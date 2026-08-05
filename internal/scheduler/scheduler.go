@@ -6,8 +6,10 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go-proxy-mini/internal/domain"
@@ -68,13 +70,14 @@ type statusWrite struct {
 }
 
 type Scheduler struct {
-	cfg      Config
-	loader   Loader
-	log      *logx.Logger
-	store    snapshotStore
-	reloadMu sync.Mutex // 重建互斥（低频，不占热路径）
-	writeCh  chan statusWrite
-	timeNow  func() time.Time
+	cfg       Config
+	loader    Loader
+	log       *logx.Logger
+	store     snapshotStore
+	reloadMu  sync.Mutex // 重建互斥（低频，不占热路径）
+	writeCh   chan statusWrite
+	timeNow   func() time.Time
+	startOnce atomic.Bool
 }
 
 func New(cfg Config, loader Loader, log *logx.Logger) *Scheduler {
@@ -87,10 +90,42 @@ func New(cfg Config, loader Loader, log *logx.Logger) *Scheduler {
 	}
 }
 
-// Start 启动定时同步与异步状态回写。
-func (s *Scheduler) Start(ctx context.Context) {
+// Name 满足 worker.Worker 契约（Global Constraints #5）。
+func (s *Scheduler) Name() string { return "scheduler" }
+
+// Start 启动定时同步与异步状态回写；重复 Start 幂等（返回错误）。
+func (s *Scheduler) Start(ctx context.Context) error {
+	if !s.startOnce.CompareAndSwap(false, true) {
+		return fmt.Errorf("scheduler: already started")
+	}
 	go s.syncLoop(ctx)
 	go s.writebackLoop(ctx)
+	return nil
+}
+
+// Close 排空剩余状态回写（限时，复用 writebackLoop 的合并逻辑）；幂等，
+// 满足 worker.Worker 契约。循环本身随 Start 的 ctx 取消而退出。
+func (s *Scheduler) Close(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case w := <-s.writeCh:
+				s.processWrite(w)
+			default:
+				close(done)
+				return
+			}
+		}
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		if s.log != nil {
+			s.log.Warn("scheduler close timeout, dropping pending writebacks")
+		}
+	}
+	return nil
 }
 
 func (s *Scheduler) syncLoop(ctx context.Context) {
@@ -114,22 +149,26 @@ func (s *Scheduler) writebackLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case w := <-s.writeCh:
-			// 合并窗口内同一账号的重复写（幂等覆盖）
-			accs := map[int64]statusWrite{w.id: w}
-			drain := true
-			for drain {
-				select {
-				case w2 := <-s.writeCh:
-					accs[w2.id] = w2
-				default:
-					drain = false
-				}
-			}
-			for _, ww := range accs {
-				if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr); err != nil && s.log != nil {
-					s.log.Warn("account status writeback failed", logx.Int64("account_id", ww.id), logx.Error(err))
-				}
-			}
+			s.processWrite(w)
+		}
+	}
+}
+
+// processWrite 处理一条状态回写：合并窗口内同一账号的重复写（幂等覆盖）后回写 DB。
+func (s *Scheduler) processWrite(w statusWrite) {
+	accs := map[int64]statusWrite{w.id: w}
+	drain := true
+	for drain {
+		select {
+		case w2 := <-s.writeCh:
+			accs[w2.id] = w2
+		default:
+			drain = false
+		}
+	}
+	for _, ww := range accs {
+		if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr); err != nil && s.log != nil {
+			s.log.Warn("account status writeback failed", logx.Int64("account_id", ww.id), logx.Error(err))
 		}
 	}
 }
@@ -181,8 +220,33 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 		newM[k] = v
 	}
 	gs, _ := buildSnapshots(map[int64][]*domain.Account{groupID: accs}, s.cfg.DefaultMaxConcurrency)
-	newM[groupID] = &groupSnapshot{accounts: gs[groupID].accounts}
-	s.store.store(newM, byID)
+	newAccs := gs[groupID].accounts
+	newM[groupID] = &groupSnapshot{accounts: newAccs}
+	// byID 必须与 groups 同步重建（评审发现：只换 groups 会导致并发计数/结果回写
+	// 落到旧快照——Select 计数在新快照、Release/MarkResult 查 byID 命中旧快照，
+	// 计数只增不减直至全量 reload；新账号的回写被静默丢弃）。
+	newByID := make(map[int64]*accountSnapshot, len(byID)+len(newAccs))
+	for k, v := range byID {
+		newByID[k] = v
+	}
+	if old, ok := m[groupID]; ok {
+		for _, os := range old.accounts {
+			stillIn := false
+			for _, ns := range newAccs {
+				if ns.acc.ID == os.acc.ID {
+					stillIn = true
+					break
+				}
+			}
+			if !stillIn {
+				delete(newByID, os.acc.ID)
+			}
+		}
+	}
+	for _, ns := range newAccs {
+		newByID[ns.acc.ID] = ns
+	}
+	s.store.store(newM, newByID)
 }
 
 func (s *Scheduler) InvalidateAll() {

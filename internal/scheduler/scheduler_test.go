@@ -198,3 +198,126 @@ func TestInvalidateGroupReloads(t *testing.T) {
 		s.Release(sel.AccountID)
 	}
 }
+
+// TestInvalidateGroupByIDRebuild 回归：InvalidateGroup 后 byID 必须与 groups 同步重建。
+// 组内账号 [1,2] → [2,3]（1 移除、3 新增）：Release/MarkResult 必须命中新快照，
+// 被移除账号必须从 byID 消失（no-op 安全）。
+func TestInvalidateGroupByIDRebuild(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 2), acc(2, tplx, 2)}})
+	s := newSched(t, m)
+
+	m.mu.Lock()
+	m.byGroup[10] = []*domain.Account{acc(2, tplx, 2), acc(3, tplx, 2)}
+	m.mu.Unlock()
+	s.InvalidateGroup(10)
+
+	// 占满并发：两账号各上限 2、总容量 4 → 4 次选择后各持 2 个槽（鸽巢原理，确定性）。
+	var sels []*Selection
+	for i := 0; i < 4; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIChat, "m")
+		require.NoError(t, err)
+		sels = append(sels, sel)
+	}
+	// 释放 2/3 的槽：并发计数必须在新快照上递减（byID 指向旧快照则计数错位）。
+	for _, sel := range sels {
+		s.Release(sel.AccountID)
+	}
+	ri, ok := s.Runtime(2)
+	require.True(t, ok)
+	require.Equal(t, int64(0), ri.Concurrency, "retained account release hits the new snapshot")
+	ri, ok = s.Runtime(3)
+	require.True(t, ok, "added account must be in byID")
+	require.Equal(t, int64(0), ri.Concurrency, "added account release hits the new snapshot")
+
+	// 新增账号 3 的结果回流必须落新快照并触发回写。
+	s.MarkResult(3, ResultError, nil)
+	ri, _ = s.Runtime(3)
+	require.Equal(t, domain.StatusErr, ri.Status, "markresult hits the new snapshot")
+	require.Equal(t, 1, ri.ErrCount)
+
+	// 被移除账号 1：Runtime 不可见，MarkResult/Release 安全 no-op（无回写）。
+	_, ok = s.Runtime(1)
+	require.False(t, ok, "removed account must not be in byID")
+	s.MarkResult(1, ResultError, nil)
+	s.Release(1)
+
+	require.NoError(t, s.Close(context.Background()))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var ids []int64
+	for _, w := range m.writes {
+		ids = append(ids, w.id)
+	}
+	require.Contains(t, ids, int64(3), "writeback fires for the added account")
+	require.NotContains(t, ids, int64(1), "no writeback for the removed account")
+}
+
+// TestInvalidateGroupShrinkByID 回归：组内账号从 [4,5] 收缩为 [4] 时，
+// 保留账号 4 的 byID 必须指向新快照（并发上限 2→1 生效），被移除账号 5 必须消失。
+func TestInvalidateGroupShrinkByID(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{11: {acc(4, tplx, 2), acc(5, tplx, 2)}})
+	s := newSched(t, m)
+
+	m.mu.Lock()
+	m.byGroup[11] = []*domain.Account{acc(4, tplx, 1)} // 5 移除；4 的并发上限 2→1
+	m.mu.Unlock()
+	s.InvalidateGroup(11)
+
+	sel, err := s.Select(11, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	require.Equal(t, int64(4), sel.AccountID)
+	ri, ok := s.Runtime(4)
+	require.True(t, ok)
+	require.Equal(t, int64(1), ri.Concurrency, "select hits the new snapshot (max 1)")
+	s.Release(sel.AccountID)
+	ri, _ = s.Runtime(4)
+	require.Equal(t, int64(0), ri.Concurrency, "release hits the new snapshot")
+
+	_, ok = s.Runtime(5)
+	require.False(t, ok, "removed account must not be in byID")
+	s.MarkResult(5, ResultError, nil)
+	s.Release(5)
+
+	require.NoError(t, s.Close(context.Background()))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, w := range m.writes {
+		require.NotEqual(t, int64(5), w.id, "no writeback for the removed account")
+	}
+}
+
+// TestWorkerContract 满足 worker.Worker 契约（Global Constraints #5）：Name + 幂等 Start。
+func TestWorkerContract(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m)
+
+	require.Equal(t, "scheduler", s.Name())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	require.NoError(t, s.Start(ctx))
+	require.EqualError(t, s.Start(ctx), "scheduler: already started")
+}
+
+// TestCloseDrainsWritebacks Close 排空 pending 回写且幂等；ctx 超时路径不阻塞。
+func TestCloseDrainsWritebacks(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m)
+
+	s.MarkResult(1, ResultError, nil)
+	require.NoError(t, s.Close(context.Background())) // 排空 pending 回写
+	require.NoError(t, s.Close(context.Background())) // 幂等
+	m.mu.Lock()
+	require.Len(t, m.writes, 1, "close drains exactly the pending writeback")
+	m.mu.Unlock()
+
+	// ctx 已取消：限时路径直接返回（丢弃/尽最大努力），不阻塞。
+	s.MarkResult(1, ResultError, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.NoError(t, s.Close(ctx))
+}
