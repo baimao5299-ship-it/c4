@@ -119,10 +119,26 @@ func newSSEWriter(w http.ResponseWriter) *sseWriter {
 	return &sseWriter{bw: bw}
 }
 
+// Event 写出纯 data: 事件（openai SSE 风格）。
 func (s *sseWriter) Event(v any) error {
+	return s.write("", v)
+}
+
+// EventTyped 写出 event: <type> + data: 事件（anthropic SSE 风格：官方 SDK 按
+// event: 行类型分发，纯 data 事件被静默跳过 → 流为空）。
+func (s *sseWriter) EventTyped(eventType string, v any) error {
+	return s.write(eventType, v)
+}
+
+func (s *sseWriter) write(eventType string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
+	}
+	if eventType != "" {
+		if _, err := s.bw.WriteString("event: " + eventType + "\n"); err != nil {
+			return err
+		}
 	}
 	if _, err := s.bw.WriteString("data: "); err != nil {
 		return err

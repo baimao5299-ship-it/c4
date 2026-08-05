@@ -130,7 +130,8 @@ func (p *Proxy) tryAnthropic(w http.ResponseWriter, r *http.Request, reqID strin
 		)
 		for stream.Next() {
 			ev := stream.Current()
-			if err := sw.Event(ev); err != nil {
+			// anthropic SSE 必须带 event: 行（SDK 按 event 类型分发，data-only 会被跳过）
+			if err := sw.EventTyped(ev.Type, ev); err != nil {
 				sw.Abort()
 				_ = stream.Close() // 归还上游连接
 				if p.log != nil {

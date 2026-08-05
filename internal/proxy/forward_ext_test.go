@@ -3,12 +3,15 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	anthropic "github.com/anthropics/anthropic-sdk-go"
+	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
@@ -102,6 +105,8 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 			w.WriteHeader(200)
 			fl := w.(http.Flusher)
 			// anthropic SSE 带 event: 行；SDK 按 event 类型分发事件（无 event 行的事件被跳过）
+			fmt.Fprint(w, `event: message_start`+"\n"+`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"gpt-4o","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}`+"\n\n")
+			fl.Flush()
 			fmt.Fprint(w, `event: content_block_delta`+"\n"+`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, `event: message_delta`+"\n"+`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":3,"output_tokens":5}}`+"\n\n")
@@ -276,4 +281,67 @@ func TestProxyAnthropicStreaming(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+}
+
+// parseAnthropicSSE 按 anthropic 协议解析输出：每个 data 块前必须有 event: 行，
+// 且 event 类型与 data JSON 的 "type" 字段一致（data-only 事件官方 SDK 静默跳过）。
+func parseAnthropicSSE(t *testing.T, body string) []string {
+	t.Helper()
+	var (
+		types []string
+		cur   string
+	)
+	for _, line := range strings.Split(body, "\n") {
+		switch {
+		case strings.HasPrefix(line, "event: "):
+			cur = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: "):
+			payload := strings.TrimPrefix(line, "data: ")
+			if payload == "[DONE]" { // 代理收尾标记，非 anthropic 协议事件
+				continue
+			}
+			var ev struct {
+				Type string `json:"type"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(payload), &ev))
+			require.Equal(t, ev.Type, cur, "event: 行与 JSON type 不一致: %q", line)
+			types = append(types, ev.Type)
+			cur = ""
+		}
+	}
+	return types
+}
+
+// 回归（评审 Important）：/v1/messages 流式输出必须带 event: <type> 行——
+// anthropic 官方 SDK 按 event: 行类型分发，data-only 事件被静默跳过 → 官方客户端拿到空流。
+func TestProxyAnthropicStreamingSSEFraming(t *testing.T) {
+	up := fakeAnthropic(t, "")
+	defer up.Close()
+	p := newTestProxyFormat(t, up.URL, domain.FormatAnthropic)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleAnthropic(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+
+	// 1) 文本级解析：event: 行存在且与 JSON type 一致
+	want := []string{"message_start", "content_block_delta", "message_delta", "message_stop"}
+	require.Equal(t, want, parseAnthropicSSE(t, rec.Body.String()))
+
+	// 2) 官方 SDK 客户端消费代理输出：event: 行缺失时流为空（修复前即空流）
+	stream := anthropicstream.NewStream[anthropic.MessageStreamEventUnion](
+		anthropicstream.NewDecoder(&http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(rec.Body.String())),
+			Request:    httptest.NewRequest(http.MethodPost, "/v1/messages", nil),
+		}), nil)
+	var got []string
+	for stream.Next() {
+		got = append(got, stream.Current().Type)
+	}
+	require.NoError(t, stream.Err())
+	require.Equal(t, want, got)
 }
