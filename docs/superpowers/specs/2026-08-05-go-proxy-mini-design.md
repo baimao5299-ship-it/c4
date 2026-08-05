@@ -118,7 +118,7 @@
 | mapped_model | *string | 映射后实际发往上游的模型名 |
 | format | enum | 模板请求格式 |
 | status_code | int | 最终返回客户端的码 |
-| error_type | enum | `none` / `429` / `5xx` / `network` / `auth` / `no_account` / `abort` |
+| error_type | enum | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` |
 | latency_ms | int | 网关内总耗时 |
 | prompt_tokens / completion_tokens / total_tokens | int | 采集到的用量（采不到为 0） |
 | created_at | time | |
