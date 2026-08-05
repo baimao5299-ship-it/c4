@@ -17,9 +17,9 @@
 - 测试断言统一 testify（require 前置、assert 独立）；`golangci-lint run` 必须全绿
 - 每个任务结束时 `go test ./...` 通过 + git commit
 - **计划内偏差（相对规格文档，实施时在代码注释标注）**：
-  1. 仓库层集成测试用内存 SQLite（modernc.org/sqlite）替代 testcontainers-PG——Windows 无 Docker 也可跑；生产仍 PG，`TEST_DB_DSN` 指向真实 PG 可做方言终检
+  1. **用户决策（2026-08-05）替代原 SQLite 方案**：仓库层测试用 **pgxmock**（github.com/pashagolub/pgxmock/v4，经 ent v0.14 的 dialect.Driver 薄适配器桥接，无真实 DB）；生产连接用原生 **pgxpool**——`OpenPG(ctx, dsn, maxConns int32) (*pgxpool.Pool, error)`，ent 经 `pgx/v5/stdlib` 的 `OpenDBFromPool(pool)` 桥接（entsql.OpenDB 在 ent v0.14.6 只接受 *sql.DB）。modernc.org/sqlite 弃用
   2. 流式空闲 watchdog 简化为整体 backstop 超时 `upstream_stream_timeout`（默认 30m，可配）——SDK 层无法注入 per-read 空闲超时
-  3. 规格 §10.2 的压测验收以 `tools/loadtest` + `tools/fakeupstream` 自研工具执行，不依赖 k6
+  3. 规格 §10.2 的压测验收以 `tools/loadtest` + `tools/fakeupstream` 自研工具执行，不依赖 k6；压测/冒烟所需 PG 实例用 Docker 自启（`postgres:16`，5432 端口）
 
 ---
 
@@ -1191,9 +1191,9 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 
 	"entgo.io/ent/dialect"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"go-proxy-mini/internal/ent"
 )
@@ -1225,15 +1225,15 @@ func New(drv dialect.Driver, migrate bool) (*Repos, error) {
 	}, nil
 }
 
-// OpenPG 打开 pgx 连接池（生产入口）。
-func OpenPG(dsn string, maxConns int) (*sql.DB, error) {
-	db, err := sql.Open("pgx", dsn)
+// OpenPG 打开原生 pgxpool（生产入口，用户决策 2026-08-05）。
+// ent 桥接见 Task 8：stdlib.OpenDBFromPool(pool) → entsql.OpenDB(dialect.Postgres, sqlDB)。
+func OpenPG(ctx context.Context, dsn string, maxConns int32) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(maxConns)
-	db.SetMaxIdleConns(maxConns)
-	return db, nil
+	cfg.MaxConns = maxConns
+	return pgxpool.NewWithConfig(ctx, cfg)
 }
 ```
 
@@ -5679,7 +5679,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 
 	"go-proxy-mini/internal/config"
 	"go-proxy-mini/internal/handler"
@@ -5710,11 +5710,13 @@ func main() {
 		fatalf("admin.token and db.dsn are required (config or GPM_ADMIN_TOKEN/GPM_DB_DSN)")
 	}
 
-	db, err := repository.OpenPG(cfg.DB.DSN, cfg.DB.MaxConns)
+	pool, err := repository.OpenPG(context.Background(), cfg.DB.DSN, int32(cfg.DB.MaxConns))
 	if err != nil {
 		fatalf("db: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
+	// ent v0.14.6 的 entsql.OpenDB 只接受 *sql.DB：pgxpool 经 pgx/stdlib 桥接（用户决策 2026-08-05）
+	db := stdlib.OpenDBFromPool(pool)
 	drv := entsql.OpenDB(dialect.Postgres, db)
 	repos, err := repository.New(drv, true)
 	if err != nil {
@@ -6088,16 +6090,22 @@ func p99(m *metrics) int64 {
 
 - [ ] **Step 3: 冒烟跑通（小并发验证链路）**
 
+先自启 PG 实例（用户决策：Docker 自启，Docker 29.3.1 已确认可用）：
+
+```bash
+docker run -d --name gpm-pg -e POSTGRES_PASSWORD=gpm -e POSTGRES_DB=go_proxy_mini -p 5432:5432 postgres:16
+```
+
 ```bash
 # 终端 1：fake upstream
 go run ./tools/fakeupstream -addr :9100 -latency 5ms
-# 终端 2：网关（config.toml 指向 :9100，见下）
+# 终端 2：网关（config.toml 指向 :9100 与 :5432，见下）
 # 终端 3：建模板/账号/分组（curl 序列，参考 Task 8 Step 7）
 go run ./tools/loadtest -addr http://127.0.0.1:8080 -key <生成key> -concurrency 50 -duration 10s -healthz http://127.0.0.1:8080/healthz
 ```
 Expected: total>0、errs=0、gateway healthz 有输出。
 
-config.toml 关键项：`db.dsn` 指向本地 PG；模板 base_url 填 `http://127.0.0.1:9100/v1`。
+config.toml 关键项：`db.dsn = "postgres://postgres:gpm@localhost:5432/go_proxy_mini?sslmode=disable"`（Docker 实例）；模板 base_url 填 `http://127.0.0.1:9100/v1`。压测结束 `docker rm -f gpm-pg` 清理（或在正式压测前重启容器保证干净 schema）。
 
 - [ ] **Step 4: 正式验收（10k 并发流 ≥ 5 分钟）**
 
