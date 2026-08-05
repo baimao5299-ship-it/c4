@@ -56,8 +56,12 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var lastCode int
+	var (
+		lastCode int
+		lastSel  = sel // 最后一次实际尝试的 Selection；中途 Select 失败返回 nil 时不得解引用 sel
+	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
+		lastSel = sel
 		ok, code := p.tryChat(w, r, reqID, groupID, start, sel, &params, peek.Stream)
 		if ok {
 			return // 已写出完整响应
@@ -95,7 +99,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	case lastCode == 0:
 		et = domain.ErrNetwork
 	}
-	p.record(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, lastCode, et, 0, nil, start)
+	p.record(reqID, groupID, lastSel.AccountID, lastSel.Model, domain.FormatOpenAIChat, lastCode, et, 0, nil, start)
 	if lastCode == http.StatusTooManyRequests {
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, errTooMany)

@@ -374,3 +374,23 @@ func TestProxyUsageCaptureDisabled(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "并发槽仍须释放")
 }
+
+// 回归：单账号 429 冷却后，失败转移中途 Select 失败（nil, ErrNoAvailable）时
+// 耗尽路径不得解引用 nil Selection（此前 panic → 500；应 429）。
+func TestProxyChatFailoverSingleAccountNoPanic(t *testing.T) {
+	up := fakeOpenAI(t, "429")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	require.NotPanics(t, func() { p.HandleChat(rec, req) })
+	require.Equal(t, 429, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, "1", rec.Header().Get("Retry-After"))
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "并发槽必须释放")
+	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
+}
