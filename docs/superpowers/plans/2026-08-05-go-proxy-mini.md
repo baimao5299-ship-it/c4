@@ -20,6 +20,9 @@
   1. **用户决策（2026-08-05）替代原 SQLite 方案**：仓库层测试用 **pgxmock**（github.com/pashagolub/pgxmock/v4，经 ent v0.14 的 dialect.Driver 薄适配器桥接，无真实 DB）；生产连接用原生 **pgxpool**——`OpenPG(ctx, dsn, maxConns int32) (*pgxpool.Pool, error)`，ent 经 `pgx/v5/stdlib` 的 `OpenDBFromPool(pool)` 桥接（entsql.OpenDB 在 ent v0.14.6 只接受 *sql.DB）。modernc.org/sqlite 弃用
   2. 流式空闲 watchdog 简化为整体 backstop 超时 `upstream_stream_timeout`（默认 30m，可配）——SDK 层无法注入 per-read 空闲超时
   3. 规格 §10.2 的压测验收以 `tools/loadtest` + `tools/fakeupstream` 自研工具执行，不依赖 k6；压测/冒烟所需 PG 实例用 Docker 自启（`postgres:16`，5432 端口）
+  4. **用户决策（2026-08-05）：用量管线不得丢数据**——`DropOnFull` 配置移除（Record 恒阻塞发送，规格 §10.5 已同步修订）；饱和反压传导至请求路径，由 HTTP 过载保护（max_inflight）兜底
+  5. **用户决策（2026-08-05）：统一 worker 管理器抽象层（为后续扩展）**——`internal/worker`（Task 8 创建）。所有后台任务实现 Worker 契约：`Name() string`、`Start(ctx) error`（非阻塞、幂等）、`Close(ctx) error`（排空、幂等）；Task 8 用 Manager 统一装配（顺序启动、反向排空、托管 goroutine panic 捕获）。Task 4 的 scheduler 与 Task 5 的 Recorder 在各自任务内对齐该契约（Start/Close 返回 error + Name()）
+  6. **用户决策（2026-08-05）：落盘热路径异步化**——所有需落盘的热点路径一律经异步批量写 worker（有界 channel + 批量 flush + 不丢数据），规格 §10.3 已增补本原则；例外：scheduler 状态回写 best-effort（30s DB 同步自愈，非记账数据）。后续新增落盘热路径必须遵循
 
 ---
 
@@ -420,7 +423,6 @@ type SchedulerConfig struct {
 type UsageConfig struct {
 	BatchSize          int           `koanf:"batch_size"`
 	FlushInterval      time.Duration `koanf:"flush_interval"`
-	DropOnFull         bool          `koanf:"drop_on_full"`
 	LogRetentionDays   int           `koanf:"log_retention_days"`
 	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"`
 }
@@ -433,7 +435,7 @@ func defaults() *Config {
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, Cooldown429: 30 * time.Second, BackoffBase: 5 * time.Second, BackoffMax: 5 * time.Minute, SyncInterval: 30 * time.Second},
-		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, DropOnFull: true, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second},
+		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second},
 	}
 }
 
@@ -2451,7 +2453,7 @@ git add -A && git commit -m "feat: in-memory scheduler with cooldown/backoff/wei
 - Consumes: `internal/domain`、`internal/repository`（`LogRepo`/`StatRepo`）、`pkg/logx`
 - Produces:
   - `usage.New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger) *Recorder`
-  - `Recorder.Start(ctx)`、`Recorder.Record(*domain.UsageLog)`（非阻塞）、`Recorder.Close(ctx)`（排空）
+  - `Recorder.Start(ctx)`、`Recorder.Record(*domain.UsageLog)`（常时非阻塞，饱和时阻塞反压不丢数据）、`Recorder.Close(ctx)`（排空）
   - `type LogInserter interface { InsertBatch(ctx, []*domain.UsageLog) error }`
   - `type StatUpserter interface { Upsert(ctx, []*domain.StatBucket) error }`
 
@@ -2513,7 +2515,6 @@ func testCfg() UsageConfig {
 	return UsageConfig{
 		BatchSize:          2,
 		FlushInterval:      50 * time.Millisecond,
-		DropOnFull:         false,
 		LogRetentionDays:   30,
 		StatsFlushInterval: 30 * time.Millisecond,
 	}
@@ -2610,6 +2611,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go-proxy-mini/internal/domain"
@@ -2619,7 +2621,6 @@ import (
 type UsageConfig struct {
 	BatchSize          int
 	FlushInterval      time.Duration
-	DropOnFull         bool
 	LogRetentionDays   int
 	StatsFlushInterval time.Duration
 }
@@ -2633,14 +2634,14 @@ type StatUpserter interface {
 }
 
 type Recorder struct {
-	cfg      UsageConfig
-	logs     LogInserter
-	stats    StatUpserter
-	log      *logx.Logger
-	logCh    chan *domain.UsageLog
-	mu       sync.Mutex
-	counters map[string]*statCounters
-	dropped  int64
+	cfg        UsageConfig
+	logs       LogInserter
+	stats      StatUpserter
+	log        *logx.Logger
+	logCh      chan *domain.UsageLog
+	mu         sync.Mutex
+	counters   map[string]*statCounters
+	startOnce  atomic.Bool
 }
 
 type statCounters struct {
@@ -2658,26 +2659,24 @@ func New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger
 	}
 }
 
-func (r *Recorder) Start(ctx context.Context) {
+// Name 满足 worker.Worker 契约（Global Constraints #5）；重复 Start 幂等。
+func (r *Recorder) Name() string { return "usage" }
+
+func (r *Recorder) Start(ctx context.Context) error {
+	if !r.startOnce.CompareAndSwap(false, true) {
+		return fmt.Errorf("recorder: already started")
+	}
 	go r.logWriterLoop(ctx)
 	go r.statsFlushLoop(ctx)
 	go r.janitorLoop(ctx)
+	return nil
 }
 
 // Record 记录一次请求：统计同步聚合（永不丢弃），明细入有界 channel。
+// 常时非阻塞；channel 饱和时阻塞反压（用户决策 2026-08-05：不得丢数据），
+// 反压传导至请求路径，由 HTTP 层过载保护（max_inflight，规格 §10.6）兜底。
 func (r *Recorder) Record(l *domain.UsageLog) {
 	r.aggregate(l)
-	if r.cfg.DropOnFull {
-		select {
-		case r.logCh <- l:
-		default:
-			r.dropped++
-			if r.log != nil && r.dropped%1000 == 1 {
-				r.log.Warn("usage log dropped (pipeline saturated)", logx.Int64("dropped", r.dropped))
-			}
-		}
-		return
-	}
 	r.logCh <- l
 }
 
@@ -2785,8 +2784,8 @@ func (r *Recorder) flushStats() {
 	}
 }
 
-// Close 排空剩余明细（限时，超时丢弃并 Warn）。
-func (r *Recorder) Close(ctx context.Context) {
+// Close 排空剩余明细（限时，超时丢弃并 Warn）；幂等，满足 worker.Worker 契约。
+func (r *Recorder) Close(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -2809,6 +2808,7 @@ func (r *Recorder) Close(ctx context.Context) {
 		}
 	}
 	r.flushStats()
+	return nil
 }
 
 func (r *Recorder) janitorLoop(ctx context.Context) {
@@ -3003,7 +3003,7 @@ func newTestProxy(t *testing.T, upstream string, accountID int64) *Proxy {
 	}, noopLoader{accs: accs}, nil)
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
-		BatchSize: 100, FlushInterval: time.Hour, DropOnFull: false,
+		BatchSize: 100, FlushInterval: time.Hour,
 		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
 	}, noopLogStore{}, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]int64{"hash-1": 10}}, nil)
@@ -5124,16 +5124,197 @@ git add -A && git commit -m "feat: admin API (templates/accounts/groups/logs/sta
 ### Task 8: 服务装配（server + main + 中间件 + responses/anthropic 端点）
 
 **Files:**
+- Create: `internal/worker/worker.go`
 - Create: `internal/server/server.go`
 - Create: `internal/server/middleware.go`
 - Create: `cmd/server/main.go`
 - Create: `internal/proxy/forward_responses.go`
 - Create: `internal/proxy/forward_anthropic.go`
+- Test: `internal/worker/worker_test.go`
 - Test: `internal/server/server_test.go`
 
 **Interfaces:**
 - Consumes: Task 1-7 全部
-- Produces: 可运行单二进制；`GET /healthz`（inflight/goroutines/heap）
+- Produces: 可运行单二进制；`GET /healthz`（inflight/goroutines/heap）；统一 worker 管理器（`internal/worker`，Global Constraints #5）
+
+- [ ] **Step 0: worker 管理器（统一后台任务抽象，用户决策 2026-08-05）**
+
+`internal/worker/worker.go`:
+
+```go
+package worker
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"go-proxy-mini/pkg/logx"
+)
+
+// Worker 是后台任务统一契约：Start 非阻塞启动内部 goroutine，Close 排空/释放。
+// 两者必须幂等；Close 在未 Start 时也必须安全。
+type Worker interface {
+	Name() string
+	Start(ctx context.Context) error
+	Close(ctx context.Context) error
+}
+
+// Manager 统一装配后台任务：顺序启动、反向排空、panic 捕获（进程不崩）。
+type Manager struct {
+	log     *logx.Logger
+	mu      sync.Mutex
+	workers []Worker
+	started bool
+}
+
+func New(log *logx.Logger) *Manager { return &Manager{log: log} }
+
+func (m *Manager) Register(ws ...Worker) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.workers = append(m.workers, ws...)
+}
+
+// StartAll 按注册顺序启动；任一失败则已启动者反向 Close 后返回错误。
+func (m *Manager) StartAll(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.started {
+		return fmt.Errorf("worker manager: already started")
+	}
+	m.started = true
+	var started []Worker
+	for _, w := range m.workers {
+		if err := w.Start(ctx); err != nil {
+			for i := len(started) - 1; i >= 0; i-- {
+				if cerr := started[i].Close(ctx); cerr != nil && m.log != nil {
+					m.log.Warn("worker close failed on start rollback", logx.String("worker", started[i].Name()), logx.Error(cerr))
+				}
+			}
+			return fmt.Errorf("worker %s start: %w", w.Name(), err)
+		}
+		started = append(started, w)
+	}
+	return nil
+}
+
+// Shutdown 反向顺序 Close（后注册先关），收集并返回首个错误。
+func (m *Manager) Shutdown(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var firstErr error
+	for i := len(m.workers) - 1; i >= 0; i-- {
+		w := m.workers[i]
+		if err := w.Close(ctx); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("worker %s close: %w", w.Name(), err)
+			}
+			if m.log != nil {
+				m.log.Warn("worker close failed", logx.String("worker", w.Name()), logx.Error(err))
+			}
+		}
+	}
+	return firstErr
+}
+
+// Go 托管命名 goroutine：panic 捕获 + Warn，进程不崩。
+func (m *Manager) Go(ctx context.Context, name string, fn func(ctx context.Context)) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil && m.log != nil {
+				m.log.Warn("worker goroutine panicked", logx.String("worker", name), logx.Any("panic", r))
+			}
+		}()
+		fn(ctx)
+	}()
+}
+```
+
+`internal/worker/worker_test.go`（testify，全 require）：
+
+```go
+package worker
+
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+type fakeWorker struct {
+	name    string
+	events  *[]string
+	mu      *sync.Mutex
+	startFn func() error
+}
+
+func (f *fakeWorker) Name() string { return f.name }
+func (f *fakeWorker) Start(context.Context) error {
+	f.mu.Lock()
+	*f.events = append(*f.events, "start:"+f.name)
+	f.mu.Unlock()
+	if f.startFn != nil {
+		return f.startFn()
+	}
+	return nil
+}
+func (f *fakeWorker) Close(context.Context) error {
+	f.mu.Lock()
+	*f.events = append(*f.events, "close:"+f.name)
+	f.mu.Unlock()
+	return nil
+}
+
+func TestStartAllShutdownOrder(t *testing.T) {
+	var events []string
+	var mu sync.Mutex
+	m := New(nil)
+	m.Register(&fakeWorker{name: "a", events: &events, mu: &mu})
+	m.Register(&fakeWorker{name: "b", events: &events, mu: &mu})
+	require.NoError(t, m.StartAll(context.Background()))
+	require.Equal(t, []string{"start:a", "start:b"}, events)
+	require.NoError(t, m.Shutdown(context.Background()))
+	require.Equal(t, []string{"start:a", "start:b", "close:b", "close:a"}, events)
+}
+
+func TestStartAllRollback(t *testing.T) {
+	var events []string
+	var mu sync.Mutex
+	m := New(nil)
+	m.Register(&fakeWorker{name: "a", events: &events, mu: &mu})
+	m.Register(&fakeWorker{name: "b", events: &events, mu: &mu, startFn: func() error { return context.DeadlineExceeded }})
+	err := m.StartAll(context.Background())
+	require.Error(t, err)
+	require.Equal(t, []string{"start:a", "start:b", "close:a"}, events)
+}
+
+func TestStartAllTwice(t *testing.T) {
+	m := New(nil)
+	m.Register(&fakeWorker{name: "a"})
+	require.NoError(t, m.StartAll(context.Background()))
+	require.Error(t, m.StartAll(context.Background()))
+}
+
+func TestGoCatchesPanic(t *testing.T) {
+	m := New(nil)
+	done := make(chan struct{})
+	m.Go(context.Background(), "boom", func(context.Context) {
+		defer close(done)
+		panic("test panic")
+	})
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("goroutine did not run")
+	}
+}
+```
+
+Run: `go test ./internal/worker/ -count=1`
 
 - [ ] **Step 1: 写失败测试（路由装配 + 中间件）**
 
@@ -5733,7 +5914,6 @@ func main() {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize:          cfg.Usage.BatchSize,
 		FlushInterval:      cfg.Usage.FlushInterval,
-		DropOnFull:         cfg.Usage.DropOnFull,
 		LogRetentionDays:   cfg.Usage.LogRetentionDays,
 		StatsFlushInterval: cfg.Usage.StatsFlushInterval,
 	}, repos.Logs, repos.Stats, log)
