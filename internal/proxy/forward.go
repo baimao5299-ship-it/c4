@@ -106,8 +106,13 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 
 var bufioPool = sync.Pool{New: func() any { return bufio.NewWriterSize(nil, 8192) }}
 
+// sseWriter 复用 bufio 写出 SSE。fl 在每次事件后 Flush：
+// 只刷 bufio 不刷 http.Flusher 时，Go http.Server 内部 4KB 缓冲会攒批放出，
+// 首字节延迟被拉高到 ~145ms（Task 9 压测实测，修复后 ~1ms，
+// 详见 docs/superpowers/plans/loadtest-results.md）。
 type sseWriter struct {
 	bw *bufio.Writer
+	fl http.Flusher
 }
 
 func newSSEWriter(w http.ResponseWriter) *sseWriter {
@@ -116,7 +121,8 @@ func newSSEWriter(w http.ResponseWriter) *sseWriter {
 	w.Header().Set("X-Accel-Buffering", "no")
 	bw := bufioPool.Get().(*bufio.Writer)
 	bw.Reset(w)
-	return &sseWriter{bw: bw}
+	fl, _ := w.(http.Flusher) // 中间件包装（statusWriter）不实现 Flusher 时静默跳过
+	return &sseWriter{bw: bw, fl: fl}
 }
 
 // Event 写出纯 data: 事件（openai SSE 风格）。
@@ -149,7 +155,13 @@ func (s *sseWriter) write(eventType string, v any) error {
 	if _, err := s.bw.WriteString("\n\n"); err != nil {
 		return err
 	}
-	return s.bw.Flush()
+	if err := s.bw.Flush(); err != nil {
+		return err
+	}
+	if s.fl != nil {
+		s.fl.Flush() // 事件级冲刷（SSE 语义必需，见 newSSEWriter 注释）
+	}
+	return nil
 }
 
 func (s *sseWriter) Done() error {
@@ -158,6 +170,9 @@ func (s *sseWriter) Done() error {
 	}
 	if err := s.bw.Flush(); err != nil {
 		return err
+	}
+	if s.fl != nil {
+		s.fl.Flush()
 	}
 	bufioPool.Put(s.bw)
 	return nil
