@@ -76,6 +76,9 @@ func (r *Recorder) Record(l *domain.UsageLog) {
 	r.logCh <- l
 }
 
+// Pending 返回尚未落库的明细条数（测试与背压观测用）。
+func (r *Recorder) Pending() int { return len(r.logCh) }
+
 func (r *Recorder) aggregate(l *domain.UsageLog) {
 	hour := l.CreatedAt.UTC().Truncate(time.Hour)
 	isErr := l.ErrorType != domain.ErrNone
