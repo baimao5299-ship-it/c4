@@ -28,7 +28,6 @@ scheduler = {
 usage = {
   batch_size = 500,
   flush_interval = "500ms",
-  drop_on_full = true,
   log_retention_days = 30,
   stats_flush_interval = "10s",
 }
