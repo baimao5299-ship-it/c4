@@ -5416,6 +5416,8 @@ Expected: FAIL（包不存在）。
 
 - [ ] **Step 3: 写 proxy 的 responses/anthropic 转发（同构于 chat）**
 
+> **⚠️ SDK 适配（2026-08-05，用户决策，Task 6 已落地）：** 本步骤两个文件与 Task 6 的 forward_chat.go 同源问题——计划代码的 SDK 调用（openai.With* / 顶层 openai.ResponseNewParams 等）在任何 openai-go/anthropic 版本中都不存在。已钉死版本：**openai-go v1.12.0 + anthropic-sdk-go v1.56.0**（模块缓存内）。实际 API 形态（Task 6 已验证）：`option` 包（option.WithBaseURL/WithHeader/WithMaxRetries(0)）、流式用 NewStreaming（无 params.Stream 字段，stream 标志从原始 body 探测）、流为 `*ssestream.Stream[T]`（Next()/Current()/Err()）、`openai.ChatModel` 是 string 别名、chunk usage 经 `chunk.JSON.Usage.Valid()`、**openai Response 类型在 `responses/` 子包**、anthropic 类似（anthropic.New[Streaming]、MessageNewParams 等）。**必须参考已合并的 Task 6 实现**（internal/proxy/forward_chat.go、pkg/aiclient/aiclient.go）逐调用对照适配，SDK 自动重试关闭（WithMaxRetries(0)，failover 归调度器）。报告需记录每个适配点。
+
 `internal/proxy/forward_responses.go`:
 
 ```go
