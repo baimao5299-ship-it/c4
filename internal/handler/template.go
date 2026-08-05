@@ -8,24 +8,32 @@ import (
 	"go-proxy-mini/internal/service"
 )
 
-func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Name          string                          `json:"name"`
-		BaseURL       string                          `json:"base_url"`
-		DefaultFormat domain.RequestFormat            `json:"default_format"`
-		Models        []string                        `json:"models"`
-		ModelFormats  map[string]domain.RequestFormat `json:"model_formats"`
-		ModelMapping  map[string]string               `json:"model_mapping"`
+// templateBody 是模板请求体的可写字段（snake_case 与其余 admin 端点一致）。
+// domain.Template 无 json tag，直接解码会丢弃 base_url/default_format 等键
+// （评审发现：updateTemplate 原实现因此让文档化的 PUT 请求全部 400）。
+type templateBody struct {
+	Name          string                          `json:"name"`
+	BaseURL       string                          `json:"base_url"`
+	DefaultFormat domain.RequestFormat            `json:"default_format"`
+	Models        []string                        `json:"models"`
+	ModelFormats  map[string]domain.RequestFormat `json:"model_formats"`
+	ModelMapping  map[string]string               `json:"model_mapping"`
+}
+
+func (b *templateBody) toTemplate() *domain.Template {
+	return &domain.Template{
+		Name: b.Name, BaseURL: b.BaseURL, DefaultFormat: b.DefaultFormat,
+		Models: b.Models, ModelFormats: b.ModelFormats, ModelMapping: b.ModelMapping,
 	}
+}
+
+func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) {
+	var in templateBody
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	tpl := &domain.Template{
-		Name: in.Name, BaseURL: in.BaseURL, DefaultFormat: in.DefaultFormat,
-		Models: in.Models, ModelFormats: in.ModelFormats, ModelMapping: in.ModelMapping,
-	}
-	created, err := h.svc.CreateTemplate(r.Context(), tpl)
+	created, err := h.svc.CreateTemplate(r.Context(), in.toTemplate())
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -62,13 +70,14 @@ func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	var in domain.Template
+	var in templateBody
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	in.ID = id
-	updated, err := h.svc.UpdateTemplate(r.Context(), &in)
+	tpl := in.toTemplate()
+	tpl.ID = id
+	updated, err := h.svc.UpdateTemplate(r.Context(), tpl)
 	if err != nil {
 		writeServiceErr(w, err)
 		return

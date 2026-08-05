@@ -100,4 +100,61 @@ func TestAdminFlow(t *testing.T) {
 	require.Equal(t, 401, rec2.Code)
 }
 
+func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
+	h := newTestHandler(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	h.Routes(r)
+
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer admin-tok")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := do(http.MethodPost, "/admin/templates", `{
+		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"default_format":"openai-chat","models":["gpt-4o","gpt-4o-mini"],
+		"model_formats":{"o3":"openai-responses"},
+		"model_mapping":{"gpt-4o":"gpt-4o-2026-01-01"}}`)
+	require.Equal(t, 200, rec.Code, "create: %s", rec.Body.String())
+	var tpl domain.Template
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tpl))
+
+	// PUT 全量 snake_case body：字段必须全部生效（评审发现：原实现直接解码
+	// 无 tag 的 domain.Template，base_url/default_format/model_formats/model_mapping
+	// 被丢弃 → 校验失败 400）。
+	rec = do(http.MethodPut, "/admin/templates/"+itoa(tpl.ID), `{
+		"name":"openai-main-v2","base_url":"https://api.openai.com/v2",
+		"default_format":"openai-responses","models":["gpt-4o"],
+		"model_formats":{"o3":"anthropic"},
+		"model_mapping":{"gpt-4o":"gpt-4o-2026-06-01"}}`)
+	require.Equal(t, 200, rec.Code, "update: %s", rec.Body.String())
+	var updated domain.Template
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
+	require.Equal(t, "openai-main-v2", updated.Name)
+	require.Equal(t, "https://api.openai.com/v2", updated.BaseURL, "base_url must round-trip")
+	require.Equal(t, domain.FormatOpenAIResponses, updated.DefaultFormat, "default_format must round-trip")
+	require.Equal(t, domain.FormatAnthropic, updated.FormatFor("o3"), "model_formats must round-trip")
+	require.Equal(t, "gpt-4o-2026-06-01", updated.ModelMapping["gpt-4o"], "model_mapping must round-trip")
+
+	// GET 确认已持久化
+	rec = do(http.MethodGet, "/admin/templates/"+itoa(tpl.ID), "")
+	require.Equal(t, 200, rec.Code, "get: %s", rec.Body.String())
+	var got domain.Template
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, updated.BaseURL, got.BaseURL, "update must persist")
+}
+
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
