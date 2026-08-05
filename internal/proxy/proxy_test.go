@@ -181,6 +181,26 @@ func TestProxyStreamingChat(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
 }
 
+// SSE 事件级冲刷回归（Task 9 压测发现）：sseWriter 必须每事件调用 http.Flusher.Flush()。
+// 只刷 bufio 不刷 Flusher 时，http.Server 内部 4KB 缓冲攒批放出，流式首字节
+// 延迟实测 145ms（修复后 ~1ms，见 docs/superpowers/plans/loadtest-results.md）。
+// ResponseRecorder 实现 Flusher：首个事件写出后 Flushed 必须为真。
+func TestProxyStreamingSSEFlushesPerEvent(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.True(t, rec.Flushed, "SSE 每事件必须冲刷（http.Flusher），首个事件后 Flushed 为真")
+	require.Contains(t, rec.Body.String(), "data: [DONE]")
+}
+
 func TestProxyAuthRejected(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()

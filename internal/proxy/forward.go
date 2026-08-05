@@ -121,7 +121,7 @@ func newSSEWriter(w http.ResponseWriter) *sseWriter {
 	w.Header().Set("X-Accel-Buffering", "no")
 	bw := bufioPool.Get().(*bufio.Writer)
 	bw.Reset(w)
-	fl, _ := w.(http.Flusher) // 中间件包装（statusWriter）不实现 Flusher 时静默跳过
+	fl, _ := w.(http.Flusher) // statusWriter 已委托 Flush（middleware.go）；静默跳过仅防测试替身
 	return &sseWriter{bw: bw, fl: fl}
 }
 
