@@ -9,6 +9,7 @@ import (
 	"go-proxy-mini/internal/ent/usagelog"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 )
@@ -18,6 +19,7 @@ type UsageLogCreate struct {
 	config
 	mutation *UsageLogMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetRequestID sets the "request_id" field.
@@ -340,6 +342,7 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_node = &UsageLog{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(usagelog.Table, sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -403,11 +406,662 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.UsageLog.Create().
+//		SetRequestID(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.UsageLogUpsert) {
+//			SetRequestID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *UsageLogCreate) OnConflict(opts ...sql.ConflictOption) *UsageLogUpsertOne {
+	_c.conflict = opts
+	return &UsageLogUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.UsageLog.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *UsageLogCreate) OnConflictColumns(columns ...string) *UsageLogUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &UsageLogUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// UsageLogUpsertOne is the builder for "upsert"-ing
+	//  one UsageLog node.
+	UsageLogUpsertOne struct {
+		create *UsageLogCreate
+	}
+
+	// UsageLogUpsert is the "OnConflict" setter.
+	UsageLogUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetRequestID sets the "request_id" field.
+func (u *UsageLogUpsert) SetRequestID(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldRequestID, v)
+	return u
+}
+
+// UpdateRequestID sets the "request_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRequestID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRequestID)
+	return u
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *UsageLogUpsert) SetGroupID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldGroupID, v)
+	return u
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateGroupID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldGroupID)
+	return u
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *UsageLogUpsert) AddGroupID(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldGroupID, v)
+	return u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *UsageLogUpsert) ClearGroupID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldGroupID)
+	return u
+}
+
+// SetAccountID sets the "account_id" field.
+func (u *UsageLogUpsert) SetAccountID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldAccountID, v)
+	return u
+}
+
+// UpdateAccountID sets the "account_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateAccountID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldAccountID)
+	return u
+}
+
+// AddAccountID adds v to the "account_id" field.
+func (u *UsageLogUpsert) AddAccountID(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldAccountID, v)
+	return u
+}
+
+// ClearAccountID clears the value of the "account_id" field.
+func (u *UsageLogUpsert) ClearAccountID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldAccountID)
+	return u
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *UsageLogUpsert) SetTemplateID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldTemplateID, v)
+	return u
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateTemplateID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldTemplateID)
+	return u
+}
+
+// AddTemplateID adds v to the "template_id" field.
+func (u *UsageLogUpsert) AddTemplateID(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldTemplateID, v)
+	return u
+}
+
+// ClearTemplateID clears the value of the "template_id" field.
+func (u *UsageLogUpsert) ClearTemplateID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldTemplateID)
+	return u
+}
+
+// SetModel sets the "model" field.
+func (u *UsageLogUpsert) SetModel(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldModel, v)
+	return u
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateModel() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldModel)
+	return u
+}
+
+// SetMappedModel sets the "mapped_model" field.
+func (u *UsageLogUpsert) SetMappedModel(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldMappedModel, v)
+	return u
+}
+
+// UpdateMappedModel sets the "mapped_model" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMappedModel() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMappedModel)
+	return u
+}
+
+// ClearMappedModel clears the value of the "mapped_model" field.
+func (u *UsageLogUpsert) ClearMappedModel() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMappedModel)
+	return u
+}
+
+// SetFormat sets the "format" field.
+func (u *UsageLogUpsert) SetFormat(v usagelog.Format) *UsageLogUpsert {
+	u.Set(usagelog.FieldFormat, v)
+	return u
+}
+
+// UpdateFormat sets the "format" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateFormat() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldFormat)
+	return u
+}
+
+// SetStatusCode sets the "status_code" field.
+func (u *UsageLogUpsert) SetStatusCode(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldStatusCode, v)
+	return u
+}
+
+// UpdateStatusCode sets the "status_code" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateStatusCode() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldStatusCode)
+	return u
+}
+
+// AddStatusCode adds v to the "status_code" field.
+func (u *UsageLogUpsert) AddStatusCode(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldStatusCode, v)
+	return u
+}
+
+// SetErrorType sets the "error_type" field.
+func (u *UsageLogUpsert) SetErrorType(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldErrorType, v)
+	return u
+}
+
+// UpdateErrorType sets the "error_type" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateErrorType() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldErrorType)
+	return u
+}
+
+// SetLatencyMs sets the "latency_ms" field.
+func (u *UsageLogUpsert) SetLatencyMs(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldLatencyMs, v)
+	return u
+}
+
+// UpdateLatencyMs sets the "latency_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateLatencyMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldLatencyMs)
+	return u
+}
+
+// AddLatencyMs adds v to the "latency_ms" field.
+func (u *UsageLogUpsert) AddLatencyMs(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldLatencyMs, v)
+	return u
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (u *UsageLogUpsert) SetPromptTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPromptTokens, v)
+	return u
+}
+
+// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePromptTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPromptTokens)
+	return u
+}
+
+// AddPromptTokens adds v to the "prompt_tokens" field.
+func (u *UsageLogUpsert) AddPromptTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPromptTokens, v)
+	return u
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (u *UsageLogUpsert) SetCompletionTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldCompletionTokens, v)
+	return u
+}
+
+// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCompletionTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCompletionTokens)
+	return u
+}
+
+// AddCompletionTokens adds v to the "completion_tokens" field.
+func (u *UsageLogUpsert) AddCompletionTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldCompletionTokens, v)
+	return u
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (u *UsageLogUpsert) SetTotalTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldTotalTokens, v)
+	return u
+}
+
+// UpdateTotalTokens sets the "total_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateTotalTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldTotalTokens)
+	return u
+}
+
+// AddTotalTokens adds v to the "total_tokens" field.
+func (u *UsageLogUpsert) AddTotalTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldTotalTokens, v)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *UsageLogUpsert) SetCreatedAt(v time.Time) *UsageLogUpsert {
+	u.Set(usagelog.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCreatedAt() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCreatedAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.UsageLog.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(usagelog.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *UsageLogUpsertOne) UpdateNewValues() *UsageLogUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(usagelog.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.UsageLog.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *UsageLogUpsertOne) Ignore() *UsageLogUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *UsageLogUpsertOne) DoNothing() *UsageLogUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the UsageLogCreate.OnConflict
+// documentation for more info.
+func (u *UsageLogUpsertOne) Update(set func(*UsageLogUpsert)) *UsageLogUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&UsageLogUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetRequestID sets the "request_id" field.
+func (u *UsageLogUpsertOne) SetRequestID(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRequestID(v)
+	})
+}
+
+// UpdateRequestID sets the "request_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRequestID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRequestID()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *UsageLogUpsertOne) SetGroupID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *UsageLogUpsertOne) AddGroupID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateGroupID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *UsageLogUpsertOne) ClearGroupID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearGroupID()
+	})
+}
+
+// SetAccountID sets the "account_id" field.
+func (u *UsageLogUpsertOne) SetAccountID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAccountID(v)
+	})
+}
+
+// AddAccountID adds v to the "account_id" field.
+func (u *UsageLogUpsertOne) AddAccountID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddAccountID(v)
+	})
+}
+
+// UpdateAccountID sets the "account_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateAccountID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAccountID()
+	})
+}
+
+// ClearAccountID clears the value of the "account_id" field.
+func (u *UsageLogUpsertOne) ClearAccountID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearAccountID()
+	})
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *UsageLogUpsertOne) SetTemplateID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTemplateID(v)
+	})
+}
+
+// AddTemplateID adds v to the "template_id" field.
+func (u *UsageLogUpsertOne) AddTemplateID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddTemplateID(v)
+	})
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateTemplateID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTemplateID()
+	})
+}
+
+// ClearTemplateID clears the value of the "template_id" field.
+func (u *UsageLogUpsertOne) ClearTemplateID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTemplateID()
+	})
+}
+
+// SetModel sets the "model" field.
+func (u *UsageLogUpsertOne) SetModel(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetModel(v)
+	})
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateModel() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateModel()
+	})
+}
+
+// SetMappedModel sets the "mapped_model" field.
+func (u *UsageLogUpsertOne) SetMappedModel(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMappedModel(v)
+	})
+}
+
+// UpdateMappedModel sets the "mapped_model" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMappedModel() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMappedModel()
+	})
+}
+
+// ClearMappedModel clears the value of the "mapped_model" field.
+func (u *UsageLogUpsertOne) ClearMappedModel() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMappedModel()
+	})
+}
+
+// SetFormat sets the "format" field.
+func (u *UsageLogUpsertOne) SetFormat(v usagelog.Format) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetFormat(v)
+	})
+}
+
+// UpdateFormat sets the "format" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateFormat() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateFormat()
+	})
+}
+
+// SetStatusCode sets the "status_code" field.
+func (u *UsageLogUpsertOne) SetStatusCode(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetStatusCode(v)
+	})
+}
+
+// AddStatusCode adds v to the "status_code" field.
+func (u *UsageLogUpsertOne) AddStatusCode(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddStatusCode(v)
+	})
+}
+
+// UpdateStatusCode sets the "status_code" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateStatusCode() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateStatusCode()
+	})
+}
+
+// SetErrorType sets the "error_type" field.
+func (u *UsageLogUpsertOne) SetErrorType(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetErrorType(v)
+	})
+}
+
+// UpdateErrorType sets the "error_type" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateErrorType() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateErrorType()
+	})
+}
+
+// SetLatencyMs sets the "latency_ms" field.
+func (u *UsageLogUpsertOne) SetLatencyMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetLatencyMs(v)
+	})
+}
+
+// AddLatencyMs adds v to the "latency_ms" field.
+func (u *UsageLogUpsertOne) AddLatencyMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddLatencyMs(v)
+	})
+}
+
+// UpdateLatencyMs sets the "latency_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateLatencyMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateLatencyMs()
+	})
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (u *UsageLogUpsertOne) SetPromptTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPromptTokens(v)
+	})
+}
+
+// AddPromptTokens adds v to the "prompt_tokens" field.
+func (u *UsageLogUpsertOne) AddPromptTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPromptTokens(v)
+	})
+}
+
+// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePromptTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePromptTokens()
+	})
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (u *UsageLogUpsertOne) SetCompletionTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCompletionTokens(v)
+	})
+}
+
+// AddCompletionTokens adds v to the "completion_tokens" field.
+func (u *UsageLogUpsertOne) AddCompletionTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCompletionTokens(v)
+	})
+}
+
+// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCompletionTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCompletionTokens()
+	})
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (u *UsageLogUpsertOne) SetTotalTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTotalTokens(v)
+	})
+}
+
+// AddTotalTokens adds v to the "total_tokens" field.
+func (u *UsageLogUpsertOne) AddTotalTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddTotalTokens(v)
+	})
+}
+
+// UpdateTotalTokens sets the "total_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateTotalTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTotalTokens()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *UsageLogUpsertOne) SetCreatedAt(v time.Time) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCreatedAt() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCreatedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *UsageLogUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for UsageLogCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *UsageLogUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *UsageLogUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *UsageLogUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // UsageLogCreateBulk is the builder for creating many UsageLog entities in bulk.
 type UsageLogCreateBulk struct {
 	config
 	err      error
 	builders []*UsageLogCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the UsageLog entities in the database.
@@ -437,6 +1091,7 @@ func (_c *UsageLogCreateBulk) Save(ctx context.Context) ([]*UsageLog, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -487,6 +1142,400 @@ func (_c *UsageLogCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *UsageLogCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.UsageLog.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.UsageLogUpsert) {
+//			SetRequestID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *UsageLogCreateBulk) OnConflict(opts ...sql.ConflictOption) *UsageLogUpsertBulk {
+	_c.conflict = opts
+	return &UsageLogUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.UsageLog.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *UsageLogCreateBulk) OnConflictColumns(columns ...string) *UsageLogUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &UsageLogUpsertBulk{
+		create: _c,
+	}
+}
+
+// UsageLogUpsertBulk is the builder for "upsert"-ing
+// a bulk of UsageLog nodes.
+type UsageLogUpsertBulk struct {
+	create *UsageLogCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.UsageLog.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(usagelog.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *UsageLogUpsertBulk) UpdateNewValues() *UsageLogUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(usagelog.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.UsageLog.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *UsageLogUpsertBulk) Ignore() *UsageLogUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *UsageLogUpsertBulk) DoNothing() *UsageLogUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the UsageLogCreateBulk.OnConflict
+// documentation for more info.
+func (u *UsageLogUpsertBulk) Update(set func(*UsageLogUpsert)) *UsageLogUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&UsageLogUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetRequestID sets the "request_id" field.
+func (u *UsageLogUpsertBulk) SetRequestID(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRequestID(v)
+	})
+}
+
+// UpdateRequestID sets the "request_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRequestID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRequestID()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *UsageLogUpsertBulk) SetGroupID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *UsageLogUpsertBulk) AddGroupID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateGroupID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *UsageLogUpsertBulk) ClearGroupID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearGroupID()
+	})
+}
+
+// SetAccountID sets the "account_id" field.
+func (u *UsageLogUpsertBulk) SetAccountID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAccountID(v)
+	})
+}
+
+// AddAccountID adds v to the "account_id" field.
+func (u *UsageLogUpsertBulk) AddAccountID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddAccountID(v)
+	})
+}
+
+// UpdateAccountID sets the "account_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateAccountID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAccountID()
+	})
+}
+
+// ClearAccountID clears the value of the "account_id" field.
+func (u *UsageLogUpsertBulk) ClearAccountID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearAccountID()
+	})
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *UsageLogUpsertBulk) SetTemplateID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTemplateID(v)
+	})
+}
+
+// AddTemplateID adds v to the "template_id" field.
+func (u *UsageLogUpsertBulk) AddTemplateID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddTemplateID(v)
+	})
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateTemplateID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTemplateID()
+	})
+}
+
+// ClearTemplateID clears the value of the "template_id" field.
+func (u *UsageLogUpsertBulk) ClearTemplateID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTemplateID()
+	})
+}
+
+// SetModel sets the "model" field.
+func (u *UsageLogUpsertBulk) SetModel(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetModel(v)
+	})
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateModel() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateModel()
+	})
+}
+
+// SetMappedModel sets the "mapped_model" field.
+func (u *UsageLogUpsertBulk) SetMappedModel(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMappedModel(v)
+	})
+}
+
+// UpdateMappedModel sets the "mapped_model" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMappedModel() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMappedModel()
+	})
+}
+
+// ClearMappedModel clears the value of the "mapped_model" field.
+func (u *UsageLogUpsertBulk) ClearMappedModel() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMappedModel()
+	})
+}
+
+// SetFormat sets the "format" field.
+func (u *UsageLogUpsertBulk) SetFormat(v usagelog.Format) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetFormat(v)
+	})
+}
+
+// UpdateFormat sets the "format" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateFormat() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateFormat()
+	})
+}
+
+// SetStatusCode sets the "status_code" field.
+func (u *UsageLogUpsertBulk) SetStatusCode(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetStatusCode(v)
+	})
+}
+
+// AddStatusCode adds v to the "status_code" field.
+func (u *UsageLogUpsertBulk) AddStatusCode(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddStatusCode(v)
+	})
+}
+
+// UpdateStatusCode sets the "status_code" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateStatusCode() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateStatusCode()
+	})
+}
+
+// SetErrorType sets the "error_type" field.
+func (u *UsageLogUpsertBulk) SetErrorType(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetErrorType(v)
+	})
+}
+
+// UpdateErrorType sets the "error_type" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateErrorType() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateErrorType()
+	})
+}
+
+// SetLatencyMs sets the "latency_ms" field.
+func (u *UsageLogUpsertBulk) SetLatencyMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetLatencyMs(v)
+	})
+}
+
+// AddLatencyMs adds v to the "latency_ms" field.
+func (u *UsageLogUpsertBulk) AddLatencyMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddLatencyMs(v)
+	})
+}
+
+// UpdateLatencyMs sets the "latency_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateLatencyMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateLatencyMs()
+	})
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (u *UsageLogUpsertBulk) SetPromptTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPromptTokens(v)
+	})
+}
+
+// AddPromptTokens adds v to the "prompt_tokens" field.
+func (u *UsageLogUpsertBulk) AddPromptTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPromptTokens(v)
+	})
+}
+
+// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePromptTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePromptTokens()
+	})
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (u *UsageLogUpsertBulk) SetCompletionTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCompletionTokens(v)
+	})
+}
+
+// AddCompletionTokens adds v to the "completion_tokens" field.
+func (u *UsageLogUpsertBulk) AddCompletionTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCompletionTokens(v)
+	})
+}
+
+// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCompletionTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCompletionTokens()
+	})
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (u *UsageLogUpsertBulk) SetTotalTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTotalTokens(v)
+	})
+}
+
+// AddTotalTokens adds v to the "total_tokens" field.
+func (u *UsageLogUpsertBulk) AddTotalTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddTotalTokens(v)
+	})
+}
+
+// UpdateTotalTokens sets the "total_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateTotalTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTotalTokens()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *UsageLogUpsertBulk) SetCreatedAt(v time.Time) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCreatedAt() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCreatedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *UsageLogUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the UsageLogCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for UsageLogCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *UsageLogUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

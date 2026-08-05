@@ -9,6 +9,7 @@ import (
 	"go-proxy-mini/internal/ent/usagestat"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 )
@@ -18,6 +19,7 @@ type UsageStatCreate struct {
 	config
 	mutation *UsageStatMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetBucketTime sets the "bucket_time" field.
@@ -354,6 +356,7 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 		_node = &UsageStat{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(usagestat.Table, sqlgraph.NewFieldSpec(usagestat.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -413,11 +416,597 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.UsageStat.Create().
+//		SetBucketTime(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.UsageStatUpsert) {
+//			SetBucketTime(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *UsageStatCreate) OnConflict(opts ...sql.ConflictOption) *UsageStatUpsertOne {
+	_c.conflict = opts
+	return &UsageStatUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.UsageStat.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *UsageStatCreate) OnConflictColumns(columns ...string) *UsageStatUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &UsageStatUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// UsageStatUpsertOne is the builder for "upsert"-ing
+	//  one UsageStat node.
+	UsageStatUpsertOne struct {
+		create *UsageStatCreate
+	}
+
+	// UsageStatUpsert is the "OnConflict" setter.
+	UsageStatUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetBucketTime sets the "bucket_time" field.
+func (u *UsageStatUpsert) SetBucketTime(v time.Time) *UsageStatUpsert {
+	u.Set(usagestat.FieldBucketTime, v)
+	return u
+}
+
+// UpdateBucketTime sets the "bucket_time" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateBucketTime() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldBucketTime)
+	return u
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *UsageStatUpsert) SetGroupID(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldGroupID, v)
+	return u
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateGroupID() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldGroupID)
+	return u
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *UsageStatUpsert) AddGroupID(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldGroupID, v)
+	return u
+}
+
+// SetAccountID sets the "account_id" field.
+func (u *UsageStatUpsert) SetAccountID(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldAccountID, v)
+	return u
+}
+
+// UpdateAccountID sets the "account_id" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateAccountID() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldAccountID)
+	return u
+}
+
+// AddAccountID adds v to the "account_id" field.
+func (u *UsageStatUpsert) AddAccountID(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldAccountID, v)
+	return u
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *UsageStatUpsert) SetTemplateID(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldTemplateID, v)
+	return u
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateTemplateID() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldTemplateID)
+	return u
+}
+
+// AddTemplateID adds v to the "template_id" field.
+func (u *UsageStatUpsert) AddTemplateID(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldTemplateID, v)
+	return u
+}
+
+// SetModel sets the "model" field.
+func (u *UsageStatUpsert) SetModel(v string) *UsageStatUpsert {
+	u.Set(usagestat.FieldModel, v)
+	return u
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateModel() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldModel)
+	return u
+}
+
+// SetIsError sets the "is_error" field.
+func (u *UsageStatUpsert) SetIsError(v bool) *UsageStatUpsert {
+	u.Set(usagestat.FieldIsError, v)
+	return u
+}
+
+// UpdateIsError sets the "is_error" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateIsError() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldIsError)
+	return u
+}
+
+// SetRequestCount sets the "request_count" field.
+func (u *UsageStatUpsert) SetRequestCount(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldRequestCount, v)
+	return u
+}
+
+// UpdateRequestCount sets the "request_count" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateRequestCount() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldRequestCount)
+	return u
+}
+
+// AddRequestCount adds v to the "request_count" field.
+func (u *UsageStatUpsert) AddRequestCount(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldRequestCount, v)
+	return u
+}
+
+// SetErrorCount sets the "error_count" field.
+func (u *UsageStatUpsert) SetErrorCount(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldErrorCount, v)
+	return u
+}
+
+// UpdateErrorCount sets the "error_count" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateErrorCount() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldErrorCount)
+	return u
+}
+
+// AddErrorCount adds v to the "error_count" field.
+func (u *UsageStatUpsert) AddErrorCount(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldErrorCount, v)
+	return u
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (u *UsageStatUpsert) SetPromptTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldPromptTokens, v)
+	return u
+}
+
+// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdatePromptTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldPromptTokens)
+	return u
+}
+
+// AddPromptTokens adds v to the "prompt_tokens" field.
+func (u *UsageStatUpsert) AddPromptTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldPromptTokens, v)
+	return u
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (u *UsageStatUpsert) SetCompletionTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldCompletionTokens, v)
+	return u
+}
+
+// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateCompletionTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldCompletionTokens)
+	return u
+}
+
+// AddCompletionTokens adds v to the "completion_tokens" field.
+func (u *UsageStatUpsert) AddCompletionTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldCompletionTokens, v)
+	return u
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (u *UsageStatUpsert) SetTotalTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldTotalTokens, v)
+	return u
+}
+
+// UpdateTotalTokens sets the "total_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateTotalTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldTotalTokens)
+	return u
+}
+
+// AddTotalTokens adds v to the "total_tokens" field.
+func (u *UsageStatUpsert) AddTotalTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldTotalTokens, v)
+	return u
+}
+
+// SetTotalLatencyMs sets the "total_latency_ms" field.
+func (u *UsageStatUpsert) SetTotalLatencyMs(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldTotalLatencyMs, v)
+	return u
+}
+
+// UpdateTotalLatencyMs sets the "total_latency_ms" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateTotalLatencyMs() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldTotalLatencyMs)
+	return u
+}
+
+// AddTotalLatencyMs adds v to the "total_latency_ms" field.
+func (u *UsageStatUpsert) AddTotalLatencyMs(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldTotalLatencyMs, v)
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *UsageStatUpsert) SetUpdatedAt(v time.Time) *UsageStatUpsert {
+	u.Set(usagestat.FieldUpdatedAt, v)
+	return u
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateUpdatedAt() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldUpdatedAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.UsageStat.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(usagestat.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *UsageStatUpsertOne) UpdateNewValues() *UsageStatUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(usagestat.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.UsageStat.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *UsageStatUpsertOne) Ignore() *UsageStatUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *UsageStatUpsertOne) DoNothing() *UsageStatUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the UsageStatCreate.OnConflict
+// documentation for more info.
+func (u *UsageStatUpsertOne) Update(set func(*UsageStatUpsert)) *UsageStatUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&UsageStatUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetBucketTime sets the "bucket_time" field.
+func (u *UsageStatUpsertOne) SetBucketTime(v time.Time) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetBucketTime(v)
+	})
+}
+
+// UpdateBucketTime sets the "bucket_time" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateBucketTime() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateBucketTime()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *UsageStatUpsertOne) SetGroupID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *UsageStatUpsertOne) AddGroupID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateGroupID() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// SetAccountID sets the "account_id" field.
+func (u *UsageStatUpsertOne) SetAccountID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetAccountID(v)
+	})
+}
+
+// AddAccountID adds v to the "account_id" field.
+func (u *UsageStatUpsertOne) AddAccountID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddAccountID(v)
+	})
+}
+
+// UpdateAccountID sets the "account_id" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateAccountID() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateAccountID()
+	})
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *UsageStatUpsertOne) SetTemplateID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTemplateID(v)
+	})
+}
+
+// AddTemplateID adds v to the "template_id" field.
+func (u *UsageStatUpsertOne) AddTemplateID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTemplateID(v)
+	})
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateTemplateID() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTemplateID()
+	})
+}
+
+// SetModel sets the "model" field.
+func (u *UsageStatUpsertOne) SetModel(v string) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetModel(v)
+	})
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateModel() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateModel()
+	})
+}
+
+// SetIsError sets the "is_error" field.
+func (u *UsageStatUpsertOne) SetIsError(v bool) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetIsError(v)
+	})
+}
+
+// UpdateIsError sets the "is_error" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateIsError() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateIsError()
+	})
+}
+
+// SetRequestCount sets the "request_count" field.
+func (u *UsageStatUpsertOne) SetRequestCount(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetRequestCount(v)
+	})
+}
+
+// AddRequestCount adds v to the "request_count" field.
+func (u *UsageStatUpsertOne) AddRequestCount(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddRequestCount(v)
+	})
+}
+
+// UpdateRequestCount sets the "request_count" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateRequestCount() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateRequestCount()
+	})
+}
+
+// SetErrorCount sets the "error_count" field.
+func (u *UsageStatUpsertOne) SetErrorCount(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetErrorCount(v)
+	})
+}
+
+// AddErrorCount adds v to the "error_count" field.
+func (u *UsageStatUpsertOne) AddErrorCount(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddErrorCount(v)
+	})
+}
+
+// UpdateErrorCount sets the "error_count" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateErrorCount() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateErrorCount()
+	})
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (u *UsageStatUpsertOne) SetPromptTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetPromptTokens(v)
+	})
+}
+
+// AddPromptTokens adds v to the "prompt_tokens" field.
+func (u *UsageStatUpsertOne) AddPromptTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddPromptTokens(v)
+	})
+}
+
+// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdatePromptTokens() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdatePromptTokens()
+	})
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (u *UsageStatUpsertOne) SetCompletionTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCompletionTokens(v)
+	})
+}
+
+// AddCompletionTokens adds v to the "completion_tokens" field.
+func (u *UsageStatUpsertOne) AddCompletionTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCompletionTokens(v)
+	})
+}
+
+// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateCompletionTokens() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCompletionTokens()
+	})
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (u *UsageStatUpsertOne) SetTotalTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTotalTokens(v)
+	})
+}
+
+// AddTotalTokens adds v to the "total_tokens" field.
+func (u *UsageStatUpsertOne) AddTotalTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTotalTokens(v)
+	})
+}
+
+// UpdateTotalTokens sets the "total_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateTotalTokens() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTotalTokens()
+	})
+}
+
+// SetTotalLatencyMs sets the "total_latency_ms" field.
+func (u *UsageStatUpsertOne) SetTotalLatencyMs(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTotalLatencyMs(v)
+	})
+}
+
+// AddTotalLatencyMs adds v to the "total_latency_ms" field.
+func (u *UsageStatUpsertOne) AddTotalLatencyMs(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTotalLatencyMs(v)
+	})
+}
+
+// UpdateTotalLatencyMs sets the "total_latency_ms" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateTotalLatencyMs() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTotalLatencyMs()
+	})
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *UsageStatUpsertOne) SetUpdatedAt(v time.Time) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateUpdatedAt() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *UsageStatUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for UsageStatCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *UsageStatUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *UsageStatUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *UsageStatUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // UsageStatCreateBulk is the builder for creating many UsageStat entities in bulk.
 type UsageStatCreateBulk struct {
 	config
 	err      error
 	builders []*UsageStatCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the UsageStat entities in the database.
@@ -447,6 +1036,7 @@ func (_c *UsageStatCreateBulk) Save(ctx context.Context) ([]*UsageStat, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -497,6 +1087,365 @@ func (_c *UsageStatCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *UsageStatCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.UsageStat.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.UsageStatUpsert) {
+//			SetBucketTime(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *UsageStatCreateBulk) OnConflict(opts ...sql.ConflictOption) *UsageStatUpsertBulk {
+	_c.conflict = opts
+	return &UsageStatUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.UsageStat.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *UsageStatCreateBulk) OnConflictColumns(columns ...string) *UsageStatUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &UsageStatUpsertBulk{
+		create: _c,
+	}
+}
+
+// UsageStatUpsertBulk is the builder for "upsert"-ing
+// a bulk of UsageStat nodes.
+type UsageStatUpsertBulk struct {
+	create *UsageStatCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.UsageStat.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(usagestat.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *UsageStatUpsertBulk) UpdateNewValues() *UsageStatUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(usagestat.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.UsageStat.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *UsageStatUpsertBulk) Ignore() *UsageStatUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *UsageStatUpsertBulk) DoNothing() *UsageStatUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the UsageStatCreateBulk.OnConflict
+// documentation for more info.
+func (u *UsageStatUpsertBulk) Update(set func(*UsageStatUpsert)) *UsageStatUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&UsageStatUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetBucketTime sets the "bucket_time" field.
+func (u *UsageStatUpsertBulk) SetBucketTime(v time.Time) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetBucketTime(v)
+	})
+}
+
+// UpdateBucketTime sets the "bucket_time" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateBucketTime() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateBucketTime()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *UsageStatUpsertBulk) SetGroupID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *UsageStatUpsertBulk) AddGroupID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateGroupID() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// SetAccountID sets the "account_id" field.
+func (u *UsageStatUpsertBulk) SetAccountID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetAccountID(v)
+	})
+}
+
+// AddAccountID adds v to the "account_id" field.
+func (u *UsageStatUpsertBulk) AddAccountID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddAccountID(v)
+	})
+}
+
+// UpdateAccountID sets the "account_id" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateAccountID() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateAccountID()
+	})
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *UsageStatUpsertBulk) SetTemplateID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTemplateID(v)
+	})
+}
+
+// AddTemplateID adds v to the "template_id" field.
+func (u *UsageStatUpsertBulk) AddTemplateID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTemplateID(v)
+	})
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateTemplateID() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTemplateID()
+	})
+}
+
+// SetModel sets the "model" field.
+func (u *UsageStatUpsertBulk) SetModel(v string) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetModel(v)
+	})
+}
+
+// UpdateModel sets the "model" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateModel() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateModel()
+	})
+}
+
+// SetIsError sets the "is_error" field.
+func (u *UsageStatUpsertBulk) SetIsError(v bool) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetIsError(v)
+	})
+}
+
+// UpdateIsError sets the "is_error" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateIsError() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateIsError()
+	})
+}
+
+// SetRequestCount sets the "request_count" field.
+func (u *UsageStatUpsertBulk) SetRequestCount(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetRequestCount(v)
+	})
+}
+
+// AddRequestCount adds v to the "request_count" field.
+func (u *UsageStatUpsertBulk) AddRequestCount(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddRequestCount(v)
+	})
+}
+
+// UpdateRequestCount sets the "request_count" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateRequestCount() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateRequestCount()
+	})
+}
+
+// SetErrorCount sets the "error_count" field.
+func (u *UsageStatUpsertBulk) SetErrorCount(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetErrorCount(v)
+	})
+}
+
+// AddErrorCount adds v to the "error_count" field.
+func (u *UsageStatUpsertBulk) AddErrorCount(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddErrorCount(v)
+	})
+}
+
+// UpdateErrorCount sets the "error_count" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateErrorCount() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateErrorCount()
+	})
+}
+
+// SetPromptTokens sets the "prompt_tokens" field.
+func (u *UsageStatUpsertBulk) SetPromptTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetPromptTokens(v)
+	})
+}
+
+// AddPromptTokens adds v to the "prompt_tokens" field.
+func (u *UsageStatUpsertBulk) AddPromptTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddPromptTokens(v)
+	})
+}
+
+// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdatePromptTokens() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdatePromptTokens()
+	})
+}
+
+// SetCompletionTokens sets the "completion_tokens" field.
+func (u *UsageStatUpsertBulk) SetCompletionTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCompletionTokens(v)
+	})
+}
+
+// AddCompletionTokens adds v to the "completion_tokens" field.
+func (u *UsageStatUpsertBulk) AddCompletionTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCompletionTokens(v)
+	})
+}
+
+// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateCompletionTokens() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCompletionTokens()
+	})
+}
+
+// SetTotalTokens sets the "total_tokens" field.
+func (u *UsageStatUpsertBulk) SetTotalTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTotalTokens(v)
+	})
+}
+
+// AddTotalTokens adds v to the "total_tokens" field.
+func (u *UsageStatUpsertBulk) AddTotalTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTotalTokens(v)
+	})
+}
+
+// UpdateTotalTokens sets the "total_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateTotalTokens() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTotalTokens()
+	})
+}
+
+// SetTotalLatencyMs sets the "total_latency_ms" field.
+func (u *UsageStatUpsertBulk) SetTotalLatencyMs(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTotalLatencyMs(v)
+	})
+}
+
+// AddTotalLatencyMs adds v to the "total_latency_ms" field.
+func (u *UsageStatUpsertBulk) AddTotalLatencyMs(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTotalLatencyMs(v)
+	})
+}
+
+// UpdateTotalLatencyMs sets the "total_latency_ms" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateTotalLatencyMs() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTotalLatencyMs()
+	})
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *UsageStatUpsertBulk) SetUpdatedAt(v time.Time) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateUpdatedAt() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *UsageStatUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the UsageStatCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for UsageStatCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *UsageStatUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

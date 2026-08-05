@@ -11,6 +11,7 @@ import (
 	"go-proxy-mini/internal/ent/template"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 )
@@ -20,6 +21,7 @@ type AccountCreate struct {
 	config
 	mutation *AccountMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetName sets the "name" field.
@@ -297,6 +299,7 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_node = &Account{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(account.Table, sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -377,11 +380,493 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Account.Create().
+//		SetName(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.AccountUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *AccountCreate) OnConflict(opts ...sql.ConflictOption) *AccountUpsertOne {
+	_c.conflict = opts
+	return &AccountUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Account.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *AccountCreate) OnConflictColumns(columns ...string) *AccountUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &AccountUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// AccountUpsertOne is the builder for "upsert"-ing
+	//  one Account node.
+	AccountUpsertOne struct {
+		create *AccountCreate
+	}
+
+	// AccountUpsert is the "OnConflict" setter.
+	AccountUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetName sets the "name" field.
+func (u *AccountUpsert) SetName(v string) *AccountUpsert {
+	u.Set(account.FieldName, v)
+	return u
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateName() *AccountUpsert {
+	u.SetExcluded(account.FieldName)
+	return u
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *AccountUpsert) SetTemplateID(v int64) *AccountUpsert {
+	u.Set(account.FieldTemplateID, v)
+	return u
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateTemplateID() *AccountUpsert {
+	u.SetExcluded(account.FieldTemplateID)
+	return u
+}
+
+// SetUpstreamKey sets the "upstream_key" field.
+func (u *AccountUpsert) SetUpstreamKey(v string) *AccountUpsert {
+	u.Set(account.FieldUpstreamKey, v)
+	return u
+}
+
+// UpdateUpstreamKey sets the "upstream_key" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateUpstreamKey() *AccountUpsert {
+	u.SetExcluded(account.FieldUpstreamKey)
+	return u
+}
+
+// SetStatus sets the "status" field.
+func (u *AccountUpsert) SetStatus(v account.Status) *AccountUpsert {
+	u.Set(account.FieldStatus, v)
+	return u
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateStatus() *AccountUpsert {
+	u.SetExcluded(account.FieldStatus)
+	return u
+}
+
+// SetCooldownUntil sets the "cooldown_until" field.
+func (u *AccountUpsert) SetCooldownUntil(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCooldownUntil, v)
+	return u
+}
+
+// UpdateCooldownUntil sets the "cooldown_until" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCooldownUntil() *AccountUpsert {
+	u.SetExcluded(account.FieldCooldownUntil)
+	return u
+}
+
+// ClearCooldownUntil clears the value of the "cooldown_until" field.
+func (u *AccountUpsert) ClearCooldownUntil() *AccountUpsert {
+	u.SetNull(account.FieldCooldownUntil)
+	return u
+}
+
+// SetWeight sets the "weight" field.
+func (u *AccountUpsert) SetWeight(v int) *AccountUpsert {
+	u.Set(account.FieldWeight, v)
+	return u
+}
+
+// UpdateWeight sets the "weight" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateWeight() *AccountUpsert {
+	u.SetExcluded(account.FieldWeight)
+	return u
+}
+
+// AddWeight adds v to the "weight" field.
+func (u *AccountUpsert) AddWeight(v int) *AccountUpsert {
+	u.Add(account.FieldWeight, v)
+	return u
+}
+
+// SetMaxConcurrency sets the "max_concurrency" field.
+func (u *AccountUpsert) SetMaxConcurrency(v int) *AccountUpsert {
+	u.Set(account.FieldMaxConcurrency, v)
+	return u
+}
+
+// UpdateMaxConcurrency sets the "max_concurrency" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateMaxConcurrency() *AccountUpsert {
+	u.SetExcluded(account.FieldMaxConcurrency)
+	return u
+}
+
+// AddMaxConcurrency adds v to the "max_concurrency" field.
+func (u *AccountUpsert) AddMaxConcurrency(v int) *AccountUpsert {
+	u.Add(account.FieldMaxConcurrency, v)
+	return u
+}
+
+// SetLastError sets the "last_error" field.
+func (u *AccountUpsert) SetLastError(v string) *AccountUpsert {
+	u.Set(account.FieldLastError, v)
+	return u
+}
+
+// UpdateLastError sets the "last_error" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateLastError() *AccountUpsert {
+	u.SetExcluded(account.FieldLastError)
+	return u
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (u *AccountUpsert) ClearLastError() *AccountUpsert {
+	u.SetNull(account.FieldLastError)
+	return u
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (u *AccountUpsert) SetLastUsedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldLastUsedAt, v)
+	return u
+}
+
+// UpdateLastUsedAt sets the "last_used_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateLastUsedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldLastUsedAt)
+	return u
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (u *AccountUpsert) ClearLastUsedAt() *AccountUpsert {
+	u.SetNull(account.FieldLastUsedAt)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *AccountUpsert) SetCreatedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCreatedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCreatedAt)
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *AccountUpsert) SetUpdatedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldUpdatedAt, v)
+	return u
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateUpdatedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldUpdatedAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.Account.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(account.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *AccountUpsertOne) UpdateNewValues() *AccountUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(account.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Account.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *AccountUpsertOne) Ignore() *AccountUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *AccountUpsertOne) DoNothing() *AccountUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the AccountCreate.OnConflict
+// documentation for more info.
+func (u *AccountUpsertOne) Update(set func(*AccountUpsert)) *AccountUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&AccountUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *AccountUpsertOne) SetName(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateName() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *AccountUpsertOne) SetTemplateID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetTemplateID(v)
+	})
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateTemplateID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateTemplateID()
+	})
+}
+
+// SetUpstreamKey sets the "upstream_key" field.
+func (u *AccountUpsertOne) SetUpstreamKey(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetUpstreamKey(v)
+	})
+}
+
+// UpdateUpstreamKey sets the "upstream_key" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateUpstreamKey() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateUpstreamKey()
+	})
+}
+
+// SetStatus sets the "status" field.
+func (u *AccountUpsertOne) SetStatus(v account.Status) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetStatus(v)
+	})
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateStatus() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateStatus()
+	})
+}
+
+// SetCooldownUntil sets the "cooldown_until" field.
+func (u *AccountUpsertOne) SetCooldownUntil(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCooldownUntil(v)
+	})
+}
+
+// UpdateCooldownUntil sets the "cooldown_until" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCooldownUntil() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCooldownUntil()
+	})
+}
+
+// ClearCooldownUntil clears the value of the "cooldown_until" field.
+func (u *AccountUpsertOne) ClearCooldownUntil() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCooldownUntil()
+	})
+}
+
+// SetWeight sets the "weight" field.
+func (u *AccountUpsertOne) SetWeight(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetWeight(v)
+	})
+}
+
+// AddWeight adds v to the "weight" field.
+func (u *AccountUpsertOne) AddWeight(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddWeight(v)
+	})
+}
+
+// UpdateWeight sets the "weight" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateWeight() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateWeight()
+	})
+}
+
+// SetMaxConcurrency sets the "max_concurrency" field.
+func (u *AccountUpsertOne) SetMaxConcurrency(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetMaxConcurrency(v)
+	})
+}
+
+// AddMaxConcurrency adds v to the "max_concurrency" field.
+func (u *AccountUpsertOne) AddMaxConcurrency(v int) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddMaxConcurrency(v)
+	})
+}
+
+// UpdateMaxConcurrency sets the "max_concurrency" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateMaxConcurrency() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateMaxConcurrency()
+	})
+}
+
+// SetLastError sets the "last_error" field.
+func (u *AccountUpsertOne) SetLastError(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetLastError(v)
+	})
+}
+
+// UpdateLastError sets the "last_error" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateLastError() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateLastError()
+	})
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (u *AccountUpsertOne) ClearLastError() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearLastError()
+	})
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (u *AccountUpsertOne) SetLastUsedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetLastUsedAt(v)
+	})
+}
+
+// UpdateLastUsedAt sets the "last_used_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateLastUsedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateLastUsedAt()
+	})
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (u *AccountUpsertOne) ClearLastUsedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearLastUsedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *AccountUpsertOne) SetCreatedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCreatedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCreatedAt()
+	})
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *AccountUpsertOne) SetUpdatedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateUpdatedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *AccountUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for AccountCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *AccountUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *AccountUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *AccountUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // AccountCreateBulk is the builder for creating many Account entities in bulk.
 type AccountCreateBulk struct {
 	config
 	err      error
 	builders []*AccountCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the Account entities in the database.
@@ -411,6 +896,7 @@ func (_c *AccountCreateBulk) Save(ctx context.Context) ([]*Account, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -461,6 +947,309 @@ func (_c *AccountCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *AccountCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Account.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.AccountUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *AccountCreateBulk) OnConflict(opts ...sql.ConflictOption) *AccountUpsertBulk {
+	_c.conflict = opts
+	return &AccountUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Account.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *AccountCreateBulk) OnConflictColumns(columns ...string) *AccountUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &AccountUpsertBulk{
+		create: _c,
+	}
+}
+
+// AccountUpsertBulk is the builder for "upsert"-ing
+// a bulk of Account nodes.
+type AccountUpsertBulk struct {
+	create *AccountCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.Account.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(account.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *AccountUpsertBulk) UpdateNewValues() *AccountUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(account.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Account.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *AccountUpsertBulk) Ignore() *AccountUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *AccountUpsertBulk) DoNothing() *AccountUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the AccountCreateBulk.OnConflict
+// documentation for more info.
+func (u *AccountUpsertBulk) Update(set func(*AccountUpsert)) *AccountUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&AccountUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *AccountUpsertBulk) SetName(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateName() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetTemplateID sets the "template_id" field.
+func (u *AccountUpsertBulk) SetTemplateID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetTemplateID(v)
+	})
+}
+
+// UpdateTemplateID sets the "template_id" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateTemplateID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateTemplateID()
+	})
+}
+
+// SetUpstreamKey sets the "upstream_key" field.
+func (u *AccountUpsertBulk) SetUpstreamKey(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetUpstreamKey(v)
+	})
+}
+
+// UpdateUpstreamKey sets the "upstream_key" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateUpstreamKey() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateUpstreamKey()
+	})
+}
+
+// SetStatus sets the "status" field.
+func (u *AccountUpsertBulk) SetStatus(v account.Status) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetStatus(v)
+	})
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateStatus() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateStatus()
+	})
+}
+
+// SetCooldownUntil sets the "cooldown_until" field.
+func (u *AccountUpsertBulk) SetCooldownUntil(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCooldownUntil(v)
+	})
+}
+
+// UpdateCooldownUntil sets the "cooldown_until" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCooldownUntil() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCooldownUntil()
+	})
+}
+
+// ClearCooldownUntil clears the value of the "cooldown_until" field.
+func (u *AccountUpsertBulk) ClearCooldownUntil() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearCooldownUntil()
+	})
+}
+
+// SetWeight sets the "weight" field.
+func (u *AccountUpsertBulk) SetWeight(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetWeight(v)
+	})
+}
+
+// AddWeight adds v to the "weight" field.
+func (u *AccountUpsertBulk) AddWeight(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddWeight(v)
+	})
+}
+
+// UpdateWeight sets the "weight" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateWeight() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateWeight()
+	})
+}
+
+// SetMaxConcurrency sets the "max_concurrency" field.
+func (u *AccountUpsertBulk) SetMaxConcurrency(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetMaxConcurrency(v)
+	})
+}
+
+// AddMaxConcurrency adds v to the "max_concurrency" field.
+func (u *AccountUpsertBulk) AddMaxConcurrency(v int) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddMaxConcurrency(v)
+	})
+}
+
+// UpdateMaxConcurrency sets the "max_concurrency" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateMaxConcurrency() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateMaxConcurrency()
+	})
+}
+
+// SetLastError sets the "last_error" field.
+func (u *AccountUpsertBulk) SetLastError(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetLastError(v)
+	})
+}
+
+// UpdateLastError sets the "last_error" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateLastError() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateLastError()
+	})
+}
+
+// ClearLastError clears the value of the "last_error" field.
+func (u *AccountUpsertBulk) ClearLastError() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearLastError()
+	})
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (u *AccountUpsertBulk) SetLastUsedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetLastUsedAt(v)
+	})
+}
+
+// UpdateLastUsedAt sets the "last_used_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateLastUsedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateLastUsedAt()
+	})
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (u *AccountUpsertBulk) ClearLastUsedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearLastUsedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *AccountUpsertBulk) SetCreatedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCreatedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCreatedAt()
+	})
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *AccountUpsertBulk) SetUpdatedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateUpdatedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *AccountUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the AccountCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for AccountCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *AccountUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
