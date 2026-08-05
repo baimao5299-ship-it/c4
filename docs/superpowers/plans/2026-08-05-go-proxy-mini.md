@@ -589,19 +589,19 @@ git add -A && git commit -m "chore: scaffold module, pkg wrappers (logx/cryptox/
 ```go
 package domain
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestTemplateFormatFor(t *testing.T) {
 	tpl := &Template{
 		DefaultFormat: FormatOpenAIChat,
 		ModelFormats:  map[string]RequestFormat{"o3": FormatOpenAIResponses},
 	}
-	if got := tpl.FormatFor("gpt-4o"); got != FormatOpenAIChat {
-		t.Fatalf("default: %s", got)
-	}
-	if got := tpl.FormatFor("o3"); got != FormatOpenAIResponses {
-		t.Fatalf("override: %s", got)
-	}
+	require.Equal(t, FormatOpenAIChat, tpl.FormatFor("gpt-4o"))
+	require.Equal(t, FormatOpenAIResponses, tpl.FormatFor("o3"))
 }
 
 func TestTemplateServes(t *testing.T) {
@@ -610,23 +610,17 @@ func TestTemplateServes(t *testing.T) {
 		ModelFormats: map[string]RequestFormat{"o3": FormatOpenAIResponses},
 		ModelMapping: map[string]string{"claude-sonnet": "claude-sonnet-4-5"},
 	}
-	if !tpl.Serves("gpt-4o") || !tpl.Serves("o3") || !tpl.Serves("claude-sonnet") {
-		t.Fatal("serves should be union of models + model_formats keys + mapping keys")
-	}
-	if tpl.Serves("nope") {
-		t.Fatal("should not serve")
-	}
+	require.True(t, tpl.Serves("gpt-4o"), "serves models")
+	require.True(t, tpl.Serves("o3"), "serves model_formats keys")
+	require.True(t, tpl.Serves("claude-sonnet"), "serves mapping keys")
+	require.False(t, tpl.Serves("nope"))
 }
 
 func TestRequestFormatValid(t *testing.T) {
 	for _, f := range []RequestFormat{FormatOpenAIChat, FormatOpenAIResponses, FormatAnthropic} {
-		if !f.Valid() {
-			t.Fatalf("%s should be valid", f)
-		}
+		require.True(t, f.Valid(), "format %s should be valid", f)
 	}
-	if Format("gemini").Valid() {
-		t.Fatal("gemini invalid")
-	}
+	require.False(t, Format("gemini").Valid())
 }
 ```
 
@@ -1042,6 +1036,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
 	_ "modernc.org/sqlite"
+	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -1050,15 +1045,11 @@ import (
 func newRepos(t *testing.T) *repository.Repos {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:test"+t.Name()+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	repos, err := repository.New(drv, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return repos
 }
 
@@ -1074,68 +1065,47 @@ func TestTemplateCRUD(t *testing.T) {
 		ModelFormats:  map[string]domain.RequestFormat{"o3": domain.FormatOpenAIResponses},
 		ModelMapping:  map[string]string{"gpt-4o": "gpt-4o-2026-01-01"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	got, err := r.Templates.Get(ctx(), tpl.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "openai-main" || got.DefaultFormat != domain.FormatOpenAIChat {
-		t.Fatalf("bad get: %+v", got)
-	}
-	if got.FormatFor("o3") != domain.FormatOpenAIResponses {
-		t.Fatal("model_formats roundtrip broken")
-	}
+	require.NoError(t, err)
+	require.Equal(t, "openai-main", got.Name)
+	require.Equal(t, domain.FormatOpenAIChat, got.DefaultFormat)
+	require.Equal(t, domain.FormatOpenAIResponses, got.FormatFor("o3"), "model_formats roundtrip")
 	got.Name = "renamed"
-	if _, err := r.Templates.Update(ctx(), got); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Templates.Delete(ctx(), tpl.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.Templates.Get(ctx(), tpl.ID); err == nil {
-		t.Fatal("expected not found after delete")
-	}
+	_, err = r.Templates.Update(ctx(), got)
+	require.NoError(t, err)
+	require.NoError(t, r.Templates.Delete(ctx(), tpl.ID))
+	_, err = r.Templates.Get(ctx(), tpl.ID)
+	require.Error(t, err, "expected not found after delete")
 }
 
 func TestAccountAndGroup(t *testing.T) {
 	r := newRepos(t)
-	tpl, _ := r.Templates.Create(ctx(), &domain.Template{
+	tpl, err := r.Templates.Create(ctx(), &domain.Template{
 		Name: "t", BaseURL: "https://u/v1", DefaultFormat: domain.FormatAnthropic,
 	})
+	require.NoError(t, err)
 	acc, err := r.Accounts.Create(ctx(), &domain.Account{
 		Name: "acc1", TemplateID: tpl.ID, UpstreamKey: "sk-x", Weight: 80, MaxConcurrency: 4,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	g, err := r.Groups.Create(ctx(), &domain.Group{Name: "g1", KeyHash: "h1", KeyPrefix: "gk-aaaa"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Groups.SetAccounts(ctx(), g.ID, []int64{acc.ID}); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, r.Groups.SetAccounts(ctx(), g.ID, []int64{acc.ID}))
 	m, err := r.Groups.LoadGroupsAccounts(ctx())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	got := m[g.ID]
-	if len(got) != 1 || got[0].ID != acc.ID || got[0].Template == nil {
-		t.Fatalf("bad load: %+v", got)
-	}
+	require.Len(t, got, 1)
+	require.Equal(t, acc.ID, got[0].ID)
+	require.NotNil(t, got[0].Template)
 	keys, err := r.Groups.LoadGroupKeys(ctx())
-	if err != nil || len(keys) != 1 || keys["h1"] != g.ID {
-		t.Fatalf("bad keys: %v %v", keys, err)
-	}
-	if err := r.Accounts.UpdateStatus(ctx(), acc.ID, domain.Status429, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	a2, _ := r.Accounts.Get(ctx(), acc.ID)
-	if a2.Status != domain.Status429 {
-		t.Fatalf("status not persisted: %s", a2.Status)
-	}
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.Equal(t, g.ID, keys["h1"])
+	require.NoError(t, r.Accounts.UpdateStatus(ctx(), acc.ID, domain.Status429, nil, nil))
+	a2, err := r.Accounts.Get(ctx(), acc.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.Status429, a2.Status, "status persisted")
 }
 
 func TestLogsAndStats(t *testing.T) {
@@ -1144,31 +1114,23 @@ func TestLogsAndStats(t *testing.T) {
 		{RequestID: "r1", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, LatencyMS: 10, TotalTokens: 100},
 		{RequestID: "r2", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 20, TotalTokens: 0},
 	}
-	if err := r.Logs.InsertBatch(ctx(), logs); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, r.Logs.InsertBatch(ctx(), logs))
 	rows, total, err := r.Logs.Query(ctx(), repository.LogQuery{GroupID: 1, Limit: 10})
-	if err != nil || total != 2 || len(rows) != 2 {
-		t.Fatalf("query: %v total=%d rows=%d", err, total, len(rows))
-	}
-	buckets := []*domain.StatBucket{
-		{BucketTime: time.Now().Truncate(time.Hour), GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30},
-	}
-	if err := r.Stats.Upsert(ctx(), buckets); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Stats.Upsert(ctx(), []*domain.StatBucket{
-		{BucketTime: buckets[0].BucketTime, GroupID: 1, Model: "m", RequestCount: 3, ErrorCount: 1, TotalTokens: 200, TotalLatencyMS: 40},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	scanned, err := r.Stats.Scan(ctx(), repository.StatQuery{From: buckets[0].BucketTime, To: buckets[0].BucketTime.Add(time.Hour)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(scanned) != 1 || scanned[0].RequestCount != 5 || scanned[0].TotalTokens != 300 {
-		t.Fatalf("bad upsert accumulate: %+v", scanned)
-	}
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, rows, 2)
+	bucket := time.Now().Truncate(time.Hour)
+	require.NoError(t, r.Stats.Upsert(ctx(), []*domain.StatBucket{
+		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30},
+	}))
+	require.NoError(t, r.Stats.Upsert(ctx(), []*domain.StatBucket{
+		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 3, ErrorCount: 1, TotalTokens: 200, TotalLatencyMS: 40},
+	}))
+	scanned, err := r.Stats.Scan(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
+	require.NoError(t, err)
+	require.Len(t, scanned, 1)
+	require.Equal(t, int64(5), scanned[0].RequestCount, "upsert accumulates")
+	require.Equal(t, int64(300), scanned[0].TotalTokens)
 }
 ```
 
@@ -1818,10 +1780,11 @@ package scheduler
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
 )
@@ -1888,9 +1851,7 @@ func acc(id int64, t *domain.Template, maxConc int) *domain.Account {
 func newSched(t *testing.T, m *memLoader) *Scheduler {
 	t.Helper()
 	s := New(testCfg(), m, nil)
-	if err := s.reload(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, s.reload(context.Background()))
 	return s
 }
 
@@ -1904,21 +1865,15 @@ func TestSelectFormatHardFilter(t *testing.T) {
 
 	// anthropic 路径下只命中 anthropic 模板账号
 	sel, err := s.Select(10, domain.FormatAnthropic, "claude")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sel.AccountID != 2 {
-		t.Fatalf("want account 2, got %d", sel.AccountID)
-	}
+	require.NoError(t, err)
+	require.Equal(t, int64(2), sel.AccountID)
 	s.Release(sel.AccountID)
 
 	// 格式不匹配（组内只有 chat 模板）→ ErrFormatUnavailable
 	m2 := newMemLoader(map[int64][]*domain.Account{10: {acc(1, chat, 4)}})
 	s2 := newSched(t, m2)
 	_, err = s2.Select(10, domain.FormatOpenAIResponses, "gpt-4o")
-	if !errors.Is(err, ErrFormatUnavailable) {
-		t.Fatalf("want ErrFormatUnavailable, got %v", err)
-	}
+	require.ErrorIs(t, err, ErrFormatUnavailable)
 }
 
 func TestSelectModelPreference(t *testing.T) {
@@ -1928,12 +1883,8 @@ func TestSelectModelPreference(t *testing.T) {
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tA, 4), acc(2, tB, 4)}})
 	s := newSched(t, m)
 	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sel.AccountID != 1 {
-		t.Fatalf("preference: want 1, got %d", sel.AccountID)
-	}
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel.AccountID, "model preference tier")
 }
 
 func TestConcurrencyLimit(t *testing.T) {
@@ -1941,16 +1892,12 @@ func TestConcurrencyLimit(t *testing.T) {
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 1)}})
 	s := newSched(t, m)
 	sel1, err := s.Select(10, domain.FormatOpenAIChat, "m")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Select(10, domain.FormatOpenAIChat, "m"); !errors.Is(err, ErrNoAvailable) {
-		t.Fatalf("want ErrNoAvailable, got %v", err)
-	}
+	require.NoError(t, err)
+	_, err = s.Select(10, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrNoAvailable)
 	s.Release(sel1.AccountID)
-	if _, err := s.Select(10, domain.FormatOpenAIChat, "m"); err != nil {
-		t.Fatalf("after release: %v", err)
-	}
+	_, err = s.Select(10, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err, "available after release")
 }
 
 func TestMark429CooldownAndRecover(t *testing.T) {
@@ -1960,25 +1907,17 @@ func TestMark429CooldownAndRecover(t *testing.T) {
 
 	reset := time.Now().Add(10 * time.Second)
 	s.MarkResult(1, Result429, &reset)
-	if _, err := s.Select(10, domain.FormatOpenAIChat, "m"); !errors.Is(err, ErrNoAvailable) {
-		t.Fatalf("in cooldown should be unavailable: %v", err)
-	}
+	_, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrNoAvailable, "in cooldown should be unavailable")
 	// 冷却过期后惰性恢复
-	m.mu.Lock()
-	m.byGroup[10][0].Status = domain.Status429
-	m.mu.Unlock()
 	s.timeNow = func() time.Time { return time.Now().Add(15 * time.Second) }
 	sel, err := s.Select(10, domain.FormatOpenAIChat, "m")
-	if err != nil {
-		t.Fatalf("after cooldown: %v", err)
-	}
+	require.NoError(t, err, "available after cooldown")
 	s.MarkResult(sel.AccountID, ResultOK, nil)
 	s.Release(sel.AccountID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.writes) == 0 {
-		t.Fatal("expected async status write")
-	}
+	require.NotEmpty(t, m.writes, "expected async status write")
 }
 
 func TestMarkErrorBackoff(t *testing.T) {
@@ -1987,31 +1926,26 @@ func TestMarkErrorBackoff(t *testing.T) {
 	s := newSched(t, m)
 
 	s.MarkResult(1, ResultError, nil) // 第一次失败 → backoff base
-	ri, _ := s.Runtime(1)
-	if ri.Status != domain.StatusErr || ri.ErrCount != 1 {
-		t.Fatalf("bad state: %+v", ri)
-	}
-	if ri.CooldownUntil == nil || !ri.CooldownUntil.After(time.Now().Add(4*time.Second)) {
-		t.Fatalf("backoff base not applied: %+v", ri.CooldownUntil)
-	}
+	ri, ok := s.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusErr, ri.Status)
+	require.Equal(t, 1, ri.ErrCount)
+	require.NotNil(t, ri.CooldownUntil)
+	require.True(t, ri.CooldownUntil.After(time.Now().Add(4*time.Second)), "backoff base applied")
 	s.MarkResult(1, ResultError, nil) // 第二次 → 指数
 	ri, _ = s.Runtime(1)
-	if ri.ErrCount != 2 {
-		t.Fatalf("err count: %d", ri.ErrCount)
-	}
+	require.Equal(t, 2, ri.ErrCount)
 	s.MarkResult(1, ResultOK, nil)
 	ri, _ = s.Runtime(1)
-	if ri.Status != domain.StatusActive || ri.ErrCount != 0 {
-		t.Fatalf("success should reset: %+v", ri)
-	}
+	require.Equal(t, domain.StatusActive, ri.Status, "success resets status")
+	require.Equal(t, 0, ri.ErrCount, "success resets err count")
 }
 
 func TestSelectUnknownGroup(t *testing.T) {
 	m := newMemLoader(map[int64][]*domain.Account{})
 	s := newSched(t, m)
-	if _, err := s.Select(99, domain.FormatOpenAIChat, "m"); !errors.Is(err, ErrGroupNotFound) {
-		t.Fatalf("want ErrGroupNotFound, got %v", err)
-	}
+	_, err := s.Select(99, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrGroupNotFound)
 }
 
 func TestInvalidateGroupReloads(t *testing.T) {
@@ -2022,15 +1956,12 @@ func TestInvalidateGroupReloads(t *testing.T) {
 	m.byGroup[10] = append(m.byGroup[10], acc(2, tplx, 4))
 	m.mu.Unlock()
 	s.InvalidateGroup(10) // 同步 reload
-	if _, err := s.Select(10, domain.FormatOpenAIChat, "m"); err != nil {
-		t.Fatal(err)
-	}
 	// 账号 2 也进入候选：把账号1 占满并发后再选应命中 2
-	sel1, _ := s.Select(10, domain.FormatOpenAIChat, "m")
+	sel1, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
 	sel2, err := s.Select(10, domain.FormatOpenAIChat, "m")
-	if err != nil || sel2.AccountID == sel1.AccountID {
-		t.Fatalf("both accounts should serve: %v %+v %+v", err, sel1, sel2)
-	}
+	require.NoError(t, err)
+	require.NotEqual(t, sel1.AccountID, sel2.AccountID, "both accounts should serve")
 	s.Release(sel1.AccountID)
 	s.Release(sel2.AccountID)
 }
@@ -2537,6 +2468,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"go-proxy-mini/internal/domain"
 )
 
@@ -2610,9 +2543,7 @@ func TestRecorderFlushesLogs(t *testing.T) {
 	ls.mu.Lock()
 	n := len(ls.logs)
 	ls.mu.Unlock()
-	if n < 2 {
-		t.Fatalf("logs not flushed: %d", n)
-	}
+	require.GreaterOrEqual(t, n, 2, "logs flushed")
 	cancel()
 	r.Close(context.Background())
 }
@@ -2641,9 +2572,7 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	}
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	if len(ss.buckets) != 2 {
-		t.Fatalf("want 2 buckets (ok/err), got %d: %+v", len(ss.buckets), ss.buckets)
-	}
+	require.Len(t, ss.buckets, 2, "want 2 buckets (ok/err)")
 	var okB, errB *domain.StatBucket
 	for _, b := range ss.buckets {
 		if b.IsError {
@@ -2652,12 +2581,12 @@ func TestRecorderAggregatesStats(t *testing.T) {
 			okB = b
 		}
 	}
-	if okB == nil || okB.RequestCount != 2 || okB.TotalTokens != 40 {
-		t.Fatalf("ok bucket wrong: %+v", okB)
-	}
-	if errB == nil || errB.RequestCount != 1 || errB.ErrorCount != 1 {
-		t.Fatalf("err bucket wrong: %+v", errB)
-	}
+	require.NotNil(t, okB)
+	require.Equal(t, int64(2), okB.RequestCount)
+	require.Equal(t, int64(40), okB.TotalTokens)
+	require.NotNil(t, errB)
+	require.Equal(t, int64(1), errB.RequestCount)
+	require.Equal(t, int64(1), errB.ErrorCount)
 	cancel()
 	r.Close(context.Background())
 }
@@ -2961,16 +2890,16 @@ git add -A && git commit -m "feat: async usage pipeline (batch logs + pre-aggreg
 package proxy
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
@@ -3072,9 +3001,7 @@ func newTestProxy(t *testing.T, upstream string, accountID int64) *Proxy {
 		DefaultMaxConcurrency: 4, Cooldown429: 30 * time.Second,
 		BackoffBase: 5 * time.Second, BackoffMax: time.Minute, SyncInterval: time.Hour,
 	}, noopLoader{accs: accs}, nil)
-	if err := sched.InvalidateAllSync(); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour, DropOnFull: false,
 		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
@@ -3099,16 +3026,11 @@ func TestProxyStreamingChat(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
 
-	if rec.Code != 200 {
-		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
 	body := rec.Body.String()
-	if !strings.Contains(body, "data: [DONE]") || !strings.Contains(body, `"content":"hi"`) {
-		t.Fatalf("bad stream: %s", body)
-	}
-	if !strings.Contains(body, `"prompt_tokens":5`) {
-		t.Fatalf("usage not captured: %s", body)
-	}
+	require.Contains(t, body, "data: [DONE]")
+	require.Contains(t, body, `"content":"hi"`)
+	require.Contains(t, body, `"prompt_tokens":5`, "usage captured from final chunk")
 }
 
 func TestProxyAuthRejected(t *testing.T) {
@@ -3120,9 +3042,7 @@ func TestProxyAuthRejected(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer wrong")
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
-	if rec.Code != 401 {
-		t.Fatalf("want 401, got %d", rec.Code)
-	}
+	require.Equal(t, 401, rec.Code)
 }
 
 func TestProxyFailoverOn429(t *testing.T) {
@@ -3143,16 +3063,14 @@ func TestProxyFailoverOn429(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer gk-1")
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
-	if rec.Code != 429 {
-		t.Fatalf("want final 429, got %d body=%s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 429, rec.Code, "body=%s", rec.Body.String())
 	// 两个账号都进入 429 冷却：Runtime 视图可查
-	if ri, ok := sched.Runtime(1); !ok || ri.Status != domain.Status429 {
-		t.Fatalf("account 1 should be 429-cooling: %+v", ri)
-	}
-	if ri, ok := sched.Runtime(2); !ok || ri.Status != domain.Status429 {
-		t.Fatalf("account 2 should be 429-cooling: %+v", ri)
-	}
+	ri, ok := sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.Status429, ri.Status)
+	ri, ok = sched.Runtime(2)
+	require.True(t, ok)
+	require.Equal(t, domain.Status429, ri.Status)
 }
 ```
 
@@ -3882,7 +3800,7 @@ func (f *fakeStore) GetTemplate(ctx context.Context, id int64) (*domain.Template
 	defer f.mu.Unlock()
 	t, ok := f.tpls[id]
 	if !ok {
-		return nil, errNotFound
+		return nil, ErrNotFound
 	}
 	return t, nil
 }
@@ -3925,7 +3843,7 @@ func (f *fakeStore) GetAccount(ctx context.Context, id int64) (*domain.Account, 
 	defer f.mu.Unlock()
 	a, ok := f.accs[id]
 	if !ok {
-		return nil, errNotFound
+		return nil, ErrNotFound
 	}
 	return a, nil
 }
@@ -3969,7 +3887,7 @@ func (f *fakeStore) GetGroup(ctx context.Context, id int64) (*domain.Group, erro
 	defer f.mu.Unlock()
 	g, ok := f.groups[id]
 	if !ok {
-		return nil, errNotFound
+		return nil, ErrNotFound
 	}
 	return g, nil
 }
@@ -4025,10 +3943,13 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
 )
 
 func TestCreateTemplateValidates(t *testing.T) {
@@ -4036,35 +3957,22 @@ func TestCreateTemplateValidates(t *testing.T) {
 	_, err := svc.CreateTemplate(context.Background(), &domain.Template{
 		Name: "", BaseURL: "not-a-url", DefaultFormat: domain.Format("nope"),
 	})
-	if err == nil {
-		t.Fatal("invalid template should fail")
-	}
-	if !errors.Is(err, errInvalidInput) {
-		t.Fatalf("want errInvalidInput, got %v", err)
-	}
+	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
 func TestCreateGroupRotateKeyFlow(t *testing.T) {
 	fs := newFakeStore()
 	svc := &Service{store: fs, invalidate: func() {}, log: nil}
 	g, raw, err := svc.CreateGroup(context.Background(), "g1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if g.KeyHash == "" || raw == "" {
-		t.Fatal("key must be generated")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, g.KeyHash)
+	require.NotEmpty(t, raw, "key must be generated")
 	raw2, err := svc.RotateGroupKey(context.Background(), g.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if raw2 == raw {
-		t.Fatal("rotated key must differ")
-	}
-	g2, _ := svc.GetGroup(context.Background(), g.ID)
-	if g2.KeyHash == g.KeyHash {
-		t.Fatal("hash must change")
-	}
+	require.NoError(t, err)
+	require.NotEqual(t, raw, raw2, "rotated key must differ")
+	g2, err := svc.GetGroup(context.Background(), g.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, g.KeyHash, g2.KeyHash, "hash must change")
 }
 
 func TestQueryStatsGranularity(t *testing.T) {
@@ -4075,12 +3983,10 @@ func TestQueryStatsGranularity(t *testing.T) {
 	}
 	svc := &Service{store: fs}
 	rows, err := svc.QueryStats(context.Background(), repository.StatQuery{}, "day")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 || rows[0].RequestCount != 15 || rows[0].TotalTokens != 150 {
-		t.Fatalf("day aggregation wrong: %+v", rows)
-	}
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(15), rows[0].RequestCount, "day aggregation sums requests")
+	require.Equal(t, int64(150), rows[0].TotalTokens)
 }
 
 func mustTime(s string) time.Time {
@@ -4092,7 +3998,7 @@ func mustTime(s string) time.Time {
 }
 ```
 
-（`service_test.go` 需 import `time` 与 `go-proxy-mini/internal/repository`；`errNotFound`/`errInvalidInput` 在 service.go 定义。）
+（`service_test.go` 需 import `time` 与 `go-proxy-mini/internal/repository`；`ErrNotFound`/`ErrInvalidInput` 在 service.go 定义。）
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -4121,8 +4027,8 @@ import (
 )
 
 var (
-	errNotFound    = errors.New("service: not found")
-	errInvalidInput = errors.New("service: invalid input")
+	ErrNotFound    = errors.New("service: not found")
+	ErrInvalidInput = errors.New("service: invalid input")
 )
 
 type Store interface {
@@ -4191,18 +4097,18 @@ func New(store Store, sched RuntimeProvider, invalidate func(), keys KeyRegistra
 
 func validateTemplate(t *domain.Template) error {
 	if t.Name == "" {
-		return errInvalidInput
+		return ErrInvalidInput
 	}
 	u, err := url.Parse(t.BaseURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		return errInvalidInput
+		return ErrInvalidInput
 	}
 	if !t.DefaultFormat.Valid() {
-		return errInvalidInput
+		return ErrInvalidInput
 	}
 	for _, f := range t.ModelFormats {
 		if !f.Valid() {
-			return errInvalidInput
+			return ErrInvalidInput
 		}
 	}
 	return nil
@@ -4210,10 +4116,10 @@ func validateTemplate(t *domain.Template) error {
 
 func validateAccount(a *domain.Account) error {
 	if a.Name == "" || a.UpstreamKey == "" || a.TemplateID <= 0 {
-		return errInvalidInput
+		return ErrInvalidInput
 	}
 	if a.Weight < 0 {
-		return errInvalidInput
+		return ErrInvalidInput
 	}
 	if a.MaxConcurrency < 1 {
 		a.MaxConcurrency = 8
@@ -4374,7 +4280,7 @@ import (
 
 func (s *Service) CreateGroup(ctx context.Context, name string) (*domain.Group, string, error) {
 	if name == "" {
-		return nil, "", errInvalidInput
+		return nil, "", ErrInvalidInput
 	}
 	raw, hash, prefix := cryptox.NewGroupKey()
 	g := &domain.Group{Name: name, KeyHash: hash, KeyPrefix: prefix}
@@ -4402,7 +4308,7 @@ func (s *Service) ListGroups(ctx context.Context) ([]*domain.Group, error) {
 
 func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	if g.Name == "" {
-		return nil, errInvalidInput
+		return nil, ErrInvalidInput
 	}
 	updated, err := s.store.UpdateGroup(ctx, g)
 	if err == nil {
@@ -4573,7 +4479,7 @@ func boolStr(b bool) string {
 - [ ] **Step 4: 编译 + 跑 service 测试**
 
 Run: `go build ./internal/service/ && go test ./internal/service/ -count=1`
-Expected: PASS。`service_test.go` 的 `mustTime` 测试引用 `time`，若 fakeStore 中 `errNotFound` 未导出导致测试包引用问题，把 sentinel 错误放本包公开（`ErrNotFound`、`ErrInvalidInput`）。
+Expected: PASS。`service_test.go` 的 `mustTime` 测试引用 `time`；sentinel 错误已公开（`ErrNotFound`、`ErrInvalidInput`），fakeStore 与 handler 直接引用。
 
 - [ ] **Step 5: 写 handler（admin API）**
 
@@ -5101,10 +5007,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
@@ -5158,68 +5066,47 @@ func TestAdminFlow(t *testing.T) {
 		"default_format":"openai-chat","models":["gpt-4o"],
 		"model_formats":{"o3":"openai-responses"},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-01-01"}}`)
-	if rec.Code != 200 {
-		t.Fatalf("create template: %d %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	var tpl domain.Template
-	if err := json.Unmarshal(rec.Body.Bytes(), &tpl); err != nil {
-		t.Fatal(err)
-	}
-	if tpl.FormatFor("o3") != domain.FormatOpenAIResponses {
-		t.Fatal("format override missing")
-	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tpl))
+	require.Equal(t, domain.FormatOpenAIResponses, tpl.FormatFor("o3"), "format override")
 
 	rec = do(http.MethodPost, "/admin/accounts", `{
 		"name":"acc1","template_id":`+itoa(tpl.ID)+`,"upstream_key":"sk-x","weight":80,"max_concurrency":4}`)
-	if rec.Code != 200 {
-		t.Fatalf("create account: %d %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "create account: %s", rec.Body.String())
 	var acc domain.Account
-	_ = json.Unmarshal(rec.Body.Bytes(), &acc)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &acc))
 
 	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
-	if rec.Code != 200 {
-		t.Fatalf("create group: %d %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
 	var groupResp struct {
 		Group domain.Group `json:"group"`
 		Key   string       `json:"key"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &groupResp); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(groupResp.Key, "gk-") {
-		t.Fatalf("bad key: %s", groupResp.Key)
-	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groupResp))
+	require.True(t, strings.HasPrefix(groupResp.Key, "gk-"), "key=%s", groupResp.Key)
 
 	rec = do(http.MethodPut, "/admin/groups/"+itoa(groupResp.Group.ID)+"/accounts", `{"account_ids":[`+itoa(acc.ID)+`]}`)
-	if rec.Code != 200 {
-		t.Fatalf("set accounts: %d %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "set accounts: %s", rec.Body.String())
 
 	rec = do(http.MethodPost, "/admin/groups/"+itoa(groupResp.Group.ID)+"/rotate-key", "")
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"key":"gk-`) {
-		t.Fatalf("rotate: %d %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "rotate: %s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"key":"gk-`)
 
 	rec = do(http.MethodGet, "/admin/stats?granularity=day", "")
-	if rec.Code != 200 {
-		t.Fatalf("stats: %d %s", rec.Code, rec.Body.String())
-	}
+	require.Equal(t, 200, rec.Code, "stats: %s", rec.Body.String())
 
 	// 未认证 → 401
 	req := httptest.NewRequest(http.MethodGet, "/admin/templates", nil)
 	rec2 := httptest.NewRecorder()
 	r.ServeHTTP(rec2, req)
-	if rec2.Code != 401 {
-		t.Fatalf("unauth should 401, got %d", rec2.Code)
-	}
+	require.Equal(t, 401, rec2.Code)
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 ```
 
-（`handler_test.go` 需 import `strconv`；`newFakeStore` 来自 `internal/service/fakestore_test.go`，需在同包测试中可见——将 `fakestore_test.go` 移至 `internal/handler` 测试同包：handler 测试直接使用 service 包不导出 fakeStore。修正：把 fakeStore 定义在 `internal/handler/fakestore_test.go`（实现 service.Store 接口），service 包的 fakeStore 仅服务 service 测试。实施时以编译为准，两处二选一。）
+（`newFakeStore` 来自 `internal/service/fakestore_test.go`，需在同包测试中可见——将 `fakestore_test.go` 移至 `internal/handler/fakestore_test.go`（实现 service.Store 接口），service 包的 fakeStore 仅服务 service 测试。实施时以编译为准，两处二选一。）
 
 - [ ] **Step 7: 编译修正 + 跑测试**
 
@@ -5259,6 +5146,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestHealthz(t *testing.T) {
@@ -5266,13 +5155,9 @@ func TestHealthz(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	resp, err := http.Get(ts.URL + "/healthz")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("healthz: %d", resp.StatusCode)
-	}
+	require.Equal(t, 200, resp.StatusCode)
 }
 
 func TestUnknownPath404(t *testing.T) {
@@ -5280,9 +5165,7 @@ func TestUnknownPath404(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != 404 {
-		t.Fatalf("want 404, got %d", rec.Code)
-	}
+	require.Equal(t, 404, rec.Code)
 }
 ```
 
