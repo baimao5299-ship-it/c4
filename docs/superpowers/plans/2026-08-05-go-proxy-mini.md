@@ -1,5 +1,7 @@
 # go-proxy-mini 实施计划
 
+> **状态：已执行完毕（2026-08-06，Task 1-9 全部完成 + 终审通过 + golangci-lint 全绿，HEAD 见 git 历史）。** 本文档为执行记录；最终设计以 `docs/superpowers/specs/2026-08-05-go-proxy-mini-design.md` 为准（实施期的用户决策已同步修订设计文档）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 实现单实例抗 W 级并发的 AI 中转网关：模板/账号/分组 + 内存调度器（故障转移/冷却/并发控制）+ 官方 SDK 转发（零协议自研）+ 用量明细与预聚合统计。

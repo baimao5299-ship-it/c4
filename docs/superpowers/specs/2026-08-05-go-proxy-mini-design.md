@@ -1,7 +1,7 @@
 # go-proxy-mini — 超 mini AI 中转网关 · 设计文档
 
 > 版本: v0.1 (2026-08-05)
-> 状态: 设计已确认，待实施
+> 状态: v0.1 已实施（2026-08-06：Task 1-9 完成、终审通过、golangci-lint 全绿；实测验收见 §10.7）
 > 技术栈参考: `teagent/DESIGN.md` §20（Go + ent + pgx + chi + zap）；调度器设计参考 `sub2api-openai-codex-fingerprint`（取其机制精华，避开其账号字段设计缺陷）
 
 ---
@@ -144,7 +144,7 @@ bucket key = `(小时桶, group_id, account_id, template_id, model, is_error)`�
 ### 5.1 状态机
 
 ```
-active ──429响应──► 429 (cooldown = 上游 reset 头解析值，解析失败兜底 30s)
+active ──429响应──► 429 (cooldown = 固定 cooldown_429，默认 30s)
   ▲                    │
   │    cooldown 到期   ▼
   └────────────────────┘
@@ -154,7 +154,7 @@ active ──5xx/网络错误/超时──► err (cooldown = 指数退避 5s×2
 disabled：仅 admin 切换，永不调度
 ```
 
-- **429 判定**：上游返回 429 → 从 SDK 错误类型取已解析的 reset/Retry-After 值（OpenAI 风格 `x-ratelimit-reset-requests` / `Retry-After`，Anthropic `retry-after`）；解析失败或头缺失用兜底冷却（默认 30s，上限 2h）。不区分真/假限流，一律进入 429 状态等待恢复
+- **429 判定**：上游返回 429 → 进入 429 状态，冷却 = 固定 `scheduler.cooldown_429`（默认 30s，可配）。v0.1 不做上游 reset/Retry-After 头解析（终审裁定固定值语义安全；头解析留待规则引擎演进，见 §14）
 - **err 判定**：5xx、连接错误、读超时、EOF 中断 → err 冷却（指数退避）；下次成功调用即重置退避与状态
 - 冷却恢复是**惰性**的：选号时检查 `cooldown_until < now`，到期即视为可用，无需后台唤醒
 - 状态变更：内存立即生效 + 异步批量回写 DB；启动时全量加载
@@ -175,10 +175,10 @@ disabled：仅 admin 切换，永不调度
 
 ### 5.4 缓存与一致性（单实例）
 
-- 组→账号快照：内存 map + 读写锁 + atomic.Value 整块替换（快照含：账号基础信息、status、cooldown、weight、并发计数、EWMA）
+- 组→账号快照：双 atomic.Value（groups / byID）整块换入换出，无锁读（快照含：账号基础信息、status、cooldown、weight、并发计数、EWMA）；InvalidateGroup 重建时 byID 与 groups 同步重建（防记账分裂，Task 4 修复）
 - 失效链路：管理端变更（模板/账号/分组/绑定关系）→ service 调 `scheduler.InvalidateGroup(groupID)` 立即回读 DB 重建；定时全量同步兜底（默认 30s）
 - 并发计数与 EWMA 仅内存（单实例语义）；重启丢失可接受（冷启动由 DB 重建）
-- 重建失败指数退避（5s 起、5min 封顶），防 DB 过载风暴
+- 重建失败仅 Warn，下个同步周期重试（30s 定时兜底）
 
 ## 6. 转发层（internal/proxy，基于官方 SDK）
 
@@ -196,11 +196,11 @@ disabled：仅 admin 切换，永不调度
 
 其他路径直接 404（网关不再透传任意路径）。**格式匹配是调度器选号的硬过滤条件**：候选账号的模板 `format_for(请求model)`（模型级覆盖 ?? 默认格式）必须等于请求路径决定的格式，否则不可选（§5.2 第 1 步）。
 
-每个模板按格式懒构建 SDK 客户端（`sync.Once` 按需，`WithBaseURL(template.base_url)` + 注入共享 `http.Client`；`model_formats` 涉及多格式时最多 3 个客户端）；账号差异仅经请求级认证选项覆盖（`WithAuthToken(upstream_key)`），不为每个账号重建客户端。共享 Transport 调优：MaxIdleConnsPerHost、IdleConnTimeout、HTTP/2 尝试。
+每个模板懒构建 SDK 客户端（`pkg/aiclient.Factory` 按模板 ID 缓存，`option.WithBaseURL(template.base_url)` + 共享 `http.Client`；每模板最多 3 个客户端：chat / responses / anthropic）；账号差异经请求级鉴权头注入（openai：`Authorization: Bearer <upstream_key>`；anthropic：`x-api-key`，均 `option.WithHeader`），不为每个账号重建客户端。模板变更（create/update/delete）经 `Factory.InvalidateAll()` 重建（与 `scheduler.InvalidateAll` 组合接线，终审修复）。共享 Transport 调优：MaxIdleConnsPerHost、IdleConnTimeout、HTTP/2 尝试。
 
 ### 6.2 请求解析与保真
 
-- 客户端 body（上限默认 4MB，超限 413）→ 对应 SDK 参数类型；**未知字段经 SDK 的 ExtraBody/ExtraFields 机制保留**，不在网关层丢失
+- 客户端 body（上限默认 4MB，超限 413）→ 对应 SDK 参数类型；未知字段不显式保留（网关层不设置 ExtraBody，以所用 SDK 版本解析行为为准，§14 边界）
 - 不做任何跨格式转换：openai 端点只走 openai SDK，anthropic 端点只走 anthropic SDK
 
 ### 6.3 模型映射
@@ -211,13 +211,13 @@ disabled：仅 admin 切换，永不调度
 
 ### 6.4 流式
 
-- SDK 流式迭代（Iter）逐事件 → 网关重序列化为 SSE 帧（`data: {json}\n\n`，结束 `data: [DONE]`）；非流式 → SDK 完整响应原样 JSON 回写
+- SDK 流式迭代（`*ssestream.Stream`：`Next()/Current()/Err()`）逐事件 → 网关重序列化为 SSE 帧（`data: {json}\n\n`，结束 `data: [DONE]`；anthropic 流另加 `event: <type>` 行——官方 SDK 按 event 行分发，Task 8 修复）；非流式 → SDK 完整响应原样 JSON 回写
 - 客户端断开 → ctx 取消 → 上游流随之中断；首字节后中断不重试，记 `error_type=abort`
 - 转发的请求头仅由 SDK 按协议生成（Authorization/x-api-key/anthropic-version 等），不逐头透传
 
 ### 6.5 用量采集
 
-- SDK 响应类型自带 usage 字段直接取（流式取末事件），零扫描开销
+- SDK 响应类型自带 usage 字段直接取，零扫描开销：chat/responses 流式取末事件 usage；anthropic 流式 input_tokens 取 message_start 事件、output_tokens 取 message_delta 事件（终审修复）
 - 开关 `proxy.usage_capture`（默认 on）；响应字节不被改写
 
 ## 7. 日志与用量
@@ -231,20 +231,20 @@ disabled：仅 admin 切换，永不调度
 | Warn | 账号状态流转（标记 429/err、冷却开始/恢复）、故障转移触发、DB 回写失败 | 输出 |
 | Error | 配置错误、DB 连接失败、启动失败等不可恢复错误 | 输出 |
 
-- `logx` API：`Debug/Info/Warn/Error` + `With(fields)`；logger 注入 context 传递
+- `logx` API：`Debug/Info/Warn/Error` + `With(fields)`；logger 以构造参数注入（不走 context）
 - 级别来源 `log.level`（debug/info/warn/error），默认 `warn`，环境变量覆盖；JSON 编码，stdout（生产由部署侧收日志）
 - **业务数据与日志级别隔离**：`usage_log` 落库不受日志级别影响（Debug 追踪行不输出 ≠ 业务明细不落库）
 
 ### 7.2 用量管线
 
-请求完成 → 组装 `usage_log` 记录 + 聚合增量 → 推入内存 channel → 批量写（默认 200 条或 2s flush）→ 明细落库 + 预聚合 UPSERT。失败重试一次，再失败 Warn 日志 + 丢（单机语义可接受）。优雅退出时排空。
+请求完成 → 组装 `usage_log` 记录 + 内存聚合增量（永不失真）→ 推入有界 channel（16384）→ 批量写（默认 500 条或 500ms 先到先写）→ 明细落库 + 10s 预聚合 UPSERT。**饱和时阻塞反压（用户决策 2026-08-05：不得丢数据）**，由 max_inflight 过载保护兜底；落库失败 Warn 日志 + 丢弃该批（DB 故障降级，不重试）。优雅退出排空（仅 DB 不可达时超时丢弃 + Warn）。
 
 ## 8. 管理 API（`/admin/*`，Bearer admin token）
 
 | 方法/路径 | 说明 |
 |---|---|
 | `POST/GET /admin/templates`、`GET/PUT/DELETE /admin/templates/{id}` | 模板 CRUD |
-| `POST/GET /admin/accounts`、`GET/PUT/DELETE /admin/accounts/{id}` | 账号 CRUD；GET 含运行时视图（当前并发、冷却剩余、err_rate） |
+| `POST/GET /admin/accounts`、`GET/PUT/DELETE /admin/accounts/{id}` | 账号 CRUD；列表接口附运行时视图（当前并发、冷却剩余、err_rate） |
 | `POST/GET /admin/groups`、`GET/PUT/DELETE /admin/groups/{id}` | 分组 CRUD |
 | `PUT /admin/groups/{id}/accounts` | 全量设置成员 `{account_ids: [...]}` |
 | `POST /admin/groups/{id}/rotate-key` | 轮换客户端 key（返回新 key，只此一次明文） |
@@ -289,9 +289,9 @@ disabled：仅 admin 切换，永不调度
 **部署要求（写进运维文档，Windows 同样适用）**：
 - 临时端口预算：10k 出站连接 ≈ 10k 临时端口；Windows 默认动态端口区间仅 ~16k 个，需 `netsh int ipv4 set dynamicport tcp start=20000 num=44000` 扩宽；Linux 调 `ip_local_port_range` + `tcp_tw_reuse`
 - FD：`ulimit -n 65535`（Linux）/ 对应句柄预算（Windows）
-- 出站 TCP keep-alive 由 Transport 设置（默认开启，30s 探测），流式空闲读 watchdog 兜底（防上游半死连接挂住流）
+- 出站 TCP keep-alive 由 Transport 设置（默认开启，30s 探测）；流式防挂死用整体 backstop 超时 `proxy.upstream_stream_timeout`（默认 30m，计划偏差 #2：SDK 层无法注入 per-read 空闲超时）
 
-**入站 http.Server**：`ReadHeaderTimeout`（10s，防 slowloris）、`MaxHeaderBytes`（1MB）、不设 `WriteTimeout`（流式必需）、keep-alive 开启；空闲读 watchdog 走 context 超时兜底。
+**入站 http.Server**：`ReadHeaderTimeout`（10s，防 slowloris）、`MaxHeaderBytes`（1MB）、不设 `WriteTimeout`（流式必需）、keep-alive 开启。
 
 ### 10.3 锁与热路径（无锁读）
 
@@ -326,12 +326,12 @@ disabled：仅 admin 切换，永不调度
 
 - **全局在途上限** `proxy.max_inflight`（默认 50000）：原子计数，超限立即 429 + Retry-After（保护自身不被打死）
 - 每分组 key 令牌桶限流 `limit.group_key_rpm`（默认 0 = 关闭，可配置启用）
-- 已有：请求体上限 413、非流式上游超时、流式空闲 watchdog
+- 已有：请求体上限 413、非流式上游超时、流式 backstop 超时（`upstream_stream_timeout`）
 - 全部保护走快速路径（原子/桶），不引入额外锁
 
 ### 10.7 压测验证（验收标准，实施后回填实测值）
 
-- 假上游（httptest）模拟 30s SSE 流 + k6（或自研压测器）打满 10k 并发流
+- tools/fakeupstream（模拟 30s SSE 流、latency、429/5xx fail 注入）+ tools/loadtest（并发档位）打满目标并发
 - 验收：10k 并发流稳定运行 ≥ 5 分钟；P99 首字节延迟增量 < 50ms；内存 < 2GB；日志零丢失（验证管线容量）；FD 水位 < 30k；failover 场景（注入 429/5xx）不产生雪崩
 - 压测基准数据回填本节的表（实施阶段产出）
 
@@ -406,8 +406,13 @@ go-proxy-mini/
 │   ├── proxy/                  # 鉴权/转发/流式/用量采集
 │   ├── usage/                  # 明细+聚合管线、janitor
 │   ├── handler/                # admin HTTP handlers
+│   ├── worker/                 # 统一 worker 管理器（生命周期编排/panic 捕获）
 │   └── server/                 # chi 路由、中间件、优雅退出
-└── migrations/                 # ent 自动迁移（启动时执行）
+├── tools/
+│   ├── fakeupstream/           # 压测假上游（latency/SSE/fail 注入）
+│   └── loadtest/               # 压测器（并发档位/healthz/计数校验）
+
+无独立迁移目录：启动时 ent 自动迁移（repository.New(drv, migrate=true)）
 ```
 
 ## 13. 错误处理 / 测试
@@ -417,8 +422,8 @@ go-proxy-mini/
 **测试策略**：
 - 单元：调度器状态机/冷却退避/选号/EWMA、模型映射、格式↔路径绑定
 - 端到端：httptest 假上游 + SDK `WithBaseURL` 指向它（含流式 SSE、429+reset 头、5xx、断连），覆盖故障转移与并发槽、SSE 帧重序列化保真
-- 仓库层：testcontainers-PostgreSQL（无 Docker 环境跳过，用 `go:build integration` 标签）
-- **压测验收（§10.7）**：假上游 + k6/自研压测器，10k 并发流 ≥ 5 分钟；P99 首字节增量 < 50ms；内存 < 2GB；日志零丢失；failover 无雪崩；基准数据回填设计文档
+- 仓库层：pgxmock（经 ent v0.14 的 dialect.Driver 薄适配器桥接，无真实 DB；用户决策 2026-08-05）；生产/压测验证用 Docker postgres:16
+- **压测验收（§10.7）**：tools/fakeupstream + tools/loadtest（自研，用户决策替代 k6），10k 并发流 ≥ 5 分钟；P99 首字节增量 < 50ms；内存 < 2GB；日志零丢失；failover 无雪崩；基准已回填 §10.7（2026-08-06）
 - 断言用 testify（require 前置、assert 独立）；golangci-lint 全绿；调度器与转发核心逻辑不依赖 DB，可全内存测
 
 ## 14. 未来演进（v1 不做）
@@ -426,4 +431,5 @@ go-proxy-mini/
 - 多实例调度（内存快照 → Redis 版）
 - 请求格式转换、计费/配额、前端管理 UI、WebSocket 透传
 - 更多请求格式（gemini 等）：request_format 为可扩展枚举，接入 = 挂载新端点 + 接入对应官方 SDK
-- 保真度边界：客户端 body 经 SDK 类型往返（ExtraBody/ExtraFields 保留未知字段）；SDK 不覆盖的极端字段存在丢失可能，以所用 SDK 版本行为为准——这是"协议处理用现成库"的既定取舍
+- 保真度边界：客户端 body 经 SDK 参数类型解码（未显式设置 ExtraBody）；SDK 不覆盖的极端字段存在丢失可能，以所用 SDK 版本行为为准——这是"协议处理用现成库"的既定取舍
+- **可编排状态管理（规则引擎）**：规则存 DB + 专用 worker 按内存规则调整账号状态（429/err/disabled + 冷却，事件驱动、可编排、可写）——见 `2026-08-05-orchestrated-state-rules-proposal.md`（DRAFT，待讨论）
