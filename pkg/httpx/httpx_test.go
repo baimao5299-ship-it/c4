@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestClientReusesTransport(t *testing.T) {
@@ -24,12 +26,8 @@ func TestClientReusesTransport(t *testing.T) {
 	})
 	for i := 0; i < 3; i++ {
 		resp, err := c.Get(srv.URL)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		resp.Body.Close()
 	}
-	if hits != 3 {
-		t.Fatalf("hits=%d", hits)
-	}
+	require.Equal(t, 3, hits)
 }

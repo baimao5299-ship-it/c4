@@ -1,25 +1,51 @@
 package logx_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/pkg/logx"
 )
 
+// newFileLogger creates a logger that writes JSON lines to a fresh temp
+// file and returns the logger plus the file path. On Windows, zap keeps
+// the sink file open for the process lifetime, so the dir cleanup is
+// best-effort there (Linux/macOS remove it right away).
+func newFileLogger(t *testing.T, level string) (*logx.Logger, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "logx-test-")
+	require.NoError(t, err)
+	out := filepath.Join(dir, "out.json")
+	logger, err := logx.New(level, out)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return logger, out
+}
+
 func TestLevelFiltering(t *testing.T) {
 	// warn 级别下 Debug 不输出、Warn 输出
-	logger, err := logx.New("warn", "stdout")
-	if err != nil {
-		t.Fatalf("new: %v", err)
-	}
+	logger, out := newFileLogger(t, "warn")
 	logger.Debug("hidden", logx.String("k", "v"))
 	logger.Warn("visible", logx.Int("n", 1))
-	_ = logger.Sync()
+	require.NoError(t, logger.Sync())
+
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "visible")
+	require.NotContains(t, string(b), "hidden")
 }
 
 func TestWithFields(t *testing.T) {
-	logger, _ := logx.New("error", "stdout")
+	logger, out := newFileLogger(t, "error")
 	child := logger.With(logx.String("trace", "abc"))
 	child.Error("boom", logx.Error(nil))
-	_ = logger.Sync()
+	require.NoError(t, logger.Sync())
+
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"trace":"abc"`)
+	require.Contains(t, string(b), "boom")
 }

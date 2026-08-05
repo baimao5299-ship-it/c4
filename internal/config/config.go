@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/knadh/koanf/parsers/toml/v2"
@@ -100,7 +101,16 @@ func Load(path string) (*Config, error) {
 			return nil, err
 		}
 	}
-	if err := k.Load(env.Provider(".", env.Opt{Prefix: "GPM_"}), nil); err != nil {
+	if err := k.Load(env.Provider(".", env.Opt{
+		Prefix: "GPM_",
+		TransformFunc: func(k, v string) (string, any) {
+			k = strings.ToLower(strings.TrimPrefix(k, "GPM_"))
+			if i := strings.Index(k, "_"); i >= 0 {
+				k = k[:i] + "." + k[i+1:]
+			}
+			return k, v
+		},
+	}), nil); err != nil {
 		return nil, err
 	}
 	if err := k.Unmarshal("", c); err != nil {

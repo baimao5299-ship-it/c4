@@ -1,30 +1,27 @@
 package cryptox
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestHashKeyDeterministic(t *testing.T) {
 	a := HashKey("gk-abc")
 	b := HashKey("gk-abc")
-	if a != b || a == "gk-abc" {
-		t.Fatalf("hash mismatch: %s %s", a, b)
-	}
+	require.NotEqual(t, "gk-abc", a)
+	require.Equal(t, a, b)
 }
 
 func TestNewGroupKey(t *testing.T) {
 	raw, hash, prefix := NewGroupKey()
-	if len(raw) != 35 || raw[:3] != "gk-" { // gk- + 32 hex
-		t.Fatalf("bad raw: %q", raw)
-	}
-	if HashKey(raw) != hash {
-		t.Fatal("hash mismatch")
-	}
-	if len(prefix) != 8 {
-		t.Fatalf("bad prefix: %q", prefix)
-	}
+	require.Len(t, raw, 35) // gk- + 32 hex
+	require.Equal(t, "gk-", raw[:3])
+	require.Equal(t, HashKey(raw), hash)
+	require.Len(t, prefix, 8)
 }
 
 func TestEqual(t *testing.T) {
-	if !Equal("abc", "abc") || Equal("abc", "abd") {
-		t.Fatal("Equal wrong")
-	}
+	require.True(t, Equal("abc", "abc"))
+	require.False(t, Equal("abc", "abd"))
 }
