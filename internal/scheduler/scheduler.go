@@ -294,6 +294,13 @@ func (s *Scheduler) MarkResult(accountID int64, kind ResultKind, resetAt *time.T
 	}
 	now := s.timeNow()
 	st := a.statePtr()
+	// 禁用账号的防复活守卫：管理端禁用后（InvalidateGroup 以 disabled 重载
+	// 快照），在途请求完成时不得把状态重置回 active 并回写 DB——否则禁用被
+	// 静默抹除、30s 同步后账号复现（评审发现）。禁用账号不参与选号，err/429
+	// 分支同样不可能合法触发于其上，统一在此短路（不改状态、不回写）。
+	if st.status == domain.StatusDisabled {
+		return
+	}
 	var (
 		next      accState
 		cooldown  *time.Time

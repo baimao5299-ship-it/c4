@@ -235,7 +235,10 @@ func statusOf(err error) int {
 	return 0 // 连接级/超时错误
 }
 
-// tplOf 从 Selection 构造轻量模板对象（仅用于 aiclient 取 SDK 客户端；模板变更经 InvalidateAll 生效）。
+// tplOf 从 Selection 构造轻量模板对象（仅用于 aiclient 取 SDK 客户端）。
+// base_url 变更生效链路（main.go 组合注入）：管理端变更 → service 的 invalidate
+// 回调 → 调度器 InvalidateAll 重载快照（新 base_url 随 Selection 下发）+ aiclient
+// Factory.InvalidateAll 丢弃按旧 base_url 构建的 SDK 客户端（懒构建，下次使用重建）。
 func tplOf(sel *scheduler.Selection) *domain.Template {
 	return &domain.Template{ID: sel.TemplateID, BaseURL: sel.BaseURL}
 }

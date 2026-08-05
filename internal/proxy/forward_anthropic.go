@@ -141,9 +141,17 @@ func (p *Proxy) tryAnthropic(w http.ResponseWriter, r *http.Request, reqID strin
 				p.finish(sel.AccountID, nil) // 客户端断开，无法转移
 				return true, 0
 			}
-			// 累计用量在 message_delta 事件携带。
+			// 真实 API 的流式用量分两处携带（anthropic-sdk-go v1.56.0 实测）：
+			// input_tokens 在 message_start 事件的 message.usage 里，
+			// output_tokens 在 message_delta 事件的 usage 里——message_delta.usage
+			// 不含 input_tokens，只累计它会导致 prompt_tokens 恒为 0（评审发现）。
+			// SDK union 的字段按事件变体填充，用 JSON 存在性标记判定。
+			if ev.JSON.Message.Valid() {
+				usage.InputTokens = ev.Message.Usage.InputTokens
+				hasUsage = true
+			}
 			if ev.JSON.Usage.Valid() {
-				usage = ev.Usage
+				usage.OutputTokens = ev.Usage.OutputTokens
 				hasUsage = true
 			}
 		}

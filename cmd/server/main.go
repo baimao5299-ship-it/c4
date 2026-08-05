@@ -94,7 +94,14 @@ func main() {
 		UsageCapture:          cfg.Proxy.UsageCapture,
 	}, sched, rec, clients, auth, log)
 
-	svc := service.New(repos, sched, sched.InvalidateAll, auth, log)
+	// 管理端变更统一经 invalidate 回调生效：调度器重载快照（选号/状态）+ aiclient
+	// 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；评审发现：此前
+	// Factory.InvalidateAll 无人调用，模板 base_url 更新后流量仍打旧上游直至重启）。
+	invalidate := func() {
+		sched.InvalidateAll()
+		clients.InvalidateAll()
+	}
+	svc := service.New(repos, sched, invalidate, auth, log)
 	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)
 

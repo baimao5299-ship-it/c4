@@ -288,6 +288,57 @@ func TestInvalidateGroupShrinkByID(t *testing.T) {
 	}
 }
 
+// TestMarkResultDisabledStaysDisabled 回归：管理端禁用账号后（InvalidateGroup
+// 以 disabled 状态重载快照），在途请求的 MarkResult(OK) 不得把账号复活为
+// active，也不得回写 DB——否则禁用被静默抹除、30s 同步后账号复现（评审发现）。
+func TestMarkResultDisabledStaysDisabled(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m)
+
+	// 在途请求：先选中账号
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+
+	// 管理端禁用：以 disabled 状态重载组快照（与账号管理变更同路径）
+	m.mu.Lock()
+	m.byGroup[10] = []*domain.Account{{
+		ID: 1, TemplateID: 1, Template: tplx, UpstreamKey: "k",
+		Status: domain.StatusDisabled, Weight: 100, MaxConcurrency: 4,
+	}}
+	m.mu.Unlock()
+	s.InvalidateGroup(10)
+	ri, ok := s.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "禁用已在快照生效")
+
+	// 在途请求完成：OK 不得把状态重置回 active、不得重置错误计数
+	s.MarkResult(1, ResultOK, nil)
+	ri, _ = s.Runtime(1)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "OK 不得复活禁用账号")
+	require.Zero(t, ri.ErrCount, "OK 不得重置禁用账号的错误计数")
+
+	// 防御性：429/错误分支同样不得给禁用账号设置冷却或改写状态
+	s.MarkResult(1, Result429, nil)
+	ri, _ = s.Runtime(1)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "429 不得把禁用账号改写为 429")
+	require.Nil(t, ri.CooldownUntil, "429 不得给禁用账号设置冷却")
+	s.MarkResult(1, ResultError, nil)
+	ri, _ = s.Runtime(1)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "错误分支不得改写禁用账号")
+
+	// 禁用账号不可再被选中
+	_, err = s.Select(10, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrNoAvailable)
+	s.Release(sel.AccountID)
+
+	// 无回写：Close 排空后 DB 写入列表必须为空
+	require.NoError(t, s.Close(context.Background()))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Empty(t, m.writes, "禁用账号不得有状态回写")
+}
+
 // TestWorkerContract 满足 worker.Worker 契约（Global Constraints #5）：Name + 幂等 Start。
 func TestWorkerContract(t *testing.T) {
 	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})

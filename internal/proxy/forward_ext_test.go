@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,12 +106,14 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			fl := w.(http.Flusher)
-			// anthropic SSE 带 event: 行；SDK 按 event 类型分发事件（无 event 行的事件被跳过）
-			fmt.Fprint(w, `event: message_start`+"\n"+`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"gpt-4o","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}`+"\n\n")
+			// anthropic SSE 带 event: 行；SDK 按 event 类型分发事件（无 event 行的事件被跳过）。
+			// 用量按真实 API 分布：input_tokens 在 message_start.message.usage，
+			// output_tokens 在 message_delta.usage（message_delta 不带 input_tokens）。
+			fmt.Fprint(w, `event: message_start`+"\n"+`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"gpt-4o","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":0}}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, `event: content_block_delta`+"\n"+`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`+"\n\n")
 			fl.Flush()
-			fmt.Fprint(w, `event: message_delta`+"\n"+`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":3,"output_tokens":5}}`+"\n\n")
+			fmt.Fprint(w, `event: message_delta`+"\n"+`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, `event: message_stop`+"\n"+`data: {"type":"message_stop"}`+"\n\n")
 			fl.Flush()
@@ -126,8 +130,29 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 	return srv
 }
 
+// captureLogStore 捕获落库的用量明细（用量值断言用）。
+type captureLogStore struct {
+	mu   sync.Mutex
+	logs []*domain.UsageLog
+}
+
+func (c *captureLogStore) InsertBatch(ctx context.Context, l []*domain.UsageLog) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logs = append(c.logs, l...)
+	return nil
+}
+
+func (c *captureLogStore) PurgeLogs(ctx context.Context, t time.Time) error { return nil }
+
 // newTestProxyFormat 构造指定模板默认格式的测试代理（调度器按模板 FormatFor 做格式硬过滤）。
 func newTestProxyFormat(t *testing.T, upstream string, format domain.RequestFormat) *Proxy {
+	t.Helper()
+	return newTestProxyFormatLogs(t, upstream, format, noopLogStore{})
+}
+
+// newTestProxyFormatLogs 同 newTestProxyFormat，但允许注入 LogInserter（用量断言用捕获实现）。
+func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.RequestFormat, logs usage.LogInserter) *Proxy {
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
@@ -150,7 +175,7 @@ func newTestProxyFormat(t *testing.T, upstream string, format domain.RequestForm
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
-	}, noopLogStore{}, noopStatStore{}, nil)
+	}, logs, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]int64{cryptox.HashKey("gk-1"): 10}}, nil)
 	hc := &http.Client{Transport: http.DefaultTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{
@@ -265,7 +290,8 @@ func TestProxyAnthropicPassthrough4xx(t *testing.T) {
 func TestProxyAnthropicStreaming(t *testing.T) {
 	up := fakeAnthropic(t, "")
 	defer up.Close()
-	p := newTestProxyFormat(t, up.URL, domain.FormatAnthropic)
+	store := &captureLogStore{}
+	p := newTestProxyFormatLogs(t, up.URL, domain.FormatAnthropic, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
 		`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -276,11 +302,24 @@ func TestProxyAnthropicStreaming(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
 	body := rec.Body.String()
 	require.Contains(t, body, `"type":"content_block_delta"`)
-	require.Contains(t, body, `"input_tokens":3`, "usage captured from message_delta event")
+	require.Contains(t, body, `"input_tokens":3`, "input_tokens passthrough from message_start event")
+	require.Contains(t, body, `"output_tokens":5`, "output_tokens passthrough from message_delta event")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+
+	// 用量值断言（评审发现修复）：prompt_tokens 来自 message_start.message.usage，
+	// completion_tokens 来自 message_delta.usage，total 为两者之和——此前只累计
+	// message_delta 导致 prompt_tokens 恒为 0。
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	lg := store.logs[0]
+	require.Equal(t, int64(3), lg.PromptTokens, "input_tokens from message_start.message.usage")
+	require.Equal(t, int64(5), lg.CompletionTokens, "output_tokens from message_delta.usage")
+	require.Equal(t, int64(8), lg.TotalTokens, "total = input + output")
 }
 
 // parseAnthropicSSE 按 anthropic 协议解析输出：每个 data 块前必须有 event: 行，
