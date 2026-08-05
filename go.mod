@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	entgo.io/ent v0.14.6
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.2
 	github.com/knadh/koanf/providers/env/v2 v2.0.1

@@ -1,0 +1,60 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
+)
+
+// QueryStats 拉取小时桶并按 granularity（hour|day）在内存聚合。
+func (s *Service) QueryStats(ctx context.Context, q repository.StatQuery, granularity string) ([]*domain.StatBucket, error) {
+	rows, err := s.store.ScanStats(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	if granularity == "hour" || len(rows) == 0 {
+		return rows, nil
+	}
+	// day 聚合：按 (日, 各维度) 合并
+	merged := make(map[string]*domain.StatBucket)
+	for _, b := range rows {
+		key := b.BucketTime.Format("2006-01-02") + "|" + itoa(b.GroupID) + "|" + itoa(b.AccountID) + "|" + itoa(b.TemplateID) + "|" + b.Model + "|" + boolStr(b.IsError)
+		m, ok := merged[key]
+		if !ok {
+			day := b.BucketTime.Truncate(24 * time.Hour)
+			m = &domain.StatBucket{
+				BucketTime: day, GroupID: b.GroupID, AccountID: b.AccountID,
+				TemplateID: b.TemplateID, Model: b.Model, IsError: b.IsError,
+			}
+			merged[key] = m
+		}
+		m.RequestCount += b.RequestCount
+		m.ErrorCount += b.ErrorCount
+		m.PromptTokens += b.PromptTokens
+		m.CompletionTokens += b.CompletionTokens
+		m.TotalTokens += b.TotalTokens
+		m.TotalLatencyMS += b.TotalLatencyMS
+	}
+	out := make([]*domain.StatBucket, 0, len(merged))
+	for _, m := range merged {
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func itoa(v int64) string {
+	if v == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%d", v)
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
