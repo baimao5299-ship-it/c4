@@ -1,5 +1,5 @@
-// loadtest 对网关打流式压测：固定并发 goroutine 持续请求，统计首字节延迟/完成率/错误。
-// 用法: go run ./tools/loadtest -addr http://127.0.0.1:8080 -key gk-xxx -concurrency 10000 -duration 5m -healthz http://127.0.0.1:8080/healthz
+// loadtest 对网关打压测：固定并发 goroutine 持续请求，支持流式首字节和非流式完整响应延迟。
+// 用法: go run ./tools/loadtest -mode stream -addr http://127.0.0.1:8080 -key gk-xxx -concurrency 10000 -duration 5m -healthz http://127.0.0.1:8080/healthz
 //
 // 相对 brief 原代码的修正（均标注在行内）：
 //   - os import 用 -out 兜底：把 RESULT 摘要同时写入文件（验收记录留档）。
@@ -38,15 +38,18 @@ var (
 	healthz     = flag.String("healthz", "", "gateway /healthz url to sample memory")
 	out         = flag.String("out", "", "write RESULT summary to this file as well")
 	pprof       = flag.String("pprof", "", "listen addr for /debug/pprof (goroutine dump on hang)")
+	mode        = flag.String("mode", "stream", "request mode: stream or chat")
 )
 
 type metrics struct {
-	total       atomic.Int64
-	errs        atomic.Int64
-	firstByteMS atomic.Int64 // sum
-	mu          sync.Mutex
-	samples     map[int64]int64 // 首字节延迟采样：桶(ms/10) → 计数（估算 P99 用）
-	errDetail   map[string]int64
+	total          atomic.Int64
+	errs           atomic.Int64
+	firstByteMS    atomic.Int64 // stream 首字节延迟之和
+	latencyMS      atomic.Int64 // chat 完整响应延迟之和
+	mu             sync.Mutex
+	samples        map[int64]int64 // stream 首字节延迟采样：桶(ms/10) → 计数
+	latencySamples map[int64]int64 // chat 完整响应延迟采样：桶(ms/10) → 计数
+	errDetail      map[string]int64
 }
 
 func (m *metrics) addErr(detail string) {
@@ -57,10 +60,17 @@ func (m *metrics) addErr(detail string) {
 
 func main() {
 	flag.Parse()
+	if *mode != "stream" && *mode != "chat" {
+		fmt.Fprintf(os.Stderr, "invalid -mode %q: want stream or chat\n", *mode)
+		os.Exit(2)
+	}
 	if *pprof != "" {
 		go func() { _ = http.ListenAndServe(*pprof, nil) }() // net/http/pprof 自动挂载
 	}
-	m := &metrics{samples: make(map[int64]int64), errDetail: make(map[string]int64)}
+	m := &metrics{
+		samples: make(map[int64]int64), latencySamples: make(map[int64]int64),
+		errDetail: make(map[string]int64),
+	}
 	warmEnd := time.Now().Add(*warmup)
 	start := warmEnd
 	stop := start.Add(*duration)
@@ -104,9 +114,14 @@ func main() {
 	}()
 
 	wg.Wait()
-	result := fmt.Sprintf("\n=== RESULT ===\ntotal=%d errs=%d avg_first_byte_ms=%.1f\n",
-		m.total.Load(), m.errs.Load(), float64(m.firstByteMS.Load())/float64(max(1, m.total.Load())))
-	result += fmt.Sprintf("p99_first_byte_ms=%d\n", p99(m))
+	result := fmt.Sprintf("\n=== RESULT ===\nmode=%s\ntotal=%d errs=%d\n", *mode, m.total.Load(), m.errs.Load())
+	if *mode == "chat" {
+		result += fmt.Sprintf("avg_latency_ms=%.1f\n", float64(m.latencyMS.Load())/float64(max(1, m.total.Load()-m.errs.Load())))
+		result += fmt.Sprintf("p99_latency_ms=%d\n", p99Latency(m))
+	} else {
+		result += fmt.Sprintf("avg_first_byte_ms=%.1f\n", float64(m.firstByteMS.Load())/float64(max(1, m.total.Load()-m.errs.Load())))
+		result += fmt.Sprintf("p99_first_byte_ms=%d\n", p99(m))
+	}
 	result += fmt.Sprintf("elapsed=%s concurrency=%d\n", time.Since(start).Round(time.Second), *concurrency)
 	m.mu.Lock()
 	for d, c := range m.errDetail {
@@ -123,13 +138,22 @@ func main() {
 	}
 }
 
-// doRequest 执行一次流式请求；count=true 时计入 total/errs/首字节采样。
-// 返回前对连接级失败做 100-300ms 抖动退避（见调用处注释）。
-func doRequest(client *http.Client, m *metrics, count bool) {
-	body := `{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`
-	req, _ := http.NewRequest(http.MethodPost, *addr+"/v1/chat/completions", bytes.NewReader([]byte(body)))
-	req.Header.Set("Authorization", "Bearer "+*key)
+// newLoadtestRequest builds the minimal chat request for the selected mode.
+func newLoadtestRequest(base, groupKey, requestMode string) *http.Request {
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+	if requestMode == "stream" {
+		body = `{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`
+	}
+	req, _ := http.NewRequest(http.MethodPost, base+"/v1/chat/completions", bytes.NewReader([]byte(body)))
+	req.Header.Set("Authorization", "Bearer "+groupKey)
 	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+// doRequest executes one request; count=true includes it in the result metrics.
+// Connection failures retain the jittered backoff used by the stream benchmark.
+func doRequest(client *http.Client, m *metrics, count bool) {
+	req := newLoadtestRequest(*addr, *key, *mode)
 	reqStart := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
@@ -151,6 +175,25 @@ func doRequest(client *http.Client, m *metrics, count bool) {
 			m.addErr(fmt.Sprintf("status:%d", resp.StatusCode))
 		}
 		resp.Body.Close()
+		return
+	}
+	if *mode == "chat" {
+		_, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			if count {
+				m.errs.Add(1)
+				m.total.Add(1)
+				m.addErr("read:" + readErr.Error())
+			}
+			return
+		}
+		if count {
+			latency := time.Since(reqStart).Milliseconds()
+			m.latencyMS.Add(latency)
+			storeLatencySample(m, latency)
+			m.total.Add(1)
+		}
 		return
 	}
 	if count {
@@ -177,11 +220,27 @@ func storeSample(m *metrics, v int64) {
 	m.mu.Unlock()
 }
 
+func storeLatencySample(m *metrics, v int64) {
+	m.mu.Lock()
+	m.latencySamples[v/10]++
+	m.mu.Unlock()
+}
+
 func p99(m *metrics) int64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return p99Buckets(m.samples)
+}
+
+func p99Latency(m *metrics) int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return p99Buckets(m.latencySamples)
+}
+
+func p99Buckets(samples map[int64]int64) int64 {
 	var total int64
-	for _, c := range m.samples {
+	for _, c := range samples {
 		total += c
 	}
 	if total == 0 {
@@ -190,7 +249,7 @@ func p99(m *metrics) int64 {
 	target := total * 99 / 100
 	var acc int64
 	for b := int64(0); ; b++ {
-		acc += m.samples[b]
+		acc += samples[b]
 		if acc >= target {
 			return b * 10
 		}
