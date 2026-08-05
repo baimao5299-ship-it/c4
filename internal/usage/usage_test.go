@@ -51,7 +51,6 @@ func testCfg() UsageConfig {
 	return UsageConfig{
 		BatchSize:          2,
 		FlushInterval:      50 * time.Millisecond,
-		DropOnFull:         false,
 		LogRetentionDays:   30,
 		StatsFlushInterval: 30 * time.Millisecond,
 	}
@@ -127,4 +126,38 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	require.Equal(t, int64(1), errB.ErrorCount)
 	cancel()
 	r.Close(context.Background())
+}
+
+func TestRecordBackpressureWhenFull(t *testing.T) {
+	ls := &memLogStore{}
+	ss := &memStatStore{}
+	r := New(testCfg(), ls, ss, nil)
+
+	// 填满有界 channel（cap 16384）：饱和后 Record 必须阻塞反压、绝不丢数据
+	// （用户决策 2026-08-05：DropOnFull 已移除）。
+	log := &domain.UsageLog{RequestID: "bp", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 1, CreatedAt: time.Now()}
+	for i := 0; i < cap(r.logCh); i++ {
+		r.logCh <- log
+	}
+
+	returned := make(chan struct{})
+	go func() {
+		r.Record(log)
+		close(returned)
+	}()
+
+	// 满时 Record 应阻塞：50ms 内不得返回
+	select {
+	case <-returned:
+		require.Fail(t, "Record returned while channel full; want blocking backpressure")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// 腾出一个槽位后 Record 应立刻完成发送
+	<-r.logCh
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		require.Fail(t, "Record still blocked after a slot was freed")
+	}
 }

@@ -1,11 +1,13 @@
 // Package usage 承载请求明细的异步落库与预聚合统计（规格 §7.2/§10.5）。
-// 统计聚合永不失真（同步进内存计数），明细经有界 channel 批量落库、饱和时可丢弃。
+// 统计聚合永不失真（同步进内存计数），明细经有界 channel 批量落库、
+// 饱和时阻塞反压（用户决策 2026-08-05：不得丢数据）。
 package usage
 
 import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go-proxy-mini/internal/domain"
@@ -15,7 +17,6 @@ import (
 type UsageConfig struct {
 	BatchSize          int
 	FlushInterval      time.Duration
-	DropOnFull         bool
 	LogRetentionDays   int
 	StatsFlushInterval time.Duration
 }
@@ -29,14 +30,14 @@ type StatUpserter interface {
 }
 
 type Recorder struct {
-	cfg      UsageConfig
-	logs     LogInserter
-	stats    StatUpserter
-	log      *logx.Logger
-	logCh    chan *domain.UsageLog
-	mu       sync.Mutex
-	counters map[string]*statCounters
-	dropped  int64
+	cfg       UsageConfig
+	logs      LogInserter
+	stats     StatUpserter
+	log       *logx.Logger
+	logCh     chan *domain.UsageLog
+	mu        sync.Mutex
+	counters  map[string]*statCounters
+	startOnce atomic.Bool
 }
 
 type statCounters struct {
@@ -54,26 +55,24 @@ func New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger
 	}
 }
 
-func (r *Recorder) Start(ctx context.Context) {
+// Name 满足 worker.Worker 契约（Global Constraints #5）；重复 Start 幂等。
+func (r *Recorder) Name() string { return "usage" }
+
+func (r *Recorder) Start(ctx context.Context) error {
+	if !r.startOnce.CompareAndSwap(false, true) {
+		return fmt.Errorf("recorder: already started")
+	}
 	go r.logWriterLoop(ctx)
 	go r.statsFlushLoop(ctx)
 	go r.janitorLoop(ctx)
+	return nil
 }
 
 // Record 记录一次请求：统计同步聚合（永不丢弃），明细入有界 channel。
+// 常时非阻塞；channel 饱和时阻塞反压（用户决策 2026-08-05：不得丢数据），
+// 反压传导至请求路径，由 HTTP 层过载保护（max_inflight，规格 §10.6）兜底。
 func (r *Recorder) Record(l *domain.UsageLog) {
 	r.aggregate(l)
-	if r.cfg.DropOnFull {
-		select {
-		case r.logCh <- l:
-		default:
-			r.dropped++
-			if r.log != nil && r.dropped%1000 == 1 {
-				r.log.Warn("usage log dropped (pipeline saturated)", logx.Int64("dropped", r.dropped))
-			}
-		}
-		return
-	}
 	r.logCh <- l
 }
 
@@ -181,8 +180,8 @@ func (r *Recorder) flushStats() {
 	}
 }
 
-// Close 排空剩余明细（限时，超时丢弃并 Warn）。
-func (r *Recorder) Close(ctx context.Context) {
+// Close 排空剩余明细（限时，超时丢弃并 Warn）；幂等，满足 worker.Worker 契约。
+func (r *Recorder) Close(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -205,6 +204,7 @@ func (r *Recorder) Close(ctx context.Context) {
 		}
 	}
 	r.flushStats()
+	return nil
 }
 
 func (r *Recorder) janitorLoop(ctx context.Context) {
