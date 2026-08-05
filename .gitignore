@@ -3,3 +3,5 @@ bin/
 *.exe
 *.log
 tools/*/tmp/
+
+.superpowers/
