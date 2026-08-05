@@ -76,12 +76,26 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		p.sched.Release(sel.AccountID)
+		// 最后一轮不再为不存在的下一次尝试预选：尾部 Select 会抢占并发槽
+		// （CAS 递增、仅 Release 递减、无回收），耗尽时永不释放 → 永久占槽。
+		if attempt+1 >= p.cfg.FailoverAttempts {
+			break
+		}
 		var selErr error
 		sel, selErr = p.sched.Select(groupID, domain.FormatOpenAIChat, model)
 		if selErr != nil {
 			break
 		}
 	}
+	// 耗尽：请求已完成（上游消费了请求），以最后一次尝试的结果记一条用量。
+	et := domain.Err5xx
+	switch {
+	case lastCode == http.StatusTooManyRequests:
+		et = domain.Err429
+	case lastCode == 0:
+		et = domain.ErrNetwork
+	}
+	p.record(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, lastCode, et, 0, nil, start)
 	if lastCode == http.StatusTooManyRequests {
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, errTooMany)

@@ -222,6 +222,8 @@ func TestProxyFailoverOn429(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.Status429, ri.Status)
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
+	// 耗尽路径（请求已完成）：以最后一次尝试的结果记一条用量
+	require.Equal(t, 1, p.rec.Pending(), "failover 耗尽必须记一条用量")
 }
 
 // 5xx：触发 failover 与 MarkResult(ResultError)；全部尝试失败最终回 502（非 429 不设 Retry-After）。
@@ -251,6 +253,42 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.StatusErr, ri.Status)
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
+	// 耗尽路径（请求已完成）：以最后一次尝试的结果记一条用量
+	require.Equal(t, 1, p.rec.Pending(), "failover 耗尽必须记一条用量")
+}
+
+// 回归（评审 Critical）：failover 耗尽时尾部 Select 为"不存在的下一次尝试"预取
+// 并发槽——若选中第三个健康账号则槽位永不释放（CAS 抢占、仅 Release 递减、无回收）。
+// 3 账号全健康 + FailoverAttempts=2：前两轮 429 后，泄漏版本会在循环退出前
+// 抢走剩余健康账号的槽（Concurrency==1），修复版本不预选（全部为 0）。
+func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
+	up := fakeOpenAI(t, "429")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+	sched := p.sched
+	loader := p.sched.Loader().(noopLoader)
+	for i := int64(2); i <= 3; i++ {
+		tpl := &domain.Template{ID: i, Name: fmt.Sprintf("t%d", i), BaseURL: up.URL + "/v1",
+			DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"}}
+		loader.accs[10] = append(loader.accs[10], &domain.Account{
+			ID: i, TemplateID: i, Template: tpl, UpstreamKey: "sk-upstream",
+			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+		})
+	}
+	require.NoError(t, sched.InvalidateAllSync())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 429, rec.Code, "body=%s", rec.Body.String())
+	for id := int64(1); id <= 3; id++ {
+		ri, ok := sched.Runtime(id)
+		require.True(t, ok)
+		require.Zero(t, ri.Concurrency, "account %d 并发槽必须全部释放", id)
+	}
+	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
 }
 
 // 4xx：确定性错误，透传上游状态码、不转移（规格 §5.3），账号不进入冷却。
