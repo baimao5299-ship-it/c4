@@ -1,0 +1,164 @@
+package proxy
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/openai/openai-go"
+
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/scheduler"
+	"go-proxy-mini/pkg/logx"
+)
+
+func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	reqID := uuid.NewString()
+	groupID, ok := p.auth.Authenticate(r)
+	if !ok {
+		writeErr(w, errInvalidKey)
+		p.record(reqID, 0, 0, "", domain.FormatOpenAIChat, 401, domain.ErrAuth, 0, nil, start)
+		return
+	}
+	if !p.limit.Allow(groupID, time.Now()) {
+		writeErr(w, errRateLimit)
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, p.cfg.MaxBodySize))
+	if err != nil {
+		writeErr(w, errBody)
+		return
+	}
+	// openai-go v1.x 参数里没有 Stream 字段（流式由 NewStreaming 在请求选项层注入
+	// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
+	var peek struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &peek); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+		return
+	}
+	var params openai.ChatCompletionNewParams
+	if err := json.Unmarshal(body, &params); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+		return
+	}
+	model := params.Model // ChatModel 即 string 别名
+
+	sel, err := p.sched.Select(groupID, domain.FormatOpenAIChat, model)
+	if err != nil {
+		p.handleSelectError(w, err)
+		p.record(reqID, groupID, 0, model, domain.FormatOpenAIChat, statusFor(err), domain.ErrNoAccount, 0, nil, start)
+		return
+	}
+
+	var lastCode int
+	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
+		ok, code := p.tryChat(w, r, reqID, groupID, start, sel, &params, peek.Stream)
+		if ok {
+			return // 已写出完整响应
+		}
+		lastCode = code
+		if code == http.StatusTooManyRequests {
+			p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil)
+		} else if code >= 500 || code == 0 {
+			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
+		} else {
+			// 4xx 确定性错误：透传上游状态码，不转移（规格 §5.3）
+			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, code, domain.Err5xx, nil, start))
+			writeJSON(w, code, map[string]any{"error": map[string]any{
+				"message": "upstream rejected request", "type": "upstream_error",
+			}})
+			return
+		}
+		p.sched.Release(sel.AccountID)
+		var selErr error
+		sel, selErr = p.sched.Select(groupID, domain.FormatOpenAIChat, model)
+		if selErr != nil {
+			break
+		}
+	}
+	if lastCode == http.StatusTooManyRequests {
+		w.Header().Set("Retry-After", "1")
+		writeErr(w, errTooMany)
+	} else {
+		writeErr(w, &formatError{status: http.StatusBadGateway, msg: "all upstream attempts failed"})
+	}
+}
+
+// tryChat 返回 (已完整处理, 上游状态码)。流式 200 发出后无法转移。
+func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *openai.ChatCompletionNewParams, streaming bool) (bool, int) {
+	tpl := tplOf(sel)
+	params.Model = sel.Model
+
+	if streaming {
+		ctx, cancel := context.WithTimeout(r.Context(), p.cfg.UpstreamStreamTimeout)
+		defer cancel()
+		stream := p.clients.ChatCompletionStream(ctx, tpl, sel.UpstreamKey, *params)
+		if stream.Err() != nil {
+			code := statusOf(stream.Err())
+			return false, code
+		}
+		sw := newSSEWriter(w)
+		var (
+			usage    openai.CompletionUsage
+			hasUsage bool
+		)
+		for stream.Next() {
+			chunk := stream.Current()
+			if err := sw.Event(chunk); err != nil {
+				sw.Abort()
+				_ = stream.Close() // 归还上游连接
+				if p.log != nil {
+					p.log.Warn("sse write failed", logx.String("request_id", reqID), logx.Error(err))
+				}
+				p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
+				p.finish(sel.AccountID, nil) // 客户端断开，无法转移
+				return true, 0
+			}
+			if chunk.JSON.Usage.Valid() {
+				usage = chunk.Usage
+				hasUsage = true
+			}
+		}
+		if err := stream.Err(); err != nil {
+			sw.Abort()
+			_ = stream.Close()
+			p.recordStreamAbort(reqID, start, sel, err)
+			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
+			return true, 0
+		}
+		_ = stream.Close()
+		_ = sw.Done()
+		var pt, ct, tt int64
+		if hasUsage {
+			pt, ct, tt = usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens
+		}
+		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
+		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+		return true, 200
+	}
+
+	resp, err := p.clients.ChatCompletion(r.Context(), tpl, sel.UpstreamKey, *params)
+	if err != nil {
+		return false, statusOf(err)
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return false, 0
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+	var pt, ct, tt int64
+	if resp.JSON.Usage.Valid() {
+		pt, ct, tt = resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens
+	}
+	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
+	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+	return true, 200
+}

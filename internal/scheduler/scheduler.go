@@ -255,6 +255,12 @@ func (s *Scheduler) InvalidateAll() {
 	}
 }
 
+// Loader 暴露数据源（测试注入用）。
+func (s *Scheduler) Loader() Loader { return s.loader }
+
+// InvalidateAllSync 同步全量重载（测试与启动用）。
+func (s *Scheduler) InvalidateAllSync() error { return s.reload(context.Background()) }
+
 // Runtime 供管理端展示运行时视图。
 func (s *Scheduler) Runtime(accountID int64) (RuntimeInfo, bool) {
 	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
