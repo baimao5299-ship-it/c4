@@ -36,6 +36,7 @@ type ErrorType string
 const (
 	ErrNone      ErrorType = "none"
 	Err429       ErrorType = "429"
+	Err4xx       ErrorType = "4xx"
 	Err5xx       ErrorType = "5xx"
 	ErrNetwork   ErrorType = "network"
 	ErrAuth      ErrorType = "auth"

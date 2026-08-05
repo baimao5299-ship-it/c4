@@ -235,6 +235,20 @@ func statusOf(err error) int {
 	return 0 // 连接级/超时错误
 }
 
+// upstreamBody 提取上游错误响应的原始 body：openai.Error / anthropic.Error 的
+// RawJSON() 即收到的未修改 JSON 原文（apierror.Error.JSON.raw），4xx 透传用。
+// 连接级/超时错误无 body，返回 nil。
+func upstreamBody(err error) []byte {
+	type rawJSONer interface{ RawJSON() string }
+	var rj rawJSONer
+	if errors.As(err, &rj) {
+		if s := rj.RawJSON(); s != "" {
+			return []byte(s)
+		}
+	}
+	return nil
+}
+
 // tplOf 从 Selection 构造轻量模板对象（仅用于 aiclient 取 SDK 客户端）。
 // base_url 变更生效链路（main.go 组合注入）：管理端变更 → service 的 invalidate
 // 回调 → 调度器 InvalidateAll 重载快照（新 base_url 随 Selection 下发）+ aiclient

@@ -268,6 +268,27 @@ func TestProxyResponsesFailoverExhausted429(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记录一条用量")
 }
 
+// responses 端点 4xx：与 chat 同构——透传上游状态码与原始 body、不转移。
+func TestProxyResponsesPassthrough4xx(t *testing.T) {
+	up := fakeResponses(t, "400")
+	defer up.Close()
+	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
+		`{"model":"gpt-4o","input":"hi"}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleResponses(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"bad request"`, "4xx 必须透传上游原始 body")
+	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
+	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+}
+
 func TestProxyAnthropicPassthrough4xx(t *testing.T) {
 	up := fakeAnthropic(t, "400")
 	defer up.Close()
@@ -280,7 +301,8 @@ func TestProxyAnthropicPassthrough4xx(t *testing.T) {
 	p.HandleAnthropic(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", rec.Body.String())
-	require.Contains(t, rec.Body.String(), "upstream rejected request")
+	require.Contains(t, rec.Body.String(), `"bad request"`, "4xx 必须透传上游原始 body")
+	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")

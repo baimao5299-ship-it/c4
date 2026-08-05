@@ -62,7 +62,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
-		ok, code := p.tryChat(w, r, reqID, groupID, start, sel, &params, peek.Stream)
+		ok, code, body := p.tryChat(w, r, reqID, groupID, start, sel, &params, peek.Stream)
 		if ok {
 			return // 已写出完整响应
 		}
@@ -72,11 +72,18 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 		} else if code >= 500 || code == 0 {
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
 		} else {
-			// 4xx 确定性错误：透传上游状态码，不转移（规格 §5.3）
-			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, code, domain.Err5xx, nil, start))
-			writeJSON(w, code, map[string]any{"error": map[string]any{
-				"message": "upstream rejected request", "type": "upstream_error",
-			}})
+			// 4xx 确定性错误：透传上游状态码与原始 body，不转移（规格 §5.3）；
+			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
+			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, code, domain.Err4xx, nil, start))
+			if len(body) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(code)
+				_, _ = w.Write(body)
+			} else {
+				writeJSON(w, code, map[string]any{"error": map[string]any{
+					"message": "upstream rejected request", "type": "upstream_error",
+				}})
+			}
 			return
 		}
 		p.sched.Release(sel.AccountID)
@@ -108,8 +115,8 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// tryChat 返回 (已完整处理, 上游状态码)。流式 200 发出后无法转移。
-func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *openai.ChatCompletionNewParams, streaming bool) (bool, int) {
+// tryChat 返回 (已完整处理, 上游状态码, 上游错误 body)。流式 200 发出后无法转移。
+func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *openai.ChatCompletionNewParams, streaming bool) (bool, int, []byte) {
 	tpl := tplOf(sel)
 	params.Model = sel.Model
 
@@ -118,8 +125,8 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 		defer cancel()
 		stream := p.clients.ChatCompletionStream(ctx, tpl, sel.UpstreamKey, *params)
 		if stream.Err() != nil {
-			code := statusOf(stream.Err())
-			return false, code
+			err := stream.Err()
+			return false, statusOf(err), upstreamBody(err)
 		}
 		sw := newSSEWriter(w)
 		var (
@@ -136,7 +143,7 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 				}
 				p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
 				p.finish(sel.AccountID, nil) // 客户端断开，无法转移
-				return true, 0
+				return true, 0, nil
 			}
 			if chunk.JSON.Usage.Valid() {
 				usage = chunk.Usage
@@ -148,7 +155,7 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 			_ = stream.Close()
 			p.recordStreamAbort(reqID, start, sel, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
-			return true, 0
+			return true, 0, nil
 		}
 		_ = stream.Close()
 		_ = sw.Done()
@@ -158,16 +165,16 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
 		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
-		return true, 200
+		return true, 200, nil
 	}
 
 	resp, err := p.clients.ChatCompletion(r.Context(), tpl, sel.UpstreamKey, *params)
 	if err != nil {
-		return false, statusOf(err)
+		return false, statusOf(err), upstreamBody(err)
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
-		return false, 0
+		return false, 0, nil
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -178,5 +185,5 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
 	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
-	return true, 200
+	return true, 200, nil
 }

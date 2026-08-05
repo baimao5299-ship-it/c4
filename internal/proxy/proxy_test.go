@@ -311,7 +311,7 @@ func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
 }
 
-// 4xx：确定性错误，透传上游状态码、不转移（规格 §5.3），账号不进入冷却。
+// 4xx：确定性错误，透传上游状态码与原始 body、不转移（规格 §5.3），账号不进入冷却。
 func TestProxyPassthrough4xx(t *testing.T) {
 	up := fakeOpenAI(t, "400")
 	defer up.Close()
@@ -323,7 +323,8 @@ func TestProxyPassthrough4xx(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
 	require.Equal(t, 400, rec.Code, "body=%s", rec.Body.String())
-	require.Contains(t, rec.Body.String(), "upstream rejected request")
+	require.Contains(t, rec.Body.String(), `"bad request"`, "4xx 必须透传上游原始 body")
+	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
 	// 未 MarkResult：状态保持 active，不冷却
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
