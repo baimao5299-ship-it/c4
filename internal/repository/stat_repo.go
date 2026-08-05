@@ -53,7 +53,7 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 }
 
 // Scan 拉取时间范围内的原始小时桶（日聚合在 service 层做，规避方言差异）。
-func (r *StatRepo) Scan(ctx context.Context, q StatQuery) ([]*domain.StatBucket, error) {
+func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBucket, error) {
 	pred := r.client.UsageStat.Query().
 		Where(
 			usagestat.BucketTimeGTE(q.From),

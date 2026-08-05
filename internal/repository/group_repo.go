@@ -2,15 +2,21 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
 	"go-proxy-mini/internal/ent/group"
 )
 
-type GroupRepo struct{ client *ent.Client }
+// GroupRepo 同时承担调度器 Loader 的账号状态回写（UpdateAccountStatus 委托 AccountRepo，
+// 由 repository.New 注入；调度器按单个 loader 对象获取数据源）。
+type GroupRepo struct {
+	client   *ent.Client
+	accounts *AccountRepo
+}
 
-func (r *GroupRepo) Create(ctx context.Context, g *domain.Group) (*domain.Group, error) {
+func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	row, err := r.client.Group.Create().
 		SetName(g.Name).SetKeyHash(g.KeyHash).SetKeyPrefix(g.KeyPrefix).
 		Save(ctx)
@@ -23,7 +29,7 @@ func (r *GroupRepo) Create(ctx context.Context, g *domain.Group) (*domain.Group,
 	}, nil
 }
 
-func (r *GroupRepo) Get(ctx context.Context, id int64) (*domain.Group, error) {
+func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
 	row, err := r.client.Group.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -34,7 +40,7 @@ func (r *GroupRepo) Get(ctx context.Context, id int64) (*domain.Group, error) {
 	}, nil
 }
 
-func (r *GroupRepo) List(ctx context.Context) ([]*domain.Group, error) {
+func (r *GroupRepo) ListGroups(ctx context.Context) ([]*domain.Group, error) {
 	rows, err := r.client.Group.Query().Order(ent.Asc(group.FieldID)).All(ctx)
 	if err != nil {
 		return nil, err
@@ -49,7 +55,7 @@ func (r *GroupRepo) List(ctx context.Context) ([]*domain.Group, error) {
 	return out, nil
 }
 
-func (r *GroupRepo) Update(ctx context.Context, g *domain.Group) (*domain.Group, error) {
+func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	row, err := r.client.Group.UpdateOneID(g.ID).
 		SetName(g.Name).SetKeyHash(g.KeyHash).SetKeyPrefix(g.KeyPrefix).
 		Save(ctx)
@@ -62,12 +68,12 @@ func (r *GroupRepo) Update(ctx context.Context, g *domain.Group) (*domain.Group,
 	}, nil
 }
 
-func (r *GroupRepo) Delete(ctx context.Context, id int64) error {
+func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 	return r.client.Group.DeleteOneID(id).Exec(ctx)
 }
 
 // SetAccounts 全量替换分组账号成员（规格 §8）。
-func (r *GroupRepo) SetAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
+func (r *GroupRepo) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
 	_, err := r.client.Group.UpdateOneID(groupID).
 		ClearAccounts().
 		AddAccountIDs(accountIDs...).
@@ -119,4 +125,9 @@ func (r *GroupRepo) LoadGroupKeys(ctx context.Context) (map[string]int64, error)
 		out[row.KeyHash] = row.ID
 	}
 	return out, nil
+}
+
+// UpdateAccountStatus 满足 scheduler.Loader：账号状态回写委托 AccountRepo。
+func (r *GroupRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error {
+	return r.accounts.UpdateAccountStatus(ctx, id, status, cooldownUntil, lastError)
 }

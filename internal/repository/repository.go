@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/dialect"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
 )
 
@@ -28,14 +29,89 @@ func New(drv dialect.Driver, migrate bool) (*Repos, error) {
 			return nil, err
 		}
 	}
+	accounts := &AccountRepo{client: client}
 	return &Repos{
 		Templates: &TemplateRepo{client: client},
-		Accounts:  &AccountRepo{client: client},
-		Groups:    &GroupRepo{client: client},
+		Accounts:  accounts,
+		Groups:    &GroupRepo{client: client, accounts: accounts},
 		Logs:      &LogRepo{client: client},
 		Stats:     &StatRepo{client: client},
 		Client:    client,
 	}, nil
+}
+
+// --- Store 门面：Repos 聚合全部实体仓库，实现 service.Store（装配入口用）。 ---
+
+func (r *Repos) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
+	return r.Templates.CreateTemplate(ctx, t)
+}
+
+func (r *Repos) GetTemplate(ctx context.Context, id int64) (*domain.Template, error) {
+	return r.Templates.GetTemplate(ctx, id)
+}
+
+func (r *Repos) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
+	return r.Templates.ListTemplates(ctx)
+}
+
+func (r *Repos) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
+	return r.Templates.UpdateTemplate(ctx, t)
+}
+
+func (r *Repos) DeleteTemplate(ctx context.Context, id int64) error {
+	return r.Templates.DeleteTemplate(ctx, id)
+}
+
+func (r *Repos) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+	return r.Accounts.CreateAccount(ctx, a)
+}
+
+func (r *Repos) GetAccount(ctx context.Context, id int64) (*domain.Account, error) {
+	return r.Accounts.GetAccount(ctx, id)
+}
+
+func (r *Repos) ListAccounts(ctx context.Context) ([]*domain.Account, error) {
+	return r.Accounts.ListAccounts(ctx)
+}
+
+func (r *Repos) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+	return r.Accounts.UpdateAccount(ctx, a)
+}
+
+func (r *Repos) DeleteAccount(ctx context.Context, id int64) error {
+	return r.Accounts.DeleteAccount(ctx, id)
+}
+
+func (r *Repos) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
+	return r.Groups.CreateGroup(ctx, g)
+}
+
+func (r *Repos) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
+	return r.Groups.GetGroup(ctx, id)
+}
+
+func (r *Repos) ListGroups(ctx context.Context) ([]*domain.Group, error) {
+	return r.Groups.ListGroups(ctx)
+}
+
+func (r *Repos) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
+	return r.Groups.UpdateGroup(ctx, g)
+}
+
+func (r *Repos) DeleteGroup(ctx context.Context, id int64) error {
+	return r.Groups.DeleteGroup(ctx, id)
+}
+
+func (r *Repos) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
+	return r.Groups.SetGroupAccounts(ctx, groupID, accountIDs)
+}
+
+func (r *Repos) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
+	return r.Logs.QueryLogs(ctx, q)
+}
+
+func (r *Repos) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBucket, error) {
+	return r.Stats.ScanStats(ctx, q)
 }
 
 // OpenPG 打开 pgx 连接池（生产入口；ent driver 由调用方用

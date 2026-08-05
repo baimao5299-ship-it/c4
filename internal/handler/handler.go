@@ -56,6 +56,13 @@ func (h *Handler) Routes(r chi.Router) {
 	})
 }
 
+// RoutesMux 返回独立的 chi mux（供 server 以 Handle("/admin/*") 挂载）。
+func (h *Handler) RoutesMux() http.Handler {
+	r := chi.NewRouter()
+	h.Routes(r)
+	return r
+}
+
 func pathID(r *http.Request) (int64, error) {
 	return strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 }

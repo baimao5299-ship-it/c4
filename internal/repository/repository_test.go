@@ -230,7 +230,7 @@ func TestTemplateCRUD(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnError(pgx.ErrNoRows)
 
-	tpl, err := tr.repos.Templates.Create(ctx(), &domain.Template{
+	tpl, err := tr.repos.Templates.CreateTemplate(ctx(), &domain.Template{
 		Name:          "openai-main",
 		BaseURL:       "https://api.openai.com/v1",
 		DefaultFormat: domain.FormatOpenAIChat,
@@ -239,16 +239,16 @@ func TestTemplateCRUD(t *testing.T) {
 		ModelMapping:  map[string]string{"gpt-4o": "gpt-4o-2026-01-01"},
 	})
 	require.NoError(t, err)
-	got, err := tr.repos.Templates.Get(ctx(), tpl.ID)
+	got, err := tr.repos.Templates.GetTemplate(ctx(), tpl.ID)
 	require.NoError(t, err)
 	require.Equal(t, "openai-main", got.Name)
 	require.Equal(t, domain.FormatOpenAIChat, got.DefaultFormat)
 	require.Equal(t, domain.FormatOpenAIResponses, got.FormatFor("o3"), "model_formats roundtrip")
 	got.Name = "renamed"
-	_, err = tr.repos.Templates.Update(ctx(), got)
+	_, err = tr.repos.Templates.UpdateTemplate(ctx(), got)
 	require.NoError(t, err)
-	require.NoError(t, tr.repos.Templates.Delete(ctx(), tpl.ID))
-	_, err = tr.repos.Templates.Get(ctx(), tpl.ID)
+	require.NoError(t, tr.repos.Templates.DeleteTemplate(ctx(), tpl.ID))
+	_, err = tr.repos.Templates.GetTemplate(ctx(), tpl.ID)
 	require.Error(t, err, "expected not found after delete")
 	tr.expectDone(t)
 }
@@ -328,17 +328,17 @@ func TestAccountAndGroup(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(accountRow("429"))
 
-	tpl, err := tr.repos.Templates.Create(ctx(), &domain.Template{
+	tpl, err := tr.repos.Templates.CreateTemplate(ctx(), &domain.Template{
 		Name: "t", BaseURL: "https://u/v1", DefaultFormat: domain.FormatAnthropic,
 	})
 	require.NoError(t, err)
-	acc, err := tr.repos.Accounts.Create(ctx(), &domain.Account{
+	acc, err := tr.repos.Accounts.CreateAccount(ctx(), &domain.Account{
 		Name: "acc1", TemplateID: tpl.ID, UpstreamKey: "sk-x", Weight: 80, MaxConcurrency: 4,
 	})
 	require.NoError(t, err)
-	g, err := tr.repos.Groups.Create(ctx(), &domain.Group{Name: "g1", KeyHash: "h1", KeyPrefix: "gk-aaaa"})
+	g, err := tr.repos.Groups.CreateGroup(ctx(), &domain.Group{Name: "g1", KeyHash: "h1", KeyPrefix: "gk-aaaa"})
 	require.NoError(t, err)
-	require.NoError(t, tr.repos.Groups.SetAccounts(ctx(), g.ID, []int64{acc.ID}))
+	require.NoError(t, tr.repos.Groups.SetGroupAccounts(ctx(), g.ID, []int64{acc.ID}))
 	m, err := tr.repos.Groups.LoadGroupsAccounts(ctx())
 	require.NoError(t, err)
 	got := m[g.ID]
@@ -349,8 +349,8 @@ func TestAccountAndGroup(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	require.Equal(t, g.ID, keys["h1"])
-	require.NoError(t, tr.repos.Accounts.UpdateStatus(ctx(), acc.ID, domain.Status429, nil, nil))
-	a2, err := tr.repos.Accounts.Get(ctx(), acc.ID)
+	require.NoError(t, tr.repos.Accounts.UpdateAccountStatus(ctx(), acc.ID, domain.Status429, nil, nil))
+	a2, err := tr.repos.Accounts.GetAccount(ctx(), acc.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.Status429, a2.Status, "status persisted")
 	tr.expectDone(t)
@@ -411,7 +411,7 @@ func TestLogsAndStats(t *testing.T) {
 		{RequestID: "r2", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 20, TotalTokens: 0},
 	}
 	require.NoError(t, tr.repos.Logs.InsertBatch(ctx(), logs))
-	rows, total, err := tr.repos.Logs.Query(ctx(), repository.LogQuery{GroupID: 1, Limit: 10})
+	rows, total, err := tr.repos.Logs.QueryLogs(ctx(), repository.LogQuery{GroupID: 1, Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)
@@ -422,7 +422,7 @@ func TestLogsAndStats(t *testing.T) {
 	require.NoError(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
 		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 3, ErrorCount: 1, TotalTokens: 200, TotalLatencyMS: 40},
 	}))
-	scanned, err := tr.repos.Stats.Scan(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
+	scanned, err := tr.repos.Stats.ScanStats(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
 	require.NoError(t, err)
 	require.Len(t, scanned, 1)
 	require.Equal(t, int64(5), scanned[0].RequestCount, "upsert accumulates")

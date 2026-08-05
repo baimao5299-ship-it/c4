@@ -10,7 +10,7 @@ import (
 
 type TemplateRepo struct{ client *ent.Client }
 
-func (r *TemplateRepo) Create(ctx context.Context, t *domain.Template) (*domain.Template, error) {
+func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.Create().
 		SetName(t.Name).SetBaseURL(t.BaseURL).
 		SetDefaultFormat(template.DefaultFormat(t.DefaultFormat)).
@@ -24,7 +24,7 @@ func (r *TemplateRepo) Create(ctx context.Context, t *domain.Template) (*domain.
 	return toDomainTemplate(row), nil
 }
 
-func (r *TemplateRepo) Get(ctx context.Context, id int64) (*domain.Template, error) {
+func (r *TemplateRepo) GetTemplate(ctx context.Context, id int64) (*domain.Template, error) {
 	row, err := r.client.Template.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (r *TemplateRepo) Get(ctx context.Context, id int64) (*domain.Template, err
 	return toDomainTemplate(row), nil
 }
 
-func (r *TemplateRepo) List(ctx context.Context) ([]*domain.Template, error) {
+func (r *TemplateRepo) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
 	rows, err := r.client.Template.Query().Order(ent.Asc(template.FieldID)).All(ctx)
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func (r *TemplateRepo) List(ctx context.Context) ([]*domain.Template, error) {
 	return out, nil
 }
 
-func (r *TemplateRepo) Update(ctx context.Context, t *domain.Template) (*domain.Template, error) {
+func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.UpdateOneID(t.ID).
 		SetName(t.Name).SetBaseURL(t.BaseURL).
 		SetDefaultFormat(template.DefaultFormat(t.DefaultFormat)).
@@ -58,7 +58,7 @@ func (r *TemplateRepo) Update(ctx context.Context, t *domain.Template) (*domain.
 	return toDomainTemplate(row), nil
 }
 
-func (r *TemplateRepo) Delete(ctx context.Context, id int64) error {
+func (r *TemplateRepo) DeleteTemplate(ctx context.Context, id int64) error {
 	return r.client.Template.DeleteOneID(id).Exec(ctx)
 }
 

@@ -11,7 +11,7 @@ import (
 
 type AccountRepo struct{ client *ent.Client }
 
-func (r *AccountRepo) Create(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+func (r *AccountRepo) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	row, err := r.client.Account.Create().
 		SetName(a.Name).SetTemplateID(a.TemplateID).SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
@@ -22,7 +22,7 @@ func (r *AccountRepo) Create(ctx context.Context, a *domain.Account) (*domain.Ac
 	return toDomainAccount(row), nil
 }
 
-func (r *AccountRepo) Get(ctx context.Context, id int64) (*domain.Account, error) {
+func (r *AccountRepo) GetAccount(ctx context.Context, id int64) (*domain.Account, error) {
 	row, err := r.client.Account.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func (r *AccountRepo) Get(ctx context.Context, id int64) (*domain.Account, error
 	return toDomainAccount(row), nil
 }
 
-func (r *AccountRepo) List(ctx context.Context) ([]*domain.Account, error) {
+func (r *AccountRepo) ListAccounts(ctx context.Context) ([]*domain.Account, error) {
 	rows, err := r.client.Account.Query().WithTemplate().Order(ent.Asc(account.FieldID)).All(ctx)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (r *AccountRepo) List(ctx context.Context) ([]*domain.Account, error) {
 	return out, nil
 }
 
-func (r *AccountRepo) Update(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	row, err := r.client.Account.UpdateOneID(a.ID).
 		SetName(a.Name).SetTemplateID(a.TemplateID).SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
@@ -54,11 +54,11 @@ func (r *AccountRepo) Update(ctx context.Context, a *domain.Account) (*domain.Ac
 	return toDomainAccount(row), nil
 }
 
-func (r *AccountRepo) Delete(ctx context.Context, id int64) error {
+func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
 	return r.client.Account.DeleteOneID(id).Exec(ctx)
 }
 
-func (r *AccountRepo) UpdateStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error {
+func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error {
 	u := r.client.Account.UpdateOneID(id).SetStatus(account.Status(status))
 	if cooldownUntil != nil {
 		u = u.SetCooldownUntil(*cooldownUntil)

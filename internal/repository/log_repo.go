@@ -58,7 +58,7 @@ func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) erro
 	return err
 }
 
-func (r *LogRepo) Query(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
+func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
 	pred := r.client.UsageLog.Query()
 	if q.GroupID > 0 {
 		pred = pred.Where(usagelog.GroupIDEQ(q.GroupID))
