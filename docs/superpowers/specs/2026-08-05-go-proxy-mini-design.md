@@ -14,7 +14,7 @@
 - 热路径（AI 请求）零 DB 访问：鉴权、选号、状态判定全部走进程内存
 - **单实例抗 W 级并发（≥10k 在途）**：吞吐量设计见 §10（连接池/无锁热路径/管线容量/过载保护，全部有量化预算与压测验收）
 - 请求格式直接路由、不转换；仅支持模型名映射（模板级）
-- 分组 = 路由池 + 跨厂商故障转移；账号三态（active/err/429）+ 冷却自动恢复
+- 分组 = 路由池 + 跨厂商故障转移；账号状态机（active/unhealthy/429/disabled）+ 冷却自动恢复
 - 账号级并发控制；用量明细落库 + 预聚合统计
 - 管理 API 与 AI API 分离；无前端
 
@@ -87,7 +87,7 @@
 | name | string | 展示名 |
 | template_id | FK → template | 所属模板 |
 | upstream_key | string | 上游真实 API key |
-| status | enum | `active` / `err` / `429` / `disabled`；disabled 仅 admin 手动切换，永不调度 |
+| status | enum | `active` / `unhealthy` / `429` / `disabled`；disabled 仅 admin 手动切换，永不调度 |
 | cooldown_until | *time | 唯一暂停机制：err/429 的冷却到期时间；过期自动回 active（惰性检查） |
 | weight | int | 调度权重，默认 100 |
 | max_concurrency | int | 并发上限，默认取全局配置 `scheduler.default_max_concurrency` |
@@ -148,14 +148,14 @@ active ──429响应──► 429 (cooldown = 固定 cooldown_429，默认 30s
   ▲                    │
   │    cooldown 到期   ▼
   └────────────────────┘
-active ──5xx/网络错误/超时──► err (cooldown = 指数退避 5s×2ⁿ，上限 5min)
+active ──5xx/网络错误/超时──► unhealthy (cooldown = 指数退避 5s×2ⁿ，上限 5min)
   ▲                              │
   └──────── 成功即重置 ────────────┘
 disabled：仅 admin 切换，永不调度
 ```
 
 - **429 判定**：上游返回 429 → 进入 429 状态，冷却 = 固定 `scheduler.cooldown_429`（默认 30s，可配）。v0.1 不做上游 reset/Retry-After 头解析（终审裁定固定值语义安全；头解析留待规则引擎演进，见 §14）
-- **err 判定**：5xx、连接错误、读超时、EOF 中断 → err 冷却（指数退避）；下次成功调用即重置退避与状态
+- **unhealthy 判定**：5xx、连接错误、读超时、EOF 中断 → unhealthy 状态（指数退避冷却）；下次成功调用即重置退避与状态
 - 冷却恢复是**惰性**的：选号时检查 `cooldown_until < now`，到期即视为可用，无需后台唤醒
 - 状态变更：内存立即生效 + 异步批量回写 DB；启动时全量加载
 

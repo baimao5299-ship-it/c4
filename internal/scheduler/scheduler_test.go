@@ -151,7 +151,7 @@ func TestMarkErrorBackoff(t *testing.T) {
 	s.MarkResult(1, ResultError, nil) // 第一次失败 → backoff base
 	ri, ok := s.Runtime(1)
 	require.True(t, ok)
-	require.Equal(t, domain.StatusErr, ri.Status)
+	require.Equal(t, domain.StatusUnhealthy, ri.Status)
 	require.Equal(t, 1, ri.ErrCount)
 	require.NotNil(t, ri.CooldownUntil)
 	require.True(t, ri.CooldownUntil.After(time.Now().Add(4*time.Second)), "backoff base applied")
@@ -233,7 +233,7 @@ func TestInvalidateGroupByIDRebuild(t *testing.T) {
 	// 新增账号 3 的结果回流必须落新快照并触发回写。
 	s.MarkResult(3, ResultError, nil)
 	ri, _ = s.Runtime(3)
-	require.Equal(t, domain.StatusErr, ri.Status, "markresult hits the new snapshot")
+	require.Equal(t, domain.StatusUnhealthy, ri.Status, "markresult hits the new snapshot")
 	require.Equal(t, 1, ri.ErrCount)
 
 	// 被移除账号 1：Runtime 不可见，MarkResult/Release 安全 no-op（无回写）。

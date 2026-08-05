@@ -325,7 +325,7 @@ func (s *Scheduler) MarkResult(accountID int64, kind ResultKind, resetAt *time.T
 		c := now.Add(backoff)
 		cooldown = &c
 		lastErr = strPtr("upstream error")
-		next = accState{status: domain.StatusErr, cooldownUntil: cooldown, errCount: st.errCount + 1, lastError: lastErr, lastUsedAt: &now}
+		next = accState{status: domain.StatusUnhealthy, cooldownUntil: cooldown, errCount: st.errCount + 1, lastError: lastErr, lastUsedAt: &now}
 		rateDelta = 1
 	}
 	a.state.Store(&next)

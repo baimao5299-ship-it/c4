@@ -17,7 +17,7 @@ func (Account) Fields() []ent.Field {
 		field.Int64("template_id"),
 		field.String("upstream_key"),
 		field.Enum("status").
-			Values("active", "err", "429", "disabled").
+			Values("active", "unhealthy", "429", "disabled").
 			Default("active"),
 		field.Time("cooldown_until").Optional().Nillable(),
 		field.Int("weight").Default(100),

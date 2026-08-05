@@ -267,11 +267,11 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	require.Empty(t, rec.Header().Get("Retry-After"))
 	ri, ok := sched.Runtime(1)
 	require.True(t, ok)
-	require.Equal(t, domain.StatusErr, ri.Status)
+	require.Equal(t, domain.StatusUnhealthy, ri.Status)
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 	ri, ok = sched.Runtime(2)
 	require.True(t, ok)
-	require.Equal(t, domain.StatusErr, ri.Status)
+	require.Equal(t, domain.StatusUnhealthy, ri.Status)
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 	// 耗尽路径（请求已完成）：以最后一次尝试的结果记一条用量
 	require.Equal(t, 1, p.rec.Pending(), "failover 耗尽必须记一条用量")
@@ -348,7 +348,7 @@ func TestProxyStreamAbortFreesSlot(t *testing.T) {
 
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
-	require.Equal(t, domain.StatusErr, ri.Status, "中止记 ResultError")
+	require.Equal(t, domain.StatusUnhealthy, ri.Status, "中止记 ResultError")
 	require.Zero(t, ri.Concurrency, "中止路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "中止路径记 ErrAbort 用量")
 }
@@ -373,7 +373,7 @@ func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
-	require.Equal(t, domain.StatusErr, ri.Status, "客户端断开记 ResultError")
+	require.Equal(t, domain.StatusUnhealthy, ri.Status, "客户端断开记 ResultError")
 	require.Zero(t, ri.Concurrency, "客户端断开必须释放并发槽")
 	require.Zero(t, p.rec.Pending(), "客户端断开不记用量")
 }

@@ -26,7 +26,7 @@ type AccountStatus string
 
 const (
 	StatusActive   AccountStatus = "active"
-	StatusErr      AccountStatus = "err"
+	StatusUnhealthy AccountStatus = "unhealthy"
 	Status429      AccountStatus = "429"
 	StatusDisabled AccountStatus = "disabled"
 )

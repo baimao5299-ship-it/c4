@@ -13,7 +13,7 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString},
 		{Name: "upstream_key", Type: field.TypeString},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "err", "429", "disabled"}, Default: "active"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "unhealthy", "429", "disabled"}, Default: "active"},
 		{Name: "cooldown_until", Type: field.TypeTime, Nullable: true},
 		{Name: "weight", Type: field.TypeInt, Default: 100},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 8},
