@@ -2263,19 +2263,27 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 	// byID 必须与 groups 同步重建（评审发现：只换 groups 会导致并发计数/结果回写
 	// 落到旧快照——Select 计数在新快照、Release/MarkResult 查 byID 命中旧快照，
 	// 计数只增不减直至全量 reload；新账号的回写被静默丢弃）。
+	// 注意：accounts 是 []*accountSnapshot，必须按 a.acc.ID 键控（修正自 2026-08-05
+	// 实现期发现的索引/ID 混用编译错误）。
 	newByID := make(map[int64]*accountSnapshot, len(byID)+len(newAccs))
 	for k, v := range byID {
 		newByID[k] = v
 	}
+	newIDs := make(map[int64]struct{}, len(newAccs))
+	for _, a := range newAccs {
+		newIDs[a.acc.ID] = struct{}{}
+	}
+	// 删除离开本组的账号（旧组成员不在新集合中）
 	if old, ok := m[groupID]; ok {
-		for k := range old.accounts {
-			if _, stillIn := newAccs[k]; !stillIn {
-				delete(newByID, k)
+		for _, a := range old.accounts {
+			if _, stillIn := newIDs[a.acc.ID]; !stillIn {
+				delete(newByID, a.acc.ID)
 			}
 		}
 	}
-	for k, v := range newAccs {
-		newByID[k] = v
+	// 覆盖/新增本组账号
+	for _, a := range newAccs {
+		newByID[a.acc.ID] = a
 	}
 	s.store.store(newM, newByID)
 }
