@@ -61,7 +61,7 @@ func TestRecorderFlushesLogs(t *testing.T) {
 	ss := &memStatStore{}
 	r := New(testCfg(), ls, ss, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	r.Start(ctx)
+	require.NoError(t, r.Start(ctx))
 
 	r.Record(&domain.UsageLog{RequestID: "a", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CreatedAt: time.Now()})
 	r.Record(&domain.UsageLog{RequestID: "b", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 20, CreatedAt: time.Now()})
@@ -90,7 +90,7 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	ss := &memStatStore{}
 	r := New(testCfg(), ls, ss, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	r.Start(ctx)
+	require.NoError(t, r.Start(ctx))
 
 	now := time.Now().Truncate(time.Hour)
 	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, LatencyMS: 5, CreatedAt: now})

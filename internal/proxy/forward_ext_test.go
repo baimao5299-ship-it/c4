@@ -44,12 +44,12 @@ func fakeResponses(t *testing.T, failMode string) *httptest.Server {
 		stream, _ := body["stream"].(bool)
 		if failMode == "429" && !stream {
 			w.WriteHeader(429)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
 			return
 		}
 		if failMode == "400" && !stream {
 			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
 			return
 		}
 		if stream {
@@ -65,7 +65,7 @@ func fakeResponses(t *testing.T, failMode string) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "rsp_1", "object": "response", "created_at": 1750000000,
 			"status": "completed", "model": body["model"], "output": []any{},
 			"usage": map[string]any{"input_tokens": 3, "output_tokens": 5, "total_tokens": 8},
@@ -94,12 +94,12 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 		stream, _ := body["stream"].(bool)
 		if failMode == "429" && !stream {
 			w.WriteHeader(429)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
 			return
 		}
 		if failMode == "400" && !stream {
 			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
 			return
 		}
 		if stream {
@@ -120,7 +120,7 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "msg_1", "type": "message", "role": "assistant",
 			"model": body["model"], "content": []any{map[string]any{"type": "text", "text": "hi"}},
 			"stop_reason": "end_turn", "stop_sequence": nil,

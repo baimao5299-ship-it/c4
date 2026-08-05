@@ -44,17 +44,17 @@ func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 		if failMode == "429" && !stream {
 			w.Header().Set("x-ratelimit-reset-requests", "5s")
 			w.WriteHeader(429)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "rate limited"}})
 			return
 		}
 		if failMode == "500" && !stream {
 			w.WriteHeader(500)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "boom"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "boom"}})
 			return
 		}
 		if failMode == "400" && !stream {
 			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
 			return
 		}
 		if failMode == "abort-stream" && stream {
@@ -84,7 +84,7 @@ func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "c1", "object": "chat.completion",
 			"model": body["model"],
 			"usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
@@ -224,7 +224,7 @@ func TestProxyFailoverOn429(t *testing.T) {
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
 	loader.accs[10] = append(loader.accs[10], acc2)
-	sched.InvalidateAllSync()
+	require.NoError(t, sched.InvalidateAllSync())
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","messages":[]}`))
@@ -256,7 +256,7 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
 	loader.accs[10] = append(loader.accs[10], acc2)
-	sched.InvalidateAllSync()
+	require.NoError(t, sched.InvalidateAllSync())
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","messages":[]}`))

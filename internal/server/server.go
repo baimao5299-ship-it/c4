@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 
 	"go-proxy-mini/pkg/logx"
 )
@@ -55,7 +54,6 @@ func NewServer(opts Options) *Server {
 	})
 
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.RealIP)
 		r.Use(func(next http.Handler) http.Handler { // admin token 认证
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				if req.Header.Get("Authorization") != "Bearer "+opts.AdminToken {
