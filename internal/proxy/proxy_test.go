@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,8 @@ import (
 // --- 假上游：SSE 流式 chat/completions ---
 // failMode: "" = 正常；"429" = 每个非流式请求都返回 429（测 failover）；
 // "500" = 每个非流式请求都返回 500（测 ResultError→502）；
-// "400" = 每个非流式请求都返回 400（测 4xx 透传、不转移）。
+// "400" = 每个非流式请求都返回 400（测 4xx 透传、不转移）；
+// "abort-stream" = 流式响应中途发非法事件（解码失败 → 流 Err() 非空，测中止路径）。
 func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -53,6 +55,16 @@ func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 		if failMode == "400" && !stream {
 			w.WriteHeader(400)
 			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			return
+		}
+		if failMode == "abort-stream" && stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			fl := w.(http.Flusher)
+			fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hi"}}],"usage":null}`+"\n\n")
+			fl.Flush()
+			fmt.Fprint(w, "data: {oops\n\n") // 非法事件：SDK 解码失败 → 流中止
+			fl.Flush()
 			return
 		}
 		if stream {
@@ -110,6 +122,11 @@ func (n noopLoader) UpdateAccountStatus(ctx context.Context, id int64, s domain.
 
 func newTestProxy(t *testing.T, upstream string, accountID int64) *Proxy {
 	t.Helper()
+	return newTestProxyCapture(t, upstream, accountID, true)
+}
+
+func newTestProxyCapture(t *testing.T, upstream string, accountID int64, usageCapture bool) *Proxy {
+	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
 		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
@@ -121,7 +138,7 @@ func newTestProxy(t *testing.T, upstream string, accountID int64) *Proxy {
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
 		UpstreamStreamTimeout: 30 * time.Second,
-		GroupKeyRPM:           0, UsageCapture: true,
+		GroupKeyRPM:           0, UsageCapture: usageCapture,
 	}
 	sched := scheduler.New(scheduler.Config{
 		DefaultMaxConcurrency: 4, Cooldown429: 30 * time.Second,
@@ -157,6 +174,11 @@ func TestProxyStreamingChat(t *testing.T) {
 	require.Contains(t, body, "data: [DONE]")
 	require.Contains(t, body, `"content":"hi"`)
 	require.Contains(t, body, `"prompt_tokens":5`, "usage captured from final chunk")
+	// 成功路径必须释放并发槽并记录用量
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
+	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
 }
 
 func TestProxyAuthRejected(t *testing.T) {
@@ -195,9 +217,11 @@ func TestProxyFailoverOn429(t *testing.T) {
 	ri, ok := sched.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.Status429, ri.Status)
+	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 	ri, ok = sched.Runtime(2)
 	require.True(t, ok)
 	require.Equal(t, domain.Status429, ri.Status)
+	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 }
 
 // 5xx：触发 failover 与 MarkResult(ResultError)；全部尝试失败最终回 502（非 429 不设 Retry-After）。
@@ -222,9 +246,11 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	ri, ok := sched.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusErr, ri.Status)
+	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 	ri, ok = sched.Runtime(2)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusErr, ri.Status)
+	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 }
 
 // 4xx：确定性错误，透传上游状态码、不转移（规格 §5.3），账号不进入冷却。
@@ -245,4 +271,68 @@ func TestProxyPassthrough4xx(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.StatusActive, ri.Status)
 	require.Nil(t, ri.CooldownUntil)
+	require.Zero(t, ri.Concurrency, "4xx 透传也必须释放并发槽")
+	// 请求已完成（上游消费了请求）：必须记录用量
+	require.Equal(t, 1, p.rec.Pending(), "4xx 透传必须记录用量")
+}
+
+// 流式中止：上游在流中途发非法事件（解码失败）→ ResultError + 释放并发槽 + ErrAbort 记录。
+func TestProxyStreamAbortFreesSlot(t *testing.T) {
+	up := fakeOpenAI(t, "abort-stream")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusErr, ri.Status, "中止记 ResultError")
+	require.Zero(t, ri.Concurrency, "中止路径必须释放并发槽")
+	require.Equal(t, 1, p.rec.Pending(), "中止路径记 ErrAbort 用量")
+}
+
+// failingResponseWriter 模拟客户端断开：所有写出都失败。
+type failingResponseWriter struct{}
+
+func (failingResponseWriter) Header() http.Header         { return http.Header{} }
+func (failingResponseWriter) Write(p []byte) (int, error) { return 0, errors.New("client gone") }
+func (failingResponseWriter) WriteHeader(int)             {}
+
+// 客户端断开：SSE 写出失败 → ResultError + 释放并发槽（无法判定结果，不记用量）。
+func TestProxyClientDisconnectFreesSlot(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	p.HandleChat(failingResponseWriter{}, req)
+
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusErr, ri.Status, "客户端断开记 ResultError")
+	require.Zero(t, ri.Concurrency, "客户端断开必须释放并发槽")
+	require.Zero(t, p.rec.Pending(), "客户端断开不记用量")
+}
+
+// UsageCapture=false：Record 不得被调用（channel 零填充，否则饱和后阻塞热路径）。
+func TestProxyUsageCaptureDisabled(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	p := newTestProxyCapture(t, up.URL+"/v1", 1, false)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code)
+	require.Zero(t, p.rec.Pending(), "UsageCapture=false 时不得入队")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "并发槽仍须释放")
 }
