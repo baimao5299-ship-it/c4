@@ -1,0 +1,34 @@
+server = { addr = ":8080", read_header_timeout = "10s", max_header_bytes = 1048576 }
+log = { level = "warn", output = "stdout" }
+admin = { token = "change-me" }
+db = { dsn = "postgres://user:pass@localhost:5432/go_proxy_mini?sslmode=disable", max_conns = 10 }
+proxy = {
+  max_body_size = 4194304,
+  max_inflight = 50000,
+  upstream_timeout = "120s",
+  upstream_stream_timeout = "30m",
+  failover_attempts = 3,
+  usage_capture = true,
+}
+upstream = {
+  max_idle_conns = 8192,
+  max_idle_conns_per_host = 2048,
+  idle_conn_timeout = "90s",
+  dial_timeout = "10s",
+  force_http2 = true,
+}
+limit = { group_key_rpm = 0 }
+scheduler = {
+  default_max_concurrency = 8,
+  cooldown_429 = "30s",
+  backoff_base = "5s",
+  backoff_max = "5m",
+  sync_interval = "30s",
+}
+usage = {
+  batch_size = 500,
+  flush_interval = "500ms",
+  drop_on_full = true,
+  log_retention_days = 30,
+  stats_flush_interval = "10s",
+}
