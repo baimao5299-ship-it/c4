@@ -34,15 +34,40 @@ const (
 
 // Defines values for RequestFormat.
 const (
-	Anthropic       RequestFormat = "anthropic"
-	OpenaiChat      RequestFormat = "openai-chat"
-	OpenaiResponses RequestFormat = "openai-responses"
+	RequestFormatAnthropic       RequestFormat = "anthropic"
+	RequestFormatOpenaiChat      RequestFormat = "openai-chat"
+	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
+)
+
+// Defines values for GetAccountsParamsOrder.
+const (
+	GetAccountsParamsOrderAsc  GetAccountsParamsOrder = "asc"
+	GetAccountsParamsOrderDesc GetAccountsParamsOrder = "desc"
+)
+
+// Defines values for GetGroupsParamsOrder.
+const (
+	GetGroupsParamsOrderAsc  GetGroupsParamsOrder = "asc"
+	GetGroupsParamsOrderDesc GetGroupsParamsOrder = "desc"
 )
 
 // Defines values for GetStatsParamsGranularity.
 const (
 	Day  GetStatsParamsGranularity = "day"
 	Hour GetStatsParamsGranularity = "hour"
+)
+
+// Defines values for GetTemplatesParamsOrder.
+const (
+	Asc  GetTemplatesParamsOrder = "asc"
+	Desc GetTemplatesParamsOrder = "desc"
+)
+
+// Defines values for GetTemplatesParamsDefaultFormat.
+const (
+	GetTemplatesParamsDefaultFormatAnthropic       GetTemplatesParamsDefaultFormat = "anthropic"
+	GetTemplatesParamsDefaultFormatOpenaiChat      GetTemplatesParamsDefaultFormat = "openai-chat"
+	GetTemplatesParamsDefaultFormatOpenaiResponses GetTemplatesParamsDefaultFormat = "openai-responses"
 )
 
 // Account defines model for Account.
@@ -70,6 +95,12 @@ type AccountCreate struct {
 	TemplateId     int64          `json:"template_id"`
 	UpstreamKey    string         `json:"upstream_key"`
 	Weight         *int           `json:"weight,omitempty"`
+}
+
+// AccountListResponse defines model for AccountListResponse.
+type AccountListResponse struct {
+	Rows  []AccountView `json:"rows"`
+	Total int64         `json:"total"`
 }
 
 // AccountStatus defines model for AccountStatus.
@@ -127,6 +158,12 @@ type Group struct {
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
 	Name string `json:"name"`
+}
+
+// GroupListResponse defines model for GroupListResponse.
+type GroupListResponse struct {
+	Rows  []Group `json:"rows"`
+	Total int64   `json:"total"`
 }
 
 // LogsResponse defines model for LogsResponse.
@@ -187,6 +224,12 @@ type TemplateCreate struct {
 	Name          string                    `json:"name"`
 }
 
+// TemplateListResponse defines model for TemplateListResponse.
+type TemplateListResponse struct {
+	Rows  []Template `json:"rows"`
+	Total int64      `json:"total"`
+}
+
 // UpdatedResponse defines model for UpdatedResponse.
 type UpdatedResponse struct {
 	Updated bool `json:"updated"`
@@ -214,6 +257,32 @@ type UsageLog struct {
 // Error defines model for Error.
 type Error = ErrorResponse
 
+// GetAccountsParams defines parameters for GetAccounts.
+type GetAccountsParams struct {
+	Limit      *int                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     *int                    `form:"offset,omitempty" json:"offset,omitempty"`
+	Name       *string                 `form:"name,omitempty" json:"name,omitempty"`
+	Sort       *string                 `form:"sort,omitempty" json:"sort,omitempty"`
+	Order      *GetAccountsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+	Status     *string                 `form:"status,omitempty" json:"status,omitempty"`
+	TemplateId *int64                  `form:"template_id,omitempty" json:"template_id,omitempty"`
+}
+
+// GetAccountsParamsOrder defines parameters for GetAccounts.
+type GetAccountsParamsOrder string
+
+// GetGroupsParams defines parameters for GetGroups.
+type GetGroupsParams struct {
+	Limit  *int                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                  `form:"offset,omitempty" json:"offset,omitempty"`
+	Name   *string               `form:"name,omitempty" json:"name,omitempty"`
+	Sort   *string               `form:"sort,omitempty" json:"sort,omitempty"`
+	Order  *GetGroupsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetGroupsParamsOrder defines parameters for GetGroups.
+type GetGroupsParamsOrder string
+
 // GetLogsParams defines parameters for GetLogs.
 type GetLogsParams struct {
 	Limit      *int       `form:"limit,omitempty" json:"limit,omitempty"`
@@ -240,6 +309,22 @@ type GetStatsParams struct {
 // GetStatsParamsGranularity defines parameters for GetStats.
 type GetStatsParamsGranularity string
 
+// GetTemplatesParams defines parameters for GetTemplates.
+type GetTemplatesParams struct {
+	Limit         *int                             `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset        *int                             `form:"offset,omitempty" json:"offset,omitempty"`
+	Name          *string                          `form:"name,omitempty" json:"name,omitempty"`
+	Sort          *string                          `form:"sort,omitempty" json:"sort,omitempty"`
+	Order         *GetTemplatesParamsOrder         `form:"order,omitempty" json:"order,omitempty"`
+	DefaultFormat *GetTemplatesParamsDefaultFormat `form:"default_format,omitempty" json:"default_format,omitempty"`
+}
+
+// GetTemplatesParamsOrder defines parameters for GetTemplates.
+type GetTemplatesParamsOrder string
+
+// GetTemplatesParamsDefaultFormat defines parameters for GetTemplates.
+type GetTemplatesParamsDefaultFormat string
+
 // PostAccountsJSONRequestBody defines body for PostAccounts for application/json ContentType.
 type PostAccountsJSONRequestBody = AccountCreate
 
@@ -263,9 +348,9 @@ type PutTemplatesIdJSONRequestBody = TemplateCreate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// 账号列表（含运行时视图）
+	// 账号列表（分页/筛选/排序，含运行时视图）
 	// (GET /accounts)
-	GetAccounts(w http.ResponseWriter, r *http.Request)
+	GetAccounts(w http.ResponseWriter, r *http.Request, params GetAccountsParams)
 	// 创建账号
 	// (POST /accounts)
 	PostAccounts(w http.ResponseWriter, r *http.Request)
@@ -278,9 +363,9 @@ type ServerInterface interface {
 
 	// (PUT /accounts/{id})
 	PutAccountsId(w http.ResponseWriter, r *http.Request, id int64)
-
+	// 分组列表（分页/筛选/排序）
 	// (GET /groups)
-	GetGroups(w http.ResponseWriter, r *http.Request)
+	GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams)
 	// 创建分组（响应含明文 key，仅此一次）
 	// (POST /groups)
 	PostGroups(w http.ResponseWriter, r *http.Request)
@@ -305,9 +390,9 @@ type ServerInterface interface {
 	// 用量统计聚合
 	// (GET /stats)
 	GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams)
-	// 模板列表
+	// 模板列表（分页/筛选/排序）
 	// (GET /templates)
-	GetTemplates(w http.ResponseWriter, r *http.Request)
+	GetTemplates(w http.ResponseWriter, r *http.Request, params GetTemplatesParams)
 	// 创建模板
 	// (POST /templates)
 	PostTemplates(w http.ResponseWriter, r *http.Request)
@@ -326,9 +411,9 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
-// 账号列表（含运行时视图）
+// 账号列表（分页/筛选/排序，含运行时视图）
 // (GET /accounts)
-func (_ Unimplemented) GetAccounts(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) GetAccounts(w http.ResponseWriter, r *http.Request, params GetAccountsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -353,8 +438,9 @@ func (_ Unimplemented) PutAccountsId(w http.ResponseWriter, r *http.Request, id 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 分组列表（分页/筛选/排序）
 // (GET /groups)
-func (_ Unimplemented) GetGroups(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -403,9 +489,9 @@ func (_ Unimplemented) GetStats(w http.ResponseWriter, r *http.Request, params G
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 模板列表
+// 模板列表（分页/筛选/排序）
 // (GET /templates)
-func (_ Unimplemented) GetTemplates(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) GetTemplates(w http.ResponseWriter, r *http.Request, params GetTemplatesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -442,8 +528,69 @@ type MiddlewareFunc func(http.Handler) http.Handler
 // GetAccounts operation middleware
 func (siw *ServerInterfaceWrapper) GetAccounts(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAccountsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "name", r.URL.Query(), &params.Name)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status", r.URL.Query(), &params.Status)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "template_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "template_id", r.URL.Query(), &params.TemplateId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "template_id", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetAccounts(w, r)
+		siw.Handler.GetAccounts(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -545,8 +692,53 @@ func (siw *ServerInterfaceWrapper) PutAccountsId(w http.ResponseWriter, r *http.
 // GetGroups operation middleware
 func (siw *ServerInterfaceWrapper) GetGroups(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetGroupsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "name", r.URL.Query(), &params.Name)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetGroups(w, r)
+		siw.Handler.GetGroups(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -856,8 +1048,61 @@ func (siw *ServerInterfaceWrapper) GetStats(w http.ResponseWriter, r *http.Reque
 // GetTemplates operation middleware
 func (siw *ServerInterfaceWrapper) GetTemplates(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetTemplatesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "name", r.URL.Query(), &params.Name)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "default_format" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "default_format", r.URL.Query(), &params.DefaultFormat)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "default_format", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetTemplates(w, r)
+		siw.Handler.GetTemplates(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

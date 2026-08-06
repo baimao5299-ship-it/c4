@@ -33,15 +33,20 @@ paths:
     get:
       operationId: GetTemplates
       tags: [templates]
-      summary: 模板列表
+      summary: 模板列表（分页/筛选/排序）
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+        - { name: default_format, in: query, schema: { type: string, enum: [openai-chat, openai-responses, anthropic] } }
       responses:
         '200':
-          description: 模板数组
+          description: 模板列表
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Template' }
+              schema: { $ref: '#/components/schemas/TemplateListResponse' }
         default:
           $ref: '#/components/responses/Error'
   /templates/{id}:
@@ -106,15 +111,21 @@ paths:
     get:
       operationId: GetAccounts
       tags: [accounts]
-      summary: 账号列表（含运行时视图）
+      summary: 账号列表（分页/筛选/排序，含运行时视图）
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+        - { name: status, in: query, schema: { type: string, description: 多值逗号分隔：active,unhealthy,429,disabled } }
+        - { name: template_id, in: query, schema: { type: integer, format: int64 } }
       responses:
         '200':
-          description: 账号视图数组
+          description: 账号视图列表
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/AccountView' }
+              schema: { $ref: '#/components/schemas/AccountListResponse' }
         default:
           $ref: '#/components/responses/Error'
   /accounts/{id}:
@@ -179,14 +190,19 @@ paths:
     get:
       operationId: GetGroups
       tags: [groups]
+      summary: 分组列表（分页/筛选/排序）
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
         '200':
-          description: 分组数组
+          description: 分组列表
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Group' }
+              schema: { $ref: '#/components/schemas/GroupListResponse' }
         default:
           $ref: '#/components/responses/Error'
   /groups/{id}:
@@ -410,6 +426,30 @@ components:
             concurrency: { type: integer, format: int64 }
             err_rate: { type: number, format: double }
             err_count: { type: integer }
+    TemplateListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/Template' }
+    AccountListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/AccountView' }
+    GroupListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/Group' }
     GroupCreate:
       type: object
       required: [name]

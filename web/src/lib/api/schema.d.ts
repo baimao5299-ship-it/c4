@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 模板列表 */
+        /** 模板列表（分页/筛选/排序） */
         get: operations["GetTemplates"];
         put?: never;
         /** 创建模板 */
@@ -47,7 +47,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 账号列表（含运行时视图） */
+        /** 账号列表（分页/筛选/排序，含运行时视图） */
         get: operations["GetAccounts"];
         put?: never;
         /** 创建账号 */
@@ -83,6 +83,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** 分组列表（分页/筛选/排序） */
         get: operations["GetGroups"];
         put?: never;
         /** 创建分组（响应含明文 key，仅此一次） */
@@ -269,6 +270,21 @@ export interface components {
             err_rate?: number;
             err_count?: number;
         };
+        TemplateListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Template"][];
+        };
+        AccountListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["AccountView"][];
+        };
+        GroupListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Group"][];
+        };
         GroupCreate: {
             name: string;
         };
@@ -369,20 +385,27 @@ export type $defs = Record<string, never>;
 export interface operations {
     GetTemplates: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+                default_format?: "openai-chat" | "openai-responses" | "anthropic";
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 模板数组 */
+            /** @description 模板列表 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Template"][];
+                    "application/json": components["schemas"]["TemplateListResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -488,20 +511,28 @@ export interface operations {
     };
     GetAccounts: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+                status?: string;
+                template_id?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 账号视图数组 */
+            /** @description 账号视图列表 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AccountView"][];
+                    "application/json": components["schemas"]["AccountListResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -607,20 +638,26 @@ export interface operations {
     };
     GetGroups: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 分组数组 */
+            /** @description 分组列表 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Group"][];
+                    "application/json": components["schemas"]["GroupListResponse"];
                 };
             };
             default: components["responses"]["Error"];

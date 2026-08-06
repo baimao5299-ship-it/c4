@@ -225,4 +225,85 @@ func TestGetLogs(t *testing.T) {
 	require.Empty(t, body.Rows)
 }
 
+// newListTestRouter 列表参数测试的接线：chi + admin token 中间件 + 挂载契约路由。
+func newListTestRouter(t *testing.T) (*AdminAPI, http.Handler, func(method, path, body string) *httptest.ResponseRecorder) {
+	t.Helper()
+	h := newTestHandler(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer admin-tok")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	return h, r, do
+}
+
+// 列表响应从裸数组 → {total, rows} 的破坏性变更测试：全部参数绑定成功
+// （fake store 不筛选，参数不报错 + 结构正确即通过）。
+func TestGetTemplatesParams(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+	rec := do(http.MethodPost, "/admin/templates", `{
+		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"default_format":"openai-chat","models":["gpt-4o"]}`)
+	require.Equal(t, 200, rec.Code, "create: %s", rec.Body.String())
+
+	rec = do(http.MethodGet, "/admin/templates?limit=5&offset=10&name=openai&sort=name&order=asc&default_format=openai-chat", "")
+	require.Equal(t, 200, rec.Code, "list: %s", rec.Body.String())
+	var body TemplateListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, int64(1), body.Total, "total")
+	require.Len(t, body.Rows, 1, "rows")
+	require.Equal(t, "openai-main", deref(body.Rows[0].Name), "row name")
+}
+
+// status 多值（逗号分隔）+ template_id 筛选参数绑定；非法枚举值 → 400
+// （openapi status 是纯 string 不校验枚举，handler 必须显式校验）。
+func TestGetAccountsStatusMulti(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+	rec := do(http.MethodPost, "/admin/templates", `{
+		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"default_format":"openai-chat"}`)
+	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
+	rec = do(http.MethodPost, "/admin/accounts", `{
+		"name":"acc1","template_id":1,"upstream_key":"sk-x","status":"active"}`)
+	require.Equal(t, 200, rec.Code, "create account: %s", rec.Body.String())
+
+	rec = do(http.MethodGet, "/admin/accounts?status=active,disabled&template_id=1", "")
+	require.Equal(t, 200, rec.Code, "list: %s", rec.Body.String())
+	var body AccountListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, int64(1), body.Total, "total")
+	require.Len(t, body.Rows, 1, "rows")
+
+	// 非法 status 枚举 → 400（handoff 硬性要求：不校验会落 repo 裸 error → 500）
+	rec = do(http.MethodGet, "/admin/accounts?status=bogus", "")
+	require.Equal(t, 400, rec.Code, "invalid status: %s", rec.Body.String())
+	var errBody map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	require.Contains(t, errBody, "error", "must be ErrorResponse JSON")
+}
+
+// 非法 sort 值 → 400（service validateListQuery 白名单校验）。
+func TestGetGroupsSortInvalid(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+	rec := do(http.MethodGet, "/admin/groups?sort=bogus", "")
+	require.Equal(t, 400, rec.Code, "invalid sort: %s", rec.Body.String())
+	var errBody map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	require.Contains(t, errBody, "error", "must be ErrorResponse JSON")
+}
+
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

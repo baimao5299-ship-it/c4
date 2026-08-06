@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -29,9 +30,27 @@ func (h *AdminAPI) PostAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAPIAccount(created))
 }
 
-// GetAccounts 账号列表（含运行时视图，ServerInterface）。Task 1：传空查询，行为不变。
-func (h *AdminAPI) GetAccounts(w http.ResponseWriter, r *http.Request) {
-	rows, _, err := h.svc.ListAccountViews(r.Context(), repository.ListQuery{})
+// GetAccounts 账号列表（分页/筛选/排序，含运行时视图，ServerInterface）。
+func (h *AdminAPI) GetAccounts(w http.ResponseWriter, r *http.Request, params GetAccountsParams) {
+	q := repository.ListQuery{
+		Limit:      int(deref(params.Limit)),
+		Offset:     int(deref(params.Offset)),
+		Name:       deref(params.Name),
+		Sort:       deref(params.Sort),
+		Order:      string(deref(params.Order)),
+		TemplateID: deref(params.TemplateId),
+	}
+	if params.Status != nil && *params.Status != "" {
+		sts := strings.Split(*params.Status, ",")
+		for _, s := range sts {
+			if !validAccountStatus(s) {
+				writeErr(w, http.StatusBadRequest, "invalid status "+s)
+				return
+			}
+		}
+		q.StatusList = sts
+	}
+	rows, total, err := h.svc.ListAccountViews(r.Context(), q)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -40,7 +59,19 @@ func (h *AdminAPI) GetAccounts(w http.ResponseWriter, r *http.Request) {
 	for _, v := range rows {
 		out = append(out, toAPIAccountView(v))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, AccountListResponse{Total: total, Rows: out})
+}
+
+// validAccountStatus 校验 status 多值参数（逗号分隔）的枚举值
+// （active/unhealthy/429/disabled）。openapi 的 status 参数是纯 string
+// （多值无法用 enum），生成类型不校验；必须在 handler 显式校验，
+// 否则非法值落到 repo 兜底返回裸 error → 500（Task 1→2 handoff 硬性要求）。
+func validAccountStatus(s string) bool {
+	switch domain.AccountStatus(s) {
+	case domain.StatusActive, domain.StatusUnhealthy, domain.Status429, domain.StatusDisabled:
+		return true
+	}
+	return false
 }
 
 // GetAccountsId 账号详情（ServerInterface）。

@@ -43,10 +43,17 @@ func (h *AdminAPI) PostTemplates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAPITemplate(created))
 }
 
-// GetTemplates 模板列表（ServerInterface）。Task 1：传空查询，行为不变；
-// Task 2 起接契约参数并返回 {total, rows}。
-func (h *AdminAPI) GetTemplates(w http.ResponseWriter, r *http.Request) {
-	rows, _, err := h.svc.ListTemplates(r.Context(), repository.ListQuery{})
+// GetTemplates 模板列表（分页/筛选/排序，ServerInterface）。
+func (h *AdminAPI) GetTemplates(w http.ResponseWriter, r *http.Request, params GetTemplatesParams) {
+	q := repository.ListQuery{
+		Limit:         int(deref(params.Limit)),
+		Offset:        int(deref(params.Offset)),
+		Name:          deref(params.Name),
+		Sort:          deref(params.Sort),
+		Order:         string(deref(params.Order)),
+		DefaultFormat: string(deref(params.DefaultFormat)),
+	}
+	rows, total, err := h.svc.ListTemplates(r.Context(), q)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -55,7 +62,7 @@ func (h *AdminAPI) GetTemplates(w http.ResponseWriter, r *http.Request) {
 	for _, t := range rows {
 		out = append(out, toAPITemplate(t))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, TemplateListResponse{Total: total, Rows: out})
 }
 
 // GetTemplatesId 模板详情（ServerInterface）。

@@ -21,9 +21,16 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, CreateGroupResponse{Group: toAPIGroup(g), Key: raw})
 }
 
-// GetGroups 分组列表（ServerInterface）。Task 1：传空查询，行为不变。
-func (h *AdminAPI) GetGroups(w http.ResponseWriter, r *http.Request) {
-	rows, _, err := h.svc.ListGroups(r.Context(), repository.ListQuery{})
+// GetGroups 分组列表（分页/筛选/排序，ServerInterface）。
+func (h *AdminAPI) GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams) {
+	q := repository.ListQuery{
+		Limit:  int(deref(params.Limit)),
+		Offset: int(deref(params.Offset)),
+		Name:   deref(params.Name),
+		Sort:   deref(params.Sort),
+		Order:  string(deref(params.Order)),
+	}
+	rows, total, err := h.svc.ListGroups(r.Context(), q)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -32,7 +39,7 @@ func (h *AdminAPI) GetGroups(w http.ResponseWriter, r *http.Request) {
 	for _, g := range rows {
 		out = append(out, toAPIGroup(g))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, GroupListResponse{Total: total, Rows: out})
 }
 
 // GetGroupsId 分组详情（ServerInterface）。
