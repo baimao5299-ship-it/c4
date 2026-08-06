@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, FolderOpen, Link2, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Trash2, FolderOpen, Link2, RefreshCw, Filter } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
+import { BatchBar } from '@/components/batch-bar'
+import { ListToolbar, type SortOrder } from '@/components/list-toolbar'
+import { Pagination } from '@/components/pagination'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -20,12 +23,93 @@ import type { components } from '@/lib/api/schema'
 
 type Group = components['schemas']['Group']
 
+const LIMIT = 20
+
 export default function Groups() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups() })
-  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts() })
+
+  // —— 列表：筛选/分页状态归 queryKey ——
+  const [name, setName] = useState('')
+  const [sort, setSort] = useState('id')
+  const [order, setOrder] = useState<SortOrder>('desc')
+  const [offset, setOffset] = useState(0)
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['groups', { limit: LIMIT, offset, name, sort, order }],
+    queryFn: () => api.listGroups({ limit: LIMIT, offset, name: name || undefined, sort, order }),
+  })
+  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts({ limit: 100 }) })
   const accounts = accountsQ.data?.rows ?? []
+  const rows = data?.rows ?? []
+
+  // —— 行勾选（跨页保留，筛选/翻页后清空）——
+  const [selected, setSelected] = useState<number[]>([])
+  const pageIds = rows.map(r => r.ID!)
+  const allChecked = rows.length > 0 && pageIds.every(id => selected.includes(id))
+  const someChecked = pageIds.some(id => selected.includes(id))
+  const toggleRow = (id: number) => setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+  const toggleAll = (c: boolean) =>
+    setSelected(s => (c ? Array.from(new Set([...s, ...pageIds])) : s.filter(x => !pageIds.includes(x))))
+
+  const resetPage = () => {
+    setOffset(0)
+    setSelected([])
+  }
+  const changeName = (v: string) => { setName(v); resetPage() }
+  const changeSort = (v: string) => { setSort(v); resetPage() }
+  const changeOrder = (o: SortOrder) => { setOrder(o); resetPage() }
+  const hasFilters = name !== ''
+  const clearFilters = () => {
+    setName('')
+    resetPage()
+  }
+
+  const sortOptions = [
+    { value: 'id', label: 'ID' },
+    { value: 'name', label: t('groups.table.name') },
+    { value: 'created_at', label: t('groups.table.createdAt') },
+    { value: 'updated_at', label: t('groups.sort.updatedAt') },
+  ]
+
+  // —— 批量删除/重命名 ——
+  const batchDelete = useMutation({
+    mutationFn: (ids: number[]) => api.deleteGroupsBatch(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups'] })
+      setSelected([])
+    },
+  })
+  const batchRename = useMutation({
+    mutationFn: (p: { ids: number[]; name: string }) => api.updateGroupsBatch(p.ids, { name: p.name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups'] })
+      setSelected([])
+      closeBatchRename()
+    },
+  })
+  // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
+  const [batchRenameOpen, setBatchRenameOpen] = useState(false)
+  const [batchRenameValue, setBatchRenameValue] = useState('')
+  const [batchRenameErr, setBatchRenameErr] = useState<string | null>(null)
+  const batchResolve = useRef<(() => void) | null>(null)
+  const closeBatchRename = () => {
+    setBatchRenameOpen(false)
+    batchResolve.current?.()
+    batchResolve.current = null
+  }
+  const openBatchRename = () => {
+    setBatchRenameValue('')
+    setBatchRenameErr(null)
+    setBatchRenameOpen(true)
+  }
+  const submitBatchRename = () => {
+    if (!batchRenameValue.trim()) {
+      setBatchRenameErr(t('groups.batchUpdateEmpty'))
+      return
+    }
+    batchRename.mutate({ ids: selected, name: batchRenameValue.trim() })
+  }
 
   // —— 创建（form → 明文 key 展示）——
   const [createOpen, setCreateOpen] = useState(false)
@@ -44,7 +128,7 @@ export default function Groups() {
   const [deleting, setDeleting] = useState<Group | null>(null)
 
   const create = useMutation({
-    mutationFn: (name: string) => api.createGroup({ name }),
+    mutationFn: (n: string) => api.createGroup({ name: n }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setCreatedKey({ name: res.group.Name ?? '', key: res.key })
@@ -100,57 +184,96 @@ export default function Groups() {
         <Button onClick={() => { setCreateName(''); setCreatedKey(null); setCreateOpen(true) }}><Plus /> {t('groups.new')}</Button>
       </div>
 
+      <ListToolbar
+        name={name}
+        onNameChange={changeName}
+        sort={sort}
+        onSortChange={changeSort}
+        order={order}
+        onOrderChange={changeOrder}
+        sortOptions={sortOptions}
+      />
+
+      <BatchBar
+        selected={selected}
+        onClear={() => setSelected([])}
+        onDelete={async () => {
+          await batchDelete.mutateAsync(selected)
+        }}
+        onUpdate={() => new Promise<void>(resolve => {
+          batchResolve.current = resolve
+          openBatchRename()
+        })}
+      />
+
       {isError ? (
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
-      ) : (data?.rows ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <FolderOpen className="size-10" />
-            <p className="font-medium">{t('groups.emptyTitle')}</p>
-            <p className="text-sm">{t('groups.emptyDesc')}</p>
-            <Button className="mt-2" onClick={() => { setCreateName(''); setCreatedKey(null); setCreateOpen(true) }}><Plus /> {t('groups.new')}</Button>
+            <p className="font-medium">{hasFilters ? t('groups.filterEmpty') : t('groups.emptyTitle')}</p>
+            {!hasFilters && <p className="text-sm">{t('groups.emptyDesc')}</p>}
+            {hasFilters ? (
+              <Button className="mt-2" variant="outline" onClick={clearFilters}><Filter /> {t('list.reset')}</Button>
+            ) : (
+              <Button className="mt-2" onClick={() => { setCreateName(''); setCreatedKey(null); setCreateOpen(true) }}><Plus /> {t('groups.new')}</Button>
+            )}
           </Card>
         </motion.div>
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>{t('groups.table.name')}</TableHead>
-                <TableHead>KeyPrefix</TableHead>
-                <TableHead>KeyHash</TableHead>
-                <TableHead>{t('groups.table.createdAt')}</TableHead>
-                <TableHead className="text-right">{t('groups.table.actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(data?.rows ?? []).map(g => (
-                <TableRow key={g.ID}>
-                  <TableCell className="tabular-nums">{g.ID}</TableCell>
-                  <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
-                  <TableCell className="font-mono text-xs">{g.KeyPrefix ?? '—'}</TableCell>
-                  <TableCell className="max-w-32 truncate font-mono text-xs text-muted-foreground" title={g.KeyHash}>
-                    {truncate(g.KeyHash, 24)}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? '') }}><Pencil /></Button>
-                      <Button variant="ghost" size="icon-sm" title={t('groups.bind')} onClick={() => openBind(g)}><Link2 /></Button>
-                      <Button variant="ghost" size="icon-sm" title={t('groups.rotate')} onClick={() => setRotateTarget(g)}><RefreshCw /></Button>
-                      <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
-                    </div>
-                  </TableCell>
+        <>
+          <Card className="overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allChecked}
+                      indeterminate={someChecked && !allChecked}
+                      onCheckedChange={c => toggleAll(c === true)}
+                    />
+                  </TableHead>
+                  <TableHead>ID</TableHead>
+                  <TableHead>{t('groups.table.name')}</TableHead>
+                  <TableHead>KeyPrefix</TableHead>
+                  <TableHead>KeyHash</TableHead>
+                  <TableHead>{t('groups.table.createdAt')}</TableHead>
+                  <TableHead className="text-right">{t('groups.table.actions')}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+              </TableHeader>
+              <TableBody>
+                {rows.map(g => (
+                  <TableRow key={g.ID} className={selected.includes(g.ID!) ? 'bg-muted/40' : undefined}>
+                    <TableCell>
+                      <Checkbox checked={selected.includes(g.ID!)} onCheckedChange={() => toggleRow(g.ID!)} />
+                    </TableCell>
+                    <TableCell className="tabular-nums">{g.ID}</TableCell>
+                    <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
+                    <TableCell className="font-mono text-xs">{g.KeyPrefix ?? '—'}</TableCell>
+                    <TableCell className="max-w-32 truncate font-mono text-xs text-muted-foreground" title={g.KeyHash}>
+                      {truncate(g.KeyHash, 24)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? '') }}><Pencil /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('groups.bind')} onClick={() => openBind(g)}><Link2 /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('groups.rotate')} onClick={() => setRotateTarget(g)}><RefreshCw /></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
+        </>
       )}
 
       {/* —— 创建分组：表单 → 明文 key 展示 —— */}
@@ -304,7 +427,7 @@ export default function Groups() {
         </DialogContent>
       </Dialog>
 
-      {/* —— 删除确认 —— */}
+      {/* —— 删除确认（单行） —— */}
       <Dialog open={!!deleting} onOpenChange={o => { if (!o && !remove.isPending) setDeleting(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -320,6 +443,38 @@ export default function Groups() {
             <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID!)} disabled={remove.isPending}>
               {remove.isPending ? t('common.deleting') : t('common.confirmDelete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 批量更新对话框：仅 name —— */}
+      <Dialog open={batchRenameOpen} onOpenChange={o => { if (!o) closeBatchRename() }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('groups.batchUpdateTitle')}</DialogTitle>
+            <DialogDescription>{t('groups.batchUpdateDesc', { count: selected.length })}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-batch-name">{t('groups.nameLabel')}</Label>
+              <Input
+                id="grp-batch-name"
+                value={batchRenameValue}
+                placeholder={t('groups.namePlaceholder')}
+                onChange={e => setBatchRenameValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && batchRenameValue.trim() && !batchRename.isPending) submitBatchRename() }}
+              />
+            </div>
+            {batchRenameErr && <p className="text-sm text-destructive">{batchRenameErr}</p>}
+            {batchRename.isError && errMsg(batchRename.error) && (
+              <p className="text-sm text-destructive">{errMsg(batchRename.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeBatchRename} disabled={batchRename.isPending}>{t('common.cancel')}</Button>
+            <Button onClick={submitBatchRename} disabled={batchRename.isPending || !batchRenameValue.trim()}>
+              {batchRename.isPending ? t('common.saving') : t('list.batchUpdate')}
             </Button>
           </DialogFooter>
         </DialogContent>

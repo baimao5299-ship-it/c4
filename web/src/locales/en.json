@@ -135,7 +135,20 @@
     "weightLabel": "Weight",
     "maxLabel": "Max concurrency",
     "deleteTitle": "Delete account",
-    "deleteDesc": "Delete account \"{{name}}\"? The account will be unbound from all groups."
+    "deleteDesc": "Delete account \"{{name}}\"? The account will be unbound from all groups.",
+    "filterStatus": "Filter status",
+    "filterTemplate": "Filter template",
+    "allTemplates": "All templates",
+    "filterEmpty": "No accounts match the filters",
+    "batchUpdateTitle": "Batch update accounts",
+    "batchUpdateDesc": "Fill in only the fields to change; leave empty to keep current values",
+    "batchUpdateEmpty": "Fill in at least one field",
+    "sort": {
+      "cooldownUntil": "Cooldown until",
+      "lastUsedAt": "Last used",
+      "createdAt": "Created at",
+      "updatedAt": "Updated at"
+    }
   },
   "groups": {
     "title": "Groups",
@@ -174,7 +187,14 @@
     "newKeyFallback": "New access key",
     "oldKeyHint": "The old key is no longer valid",
     "deleteTitle": "Delete group",
-    "deleteDesc": "Delete group \"{{name}}\"? Its access key will be invalidated immediately."
+    "deleteDesc": "Delete group \"{{name}}\"? Its access key will be invalidated immediately.",
+    "filterEmpty": "No groups match the filters",
+    "batchUpdateTitle": "Batch update groups",
+    "batchUpdateDesc": "Set a single name for the {{count}} selected groups",
+    "batchUpdateEmpty": "Enter a name",
+    "sort": {
+      "updatedAt": "Updated at"
+    }
   },
   "logs": {
     "title": "Logs",
@@ -227,7 +247,8 @@
     "batchDelete": "Batch delete",
     "batchUpdate": "Batch update",
     "reset": "Reset",
-    "clearSelection": "Clear selection"
+    "clearSelection": "Clear selection",
+    "unchanged": "Unchanged"
   },
   "batch": {
     "confirmDelete": "Delete the {{count}} selected items?",

@@ -135,7 +135,20 @@
     "weightLabel": "权重",
     "maxLabel": "最大并发",
     "deleteTitle": "删除账号",
-    "deleteDesc": "确认删除账号「{{name}}」？删除后该账号从所有分组解绑。"
+    "deleteDesc": "确认删除账号「{{name}}」？删除后该账号从所有分组解绑。",
+    "filterStatus": "状态筛选",
+    "filterTemplate": "模板筛选",
+    "allTemplates": "全部模板",
+    "filterEmpty": "没有符合条件的账号",
+    "batchUpdateTitle": "批量更新账号",
+    "batchUpdateDesc": "仅填写需要修改的字段，留空表示保持原值",
+    "batchUpdateEmpty": "至少填写一个字段",
+    "sort": {
+      "cooldownUntil": "冷却截止",
+      "lastUsedAt": "最近使用",
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间"
+    }
   },
   "groups": {
     "title": "分组",
@@ -174,7 +187,14 @@
     "newKeyFallback": "新访问 key",
     "oldKeyHint": "旧 key 已失效",
     "deleteTitle": "删除分组",
-    "deleteDesc": "确认删除分组「{{name}}」？其访问 key 将立即失效。"
+    "deleteDesc": "确认删除分组「{{name}}」？其访问 key 将立即失效。",
+    "filterEmpty": "没有符合条件的分组",
+    "batchUpdateTitle": "批量更新分组",
+    "batchUpdateDesc": "为选中的 {{count}} 个分组统一设置名称",
+    "batchUpdateEmpty": "请输入名称",
+    "sort": {
+      "updatedAt": "更新时间"
+    }
   },
   "logs": {
     "title": "日志",
@@ -227,7 +247,8 @@
     "batchDelete": "批量删除",
     "batchUpdate": "批量更新",
     "reset": "重置",
-    "clearSelection": "清除选择"
+    "clearSelection": "清除选择",
+    "unchanged": "不修改"
   },
   "batch": {
     "confirmDelete": "确认删除选中的 {{count}} 项？",
