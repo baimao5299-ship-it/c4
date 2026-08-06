@@ -19,9 +19,9 @@ export default function Login() {
     nav('/dashboard')
   }
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <Card className="w-96">
+        <Card className="w-96 p-2">
           <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" /> {t('common.appTitle')}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">{t('login.hint')}</p>
