@@ -154,6 +154,67 @@ func TestPostGroupsBatchDeleteMissing(t *testing.T) {
 	require.Equal(t, 404, rec.Code, "missing id: %s", rec.Body.String())
 }
 
+// TestPostAccountsBatchDelete 批量删除账号：成功 / 重复 ids 去重 / 缺 id 404。
+func TestPostAccountsBatchDelete(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+
+	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com/v1","default_format":"openai-chat"}`)
+	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
+	ids := make([]int64, 0, 3)
+	for i := 1; i <= 3; i++ {
+		rec = do(http.MethodPost, "/admin/accounts", `{"name":"acc`+itoa(int64(i))+`","template_id":1,"upstream_key":"sk-x"}`)
+		require.Equal(t, 200, rec.Code, "create account: %s", rec.Body.String())
+		var created domain.Account
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+		ids = append(ids, created.ID)
+	}
+
+	// 成功：删除前两个 → 200 {"deleted":2}
+	rec = do(http.MethodPost, "/admin/accounts/batch-delete", `{"ids":[`+itoa(ids[0])+`,`+itoa(ids[1])+`]}`)
+	require.Equal(t, 200, rec.Code, "batch delete: %s", rec.Body.String())
+	var del BatchDeleteResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &del))
+	require.Equal(t, 2, del.Deleted)
+
+	// 重复 ids 去重 → {"deleted":1}
+	rec = do(http.MethodPost, "/admin/accounts/batch-delete", `{"ids":[`+itoa(ids[2])+`,`+itoa(ids[2])+`]}`)
+	require.Equal(t, 200, rec.Code, "dup ids: %s", rec.Body.String())
+	var del2 BatchDeleteResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &del2))
+	require.Equal(t, 1, del2.Deleted)
+
+	// 缺 id → 404，响应含缺失 id
+	rec = do(http.MethodPost, "/admin/accounts/batch-delete", `{"ids":[999]}`)
+	require.Equal(t, 404, rec.Code, "missing id: %s", rec.Body.String())
+	var errBody map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+	require.Contains(t, errBody["error"], "999", "404 must carry missing id: %s", rec.Body.String())
+}
+
+// TestPostGroupsBatchDelete 批量删除分组：成功（service 先 GetGroup 逐 id
+// 前置检查，再事务批量删）/ 缺 id 404。
+func TestPostGroupsBatchDelete(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+
+	ids := make([]int64, 0, 2)
+	for i := 1; i <= 2; i++ {
+		rec := do(http.MethodPost, "/admin/groups", `{"name":"g`+itoa(int64(i))+`"}`)
+		require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
+		var created struct {
+			Group domain.Group `json:"group"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+		ids = append(ids, created.Group.ID)
+	}
+
+	// 成功 → 200 {"deleted":2}
+	rec := do(http.MethodPost, "/admin/groups/batch-delete", `{"ids":[`+itoa(ids[0])+`,`+itoa(ids[1])+`]}`)
+	require.Equal(t, 200, rec.Code, "batch delete: %s", rec.Body.String())
+	var del BatchDeleteResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &del))
+	require.Equal(t, 2, del.Deleted)
+}
+
 // TestPostGroupsBatchUpdate 批量更新分组：成功（改名生效）/ 空 fields 400。
 func TestPostGroupsBatchUpdate(t *testing.T) {
 	_, _, do := newListTestRouter(t)

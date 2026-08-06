@@ -32,7 +32,7 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
 	row, err := r.client.Group.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, errMissingID(err, id)
 	}
 	return &domain.Group{
 		ID: row.ID, Name: row.Name, KeyHash: row.KeyHash, KeyPrefix: row.KeyPrefix,

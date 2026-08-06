@@ -159,6 +159,11 @@ func TestBatchUpdateAccounts(t *testing.T) {
 	got, err := svc.GetAccount(ctx, a.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusDisabled, got.Status)
+
+	// 缺 id → repository.ErrNotFound 包装 → mapRepoErr → service.ErrNotFound（消息含缺失 id）
+	err = svc.UpdateAccountsBatch(ctx, []int64{999}, repository.AccountPatch{Status: &st})
+	require.ErrorIs(t, err, ErrNotFound, "缺 id 必须映射 404")
+	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
 }
 
 type fakeKeyRegistrar struct {

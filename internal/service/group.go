@@ -30,7 +30,11 @@ func (s *Service) CreateGroup(ctx context.Context, name string) (*domain.Group, 
 }
 
 func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
-	return s.store.GetGroup(ctx, id)
+	g, err := s.store.GetGroup(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return g, nil
 }
 
 func (s *Service) ListGroups(ctx context.Context, q repository.ListQuery) ([]*domain.Group, int64, error) {
@@ -54,7 +58,7 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	g, err := s.store.GetGroup(ctx, id)
 	if err != nil {
-		return err
+		return mapRepoErr(err)
 	}
 	if s.keys != nil {
 		s.keys.Delete(g.KeyHash)
@@ -73,7 +77,7 @@ func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	for _, id := range ids {
 		g, err := s.store.GetGroup(ctx, id)
 		if err != nil {
-			return err // 404 缺 id
+			return mapRepoErr(err) // 404 缺 id
 		}
 		if s.keys != nil {
 			s.keys.Delete(g.KeyHash)

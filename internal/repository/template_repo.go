@@ -27,7 +27,7 @@ func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (
 func (r *TemplateRepo) GetTemplate(ctx context.Context, id int64) (*domain.Template, error) {
 	row, err := r.client.Template.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, errMissingID(err, id)
 	}
 	return toDomainTemplate(row), nil
 }

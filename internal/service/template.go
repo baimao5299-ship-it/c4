@@ -24,7 +24,11 @@ func (s *Service) CreateTemplate(ctx context.Context, t *domain.Template) (*doma
 }
 
 func (s *Service) GetTemplate(ctx context.Context, id int64) (*domain.Template, error) {
-	return s.store.GetTemplate(ctx, id)
+	t, err := s.store.GetTemplate(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return t, nil
 }
 
 func (s *Service) ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error) {

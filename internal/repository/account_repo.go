@@ -26,7 +26,7 @@ func (r *AccountRepo) CreateAccount(ctx context.Context, a *domain.Account) (*do
 func (r *AccountRepo) GetAccount(ctx context.Context, id int64) (*domain.Account, error) {
 	row, err := r.client.Account.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, errMissingID(err, id)
 	}
 	return toDomainAccount(row), nil
 }

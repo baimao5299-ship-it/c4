@@ -356,6 +356,43 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.expectDone(t)
 }
 
+// TestGetXxxMissing 单资源 Get 缺 id：空结果集走真实 ent Only 路径 →
+// *NotFoundError → errMissingID 映射为 repository.ErrNotFound（消息含缺失 id）。
+// 注意刻意用空行（而非 WillReturnError）：生产驱动对无命中返回空集而非错误，
+// 只有空集才能触发 ent 的 NotFoundError（驱动错误应原样透传、不伪装 404）。
+func TestGetTemplateMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectQuery(q(`FROM "templates" WHERE`)).
+		WithArgs(int64(999)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}))
+	_, err := tr.repos.Templates.GetTemplate(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestGetAccountMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(999)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}))
+	_, err := tr.repos.Accounts.GetAccount(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestGetGroupMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectQuery(q(`FROM "groups" WHERE`)).
+		WithArgs(int64(999)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}))
+	_, err := tr.repos.Groups.GetGroup(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
 // listSQL 匹配 List 查询的 SQL 片段（含 ORDER BY/LIMIT/OFFSET 断言）。
 func listSQL(order string) string {
 	return "(?i)FROM \"templates\".*ORDER BY \"templates\"\\." + order + "( LIMIT \\d+)?( OFFSET \\d+)?"

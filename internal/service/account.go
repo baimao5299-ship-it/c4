@@ -23,7 +23,11 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 }
 
 func (s *Service) GetAccount(ctx context.Context, id int64) (*domain.Account, error) {
-	return s.store.GetAccount(ctx, id)
+	a, err := s.store.GetAccount(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return a, nil
 }
 
 func (s *Service) ListAccounts(ctx context.Context, q repository.ListQuery) ([]*domain.Account, int64, error) {
