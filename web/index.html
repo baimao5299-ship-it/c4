@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      ;(function () {
+        var s = localStorage.getItem('vite-ui-theme')
+        var t = s === 'light' || s === 'dark' ? s
+          : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.classList.add(t)
+      })()
+    </script>
     <title>网关管理台</title>
   </head>
   <body>

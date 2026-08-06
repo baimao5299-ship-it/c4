@@ -1,6 +1,7 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
 import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
+import { ThemeProvider } from '@/components/theme-provider'
 import { auth } from '@/lib/auth'
 import Login from '@/pages/login'
 import Layout from '@/components/layout'
@@ -52,8 +53,10 @@ const qc = new QueryClient({
 
 export default function App() {
   return (
-    <QueryClientProvider client={qc}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
+      <QueryClientProvider client={qc}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ThemeProvider>
   )
 }

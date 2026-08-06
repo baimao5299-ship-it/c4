@@ -23,6 +23,12 @@
     "logs": "日志",
     "stats": "统计"
   },
+  "theme": {
+    "toggle": "切换主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
   "status": {
     "active": "可用",
     "unhealthy": "不健康",

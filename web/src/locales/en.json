@@ -23,6 +23,12 @@
     "logs": "Logs",
     "stats": "Stats"
   },
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
   "status": {
     "active": "Available",
     "unhealthy": "Unhealthy",
