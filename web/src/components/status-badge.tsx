@@ -6,11 +6,12 @@ import { cn } from '@/lib/utils'
 
 export type AccountStatus = components['schemas']['AccountStatus']
 
-// 状态色只做小圆点 + 文字着色（玻璃底由 Badge 提供），不做整块状态色填充。
+// 状态色 = GooseHyperGlass gooseLight 系（toggleAccent #34C759 绿 / trackOff 灰 / dialog 蓝灰），
+// 只做小圆点 + 文字着色（玻璃底由 Badge 提供），不做整块状态色填充。
 const STATUS_META: Record<AccountStatus, { dot: string; text: string }> = {
-  active: { dot: 'bg-teal-500', text: 'text-teal-700' },
+  active: { dot: 'bg-[#34c759]', text: 'text-[#1e7d3c]' },
   unhealthy: { dot: 'bg-amber-500', text: 'text-amber-700' },
-  '429': { dot: 'bg-orange-500', text: 'text-orange-700' },
+  '429': { dot: 'bg-[#ff8d28]', text: 'text-[#b95f0e]' },
   disabled: { dot: 'bg-rose-300', text: 'text-rose-400' },
 }
 

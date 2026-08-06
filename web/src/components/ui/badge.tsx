@@ -9,18 +9,18 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        /* 通透玻璃标签：白细边 + 顶白高光，indigo 仅作文字/描边强调 */
+        /* 通透玻璃标签：白细边 + 顶白高光，#0088FF 仅作文字/描边强调 */
         default:
-          "border-indigo-200/60 bg-white/45 text-indigo-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-md [a]:hover:bg-white/65",
+          "border-primary/40 bg-white/40 text-primary shadow-[inset_0_1px_3px_rgba(255,255,255,0.4)] backdrop-blur-md [a]:hover:bg-white/65",
         secondary:
-          "border-white/50 bg-white/45 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] backdrop-blur-md [a]:hover:bg-white/65",
+          "border-white/50 bg-white/45 text-foreground shadow-[inset_0_1px_3px_rgba(255,255,255,0.4)] backdrop-blur-md [a]:hover:bg-white/65",
         destructive:
-          "border-white/50 bg-white/45 text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] backdrop-blur-md focus-visible:ring-red-500/20 [a]:hover:bg-red-500/10",
+          "border-white/50 bg-white/45 text-red-600 shadow-[inset_0_1px_3px_rgba(255,255,255,0.4)] backdrop-blur-md focus-visible:ring-red-500/20 [a]:hover:bg-red-500/10",
         outline:
-          "border-indigo-200/60 bg-white/30 text-foreground backdrop-blur-md [a]:hover:bg-white/55 [a]:hover:text-indigo-700",
+          "border-primary/30 bg-white/30 text-foreground backdrop-blur-md [a]:hover:bg-white/55 [a]:hover:text-primary",
         ghost:
-          "hover:bg-white/45 hover:text-indigo-700",
-        link: "text-indigo-600 underline-offset-4 hover:underline",
+          "hover:bg-white/45 hover:text-primary",
+        link: "text-primary underline-offset-4 hover:underline",
       },
     },
     defaultVariants: {

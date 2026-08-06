@@ -9,18 +9,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /* 通透玻璃（GooseHyperGlass transparent style）：半透明白 + 顶白高光 + 白细边 + 软投影，无实心填充 */
+        /* 通透玻璃（GooseHyperGlass transparent style）：半透明白 + 顶白高光 + 白细边 + 软投影，无实心填充；
+           强调 = #0088FF（gooseLight accent），仅文字/细边/光晕 */
         default:
-          "border-white/50 bg-white/45 text-indigo-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_2px_10px_rgba(31,38,135,0.06)] backdrop-blur-md hover:bg-white/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_4px_18px_rgba(99,102,241,0.28)]",
+          "border-white/50 bg-white/45 text-primary shadow-[inset_0_1px_3px_rgba(255,255,255,0.4),0_2px_10px_rgba(0,0,0,0.08)] backdrop-blur-md hover:bg-white/70 hover:shadow-[inset_0_1px_3px_rgba(255,255,255,0.5),0_4px_18px_rgba(0,136,255,0.3)]",
         outline:
-          "border-white/50 bg-white/35 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_10px_rgba(31,38,135,0.05)] backdrop-blur-md hover:bg-white/60 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_18px_rgba(99,102,241,0.22)]",
+          "border-white/50 bg-white/35 text-foreground shadow-[inset_0_1px_3px_rgba(255,255,255,0.35),0_2px_10px_rgba(0,0,0,0.06)] backdrop-blur-md hover:bg-white/60 hover:text-primary hover:shadow-[inset_0_1px_3px_rgba(255,255,255,0.45),0_4px_18px_rgba(0,136,255,0.25)]",
         secondary:
-          "border-white/50 bg-white/35 text-secondary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_10px_rgba(31,38,135,0.05)] backdrop-blur-md hover:bg-white/60 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_18px_rgba(99,102,241,0.22)]",
+          "border-white/50 bg-white/35 text-secondary-foreground shadow-[inset_0_1px_3px_rgba(255,255,255,0.35),0_2px_10px_rgba(0,0,0,0.06)] backdrop-blur-md hover:bg-white/60 hover:text-primary hover:shadow-[inset_0_1px_3px_rgba(255,255,255,0.45),0_4px_18px_rgba(0,136,255,0.25)]",
         ghost:
-          "hover:bg-white/45 hover:text-indigo-700 aria-expanded:bg-white/45 aria-expanded:text-indigo-700",
+          "hover:bg-white/45 hover:text-primary aria-expanded:bg-white/45 aria-expanded:text-primary",
         destructive:
-          "border-white/50 bg-white/40 text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_10px_rgba(31,38,135,0.05)] backdrop-blur-md hover:bg-red-500/15 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_18px_rgba(244,63,94,0.2)] focus-visible:border-red-400/40 focus-visible:ring-red-500/20",
-        link: "text-indigo-600 underline-offset-4 hover:underline",
+          "border-white/50 bg-white/40 text-red-600 shadow-[inset_0_1px_3px_rgba(255,255,255,0.35),0_2px_10px_rgba(0,0,0,0.06)] backdrop-blur-md hover:bg-red-500/15 hover:shadow-[inset_0_1px_3px_rgba(255,255,255,0.45),0_4px_18px_rgba(244,63,94,0.2)] focus-visible:border-red-400/40 focus-visible:ring-red-500/20",
+        link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         default:

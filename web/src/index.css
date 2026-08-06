@@ -51,40 +51,41 @@
 }
 
 :root {
-    --background: oklch(0.985 0.008 250);
-    --foreground: oklch(0.205 0.02 275);
+    --background: oklch(0.955 0.02 255);
+    --foreground: oklch(0.24 0.012 260);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.205 0.02 275);
+    --card-foreground: oklch(0.24 0.012 260);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.205 0.02 275);
-    /* Apple liquid glass 主色系：indigo（链接/选中/焦点环/checkbox） */
-    --primary: oklch(0.545 0.22 277);
+    --popover-foreground: oklch(0.24 0.012 260);
+    /* 强调色 = GooseHyperGlass gooseLight 系 #0088FF（tabsAccent/sliderAccent/dialogAccent），
+       仅用于链接/active 指示条/图标/细边框/焦点环，不做大面积底色 */
+    --primary: oklch(0.62 0.19 255);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0.008 250);
-    --secondary-foreground: oklch(0.35 0.05 275);
-    --muted: oklch(0.965 0.01 250);
-    --muted-foreground: oklch(0.5 0.02 275);
-    --accent: oklch(0.955 0.028 285);
-    --accent-foreground: oklch(0.45 0.17 280);
+    --secondary: oklch(0.97 0.003 260);
+    --secondary-foreground: oklch(0.32 0.008 260);
+    --muted: oklch(0.96 0.003 260);
+    --muted-foreground: oklch(0.5 0.012 260);
+    --accent: oklch(0.955 0.02 255);
+    --accent-foreground: oklch(0.5 0.15 255);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.925 0.012 250);
-    --input: oklch(0.92 0.015 250);
-    --ring: oklch(0.62 0.18 280);
-    /* 点缀：indigo/sky/violet/cyan/teal（图表/状态色） */
-    --chart-1: oklch(0.62 0.19 265);
-    --chart-2: oklch(0.72 0.14 235);
-    --chart-3: oklch(0.6 0.22 295);
-    --chart-4: oklch(0.8 0.12 195);
-    --chart-5: oklch(0.72 0.13 170);
+    --border: oklch(0.925 0.006 260);
+    --input: oklch(0.92 0.008 260);
+    --ring: oklch(0.72 0.13 255);
+    /* 点缀 = GooseHyperGlass 系：blue #0088FF / sky / violet / green #34C759 / orange #FF8D28 */
+    --chart-1: oklch(0.62 0.19 255);
+    --chart-2: oklch(0.68 0.15 235);
+    --chart-3: oklch(0.6 0.18 290);
+    --chart-4: oklch(0.72 0.15 155);
+    --chart-5: oklch(0.72 0.14 65);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0.008 250);
-    --sidebar-foreground: oklch(0.205 0.02 275);
-    --sidebar-primary: oklch(0.545 0.22 277);
+    --sidebar: oklch(0.955 0.02 255);
+    --sidebar-foreground: oklch(0.24 0.012 260);
+    --sidebar-primary: oklch(0.62 0.19 255);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.955 0.028 285);
-    --sidebar-accent-foreground: oklch(0.45 0.17 280);
-    --sidebar-border: oklch(0.925 0.012 250);
-    --sidebar-ring: oklch(0.62 0.18 280);
+    --sidebar-accent: oklch(0.955 0.02 255);
+    --sidebar-accent-foreground: oklch(0.5 0.15 255);
+    --sidebar-border: oklch(0.925 0.006 260);
+    --sidebar-ring: oklch(0.72 0.13 255);
 }
 
 @layer base {
@@ -94,21 +95,29 @@
   html {
     @apply font-sans;
     }
-  /* 背景：淡蓝白渐变 + 蓝紫/青光斑（Apple liquid glass），fixed 保证滚动时不抖 */
+  /* 背景 = 参考仓库 demo 氛围的"彩色内容层"：liquid-glass-react demo 玻璃背后是彩色图片、
+     GooseHyperGlass demo 玻璃背后是 wallpaper 图像。管理台无图片素材，用饱和的 aurora 渐变团
+     （蓝/紫/青/teal 大色团 + 蓝白基底）充当同等角色，玻璃 blur 透出彩色层次 = 玻璃感来源。 */
   body {
     @apply text-foreground;
     background:
-      radial-gradient(600px 400px at 85% 10%, oklch(0.88 0.09 290 / 0.5), transparent 65%),
-      radial-gradient(700px 500px at 10% 90%, oklch(0.9 0.07 260 / 0.45), transparent 60%),
-      radial-gradient(500px 380px at 55% 85%, oklch(0.94 0.05 210 / 0.4), transparent 60%),
-      linear-gradient(160deg, oklch(0.985 0.008 250), oklch(0.955 0.02 245));
+      radial-gradient(60% 50% at 20% 15%, oklch(0.8 0.12 285 / 0.5), transparent 70%),
+      radial-gradient(55% 45% at 85% 20%, oklch(0.75 0.13 255 / 0.45), transparent 70%),
+      radial-gradient(50% 40% at 70% 85%, oklch(0.82 0.1 215 / 0.45), transparent 70%),
+      radial-gradient(45% 40% at 25% 80%, oklch(0.8 0.1 160 / 0.35), transparent 70%),
+      linear-gradient(160deg, oklch(0.95 0.03 255), oklch(0.9 0.05 250));
     background-attachment: fixed;
   }
 }
 
 /* ===== liquid glass 工具类（全站玻璃材质，后续任务直接引用） ===== */
-.glass-card { @apply rounded-2xl border border-indigo-200/60 bg-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_8px_32px_rgba(79,70,229,0.12)] backdrop-blur-xl; }
-.glass-panel { @apply rounded-xl border border-indigo-200/50 bg-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_4px_16px_rgba(79,70,229,0.1)] backdrop-blur-lg; }
-.glass-input { @apply rounded-lg border border-indigo-200/60 bg-white/50 backdrop-blur-md; }
-/* 浅色通透玻璃侧边栏（Apple iOS 26）：与内容区同材质，右侧白高光分隔边 */
-.glass-sidebar { @apply border-r border-white/60 bg-white/50 shadow-[inset_-1px_0_0_rgba(255,255,255,0.8),0_0_24px_rgba(31,38,135,0.05)] backdrop-blur-2xl; }
+/* 玻璃 = 无实心填充：半透明白 + blur + saturate(150%)（liquid-glass-react backdropFilter: blur+saturate(140%)）
+   + 白细边/0.5px 白环（liquid-glass-react boxShadow 0 0 0 0.5px rgba(255,255,255,0.5) inset）
+   + 顶白高光（inset 0 1px 3px white 0.25）+ 黑色软投影（liquid-glass-react 0 12px 40px rgba(0,0,0,0.25)） */
+.glass-card { @apply rounded-2xl border border-white/40 bg-white/35 shadow-[inset_0_1px_3px_rgba(255,255,255,0.3),0_0_0_0.5px_rgba(255,255,255,0.5)_inset,0_12px_40px_rgba(0,0,0,0.14)] backdrop-blur-xl backdrop-saturate-150; }
+.glass-panel { @apply rounded-xl border border-white/40 bg-white/30 shadow-[inset_0_1px_3px_rgba(255,255,255,0.25),0_0_0_0.5px_rgba(255,255,255,0.45)_inset,0_4px_20px_rgba(0,0,0,0.12)] backdrop-blur-lg backdrop-saturate-150; }
+.glass-input { @apply rounded-lg border border-white/50 bg-white/35 shadow-[inset_0_1px_2px_rgba(255,255,255,0.45)] backdrop-blur-md backdrop-saturate-150; }
+/* 整体玻璃胶囊外壳：大圆角 + 顶高光边 + 蓝紫投影（页面留白，内部侧边栏/内容区同一材质） */
+.glass-shell { @apply rounded-[2rem] border border-white/40 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_24px_64px_rgba(79,70,229,0.18)] backdrop-blur-2xl backdrop-saturate-150; }
+/* 保留（后续任务可引用）：浅色玻璃分区条 */
+.glass-sidebar { @apply border-r border-white/20 bg-white/25; }
