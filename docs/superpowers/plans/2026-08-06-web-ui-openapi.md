@@ -1148,6 +1148,23 @@ git commit -m "feat: web pages — dashboard, templates, accounts, groups"
 
 ---
 
+### Task 3.5: i18n 中英双语（用户 2026-08-06 中途指示）
+
+**Files:**
+- Create: `web/src/lib/i18n.ts`（i18next + react-i18next 初始化）、`web/src/locales/zh.json`、`web/src/locales/en.json`
+- Modify: `web/src/main.tsx`（挂 i18n）、全部页面与组件（login/layout/dashboard/templates/accounts/groups + ui 组件内硬编码中文）、`web/src/components/layout.tsx`（顶栏加语言切换）
+
+**Interfaces:**
+- 消费：全部既有页面文案；生产：语言资源 + 切换。
+- 约定：i18next + react-i18next；语言 zh-CN（默认）/en；localStorage key `gpm_lang` 持久化；首载按 navigator.language（zh 开头 → zh-CN，否则 en）决定；`useTranslation()` 取文案；语言切换按钮放 layout 顶栏（中/EN 切换，切换即持久化 + 全部文案即时更新）。响应/请求字段名（Go 大写 / snake_case）不做 i18n。
+
+- [ ] **Step 1**: `pnpm_config_verify_deps_before_run=false pnpm add i18next react-i18next`（或直接改 package.json + 更新 lockfile，记录版本）
+- [ ] **Step 2**: `src/lib/i18n.ts` 初始化（resources、lng 解析、localStorage 持久化、fallback zh）；`main.tsx` 引入
+- [ ] **Step 3**: 抽取全部硬编码中文 → locales/zh.json（key 分层：nav.login.dashboard.templates.accounts.groups.logs.stats.common.*…）；en.json 完整翻译
+- [ ] **Step 4**: 全部页面/组件改用 `t()`；layout 顶栏加语言切换（DropdownMenu 或 Button 组，当前语言高亮）
+- [ ] **Step 5**: 验证：build + tsc 通过；切换语言后文案即时更新（Playwright 或手动）；切语言偏好持久化（刷新保持）
+- [ ] **Step 6**: Commit（`feat: i18n — zh-CN/en`，范围 web/）
+
 ### Task 4: Pages — logs + stats
 
 **Files:**
