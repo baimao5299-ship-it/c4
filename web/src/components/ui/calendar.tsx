@@ -46,20 +46,22 @@ function Calendar({
         nav: "flex items-center gap-1",
         button_previous: cn(
           buttonVariants({ variant: "outline", size: "icon-xs" }),
-          "absolute top-0 left-0 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          // z-10：v10 navLayout="around" 下按钮是 month 的直接绝对定位子节点，
+          // 与同排的 month_caption（relative + w-full）重叠时会被其盖住而不可点
+          // （同一 z-index 层按 DOM 顺序绘制，caption 在后 → 盖住先渲染的按钮）。
+          "absolute top-0 left-0 z-10 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
         ),
         button_next: cn(
           buttonVariants({ variant: "outline", size: "icon-xs" }),
-          "absolute top-0 right-0 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          "absolute top-0 right-0 z-10 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
         ),
-        month_grid: "w-full border-collapse space-y-1",
-        weekdays: "flex",
-        weekday: "text-muted-foreground rounded-md w-8 font-normal text-[0.8rem]",
-        week: "flex w-full mt-2",
-        day: cn(
-          buttonVariants({ variant: "ghost", size: "icon-xs" }),
-          "relative p-0 text-center text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-selected:opacity-100"
-        ),
+        month_grid: "w-full border-collapse",
+        // 周标题行与日期行统一为 7 等分 grid（grid-cols-7）→ 列宽一致，数字与周列对齐
+        weekdays: "grid w-full grid-cols-7",
+        weekday:
+          "text-muted-foreground rounded-md font-normal text-[0.8rem] flex items-center justify-center",
+        week: "mt-2 grid w-full grid-cols-7",
+        day: "relative flex items-center justify-center p-0 aria-selected:opacity-100",
         day_button: cn(
           buttonVariants({ variant: "ghost", size: "icon-xs" }),
           "h-8 w-8 p-0 font-normal aria-selected:opacity-100"

@@ -270,7 +270,8 @@
   "datePicker": {
     "placeholder": "Pick date & time",
     "clear": "Clear",
-    "time": "Time"
+    "hour": "Hour",
+    "minute": "Min"
   },
   "placeholder": {
     "underConstruction": "Under construction"
