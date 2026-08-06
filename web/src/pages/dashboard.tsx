@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Activity, AlertTriangle, Gauge, PowerOff, Boxes, FolderOpen, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { api } from '@/App'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,26 +23,6 @@ const cardGrid = 'grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:dat
 
 // errTop 柱图数据行。
 type ErrRow = { name: string; err_rate: number; err_count: number }
-
-// 图表悬浮提示：语义类（bg-card/border/text-muted-foreground），深浅色均成立。
-function ErrTooltip({ active, payload }: { active?: boolean; payload?: readonly { payload: ErrRow }[] }) {
-  const { t } = useTranslation()
-  if (!active || !payload?.length) return null
-  const row = payload[0].payload
-  return (
-    <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-lg">
-      <p className="mb-1 font-medium">{row.name}</p>
-      <p className="text-muted-foreground">
-        {t('dashboard.tableErrRate')}{' '}
-        <span className="font-medium tabular-nums text-foreground">{formatPercent(row.err_rate)}</span>
-      </p>
-      <p className="text-muted-foreground">
-        {t('dashboard.tableErrCount')}{' '}
-        <span className="font-medium tabular-nums text-foreground">{row.err_count}</span>
-      </p>
-    </div>
-  )
-}
 
 export default function Dashboard() {
   const { t } = useTranslation()
@@ -75,6 +56,11 @@ export default function Dashboard() {
   }))
 
   const loading = accountsQ.isLoading || templatesQ.isLoading || groupsQ.isLoading
+
+  // 图表配置（ChartContainer 注入 --color-err_rate，随主题翻转）。
+  const chartConfig = {
+    err_rate: { label: t('dashboard.tableErrRate'), color: 'var(--primary)' },
+  } satisfies ChartConfig
 
   const statusCards: { key: keyof typeof statusCounts; icon: typeof Activity; descKey: string }[] = [
     { key: 'active', icon: Activity, descKey: 'dashboard.statusCards.active' },
@@ -166,37 +152,62 @@ export default function Dashboard() {
                       {t('dashboard.errTopEmpty')}
                     </p>
                   ) : (
-                    <div className="text-muted-foreground">
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart accessibilityLayer data={errData} margin={{ left: 0, right: 8 }}>
-                          <defs>
-                            <linearGradient id="gpm-errbar-fill" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.9} />
-                              <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.35} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-                          <XAxis
-                            dataKey="name"
-                            tickLine={false}
-                            axisLine={false}
-                            tickMargin={8}
-                            interval={0}
-                            tick={{ fill: 'currentColor', fontSize: 12 }}
-                            tickFormatter={(v: string) => truncate(v, 8)}
-                          />
-                          <YAxis
-                            width={44}
-                            tickLine={false}
-                            axisLine={false}
-                            tick={{ fill: 'currentColor', fontSize: 12 }}
-                            tickFormatter={(v: number) => formatPercent(v)}
-                          />
-                          <Tooltip cursor={{ fill: 'var(--muted)' }} content={<ErrTooltip />} />
-                          <Bar dataKey="err_rate" fill="url(#gpm-errbar-fill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
+                    <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+                      <BarChart accessibilityLayer data={errData} margin={{ left: 0, right: 8 }}>
+                        <defs>
+                          <linearGradient id="gpm-errbar-fill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--color-err_rate)" stopOpacity={0.9} />
+                            <stop offset="100%" stopColor="var(--color-err_rate)" stopOpacity={0.35} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="name"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          interval={0}
+                          tickFormatter={(v: string) => truncate(v, 8)}
+                        />
+                        <YAxis
+                          width={44}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v: number) => formatPercent(v)}
+                        />
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent
+                              indicator="dot"
+                              labelFormatter={(label, payload) => {
+                                const row = payload?.[0]?.payload as ErrRow | undefined
+                                return row?.name ?? String(label ?? '')
+                              }}
+                              formatter={(value, _name, item) => {
+                                const row = item?.payload as ErrRow | undefined
+                                return (
+                                  <>
+                                    <span className="text-muted-foreground">{t('dashboard.tableErrRate')}</span>
+                                    <span className="font-mono font-medium text-foreground tabular-nums">
+                                      {formatPercent(Number(value))}
+                                    </span>
+                                    {row && (
+                                      <span className="flex w-full justify-between text-muted-foreground">
+                                        <span>{t('dashboard.tableErrCount')}</span>
+                                        <span className="font-mono font-medium text-foreground tabular-nums">
+                                          {row.err_count}
+                                        </span>
+                                      </span>
+                                    )}
+                                  </>
+                                )
+                              }}
+                            />
+                          }
+                        />
+                        <Bar dataKey="err_rate" fill="url(#gpm-errbar-fill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                      </BarChart>
+                    </ChartContainer>
                   )}
                 </CardContent>
               </Card>
