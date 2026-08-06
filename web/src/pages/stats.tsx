@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatDateTime } from '@/components/fmt'
+import { formatDateTime, toRFC3339 } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type StatBucket = components['schemas']['StatBucket']
@@ -18,13 +18,6 @@ type Granularity = 'hour' | 'day'
 type Metric = 'requests' | 'tokens'
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
-
-// datetime-local → RFC3339（本地时区输入 → UTC ISO）。
-function toRFC3339(v: string): string | undefined {
-  if (!v) return undefined
-  const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
-}
 
 // 默认近 24h（组件挂载时固定一次，避免渲染期时间漂移）。
 function defaultRange() {
@@ -188,7 +181,9 @@ export default function Stats() {
           <CardDescription>{t('stats.chartDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? (
+            <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
+          ) : isLoading ? (
             <Skeleton className="h-52 w-full" />
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">

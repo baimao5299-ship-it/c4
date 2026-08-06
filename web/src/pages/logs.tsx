@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatDateTime } from '@/components/fmt'
+import { formatDateTime, toRFC3339 } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type ErrorType = components['schemas']['ErrorType']
@@ -47,13 +47,6 @@ const FORMAT_LABELS: Record<RequestFormat, string> = {
 const LIMITS = [10, 20, 50]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
-
-// datetime-local → RFC3339（本地时区输入 → UTC ISO）。
-function toRFC3339(v: string): string | undefined {
-  if (!v) return undefined
-  const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
-}
 
 interface LogFilters {
   group_id: string
@@ -160,7 +153,7 @@ export default function Logs() {
             <Input id="log-to" type="datetime-local" value={filters.to} onChange={e => set({ to: e.target.value })} />
           </div>
           <div className="flex items-end">
-            <Button variant="outline" className="w-full" onClick={() => setFilters(emptyFilters())}>
+            <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setOffset(0) }}>
               <RotateCcw /> {t('logs.filter.reset')}
             </Button>
           </div>

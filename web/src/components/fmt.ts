@@ -17,6 +17,13 @@ export function truncate(s: string | undefined | null, n = 16): string {
   return s.length > n ? `${s.slice(0, n)}…` : s
 }
 
+// datetime-local → RFC3339（本地时区输入 → UTC ISO），非法/空值返回 undefined。
+export function toRFC3339(v: string): string | undefined {
+  if (!v) return undefined
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
+}
+
 // 逗号列表截断展示，完整内容放 title。
 export function commaList(items: string[] | undefined, max = 3): { text: string; full: string } {
   const full = items?.join(', ') ?? ''
