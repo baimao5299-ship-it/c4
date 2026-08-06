@@ -8,6 +8,7 @@ import { ApiUnauthorized } from '@/lib/api/client'
 import { BatchBar } from '@/components/batch-bar'
 import { ListToolbar, type SortOrder } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
+import { SortableHeader } from '@/components/sortable-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -31,13 +32,13 @@ export default function Groups() {
 
   // —— 列表：筛选/分页状态归 queryKey ——
   const [name, setName] = useState('')
-  const [sort, setSort] = useState('id')
+  const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['groups', { limit: LIMIT, offset, name, sort, order }],
-    queryFn: () => api.listGroups({ limit: LIMIT, offset, name: name || undefined, sort, order }),
+    queryKey: ['groups', { limit: LIMIT, offset, name, sort: activeSort ?? 'id', order }],
+    queryFn: () => api.listGroups({ limit: LIMIT, offset, name: name || undefined, sort: activeSort ?? 'id', order }),
   })
   const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts({ limit: 100 }) })
   const accounts = accountsQ.data?.rows ?? []
@@ -57,8 +58,21 @@ export default function Groups() {
     setSelected([])
   }
   const changeName = (v: string) => { setName(v); resetPage() }
-  const changeSort = (v: string) => { setSort(v); resetPage() }
+  const changeSort = (v: string) => { setActiveSort(v); resetPage() }
   const changeOrder = (o: SortOrder) => { setOrder(o); resetPage() }
+  // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
+  const onColumnToggle = (col: string) => {
+    resetPage()
+    if (activeSort !== col) {
+      setActiveSort(col)
+      setOrder('desc')
+    } else if (order === 'desc') {
+      setOrder('asc')
+    } else {
+      setActiveSort(null)
+      setOrder('desc')
+    }
+  }
   const hasFilters = name !== ''
   const clearFilters = () => {
     setName('')
@@ -187,7 +201,7 @@ export default function Groups() {
       <ListToolbar
         name={name}
         onNameChange={changeName}
-        sort={sort}
+        sort={activeSort ?? 'id'}
         onSortChange={changeSort}
         order={order}
         onOrderChange={changeOrder}
@@ -238,11 +252,11 @@ export default function Groups() {
                       onCheckedChange={c => toggleAll(c === true)}
                     />
                   </TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>{t('groups.table.name')}</TableHead>
+                  <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
                   <TableHead>KeyPrefix</TableHead>
                   <TableHead>KeyHash</TableHead>
-                  <TableHead>{t('groups.table.createdAt')}</TableHead>
+                  <SortableHeader field="created_at" label={t('groups.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
                   <TableHead className="text-right">{t('groups.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>

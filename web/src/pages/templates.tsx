@@ -10,6 +10,7 @@ import { BatchBar } from '@/components/batch-bar'
 import { commaList, formatDateTime, truncate } from '@/components/fmt'
 import { ListToolbar, type SortOption, type SortOrder } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
+import { SortableHeader } from '@/components/sortable-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -299,7 +300,7 @@ export default function Templates() {
   // —— 列表状态：分页/筛选/排序 ——
   const [offset, setOffset] = useState(0)
   const [name, setName] = useState('')
-  const [sort, setSort] = useState('id')
+  const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [debouncedName, setDebouncedName] = useState('')
   const [selected, setSelected] = useState<number[]>([])
@@ -311,8 +312,8 @@ export default function Templates() {
   }, [name])
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['templates', { limit: LIMIT, offset, name: debouncedName, sort, order }],
-    queryFn: () => api.listTemplates({ limit: LIMIT, offset, name: debouncedName || undefined, sort, order }),
+    queryKey: ['templates', { limit: LIMIT, offset, name: debouncedName, sort: activeSort ?? 'id', order }],
+    queryFn: () => api.listTemplates({ limit: LIMIT, offset, name: debouncedName || undefined, sort: activeSort ?? 'id', order }),
   })
   const rows = data?.rows ?? []
 
@@ -332,8 +333,23 @@ export default function Templates() {
 
   // 筛选/排序/翻页变化 → 重置 offset 并清空选择
   const onNameChange = (v: string) => { setName(v); setOffset(0); setSelected([]) }
-  const onSortChange = (v: string) => { setSort(v); setOffset(0); setSelected([]) }
+  // 工具栏下拉选字段：选中即视为主动排序，order 保持当前值
+  const onSortChange = (v: string) => { setActiveSort(v); setOffset(0); setSelected([]) }
   const onOrderChange = (o: SortOrder) => { setOrder(o); setOffset(0); setSelected([]) }
+  // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
+  const onColumnToggle = (col: string) => {
+    setOffset(0)
+    setSelected([])
+    if (activeSort !== col) {
+      setActiveSort(col)
+      setOrder('desc')
+    } else if (order === 'desc') {
+      setOrder('asc')
+    } else {
+      setActiveSort(null)
+      setOrder('desc')
+    }
+  }
   const onOffsetChange = (o: number) => { setOffset(o); setSelected([]) }
 
   // —— 创建/编辑对话框 ——
@@ -449,7 +465,7 @@ export default function Templates() {
       <ListToolbar
         name={name}
         onNameChange={onNameChange}
-        sort={sort}
+        sort={activeSort ?? 'id'}
         onSortChange={onSortChange}
         order={order}
         onOrderChange={onOrderChange}
@@ -502,14 +518,14 @@ export default function Templates() {
                       aria-label={tr('list.selected', { count: rows.length })}
                     />
                   </TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>{tr('templates.table.name')}</TableHead>
-                  <TableHead>BaseURL</TableHead>
+                  <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="name" label={tr('templates.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="base_url" label="BaseURL" active={activeSort === 'base_url'} order={order} onToggle={onColumnToggle} />
                   <TableHead>{tr('templates.table.supportedFormats')}</TableHead>
                   <TableHead>{tr('templates.table.models')}</TableHead>
                   <TableHead>{tr('templates.table.formatModels')}</TableHead>
                   <TableHead>{tr('templates.table.modelMapping')}</TableHead>
-                  <TableHead>{tr('templates.table.createdAt')}</TableHead>
+                  <SortableHeader field="created_at" label={tr('templates.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
                   <TableHead className="text-right">{tr('templates.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>

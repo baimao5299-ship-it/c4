@@ -8,6 +8,7 @@ import { ApiUnauthorized } from '@/lib/api/client'
 import { BatchBar } from '@/components/batch-bar'
 import { ListToolbar, type SortOrder } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
+import { SortableHeader } from '@/components/sortable-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -111,7 +112,7 @@ export default function Accounts() {
 
   // —— 列表：筛选/分页状态归 queryKey ——
   const [name, setName] = useState('')
-  const [sort, setSort] = useState('id')
+  const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
   const [statusFilter, setStatusFilter] = useState<AccountStatus[]>([])
@@ -120,14 +121,14 @@ export default function Accounts() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
       'accounts',
-      { limit: LIMIT, offset, name, sort, order, status: statusFilter.join(','), template_id: templateId === 'all' ? undefined : Number(templateId) },
+      { limit: LIMIT, offset, name, sort: activeSort ?? 'id', order, status: statusFilter.join(','), template_id: templateId === 'all' ? undefined : Number(templateId) },
     ],
     queryFn: () =>
       api.listAccounts({
         limit: LIMIT,
         offset,
         name: name || undefined,
-        sort,
+        sort: activeSort ?? 'id',
         order,
         status: statusFilter.length > 0 ? statusFilter.join(',') : undefined,
         template_id: templateId === 'all' ? undefined : Number(templateId),
@@ -153,8 +154,21 @@ export default function Accounts() {
     setSelected([])
   }
   const changeName = (v: string) => { setName(v); resetPage() }
-  const changeSort = (v: string) => { setSort(v); resetPage() }
+  const changeSort = (v: string) => { setActiveSort(v); resetPage() }
   const changeOrder = (o: SortOrder) => { setOrder(o); resetPage() }
+  // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
+  const onColumnToggle = (col: string) => {
+    resetPage()
+    if (activeSort !== col) {
+      setActiveSort(col)
+      setOrder('desc')
+    } else if (order === 'desc') {
+      setOrder('asc')
+    } else {
+      setActiveSort(null)
+      setOrder('desc')
+    }
+  }
   const toggleStatusFilter = (s: AccountStatus) => {
     setStatusFilter(cur => (cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]))
     resetPage()
@@ -288,7 +302,7 @@ export default function Accounts() {
       <ListToolbar
         name={name}
         onNameChange={changeName}
-        sort={sort}
+        sort={activeSort ?? 'id'}
         onSortChange={changeSort}
         order={order}
         onOrderChange={changeOrder}
@@ -376,12 +390,12 @@ export default function Accounts() {
                       onCheckedChange={c => toggleAll(c === true)}
                     />
                   </TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>{t('accounts.table.name')}</TableHead>
-                  <TableHead>{t('accounts.table.template')}</TableHead>
-                  <TableHead>{t('accounts.table.status')}</TableHead>
-                  <TableHead className="text-right">{t('accounts.table.weight')}</TableHead>
-                  <TableHead className="text-right">{t('accounts.table.maxConcurrency')}</TableHead>
+                  <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="name" label={t('accounts.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="template_id" label={t('accounts.table.template')} active={activeSort === 'template_id'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="status" label={t('accounts.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
+                  <SortableHeader field="weight" label={t('accounts.table.weight')} active={activeSort === 'weight'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
+                  <SortableHeader field="max_concurrency" label={t('accounts.table.maxConcurrency')} active={activeSort === 'max_concurrency'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
                   <TableHead className="text-right">{t('accounts.table.curConcurrency')}</TableHead>
                   <TableHead className="text-right">{t('accounts.table.errRate')}</TableHead>
                   <TableHead className="text-right">{t('accounts.table.errCount')}</TableHead>
