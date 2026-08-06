@@ -95,15 +95,16 @@
   html {
     @apply font-sans;
     }
-  /* 背景 = 参考仓库 demo 实际参数：liquid-glass-react demo body 为纯 #ffffff（dark #0a0a0a）、
-     GooseHyperGlass catalog 容器为 #FAFAFA@0.4-0.6（透明 canvas + DOM 背后），彩色氛围来自内容本身
-     （demo 的彩图 / 管理台的卡片与强调色）。此处 = 近纯白 + 极淡浅蓝渐变 + 两枚克制的小光斑，不放大。 */
+  /* 背景图 = 软 aurora 光斑图（web/public/bg-aurora.png，本地生成）：
+     liquid-glass-react demo 玻璃背后是彩色图片、GooseHyperGlass demo 背后是 wallpaper 图像，
+     管理台以一张克制的浅色 aurora 图充当同等角色（浅蓝底 + 蓝/紫/青软光斑）。
+     此前尝试过纯黑（用户否）与近纯白（用户否），本版为图。 */
   body {
     @apply text-foreground;
-    background:
-      radial-gradient(360px 300px at 82% 12%, oklch(0.9 0.035 255 / 0.35), transparent 70%),
-      radial-gradient(320px 280px at 12% 88%, oklch(0.91 0.03 285 / 0.3), transparent 70%),
-      linear-gradient(160deg, #ffffff, oklch(0.965 0.008 250));
+    background-color: #e6edf9;
+    background-image: url('/bg-aurora.png');
+    background-size: cover;
+    background-position: center;
     background-attachment: fixed;
   }
 }
@@ -116,6 +117,6 @@
 .glass-panel { @apply rounded-xl border border-white/40 bg-white/30 shadow-[inset_0_1px_3px_rgba(255,255,255,0.25),0_0_0_0.5px_rgba(255,255,255,0.45)_inset,0_4px_20px_rgba(0,0,0,0.12)] backdrop-blur-lg backdrop-saturate-150; }
 .glass-input { @apply rounded-lg border border-white/50 bg-white/35 shadow-[inset_0_1px_2px_rgba(255,255,255,0.45)] backdrop-blur-md backdrop-saturate-150; }
 /* 整体玻璃胶囊外壳：大圆角 + 顶高光边 + 蓝紫投影（页面留白，内部侧边栏/内容区同一材质） */
-.glass-shell { @apply rounded-[2rem] border border-white/40 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_24px_64px_rgba(79,70,229,0.18)] backdrop-blur-2xl backdrop-saturate-150; }
+.glass-shell { @apply rounded-[2rem] border border-white/40 bg-white/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_24px_64px_rgba(79,70,229,0.18)] backdrop-blur-2xl backdrop-saturate-150; }
 /* 保留（后续任务可引用）：浅色玻璃分区条 */
 .glass-sidebar { @apply border-r border-white/20 bg-white/25; }
