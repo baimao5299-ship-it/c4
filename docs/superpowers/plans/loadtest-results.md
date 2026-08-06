@@ -103,6 +103,40 @@ P99 未达标归因：fakeupstream 单进程吞吐上限约 3.3k req/s（其 CPU
 
 对照（sserelay 收益）：旧实现（SDK 逐事件解码）在 12 核限制下 5,000 并发同型流 avg 首字节 428ms / P99 2.55s；sserelay + 24 核下 10,000 并发 avg 114.7ms / P99 330ms——并发翻倍、延迟降约 4 倍。
 
+## 四·四、50k 并发压力 + pprof 热点分析（2026-08-06）
+
+环境：同一匿名 Linux 服务器（24 核 / 62GB，100% CPU）。拓扑：loadtest（50k 并发）→ 网关（sserelay，临时 loopback-only pprof 6060）→ 3 实例 fakeupstream（:9101/2/3，100 chunks × 1ms）。`ulimit -n 1048576`、`max_inflight 200000`、6 账号（3 模板 × 2）。
+
+### 结果
+
+| 项 | 实测 |
+|---|---|
+| total / errs | 146,064 / 19（0.013%，全部为 loadtest 侧 `cannot assign requested address` 瞬时端口耗尽） |
+| avg 首字节 / P99 | 10,075ms / 19,190ms（严重排队，需求 500k req/s vs 上游完成 ~2.4k req/s） |
+| 网关 | goroutines 峰值 ~187k，heap 峰值 ~4.8GB，RSS ~6.9GB，CPU 峰值 ~9/24 核 |
+| 上游 | 3 实例合计 CPU ~1.3/24 核（远未打满） |
+| 稳定性 | 无崩溃、无泄漏：结束后 goroutines 回落至 ~12k、inflight 50k→0、heap 回落至 ~2GB |
+
+### pprof 热点（网关 CPU，30s 采样）
+
+**无业务代码热点**——top 全部为 runtime 调度/同步原语：
+
+- `runtime.selectgo` 49.8% cum（18.7 万 goroutine 的 select 等待/唤醒）
+- `runtime.schedule` 25.7% cum、`lock2`+`unlock2` ~27%、`futex` 7%
+- `runtime.(*timers)`（run/siftDown 合计 ~19%）——**每流 1 个 1ms flush timer**：50k 流 = 50k 个 1ms timer 持续空转（事件到达率远低于 1ms 粒度）
+- `runtime.saveblockevent` 23.6%——**测量伪影**：benchprofile 的 `SetBlockProfileRate(1)` 全量阻塞采样自身开销，非真实负载
+
+block/mutex profile：阻塞等待集中在**上游响应**（`rawPost`/`http.Client.Do` 43%）与 sserelay 写路径 mutex（44%，每流独立锁的等待累计，非跨流竞争）。上游与 loadtest CPU 均未打满（Syscall 为主）。
+
+### 结论
+
+1. **网关 50k 连接 + 18.7 万 goroutine 稳定**：0 网关侧错误、无崩溃无泄漏。
+2. **完成率瓶颈在上游链路**（~2.4k req/s，各组件 CPU 均未打满）：网关→上游连接建立/复用 + fakeupstream 处理能力的排队，非网关 CPU 瓶颈。
+3. **pprof 揭示的真实优化信号**：
+   - 每流 1 个 timer goroutine（relay `startFlushTimer`）——50k 流 = 50k 空转 goroutine，可共享/懒启动；
+   - 1ms `FlushInterval` 在事件间隔 >1ms 时大量空转（timers 堆压力），可考虑自适应间隔或按事件驱动；
+   - block/mutex 采样仅存在于临时 benchprofile 构建，生产无此开销。
+
 ## 五、压测发现并修复的缺陷
 
 **SSE 事件级冲刷缺失（internal/proxy/forward.go + internal/server/middleware.go）**：
