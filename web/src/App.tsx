@@ -1,6 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
-import { ApiClient } from '@/lib/api/client'
+import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
 import { auth } from '@/lib/auth'
 import Login from '@/pages/login'
 import Layout from '@/components/layout'
@@ -30,11 +30,27 @@ const router = createBrowserRouter([
   },
 ])
 
+// 401 全局拦截（Task 2→3 handoff 硬性要求）：任何 query/mutation 收到
+// ApiUnauthorized（client.ts 对 401 响应的归一化）→ 清 token + 跳 /login。
+// 页面无需各自 onError 兜底；QueryCache/MutationCache 的 onError 在 React Query
+// v5 中对所有活跃观测者/变更统一触发（queries.retry: 0 保证每个请求只报一次）。
+const handleAuthError = (err: unknown) => {
+  if (err instanceof ApiUnauthorized) {
+    auth.clear()
+    router.navigate('/login')
+  }
+}
+
+const qc = new QueryClient({
+  queryCache: new QueryCache({ onError: handleAuthError }),
+  mutationCache: new MutationCache({ onError: handleAuthError }),
+  defaultOptions: {
+    queries: { retry: 0, refetchOnWindowFocus: false },
+    mutations: { retry: 0 },
+  },
+})
+
 export default function App() {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: 0, refetchOnWindowFocus: false } },
-  })
-  // 401 全局拦截：清 token 回登录（页面内抛 ApiUnauthorized 由 query onError 统一处理）
   return (
     <QueryClientProvider client={qc}>
       <RouterProvider router={router} />
