@@ -137,6 +137,28 @@ block/mutex profile：阻塞等待集中在**上游响应**（`rawPost`/`http.Cl
    - 1ms `FlushInterval` 在事件间隔 >1ms 时大量空转（timers 堆压力），可考虑自适应间隔或按事件驱动；
    - block/mutex 采样仅存在于临时 benchprofile 构建，生产无此开销。
 
+## 四·五、50k 并发 × 5,000 账号压测 + pprof 热点定位（2026-08-06）
+
+环境：同一匿名 Linux 服务器（24 核 / 62GB，100% CPU）。拓扑：loadtest（50k 并发）→ 网关 → 3 实例 fakeupstream（100 chunks × 1ms）；单分组绑定 **5,000 个 active 账号**（3 模板均分，max_concurrency 10000/账号，weight 100）。
+
+### 结果
+
+| 项 | 实测 |
+|---|---|
+| total / errs | 14,615 / 0（完成率 ~61 req/s，avg 首字节 162.8s / P99 227.4s） |
+| 网关 inflight 峰值 | ~17,332（未达 50k——CPU 打满后连接建立停滞，loadtest 侧 dial 排队） |
+| 稳定性 | 无崩溃、无泄漏（结束后 goroutines 回落 ~3.6k、inflight 0） |
+
+### pprof 热点（网关 CPU，30s 采样，采样期间 CPU 过载致 lostProfileEvent 48%）
+
+**调度器选号是绝对热点（51%+），业务代码首次成为压测主要瓶颈：**
+
+- `Scheduler.weightedOrder` 51.2% cum + `accountSnapshot.score` 29.4% flat + `Scheduler.Select` 51.3% cum
+
+**根因**：`weightedOrder` 是不放回加权抽样，实现为 O(n²)——每轮遍历剩余池重算 total + 逐元素 score（5,000 账号 → 每 Select ~1,250 万次 `score()` 浮点计算）+ 切片删除。每请求一次 Select，50k 并发下 CPU 被打满，其余处理（accept/连接/转发）全部停滞。此前压测（单组 6 账号）选号是 O(36) 微操作，从未暴露。
+
+**优化方向（未实施）**：加权抽样改为单遍 O(n)（一次 total + 一次索引选择，score 缓存复用）；CAS 竞争重试保持循环但每次重选 O(n)（真实场景竞争极少，通常 1 次）。预计 Select 加速 ~O(n) 倍（5k 账号下约千倍）。
+
 ## 五、压测发现并修复的缺陷
 
 **SSE 事件级冲刷缺失（internal/proxy/forward.go + internal/server/middleware.go）**：
