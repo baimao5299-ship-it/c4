@@ -158,7 +158,7 @@ func (c *captureLogStore) InsertBatch(ctx context.Context, l []*domain.UsageLog)
 
 func (c *captureLogStore) PurgeLogs(ctx context.Context, t time.Time) error { return nil }
 
-// newTestProxyFormat 构造指定模板默认格式的测试代理（调度器按模板 FormatFor 做格式硬过滤）。
+// newTestProxyFormat 构造指定模板格式的测试代理（调度器按模板 FormatSupports 做格式硬过滤）。
 func newTestProxyFormat(t *testing.T, upstream string, format domain.RequestFormat) *Proxy {
 	t.Helper()
 	return newTestProxyFormatLogs(t, upstream, format, noopLogStore{})
@@ -169,7 +169,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		DefaultFormat: format, Models: []string{"gpt-4o"},
+		SupportedFormats: []domain.RequestFormat{format}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{
 		ID: 1, TemplateID: 1, Template: tpl, UpstreamKey: "sk-upstream",

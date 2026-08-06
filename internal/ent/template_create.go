@@ -35,9 +35,9 @@ func (_c *TemplateCreate) SetBaseURL(v string) *TemplateCreate {
 	return _c
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (_c *TemplateCreate) SetDefaultFormat(v template.DefaultFormat) *TemplateCreate {
-	_c.mutation.SetDefaultFormat(v)
+// SetSupportedFormats sets the "supported_formats" field.
+func (_c *TemplateCreate) SetSupportedFormats(v []string) *TemplateCreate {
+	_c.mutation.SetSupportedFormats(v)
 	return _c
 }
 
@@ -47,9 +47,9 @@ func (_c *TemplateCreate) SetModels(v []string) *TemplateCreate {
 	return _c
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (_c *TemplateCreate) SetModelFormats(v map[string]string) *TemplateCreate {
-	_c.mutation.SetModelFormats(v)
+// SetFormatModels sets the "format_models" field.
+func (_c *TemplateCreate) SetFormatModels(v map[string][]string) *TemplateCreate {
+	_c.mutation.SetFormatModels(v)
 	return _c
 }
 
@@ -161,19 +161,14 @@ func (_c *TemplateCreate) check() error {
 	if _, ok := _c.mutation.BaseURL(); !ok {
 		return &ValidationError{Name: "base_url", err: errors.New(`ent: missing required field "Template.base_url"`)}
 	}
-	if _, ok := _c.mutation.DefaultFormat(); !ok {
-		return &ValidationError{Name: "default_format", err: errors.New(`ent: missing required field "Template.default_format"`)}
-	}
-	if v, ok := _c.mutation.DefaultFormat(); ok {
-		if err := template.DefaultFormatValidator(v); err != nil {
-			return &ValidationError{Name: "default_format", err: fmt.Errorf(`ent: validator failed for field "Template.default_format": %w`, err)}
-		}
+	if _, ok := _c.mutation.SupportedFormats(); !ok {
+		return &ValidationError{Name: "supported_formats", err: errors.New(`ent: missing required field "Template.supported_formats"`)}
 	}
 	if _, ok := _c.mutation.Models(); !ok {
 		return &ValidationError{Name: "models", err: errors.New(`ent: missing required field "Template.models"`)}
 	}
-	if _, ok := _c.mutation.ModelFormats(); !ok {
-		return &ValidationError{Name: "model_formats", err: errors.New(`ent: missing required field "Template.model_formats"`)}
+	if _, ok := _c.mutation.FormatModels(); !ok {
+		return &ValidationError{Name: "format_models", err: errors.New(`ent: missing required field "Template.format_models"`)}
 	}
 	if _, ok := _c.mutation.ModelMapping(); !ok {
 		return &ValidationError{Name: "model_mapping", err: errors.New(`ent: missing required field "Template.model_mapping"`)}
@@ -225,17 +220,17 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 		_spec.SetField(template.FieldBaseURL, field.TypeString, value)
 		_node.BaseURL = value
 	}
-	if value, ok := _c.mutation.DefaultFormat(); ok {
-		_spec.SetField(template.FieldDefaultFormat, field.TypeEnum, value)
-		_node.DefaultFormat = value
+	if value, ok := _c.mutation.SupportedFormats(); ok {
+		_spec.SetField(template.FieldSupportedFormats, field.TypeJSON, value)
+		_node.SupportedFormats = value
 	}
 	if value, ok := _c.mutation.Models(); ok {
 		_spec.SetField(template.FieldModels, field.TypeJSON, value)
 		_node.Models = value
 	}
-	if value, ok := _c.mutation.ModelFormats(); ok {
-		_spec.SetField(template.FieldModelFormats, field.TypeJSON, value)
-		_node.ModelFormats = value
+	if value, ok := _c.mutation.FormatModels(); ok {
+		_spec.SetField(template.FieldFormatModels, field.TypeJSON, value)
+		_node.FormatModels = value
 	}
 	if value, ok := _c.mutation.ModelMapping(); ok {
 		_spec.SetField(template.FieldModelMapping, field.TypeJSON, value)
@@ -341,15 +336,15 @@ func (u *TemplateUpsert) UpdateBaseURL() *TemplateUpsert {
 	return u
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (u *TemplateUpsert) SetDefaultFormat(v template.DefaultFormat) *TemplateUpsert {
-	u.Set(template.FieldDefaultFormat, v)
+// SetSupportedFormats sets the "supported_formats" field.
+func (u *TemplateUpsert) SetSupportedFormats(v []string) *TemplateUpsert {
+	u.Set(template.FieldSupportedFormats, v)
 	return u
 }
 
-// UpdateDefaultFormat sets the "default_format" field to the value that was provided on create.
-func (u *TemplateUpsert) UpdateDefaultFormat() *TemplateUpsert {
-	u.SetExcluded(template.FieldDefaultFormat)
+// UpdateSupportedFormats sets the "supported_formats" field to the value that was provided on create.
+func (u *TemplateUpsert) UpdateSupportedFormats() *TemplateUpsert {
+	u.SetExcluded(template.FieldSupportedFormats)
 	return u
 }
 
@@ -365,15 +360,15 @@ func (u *TemplateUpsert) UpdateModels() *TemplateUpsert {
 	return u
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (u *TemplateUpsert) SetModelFormats(v map[string]string) *TemplateUpsert {
-	u.Set(template.FieldModelFormats, v)
+// SetFormatModels sets the "format_models" field.
+func (u *TemplateUpsert) SetFormatModels(v map[string][]string) *TemplateUpsert {
+	u.Set(template.FieldFormatModels, v)
 	return u
 }
 
-// UpdateModelFormats sets the "model_formats" field to the value that was provided on create.
-func (u *TemplateUpsert) UpdateModelFormats() *TemplateUpsert {
-	u.SetExcluded(template.FieldModelFormats)
+// UpdateFormatModels sets the "format_models" field to the value that was provided on create.
+func (u *TemplateUpsert) UpdateFormatModels() *TemplateUpsert {
+	u.SetExcluded(template.FieldFormatModels)
 	return u
 }
 
@@ -489,17 +484,17 @@ func (u *TemplateUpsertOne) UpdateBaseURL() *TemplateUpsertOne {
 	})
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (u *TemplateUpsertOne) SetDefaultFormat(v template.DefaultFormat) *TemplateUpsertOne {
+// SetSupportedFormats sets the "supported_formats" field.
+func (u *TemplateUpsertOne) SetSupportedFormats(v []string) *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
-		s.SetDefaultFormat(v)
+		s.SetSupportedFormats(v)
 	})
 }
 
-// UpdateDefaultFormat sets the "default_format" field to the value that was provided on create.
-func (u *TemplateUpsertOne) UpdateDefaultFormat() *TemplateUpsertOne {
+// UpdateSupportedFormats sets the "supported_formats" field to the value that was provided on create.
+func (u *TemplateUpsertOne) UpdateSupportedFormats() *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
-		s.UpdateDefaultFormat()
+		s.UpdateSupportedFormats()
 	})
 }
 
@@ -517,17 +512,17 @@ func (u *TemplateUpsertOne) UpdateModels() *TemplateUpsertOne {
 	})
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (u *TemplateUpsertOne) SetModelFormats(v map[string]string) *TemplateUpsertOne {
+// SetFormatModels sets the "format_models" field.
+func (u *TemplateUpsertOne) SetFormatModels(v map[string][]string) *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
-		s.SetModelFormats(v)
+		s.SetFormatModels(v)
 	})
 }
 
-// UpdateModelFormats sets the "model_formats" field to the value that was provided on create.
-func (u *TemplateUpsertOne) UpdateModelFormats() *TemplateUpsertOne {
+// UpdateFormatModels sets the "format_models" field to the value that was provided on create.
+func (u *TemplateUpsertOne) UpdateFormatModels() *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
-		s.UpdateModelFormats()
+		s.UpdateFormatModels()
 	})
 }
 
@@ -815,17 +810,17 @@ func (u *TemplateUpsertBulk) UpdateBaseURL() *TemplateUpsertBulk {
 	})
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (u *TemplateUpsertBulk) SetDefaultFormat(v template.DefaultFormat) *TemplateUpsertBulk {
+// SetSupportedFormats sets the "supported_formats" field.
+func (u *TemplateUpsertBulk) SetSupportedFormats(v []string) *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
-		s.SetDefaultFormat(v)
+		s.SetSupportedFormats(v)
 	})
 }
 
-// UpdateDefaultFormat sets the "default_format" field to the value that was provided on create.
-func (u *TemplateUpsertBulk) UpdateDefaultFormat() *TemplateUpsertBulk {
+// UpdateSupportedFormats sets the "supported_formats" field to the value that was provided on create.
+func (u *TemplateUpsertBulk) UpdateSupportedFormats() *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
-		s.UpdateDefaultFormat()
+		s.UpdateSupportedFormats()
 	})
 }
 
@@ -843,17 +838,17 @@ func (u *TemplateUpsertBulk) UpdateModels() *TemplateUpsertBulk {
 	})
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (u *TemplateUpsertBulk) SetModelFormats(v map[string]string) *TemplateUpsertBulk {
+// SetFormatModels sets the "format_models" field.
+func (u *TemplateUpsertBulk) SetFormatModels(v map[string][]string) *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
-		s.SetModelFormats(v)
+		s.SetFormatModels(v)
 	})
 }
 
-// UpdateModelFormats sets the "model_formats" field to the value that was provided on create.
-func (u *TemplateUpsertBulk) UpdateModelFormats() *TemplateUpsertBulk {
+// UpdateFormatModels sets the "format_models" field to the value that was provided on create.
+func (u *TemplateUpsertBulk) UpdateFormatModels() *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
-		s.UpdateModelFormats()
+		s.UpdateFormatModels()
 	})
 }
 

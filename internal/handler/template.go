@@ -8,14 +8,23 @@ import (
 	"go-proxy-mini/internal/service"
 )
 
-// toDomainFormats 契约 map（值类型为生成的 RequestFormat）→ 领域 map。
-func toDomainFormats(m *map[string]RequestFormat) map[string]domain.RequestFormat {
+// formatsFromBody 契约格式数组 → 领域格式数组。
+func formatsFromBody(in []TemplateCreateSupportedFormats) []domain.RequestFormat {
+	out := make([]domain.RequestFormat, 0, len(in))
+	for _, f := range in {
+		out = append(out, domain.RequestFormat(f))
+	}
+	return out
+}
+
+// formatModelsFromBody 契约 map（格式 → 模型列表）→ 领域 map；nil 输入产出 nil。
+func formatModelsFromBody(m *map[string][]string) map[domain.RequestFormat][]string {
 	if m == nil {
 		return nil
 	}
-	out := make(map[string]domain.RequestFormat, len(*m))
+	out := make(map[domain.RequestFormat][]string, len(*m))
 	for k, v := range *m {
-		out[k] = domain.RequestFormat(v)
+		out[domain.RequestFormat(k)] = v
 	}
 	return out
 }
@@ -28,12 +37,12 @@ func (h *AdminAPI) PostTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := h.svc.CreateTemplate(r.Context(), &domain.Template{
-		Name:          in.Name,
-		BaseURL:       in.BaseUrl,
-		DefaultFormat: domain.RequestFormat(in.DefaultFormat),
-		Models:        deref(in.Models),
-		ModelFormats:  toDomainFormats(in.ModelFormats),
-		ModelMapping:  deref(in.ModelMapping),
+		Name:             in.Name,
+		BaseURL:          in.BaseUrl,
+		SupportedFormats: formatsFromBody(in.SupportedFormats),
+		Models:           deref(in.Models),
+		FormatModels:     formatModelsFromBody(in.FormatModels),
+		ModelMapping:     deref(in.ModelMapping),
 	})
 	if err != nil {
 		writeServiceErr(w, err)
@@ -74,12 +83,12 @@ func (h *AdminAPI) PutTemplatesId(w http.ResponseWriter, r *http.Request, id int
 		return
 	}
 	tpl := &domain.Template{
-		Name:          in.Name,
-		BaseURL:       in.BaseUrl,
-		DefaultFormat: domain.RequestFormat(in.DefaultFormat),
-		Models:        deref(in.Models),
-		ModelFormats:  toDomainFormats(in.ModelFormats),
-		ModelMapping:  deref(in.ModelMapping),
+		Name:             in.Name,
+		BaseURL:          in.BaseUrl,
+		SupportedFormats: formatsFromBody(in.SupportedFormats),
+		Models:           deref(in.Models),
+		FormatModels:     formatModelsFromBody(in.FormatModels),
+		ModelMapping:     deref(in.ModelMapping),
 	}
 	tpl.ID = id
 	updated, err := h.svc.UpdateTemplate(r.Context(), tpl)

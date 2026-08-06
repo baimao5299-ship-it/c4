@@ -34,9 +34,23 @@ const (
 
 // Defines values for RequestFormat.
 const (
-	Anthropic       RequestFormat = "anthropic"
-	OpenaiChat      RequestFormat = "openai-chat"
-	OpenaiResponses RequestFormat = "openai-responses"
+	RequestFormatAnthropic       RequestFormat = "anthropic"
+	RequestFormatOpenaiChat      RequestFormat = "openai-chat"
+	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
+)
+
+// Defines values for TemplateSupportedFormats.
+const (
+	TemplateSupportedFormatsAnthropic       TemplateSupportedFormats = "anthropic"
+	TemplateSupportedFormatsOpenaiChat      TemplateSupportedFormats = "openai-chat"
+	TemplateSupportedFormatsOpenaiResponses TemplateSupportedFormats = "openai-responses"
+)
+
+// Defines values for TemplateCreateSupportedFormats.
+const (
+	Anthropic       TemplateCreateSupportedFormats = "anthropic"
+	OpenaiChat      TemplateCreateSupportedFormats = "openai-chat"
+	OpenaiResponses TemplateCreateSupportedFormats = "openai-responses"
 )
 
 // Defines values for GetStatsParamsGranularity.
@@ -166,26 +180,32 @@ type StatBucket struct {
 
 // Template defines model for Template.
 type Template struct {
-	BaseURL       *string                   `json:"BaseURL,omitempty"`
-	CreatedAt     *time.Time                `json:"CreatedAt,omitempty"`
-	DefaultFormat *RequestFormat            `json:"DefaultFormat,omitempty"`
-	ID            *int64                    `json:"ID,omitempty"`
-	ModelFormats  *map[string]RequestFormat `json:"ModelFormats,omitempty"`
-	ModelMapping  *map[string]string        `json:"ModelMapping,omitempty"`
-	Models        *[]string                 `json:"Models,omitempty"`
-	Name          *string                   `json:"Name,omitempty"`
-	UpdatedAt     *time.Time                `json:"UpdatedAt,omitempty"`
+	BaseURL          string                     `json:"BaseURL"`
+	CreatedAt        time.Time                  `json:"CreatedAt"`
+	FormatModels     *map[string][]string       `json:"FormatModels,omitempty"`
+	ID               int64                      `json:"ID"`
+	ModelMapping     *map[string]string         `json:"ModelMapping,omitempty"`
+	Models           *[]string                  `json:"Models,omitempty"`
+	Name             string                     `json:"Name"`
+	SupportedFormats []TemplateSupportedFormats `json:"SupportedFormats"`
+	UpdatedAt        time.Time                  `json:"UpdatedAt"`
 }
+
+// TemplateSupportedFormats defines model for Template.SupportedFormats.
+type TemplateSupportedFormats string
 
 // TemplateCreate defines model for TemplateCreate.
 type TemplateCreate struct {
-	BaseUrl       string                    `json:"base_url"`
-	DefaultFormat RequestFormat             `json:"default_format"`
-	ModelFormats  *map[string]RequestFormat `json:"model_formats,omitempty"`
-	ModelMapping  *map[string]string        `json:"model_mapping,omitempty"`
-	Models        *[]string                 `json:"models,omitempty"`
-	Name          string                    `json:"name"`
+	BaseUrl          string                           `json:"base_url"`
+	FormatModels     *map[string][]string             `json:"format_models,omitempty"`
+	ModelMapping     *map[string]string               `json:"model_mapping,omitempty"`
+	Models           *[]string                        `json:"models,omitempty"`
+	Name             string                           `json:"name"`
+	SupportedFormats []TemplateCreateSupportedFormats `json:"supported_formats"`
 }
+
+// TemplateCreateSupportedFormats defines model for TemplateCreate.SupportedFormats.
+type TemplateCreateSupportedFormats string
 
 // UpdatedResponse defines model for UpdatedResponse.
 type UpdatedResponse struct {

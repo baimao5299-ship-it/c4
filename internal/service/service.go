@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"slices"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -89,12 +90,27 @@ func validateTemplate(t *domain.Template) error {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return ErrInvalidInput
 	}
-	if !t.DefaultFormat.Valid() {
+	if len(t.SupportedFormats) == 0 {
 		return ErrInvalidInput
 	}
-	for _, f := range t.ModelFormats {
-		if !f.Valid() {
+	seen := make(map[domain.RequestFormat]bool, len(t.SupportedFormats))
+	for _, f := range t.SupportedFormats {
+		if !f.Valid() || seen[f] {
 			return ErrInvalidInput
+		}
+		seen[f] = true
+	}
+	for f, models := range t.FormatModels {
+		if !seen[f] || len(models) == 0 {
+			return ErrInvalidInput
+		}
+		for _, m := range models {
+			// 模型必须在可服务集合（排除 format_models 自身，防自引用循环）
+			if !slices.Contains(t.Models, m) {
+				if _, ok := t.ModelMapping[m]; !ok {
+					return ErrInvalidInput
+				}
+			}
 		}
 	}
 	return nil

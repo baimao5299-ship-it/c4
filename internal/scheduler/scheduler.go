@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -215,8 +216,10 @@ func modelSet(accs []*accountSnapshot) map[string]struct{} {
 		for _, m := range a.tpl.Models {
 			set[m] = struct{}{}
 		}
-		for m := range a.tpl.ModelFormats {
-			set[m] = struct{}{}
+		for _, list := range a.tpl.FormatModels {
+			for _, m := range list {
+				set[m] = struct{}{}
+			}
 		}
 		for m := range a.tpl.ModelMapping {
 			set[m] = struct{}{}
@@ -225,9 +228,9 @@ func modelSet(accs []*accountSnapshot) map[string]struct{} {
 	return set
 }
 
-// buildRoutes 预生成 (format, model) 调度路径：格式硬过滤（FormatFor）与模型偏好
+// buildRoutes 预生成 (format, model) 调度路径：格式硬过滤（FormatSupports）与模型偏好
 // （Serves）都是静态信息，可完全在重建时计算。另为每个格式生成默认回退桶
-// （model == ""）：请求模型未知时行为等价于默认格式 + tier2（Serves 恒 false）。
+// （model == ""）：请求模型未知时行为等价于格式桶 + tier2（Serves 恒 false）。
 func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 	routes := make(map[routeKey]*route)
 	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatAnthropic}
@@ -235,7 +238,7 @@ func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 		for _, format := range formats {
 			var t1, t2 []*accountSnapshot
 			for _, a := range accs {
-				if a.tpl == nil || a.tpl.FormatFor(model) != format {
+				if a.tpl == nil || !a.tpl.FormatSupports(format, model) {
 					continue
 				}
 				if a.tpl.Serves(model) {
@@ -260,7 +263,7 @@ func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 	for _, format := range formats {
 		var t2 []*accountSnapshot
 		for _, a := range accs {
-			if a.tpl == nil || a.tpl.DefaultFormat != format {
+			if a.tpl == nil || !slices.Contains(a.tpl.SupportedFormats, format) {
 				continue
 			}
 			t2 = append(t2, a)

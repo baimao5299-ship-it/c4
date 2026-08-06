@@ -205,10 +205,10 @@ export interface components {
         TemplateCreate: {
             name: string;
             base_url: string;
-            default_format: components["schemas"]["RequestFormat"];
+            supported_formats: ("openai-chat" | "openai-responses" | "anthropic")[];
             models?: string[];
-            model_formats?: {
-                [key: string]: components["schemas"]["RequestFormat"];
+            format_models?: {
+                [key: string]: string[];
             };
             model_mapping?: {
                 [key: string]: string;
@@ -216,21 +216,21 @@ export interface components {
         };
         Template: {
             /** Format: int64 */
-            ID?: number;
-            Name?: string;
-            BaseURL?: string;
-            DefaultFormat?: components["schemas"]["RequestFormat"];
+            ID: number;
+            Name: string;
+            BaseURL: string;
+            SupportedFormats: ("openai-chat" | "openai-responses" | "anthropic")[];
             Models?: string[];
-            ModelFormats?: {
-                [key: string]: components["schemas"]["RequestFormat"];
+            FormatModels?: {
+                [key: string]: string[];
             };
             ModelMapping?: {
                 [key: string]: string;
             };
             /** Format: date-time */
-            CreatedAt?: string;
+            CreatedAt: string;
             /** Format: date-time */
-            UpdatedAt?: string;
+            UpdatedAt: string;
         };
         AccountCreate: {
             name: string;

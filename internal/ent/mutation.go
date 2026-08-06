@@ -1819,25 +1819,26 @@ func (m *GroupMutation) ResetEdge(name string) error {
 // TemplateMutation represents an operation that mutates the Template nodes in the graph.
 type TemplateMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *int64
-	name            *string
-	base_url        *string
-	default_format  *template.DefaultFormat
-	models          *[]string
-	appendmodels    []string
-	model_formats   *map[string]string
-	model_mapping   *map[string]string
-	created_at      *time.Time
-	updated_at      *time.Time
-	clearedFields   map[string]struct{}
-	accounts        map[int64]struct{}
-	removedaccounts map[int64]struct{}
-	clearedaccounts bool
-	done            bool
-	oldValue        func(context.Context) (*Template, error)
-	predicates      []predicate.Template
+	op                      Op
+	typ                     string
+	id                      *int64
+	name                    *string
+	base_url                *string
+	supported_formats       *[]string
+	appendsupported_formats []string
+	models                  *[]string
+	appendmodels            []string
+	format_models           *map[string][]string
+	model_mapping           *map[string]string
+	created_at              *time.Time
+	updated_at              *time.Time
+	clearedFields           map[string]struct{}
+	accounts                map[int64]struct{}
+	removedaccounts         map[int64]struct{}
+	clearedaccounts         bool
+	done                    bool
+	oldValue                func(context.Context) (*Template, error)
+	predicates              []predicate.Template
 }
 
 var _ ent.Mutation = (*TemplateMutation)(nil)
@@ -2016,40 +2017,55 @@ func (m *TemplateMutation) ResetBaseURL() {
 	m.base_url = nil
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (m *TemplateMutation) SetDefaultFormat(tf template.DefaultFormat) {
-	m.default_format = &tf
+// SetSupportedFormats sets the "supported_formats" field.
+func (m *TemplateMutation) SetSupportedFormats(s []string) {
+	m.supported_formats = &s
+	m.appendsupported_formats = nil
 }
 
-// DefaultFormat returns the value of the "default_format" field in the mutation.
-func (m *TemplateMutation) DefaultFormat() (r template.DefaultFormat, exists bool) {
-	v := m.default_format
+// SupportedFormats returns the value of the "supported_formats" field in the mutation.
+func (m *TemplateMutation) SupportedFormats() (r []string, exists bool) {
+	v := m.supported_formats
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldDefaultFormat returns the old "default_format" field's value of the Template entity.
+// OldSupportedFormats returns the old "supported_formats" field's value of the Template entity.
 // If the Template object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TemplateMutation) OldDefaultFormat(ctx context.Context) (v template.DefaultFormat, err error) {
+func (m *TemplateMutation) OldSupportedFormats(ctx context.Context) (v []string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldDefaultFormat is only allowed on UpdateOne operations")
+		return v, errors.New("OldSupportedFormats is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldDefaultFormat requires an ID field in the mutation")
+		return v, errors.New("OldSupportedFormats requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldDefaultFormat: %w", err)
+		return v, fmt.Errorf("querying old value for OldSupportedFormats: %w", err)
 	}
-	return oldValue.DefaultFormat, nil
+	return oldValue.SupportedFormats, nil
 }
 
-// ResetDefaultFormat resets all changes to the "default_format" field.
-func (m *TemplateMutation) ResetDefaultFormat() {
-	m.default_format = nil
+// AppendSupportedFormats adds s to the "supported_formats" field.
+func (m *TemplateMutation) AppendSupportedFormats(s []string) {
+	m.appendsupported_formats = append(m.appendsupported_formats, s...)
+}
+
+// AppendedSupportedFormats returns the list of values that were appended to the "supported_formats" field in this mutation.
+func (m *TemplateMutation) AppendedSupportedFormats() ([]string, bool) {
+	if len(m.appendsupported_formats) == 0 {
+		return nil, false
+	}
+	return m.appendsupported_formats, true
+}
+
+// ResetSupportedFormats resets all changes to the "supported_formats" field.
+func (m *TemplateMutation) ResetSupportedFormats() {
+	m.supported_formats = nil
+	m.appendsupported_formats = nil
 }
 
 // SetModels sets the "models" field.
@@ -2103,40 +2119,40 @@ func (m *TemplateMutation) ResetModels() {
 	m.appendmodels = nil
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (m *TemplateMutation) SetModelFormats(value map[string]string) {
-	m.model_formats = &value
+// SetFormatModels sets the "format_models" field.
+func (m *TemplateMutation) SetFormatModels(value map[string][]string) {
+	m.format_models = &value
 }
 
-// ModelFormats returns the value of the "model_formats" field in the mutation.
-func (m *TemplateMutation) ModelFormats() (r map[string]string, exists bool) {
-	v := m.model_formats
+// FormatModels returns the value of the "format_models" field in the mutation.
+func (m *TemplateMutation) FormatModels() (r map[string][]string, exists bool) {
+	v := m.format_models
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldModelFormats returns the old "model_formats" field's value of the Template entity.
+// OldFormatModels returns the old "format_models" field's value of the Template entity.
 // If the Template object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TemplateMutation) OldModelFormats(ctx context.Context) (v map[string]string, err error) {
+func (m *TemplateMutation) OldFormatModels(ctx context.Context) (v map[string][]string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldModelFormats is only allowed on UpdateOne operations")
+		return v, errors.New("OldFormatModels is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldModelFormats requires an ID field in the mutation")
+		return v, errors.New("OldFormatModels requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldModelFormats: %w", err)
+		return v, fmt.Errorf("querying old value for OldFormatModels: %w", err)
 	}
-	return oldValue.ModelFormats, nil
+	return oldValue.FormatModels, nil
 }
 
-// ResetModelFormats resets all changes to the "model_formats" field.
-func (m *TemplateMutation) ResetModelFormats() {
-	m.model_formats = nil
+// ResetFormatModels resets all changes to the "format_models" field.
+func (m *TemplateMutation) ResetFormatModels() {
+	m.format_models = nil
 }
 
 // SetModelMapping sets the "model_mapping" field.
@@ -2342,14 +2358,14 @@ func (m *TemplateMutation) Fields() []string {
 	if m.base_url != nil {
 		fields = append(fields, template.FieldBaseURL)
 	}
-	if m.default_format != nil {
-		fields = append(fields, template.FieldDefaultFormat)
+	if m.supported_formats != nil {
+		fields = append(fields, template.FieldSupportedFormats)
 	}
 	if m.models != nil {
 		fields = append(fields, template.FieldModels)
 	}
-	if m.model_formats != nil {
-		fields = append(fields, template.FieldModelFormats)
+	if m.format_models != nil {
+		fields = append(fields, template.FieldFormatModels)
 	}
 	if m.model_mapping != nil {
 		fields = append(fields, template.FieldModelMapping)
@@ -2372,12 +2388,12 @@ func (m *TemplateMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case template.FieldBaseURL:
 		return m.BaseURL()
-	case template.FieldDefaultFormat:
-		return m.DefaultFormat()
+	case template.FieldSupportedFormats:
+		return m.SupportedFormats()
 	case template.FieldModels:
 		return m.Models()
-	case template.FieldModelFormats:
-		return m.ModelFormats()
+	case template.FieldFormatModels:
+		return m.FormatModels()
 	case template.FieldModelMapping:
 		return m.ModelMapping()
 	case template.FieldCreatedAt:
@@ -2397,12 +2413,12 @@ func (m *TemplateMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldName(ctx)
 	case template.FieldBaseURL:
 		return m.OldBaseURL(ctx)
-	case template.FieldDefaultFormat:
-		return m.OldDefaultFormat(ctx)
+	case template.FieldSupportedFormats:
+		return m.OldSupportedFormats(ctx)
 	case template.FieldModels:
 		return m.OldModels(ctx)
-	case template.FieldModelFormats:
-		return m.OldModelFormats(ctx)
+	case template.FieldFormatModels:
+		return m.OldFormatModels(ctx)
 	case template.FieldModelMapping:
 		return m.OldModelMapping(ctx)
 	case template.FieldCreatedAt:
@@ -2432,12 +2448,12 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBaseURL(v)
 		return nil
-	case template.FieldDefaultFormat:
-		v, ok := value.(template.DefaultFormat)
+	case template.FieldSupportedFormats:
+		v, ok := value.([]string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetDefaultFormat(v)
+		m.SetSupportedFormats(v)
 		return nil
 	case template.FieldModels:
 		v, ok := value.([]string)
@@ -2446,12 +2462,12 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetModels(v)
 		return nil
-	case template.FieldModelFormats:
-		v, ok := value.(map[string]string)
+	case template.FieldFormatModels:
+		v, ok := value.(map[string][]string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetModelFormats(v)
+		m.SetFormatModels(v)
 		return nil
 	case template.FieldModelMapping:
 		v, ok := value.(map[string]string)
@@ -2529,14 +2545,14 @@ func (m *TemplateMutation) ResetField(name string) error {
 	case template.FieldBaseURL:
 		m.ResetBaseURL()
 		return nil
-	case template.FieldDefaultFormat:
-		m.ResetDefaultFormat()
+	case template.FieldSupportedFormats:
+		m.ResetSupportedFormats()
 		return nil
 	case template.FieldModels:
 		m.ResetModels()
 		return nil
-	case template.FieldModelFormats:
-		m.ResetModelFormats()
+	case template.FieldFormatModels:
+		m.ResetFormatModels()
 		return nil
 	case template.FieldModelMapping:
 		m.ResetModelMapping()

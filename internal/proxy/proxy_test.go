@@ -150,7 +150,7 @@ func newTestProxyCapture(t *testing.T, upstream string, accountID int64, usageCa
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	return newTestProxyTplCapture(t, tpl, accountID, usageCapture)
 }
@@ -263,7 +263,7 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 	defer srv.Close()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: srv.URL + "/v1",
-		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: map[string]string{"gpt-4o": "gpt-4o-upstream"},
 	}
 	p := newTestProxyTplCapture(t, tpl, 1, true)
@@ -320,7 +320,7 @@ func TestProxyFailoverOn429(t *testing.T) {
 	defer up.Close()
 	p := newTestProxy(t, up.URL+"/v1", 1)
 	// 第二个账号
-	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"}}
+	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 	sched := p.sched
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
@@ -352,7 +352,7 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	up := fakeOpenAI(t, "500")
 	defer up.Close()
 	p := newTestProxy(t, up.URL+"/v1", 1)
-	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"}}
+	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 	sched := p.sched
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
@@ -390,7 +390,7 @@ func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 	loader := p.sched.Loader().(noopLoader)
 	for i := int64(2); i <= 3; i++ {
 		tpl := &domain.Template{ID: i, Name: fmt.Sprintf("t%d", i), BaseURL: up.URL + "/v1",
-			DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"}}
+			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 		loader.accs[10] = append(loader.accs[10], &domain.Account{
 			ID: i, TemplateID: i, Template: tpl, UpstreamKey: "sk-upstream",
 			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
@@ -466,7 +466,7 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 	store := &captureLogStore{}
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: up.URL + "/v1",
-		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	// 小超时保证断言在测试生命周期内触发（父 ctx 不取消，仅子 ctx 超时）
 	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 100*time.Millisecond, store)

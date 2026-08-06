@@ -22,7 +22,7 @@ func BenchmarkSelect5000Accounts(b *testing.B) {
 
 func schedulerWithAccounts(b *testing.B, n int) *Scheduler {
 	b.Helper()
-	tpl := &domain.Template{ID: 1, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"}}
+	tpl := &domain.Template{ID: 1, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 	accs := make(map[int64][]*domain.Account)
 	for i := int64(1); i <= int64(n); i++ {
 		accs[10] = append(accs[10], &domain.Account{

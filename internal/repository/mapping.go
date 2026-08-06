@@ -7,14 +7,18 @@ import (
 )
 
 func toDomainTemplate(t *ent.Template) *domain.Template {
-	mf := make(map[string]domain.RequestFormat, len(t.ModelFormats))
-	for k, v := range t.ModelFormats {
-		mf[k] = domain.RequestFormat(v)
+	formats := make([]domain.RequestFormat, 0, len(t.SupportedFormats))
+	for _, f := range t.SupportedFormats {
+		formats = append(formats, domain.RequestFormat(f))
+	}
+	fm := make(map[domain.RequestFormat][]string, len(t.FormatModels))
+	for k, v := range t.FormatModels {
+		fm[domain.RequestFormat(k)] = v
 	}
 	return &domain.Template{
 		ID: t.ID, Name: t.Name, BaseURL: t.BaseURL,
-		DefaultFormat: domain.RequestFormat(t.DefaultFormat),
-		Models:        t.Models, ModelFormats: mf, ModelMapping: t.ModelMapping,
+		SupportedFormats: formats, Models: t.Models,
+		FormatModels: fm, ModelMapping: t.ModelMapping,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 }

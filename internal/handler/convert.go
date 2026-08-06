@@ -6,23 +6,26 @@ import (
 )
 
 // 本文件实现领域类型 → 生成的契约类型（api.gen.go）的转换。
-// oapi-codegen v2.4.1 对非 required 属性生成指针 + omitempty 字段
-// （如 ID *int64、Name *string），因此响应字段全部经取址赋值；
+// oapi-codegen v2.4.1 对 required 属性生成值类型、非 required 生成指针 +
+// omitempty 字段，因此响应字段按生成类型取址/取值赋值；
 // 枚举类型（RequestFormat/AccountStatus/ErrorType）跨包需显式转换。
 
 // toAPITemplate 模板领域对象 → 契约类型。
 func toAPITemplate(t *domain.Template) Template {
-	f := RequestFormat(t.DefaultFormat)
+	formats := make([]TemplateSupportedFormats, 0, len(t.SupportedFormats))
+	for _, f := range t.SupportedFormats {
+		formats = append(formats, TemplateSupportedFormats(f))
+	}
 	return Template{
-		ID:            &t.ID,
-		Name:          &t.Name,
-		BaseURL:       &t.BaseURL,
-		DefaultFormat: &f,
-		Models:        &t.Models,
-		ModelFormats:  toAPITemplateFormats(t.ModelFormats),
-		ModelMapping:  &t.ModelMapping,
-		CreatedAt:     &t.CreatedAt,
-		UpdatedAt:     &t.UpdatedAt,
+		ID:               t.ID,
+		Name:             t.Name,
+		BaseURL:          t.BaseURL,
+		SupportedFormats: formats,
+		Models:           &t.Models,
+		FormatModels:     toAPITemplateFormatModels(t.FormatModels),
+		ModelMapping:     &t.ModelMapping,
+		CreatedAt:        t.CreatedAt,
+		UpdatedAt:        t.UpdatedAt,
 	}
 }
 
@@ -128,15 +131,14 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	}
 }
 
-// toAPITemplateFormats 把领域 map（值类型为 domain.RequestFormat）
-// 转换为契约 map（值类型为 RequestFormat）；nil 输入产出指向 nil map
-// 的指针（wire 上仍为 "ModelFormats":null，与旧实现一致）。
-func toAPITemplateFormats(m map[string]domain.RequestFormat) *map[string]RequestFormat {
-	var out map[string]RequestFormat
+// toAPITemplateFormatModels 把领域 map（键为 domain.RequestFormat）转换为契约
+// map（键为 string）；nil 输入产出指向 nil map 的指针（wire 上仍为 "FormatModels":null）。
+func toAPITemplateFormatModels(m map[domain.RequestFormat][]string) *map[string][]string {
+	var out map[string][]string
 	if m != nil {
-		out = make(map[string]RequestFormat, len(m))
+		out = make(map[string][]string, len(m))
 		for k, v := range m {
-			out[k] = RequestFormat(v)
+			out[string(k)] = v
 		}
 	}
 	return &out

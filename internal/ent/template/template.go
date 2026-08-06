@@ -3,7 +3,6 @@
 package template
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -19,12 +18,12 @@ const (
 	FieldName = "name"
 	// FieldBaseURL holds the string denoting the base_url field in the database.
 	FieldBaseURL = "base_url"
-	// FieldDefaultFormat holds the string denoting the default_format field in the database.
-	FieldDefaultFormat = "default_format"
+	// FieldSupportedFormats holds the string denoting the supported_formats field in the database.
+	FieldSupportedFormats = "supported_formats"
 	// FieldModels holds the string denoting the models field in the database.
 	FieldModels = "models"
-	// FieldModelFormats holds the string denoting the model_formats field in the database.
-	FieldModelFormats = "model_formats"
+	// FieldFormatModels holds the string denoting the format_models field in the database.
+	FieldFormatModels = "format_models"
 	// FieldModelMapping holds the string denoting the model_mapping field in the database.
 	FieldModelMapping = "model_mapping"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -49,9 +48,9 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldBaseURL,
-	FieldDefaultFormat,
+	FieldSupportedFormats,
 	FieldModels,
-	FieldModelFormats,
+	FieldFormatModels,
 	FieldModelMapping,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -76,30 +75,6 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 )
 
-// DefaultFormat defines the type for the "default_format" enum field.
-type DefaultFormat string
-
-// DefaultFormat values.
-const (
-	DefaultFormatOpenaiChat      DefaultFormat = "openai-chat"
-	DefaultFormatOpenaiResponses DefaultFormat = "openai-responses"
-	DefaultFormatAnthropic       DefaultFormat = "anthropic"
-)
-
-func (df DefaultFormat) String() string {
-	return string(df)
-}
-
-// DefaultFormatValidator is a validator for the "default_format" field enum values. It is called by the builders before save.
-func DefaultFormatValidator(df DefaultFormat) error {
-	switch df {
-	case DefaultFormatOpenaiChat, DefaultFormatOpenaiResponses, DefaultFormatAnthropic:
-		return nil
-	default:
-		return fmt.Errorf("template: invalid enum value for default_format field: %q", df)
-	}
-}
-
 // OrderOption defines the ordering options for the Template queries.
 type OrderOption func(*sql.Selector)
 
@@ -116,11 +91,6 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByBaseURL orders the results by the base_url field.
 func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
-}
-
-// ByDefaultFormat orders the results by the default_format field.
-func ByDefaultFormat(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldDefaultFormat, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

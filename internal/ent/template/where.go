@@ -205,26 +205,6 @@ func BaseURLContainsFold(v string) predicate.Template {
 	return predicate.Template(sql.FieldContainsFold(FieldBaseURL, v))
 }
 
-// DefaultFormatEQ applies the EQ predicate on the "default_format" field.
-func DefaultFormatEQ(v DefaultFormat) predicate.Template {
-	return predicate.Template(sql.FieldEQ(FieldDefaultFormat, v))
-}
-
-// DefaultFormatNEQ applies the NEQ predicate on the "default_format" field.
-func DefaultFormatNEQ(v DefaultFormat) predicate.Template {
-	return predicate.Template(sql.FieldNEQ(FieldDefaultFormat, v))
-}
-
-// DefaultFormatIn applies the In predicate on the "default_format" field.
-func DefaultFormatIn(vs ...DefaultFormat) predicate.Template {
-	return predicate.Template(sql.FieldIn(FieldDefaultFormat, vs...))
-}
-
-// DefaultFormatNotIn applies the NotIn predicate on the "default_format" field.
-func DefaultFormatNotIn(vs ...DefaultFormat) predicate.Template {
-	return predicate.Template(sql.FieldNotIn(FieldDefaultFormat, vs...))
-}
-
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldCreatedAt, v))

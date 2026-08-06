@@ -22,12 +22,12 @@ type Template struct {
 	Name string `json:"name,omitempty"`
 	// BaseURL holds the value of the "base_url" field.
 	BaseURL string `json:"base_url,omitempty"`
-	// DefaultFormat holds the value of the "default_format" field.
-	DefaultFormat template.DefaultFormat `json:"default_format,omitempty"`
+	// SupportedFormats holds the value of the "supported_formats" field.
+	SupportedFormats []string `json:"supported_formats,omitempty"`
 	// Models holds the value of the "models" field.
 	Models []string `json:"models,omitempty"`
-	// ModelFormats holds the value of the "model_formats" field.
-	ModelFormats map[string]string `json:"model_formats,omitempty"`
+	// FormatModels holds the value of the "format_models" field.
+	FormatModels map[string][]string `json:"format_models,omitempty"`
 	// ModelMapping holds the value of the "model_mapping" field.
 	ModelMapping map[string]string `json:"model_mapping,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -63,11 +63,11 @@ func (*Template) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case template.FieldModels, template.FieldModelFormats, template.FieldModelMapping:
+		case template.FieldSupportedFormats, template.FieldModels, template.FieldFormatModels, template.FieldModelMapping:
 			values[i] = new([]byte)
 		case template.FieldID:
 			values[i] = new(sql.NullInt64)
-		case template.FieldName, template.FieldBaseURL, template.FieldDefaultFormat:
+		case template.FieldName, template.FieldBaseURL:
 			values[i] = new(sql.NullString)
 		case template.FieldCreatedAt, template.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -104,11 +104,13 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.BaseURL = value.String
 			}
-		case template.FieldDefaultFormat:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field default_format", values[i])
-			} else if value.Valid {
-				_m.DefaultFormat = template.DefaultFormat(value.String)
+		case template.FieldSupportedFormats:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field supported_formats", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SupportedFormats); err != nil {
+					return fmt.Errorf("unmarshal field supported_formats: %w", err)
+				}
 			}
 		case template.FieldModels:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -118,12 +120,12 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field models: %w", err)
 				}
 			}
-		case template.FieldModelFormats:
+		case template.FieldFormatModels:
 			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field model_formats", values[i])
+				return fmt.Errorf("unexpected type %T for field format_models", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.ModelFormats); err != nil {
-					return fmt.Errorf("unmarshal field model_formats: %w", err)
+				if err := json.Unmarshal(*value, &_m.FormatModels); err != nil {
+					return fmt.Errorf("unmarshal field format_models: %w", err)
 				}
 			}
 		case template.FieldModelMapping:
@@ -193,14 +195,14 @@ func (_m *Template) String() string {
 	builder.WriteString("base_url=")
 	builder.WriteString(_m.BaseURL)
 	builder.WriteString(", ")
-	builder.WriteString("default_format=")
-	builder.WriteString(fmt.Sprintf("%v", _m.DefaultFormat))
+	builder.WriteString("supported_formats=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SupportedFormats))
 	builder.WriteString(", ")
 	builder.WriteString("models=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Models))
 	builder.WriteString(", ")
-	builder.WriteString("model_formats=")
-	builder.WriteString(fmt.Sprintf("%v", _m.ModelFormats))
+	builder.WriteString("format_models=")
+	builder.WriteString(fmt.Sprintf("%v", _m.FormatModels))
 	builder.WriteString(", ")
 	builder.WriteString("model_mapping=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ModelMapping))

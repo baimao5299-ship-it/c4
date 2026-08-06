@@ -45,32 +45,41 @@ const (
 )
 
 type Template struct {
-	ID            int64
-	Name          string
-	BaseURL       string
-	DefaultFormat RequestFormat
-	Models        []string
-	ModelFormats  map[string]RequestFormat
-	ModelMapping  map[string]string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID               int64
+	Name             string
+	BaseURL          string
+	SupportedFormats []RequestFormat            // 模板支持的格式（非空、去重）
+	Models           []string                   // 可服务模型集合
+	FormatModels     map[RequestFormat][]string // 格式 → 该格式支持的模型列表；未配置 = 全部 Models
+	ModelMapping     map[string]string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
-// FormatFor 返回模型 m 在该模板下的请求格式：model_formats 覆盖优先，否则默认格式。
-func (t *Template) FormatFor(m string) RequestFormat {
-	if f, ok := t.ModelFormats[m]; ok {
-		return f
+// FormatsFor 模板支持的格式列表。
+func (t *Template) FormatsFor() []RequestFormat { return t.SupportedFormats }
+
+// FormatSupports 格式 f 是否支持模型 m（模型级限制）：
+// f 不在 SupportedFormats → false；FormatModels[f] 配置了 → m ∈ 列表；未配置 → true。
+func (t *Template) FormatSupports(f RequestFormat, m string) bool {
+	if !slices.Contains(t.SupportedFormats, f) {
+		return false
 	}
-	return t.DefaultFormat
+	if list, ok := t.FormatModels[f]; ok {
+		return slices.Contains(list, m)
+	}
+	return true
 }
 
-// Serves 模型是否在可服务集合（models ∪ model_formats keys ∪ mapping keys）内。
+// Serves 模型是否在可服务集合（models ∪ format_models 全部列表 ∪ mapping keys）内。
 func (t *Template) Serves(m string) bool {
 	if slices.Contains(t.Models, m) {
 		return true
 	}
-	if _, ok := t.ModelFormats[m]; ok {
-		return true
+	for _, list := range t.FormatModels {
+		if slices.Contains(list, m) {
+			return true
+		}
 	}
 	if _, ok := t.ModelMapping[m]; ok {
 		return true

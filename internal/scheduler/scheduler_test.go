@@ -58,7 +58,7 @@ func testCfg() Config {
 }
 
 func tpl(id int64, format domain.RequestFormat, models []string) *domain.Template {
-	return &domain.Template{ID: id, BaseURL: "https://u/v1", DefaultFormat: format, Models: models}
+	return &domain.Template{ID: id, BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{format}, Models: models}
 }
 
 func acc(id int64, t *domain.Template, maxConc int) *domain.Account {
@@ -387,7 +387,7 @@ func mkAcc(id int64, weight int, tpl *domain.Template) *accountSnapshot {
 }
 
 func tplWith(ff domain.RequestFormat, models []string) *domain.Template {
-	return &domain.Template{DefaultFormat: ff, Models: models}
+	return &domain.Template{SupportedFormats: []domain.RequestFormat{ff}, Models: models}
 }
 
 func TestNewWeightedSeqGcdNormalization(t *testing.T) {
@@ -443,13 +443,28 @@ func TestBuildRoutesBucketsAndDefault(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestBuildRoutesModelFormatsOverride(t *testing.T) {
-	tpl := &domain.Template{DefaultFormat: domain.FormatOpenAIChat, ModelFormats: map[string]domain.RequestFormat{"special": domain.FormatAnthropic}}
+func TestBuildRoutesFormatModelsLimit(t *testing.T) {
+	tpl := &domain.Template{
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatAnthropic},
+		Models:           []string{"gpt-4o", "special"},
+		FormatModels:     map[domain.RequestFormat][]string{domain.FormatAnthropic: {"special"}},
+	}
 	pool := []*accountSnapshot{mkAcc(1, 100, tpl)}
 	routes := buildRoutes(pool)
+	// anthropic 只支持 special（format_models 限制）→ special 有桶且 tier1（∈ Models → Serves true）
 	rt, ok := routes[routeKey{domain.FormatAnthropic, "special"}]
-	require.True(t, ok, "ModelFormats 覆盖 → special 模型走 anthropic 格式")
-	require.NotNil(t, rt.tier1, "special ∈ ModelFormats keys → Serves true → tier1")
+	require.True(t, ok, "FormatModels 配置格式 → special 模型走 anthropic 桶")
+	require.NotNil(t, rt.tier1, "special ∈ Models → Serves true → tier1")
+	// gpt-4o 不在 anthropic 的 format_models 列表 → 该组合无桶
+	_, ok = routes[routeKey{domain.FormatAnthropic, "gpt-4o"}]
+	require.False(t, ok, "gpt-4o ∉ FormatModels[anthropic] → 格式不支持该模型")
+	// chat 未配置 format_models → 全部模型
+	rtC, ok := routes[routeKey{domain.FormatOpenAIChat, "gpt-4o"}]
+	require.True(t, ok, "未配置格式 → 全部模型")
+	require.NotNil(t, rtC.tier1, "gpt-4o ∈ Models → tier1")
+	// responses 不在 supported → 无桶
+	_, ok = routes[routeKey{domain.FormatOpenAIResponses, "special"}]
+	require.False(t, ok, "格式不在 supported → 无桶")
 }
 
 // 分布：10 万次选号，频率 vs 权重比例（±5% 容差，shuffle 后的轮询分布）
@@ -525,7 +540,7 @@ func TestSelectUnknownModelDefaultBucket(t *testing.T) {
 func TestSelectTierFallback(t *testing.T) {
 	s := newTestScheduler(t, []*domain.Account{
 		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
-		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
 	})
 	require.NoError(t, s.InvalidateAllSync())
 	// 账号 1（tier1）进冷却 → 请求 gpt-4o 应回落 tier2（账号 2，Serves 为 false）
@@ -542,7 +557,7 @@ func TestSelectTierFallback(t *testing.T) {
 func TestSelectTier1FullFallsBackToTier2(t *testing.T) {
 	s := newTestScheduler(t, []*domain.Account{
 		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1},
-		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4},
+		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4},
 	})
 	require.NoError(t, s.InvalidateAllSync())
 	// 账号 1 是唯一 Serves gpt-4o 的账号（tier1 序列只有它）→ 确定性占用其唯一并发槽

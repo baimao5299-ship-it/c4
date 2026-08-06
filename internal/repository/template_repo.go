@@ -13,9 +13,9 @@ type TemplateRepo struct{ client *ent.Client }
 func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.Create().
 		SetName(t.Name).SetBaseURL(t.BaseURL).
-		SetDefaultFormat(template.DefaultFormat(t.DefaultFormat)).
+		SetSupportedFormats(formatsToStrings(t.SupportedFormats)).
 		SetModels(t.Models).
-		SetModelFormats(toStringMap(t.ModelFormats)).
+		SetFormatModels(formatModelsToStrings(t.FormatModels)).
 		SetModelMapping(t.ModelMapping).
 		Save(ctx)
 	if err != nil {
@@ -47,9 +47,9 @@ func (r *TemplateRepo) ListTemplates(ctx context.Context) ([]*domain.Template, e
 func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.UpdateOneID(t.ID).
 		SetName(t.Name).SetBaseURL(t.BaseURL).
-		SetDefaultFormat(template.DefaultFormat(t.DefaultFormat)).
+		SetSupportedFormats(formatsToStrings(t.SupportedFormats)).
 		SetModels(t.Models).
-		SetModelFormats(toStringMap(t.ModelFormats)).
+		SetFormatModels(formatModelsToStrings(t.FormatModels)).
 		SetModelMapping(t.ModelMapping).
 		Save(ctx)
 	if err != nil {
@@ -62,10 +62,20 @@ func (r *TemplateRepo) DeleteTemplate(ctx context.Context, id int64) error {
 	return r.client.Template.DeleteOneID(id).Exec(ctx)
 }
 
-func toStringMap(m map[string]domain.RequestFormat) map[string]string {
-	out := make(map[string]string, len(m))
+// formatsToStrings 领域格式数组 → ent 字符串数组。
+func formatsToStrings(fs []domain.RequestFormat) []string {
+	out := make([]string, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, string(f))
+	}
+	return out
+}
+
+// formatModelsToStrings 领域 map（键为 RequestFormat）→ ent map（键为 string）。
+func formatModelsToStrings(m map[domain.RequestFormat][]string) map[string][]string {
+	out := make(map[string][]string, len(m))
 	for k, v := range m {
-		out[k] = string(v)
+		out[string(k)] = v
 	}
 	return out
 }

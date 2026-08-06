@@ -19,7 +19,6 @@ import (
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent/account"
-	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/repository"
 )
@@ -175,10 +174,11 @@ func (tr *testRepos) expectDone(t *testing.T) {
 }
 
 func templateRow() *pgxmock.Rows {
-	return pgxmock.NewRows([]string{"id", "name", "base_url", "default_format", "models",
-		"model_formats", "model_mapping", "created_at", "updated_at"}).
-		AddRow(int64(1), "openai-main", "https://api.openai.com/v1", "openai-chat",
-			[]byte(`["gpt-4o"]`), []byte(`{"o3":"openai-responses"}`),
+	return pgxmock.NewRows([]string{"id", "name", "base_url", "supported_formats", "models",
+		"format_models", "model_mapping", "created_at", "updated_at"}).
+		AddRow(int64(1), "openai-main", "https://api.openai.com/v1",
+			[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
+			[]byte(`{"openai-responses":["o3"]}`),
 			[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }
@@ -196,8 +196,9 @@ func TestTemplateCRUD(t *testing.T) {
 
 	// Create -> INSERT ... RETURNING id
 	tr.pool.ExpectQuery(q(`INSERT INTO "templates"`)).
-		WithArgs("openai-main", "https://api.openai.com/v1", template.DefaultFormat("openai-chat"),
-			json.RawMessage(`["gpt-4o"]`), json.RawMessage(`{"o3":"openai-responses"}`),
+		WithArgs("openai-main", "https://api.openai.com/v1",
+			json.RawMessage(`["openai-chat","openai-responses"]`), json.RawMessage(`["gpt-4o"]`),
+			json.RawMessage(`{"openai-responses":["o3"]}`),
 			json.RawMessage(`{"gpt-4o":"gpt-4o-2026-01-01"}`),
 			pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
@@ -210,8 +211,9 @@ func TestTemplateCRUD(t *testing.T) {
 	// Update -> Tx: UPDATE + re-SELECT + Commit
 	tr.pool.ExpectBegin()
 	tr.pool.ExpectExec(q(`UPDATE "templates" SET`)).
-		WithArgs("renamed", "https://api.openai.com/v1", template.DefaultFormat("openai-chat"),
-			json.RawMessage(`["gpt-4o"]`), json.RawMessage(`{"o3":"openai-responses"}`),
+		WithArgs("renamed", "https://api.openai.com/v1",
+			json.RawMessage(`["openai-chat","openai-responses"]`), json.RawMessage(`["gpt-4o"]`),
+			json.RawMessage(`{"openai-responses":["o3"]}`),
 			json.RawMessage(`{"gpt-4o":"gpt-4o-2026-01-01"}`),
 			pgxmock.AnyArg(), int64(1)).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
@@ -231,19 +233,21 @@ func TestTemplateCRUD(t *testing.T) {
 		WillReturnError(pgx.ErrNoRows)
 
 	tpl, err := tr.repos.Templates.CreateTemplate(ctx(), &domain.Template{
-		Name:          "openai-main",
-		BaseURL:       "https://api.openai.com/v1",
-		DefaultFormat: domain.FormatOpenAIChat,
-		Models:        []string{"gpt-4o"},
-		ModelFormats:  map[string]domain.RequestFormat{"o3": domain.FormatOpenAIResponses},
-		ModelMapping:  map[string]string{"gpt-4o": "gpt-4o-2026-01-01"},
+		Name:             "openai-main",
+		BaseURL:          "https://api.openai.com/v1",
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses},
+		Models:           []string{"gpt-4o"},
+		FormatModels:     map[domain.RequestFormat][]string{domain.FormatOpenAIResponses: {"o3"}},
+		ModelMapping:     map[string]string{"gpt-4o": "gpt-4o-2026-01-01"},
 	})
 	require.NoError(t, err)
 	got, err := tr.repos.Templates.GetTemplate(ctx(), tpl.ID)
 	require.NoError(t, err)
 	require.Equal(t, "openai-main", got.Name)
-	require.Equal(t, domain.FormatOpenAIChat, got.DefaultFormat)
-	require.Equal(t, domain.FormatOpenAIResponses, got.FormatFor("o3"), "model_formats roundtrip")
+	require.ElementsMatch(t, []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses}, got.SupportedFormats)
+	require.True(t, got.FormatSupports(domain.FormatOpenAIResponses, "o3"), "format_models roundtrip")
+	require.False(t, got.FormatSupports(domain.FormatOpenAIResponses, "gpt-4o"), "responses 配置了 format_models → 仅列表内模型")
+	require.True(t, got.FormatSupports(domain.FormatOpenAIChat, "gpt-4o"), "chat 未配置 format_models → 全部模型")
 	got.Name = "renamed"
 	_, err = tr.repos.Templates.UpdateTemplate(ctx(), got)
 	require.NoError(t, err)
@@ -258,7 +262,7 @@ func TestAccountAndGroup(t *testing.T) {
 
 	// Template create
 	tr.pool.ExpectQuery(q(`INSERT INTO "templates"`)).
-		WithArgs("t", "https://u/v1", template.DefaultFormat("anthropic"),
+		WithArgs("t", "https://u/v1", json.RawMessage(`["anthropic"]`),
 			json.RawMessage(`null`), json.RawMessage(`{}`), json.RawMessage(`null`),
 			pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
@@ -329,7 +333,7 @@ func TestAccountAndGroup(t *testing.T) {
 		WillReturnRows(accountRow("429"))
 
 	tpl, err := tr.repos.Templates.CreateTemplate(ctx(), &domain.Template{
-		Name: "t", BaseURL: "https://u/v1", DefaultFormat: domain.FormatAnthropic,
+		Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatAnthropic},
 	})
 	require.NoError(t, err)
 	acc, err := tr.repos.Accounts.CreateAccount(ctx(), &domain.Account{

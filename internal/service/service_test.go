@@ -13,10 +13,42 @@ import (
 
 func TestCreateTemplateValidates(t *testing.T) {
 	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	cases := []struct {
+		name string
+		tpl  *domain.Template
+	}{
+		{"name empty", &domain.Template{Name: "", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
+		{"bad url", &domain.Template{Name: "t", BaseURL: "not-a-url", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
+		{"empty supported_formats", &domain.Template{Name: "t", BaseURL: "https://u/v1"}},
+		{"invalid enum", &domain.Template{Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.RequestFormat("nope")}}},
+		{"duplicate formats", &domain.Template{Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIChat}}},
+		{"format_models key not in supported", &domain.Template{
+			Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+			FormatModels: map[domain.RequestFormat][]string{domain.FormatAnthropic: {"m"}},
+		}},
+		{"format_models empty list", &domain.Template{
+			Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+			FormatModels: map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {}},
+		}},
+		{"format_models model outside serve set", &domain.Template{
+			Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+			FormatModels: map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {"gpt-4o"}},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.CreateTemplate(context.Background(), tc.tpl)
+			require.ErrorIs(t, err, ErrInvalidInput)
+		})
+	}
+	// 合法：format_models 模型 ∈ Models
 	_, err := svc.CreateTemplate(context.Background(), &domain.Template{
-		Name: "", BaseURL: "not-a-url", DefaultFormat: domain.RequestFormat("nope"),
+		Name: "t", BaseURL: "https://u/v1",
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+		Models:           []string{"gpt-4o"},
+		FormatModels:     map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {"gpt-4o"}},
 	})
-	require.ErrorIs(t, err, ErrInvalidInput)
+	require.NoError(t, err)
 }
 
 func TestCreateGroupRotateKeyFlow(t *testing.T) {

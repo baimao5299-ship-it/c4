@@ -58,17 +58,15 @@ func (_u *TemplateUpdate) SetNillableBaseURL(v *string) *TemplateUpdate {
 	return _u
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (_u *TemplateUpdate) SetDefaultFormat(v template.DefaultFormat) *TemplateUpdate {
-	_u.mutation.SetDefaultFormat(v)
+// SetSupportedFormats sets the "supported_formats" field.
+func (_u *TemplateUpdate) SetSupportedFormats(v []string) *TemplateUpdate {
+	_u.mutation.SetSupportedFormats(v)
 	return _u
 }
 
-// SetNillableDefaultFormat sets the "default_format" field if the given value is not nil.
-func (_u *TemplateUpdate) SetNillableDefaultFormat(v *template.DefaultFormat) *TemplateUpdate {
-	if v != nil {
-		_u.SetDefaultFormat(*v)
-	}
+// AppendSupportedFormats appends value to the "supported_formats" field.
+func (_u *TemplateUpdate) AppendSupportedFormats(v []string) *TemplateUpdate {
+	_u.mutation.AppendSupportedFormats(v)
 	return _u
 }
 
@@ -84,9 +82,9 @@ func (_u *TemplateUpdate) AppendModels(v []string) *TemplateUpdate {
 	return _u
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (_u *TemplateUpdate) SetModelFormats(v map[string]string) *TemplateUpdate {
-	_u.mutation.SetModelFormats(v)
+// SetFormatModels sets the "format_models" field.
+func (_u *TemplateUpdate) SetFormatModels(v map[string][]string) *TemplateUpdate {
+	_u.mutation.SetFormatModels(v)
 	return _u
 }
 
@@ -193,20 +191,7 @@ func (_u *TemplateUpdate) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (_u *TemplateUpdate) check() error {
-	if v, ok := _u.mutation.DefaultFormat(); ok {
-		if err := template.DefaultFormatValidator(v); err != nil {
-			return &ValidationError{Name: "default_format", err: fmt.Errorf(`ent: validator failed for field "Template.default_format": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
-	if err := _u.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(template.Table, template.Columns, sqlgraph.NewFieldSpec(template.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -221,8 +206,13 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.BaseURL(); ok {
 		_spec.SetField(template.FieldBaseURL, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.DefaultFormat(); ok {
-		_spec.SetField(template.FieldDefaultFormat, field.TypeEnum, value)
+	if value, ok := _u.mutation.SupportedFormats(); ok {
+		_spec.SetField(template.FieldSupportedFormats, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedFormats(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, template.FieldSupportedFormats, value)
+		})
 	}
 	if value, ok := _u.mutation.Models(); ok {
 		_spec.SetField(template.FieldModels, field.TypeJSON, value)
@@ -232,8 +222,8 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			sqljson.Append(u, template.FieldModels, value)
 		})
 	}
-	if value, ok := _u.mutation.ModelFormats(); ok {
-		_spec.SetField(template.FieldModelFormats, field.TypeJSON, value)
+	if value, ok := _u.mutation.FormatModels(); ok {
+		_spec.SetField(template.FieldFormatModels, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.ModelMapping(); ok {
 		_spec.SetField(template.FieldModelMapping, field.TypeJSON, value)
@@ -337,17 +327,15 @@ func (_u *TemplateUpdateOne) SetNillableBaseURL(v *string) *TemplateUpdateOne {
 	return _u
 }
 
-// SetDefaultFormat sets the "default_format" field.
-func (_u *TemplateUpdateOne) SetDefaultFormat(v template.DefaultFormat) *TemplateUpdateOne {
-	_u.mutation.SetDefaultFormat(v)
+// SetSupportedFormats sets the "supported_formats" field.
+func (_u *TemplateUpdateOne) SetSupportedFormats(v []string) *TemplateUpdateOne {
+	_u.mutation.SetSupportedFormats(v)
 	return _u
 }
 
-// SetNillableDefaultFormat sets the "default_format" field if the given value is not nil.
-func (_u *TemplateUpdateOne) SetNillableDefaultFormat(v *template.DefaultFormat) *TemplateUpdateOne {
-	if v != nil {
-		_u.SetDefaultFormat(*v)
-	}
+// AppendSupportedFormats appends value to the "supported_formats" field.
+func (_u *TemplateUpdateOne) AppendSupportedFormats(v []string) *TemplateUpdateOne {
+	_u.mutation.AppendSupportedFormats(v)
 	return _u
 }
 
@@ -363,9 +351,9 @@ func (_u *TemplateUpdateOne) AppendModels(v []string) *TemplateUpdateOne {
 	return _u
 }
 
-// SetModelFormats sets the "model_formats" field.
-func (_u *TemplateUpdateOne) SetModelFormats(v map[string]string) *TemplateUpdateOne {
-	_u.mutation.SetModelFormats(v)
+// SetFormatModels sets the "format_models" field.
+func (_u *TemplateUpdateOne) SetFormatModels(v map[string][]string) *TemplateUpdateOne {
+	_u.mutation.SetFormatModels(v)
 	return _u
 }
 
@@ -485,20 +473,7 @@ func (_u *TemplateUpdateOne) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (_u *TemplateUpdateOne) check() error {
-	if v, ok := _u.mutation.DefaultFormat(); ok {
-		if err := template.DefaultFormatValidator(v); err != nil {
-			return &ValidationError{Name: "default_format", err: fmt.Errorf(`ent: validator failed for field "Template.default_format": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err error) {
-	if err := _u.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(template.Table, template.Columns, sqlgraph.NewFieldSpec(template.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
 	if !ok {
@@ -530,8 +505,13 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	if value, ok := _u.mutation.BaseURL(); ok {
 		_spec.SetField(template.FieldBaseURL, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.DefaultFormat(); ok {
-		_spec.SetField(template.FieldDefaultFormat, field.TypeEnum, value)
+	if value, ok := _u.mutation.SupportedFormats(); ok {
+		_spec.SetField(template.FieldSupportedFormats, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSupportedFormats(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, template.FieldSupportedFormats, value)
+		})
 	}
 	if value, ok := _u.mutation.Models(); ok {
 		_spec.SetField(template.FieldModels, field.TypeJSON, value)
@@ -541,8 +521,8 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 			sqljson.Append(u, template.FieldModels, value)
 		})
 	}
-	if value, ok := _u.mutation.ModelFormats(); ok {
-		_spec.SetField(template.FieldModelFormats, field.TypeJSON, value)
+	if value, ok := _u.mutation.FormatModels(); ok {
+		_spec.SetField(template.FieldFormatModels, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.ModelMapping(); ok {
 		_spec.SetField(template.FieldModelMapping, field.TypeJSON, value)

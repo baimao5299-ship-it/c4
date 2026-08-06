@@ -60,13 +60,14 @@ func TestAdminFlow(t *testing.T) {
 
 	rec := do(http.MethodPost, "/admin/templates", `{
 		"name":"openai-main","base_url":"https://api.openai.com/v1",
-		"default_format":"openai-chat","models":["gpt-4o"],
-		"model_formats":{"o3":"openai-responses"},
+		"supported_formats":["openai-chat","openai-responses"],"models":["gpt-4o","o3"],
+		"format_models":{"openai-responses":["o3"]},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-01-01"}}`)
 	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	var tpl domain.Template
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tpl))
-	require.Equal(t, domain.FormatOpenAIResponses, tpl.FormatFor("o3"), "format override")
+	require.True(t, tpl.FormatSupports(domain.FormatOpenAIResponses, "o3"), "format_models round-trip")
+	require.False(t, tpl.FormatSupports(domain.FormatOpenAIResponses, "gpt-4o"), "responses 仅列表内模型")
 
 	rec = do(http.MethodPost, "/admin/accounts", `{
 		"name":"acc1","template_id":`+itoa(tpl.ID)+`,"upstream_key":"sk-x","weight":80,"max_concurrency":4}`)
@@ -125,28 +126,29 @@ func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
 
 	rec := do(http.MethodPost, "/admin/templates", `{
 		"name":"openai-main","base_url":"https://api.openai.com/v1",
-		"default_format":"openai-chat","models":["gpt-4o","gpt-4o-mini"],
-		"model_formats":{"o3":"openai-responses"},
+		"supported_formats":["openai-chat","openai-responses"],"models":["gpt-4o","gpt-4o-mini","o3"],
+		"format_models":{"openai-responses":["o3"]},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-01-01"}}`)
 	require.Equal(t, 200, rec.Code, "create: %s", rec.Body.String())
 	var tpl domain.Template
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tpl))
 
 	// PUT 全量 snake_case body：字段必须全部生效（评审发现：原实现直接解码
-	// 无 tag 的 domain.Template，base_url/default_format/model_formats/model_mapping
+	// 无 tag 的 domain.Template，base_url/supported_formats/format_models/model_mapping
 	// 被丢弃 → 校验失败 400）。
 	rec = do(http.MethodPut, "/admin/templates/"+itoa(tpl.ID), `{
 		"name":"openai-main-v2","base_url":"https://api.openai.com/v2",
-		"default_format":"openai-responses","models":["gpt-4o"],
-		"model_formats":{"o3":"anthropic"},
+		"supported_formats":["openai-chat","anthropic"],"models":["gpt-4o","o3"],
+		"format_models":{"anthropic":["o3"]},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-06-01"}}`)
 	require.Equal(t, 200, rec.Code, "update: %s", rec.Body.String())
 	var updated domain.Template
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
 	require.Equal(t, "openai-main-v2", updated.Name)
 	require.Equal(t, "https://api.openai.com/v2", updated.BaseURL, "base_url must round-trip")
-	require.Equal(t, domain.FormatOpenAIResponses, updated.DefaultFormat, "default_format must round-trip")
-	require.Equal(t, domain.FormatAnthropic, updated.FormatFor("o3"), "model_formats must round-trip")
+	require.ElementsMatch(t, []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatAnthropic}, updated.SupportedFormats, "supported_formats must round-trip")
+	require.True(t, updated.FormatSupports(domain.FormatAnthropic, "o3"), "format_models must round-trip")
+	require.False(t, updated.FormatSupports(domain.FormatAnthropic, "gpt-4o"), "format_models 限制生效")
 	require.Equal(t, "gpt-4o-2026-06-01", updated.ModelMapping["gpt-4o"], "model_mapping must round-trip")
 
 	// GET 确认已持久化
