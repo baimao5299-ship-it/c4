@@ -95,17 +95,15 @@
   html {
     @apply font-sans;
     }
-  /* 背景 = 参考仓库 demo 氛围的"彩色内容层"：liquid-glass-react demo 玻璃背后是彩色图片、
-     GooseHyperGlass demo 玻璃背后是 wallpaper 图像。管理台无图片素材，用饱和的 aurora 渐变团
-     （蓝/紫/青/teal 大色团 + 蓝白基底）充当同等角色，玻璃 blur 透出彩色层次 = 玻璃感来源。 */
+  /* 背景 = 参考仓库 demo 实际参数：liquid-glass-react demo body 为纯 #ffffff（dark #0a0a0a）、
+     GooseHyperGlass catalog 容器为 #FAFAFA@0.4-0.6（透明 canvas + DOM 背后），彩色氛围来自内容本身
+     （demo 的彩图 / 管理台的卡片与强调色）。此处 = 近纯白 + 极淡浅蓝渐变 + 两枚克制的小光斑，不放大。 */
   body {
     @apply text-foreground;
     background:
-      radial-gradient(60% 50% at 20% 15%, oklch(0.8 0.12 285 / 0.5), transparent 70%),
-      radial-gradient(55% 45% at 85% 20%, oklch(0.75 0.13 255 / 0.45), transparent 70%),
-      radial-gradient(50% 40% at 70% 85%, oklch(0.82 0.1 215 / 0.45), transparent 70%),
-      radial-gradient(45% 40% at 25% 80%, oklch(0.8 0.1 160 / 0.35), transparent 70%),
-      linear-gradient(160deg, oklch(0.95 0.03 255), oklch(0.9 0.05 250));
+      radial-gradient(360px 300px at 82% 12%, oklch(0.9 0.035 255 / 0.35), transparent 70%),
+      radial-gradient(320px 280px at 12% 88%, oklch(0.91 0.03 285 / 0.3), transparent 70%),
+      linear-gradient(160deg, #ffffff, oklch(0.965 0.008 250));
     background-attachment: fixed;
   }
 }

@@ -27,9 +27,9 @@ export default function Layout() {
   const { t, i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
   return (
-    /* 统一圆角玻璃胶囊外壳：页面留白 + 单个大玻璃容器（侧边栏/内容区同一材质、无内部隔断） */
-    <div className="min-h-screen p-4 md:p-6">
-      <div className="glass-shell mx-auto flex max-w-[1600px] min-h-[calc(100vh-2rem)] overflow-hidden md:min-h-[calc(100vh-3rem)]">
+    /* 统一圆角玻璃胶囊外壳：紧凑页边距 + 单个大玻璃容器（侧边栏/内容区同一材质、无内部隔断） */
+    <div className="min-h-screen p-3 md:p-4">
+      <div className="glass-shell mx-auto flex max-w-[1600px] min-h-[calc(100vh-1.5rem)] overflow-hidden md:min-h-[calc(100vh-2rem)]">
         <aside className="flex w-56 shrink-0 flex-col text-slate-800">
           <div className="p-4 font-semibold text-lg">{t('common.appTitle')}</div>
           <nav className="flex-1 space-y-1 p-2">
