@@ -36,11 +36,6 @@ func (a *accountSnapshot) statePtr() *accState {
 	return st
 }
 
-func (a *accountSnapshot) score() float64 {
-	rate := float64(a.errRate.Load()) / errRateScale
-	return float64(a.acc.Weight) * (1 - rate)
-}
-
 // routeKey 是预生成调度路径的桶键；model == "" 表示默认回退桶
 // （请求模型不在任何模板可服务集合内时，行为等价于默认格式的 tier2）。
 type routeKey struct {
@@ -52,7 +47,7 @@ type routeKey struct {
 // 请求时以原子游标取模取用。重建时生成，Select 热路径零计算。
 type weightedSeq struct {
 	seq    []*accountSnapshot
-	cursor atomic.Uint64 //nolint:unused // Task 2（Select 迁移）将消费该游标
+	cursor atomic.Uint64 // 请求时原子游标取模取用（Select 热路径）
 }
 
 // route 是 (format, model) 桶：模型命中（Serves）走 tier1，未命中走 tier2。

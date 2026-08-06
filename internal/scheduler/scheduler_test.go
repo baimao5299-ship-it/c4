@@ -71,6 +71,12 @@ func newSched(t *testing.T, m *memLoader) *Scheduler {
 	return s
 }
 
+// newTestScheduler 用给定账号（固定放入组 10）构建已加载快照的调度器。
+func newTestScheduler(t *testing.T, accs []*domain.Account) *Scheduler {
+	t.Helper()
+	return newSched(t, newMemLoader(map[int64][]*domain.Account{10: accs}))
+}
+
 func TestSelectFormatHardFilter(t *testing.T) {
 	chat := tpl(1, domain.FormatOpenAIChat, []string{"gpt-4o"})
 	ant := tpl(2, domain.FormatAnthropic, []string{"claude"})
@@ -390,7 +396,11 @@ func TestNewWeightedSeqGcdNormalization(t *testing.T) {
 	require.Len(t, ws.seq, 3, "weight 100:50 → GCD=50 → 序列长 3")
 	count1, count2 := 0, 0
 	for _, a := range ws.seq {
-		if a.acc.ID == 1 { count1++ } else { count2++ }
+		if a.acc.ID == 1 {
+			count1++
+		} else {
+			count2++
+		}
 	}
 	require.Equal(t, 2, count1)
 	require.Equal(t, 1, count2)
@@ -439,4 +449,88 @@ func TestBuildRoutesModelFormatsOverride(t *testing.T) {
 	rt, ok := routes[routeKey{domain.FormatAnthropic, "special"}]
 	require.True(t, ok, "ModelFormats 覆盖 → special 模型走 anthropic 格式")
 	require.NotNil(t, rt.tier1, "special ∈ ModelFormats keys → Serves true → tier1")
+}
+
+// 分布：10 万次选号，频率 vs 权重比例（±5% 容差，shuffle 后的轮询分布）
+func TestSelectWeightDistribution(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k2", Status: domain.StatusActive, Weight: 50, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	const n = 100_000
+	counts := map[int64]int{}
+	for i := 0; i < n; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		require.NoError(t, err)
+		counts[sel.AccountID]++
+		s.Release(sel.AccountID)
+		s.MarkResult(sel.AccountID, ResultOK, nil)
+	}
+	ratio := float64(counts[1]) / float64(counts[2])
+	// 注意：testify 无 InRange，用 InDelta（±0.1 窗口等价于 [1.9, 2.1]）
+	require.InDelta(t, ratio, 2.0, 0.1, "weight 100:50 → 频率比 ≈ 2:1")
+}
+
+// 动态状态跳过：冷却中的账号被跳过，选中其他账号
+func TestSelectSkipsCooldown(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	// 账号 1 进 429 冷却
+	s.MarkResult(1, Result429, nil)
+	for i := 0; i < 50; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		require.NoError(t, err)
+		require.Equal(t, int64(2), sel.AccountID, "冷却中的账号 1 必须被跳过")
+		s.Release(sel.AccountID)
+	}
+}
+
+// 全不可用（全冷却）→ ErrNoAvailable，且有限时间内返回
+func TestSelectAllCooldownReturnsNoAvailable(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	s.MarkResult(1, Result429, nil)
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrNoAvailable)
+	case <-time.After(time.Second):
+		t.Fatal("全冷却必须有限时间内返回 ErrNoAvailable")
+	}
+}
+
+// 未知模型回落默认桶：请求 model 不在任何模板可服务集合 → 默认格式 tier2 选中
+func TestSelectUnknownModelDefaultBucket(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "unknown-model-xyz")
+	require.NoError(t, err, "未知模型走默认回退桶（默认格式 tier2）")
+	require.Equal(t, int64(1), sel.AccountID)
+}
+
+// tier 回落：tier1 全冷却 → tier2 选中
+func TestSelectTierFallback(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	// 账号 1（tier1）进冷却 → 请求 gpt-4o 应回落 tier2（账号 2，Serves 为 false）
+	s.MarkResult(1, Result429, nil)
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), sel.AccountID, "tier1 全不可用 → tier2 回落")
+	s.Release(sel.AccountID)
 }
