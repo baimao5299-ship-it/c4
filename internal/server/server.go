@@ -2,8 +2,10 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +20,7 @@ type Options struct {
 	MaxHeaderBytes    int
 	AdminHandler      http.Handler // 已挂 /admin/* 路由
 	AIHandler         http.Handler // proxy 三个端点
+	WebFS             fs.FS        // 前端构建产物（nil = 不挂静态资源）
 	Logger            *logx.Logger
 }
 
@@ -77,6 +80,38 @@ func NewServer(opts Options) *Server {
 			r.Mount("/", opts.AIHandler)
 		}
 	})
+
+	// 静态资源 + SPA fallback：必须在 admin/AI/healthz 之后注册。
+	// 说明：chi 的 NotFound() 会向已 Mount 的子路由传播（updateSubRoutes），
+	// 因此这里在 Mount("/", AIHandler) 之后设置 NotFound，AI 路由的未匹配
+	// 路径会进入同一 fallback；/admin/* 经 Handle 注册不受影响。
+	if opts.WebFS != nil {
+		r.Handle("/assets/*", http.FileServerFS(opts.WebFS))
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			index, err := fs.ReadFile(opts.WebFS, "index.html")
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(index)
+		})
+		// SPA fallback：非 API/静态路径回 index.html
+		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/v1") || r.URL.Path == "/healthz" {
+				http.NotFound(w, r)
+				return
+			}
+			index, err := fs.ReadFile(opts.WebFS, "index.html")
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(index)
+		})
+	}
+
 	s.handler = r
 	return s
 }

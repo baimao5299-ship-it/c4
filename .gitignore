@@ -4,4 +4,8 @@ bin/
 *.log
 tools/*/tmp/
 
+# 前端构建产物嵌入目录：仅 .gitkeep 占位入库（go:embed all:dist 需要目录存在）
+cmd/server/dist/*
+!cmd/server/dist/.gitkeep
+
 .superpowers/

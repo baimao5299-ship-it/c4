@@ -112,6 +112,7 @@ func main() {
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 		AdminHandler:      h.RoutesMux(),
 		AIHandler:         aiRouter,
+		WebFS:             webUI(),
 		Logger:            log,
 	})
 
