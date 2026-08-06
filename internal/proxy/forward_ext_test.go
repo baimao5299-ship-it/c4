@@ -24,7 +24,8 @@ import (
 )
 
 // --- 假上游：openai /v1/responses（Responses API） ---
-// failMode: "" = 正常；"429" = 非流式 429（测 failover）；"400" = 非流式 400（测透传）。
+// failMode: "" = 正常；"429" = 非流式 429（测 failover）；"400" = 非流式 400（测透传）；
+// "400-stream" = 流式 400（测流式 4xx 透传）。
 func fakeResponses(t *testing.T, failMode string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +49,11 @@ func fakeResponses(t *testing.T, failMode string) *httptest.Server {
 			return
 		}
 		if failMode == "400" && !stream {
+			w.WriteHeader(400)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			return
+		}
+		if failMode == "400-stream" && stream {
 			w.WriteHeader(400)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
 			return
@@ -100,6 +106,11 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 			return
 		}
 		if failMode == "400" && !stream {
+			w.WriteHeader(400)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			return
+		}
+		if failMode == "400-stream" && stream {
 			w.WriteHeader(400)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
 			return
@@ -302,6 +313,30 @@ func TestProxyResponsesPassthrough4xx(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
 }
 
+// 回归（评审 Minor）：responses 流式 4xx 透传（上游非 200 在 relay 前检出）。
+func TestProxyResponsesStreamingPassthrough4xx(t *testing.T) {
+	up := fakeResponses(t, "400-stream")
+	defer up.Close()
+	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
+		`{"model":"gpt-4o","input":"hi","stream":true}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleResponses(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"bad request"`, "4xx 必须透传上游原始 body")
+	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
+	// 未 MarkResult：状态保持 active，不冷却
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status)
+	require.Nil(t, ri.CooldownUntil)
+	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
+	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+}
+
 func TestProxyAnthropicPassthrough4xx(t *testing.T) {
 	up := fakeAnthropic(t, "400")
 	defer up.Close()
@@ -318,6 +353,30 @@ func TestProxyAnthropicPassthrough4xx(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
+	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+}
+
+// 回归（评审 Minor）：anthropic 流式 4xx 透传（上游非 200 在 relay 前检出）。
+func TestProxyAnthropicStreamingPassthrough4xx(t *testing.T) {
+	up := fakeAnthropic(t, "400-stream")
+	defer up.Close()
+	p := newTestProxyFormat(t, up.URL, domain.FormatAnthropic)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleAnthropic(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"bad request"`, "4xx 必须透传上游原始 body")
+	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
+	// 未 MarkResult：状态保持 active，不冷却
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status)
+	require.Nil(t, ri.CooldownUntil)
 	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
 	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
 }

@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -154,7 +153,10 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 		var pt, ct, tt int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
-				if len(ev.Event) == 0 && gjson.GetBytes(ev.Data, "usage").Exists() {
+				// "usage": null 的帧（存在但为 null）不得清零元组：Exists() 对
+				// null 为真。gjson 无 IsNull()，用 Type == gjson.JSON 判定非空
+				// 对象/数组（缺失与显式 null 的 Type 均为 Null）（评审 Minor）。
+				if len(ev.Event) == 0 && gjson.GetBytes(ev.Data, "usage").Type == gjson.JSON {
 					pt = gjson.GetBytes(ev.Data, "usage.prompt_tokens").Int()
 					ct = gjson.GetBytes(ev.Data, "usage.completion_tokens").Int()
 					tt = gjson.GetBytes(ev.Data, "usage.total_tokens").Int()
@@ -163,8 +165,11 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 		})
 		resp.Body.Close()
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				// 客户端断开：释放槽位，无法转移
+			// 客户端断开：释放槽位，无法转移。不能按 errors.Is(err, context.Canceled)
+			// 判断——sserelay.normalize 把任何 ctx 错误（含超时）折叠为 context.Canceled，
+			// 超时只会取消子 ctx 而父 ctx（r.Context()）仍存活；上游停滞超时必须走
+			// 上游错误分支（recordStreamAbort + ResultError），不得当作客户端断开。
+			if r.Context().Err() != nil {
 				p.finish(sel.AccountID, nil)
 				return true, 0, nil
 			}
