@@ -610,18 +610,47 @@ git commit -m "feat: repo batch delete/update with transactional semantics"
 
 ---
 
-### Task 4: 契约批量端点 + service + handler
+### Task 4a: service 层批量（Store 接口 + 校验 + 测试）
 
 **Files:**
-- Modify: `openapi/openapi.yaml`
-- Modify: `internal/handler/api.gen.go`（生成）、`internal/handler/template.go`、`internal/handler/account.go`、`internal/handler/group.go`、`internal/handler/handler_test.go`
-- Modify: `internal/service/service.go`（Store 接口 + 批量校验）、`internal/service/template.go`、`internal/service/account.go`、`internal/service/group.go`、`internal/service/fakestore_test.go`、`internal/service/service_test.go`
-- Modify: `internal/repository/repository.go`（Store 门面批量委托）
-- Test: `internal/handler/handler_test.go`、`internal/service/service_test.go`
+- Modify: `internal/service/service.go`（Store 接口 + validateIDs + patch 校验）、`internal/service/template.go`、`internal/service/account.go`、`internal/service/group.go`、`internal/service/fakestore_test.go`、`internal/service/service_test.go`
+- Modify: `internal/repository/repository.go`（Store 门面 6 个批量委托）
+- Test: `internal/service/service_test.go`
 
 **Interfaces:**
-- 消费：Task 3 的 `repository.*Patch` 与批量方法；Task 1 的 `validateListQuery`
-- 生产：生成类型 `BatchDeleteBody{Ids []int64}`、`BatchUpdateBody`（fields 为具体 patch schema：`TemplatePatchBody`/`AccountPatchBody`/`GroupPatchBody`，字段全 optional）、`BatchDeleteResponse{Deleted int}`、`BatchUpdateResponse{Updated int}`；service 方法 `DeleteTemplatesBatch(ctx, ids) error`、`UpdateTemplatesBatch(ctx, ids, patch) error`（账号/分组同）
+- 消费：Task 3 的 `repository.*Patch`/`Delete*Batch`/`Update*Batch` 与 `repository.ErrNotFound`
+- 生产：service 方法 `DeleteTemplatesBatch(ctx, ids) error`、`UpdateTemplatesBatch(ctx, ids, p repository.TemplatePatch) error`（账号/分组同）；404 映射：repo.ErrNotFound → `fmt.Errorf("%w: %s", ErrNotFound, 缺失详情)`
+- **不碰契约/handler/api.gen.go**（Task 4b 范围）；Store 接口扩展后 fakestore 同步
+
+**并行协议（与 Task 4b 并行执行，用户确认）:**
+- 4a 只动 service/repository 包，4b 只动契约/handler——文件无重叠
+- **4a 验证只用局部包**：`go test ./internal/service/ ./internal/repository/`（4b 生成 api.gen.go 后全量编译会挂，属预期）
+- 4a 先提交（service 方法就位），提交后通知控制器 → 控制器通知 4b 验证
+
+- [ ] **Step 1: Store 接口扩展 + 门面委托 + fakestore 同步（代码见下方 Task 4a 执行范围内的 Step 3 原文，即"Step 3: service 层批量方法 + Store 接口"小节）**
+- [ ] **Step 2: service 6 个批量方法 + validateIDs + validateTemplatePatch/validateAccountPatch + 分组 key 清理（同 Step 3 原文）**
+- [ ] **Step 3: service_test.go 批量测试**（成功路径 invalidate 调用、空/超长/重复 ids → ErrInvalidInput、patch 校验失败 → ErrInvalidInput、404 映射含缺失 id）
+- [ ] **Step 4: 验证**：`go test ./internal/service/ ./internal/repository/` 全绿（**不跑 ./...**）
+- [ ] **Step 5: Commit**（消息：`feat: service batch delete/update with validation`）
+
+---
+
+### Task 4b: 契约批量端点 + 生成 + handler + 测试
+
+**Files:**
+- Modify: `openapi/openapi.yaml`、`internal/handler/api.gen.go`（生成）、`internal/handler/template.go`、`internal/handler/account.go`、`internal/handler/group.go`、`internal/handler/handler.go`（normalizeIDs 等 helper）、`internal/handler/handler_test.go`
+- Modify: `web/src/lib/api/schema.d.ts`（生成，仅契约）
+- Test: `internal/handler/handler_test.go`
+
+**Interfaces:**
+- 消费：Task 4a 的 6 个 service 批量方法；Task 3 的 repository 层
+- 生产：生成类型 `BatchDeleteBody{Ids []int64}`、`BatchUpdateTemplatesBody{Ids; Fields *TemplatePatch}`（Accounts/Groups 同）、`TemplatePatch`/`AccountPatch`/`GroupPatch`（字段全 optional 指针）、`BatchDeleteResponse{Deleted int}`、`BatchUpdateResponse{Updated int}`
+- **不碰 service 包**（Task 4a 范围）
+
+**并行协议（与 Task 4a 并行执行，用户确认）:**
+- 4b 只动契约/handler 文件；**4a 提交前不验证编译**（svc 方法未实现 + 生成后 ServerInterface 未实现，编译挂是预期）
+- 4b 先写完全部代码 → 等控制器"4a 已提交"信号 → 验证（handler/service 测试）→ 提交
+- 生成类型字段名以 api.gen.go 实际为准
 
 - [ ] **Step 1: 更新 openapi.yaml（6 个批量端点 + schema）**
 
@@ -756,7 +785,9 @@ components/schemas 追加：
 Run: `cd internal/handler && go generate`
 Expected: api.gen.go 加 6 个方法 + 类型；handler 编译失败（未实现）——正常。
 
-- [ ] **Step 3: service 层批量方法 + Store 接口**
+- [ ] **Step 2.5（Task 4a 执行，4b 跳过）: 4b 的 Step 3 原为 service 层内容——已归 Task 4a（见上方 Task 4a Step 1-2），4b 不执行此步。下方 "Step 3: service 层批量方法 + Store 接口" 小节保留为 Task 4a 的代码原文（含 validateIDs/validateTemplatePatch/validateAccountPatch/分组 key 清理/404 映射），Task 4a 照此实现。**
+
+- [ ] **Step 3: service 层批量方法 + Store 接口（Task 4a 代码原文，4a 执行）**
 
 service.go Store 接口加：
 
@@ -1104,7 +1135,7 @@ writeServiceErr 404 分支改：`writeErr(w, http.StatusNotFound, err.Error())`�
 
 好——计划里写：service 批量方法 wrap：`fmt.Errorf("%w: %s", ErrNotFound, missingMsg)`，handler 批量方法先 `errors.Is(err, service.ErrNotFound)` → `writeErr(w, 404, err.Error())` 否则 writeServiceErr。
 
-- [ ] **Step 5: handler_test 批量测试**
+- [ ] **Step 5: handler_test 批量测试（4b 执行；含成功/空 ids 400/超长 400/重复去重/字段非法 400/缺 id 404）**
 
 ```go
 func TestPostTemplatesBatchDelete(t *testing.T) {
@@ -1122,21 +1153,21 @@ func TestPostGroupsBatchDeleteMissing(t *testing.T) {
 
 （fake store 需实现批量方法——fakestore_test.go Step 3 已加；fake 的 DeleteTemplatesBatch 对缺失 id 返回 repository.ErrNotFound 模拟。）
 
-- [ ] **Step 6: 跑测试**
+- [ ] **Step 6: 跑测试（4b 执行；**必须在 Task 4a 提交后**）**
 
-Run: `go test ./internal/...`
+Run: `go test ./internal/handler/ ./internal/service/ ./internal/repository/`
 Expected: 全绿
 
-- [ ] **Step 7: 重新生成 TS 类型**
+- [ ] **Step 7: 重新生成 TS 类型（4b 执行）**
 
 Run: `cd web && pnpm_config_verify_deps_before_run=false pnpm run gen:api`
 Expected: schema.d.ts 更新（批量端点 + patch 类型）。不跑 web build。
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Commit（4b 执行）**
 
 ```bash
-git add openapi/openapi.yaml internal/handler internal/service internal/repository web/src/lib/api/schema.d.ts
-git commit -m "feat: batch delete/update endpoints (contract + service + handler)"
+git add openapi/openapi.yaml internal/handler web/src/lib/api/schema.d.ts
+git commit -m "feat: batch delete/update endpoints (contract + handler)"
 ```
 
 ---
