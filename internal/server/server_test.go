@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -91,6 +92,32 @@ func TestAdminAndAIHandlersCoexist(t *testing.T) {
 		require.Equal(t, tc.wantHandler, body["handler"], "path %s", tc.path)
 		require.Equal(t, tc.path, body["path"], "path must be forwarded unchanged")
 	}
+}
+
+// 回归：/favicon.svg 必须返回真实 SVG（index.html 引用 dist 根 favicon），
+// 不能落入 SPA fallback 返回 text/html —— 浏览器会拒绝渲染错误 MIME 的 favicon。
+func TestFaviconServedFromWebFS(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.html":    &fstest.MapFile{Data: []byte(`<link rel="icon" href="/favicon.svg" />`)},
+		"favicon.svg":   &fstest.MapFile{Data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)},
+		"assets/app.js": &fstest.MapFile{Data: []byte(`console.log("x")`)},
+	}
+	s := NewServer(Options{AdminToken: "tok", WebFS: fsys})
+
+	req := httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code)
+	require.Equal(t, "image/svg+xml", rec.Header().Get("Content-Type"))
+	require.Contains(t, rec.Body.String(), "<svg")
+	require.NotContains(t, rec.Body.String(), "<link") // 不能是 index.html
+
+	// 对照组：SPA fallback 路径仍回 index.html。
+	req = httptest.NewRequest(http.MethodGet, "/groups", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code)
+	require.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
 }
 
 // 规格 §10.6：全局在途上限，超限立即 429 + Retry-After: 1。

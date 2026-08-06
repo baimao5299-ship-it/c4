@@ -87,6 +87,9 @@ func NewServer(opts Options) *Server {
 	// 路径会进入同一 fallback；/admin/* 经 Handle 注册不受影响。
 	if opts.WebFS != nil {
 		r.Handle("/assets/*", http.FileServerFS(opts.WebFS))
+		// favicon 位于 dist 根（index.html 引用 /favicon.svg），不走 SPA fallback，
+		// 否则会返回 index.html（content-type text/html，浏览器拒绝渲染）。
+		r.Handle("/favicon.svg", http.FileServerFS(opts.WebFS))
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			index, err := fs.ReadFile(opts.WebFS, "index.html")
 			if err != nil {
