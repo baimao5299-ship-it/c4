@@ -52,7 +52,7 @@ func (r *TemplateRepo) DeleteTemplatesBatch(ctx context.Context, ids []int64) er
 	}
 	for _, id := range ids {
 		if err := tx.Template.DeleteOneID(id).Exec(ctx); err != nil {
-			return err
+			return errMissingID(err, id)
 		}
 	}
 	return tx.Commit()
@@ -69,7 +69,7 @@ func (r *AccountRepo) DeleteAccountsBatch(ctx context.Context, ids []int64) erro
 	}
 	for _, id := range ids {
 		if err := tx.Account.DeleteOneID(id).Exec(ctx); err != nil {
-			return err
+			return errMissingID(err, id)
 		}
 	}
 	return tx.Commit()
@@ -86,7 +86,7 @@ func (r *GroupRepo) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	}
 	for _, id := range ids {
 		if err := tx.Group.DeleteOneID(id).Exec(ctx); err != nil {
-			return err
+			return errMissingID(err, id)
 		}
 	}
 	return tx.Commit()
@@ -124,7 +124,7 @@ func (r *TemplateRepo) UpdateTemplatesBatch(ctx context.Context, ids []int64, p 
 			u = u.SetModelMapping(*p.ModelMapping)
 		}
 		if _, err := u.Save(ctx); err != nil {
-			return err
+			return errMissingID(err, id)
 		}
 	}
 	return tx.Commit()
@@ -160,7 +160,7 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 			u = u.SetMaxConcurrency(*p.MaxConcurrency)
 		}
 		if _, err := u.Save(ctx); err != nil {
-			return err
+			return errMissingID(err, id)
 		}
 	}
 	return tx.Commit()
@@ -181,10 +181,20 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 			u = u.SetName(*p.Name)
 		}
 		if _, err := u.Save(ctx); err != nil {
-			return err
+			return errMissingID(err, id)
 		}
 	}
 	return tx.Commit()
+}
+
+// errMissingID 把 per-id 执行错误映射为 ErrNotFound 包装（与 diffMissing 同格式）。
+// 覆盖 check→exec 竞态窗口：存在性检查通过后、DeleteOne/UpdateOne 执行前若并发
+// 请求已删同 id，ent 对 0 行删除/更新返回 NotFoundError（ent.IsNotFound）。
+func errMissingID(err error, id int64) error {
+	if ent.IsNotFound(err) {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
+	}
+	return err
 }
 
 // --- 事务内存在性检查：ids 必须全部存在，否则 ErrNotFound（含缺失 id） ---

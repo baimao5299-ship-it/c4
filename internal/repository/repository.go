@@ -62,6 +62,14 @@ func (r *Repos) DeleteTemplate(ctx context.Context, id int64) error {
 	return r.Templates.DeleteTemplate(ctx, id)
 }
 
+func (r *Repos) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
+	return r.Templates.DeleteTemplatesBatch(ctx, ids)
+}
+
+func (r *Repos) UpdateTemplatesBatch(ctx context.Context, ids []int64, p TemplatePatch) error {
+	return r.Templates.UpdateTemplatesBatch(ctx, ids, p)
+}
+
 func (r *Repos) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	return r.Accounts.CreateAccount(ctx, a)
 }
@@ -80,6 +88,14 @@ func (r *Repos) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.A
 
 func (r *Repos) DeleteAccount(ctx context.Context, id int64) error {
 	return r.Accounts.DeleteAccount(ctx, id)
+}
+
+func (r *Repos) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
+	return r.Accounts.DeleteAccountsBatch(ctx, ids)
+}
+
+func (r *Repos) UpdateAccountsBatch(ctx context.Context, ids []int64, p AccountPatch) error {
+	return r.Accounts.UpdateAccountsBatch(ctx, ids, p)
 }
 
 func (r *Repos) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
@@ -104,6 +120,14 @@ func (r *Repos) DeleteGroup(ctx context.Context, id int64) error {
 
 func (r *Repos) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
 	return r.Groups.SetGroupAccounts(ctx, groupID, accountIDs)
+}
+
+func (r *Repos) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
+	return r.Groups.DeleteGroupsBatch(ctx, ids)
+}
+
+func (r *Repos) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupPatch) error {
+	return r.Groups.UpdateGroupsBatch(ctx, ids, p)
 }
 
 func (r *Repos) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {

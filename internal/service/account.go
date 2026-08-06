@@ -53,6 +53,31 @@ func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
 	return err
 }
 
+func (s *Service) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	if err := mapRepoErr(s.store.DeleteAccountsBatch(ctx, ids)); err != nil {
+		return err
+	}
+	s.invalidate()
+	return nil
+}
+
+func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p repository.AccountPatch) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	if err := validateAccountPatch(p); err != nil {
+		return err
+	}
+	if err := mapRepoErr(s.store.UpdateAccountsBatch(ctx, ids, p)); err != nil {
+		return err
+	}
+	s.invalidate()
+	return nil
+}
+
 // AccountView 是账号的管理端视图（含调度器运行时信息）。
 type AccountView struct {
 	*domain.Account

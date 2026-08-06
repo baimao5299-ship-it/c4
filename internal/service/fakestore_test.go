@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"go-proxy-mini/internal/domain"
@@ -178,6 +179,125 @@ func (f *fakeStore) SetGroupAccounts(ctx context.Context, groupID int64, account
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.members[groupID] = accountIDs
+	return nil
+}
+
+// --- 批量操作（缺失 id → repository.ErrNotFound 包装，模拟真实事务内存在性检查） ---
+
+func (f *fakeStore) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := f.tpls[id]; !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+	}
+	for _, id := range ids {
+		delete(f.tpls, id)
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repository.TemplatePatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		t, ok := f.tpls[id]
+		if !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+		if p.Name != nil {
+			t.Name = *p.Name
+		}
+		if p.BaseURL != nil {
+			t.BaseURL = *p.BaseURL
+		}
+		if p.DefaultFormat != nil {
+			t.DefaultFormat = *p.DefaultFormat
+		}
+		if p.Models != nil {
+			t.Models = *p.Models
+		}
+		if p.ModelFormats != nil {
+			t.ModelFormats = *p.ModelFormats
+		}
+		if p.ModelMapping != nil {
+			t.ModelMapping = *p.ModelMapping
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := f.accs[id]; !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+	}
+	for _, id := range ids {
+		delete(f.accs, id)
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateAccountsBatch(ctx context.Context, ids []int64, p repository.AccountPatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		a, ok := f.accs[id]
+		if !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+		if p.Name != nil {
+			a.Name = *p.Name
+		}
+		if p.TemplateID != nil {
+			a.TemplateID = *p.TemplateID
+		}
+		if p.UpstreamKey != nil {
+			a.UpstreamKey = *p.UpstreamKey
+		}
+		if p.Status != nil {
+			a.Status = *p.Status
+		}
+		if p.Weight != nil {
+			a.Weight = *p.Weight
+		}
+		if p.MaxConcurrency != nil {
+			a.MaxConcurrency = *p.MaxConcurrency
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := f.groups[id]; !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+	}
+	for _, id := range ids {
+		delete(f.groups, id)
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		g, ok := f.groups[id]
+		if !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+		if p.Name != nil {
+			g.Name = *p.Name
+		}
+	}
 	return nil
 }
 

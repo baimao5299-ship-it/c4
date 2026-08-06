@@ -66,6 +66,40 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		g, err := s.store.GetGroup(ctx, id)
+		if err != nil {
+			return err // 404 缺 id
+		}
+		if s.keys != nil {
+			s.keys.Delete(g.KeyHash)
+		}
+	}
+	if err := mapRepoErr(s.store.DeleteGroupsBatch(ctx, ids)); err != nil {
+		return err // 事务回滚；key 已删但 DB 未删——与单删同性质（失败自愈：DB 仍在则 key 下次重载恢复）
+	}
+	s.invalidate()
+	return nil
+}
+
+func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	if p.Name != nil && *p.Name == "" {
+		return ErrInvalidInput
+	}
+	if err := mapRepoErr(s.store.UpdateGroupsBatch(ctx, ids, p)); err != nil {
+		return err
+	}
+	s.invalidate()
+	return nil
+}
+
 func (s *Service) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
 	if err := s.store.SetGroupAccounts(ctx, groupID, accountIDs); err != nil {
 		return err

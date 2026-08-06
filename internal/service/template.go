@@ -53,3 +53,28 @@ func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
 	}
 	return err
 }
+
+func (s *Service) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	if err := mapRepoErr(s.store.DeleteTemplatesBatch(ctx, ids)); err != nil {
+		return err
+	}
+	s.invalidate()
+	return nil
+}
+
+func (s *Service) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repository.TemplatePatch) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	if err := validateTemplatePatch(p); err != nil {
+		return err
+	}
+	if err := mapRepoErr(s.store.UpdateTemplatesBatch(ctx, ids, p)); err != nil {
+		return err
+	}
+	s.invalidate()
+	return nil
+}
