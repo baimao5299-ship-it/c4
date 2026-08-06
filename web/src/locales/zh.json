@@ -73,6 +73,8 @@
     "errTopTitle": "错误率排行 Top 5",
     "errTopDesc": "err_rate 最高的账号",
     "errTopEmpty": "暂无错误率大于 0 的账号",
+    "errTopDetailTitle": "错误账号明细",
+    "errTopDetailDesc": "错误率大于 0 的账号，按错误率降序",
     "tableAccount": "账号",
     "tableErrRate": "错误率",
     "tableErrCount": "错误数"

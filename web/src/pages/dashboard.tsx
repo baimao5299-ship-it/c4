@@ -2,18 +2,45 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Activity, AlertTriangle, Gauge, PowerOff, Boxes, FolderOpen, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '@/App'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { StatusBadge, statusLabel } from '@/components/status-badge'
+import { StatusBadge } from '@/components/status-badge'
 import { formatPercent, truncate } from '@/components/fmt'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
+}
+
+// 统计卡 grid 的官方 dashboard-01 处理：浅色卡片带顶部 primary 微渐变 + 细阴影，深色回退纯 card。
+const cardGrid = 'grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card'
+
+// errTop 柱图数据行。
+type ErrRow = { name: string; err_rate: number; err_count: number }
+
+// 图表悬浮提示：语义类（bg-card/border/text-muted-foreground），深浅色均成立。
+function ErrTooltip({ active, payload }: { active?: boolean; payload?: readonly { payload: ErrRow }[] }) {
+  const { t } = useTranslation()
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload
+  return (
+    <div className="rounded-lg border bg-card px-3 py-2 text-sm shadow-lg">
+      <p className="mb-1 font-medium">{row.name}</p>
+      <p className="text-muted-foreground">
+        {t('dashboard.tableErrRate')}{' '}
+        <span className="font-medium tabular-nums text-foreground">{formatPercent(row.err_rate)}</span>
+      </p>
+      <p className="text-muted-foreground">
+        {t('dashboard.tableErrCount')}{' '}
+        <span className="font-medium tabular-nums text-foreground">{row.err_count}</span>
+      </p>
+    </div>
+  )
 }
 
 export default function Dashboard() {
@@ -41,6 +68,11 @@ export default function Dashboard() {
     .filter(a => (a.err_rate ?? 0) > 0)
     .sort((x, y) => (y.err_rate ?? 0) - (x.err_rate ?? 0))
     .slice(0, 5)
+  const errData: ErrRow[] = errTop.map(a => ({
+    name: a.Name ?? '—',
+    err_rate: a.err_rate ?? 0,
+    err_count: a.err_count ?? 0,
+  }))
 
   const loading = accountsQ.isLoading || templatesQ.isLoading || groupsQ.isLoading
 
@@ -74,44 +106,110 @@ export default function Dashboard() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-28" />
           ))}
         </div>
       ) : (
         <>
-          {/* 状态计数卡片（交错入场） */}
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {/* 状态计数卡片（dashboard-01 section-cards 结构：描述 + 大数字 + 状态徽章） */}
+          <div className={`${cardGrid} sm:grid-cols-2 xl:grid-cols-4`}>
             {statusCards.map(({ key, icon: Icon, descKey }, i) => (
               <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: i * 0.06 }}>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <Icon className="size-4" /> {statusLabel(key, t)}
-                      </span>
+                <Card className="@container/card h-full">
+                  <CardHeader>
+                    <CardDescription className="flex items-center gap-1.5">
+                      <Icon className="size-4" /> {t(descKey)}
+                    </CardDescription>
+                    <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+                      {statusCounts[key]}
+                    </CardTitle>
+                    <CardAction>
                       <StatusBadge status={key} />
+                    </CardAction>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* 资源总数卡片（同款结构，无徽章位） */}
+          <div className={`${cardGrid} sm:grid-cols-3`}>
+            {totalCards.map(({ key, labelKey, value, icon: Icon }, i) => (
+              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: 0.26 + i * 0.06 }}>
+                <Card className="@container/card h-full">
+                  <CardHeader>
+                    <CardDescription className="flex items-center gap-1.5">
+                      <Icon className="size-4" /> {t(labelKey)}
+                    </CardDescription>
+                    <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+                      {value}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-semibold tabular-nums">{statusCounts[key]}</div>
-                    <p className="text-xs text-muted-foreground">{t(descKey)}</p>
-                  </CardContent>
                 </Card>
               </motion.div>
             ))}
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            {/* 并发水位 */}
-            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.28 }} className="xl:col-span-1">
+            {/* err_rate Top 5 柱图（单序列，颜色走语义 primary，深浅色自适应） */}
+            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.44 }} className="xl:col-span-2">
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle>{t('dashboard.errTopTitle')}</CardTitle>
+                  <CardDescription>{t('dashboard.errTopDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+                  {errData.length === 0 ? (
+                    <p className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+                      {t('dashboard.errTopEmpty')}
+                    </p>
+                  ) : (
+                    <div className="text-muted-foreground">
+                      <ResponsiveContainer width="100%" height={250}>
+                        <BarChart accessibilityLayer data={errData} margin={{ left: 0, right: 8 }}>
+                          <defs>
+                            <linearGradient id="gpm-errbar-fill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.9} />
+                              <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.35} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="name"
+                            tickLine={false}
+                            axisLine={false}
+                            tickMargin={8}
+                            interval={0}
+                            tick={{ fill: 'currentColor', fontSize: 12 }}
+                            tickFormatter={(v: string) => truncate(v, 8)}
+                          />
+                          <YAxis
+                            width={44}
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fill: 'currentColor', fontSize: 12 }}
+                            tickFormatter={(v: number) => formatPercent(v)}
+                          />
+                          <Tooltip cursor={{ fill: 'var(--muted)' }} content={<ErrTooltip />} />
+                          <Bar dataKey="err_rate" fill="url(#gpm-errbar-fill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* 并发水位（聚合标量：单值进度条） */}
+            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.5 }}>
               <Card className="h-full">
                 <CardHeader>
                   <CardTitle>{t('dashboard.waterTitle')}</CardTitle>
                   <CardDescription>{t('dashboard.waterDesc', { cur: totalCur, max: totalMax })}</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex h-[250px] flex-col justify-center">
                   <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                     <motion.div
                       className="h-full rounded-full bg-primary"
@@ -126,39 +224,22 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             </motion.div>
+          </div>
 
-            {/* 总数统计 */}
-            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.34 }}>
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle>{t('dashboard.resourcesTitle')}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {totalCards.map(({ key, labelKey, value, icon: Icon }) => (
-                    <div key={key} className="flex items-center justify-between rounded-lg border p-2.5">
-                      <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Icon className="size-4" /> {t(labelKey)}
-                      </span>
-                      <span className="text-xl font-semibold tabular-nums">{value}</span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* err_rate Top 5 */}
-            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.4 }} className="xl:col-span-1">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle>{t('dashboard.errTopTitle')}</CardTitle>
-                  <CardDescription>{t('dashboard.errTopDesc')}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {errTop.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">{t('dashboard.errTopEmpty')}</p>
-                  ) : (
+          {/* 最近错误账号明细（dashboard-01 data-table 容器样式：圆角边框 + muted 表头） */}
+          <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.56 }}>
+            <Card>
+              <CardHeader>
+                <CardTitle>{t('dashboard.errTopDetailTitle')}</CardTitle>
+                <CardDescription>{t('dashboard.errTopDetailDesc')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {errTop.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">{t('dashboard.errTopEmpty')}</p>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border">
                     <Table>
-                      <TableHeader>
+                      <TableHeader className="bg-muted">
                         <TableRow>
                           <TableHead>{t('dashboard.tableAccount')}</TableHead>
                           <TableHead className="text-right">{t('dashboard.tableErrRate')}</TableHead>
@@ -170,20 +251,18 @@ export default function Dashboard() {
                           <TableRow key={a.ID}>
                             <TableCell className="max-w-40 truncate" title={a.Name}>{truncate(a.Name, 14)}</TableCell>
                             <TableCell className="text-right">
-                              <Badge className="bg-red-500/10 text-red-600 dark:bg-red-400/10 dark:text-red-400">
-                                {formatPercent(a.err_rate)}
-                              </Badge>
+                              <Badge variant="destructive">{formatPercent(a.err_rate)}</Badge>
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{a.err_count ?? 0}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
         </>
       )}
     </div>

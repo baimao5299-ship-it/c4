@@ -73,6 +73,8 @@
     "errTopTitle": "Top 5 error rates",
     "errTopDesc": "Accounts with the highest err_rate",
     "errTopEmpty": "No accounts with error rate above 0",
+    "errTopDetailTitle": "Error account details",
+    "errTopDetailDesc": "Accounts with error rate above 0, sorted descending",
     "tableAccount": "Account",
     "tableErrRate": "Error rate",
     "tableErrCount": "Errors"
