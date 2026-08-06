@@ -9,3 +9,6 @@ cmd/server/dist/*
 !cmd/server/dist/.gitkeep
 
 .superpowers/
+
+# 设计文档仅存本地，不进 git（用户 2026-08-07 指示）
+docs/superpowers/
