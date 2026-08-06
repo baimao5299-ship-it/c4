@@ -97,6 +97,12 @@ field.JSON("format_models", map[string][]string{}), // 替代 model_formats（mo
 
 usage 日志 `format` 单值不变（记录实际请求格式）。
 
+### 实现回填（Task 2）
+
+- 拒绝语义：格式不支持 / `FormatModels[f]` 排除模型 / 无可用账号 均折叠为既有的 `ErrFormatUnavailable`，由 proxy 映射为 `404`「no account supports this request format」（复用既有语义，未做 400/专属消息）；上表「400 + 消息含格式名」为设计初稿措辞，以本行为准。
+- 校验路径（admin 创建/更新）严格 `400`（`ErrInvalidInput`），e2e 已验。
+- 调度回退桶 `(format, "")` 按 `SupportedFormats` 包含（tier2 语义，无模型可服务时为空）。
+
 ## 测试
 
 - domain：FormatsFor/Serves/FormatSupports 各分支（未配置=全部、配置子集、f 不在 supported、m 不在 Serves）；

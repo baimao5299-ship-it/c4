@@ -15,7 +15,7 @@
 
 | 枚举 | 取值 |
 |---|---|
-| `default_format` / `format` | `openai-chat` / `openai-responses` / `anthropic` |
+| `format`（请求格式） | `openai-chat` / `openai-responses` / `anthropic` |
 | `status`（账号） | `active` / `unhealthy` / `429` / `disabled` |
 | `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` |
 
@@ -23,7 +23,9 @@
 
 ## 模板 Templates
 
-模板定义上游厂商：base_url、默认请求格式、可服务模型集合、模型级格式覆盖与模型映射。
+模板定义上游厂商：base_url、支持的请求格式集合、可服务模型集合、格式级模型覆盖与模型映射。
+
+> **破坏性变更**：`default_format` 已移除（由必填的 `supported_formats` 数组取代），`model_formats` 已移除（由反转为按格式组织的 `format_models` 取代）。旧数据未迁移，使用旧字段的客户端需按下方新结构调整。
 
 ### 创建模板
 
@@ -35,9 +37,9 @@
 {
   "name": "openai-main",
   "base_url": "https://api.openai.com/v1",
-  "default_format": "openai-chat",
+  "supported_formats": ["openai-chat", "openai-responses"],
   "models": ["gpt-4o", "gpt-4o-mini"],
-  "model_formats": { "gpt-4o-vision": "openai-chat" },
+  "format_models": { "openai-responses": ["gpt-4o-mini"] },
   "model_mapping": { "gpt-4o": "gpt-4o-2024-11-20" }
 }
 ```
@@ -46,9 +48,9 @@
 |---|---|---|---|
 | `name` | string | ✅ | 模板名 |
 | `base_url` | string | ✅ | 上游地址（含 `/v1` 前缀；流式/非流式均基于此） |
-| `default_format` | string | ✅ | 默认请求格式（枚举见上） |
+| `supported_formats` | string[] | ✅ | 支持的请求格式枚举数组（至少 1 项，项枚举见上；重复/非法枚举返回 `400`） |
 | `models` | string[] | 否 | 可服务模型名集合 |
-| `model_formats` | object | 否 | 模型级格式覆盖：`{模型名: 格式}`，优先于 `default_format` |
+| `format_models` | object | 否 | 格式级模型覆盖：`{格式: [模型名]}`，key 必须是 `supported_formats` 子集、模型必须是 `models` 子集（否则 `400`）；未配置的格式 = 全部 `models` |
 | `model_mapping` | object | 否 | 模型映射：`{客户端模型名: 上游实际模型名}` |
 
 响应 `200`：创建后的模板对象（字段为大写，见下方模板对象结构）。
@@ -60,16 +62,16 @@
   "ID": 1,
   "Name": "openai-main",
   "BaseURL": "https://api.openai.com/v1",
-  "DefaultFormat": "openai-chat",
+  "SupportedFormats": ["openai-chat", "openai-responses"],
   "Models": ["gpt-4o", "gpt-4o-mini"],
-  "ModelFormats": { "gpt-4o-vision": "openai-chat" },
+  "FormatModels": { "openai-responses": ["gpt-4o-mini"] },
   "ModelMapping": { "gpt-4o": "gpt-4o-2024-11-20" },
   "CreatedAt": "2026-08-06T10:00:00Z",
   "UpdatedAt": "2026-08-06T10:00:00Z"
 }
 ```
 
-> 注意：响应字段为 **Go 默认大写命名**（`ID` / `Name` / `BaseURL`…），请求字段为 snake_case。`Models` / `ModelFormats` / `ModelMapping` 为 `null` 时表示空。
+> 注意：响应字段为 **Go 默认大写命名**（`ID` / `Name` / `BaseURL`…），请求字段为 snake_case。`Models` / `FormatModels` / `ModelMapping` 为 `null` 时表示空。
 
 ### 模板其他端点
 
@@ -80,7 +82,7 @@
 | `PUT /admin/templates/{id}` | 全量更新（字段同创建） | `200`：更新后模板对象 |
 | `DELETE /admin/templates/{id}` | 删除 | `200`：`{"deleted": true}`；仍被账号引用时返回 `500`（DB 外键约束） |
 
-> 模板变更（含 base_url / models / model_formats / model_mapping）通过 invalidate 回调即时生效于调度器快照与上游 SDK 客户端（无需重启）。
+> 模板变更（含 base_url / supported_formats / format_models / model_mapping）通过 invalidate 回调即时生效于调度器快照与上游 SDK 客户端（无需重启）。
 
 ---
 
