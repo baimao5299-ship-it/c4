@@ -1,24 +1,36 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, Boxes, X } from 'lucide-react'
+import { Boxes, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
-import { Button } from '@/components/ui/button'
+import type { components } from '@/lib/api/schema'
+import { BatchBar } from '@/components/batch-bar'
+import { commaList, formatDateTime, truncate } from '@/components/fmt'
+import { ListToolbar, type SortOption, type SortOrder } from '@/components/list-toolbar'
+import { Pagination } from '@/components/pagination'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatDateTime, truncate, commaList } from '@/components/fmt'
-import type { components } from '@/lib/api/schema'
 
 type Template = components['schemas']['Template']
 type TemplateCreate = components['schemas']['TemplateCreate']
+type TemplatePatch = components['schemas']['TemplatePatch']
 type RequestFormat = components['schemas']['RequestFormat']
 
 const FORMAT_LABELS: Record<RequestFormat, string> = {
@@ -28,24 +40,32 @@ const FORMAT_LABELS: Record<RequestFormat, string> = {
 }
 const FORMATS = Object.keys(FORMAT_LABELS) as RequestFormat[]
 
-// 动态行（model_formats / model_mapping）编辑。
-interface RowForm { key: string; value: string }
+const LIMIT = 20
 
+// —— 多格式表单状态（supported_formats/format_models；default_format/model_formats 已废弃） ——
+interface FormatRow {
+  format: RequestFormat
+  modelsText: string
+}
+interface MappingRow {
+  key: string
+  value: string
+}
 interface FormState {
   name: string
   base_url: string
-  default_format: RequestFormat
+  supported_formats: RequestFormat[]
   modelsText: string
-  model_formats: RowForm[]
-  model_mapping: RowForm[]
+  format_models: FormatRow[]
+  model_mapping: MappingRow[]
 }
 
 const emptyForm = (): FormState => ({
   name: '',
   base_url: '',
-  default_format: 'openai-chat',
+  supported_formats: [],
   modelsText: '',
-  model_formats: [],
+  format_models: [],
   model_mapping: [],
 })
 
@@ -53,59 +73,308 @@ function toForm(t: Template): FormState {
   return {
     name: t.Name ?? '',
     base_url: t.BaseURL ?? '',
-    default_format: (t.SupportedFormats?.[0] ?? 'openai-chat') as RequestFormat,
+    supported_formats: [...(t.SupportedFormats ?? [])],
     modelsText: (t.Models ?? []).join(', '),
-    model_formats: Object.entries(t.FormatModels ?? {}).map(([key, value]) => ({ key, value: value[0] ?? 'openai-chat' })),
+    format_models: Object.entries(t.FormatModels ?? {}).map(([format, models]) => ({
+      format: format as RequestFormat,
+      modelsText: (models ?? []).join(', '),
+    })),
     model_mapping: Object.entries(t.ModelMapping ?? {}).map(([key, value]) => ({ key, value })),
   }
 }
 
+const splitList = (s: string) => s.split(',').map(x => x.trim()).filter(Boolean)
+
+function formatModelsOf(f: FormState): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const r of f.format_models) {
+    const models = splitList(r.modelsText)
+    if (r.format && models.length) out[r.format] = models
+  }
+  return out
+}
+
+function mappingOf(f: FormState): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const r of f.model_mapping) if (r.key.trim() && r.value.trim()) out[r.key.trim()] = r.value.trim()
+  return out
+}
+
 function toBody(f: FormState): TemplateCreate {
-  // 新契约 format_models 为 模型 → 格式列表；旧页面每模型单格式，兼容为单元素数组（Task 3/4 改多格式 UI）。
-  const format_models: Record<string, string[]> = {}
-  for (const r of f.model_formats) if (r.key.trim()) format_models[r.key.trim()] = [r.value.trim()]
-  const model_mapping: Record<string, string> = {}
-  for (const r of f.model_mapping) if (r.key.trim() && r.value.trim()) model_mapping[r.key.trim()] = r.value.trim()
+  const format_models = formatModelsOf(f)
+  const model_mapping = mappingOf(f)
   return {
     name: f.name.trim(),
     base_url: f.base_url.trim(),
-    supported_formats: [f.default_format],
-    models: f.modelsText.split(',').map(s => s.trim()).filter(Boolean),
-    format_models: f.model_formats.length ? format_models : undefined,
-    model_mapping: f.model_mapping.length ? model_mapping : undefined,
+    supported_formats: f.supported_formats,
+    models: splitList(f.modelsText),
+    format_models: Object.keys(format_models).length ? format_models : undefined,
+    model_mapping: Object.keys(model_mapping).length ? model_mapping : undefined,
   }
 }
 
-function FormatBadge({ format }: { format?: RequestFormat }) {
-  return <Badge variant="outline">{format ? FORMAT_LABELS[format] : '—'}</Badge>
+// 批量更新：仅包含已填写的字段（TemplatePatch 子集）
+function toPatch(f: FormState): TemplatePatch {
+  const patch: TemplatePatch = {}
+  if (f.name.trim()) patch.name = f.name.trim()
+  if (f.base_url.trim()) patch.base_url = f.base_url.trim()
+  if (f.supported_formats.length) patch.supported_formats = f.supported_formats
+  const models = splitList(f.modelsText)
+  if (models.length) patch.models = models
+  const format_models = formatModelsOf(f)
+  if (Object.keys(format_models).length) patch.format_models = format_models
+  const model_mapping = mappingOf(f)
+  if (Object.keys(model_mapping).length) patch.model_mapping = model_mapping
+  return patch
+}
+
+function FormatBadge({ format }: { format?: string }) {
+  return <Badge variant="outline">{format ? (FORMAT_LABELS[format as RequestFormat] ?? format) : '—'}</Badge>
+}
+
+// —— 表单区（创建/编辑与批量更新共用；batch 模式下所有字段可选） ——
+function FormFields({
+  form,
+  setForm,
+  error,
+}: {
+  form: FormState
+  setForm: (updater: (f: FormState) => FormState) => void
+  error?: string | null
+}) {
+  const { t } = useTranslation()
+
+  const toggleFormat = (f: RequestFormat) => {
+    setForm(prev => {
+      const on = prev.supported_formats.includes(f)
+      const supported_formats = on ? prev.supported_formats.filter(x => x !== f) : [...prev.supported_formats, f]
+      // 取消勾选的格式同步移除其 format_models 行（后端要求 key ∈ supported_formats）
+      const format_models = on ? prev.format_models.filter(r => r.format !== f) : prev.format_models
+      return { ...prev, supported_formats, format_models }
+    })
+  }
+  const setFormatRow = (i: number, patch: Partial<FormatRow>) =>
+    setForm(f => ({ ...f, format_models: f.format_models.map((r, j) => (j === i ? { ...r, ...patch } : r)) }))
+  const removeFormatRow = (i: number) =>
+    setForm(f => ({ ...f, format_models: f.format_models.filter((_, j) => j !== i) }))
+  const addFormatRow = () =>
+    setForm(f => ({
+      ...f,
+      format_models: [...f.format_models, { format: f.supported_formats[0] ?? 'openai-chat', modelsText: '' }],
+    }))
+  const setMappingRow = (i: number, patch: Partial<MappingRow>) =>
+    setForm(f => ({ ...f, model_mapping: f.model_mapping.map((r, j) => (j === i ? { ...r, ...patch } : r)) }))
+  const removeMappingRow = (i: number) =>
+    setForm(f => ({ ...f, model_mapping: f.model_mapping.filter((_, j) => j !== i) }))
+  const addMappingRow = () => setForm(f => ({ ...f, model_mapping: [...f.model_mapping, { key: '', value: '' }] }))
+
+  // 格式行下拉选项 = 已选 supported_formats
+  const formatOptions: Record<string, string> = {}
+  for (const f of form.supported_formats) formatOptions[f] = FORMAT_LABELS[f]
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="tpl-name">{t('templates.nameLabel')}</Label>
+        <Input
+          id="tpl-name"
+          value={form.name}
+          placeholder={t('templates.namePlaceholder')}
+          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="tpl-base">BaseURL</Label>
+        <Input
+          id="tpl-base"
+          value={form.base_url}
+          placeholder="https://api.openai.com/v1"
+          onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
+        />
+      </div>
+
+      {/* supported_formats：chips 多选（非空校验） */}
+      <div className="space-y-1.5">
+        <Label>{t('templates.supportedFormatsLabel')}</Label>
+        <div className="flex flex-wrap gap-1.5">
+          {FORMATS.map(f => {
+            const on = form.supported_formats.includes(f)
+            return (
+              <Button
+                key={f}
+                type="button"
+                size="sm"
+                variant={on ? 'default' : 'outline'}
+                onClick={() => toggleFormat(f)}
+              >
+                {FORMAT_LABELS[f]}
+              </Button>
+            )
+          })}
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="tpl-models">{t('templates.modelsLabel')}</Label>
+        <Input
+          id="tpl-models"
+          value={form.modelsText}
+          placeholder="gpt-4o, gpt-4o-mini"
+          onChange={e => setForm(f => ({ ...f, modelsText: e.target.value }))}
+        />
+      </div>
+
+      {/* format_models 动态行：格式 → 模型列表（逗号分隔）；未配置的格式支持全部模型 */}
+      <div className="space-y-1.5">
+        <Label>{t('templates.formatModelsLabel')}</Label>
+        <p className="text-xs text-muted-foreground">{t('templates.formatModelsHint')}</p>
+        <div className="space-y-1.5">
+          {form.format_models.map((row, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <Select items={formatOptions} value={row.format} onValueChange={v => setFormatRow(i, { format: v as RequestFormat })}>
+                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {form.supported_formats.map(f => (
+                    <SelectItem key={f} value={f}>{FORMAT_LABELS[f]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                className="flex-1"
+                placeholder={t('templates.modelsListPlaceholder')}
+                value={row.modelsText}
+                onChange={e => setFormatRow(i, { modelsText: e.target.value })}
+              />
+              <Button variant="ghost" size="icon-sm" title={t('templates.deleteRow')} onClick={() => removeFormatRow(i)}>
+                <X />
+              </Button>
+            </div>
+          ))}
+          <Button variant="outline" size="sm" disabled={form.supported_formats.length === 0} onClick={addFormatRow}>
+            <Plus /> {t('templates.addFormatRow')}
+          </Button>
+        </div>
+      </div>
+
+      {/* model_mapping 动态行：客户端模型 → 上游模型 */}
+      <div className="space-y-1.5">
+        <Label>{t('templates.modelMappingLabel')}</Label>
+        <div className="space-y-1.5">
+          {form.model_mapping.map((row, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <Input
+                className="flex-1"
+                placeholder={t('templates.clientModelPlaceholder')}
+                value={row.key}
+                onChange={e => setMappingRow(i, { key: e.target.value })}
+              />
+              <span className="text-muted-foreground">→</span>
+              <Input
+                className="flex-1"
+                placeholder={t('templates.upstreamModelPlaceholder')}
+                value={row.value}
+                onChange={e => setMappingRow(i, { value: e.target.value })}
+              />
+              <Button variant="ghost" size="icon-sm" title={t('templates.deleteRow')} onClick={() => removeMappingRow(i)}>
+                <X />
+              </Button>
+            </div>
+          ))}
+          <Button variant="outline" size="sm" onClick={addMappingRow}>
+            <Plus /> {t('templates.addMapping')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function Templates() {
   const { t: tr } = useTranslation()
   const qc = useQueryClient()
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates() })
+
+  // —— 列表状态：分页/筛选/排序 ——
+  const [offset, setOffset] = useState(0)
+  const [name, setName] = useState('')
+  const [sort, setSort] = useState('id')
+  const [order, setOrder] = useState<SortOrder>('desc')
+  const [debouncedName, setDebouncedName] = useState('')
+  const [selected, setSelected] = useState<number[]>([])
+
+  // 搜索输入防抖 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedName(name), 300)
+    return () => clearTimeout(timer)
+  }, [name])
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['templates', { limit: LIMIT, offset, name: debouncedName, sort, order }],
+    queryFn: () => api.listTemplates({ limit: LIMIT, offset, name: debouncedName || undefined, sort, order }),
+  })
+  const rows = data?.rows ?? []
+
+  // 行数据变化后清理已不存在的勾选
+  useEffect(() => {
+    const ids = new Set(rows.map(r => r.ID))
+    setSelected(s => s.filter(id => ids.has(id)))
+  }, [rows])
+
+  const sortOptions: SortOption[] = [
+    { value: 'id', label: 'ID' },
+    { value: 'name', label: tr('templates.table.name') },
+    { value: 'base_url', label: 'BaseURL' },
+    { value: 'created_at', label: tr('templates.table.createdAt') },
+    { value: 'updated_at', label: tr('templates.table.updatedAt') },
+  ]
+
+  // 筛选/排序/翻页变化 → 重置 offset 并清空选择
+  const onNameChange = (v: string) => { setName(v); setOffset(0); setSelected([]) }
+  const onSortChange = (v: string) => { setSort(v); setOffset(0); setSelected([]) }
+  const onOrderChange = (o: SortOrder) => { setOrder(o); setOffset(0); setSelected([]) }
+  const onOffsetChange = (o: number) => { setOffset(o); setSelected([]) }
 
   // —— 创建/编辑对话框 ——
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Template | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
+  const [validationMsg, setValidationMsg] = useState<string | null>(null)
+  // —— 批量更新对话框 ——
+  const [batchOpen, setBatchOpen] = useState(false)
+  const batchResolve = useRef<(() => void) | null>(null)
   // —— 删除确认 ——
   const [deleting, setDeleting] = useState<Template | null>(null)
 
   const openCreate = () => {
     setEditing(null)
     setForm(emptyForm())
+    setValidationMsg(null)
     setDialogOpen(true)
   }
   const openEdit = (t: Template) => {
     setEditing(t)
     setForm(toForm(t))
+    setValidationMsg(null)
     setDialogOpen(true)
+  }
+  // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
+  const closeBatchUpdate = () => {
+    setBatchOpen(false)
+    setValidationMsg(null)
+    batchResolve.current?.()
+    batchResolve.current = null
+  }
+  const openBatchUpdate = () => {
+    setForm(emptyForm())
+    setValidationMsg(null)
+    setBatchOpen(true)
+    return new Promise<void>(resolve => {
+      batchResolve.current = resolve
+    })
   }
 
   const save = useMutation({
-    mutationFn: (f: FormState) =>
-      editing ? api.updateTemplate(editing.ID!, toBody(f)) : api.createTemplate(toBody(f)),
+    mutationFn: (f: FormState) => (editing ? api.updateTemplate(editing.ID, toBody(f)) : api.createTemplate(toBody(f))),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] })
       setDialogOpen(false)
@@ -116,22 +385,54 @@ export default function Templates() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] })
       setDeleting(null)
+      // 删除的是当前页最后一行时回退一页
+      if (rows.length === 1 && offset > 0) setOffset(offset - LIMIT)
     },
+  })
+  const batchDelete = useMutation({
+    mutationFn: (ids: number[]) => api.deleteTemplatesBatch(ids),
+    onSuccess: (_res, ids) => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      setSelected([])
+      // 当前页被删空时回到最后有效页
+      const after = (data?.total ?? 0) - ids.length
+      if (offset > 0 && offset >= after) setOffset(Math.max(0, after - (after % LIMIT)))
+    },
+  })
+  const batchUpdate = useMutation({
+    mutationFn: ({ ids, fields }: { ids: number[]; fields: TemplatePatch }) => api.updateTemplatesBatch(ids, fields),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      closeBatchUpdate()
+      setSelected([])
+    },
+    // onError 不 resolve：对话框保持打开就地展示错误，取消时由 closeBatchUpdate resolve
   })
 
   const submit = () => {
-    if (!form.name.trim() || !form.base_url.trim()) return
+    setValidationMsg(null)
+    if (!form.name.trim() || !form.base_url.trim() || form.supported_formats.length === 0) {
+      setValidationMsg(tr('templates.formRequired'))
+      return
+    }
     save.mutate(form)
+  }
+
+  const submitBatch = () => {
+    setValidationMsg(null)
+    const fields = toPatch(form)
+    if (Object.keys(fields).length === 0) {
+      setValidationMsg(tr('templates.batchUpdateEmpty'))
+      return
+    }
+    batchUpdate.mutate({ ids: selected, fields })
   }
 
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
 
-  const setRow = (list: 'model_formats' | 'model_mapping', i: number, patch: Partial<RowForm>) =>
-    setForm(f => ({ ...f, [list]: f[list].map((r, j) => (j === i ? { ...r, ...patch } : r)) }))
-  const removeRow = (list: 'model_formats' | 'model_mapping', i: number) =>
-    setForm(f => ({ ...f, [list]: f[list].filter((_, j) => j !== i) }))
-  const addRow = (list: 'model_formats' | 'model_mapping') =>
-    setForm(f => ({ ...f, [list]: [...f[list], { key: '', value: list === 'model_formats' ? f.default_format : '' }] }))
+  const toggleRow = (id: number, on: boolean) => setSelected(s => (on ? [...s, id] : s.filter(x => x !== id)))
+  const allChecked = rows.length > 0 && rows.every(r => selected.includes(r.ID))
+  const someChecked = rows.some(r => selected.includes(r.ID)) && !allChecked
 
   return (
     <div className="space-y-4">
@@ -143,19 +444,46 @@ export default function Templates() {
         <Button onClick={openCreate}><Plus /> {tr('templates.new')}</Button>
       </div>
 
+      <ListToolbar
+        name={name}
+        onNameChange={onNameChange}
+        sort={sort}
+        onSortChange={onSortChange}
+        order={order}
+        onOrderChange={onOrderChange}
+        sortOptions={sortOptions}
+      />
+
+      <BatchBar
+        selected={selected}
+        onClear={() => setSelected([])}
+        onDelete={() => batchDelete.mutate(selected)}
+        onUpdate={openBatchUpdate}
+      />
+      {batchDelete.isError && errMsg(batchDelete.error) && (
+        <p className="text-sm text-destructive">{errMsg(batchDelete.error)}</p>
+      )}
+      {batchUpdate.isError && errMsg(batchUpdate.error) && (
+        <p className="text-sm text-destructive">{errMsg(batchUpdate.error)}</p>
+      )}
+
       {isError ? (
         <p className="text-sm text-destructive">{tr('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
-      ) : (data?.rows ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <Boxes className="size-10" />
-            <p className="font-medium">{tr('templates.emptyTitle')}</p>
-            <p className="text-sm">{tr('templates.emptyDesc')}</p>
-            <Button className="mt-2" onClick={openCreate}><Plus /> {tr('templates.new')}</Button>
+            <p className="font-medium">{debouncedName ? tr('templates.noResultsTitle') : tr('templates.emptyTitle')}</p>
+            <p className="text-sm">{debouncedName ? tr('templates.noResultsDesc') : tr('templates.emptyDesc')}</p>
+            {debouncedName ? (
+              <Button className="mt-2" variant="outline" onClick={() => onNameChange('')}>{tr('list.reset')}</Button>
+            ) : (
+              <Button className="mt-2" onClick={openCreate}><Plus /> {tr('templates.new')}</Button>
+            )}
           </Card>
         </motion.div>
       ) : (
@@ -163,37 +491,60 @@ export default function Templates() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allChecked}
+                    indeterminate={someChecked}
+                    onCheckedChange={(c: boolean) => setSelected(c ? rows.map(r => r.ID) : [])}
+                    aria-label={tr('list.selected', { count: rows.length })}
+                  />
+                </TableHead>
                 <TableHead>ID</TableHead>
                 <TableHead>{tr('templates.table.name')}</TableHead>
                 <TableHead>BaseURL</TableHead>
-                <TableHead>{tr('templates.table.defaultFormat')}</TableHead>
+                <TableHead>{tr('templates.table.supportedFormats')}</TableHead>
                 <TableHead>{tr('templates.table.models')}</TableHead>
-                <TableHead>{tr('templates.table.formatOverrides')}</TableHead>
+                <TableHead>{tr('templates.table.formatModels')}</TableHead>
                 <TableHead>{tr('templates.table.modelMapping')}</TableHead>
                 <TableHead>{tr('templates.table.createdAt')}</TableHead>
                 <TableHead className="text-right">{tr('templates.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(data?.rows ?? []).map(t => {
+              {rows.map(t => {
                 const models = commaList(t.Models)
                 const formats = Object.entries(t.FormatModels ?? {})
                 const mappings = Object.entries(t.ModelMapping ?? {})
                 return (
                   <TableRow key={t.ID}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selected.includes(t.ID)}
+                        onCheckedChange={(c: boolean) => toggleRow(t.ID, c)}
+                        aria-label={t.Name ?? String(t.ID)}
+                      />
+                    </TableCell>
                     <TableCell className="tabular-nums">{t.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={t.Name}>{t.Name}</TableCell>
                     <TableCell className="max-w-52 truncate font-mono text-xs" title={t.BaseURL}>{t.BaseURL}</TableCell>
-                    <TableCell><FormatBadge format={t.SupportedFormats?.[0]} /></TableCell>
+                    <TableCell>
+                      <div className="flex max-w-44 flex-wrap gap-1">
+                        {(t.SupportedFormats ?? []).map(f => <FormatBadge key={f} format={f} />)}
+                      </div>
+                    </TableCell>
                     <TableCell className="max-w-40 truncate" title={models.full || undefined}>{models.text}</TableCell>
                     <TableCell>
                       {formats.length === 0 ? '—' : (
                         <div className="flex max-w-56 flex-wrap gap-1">
-                          {formats.slice(0, 3).map(([k, v]) => (
-                            <Badge key={k} variant="outline" className="font-mono text-xs" title={`${k} → ${FORMAT_LABELS[v[0] as RequestFormat]}`}>
-                              {truncate(k, 12)}→{FORMAT_LABELS[v[0] as RequestFormat]}
-                            </Badge>
-                          ))}
+                          {formats.slice(0, 3).map(([f, ms]) => {
+                            const label = FORMAT_LABELS[f as RequestFormat] ?? f
+                            const list = (ms ?? []).join(', ')
+                            return (
+                              <Badge key={f} variant="outline" className="font-mono text-xs" title={`${label}: ${list}`}>
+                                {truncate(label, 10)}:{truncate(list, 12)}
+                              </Badge>
+                            )
+                          })}
                           {formats.length > 3 && <Badge variant="outline">+{formats.length - 3}</Badge>}
                         </div>
                       )}
@@ -213,8 +564,18 @@ export default function Templates() {
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={tr('common.edit')} onClick={() => openEdit(t)}><Pencil /></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={tr('common.delete')} onClick={() => setDeleting(t)}><Trash2 /></Button>
+                        <Button variant="ghost" size="icon-sm" title={tr('common.edit')} onClick={() => openEdit(t)}>
+                          <Pencil />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-destructive"
+                          title={tr('common.delete')}
+                          onClick={() => setDeleting(t)}
+                        >
+                          <Trash2 />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -222,87 +583,50 @@ export default function Templates() {
               })}
             </TableBody>
           </Table>
+          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={onOffsetChange} />
         </Card>
       )}
 
       {/* —— 创建/编辑对话框 —— */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={o => { setDialogOpen(o); if (!o) setValidationMsg(null) }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? tr('templates.editTitle', { id: editing.ID }) : tr('templates.newTitle')}</DialogTitle>
             <DialogDescription>{tr('templates.dialogDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="tpl-name">{tr('templates.nameLabel')}</Label>
-              <Input id="tpl-name" value={form.name} placeholder={tr('templates.namePlaceholder')} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="tpl-base">BaseURL</Label>
-              <Input id="tpl-base" value={form.base_url} placeholder="https://api.openai.com/v1" onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{tr('templates.defaultFormatLabel')}</Label>
-              <Select items={FORMAT_LABELS} value={form.default_format} onValueChange={v => setForm(f => ({ ...f, default_format: v as RequestFormat }))}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {FORMATS.map(f => <SelectItem key={f} value={f}>{FORMAT_LABELS[f]}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="tpl-models">{tr('templates.modelsLabel')}</Label>
-              <Input id="tpl-models" value={form.modelsText} placeholder="gpt-4o, gpt-4o-mini" onChange={e => setForm(f => ({ ...f, modelsText: e.target.value }))} />
-            </div>
-
-            {/* model_formats 动态行：模型 → 格式覆盖 */}
-            <div className="space-y-1.5">
-              <Label>{tr('templates.formatOverridesLabel')}</Label>
-              <div className="space-y-1.5">
-                {form.model_formats.map((row, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <Input className="flex-1" placeholder={tr('templates.modelNamePlaceholder')} value={row.key} onChange={e => setRow('model_formats', i, { key: e.target.value })} />
-                    <Select
-                      items={FORMAT_LABELS}
-                      value={row.value as RequestFormat}
-                      onValueChange={v => setRow('model_formats', i, { value: v as string })}
-                    >
-                      <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {FORMATS.map(f => <SelectItem key={f} value={f}>{FORMAT_LABELS[f]}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <Button variant="ghost" size="icon-sm" title={tr('templates.deleteRow')} onClick={() => removeRow('model_formats', i)}><X /></Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={() => addRow('model_formats')}><Plus /> {tr('templates.addOverride')}</Button>
-              </div>
-            </div>
-
-            {/* model_mapping 动态行：客户端模型 → 上游模型 */}
-            <div className="space-y-1.5">
-              <Label>{tr('templates.modelMappingLabel')}</Label>
-              <div className="space-y-1.5">
-                {form.model_mapping.map((row, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <Input className="flex-1" placeholder={tr('templates.clientModelPlaceholder')} value={row.key} onChange={e => setRow('model_mapping', i, { key: e.target.value })} />
-                    <span className="text-muted-foreground">→</span>
-                    <Input className="flex-1" placeholder={tr('templates.upstreamModelPlaceholder')} value={row.value} onChange={e => setRow('model_mapping', i, { value: e.target.value })} />
-                    <Button variant="ghost" size="icon-sm" title={tr('templates.deleteRow')} onClick={() => removeRow('model_mapping', i)}><X /></Button>
-                  </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={() => addRow('model_mapping')}><Plus /> {tr('templates.addMapping')}</Button>
-              </div>
-            </div>
-
+            <FormFields form={form} setForm={setForm} error={validationMsg} />
             {save.isError && errMsg(save.error) && (
               <p className="text-sm text-destructive">{errMsg(save.error)}</p>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{tr('common.cancel')}</Button>
-            <Button onClick={submit} disabled={save.isPending || !form.name.trim() || !form.base_url.trim()}>
+            <Button onClick={submit} disabled={save.isPending}>
               {save.isPending ? tr('common.saving') : editing ? tr('common.saveChanges') : tr('common.create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 批量更新对话框 —— */}
+      <Dialog open={batchOpen} onOpenChange={o => { if (!o) closeBatchUpdate() }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{tr('templates.batchUpdateTitle', { count: selected.length })}</DialogTitle>
+            <DialogDescription>{tr('templates.batchUpdateDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <FormFields form={form} setForm={setForm} />
+            {validationMsg && <p className="text-sm text-destructive">{validationMsg}</p>}
+            {batchUpdate.isError && errMsg(batchUpdate.error) && (
+              <p className="text-sm text-destructive">{errMsg(batchUpdate.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeBatchUpdate}>{tr('common.cancel')}</Button>
+            <Button onClick={submitBatch} disabled={batchUpdate.isPending}>
+              {batchUpdate.isPending ? tr('common.saving') : tr('common.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -322,7 +646,7 @@ export default function Templates() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>{tr('common.cancel')}</Button>
-            <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID!)} disabled={remove.isPending}>
+            <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID)} disabled={remove.isPending}>
               {remove.isPending ? tr('common.deleting') : tr('common.confirmDelete')}
             </Button>
           </DialogFooter>
