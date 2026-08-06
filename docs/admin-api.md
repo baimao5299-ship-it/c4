@@ -27,6 +27,13 @@
 模板定义上游厂商：base_url、支持的请求格式集合、可服务模型集合、格式级模型覆盖与模型映射。
 
 > **破坏性变更**：`default_format` 已移除（由必填的 `supported_formats` 数组取代），`model_formats` 已移除（由反转为按格式组织的 `format_models` 取代）。旧数据未迁移，使用旧字段的客户端需按下方新结构调整。
+>
+> **数据库迁移（升级必做）**：旧版本的 `templates` 表含 `default_format` / `model_formats` 两列（`NOT NULL` 无默认值）。新代码不再写入这两列，`NOT NULL` 约束会导致所有 `INSERT` 失败。生产库升级前必须删除这两列：
+>
+> ```sql
+> ALTER TABLE templates DROP COLUMN IF EXISTS default_format;
+> ALTER TABLE templates DROP COLUMN IF EXISTS model_formats;
+> ```
 
 ### 创建模板
 
