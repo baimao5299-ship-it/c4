@@ -1,0 +1,114 @@
+import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { CheckCircle2, Trash2, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+
+// 列表页批量操作条：已选计数 + 批量删除（带确认弹窗）+ 可选批量更新 + 清除选择。
+// onDelete/onUpdate 可为异步；完成后就地显示短暂成功反馈（batch.deleted / batch.updated）。
+export function BatchBar({
+  selected,
+  onClear,
+  onDelete,
+  onUpdate,
+  deleteLabel,
+  updateLabel,
+}: {
+  selected: number[]
+  onClear: () => void
+  onDelete: () => void | Promise<void>
+  onUpdate?: () => void | Promise<void>
+  deleteLabel?: string
+  updateLabel?: string
+}) {
+  const { t } = useTranslation()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pending, setPending] = useState<'delete' | 'update' | null>(null)
+  const [done, setDone] = useState<'delete' | 'update' | null>(null)
+  const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  if (selected.length === 0) return null
+
+  const count = selected.length
+
+  function run(action: 'delete' | 'update', fn: () => void | Promise<void>) {
+    setPending(action)
+    void Promise.resolve(fn()).finally(() => {
+      setPending(null)
+      setDone(action)
+      clearTimeout(doneTimer.current)
+      doneTimer.current = setTimeout(() => setDone(null), 2000)
+    })
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+      {done ? (
+        <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 className="size-4" />
+          {t(done === 'delete' ? 'batch.deleted' : 'batch.updated', { count })}
+        </span>
+      ) : (
+        <>
+          <span className="text-sm text-muted-foreground">{t('list.selected', { count })}</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={pending !== null}
+              onClick={() => setConfirmOpen(true)}
+            >
+              <Trash2 />
+              {deleteLabel ?? t('list.batchDelete')}
+            </Button>
+            {onUpdate && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending !== null}
+                onClick={() => run('update', onUpdate)}
+              >
+                {pending === 'update' ? t('common.saving') : updateLabel ?? t('list.batchUpdate')}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" disabled={pending !== null} onClick={onClear}>
+              <X />
+              {t('list.clearSelection')}
+            </Button>
+          </div>
+        </>
+      )}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('common.confirmDelete')}</DialogTitle>
+            <DialogDescription>{t('batch.confirmDelete', { count })}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={pending === 'delete'}
+              onClick={() => {
+                setConfirmOpen(false)
+                run('delete', onDelete)
+              }}
+            >
+              {pending === 'delete' ? t('common.deleting') : deleteLabel ?? t('list.batchDelete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

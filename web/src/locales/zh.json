@@ -214,6 +214,26 @@
     "emptyTitle": "暂无日志",
     "emptyDesc": "调整过滤条件后重试"
   },
+  "list": {
+    "search": "搜索名称",
+    "sort": "排序",
+    "order": "顺序",
+    "asc": "升序",
+    "desc": "降序",
+    "prev": "上一页",
+    "next": "下一页",
+    "pageInfo": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",
+    "selected": "已选 {{count}} 项",
+    "batchDelete": "批量删除",
+    "batchUpdate": "批量更新",
+    "reset": "重置",
+    "clearSelection": "清除选择"
+  },
+  "batch": {
+    "confirmDelete": "确认删除选中的 {{count}} 项？",
+    "deleted": "已删除 {{count}} 项",
+    "updated": "已更新 {{count}} 项"
+  },
   "stats": {
     "title": "统计",
     "subtitle": "按时间桶聚合的用量统计",

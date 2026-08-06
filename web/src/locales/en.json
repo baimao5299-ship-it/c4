@@ -214,6 +214,26 @@
     "emptyTitle": "No logs",
     "emptyDesc": "Adjust the filters and try again"
   },
+  "list": {
+    "search": "Search name",
+    "sort": "Sort",
+    "order": "Order",
+    "asc": "Asc",
+    "desc": "Desc",
+    "prev": "Prev",
+    "next": "Next",
+    "pageInfo": "Page {{page}} / {{totalPages}} · {{total}} entries",
+    "selected": "{{count}} selected",
+    "batchDelete": "Batch delete",
+    "batchUpdate": "Batch update",
+    "reset": "Reset",
+    "clearSelection": "Clear selection"
+  },
+  "batch": {
+    "confirmDelete": "Delete the {{count}} selected items?",
+    "deleted": "Deleted {{count}} items",
+    "updated": "Updated {{count}} items"
+  },
   "stats": {
     "title": "Stats",
     "subtitle": "Usage statistics aggregated by time bucket",
