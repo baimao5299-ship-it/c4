@@ -64,7 +64,7 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 		s.keys.Delete(g.KeyHash)
 	}
 	if err := s.store.DeleteGroup(ctx, id); err != nil {
-		return err
+		return mapRepoErr(err) // 竞态窗口缺 id → 404（前置 Get 已拦截常见路径）
 	}
 	s.invalidate()
 	return nil
@@ -116,7 +116,7 @@ func (s *Service) SetGroupAccounts(ctx context.Context, groupID int64, accountID
 func (s *Service) RotateGroupKey(ctx context.Context, groupID int64) (string, error) {
 	g, err := s.store.GetGroup(ctx, groupID)
 	if err != nil {
-		return "", err
+		return "", mapRepoErr(err) // 缺 id → 404
 	}
 	oldHash := g.KeyHash
 	raw, hash, prefix := cryptox.NewGroupKey()

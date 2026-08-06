@@ -87,7 +87,10 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 }
 
 func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
-	return r.client.Group.DeleteOneID(id).Exec(ctx)
+	if err := r.client.Group.DeleteOneID(id).Exec(ctx); err != nil {
+		return errMissingID(err, id)
+	}
+	return nil
 }
 
 // SetAccounts 全量替换分组账号成员（规格 §8）。

@@ -284,3 +284,49 @@ func TestBatchNotFoundMapping(t *testing.T) {
 	err = svc.DeleteGroupsBatch(ctx, []int64{999})
 	require.ErrorIs(t, err, ErrNotFound)
 }
+
+// --- Task 5：单资源删除缺 id → 404 映射（与批量语义对齐） ---
+
+// TestSingleDeleteNotFoundMapping 单资源 Delete 缺 id：repo 单删缺 id 与
+// DeleteGroup 前置 Get 均经 mapRepoErr → service.ErrNotFound（消息含缺失 id，
+// 与批量 404 一致），且失败不 invalidate。
+func TestSingleDeleteNotFoundMapping(t *testing.T) {
+	fs := newFakeStore()
+	invalidated := 0
+	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	ctx := context.Background()
+
+	err := svc.DeleteTemplate(ctx, 999)
+	require.ErrorIs(t, err, ErrNotFound, "templates 单删缺 id → 404")
+	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
+
+	err = svc.DeleteAccount(ctx, 999)
+	require.ErrorIs(t, err, ErrNotFound, "accounts 单删缺 id → 404")
+	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
+
+	err = svc.DeleteGroup(ctx, 999)
+	require.ErrorIs(t, err, ErrNotFound, "groups 单删缺 id → 404（GetGroup 前置拦截）")
+	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
+
+	require.Zero(t, invalidated, "缺 id 失败不得 invalidate")
+}
+
+// TestCreateAccountMissingTemplate CreateAccount 前置 GetTemplate 缺 id →
+// service.ErrNotFound（消息含缺失 id；此前裸透传 repository 错误 → 生产 500）。
+func TestCreateAccountMissingTemplate(t *testing.T) {
+	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	_, err := svc.CreateAccount(context.Background(), &domain.Account{
+		Name: "a", UpstreamKey: "k", TemplateID: 999, MaxConcurrency: 4,
+	})
+	require.ErrorIs(t, err, ErrNotFound, "模板缺 id → 404")
+	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
+}
+
+// TestRotateGroupKeyMissing RotateGroupKey 前置 GetGroup 缺 id →
+// service.ErrNotFound（消息含缺失 id）。
+func TestRotateGroupKeyMissing(t *testing.T) {
+	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	_, err := svc.RotateGroupKey(context.Background(), 999)
+	require.ErrorIs(t, err, ErrNotFound, "分组缺 id → 404")
+	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
+}

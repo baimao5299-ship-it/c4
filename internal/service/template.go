@@ -51,11 +51,11 @@ func (s *Service) UpdateTemplate(ctx context.Context, t *domain.Template) (*doma
 }
 
 func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
-	err := s.store.DeleteTemplate(ctx, id)
-	if err == nil {
-		s.invalidate()
+	if err := mapRepoErr(s.store.DeleteTemplate(ctx, id)); err != nil {
+		return err // 404 缺 id（与批量语义对齐）
 	}
-	return err
+	s.invalidate()
+	return nil
 }
 
 func (s *Service) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {

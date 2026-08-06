@@ -175,11 +175,12 @@ func templatePatchFromBody(f *TemplatePatch) (repository.TemplatePatch, error) {
 	return p, nil
 }
 
-// writeServiceErr 统一把 service 错误映射为 HTTP 状态。
+// writeServiceErr 统一把 service 错误映射为 HTTP 状态。404 输出 err.Error()
+// （service 层已把缺失 id 详情包装进 ErrNotFound，与批量 404 同语义）。
 func writeServiceErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotFound):
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErr(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrInvalidInput):
 		writeErr(w, http.StatusBadRequest, err.Error())
 	default:

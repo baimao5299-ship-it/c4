@@ -12,7 +12,7 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 		return nil, err
 	}
 	if _, err := s.store.GetTemplate(ctx, a.TemplateID); err != nil {
-		return nil, err
+		return nil, mapRepoErr(err) // 模板缺 id → 404
 	}
 	created, err := s.store.CreateAccount(ctx, a)
 	if err != nil {
@@ -50,11 +50,11 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
-	err := s.store.DeleteAccount(ctx, id)
-	if err == nil {
-		s.invalidate()
+	if err := mapRepoErr(s.store.DeleteAccount(ctx, id)); err != nil {
+		return err // 404 缺 id（与批量语义对齐）
 	}
-	return err
+	s.invalidate()
+	return nil
 }
 
 func (s *Service) DeleteAccountsBatch(ctx context.Context, ids []int64) error {

@@ -393,6 +393,43 @@ func TestGetGroupMissing(t *testing.T) {
 	tr.expectDone(t)
 }
 
+// TestDeleteXxxMissing 单资源 Delete 缺 id：DeleteOneID.Exec 对 0 行删除返回
+// *NotFoundError（ent 生成：n==0 → NotFoundError）→ errMissingID 映射为
+// repository.ErrNotFound（消息含缺失 id，与批量/Get 路径同格式）。与
+// TestGetXxxMissing 同基座（真实 ent client + pgxmock）。
+func TestDeleteTemplateMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
+		WithArgs(int64(999)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	err := tr.repos.Templates.DeleteTemplate(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestDeleteAccountMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectExec(q(`DELETE FROM "accounts"`)).
+		WithArgs(int64(999)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	err := tr.repos.Accounts.DeleteAccount(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestDeleteGroupMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectExec(q(`DELETE FROM "groups"`)).
+		WithArgs(int64(999)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	err := tr.repos.Groups.DeleteGroup(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
 // listSQL 匹配 List 查询的 SQL 片段（含 ORDER BY/LIMIT/OFFSET 断言）。
 func listSQL(order string) string {
 	return "(?i)FROM \"templates\".*ORDER BY \"templates\"\\." + order + "( LIMIT \\d+)?( OFFSET \\d+)?"

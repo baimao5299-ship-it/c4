@@ -80,7 +80,10 @@ func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (
 }
 
 func (r *TemplateRepo) DeleteTemplate(ctx context.Context, id int64) error {
-	return r.client.Template.DeleteOneID(id).Exec(ctx)
+	if err := r.client.Template.DeleteOneID(id).Exec(ctx); err != nil {
+		return errMissingID(err, id)
+	}
+	return nil
 }
 
 func toStringMap(m map[string]domain.RequestFormat) map[string]string {

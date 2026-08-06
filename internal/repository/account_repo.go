@@ -100,7 +100,10 @@ func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account) (*do
 }
 
 func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
-	return r.client.Account.DeleteOneID(id).Exec(ctx)
+	if err := r.client.Account.DeleteOneID(id).Exec(ctx); err != nil {
+		return errMissingID(err, id)
+	}
+	return nil
 }
 
 func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error {
