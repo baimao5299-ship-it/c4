@@ -45,9 +45,12 @@ func (h *AdminAPI) GetLogs(w http.ResponseWriter, r *http.Request, params GetLog
 	}
 	out := make([]UsageLog, 0, len(rows))
 	for _, item := range rows { // service.QueryLogs 返回 []any（元素为 *domain.UsageLog）
-		if l, ok := item.(*domain.UsageLog); ok {
-			out = append(out, toAPIUsageLog(l))
+		l, ok := item.(*domain.UsageLog)
+		if !ok { // 类型不符是内部错误：不能静默丢数据，返回 500
+			writeErr(w, http.StatusInternalServerError, "internal error: unexpected log row type")
+			return
 		}
+		out = append(out, toAPIUsageLog(l))
 	}
 	writeJSON(w, http.StatusOK, LogsResponse{Total: total, Rows: out})
 }

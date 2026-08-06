@@ -157,4 +157,72 @@ func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
 	require.Equal(t, updated.BaseURL, got.BaseURL, "update must persist")
 }
 
+// 评审：参数绑定失败（InvalidParamFormatError）必须输出契约 ErrorResponse
+// JSON（{"error": ...}），而非生成的 http.Error 纯文本 400。
+func TestParamBindErrorIsErrorResponse(t *testing.T) {
+	h := newTestHandler(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+
+	do := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer admin-tok")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for _, tc := range []struct {
+		name, path string
+	}{
+		{"path param non-int", "/admin/templates/abc"},
+		{"query limit non-int", "/admin/logs?limit=abc"},
+		{"query date invalid", "/admin/logs?from=2026-13-01"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := do(tc.path)
+			require.Equal(t, 400, rec.Code, "path %s: %s", tc.path, rec.Body.String())
+			require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Contains(t, body, "error", "must be ErrorResponse JSON, got: %s", rec.Body.String())
+		})
+	}
+}
+
+// GetLogs 正常路径：limit/offset 缺省取契约默认值，返回 rows + total。
+func TestGetLogs(t *testing.T) {
+	h := newTestHandler(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/logs", nil)
+	req.Header.Set("Authorization", "Bearer admin-tok")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, "logs: %s", rec.Body.String())
+	var body LogsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Zero(t, body.Total)
+	require.Empty(t, body.Rows)
+}
+
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

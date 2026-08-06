@@ -22,8 +22,15 @@ func New(svc *service.Service) *AdminAPI {
 }
 
 // Router 返回带 /admin 前缀的 chi 路由（替代原 Routes/RoutesMux）。
+// ErrorHandlerFunc 覆盖生成的默认 http.Error 纯文本 400：参数绑定失败
+// （InvalidParamFormatError 等）统一输出契约 ErrorResponse（{"error": ...}）。
 func (h *AdminAPI) Router() http.Handler {
-	return HandlerWithOptions(h, ChiServerOptions{BaseURL: "/admin"})
+	return HandlerWithOptions(h, ChiServerOptions{
+		BaseURL: "/admin",
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			writeErr(w, http.StatusBadRequest, err.Error())
+		},
+	})
 }
 
 // RoutesMux 兼容保留：cmd/server/main.go 仍以 Handle("/admin/*") 挂载，

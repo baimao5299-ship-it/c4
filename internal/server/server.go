@@ -64,7 +64,10 @@ func NewServer(opts Options) *Server {
 			})
 		})
 		if opts.AdminHandler != nil {
-			r.Mount("/", opts.AdminHandler) // AdminHandler 自带 /admin 前缀（HandlerWithOptions BaseURL）
+			// 用 Handle 而非 Mount：chi v5.3.1 对同一 pattern 重复 Mount 会 panic，
+			// 且 AI 组已挂 Mount("/", ...)。Handle 不剥离前缀，AdminHandler
+			// （HandlerWithOptions BaseURL="/admin"）按完整路径 /admin/* 匹配。
+			r.Handle("/admin/*", opts.AdminHandler)
 		}
 	})
 
