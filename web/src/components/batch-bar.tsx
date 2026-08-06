@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, Trash2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 
 // 列表页批量操作条：已选计数 + 批量删除（带确认弹窗）+ 可选批量更新 + 清除选择。
-// onDelete/onUpdate 可为异步；完成后就地显示短暂成功反馈（batch.deleted / batch.updated）。
+// onDelete/onUpdate 可为异步；resolve 后就地显示短暂成功反馈（batch.deleted / batch.updated），reject 时就地显示错误（2s 自动消失）。
 export function BatchBar({
   selected,
   onClear,
@@ -32,6 +32,7 @@ export function BatchBar({
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pending, setPending] = useState<'delete' | 'update' | null>(null)
   const [done, setDone] = useState<'delete' | 'update' | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   if (selected.length === 0) return null
@@ -40,12 +41,19 @@ export function BatchBar({
 
   function run(action: 'delete' | 'update', fn: () => void | Promise<void>) {
     setPending(action)
-    void Promise.resolve(fn()).finally(() => {
-      setPending(null)
-      setDone(action)
-      clearTimeout(doneTimer.current)
-      doneTimer.current = setTimeout(() => setDone(null), 2000)
-    })
+    setError(null)
+    Promise.resolve(fn())
+      .then(() => {
+        setDone(action)
+        clearTimeout(doneTimer.current)
+        doneTimer.current = setTimeout(() => setDone(null), 2000)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+        clearTimeout(doneTimer.current)
+        doneTimer.current = setTimeout(() => setError(null), 2000)
+      })
+      .finally(() => setPending(null))
   }
 
   return (
@@ -54,6 +62,11 @@ export function BatchBar({
         <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
           <CheckCircle2 className="size-4" />
           {t(done === 'delete' ? 'batch.deleted' : 'batch.updated', { count })}
+        </span>
+      ) : error ? (
+        <span className="flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400">
+          <AlertCircle className="size-4" />
+          {error}
         </span>
       ) : (
         <>
