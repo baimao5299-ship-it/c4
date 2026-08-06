@@ -10,8 +10,10 @@
 package aiclient
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -91,6 +93,46 @@ func (f *Factory) AnthMessage(ctx context.Context, tpl *domain.Template, key str
 
 func (f *Factory) AnthMessageStream(ctx context.Context, tpl *domain.Template, key string, params anthropic.MessageNewParams) *anthropicstream.Stream[anthropic.MessageStreamEventUnion] {
 	return f.anthropic(tpl).Messages.NewStreaming(ctx, params, anthropicoption.WithHeader("x-api-key", key))
+}
+
+// --- 流式原始请求（SSE relay 用） ---
+// SDK 的请求层在 internal/requestconfig（不可 import），故基于共享 http.Client
+// 构造原始请求：注入鉴权头、使用 SDK 客户端同款连接池与超时。
+// 返回完整 *http.Response，status 检查与 body 关闭由调用方负责。
+
+func (f *Factory) ChatCompletionStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, tpl, "chat/completions", "Bearer "+key, body)
+}
+
+func (f *Factory) ResponseStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, tpl, "responses", "Bearer "+key, body)
+}
+
+func (f *Factory) AnthMessageStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, tpl, "v1/messages", key, body)
+}
+
+// rawPost 构造并发出原始 POST；authHeader 为 Authorization 值（anthropic 用
+// x-api-key，传 key 本身）。
+func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth string, body []byte) (*http.Response, error) {
+	u, err := url.Parse(tpl.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	// url.JoinPath：base 末尾带/不带 / 均可正确拼接（ResolveReference 对
+	// 非尾斜杠 base 会做 RFC3986 path merge，丢掉 /v1 等前缀）。
+	full := u.JoinPath(path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, full.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if path == "v1/messages" {
+		req.Header.Set("x-api-key", auth)
+	} else {
+		req.Header.Set("Authorization", auth)
+	}
+	return f.hc.Do(req)
 }
 
 // --- 客户端懒构建（每模板最多 3 个，共享 http.Client，规格 §6.1） ---
