@@ -4,7 +4,7 @@ import { BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { DateTimePicker } from '@/components/ui/date-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -158,12 +158,12 @@ export default function Stats() {
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-4">
           <div className="w-[14rem] space-y-1.5">
-            <Label htmlFor="st-from">{t('stats.from')}</Label>
-            <Input id="st-from" type="datetime-local" value={range.from} onChange={e => setRange(r => ({ ...r, from: e.target.value }))} />
+            <Label>{t('stats.from')}</Label>
+            <DateTimePicker value={range.from} onChange={v => setRange(r => ({ ...r, from: v }))} />
           </div>
           <div className="w-[14rem] space-y-1.5">
-            <Label htmlFor="st-to">{t('stats.to')}</Label>
-            <Input id="st-to" type="datetime-local" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} />
+            <Label>{t('stats.to')}</Label>
+            <DateTimePicker value={range.to} onChange={v => setRange(r => ({ ...r, to: v }))} />
           </div>
           <div className="space-y-1.5">
             <Label>{t('stats.granularity')}</Label>

@@ -6,6 +6,7 @@ import { api } from '@/App'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { DateTimePicker } from '@/components/ui/date-picker'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -145,12 +146,12 @@ export default function Logs() {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="log-from">{t('logs.filter.from')}</Label>
-            <Input id="log-from" type="datetime-local" value={filters.from} onChange={e => set({ from: e.target.value })} />
+            <Label>{t('logs.filter.from')}</Label>
+            <DateTimePicker value={filters.from} onChange={v => set({ from: v })} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="log-to">{t('logs.filter.to')}</Label>
-            <Input id="log-to" type="datetime-local" value={filters.to} onChange={e => set({ to: e.target.value })} />
+            <Label>{t('logs.filter.to')}</Label>
+            <DateTimePicker value={filters.to} onChange={v => set({ to: v })} />
           </div>
           <div className="flex items-end">
             <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setOffset(0) }}>

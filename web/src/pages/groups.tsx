@@ -139,11 +139,11 @@ export default function Groups() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-0.5">
-                      <Button variant="ghost" size="icon-xs" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? '') }}><Pencil /></Button>
-                      <Button variant="ghost" size="icon-xs" title={t('groups.bind')} onClick={() => openBind(g)}><Link2 /></Button>
-                      <Button variant="ghost" size="icon-xs" title={t('groups.rotate')} onClick={() => setRotateTarget(g)}><RefreshCw /></Button>
-                      <Button variant="ghost" size="icon-xs" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? '') }}><Pencil /></Button>
+                      <Button variant="ghost" size="icon-sm" title={t('groups.bind')} onClick={() => openBind(g)}><Link2 /></Button>
+                      <Button variant="ghost" size="icon-sm" title={t('groups.rotate')} onClick={() => setRotateTarget(g)}><RefreshCw /></Button>
+                      <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
