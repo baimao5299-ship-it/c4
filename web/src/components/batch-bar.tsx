@@ -70,7 +70,9 @@ export function BatchBar({
         </span>
       ) : (
         <>
-          <span className="text-sm text-muted-foreground">{t('list.selected', { count })}</span>
+          <span className="rounded-md bg-background px-2 py-0.5 text-sm font-medium text-foreground tabular-nums">
+            {t('list.selected', { count })}
+          </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button
               variant="destructive"

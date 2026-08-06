@@ -204,7 +204,9 @@ function FormFields({
                 key={f}
                 type="button"
                 size="sm"
-                variant={on ? 'default' : 'outline'}
+                variant={on ? 'secondary' : 'outline'}
+                aria-pressed={on}
+                className="rounded-full"
                 onClick={() => toggleFormat(f)}
               >
                 {FORMAT_LABELS[f]}
@@ -487,104 +489,106 @@ export default function Templates() {
           </Card>
         </motion.div>
       ) : (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={allChecked}
-                    indeterminate={someChecked}
-                    onCheckedChange={(c: boolean) => setSelected(c ? rows.map(r => r.ID) : [])}
-                    aria-label={tr('list.selected', { count: rows.length })}
-                  />
-                </TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead>{tr('templates.table.name')}</TableHead>
-                <TableHead>BaseURL</TableHead>
-                <TableHead>{tr('templates.table.supportedFormats')}</TableHead>
-                <TableHead>{tr('templates.table.models')}</TableHead>
-                <TableHead>{tr('templates.table.formatModels')}</TableHead>
-                <TableHead>{tr('templates.table.modelMapping')}</TableHead>
-                <TableHead>{tr('templates.table.createdAt')}</TableHead>
-                <TableHead className="text-right">{tr('templates.table.actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map(t => {
-                const models = commaList(t.Models)
-                const formats = Object.entries(t.FormatModels ?? {})
-                const mappings = Object.entries(t.ModelMapping ?? {})
-                return (
-                  <TableRow key={t.ID}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selected.includes(t.ID)}
-                        onCheckedChange={(c: boolean) => toggleRow(t.ID, c)}
-                        aria-label={t.Name ?? String(t.ID)}
-                      />
-                    </TableCell>
-                    <TableCell className="tabular-nums">{t.ID}</TableCell>
-                    <TableCell className="max-w-36 truncate" title={t.Name}>{t.Name}</TableCell>
-                    <TableCell className="max-w-52 truncate font-mono text-xs" title={t.BaseURL}>{t.BaseURL}</TableCell>
-                    <TableCell>
-                      <div className="flex max-w-44 flex-wrap gap-1">
-                        {(t.SupportedFormats ?? []).map(f => <FormatBadge key={f} format={f} />)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-40 truncate" title={models.full || undefined}>{models.text}</TableCell>
-                    <TableCell>
-                      {formats.length === 0 ? '—' : (
-                        <div className="flex max-w-56 flex-wrap gap-1">
-                          {formats.slice(0, 3).map(([f, ms]) => {
-                            const label = FORMAT_LABELS[f as RequestFormat] ?? f
-                            const list = (ms ?? []).join(', ')
-                            return (
-                              <Badge key={f} variant="outline" className="font-mono text-xs" title={`${label}: ${list}`}>
-                                {truncate(label, 10)}:{truncate(list, 12)}
+        <>
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allChecked}
+                      indeterminate={someChecked}
+                      onCheckedChange={(c: boolean) => setSelected(c ? rows.map(r => r.ID) : [])}
+                      aria-label={tr('list.selected', { count: rows.length })}
+                    />
+                  </TableHead>
+                  <TableHead>ID</TableHead>
+                  <TableHead>{tr('templates.table.name')}</TableHead>
+                  <TableHead>BaseURL</TableHead>
+                  <TableHead>{tr('templates.table.supportedFormats')}</TableHead>
+                  <TableHead>{tr('templates.table.models')}</TableHead>
+                  <TableHead>{tr('templates.table.formatModels')}</TableHead>
+                  <TableHead>{tr('templates.table.modelMapping')}</TableHead>
+                  <TableHead>{tr('templates.table.createdAt')}</TableHead>
+                  <TableHead className="text-right">{tr('templates.table.actions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map(t => {
+                  const models = commaList(t.Models)
+                  const formats = Object.entries(t.FormatModels ?? {})
+                  const mappings = Object.entries(t.ModelMapping ?? {})
+                  return (
+                    <TableRow key={t.ID} data-state={selected.includes(t.ID) ? 'selected' : undefined}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selected.includes(t.ID)}
+                          onCheckedChange={(c: boolean) => toggleRow(t.ID, c)}
+                          aria-label={t.Name ?? String(t.ID)}
+                        />
+                      </TableCell>
+                      <TableCell className="tabular-nums">{t.ID}</TableCell>
+                      <TableCell className="max-w-36 truncate" title={t.Name}>{t.Name}</TableCell>
+                      <TableCell className="max-w-52 truncate font-mono text-xs" title={t.BaseURL}>{t.BaseURL}</TableCell>
+                      <TableCell>
+                        <div className="flex max-w-44 flex-wrap gap-1">
+                          {(t.SupportedFormats ?? []).map(f => <FormatBadge key={f} format={f} />)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-40 truncate" title={models.full || undefined}>{models.text}</TableCell>
+                      <TableCell>
+                        {formats.length === 0 ? '—' : (
+                          <div className="flex max-w-56 flex-wrap gap-1">
+                            {formats.slice(0, 3).map(([f, ms]) => {
+                              const label = FORMAT_LABELS[f as RequestFormat] ?? f
+                              const list = (ms ?? []).join(', ')
+                              return (
+                                <Badge key={f} variant="outline" className="font-mono text-xs" title={`${label}: ${list}`}>
+                                  {truncate(label, 10)}:{truncate(list, 12)}
+                                </Badge>
+                              )
+                            })}
+                            {formats.length > 3 && <Badge variant="outline">+{formats.length - 3}</Badge>}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {mappings.length === 0 ? '—' : (
+                          <div className="flex max-w-56 flex-wrap gap-1">
+                            {mappings.slice(0, 3).map(([k, v]) => (
+                              <Badge key={k} variant="outline" className="font-mono text-xs" title={`${k} → ${v}`}>
+                                {truncate(k, 10)}→{truncate(v, 10)}
                               </Badge>
-                            )
-                          })}
-                          {formats.length > 3 && <Badge variant="outline">+{formats.length - 3}</Badge>}
+                            ))}
+                            {mappings.length > 3 && <Badge variant="outline">+{mappings.length - 3}</Badge>}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.CreatedAt)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon-sm" title={tr('common.edit')} onClick={() => openEdit(t)}>
+                            <Pencil />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive"
+                            title={tr('common.delete')}
+                            onClick={() => setDeleting(t)}
+                          >
+                            <Trash2 />
+                          </Button>
                         </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {mappings.length === 0 ? '—' : (
-                        <div className="flex max-w-56 flex-wrap gap-1">
-                          {mappings.slice(0, 3).map(([k, v]) => (
-                            <Badge key={k} variant="outline" className="font-mono text-xs" title={`${k} → ${v}`}>
-                              {truncate(k, 10)}→{truncate(v, 10)}
-                            </Badge>
-                          ))}
-                          {mappings.length > 3 && <Badge variant="outline">+{mappings.length - 3}</Badge>}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.CreatedAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={tr('common.edit')} onClick={() => openEdit(t)}>
-                          <Pencil />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-destructive"
-                          title={tr('common.delete')}
-                          onClick={() => setDeleting(t)}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
           <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={onOffsetChange} />
-        </Card>
+        </>
       )}
 
       {/* —— 创建/编辑对话框 —— */}

@@ -227,7 +227,7 @@ export default function Groups() {
         </motion.div>
       ) : (
         <>
-          <Card className="overflow-hidden">
+          <div className="overflow-hidden rounded-lg border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -248,7 +248,7 @@ export default function Groups() {
               </TableHeader>
               <TableBody>
                 {rows.map(g => (
-                  <TableRow key={g.ID} className={selected.includes(g.ID!) ? 'bg-muted/40' : undefined}>
+                  <TableRow key={g.ID} data-state={selected.includes(g.ID!) ? 'selected' : undefined}>
                     <TableCell>
                       <Checkbox checked={selected.includes(g.ID!)} onCheckedChange={() => toggleRow(g.ID!)} />
                     </TableCell>
@@ -271,7 +271,7 @@ export default function Groups() {
                 ))}
               </TableBody>
             </Table>
-          </Card>
+          </div>
           <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
         </>
       )}

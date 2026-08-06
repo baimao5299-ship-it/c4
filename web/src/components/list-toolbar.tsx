@@ -20,6 +20,7 @@ export type SortOrder = 'asc' | 'desc'
 
 // 列表页通用工具栏：名称搜索 + 排序字段/顺序切换 + 资源专属筛选。
 // 全部受控（props 驱动），children 由页面注入资源专属筛选（status 多选、template 下拉等）。
+// 容器与表格卡片同为 border bg-card 分层；搜索/筛选/按钮统一 h-9。
 export function ListToolbar({
   name,
   onNameChange,
@@ -41,18 +42,22 @@ export function ListToolbar({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
       <div className="relative w-48">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          className="pl-8"
+          className="h-9 pl-8"
           placeholder={t('list.search')}
           value={name}
           onChange={e => onNameChange(e.target.value)}
         />
       </div>
       <Select value={sort} onValueChange={onSortChange}>
-        <SelectTrigger size="sm" aria-label={t('list.sort')}>
+        <SelectTrigger
+          size="default"
+          className="data-[size=default]:h-9"
+          aria-label={t('list.sort')}
+        >
           <SelectValue placeholder={t('list.sort')} />
         </SelectTrigger>
         <SelectContent>
@@ -65,7 +70,7 @@ export function ListToolbar({
       </Select>
       <Button
         variant="outline"
-        size="sm"
+        size="lg"
         aria-pressed={order === 'asc'}
         aria-label={t('list.order')}
         onClick={() => onOrderChange(order === 'asc' ? 'desc' : 'asc')}
@@ -74,7 +79,7 @@ export function ListToolbar({
         {order === 'asc' ? t('list.asc') : t('list.desc')}
       </Button>
       {name !== '' && (
-        <Button variant="ghost" size="sm" onClick={() => onNameChange('')}>
+        <Button variant="ghost" size="lg" onClick={() => onNameChange('')}>
           <X />
           {t('list.reset')}
         </Button>

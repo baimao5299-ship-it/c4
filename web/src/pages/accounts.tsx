@@ -296,7 +296,7 @@ export default function Accounts() {
       >
         {/* status 多选筛选（逗号拼接传参） */}
         <Popover>
-          <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+          <PopoverTrigger render={<Button variant="outline" size="lg" />}>
             <Filter />
             {statusFilter.length > 0
               ? statusFilter.map(s => t(`status.${s}`)).join(', ')
@@ -320,7 +320,7 @@ export default function Accounts() {
         </Popover>
         {/* template 精确筛选 */}
         <Select value={templateId} onValueChange={changeTemplate}>
-          <SelectTrigger size="sm" className="w-44" aria-label={t('accounts.filterTemplate')}>
+          <SelectTrigger size="default" className="w-44 data-[size=default]:h-9" aria-label={t('accounts.filterTemplate')}>
             <SelectValue placeholder={t('accounts.filterTemplate')} />
           </SelectTrigger>
           <SelectContent>
@@ -365,7 +365,7 @@ export default function Accounts() {
         </motion.div>
       ) : (
         <>
-          <Card className="overflow-hidden">
+          <div className="overflow-hidden rounded-lg border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -391,7 +391,7 @@ export default function Accounts() {
               </TableHeader>
               <TableBody>
                 {rows.map(a => (
-                  <TableRow key={a.ID} className={selected.includes(a.ID!) ? 'bg-muted/40' : undefined}>
+                  <TableRow key={a.ID} data-state={selected.includes(a.ID!) ? 'selected' : undefined}>
                     <TableCell>
                       <Checkbox checked={selected.includes(a.ID!)} onCheckedChange={() => toggleRow(a.ID!)} />
                     </TableCell>
@@ -435,7 +435,7 @@ export default function Accounts() {
                 ))}
               </TableBody>
             </Table>
-          </Card>
+          </div>
           <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
         </>
       )}
