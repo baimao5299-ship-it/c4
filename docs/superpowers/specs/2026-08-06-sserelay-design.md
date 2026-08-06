@@ -184,6 +184,8 @@ resp.Body.Close()
 
 规格 §6.1 "上游调用一律走官方 SDK" 需同步更新：**非流式走 SDK，流式走原始 HTTP + sserelay**（流式性能优化例外，本设计已批准）。
 
+实现完成（提交后）：非流式保留官方 SDK；流式改用原始 HTTP + sserelay。规格 §6.1 表述同步。
+
 ## 测试设计
 
 ### pkg/sserelay/relay_test.go

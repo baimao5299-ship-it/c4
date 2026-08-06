@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,10 +10,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openai/openai-go/responses"
+	"github.com/tidwall/gjson"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/pkg/logx"
+	"go-proxy-mini/pkg/sserelay"
 )
 
 // HandleResponses 转发 /v1/responses（openai-responses 格式），与 chat 同构：
@@ -64,7 +66,7 @@ func (p *Proxy) HandleResponses(w http.ResponseWriter, r *http.Request) {
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
-		ok, code, body := p.tryResponses(w, r, reqID, groupID, start, sel, &params, peek.Stream)
+		ok, code, body := p.tryResponses(w, r, reqID, groupID, start, sel, &params, peek.Stream, body)
 		if ok {
 			return // 已写出完整响应
 		}
@@ -118,53 +120,56 @@ func (p *Proxy) HandleResponses(w http.ResponseWriter, r *http.Request) {
 }
 
 // tryResponses 返回 (已完整处理, 上游状态码, 上游错误 body)。流式 200 发出后无法转移。
-func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *responses.ResponseNewParams, streaming bool) (bool, int, []byte) {
+// rbody 为 HandleResponses 已读出的原始请求体（流式原始转发用）。
+func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *responses.ResponseNewParams, streaming bool, rbody []byte) (bool, int, []byte) {
 	tpl := tplOf(sel)
 	params.Model = responses.ResponsesModel(sel.Model)
 
 	if streaming {
 		ctx, cancel := context.WithTimeout(r.Context(), p.cfg.UpstreamStreamTimeout)
 		defer cancel()
-		stream := p.clients.ResponseStream(ctx, tpl, sel.UpstreamKey, *params)
-		if stream.Err() != nil {
-			err := stream.Err()
+		// 模型改写：与 SDK 路径 params.Model = sel.Model 等价（ModelMapping 语义）。
+		// 客户端请求体已带 stream:true（fake 上游按 body["stream"] 分支），无需注入。
+		streamBody, err := setModel(rbody, sel.Model)
+		if err != nil {
+			return false, 0, nil
+		}
+		resp, err := p.clients.ResponseStreamRaw(ctx, tpl, sel.UpstreamKey, streamBody)
+		if err != nil {
 			return false, statusOf(err), upstreamBody(err)
 		}
-		sw := newSSEWriter(w)
-		var (
-			usage    responses.ResponseUsage
-			hasUsage bool
-		)
-		for stream.Next() {
-			ev := stream.Current()
-			if err := sw.Event(ev); err != nil {
-				sw.Abort()
-				_ = stream.Close() // 归还上游连接
-				if p.log != nil {
-					p.log.Warn("sse write failed", logx.String("request_id", reqID), logx.Error(err))
+		if resp.StatusCode != http.StatusOK {
+			body := readUpstreamBody(resp)
+			resp.Body.Close()
+			return false, resp.StatusCode, body
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Accel-Buffering", "no")
+		var pt, ct, tt int64
+		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
+			Observer: func(ev sserelay.Event) {
+				// 用量只在 response.completed 事件携带（响应对象的 usage 字段）。
+				if bytes.Equal(ev.Event, []byte("response.completed")) {
+					pt = gjson.GetBytes(ev.Data, "response.usage.input_tokens").Int()
+					ct = gjson.GetBytes(ev.Data, "response.usage.output_tokens").Int()
+					tt = gjson.GetBytes(ev.Data, "response.usage.total_tokens").Int()
 				}
-				p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
-				p.finish(sel.AccountID, nil) // 客户端断开，无法转移
+			},
+		})
+		resp.Body.Close()
+		if err != nil {
+			// 客户端断开：释放槽位，无法转移。不能按 errors.Is(err, context.Canceled)
+			// 判断——sserelay.normalize 把任何 ctx 错误（含超时）折叠为 context.Canceled，
+			// 超时只会取消子 ctx 而父 ctx（r.Context()）仍存活；上游停滞超时必须走
+			// 上游错误分支（recordStreamAbort + ResultError），不得当作客户端断开。
+			if r.Context().Err() != nil {
+				p.finish(sel.AccountID, nil)
 				return true, 0, nil
 			}
-			// 用量只在 response.completed 事件携带（响应对象的 usage 字段）。
-			if ev.JSON.Response.Valid() && ev.Response.JSON.Usage.Valid() {
-				usage = ev.Response.Usage
-				hasUsage = true
-			}
-		}
-		if err := stream.Err(); err != nil {
-			sw.Abort()
-			_ = stream.Close()
 			p.recordStreamAbort(reqID, start, sel, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
 			return true, 0, nil
-		}
-		_ = stream.Close()
-		_ = sw.Done()
-		var pt, ct, tt int64
-		if hasUsage {
-			pt, ct, tt = usage.InputTokens, usage.OutputTokens, usage.InputTokens+usage.OutputTokens
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
 		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))

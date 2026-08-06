@@ -24,7 +24,10 @@ import (
 // failMode: "" = 正常；"429" = 每个非流式请求都返回 429（测 failover）；
 // "500" = 每个非流式请求都返回 500（测 ResultError→502）；
 // "400" = 每个非流式请求都返回 400（测 4xx 透传、不转移）；
-// "abort-stream" = 流式响应中途发非法事件（解码失败 → 流 Err() 非空，测中止路径）。
+// "400-stream" = 每个流式请求都返回 400（测流式 4xx 透传）；
+// "abort-stream" = 流式响应发完一部分后 panic 断开连接（chunked 帧未终结 →
+// relay 读到读错误，测中止路径；旧实现靠非法 JSON 事件触发 SDK 解码失败）；
+// "stall-stream" = 流式首帧后不再发送任何字节（测 UpstreamStreamTimeout 超时）。
 func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -57,15 +60,33 @@ func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
 			return
 		}
+		if failMode == "400-stream" && stream {
+			w.WriteHeader(400)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "bad request"}})
+			return
+		}
+		if failMode == "stall-stream" && stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			fl := w.(http.Flusher)
+			fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hi"}}],"usage":null}`+"\n\n")
+			fl.Flush()
+			// 首帧后不再发送任何字节：relay 阻塞在读上直到 ctx 超时
+			// （UpstreamStreamTimeout），模拟上游停滞。代理端 ctx 超时后
+			// 传输层取消连接 → 本处理器 r.Context() 结束，随之返回。
+			<-r.Context().Done()
+			return
+		}
 		if failMode == "abort-stream" && stream {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			fl := w.(http.Flusher)
 			fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hi"}}],"usage":null}`+"\n\n")
 			fl.Flush()
-			fmt.Fprint(w, "data: {oops\n\n") // 非法事件：SDK 解码失败 → 流中止
-			fl.Flush()
-			return
+			// 已发出部分流后 panic：连接被服务器强制关闭，relay 读到读错误
+			// （chunked 传输未写终结帧 → io.ErrUnexpectedEOF）。relay 原样
+			// 转发字节不解析事件，必须用真实读错误触发中止路径。
+			panic("abort-stream: connection cut mid-stream")
 		}
 		if stream {
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -131,13 +152,26 @@ func newTestProxyCapture(t *testing.T, upstream string, accountID int64, usageCa
 		ID: 1, Name: "t", BaseURL: upstream,
 		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
 	}
+	return newTestProxyTplCapture(t, tpl, accountID, usageCapture)
+}
+
+// newTestProxyTplCapture 用自定义模板构造测试代理（ModelMapping 等定制场景用）。
+func newTestProxyTplCapture(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool) *Proxy {
+	t.Helper()
+	return newTestProxyTplTimeoutLogs(t, tpl, accountID, usageCapture, 30*time.Second, noopLogStore{})
+}
+
+// newTestProxyTplTimeoutLogs 用自定义模板、流式超时与日志存储构造测试代理
+// （流式超时回归、用量值断言场景用；默认 30s 超时走 newTestProxyTplCapture）。
+func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, logs usage.LogInserter) *Proxy {
+	t.Helper()
 	accs := map[int64][]*domain.Account{10: {{
-		ID: accountID, TemplateID: 1, Template: tpl, UpstreamKey: "sk-upstream",
+		ID: accountID, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "sk-upstream",
 		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
-		UpstreamStreamTimeout: 30 * time.Second,
+		UpstreamStreamTimeout: streamTimeout,
 		GroupKeyRPM:           0, UsageCapture: usageCapture,
 	}
 	sched := scheduler.New(scheduler.Config{
@@ -148,12 +182,12 @@ func newTestProxyCapture(t *testing.T, upstream string, accountID int64, usageCa
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
-	}, noopLogStore{}, noopStatStore{}, nil)
+	}, logs, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]int64{cryptox.HashKey("gk-1"): 10}}, nil)
 	hc := &http.Client{Transport: http.DefaultTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout:       5 * time.Second,
-		UpstreamStreamTimeout: 30 * time.Second,
+		UpstreamStreamTimeout: streamTimeout,
 	})
 	return New(cfg, sched, rec, clients, auth, nil)
 }
@@ -179,6 +213,73 @@ func TestProxyStreamingChat(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+}
+
+// 兼容性钉（Task 3）：流式转发必须原样保留上游原始字节——chat 是 data-only
+// SSE（无 event: 行），[DONE] 与 usage 字段完整透传，成功路径释放并发槽并记用量。
+func TestProxyStreamingChatPreservesRawBytes(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, 200, rec.Code)
+	body := rec.Body.String()
+	// 原始字节必须完整保留：上游 chunk 与网关转发字节一致
+	require.Contains(t, body, "data: ")
+	require.Contains(t, body, "data: [DONE]")
+	require.NotContains(t, body, "event:") // openai chat 是 data-only SSE
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
+	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+}
+
+// 回归（Task 3 迁移发现）：流式原始转发必须沿用 SDK 路径的模型改写语义——
+// 调度器选号时已应用 ModelMapping（sel.Model 为上游模型名），原始请求体里的
+// 客户端模型名若不改写，映射用户流式请求会打到上游不存在的模型。
+func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		stream, _ := body["stream"].(bool)
+		require.True(t, stream, "原始流式请求体必须带 stream:true")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		fmt.Fprintf(w, "data: {\"id\":\"c1\",\"model\":%q,\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":null}\n\n", body["model"])
+		fl.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer srv.Close()
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: srv.URL + "/v1",
+		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
+		ModelMapping: map[string]string{"gpt-4o": "gpt-4o-upstream"},
+	}
+	p := newTestProxyTplCapture(t, tpl, 1, true)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"model":"gpt-4o-upstream"`, "流式原始请求必须携带映射后的上游模型名")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency)
+	require.Equal(t, 1, p.rec.Pending())
 }
 
 // SSE 事件级冲刷回归（Task 9 压测发现）：sseWriter 必须每事件调用 http.Flusher.Flush()。
@@ -354,6 +455,67 @@ func TestProxyStreamAbortFreesSlot(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "中止路径记 ErrAbort 用量")
 }
 
+// 回归（评审 Critical）：流式上游停滞超过 UpstreamStreamTimeout 必须按上游错误
+// 处理——记 ErrAbort + MarkResult(ResultError) → 账号不健康。此前 sserelay.
+// normalize 把 ctx 超时折叠为 context.Canceled，tryChat 按 errors.Is(err,
+// context.Canceled) 走了"客户端断开"分支：释放槽位但不 MarkResult、不记用量
+// （账号保持 active、Pending 0），与迁移前 SDK 路径（记 ErrAbort + 不健康）相悖。
+func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
+	up := fakeOpenAI(t, "stall-stream")
+	defer up.Close()
+	store := &captureLogStore{}
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: up.URL + "/v1",
+		DefaultFormat: domain.FormatOpenAIChat, Models: []string{"gpt-4o"},
+	}
+	// 小超时保证断言在测试生命周期内触发（父 ctx 不取消，仅子 ctx 超时）
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 100*time.Millisecond, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusUnhealthy, ri.Status, "停滞超时记 ResultError → 不健康")
+	require.Zero(t, ri.Concurrency, "超时中止路径必须释放并发槽")
+	require.Equal(t, 1, p.rec.Pending(), "超时中止必须记一条 ErrAbort 用量")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType, "超时中止按上游读失败记 ErrAbort")
+}
+
+// 回归（评审 Minor）：流式 4xx 透传必须与非流式同语义——上游非 200 响应在
+// relay 之前就被检出，状态码 + 原始 body 原样写出、不 MarkResult（账号保持
+// active、不冷却）、并发槽释放、记一条用量。此前 fakes 的 "400" 模式只在
+// 非流式请求上触发，流式 4xx 路径没有测试覆盖。
+func TestProxyChatStreamingPassthrough4xx(t *testing.T) {
+	up := fakeOpenAI(t, "400-stream")
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, 400, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"bad request"`, "4xx 必须透传上游原始 body")
+	require.NotContains(t, rec.Body.String(), "upstream rejected request", "透传 body 时不得回退网关文案")
+	// 未 MarkResult：状态保持 active，不冷却
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status)
+	require.Nil(t, ri.CooldownUntil)
+	require.Zero(t, ri.Concurrency, "4xx 透传也必须释放并发槽")
+	require.Equal(t, 1, p.rec.Pending(), "4xx 透传必须记录用量")
+}
+
 // failingResponseWriter 模拟客户端断开：所有写出都失败。
 type failingResponseWriter struct{}
 
@@ -361,7 +523,9 @@ func (failingResponseWriter) Header() http.Header         { return http.Header{}
 func (failingResponseWriter) Write(p []byte) (int, error) { return 0, errors.New("client gone") }
 func (failingResponseWriter) WriteHeader(int)             {}
 
-// 客户端断开：SSE 写出失败 → ResultError + 释放并发槽（无法判定结果，不记用量）。
+// 客户端断开：SSE 写出失败 → ResultError + 释放并发槽。旧 SDK 路径不记用量；
+// relay 无法区分"写出失败"与"上游读失败"（两者都是非 ctx 取消的错误），
+// 按控制器语义一律走 recordStreamAbort → 记一条 ErrAbort 用量。
 func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
@@ -376,7 +540,7 @@ func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status, "客户端断开记 ResultError")
 	require.Zero(t, ri.Concurrency, "客户端断开必须释放并发槽")
-	require.Zero(t, p.rec.Pending(), "客户端断开不记用量")
+	require.Equal(t, 1, p.rec.Pending(), "写出失败按上游读失败处理，记 ErrAbort 用量")
 }
 
 // UsageCapture=false：Record 不得被调用（channel 零填充，否则饱和后阻塞热路径）。

@@ -4,23 +4,23 @@
 //
 // 版本说明（openai-go v1.12.0 / anthropic-sdk-go v1.56.0）：客户端选项在
 // option 子包（option.WithBaseURL/WithHTTPClient/WithHeader）；流式入口
-// NewStreaming 在请求选项层注入 "stream": true，参数里不再有 Stream 字段，
-// 流类型为 *ssestream.Stream[T]（Next()/Current()/Err() 迭代）。调用方按
-// 原始请求体里的 stream 字段决定走 New 还是 NewStreaming。
+// NewStreaming 在请求选项层注入 "stream": true，参数里不再有 Stream 字段。
+// 调用方按原始请求体里的 stream 字段决定走 SDK 非流式（本文件）还是原始
+// 流式请求（StreamRaw 系列，流式 SSE relay 用，见下方）。
 package aiclient
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
-	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/openai/openai-go"
 	openaioption "github.com/openai/openai-go/option"
-	openaistream "github.com/openai/openai-go/packages/ssestream"
 	"github.com/openai/openai-go/responses"
 
 	"go-proxy-mini/internal/domain"
@@ -64,21 +64,12 @@ func (f *Factory) ChatCompletion(ctx context.Context, tpl *domain.Template, key 
 	return f.chat(tpl).Chat.Completions.New(ctx, params, openaioption.WithHeader("Authorization", "Bearer "+key))
 }
 
-// ChatCompletionStream 流式调用；ctx 由调用方管理（含超时），本函数只注入鉴权头。
-func (f *Factory) ChatCompletionStream(ctx context.Context, tpl *domain.Template, key string, params openai.ChatCompletionNewParams) *openaistream.Stream[openai.ChatCompletionChunk] {
-	return f.chat(tpl).Chat.Completions.NewStreaming(ctx, params, openaioption.WithHeader("Authorization", "Bearer "+key))
-}
-
 // --- openai responses ---
 
 func (f *Factory) Response(ctx context.Context, tpl *domain.Template, key string, params responses.ResponseNewParams) (*responses.Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, f.cfg.UpstreamTimeout)
 	defer cancel()
 	return f.responses(tpl).Responses.New(ctx, params, openaioption.WithHeader("Authorization", "Bearer "+key))
-}
-
-func (f *Factory) ResponseStream(ctx context.Context, tpl *domain.Template, key string, params responses.ResponseNewParams) *openaistream.Stream[responses.ResponseStreamEventUnion] {
-	return f.responses(tpl).Responses.NewStreaming(ctx, params, openaioption.WithHeader("Authorization", "Bearer "+key))
 }
 
 // --- anthropic messages ---
@@ -89,8 +80,44 @@ func (f *Factory) AnthMessage(ctx context.Context, tpl *domain.Template, key str
 	return f.anthropic(tpl).Messages.New(ctx, params, anthropicoption.WithHeader("x-api-key", key))
 }
 
-func (f *Factory) AnthMessageStream(ctx context.Context, tpl *domain.Template, key string, params anthropic.MessageNewParams) *anthropicstream.Stream[anthropic.MessageStreamEventUnion] {
-	return f.anthropic(tpl).Messages.NewStreaming(ctx, params, anthropicoption.WithHeader("x-api-key", key))
+// --- 流式原始请求（SSE relay 用） ---
+// SDK 的请求层在 internal/requestconfig（不可 import），故基于共享 http.Client
+// 构造原始请求：注入鉴权头、使用 SDK 客户端同款连接池与超时。
+// 返回完整 *http.Response，status 检查与 body 关闭由调用方负责。
+
+func (f *Factory) ChatCompletionStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, tpl, "chat/completions", "Bearer "+key, body)
+}
+
+func (f *Factory) ResponseStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, tpl, "responses", "Bearer "+key, body)
+}
+
+func (f *Factory) AnthMessageStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, tpl, "v1/messages", key, body)
+}
+
+// rawPost 构造并发出原始 POST；authHeader 为 Authorization 值（anthropic 用
+// x-api-key，传 key 本身）。
+func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth string, body []byte) (*http.Response, error) {
+	u, err := url.Parse(tpl.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	// url.JoinPath：base 末尾带/不带 / 均可正确拼接（ResolveReference 对
+	// 非尾斜杠 base 会做 RFC3986 path merge，丢掉 /v1 等前缀）。
+	full := u.JoinPath(path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, full.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if path == "v1/messages" {
+		req.Header.Set("x-api-key", auth)
+	} else {
+		req.Header.Set("Authorization", auth)
+	}
+	return f.hc.Do(req)
 }
 
 // --- 客户端懒构建（每模板最多 3 个，共享 http.Client，规格 §6.1） ---
