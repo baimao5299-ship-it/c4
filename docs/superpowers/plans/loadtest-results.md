@@ -59,6 +59,30 @@
 
 结论：非流式 SDK 请求/响应路径在 10k 并发下稳定，吞吐平台约 2.4 万 req/s；其完整响应 P99 为 550ms，未显示出流式高频 SSE 那种逐事件解码/重编码/Flush 导致的秒级排队。该结果不能替代流式验收，流式高频 SSE 瓶颈仍需以原始 SSE relay 改造解决。
 
+## 四·二、SSE relay 首事件 flush A/B 对照实验（2026-08-06）
+
+环境：匿名 Linux 压测服务器，24 逻辑 CPU / 62GB 内存，无生产负载（100% CPU 可用）。链路为 loadtest/ssetiming → 网关（sserelay 已上线）→ fakeupstream。A = 首事件立即 flush（默认实现）；B = 首事件跳过立即 flush、全部事件走 4KiB/1ms 批量（SkipFirstFlush 开关，实验代码未提交、已还原）。
+
+流型 1：正常流（fakeupstream 100 chunks × 20ms，5,000 并发，45s）：
+
+| 指标 | A（首事件立即 flush） | B（全批量） |
+|---|---:|---:|
+| 首事件延迟 avg | 663µs | 1.98ms |
+| 首事件延迟 P99 | 2.0ms | 4.3ms |
+| token 间隔 avg（上游 20ms 主导） | 20.48ms | 20.56ms |
+| 网关 write syscalls | 56,491 | 56,923 |
+
+流型 2：密集流（fakeupstream 1000 chunks × 0ms，2,000 并发，30s）：
+
+| 指标 | A | B |
+|---|---:|---:|
+| total | 37,980 | 38,075 |
+| avg 首字节 | 352.8ms | 335.5ms（排队主导，噪声内） |
+| P99 首字节 | 2,710ms | 2,660ms |
+| 网关 write syscalls | 2,839,268 | 2,834,845 |
+
+结论：**A 胜出，保持默认**。A/B 差异仅每流第一个事件的 flush 时机（之后均走 4KiB 阈值 / 1ms timer 批量，relay 的批量 flush 在两种流型下始终生效）——因此 B 没有带来 syscall 减少（两流型 A/B syscw 均持平），而 A 在正常流上首事件延迟好约 1.3ms（663µs vs 1.98ms）。密集流下差异被排队淹没（±5% 噪声）。首事件立即 flush 无代价地改善流式首字节体验，维持为默认配置。
+
 ## 五、压测发现并修复的缺陷
 
 **SSE 事件级冲刷缺失（internal/proxy/forward.go + internal/server/middleware.go）**：
