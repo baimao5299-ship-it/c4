@@ -3,8 +3,6 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-/* 主题 = 亮色 liquid glass（暗色仅侧边栏，由 glass-sidebar 承担）；dark: 变体保留为
-   惰性 class 变体（无任何代码挂 .dark，永不激活），旧 .dark 变量块已删（死代码）。 */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -51,75 +49,82 @@
 }
 
 :root {
-    --background: oklch(0.955 0.02 255);
-    --foreground: oklch(0.24 0.012 260);
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.24 0.012 260);
+    --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.24 0.012 260);
-    /* 强调色 = GooseHyperGlass gooseLight 系 #0088FF（tabsAccent/sliderAccent/dialogAccent），
-       仅用于链接/active 指示条/图标/细边框/焦点环，不做大面积底色 */
-    --primary: oklch(0.62 0.19 255);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0.003 260);
-    --secondary-foreground: oklch(0.32 0.008 260);
-    --muted: oklch(0.96 0.003 260);
-    --muted-foreground: oklch(0.5 0.012 260);
-    --accent: oklch(0.955 0.02 255);
-    --accent-foreground: oklch(0.5 0.15 255);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.925 0.006 260);
-    --input: oklch(0.92 0.008 260);
-    --ring: oklch(0.72 0.13 255);
-    /* 点缀 = GooseHyperGlass 系：blue #0088FF / sky / violet / green #34C759 / orange #FF8D28 */
-    --chart-1: oklch(0.62 0.19 255);
-    --chart-2: oklch(0.68 0.15 235);
-    --chart-3: oklch(0.6 0.18 290);
-    --chart-4: oklch(0.72 0.15 155);
-    --chart-5: oklch(0.72 0.14 65);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.955 0.02 255);
-    --sidebar-foreground: oklch(0.24 0.012 260);
-    --sidebar-primary: oklch(0.62 0.19 255);
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.955 0.02 255);
-    --sidebar-accent-foreground: oklch(0.5 0.15 255);
-    --sidebar-border: oklch(0.925 0.006 260);
-    --sidebar-ring: oklch(0.72 0.13 255);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
     }
+  body {
+    @apply bg-background text-foreground;
+    }
   html {
     @apply font-sans;
     }
-  /* 页面背景 = 用户指定图（web/public/bg-main.webp，2000x2000 深蓝渐变：
-     上部钢蓝 → 下部深藏青，用户自选）。图铺满整页（fixed），玻璃外壳悬浮其上，
-     外壳/卡片 backdrop-blur 模糊身后图像 = 玻璃透视。底色回退 = 图下部藏青。 */
-  body {
-    @apply text-foreground;
-    background-color: #16294d;
-    background-image: url('/bg-main.webp');
-    background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
-  }
 }
-
-/* ===== liquid glass 工具类（全站玻璃材质，后续任务直接引用） ===== */
-/* macOS 冷色系毛玻璃配方（用户路线一）：卡片 bg rgba(255,255,255,.75) + blur(20px) +
-   1px 清晰白边 rgba(255,255,255,.9) + 16px 圆角 + 蓝黑投影 0 10px 30px -5px rgba(0,10,60,.06)
-   （清晰描边 + 稍强阴影 = 悬浮立体感，卡片不再融入背景） */
-.glass-card { @apply rounded-[1rem] border border-white/90 bg-white/75 shadow-[inset_0_1px_2px_rgba(255,255,255,0.5),0_10px_30px_-5px_rgba(0,10,60,0.06)] backdrop-blur-[20px]; }
-.glass-panel { @apply rounded-xl border border-white/85 bg-white/65 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_8px_24px_-6px_rgba(0,10,60,0.06)] backdrop-blur-[20px]; }
-.glass-input { @apply rounded-lg border border-white/85 bg-white/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4)] backdrop-blur-[20px]; }
-/* 底部标签栏容器（liquid-glass-webgl BottomTabs container：全宽胶囊玻璃；
-   选中项 = 其上再叠一层白色玻璃药丸，未选中项透明无玻璃） */
-.glass-bar { @apply rounded-full border border-white/85 bg-white/65 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_8px_24px_-6px_rgba(0,10,60,0.08)] backdrop-blur-[20px]; }
-/* 整体玻璃胶囊外壳：微光背景上的一层轻毛玻璃（大圆角 + 顶高光边 + 蓝黑柔和投影），
-   外壳 backdrop-blur 模糊身后的微光 = 玻璃透视；内部玻璃卡片再叠一层 */
-.glass-shell { @apply rounded-[2rem] border border-white/60 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_24px_60px_-12px_rgba(0,10,60,0.08)] backdrop-blur-2xl; }
-/* 保留（后续任务可引用）：浅色玻璃分区条 */
-.glass-sidebar { @apply border-r border-white/20 bg-white/25; }
