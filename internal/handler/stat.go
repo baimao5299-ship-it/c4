@@ -7,36 +7,40 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
-func (h *Handler) queryStats(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
+// GetStats 用量统计聚合（ServerInterface）。from/to 缺省 now-24h..now，
+// granularity 非法值回落 day。
+func (h *AdminAPI) GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams) {
 	sq := repository.StatQuery{From: time.Now().Add(-24 * time.Hour), To: time.Now()}
-	if v := q.Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			sq.From = t
+	if params.From != nil {
+		sq.From = *params.From
+	}
+	if params.To != nil {
+		sq.To = *params.To
+	}
+	if params.GroupId != nil {
+		sq.GroupID = *params.GroupId
+	}
+	if params.AccountId != nil {
+		sq.AccountID = *params.AccountId
+	}
+	if params.Model != nil {
+		sq.Model = *params.Model
+	}
+	granularity := "day"
+	if params.Granularity != nil {
+		granularity = string(*params.Granularity)
+		if granularity != "hour" && granularity != "day" {
+			granularity = "day"
 		}
-	}
-	if v := q.Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			sq.To = t
-		}
-	}
-	if v := q.Get("group_id"); v != "" {
-		sq.GroupID = mustI64(v)
-	}
-	if v := q.Get("account_id"); v != "" {
-		sq.AccountID = mustI64(v)
-	}
-	if v := q.Get("model"); v != "" {
-		sq.Model = v
-	}
-	granularity := q.Get("granularity")
-	if granularity != "hour" && granularity != "day" {
-		granularity = "day"
 	}
 	rows, err := h.svc.QueryStats(r.Context(), sq, granularity)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rows)
+	out := make([]StatBucket, 0, len(rows))
+	for _, b := range rows {
+		out = append(out, toAPIStatBucket(b))
+	}
+	writeJSON(w, http.StatusOK, out)
 }

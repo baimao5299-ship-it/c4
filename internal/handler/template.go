@@ -8,94 +8,95 @@ import (
 	"go-proxy-mini/internal/service"
 )
 
-// templateBody 是模板请求体的可写字段（snake_case 与其余 admin 端点一致）。
-// domain.Template 无 json tag，直接解码会丢弃 base_url/default_format 等键
-// （评审发现：updateTemplate 原实现因此让文档化的 PUT 请求全部 400）。
-type templateBody struct {
-	Name          string                          `json:"name"`
-	BaseURL       string                          `json:"base_url"`
-	DefaultFormat domain.RequestFormat            `json:"default_format"`
-	Models        []string                        `json:"models"`
-	ModelFormats  map[string]domain.RequestFormat `json:"model_formats"`
-	ModelMapping  map[string]string               `json:"model_mapping"`
-}
-
-func (b *templateBody) toTemplate() *domain.Template {
-	return &domain.Template{
-		Name: b.Name, BaseURL: b.BaseURL, DefaultFormat: b.DefaultFormat,
-		Models: b.Models, ModelFormats: b.ModelFormats, ModelMapping: b.ModelMapping,
+// toDomainFormats 契约 map（值类型为生成的 RequestFormat）→ 领域 map。
+func toDomainFormats(m *map[string]RequestFormat) map[string]domain.RequestFormat {
+	if m == nil {
+		return nil
 	}
+	out := make(map[string]domain.RequestFormat, len(*m))
+	for k, v := range *m {
+		out[k] = domain.RequestFormat(v)
+	}
+	return out
 }
 
-func (h *Handler) createTemplate(w http.ResponseWriter, r *http.Request) {
-	var in templateBody
+// PostTemplates 创建模板（ServerInterface）。
+func (h *AdminAPI) PostTemplates(w http.ResponseWriter, r *http.Request) {
+	var in TemplateCreate
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	created, err := h.svc.CreateTemplate(r.Context(), in.toTemplate())
+	created, err := h.svc.CreateTemplate(r.Context(), &domain.Template{
+		Name:          in.Name,
+		BaseURL:       in.BaseUrl,
+		DefaultFormat: domain.RequestFormat(in.DefaultFormat),
+		Models:        deref(in.Models),
+		ModelFormats:  toDomainFormats(in.ModelFormats),
+		ModelMapping:  deref(in.ModelMapping),
+	})
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, created)
+	writeJSON(w, http.StatusOK, toAPITemplate(created))
 }
 
-func (h *Handler) listTemplates(w http.ResponseWriter, r *http.Request) {
+// GetTemplates 模板列表（ServerInterface）。
+func (h *AdminAPI) GetTemplates(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.svc.ListTemplates(r.Context())
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rows)
+	out := make([]Template, 0, len(rows))
+	for _, t := range rows {
+		out = append(out, toAPITemplate(t))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
-func (h *Handler) getTemplate(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad id")
-		return
-	}
+// GetTemplatesId 模板详情（ServerInterface）。
+func (h *AdminAPI) GetTemplatesId(w http.ResponseWriter, r *http.Request, id int64) {
 	tpl, err := h.svc.GetTemplate(r.Context(), id)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, tpl)
+	writeJSON(w, http.StatusOK, toAPITemplate(tpl))
 }
 
-func (h *Handler) updateTemplate(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad id")
-		return
-	}
-	var in templateBody
+// PutTemplatesId 全量更新模板（ServerInterface）。
+func (h *AdminAPI) PutTemplatesId(w http.ResponseWriter, r *http.Request, id int64) {
+	var in TemplateCreate
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	tpl := in.toTemplate()
+	tpl := &domain.Template{
+		Name:          in.Name,
+		BaseURL:       in.BaseUrl,
+		DefaultFormat: domain.RequestFormat(in.DefaultFormat),
+		Models:        deref(in.Models),
+		ModelFormats:  toDomainFormats(in.ModelFormats),
+		ModelMapping:  deref(in.ModelMapping),
+	}
 	tpl.ID = id
 	updated, err := h.svc.UpdateTemplate(r.Context(), tpl)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, toAPITemplate(updated))
 }
 
-func (h *Handler) deleteTemplate(w http.ResponseWriter, r *http.Request) {
-	id, err := pathID(r)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad id")
-		return
-	}
+// DeleteTemplatesId 删除模板（ServerInterface）。
+func (h *AdminAPI) DeleteTemplatesId(w http.ResponseWriter, r *http.Request, id int64) {
 	if err := h.svc.DeleteTemplate(r.Context(), id); err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+	writeJSON(w, http.StatusOK, DeletedResponse{Deleted: true})
 }
 
 // writeServiceErr 统一把 service 错误映射为 HTTP 状态。

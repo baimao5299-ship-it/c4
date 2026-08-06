@@ -2,63 +2,52 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
-	"time"
 
+	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
 )
 
-func (h *Handler) queryLogs(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	lq := repository.LogQuery{
-		Limit:  parseIntDefault(q.Get("limit"), 20),
-		Offset: parseIntDefault(q.Get("offset"), 0),
+// GetLogs 用量日志分页查询（ServerInterface）。limit/offset 缺省 20/0
+// （契约 default），其余过滤参数仅非 nil 时生效。
+func (h *AdminAPI) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
+	lq := repository.LogQuery{Limit: 20, Offset: 0}
+	if params.Limit != nil {
+		lq.Limit = *params.Limit
 	}
-	if v := q.Get("group_id"); v != "" {
-		lq.GroupID = mustI64(v)
+	if params.Offset != nil {
+		lq.Offset = *params.Offset
 	}
-	if v := q.Get("account_id"); v != "" {
-		lq.AccountID = mustI64(v)
+	if params.GroupId != nil {
+		lq.GroupID = *params.GroupId
 	}
-	if v := q.Get("model"); v != "" {
-		lq.Model = v
+	if params.AccountId != nil {
+		lq.AccountID = *params.AccountId
 	}
-	if v := q.Get("status_code"); v != "" {
-		lq.StatusCode = int(mustI64(v)) // LogQuery.StatusCode 为 int（计划/brief 原代码为 int64 赋值，编译修正）
+	if params.Model != nil {
+		lq.Model = *params.Model
 	}
-	if v := q.Get("error_type"); v != "" {
-		lq.ErrorType = v
+	if params.StatusCode != nil {
+		lq.StatusCode = *params.StatusCode
 	}
-	if v := q.Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			lq.From = &t
-		}
+	if params.ErrorType != nil {
+		lq.ErrorType = *params.ErrorType
 	}
-	if v := q.Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			lq.To = &t
-		}
+	if params.From != nil {
+		lq.From = params.From
+	}
+	if params.To != nil {
+		lq.To = params.To
 	}
 	rows, total, err := h.svc.QueryLogs(r.Context(), lq)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"total": total, "rows": rows})
-}
-
-func parseIntDefault(s string, def int) int {
-	if s == "" {
-		return def
+	out := make([]UsageLog, 0, len(rows))
+	for _, item := range rows { // service.QueryLogs 返回 []any（元素为 *domain.UsageLog）
+		if l, ok := item.(*domain.UsageLog); ok {
+			out = append(out, toAPIUsageLog(l))
+		}
 	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return def
-	}
-	return v
-}
-
-func mustI64(s string) int64 {
-	v, _ := strconv.ParseInt(s, 10, 64)
-	return v
+	writeJSON(w, http.StatusOK, LogsResponse{Total: total, Rows: out})
 }

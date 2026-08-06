@@ -64,7 +64,7 @@ func NewServer(opts Options) *Server {
 			})
 		})
 		if opts.AdminHandler != nil {
-			r.Handle("/admin/*", opts.AdminHandler)
+			r.Mount("/", opts.AdminHandler) // AdminHandler 自带 /admin 前缀（HandlerWithOptions BaseURL）
 		}
 	})
 

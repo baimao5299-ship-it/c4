@@ -1,75 +1,49 @@
-// Package handler 实现 /admin/* 的 HTTP 处理（JSON in/out，chi 路由）。
+// Package handler 实现 /admin/* 的 HTTP 处理：OpenAPI 契约层（oapi-codegen
+// 生成的 ServerInterface + chi 路由），JSON in/out。
 package handler
 
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
 
 	"go-proxy-mini/internal/service"
 )
 
-type Handler struct {
+// AdminAPI 实现生成的 ServerInterface（契约层唯一实现）。
+// 注：生成代码自带包级 func Handler(...) 路由助手，故实现结构体命名
+// AdminAPI 以避免与生成的 Handler 函数重名。
+type AdminAPI struct {
 	svc *service.Service
 }
 
-func New(svc *service.Service) *Handler {
-	return &Handler{svc: svc}
+// New 构造契约处理器（路由由 HandlerWithOptions 生成）。
+func New(svc *service.Service) *AdminAPI {
+	return &AdminAPI{svc: svc}
 }
 
-// Routes 挂载全部 admin 路由（不含认证中间件，由 server 层加）。
-func (h *Handler) Routes(r chi.Router) {
-	r.Route("/admin", func(r chi.Router) {
-		r.Route("/templates", func(r chi.Router) {
-			r.Post("/", h.createTemplate)
-			r.Get("/", h.listTemplates)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", h.getTemplate)
-				r.Put("/", h.updateTemplate)
-				r.Delete("/", h.deleteTemplate)
-			})
-		})
-		r.Route("/accounts", func(r chi.Router) {
-			r.Post("/", h.createAccount)
-			r.Get("/", h.listAccounts)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", h.getAccount)
-				r.Put("/", h.updateAccount)
-				r.Delete("/", h.deleteAccount)
-			})
-		})
-		r.Route("/groups", func(r chi.Router) {
-			r.Post("/", h.createGroup)
-			r.Get("/", h.listGroups)
-			r.Route("/{id}", func(r chi.Router) {
-				r.Get("/", h.getGroup)
-				r.Put("/", h.updateGroup)
-				r.Delete("/", h.deleteGroup)
-				r.Put("/accounts", h.setGroupAccounts)
-				r.Post("/rotate-key", h.rotateGroupKey)
-			})
-		})
-		r.Get("/logs", h.queryLogs)
-		r.Get("/stats", h.queryStats)
-	})
+// Router 返回带 /admin 前缀的 chi 路由（替代原 Routes/RoutesMux）。
+func (h *AdminAPI) Router() http.Handler {
+	return HandlerWithOptions(h, ChiServerOptions{BaseURL: "/admin"})
 }
 
-// RoutesMux 返回独立的 chi mux（供 server 以 Handle("/admin/*") 挂载）。
-func (h *Handler) RoutesMux() http.Handler {
-	r := chi.NewRouter()
-	h.Routes(r)
-	return r
-}
-
-func pathID(r *http.Request) (int64, error) {
-	return strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+// RoutesMux 兼容保留：cmd/server/main.go 仍以 Handle("/admin/*") 挂载，
+// 后续任务改接 Router 后可删除。
+func (h *AdminAPI) RoutesMux() http.Handler {
+	return h.Router()
 }
 
 func decode(r *http.Request, v any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
 	return dec.Decode(v)
+}
+
+// deref 返回指针指向的值；nil 时返回零值。
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -27,7 +27,7 @@ type fakeKeys struct{ upserted, deleted []string }
 func (f *fakeKeys) Upsert(hash string, groupID int64) { f.upserted = append(f.upserted, hash) }
 func (f *fakeKeys) Delete(hash string)                { f.deleted = append(f.deleted, hash) }
 
-func newTestHandler(t *testing.T) *Handler {
+func newTestHandler(t *testing.T) *AdminAPI {
 	t.Helper()
 	store := newFakeStore()
 	invalidate := func() {}
@@ -47,7 +47,7 @@ func TestAdminFlow(t *testing.T) {
 			next.ServeHTTP(w, req)
 		})
 	})
-	h.Routes(r)
+	r.Mount("/", h.Router())
 
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -112,7 +112,7 @@ func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
 			next.ServeHTTP(w, req)
 		})
 	})
-	h.Routes(r)
+	r.Mount("/", h.Router())
 
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
