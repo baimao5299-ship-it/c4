@@ -83,6 +83,26 @@
 
 结论：**A 胜出，保持默认**。A/B 差异仅每流第一个事件的 flush 时机（之后均走 4KiB 阈值 / 1ms timer 批量，relay 的批量 flush 在两种流型下始终生效）——因此 B 没有带来 syscall 减少（两流型 A/B syscw 均持平），而 A 在正常流上首事件延迟好约 1.3ms（663µs vs 1.98ms）。密集流下差异被排队淹没（±5% 噪声）。首事件立即 flush 无代价地改善流式首字节体验，维持为默认配置。
 
+## 四·三、10k 并发正式档（sserelay 上线后，2026-08-06）
+
+环境：匿名 Linux 压测服务器，24 逻辑 CPU / 62GB 内存，100% CPU 可用，SOMAXCONN=65535。链路：loadtest → 网关（sserelay 原始字节 relay）→ fakeupstream（100 chunks × 20ms）。验收工具 loadtest（-mode stream）。
+
+### 正式档：10,000 并发 × 5 分钟
+
+| 项 | 目标 | 实测 | 结论 |
+|---|---|---|---|
+| 并发流 | 10,000 | 10,000（5m3s 稳定） | ✅ |
+| errs 占比 | <0.1% | 0 / 996,137 = 0% | ✅ |
+| P99 首字节增量 | <50ms | 基线 <10ms → 10k 档 P99 330ms（avg 114.7ms） | ⚠️ 未达标——归因见下 |
+| 内存 | <2GB | 网关 RSS 峰值 1.58GB、heap 峰值 ~1.17GB | ✅ |
+| 日志零丢失 | 0 | usage_logs 1,178,187 = 正式档 996,137 + 基线 150 + failover 60,000 + 预热 ~121,900（估算 119k，±2.4%） | ✅ |
+| FD 水位 | <30k | 网关 2,010 / 上游 2,006 | ✅ |
+| failover 注入 | 429/5xx 无雪崩 | 429：30,000 req / 0 errs / avg 1.0ms；5xx：30,000 req / 0 errs / avg 1.1ms；注入账号 a1 正确进入 429 冷却 / unhealthy 指数退避 | ✅ |
+
+P99 未达标归因：fakeupstream 单进程吞吐上限约 3.3k req/s（其 CPU 峰值 6.3 核打满），而 10k 并发 × 2s/流 的需求约 5k req/s——上游吞吐不足导致网关持续排队，首字节延迟被排队抬高。网关自身峰值 ~10 核（24 核中仍有 14 核空闲），PG 峰值 6.5% CPU，无泄漏（结束后 goroutines 49,700 → 4,109、inflight 10k → 0、heap 回落至 230MB）。即 P99 由测试上游容量决定，非网关缺陷。
+
+对照（sserelay 收益）：旧实现（SDK 逐事件解码）在 12 核限制下 5,000 并发同型流 avg 首字节 428ms / P99 2.55s；sserelay + 24 核下 10,000 并发 avg 114.7ms / P99 330ms——并发翻倍、延迟降约 4 倍。
+
 ## 五、压测发现并修复的缺陷
 
 **SSE 事件级冲刷缺失（internal/proxy/forward.go + internal/server/middleware.go）**：
