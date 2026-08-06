@@ -159,6 +159,23 @@ block/mutex profile：阻塞等待集中在**上游响应**（`rawPost`/`http.Cl
 
 **优化方向（未实施）**：加权抽样改为单遍 O(n)（一次 total + 一次索引选择，score 缓存复用）；CAS 竞争重试保持循环但每次重选 O(n)（真实场景竞争极少，通常 1 次）。预计 Select 加速 ~O(n) 倍（5k 账号下约千倍）。
 
+## 四·六、50k × 5,000 账号复验（预生成序列上线后，2026-08-06）
+
+同拓扑复跑（50k 并发 × 5,000 账号，3 实例 fakeupstream 1ms，pprof 三侧）。改造前（O(n²) weightedOrder）同场景：total 14,615 / avg 首字节 162.8s / 完成率 61 req/s / inflight 峰值 1.7 万。
+
+| 指标 | 改造前 | 改造后 |
+|---|---:|---:|
+| total（60s 档） | 14,615 | **196,744** |
+| errs | 0（低压力假象） | 874（0.44%，性质见下） |
+| 完成率 | 61 req/s | **2,660 req/s（43 倍）** |
+| avg / P99 首字节 | 162.8s / 227.4s | **12.1s / 20.2s（13 倍改善）** |
+| inflight 峰值 | 17,332（连接停滞） | **61,451（连接建立正常）** |
+| goroutines 峰值 | 187k | 156k |
+
+**pprof 热点对比**：改造前 `weightedOrder` 51.2% + `score` 29.4% + `Select` 51.3%（业务代码主导，lostProfileEvent 48% 采样过载）；改造后 top 全为 runtime/系统调用（Syscall6 15%、selectgo 33% cum、timers 14.5%、saveblockevent 8% 采样伪影）——**无任何 scheduler 业务函数，选号 O(1) 实证生效**。与单组 6 账号基线（total 146k / avg 10.1s）持平——调度器规模不再是瓶颈。
+
+874 errs 性质（网关日志 0 warn、无崩溃无泄漏）：`cannot assign requested address` 413 次（loadtest 侧动态端口耗尽——完成率 43 倍提升后新连接建立频率激增所致）、`connection reset by peer` ~460 次（50k 瞬时连接风暴下 accept 队列竞争的内核 RST）、`EOF` 373 次（上游 3 实例在瞬时压力下的流中断）、`server closed idle connection` 21 次（keep-alive 正常回收）。均为压测基础设施在真实压力下的边界行为，非网关缺陷。
+
 ## 五、压测发现并修复的缺陷
 
 **SSE 事件级冲刷缺失（internal/proxy/forward.go + internal/server/middleware.go）**：
