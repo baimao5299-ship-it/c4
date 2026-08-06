@@ -95,14 +95,13 @@
   html {
     @apply font-sans;
     }
-  /* 背景图 = 软 aurora 光斑图（web/public/bg-aurora.png，本地生成）：
-     liquid-glass-react demo 玻璃背后是彩色图片、GooseHyperGlass demo 背后是 wallpaper 图像，
-     管理台以一张克制的浅色 aurora 图充当同等角色（浅蓝底 + 蓝/紫/青软光斑）。
-     此前尝试过纯黑（用户否）与近纯白（用户否），本版为图。 */
+  /* 页面背景 = 用户指定图（web/public/bg-main.webp，2000x2000 深蓝渐变：
+     上部钢蓝 → 下部深藏青，用户自选）。图铺满整页（fixed），玻璃外壳悬浮其上，
+     外壳/卡片 backdrop-blur 模糊身后图像 = 玻璃透视。底色回退 = 图下部藏青。 */
   body {
     @apply text-foreground;
-    background-color: #e6edf9;
-    background-image: url('/bg-aurora.png');
+    background-color: #16294d;
+    background-image: url('/bg-main.webp');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -110,13 +109,17 @@
 }
 
 /* ===== liquid glass 工具类（全站玻璃材质，后续任务直接引用） ===== */
-/* 玻璃 = 无实心填充：半透明白 + blur + saturate(150%)（liquid-glass-react backdropFilter: blur+saturate(140%)）
-   + 白细边/0.5px 白环（liquid-glass-react boxShadow 0 0 0 0.5px rgba(255,255,255,0.5) inset）
-   + 顶白高光（inset 0 1px 3px white 0.25）+ 黑色软投影（liquid-glass-react 0 12px 40px rgba(0,0,0,0.25)） */
-.glass-card { @apply rounded-2xl border border-white/40 bg-white/35 shadow-[inset_0_1px_3px_rgba(255,255,255,0.3),0_0_0_0.5px_rgba(255,255,255,0.5)_inset,0_12px_40px_rgba(0,0,0,0.14)] backdrop-blur-xl backdrop-saturate-150; }
-.glass-panel { @apply rounded-xl border border-white/40 bg-white/30 shadow-[inset_0_1px_3px_rgba(255,255,255,0.25),0_0_0_0.5px_rgba(255,255,255,0.45)_inset,0_4px_20px_rgba(0,0,0,0.12)] backdrop-blur-lg backdrop-saturate-150; }
-.glass-input { @apply rounded-lg border border-white/50 bg-white/35 shadow-[inset_0_1px_2px_rgba(255,255,255,0.45)] backdrop-blur-md backdrop-saturate-150; }
-/* 整体玻璃胶囊外壳：大圆角 + 顶高光边 + 蓝紫投影（页面留白，内部侧边栏/内容区同一材质） */
-.glass-shell { @apply rounded-[2rem] border border-white/40 bg-white/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_24px_64px_rgba(79,70,229,0.18)] backdrop-blur-2xl backdrop-saturate-150; }
+/* macOS 冷色系毛玻璃配方（用户路线一）：卡片 bg rgba(255,255,255,.75) + blur(20px) +
+   1px 清晰白边 rgba(255,255,255,.9) + 16px 圆角 + 蓝黑投影 0 10px 30px -5px rgba(0,10,60,.06)
+   （清晰描边 + 稍强阴影 = 悬浮立体感，卡片不再融入背景） */
+.glass-card { @apply rounded-[1rem] border border-white/90 bg-white/75 shadow-[inset_0_1px_2px_rgba(255,255,255,0.5),0_10px_30px_-5px_rgba(0,10,60,0.06)] backdrop-blur-[20px]; }
+.glass-panel { @apply rounded-xl border border-white/85 bg-white/65 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_8px_24px_-6px_rgba(0,10,60,0.06)] backdrop-blur-[20px]; }
+.glass-input { @apply rounded-lg border border-white/85 bg-white/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4)] backdrop-blur-[20px]; }
+/* 底部标签栏容器（liquid-glass-webgl BottomTabs container：全宽胶囊玻璃；
+   选中项 = 其上再叠一层白色玻璃药丸，未选中项透明无玻璃） */
+.glass-bar { @apply rounded-full border border-white/85 bg-white/65 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_8px_24px_-6px_rgba(0,10,60,0.08)] backdrop-blur-[20px]; }
+/* 整体玻璃胶囊外壳：微光背景上的一层轻毛玻璃（大圆角 + 顶高光边 + 蓝黑柔和投影），
+   外壳 backdrop-blur 模糊身后的微光 = 玻璃透视；内部玻璃卡片再叠一层 */
+.glass-shell { @apply rounded-[2rem] border border-white/60 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_24px_60px_-12px_rgba(0,10,60,0.08)] backdrop-blur-2xl; }
 /* 保留（后续任务可引用）：浅色玻璃分区条 */
 .glass-sidebar { @apply border-r border-white/20 bg-white/25; }
