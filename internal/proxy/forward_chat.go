@@ -3,16 +3,18 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/openai/openai-go"
+	"github.com/tidwall/gjson"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/pkg/logx"
+	"go-proxy-mini/pkg/sserelay"
 )
 
 func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +64,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
-		ok, code, body := p.tryChat(w, r, reqID, groupID, start, sel, &params, peek.Stream)
+		ok, code, body := p.tryChat(w, r, reqID, groupID, start, sel, &params, peek.Stream, body)
 		if ok {
 			return // 已写出完整响应
 		}
@@ -116,52 +118,59 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 }
 
 // tryChat 返回 (已完整处理, 上游状态码, 上游错误 body)。流式 200 发出后无法转移。
-func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *openai.ChatCompletionNewParams, streaming bool) (bool, int, []byte) {
+// rbody 为 HandleChat 已读出的原始请求体（流式原始转发用）。
+func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *openai.ChatCompletionNewParams, streaming bool, rbody []byte) (bool, int, []byte) {
 	tpl := tplOf(sel)
 	params.Model = sel.Model
 
 	if streaming {
 		ctx, cancel := context.WithTimeout(r.Context(), p.cfg.UpstreamStreamTimeout)
 		defer cancel()
-		stream := p.clients.ChatCompletionStream(ctx, tpl, sel.UpstreamKey, *params)
-		if stream.Err() != nil {
-			err := stream.Err()
+		// SDK NewStreaming 会在请求层注入 "stream": true；原始请求必须显式注入，
+		// 否则上游按非流式响应，relay 收不到 SSE。注入后仍需发送原始 body。
+		streamBody, err := setStreamFlag(rbody, true)
+		if err != nil {
+			return false, 0, nil
+		}
+		// 模型改写：调度器选号已应用 ModelMapping（sel.Model 为上游模型名），
+		// 与 SDK 路径 params.Model = sel.Model 等价，映射配置在流式下不失效。
+		streamBody, err = setModel(streamBody, sel.Model)
+		if err != nil {
+			return false, 0, nil
+		}
+		resp, err := p.clients.ChatCompletionStreamRaw(ctx, tpl, sel.UpstreamKey, streamBody)
+		if err != nil {
 			return false, statusOf(err), upstreamBody(err)
 		}
-		sw := newSSEWriter(w)
-		var (
-			usage    openai.CompletionUsage
-			hasUsage bool
-		)
-		for stream.Next() {
-			chunk := stream.Current()
-			if err := sw.Event(chunk); err != nil {
-				sw.Abort()
-				_ = stream.Close() // 归还上游连接
-				if p.log != nil {
-					p.log.Warn("sse write failed", logx.String("request_id", reqID), logx.Error(err))
+		if resp.StatusCode != http.StatusOK {
+			body := readUpstreamBody(resp)
+			resp.Body.Close()
+			return false, resp.StatusCode, body
+		}
+		// SSE 响应头与旧 sseWriter 一致（relay 只转发字节，不代设头）
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Accel-Buffering", "no")
+		var pt, ct, tt int64
+		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
+			Observer: func(ev sserelay.Event) {
+				if len(ev.Event) == 0 && gjson.GetBytes(ev.Data, "usage").Exists() {
+					pt = gjson.GetBytes(ev.Data, "usage.prompt_tokens").Int()
+					ct = gjson.GetBytes(ev.Data, "usage.completion_tokens").Int()
+					tt = gjson.GetBytes(ev.Data, "usage.total_tokens").Int()
 				}
-				p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
-				p.finish(sel.AccountID, nil) // 客户端断开，无法转移
+			},
+		})
+		resp.Body.Close()
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				// 客户端断开：释放槽位，无法转移
+				p.finish(sel.AccountID, nil)
 				return true, 0, nil
 			}
-			if chunk.JSON.Usage.Valid() {
-				usage = chunk.Usage
-				hasUsage = true
-			}
-		}
-		if err := stream.Err(); err != nil {
-			sw.Abort()
-			_ = stream.Close()
 			p.recordStreamAbort(reqID, start, sel, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
 			return true, 0, nil
-		}
-		_ = stream.Close()
-		_ = sw.Done()
-		var pt, ct, tt int64
-		if hasUsage {
-			pt, ct, tt = usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
 		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))

@@ -3,12 +3,11 @@
 package proxy
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"reflect"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -102,84 +101,6 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 	writeJSON(w, e.status, map[string]any{"error": map[string]any{"message": e.msg, "type": "gateway_error"}})
 }
 
-// --- SSE 写出（bufio 复用） ---
-
-var bufioPool = sync.Pool{New: func() any { return bufio.NewWriterSize(nil, 8192) }}
-
-// sseWriter 复用 bufio 写出 SSE。fl 在每次事件后 Flush：
-// 只刷 bufio 不刷 http.Flusher 时，Go http.Server 内部 4KB 缓冲会攒批放出，
-// 首字节延迟被拉高到 ~145ms（Task 9 压测实测，修复后 ~1ms，
-// 详见 docs/superpowers/plans/loadtest-results.md）。
-type sseWriter struct {
-	bw *bufio.Writer
-	fl http.Flusher
-}
-
-func newSSEWriter(w http.ResponseWriter) *sseWriter {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no")
-	bw := bufioPool.Get().(*bufio.Writer)
-	bw.Reset(w)
-	fl, _ := w.(http.Flusher) // statusWriter 已委托 Flush（middleware.go）；静默跳过仅防测试替身
-	return &sseWriter{bw: bw, fl: fl}
-}
-
-// Event 写出纯 data: 事件（openai SSE 风格）。
-func (s *sseWriter) Event(v any) error {
-	return s.write("", v)
-}
-
-// EventTyped 写出 event: <type> + data: 事件（anthropic SSE 风格：官方 SDK 按
-// event: 行类型分发，纯 data 事件被静默跳过 → 流为空）。
-func (s *sseWriter) EventTyped(eventType string, v any) error {
-	return s.write(eventType, v)
-}
-
-func (s *sseWriter) write(eventType string, v any) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	if eventType != "" {
-		if _, err := s.bw.WriteString("event: " + eventType + "\n"); err != nil {
-			return err
-		}
-	}
-	if _, err := s.bw.WriteString("data: "); err != nil {
-		return err
-	}
-	if _, err := s.bw.Write(data); err != nil {
-		return err
-	}
-	if _, err := s.bw.WriteString("\n\n"); err != nil {
-		return err
-	}
-	if err := s.bw.Flush(); err != nil {
-		return err
-	}
-	if s.fl != nil {
-		s.fl.Flush() // 事件级冲刷（SSE 语义必需，见 newSSEWriter 注释）
-	}
-	return nil
-}
-
-func (s *sseWriter) Done() error {
-	if _, err := s.bw.WriteString("data: [DONE]\n\n"); err != nil {
-		return err
-	}
-	if err := s.bw.Flush(); err != nil {
-		return err
-	}
-	if s.fl != nil {
-		s.fl.Flush()
-	}
-	bufioPool.Put(s.bw)
-	return nil
-}
-
-func (s *sseWriter) Abort() { bufioPool.Put(s.bw) }
-
 // --- 辅助 ---
 
 type usageTuple struct {
@@ -247,6 +168,39 @@ func upstreamBody(err error) []byte {
 		}
 	}
 	return nil
+}
+
+// readUpstreamBody 读取并关闭非 200 响应的 body（4xx/5xx 透传用）。
+func readUpstreamBody(resp *http.Response) []byte {
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// setStreamFlag 把原始请求体里的 "stream" 字段设为给定值（流式注入用）。
+// 用 map 重写避免对任意 JSON 结构做字符串手术；失败返回 nil。
+func setStreamFlag(body []byte, v bool) ([]byte, error) {
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["stream"] = v
+	return json.Marshal(m)
+}
+
+// setModel 把原始请求体里的 "model" 字段改写为调度器选定的上游模型名
+// （ModelMapping 已应用，见 scheduler.Select 的 Selection.Model）。原始转发
+// 必须沿用 SDK 路径 params.Model = sel.Model 的改写语义，否则映射配置在
+// 流式请求上失效（Task 3 迁移发现）。
+func setModel(body []byte, model string) ([]byte, error) {
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["model"] = model
+	return json.Marshal(m)
 }
 
 // tplOf 从 Selection 构造轻量模板对象（仅用于 aiclient 取 SDK 客户端）。

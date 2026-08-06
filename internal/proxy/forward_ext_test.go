@@ -56,9 +56,11 @@ func fakeResponses(t *testing.T, failMode string) *httptest.Server {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			fl := w.(http.Flusher)
-			fmt.Fprint(w, `data: {"type":"response.output_text.delta","delta":"hi"}`+"\n\n")
+			// 真实 Responses API 的 SSE 带 event: 行（openai SDK 只按 data JSON
+			// 的 type 分发，event 行不影响 SDK 消费）；代理 relay 后原样保留。
+			fmt.Fprint(w, `event: response.output_text.delta`+"\n"+`data: {"type":"response.output_text.delta","delta":"hi"}`+"\n\n")
 			fl.Flush()
-			fmt.Fprint(w, `data: {"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`+"\n\n")
+			fmt.Fprint(w, `event: response.completed`+"\n"+`data: {"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, "data: [DONE]\n\n")
 			fl.Flush()
@@ -109,11 +111,11 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 			// anthropic SSE 带 event: 行；SDK 按 event 类型分发事件（无 event 行的事件被跳过）。
 			// 用量按真实 API 分布：input_tokens 在 message_start.message.usage，
 			// output_tokens 在 message_delta.usage（message_delta 不带 input_tokens）。
-			fmt.Fprint(w, `event: message_start`+"\n"+`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"gpt-4o","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":0}}}`+"\n\n")
+			fmt.Fprint(w, `event: message_start`+"\n"+`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"gpt-4o","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, `event: content_block_delta`+"\n"+`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`+"\n\n")
 			fl.Flush()
-			fmt.Fprint(w, `event: message_delta`+"\n"+`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}`+"\n\n")
+			fmt.Fprint(w, `event: message_delta`+"\n"+`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":20}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, `event: message_stop`+"\n"+`data: {"type":"message_stop"}`+"\n\n")
 			fl.Flush()
@@ -209,7 +211,8 @@ func TestProxyResponsesNonStreaming(t *testing.T) {
 func TestProxyResponsesStreaming(t *testing.T) {
 	up := fakeResponses(t, "")
 	defer up.Close()
-	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+	store := &captureLogStore{}
+	p := newTestProxyFormatLogs(t, up.URL+"/v1", domain.FormatOpenAIResponses, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
 		`{"model":"gpt-4o","input":"hi","stream":true}`))
@@ -226,6 +229,16 @@ func TestProxyResponsesStreaming(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+
+	// 用量值断言：response.completed 事件的 response.usage 字段（relay observer 提取）。
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	lg := store.logs[0]
+	require.Equal(t, int64(3), lg.PromptTokens, "input_tokens from response.completed.response.usage")
+	require.Equal(t, int64(5), lg.CompletionTokens, "output_tokens from response.completed.response.usage")
+	require.Equal(t, int64(8), lg.TotalTokens, "total_tokens from response.completed.response.usage")
 }
 
 func TestProxyAnthropicNonStreaming(t *testing.T) {
@@ -324,8 +337,8 @@ func TestProxyAnthropicStreaming(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
 	body := rec.Body.String()
 	require.Contains(t, body, `"type":"content_block_delta"`)
-	require.Contains(t, body, `"input_tokens":3`, "input_tokens passthrough from message_start event")
-	require.Contains(t, body, `"output_tokens":5`, "output_tokens passthrough from message_delta event")
+	require.Contains(t, body, `"input_tokens":10`, "input_tokens passthrough from message_start event")
+	require.Contains(t, body, `"output_tokens":20`, "output_tokens passthrough from message_delta event")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
@@ -339,9 +352,30 @@ func TestProxyAnthropicStreaming(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1, "must capture exactly one usage log")
 	lg := store.logs[0]
-	require.Equal(t, int64(3), lg.PromptTokens, "input_tokens from message_start.message.usage")
-	require.Equal(t, int64(5), lg.CompletionTokens, "output_tokens from message_delta.usage")
-	require.Equal(t, int64(8), lg.TotalTokens, "total = input + output")
+	require.Equal(t, int64(10), lg.PromptTokens, "input_tokens from message_start.message.usage")
+	require.Equal(t, int64(20), lg.CompletionTokens, "output_tokens from message_delta.usage")
+	require.Equal(t, int64(30), lg.TotalTokens, "total = input + output")
+}
+
+// 兼容性钉（Task 3）：anthropic 流式转发必须保留上游原始字节——event: 行与
+// 用量字段（input_tokens/output_tokens）原样透传。
+func TestProxyAnthropicStreamingPreservesEventLines(t *testing.T) {
+	up := fakeAnthropic(t, "")
+	defer up.Close()
+	p := newTestProxyFormat(t, up.URL, domain.FormatAnthropic)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleAnthropic(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	body := rec.Body.String()
+	require.Contains(t, body, "event: message_start")
+	require.Contains(t, body, "event: message_stop")
+	require.Contains(t, body, `"input_tokens":10`)
+	require.Contains(t, body, `"output_tokens":20`)
 }
 
 // parseAnthropicSSE 按 anthropic 协议解析输出：每个 data 块前必须有 event: 行，
