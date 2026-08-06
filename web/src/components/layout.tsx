@@ -33,8 +33,8 @@ export default function Layout() {
         <nav className="flex-1 space-y-1 p-2">
           {nav.map(({ to, key, icon: Icon }) => (
             <NavLink key={to} to={to}
-              className={({ isActive }) => `flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}>
-              <Icon className="h-4 w-4" /> {t(key)}
+              className={({ isActive }) => `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-100'}`}>
+              <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
             </NavLink>
           ))}
         </nav>

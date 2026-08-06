@@ -69,6 +69,8 @@ function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[]
 
 // 轻量自绘 SVG 柱状图（无第三方图表依赖）：rect 高度按最大值缩放，
 // 0/50%/100% 网格线 + 稀疏横轴标签（约每 n/8 个桶一个）。
+// 桶宽策略：桶多时按槽宽比例自适应（64%），桶少时固定上限 BAR_W_MAX +
+// 等距 gap，整体居中，避免 1-3 个桶撑满全宽变成粗柱。
 function BarChart({ rows, metric, ariaLabel }: { rows: BucketRow[]; metric: Metric; ariaLabel: string }) {
   const W = 760, H = 200, PL = 12, PR = 12, PT = 16, PB = 30
   const plotW = W - PL - PR
@@ -77,7 +79,14 @@ function BarChart({ rows, metric, ariaLabel }: { rows: BucketRow[]; metric: Metr
   const values = rows.map(r => (metric === 'requests' ? r.RequestCount : r.TotalTokens))
   const max = Math.max(1, ...values)
   const step = Math.max(1, Math.ceil(n / 8))
-  const bw = plotW / n
+  const BAR_W_MAX = 44, BAR_GAP = 6
+  const slot = plotW / n
+  const barW = Math.min(slot * 0.64, BAR_W_MAX)
+  const sparse = slot * 0.64 > BAR_W_MAX // 桶少 → 固定柱宽 + gap
+  const contentW = sparse ? n * barW + (n - 1) * BAR_GAP : plotW
+  const startX = PL + (plotW - contentW) / 2
+  const barX = (i: number) =>
+    sparse ? startX + i * (barW + BAR_GAP) : startX + i * slot + (slot - barW) / 2
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full text-foreground" role="img" aria-label={ariaLabel}>
       {[0, 0.5, 1].map(f => (
@@ -94,18 +103,21 @@ function BarChart({ rows, metric, ariaLabel }: { rows: BucketRow[]; metric: Metr
         return (
           <rect
             key={r.time}
-            x={PL + i * bw + bw * 0.18}
+            x={barX(i)}
             y={PT + plotH - h}
-            width={bw * 0.64}
+            width={barW}
             height={values[i] === 0 ? 0 : Math.max(h, 2)}
             rx={2}
             fill="currentColor" opacity={0.85}
-          />
+          >
+            {/* 原生 title 悬停提示：桶标签 + 数值（均为非翻译文案） */}
+            <title>{`${r.label} · ${values[i]}`}</title>
+          </rect>
         )
       })}
       {rows.map((r, i) =>
         i % step === 0 ? (
-          <text key={r.time} x={PL + i * bw + bw / 2} y={H - 10} textAnchor="middle" fontSize={10} fill="currentColor" opacity={0.6}>
+          <text key={r.time} x={barX(i) + barW / 2} y={H - 10} textAnchor="middle" fontSize={10} fill="currentColor" opacity={0.6}>
             {r.label}
           </text>
         ) : null
@@ -145,11 +157,11 @@ export default function Stats() {
       {/* 控制：时间范围 + 粒度 + 指标 */}
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-4">
-          <div className="space-y-1.5">
+          <div className="w-[14rem] space-y-1.5">
             <Label htmlFor="st-from">{t('stats.from')}</Label>
             <Input id="st-from" type="datetime-local" value={range.from} onChange={e => setRange(r => ({ ...r, from: e.target.value }))} />
           </div>
-          <div className="space-y-1.5">
+          <div className="w-[14rem] space-y-1.5">
             <Label htmlFor="st-to">{t('stats.to')}</Label>
             <Input id="st-to" type="datetime-local" value={range.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} />
           </div>
