@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -533,4 +534,87 @@ func TestSelectTierFallback(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(2), sel.AccountID, "tier1 全不可用 → tier2 回落")
 	s.Release(sel.AccountID)
+}
+
+// tier 回落（并发满，Task 2 评审钉死）：tier1 账号并发满 → 回落 tier2（可用性优先）。
+// 规范裁定：旧实现（并发满账号在分档前被剔除 → tier1 为空）在此场景直接
+// ErrNoAvailable 的语义不可取；新实现 tier1 序列扫描失败后必须回落 tier2。
+func TestSelectTier1FullFallsBackToTier2(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1},
+		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	// 账号 1 是唯一 Serves gpt-4o 的账号（tier1 序列只有它）→ 确定性占用其唯一并发槽
+	sel1, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel1.AccountID, "tier1 唯一账号先被选中")
+	// tier1 并发满 → 必须回落 tier2（账号 2，Serves 恒 false 但同默认格式）
+	sel2, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), sel2.AccountID, "tier1 并发满 → tier2 回落（可用性优先）")
+	s.Release(sel1.AccountID)
+	s.Release(sel2.AccountID)
+}
+
+// 并发 CAS 竞争（Task 2 评审钉死）：单账号（n=1 序列）两并发 Select，
+// 恰一成功、另一返回 ErrNoAvailable——单遍单次 CAS 语义（败者不自旋重试，
+// 调用方重试）。屏障对齐两 goroutine 后 200 轮放大真实 CAS 冲突。
+func TestSelectConcurrentCASRace(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	type pairResult struct {
+		sel *Selection
+		err error
+	}
+	const pairs = 200
+	for i := 0; i < pairs; i++ {
+		start := make(chan struct{})
+		ready := make(chan struct{}, 2)
+		results := make(chan pairResult, 2)
+		var wg sync.WaitGroup
+		for j := 0; j < 2; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ready <- struct{}{}
+				<-start
+				sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+				results <- pairResult{sel: sel, err: err}
+			}()
+		}
+		<-ready
+		<-ready
+		close(start) // 同时放行，最大化 CAS 读-改-写冲突窗口
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("iter %d: pair did not finish in time — CAS loser must return promptly, not spin", i)
+		}
+		close(results)
+		var winner *Selection
+		okCount, noAvailCount := 0, 0
+		for r := range results {
+			switch {
+			case r.err == nil:
+				okCount++
+				winner = r.sel
+			case errors.Is(r.err, ErrNoAvailable):
+				noAvailCount++
+			default:
+				t.Fatalf("iter %d: unexpected error: %v", i, r.err)
+			}
+		}
+		require.Equal(t, 1, okCount, "iter %d: exactly one success per pair", i)
+		require.Equal(t, 1, noAvailCount, "iter %d: loser gets ErrNoAvailable (never two successes)", i)
+		require.NotNil(t, winner, "iter %d: winner carries a selection", i)
+		s.Release(winner.AccountID) // 恢复槽位，下一轮从 0 并发开始
+	}
 }
