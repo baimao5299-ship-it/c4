@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -69,6 +70,12 @@ func newSched(t *testing.T, m *memLoader) *Scheduler {
 	s := New(testCfg(), m, nil)
 	require.NoError(t, s.reload(context.Background()))
 	return s
+}
+
+// newTestScheduler 用给定账号（固定放入组 10）构建已加载快照的调度器。
+func newTestScheduler(t *testing.T, accs []*domain.Account) *Scheduler {
+	t.Helper()
+	return newSched(t, newMemLoader(map[int64][]*domain.Account{10: accs}))
 }
 
 func TestSelectFormatHardFilter(t *testing.T) {
@@ -371,4 +378,243 @@ func TestCloseDrainsWritebacks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.NoError(t, s.Close(ctx))
+}
+
+func mkAcc(id int64, weight int, tpl *domain.Template) *accountSnapshot {
+	a := &accountSnapshot{acc: domain.Account{ID: id, Weight: weight}, tpl: tpl}
+	a.state.Store(&accState{status: domain.StatusActive})
+	return a
+}
+
+func tplWith(ff domain.RequestFormat, models []string) *domain.Template {
+	return &domain.Template{DefaultFormat: ff, Models: models}
+}
+
+func TestNewWeightedSeqGcdNormalization(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"})
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl), mkAcc(2, 50, tpl)}
+	ws := newWeightedSeq(pool)
+	require.Len(t, ws.seq, 3, "weight 100:50 → GCD=50 → 序列长 3")
+	count1, count2 := 0, 0
+	for _, a := range ws.seq {
+		if a.acc.ID == 1 {
+			count1++
+		} else {
+			count2++
+		}
+	}
+	require.Equal(t, 2, count1)
+	require.Equal(t, 1, count2)
+}
+
+func TestNewWeightedSeqEqualWeights(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"})
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl), mkAcc(2, 100, tpl), mkAcc(3, 100, tpl)}
+	ws := newWeightedSeq(pool)
+	require.Len(t, ws.seq, 3, "全同权重 → 每账号 1 次")
+	require.ElementsMatch(t, []int64{1, 2, 3}, []int64{ws.seq[0].acc.ID, ws.seq[1].acc.ID, ws.seq[2].acc.ID})
+}
+
+func TestNewWeightedSeqLengthCap(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"})
+	// 反例构造超长：权重 9999 与 1 → GCD=1 → 长 10000 > 4096
+	pool2 := []*accountSnapshot{mkAcc(1, 9999, tpl), mkAcc(2, 1, tpl)}
+	ws := newWeightedSeq(pool2)
+	require.LessOrEqual(t, len(ws.seq), maxSeqLen, "长度上限 4096")
+	require.Contains(t, []int64{ws.seq[0].acc.ID, ws.seq[1].acc.ID}, int64(1), "权重高的账号至少出现一次")
+}
+
+func TestBuildRoutesBucketsAndDefault(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o", "gpt-4o-mini"})
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl)}
+	routes := buildRoutes(pool)
+	// 已知模型桶
+	rt, ok := routes[routeKey{domain.FormatOpenAIChat, "gpt-4o"}]
+	require.True(t, ok)
+	require.NotNil(t, rt.tier1, "gpt-4o 在 models 里 → tier1")
+	require.Nil(t, rt.tier2)
+	// 默认桶（未知模型回落）
+	rtD, ok := routes[routeKey{domain.FormatOpenAIChat, ""}]
+	require.True(t, ok)
+	require.Nil(t, rtD.tier1)
+	require.NotNil(t, rtD.tier2, "未知模型 → 默认格式 tier2")
+	// 其他格式无桶
+	_, ok = routes[routeKey{domain.FormatAnthropic, "gpt-4o"}]
+	require.False(t, ok)
+}
+
+func TestBuildRoutesModelFormatsOverride(t *testing.T) {
+	tpl := &domain.Template{DefaultFormat: domain.FormatOpenAIChat, ModelFormats: map[string]domain.RequestFormat{"special": domain.FormatAnthropic}}
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl)}
+	routes := buildRoutes(pool)
+	rt, ok := routes[routeKey{domain.FormatAnthropic, "special"}]
+	require.True(t, ok, "ModelFormats 覆盖 → special 模型走 anthropic 格式")
+	require.NotNil(t, rt.tier1, "special ∈ ModelFormats keys → Serves true → tier1")
+}
+
+// 分布：10 万次选号，频率 vs 权重比例（±5% 容差，shuffle 后的轮询分布）
+func TestSelectWeightDistribution(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k2", Status: domain.StatusActive, Weight: 50, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	const n = 100_000
+	counts := map[int64]int{}
+	for i := 0; i < n; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		require.NoError(t, err)
+		counts[sel.AccountID]++
+		s.Release(sel.AccountID)
+		s.MarkResult(sel.AccountID, ResultOK, nil)
+	}
+	ratio := float64(counts[1]) / float64(counts[2])
+	// 注意：testify 无 InRange，用 InDelta（±0.1 窗口等价于 [1.9, 2.1]）
+	require.InDelta(t, ratio, 2.0, 0.1, "weight 100:50 → 频率比 ≈ 2:1")
+}
+
+// 动态状态跳过：冷却中的账号被跳过，选中其他账号
+func TestSelectSkipsCooldown(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	// 账号 1 进 429 冷却
+	s.MarkResult(1, Result429, nil)
+	for i := 0; i < 50; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		require.NoError(t, err)
+		require.Equal(t, int64(2), sel.AccountID, "冷却中的账号 1 必须被跳过")
+		s.Release(sel.AccountID)
+	}
+}
+
+// 全不可用（全冷却）→ ErrNoAvailable，且有限时间内返回
+func TestSelectAllCooldownReturnsNoAvailable(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	s.MarkResult(1, Result429, nil)
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrNoAvailable)
+	case <-time.After(time.Second):
+		t.Fatal("全冷却必须有限时间内返回 ErrNoAvailable")
+	}
+}
+
+// 未知模型回落默认桶：请求 model 不在任何模板可服务集合 → 默认格式 tier2 选中
+func TestSelectUnknownModelDefaultBucket(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "unknown-model-xyz")
+	require.NoError(t, err, "未知模型走默认回退桶（默认格式 tier2）")
+	require.Equal(t, int64(1), sel.AccountID)
+}
+
+// tier 回落：tier1 全冷却 → tier2 选中
+func TestSelectTierFallback(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	// 账号 1（tier1）进冷却 → 请求 gpt-4o 应回落 tier2（账号 2，Serves 为 false）
+	s.MarkResult(1, Result429, nil)
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), sel.AccountID, "tier1 全不可用 → tier2 回落")
+	s.Release(sel.AccountID)
+}
+
+// tier 回落（并发满，Task 2 评审钉死）：tier1 账号并发满 → 回落 tier2（可用性优先）。
+// 规范裁定：旧实现（并发满账号在分档前被剔除 → tier1 为空）在此场景直接
+// ErrNoAvailable 的语义不可取；新实现 tier1 序列扫描失败后必须回落 tier2。
+func TestSelectTier1FullFallsBackToTier2(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1},
+		{ID: 2, TemplateID: 2, Template: &domain.Template{ID: 2, DefaultFormat: domain.FormatOpenAIChat, Models: []string{"other-model"}}, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	// 账号 1 是唯一 Serves gpt-4o 的账号（tier1 序列只有它）→ 确定性占用其唯一并发槽
+	sel1, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel1.AccountID, "tier1 唯一账号先被选中")
+	// tier1 并发满 → 必须回落 tier2（账号 2，Serves 恒 false 但同默认格式）
+	sel2, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), sel2.AccountID, "tier1 并发满 → tier2 回落（可用性优先）")
+	s.Release(sel1.AccountID)
+	s.Release(sel2.AccountID)
+}
+
+// 并发 CAS 竞争（Task 2 评审钉死）：单账号（n=1 序列）两并发 Select，
+// 恰一成功、另一返回 ErrNoAvailable——单遍单次 CAS 语义（败者不自旋重试，
+// 调用方重试）。屏障对齐两 goroutine 后 200 轮放大真实 CAS 冲突。
+func TestSelectConcurrentCASRace(t *testing.T) {
+	s := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1},
+	})
+	require.NoError(t, s.InvalidateAllSync())
+	type pairResult struct {
+		sel *Selection
+		err error
+	}
+	const pairs = 200
+	for i := 0; i < pairs; i++ {
+		start := make(chan struct{})
+		ready := make(chan struct{}, 2)
+		results := make(chan pairResult, 2)
+		var wg sync.WaitGroup
+		for j := 0; j < 2; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ready <- struct{}{}
+				<-start
+				sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+				results <- pairResult{sel: sel, err: err}
+			}()
+		}
+		<-ready
+		<-ready
+		close(start) // 同时放行，最大化 CAS 读-改-写冲突窗口
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("iter %d: pair did not finish in time — CAS loser must return promptly, not spin", i)
+		}
+		close(results)
+		var winner *Selection
+		okCount, noAvailCount := 0, 0
+		for r := range results {
+			switch {
+			case r.err == nil:
+				okCount++
+				winner = r.sel
+			case errors.Is(r.err, ErrNoAvailable):
+				noAvailCount++
+			default:
+				t.Fatalf("iter %d: unexpected error: %v", i, r.err)
+			}
+		}
+		require.Equal(t, 1, okCount, "iter %d: exactly one success per pair", i)
+		require.Equal(t, 1, noAvailCount, "iter %d: loser gets ErrNoAvailable (never two successes)", i)
+		require.NotNil(t, winner, "iter %d: winner carries a selection", i)
+		s.Release(winner.AccountID) // 恢复槽位，下一轮从 0 并发开始
+	}
 }
