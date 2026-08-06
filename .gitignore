@@ -9,3 +9,4 @@ cmd/server/dist/*
 !cmd/server/dist/.gitkeep
 
 .superpowers/
+.claude/
