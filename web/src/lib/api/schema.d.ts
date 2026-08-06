@@ -421,11 +421,10 @@ export interface components {
         TemplatePatch: {
             name?: string;
             base_url?: string;
-            /** @enum {string} */
-            default_format?: "openai-chat" | "openai-responses" | "anthropic";
+            supported_formats?: ("openai-chat" | "openai-responses" | "anthropic")[];
             models?: string[];
-            model_formats?: {
-                [key: string]: string;
+            format_models?: {
+                [key: string]: string[];
             };
             model_mapping?: {
                 [key: string]: string;
@@ -540,7 +539,6 @@ export interface operations {
                 name?: string;
                 sort?: string;
                 order?: "asc" | "desc";
-                default_format?: "openai-chat" | "openai-responses" | "anthropic";
             };
             header?: never;
             path?: never;
