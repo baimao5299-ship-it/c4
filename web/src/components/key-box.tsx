@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 // 复制到剪贴板：优先 Clipboard API（localhost 属安全上下文），失败回退 execCommand。
@@ -26,6 +27,7 @@ export async function copyText(text: string): Promise<boolean> {
 
 // 明文 key 展示框（分组创建 / key 轮换后，仅此一次明文）：高亮 + 复制按钮。
 export function KeyBox({ title, value, hint }: { title?: string; value: string; hint?: string }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   return (
     <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950/30">
@@ -46,7 +48,7 @@ export function KeyBox({ title, value, hint }: { title?: string; value: string; 
           }}
         >
           {copied ? <Check /> : <Copy />}
-          {copied ? '已复制' : '复制'}
+          {copied ? t('keybox.copied') : t('keybox.copy')}
         </Button>
       </div>
       {hint && <p className="mt-1.5 text-xs text-emerald-700/70 dark:text-emerald-300/60">{hint}</p>}

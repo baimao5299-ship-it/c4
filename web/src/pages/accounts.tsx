@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, Users, Ban, CircleCheck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
 import { Button } from '@/components/ui/button'
@@ -21,13 +22,7 @@ type AccountView = components['schemas']['AccountView']
 type AccountCreate = components['schemas']['AccountCreate']
 type AccountStatus = components['schemas']['AccountStatus']
 
-const STATUS_LABELS: Record<AccountStatus, string> = {
-  active: '可用',
-  unhealthy: '不健康',
-  '429': '限流中',
-  disabled: '已禁用',
-}
-const STATUSES = Object.keys(STATUS_LABELS) as AccountStatus[]
+const STATUSES: AccountStatus[] = ['active', 'unhealthy', '429', 'disabled']
 
 interface FormState {
   name: string
@@ -83,6 +78,7 @@ function toggleBody(a: AccountView, next: AccountStatus): AccountCreate {
 }
 
 export default function Accounts() {
+  const { t } = useTranslation()
   const qc = useQueryClient()
   // 运行时视图 10s 轮询。
   const { data, isLoading, isError, error } = useQuery({
@@ -142,16 +138,16 @@ export default function Accounts() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">账号</h1>
-          <p className="text-sm text-muted-foreground">上游密钥与配额，运行时视图每 10 秒刷新</p>
+          <h1 className="text-lg font-semibold">{t('accounts.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('accounts.subtitle')}</p>
         </div>
-        <Button onClick={openCreate} disabled={templates.length === 0} title={templates.length === 0 ? '请先创建模板' : undefined}>
-          <Plus /> 新建账号
+        <Button onClick={openCreate} disabled={templates.length === 0} title={templates.length === 0 ? t('accounts.noTemplate') : undefined}>
+          <Plus /> {t('accounts.new')}
         </Button>
       </div>
 
       {isError ? (
-        <p className="text-sm text-destructive">加载失败：{(error as Error).message}</p>
+        <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
@@ -160,9 +156,9 @@ export default function Accounts() {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <Users className="size-10" />
-            <p className="font-medium">暂无账号</p>
-            <p className="text-sm">创建账号前需先有模板</p>
-            <Button className="mt-2" onClick={openCreate} disabled={templates.length === 0}><Plus /> 新建账号</Button>
+            <p className="font-medium">{t('accounts.emptyTitle')}</p>
+            <p className="text-sm">{t('accounts.emptyDesc')}</p>
+            <Button className="mt-2" onClick={openCreate} disabled={templates.length === 0}><Plus /> {t('accounts.new')}</Button>
           </Card>
         </motion.div>
       ) : (
@@ -171,16 +167,16 @@ export default function Accounts() {
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
-                <TableHead>名称</TableHead>
-                <TableHead>模板</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">权重</TableHead>
-                <TableHead className="text-right">最大并发</TableHead>
-                <TableHead className="text-right">当前并发</TableHead>
-                <TableHead className="text-right">错误率</TableHead>
-                <TableHead className="text-right">错误数</TableHead>
-                <TableHead>最近错误</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{t('accounts.table.name')}</TableHead>
+                <TableHead>{t('accounts.table.template')}</TableHead>
+                <TableHead>{t('accounts.table.status')}</TableHead>
+                <TableHead className="text-right">{t('accounts.table.weight')}</TableHead>
+                <TableHead className="text-right">{t('accounts.table.maxConcurrency')}</TableHead>
+                <TableHead className="text-right">{t('accounts.table.curConcurrency')}</TableHead>
+                <TableHead className="text-right">{t('accounts.table.errRate')}</TableHead>
+                <TableHead className="text-right">{t('accounts.table.errCount')}</TableHead>
+                <TableHead>{t('accounts.table.lastError')}</TableHead>
+                <TableHead className="text-right">{t('accounts.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -212,14 +208,14 @@ export default function Accounts() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        title={a.Status === 'disabled' ? '启用' : '禁用'}
+                        title={a.Status === 'disabled' ? t('accounts.enable') : t('accounts.disable')}
                         onClick={() => toggle.mutate(a)}
                         disabled={toggle.isPending}
                       >
                         {a.Status === 'disabled' ? <CircleCheck /> : <Ban />}
                       </Button>
-                      <Button variant="ghost" size="icon-sm" title="编辑" onClick={() => openEdit(a)}><Pencil /></Button>
-                      <Button variant="ghost" size="icon-sm" className="text-destructive" title="删除" onClick={() => setDeleting(a)}><Trash2 /></Button>
+                      <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(a)}><Pencil /></Button>
+                      <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(a)}><Trash2 /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -233,16 +229,16 @@ export default function Accounts() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? `编辑账号 #${editing.ID}` : '新建账号'}</DialogTitle>
-            <DialogDescription>upstream_key 为上游厂商的 API 密钥</DialogDescription>
+            <DialogTitle>{editing ? t('accounts.editTitle', { id: editing.ID }) : t('accounts.newTitle')}</DialogTitle>
+            <DialogDescription>{t('accounts.dialogDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="acc-name">名称</Label>
-              <Input id="acc-name" value={form.name} placeholder="如 openai-acc-1" onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              <Label htmlFor="acc-name">{t('accounts.nameLabel')}</Label>
+              <Input id="acc-name" value={form.name} placeholder={t('accounts.namePlaceholder')} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>所属模板</Label>
+              <Label>{t('accounts.templateLabel')}</Label>
               <Select
                 items={Object.fromEntries(templates.map(t => [String(t.ID), t.Name ?? `#${t.ID}`]))}
                 value={form.template_id || null}
@@ -260,20 +256,24 @@ export default function Accounts() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
-                <Label>状态</Label>
-                <Select items={STATUS_LABELS} value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as AccountStatus }))}>
+                <Label>{t('accounts.statusLabel')}</Label>
+                <Select
+                  items={Object.fromEntries(STATUSES.map(s => [s, t(`status.${s}`)]))}
+                  value={form.status}
+                  onValueChange={v => setForm(f => ({ ...f, status: v as AccountStatus }))}
+                >
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {STATUSES.map(s => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+                    {STATUSES.map(s => <SelectItem key={s} value={s}>{t(`status.${s}`)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-weight">权重</Label>
+                <Label htmlFor="acc-weight">{t('accounts.weightLabel')}</Label>
                 <Input id="acc-weight" type="number" min={0} value={form.weight} onChange={e => setForm(f => ({ ...f, weight: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-max">最大并发</Label>
+                <Label htmlFor="acc-max">{t('accounts.maxLabel')}</Label>
                 <Input id="acc-max" type="number" min={1} value={form.max_concurrency} onChange={e => setForm(f => ({ ...f, max_concurrency: e.target.value }))} />
               </div>
             </div>
@@ -282,9 +282,9 @@ export default function Accounts() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
             <Button onClick={submit} disabled={save.isPending || !form.name.trim() || !form.template_id || !form.upstream_key}>
-              {save.isPending ? '保存中…' : editing ? '保存修改' : '创建'}
+              {save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -294,18 +294,18 @@ export default function Accounts() {
       <Dialog open={!!deleting} onOpenChange={o => { if (!o && !remove.isPending) setDeleting(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>删除账号</DialogTitle>
+            <DialogTitle>{t('accounts.deleteTitle')}</DialogTitle>
             <DialogDescription>
-              确认删除账号「{deleting?.Name}」？删除后该账号从所有分组解绑。
+              {t('accounts.deleteDesc', { name: deleting?.Name })}
             </DialogDescription>
           </DialogHeader>
           {remove.isError && errMsg(remove.error) && (
             <p className="text-sm text-destructive">{errMsg(remove.error)}</p>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>取消</Button>
+            <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID!)} disabled={remove.isPending}>
-              {remove.isPending ? '删除中…' : '确认删除'}
+              {remove.isPending ? t('common.deleting') : t('common.confirmDelete')}
             </Button>
           </DialogFooter>
         </DialogContent>

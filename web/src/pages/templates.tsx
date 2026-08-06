@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, Boxes, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
 import { Button } from '@/components/ui/button'
@@ -79,6 +80,7 @@ function FormatBadge({ format }: { format?: RequestFormat }) {
 }
 
 export default function Templates() {
+  const { t: tr } = useTranslation()
   const qc = useQueryClient()
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates })
 
@@ -134,14 +136,14 @@ export default function Templates() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">模板</h1>
-          <p className="text-sm text-muted-foreground">上游厂商配置：base_url、格式、模型集与映射</p>
+          <h1 className="text-lg font-semibold">{tr('templates.title')}</h1>
+          <p className="text-sm text-muted-foreground">{tr('templates.subtitle')}</p>
         </div>
-        <Button onClick={openCreate}><Plus /> 新建模板</Button>
+        <Button onClick={openCreate}><Plus /> {tr('templates.new')}</Button>
       </div>
 
       {isError ? (
-        <p className="text-sm text-destructive">加载失败：{(error as Error).message}</p>
+        <p className="text-sm text-destructive">{tr('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
@@ -150,9 +152,9 @@ export default function Templates() {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <Boxes className="size-10" />
-            <p className="font-medium">暂无模板</p>
-            <p className="text-sm">先创建模板，再配置账号</p>
-            <Button className="mt-2" onClick={openCreate}><Plus /> 新建模板</Button>
+            <p className="font-medium">{tr('templates.emptyTitle')}</p>
+            <p className="text-sm">{tr('templates.emptyDesc')}</p>
+            <Button className="mt-2" onClick={openCreate}><Plus /> {tr('templates.new')}</Button>
           </Card>
         </motion.div>
       ) : (
@@ -161,14 +163,14 @@ export default function Templates() {
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
-                <TableHead>名称</TableHead>
+                <TableHead>{tr('templates.table.name')}</TableHead>
                 <TableHead>BaseURL</TableHead>
-                <TableHead>默认格式</TableHead>
-                <TableHead>模型</TableHead>
-                <TableHead>格式覆盖</TableHead>
-                <TableHead>模型映射</TableHead>
-                <TableHead>创建时间</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead>{tr('templates.table.defaultFormat')}</TableHead>
+                <TableHead>{tr('templates.table.models')}</TableHead>
+                <TableHead>{tr('templates.table.formatOverrides')}</TableHead>
+                <TableHead>{tr('templates.table.modelMapping')}</TableHead>
+                <TableHead>{tr('templates.table.createdAt')}</TableHead>
+                <TableHead className="text-right">{tr('templates.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -210,8 +212,8 @@ export default function Templates() {
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title="编辑" onClick={() => openEdit(t)}><Pencil /></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title="删除" onClick={() => setDeleting(t)}><Trash2 /></Button>
+                        <Button variant="ghost" size="icon-sm" title={tr('common.edit')} onClick={() => openEdit(t)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={tr('common.delete')} onClick={() => setDeleting(t)}><Trash2 /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -226,20 +228,20 @@ export default function Templates() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? `编辑模板 #${editing.ID}` : '新建模板'}</DialogTitle>
-            <DialogDescription>base_url 需为完整上游地址（含 /v1 前缀）</DialogDescription>
+            <DialogTitle>{editing ? tr('templates.editTitle', { id: editing.ID }) : tr('templates.newTitle')}</DialogTitle>
+            <DialogDescription>{tr('templates.dialogDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="tpl-name">名称</Label>
-              <Input id="tpl-name" value={form.name} placeholder="如 openai-main" onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              <Label htmlFor="tpl-name">{tr('templates.nameLabel')}</Label>
+              <Input id="tpl-name" value={form.name} placeholder={tr('templates.namePlaceholder')} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="tpl-base">BaseURL</Label>
               <Input id="tpl-base" value={form.base_url} placeholder="https://api.openai.com/v1" onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>默认请求格式</Label>
+              <Label>{tr('templates.defaultFormatLabel')}</Label>
               <Select items={FORMAT_LABELS} value={form.default_format} onValueChange={v => setForm(f => ({ ...f, default_format: v as RequestFormat }))}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -248,17 +250,17 @@ export default function Templates() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="tpl-models">模型列表（逗号分隔）</Label>
+              <Label htmlFor="tpl-models">{tr('templates.modelsLabel')}</Label>
               <Input id="tpl-models" value={form.modelsText} placeholder="gpt-4o, gpt-4o-mini" onChange={e => setForm(f => ({ ...f, modelsText: e.target.value }))} />
             </div>
 
             {/* model_formats 动态行：模型 → 格式覆盖 */}
             <div className="space-y-1.5">
-              <Label>模型格式覆盖（model_formats）</Label>
+              <Label>{tr('templates.formatOverridesLabel')}</Label>
               <div className="space-y-1.5">
                 {form.model_formats.map((row, i) => (
                   <div key={i} className="flex items-center gap-1.5">
-                    <Input className="flex-1" placeholder="模型名" value={row.key} onChange={e => setRow('model_formats', i, { key: e.target.value })} />
+                    <Input className="flex-1" placeholder={tr('templates.modelNamePlaceholder')} value={row.key} onChange={e => setRow('model_formats', i, { key: e.target.value })} />
                     <Select
                       items={FORMAT_LABELS}
                       value={row.value as RequestFormat}
@@ -269,26 +271,26 @@ export default function Templates() {
                         {FORMATS.map(f => <SelectItem key={f} value={f}>{FORMAT_LABELS[f]}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    <Button variant="ghost" size="icon-sm" title="删除行" onClick={() => removeRow('model_formats', i)}><X /></Button>
+                    <Button variant="ghost" size="icon-sm" title={tr('templates.deleteRow')} onClick={() => removeRow('model_formats', i)}><X /></Button>
                   </div>
                 ))}
-                <Button variant="outline" size="sm" onClick={() => addRow('model_formats')}><Plus /> 添加覆盖</Button>
+                <Button variant="outline" size="sm" onClick={() => addRow('model_formats')}><Plus /> {tr('templates.addOverride')}</Button>
               </div>
             </div>
 
             {/* model_mapping 动态行：客户端模型 → 上游模型 */}
             <div className="space-y-1.5">
-              <Label>模型映射（model_mapping）</Label>
+              <Label>{tr('templates.modelMappingLabel')}</Label>
               <div className="space-y-1.5">
                 {form.model_mapping.map((row, i) => (
                   <div key={i} className="flex items-center gap-1.5">
-                    <Input className="flex-1" placeholder="客户端模型名" value={row.key} onChange={e => setRow('model_mapping', i, { key: e.target.value })} />
+                    <Input className="flex-1" placeholder={tr('templates.clientModelPlaceholder')} value={row.key} onChange={e => setRow('model_mapping', i, { key: e.target.value })} />
                     <span className="text-muted-foreground">→</span>
-                    <Input className="flex-1" placeholder="上游模型名" value={row.value} onChange={e => setRow('model_mapping', i, { value: e.target.value })} />
-                    <Button variant="ghost" size="icon-sm" title="删除行" onClick={() => removeRow('model_mapping', i)}><X /></Button>
+                    <Input className="flex-1" placeholder={tr('templates.upstreamModelPlaceholder')} value={row.value} onChange={e => setRow('model_mapping', i, { value: e.target.value })} />
+                    <Button variant="ghost" size="icon-sm" title={tr('templates.deleteRow')} onClick={() => removeRow('model_mapping', i)}><X /></Button>
                   </div>
                 ))}
-                <Button variant="outline" size="sm" onClick={() => addRow('model_mapping')}><Plus /> 添加映射</Button>
+                <Button variant="outline" size="sm" onClick={() => addRow('model_mapping')}><Plus /> {tr('templates.addMapping')}</Button>
               </div>
             </div>
 
@@ -297,9 +299,9 @@ export default function Templates() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{tr('common.cancel')}</Button>
             <Button onClick={submit} disabled={save.isPending || !form.name.trim() || !form.base_url.trim()}>
-              {save.isPending ? '保存中…' : editing ? '保存修改' : '创建'}
+              {save.isPending ? tr('common.saving') : editing ? tr('common.saveChanges') : tr('common.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -309,18 +311,18 @@ export default function Templates() {
       <Dialog open={!!deleting} onOpenChange={o => { if (!o && !remove.isPending) setDeleting(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>删除模板</DialogTitle>
+            <DialogTitle>{tr('templates.deleteTitle')}</DialogTitle>
             <DialogDescription>
-              确认删除模板「{deleting?.Name}」？绑定该模板的账号将无法使用。
+              {tr('templates.deleteDesc', { name: deleting?.Name })}
             </DialogDescription>
           </DialogHeader>
           {remove.isError && errMsg(remove.error) && (
             <p className="text-sm text-destructive">{errMsg(remove.error)}</p>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>取消</Button>
+            <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>{tr('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID!)} disabled={remove.isPending}>
-              {remove.isPending ? '删除中…' : '确认删除'}
+              {remove.isPending ? tr('common.deleting') : tr('common.confirmDelete')}
             </Button>
           </DialogFooter>
         </DialogContent>
