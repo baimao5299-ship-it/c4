@@ -501,3 +501,80 @@ func TestLogsAndStats(t *testing.T) {
 	require.Equal(t, int64(300), scanned[0].TotalTokens)
 	tr.expectDone(t)
 }
+
+// ---------------------------------------------------------------------------
+// Task 3: 批量删除/更新（ent.Tx 事务，全成或全败）
+// ---------------------------------------------------------------------------
+
+func TestDeleteTemplatesBatchRollback(t *testing.T) {
+	// 场景 1：存在性检查缺失 id → ErrNotFound（含缺失 id），且无任何 DELETE 执行。
+	t.Run("missing id returns ErrNotFound without DELETE", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		// 存在性检查：SELECT id WHERE id IN (1,2,3) 只返回 2 行（id=3 缺失）
+		tr.pool.ExpectQuery(q(`SELECT "templates"."id" FROM "templates" WHERE`)).
+			WithArgs(int64(1), int64(2), int64(3)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectRollback()
+
+		err := tr.repos.Templates.DeleteTemplatesBatch(ctx(), []int64{1, 2, 3})
+		require.ErrorIs(t, err, repository.ErrNotFound)
+		require.Contains(t, err.Error(), "id=3 missing")
+		tr.expectDone(t)
+	})
+
+	// 场景 2：存在性通过 → 逐个 DELETE → 中途 DB 错误 → 整体回滚（无 Commit）。
+	t.Run("midway db error rolls back without commit", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		tr.pool.ExpectQuery(q(`SELECT "templates"."id" FROM "templates" WHERE`)).
+			WithArgs(int64(1), int64(2)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
+			WithArgs(int64(1)).
+			WillReturnResult(pgxmock.NewResult("DELETE", 1))
+		tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
+			WithArgs(int64(2)).
+			WillReturnError(errors.New("midway db error"))
+		tr.pool.ExpectRollback()
+
+		err := tr.repos.Templates.DeleteTemplatesBatch(ctx(), []int64{1, 2})
+		require.Error(t, err)
+		require.NotErrorIs(t, err, repository.ErrNotFound, "DB 错误不应伪装成 not found")
+		tr.expectDone(t)
+	})
+}
+
+func TestUpdateAccountsBatch(t *testing.T) {
+	tr := newRepos(t)
+	name := "renamed-acc"
+	weight := 50
+	st := domain.StatusActive
+
+	tr.pool.ExpectBegin()
+	// 存在性检查：ids 全部存在
+	tr.pool.ExpectQuery(q(`SELECT "accounts"."id" FROM "accounts" WHERE`)).
+		WithArgs(int64(2), int64(5)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)).AddRow(int64(5)))
+	// 每个 id：UPDATE 只含 patch 提供的字段（name/status/weight + updated_at），
+	// 无 template_id/upstream_key/max_concurrency —— WithArgs 精确断言 Set 链列。
+	tr.pool.ExpectExec(q(`UPDATE "accounts" SET`)).
+		WithArgs(name, account.Status("active"), weight, pgxmock.AnyArg(), int64(2)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(2)).
+		WillReturnRows(accountRow("active"))
+	tr.pool.ExpectExec(q(`UPDATE "accounts" SET`)).
+		WithArgs(name, account.Status("active"), weight, pgxmock.AnyArg(), int64(5)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(5)).
+		WillReturnRows(accountRow("active"))
+	tr.pool.ExpectCommit()
+
+	err := tr.repos.Accounts.UpdateAccountsBatch(ctx(), []int64{2, 5}, repository.AccountPatch{
+		Name: &name, Status: &st, Weight: &weight,
+	})
+	require.NoError(t, err)
+	tr.expectDone(t)
+}
