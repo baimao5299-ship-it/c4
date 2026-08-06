@@ -199,9 +199,78 @@ func buildSnapshots(m map[int64][]*domain.Account, defaultMax int) (map[int64]*g
 			gs.accounts = append(gs.accounts, as)
 			byID[a.ID] = as
 		}
+		gs.routes = buildRoutes(gs.accounts)
 		groups[gid] = gs
 	}
 	return groups, byID
+}
+
+// modelSet 组内所有账号模板的可服务模型并集（桶 key 的模型空间）。
+func modelSet(accs []*accountSnapshot) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, a := range accs {
+		if a.tpl == nil {
+			continue
+		}
+		for _, m := range a.tpl.Models {
+			set[m] = struct{}{}
+		}
+		for m := range a.tpl.ModelFormats {
+			set[m] = struct{}{}
+		}
+		for m := range a.tpl.ModelMapping {
+			set[m] = struct{}{}
+		}
+	}
+	return set
+}
+
+// buildRoutes 预生成 (format, model) 调度路径：格式硬过滤（FormatFor）与模型偏好
+// （Serves）都是静态信息，可完全在重建时计算。另为每个格式生成默认回退桶
+// （model == ""）：请求模型未知时行为等价于默认格式 + tier2（Serves 恒 false）。
+func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
+	routes := make(map[routeKey]*route)
+	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatAnthropic}
+	for model := range modelSet(accs) {
+		for _, format := range formats {
+			var t1, t2 []*accountSnapshot
+			for _, a := range accs {
+				if a.tpl == nil || a.tpl.FormatFor(model) != format {
+					continue
+				}
+				if a.tpl.Serves(model) {
+					t1 = append(t1, a)
+				} else {
+					t2 = append(t2, a)
+				}
+			}
+			if len(t1) == 0 && len(t2) == 0 {
+				continue
+			}
+			rt := &route{}
+			if len(t1) > 0 {
+				rt.tier1 = newWeightedSeq(t1)
+			}
+			if len(t2) > 0 {
+				rt.tier2 = newWeightedSeq(t2)
+			}
+			routes[routeKey{format, model}] = rt
+		}
+	}
+	for _, format := range formats {
+		var t2 []*accountSnapshot
+		for _, a := range accs {
+			if a.tpl == nil || a.tpl.DefaultFormat != format {
+				continue
+			}
+			t2 = append(t2, a)
+		}
+		if len(t2) == 0 {
+			continue
+		}
+		routes[routeKey{format, ""}] = &route{tier2: newWeightedSeq(t2)}
+	}
+	return routes
 }
 
 func (s *Scheduler) InvalidateGroup(groupID int64) {
@@ -221,7 +290,9 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 	}
 	gs, _ := buildSnapshots(map[int64][]*domain.Account{groupID: accs}, s.cfg.DefaultMaxConcurrency)
 	newAccs := gs[groupID].accounts
-	newM[groupID] = &groupSnapshot{accounts: newAccs}
+	// 直接复用 buildSnapshots 产出的快照：accounts 与 routes 一并生效，
+	// 避免组级重载后 routes 为 nil（Select 预生成路径断裂）。
+	newM[groupID] = gs[groupID]
 	// byID 必须与 groups 同步重建（评审发现：只换 groups 会导致并发计数/结果回写
 	// 落到旧快照——Select 计数在新快照、Release/MarkResult 查 byID 命中旧快照，
 	// 计数只增不减直至全量 reload；新账号的回写被静默丢弃）。

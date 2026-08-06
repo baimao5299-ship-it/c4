@@ -372,3 +372,71 @@ func TestCloseDrainsWritebacks(t *testing.T) {
 	cancel()
 	require.NoError(t, s.Close(ctx))
 }
+
+func mkAcc(id int64, weight int, tpl *domain.Template) *accountSnapshot {
+	a := &accountSnapshot{acc: domain.Account{ID: id, Weight: weight}, tpl: tpl}
+	a.state.Store(&accState{status: domain.StatusActive})
+	return a
+}
+
+func tplWith(ff domain.RequestFormat, models []string) *domain.Template {
+	return &domain.Template{DefaultFormat: ff, Models: models}
+}
+
+func TestNewWeightedSeqGcdNormalization(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"})
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl), mkAcc(2, 50, tpl)}
+	ws := newWeightedSeq(pool)
+	require.Len(t, ws.seq, 3, "weight 100:50 → GCD=50 → 序列长 3")
+	count1, count2 := 0, 0
+	for _, a := range ws.seq {
+		if a.acc.ID == 1 { count1++ } else { count2++ }
+	}
+	require.Equal(t, 2, count1)
+	require.Equal(t, 1, count2)
+}
+
+func TestNewWeightedSeqEqualWeights(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"})
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl), mkAcc(2, 100, tpl), mkAcc(3, 100, tpl)}
+	ws := newWeightedSeq(pool)
+	require.Len(t, ws.seq, 3, "全同权重 → 每账号 1 次")
+	require.ElementsMatch(t, []int64{1, 2, 3}, []int64{ws.seq[0].acc.ID, ws.seq[1].acc.ID, ws.seq[2].acc.ID})
+}
+
+func TestNewWeightedSeqLengthCap(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"})
+	// 反例构造超长：权重 9999 与 1 → GCD=1 → 长 10000 > 4096
+	pool2 := []*accountSnapshot{mkAcc(1, 9999, tpl), mkAcc(2, 1, tpl)}
+	ws := newWeightedSeq(pool2)
+	require.LessOrEqual(t, len(ws.seq), maxSeqLen, "长度上限 4096")
+	require.Contains(t, []int64{ws.seq[0].acc.ID, ws.seq[1].acc.ID}, int64(1), "权重高的账号至少出现一次")
+}
+
+func TestBuildRoutesBucketsAndDefault(t *testing.T) {
+	tpl := tplWith(domain.FormatOpenAIChat, []string{"gpt-4o", "gpt-4o-mini"})
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl)}
+	routes := buildRoutes(pool)
+	// 已知模型桶
+	rt, ok := routes[routeKey{domain.FormatOpenAIChat, "gpt-4o"}]
+	require.True(t, ok)
+	require.NotNil(t, rt.tier1, "gpt-4o 在 models 里 → tier1")
+	require.Nil(t, rt.tier2)
+	// 默认桶（未知模型回落）
+	rtD, ok := routes[routeKey{domain.FormatOpenAIChat, ""}]
+	require.True(t, ok)
+	require.Nil(t, rtD.tier1)
+	require.NotNil(t, rtD.tier2, "未知模型 → 默认格式 tier2")
+	// 其他格式无桶
+	_, ok = routes[routeKey{domain.FormatAnthropic, "gpt-4o"}]
+	require.False(t, ok)
+}
+
+func TestBuildRoutesModelFormatsOverride(t *testing.T) {
+	tpl := &domain.Template{DefaultFormat: domain.FormatOpenAIChat, ModelFormats: map[string]domain.RequestFormat{"special": domain.FormatAnthropic}}
+	pool := []*accountSnapshot{mkAcc(1, 100, tpl)}
+	routes := buildRoutes(pool)
+	rt, ok := routes[routeKey{domain.FormatAnthropic, "special"}]
+	require.True(t, ok, "ModelFormats 覆盖 → special 模型走 anthropic 格式")
+	require.NotNil(t, rt.tier1, "special ∈ ModelFormats keys → Serves true → tier1")
+}
