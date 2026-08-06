@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/service"
 )
 
@@ -42,9 +43,10 @@ func (h *AdminAPI) PostTemplates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAPITemplate(created))
 }
 
-// GetTemplates 模板列表（ServerInterface）。
+// GetTemplates 模板列表（ServerInterface）。Task 1：传空查询，行为不变；
+// Task 2 起接契约参数并返回 {total, rows}。
 func (h *AdminAPI) GetTemplates(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.svc.ListTemplates(r.Context())
+	rows, _, err := h.svc.ListTemplates(r.Context(), repository.ListQuery{})
 	if err != nil {
 		writeServiceErr(w, err)
 		return

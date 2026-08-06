@@ -356,6 +356,78 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.expectDone(t)
 }
 
+// listSQL 匹配 List 查询的 SQL 片段（含 ORDER BY/LIMIT/OFFSET 断言）。
+func listSQL(order string) string {
+	return "(?i)FROM \"templates\".*ORDER BY \"templates\"\\." + order + "( LIMIT \\d+)?( OFFSET \\d+)?"
+}
+
+func TestListTemplatesQuery(t *testing.T) {
+	// 1) name 模糊 + default_format 筛选：Count 与 List 同条件（PG 下 NameContainsFold → ILIKE）。
+	t.Run("filter name and default_format", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectQuery(q(`SELECT COUNT("templates"."id") FROM "templates"`)).
+			WithArgs("%main%", template.DefaultFormat("openai-chat")).
+			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
+		tr.pool.ExpectQuery(listSQL(`"id" DESC LIMIT 20`)).
+			WithArgs("%main%", template.DefaultFormat("openai-chat")).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "name", "base_url", "default_format", "models",
+				"model_formats", "model_mapping", "created_at", "updated_at"}).
+				AddRow(int64(1), "openai-main", "https://api.openai.com/v1", "openai-chat",
+					[]byte(`["gpt-4o"]`), []byte(`{"o3":"openai-responses"}`),
+					[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				AddRow(int64(2), "openai-alt", "https://api.openai.com/v1", "openai-chat",
+					[]byte(`["gpt-4o-mini"]`), []byte(`{}`), []byte(`{}`),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+		rows, total, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{
+			Name: "main", DefaultFormat: "openai-chat",
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(2), total, "Count 与 List 同条件")
+		require.Len(t, rows, 2)
+		require.Equal(t, "openai-main", rows[0].Name)
+		tr.expectDone(t)
+	})
+
+	// 2) 分页 + 排序：Sort=name Order=asc → ORDER BY name ASC，Limit=50 Offset=20 内联。
+	t.Run("pagination and sort", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectQuery(q(`SELECT COUNT("templates"."id") FROM "templates"`)).
+			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
+		tr.pool.ExpectQuery(`(?i)FROM "templates".*ORDER BY "templates"\."name" ASC LIMIT 50 OFFSET 20`).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "name", "base_url", "default_format", "models",
+				"model_formats", "model_mapping", "created_at", "updated_at"}).
+				AddRow(int64(2), "openai-alt", "https://api.openai.com/v1", "openai-chat",
+					[]byte(`["gpt-4o-mini"]`), []byte(`{}`), []byte(`{}`),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				AddRow(int64(1), "openai-main", "https://api.openai.com/v1", "openai-chat",
+					[]byte(`["gpt-4o"]`), []byte(`{"o3":"openai-responses"}`),
+					[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+		rows, total, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{
+			Sort: "name", Order: "asc", Offset: 20, Limit: 50,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(2), total)
+		require.Len(t, rows, 2)
+		require.Equal(t, "openai-alt", rows[0].Name, "mock 行序即返回序")
+		tr.expectDone(t)
+	})
+
+	// 3) 非法 sort → ErrInvalidSort（Count 已执行，List 不执行）。
+	t.Run("invalid sort rejected", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectQuery(q(`SELECT COUNT("templates"."id") FROM "templates"`)).
+			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(3)))
+		_, _, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{Sort: "bogus"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "sort")
+		tr.expectDone(t)
+	})
+}
+
 func TestLogsAndStats(t *testing.T) {
 	tr := newRepos(t)
 

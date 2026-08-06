@@ -50,8 +50,8 @@ func (r *Repos) GetTemplate(ctx context.Context, id int64) (*domain.Template, er
 	return r.Templates.GetTemplate(ctx, id)
 }
 
-func (r *Repos) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
-	return r.Templates.ListTemplates(ctx)
+func (r *Repos) ListTemplates(ctx context.Context, q ListQuery) ([]*domain.Template, int64, error) {
+	return r.Templates.ListTemplates(ctx, q)
 }
 
 func (r *Repos) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
@@ -70,8 +70,8 @@ func (r *Repos) GetAccount(ctx context.Context, id int64) (*domain.Account, erro
 	return r.Accounts.GetAccount(ctx, id)
 }
 
-func (r *Repos) ListAccounts(ctx context.Context) ([]*domain.Account, error) {
-	return r.Accounts.ListAccounts(ctx)
+func (r *Repos) ListAccounts(ctx context.Context, q ListQuery) ([]*domain.Account, int64, error) {
+	return r.Accounts.ListAccounts(ctx, q)
 }
 
 func (r *Repos) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
@@ -90,8 +90,8 @@ func (r *Repos) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
 	return r.Groups.GetGroup(ctx, id)
 }
 
-func (r *Repos) ListGroups(ctx context.Context) ([]*domain.Group, error) {
-	return r.Groups.ListGroups(ctx)
+func (r *Repos) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Group, int64, error) {
+	return r.Groups.ListGroups(ctx, q)
 }
 
 func (r *Repos) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {

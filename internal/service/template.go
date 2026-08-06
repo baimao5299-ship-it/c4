@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/logx"
 )
 
@@ -26,8 +27,11 @@ func (s *Service) GetTemplate(ctx context.Context, id int64) (*domain.Template, 
 	return s.store.GetTemplate(ctx, id)
 }
 
-func (s *Service) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
-	return s.store.ListTemplates(ctx)
+func (s *Service) ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error) {
+	if err := validateListQuery(q, listSortFields["templates"]); err != nil {
+		return nil, 0, err
+	}
+	return s.store.ListTemplates(ctx, q)
 }
 
 func (s *Service) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {

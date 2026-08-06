@@ -32,16 +32,37 @@ func (r *TemplateRepo) GetTemplate(ctx context.Context, id int64) (*domain.Templ
 	return toDomainTemplate(row), nil
 }
 
-func (r *TemplateRepo) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
-	rows, err := r.client.Template.Query().Order(ent.Asc(template.FieldID)).All(ctx)
+func (r *TemplateRepo) ListTemplates(ctx context.Context, q ListQuery) ([]*domain.Template, int64, error) {
+	pred := r.client.Template.Query()
+	if q.Name != "" {
+		pred = pred.Where(template.NameContainsFold(q.Name))
+	}
+	if q.DefaultFormat != "" {
+		pred = pred.Where(template.DefaultFormatEQ(template.DefaultFormat(q.DefaultFormat)))
+	}
+	total, err := pred.Count(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	order, err := q.sortOrder(templateSortFields)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
 	out := make([]*domain.Template, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toDomainTemplate(row))
 	}
-	return out, nil
+	return out, int64(total), nil
 }
 
 func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {

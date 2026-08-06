@@ -48,6 +48,31 @@ func TestQueryStatsGranularity(t *testing.T) {
 	require.Equal(t, int64(150), rows[0].TotalTokens)
 }
 
+// TestListQueryValidation service 层 sort/order 白名单校验：非法值 → ErrInvalidInput
+// （handler 依赖此 400；fake store 不校验，故校验必须在 service 层前置）。
+func TestListQueryValidation(t *testing.T) {
+	fs := newFakeStore()
+	svc := &Service{store: fs, invalidate: func() {}}
+
+	_, _, err := svc.ListTemplates(context.Background(), repository.ListQuery{Order: "sideways"})
+	require.ErrorIs(t, err, ErrInvalidInput, "非法 order")
+	_, _, err = svc.ListTemplates(context.Background(), repository.ListQuery{Sort: "bogus"})
+	require.ErrorIs(t, err, ErrInvalidInput, "非法 sort")
+	_, _, err = svc.ListGroups(context.Background(), repository.ListQuery{Sort: "weight"})
+	require.ErrorIs(t, err, ErrInvalidInput, "账号专属 sort 对分组无效")
+	_, _, err = svc.ListAccountViews(context.Background(), repository.ListQuery{Sort: "bogus"})
+	require.ErrorIs(t, err, ErrInvalidInput, "ListAccountViews 同样校验")
+
+	rows, total, err := svc.ListTemplates(context.Background(), repository.ListQuery{Sort: "name", Order: "asc"})
+	require.NoError(t, err)
+	require.Zero(t, total)
+	require.Empty(t, rows)
+	views, total, err := svc.ListAccountViews(context.Background(), repository.ListQuery{})
+	require.NoError(t, err)
+	require.Zero(t, total)
+	require.Empty(t, views)
+}
+
 func mustTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {

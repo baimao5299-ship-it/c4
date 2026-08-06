@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/cryptox"
 	"go-proxy-mini/pkg/logx"
 )
@@ -32,8 +33,11 @@ func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error)
 	return s.store.GetGroup(ctx, id)
 }
 
-func (s *Service) ListGroups(ctx context.Context) ([]*domain.Group, error) {
-	return s.store.ListGroups(ctx)
+func (s *Service) ListGroups(ctx context.Context, q repository.ListQuery) ([]*domain.Group, int64, error) {
+	if err := validateListQuery(q, listSortFields["groups"]); err != nil {
+		return nil, 0, err
+	}
+	return s.store.ListGroups(ctx, q)
 }
 
 func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {

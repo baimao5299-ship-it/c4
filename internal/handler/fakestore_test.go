@@ -57,7 +57,7 @@ func (f *fakeStore) GetTemplate(ctx context.Context, id int64) (*domain.Template
 	return &c, nil
 }
 
-func (f *fakeStore) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
+func (f *fakeStore) ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]*domain.Template, 0, len(f.tpls))
@@ -65,7 +65,7 @@ func (f *fakeStore) ListTemplates(ctx context.Context) ([]*domain.Template, erro
 		c := *t
 		out = append(out, &c)
 	}
-	return out, nil
+	return out, int64(len(f.tpls)), nil
 }
 
 func (f *fakeStore) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
@@ -104,7 +104,7 @@ func (f *fakeStore) GetAccount(ctx context.Context, id int64) (*domain.Account, 
 	return &c, nil
 }
 
-func (f *fakeStore) ListAccounts(ctx context.Context) ([]*domain.Account, error) {
+func (f *fakeStore) ListAccounts(ctx context.Context, q repository.ListQuery) ([]*domain.Account, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]*domain.Account, 0, len(f.accs))
@@ -112,7 +112,7 @@ func (f *fakeStore) ListAccounts(ctx context.Context) ([]*domain.Account, error)
 		c := *a
 		out = append(out, &c)
 	}
-	return out, nil
+	return out, int64(len(f.accs)), nil
 }
 
 func (f *fakeStore) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
@@ -152,7 +152,7 @@ func (f *fakeStore) GetGroup(ctx context.Context, id int64) (*domain.Group, erro
 	return &c, nil
 }
 
-func (f *fakeStore) ListGroups(ctx context.Context) ([]*domain.Group, error) {
+func (f *fakeStore) ListGroups(ctx context.Context, q repository.ListQuery) ([]*domain.Group, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]*domain.Group, 0, len(f.groups))
@@ -160,7 +160,7 @@ func (f *fakeStore) ListGroups(ctx context.Context) ([]*domain.Group, error) {
 		c := *g
 		out = append(out, &c)
 	}
-	return out, nil
+	return out, int64(len(f.groups)), nil
 }
 
 func (f *fakeStore) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {

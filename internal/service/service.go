@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"slices"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -28,7 +29,7 @@ type Store interface {
 type TemplateStore interface {
 	CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error)
 	GetTemplate(ctx context.Context, id int64) (*domain.Template, error)
-	ListTemplates(ctx context.Context) ([]*domain.Template, error)
+	ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error)
 	UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error)
 	DeleteTemplate(ctx context.Context, id int64) error
 }
@@ -36,7 +37,7 @@ type TemplateStore interface {
 type AccountStore interface {
 	CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error)
 	GetAccount(ctx context.Context, id int64) (*domain.Account, error)
-	ListAccounts(ctx context.Context) ([]*domain.Account, error)
+	ListAccounts(ctx context.Context, q repository.ListQuery) ([]*domain.Account, int64, error)
 	UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error)
 	DeleteAccount(ctx context.Context, id int64) error
 }
@@ -44,7 +45,7 @@ type AccountStore interface {
 type GroupStore interface {
 	CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error)
 	GetGroup(ctx context.Context, id int64) (*domain.Group, error)
-	ListGroups(ctx context.Context) ([]*domain.Group, error)
+	ListGroups(ctx context.Context, q repository.ListQuery) ([]*domain.Group, int64, error)
 	UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error)
 	DeleteGroup(ctx context.Context, id int64) error
 	SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error
@@ -109,6 +110,24 @@ func validateAccount(a *domain.Account) error {
 	}
 	if a.MaxConcurrency < 1 {
 		a.MaxConcurrency = 8
+	}
+	return nil
+}
+
+// listSortFields 各资源允许的 sort 白名单（与 repo 层白名单一致，双保险）。
+var listSortFields = map[string][]string{
+	"templates": {"id", "name", "base_url", "default_format", "created_at", "updated_at"},
+	"accounts":  {"id", "name", "template_id", "status", "cooldown_until", "weight", "max_concurrency", "last_used_at", "created_at", "updated_at"},
+	"groups":    {"id", "name", "created_at", "updated_at"},
+}
+
+// validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。
+func validateListQuery(q repository.ListQuery, sortFields []string) error {
+	if q.Order != "" && q.Order != "asc" && q.Order != "desc" {
+		return ErrInvalidInput
+	}
+	if q.Sort != "" && !slices.Contains(sortFields, q.Sort) {
+		return ErrInvalidInput
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
 )
 
 // PostAccounts 创建账号（ServerInterface）。
@@ -28,9 +29,9 @@ func (h *AdminAPI) PostAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAPIAccount(created))
 }
 
-// GetAccounts 账号列表（含运行时视图，ServerInterface）。
+// GetAccounts 账号列表（含运行时视图，ServerInterface）。Task 1：传空查询，行为不变。
 func (h *AdminAPI) GetAccounts(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.svc.ListAccountViews(r.Context())
+	rows, _, err := h.svc.ListAccountViews(r.Context(), repository.ListQuery{})
 	if err != nil {
 		writeServiceErr(w, err)
 		return

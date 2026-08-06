@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+
+	"go-proxy-mini/internal/repository"
 )
 
 // PostGroups 创建分组（响应含明文 key，仅此一次，ServerInterface）。
@@ -19,9 +21,9 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, CreateGroupResponse{Group: toAPIGroup(g), Key: raw})
 }
 
-// GetGroups 分组列表（ServerInterface）。
+// GetGroups 分组列表（ServerInterface）。Task 1：传空查询，行为不变。
 func (h *AdminAPI) GetGroups(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.svc.ListGroups(r.Context())
+	rows, _, err := h.svc.ListGroups(r.Context(), repository.ListQuery{})
 	if err != nil {
 		writeServiceErr(w, err)
 		return
