@@ -140,8 +140,8 @@ export default function Logs() {
             >
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value={ERROR_ALL}>{t('logs.filter.all')}</SelectItem>
-                {ERROR_TYPES.map(et => <SelectItem key={et} value={et}>{t(`errorType.${et}`)}</SelectItem>)}
+                <SelectItem value={ERROR_ALL} label={t('logs.filter.all')}>{t('logs.filter.all')}</SelectItem>
+                {ERROR_TYPES.map(et => <SelectItem key={et} value={et} label={t(`errorType.${et}`)}>{t(`errorType.${et}`)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

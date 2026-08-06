@@ -62,7 +62,7 @@ export function ListToolbar({
         </SelectTrigger>
         <SelectContent>
           {sortOptions.map(opt => (
-            <SelectItem key={opt.value} value={opt.value}>
+            <SelectItem key={opt.value} value={opt.value} label={opt.label}>
               {opt.label}
             </SelectItem>
           ))}

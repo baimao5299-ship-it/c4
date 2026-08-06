@@ -239,7 +239,7 @@ function FormFields({
                 <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {form.supported_formats.map(f => (
-                    <SelectItem key={f} value={f}>{FORMAT_LABELS[f]}</SelectItem>
+                    <SelectItem key={f} value={f} label={FORMAT_LABELS[f]}>{FORMAT_LABELS[f]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

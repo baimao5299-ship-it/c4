@@ -338,9 +338,9 @@ export default function Accounts() {
             <SelectValue placeholder={t('accounts.filterTemplate')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('accounts.allTemplates')}</SelectItem>
+            <SelectItem value="all" label={t('accounts.allTemplates')}>{t('accounts.allTemplates')}</SelectItem>
             {templates.map(tp => (
-              <SelectItem key={tp.ID} value={String(tp.ID)}>{tp.Name ?? `#${tp.ID}`}</SelectItem>
+              <SelectItem key={tp.ID} value={String(tp.ID)} label={tp.Name ?? `#${tp.ID}`}>{tp.Name ?? `#${tp.ID}`}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -475,7 +475,7 @@ export default function Accounts() {
               >
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {templates.map(tp => <SelectItem key={tp.ID} value={String(tp.ID)}>{tp.Name ?? `#${tp.ID}`}</SelectItem>)}
+                  {templates.map(tp => <SelectItem key={tp.ID} value={String(tp.ID)} label={tp.Name ?? `#${tp.ID}`}>{tp.Name ?? `#${tp.ID}`}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -493,7 +493,7 @@ export default function Accounts() {
                 >
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {STATUSES.map(s => <SelectItem key={s} value={s}>{t(`status.${s}`)}</SelectItem>)}
+                    {STATUSES.map(s => <SelectItem key={s} value={s} label={t(`status.${s}`)}>{t(`status.${s}`)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -562,8 +562,8 @@ export default function Accounts() {
                 <Select value={batchForm.status} onValueChange={v => setBatchForm(f => ({ ...f, status: v as BatchStatus }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t('list.unchanged')}</SelectItem>
-                    {STATUSES.map(s => <SelectItem key={s} value={s}>{t(`status.${s}`)}</SelectItem>)}
+                    <SelectItem value="all" label={t('list.unchanged')}>{t('list.unchanged')}</SelectItem>
+                    {STATUSES.map(s => <SelectItem key={s} value={s} label={t(`status.${s}`)}>{t(`status.${s}`)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -572,8 +572,8 @@ export default function Accounts() {
                 <Select value={batchForm.template_id} onValueChange={v => setBatchForm(f => ({ ...f, template_id: v }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t('list.unchanged')}</SelectItem>
-                    {templates.map(tp => <SelectItem key={tp.ID} value={String(tp.ID)}>{tp.Name ?? `#${tp.ID}`}</SelectItem>)}
+                    <SelectItem value="all" label={t('list.unchanged')}>{t('list.unchanged')}</SelectItem>
+                    {templates.map(tp => <SelectItem key={tp.ID} value={String(tp.ID)} label={tp.Name ?? `#${tp.ID}`}>{tp.Name ?? `#${tp.ID}`}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
