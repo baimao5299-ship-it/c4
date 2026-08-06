@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -115,4 +116,71 @@ func (h *AdminAPI) DeleteAccountsId(w http.ResponseWriter, r *http.Request, id i
 		return
 	}
 	writeJSON(w, http.StatusOK, DeletedResponse{Deleted: true})
+}
+
+// PostAccountsBatchDelete 批量删除账号（事务，全成或全败；删除后调度快照
+// 失效由 service invalidate 完成，ServerInterface）。
+func (h *AdminAPI) PostAccountsBatchDelete(w http.ResponseWriter, r *http.Request) {
+	var in BatchDeleteBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	ids, err := normalizeIDs(in.Ids)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.DeleteAccountsBatch(r.Context(), ids); err != nil {
+		writeBatchServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, BatchDeleteResponse{Deleted: len(ids)})
+}
+
+// PostAccountsBatchUpdate 批量更新账号（fields 任意子集；更新后调度快照
+// 失效由 service invalidate 完成，ServerInterface）。
+func (h *AdminAPI) PostAccountsBatchUpdate(w http.ResponseWriter, r *http.Request) {
+	var in BatchUpdateAccountsBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	ids, err := normalizeIDs(in.Ids)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p, err := accountPatchFromBody(&in.Fields)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.UpdateAccountsBatch(r.Context(), ids, p); err != nil {
+		writeBatchServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, BatchUpdateResponse{Updated: len(ids)})
+}
+
+// accountPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新）。
+// 契约 status 枚举不参与解码校验（与列表参数一致），此处显式校验；
+// 空 fields（无任何字段）视为非法输入。
+func accountPatchFromBody(f *AccountPatch) (repository.AccountPatch, error) {
+	if f.Status != nil && !validAccountStatus(string(*f.Status)) {
+		return repository.AccountPatch{}, errors.New("invalid status " + string(*f.Status))
+	}
+	p := repository.AccountPatch{
+		Name:           f.Name,
+		TemplateID:     f.TemplateId,
+		UpstreamKey:    f.UpstreamKey,
+		Status:         (*domain.AccountStatus)(f.Status),
+		Weight:         f.Weight,
+		MaxConcurrency: f.MaxConcurrency,
+	}
+	if p.Name == nil && p.TemplateID == nil && p.UpstreamKey == nil &&
+		p.Status == nil && p.Weight == nil && p.MaxConcurrency == nil {
+		return repository.AccountPatch{}, errors.New("fields must contain at least one field")
+	}
+	return p, nil
 }

@@ -4,6 +4,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"go-proxy-mini/internal/service"
@@ -61,4 +62,31 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]any{"error": msg})
+}
+
+// normalizeIDs 校验批量 ids 1–100 条且去重（返回去重后列表，条数按去重后计）。
+func normalizeIDs(ids []int64) ([]int64, error) {
+	if len(ids) == 0 || len(ids) > 100 {
+		return nil, errors.New("ids must contain 1-100 entries")
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// writeBatchServiceErr 批量操作的错误映射：404 需携带缺失 id 信息（service
+// 层把 repo 的 "id=%d missing" 包装进 ErrNotFound），其余走 writeServiceErr。
+func writeBatchServiceErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeServiceErr(w, err)
 }

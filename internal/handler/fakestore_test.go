@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"go-proxy-mini/internal/domain"
@@ -189,6 +190,140 @@ func (f *fakeStore) QueryLogs(ctx context.Context, q repository.LogQuery) ([]*do
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.logs, int64(len(f.logs)), nil
+}
+
+// --- 批量操作（模拟 repo 语义：事务内存在性检查，缺失 id 返回
+// repository.ErrNotFound 包装错误含 id；更新仅应用 patch 非 nil 字段） ---
+
+// missingID 返回 ids 中第一个不存在条目的 id（与真实 repo 的
+// checkXxxExist 差集语义一致）。
+func (f *fakeStore) missingID(ids []int64, exists func(id int64) bool) (int64, bool) {
+	for _, id := range ids {
+		if !exists(id) {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+func (f *fakeStore) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.tpls[id]; return ok }); ok {
+		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+	}
+	for _, id := range ids {
+		delete(f.tpls, id)
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repository.TemplatePatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.tpls[id]; return ok }); ok {
+		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+	}
+	for _, id := range ids {
+		t := f.tpls[id]
+		if p.Name != nil {
+			t.Name = *p.Name
+		}
+		if p.BaseURL != nil {
+			t.BaseURL = *p.BaseURL
+		}
+		if p.DefaultFormat != nil {
+			t.DefaultFormat = *p.DefaultFormat
+		}
+		if p.Models != nil {
+			t.Models = *p.Models
+		}
+		if p.ModelFormats != nil {
+			m := make(map[string]domain.RequestFormat, len(*p.ModelFormats))
+			for k, v := range *p.ModelFormats {
+				m[k] = v
+			}
+			t.ModelFormats = m
+		}
+		if p.ModelMapping != nil {
+			m := make(map[string]string, len(*p.ModelMapping))
+			for k, v := range *p.ModelMapping {
+				m[k] = v
+			}
+			t.ModelMapping = m
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.accs[id]; return ok }); ok {
+		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+	}
+	for _, id := range ids {
+		delete(f.accs, id)
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateAccountsBatch(ctx context.Context, ids []int64, p repository.AccountPatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.accs[id]; return ok }); ok {
+		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+	}
+	for _, id := range ids {
+		a := f.accs[id]
+		if p.Name != nil {
+			a.Name = *p.Name
+		}
+		if p.TemplateID != nil {
+			a.TemplateID = *p.TemplateID
+		}
+		if p.UpstreamKey != nil {
+			a.UpstreamKey = *p.UpstreamKey
+		}
+		if p.Status != nil {
+			a.Status = *p.Status
+		}
+		if p.Weight != nil {
+			a.Weight = *p.Weight
+		}
+		if p.MaxConcurrency != nil {
+			a.MaxConcurrency = *p.MaxConcurrency
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.groups[id]; return ok }); ok {
+		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+	}
+	for _, id := range ids {
+		delete(f.groups, id)
+		delete(f.keyHashes, id)
+	}
+	return nil
+}
+
+func (f *fakeStore) UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.groups[id]; return ok }); ok {
+		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+	}
+	for _, id := range ids {
+		g := f.groups[id]
+		if p.Name != nil {
+			g.Name = *p.Name
+		}
+	}
+	return nil
 }
 
 func (f *fakeStore) ScanStats(ctx context.Context, q repository.StatQuery) ([]*domain.StatBucket, error) {

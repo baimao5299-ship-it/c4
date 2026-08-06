@@ -108,6 +108,73 @@ func (h *AdminAPI) DeleteTemplatesId(w http.ResponseWriter, r *http.Request, id 
 	writeJSON(w, http.StatusOK, DeletedResponse{Deleted: true})
 }
 
+// PostTemplatesBatchDelete 批量删除模板（事务，全成或全败，ServerInterface）。
+func (h *AdminAPI) PostTemplatesBatchDelete(w http.ResponseWriter, r *http.Request) {
+	var in BatchDeleteBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	ids, err := normalizeIDs(in.Ids)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.DeleteTemplatesBatch(r.Context(), ids); err != nil {
+		writeBatchServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, BatchDeleteResponse{Deleted: len(ids)})
+}
+
+// PostTemplatesBatchUpdate 批量更新模板（fields 任意子集，ServerInterface）。
+func (h *AdminAPI) PostTemplatesBatchUpdate(w http.ResponseWriter, r *http.Request) {
+	var in BatchUpdateTemplatesBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	ids, err := normalizeIDs(in.Ids)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p, err := templatePatchFromBody(&in.Fields)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.UpdateTemplatesBatch(r.Context(), ids, p); err != nil {
+		writeBatchServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, BatchUpdateResponse{Updated: len(ids)})
+}
+
+// templatePatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新）。
+// 空 fields（无任何字段）视为非法输入。
+func templatePatchFromBody(f *TemplatePatch) (repository.TemplatePatch, error) {
+	p := repository.TemplatePatch{
+		Name:          f.Name,
+		BaseURL:       f.BaseUrl,
+		DefaultFormat: (*domain.RequestFormat)(f.DefaultFormat),
+		Models:        f.Models,
+		ModelMapping:  f.ModelMapping,
+	}
+	if f.ModelFormats != nil {
+		m := make(map[string]domain.RequestFormat, len(*f.ModelFormats))
+		for k, v := range *f.ModelFormats {
+			m[k] = domain.RequestFormat(v)
+		}
+		p.ModelFormats = &m
+	}
+	if p.Name == nil && p.BaseURL == nil && p.DefaultFormat == nil &&
+		p.Models == nil && p.ModelFormats == nil && p.ModelMapping == nil {
+		return repository.TemplatePatch{}, errors.New("fields must contain at least one field")
+	}
+	return p, nil
+}
+
 // writeServiceErr 统一把 service 错误映射为 HTTP 状态。
 func writeServiceErr(w http.ResponseWriter, err error) {
 	switch {

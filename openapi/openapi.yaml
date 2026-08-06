@@ -49,6 +49,42 @@ paths:
               schema: { $ref: '#/components/schemas/TemplateListResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /templates/batch-delete:
+    post:
+      operationId: PostTemplatesBatchDelete
+      tags: [templates]
+      summary: 批量删除模板（事务，全成或全败）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchDeleteBody' }
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchDeleteResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /templates/batch-update:
+    post:
+      operationId: PostTemplatesBatchUpdate
+      tags: [templates]
+      summary: 批量更新模板（fields 为任意字段子集）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchUpdateTemplatesBody' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchUpdateResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /templates/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -128,6 +164,42 @@ paths:
               schema: { $ref: '#/components/schemas/AccountListResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /accounts/batch-delete:
+    post:
+      operationId: PostAccountsBatchDelete
+      tags: [accounts]
+      summary: 批量删除账号（事务，全成或全败）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchDeleteBody' }
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchDeleteResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /accounts/batch-update:
+    post:
+      operationId: PostAccountsBatchUpdate
+      tags: [accounts]
+      summary: 批量更新账号（fields 为任意字段子集）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchUpdateAccountsBody' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchUpdateResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /accounts/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -203,6 +275,42 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GroupListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /groups/batch-delete:
+    post:
+      operationId: PostGroupsBatchDelete
+      tags: [groups]
+      summary: 批量删除分组（事务，全成或全败）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchDeleteBody' }
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchDeleteResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /groups/batch-update:
+    post:
+      operationId: PostGroupsBatchUpdate
+      tags: [groups]
+      summary: 批量更新分组（fields 为任意字段子集）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchUpdateGroupsBody' }
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchUpdateResponse' }
         default:
           $ref: '#/components/responses/Error'
   /groups/{id}:
@@ -482,6 +590,84 @@ components:
         account_ids:
           type: array
           items: { type: integer, format: int64 }
+    BatchDeleteBody:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, format: int64 }
+          minItems: 1
+          maxItems: 100
+    BatchUpdateTemplatesBody:
+      type: object
+      required: [ids, fields]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, format: int64 }
+          minItems: 1
+          maxItems: 100
+        fields:
+          $ref: '#/components/schemas/TemplatePatch'
+    TemplatePatch:
+      type: object
+      properties:
+        name: { type: string }
+        base_url: { type: string }
+        default_format: { type: string, enum: [openai-chat, openai-responses, anthropic] }
+        models:
+          type: array
+          items: { type: string }
+        model_formats:
+          type: object
+          additionalProperties: { type: string }
+        model_mapping:
+          type: object
+          additionalProperties: { type: string }
+    AccountPatch:
+      type: object
+      properties:
+        name: { type: string }
+        template_id: { type: integer, format: int64 }
+        upstream_key: { type: string }
+        status: { type: string, enum: [active, unhealthy, "429", disabled] }
+        weight: { type: integer }
+        max_concurrency: { type: integer }
+    GroupPatch:
+      type: object
+      properties:
+        name: { type: string }
+    BatchUpdateAccountsBody:
+      type: object
+      required: [ids, fields]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, format: int64 }
+          minItems: 1
+          maxItems: 100
+        fields: { $ref: '#/components/schemas/AccountPatch' }
+    BatchUpdateGroupsBody:
+      type: object
+      required: [ids, fields]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, format: int64 }
+          minItems: 1
+          maxItems: 100
+        fields: { $ref: '#/components/schemas/GroupPatch' }
+    BatchDeleteResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted: { type: integer }
+    BatchUpdateResponse:
+      type: object
+      required: [updated]
+      properties:
+        updated: { type: integer }
     UsageLog:
       type: object
       properties:

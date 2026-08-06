@@ -12,6 +12,14 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for AccountPatchStatus.
+const (
+	AccountPatchStatusActive    AccountPatchStatus = "active"
+	AccountPatchStatusDisabled  AccountPatchStatus = "disabled"
+	AccountPatchStatusN429      AccountPatchStatus = "429"
+	AccountPatchStatusUnhealthy AccountPatchStatus = "unhealthy"
+)
+
 // Defines values for AccountStatus.
 const (
 	AccountStatusActive    AccountStatus = "active"
@@ -22,14 +30,14 @@ const (
 
 // Defines values for ErrorType.
 const (
-	ErrorTypeAbort     ErrorType = "abort"
-	ErrorTypeAuth      ErrorType = "auth"
-	ErrorTypeN429      ErrorType = "429"
-	ErrorTypeN4xx      ErrorType = "4xx"
-	ErrorTypeN5xx      ErrorType = "5xx"
-	ErrorTypeNetwork   ErrorType = "network"
-	ErrorTypeNoAccount ErrorType = "no_account"
-	ErrorTypeNone      ErrorType = "none"
+	Abort     ErrorType = "abort"
+	Auth      ErrorType = "auth"
+	N429      ErrorType = "429"
+	N4xx      ErrorType = "4xx"
+	N5xx      ErrorType = "5xx"
+	Network   ErrorType = "network"
+	NoAccount ErrorType = "no_account"
+	None      ErrorType = "none"
 )
 
 // Defines values for RequestFormat.
@@ -37,6 +45,13 @@ const (
 	RequestFormatAnthropic       RequestFormat = "anthropic"
 	RequestFormatOpenaiChat      RequestFormat = "openai-chat"
 	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
+)
+
+// Defines values for TemplatePatchDefaultFormat.
+const (
+	TemplatePatchDefaultFormatAnthropic       TemplatePatchDefaultFormat = "anthropic"
+	TemplatePatchDefaultFormatOpenaiChat      TemplatePatchDefaultFormat = "openai-chat"
+	TemplatePatchDefaultFormatOpenaiResponses TemplatePatchDefaultFormat = "openai-responses"
 )
 
 // Defines values for GetAccountsParamsOrder.
@@ -65,9 +80,9 @@ const (
 
 // Defines values for GetTemplatesParamsDefaultFormat.
 const (
-	GetTemplatesParamsDefaultFormatAnthropic       GetTemplatesParamsDefaultFormat = "anthropic"
-	GetTemplatesParamsDefaultFormatOpenaiChat      GetTemplatesParamsDefaultFormat = "openai-chat"
-	GetTemplatesParamsDefaultFormatOpenaiResponses GetTemplatesParamsDefaultFormat = "openai-responses"
+	Anthropic       GetTemplatesParamsDefaultFormat = "anthropic"
+	OpenaiChat      GetTemplatesParamsDefaultFormat = "openai-chat"
+	OpenaiResponses GetTemplatesParamsDefaultFormat = "openai-responses"
 )
 
 // Account defines model for Account.
@@ -103,6 +118,19 @@ type AccountListResponse struct {
 	Total int64         `json:"total"`
 }
 
+// AccountPatch defines model for AccountPatch.
+type AccountPatch struct {
+	MaxConcurrency *int                `json:"max_concurrency,omitempty"`
+	Name           *string             `json:"name,omitempty"`
+	Status         *AccountPatchStatus `json:"status,omitempty"`
+	TemplateId     *int64              `json:"template_id,omitempty"`
+	UpstreamKey    *string             `json:"upstream_key,omitempty"`
+	Weight         *int                `json:"weight,omitempty"`
+}
+
+// AccountPatchStatus defines model for AccountPatch.Status.
+type AccountPatchStatus string
+
 // AccountStatus defines model for AccountStatus.
 type AccountStatus string
 
@@ -124,6 +152,39 @@ type AccountView struct {
 	Concurrency    *int64         `json:"concurrency,omitempty"`
 	ErrCount       *int           `json:"err_count,omitempty"`
 	ErrRate        *float64       `json:"err_rate,omitempty"`
+}
+
+// BatchDeleteBody defines model for BatchDeleteBody.
+type BatchDeleteBody struct {
+	Ids []int64 `json:"ids"`
+}
+
+// BatchDeleteResponse defines model for BatchDeleteResponse.
+type BatchDeleteResponse struct {
+	Deleted int `json:"deleted"`
+}
+
+// BatchUpdateAccountsBody defines model for BatchUpdateAccountsBody.
+type BatchUpdateAccountsBody struct {
+	Fields AccountPatch `json:"fields"`
+	Ids    []int64      `json:"ids"`
+}
+
+// BatchUpdateGroupsBody defines model for BatchUpdateGroupsBody.
+type BatchUpdateGroupsBody struct {
+	Fields GroupPatch `json:"fields"`
+	Ids    []int64    `json:"ids"`
+}
+
+// BatchUpdateResponse defines model for BatchUpdateResponse.
+type BatchUpdateResponse struct {
+	Updated int `json:"updated"`
+}
+
+// BatchUpdateTemplatesBody defines model for BatchUpdateTemplatesBody.
+type BatchUpdateTemplatesBody struct {
+	Fields TemplatePatch `json:"fields"`
+	Ids    []int64       `json:"ids"`
 }
 
 // CreateGroupResponse defines model for CreateGroupResponse.
@@ -164,6 +225,11 @@ type GroupCreate struct {
 type GroupListResponse struct {
 	Rows  []Group `json:"rows"`
 	Total int64   `json:"total"`
+}
+
+// GroupPatch defines model for GroupPatch.
+type GroupPatch struct {
+	Name *string `json:"name,omitempty"`
 }
 
 // LogsResponse defines model for LogsResponse.
@@ -229,6 +295,19 @@ type TemplateListResponse struct {
 	Rows  []Template `json:"rows"`
 	Total int64      `json:"total"`
 }
+
+// TemplatePatch defines model for TemplatePatch.
+type TemplatePatch struct {
+	BaseUrl       *string                     `json:"base_url,omitempty"`
+	DefaultFormat *TemplatePatchDefaultFormat `json:"default_format,omitempty"`
+	ModelFormats  *map[string]string          `json:"model_formats,omitempty"`
+	ModelMapping  *map[string]string          `json:"model_mapping,omitempty"`
+	Models        *[]string                   `json:"models,omitempty"`
+	Name          *string                     `json:"name,omitempty"`
+}
+
+// TemplatePatchDefaultFormat defines model for TemplatePatch.DefaultFormat.
+type TemplatePatchDefaultFormat string
 
 // UpdatedResponse defines model for UpdatedResponse.
 type UpdatedResponse struct {
@@ -328,11 +407,23 @@ type GetTemplatesParamsDefaultFormat string
 // PostAccountsJSONRequestBody defines body for PostAccounts for application/json ContentType.
 type PostAccountsJSONRequestBody = AccountCreate
 
+// PostAccountsBatchDeleteJSONRequestBody defines body for PostAccountsBatchDelete for application/json ContentType.
+type PostAccountsBatchDeleteJSONRequestBody = BatchDeleteBody
+
+// PostAccountsBatchUpdateJSONRequestBody defines body for PostAccountsBatchUpdate for application/json ContentType.
+type PostAccountsBatchUpdateJSONRequestBody = BatchUpdateAccountsBody
+
 // PutAccountsIdJSONRequestBody defines body for PutAccountsId for application/json ContentType.
 type PutAccountsIdJSONRequestBody = AccountCreate
 
 // PostGroupsJSONRequestBody defines body for PostGroups for application/json ContentType.
 type PostGroupsJSONRequestBody = GroupCreate
+
+// PostGroupsBatchDeleteJSONRequestBody defines body for PostGroupsBatchDelete for application/json ContentType.
+type PostGroupsBatchDeleteJSONRequestBody = BatchDeleteBody
+
+// PostGroupsBatchUpdateJSONRequestBody defines body for PostGroupsBatchUpdate for application/json ContentType.
+type PostGroupsBatchUpdateJSONRequestBody = BatchUpdateGroupsBody
 
 // PutGroupsIdJSONRequestBody defines body for PutGroupsId for application/json ContentType.
 type PutGroupsIdJSONRequestBody = GroupCreate
@@ -342,6 +433,12 @@ type PutGroupsIdAccountsJSONRequestBody = SetGroupAccountsBody
 
 // PostTemplatesJSONRequestBody defines body for PostTemplates for application/json ContentType.
 type PostTemplatesJSONRequestBody = TemplateCreate
+
+// PostTemplatesBatchDeleteJSONRequestBody defines body for PostTemplatesBatchDelete for application/json ContentType.
+type PostTemplatesBatchDeleteJSONRequestBody = BatchDeleteBody
+
+// PostTemplatesBatchUpdateJSONRequestBody defines body for PostTemplatesBatchUpdate for application/json ContentType.
+type PostTemplatesBatchUpdateJSONRequestBody = BatchUpdateTemplatesBody
 
 // PutTemplatesIdJSONRequestBody defines body for PutTemplatesId for application/json ContentType.
 type PutTemplatesIdJSONRequestBody = TemplateCreate
@@ -354,6 +451,12 @@ type ServerInterface interface {
 	// 创建账号
 	// (POST /accounts)
 	PostAccounts(w http.ResponseWriter, r *http.Request)
+	// 批量删除账号（事务，全成或全败）
+	// (POST /accounts/batch-delete)
+	PostAccountsBatchDelete(w http.ResponseWriter, r *http.Request)
+	// 批量更新账号（fields 为任意字段子集）
+	// (POST /accounts/batch-update)
+	PostAccountsBatchUpdate(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /accounts/{id})
 	DeleteAccountsId(w http.ResponseWriter, r *http.Request, id int64)
@@ -369,6 +472,12 @@ type ServerInterface interface {
 	// 创建分组（响应含明文 key，仅此一次）
 	// (POST /groups)
 	PostGroups(w http.ResponseWriter, r *http.Request)
+	// 批量删除分组（事务，全成或全败）
+	// (POST /groups/batch-delete)
+	PostGroupsBatchDelete(w http.ResponseWriter, r *http.Request)
+	// 批量更新分组（fields 为任意字段子集）
+	// (POST /groups/batch-update)
+	PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /groups/{id})
 	DeleteGroupsId(w http.ResponseWriter, r *http.Request, id int64)
@@ -396,6 +505,12 @@ type ServerInterface interface {
 	// 创建模板
 	// (POST /templates)
 	PostTemplates(w http.ResponseWriter, r *http.Request)
+	// 批量删除模板（事务，全成或全败）
+	// (POST /templates/batch-delete)
+	PostTemplatesBatchDelete(w http.ResponseWriter, r *http.Request)
+	// 批量更新模板（fields 为任意字段子集）
+	// (POST /templates/batch-update)
+	PostTemplatesBatchUpdate(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /templates/{id})
 	DeleteTemplatesId(w http.ResponseWriter, r *http.Request, id int64)
@@ -423,6 +538,18 @@ func (_ Unimplemented) PostAccounts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 批量删除账号（事务，全成或全败）
+// (POST /accounts/batch-delete)
+func (_ Unimplemented) PostAccountsBatchDelete(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量更新账号（fields 为任意字段子集）
+// (POST /accounts/batch-update)
+func (_ Unimplemented) PostAccountsBatchUpdate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (DELETE /accounts/{id})
 func (_ Unimplemented) DeleteAccountsId(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -447,6 +574,18 @@ func (_ Unimplemented) GetGroups(w http.ResponseWriter, r *http.Request, params 
 // 创建分组（响应含明文 key，仅此一次）
 // (POST /groups)
 func (_ Unimplemented) PostGroups(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量删除分组（事务，全成或全败）
+// (POST /groups/batch-delete)
+func (_ Unimplemented) PostGroupsBatchDelete(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量更新分组（fields 为任意字段子集）
+// (POST /groups/batch-update)
+func (_ Unimplemented) PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -498,6 +637,18 @@ func (_ Unimplemented) GetTemplates(w http.ResponseWriter, r *http.Request, para
 // 创建模板
 // (POST /templates)
 func (_ Unimplemented) PostTemplates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量删除模板（事务，全成或全败）
+// (POST /templates/batch-delete)
+func (_ Unimplemented) PostTemplatesBatchDelete(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量更新模板（fields 为任意字段子集）
+// (POST /templates/batch-update)
+func (_ Unimplemented) PostTemplatesBatchUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -605,6 +756,34 @@ func (siw *ServerInterfaceWrapper) PostAccounts(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostAccounts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostAccountsBatchDelete operation middleware
+func (siw *ServerInterfaceWrapper) PostAccountsBatchDelete(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostAccountsBatchDelete(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostAccountsBatchUpdate operation middleware
+func (siw *ServerInterfaceWrapper) PostAccountsBatchUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostAccountsBatchUpdate(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -753,6 +932,34 @@ func (siw *ServerInterfaceWrapper) PostGroups(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostGroupsBatchDelete operation middleware
+func (siw *ServerInterfaceWrapper) PostGroupsBatchDelete(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostGroupsBatchDelete(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostGroupsBatchUpdate operation middleware
+func (siw *ServerInterfaceWrapper) PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostGroupsBatchUpdate(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1126,6 +1333,34 @@ func (siw *ServerInterfaceWrapper) PostTemplates(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// PostTemplatesBatchDelete operation middleware
+func (siw *ServerInterfaceWrapper) PostTemplatesBatchDelete(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostTemplatesBatchDelete(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostTemplatesBatchUpdate operation middleware
+func (siw *ServerInterfaceWrapper) PostTemplatesBatchUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostTemplatesBatchUpdate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteTemplatesId operation middleware
 func (siw *ServerInterfaceWrapper) DeleteTemplatesId(w http.ResponseWriter, r *http.Request) {
 
@@ -1321,6 +1556,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/accounts", wrapper.PostAccounts)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/accounts/batch-delete", wrapper.PostAccountsBatchDelete)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/accounts/batch-update", wrapper.PostAccountsBatchUpdate)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/accounts/{id}", wrapper.DeleteAccountsId)
 	})
 	r.Group(func(r chi.Router) {
@@ -1334,6 +1575,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/groups", wrapper.PostGroups)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/groups/batch-delete", wrapper.PostGroupsBatchDelete)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/groups/batch-update", wrapper.PostGroupsBatchUpdate)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/groups/{id}", wrapper.DeleteGroupsId)
@@ -1361,6 +1608,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/templates", wrapper.PostTemplates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/templates/batch-delete", wrapper.PostTemplatesBatchDelete)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/templates/batch-update", wrapper.PostTemplatesBatchUpdate)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/templates/{id}", wrapper.DeleteTemplatesId)
