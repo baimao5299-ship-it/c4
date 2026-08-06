@@ -9,16 +9,17 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        /* 通透玻璃（GooseHyperGlass transparent style）：半透明白 + 顶白高光 + 白细边 + 软投影，无实心填充 */
         default:
-          "bg-[linear-gradient(135deg,#6366f1,#8b5cf6)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_4px_14px_rgba(99,102,241,0.35)] backdrop-blur-md hover:brightness-110 active:brightness-95",
+          "border-white/50 bg-white/45 text-indigo-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_2px_10px_rgba(31,38,135,0.06)] backdrop-blur-md hover:bg-white/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_4px_18px_rgba(99,102,241,0.28)]",
         outline:
-          "border-indigo-200/60 bg-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-md hover:border-indigo-300/70 hover:bg-white/65 hover:text-indigo-700 aria-expanded:border-indigo-300/70 aria-expanded:bg-white/65 aria-expanded:text-indigo-700",
+          "border-white/50 bg-white/35 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_10px_rgba(31,38,135,0.05)] backdrop-blur-md hover:bg-white/60 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_18px_rgba(99,102,241,0.22)]",
         secondary:
-          "border-indigo-200/60 bg-white/45 text-secondary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-md hover:border-indigo-300/70 hover:bg-white/65 aria-expanded:border-indigo-300/70 aria-expanded:bg-white/65 aria-expanded:text-secondary-foreground",
+          "border-white/50 bg-white/35 text-secondary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_10px_rgba(31,38,135,0.05)] backdrop-blur-md hover:bg-white/60 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_18px_rgba(99,102,241,0.22)]",
         ghost:
-          "hover:bg-white/50 hover:text-indigo-700 aria-expanded:bg-white/50 aria-expanded:text-indigo-700",
+          "hover:bg-white/45 hover:text-indigo-700 aria-expanded:bg-white/45 aria-expanded:text-indigo-700",
         destructive:
-          "bg-red-500/15 text-red-600 backdrop-blur-md hover:bg-red-500/25 focus-visible:border-red-400/40 focus-visible:ring-red-500/20",
+          "border-white/50 bg-white/40 text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_10px_rgba(31,38,135,0.05)] backdrop-blur-md hover:bg-red-500/15 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_4px_18px_rgba(244,63,94,0.2)] focus-visible:border-red-400/40 focus-visible:ring-red-500/20",
         link: "text-indigo-600 underline-offset-4 hover:underline",
       },
       size: {
