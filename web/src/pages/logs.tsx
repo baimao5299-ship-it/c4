@@ -176,6 +176,7 @@ export default function Logs() {
           <p className="text-sm">{t('logs.emptyDesc')}</p>
         </Card>
       ) : (
+        <>
         <Card className="overflow-hidden">
           <Table>
             <TableHeader>
@@ -219,32 +220,34 @@ export default function Logs() {
               ))}
             </TableBody>
           </Table>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2.5">
-            <div className="text-sm text-muted-foreground">
-              {t('logs.pagination.total', { total })}
-              <span className="mx-2">·</span>
-              {t('logs.pagination.page', { page, pages })}
-            </div>
-            <div className="flex items-center gap-2">
-              <Select
-                items={Object.fromEntries(LIMITS.map(n => [String(n), String(n)]))}
-                value={String(limit)}
-                onValueChange={changeLimit}
-              >
-                <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {LIMITS.map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
-                <ChevronLeft /> {t('logs.pagination.prev')}
-              </Button>
-              <Button variant="outline" size="sm" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>
-                {t('logs.pagination.next')} <ChevronRight />
-              </Button>
-            </div>
-          </div>
         </Card>
+        {/* 分页条：独立于表格卡片，对齐 pagination-demo（outline 按钮 + chevron 图标 + 移动端隐藏文字） */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-muted-foreground">
+            {t('logs.pagination.total', { total })}
+            <span className="mx-2">·</span>
+            {t('logs.pagination.page', { page, pages })}
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              items={Object.fromEntries(LIMITS.map(n => [String(n), String(n)]))}
+              value={String(limit)}
+              onValueChange={changeLimit}
+            >
+              <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {LIMITS.map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
+              <ChevronLeft /> <span className="hidden sm:inline">{t('logs.pagination.prev')}</span>
+            </Button>
+            <Button variant="outline" size="sm" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>
+              <span className="hidden sm:inline">{t('logs.pagination.next')}</span> <ChevronRight />
+            </Button>
+          </div>
+        </div>
+        </>
       )}
     </div>
   )
