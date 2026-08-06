@@ -1,6 +1,7 @@
 package sserelay
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -101,7 +102,8 @@ func TestRelayFirstEventFlushesImmediately(t *testing.T) {
 
 func TestRelayBatchesUntilThreshold(t *testing.T) {
 	fr := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
-	// 3 个各 2KB 的事件：第 1 个立即 flush，第 2 个攒到 4KB 后 flush，第 3 个等 timer/结束 flush
+	// 3 个各 2056B 的事件，阈值 4096：首事件立即 flush（不重置累计，2056 仍计入阈值），
+	// 第 2 个使累计 4112 >= 4096 触发 flush 并归零，第 3 个未达阈值，由流结束残余 flush
 	var src strings.Builder
 	for i := 0; i < 3; i++ {
 		src.WriteString("data: ")
@@ -109,20 +111,46 @@ func TestRelayBatchesUntilThreshold(t *testing.T) {
 		src.WriteString("\n\n")
 	}
 	require.NoError(t, relayStream(fr, src.String(), Config{FlushBytes: 4096, FlushInterval: time.Hour}))
-	// 首事件 1 次 + 第 2 事件攒满 1 次 + 流结束 flush 1 次
+	// 首事件 1 次 + 第 2 事件攒满阈值 1 次 + 流结束残余 1 次
 	require.Equal(t, int32(3), fr.flushed.Load())
+}
+
+// stagedReader 依次返回 chunks，之后阻塞在 block 上：用于构造"流仍存活、
+// 停在 Read 上、没有下一帧"的场景，让 timer 成为唯一可能的 flush 来源。
+type stagedReader struct {
+	chunks [][]byte
+	block  chan struct{}
+	idx    int
+}
+
+func (s *stagedReader) Read(p []byte) (int, error) {
+	if s.idx < len(s.chunks) {
+		n := copy(p, s.chunks[s.idx])
+		s.idx++
+		return n, nil
+	}
+	<-s.block
+	return 0, io.EOF
 }
 
 func TestRelayTimerFlushesWithoutNextEvent(t *testing.T) {
 	fr := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	src := &stagedReader{chunks: [][]byte{[]byte("data: x\n\n")}, block: make(chan struct{})}
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- Relay(ctx, fr, strings.NewReader("data: x\n\n"), Config{FlushBytes: 4096, FlushInterval: 20 * time.Millisecond})
+		errCh <- Relay(context.Background(), fr, src, Config{FlushBytes: 4096, FlushInterval: 20 * time.Millisecond})
 	}()
-	// 首事件已 flush；等 100ms（期间无下一帧）验证 timer 继续 flush
-	require.Eventually(t, func() bool { return fr.flushed.Load() >= 2 }, time.Second, 10*time.Millisecond)
+	// 首事件立即 flush
+	require.Eventually(t, func() bool { return fr.flushed.Load() >= 1 }, time.Second, time.Millisecond)
+	// 源仍阻塞在 Read、relay 未退出：期间没有下一帧，2nd flush 只能来自 timer
+	select {
+	case err := <-errCh:
+		t.Fatalf("relay 在源阻塞期间提前退出: %v", err)
+	default:
+	}
+	require.Eventually(t, func() bool { return fr.flushed.Load() >= 2 }, 200*time.Millisecond, 5*time.Millisecond)
+	// 解除阻塞，流正常结束
+	close(src.block)
 	require.NoError(t, <-errCh)
 }
 
@@ -168,10 +196,18 @@ type blockingReader struct{ ch chan struct{} }
 
 func (r *blockingReader) Read(p []byte) (int, error) { <-r.ch; return 0, io.EOF }
 
+// plainWriter 只实现 http.ResponseWriter 的 Header/Write/WriteHeader，
+// 刻意不提供 Flush 方法，用于覆盖 dst 无 Flusher 的路径。
+type plainWriter struct{ buf bytes.Buffer }
+
+func (w *plainWriter) Header() http.Header         { return http.Header{} }
+func (w *plainWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
+func (w *plainWriter) WriteHeader(int)             {}
+
 func TestRelayNoFlusherStillWrites(t *testing.T) {
-	rec := httptest.NewRecorder() // 无 Flusher
-	require.NoError(t, relayStream(rec, "data: x\n\n", Config{}))
-	require.Equal(t, "data: x\n\n", rec.Body.String())
+	wr := &plainWriter{} // 无 Flusher：flush 路径跳过 fl.Flush，但字节仍完整写出
+	require.NoError(t, relayStream(wr, "data: x\n\n", Config{}))
+	require.Equal(t, "data: x\n\n", wr.buf.String())
 }
 
 func TestRelayTimerGoroutineExits(t *testing.T) {

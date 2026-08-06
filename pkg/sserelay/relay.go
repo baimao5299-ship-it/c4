@@ -14,6 +14,8 @@ import (
 )
 
 // Event 是一次 SSE 事件的旁路视图。
+// Raw/Event/Data 均指向 relay 内部复用的缓冲，仅在本次 Observer 回调期间有效；
+// 消费方不得跨帧保留这些切片（下一帧会复用同一批缓冲）。
 type Event struct {
 	Raw   []byte // 完整原始帧（含结尾空行）
 	Event []byte // event: 字段值；data-only 帧为空
@@ -21,17 +23,14 @@ type Event struct {
 }
 
 // Observer 在帧原样写出后调用；不得阻塞 relay，不得修改已写出的字节。
+// 回调参数 Event 的各切片仅在回调内有效（见 Event 注释），不得跨帧保留。
 type Observer func(Event)
 
 type Config struct {
 	FlushBytes    int           // 缓冲达到该值立即 flush；0 时默认 4096
-	FlushInterval time.Duration // 距上次 flush 达到该值时 timer flush；0 时默认 1ms
+	FlushInterval time.Duration // 从 relay 启动起以固定间隔触发 timer flush（仅 pending > 0 时实际 flush）；0 时默认 1ms
 	Observer      Observer
 }
-
-// keepAliveMaxInterval 界定"交互式" FlushInterval：不超过该值时，流结束前补一次
-// keep-alive flush，让对端尽快感知流结束；1h 级别的 interval 下这是无谓开销，跳过。
-const keepAliveMaxInterval = 100 * time.Millisecond
 
 type relay struct {
 	ctx context.Context
@@ -40,7 +39,7 @@ type relay struct {
 	cfg Config
 
 	mu       sync.Mutex // 保护 bw/pending/timer
-	pending  int        // 已写入的累计字节（含首事件；阈值判定用，flush 不重置）
+	pending  int        // 累计写入字节；阈值/timer/结束残余 flush 后归零（首事件 latency flush 不归零，其字节继续计入阈值）
 	lastTick time.Time
 
 	timer     *time.Timer
@@ -67,12 +66,11 @@ func Relay(ctx context.Context, dst http.ResponseWriter, src io.Reader, cfg Conf
 
 	err := r.run(&ctxReader{ctx: ctx, r: src})
 	r.stopFlushTimer()
-	// 读循环退出后（timer 已停、goroutine 已退出）再 flush 残余并归还 writer
+	// 读循环退出后（timer 已停、goroutine 已退出）再 flush 残余并归还 writer；
+	// 仅实际仍有缓冲字节时才 flush（首事件已 flush 后无残余，不产生多余 Flush）
 	r.mu.Lock()
-	_ = r.flushLocked()
-	if err == nil && r.cfg.FlushInterval <= keepAliveMaxInterval {
-		// 短 interval 的交互式流：退出前补一次 keep-alive flush
-		r.keepAliveFlushLocked()
+	if r.bw.Buffered() > 0 {
+		_ = r.flushLocked()
 	}
 	r.mu.Unlock()
 	return err
@@ -122,9 +120,6 @@ func (r *relay) run(src io.Reader) error {
 				if err := flushFrame(); err != nil {
 					return err
 				}
-				if err != nil {
-					return r.normalize(err)
-				}
 				continue
 			}
 			if len(line) == 1 && line[0] == '\n' {
@@ -132,9 +127,6 @@ func (r *relay) run(src io.Reader) error {
 				frame.Write(line)
 				if err := flushFrame(); err != nil {
 					return err
-				}
-				if err != nil {
-					return r.normalize(err)
 				}
 				continue
 			}
@@ -212,8 +204,9 @@ func (r *relay) write(p []byte) error {
 	first := r.lastTick.IsZero()
 	r.lastTick = time.Now()
 	if first {
-		// 首事件立即 flush，保证首字节延迟
-		return r.flushLocked()
+		// 首事件立即 flush，保证首字节延迟；不重置 pending——首事件字节仍计入
+		// 阈值，后续小事件可叠加触发一次批量 flush（区分于阈值 flush 的归零语义）
+		return r.flushNoResetLocked()
 	}
 	if r.pending >= r.cfg.FlushBytes {
 		return r.flushLocked()
@@ -247,10 +240,13 @@ func (r *relay) stopFlushTimer() {
 	<-r.timerDone      // 等 timer goroutine 退出后才允许释放 writer
 }
 
-// flushLocked 把缓冲的字节刷到 dst；无缓冲时直接返回（不产生空 Flush）。
-// 错误返回给写路径上报；timer goroutine 与退出路径忽略它（客户端断开不可恢复）。
+// flushLocked 批量 flush（阈值 / timer / 结束残余触发）：pending > 0 时执行
+// bw.Flush + fl.Flush，并把 pending 归零，使事件重新累积批量（spec 规则 2/3）。
+// 不检查 bw.Buffered()：>= 8192B 的帧走 bufio 直写路径时缓冲为空但确实有数据
+// 待 flush，bw.Flush 对空缓冲是廉价 no-op，随后仍需 fl.Flush 把数据推给对端。
+// 错误返回给写路径上报；timer goroutine 与退出路径忽略（客户端断开不可恢复）。
 func (r *relay) flushLocked() error {
-	if r.bw.Buffered() == 0 {
+	if r.pending <= 0 {
 		return nil
 	}
 	if err := r.bw.Flush(); err != nil {
@@ -259,12 +255,17 @@ func (r *relay) flushLocked() error {
 	if r.fl != nil {
 		r.fl.Flush()
 	}
+	r.pending = 0
 	return nil
 }
 
-// keepAliveFlushLocked 无条件触发一次 Flush（即使无缓冲数据）；net/http 下空 Flush 为 no-op。
-func (r *relay) keepAliveFlushLocked() {
+// flushNoResetLocked 只 flush 不重置 pending：首事件 latency flush 专用。
+func (r *relay) flushNoResetLocked() error {
+	if err := r.bw.Flush(); err != nil {
+		return err
+	}
 	if r.fl != nil {
 		r.fl.Flush()
 	}
+	return nil
 }
