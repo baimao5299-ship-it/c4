@@ -29,6 +29,16 @@
     "429": "Rate limited",
     "disabled": "Disabled"
   },
+  "errorType": {
+    "none": "OK",
+    "429": "Rate limited 429",
+    "4xx": "4xx error",
+    "5xx": "5xx error",
+    "network": "Network error",
+    "auth": "Auth failure",
+    "no_account": "No account",
+    "abort": "Aborted"
+  },
   "login": {
     "emptyToken": "Please enter the admin token",
     "hint": "Enter the admin token (admin.token from config.toml)",
@@ -165,6 +175,70 @@
     "oldKeyHint": "The old key is no longer valid",
     "deleteTitle": "Delete group",
     "deleteDesc": "Delete group \"{{name}}\"? Its access key will be invalidated immediately."
+  },
+  "logs": {
+    "title": "Logs",
+    "subtitle": "Query usage logs with filters",
+    "filter": {
+      "groupId": "Group ID",
+      "accountId": "Account ID",
+      "model": "Model",
+      "statusCode": "Status code",
+      "errorType": "Error type",
+      "from": "From",
+      "to": "To",
+      "all": "All",
+      "reset": "Reset"
+    },
+    "table": {
+      "requestId": "Request ID",
+      "createdAt": "Time",
+      "group": "Group",
+      "account": "Account",
+      "model": "Model",
+      "mappedModel": "Mapped model",
+      "format": "Format",
+      "statusCode": "Status code",
+      "errorType": "Error type",
+      "latency": "Latency",
+      "promptTokens": "PT",
+      "completionTokens": "CT",
+      "totalTokens": "TT"
+    },
+    "pagination": {
+      "total": "{{total}} entries",
+      "page": "Page {{page}} / {{pages}}",
+      "prev": "Prev",
+      "next": "Next"
+    },
+    "emptyTitle": "No logs",
+    "emptyDesc": "Adjust the filters and try again"
+  },
+  "stats": {
+    "title": "Stats",
+    "subtitle": "Usage statistics aggregated by time bucket",
+    "from": "From",
+    "to": "To",
+    "granularity": "Granularity",
+    "granularityHour": "Hour",
+    "granularityDay": "Day",
+    "metric": "Metric",
+    "metricRequests": "Requests",
+    "metricTokens": "Tokens",
+    "chartRequestsTitle": "Requests trend",
+    "chartTokensTitle": "Tokens trend",
+    "chartDesc": "Aggregated by time bucket; bar height scaled to the maximum",
+    "table": {
+      "time": "Time",
+      "requests": "Requests",
+      "errors": "Errors",
+      "promptTokens": "PT",
+      "completionTokens": "CT",
+      "totalTokens": "TT",
+      "avgLatency": "Avg latency"
+    },
+    "emptyTitle": "No statistics in this range",
+    "emptyDesc": "Adjust the time range or granularity and try again"
   },
   "placeholder": {
     "underConstruction": "Under construction"
