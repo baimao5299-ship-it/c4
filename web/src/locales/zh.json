@@ -270,7 +270,8 @@
   "datePicker": {
     "placeholder": "选择日期时间",
     "clear": "清除",
-    "time": "时间"
+    "hour": "时",
+    "minute": "分"
   },
   "placeholder": {
     "underConstruction": "建设中"

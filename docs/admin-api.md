@@ -7,9 +7,10 @@
 - **Base URL**：`http://<gateway>/admin`
 - **认证**：所有请求必须带 `Authorization: Bearer <admin_token>`（`config.toml` 的 `admin.token`，或环境变量 `GPM_ADMIN_TOKEN`）。缺失或错误返回 `401`。
 - **Content-Type**：请求体与响应均为 `application/json`（`rotate-key` 等无请求体操作除外）。
-- **错误格式**：非 2xx 响应体为 `{"error": "<消息>"}`。
+- **错误格式**：非 2xx 响应体为 `{"error": "<消息>"}`。404 的消息含缺失资源 id（如 `service: not found: id=999 missing`），便于定位。
 - **ID**：路径参数 `{id}` 为模板/账号/分组的整数 ID。
-- **更新语义**：`PUT` 为**全量替换**——请求体中的字段整体覆盖，未提供的字段清零（仅提供部分字段的 `PUT` 会把缺失字段重置为空/零值）。
+- **更新语义**：`PUT` 为**全量替换**——请求体中的字段整体覆盖，未提供的字段清零（仅提供部分字段的 `PUT` 会把缺失字段重置为空/零值）。批量 `batch-update` 为**部分更新**（只改 `fields` 中提供的字段）。
+- **列表响应**：三个列表端点（templates / accounts / groups）统一返回 `{"total": <满足筛选的总数>, "rows": [...]}`，支持 `limit` / `offset` 分页、筛选参数与白名单 `sort` / `order` 排序（非法 `sort` / `order` → `400`）。
 
 ## 枚举值
 
@@ -73,14 +74,64 @@
 
 > 注意：响应字段为 **Go 默认大写命名**（`ID` / `Name` / `BaseURL`…），请求字段为 snake_case。`Models` / `FormatModels` / `ModelMapping` 为 `null` 时表示空。
 
+### 模板列表
+
+`GET /admin/templates`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `limit` | int | 20 | 每页行数（≤0 视为 20） |
+| `offset` | int | 0 | 分页偏移（<0 视为 0） |
+| `sort` | string | `id` | 白名单：`id` / `name` / `base_url` / `default_format` / `created_at` / `updated_at`；非法值 → `400` |
+| `order` | string | `desc` | `asc` / `desc`；其他值 → `400` |
+| `name` | string | — | 名称模糊匹配（不区分大小写） |
+| `default_format` | string | — | 按默认格式过滤（枚举见上） |
+
+响应 `200`：
+
+```json
+{
+  "total": 2,
+  "rows": [
+    { "ID": 1, "Name": "openai-main", "BaseURL": "https://api.openai.com/v1", "...": "模板对象字段" }
+  ]
+}
+```
+
+### 模板批量操作
+
+`POST /admin/templates/batch-delete`
+
+请求体：`{"ids": [1, 2, 3]}`（1–100 条，重复 id 自动去重）。
+
+| 响应 | 说明 |
+|---|---|
+| `200` | `{"deleted": 3}`（按去重后的条数计）；事务全成或全败 |
+| `400` | `ids` 为空或超过 100 条；`fields` 为空（batch-update） |
+| `404` | 任一 id 不存在：`{"error": "...id=999 missing..."}`（全败，不部分删除） |
+
+`POST /admin/templates/batch-update`
+
+请求体：`{"ids": [1, 2], "fields": {"name": "renamed"}}`。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 否 | 模板名（非空） |
+| `base_url` | string | 否 | 上游地址（合法 URL） |
+| `default_format` | string | 否 | 默认请求格式（枚举见上） |
+| `models` | string[] | 否 | 可服务模型集合 |
+| `model_formats` | object | 否 | 模型级格式覆盖 |
+| `model_mapping` | object | 否 | 模型映射 |
+
+`fields` 必须至少提供一字段；`ids` 中任一 id 不存在 → `404`（事务全败）。成功 `200`：`{"updated": 2}`。
+
 ### 模板其他端点
 
 | 方法/路径 | 说明 | 响应 |
 |---|---|---|
-| `GET /admin/templates` | 列表 | `200`：模板对象数组 |
 | `GET /admin/templates/{id}` | 单个模板 | `200`：模板对象；`404` 不存在 |
 | `PUT /admin/templates/{id}` | 全量更新（字段同创建） | `200`：更新后模板对象 |
-| `DELETE /admin/templates/{id}` | 删除 | `200`：`{"deleted": true}`；仍被账号引用时返回 `500`（DB 外键约束） |
+| `DELETE /admin/templates/{id}` | 删除 | `200`：`{"deleted": true}`；`404` 资源不存在（消息含缺失 id）；仍被账号引用时返回 `500`（DB 外键约束） |
 
 > 模板变更（含 base_url / supported_formats / format_models / model_mapping）通过 invalidate 回调即时生效于调度器快照与上游 SDK 客户端（无需重启）。
 
@@ -151,16 +202,31 @@
 
 `GET /admin/accounts`
 
-响应 `200`：账号视图数组。每个元素为账号对象 + 三个运行时字段（来自调度器内存快照）：
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `limit` | int | 20 | 每页行数 |
+| `offset` | int | 0 | 分页偏移 |
+| `sort` | string | `id` | 白名单：`id` / `name` / `template_id` / `status` / `cooldown_until` / `weight` / `max_concurrency` / `last_used_at` / `created_at` / `updated_at`；非法值 → `400` |
+| `order` | string | `desc` | `asc` / `desc`；其他值 → `400` |
+| `name` | string | — | 名称模糊匹配（不区分大小写） |
+| `status` | string | — | 多值过滤，逗号分隔（如 `active,disabled`）；非法枚举 → `400` |
+| `template_id` | int | — | 按所属模板过滤 |
+
+响应 `200`：`{"total": <总数>, "rows": [...]}`。每个元素为账号对象 + 三个运行时字段（来自调度器内存快照）：
 
 ```json
 {
-  "ID": 1,
-  "Name": "a1",
-  "...": "账号对象字段",
-  "concurrency": 3,
-  "err_rate": 0.05,
-  "err_count": 2
+  "total": 1,
+  "rows": [
+    {
+      "ID": 1,
+      "Name": "a1",
+      "...": "账号对象字段",
+      "concurrency": 3,
+      "err_rate": 0.05,
+      "err_count": 2
+    }
+  ]
 }
 ```
 
@@ -170,13 +236,40 @@
 | `err_rate` | 错误率 EWMA（0.0–1.0，定点 1e6 缩放后输出） |
 | `err_count` | 连续错误计数（决定退避指数） |
 
+### 账号批量操作
+
+`POST /admin/accounts/batch-delete`
+
+请求体：`{"ids": [1, 2]}`（1–100 条，重复自动去重）。
+
+| 响应 | 说明 |
+|---|---|
+| `200` | `{"deleted": 2}`（按去重后的条数计）；事务全成或全败 |
+| `400` | `ids` 为空或超过 100 条 |
+| `404` | 任一 id 不存在：`{"error": "...id=999 missing..."}`（全败） |
+
+`POST /admin/accounts/batch-update`
+
+请求体：`{"ids": [1], "fields": {"status": "disabled", "weight": 50}}`。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 否 | 账号名（非空） |
+| `template_id` | int | 否 | 所属模板 ID（>0） |
+| `upstream_key` | string | 否 | 上游 API key（非空） |
+| `status` | string | 否 | 状态枚举（见上；非法枚举 → `400`） |
+| `weight` | int | 否 | 选号权重（≥0） |
+| `max_concurrency` | int | 否 | 并发上限（≥1） |
+
+`fields` 必须至少提供一字段；`ids` 中任一 id 不存在 → `404`（事务全败）。成功 `200`：`{"updated": 1}`。
+
 ### 账号其他端点
 
 | 方法/路径 | 说明 | 响应 |
 |---|---|---|
 | `GET /admin/accounts/{id}` | 单个账号 | `200`：账号对象；`404` 不存在 |
 | `PUT /admin/accounts/{id}` | 全量更新（字段同创建；`status` 可改为 `disabled` 禁用） | `200`：更新后账号对象 |
-| `DELETE /admin/accounts/{id}` | 删除 | `200`：`{"deleted": true}` |
+| `DELETE /admin/accounts/{id}` | 删除 | `200`：`{"deleted": true}`；`404` 资源不存在（消息含缺失 id） |
 
 ---
 
@@ -203,14 +296,43 @@
 
 > `key` 为**明文分组 key，仅此一次返回**（数据库只存 SHA-256 哈希）。遗失需 `rotate-key` 轮换。
 
+### 分组列表
+
+`GET /admin/groups`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `limit` | int | 20 | 每页行数 |
+| `offset` | int | 0 | 分页偏移 |
+| `sort` | string | `id` | 白名单：`id` / `name` / `created_at` / `updated_at`；非法值 → `400` |
+| `order` | string | `desc` | `asc` / `desc`；其他值 → `400` |
+| `name` | string | — | 名称模糊匹配（不区分大小写） |
+
+响应 `200`：`{"total": <总数>, "rows": [分组对象...]}`（不含明文 key）。
+
+### 分组批量操作
+
+`POST /admin/groups/batch-delete`
+
+请求体：`{"ids": [1, 2]}`（1–100 条，重复自动去重）。
+
+| 响应 | 说明 |
+|---|---|
+| `200` | `{"deleted": 2}`；事务全成或全败；删除前先清理各组注册 key |
+| `400` | `ids` 为空或超过 100 条 |
+| `404` | 任一 id 不存在：`{"error": "...id=999 missing..."}`（全败） |
+
+`POST /admin/groups/batch-update`
+
+请求体：`{"ids": [1], "fields": {"name": "renamed"}}`（`name` 非空，`fields` 必须提供）。任一 id 不存在 → `404`（事务全败）。成功 `200`：`{"updated": 1}`。
+
 ### 分组其他端点
 
 | 方法/路径 | 说明 | 响应 |
 |---|---|---|
-| `GET /admin/groups` | 列表 | `200`：分组对象数组（不含明文 key） |
 | `GET /admin/groups/{id}` | 单个分组 | `200`：分组对象 |
 | `PUT /admin/groups/{id}` | 重命名 | `200`：更新后分组对象 |
-| `DELETE /admin/groups/{id}` | 删除（先删注册 key 再删 DB） | `200`：`{"deleted": true}` |
+| `DELETE /admin/groups/{id}` | 删除（先删注册 key 再删 DB） | `200`：`{"deleted": true}`；`404` 资源不存在（消息含缺失 id） |
 | `PUT /admin/groups/{id}/accounts` | 绑定账号集合 | 请求体 `{"account_ids": [1, 2, 3]}`；`200`：`{"updated": true}` |
 | `POST /admin/groups/{id}/rotate-key` | 轮换分组 key | `200`：`{"key": "gk-<新明文>"}`（旧 key 立即失效） |
 
@@ -301,9 +423,9 @@
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 路径 ID 非法 / 资源仍被引用（删除） |
+| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 |
 | `401` | admin token 缺失或错误 |
-| `404` | 资源不存在 |
+| `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |
 | `500` | 服务端错误（DB 等） |
 
 错误响应体统一为 `{"error": "<消息>"}`。

@@ -4,8 +4,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"slices"
+	"strings"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -29,26 +31,32 @@ type Store interface {
 type TemplateStore interface {
 	CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error)
 	GetTemplate(ctx context.Context, id int64) (*domain.Template, error)
-	ListTemplates(ctx context.Context) ([]*domain.Template, error)
+	ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error)
 	UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error)
 	DeleteTemplate(ctx context.Context, id int64) error
+	DeleteTemplatesBatch(ctx context.Context, ids []int64) error
+	UpdateTemplatesBatch(ctx context.Context, ids []int64, p repository.TemplatePatch) error
 }
 
 type AccountStore interface {
 	CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error)
 	GetAccount(ctx context.Context, id int64) (*domain.Account, error)
-	ListAccounts(ctx context.Context) ([]*domain.Account, error)
+	ListAccounts(ctx context.Context, q repository.ListQuery) ([]*domain.Account, int64, error)
 	UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error)
 	DeleteAccount(ctx context.Context, id int64) error
+	DeleteAccountsBatch(ctx context.Context, ids []int64) error
+	UpdateAccountsBatch(ctx context.Context, ids []int64, p repository.AccountPatch) error
 }
 
 type GroupStore interface {
 	CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error)
 	GetGroup(ctx context.Context, id int64) (*domain.Group, error)
-	ListGroups(ctx context.Context) ([]*domain.Group, error)
+	ListGroups(ctx context.Context, q repository.ListQuery) ([]*domain.Group, int64, error)
 	UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error)
 	DeleteGroup(ctx context.Context, id int64) error
 	SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error
+	DeleteGroupsBatch(ctx context.Context, ids []int64) error
+	UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error
 }
 
 type LogStore interface {
@@ -127,4 +135,109 @@ func validateAccount(a *domain.Account) error {
 		a.MaxConcurrency = 8
 	}
 	return nil
+}
+
+// listSortFields 各资源允许的 sort 白名单（与 repo 层白名单一致，双保险）。
+var listSortFields = map[string][]string{
+	"templates": {"id", "name", "base_url", "created_at", "updated_at"},
+	"accounts":  {"id", "name", "template_id", "status", "cooldown_until", "weight", "max_concurrency", "last_used_at", "created_at", "updated_at"},
+	"groups":    {"id", "name", "created_at", "updated_at"},
+}
+
+// validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。
+func validateListQuery(q repository.ListQuery, sortFields []string) error {
+	if q.Order != "" && q.Order != "asc" && q.Order != "desc" {
+		return ErrInvalidInput
+	}
+	if q.Sort != "" && !slices.Contains(sortFields, q.Sort) {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+// --- 批量操作校验与错误映射 ---
+
+// validateIDs ids 1–100 且去重（handler 已做，service 兜底）。
+func validateIDs(ids []int64) error {
+	if len(ids) == 0 || len(ids) > 100 {
+		return ErrInvalidInput
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			return ErrInvalidInput
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+// validateTemplatePatch 校验批量 patch 提供的字段（nil = 未提供，跳过）。
+// 多格式语义与 validateTemplate 对齐：supported_formats 非空/枚举/去重；
+// format_models 的 key 必须合法枚举且列表非空；两者同批提供时 key 必须
+// ∈ supported_formats（跨字段子集校验，与单 PUT 的 validateTemplate 一致）。
+func validateTemplatePatch(p repository.TemplatePatch) error {
+	if p.Name != nil && *p.Name == "" {
+		return ErrInvalidInput
+	}
+	if p.BaseURL != nil {
+		u, err := url.Parse(*p.BaseURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return ErrInvalidInput
+		}
+	}
+	var supported map[domain.RequestFormat]bool
+	if p.SupportedFormats != nil {
+		if len(*p.SupportedFormats) == 0 {
+			return ErrInvalidInput
+		}
+		supported = make(map[domain.RequestFormat]bool, len(*p.SupportedFormats))
+		for _, f := range *p.SupportedFormats {
+			if !f.Valid() || supported[f] {
+				return ErrInvalidInput
+			}
+			supported[f] = true
+		}
+	}
+	if p.FormatModels != nil {
+		for f, models := range *p.FormatModels {
+			if !f.Valid() || len(models) == 0 {
+				return ErrInvalidInput
+			}
+			if supported != nil && !supported[f] {
+				return ErrInvalidInput
+			}
+		}
+	}
+	return nil
+}
+
+// validateAccountPatch 校验批量 patch 提供的字段（nil = 未提供，跳过）。
+func validateAccountPatch(p repository.AccountPatch) error {
+	if p.Name != nil && *p.Name == "" {
+		return ErrInvalidInput
+	}
+	if p.UpstreamKey != nil && *p.UpstreamKey == "" {
+		return ErrInvalidInput
+	}
+	if p.TemplateID != nil && *p.TemplateID <= 0 {
+		return ErrInvalidInput
+	}
+	if p.Weight != nil && *p.Weight < 0 {
+		return ErrInvalidInput
+	}
+	if p.MaxConcurrency != nil && *p.MaxConcurrency < 1 {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+// mapRepoErr 批量存储错误映射：repository.ErrNotFound → ErrNotFound（保留缺失 id
+// 详情，404 响应带 "id=5 missing"）。其他错误原样返回。
+func mapRepoErr(err error) error {
+	if errors.Is(err, repository.ErrNotFound) {
+		detail := strings.TrimPrefix(err.Error(), repository.ErrNotFound.Error()+": ")
+		return fmt.Errorf("%w: %s", ErrNotFound, detail)
+	}
+	return err
 }

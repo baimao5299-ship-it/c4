@@ -32,7 +32,7 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
 	row, err := r.client.Group.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, errMissingID(err, id)
 	}
 	return &domain.Group{
 		ID: row.ID, Name: row.Name, KeyHash: row.KeyHash, KeyPrefix: row.KeyPrefix,
@@ -40,10 +40,28 @@ func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, erro
 	}, nil
 }
 
-func (r *GroupRepo) ListGroups(ctx context.Context) ([]*domain.Group, error) {
-	rows, err := r.client.Group.Query().Order(ent.Asc(group.FieldID)).All(ctx)
+func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Group, int64, error) {
+	pred := r.client.Group.Query()
+	if q.Name != "" {
+		pred = pred.Where(group.NameContainsFold(q.Name))
+	}
+	total, err := pred.Count(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	order, err := q.sortOrder(groupSortFields)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
 	out := make([]*domain.Group, 0, len(rows))
 	for _, row := range rows {
@@ -52,7 +70,7 @@ func (r *GroupRepo) ListGroups(ctx context.Context) ([]*domain.Group, error) {
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
 	}
-	return out, nil
+	return out, int64(total), nil
 }
 
 func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
@@ -69,7 +87,10 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 }
 
 func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
-	return r.client.Group.DeleteOneID(id).Exec(ctx)
+	if err := r.client.Group.DeleteOneID(id).Exec(ctx); err != nil {
+		return errMissingID(err, id)
+	}
+	return nil
 }
 
 // SetAccounts 全量替换分组账号成员（规格 §8）。

@@ -360,6 +360,154 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.expectDone(t)
 }
 
+// TestGetXxxMissing 单资源 Get 缺 id：空结果集走真实 ent Only 路径 →
+// *NotFoundError → errMissingID 映射为 repository.ErrNotFound（消息含缺失 id）。
+// 注意刻意用空行（而非 WillReturnError）：生产驱动对无命中返回空集而非错误，
+// 只有空集才能触发 ent 的 NotFoundError（驱动错误应原样透传、不伪装 404）。
+func TestGetTemplateMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectQuery(q(`FROM "templates" WHERE`)).
+		WithArgs(int64(999)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}))
+	_, err := tr.repos.Templates.GetTemplate(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestGetAccountMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(999)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}))
+	_, err := tr.repos.Accounts.GetAccount(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestGetGroupMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectQuery(q(`FROM "groups" WHERE`)).
+		WithArgs(int64(999)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}))
+	_, err := tr.repos.Groups.GetGroup(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+// TestDeleteXxxMissing 单资源 Delete 缺 id：DeleteOneID.Exec 对 0 行删除返回
+// *NotFoundError（ent 生成：n==0 → NotFoundError）→ errMissingID 映射为
+// repository.ErrNotFound（消息含缺失 id，与批量/Get 路径同格式）。与
+// TestGetXxxMissing 同基座（真实 ent client + pgxmock）。
+func TestDeleteTemplateMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
+		WithArgs(int64(999)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	err := tr.repos.Templates.DeleteTemplate(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestDeleteAccountMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectExec(q(`DELETE FROM "accounts"`)).
+		WithArgs(int64(999)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	err := tr.repos.Accounts.DeleteAccount(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+func TestDeleteGroupMissing(t *testing.T) {
+	tr := newRepos(t)
+	tr.pool.ExpectExec(q(`DELETE FROM "groups"`)).
+		WithArgs(int64(999)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	err := tr.repos.Groups.DeleteGroup(ctx(), 999)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+	tr.expectDone(t)
+}
+
+// listSQL 匹配 List 查询的 SQL 片段（含 ORDER BY/LIMIT/OFFSET 断言）。
+func listSQL(order string) string {
+	return "(?i)FROM \"templates\".*ORDER BY \"templates\"\\." + order + "( LIMIT \\d+)?( OFFSET \\d+)?"
+}
+
+func TestListTemplatesQuery(t *testing.T) {
+	// 1) name 模糊：Count 与 List 同条件（PG 下 NameContainsFold → ILIKE）。
+	t.Run("filter name", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectQuery(q(`SELECT COUNT("templates"."id") FROM "templates"`)).
+			WithArgs("%main%").
+			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
+		tr.pool.ExpectQuery(listSQL(`"id" DESC LIMIT 20`)).
+			WithArgs("%main%").
+			WillReturnRows(pgxmock.NewRows([]string{"id", "name", "base_url", "supported_formats", "models",
+				"format_models", "model_mapping", "created_at", "updated_at"}).
+				AddRow(int64(1), "openai-main", "https://api.openai.com/v1",
+					[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
+					[]byte(`{"openai-responses":["o3"]}`),
+					[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				AddRow(int64(2), "openai-alt", "https://api.openai.com/v1",
+					[]byte(`["openai-chat"]`), []byte(`["gpt-4o-mini"]`), []byte(`{}`), []byte(`{}`),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+		rows, total, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{
+			Name: "main",
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(2), total, "Count 与 List 同条件")
+		require.Len(t, rows, 2)
+		require.Equal(t, "openai-main", rows[0].Name)
+		tr.expectDone(t)
+	})
+
+	// 2) 分页 + 排序：Sort=name Order=asc → ORDER BY name ASC，Limit=50 Offset=20 内联。
+	t.Run("pagination and sort", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectQuery(q(`SELECT COUNT("templates"."id") FROM "templates"`)).
+			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
+		tr.pool.ExpectQuery(`(?i)FROM "templates".*ORDER BY "templates"\."name" ASC LIMIT 50 OFFSET 20`).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "name", "base_url", "supported_formats", "models",
+				"format_models", "model_mapping", "created_at", "updated_at"}).
+				AddRow(int64(2), "openai-alt", "https://api.openai.com/v1",
+					[]byte(`["openai-chat"]`), []byte(`["gpt-4o-mini"]`), []byte(`{}`), []byte(`{}`),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				AddRow(int64(1), "openai-main", "https://api.openai.com/v1",
+					[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
+					[]byte(`{"openai-responses":["o3"]}`),
+					[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+
+		rows, total, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{
+			Sort: "name", Order: "asc", Offset: 20, Limit: 50,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(2), total)
+		require.Len(t, rows, 2)
+		require.Equal(t, "openai-alt", rows[0].Name, "mock 行序即返回序")
+		tr.expectDone(t)
+	})
+
+	// 3) 非法 sort → ErrInvalidSort（Count 已执行，List 不执行）。
+	t.Run("invalid sort rejected", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectQuery(q(`SELECT COUNT("templates"."id") FROM "templates"`)).
+			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(3)))
+		_, _, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{Sort: "bogus"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "sort")
+		tr.expectDone(t)
+	})
+}
+
 func TestLogsAndStats(t *testing.T) {
 	tr := newRepos(t)
 
@@ -431,5 +579,82 @@ func TestLogsAndStats(t *testing.T) {
 	require.Len(t, scanned, 1)
 	require.Equal(t, int64(5), scanned[0].RequestCount, "upsert accumulates")
 	require.Equal(t, int64(300), scanned[0].TotalTokens)
+	tr.expectDone(t)
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: 批量删除/更新（ent.Tx 事务，全成或全败）
+// ---------------------------------------------------------------------------
+
+func TestDeleteTemplatesBatchRollback(t *testing.T) {
+	// 场景 1：存在性检查缺失 id → ErrNotFound（含缺失 id），且无任何 DELETE 执行。
+	t.Run("missing id returns ErrNotFound without DELETE", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		// 存在性检查：SELECT id WHERE id IN (1,2,3) 只返回 2 行（id=3 缺失）
+		tr.pool.ExpectQuery(q(`SELECT "templates"."id" FROM "templates" WHERE`)).
+			WithArgs(int64(1), int64(2), int64(3)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectRollback()
+
+		err := tr.repos.Templates.DeleteTemplatesBatch(ctx(), []int64{1, 2, 3})
+		require.ErrorIs(t, err, repository.ErrNotFound)
+		require.Contains(t, err.Error(), "id=3 missing")
+		tr.expectDone(t)
+	})
+
+	// 场景 2：存在性通过 → 逐个 DELETE → 中途 DB 错误 → 整体回滚（无 Commit）。
+	t.Run("midway db error rolls back without commit", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		tr.pool.ExpectQuery(q(`SELECT "templates"."id" FROM "templates" WHERE`)).
+			WithArgs(int64(1), int64(2)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
+			WithArgs(int64(1)).
+			WillReturnResult(pgxmock.NewResult("DELETE", 1))
+		tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
+			WithArgs(int64(2)).
+			WillReturnError(errors.New("midway db error"))
+		tr.pool.ExpectRollback()
+
+		err := tr.repos.Templates.DeleteTemplatesBatch(ctx(), []int64{1, 2})
+		require.Error(t, err)
+		require.NotErrorIs(t, err, repository.ErrNotFound, "DB 错误不应伪装成 not found")
+		tr.expectDone(t)
+	})
+}
+
+func TestUpdateAccountsBatch(t *testing.T) {
+	tr := newRepos(t)
+	name := "renamed-acc"
+	weight := 50
+	st := domain.StatusActive
+
+	tr.pool.ExpectBegin()
+	// 存在性检查：ids 全部存在
+	tr.pool.ExpectQuery(q(`SELECT "accounts"."id" FROM "accounts" WHERE`)).
+		WithArgs(int64(2), int64(5)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)).AddRow(int64(5)))
+	// 每个 id：UPDATE 只含 patch 提供的字段（name/status/weight + updated_at），
+	// 无 template_id/upstream_key/max_concurrency —— WithArgs 精确断言 Set 链列。
+	tr.pool.ExpectExec(q(`UPDATE "accounts" SET`)).
+		WithArgs(name, account.Status("active"), weight, pgxmock.AnyArg(), int64(2)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(2)).
+		WillReturnRows(accountRow("active"))
+	tr.pool.ExpectExec(q(`UPDATE "accounts" SET`)).
+		WithArgs(name, account.Status("active"), weight, pgxmock.AnyArg(), int64(5)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(5)).
+		WillReturnRows(accountRow("active"))
+	tr.pool.ExpectCommit()
+
+	err := tr.repos.Accounts.UpdateAccountsBatch(ctx(), []int64{2, 5}, repository.AccountPatch{
+		Name: &name, Status: &st, Weight: &weight,
+	})
+	require.NoError(t, err)
 	tr.expectDone(t)
 }

@@ -11,11 +11,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 模板列表 */
+        /** 模板列表（分页/筛选/排序） */
         get: operations["GetTemplates"];
         put?: never;
         /** 创建模板 */
         post: operations["PostTemplates"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/templates/batch-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量删除模板（事务，全成或全败） */
+        post: operations["PostTemplatesBatchDelete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/templates/batch-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量更新模板（fields 为任意字段子集） */
+        post: operations["PostTemplatesBatchUpdate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -47,11 +81,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 账号列表（含运行时视图） */
+        /** 账号列表（分页/筛选/排序，含运行时视图） */
         get: operations["GetAccounts"];
         put?: never;
         /** 创建账号 */
         post: operations["PostAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/accounts/batch-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量删除账号（事务，全成或全败） */
+        post: operations["PostAccountsBatchDelete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/accounts/batch-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量更新账号（fields 为任意字段子集） */
+        post: operations["PostAccountsBatchUpdate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -83,10 +151,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** 分组列表（分页/筛选/排序） */
         get: operations["GetGroups"];
         put?: never;
         /** 创建分组（响应含明文 key，仅此一次） */
         post: operations["PostGroups"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/batch-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量删除分组（事务，全成或全败） */
+        post: operations["PostGroupsBatchDelete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/batch-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量更新分组（fields 为任意字段子集） */
+        post: operations["PostGroupsBatchUpdate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -269,6 +372,21 @@ export interface components {
             err_rate?: number;
             err_count?: number;
         };
+        TemplateListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Template"][];
+        };
+        AccountListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["AccountView"][];
+        };
+        GroupListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Group"][];
+        };
         GroupCreate: {
             name: string;
         };
@@ -292,6 +410,53 @@ export interface components {
         };
         SetGroupAccountsBody: {
             account_ids: number[];
+        };
+        BatchDeleteBody: {
+            ids: number[];
+        };
+        BatchUpdateTemplatesBody: {
+            ids: number[];
+            fields: components["schemas"]["TemplatePatch"];
+        };
+        TemplatePatch: {
+            name?: string;
+            base_url?: string;
+            /** @enum {string} */
+            default_format?: "openai-chat" | "openai-responses" | "anthropic";
+            models?: string[];
+            model_formats?: {
+                [key: string]: string;
+            };
+            model_mapping?: {
+                [key: string]: string;
+            };
+        };
+        AccountPatch: {
+            name?: string;
+            /** Format: int64 */
+            template_id?: number;
+            upstream_key?: string;
+            /** @enum {string} */
+            status?: "active" | "unhealthy" | "429" | "disabled";
+            weight?: number;
+            max_concurrency?: number;
+        };
+        GroupPatch: {
+            name?: string;
+        };
+        BatchUpdateAccountsBody: {
+            ids: number[];
+            fields: components["schemas"]["AccountPatch"];
+        };
+        BatchUpdateGroupsBody: {
+            ids: number[];
+            fields: components["schemas"]["GroupPatch"];
+        };
+        BatchDeleteResponse: {
+            deleted: number;
+        };
+        BatchUpdateResponse: {
+            updated: number;
         };
         UsageLog: {
             /** Format: int64 */
@@ -369,20 +534,27 @@ export type $defs = Record<string, never>;
 export interface operations {
     GetTemplates: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+                default_format?: "openai-chat" | "openai-responses" | "anthropic";
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 模板数组 */
+            /** @description 模板列表 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Template"][];
+                    "application/json": components["schemas"]["TemplateListResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -408,6 +580,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Template"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostTemplatesBatchDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchDeleteBody"];
+            };
+        };
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchDeleteResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostTemplatesBatchUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchUpdateTemplatesBody"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchUpdateResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -488,20 +710,28 @@ export interface operations {
     };
     GetAccounts: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+                status?: string;
+                template_id?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 账号视图数组 */
+            /** @description 账号视图列表 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AccountView"][];
+                    "application/json": components["schemas"]["AccountListResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -527,6 +757,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Account"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostAccountsBatchDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchDeleteBody"];
+            };
+        };
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchDeleteResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostAccountsBatchUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchUpdateAccountsBody"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchUpdateResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -607,20 +887,26 @@ export interface operations {
     };
     GetGroups: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 分组数组 */
+            /** @description 分组列表 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Group"][];
+                    "application/json": components["schemas"]["GroupListResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -646,6 +932,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreateGroupResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostGroupsBatchDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchDeleteBody"];
+            };
+        };
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchDeleteResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostGroupsBatchUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchUpdateGroupsBody"];
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchUpdateResponse"];
                 };
             };
             default: components["responses"]["Error"];

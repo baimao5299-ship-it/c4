@@ -27,21 +27,39 @@ func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (
 func (r *TemplateRepo) GetTemplate(ctx context.Context, id int64) (*domain.Template, error) {
 	row, err := r.client.Template.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, errMissingID(err, id)
 	}
 	return toDomainTemplate(row), nil
 }
 
-func (r *TemplateRepo) ListTemplates(ctx context.Context) ([]*domain.Template, error) {
-	rows, err := r.client.Template.Query().Order(ent.Asc(template.FieldID)).All(ctx)
+func (r *TemplateRepo) ListTemplates(ctx context.Context, q ListQuery) ([]*domain.Template, int64, error) {
+	pred := r.client.Template.Query()
+	if q.Name != "" {
+		pred = pred.Where(template.NameContainsFold(q.Name))
+	}
+	total, err := pred.Count(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	order, err := q.sortOrder(templateSortFields)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	if err != nil {
+		return nil, 0, err
 	}
 	out := make([]*domain.Template, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toDomainTemplate(row))
 	}
-	return out, nil
+	return out, int64(total), nil
 }
 
 func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
@@ -59,7 +77,10 @@ func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (
 }
 
 func (r *TemplateRepo) DeleteTemplate(ctx context.Context, id int64) error {
-	return r.client.Template.DeleteOneID(id).Exec(ctx)
+	if err := r.client.Template.DeleteOneID(id).Exec(ctx); err != nil {
+		return errMissingID(err, id)
+	}
+	return nil
 }
 
 // formatsToStrings 领域格式数组 → ent 字符串数组。
