@@ -53,24 +53,25 @@ function toForm(t: Template): FormState {
   return {
     name: t.Name ?? '',
     base_url: t.BaseURL ?? '',
-    default_format: t.DefaultFormat ?? 'openai-chat',
+    default_format: (t.SupportedFormats?.[0] ?? 'openai-chat') as RequestFormat,
     modelsText: (t.Models ?? []).join(', '),
-    model_formats: Object.entries(t.ModelFormats ?? {}).map(([key, value]) => ({ key, value })),
+    model_formats: Object.entries(t.FormatModels ?? {}).map(([key, value]) => ({ key, value: value[0] ?? 'openai-chat' })),
     model_mapping: Object.entries(t.ModelMapping ?? {}).map(([key, value]) => ({ key, value })),
   }
 }
 
 function toBody(f: FormState): TemplateCreate {
-  const model_formats: Record<string, RequestFormat> = {}
-  for (const r of f.model_formats) if (r.key.trim()) model_formats[r.key.trim()] = r.value as RequestFormat
+  // 新契约 format_models 为 模型 → 格式列表；旧页面每模型单格式，兼容为单元素数组（Task 3/4 改多格式 UI）。
+  const format_models: Record<string, string[]> = {}
+  for (const r of f.model_formats) if (r.key.trim()) format_models[r.key.trim()] = [r.value.trim()]
   const model_mapping: Record<string, string> = {}
   for (const r of f.model_mapping) if (r.key.trim() && r.value.trim()) model_mapping[r.key.trim()] = r.value.trim()
   return {
     name: f.name.trim(),
     base_url: f.base_url.trim(),
-    default_format: f.default_format,
+    supported_formats: [f.default_format],
     models: f.modelsText.split(',').map(s => s.trim()).filter(Boolean),
-    model_formats: f.model_formats.length ? model_formats : undefined,
+    format_models: f.model_formats.length ? format_models : undefined,
     model_mapping: f.model_mapping.length ? model_mapping : undefined,
   }
 }
@@ -82,7 +83,7 @@ function FormatBadge({ format }: { format?: RequestFormat }) {
 export default function Templates() {
   const { t: tr } = useTranslation()
   const qc = useQueryClient()
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates })
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates() })
 
   // —— 创建/编辑对话框 ——
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -148,7 +149,7 @@ export default function Templates() {
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
-      ) : (data ?? []).length === 0 ? (
+      ) : (data?.rows ?? []).length === 0 ? (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <Boxes className="size-10" />
@@ -174,23 +175,23 @@ export default function Templates() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(data ?? []).map(t => {
+              {(data?.rows ?? []).map(t => {
                 const models = commaList(t.Models)
-                const formats = Object.entries(t.ModelFormats ?? {})
+                const formats = Object.entries(t.FormatModels ?? {})
                 const mappings = Object.entries(t.ModelMapping ?? {})
                 return (
                   <TableRow key={t.ID}>
                     <TableCell className="tabular-nums">{t.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={t.Name}>{t.Name}</TableCell>
                     <TableCell className="max-w-52 truncate font-mono text-xs" title={t.BaseURL}>{t.BaseURL}</TableCell>
-                    <TableCell><FormatBadge format={t.DefaultFormat} /></TableCell>
+                    <TableCell><FormatBadge format={t.SupportedFormats?.[0]} /></TableCell>
                     <TableCell className="max-w-40 truncate" title={models.full || undefined}>{models.text}</TableCell>
                     <TableCell>
                       {formats.length === 0 ? '—' : (
                         <div className="flex max-w-56 flex-wrap gap-1">
                           {formats.slice(0, 3).map(([k, v]) => (
-                            <Badge key={k} variant="outline" className="font-mono text-xs" title={`${k} → ${FORMAT_LABELS[v]}`}>
-                              {truncate(k, 12)}→{FORMAT_LABELS[v]}
+                            <Badge key={k} variant="outline" className="font-mono text-xs" title={`${k} → ${FORMAT_LABELS[v[0] as RequestFormat]}`}>
+                              {truncate(k, 12)}→{FORMAT_LABELS[v[0] as RequestFormat]}
                             </Badge>
                           ))}
                           {formats.length > 3 && <Badge variant="outline">+{formats.length - 3}</Badge>}

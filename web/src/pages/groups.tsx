@@ -23,9 +23,9 @@ type Group = components['schemas']['Group']
 export default function Groups() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['groups'], queryFn: api.listGroups })
-  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts })
-  const accounts = accountsQ.data ?? []
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups() })
+  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts() })
+  const accounts = accountsQ.data?.rows ?? []
 
   // —— 创建（form → 明文 key 展示）——
   const [createOpen, setCreateOpen] = useState(false)
@@ -106,7 +106,7 @@ export default function Groups() {
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
-      ) : (data ?? []).length === 0 ? (
+      ) : (data?.rows ?? []).length === 0 ? (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <FolderOpen className="size-10" />
@@ -129,7 +129,7 @@ export default function Groups() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(data ?? []).map(g => (
+              {(data?.rows ?? []).map(g => (
                 <TableRow key={g.ID}>
                   <TableCell className="tabular-nums">{g.ID}</TableCell>
                   <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>

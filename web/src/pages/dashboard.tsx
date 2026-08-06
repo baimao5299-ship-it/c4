@@ -19,11 +19,11 @@ const fadeUp = {
 export default function Dashboard() {
   const { t } = useTranslation()
   // 账号运行时视图 10s 轮询；模板/分组仅加载一次（数量统计）。
-  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts, refetchInterval: 10_000 })
-  const templatesQ = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates })
-  const groupsQ = useQuery({ queryKey: ['groups'], queryFn: api.listGroups })
+  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts(), refetchInterval: 10_000 })
+  const templatesQ = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates() })
+  const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups() })
 
-  const accounts = accountsQ.data ?? []
+  const accounts = accountsQ.data?.rows ?? []
   const statusCounts = {
     active: accounts.filter(a => a.Status === 'active').length,
     unhealthy: accounts.filter(a => a.Status === 'unhealthy').length,
@@ -53,8 +53,8 @@ export default function Dashboard() {
 
   const totalCards = [
     { key: 'accounts', labelKey: 'dashboard.totalCards.accounts', value: accounts.length, icon: Users },
-    { key: 'templates', labelKey: 'dashboard.totalCards.templates', value: templatesQ.data?.length ?? 0, icon: Boxes },
-    { key: 'groups', labelKey: 'dashboard.totalCards.groups', value: groupsQ.data?.length ?? 0, icon: FolderOpen },
+    { key: 'templates', labelKey: 'dashboard.totalCards.templates', value: templatesQ.data?.rows.length ?? 0, icon: Boxes },
+    { key: 'groups', labelKey: 'dashboard.totalCards.groups', value: groupsQ.data?.rows.length ?? 0, icon: FolderOpen },
   ] as const
 
   if (accountsQ.isError) {

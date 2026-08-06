@@ -83,11 +83,11 @@ export default function Accounts() {
   // 运行时视图 10s 轮询。
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['accounts'],
-    queryFn: api.listAccounts,
+    queryFn: () => api.listAccounts(),
     refetchInterval: 10_000,
   })
-  const templatesQ = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates })
-  const templates = templatesQ.data ?? []
+  const templatesQ = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates() })
+  const templates = templatesQ.data?.rows ?? []
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AccountView | null>(null)
@@ -152,7 +152,7 @@ export default function Accounts() {
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
-      ) : (data ?? []).length === 0 ? (
+      ) : (data?.rows ?? []).length === 0 ? (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
           <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <Users className="size-10" />
@@ -180,7 +180,7 @@ export default function Accounts() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(data ?? []).map(a => (
+              {(data?.rows ?? []).map(a => (
                 <TableRow key={a.ID}>
                   <TableCell className="tabular-nums">{a.ID}</TableCell>
                   <TableCell className="max-w-32 truncate" title={a.Name}>{a.Name}</TableCell>
