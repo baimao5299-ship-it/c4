@@ -306,4 +306,32 @@ func TestGetGroupsSortInvalid(t *testing.T) {
 	require.Contains(t, errBody, "error", "must be ErrorResponse JSON")
 }
 
+// TestSingleResourceMissingID 单资源 GET/DELETE 缺 id → 404，且响应体消息
+// 含缺失 id（与批量 404 同语义；Minor T5-2 清账：handler fake 的 Get/Delete
+// 需返回带 id 错误，此前仅状态码断言/缺失）。
+func TestSingleResourceMissingID(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/admin/templates/999"},
+		{http.MethodDelete, "/admin/templates/999"},
+		{http.MethodGet, "/admin/accounts/999"},
+		{http.MethodDelete, "/admin/accounts/999"},
+		{http.MethodGet, "/admin/groups/999"},
+		{http.MethodDelete, "/admin/groups/999"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			rec := do(tc.method, tc.path, "")
+			require.Equal(t, 404, rec.Code, "%s %s: %s", tc.method, tc.path, rec.Body.String())
+			var errBody map[string]any
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+			errMsg, ok := errBody["error"].(string)
+			require.True(t, ok, "error must be string: %s", rec.Body.String())
+			require.Contains(t, errMsg, "id=999 missing", "404 消息含缺失 id: %s", rec.Body.String())
+		})
+	}
+}
+
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

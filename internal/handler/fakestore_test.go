@@ -37,6 +37,12 @@ func newFakeStore() *fakeStore {
 
 var _ service.Store = (*fakeStore)(nil)
 
+// missingErr 模拟真实 repo 单资源缺 id 错误（与批量 fake 同格式：
+// repository.ErrNotFound 包装，service mapRepoErr 据此映射 404 含 id）。
+func missingErr(id int64) error {
+	return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+}
+
 func (f *fakeStore) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -52,7 +58,7 @@ func (f *fakeStore) GetTemplate(ctx context.Context, id int64) (*domain.Template
 	defer f.mu.Unlock()
 	t, ok := f.tpls[id]
 	if !ok {
-		return nil, service.ErrNotFound
+		return nil, missingErr(id)
 	}
 	c := *t
 	return &c, nil
@@ -80,6 +86,9 @@ func (f *fakeStore) UpdateTemplate(ctx context.Context, t *domain.Template) (*do
 func (f *fakeStore) DeleteTemplate(ctx context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, ok := f.tpls[id]; !ok {
+		return missingErr(id)
+	}
 	delete(f.tpls, id)
 	return nil
 }
@@ -99,7 +108,7 @@ func (f *fakeStore) GetAccount(ctx context.Context, id int64) (*domain.Account, 
 	defer f.mu.Unlock()
 	a, ok := f.accs[id]
 	if !ok {
-		return nil, service.ErrNotFound
+		return nil, missingErr(id)
 	}
 	c := *a
 	return &c, nil
@@ -127,6 +136,9 @@ func (f *fakeStore) UpdateAccount(ctx context.Context, a *domain.Account) (*doma
 func (f *fakeStore) DeleteAccount(ctx context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, ok := f.accs[id]; !ok {
+		return missingErr(id)
+	}
 	delete(f.accs, id)
 	return nil
 }
@@ -147,7 +159,7 @@ func (f *fakeStore) GetGroup(ctx context.Context, id int64) (*domain.Group, erro
 	defer f.mu.Unlock()
 	g, ok := f.groups[id]
 	if !ok {
-		return nil, service.ErrNotFound
+		return nil, missingErr(id)
 	}
 	c := *g
 	return &c, nil
@@ -175,6 +187,9 @@ func (f *fakeStore) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 func (f *fakeStore) DeleteGroup(ctx context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, ok := f.groups[id]; !ok {
+		return missingErr(id)
+	}
 	delete(f.groups, id)
 	return nil
 }
