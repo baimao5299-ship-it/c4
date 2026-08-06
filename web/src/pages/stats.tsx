@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { api } from '@/App'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { DateTimePicker } from '@/components/ui/date-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -67,65 +69,6 @@ function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[]
   return [...map.values()].sort((a, b) => a.time.localeCompare(b.time))
 }
 
-// 轻量自绘 SVG 柱状图（无第三方图表依赖）：rect 高度按最大值缩放，
-// 0/50%/100% 网格线 + 稀疏横轴标签（约每 n/8 个桶一个）。
-// 桶宽策略：桶多时按槽宽比例自适应（64%），桶少时固定上限 BAR_W_MAX +
-// 等距 gap，整体居中，避免 1-3 个桶撑满全宽变成粗柱。
-function BarChart({ rows, metric, ariaLabel }: { rows: BucketRow[]; metric: Metric; ariaLabel: string }) {
-  const W = 760, H = 200, PL = 12, PR = 12, PT = 16, PB = 30
-  const plotW = W - PL - PR
-  const plotH = H - PT - PB
-  const n = rows.length
-  const values = rows.map(r => (metric === 'requests' ? r.RequestCount : r.TotalTokens))
-  const max = Math.max(1, ...values)
-  const step = Math.max(1, Math.ceil(n / 8))
-  const BAR_W_MAX = 44, BAR_GAP = 6
-  const slot = plotW / n
-  const barW = Math.min(slot * 0.64, BAR_W_MAX)
-  const sparse = slot * 0.64 > BAR_W_MAX // 桶少 → 固定柱宽 + gap
-  const contentW = sparse ? n * barW + (n - 1) * BAR_GAP : plotW
-  const startX = PL + (plotW - contentW) / 2
-  const barX = (i: number) =>
-    sparse ? startX + i * (barW + BAR_GAP) : startX + i * slot + (slot - barW) / 2
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full text-foreground" role="img" aria-label={ariaLabel}>
-      {[0, 0.5, 1].map(f => (
-        <line
-          key={f}
-          x1={PL} x2={W - PR}
-          y1={PT + plotH * (1 - f)} y2={PT + plotH * (1 - f)}
-          stroke="currentColor" strokeOpacity={f === 0 ? 0.35 : 0.12} strokeWidth={1}
-        />
-      ))}
-      <text x={PL} y={PT - 4} fontSize={10} fill="currentColor" opacity={0.6}>{max}</text>
-      {rows.map((r, i) => {
-        const h = (values[i] / max) * plotH
-        return (
-          <rect
-            key={r.time}
-            x={barX(i)}
-            y={PT + plotH - h}
-            width={barW}
-            height={values[i] === 0 ? 0 : Math.max(h, 2)}
-            rx={2}
-            fill="currentColor" opacity={0.85}
-          >
-            {/* 原生 title 悬停提示：桶标签 + 数值（均为非翻译文案） */}
-            <title>{`${r.label} · ${values[i]}`}</title>
-          </rect>
-        )
-      })}
-      {rows.map((r, i) =>
-        i % step === 0 ? (
-          <text key={r.time} x={barX(i) + barW / 2} y={H - 10} textAnchor="middle" fontSize={10} fill="currentColor" opacity={0.6}>
-            {r.label}
-          </text>
-        ) : null
-      )}
-    </svg>
-  )
-}
-
 export default function Stats() {
   const { t } = useTranslation()
   const [range, setRange] = useState(defaultRange)
@@ -145,7 +88,17 @@ export default function Stats() {
   const avgLatency = (r: BucketRow) =>
     r.RequestCount > 0 ? `${Math.round(r.TotalLatencyMS / r.RequestCount)} ms` : '—'
 
-  const metricLabel = t(metric === 'requests' ? 'stats.metricRequests' : 'stats.metricTokens')
+  // 主题色走 --chart-* 变量（ChartStyle 注入 --color-requests / --color-tokens）。
+  const chartConfig = {
+    requests: { label: t('stats.metricRequests'), color: 'var(--chart-1)' },
+    tokens: { label: t('stats.metricTokens'), color: 'var(--chart-2)' },
+  } satisfies ChartConfig
+
+  // 图表只消费 label + 指标值两列，dataKey 与 chartConfig 键对齐（官方示例写法）。
+  const chartData = useMemo(
+    () => rows.map(r => ({ label: r.label, requests: r.RequestCount, tokens: r.TotalTokens })),
+    [rows]
+  )
 
   return (
     <div className="space-y-4">
@@ -196,7 +149,7 @@ export default function Stats() {
           {isError ? (
             <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
           ) : isLoading ? (
-            <Skeleton className="h-52 w-full" />
+            <Skeleton className="h-[300px] w-full" />
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <BarChart3 className="size-10" />
@@ -204,7 +157,31 @@ export default function Stats() {
               <p className="text-sm">{t('stats.emptyDesc')}</p>
             </div>
           ) : (
-            <BarChart rows={rows} metric={metric} ariaLabel={metricLabel} />
+            <ChartContainer config={chartConfig} className="h-[300px] w-full">
+              {metric === 'requests' ? (
+                <BarChart accessibilityLayer data={chartData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="requests" fill="var(--color-requests)" radius={4} />
+                </BarChart>
+              ) : (
+                <AreaChart accessibilityLayer data={chartData}>
+                  <defs>
+                    <linearGradient id="fillTokens" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-tokens)" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area dataKey="tokens" type="natural" fill="url(#fillTokens)" stroke="var(--color-tokens)" strokeWidth={2} />
+                </AreaChart>
+              )}
+            </ChartContainer>
           )}
         </CardContent>
       </Card>
