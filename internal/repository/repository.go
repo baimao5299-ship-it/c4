@@ -132,6 +132,26 @@ func (r *Repos) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupPatch
 	return r.Groups.UpdateGroupsBatch(ctx, ids, p)
 }
 
+func (r *Repos) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {
+	return r.Rules.ListRules(ctx, enabled)
+}
+
+func (r *Repos) CreateRule(ctx context.Context, rl domain.Rule) (int64, error) {
+	return r.Rules.CreateRule(ctx, rl)
+}
+
+func (r *Repos) UpdateRule(ctx context.Context, rl domain.Rule) error {
+	return r.Rules.UpdateRule(ctx, rl)
+}
+
+func (r *Repos) DeleteRule(ctx context.Context, id int64) error {
+	return r.Rules.DeleteRule(ctx, id)
+}
+
+func (r *Repos) CountRules(ctx context.Context) (int64, error) {
+	return r.Rules.CountRules(ctx)
+}
+
 func (r *Repos) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
 	return r.Logs.QueryLogs(ctx, q)
 }

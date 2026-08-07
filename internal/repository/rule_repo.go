@@ -3,6 +3,9 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+
+	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
@@ -44,6 +47,9 @@ func (r *RuleRepo) CreateRule(ctx context.Context, rl domain.Rule) (int64, error
 		SetWhen(whenToMap(rl.When)).SetThen(thenToMap(rl.Then)).
 		Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return 0, fmt.Errorf("%w: priority=%d or name=%q", ErrConflict, rl.Priority, rl.Name)
+		}
 		return 0, err
 	}
 	return row.ID, nil
@@ -54,7 +60,13 @@ func (r *RuleRepo) UpdateRule(ctx context.Context, rl domain.Rule) error {
 		SetName(rl.Name).SetEnabled(rl.Enabled).SetPriority(rl.Priority).
 		SetWhen(whenToMap(rl.When)).SetThen(thenToMap(rl.Then)).
 		Save(ctx)
-	return err
+	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return fmt.Errorf("%w: priority=%d or name=%q", ErrConflict, rl.Priority, rl.Name)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *RuleRepo) DeleteRule(ctx context.Context, id int64) error {

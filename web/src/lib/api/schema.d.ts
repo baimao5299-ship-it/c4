@@ -252,6 +252,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 规则列表（enabled 过滤，priority 升序） */
+        get: operations["ListRules"];
+        put?: never;
+        /** 创建规则 */
+        post: operations["CreateRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新规则（fields 任意子集，未提供字段保持原值） */
+        put: operations["UpdateRule"];
+        post?: never;
+        /** 删除规则 */
+        delete: operations["DeleteRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/logs": {
         parameters: {
             query?: never;
@@ -389,6 +427,50 @@ export interface components {
         };
         GroupCreate: {
             name: string;
+        };
+        RuleCreate: {
+            name: string;
+            enabled?: boolean;
+            priority: number;
+            when?: {
+                [key: string]: unknown;
+            };
+            then?: {
+                [key: string]: unknown;
+            };
+        };
+        RulePatch: {
+            name?: string;
+            enabled?: boolean;
+            priority?: number;
+            when?: {
+                [key: string]: unknown;
+            };
+            then?: {
+                [key: string]: unknown;
+            };
+        };
+        Rule: {
+            /** Format: int64 */
+            ID: number;
+            Name: string;
+            Enabled: boolean;
+            Priority: number;
+            When: {
+                [key: string]: unknown;
+            };
+            Then: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        RuleListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Rule"][];
         };
         Group: {
             /** Format: int64 */
@@ -1104,6 +1186,102 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RotateKeyResponse"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    ListRules: {
+        parameters: {
+            query?: {
+                enabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 规则列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    CreateRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleCreate"];
+            };
+        };
+        responses: {
+            /** @description 创建后的规则 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rule"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    UpdateRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RulePatch"];
+            };
+        };
+        responses: {
+            /** @description 更新后的规则 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rule"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    DeleteRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

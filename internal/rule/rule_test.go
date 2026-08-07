@@ -330,7 +330,7 @@ func TestApply(t *testing.T) {
 	require.Nil(t, w)
 
 	// cooldown 未配 + ResetAt 非 nil → ResetAt（M2 残留语义）
-	st, cd, w = Apply(domain.RuleThen{Status: &status}, ev)
+	st, cd, _ = Apply(domain.RuleThen{Status: &status}, ev)
 	require.Equal(t, domain.StatusActive, *st)
 	require.Equal(t, at(90), *cd)
 

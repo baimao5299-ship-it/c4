@@ -418,13 +418,90 @@
 
 ---
 
+## 规则 Rules
+
+规则引擎驱动账号状态管理（替代旧硬编码状态机）：请求结果事件按 `priority` 升序逐规则首中匹配，命中即执行 `then` 动作（状态/冷却/权重）。规则变更（增删改）即时生效（自动触发引擎重载）。
+
+### 规则模型
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `name` | string | 规则名（唯一） |
+| `priority` | int | 优先级（唯一，升序匹配、首中即停） |
+| `enabled` | bool | 缺省 `true`；`false` = 停用（不参与匹配） |
+| `when` | object | 匹配条件（字段白名单，未知字段拒绝 400） |
+| `then` | object | 动作（`status`/`cooldown`/`weight` 至少一个） |
+
+`when` 字段（全部可选，nil = 不限）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `kind` | string | `ok` / `429` / `error`（nil = 任意事件） |
+| `http_status` | int | 上游状态码等值匹配 |
+| `error_message_contains` | string | 错误消息子串匹配 |
+| `account_id` / `template_id` / `group_id` | int | 维度等值匹配（nil = 不限） |
+| `model` | string | 模型等值匹配 |
+| `window_seconds` | int | 统计窗口（≥1，缺省 60；固定粒度近似，误差 ≤ 一个粒度） |
+| `count_429_ge` / `count_error_ge` / `count_ok_ge` / `count_total_ge` | int | 窗口内计数阈值（≥0） |
+| `ratio_429_ge` / `ratio_error_ge` | float | 窗口内比例阈值（[0,1]，**必须配 `count_total_ge`**） |
+
+`then` 字段（至少一个）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `status` | string | `active` / `unhealthy` / `429` / `disabled` |
+| `cooldown` | string | 冷却时长（`time.ParseDuration` 可解析且 >0，如 `"30s"`、`"5h"`） |
+| `weight` | int | 权重（0-100，变更立即重建该组选号序列） |
+
+种子规则（规则表为空时启动自动写入）：`429 → status=429 + cooldown 30s`（priority 10）、`error → status=unhealthy + cooldown 5s`（priority 20）、`ok → status=active`（priority 30，无冷却）。
+
+### 创建规则
+
+`POST /admin/rules`
+
+```json
+{
+  "name": "escalate-on-5xx",
+  "priority": 40,
+  "enabled": true,
+  "when": { "kind": "error", "count_error_ge": 5, "window_seconds": 60 },
+  "then": { "status": "unhealthy", "cooldown": "30s" }
+}
+```
+
+响应 `201`：创建后的规则（含 `id`/`created_at`/`updated_at`，`when`/`then` 原样返回）。
+
+### 规则列表
+
+`GET /admin/rules?enabled=true`（`enabled` 可选，缺省返回全部；priority 升序，无分页）
+
+响应 `200`：`{"total": N, "rows": [...]}`。
+
+### 更新规则
+
+`PUT /admin/rules/{id}`——部分更新：未提供的字段保持原值（`when`/`then` 提供即整体替换）。
+
+响应 `200`：更新后的规则；`404` 含缺失 id。
+
+### 删除规则
+
+`DELETE /admin/rules/{id}`——响应 `204`；`404` 含缺失 id。
+
+### 错误语义
+
+| 状态码 | 场景 |
+|---|---|
+| `400` | `when`/`then` 含未知字段、`kind` 非法、计数为负、`window_seconds` < 1、比例越界或缺 `count_total_ge`、`then` 无动作、`cooldown` 非法、`weight` 越界 |
+| `409` | `priority` 或 `name` 唯一冲突 |
+
 ## 认证失败与错误码
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 |
+| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 |
 | `401` | admin token 缺失或错误 |
 | `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |
+| `409` | 规则 `priority`/`name` 唯一冲突 |
 | `500` | 服务端错误（DB 等） |
 
 错误响应体统一为 `{"error": "<消息>"}`。

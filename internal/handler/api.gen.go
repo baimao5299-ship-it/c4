@@ -253,6 +253,42 @@ type RotateKeyResponse struct {
 	Key string `json:"key"`
 }
 
+// Rule defines model for Rule.
+type Rule struct {
+	CreatedAt time.Time              `json:"CreatedAt"`
+	Enabled   bool                   `json:"Enabled"`
+	ID        int64                  `json:"ID"`
+	Name      string                 `json:"Name"`
+	Priority  int                    `json:"Priority"`
+	Then      map[string]interface{} `json:"Then"`
+	UpdatedAt time.Time              `json:"UpdatedAt"`
+	When      map[string]interface{} `json:"When"`
+}
+
+// RuleCreate defines model for RuleCreate.
+type RuleCreate struct {
+	Enabled  *bool                   `json:"enabled,omitempty"`
+	Name     string                  `json:"name"`
+	Priority int                     `json:"priority"`
+	Then     *map[string]interface{} `json:"then,omitempty"`
+	When     *map[string]interface{} `json:"when,omitempty"`
+}
+
+// RuleListResponse defines model for RuleListResponse.
+type RuleListResponse struct {
+	Rows  []Rule `json:"rows"`
+	Total int64  `json:"total"`
+}
+
+// RulePatch defines model for RulePatch.
+type RulePatch struct {
+	Enabled  *bool                   `json:"enabled,omitempty"`
+	Name     *string                 `json:"name,omitempty"`
+	Priority *int                    `json:"priority,omitempty"`
+	Then     *map[string]interface{} `json:"then,omitempty"`
+	When     *map[string]interface{} `json:"when,omitempty"`
+}
+
 // SetGroupAccountsBody defines model for SetGroupAccountsBody.
 type SetGroupAccountsBody struct {
 	AccountIds []int64 `json:"account_ids"`
@@ -388,6 +424,11 @@ type GetLogsParams struct {
 	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// ListRulesParams defines parameters for ListRules.
+type ListRulesParams struct {
+	Enabled *bool `form:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
 // GetStatsParams defines parameters for GetStats.
 type GetStatsParams struct {
 	From        *time.Time                 `form:"from,omitempty" json:"from,omitempty"`
@@ -439,6 +480,12 @@ type PutGroupsIdJSONRequestBody = GroupCreate
 
 // PutGroupsIdAccountsJSONRequestBody defines body for PutGroupsIdAccounts for application/json ContentType.
 type PutGroupsIdAccountsJSONRequestBody = SetGroupAccountsBody
+
+// CreateRuleJSONRequestBody defines body for CreateRule for application/json ContentType.
+type CreateRuleJSONRequestBody = RuleCreate
+
+// UpdateRuleJSONRequestBody defines body for UpdateRule for application/json ContentType.
+type UpdateRuleJSONRequestBody = RulePatch
 
 // PostTemplatesJSONRequestBody defines body for PostTemplates for application/json ContentType.
 type PostTemplatesJSONRequestBody = TemplateCreate
@@ -505,6 +552,18 @@ type ServerInterface interface {
 	// 用量日志分页查询
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
+	// 规则列表（enabled 过滤，priority 升序）
+	// (GET /rules)
+	ListRules(w http.ResponseWriter, r *http.Request, params ListRulesParams)
+	// 创建规则
+	// (POST /rules)
+	CreateRule(w http.ResponseWriter, r *http.Request)
+	// 删除规则
+	// (DELETE /rules/{id})
+	DeleteRule(w http.ResponseWriter, r *http.Request, id int64)
+	// 更新规则（fields 任意子集，未提供字段保持原值）
+	// (PUT /rules/{id})
+	UpdateRule(w http.ResponseWriter, r *http.Request, id int64)
 	// 用量统计聚合
 	// (GET /stats)
 	GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams)
@@ -628,6 +687,30 @@ func (_ Unimplemented) PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Requ
 // 用量日志分页查询
 // (GET /logs)
 func (_ Unimplemented) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 规则列表（enabled 过滤，priority 升序）
+// (GET /rules)
+func (_ Unimplemented) ListRules(w http.ResponseWriter, r *http.Request, params ListRulesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 创建规则
+// (POST /rules)
+func (_ Unimplemented) CreateRule(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 删除规则
+// (DELETE /rules/{id})
+func (_ Unimplemented) DeleteRule(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 更新规则（fields 任意子集，未提供字段保持原值）
+// (PUT /rules/{id})
+func (_ Unimplemented) UpdateRule(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1194,6 +1277,97 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// ListRules operation middleware
+func (siw *ServerInterfaceWrapper) ListRules(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRulesParams
+
+	// ------------- Optional query parameter "enabled" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "enabled", r.URL.Query(), &params.Enabled)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "enabled", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRules(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateRule operation middleware
+func (siw *ServerInterfaceWrapper) CreateRule(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateRule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteRule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteRule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateRule operation middleware
+func (siw *ServerInterfaceWrapper) UpdateRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateRule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetStats operation middleware
 func (siw *ServerInterfaceWrapper) GetStats(w http.ResponseWriter, r *http.Request) {
 
@@ -1600,6 +1774,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/rules", wrapper.ListRules)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/rules", wrapper.CreateRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/rules/{id}", wrapper.DeleteRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/rules/{id}", wrapper.UpdateRule)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/stats", wrapper.GetStats)

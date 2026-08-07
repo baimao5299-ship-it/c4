@@ -1,0 +1,163 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"go-proxy-mini/internal/domain"
+)
+
+// fakeReloader 记录规则引擎 Reload 调用（invalidate 钩子断言用）。
+type fakeReloader struct{ calls int }
+
+func (f *fakeReloader) Reload(ctx context.Context) error {
+	f.calls++
+	return nil
+}
+
+func newRuleSvc() (*Service, *fakeStore, *fakeReloader) {
+	fs := newFakeStore()
+	rl := &fakeReloader{}
+	return &Service{store: fs, ruleReload: rl}, fs, rl
+}
+
+func validWhen() map[string]any { return map[string]any{"kind": "error"} }
+func validThen() map[string]any { return map[string]any{"status": "unhealthy", "cooldown": "5s"} }
+
+func TestCreateRule(t *testing.T) {
+	svc, _, rl := newRuleSvc()
+	got, err := svc.CreateRule(context.Background(), RuleInput{
+		Name: "r1", Enabled: true, Priority: 10, When: validWhen(), Then: validThen(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got.ID)
+	require.Equal(t, "r1", got.Name)
+	require.True(t, got.Enabled)
+	require.Equal(t, "error", *got.When.Kind)
+	require.Equal(t, domain.StatusUnhealthy, *got.Then.Status)
+	require.Equal(t, "5s", *got.Then.Cooldown)
+	require.Equal(t, 1, rl.calls, "规则创建后必须触发引擎 Reload")
+}
+
+func TestCreateRuleRejectsUnknownWhenKey(t *testing.T) {
+	svc, _, rl := newRuleSvc()
+	_, err := svc.CreateRule(context.Background(), RuleInput{
+		Name: "r1", Priority: 10,
+		When: map[string]any{"kind": "error", "bogus_key": 1},
+		Then: validThen(),
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "when 未知键 → 400 语义")
+	require.Zero(t, rl.calls, "校验失败不触发 Reload")
+
+	_, err = svc.CreateRule(context.Background(), RuleInput{
+		Name: "r2", Priority: 11, When: validWhen(),
+		Then: map[string]any{"status": "unhealthy", "bogus": true},
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "then 未知键 → 400 语义")
+}
+
+func TestCreateRuleInvalidThen(t *testing.T) {
+	svc, _, _ := newRuleSvc()
+	_, err := svc.CreateRule(context.Background(), RuleInput{
+		Name: "r1", Priority: 10, When: validWhen(), Then: map[string]any{},
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "then 无动作 → 400 语义")
+	_, err = svc.CreateRule(context.Background(), RuleInput{
+		Name: "r2", Priority: 11, When: validWhen(), Then: map[string]any{"cooldown": "0s"},
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "cooldown ≤ 0 → 400 语义")
+	_, err = svc.CreateRule(context.Background(), RuleInput{
+		Name: "r3", Priority: 12, When: map[string]any{"ratio_429_ge": 0.5}, Then: validThen(),
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "比例缺 count_total_ge → 400 语义")
+}
+
+func TestCreateRulePriorityConflict(t *testing.T) {
+	svc, _, rl := newRuleSvc()
+	_, err := svc.CreateRule(context.Background(), RuleInput{Name: "r1", Priority: 10, When: validWhen(), Then: validThen()})
+	require.NoError(t, err)
+	_, err = svc.CreateRule(context.Background(), RuleInput{Name: "r2", Priority: 10, When: validWhen(), Then: validThen()})
+	require.ErrorIs(t, err, ErrConflict, "priority 唯一冲突 → ErrConflict（409 语义）")
+	_, err = svc.CreateRule(context.Background(), RuleInput{Name: "r1", Priority: 20, When: validWhen(), Then: validThen()})
+	require.ErrorIs(t, err, ErrConflict, "name 唯一冲突同样映射 ErrConflict")
+	require.Equal(t, 1, rl.calls, "冲突失败不触发 Reload")
+}
+
+func TestUpdateRuleMerge(t *testing.T) {
+	svc, _, rl := newRuleSvc()
+	created, err := svc.CreateRule(context.Background(), RuleInput{
+		Name: "r1", Enabled: false, Priority: 10, When: validWhen(), Then: validThen(),
+	})
+	require.NoError(t, err)
+
+	// 部分更新：未提供字段保持原值
+	name := "r1-renamed"
+	updated, err := svc.UpdateRule(context.Background(), created.ID, RulePatch{Name: &name})
+	require.NoError(t, err)
+	require.Equal(t, "r1-renamed", updated.Name)
+	require.False(t, updated.Enabled, "未提供字段保持原值")
+	require.Equal(t, 10, updated.Priority)
+	require.Equal(t, "error", *updated.When.Kind, "when 未提供保持原值")
+	require.Equal(t, 2, rl.calls, "规则更新后必须触发引擎 Reload")
+
+	// when 更新：未知键拒绝
+	_, err = svc.UpdateRule(context.Background(), created.ID, RulePatch{When: map[string]any{"bogus": 1}})
+	require.ErrorIs(t, err, ErrInvalidInput)
+	require.Equal(t, 2, rl.calls, "校验失败不触发 Reload")
+
+	// 404 含 id
+	_, err = svc.UpdateRule(context.Background(), 999, RulePatch{})
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing")
+
+	// priority 冲突 → ErrConflict
+	_, err = svc.CreateRule(context.Background(), RuleInput{Name: "r2", Priority: 20, When: validWhen(), Then: validThen()})
+	require.NoError(t, err)
+	p := 20
+	_, err = svc.UpdateRule(context.Background(), created.ID, RulePatch{Priority: &p})
+	require.ErrorIs(t, err, ErrConflict)
+	require.Equal(t, 3, rl.calls, "冲突失败不触发 Reload")
+}
+
+func TestDeleteRule(t *testing.T) {
+	svc, _, rl := newRuleSvc()
+	created, err := svc.CreateRule(context.Background(), RuleInput{Name: "r1", Priority: 10, When: validWhen(), Then: validThen()})
+	require.NoError(t, err)
+	require.NoError(t, svc.DeleteRule(context.Background(), created.ID))
+	require.Equal(t, 2, rl.calls, "删除后必须触发引擎 Reload")
+
+	err = svc.DeleteRule(context.Background(), 999)
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Contains(t, err.Error(), "id=999 missing", "404 消息含 id")
+	require.Equal(t, 2, rl.calls, "404 不触发 Reload")
+}
+
+func TestListRules(t *testing.T) {
+	svc, _, _ := newRuleSvc()
+	for _, p := range []int{30, 10, 20} {
+		_, err := svc.CreateRule(context.Background(), RuleInput{
+			Name: fmt.Sprintf("r%d", p), Enabled: p != 20, Priority: p, When: validWhen(), Then: validThen(),
+		})
+		require.NoError(t, err)
+	}
+	rows, total, err := svc.ListRules(context.Background(), nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Equal(t, []int{10, 20, 30}, []int{rows[0].Priority, rows[1].Priority, rows[2].Priority},
+		"priority 升序")
+
+	enabled := true
+	rows, total, err = svc.ListRules(context.Background(), &enabled)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total, "enabled 过滤")
+	require.Equal(t, []int{10, 30}, []int{rows[0].Priority, rows[1].Priority})
+
+	disabled := false
+	rows, total, err = svc.ListRules(context.Background(), &disabled)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, 20, rows[0].Priority)
+}

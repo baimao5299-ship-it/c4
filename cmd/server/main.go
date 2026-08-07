@@ -101,7 +101,9 @@ func main() {
 		sched.InvalidateAll()
 		clients.InvalidateAll()
 	}
-	svc := service.New(repos, sched, invalidate, auth, log)
+	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
+	// 不能随模板/账号/分组等任意资源变更触发）。
+	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
 	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)
 

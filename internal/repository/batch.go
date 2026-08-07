@@ -15,6 +15,9 @@ import (
 // ErrNotFound 批量操作中存在性检查失败（缺失 id）。
 var ErrNotFound = errors.New("repository: not found")
 
+// ErrConflict 唯一约束冲突（规则 priority/name 等；service 映射 409）。
+var ErrConflict = errors.New("repository: conflict")
+
 // --- 批量更新字段子集（nil 字段 = 不更新） ---
 
 type TemplatePatch struct {
