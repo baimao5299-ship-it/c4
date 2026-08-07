@@ -2,13 +2,14 @@ openapi: 3.0.3
 info:
   title: go-proxy-mini Admin API
   version: 1.0.0
-  description: '管理端 API（模板/账号/分组/日志/统计）。认证：Authorization: Bearer <admin_token>。'
+  description: '管理端 API（模板/账号/分组/规则/日志/统计）。认证：Authorization: Bearer <admin_token>。'
 servers:
   - url: /admin
 tags:
   - name: templates
   - name: accounts
   - name: groups
+  - name: rules
   - name: logs
   - name: stats
 paths:
@@ -388,6 +389,68 @@ paths:
               schema: { $ref: '#/components/schemas/RotateKeyResponse' }
         default:
           $ref: '#/components/responses/Error'
+  # 注意 chi 路径顺序：/rules 必须先于 /rules/{id} 注册（生成器按 spec 顺序注册）。
+  /rules:
+    get:
+      operationId: ListRules
+      tags: [rules]
+      summary: 规则列表（enabled 过滤，priority 升序）
+      parameters:
+        - { name: enabled, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: 规则列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RuleListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: CreateRule
+      tags: [rules]
+      summary: 创建规则
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RuleCreate' }
+      responses:
+        '201':
+          description: 创建后的规则
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rule' }
+        default:
+          $ref: '#/components/responses/Error'
+  /rules/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      operationId: UpdateRule
+      tags: [rules]
+      summary: 更新规则（fields 任意子集，未提供字段保持原值）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RulePatch' }
+      responses:
+        '200':
+          description: 更新后的规则
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rule' }
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: DeleteRule
+      tags: [rules]
+      summary: 删除规则
+      responses:
+        '204':
+          description: 删除成功
+        default:
+          $ref: '#/components/responses/Error'
   /logs:
     get:
       operationId: GetLogs
@@ -572,6 +635,55 @@ components:
       required: [name]
       properties:
         name: { type: string }
+    RuleCreate:
+      type: object
+      required: [name, priority]
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        priority: { type: integer }
+        when:
+          type: object
+          additionalProperties: true
+        then:
+          type: object
+          additionalProperties: true
+    RulePatch:
+      type: object
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        priority: { type: integer }
+        when:
+          type: object
+          additionalProperties: true
+        then:
+          type: object
+          additionalProperties: true
+    Rule:
+      type: object
+      required: [ID, Name, Enabled, Priority, When, Then, CreatedAt, UpdatedAt]
+      properties:
+        ID: { type: integer, format: int64 }
+        Name: { type: string }
+        Enabled: { type: boolean }
+        Priority: { type: integer }
+        When:
+          type: object
+          additionalProperties: true
+        Then:
+          type: object
+          additionalProperties: true
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    RuleListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/Rule' }
     Group:
       type: object
       properties:

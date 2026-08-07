@@ -18,11 +18,10 @@ upstream = {
   force_http2 = true,
 }
 limit = { group_key_rpm = 0 }
+# cooldown_429 / backoff_base / backoff_max 已废弃：429 冷却与错误退避由规则引擎
+# （种子规则 + /admin/rules 自定义规则）接管，旧键仅保留读取兼容、不参与决策。
 scheduler = {
   default_max_concurrency = 8,
-  cooldown_429 = "30s",
-  backoff_base = "5s",
-  backoff_max = "5m",
   sync_interval = "30s",
 }
 usage = {

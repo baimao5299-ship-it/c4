@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"go-proxy-mini/internal/domain"
@@ -21,6 +22,7 @@ type fakeStore struct {
 	accs      map[int64]*domain.Account
 	groups    map[int64]*domain.Group
 	members   map[int64][]int64
+	rules     map[int64]domain.Rule
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	nextID    int64
@@ -31,7 +33,7 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		tpls: make(map[int64]*domain.Template), accs: make(map[int64]*domain.Account),
 		groups: make(map[int64]*domain.Group), members: make(map[int64][]int64),
-		keyHashes: make(map[int64]string), nextID: 1,
+		rules: make(map[int64]domain.Rule), keyHashes: make(map[int64]string), nextID: 1,
 	}
 }
 
@@ -341,4 +343,71 @@ func (f *fakeStore) ScanStats(ctx context.Context, q repository.StatQuery) ([]*d
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.stats, nil
+}
+
+// --- 规则（RuleStore）：priority/name 唯一冲突模拟真实 repo 的 ErrConflict ---
+
+func (f *fakeStore) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]domain.Rule, 0, len(f.rules))
+	for _, r := range f.rules {
+		if enabled != nil && r.Enabled != *enabled {
+			continue
+		}
+		out = append(out, r)
+	}
+	slices.SortFunc(out, func(a, b domain.Rule) int { return a.Priority - b.Priority })
+	return out, nil
+}
+
+func (f *fakeStore) CreateRule(ctx context.Context, r domain.Rule) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.ruleConflictLocked(0, r); err != nil {
+		return 0, err
+	}
+	r.ID = f.nextID
+	f.nextID++
+	f.rules[r.ID] = r
+	return r.ID, nil
+}
+
+func (f *fakeStore) UpdateRule(ctx context.Context, r domain.Rule) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.rules[r.ID]; !ok {
+		return missingErr(r.ID)
+	}
+	if err := f.ruleConflictLocked(r.ID, r); err != nil {
+		return err
+	}
+	f.rules[r.ID] = r
+	return nil
+}
+
+func (f *fakeStore) DeleteRule(ctx context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.rules[id]; !ok {
+		return missingErr(id)
+	}
+	delete(f.rules, id)
+	return nil
+}
+
+func (f *fakeStore) CountRules(ctx context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return int64(len(f.rules)), nil
+}
+
+// ruleConflictLocked 检查 priority/name 唯一冲突（持锁调用；excludeID 为更新目标自身）。
+func (f *fakeStore) ruleConflictLocked(excludeID int64, r domain.Rule) error {
+	for _, e := range f.rules {
+		if e.ID != excludeID && (e.Priority == r.Priority || e.Name == r.Name) {
+			return fmt.Errorf("%w: priority=%d or name=%q", repository.ErrConflict, r.Priority, r.Name)
+		}
+	}
+	return nil
 }

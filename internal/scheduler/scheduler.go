@@ -1,19 +1,19 @@
-// Package scheduler 实现内存优先的账号调度：状态机（err/429 冷却 + 指数退避）、
-// 选号（格式硬过滤 + 模型偏好 + 预生成加权轮询序列）、并发槽、快照缓存与异步状态回写。
-// 规格 §5。单实例语义：运行时状态仅存内存。
+// Package scheduler 实现内存优先的账号调度：规则驱动的状态管理（internal/rule 引擎
+// 事件投递 + apply 回调）、选号（格式硬过滤 + 模型偏好 + 预生成加权轮询序列）、
+// 并发槽、快照缓存与异步状态回写。规格 §5。单实例语义：运行时状态仅存内存。
 package scheduler
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/pkg/logx"
 )
 
@@ -25,9 +25,6 @@ var (
 
 type Config struct {
 	DefaultMaxConcurrency int
-	Cooldown429           time.Duration
-	BackoffBase           time.Duration
-	BackoffMax            time.Duration
 	SyncInterval          time.Duration
 }
 
@@ -35,7 +32,7 @@ type Config struct {
 type Loader interface {
 	LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error)
 	LoadGroupAccounts(ctx context.Context, groupID int64) ([]*domain.Account, error)
-	UpdateAccountStatus(ctx context.Context, accountID int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error
+	UpdateAccountStatus(ctx context.Context, accountID int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error
 }
 
 type ResultKind int
@@ -68,11 +65,13 @@ type statusWrite struct {
 	status   domain.AccountStatus
 	cooldown *time.Time
 	lastErr  *string
+	weight   *int // 权重动作随状态同批回写（nil = 不动 weight）
 }
 
 type Scheduler struct {
 	cfg       Config
 	loader    Loader
+	rule      *rule.RuleEngine
 	log       *logx.Logger
 	store     snapshotStore
 	reloadMu  sync.Mutex // 重建互斥（低频，不占热路径）
@@ -81,14 +80,19 @@ type Scheduler struct {
 	startOnce atomic.Bool
 }
 
-func New(cfg Config, loader Loader, log *logx.Logger) *Scheduler {
-	return &Scheduler{
+// New 构造调度器并注册规则引擎的 apply 回调（动作应用 = 快照/EWMA/回写，见 apply）。
+// ruleEngine 必须非 nil（状态管理唯一路径；main 在 Start 前显式 Reload）。
+func New(cfg Config, loader Loader, ruleEngine *rule.RuleEngine, log *logx.Logger) *Scheduler {
+	s := &Scheduler{
 		cfg:     cfg,
 		loader:  loader,
+		rule:    ruleEngine,
 		log:     log,
 		writeCh: make(chan statusWrite, 4096),
 		timeNow: time.Now,
 	}
+	ruleEngine.SetApply(s.apply)
+	return s
 }
 
 // Name 满足 worker.Worker 契约（Global Constraints #5）。
@@ -156,19 +160,25 @@ func (s *Scheduler) writebackLoop(ctx context.Context) {
 }
 
 // processWrite 处理一条状态回写：合并窗口内同一账号的重复写（幂等覆盖）后回写 DB。
+// 合并语义：后写覆盖先写，但 weight 例外——后写若不带 weight（statusWrite.weight=nil，
+// 纯状态动作），保留先前已入队的 weight（否则同账号 weight 写先入队、status 写后
+// 入队时合并丢 weight，DB 不持久化 → ≤30s reload 后内存回退，weight 动作被静默撤销）。
 func (s *Scheduler) processWrite(w statusWrite) {
 	accs := map[int64]statusWrite{w.id: w}
 	drain := true
 	for drain {
 		select {
 		case w2 := <-s.writeCh:
+			if prev, ok := accs[w2.id]; ok && w2.weight == nil && prev.weight != nil {
+				w2.weight = prev.weight
+			}
 			accs[w2.id] = w2
 		default:
 			drain = false
 		}
 	}
 	for _, ww := range accs {
-		if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr); err != nil && s.log != nil {
+		if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr, ww.weight); err != nil && s.log != nil {
 			s.log.Warn("account status writeback failed", logx.Int64("account_id", ww.id), logx.Error(err))
 		}
 	}
@@ -192,7 +202,7 @@ func buildSnapshots(m map[int64][]*domain.Account, defaultMax int) (map[int64]*g
 	for gid, accs := range m {
 		gs := &groupSnapshot{}
 		for _, a := range accs {
-			as := &accountSnapshot{acc: *a, tpl: a.Template}
+			as := &accountSnapshot{gid: gid, acc: *a, tpl: a.Template}
 			as.state.Store(&accState{status: a.Status, cooldownUntil: a.CooldownUntil})
 			if a.MaxConcurrency <= 0 {
 				as.acc.MaxConcurrency = defaultMax
@@ -359,70 +369,141 @@ func (s *Scheduler) Release(accountID int64) {
 	}
 }
 
-// MarkResult 请求结果回流：更新状态/冷却/EWMA，异步回写 DB。
-func (s *Scheduler) MarkResult(accountID int64, kind ResultKind, resetAt *time.Time) {
+// MarkResult 请求结果回流：禁用守卫（同步短路）+ 条件投递（C1）→ 规则引擎异步处理。
+// 快照/EWMA/组路由/DB 回写全部由规则命中后的 apply 回调完成（本方法不再触碰状态）。
+func (s *Scheduler) MarkResult(accountID int64, kind ResultKind, resetAt *time.Time, httpStatus int, errMsg string) {
 	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
 	a, ok := byID[accountID]
 	if !ok {
 		return
 	}
-	now := s.timeNow()
-	st := a.statePtr()
 	// 禁用账号的防复活守卫：管理端禁用后（InvalidateGroup 以 disabled 重载
-	// 快照），在途请求完成时不得把状态重置回 active 并回写 DB——否则禁用被
-	// 静默抹除、30s 同步后账号复现（评审发现）。禁用账号不参与选号，err/429
-	// 分支同样不可能合法触发于其上，统一在此短路（不改状态、不回写）。
-	if st.status == domain.StatusDisabled {
+	// 快照），在途请求完成时不得投递事件把状态重置回 active 并回写 DB——否则
+	// 禁用被静默抹除、30s 同步后账号复现（评审发现）。禁用账号不参与选号，
+	// err/429 分支同样不可能合法触发于其上，统一在此短路（不投递）。
+	if a.statePtr().status == domain.StatusDisabled {
 		return
 	}
-	var (
-		next      accState
-		cooldown  *time.Time
-		lastErr   *string
-		rateDelta float64
-	)
-	switch kind {
-	case ResultOK:
-		next = accState{status: domain.StatusActive, lastUsedAt: &now}
-		rateDelta = 0
-	case Result429:
-		cooldown = resetAt
-		if cooldown == nil {
-			c := now.Add(s.cfg.Cooldown429)
-			cooldown = &c
-		}
-		lastErr = strPtr("upstream 429 rate limited")
-		next = accState{status: domain.Status429, cooldownUntil: cooldown, errCount: st.errCount + 1, lastError: lastErr, lastUsedAt: &now}
-		rateDelta = 1
-	case ResultError:
-		backoff := backoffDuration(s.cfg.BackoffBase, s.cfg.BackoffMax, st.errCount)
-		c := now.Add(backoff)
-		cooldown = &c
-		lastErr = strPtr("upstream error")
-		next = accState{status: domain.StatusUnhealthy, cooldownUntil: cooldown, errCount: st.errCount + 1, lastError: lastErr, lastUsedAt: &now}
-		rateDelta = 1
+	// 条件投递（C1）：规则表无 kind=nil/ok 规则时 ok 事件不投递
+	// （无恢复规则时成功结果不影响任何状态，省队列与处理开销）。
+	if kind == ResultOK && !s.rule.NeedsOKEvents() {
+		return
 	}
-	a.state.Store(&next)
-	// EWMA：α=0.2
-	old := float64(a.errRate.Load()) / errRateScale
-	rate := 0.2*rateDelta + 0.8*old
-	a.errRate.Store(uint64(rate * errRateScale))
-	s.enqueueWrite(accountID, next)
+	var hp *int
+	if httpStatus > 0 {
+		hp = &httpStatus
+	}
+	ev := rule.Event{
+		AccountID:    accountID,
+		TemplateID:   a.acc.TemplateID,
+		GroupID:      groupIDPtr(a.gid),
+		Kind:         ruleKind(kind),
+		HTTPStatus:   hp,
+		ErrorMessage: errMsg,
+		ResetAt:      resetAt,
+		OccurredAt:   s.timeNow(),
+	}
+	s.rule.Enqueue(ev)
 }
 
-func backoffDuration(base, max time.Duration, errCount int) time.Duration {
-	d := time.Duration(float64(base) * math.Pow(2, float64(errCount)))
-	if d > max {
-		return max
+// ruleKind 映射 ResultKind → 规则引擎事件类别。
+func ruleKind(k ResultKind) rule.Kind {
+	switch k {
+	case Result429:
+		return rule.Kind429
+	case ResultError:
+		return rule.KindError
+	default:
+		return rule.KindOK
 	}
-	return d
+}
+
+func groupIDPtr(gid int64) *int64 {
+	if gid <= 0 {
+		return nil
+	}
+	return &gid
 }
 
 func strPtr(s string) *string { return &s }
 
-func (s *Scheduler) enqueueWrite(id int64, st accState) {
+// FlushRules 同步处理规则引擎队列中的全部事件（仅测试与优雅关闭用）：
+// MarkResult 为异步投递，需要立即断言快照的测试先排空队列。
+func (s *Scheduler) FlushRules() {
+	s.rule.Flush(context.Background())
+}
+
+// apply 是规则引擎的动作应用回调（New 时注册）：更新快照状态/冷却/权重、
+// EWMA（仅状态类动作）、权重变更时重建组路由（weightedSeq 预生成缓存）、
+// 异步 DB 回写。st 为 nil = 只改权重/冷却，不动状态与 EWMA。
+func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *time.Time, weight *int) {
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	a, ok := byID[aid]
+	if !ok {
+		return // 快照外账号（已移除/未知）：无状态可改，不投递回写
+	}
+	now := s.timeNow()
+	next := *a.statePtr()
+	if st != nil {
+		next.status = *st
+		switch *st {
+		case domain.Status429:
+			next.errCount++
+			next.lastError = strPtr("upstream 429 rate limited")
+		case domain.StatusUnhealthy:
+			next.errCount++
+			next.lastError = strPtr("upstream error")
+		case domain.StatusActive:
+			next.errCount = 0
+			next.lastError = nil
+		}
+		// EWMA：α=0.2；仅状态类动作更新（ok=0、429/error=1 的 rateDelta，
+		// 纯 weight 动作不更新——I5）
+		rateDelta := 0.0
+		if *st == domain.Status429 || *st == domain.StatusUnhealthy {
+			rateDelta = 1
+		}
+		old := float64(a.errRate.Load()) / errRateScale
+		rate := 0.2*rateDelta + 0.8*old
+		a.errRate.Store(uint64(rate * errRateScale))
+	}
+	if cooldownUntil != nil {
+		next.cooldownUntil = cooldownUntil
+	}
+	next.lastUsedAt = &now
+	a.state.Store(&next)
+	if weight != nil {
+		a.acc.Weight = *weight
+		// weightedSeq 是预生成缓存：权重变更必须重建该组路由序列，
+		// 否则选号仍按旧权重（I1）。
+		s.rebuildGroup(a.gid)
+	}
+	s.enqueueWrite(aid, next, weight)
+}
+
+// rebuildGroup 重建单组路由（不碰 DB/账号列表）：从 store 中现有账号快照
+// （apply 已更新 acc.Weight）重新 buildRoutes，整体换入快照（原子替换，避免
+// 与 Select 读端并发修改同一 groupSnapshot 的数据竞争）。byID 不变（同一批
+// accountSnapshot 指针）。
+func (s *Scheduler) rebuildGroup(groupID int64) {
+	s.reloadMu.Lock()
+	defer s.reloadMu.Unlock()
+	m := s.store.groups.Load().(map[int64]*groupSnapshot)
+	gs, ok := m[groupID]
+	if !ok {
+		return
+	}
+	newM := make(map[int64]*groupSnapshot, len(m))
+	for k, v := range m {
+		newM[k] = v
+	}
+	newM[groupID] = &groupSnapshot{accounts: gs.accounts, routes: buildRoutes(gs.accounts)}
+	s.store.store(newM, s.store.byID.Load().(map[int64]*accountSnapshot))
+}
+
+func (s *Scheduler) enqueueWrite(id int64, st accState, weight *int) {
 	select {
-	case s.writeCh <- statusWrite{id: id, status: st.status, cooldown: st.cooldownUntil, lastErr: st.lastError}:
+	case s.writeCh <- statusWrite{id: id, status: st.status, cooldown: st.cooldownUntil, lastErr: st.lastError, weight: weight}:
 	default:
 		// 队列满：丢弃 DB 回写（内存状态已生效，重启后由下一次请求重新判定）
 	}

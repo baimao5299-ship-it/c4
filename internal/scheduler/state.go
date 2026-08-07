@@ -20,6 +20,7 @@ type accState struct {
 }
 
 type accountSnapshot struct {
+	gid         int64 // 所属组（权重动作重建路由用）
 	acc         domain.Account
 	tpl         *domain.Template
 	concurrency atomic.Int64

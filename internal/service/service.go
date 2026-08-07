@@ -18,12 +18,14 @@ import (
 var (
 	ErrNotFound     = errors.New("service: not found")
 	ErrInvalidInput = errors.New("service: invalid input")
+	ErrConflict     = errors.New("service: conflict")
 )
 
 type Store interface {
 	TemplateStore
 	AccountStore
 	GroupStore
+	RuleStore
 	LogStore
 	StatStore
 }
@@ -67,6 +69,12 @@ type StatStore interface {
 	ScanStats(ctx context.Context, q repository.StatQuery) ([]*domain.StatBucket, error)
 }
 
+// RuleReloader 由 rule.RuleEngine 实现：规则 CRUD 后全量重载（invalidate 钩子）。
+// 独立于通用 invalidate——规则重载会重置窗口计数，不能随任意资源变更触发。
+type RuleReloader interface {
+	Reload(ctx context.Context) error
+}
+
 // RuntimeProvider 由 scheduler 实现，供账号运行时视图。
 type RuntimeProvider interface {
 	Runtime(accountID int64) (scheduler.RuntimeInfo, bool)
@@ -82,12 +90,13 @@ type Service struct {
 	store      Store
 	sched      RuntimeProvider
 	invalidate func() // 调度快照失效（全量重载）
+	ruleReload RuleReloader
 	keys       KeyRegistrar
 	log        *logx.Logger
 }
 
-func New(store Store, sched RuntimeProvider, invalidate func(), keys KeyRegistrar, log *logx.Logger) *Service {
-	return &Service{store: store, sched: sched, invalidate: invalidate, keys: keys, log: log}
+func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
+	return &Service{store: store, sched: sched, invalidate: invalidate, ruleReload: ruleReload, keys: keys, log: log}
 }
 
 func validateTemplate(t *domain.Template) error {

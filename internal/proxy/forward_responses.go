@@ -72,9 +72,9 @@ func (p *Proxy) HandleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 		lastCode = code
 		if code == http.StatusTooManyRequests {
-			p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil)
+			p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil, code, upstreamErrMsg(body))
 		} else if code >= 500 || code == 0 {
-			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
+			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, code, upstreamErrMsg(body))
 		} else {
 			// 4xx 确定性错误：透传上游状态码与原始 body，不转移（规格 §5.3）；
 			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
@@ -168,10 +168,10 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 				return true, 0, nil
 			}
 			p.recordStreamAbort(reqID, start, sel, err)
-			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil)
+			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return true, 0, nil
 		}
-		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
+		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
 		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
 		return true, 200, nil
 	}
@@ -191,7 +191,7 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 	if resp.JSON.Usage.Valid() {
 		pt, ct, tt = resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.InputTokens+resp.Usage.OutputTokens
 	}
-	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil)
+	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
 	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
 	return true, 200, nil
 }

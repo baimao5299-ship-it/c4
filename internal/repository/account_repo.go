@@ -106,7 +106,9 @@ func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error {
+// UpdateAccountStatus 满足 scheduler.Loader：状态/冷却/错误信息回写；weight 非 nil
+// 时一并更新（规则引擎权重动作，nil = 不动 weight）。
+func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error {
 	u := r.client.Account.UpdateOneID(id).SetStatus(account.Status(status))
 	if cooldownUntil != nil {
 		u = u.SetCooldownUntil(*cooldownUntil)
@@ -117,6 +119,9 @@ func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status 
 		u = u.SetLastError(*lastError)
 	} else {
 		u = u.ClearLastError()
+	}
+	if weight != nil {
+		u = u.SetWeight(*weight)
 	}
 	_, err := u.Save(ctx)
 	return err

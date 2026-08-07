@@ -32,6 +32,18 @@ func (f GroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupMutation", m)
 }
 
+// The RuleFunc type is an adapter to allow the use of ordinary
+// function as Rule mutator.
+type RuleFunc func(context.Context, *ent.RuleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RuleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RuleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RuleMutation", m)
+}
+
 // The TemplateFunc type is an adapter to allow the use of ordinary
 // function as Template mutator.
 type TemplateFunc func(context.Context, *ent.TemplateMutation) (ent.Value, error)

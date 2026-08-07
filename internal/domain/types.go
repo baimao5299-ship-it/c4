@@ -144,3 +144,38 @@ type StatBucket struct {
 	TotalTokens      int64
 	TotalLatencyMS   int64
 }
+
+// —— 规则引擎（可编排状态管理） ——
+type RuleWhen struct {
+	Kind                 *string  `json:"kind,omitempty"`
+	HTTPStatus           *int     `json:"http_status,omitempty"`
+	ErrorMessageContains *string  `json:"error_message_contains,omitempty"`
+	AccountID            *int64   `json:"account_id,omitempty"`
+	TemplateID           *int64   `json:"template_id,omitempty"`
+	GroupID              *int64   `json:"group_id,omitempty"`
+	Model                *string  `json:"model,omitempty"`
+	WindowSeconds        *int     `json:"window_seconds,omitempty"`
+	Count429GE           *int     `json:"count_429_ge,omitempty"`
+	CountErrorGE         *int     `json:"count_error_ge,omitempty"`
+	CountOKGE            *int     `json:"count_ok_ge,omitempty"`
+	CountTotalGE         *int     `json:"count_total_ge,omitempty"`
+	Ratio429GE           *float64 `json:"ratio_429_ge,omitempty"`
+	RatioErrorGE         *float64 `json:"ratio_error_ge,omitempty"`
+}
+
+type RuleThen struct {
+	Status   *AccountStatus `json:"status,omitempty"`
+	Cooldown *string        `json:"cooldown,omitempty"` // time.ParseDuration 可解析的时长，如 "30s"、"5h"
+	Weight   *int           `json:"weight,omitempty"`   // 0-100
+}
+
+type Rule struct {
+	ID        int64
+	Name      string
+	Enabled   bool
+	Priority  int
+	When      RuleWhen
+	Then      RuleThen
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}

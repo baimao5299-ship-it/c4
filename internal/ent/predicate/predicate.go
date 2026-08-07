@@ -12,6 +12,9 @@ type Account func(*sql.Selector)
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
+// Rule is the predicate function for rule builders.
+type Rule func(*sql.Selector)
+
 // Template is the predicate function for template builders.
 type Template func(*sql.Selector)
 

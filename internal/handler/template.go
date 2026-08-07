@@ -194,6 +194,8 @@ func writeServiceErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrInvalidInput):
 		writeErr(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrConflict):
+		writeErr(w, http.StatusConflict, err.Error())
 	default:
 		writeErr(w, http.StatusInternalServerError, "internal error")
 	}

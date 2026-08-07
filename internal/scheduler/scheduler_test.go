@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
+	"go-proxy-mini/internal/rule"
 )
 
 // --- 测试 Loader（内存实现） ---
@@ -40,22 +42,72 @@ func (m *memLoader) LoadGroupAccounts(ctx context.Context, id int64) ([]*domain.
 	return m.byGroup[id], nil
 }
 
-func (m *memLoader) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldown *time.Time, lastErr *string) error {
+func (m *memLoader) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldown *time.Time, lastErr *string, weight *int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.writes = append(m.writes, statusWrite{id: id, status: status, cooldown: cooldown})
+	m.writes = append(m.writes, statusWrite{id: id, status: status, cooldown: cooldown, weight: weight})
 	return nil
 }
 
 func testCfg() Config {
 	return Config{
 		DefaultMaxConcurrency: 2,
-		Cooldown429:           30 * time.Second,
-		BackoffBase:           5 * time.Second,
-		BackoffMax:            5 * time.Minute,
 		SyncInterval:          100 * time.Hour, // 测试中不触发定时同步
 	}
 }
+
+// fakeRuleStore 内存 RuleStore：种子写入 + 列表查询（值语义副本）。
+type fakeRuleStore struct {
+	mu    sync.Mutex
+	rules map[int64]domain.Rule
+	next  int64
+}
+
+func (f *fakeRuleStore) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]domain.Rule, 0, len(f.rules))
+	for _, r := range f.rules {
+		if enabled != nil && r.Enabled != *enabled {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (f *fakeRuleStore) CreateRule(ctx context.Context, r domain.Rule) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r.ID = f.next
+	f.next++
+	f.rules[r.ID] = r
+	return r.ID, nil
+}
+
+func (f *fakeRuleStore) UpdateRule(ctx context.Context, r domain.Rule) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rules[r.ID] = r
+	return nil
+}
+
+func (f *fakeRuleStore) DeleteRule(ctx context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.rules, id)
+	return nil
+}
+
+func (f *fakeRuleStore) CountRules(ctx context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return int64(len(f.rules)), nil
+}
+
+var _ repository.RuleStore = (*fakeRuleStore)(nil)
+
+func intPtr(v int) *int { return &v }
 
 func tpl(id int64, format domain.RequestFormat, models []string) *domain.Template {
 	return &domain.Template{ID: id, BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{format}, Models: models}
@@ -67,7 +119,11 @@ func acc(id int64, t *domain.Template, maxConc int) *domain.Account {
 
 func newSched(t *testing.T, m *memLoader) *Scheduler {
 	t.Helper()
-	s := New(testCfg(), m, nil)
+	// 规则引擎：空表 Reload 写种子（429/30s、error/unhealthy/5s、ok/active），
+	// 行为等价于旧硬编码状态机（Task C 改造后 MarkResult 走规则路径）。
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	s := New(testCfg(), m, re, nil)
 	require.NoError(t, s.reload(context.Background()))
 	return s
 }
@@ -133,16 +189,23 @@ func TestMark429CooldownAndRecover(t *testing.T) {
 	t.Cleanup(cancel)
 	go s.writebackLoop(ctx)
 
-	reset := time.Now().Add(10 * time.Second)
-	s.MarkResult(1, Result429, &reset)
+	// 种子规则：429 → status=429 + cooldown 30s（MarkResult 异步投递，flush 同步处理）
+	s.MarkResult(1, Result429, nil, 0, "")
+	s.FlushRules()
 	_, err := s.Select(10, domain.FormatOpenAIChat, "m")
 	require.ErrorIs(t, err, ErrNoAvailable, "in cooldown should be unavailable")
-	// 冷却过期后惰性恢复
-	s.timeNow = func() time.Time { return time.Now().Add(15 * time.Second) }
+	// 冷却过期后惰性恢复（种子 cooldown 30s > 15s，需推进 35s）
+	s.timeNow = func() time.Time { return time.Now().Add(35 * time.Second) }
 	sel, err := s.Select(10, domain.FormatOpenAIChat, "m")
 	require.NoError(t, err, "available after cooldown")
-	s.MarkResult(sel.AccountID, ResultOK, nil)
+	s.MarkResult(sel.AccountID, ResultOK, nil, 0, "")
+	s.FlushRules()
 	s.Release(sel.AccountID)
+	// C-M2 语义钉：OK 恢复 active 但残留 cooldownUntil 保留至过期（新 apply 仅
+	// cooldownUntil 非 nil 才设置；种子 ok 规则无 cooldown → 旧冷却不清除）。
+	ri, _ := s.Runtime(1)
+	require.Equal(t, domain.StatusActive, ri.Status, "OK 恢复 active")
+	require.NotNil(t, ri.CooldownUntil, "OK 不清除残留冷却（保留至过期，Select 按时间判定不受影响）")
 	require.Eventually(t, func() bool {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -155,17 +218,21 @@ func TestMarkErrorBackoff(t *testing.T) {
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
 	s := newSched(t, m)
 
-	s.MarkResult(1, ResultError, nil) // 第一次失败 → backoff base
+	// 种子规则：error → unhealthy + cooldown 5s（指数退避已废弃——升级惩罚由规则表达）
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()
 	ri, ok := s.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status)
 	require.Equal(t, 1, ri.ErrCount)
 	require.NotNil(t, ri.CooldownUntil)
-	require.True(t, ri.CooldownUntil.After(time.Now().Add(4*time.Second)), "backoff base applied")
-	s.MarkResult(1, ResultError, nil) // 第二次 → 指数
+	require.True(t, ri.CooldownUntil.After(time.Now().Add(4*time.Second)), "seed cooldown 5s applied")
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()
 	ri, _ = s.Runtime(1)
 	require.Equal(t, 2, ri.ErrCount)
-	s.MarkResult(1, ResultOK, nil)
+	s.MarkResult(1, ResultOK, nil, 0, "")
+	s.FlushRules()
 	ri, _ = s.Runtime(1)
 	require.Equal(t, domain.StatusActive, ri.Status, "success resets status")
 	require.Equal(t, 0, ri.ErrCount, "success resets err count")
@@ -238,7 +305,8 @@ func TestInvalidateGroupByIDRebuild(t *testing.T) {
 	require.Equal(t, int64(0), ri.Concurrency, "added account release hits the new snapshot")
 
 	// 新增账号 3 的结果回流必须落新快照并触发回写。
-	s.MarkResult(3, ResultError, nil)
+	s.MarkResult(3, ResultError, nil, 0, "")
+	s.FlushRules()
 	ri, _ = s.Runtime(3)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status, "markresult hits the new snapshot")
 	require.Equal(t, 1, ri.ErrCount)
@@ -246,7 +314,8 @@ func TestInvalidateGroupByIDRebuild(t *testing.T) {
 	// 被移除账号 1：Runtime 不可见，MarkResult/Release 安全 no-op（无回写）。
 	_, ok = s.Runtime(1)
 	require.False(t, ok, "removed account must not be in byID")
-	s.MarkResult(1, ResultError, nil)
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()
 	s.Release(1)
 
 	require.NoError(t, s.Close(context.Background()))
@@ -284,7 +353,8 @@ func TestInvalidateGroupShrinkByID(t *testing.T) {
 
 	_, ok = s.Runtime(5)
 	require.False(t, ok, "removed account must not be in byID")
-	s.MarkResult(5, ResultError, nil)
+	s.MarkResult(5, ResultError, nil, 0, "")
+	s.FlushRules()
 	s.Release(5)
 
 	require.NoError(t, s.Close(context.Background()))
@@ -319,18 +389,18 @@ func TestMarkResultDisabledStaysDisabled(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.StatusDisabled, ri.Status, "禁用已在快照生效")
 
-	// 在途请求完成：OK 不得把状态重置回 active、不得重置错误计数
-	s.MarkResult(1, ResultOK, nil)
+	// 在途请求完成：OK 不得把状态重置回 active、不得重置错误计数（守卫同步短路，不投递）
+	s.MarkResult(1, ResultOK, nil, 0, "")
 	ri, _ = s.Runtime(1)
 	require.Equal(t, domain.StatusDisabled, ri.Status, "OK 不得复活禁用账号")
 	require.Zero(t, ri.ErrCount, "OK 不得重置禁用账号的错误计数")
 
 	// 防御性：429/错误分支同样不得给禁用账号设置冷却或改写状态
-	s.MarkResult(1, Result429, nil)
+	s.MarkResult(1, Result429, nil, 0, "")
 	ri, _ = s.Runtime(1)
 	require.Equal(t, domain.StatusDisabled, ri.Status, "429 不得把禁用账号改写为 429")
 	require.Nil(t, ri.CooldownUntil, "429 不得给禁用账号设置冷却")
-	s.MarkResult(1, ResultError, nil)
+	s.MarkResult(1, ResultError, nil, 0, "")
 	ri, _ = s.Runtime(1)
 	require.Equal(t, domain.StatusDisabled, ri.Status, "错误分支不得改写禁用账号")
 
@@ -344,6 +414,84 @@ func TestMarkResultDisabledStaysDisabled(t *testing.T) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	require.Empty(t, m.writes, "禁用账号不得有状态回写")
+}
+
+// TestWeightActionRebuildsRoutes 权重动作（I1/I5）：命中后快照权重更新 + 组路由
+// 重建（weightedSeq 预生成缓存），选号分布立即按新权重；纯 weight 动作不更新
+// 状态与 EWMA；DB 回写携带 weight。
+func TestWeightActionRebuildsRoutes(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"gpt-4o"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {
+		{ID: 1, TemplateID: 1, Template: tplx, UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+		{ID: 2, TemplateID: 1, Template: tplx, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
+	}})
+	// 自定义规则表（非种子）：error → 纯 weight 动作（weight 10）
+	rstore := &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}
+	_, err := rstore.CreateRule(context.Background(), domain.Rule{
+		Name: "throttle", Enabled: true, Priority: 10,
+		When: domain.RuleWhen{Kind: strPtr("error")},
+		Then: domain.RuleThen{Weight: intPtr(10)},
+	})
+	require.NoError(t, err)
+	re := rule.New(rule.Config{}, rstore, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	s := New(testCfg(), m, re, nil)
+	require.NoError(t, s.reload(context.Background()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go s.writebackLoop(ctx)
+
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()
+
+	// 纯 weight 动作：状态/EWMA 不动，快照权重更新
+	ri, ok := s.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status, "纯 weight 动作不动状态")
+	require.Zero(t, ri.ErrRate, "纯 weight 动作不更新 EWMA")
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	require.Equal(t, 10, byID[1].acc.Weight, "快照权重已更新")
+
+	// 回写携带 weight
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.writes) == 1 && m.writes[0].weight != nil && *m.writes[0].weight == 10
+	}, time.Second, 10*time.Millisecond, "writeback carries weight")
+
+	// 路由序列已重建：选号分布按新权重（100:10 → ≈10:1）
+	const n = 20_000
+	counts := map[int64]int{}
+	for i := 0; i < n; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+		require.NoError(t, err)
+		counts[sel.AccountID]++
+		s.Release(sel.AccountID)
+	}
+	ratio := float64(counts[2]) / float64(counts[1])
+	require.InDelta(t, ratio, 10.0, 0.5, "weight 100:10 → 频率比 ≈ 10:1（路由已按新权重重建）")
+}
+
+// TestProcessWriteMergeKeepsWeight 回归（评审 I-1）：同账号 weight 写先入队、
+// status 写（weight=nil）后入队，processWrite 合并不得丢 weight——否则 DB 不持久化，
+// ≤30s reload 后内存回退，weight 动作被静默撤销。
+func TestProcessWriteMergeKeepsWeight(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m)
+
+	// weight 写先入队、status 写后入队（weight=nil）
+	s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, intPtr(10))
+	s.enqueueWrite(1, accState{status: domain.StatusActive}, nil)
+
+	require.NoError(t, s.Close(context.Background())) // 排空触发 processWrite 合并
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.writes, 1, "same-account writes merged into one")
+	require.Equal(t, domain.StatusActive, m.writes[0].status, "后写 status 覆盖先写")
+	require.NotNil(t, m.writes[0].weight, "后写 weight=nil 不得丢弃已入队的 weight")
+	require.Equal(t, 10, *m.writes[0].weight, "最终写必须携带 weight")
 }
 
 // TestWorkerContract 满足 worker.Worker 契约（Global Constraints #5）：Name + 幂等 Start。
@@ -361,12 +509,14 @@ func TestWorkerContract(t *testing.T) {
 }
 
 // TestCloseDrainsWritebacks Close 排空 pending 回写且幂等；ctx 超时路径不阻塞。
+// 事件经 FlushRules 同步处理后进入回写队列（生产路径由规则引擎 worker 消费）。
 func TestCloseDrainsWritebacks(t *testing.T) {
 	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
 	s := newSched(t, m)
 
-	s.MarkResult(1, ResultError, nil)
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()                                    // 事件 → apply → 回写入队
 	require.NoError(t, s.Close(context.Background())) // 排空 pending 回写
 	require.NoError(t, s.Close(context.Background())) // 幂等
 	m.mu.Lock()
@@ -374,7 +524,8 @@ func TestCloseDrainsWritebacks(t *testing.T) {
 	m.mu.Unlock()
 
 	// ctx 已取消：限时路径直接返回（丢弃/尽最大努力），不阻塞。
-	s.MarkResult(1, ResultError, nil)
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.NoError(t, s.Close(ctx))
@@ -481,7 +632,7 @@ func TestSelectWeightDistribution(t *testing.T) {
 		require.NoError(t, err)
 		counts[sel.AccountID]++
 		s.Release(sel.AccountID)
-		s.MarkResult(sel.AccountID, ResultOK, nil)
+		s.MarkResult(sel.AccountID, ResultOK, nil, 0, "")
 	}
 	ratio := float64(counts[1]) / float64(counts[2])
 	// 注意：testify 无 InRange，用 InDelta（±0.1 窗口等价于 [1.9, 2.1]）
@@ -496,7 +647,8 @@ func TestSelectSkipsCooldown(t *testing.T) {
 	})
 	require.NoError(t, s.InvalidateAllSync())
 	// 账号 1 进 429 冷却
-	s.MarkResult(1, Result429, nil)
+	s.MarkResult(1, Result429, nil, 0, "")
+	s.FlushRules()
 	for i := 0; i < 50; i++ {
 		sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
 		require.NoError(t, err)
@@ -511,7 +663,8 @@ func TestSelectAllCooldownReturnsNoAvailable(t *testing.T) {
 		{ID: 1, TemplateID: 1, Template: tplWith(domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000},
 	})
 	require.NoError(t, s.InvalidateAllSync())
-	s.MarkResult(1, Result429, nil)
+	s.MarkResult(1, Result429, nil, 0, "")
+	s.FlushRules()
 	done := make(chan error, 1)
 	go func() {
 		_, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
@@ -544,7 +697,8 @@ func TestSelectTierFallback(t *testing.T) {
 	})
 	require.NoError(t, s.InvalidateAllSync())
 	// 账号 1（tier1）进冷却 → 请求 gpt-4o 应回落 tier2（账号 2，Serves 为 false）
-	s.MarkResult(1, Result429, nil)
+	s.MarkResult(1, Result429, nil, 0, "")
+	s.FlushRules()
 	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), sel.AccountID, "tier1 全不可用 → tier2 回落")

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/usage"
 	"go-proxy-mini/pkg/aiclient"
@@ -180,10 +181,11 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background())) // 空表写种子
 	sched := scheduler.New(scheduler.Config{
-		DefaultMaxConcurrency: 4, Cooldown429: 30 * time.Second,
-		BackoffBase: 5 * time.Second, BackoffMax: time.Minute, SyncInterval: time.Hour,
-	}, noopLoader{accs: accs}, nil)
+		DefaultMaxConcurrency: 4, SyncInterval: time.Hour,
+	}, noopLoader{accs: accs}, re, nil)
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,

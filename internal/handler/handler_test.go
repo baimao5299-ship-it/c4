@@ -31,7 +31,7 @@ func newTestHandler(t *testing.T) *AdminAPI {
 	t.Helper()
 	store := newFakeStore()
 	invalidate := func() {}
-	svc := service.New(store, fakeSched{}, invalidate, &fakeKeys{}, nil)
+	svc := service.New(store, fakeSched{}, invalidate, nil, &fakeKeys{}, nil)
 	return New(svc)
 }
 

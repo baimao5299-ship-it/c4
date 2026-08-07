@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/usage"
 	"go-proxy-mini/pkg/aiclient"
@@ -137,8 +139,45 @@ func (n noopLoader) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 func (n noopLoader) LoadGroupAccounts(ctx context.Context, id int64) ([]*domain.Account, error) {
 	return n.accs[id], nil
 }
-func (n noopLoader) UpdateAccountStatus(ctx context.Context, id int64, s domain.AccountStatus, c *time.Time, e *string) error {
+func (n noopLoader) UpdateAccountStatus(ctx context.Context, id int64, s domain.AccountStatus, c *time.Time, e *string, w *int) error {
 	return nil
+}
+
+// fakeRuleStore 内存 RuleStore：种子写入（值语义副本）。
+type fakeRuleStore struct {
+	mu    sync.Mutex
+	rules map[int64]domain.Rule
+	next  int64
+}
+
+func (f *fakeRuleStore) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]domain.Rule, 0, len(f.rules))
+	for _, r := range f.rules {
+		if enabled != nil && r.Enabled != *enabled {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (f *fakeRuleStore) CreateRule(ctx context.Context, r domain.Rule) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r.ID = f.next
+	f.next++
+	f.rules[r.ID] = r
+	return r.ID, nil
+}
+
+func (f *fakeRuleStore) UpdateRule(ctx context.Context, r domain.Rule) error { return nil }
+func (f *fakeRuleStore) DeleteRule(ctx context.Context, id int64) error      { return nil }
+func (f *fakeRuleStore) CountRules(ctx context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return int64(len(f.rules)), nil
 }
 
 func newTestProxy(t *testing.T, upstream string, accountID int64) *Proxy {
@@ -174,10 +213,11 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 		UpstreamStreamTimeout: streamTimeout,
 		GroupKeyRPM:           0, UsageCapture: usageCapture,
 	}
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background())) // 空表写种子（429/30s、error/5s、ok/active）
 	sched := scheduler.New(scheduler.Config{
-		DefaultMaxConcurrency: 4, Cooldown429: 30 * time.Second,
-		BackoffBase: 5 * time.Second, BackoffMax: time.Minute, SyncInterval: time.Hour,
-	}, noopLoader{accs: accs}, nil)
+		DefaultMaxConcurrency: 4, SyncInterval: time.Hour,
+	}, noopLoader{accs: accs}, re, nil)
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
@@ -334,6 +374,8 @@ func TestProxyFailoverOn429(t *testing.T) {
 	p.HandleChat(rec, req)
 	require.Equal(t, 429, rec.Code, "body=%s", rec.Body.String())
 	require.Equal(t, "1", rec.Header().Get("Retry-After"), "429 最终失败回 Retry-After")
+	// MarkResult 为异步投递：断言前排空规则队列（测试与优雅关闭用钩子）
+	sched.FlushRules()
 	// 两个账号都进入 429 冷却：Runtime 视图可查
 	ri, ok := sched.Runtime(1)
 	require.True(t, ok)
@@ -366,6 +408,7 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	p.HandleChat(rec, req)
 	require.Equal(t, 502, rec.Code, "body=%s", rec.Body.String())
 	require.Empty(t, rec.Header().Get("Retry-After"))
+	sched.FlushRules() // MarkResult 异步投递：断言前排空
 	ri, ok := sched.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status)
@@ -448,6 +491,7 @@ func TestProxyStreamAbortFreesSlot(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
 
+	p.sched.FlushRules() // MarkResult 异步投递：断言前排空
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status, "中止记 ResultError")
@@ -477,6 +521,7 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
 
+	p.sched.FlushRules() // MarkResult 异步投递：断言前排空
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status, "停滞超时记 ResultError → 不健康")
@@ -536,6 +581,7 @@ func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer gk-1")
 	p.HandleChat(failingResponseWriter{}, req)
 
+	p.sched.FlushRules() // MarkResult 异步投递：断言前排空
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status, "客户端断开记 ResultError")

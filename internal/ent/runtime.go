@@ -5,6 +5,7 @@ package ent
 import (
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/schema"
 	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/usagelog"
@@ -48,6 +49,22 @@ func init() {
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	ruleFields := schema.Rule{}.Fields()
+	_ = ruleFields
+	// ruleDescEnabled is the schema descriptor for enabled field.
+	ruleDescEnabled := ruleFields[2].Descriptor()
+	// rule.DefaultEnabled holds the default value on creation for the enabled field.
+	rule.DefaultEnabled = ruleDescEnabled.Default.(bool)
+	// ruleDescCreatedAt is the schema descriptor for created_at field.
+	ruleDescCreatedAt := ruleFields[6].Descriptor()
+	// rule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rule.DefaultCreatedAt = ruleDescCreatedAt.Default.(func() time.Time)
+	// ruleDescUpdatedAt is the schema descriptor for updated_at field.
+	ruleDescUpdatedAt := ruleFields[7].Descriptor()
+	// rule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	rule.DefaultUpdatedAt = ruleDescUpdatedAt.Default.(func() time.Time)
+	// rule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	rule.UpdateDefaultUpdatedAt = ruleDescUpdatedAt.UpdateDefault.(func() time.Time)
 	templateFields := schema.Template{}.Fields()
 	_ = templateFields
 	// templateDescCreatedAt is the schema descriptor for created_at field.

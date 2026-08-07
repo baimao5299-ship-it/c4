@@ -13,6 +13,7 @@ import (
 
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
@@ -32,6 +33,8 @@ type Client struct {
 	Account *AccountClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
+	// Rule is the client for interacting with the Rule builders.
+	Rule *RuleClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -51,6 +54,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Account = NewAccountClient(c.config)
 	c.Group = NewGroupClient(c.config)
+	c.Rule = NewRuleClient(c.config)
 	c.Template = NewTemplateClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.UsageStat = NewUsageStatClient(c.config)
@@ -148,6 +152,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:    cfg,
 		Account:   NewAccountClient(cfg),
 		Group:     NewGroupClient(cfg),
+		Rule:      NewRuleClient(cfg),
 		Template:  NewTemplateClient(cfg),
 		UsageLog:  NewUsageLogClient(cfg),
 		UsageStat: NewUsageStatClient(cfg),
@@ -172,6 +177,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:    cfg,
 		Account:   NewAccountClient(cfg),
 		Group:     NewGroupClient(cfg),
+		Rule:      NewRuleClient(cfg),
 		Template:  NewTemplateClient(cfg),
 		UsageLog:  NewUsageLogClient(cfg),
 		UsageStat: NewUsageStatClient(cfg),
@@ -203,21 +209,21 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.Account.Use(hooks...)
-	c.Group.Use(hooks...)
-	c.Template.Use(hooks...)
-	c.UsageLog.Use(hooks...)
-	c.UsageStat.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.Account, c.Group, c.Rule, c.Template, c.UsageLog, c.UsageStat,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.Account.Intercept(interceptors...)
-	c.Group.Intercept(interceptors...)
-	c.Template.Intercept(interceptors...)
-	c.UsageLog.Intercept(interceptors...)
-	c.UsageStat.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.Account, c.Group, c.Rule, c.Template, c.UsageLog, c.UsageStat,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -227,6 +233,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Account.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
+	case *RuleMutation:
+		return c.Rule.mutate(ctx, m)
 	case *TemplateMutation:
 		return c.Template.mutate(ctx, m)
 	case *UsageLogMutation:
@@ -549,6 +557,139 @@ func (c *GroupClient) mutate(ctx context.Context, m *GroupMutation) (Value, erro
 		return (&GroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Group mutation op: %q", m.Op())
+	}
+}
+
+// RuleClient is a client for the Rule schema.
+type RuleClient struct {
+	config
+}
+
+// NewRuleClient returns a client for the Rule from the given config.
+func NewRuleClient(c config) *RuleClient {
+	return &RuleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rule.Hooks(f(g(h())))`.
+func (c *RuleClient) Use(hooks ...Hook) {
+	c.hooks.Rule = append(c.hooks.Rule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rule.Intercept(f(g(h())))`.
+func (c *RuleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Rule = append(c.inters.Rule, interceptors...)
+}
+
+// Create returns a builder for creating a Rule entity.
+func (c *RuleClient) Create() *RuleCreate {
+	mutation := newRuleMutation(c.config, OpCreate)
+	return &RuleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Rule entities.
+func (c *RuleClient) CreateBulk(builders ...*RuleCreate) *RuleCreateBulk {
+	return &RuleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RuleClient) MapCreateBulk(slice any, setFunc func(*RuleCreate, int)) *RuleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RuleCreateBulk{err: fmt.Errorf("calling to RuleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RuleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RuleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Rule.
+func (c *RuleClient) Update() *RuleUpdate {
+	mutation := newRuleMutation(c.config, OpUpdate)
+	return &RuleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RuleClient) UpdateOne(_m *Rule) *RuleUpdateOne {
+	mutation := newRuleMutation(c.config, OpUpdateOne, withRule(_m))
+	return &RuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RuleClient) UpdateOneID(id int64) *RuleUpdateOne {
+	mutation := newRuleMutation(c.config, OpUpdateOne, withRuleID(id))
+	return &RuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Rule.
+func (c *RuleClient) Delete() *RuleDelete {
+	mutation := newRuleMutation(c.config, OpDelete)
+	return &RuleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RuleClient) DeleteOne(_m *Rule) *RuleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RuleClient) DeleteOneID(id int64) *RuleDeleteOne {
+	builder := c.Delete().Where(rule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RuleDeleteOne{builder}
+}
+
+// Query returns a query builder for Rule.
+func (c *RuleClient) Query() *RuleQuery {
+	return &RuleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Rule entity by its id.
+func (c *RuleClient) Get(ctx context.Context, id int64) (*Rule, error) {
+	return c.Query().Where(rule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RuleClient) GetX(ctx context.Context, id int64) *Rule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *RuleClient) Hooks() []Hook {
+	return c.hooks.Rule
+}
+
+// Interceptors returns the client interceptors.
+func (c *RuleClient) Interceptors() []Interceptor {
+	return c.inters.Rule
+}
+
+func (c *RuleClient) mutate(ctx context.Context, m *RuleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RuleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RuleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RuleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Rule mutation op: %q", m.Op())
 	}
 }
 
@@ -970,9 +1111,9 @@ func (c *UsageStatClient) mutate(ctx context.Context, m *UsageStatMutation) (Val
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, Group, Template, UsageLog, UsageStat []ent.Hook
+		Account, Group, Rule, Template, UsageLog, UsageStat []ent.Hook
 	}
 	inters struct {
-		Account, Group, Template, UsageLog, UsageStat []ent.Interceptor
+		Account, Group, Rule, Template, UsageLog, UsageStat []ent.Interceptor
 	}
 )
