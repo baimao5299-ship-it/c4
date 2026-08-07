@@ -42,15 +42,24 @@ type Proxy struct {
 	limit    *fixedWindowLimiter
 	log      *logx.Logger
 	inflight atomic.Int64
+	callers  map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
 }
 
 // New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
 // 不用 Config 字段——避免 nil 运行时才炸）。
 func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger) *Proxy {
-	return &Proxy{
+	p := &Proxy{
 		cfg: cfg, sched: sched, creds: creds, rec: rec, clients: clients, auth: auth,
 		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log,
 	}
+	// 注册表：每格式一 caller，New 时一次性构造（per-request 零分配）。
+	// 新格式（Gemini/Grok/ollama 等）= 1 个 caller 文件 + 此处一行注册。
+	p.callers = map[domain.RequestFormat]UpstreamCaller{
+		domain.FormatOpenAIChat:      &chatCaller{p: p},
+		domain.FormatOpenAIResponses: &responsesCaller{p: p},
+		domain.FormatAnthropic:       &anthropicCaller{p: p},
+	}
+	return p
 }
 
 func (p *Proxy) Inflight() int64 { return p.inflight.Load() }

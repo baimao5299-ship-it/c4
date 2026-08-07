@@ -1,0 +1,157 @@
+package proxy
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
+
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/scheduler"
+)
+
+// UpstreamCaller 一格式一实现：完成单次上游调用（含流式写出、客户端断开判定
+// 与 usage 记录）。记录职责全在 caller（finish/buildLog/recordStreamAbort/
+// MarkResult 直接可用——评审 I-1）；骨架只做 code 分支（429/5xx 转移、4xx
+// 透传记录）、handled 短路与耗尽 record。凭据值经 aiclient 格式方法传入
+// （头名 aiclient 内组装，Phase 1 正交延续——评审 M-2）。
+//
+// 语义：
+//   - handled == true → 请求已处理完毕（成功/客户端断开/流中止已记录；本地拒绝
+//     已写出无记录），骨架直接 return（不可转移）
+//   - handled == false → 上游未接受，骨架接手：
+//     code 429 → MarkResult(Result429) + Release + 转移
+//     code >= 500 或 code == 0（连接级/凭据错）→ MarkResult(ResultError) + Release + 转移
+//     code 4xx（err == nil）→ 骨架 finish(buildLog(Err4xx)) + 透传 respBody
+//     （空 → 网关文案 "upstream rejected request"）
+type UpstreamCaller interface {
+	Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64,
+		start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (code int, respBody []byte, handled bool, err error)
+}
+
+// handleFormat 通用转发骨架（从原 HandleXxx 提取，三格式共用）：鉴权 → 限流 →
+// 读体 → stream 探测（peek unmarshal）+ model 提取（gjson，零分配）→ 选号 →
+// failover 循环（每轮 credentialFor + caller.Call + code 分支）→ 耗尽记录写出。
+func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	reqID := uuid.NewString()
+	groupID, ok := p.auth.Authenticate(r)
+	if !ok {
+		writeErr(w, errInvalidKey)
+		p.record(reqID, 0, 0, "", "", format, 401, domain.ErrAuth, 0, nil, start)
+		return
+	}
+	if !p.limit.Allow(groupID, time.Now()) {
+		writeErr(w, errRateLimit)
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, p.cfg.MaxBodySize))
+	if err != nil {
+		writeErr(w, errBody)
+		return
+	}
+	// SDK v1.x 参数里没有 Stream 字段（流式由 NewStreaming 在请求选项层注入
+	// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
+	var peek struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &peek); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+		return
+	}
+	// model 提取（评审 I-2）：gjson 顶层直取、零分配，不解析完整 params。
+	// 类型校验对齐现状完整 params 解析对 model 字段的校验：非字符串 → 400；
+	// 显式 null 与缺失等同（encoding/json 的 null → 零值语义）。
+	reqModel := ""
+	if mv := gjson.GetBytes(body, "model"); mv.Exists() {
+		if mv.Type != gjson.Null && mv.Type != gjson.String {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: model must be a string"}})
+			return
+		}
+		reqModel = mv.String()
+	}
+
+	sel, err := p.sched.Select(groupID, format, reqModel)
+	if err != nil {
+		p.handleSelectError(w, err)
+		p.record(reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, nil, start)
+		return
+	}
+
+	// 注册表查找在 failover 循环外（评审 I-3）：格式固定，每轮不重查。
+	caller := p.callers[format]
+
+	var (
+		lastCode int
+		lastSel  = sel // 最后一次实际尝试的 Selection；中途 Select 失败返回 nil 时不得解引用 sel
+	)
+	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
+		lastSel = sel
+		// 凭据每轮取（评审 I-3）：尾部 Select 后 Selection 变化，凭据随账号；
+		// 循环外取一次会把旧账号 key 发给新账号上游。
+		cred, err := p.credentialFor(r.Context(), sel)
+		var (
+			code     int
+			respBody []byte
+			handled  bool
+		)
+		if err != nil {
+			code = 0 // 凭据错误按网络错误处理（等价现状 try* 内 false,0,nil → 耗尽 ErrNetwork）
+		} else {
+			code, respBody, handled, err = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, peek.Stream)
+		}
+		if handled {
+			return // caller 已处理完毕（成功/客户端断开/流中止已记录；本地拒绝已写出无记录）
+		}
+		lastCode = code
+		if code == http.StatusTooManyRequests {
+			p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil, code, upstreamErrMsg(respBody))
+		} else if code >= 500 || code == 0 {
+			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, code, upstreamErrMsg(respBody))
+		} else {
+			// 4xx 确定性错误：透传上游状态码与原始 body，不转移（规格 §5.3）；
+			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
+			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, nil, start))
+			if len(respBody) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(code)
+				_, _ = w.Write(respBody)
+			} else {
+				writeJSON(w, code, map[string]any{"error": map[string]any{
+					"message": "upstream rejected request", "type": "upstream_error",
+				}})
+			}
+			return
+		}
+		p.sched.Release(sel.AccountID)
+		// 最后一轮不再为不存在的下一次尝试预选：尾部 Select 会抢占并发槽
+		// （CAS 递增、仅 Release 递减、无回收），耗尽时永不释放 → 永久占槽。
+		if attempt+1 >= p.cfg.FailoverAttempts {
+			break
+		}
+		var selErr error
+		sel, selErr = p.sched.Select(groupID, format, reqModel)
+		if selErr != nil {
+			break
+		}
+	}
+	// 耗尽：请求已完成（上游消费了请求），以最后一次尝试的结果记一条用量。
+	et := domain.Err5xx
+	switch {
+	case lastCode == http.StatusTooManyRequests:
+		et = domain.Err429
+	case lastCode == 0:
+		et = domain.ErrNetwork
+	}
+	p.record(reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, 0, nil, start)
+	if lastCode == http.StatusTooManyRequests {
+		w.Header().Set("Retry-After", "1")
+		writeErr(w, errTooMany)
+	} else {
+		writeErr(w, &formatError{status: http.StatusBadGateway, msg: "all upstream attempts failed"})
+	}
+}
