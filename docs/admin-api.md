@@ -453,7 +453,17 @@
 | `cooldown` | string | 冷却时长（`time.ParseDuration` 可解析且 >0，如 `"30s"`、`"5h"`） |
 | `weight` | int | 权重（0-100，变更立即重建该组选号序列） |
 
-种子规则（规则表为空时启动自动写入）：`429 → status=429 + cooldown 30s`（priority 10）、`error → status=unhealthy + cooldown 5s`（priority 20）、`ok → status=active`（priority 30，无冷却）。
+种子规则（规则表为空时启动自动写入）：`429 → status=429 + cooldown 30s`（priority 10）、`error → status=unhealthy + cooldown 5s`（priority 20）、`ok → status=active`（priority 30，无冷却）。删除全部规则后，下次引擎重载（任意规则 CRUD 或重启）会自动重新播种——规则表不会保持真空。
+
+### 事件模型与匹配语义
+
+- **事件来源**：每次请求结算（MarkResult）产生一个事件 `{kind, http_status, error_message, account_id, template_id, group_id, model, occurred_at, reset_at}`，经有界队列投递规则 worker 匹配（队列满时丢弃并告警，不阻塞请求路径）。
+- **条件投递**：仅当规则集中存在 `when.kind` 为 `nil`（任意）或 `ok` 的规则时，`ok` 事件才进入匹配；否则 ok 事件直接被跳过（性能优化）。想用 ok 事件恢复状态，必须保留 kind=ok 或全匹配规则（种子规则自带 ok 规则）。
+- **首中即停**：按 `priority` 升序逐规则匹配，首个命中即执行其 `then` 全部动作，不再继续。
+- **命中不清零窗口**：计数窗口为滑动窗口，命中不重置计数（自然衰减）；统计窗口固定粒度近似，误差 ≤ 一个粒度。
+- **冷却语义**：命中且 `then.cooldown` 提供 → `cooldown_until = 命中时刻 + cooldown`。`then` 只设 status 无 cooldown 时，事件自带 `reset_at`（如上游 `Retry-After`）作为冷却兜底。
+- **OK 不清除冷却**：`ok` 事件命中只恢复状态（如 `active`），**不**清除既有的 `cooldown_until`——调度器在冷却期内仍抑制该账号，避免 429 风暴后立即被打满。
+- **状态变更即时生效**：规则增删改自动触发引擎重载；`weight` 动作立即重建对应组的选号序列（无需等 sync 周期）。
 
 ### 创建规则
 
@@ -493,6 +503,8 @@
 |---|---|
 | `400` | `when`/`then` 含未知字段、`kind` 非法、计数为负、`window_seconds` < 1、比例越界或缺 `count_total_ge`、`then` 无动作、`cooldown` 非法、`weight` 越界 |
 | `409` | `priority` 或 `name` 唯一冲突 |
+
+> 配置变更：`scheduler.cooldown_429` / `scheduler.backoff_base` / `scheduler.backoff_max` **已废弃**（不再参与任何决策，仅保留读取兼容）。429 冷却、错误退避与恢复节奏统一由规则引擎的种子规则与自定义规则接管。
 
 ## 认证失败与错误码
 

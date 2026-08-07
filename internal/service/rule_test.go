@@ -75,6 +75,19 @@ func TestCreateRuleInvalidThen(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput, "比例缺 count_total_ge → 400 语义")
 }
 
+func TestCreateRuleNameRequired(t *testing.T) {
+	svc, _, rl := newRuleSvc()
+	_, err := svc.CreateRule(context.Background(), RuleInput{
+		Name: "", Priority: 10, When: validWhen(), Then: validThen(),
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "name 空 → 400 语义")
+	_, err = svc.CreateRule(context.Background(), RuleInput{
+		Name: "   ", Priority: 11, When: validWhen(), Then: validThen(),
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "name 全空白 → 400 语义")
+	require.Zero(t, rl.calls, "校验失败不触发 Reload")
+}
+
 func TestCreateRulePriorityConflict(t *testing.T) {
 	svc, _, rl := newRuleSvc()
 	_, err := svc.CreateRule(context.Background(), RuleInput{Name: "r1", Priority: 10, When: validWhen(), Then: validThen()})
@@ -108,10 +121,22 @@ func TestUpdateRuleMerge(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 	require.Equal(t, 2, rl.calls, "校验失败不触发 Reload")
 
+	// 显式 {} 清空 when（D-M2）：非 nil 空 map = 整体替换为空 when（匹配一切）
+	cleared, err := svc.UpdateRule(context.Background(), created.ID, RulePatch{When: map[string]any{}})
+	require.NoError(t, err)
+	require.Nil(t, cleared.When.Kind, "显式 {} 清空 when")
+	require.Equal(t, "r1-renamed", cleared.Name, "其他字段不受影响")
+	require.Equal(t, 3, rl.calls, "清空 when 同样触发 Reload")
+
 	// 404 含 id
 	_, err = svc.UpdateRule(context.Background(), 999, RulePatch{})
 	require.ErrorIs(t, err, ErrNotFound)
 	require.Contains(t, err.Error(), "id=999 missing")
+
+	// name 更新为空 → 400 语义
+	emptyName := ""
+	_, err = svc.UpdateRule(context.Background(), created.ID, RulePatch{Name: &emptyName})
+	require.ErrorIs(t, err, ErrInvalidInput, "name 更新为空 → 400 语义")
 
 	// priority 冲突 → ErrConflict
 	_, err = svc.CreateRule(context.Background(), RuleInput{Name: "r2", Priority: 20, When: validWhen(), Then: validThen()})
@@ -119,7 +144,7 @@ func TestUpdateRuleMerge(t *testing.T) {
 	p := 20
 	_, err = svc.UpdateRule(context.Background(), created.ID, RulePatch{Priority: &p})
 	require.ErrorIs(t, err, ErrConflict)
-	require.Equal(t, 3, rl.calls, "冲突失败不触发 Reload")
+	require.Equal(t, 4, rl.calls, "冲突失败不触发 Reload")
 }
 
 func TestDeleteRule(t *testing.T) {

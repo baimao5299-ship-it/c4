@@ -201,6 +201,11 @@ func TestMark429CooldownAndRecover(t *testing.T) {
 	s.MarkResult(sel.AccountID, ResultOK, nil, 0, "")
 	s.FlushRules()
 	s.Release(sel.AccountID)
+	// C-M2 语义钉：OK 恢复 active 但残留 cooldownUntil 保留至过期（新 apply 仅
+	// cooldownUntil 非 nil 才设置；种子 ok 规则无 cooldown → 旧冷却不清除）。
+	ri, _ := s.Runtime(1)
+	require.Equal(t, domain.StatusActive, ri.Status, "OK 恢复 active")
+	require.NotNil(t, ri.CooldownUntil, "OK 不清除残留冷却（保留至过期，Select 按时间判定不受影响）")
 	require.Eventually(t, func() bool {
 		m.mu.Lock()
 		defer m.mu.Unlock()

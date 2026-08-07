@@ -42,9 +42,12 @@ type RulePatch struct {
 	Then     map[string]any
 }
 
-// CreateRule 创建规则：when/then 反序列化（未知键拒绝）→ 语义校验 →
+// CreateRule 创建规则：name 必填 → when/then 反序列化（未知键拒绝）→ 语义校验 →
 // 写入 → 规则引擎 Reload。priority/name 唯一冲突 → ErrConflict（409）。
 func (s *Service) CreateRule(ctx context.Context, in RuleInput) (*domain.Rule, error) {
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
 	w, err := ruleWhenFromRaw(in.When)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
@@ -101,6 +104,9 @@ func (s *Service) UpdateRule(ctx context.Context, id int64, p RulePatch) (*domai
 			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 		cur.Then = t
+	}
+	if strings.TrimSpace(cur.Name) == "" {
+		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
 	if err := rule.ValidateWhen(cur.When); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
