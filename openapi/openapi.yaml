@@ -829,6 +829,8 @@ components:
         PromptTokens: { type: integer, format: int64 }
         CompletionTokens: { type: integer, format: int64 }
         TotalTokens: { type: integer, format: int64 }
+        CacheReadTokens: { type: integer, format: int64 }
+        CacheCreationTokens: { type: integer, format: int64 }
         CreatedAt: { type: string, format: date-time }
     LogsResponse:
       type: object
@@ -852,4 +854,6 @@ components:
         PromptTokens: { type: integer, format: int64 }
         CompletionTokens: { type: integer, format: int64 }
         TotalTokens: { type: integer, format: int64 }
+        CacheReadTokens: { type: integer, format: int64 }
+        CacheCreationTokens: { type: integer, format: int64 }
         TotalLatencyMS: { type: integer, format: int64 }

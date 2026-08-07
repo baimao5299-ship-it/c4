@@ -39,6 +39,8 @@ func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) erro
 			SetPromptTokens(l.PromptTokens).
 			SetCompletionTokens(l.CompletionTokens).
 			SetTotalTokens(l.TotalTokens).
+			SetCacheReadTokens(l.CacheReadTokens).
+			SetCacheCreationTokens(l.CacheCreationTokens).
 			SetCreatedAt(l.CreatedAt)
 		if l.GroupID > 0 {
 			c = c.SetGroupID(l.GroupID)
@@ -98,11 +100,13 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 			ID: row.ID, RequestID: row.RequestID,
 			Model: row.Model, Format: domain.RequestFormat(row.Format),
 			StatusCode: row.StatusCode, ErrorType: domain.ErrorType(row.ErrorType),
-			LatencyMS:        row.LatencyMs,
-			PromptTokens:     row.PromptTokens,
-			CompletionTokens: row.CompletionTokens,
-			TotalTokens:      row.TotalTokens,
-			CreatedAt:        row.CreatedAt,
+			LatencyMS:           row.LatencyMs,
+			PromptTokens:        row.PromptTokens,
+			CompletionTokens:    row.CompletionTokens,
+			TotalTokens:         row.TotalTokens,
+			CacheReadTokens:     row.CacheReadTokens,
+			CacheCreationTokens: row.CacheCreationTokens,
+			CreatedAt:           row.CreatedAt,
 		}
 		if row.GroupID != nil {
 			l.GroupID = *row.GroupID

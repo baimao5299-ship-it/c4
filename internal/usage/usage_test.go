@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -37,6 +38,8 @@ func (m *memStatStore) Upsert(ctx context.Context, b []*domain.StatBucket) error
 				ob.RequestCount += nb.RequestCount
 				ob.ErrorCount += nb.ErrorCount
 				ob.TotalTokens += nb.TotalTokens
+				ob.CacheReadTokens += nb.CacheReadTokens
+				ob.CacheCreationTokens += nb.CacheCreationTokens
 				ob.TotalLatencyMS += nb.TotalLatencyMS
 				goto next
 			}
@@ -93,9 +96,9 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	require.NoError(t, r.Start(ctx))
 
 	now := time.Now().Truncate(time.Hour)
-	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, LatencyMS: 5, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, LatencyMS: 5, CacheReadTokens: 4, CacheCreationTokens: 2, CreatedAt: now})
 	r.Record(&domain.UsageLog{RequestID: "b", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 7, CreatedAt: now})
-	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, LatencyMS: 9, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, LatencyMS: 9, CacheReadTokens: 6, CacheCreationTokens: 3, CreatedAt: now})
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -121,11 +124,53 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	require.NotNil(t, okB)
 	require.Equal(t, int64(2), okB.RequestCount)
 	require.Equal(t, int64(40), okB.TotalTokens)
+	require.Equal(t, int64(10), okB.CacheReadTokens, "cache read SUM 进聚合桶")
+	require.Equal(t, int64(5), okB.CacheCreationTokens, "cache creation SUM 进聚合桶")
 	require.NotNil(t, errB)
 	require.Equal(t, int64(1), errB.RequestCount)
 	require.Equal(t, int64(1), errB.ErrorCount)
+	require.Zero(t, errB.CacheReadTokens, "无缓存记录 → 0")
 	cancel()
 	r.Close(context.Background())
+}
+
+// failStatStore 模拟 Upsert 失败（flushStats 回灌路径，评审 M3）。
+type failStatStore struct {
+	fail    bool
+	buckets []*domain.StatBucket
+}
+
+func (m *failStatStore) Upsert(ctx context.Context, b []*domain.StatBucket) error {
+	if m.fail {
+		return errors.New("db down")
+	}
+	m.buckets = append(m.buckets, b...)
+	return nil
+}
+
+// TestFlushStatsRefeedsCacheTokens 失败回灌：Upsert 失败后计数回灌内存计数，
+// 下一次成功 flush 聚合不丢 cache 字段（评审 M3 两处 SUM）。
+func TestFlushStatsRefeedsCacheTokens(t *testing.T) {
+	ls := &memLogStore{}
+	ss := &failStatStore{}
+	r := New(UsageConfig{BatchSize: 10}, ls, ss, nil)
+
+	now := time.Now().Truncate(time.Hour)
+	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CacheReadTokens: 4, CacheCreationTokens: 2, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, CacheReadTokens: 6, CacheCreationTokens: 3, CreatedAt: now})
+
+	// 第一次 flush 失败 → 计数回灌
+	ss.fail = true
+	r.flushStats()
+	require.Empty(t, ss.buckets)
+
+	// 第二次成功 flush → 回灌的 cache 计数不丢
+	ss.fail = false
+	r.flushStats()
+	require.Len(t, ss.buckets, 1)
+	require.Equal(t, int64(10), ss.buckets[0].CacheReadTokens, "回灌后 cache read 不丢")
+	require.Equal(t, int64(5), ss.buckets[0].CacheCreationTokens, "回灌后 cache creation 不丢")
+	require.Equal(t, int64(2), ss.buckets[0].RequestCount)
 }
 
 func TestRecordBackpressureWhenFull(t *testing.T) {

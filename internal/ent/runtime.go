@@ -107,8 +107,16 @@ func init() {
 	usagelogDescTotalTokens := usagelogFields[13].Descriptor()
 	// usagelog.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	usagelog.DefaultTotalTokens = usagelogDescTotalTokens.Default.(int64)
+	// usagelogDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
+	usagelogDescCacheReadTokens := usagelogFields[14].Descriptor()
+	// usagelog.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
+	usagelog.DefaultCacheReadTokens = usagelogDescCacheReadTokens.Default.(int64)
+	// usagelogDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
+	usagelogDescCacheCreationTokens := usagelogFields[15].Descriptor()
+	// usagelog.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
+	usagelog.DefaultCacheCreationTokens = usagelogDescCacheCreationTokens.Default.(int64)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[14].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[16].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	usagestatFields := schema.UsageStat{}.Fields()
@@ -153,12 +161,20 @@ func init() {
 	usagestatDescTotalTokens := usagestatFields[11].Descriptor()
 	// usagestat.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	usagestat.DefaultTotalTokens = usagestatDescTotalTokens.Default.(int64)
+	// usagestatDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
+	usagestatDescCacheReadTokens := usagestatFields[12].Descriptor()
+	// usagestat.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
+	usagestat.DefaultCacheReadTokens = usagestatDescCacheReadTokens.Default.(int64)
+	// usagestatDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
+	usagestatDescCacheCreationTokens := usagestatFields[13].Descriptor()
+	// usagestat.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
+	usagestat.DefaultCacheCreationTokens = usagestatDescCacheCreationTokens.Default.(int64)
 	// usagestatDescTotalLatencyMs is the schema descriptor for total_latency_ms field.
-	usagestatDescTotalLatencyMs := usagestatFields[12].Descriptor()
+	usagestatDescTotalLatencyMs := usagestatFields[14].Descriptor()
 	// usagestat.DefaultTotalLatencyMs holds the default value on creation for the total_latency_ms field.
 	usagestat.DefaultTotalLatencyMs = usagestatDescTotalLatencyMs.Default.(int64)
 	// usagestatDescUpdatedAt is the schema descriptor for updated_at field.
-	usagestatDescUpdatedAt := usagestatFields[13].Descriptor()
+	usagestatDescUpdatedAt := usagestatFields[15].Descriptor()
 	// usagestat.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	usagestat.DefaultUpdatedAt = usagestatDescUpdatedAt.Default.(func() time.Time)
 	// usagestat.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

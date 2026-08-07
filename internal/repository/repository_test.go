@@ -511,15 +511,18 @@ func TestListTemplatesQuery(t *testing.T) {
 func TestLogsAndStats(t *testing.T) {
 	tr := newRepos(t)
 
-	// InsertBatch -> 批量 INSERT ... RETURNING id
+	// InsertBatch -> 批量 INSERT ... RETURNING id（列序：account_id, cache_creation_tokens,
+	// cache_read_tokens, completion_tokens, created_at, ... total_tokens）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_logs"`)).
-		WithArgs(int64(2), int64(0), pgxmock.AnyArg(), "none", usagelog.Format("openai-chat"), int64(1), int64(10),
-			"m", int64(0), "r1", int(200), int64(3), int64(100),
-			int64(2), int64(0), pgxmock.AnyArg(), "5xx", usagelog.Format("openai-chat"), int64(1), int64(20),
-			"m", int64(0), "r2", int(500), int64(3), int64(0)).
+		WithArgs(int64(2), int64(2), int64(4), int64(0), pgxmock.AnyArg(), "none",
+			usagelog.Format("openai-chat"), int64(1), int64(10), "m", int64(0), "r1",
+			int(200), int64(3), int64(100),
+			int64(2), int64(3), int64(5), int64(0), pgxmock.AnyArg(), "5xx",
+			usagelog.Format("openai-chat"), int64(1), int64(20), "m", int64(0), "r2",
+			int(500), int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
-	// Log Query -> Count + SELECT
+	// Log Query -> Count + SELECT（cache 两列在 total_tokens 与 created_at 之间）
 	tr.pool.ExpectQuery(q(`SELECT COUNT(`)).
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
@@ -527,25 +530,26 @@ func TestLogsAndStats(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
 			"model", "mapped_model", "format", "status_code", "error_type", "latency_ms",
-			"prompt_tokens", "completion_tokens", "total_tokens", "created_at"}).
+			"prompt_tokens", "completion_tokens", "total_tokens", "cache_read_tokens",
+			"cache_creation_tokens", "created_at"}).
 			AddRow(int64(1), "r1", int64(1), int64(2), int64(3), "m", "", "openai-chat",
-				int(200), "none", int64(10), int64(0), int64(0), int64(100),
+				int(200), "none", int64(10), int64(0), int64(0), int64(100), int64(4), int64(2),
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 			AddRow(int64(2), "r2", int64(1), int64(2), int64(3), "m", "", "openai-chat",
-				int(500), "5xx", int64(20), int64(0), int64(0), int64(0),
+				int(500), "5xx", int64(20), int64(0), int64(0), int64(0), int64(5), int64(3),
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 	// Stats Upsert x2 -> INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING id
-	//（DO UPDATE 的 COALESCE 增量以 $14.. 追加为独立参数）
+	//（DO UPDATE 的 COALESCE 增量以 $16.. 追加为独立参数，含 cache 两列）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), "m", false,
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(30), pgxmock.AnyArg(),
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(30)).
+			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(30), pgxmock.AnyArg(),
+			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(30)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), "m", false,
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(40), pgxmock.AnyArg(),
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(40)).
+			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(40), pgxmock.AnyArg(),
+			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(40)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
 
 	// Stats Scan（测试未过滤 group_id，仅 bucket_time 范围两个参数）
@@ -553,32 +557,39 @@ func TestLogsAndStats(t *testing.T) {
 		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "bucket_time", "group_id", "account_id", "template_id",
 			"model", "is_error", "request_count", "error_count", "prompt_tokens",
-			"completion_tokens", "total_tokens", "total_latency_ms", "updated_at"}).
+			"completion_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
+			"total_latency_ms", "updated_at"}).
 			AddRow(int64(1), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(1), int64(0), int64(0),
-				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(30),
+				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(30),
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 	logs := []*domain.UsageLog{
-		{RequestID: "r1", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, LatencyMS: 10, TotalTokens: 100},
-		{RequestID: "r2", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 20, TotalTokens: 0},
+		{RequestID: "r1", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, LatencyMS: 10, TotalTokens: 100, CacheReadTokens: 4, CacheCreationTokens: 2},
+		{RequestID: "r2", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 20, TotalTokens: 0, CacheReadTokens: 5, CacheCreationTokens: 3},
 	}
 	require.NoError(t, tr.repos.Logs.InsertBatch(ctx(), logs))
 	rows, total, err := tr.repos.Logs.QueryLogs(ctx(), repository.LogQuery{GroupID: 1, Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)
+	require.Equal(t, int64(4), rows[0].CacheReadTokens, "cache read round-trip")
+	require.Equal(t, int64(2), rows[0].CacheCreationTokens, "cache creation round-trip")
+	require.Equal(t, int64(5), rows[1].CacheReadTokens)
+	require.Equal(t, int64(3), rows[1].CacheCreationTokens)
 	bucket := time.Now().Truncate(time.Hour)
 	require.NoError(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
-		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30},
+		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30, CacheReadTokens: 4, CacheCreationTokens: 2},
 	}))
 	require.NoError(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
-		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 3, ErrorCount: 1, TotalTokens: 200, TotalLatencyMS: 40},
+		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 3, ErrorCount: 1, TotalTokens: 200, TotalLatencyMS: 40, CacheReadTokens: 6, CacheCreationTokens: 3},
 	}))
 	scanned, err := tr.repos.Stats.ScanStats(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
 	require.NoError(t, err)
 	require.Len(t, scanned, 1)
 	require.Equal(t, int64(5), scanned[0].RequestCount, "upsert accumulates")
 	require.Equal(t, int64(300), scanned[0].TotalTokens)
+	require.Equal(t, int64(10), scanned[0].CacheReadTokens, "cache read accumulates")
+	require.Equal(t, int64(5), scanned[0].CacheCreationTokens, "cache creation accumulates")
 	tr.expectDone(t)
 }
 

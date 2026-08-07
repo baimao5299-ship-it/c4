@@ -150,16 +150,14 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var pt, ct, tt int64
+		var pt, ct, tt, cr, cc int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
 				// "usage": null 的帧（存在但为 null）不得清零元组：Exists() 对
 				// null 为真。gjson 无 IsNull()，用 Type == gjson.JSON 判定非空
 				// 对象/数组（缺失与显式 null 的 Type 均为 Null）（评审 Minor）。
 				if len(ev.Event) == 0 && gjson.GetBytes(ev.Data, "usage").Type == gjson.JSON {
-					pt = gjson.GetBytes(ev.Data, "usage.prompt_tokens").Int()
-					ct = gjson.GetBytes(ev.Data, "usage.completion_tokens").Int()
-					tt = gjson.GetBytes(ev.Data, "usage.total_tokens").Int()
+					pt, ct, tt, cr, cc = chatStreamUsage(ev.Data)
 				}
 			},
 		})
@@ -178,7 +176,7 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 			return true, 0, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 		return true, 200, nil
 	}
 
@@ -193,11 +191,13 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-	var pt, ct, tt int64
+	var pt, ct, tt, cr, cc int64
 	if resp.JSON.Usage.Valid() {
-		pt, ct, tt = resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens
+		// 非流式：cr 直读 SDK 结构体、cc 走 RawJSON() 原始字节 gjson 聚合
+		// （评审 I-1 方案——结构体 marshal 自证不可用）。
+		pt, ct, tt, cr, cc = chatUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 	return true, 200, nil
 }

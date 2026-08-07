@@ -34,6 +34,8 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 			SetPromptTokens(b.PromptTokens).
 			SetCompletionTokens(b.CompletionTokens).
 			SetTotalTokens(b.TotalTokens).
+			SetCacheReadTokens(b.CacheReadTokens).
+			SetCacheCreationTokens(b.CacheCreationTokens).
 			SetTotalLatencyMs(b.TotalLatencyMS).
 			OnConflictColumns("bucket_time", "group_id", "account_id", "template_id", "model", "is_error").
 			Update(func(u *ent.UsageStatUpsert) {
@@ -42,6 +44,8 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 				u.AddPromptTokens(b.PromptTokens)
 				u.AddCompletionTokens(b.CompletionTokens)
 				u.AddTotalTokens(b.TotalTokens)
+				u.AddCacheReadTokens(b.CacheReadTokens)
+				u.AddCacheCreationTokens(b.CacheCreationTokens)
 				u.AddTotalLatencyMs(b.TotalLatencyMS)
 			}).
 			ID(ctx)
@@ -80,6 +84,7 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 			RequestCount: row.RequestCount, ErrorCount: row.ErrorCount,
 			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
 			TotalTokens: row.TotalTokens, TotalLatencyMS: row.TotalLatencyMs,
+			CacheReadTokens: row.CacheReadTokens, CacheCreationTokens: row.CacheCreationTokens,
 		})
 	}
 	return out, nil

@@ -114,6 +114,16 @@ func TotalTokens(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldTotalTokens, v))
 }
 
+// CacheReadTokens applies equality check predicate on the "cache_read_tokens" field. It's identical to CacheReadTokensEQ.
+func CacheReadTokens(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheReadTokens, v))
+}
+
+// CacheCreationTokens applies equality check predicate on the "cache_creation_tokens" field. It's identical to CacheCreationTokensEQ.
+func CacheCreationTokens(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreationTokens, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCreatedAt, v))
@@ -757,6 +767,86 @@ func TotalTokensLT(v int64) predicate.UsageLog {
 // TotalTokensLTE applies the LTE predicate on the "total_tokens" field.
 func TotalTokensLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldTotalTokens, v))
+}
+
+// CacheReadTokensEQ applies the EQ predicate on the "cache_read_tokens" field.
+func CacheReadTokensEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensNEQ applies the NEQ predicate on the "cache_read_tokens" field.
+func CacheReadTokensNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensIn applies the In predicate on the "cache_read_tokens" field.
+func CacheReadTokensIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCacheReadTokens, vs...))
+}
+
+// CacheReadTokensNotIn applies the NotIn predicate on the "cache_read_tokens" field.
+func CacheReadTokensNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCacheReadTokens, vs...))
+}
+
+// CacheReadTokensGT applies the GT predicate on the "cache_read_tokens" field.
+func CacheReadTokensGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensGTE applies the GTE predicate on the "cache_read_tokens" field.
+func CacheReadTokensGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensLT applies the LT predicate on the "cache_read_tokens" field.
+func CacheReadTokensLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCacheReadTokens, v))
+}
+
+// CacheReadTokensLTE applies the LTE predicate on the "cache_read_tokens" field.
+func CacheReadTokensLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCacheReadTokens, v))
+}
+
+// CacheCreationTokensEQ applies the EQ predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensNEQ applies the NEQ predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensIn applies the In predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCacheCreationTokens, vs...))
+}
+
+// CacheCreationTokensNotIn applies the NotIn predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCacheCreationTokens, vs...))
+}
+
+// CacheCreationTokensGT applies the GT predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensGTE applies the GTE predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensLT applies the LT predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCacheCreationTokens, v))
+}
+
+// CacheCreationTokensLTE applies the LTE predicate on the "cache_creation_tokens" field.
+func CacheCreationTokensLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCacheCreationTokens, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

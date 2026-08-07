@@ -65,8 +65,9 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, model string, f
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: model, Format: format, StatusCode: status, ErrorType: et,
-		LatencyMS:    time.Since(start).Milliseconds(),
-		PromptTokens: u.pt, CompletionTokens: u.ct, TotalTokens: u.tt,
+		LatencyMS:           time.Since(start).Milliseconds(),
+		PromptTokens:        u.pt, CompletionTokens: u.ct, TotalTokens: u.tt,
+		CacheReadTokens:     u.cr, CacheCreationTokens: u.cc,
 		CreatedAt: time.Now(),
 	}
 }
@@ -106,7 +107,8 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 // --- 辅助 ---
 
 type usageTuple struct {
-	pt, ct, tt int64
+	pt, ct, tt     int64
+	cr, cc         int64 // 缓存读取/写入 token（缺失 = 0）
 }
 
 func (p *Proxy) recordStreamAbort(reqID string, start time.Time, sel *scheduler.Selection, err error) {

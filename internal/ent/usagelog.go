@@ -43,6 +43,10 @@ type UsageLog struct {
 	CompletionTokens int64 `json:"completion_tokens,omitempty"`
 	// TotalTokens holds the value of the "total_tokens" field.
 	TotalTokens int64 `json:"total_tokens,omitempty"`
+	// CacheReadTokens holds the value of the "cache_read_tokens" field.
+	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
+	// CacheCreationTokens holds the value of the "cache_creation_tokens" field.
+	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt    time.Time `json:"created_at,omitempty"`
 	selectValues sql.SelectValues
@@ -53,7 +57,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldPromptTokens, usagelog.FieldCompletionTokens, usagelog.FieldTotalTokens:
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldPromptTokens, usagelog.FieldCompletionTokens, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreationTokens:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType:
 			values[i] = new(sql.NullString)
@@ -162,6 +166,18 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TotalTokens = value.Int64
 			}
+		case usagelog.FieldCacheReadTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_read_tokens", values[i])
+			} else if value.Valid {
+				_m.CacheReadTokens = value.Int64
+			}
+		case usagelog.FieldCacheCreationTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_creation_tokens", values[i])
+			} else if value.Valid {
+				_m.CacheCreationTokens = value.Int64
+			}
 		case usagelog.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -250,6 +266,12 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("total_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TotalTokens))
+	builder.WriteString(", ")
+	builder.WriteString("cache_read_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CacheReadTokens))
+	builder.WriteString(", ")
+	builder.WriteString("cache_creation_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CacheCreationTokens))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

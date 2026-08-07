@@ -40,6 +40,10 @@ const (
 	FieldCompletionTokens = "completion_tokens"
 	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
 	FieldTotalTokens = "total_tokens"
+	// FieldCacheReadTokens holds the string denoting the cache_read_tokens field in the database.
+	FieldCacheReadTokens = "cache_read_tokens"
+	// FieldCacheCreationTokens holds the string denoting the cache_creation_tokens field in the database.
+	FieldCacheCreationTokens = "cache_creation_tokens"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// Table holds the table name of the usagelog in the database.
@@ -62,6 +66,8 @@ var Columns = []string{
 	FieldPromptTokens,
 	FieldCompletionTokens,
 	FieldTotalTokens,
+	FieldCacheReadTokens,
+	FieldCacheCreationTokens,
 	FieldCreatedAt,
 }
 
@@ -90,6 +96,10 @@ var (
 	DefaultCompletionTokens int64
 	// DefaultTotalTokens holds the default value on creation for the "total_tokens" field.
 	DefaultTotalTokens int64
+	// DefaultCacheReadTokens holds the default value on creation for the "cache_read_tokens" field.
+	DefaultCacheReadTokens int64
+	// DefaultCacheCreationTokens holds the default value on creation for the "cache_creation_tokens" field.
+	DefaultCacheCreationTokens int64
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -189,6 +199,16 @@ func ByCompletionTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByTotalTokens orders the results by the total_tokens field.
 func ByTotalTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTotalTokens, opts...).ToFunc()
+}
+
+// ByCacheReadTokens orders the results by the cache_read_tokens field.
+func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheReadTokens, opts...).ToFunc()
+}
+
+// ByCacheCreationTokens orders the results by the cache_creation_tokens field.
+func ByCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheCreationTokens, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

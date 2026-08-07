@@ -190,6 +190,7 @@ export default function Logs() {
                 <TableHead className="text-right">{t('logs.table.promptTokens')}</TableHead>
                 <TableHead className="text-right">{t('logs.table.completionTokens')}</TableHead>
                 <TableHead className="text-right">{t('logs.table.totalTokens')}</TableHead>
+                <TableHead className="text-right">{t('logs.table.cache')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -212,6 +213,9 @@ export default function Logs() {
                   <TableCell className="text-right tabular-nums">{l.PromptTokens ?? 0}</TableCell>
                   <TableCell className="text-right tabular-nums">{l.CompletionTokens ?? 0}</TableCell>
                   <TableCell className="text-right tabular-nums">{l.TotalTokens ?? 0}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {l.CacheReadTokens || l.CacheCreationTokens ? `${l.CacheReadTokens ?? 0}/${l.CacheCreationTokens ?? 0}` : '—'}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

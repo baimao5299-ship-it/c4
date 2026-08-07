@@ -100,6 +100,8 @@ func (r *Recorder) aggregate(l *domain.UsageLog) {
 	c.bucket.PromptTokens += l.PromptTokens
 	c.bucket.CompletionTokens += l.CompletionTokens
 	c.bucket.TotalTokens += l.TotalTokens
+	c.bucket.CacheReadTokens += l.CacheReadTokens
+	c.bucket.CacheCreationTokens += l.CacheCreationTokens
 	c.bucket.TotalLatencyMS += l.LatencyMS
 }
 
@@ -174,6 +176,8 @@ func (r *Recorder) flushStats() {
 				c.bucket.PromptTokens += b.PromptTokens
 				c.bucket.CompletionTokens += b.CompletionTokens
 				c.bucket.TotalTokens += b.TotalTokens
+				c.bucket.CacheReadTokens += b.CacheReadTokens
+				c.bucket.CacheCreationTokens += b.CacheCreationTokens
 				c.bucket.TotalLatencyMS += b.TotalLatencyMS
 			} else {
 				r.counters[key] = &statCounters{bucket: *b}

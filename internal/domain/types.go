@@ -123,11 +123,13 @@ type UsageLog struct {
 	Format           RequestFormat
 	StatusCode       int
 	ErrorType        ErrorType
-	LatencyMS        int64
-	PromptTokens     int64
-	CompletionTokens int64
-	TotalTokens      int64
-	CreatedAt        time.Time
+	LatencyMS           int64
+	PromptTokens        int64
+	CompletionTokens    int64
+	TotalTokens         int64
+	CacheReadTokens     int64 // 缓存读取 token（跨协议归一化，sub2api 计费语义）
+	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
+	CreatedAt           time.Time
 }
 
 type StatBucket struct {
@@ -139,10 +141,12 @@ type StatBucket struct {
 	IsError          bool
 	RequestCount     int64
 	ErrorCount       int64
-	PromptTokens     int64
-	CompletionTokens int64
-	TotalTokens      int64
-	TotalLatencyMS   int64
+	PromptTokens        int64
+	CompletionTokens    int64
+	TotalTokens         int64
+	CacheReadTokens     int64 // 缓存读取 token
+	CacheCreationTokens int64 // 缓存写入 token
+	TotalLatencyMS      int64
 }
 
 // —— 规则引擎（可编排状态管理） ——

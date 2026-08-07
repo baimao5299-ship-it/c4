@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openai/openai-go/responses"
-	"github.com/tidwall/gjson"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
@@ -146,14 +145,13 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var pt, ct, tt int64
+		var pt, ct, tt, cr, cc int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
-				// 用量只在 response.completed 事件携带（响应对象的 usage 字段）。
+				// 用量只在 response.completed 事件携带（响应对象的 usage 字段；
+				// 评审 M2：流式前缀 response.usage.*）。
 				if bytes.Equal(ev.Event, []byte("response.completed")) {
-					pt = gjson.GetBytes(ev.Data, "response.usage.input_tokens").Int()
-					ct = gjson.GetBytes(ev.Data, "response.usage.output_tokens").Int()
-					tt = gjson.GetBytes(ev.Data, "response.usage.total_tokens").Int()
+					pt, ct, tt, cr, cc = responsesCompletedUsage(ev.Data)
 				}
 			},
 		})
@@ -172,7 +170,7 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 			return true, 0, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 		return true, 200, nil
 	}
 
@@ -187,11 +185,13 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-	var pt, ct, tt int64
+	var pt, ct, tt, cr, cc int64
 	if resp.JSON.Usage.Valid() {
-		pt, ct, tt = resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.InputTokens+resp.Usage.OutputTokens
+		// 非流式：cr 直读 SDK 结构体、cc 走 RawJSON() gjson 聚合
+		// （Responses 无 cache_creation 对象，恒 0 预期——M4）。
+		pt, ct, tt, cr, cc = responsesUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 	return true, 200, nil
 }

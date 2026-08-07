@@ -229,7 +229,8 @@
       "latency": "延迟",
       "promptTokens": "PT",
       "completionTokens": "CT",
-      "totalTokens": "TT"
+      "totalTokens": "TT",
+      "cache": "缓存(读/写)"
     },
     "pagination": {
       "total": "共 {{total}} 条",

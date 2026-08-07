@@ -35,6 +35,10 @@ const (
 	FieldCompletionTokens = "completion_tokens"
 	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
 	FieldTotalTokens = "total_tokens"
+	// FieldCacheReadTokens holds the string denoting the cache_read_tokens field in the database.
+	FieldCacheReadTokens = "cache_read_tokens"
+	// FieldCacheCreationTokens holds the string denoting the cache_creation_tokens field in the database.
+	FieldCacheCreationTokens = "cache_creation_tokens"
 	// FieldTotalLatencyMs holds the string denoting the total_latency_ms field in the database.
 	FieldTotalLatencyMs = "total_latency_ms"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -57,6 +61,8 @@ var Columns = []string{
 	FieldPromptTokens,
 	FieldCompletionTokens,
 	FieldTotalTokens,
+	FieldCacheReadTokens,
+	FieldCacheCreationTokens,
 	FieldTotalLatencyMs,
 	FieldUpdatedAt,
 }
@@ -92,6 +98,10 @@ var (
 	DefaultCompletionTokens int64
 	// DefaultTotalTokens holds the default value on creation for the "total_tokens" field.
 	DefaultTotalTokens int64
+	// DefaultCacheReadTokens holds the default value on creation for the "cache_read_tokens" field.
+	DefaultCacheReadTokens int64
+	// DefaultCacheCreationTokens holds the default value on creation for the "cache_creation_tokens" field.
+	DefaultCacheCreationTokens int64
 	// DefaultTotalLatencyMs holds the default value on creation for the "total_latency_ms" field.
 	DefaultTotalLatencyMs int64
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -161,6 +171,16 @@ func ByCompletionTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByTotalTokens orders the results by the total_tokens field.
 func ByTotalTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTotalTokens, opts...).ToFunc()
+}
+
+// ByCacheReadTokens orders the results by the cache_read_tokens field.
+func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheReadTokens, opts...).ToFunc()
+}
+
+// ByCacheCreationTokens orders the results by the cache_creation_tokens field.
+func ByCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheCreationTokens, opts...).ToFunc()
 }
 
 // ByTotalLatencyMs orders the results by the total_latency_ms field.

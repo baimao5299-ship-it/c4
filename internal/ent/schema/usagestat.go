@@ -24,6 +24,8 @@ func (UsageStat) Fields() []ent.Field {
 		field.Int64("prompt_tokens").Default(0),
 		field.Int64("completion_tokens").Default(0),
 		field.Int64("total_tokens").Default(0),
+		field.Int64("cache_read_tokens").Default(0),
+		field.Int64("cache_creation_tokens").Default(0),
 		field.Int64("total_latency_ms").Default(0),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}
