@@ -1,0 +1,32 @@
+# 生产配置模板（compose 挂载，只读）。admin.token / db.dsn 由环境变量
+# GPM_ADMIN_TOKEN / GPM_DB_DSN 注入覆盖（见 compose.yml），此处留空即可。
+server = { addr = ":18080", read_header_timeout = "10s", max_header_bytes = 1048576 }
+log = { level = "info", output = "stdout" }
+admin = { token = "" }
+db = { dsn = "", max_conns = 20 }
+proxy = {
+  max_body_size = 4194304,
+  max_inflight = 50000,
+  upstream_timeout = "120s",
+  upstream_stream_timeout = "30m",
+  failover_attempts = 3,
+  usage_capture = true,
+}
+upstream = {
+  max_idle_conns = 8192,
+  max_idle_conns_per_host = 2048,
+  idle_conn_timeout = "90s",
+  dial_timeout = "10s",
+  force_http2 = true,
+}
+limit = { group_key_rpm = 0 }
+scheduler = {
+  default_max_concurrency = 8,
+  sync_interval = "30s",
+}
+usage = {
+  batch_size = 500,
+  flush_interval = "500ms",
+  log_retention_days = 30,
+  stats_flush_interval = "10s",
+}
