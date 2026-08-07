@@ -6,9 +6,9 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
 import { BatchBar } from '@/components/batch-bar'
-import { ListToolbar, type SortOrder } from '@/components/list-toolbar'
+import { ListToolbar } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
-import { SortableHeader } from '@/components/sortable-header'
+import { SortableHeader, type SortOrder } from '@/components/sortable-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -154,8 +154,6 @@ export default function Accounts() {
     setSelected([])
   }
   const changeName = (v: string) => { setName(v); resetPage() }
-  const changeSort = (v: string) => { setActiveSort(v); resetPage() }
-  const changeOrder = (o: SortOrder) => { setOrder(o); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
     resetPage()
@@ -181,19 +179,6 @@ export default function Accounts() {
     setTemplateId('all')
     resetPage()
   }
-
-  const sortOptions = [
-    { value: 'id', label: 'ID' },
-    { value: 'name', label: t('accounts.table.name') },
-    { value: 'template_id', label: t('accounts.table.template') },
-    { value: 'status', label: t('accounts.table.status') },
-    { value: 'cooldown_until', label: t('accounts.sort.cooldownUntil') },
-    { value: 'weight', label: t('accounts.table.weight') },
-    { value: 'max_concurrency', label: t('accounts.table.maxConcurrency') },
-    { value: 'last_used_at', label: t('accounts.sort.lastUsedAt') },
-    { value: 'created_at', label: t('accounts.sort.createdAt') },
-    { value: 'updated_at', label: t('accounts.sort.updatedAt') },
-  ]
 
   // —— 批量删除/更新 ——
   const batchDelete = useMutation({
@@ -302,11 +287,6 @@ export default function Accounts() {
       <ListToolbar
         name={name}
         onNameChange={changeName}
-        sort={activeSort ?? 'id'}
-        onSortChange={changeSort}
-        order={order}
-        onOrderChange={changeOrder}
-        sortOptions={sortOptions}
       >
         {/* status 多选筛选（逗号拼接传参） */}
         <Popover>

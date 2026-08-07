@@ -8,9 +8,9 @@ import { ApiUnauthorized } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 import { BatchBar } from '@/components/batch-bar'
 import { commaList, formatDateTime, truncate } from '@/components/fmt'
-import { ListToolbar, type SortOption, type SortOrder } from '@/components/list-toolbar'
+import { ListToolbar } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
-import { SortableHeader } from '@/components/sortable-header'
+import { SortableHeader, type SortOrder } from '@/components/sortable-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -323,19 +323,8 @@ export default function Templates() {
     setSelected(s => s.filter(id => ids.has(id)))
   }, [rows])
 
-  const sortOptions: SortOption[] = [
-    { value: 'id', label: 'ID' },
-    { value: 'name', label: tr('templates.table.name') },
-    { value: 'base_url', label: 'BaseURL' },
-    { value: 'created_at', label: tr('templates.table.createdAt') },
-    { value: 'updated_at', label: tr('templates.table.updatedAt') },
-  ]
-
   // 筛选/排序/翻页变化 → 重置 offset 并清空选择
   const onNameChange = (v: string) => { setName(v); setOffset(0); setSelected([]) }
-  // 工具栏下拉选字段：选中即视为主动排序，order 保持当前值
-  const onSortChange = (v: string) => { setActiveSort(v); setOffset(0); setSelected([]) }
-  const onOrderChange = (o: SortOrder) => { setOrder(o); setOffset(0); setSelected([]) }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
     setOffset(0)
@@ -465,11 +454,6 @@ export default function Templates() {
       <ListToolbar
         name={name}
         onNameChange={onNameChange}
-        sort={activeSort ?? 'id'}
-        onSortChange={onSortChange}
-        order={order}
-        onOrderChange={onOrderChange}
-        sortOptions={sortOptions}
       />
 
       <BatchBar
