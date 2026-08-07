@@ -1,0 +1,16 @@
+# 构建上下文裁剪：dist 由 Stage 1 重建后复制进 embed 目录，本地产物一律不进镜像
+.git
+.claude
+.superpowers
+docs
+*.exe
+*.exe~
+server.exe
+config.toml
+web/node_modules
+web/dist
+cmd/server/dist
+deploy/data
+Dockerfile
+deploy/compose.yml
+deploy/config.toml
