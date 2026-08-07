@@ -65,6 +65,11 @@ func BaseURL(v string) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldBaseURL, v))
 }
 
+// CredentialType applies equality check predicate on the "credential_type" field. It's identical to CredentialTypeEQ.
+func CredentialType(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldCredentialType, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldCreatedAt, v))
@@ -203,6 +208,71 @@ func BaseURLEqualFold(v string) predicate.Template {
 // BaseURLContainsFold applies the ContainsFold predicate on the "base_url" field.
 func BaseURLContainsFold(v string) predicate.Template {
 	return predicate.Template(sql.FieldContainsFold(FieldBaseURL, v))
+}
+
+// CredentialTypeEQ applies the EQ predicate on the "credential_type" field.
+func CredentialTypeEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldEQ(FieldCredentialType, v))
+}
+
+// CredentialTypeNEQ applies the NEQ predicate on the "credential_type" field.
+func CredentialTypeNEQ(v string) predicate.Template {
+	return predicate.Template(sql.FieldNEQ(FieldCredentialType, v))
+}
+
+// CredentialTypeIn applies the In predicate on the "credential_type" field.
+func CredentialTypeIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldIn(FieldCredentialType, vs...))
+}
+
+// CredentialTypeNotIn applies the NotIn predicate on the "credential_type" field.
+func CredentialTypeNotIn(vs ...string) predicate.Template {
+	return predicate.Template(sql.FieldNotIn(FieldCredentialType, vs...))
+}
+
+// CredentialTypeGT applies the GT predicate on the "credential_type" field.
+func CredentialTypeGT(v string) predicate.Template {
+	return predicate.Template(sql.FieldGT(FieldCredentialType, v))
+}
+
+// CredentialTypeGTE applies the GTE predicate on the "credential_type" field.
+func CredentialTypeGTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldGTE(FieldCredentialType, v))
+}
+
+// CredentialTypeLT applies the LT predicate on the "credential_type" field.
+func CredentialTypeLT(v string) predicate.Template {
+	return predicate.Template(sql.FieldLT(FieldCredentialType, v))
+}
+
+// CredentialTypeLTE applies the LTE predicate on the "credential_type" field.
+func CredentialTypeLTE(v string) predicate.Template {
+	return predicate.Template(sql.FieldLTE(FieldCredentialType, v))
+}
+
+// CredentialTypeContains applies the Contains predicate on the "credential_type" field.
+func CredentialTypeContains(v string) predicate.Template {
+	return predicate.Template(sql.FieldContains(FieldCredentialType, v))
+}
+
+// CredentialTypeHasPrefix applies the HasPrefix predicate on the "credential_type" field.
+func CredentialTypeHasPrefix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasPrefix(FieldCredentialType, v))
+}
+
+// CredentialTypeHasSuffix applies the HasSuffix predicate on the "credential_type" field.
+func CredentialTypeHasSuffix(v string) predicate.Template {
+	return predicate.Template(sql.FieldHasSuffix(FieldCredentialType, v))
+}
+
+// CredentialTypeEqualFold applies the EqualFold predicate on the "credential_type" field.
+func CredentialTypeEqualFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldEqualFold(FieldCredentialType, v))
+}
+
+// CredentialTypeContainsFold applies the ContainsFold predicate on the "credential_type" field.
+func CredentialTypeContainsFold(v string) predicate.Template {
+	return predicate.Template(sql.FieldContainsFold(FieldCredentialType, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

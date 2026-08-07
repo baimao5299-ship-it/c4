@@ -22,6 +22,8 @@ type Template struct {
 	Name string `json:"name,omitempty"`
 	// BaseURL holds the value of the "base_url" field.
 	BaseURL string `json:"base_url,omitempty"`
+	// CredentialType holds the value of the "credential_type" field.
+	CredentialType string `json:"credential_type,omitempty"`
 	// SupportedFormats holds the value of the "supported_formats" field.
 	SupportedFormats []string `json:"supported_formats,omitempty"`
 	// Models holds the value of the "models" field.
@@ -67,7 +69,7 @@ func (*Template) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case template.FieldID:
 			values[i] = new(sql.NullInt64)
-		case template.FieldName, template.FieldBaseURL:
+		case template.FieldName, template.FieldBaseURL, template.FieldCredentialType:
 			values[i] = new(sql.NullString)
 		case template.FieldCreatedAt, template.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -103,6 +105,12 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field base_url", values[i])
 			} else if value.Valid {
 				_m.BaseURL = value.String
+			}
+		case template.FieldCredentialType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field credential_type", values[i])
+			} else if value.Valid {
+				_m.CredentialType = value.String
 			}
 		case template.FieldSupportedFormats:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -194,6 +202,9 @@ func (_m *Template) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("base_url=")
 	builder.WriteString(_m.BaseURL)
+	builder.WriteString(", ")
+	builder.WriteString("credential_type=")
+	builder.WriteString(_m.CredentialType)
 	builder.WriteString(", ")
 	builder.WriteString("supported_formats=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SupportedFormats))

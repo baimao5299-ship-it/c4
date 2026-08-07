@@ -70,11 +70,6 @@ func UpstreamKey(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldUpstreamKey, v))
 }
 
-// CredentialType applies equality check predicate on the "credential_type" field. It's identical to CredentialTypeEQ.
-func CredentialType(v string) predicate.Account {
-	return predicate.Account(sql.FieldEQ(FieldCredentialType, v))
-}
-
 // CooldownUntil applies equality check predicate on the "cooldown_until" field. It's identical to CooldownUntilEQ.
 func CooldownUntil(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldCooldownUntil, v))
@@ -258,71 +253,6 @@ func UpstreamKeyEqualFold(v string) predicate.Account {
 // UpstreamKeyContainsFold applies the ContainsFold predicate on the "upstream_key" field.
 func UpstreamKeyContainsFold(v string) predicate.Account {
 	return predicate.Account(sql.FieldContainsFold(FieldUpstreamKey, v))
-}
-
-// CredentialTypeEQ applies the EQ predicate on the "credential_type" field.
-func CredentialTypeEQ(v string) predicate.Account {
-	return predicate.Account(sql.FieldEQ(FieldCredentialType, v))
-}
-
-// CredentialTypeNEQ applies the NEQ predicate on the "credential_type" field.
-func CredentialTypeNEQ(v string) predicate.Account {
-	return predicate.Account(sql.FieldNEQ(FieldCredentialType, v))
-}
-
-// CredentialTypeIn applies the In predicate on the "credential_type" field.
-func CredentialTypeIn(vs ...string) predicate.Account {
-	return predicate.Account(sql.FieldIn(FieldCredentialType, vs...))
-}
-
-// CredentialTypeNotIn applies the NotIn predicate on the "credential_type" field.
-func CredentialTypeNotIn(vs ...string) predicate.Account {
-	return predicate.Account(sql.FieldNotIn(FieldCredentialType, vs...))
-}
-
-// CredentialTypeGT applies the GT predicate on the "credential_type" field.
-func CredentialTypeGT(v string) predicate.Account {
-	return predicate.Account(sql.FieldGT(FieldCredentialType, v))
-}
-
-// CredentialTypeGTE applies the GTE predicate on the "credential_type" field.
-func CredentialTypeGTE(v string) predicate.Account {
-	return predicate.Account(sql.FieldGTE(FieldCredentialType, v))
-}
-
-// CredentialTypeLT applies the LT predicate on the "credential_type" field.
-func CredentialTypeLT(v string) predicate.Account {
-	return predicate.Account(sql.FieldLT(FieldCredentialType, v))
-}
-
-// CredentialTypeLTE applies the LTE predicate on the "credential_type" field.
-func CredentialTypeLTE(v string) predicate.Account {
-	return predicate.Account(sql.FieldLTE(FieldCredentialType, v))
-}
-
-// CredentialTypeContains applies the Contains predicate on the "credential_type" field.
-func CredentialTypeContains(v string) predicate.Account {
-	return predicate.Account(sql.FieldContains(FieldCredentialType, v))
-}
-
-// CredentialTypeHasPrefix applies the HasPrefix predicate on the "credential_type" field.
-func CredentialTypeHasPrefix(v string) predicate.Account {
-	return predicate.Account(sql.FieldHasPrefix(FieldCredentialType, v))
-}
-
-// CredentialTypeHasSuffix applies the HasSuffix predicate on the "credential_type" field.
-func CredentialTypeHasSuffix(v string) predicate.Account {
-	return predicate.Account(sql.FieldHasSuffix(FieldCredentialType, v))
-}
-
-// CredentialTypeEqualFold applies the EqualFold predicate on the "credential_type" field.
-func CredentialTypeEqualFold(v string) predicate.Account {
-	return predicate.Account(sql.FieldEqualFold(FieldCredentialType, v))
-}
-
-// CredentialTypeContainsFold applies the ContainsFold predicate on the "credential_type" field.
-func CredentialTypeContainsFold(v string) predicate.Account {
-	return predicate.Account(sql.FieldContainsFold(FieldCredentialType, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

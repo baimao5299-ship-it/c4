@@ -18,6 +18,7 @@ func toDomainTemplate(t *ent.Template) *domain.Template {
 	}
 	return &domain.Template{
 		ID: t.ID, Name: t.Name, BaseURL: t.BaseURL,
+		CredentialType: credential.Type(t.CredentialType),
 		SupportedFormats: formats, Models: t.Models,
 		FormatModels: fm, ModelMapping: t.ModelMapping,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
@@ -31,7 +32,7 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 	}
 	return &domain.Account{
 		ID: a.ID, Name: a.Name, TemplateID: a.TemplateID, Template: tpl,
-		UpstreamKey: a.UpstreamKey, CredentialType: credential.Type(a.CredentialType),
+		UpstreamKey: a.UpstreamKey,
 		Status: domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,
 		LastError: a.LastError, LastUsedAt: a.LastUsedAt,

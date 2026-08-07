@@ -175,9 +175,9 @@ func (tr *testRepos) expectDone(t *testing.T) {
 }
 
 func templateRow() *pgxmock.Rows {
-	return pgxmock.NewRows([]string{"id", "name", "base_url", "supported_formats", "models",
+	return pgxmock.NewRows([]string{"id", "name", "base_url", "credential_type", "supported_formats", "models",
 		"format_models", "model_mapping", "created_at", "updated_at"}).
-		AddRow(int64(1), "openai-main", "https://api.openai.com/v1",
+		AddRow(int64(1), "openai-main", "https://api.openai.com/v1", "api_key",
 			[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
 			[]byte(`{"openai-responses":["o3"]}`),
 			[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -185,19 +185,19 @@ func templateRow() *pgxmock.Rows {
 }
 
 func accountRow(status string) *pgxmock.Rows {
-	return pgxmock.NewRows([]string{"id", "name", "template_id", "upstream_key", "credential_type", "status",
+	return pgxmock.NewRows([]string{"id", "name", "template_id", "upstream_key", "status",
 		"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
 		"created_at", "updated_at"}).
-		AddRow(int64(2), "acc1", int64(1), "sk-x", "api_key", status, time.Time{}, int64(80), int64(4), "", time.Time{},
+		AddRow(int64(2), "acc1", int64(1), "sk-x", status, time.Time{}, int64(80), int64(4), "", time.Time{},
 			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
 func TestTemplateCRUD(t *testing.T) {
 	tr := newRepos(t)
 
-	// Create -> INSERT ... RETURNING id
+	// Create -> INSERT ... RETURNING id（credential_type 全字段 Set：api_key）
 	tr.pool.ExpectQuery(q(`INSERT INTO "templates"`)).
-		WithArgs("openai-main", "https://api.openai.com/v1",
+		WithArgs("openai-main", "https://api.openai.com/v1", "api_key",
 			json.RawMessage(`["openai-chat","openai-responses"]`), json.RawMessage(`["gpt-4o"]`),
 			json.RawMessage(`{"openai-responses":["o3"]}`),
 			json.RawMessage(`{"gpt-4o":"gpt-4o-2026-01-01"}`),
@@ -212,7 +212,7 @@ func TestTemplateCRUD(t *testing.T) {
 	// Update -> Tx: UPDATE + re-SELECT + Commit
 	tr.pool.ExpectBegin()
 	tr.pool.ExpectExec(q(`UPDATE "templates" SET`)).
-		WithArgs("renamed", "https://api.openai.com/v1",
+		WithArgs("renamed", "https://api.openai.com/v1", "api_key",
 			json.RawMessage(`["openai-chat","openai-responses"]`), json.RawMessage(`["gpt-4o"]`),
 			json.RawMessage(`{"openai-responses":["o3"]}`),
 			json.RawMessage(`{"gpt-4o":"gpt-4o-2026-01-01"}`),
@@ -236,6 +236,7 @@ func TestTemplateCRUD(t *testing.T) {
 	tpl, err := tr.repos.Templates.CreateTemplate(ctx(), &domain.Template{
 		Name:             "openai-main",
 		BaseURL:          "https://api.openai.com/v1",
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses},
 		Models:           []string{"gpt-4o"},
 		FormatModels:     map[domain.RequestFormat][]string{domain.FormatOpenAIResponses: {"o3"}},
@@ -245,6 +246,7 @@ func TestTemplateCRUD(t *testing.T) {
 	got, err := tr.repos.Templates.GetTemplate(ctx(), tpl.ID)
 	require.NoError(t, err)
 	require.Equal(t, "openai-main", got.Name)
+	require.Equal(t, credential.TypeAPIKey, got.CredentialType, "credential_type 模板级映射")
 	require.ElementsMatch(t, []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses}, got.SupportedFormats)
 	require.True(t, got.FormatSupports(domain.FormatOpenAIResponses, "o3"), "format_models roundtrip")
 	require.False(t, got.FormatSupports(domain.FormatOpenAIResponses, "gpt-4o"), "responses 配置了 format_models → 仅列表内模型")
@@ -261,16 +263,16 @@ func TestTemplateCRUD(t *testing.T) {
 func TestAccountAndGroup(t *testing.T) {
 	tr := newRepos(t)
 
-	// Template create
+	// Template create（repo 全字段 Set：credential_type 空串原样写入——默认值兜底在 service 层）
 	tr.pool.ExpectQuery(q(`INSERT INTO "templates"`)).
-		WithArgs("t", "https://u/v1", json.RawMessage(`["anthropic"]`),
+		WithArgs("t", "https://u/v1", "", json.RawMessage(`["anthropic"]`),
 			json.RawMessage(`null`), json.RawMessage(`{}`), json.RawMessage(`null`),
 			pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
 
-	// Account create（credential_type 未显式 Set → ent 客户端默认 "api_key" 入参）
+	// Account create（账号级无 credential_type 字段）
 	tr.pool.ExpectQuery(q(`INSERT INTO "accounts"`)).
-		WithArgs("acc1", "sk-x", "api_key", account.Status("active"), int(80), int(4),
+		WithArgs("acc1", "sk-x", account.Status("active"), int(80), int(4),
 			pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
 
@@ -313,10 +315,10 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.pool.ExpectQuery(q(`JOIN "account_groups"`)).
 		WithArgs(int64(3)).
 		// 注意：M2M 边加载把 join 列（group_id）放在 SELECT 的第一列。
-		WillReturnRows(pgxmock.NewRows([]string{"group_id", "id", "name", "template_id", "upstream_key", "credential_type", "status",
+		WillReturnRows(pgxmock.NewRows([]string{"group_id", "id", "name", "template_id", "upstream_key", "status",
 			"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
 			"created_at", "updated_at"}).
-			AddRow(int64(3), int64(2), "acc1", int64(1), "sk-x", "api_key", "active", time.Time{}, int64(80), int64(4), "", time.Time{},
+			AddRow(int64(3), int64(2), "acc1", int64(1), "sk-x", "active", time.Time{}, int64(80), int64(4), "", time.Time{},
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 	tr.pool.ExpectQuery(q(`FROM "templates"`)).
 		WithArgs(int64(1)).
@@ -369,7 +371,6 @@ func TestAccountAndGroup(t *testing.T) {
 	a2, err := tr.repos.Accounts.GetAccount(ctx(), acc.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.Status429, a2.Status, "status persisted")
-	require.Equal(t, credential.TypeAPIKey, a2.CredentialType, "credential_type 默认 api_key 映射")
 	tr.expectDone(t)
 }
 

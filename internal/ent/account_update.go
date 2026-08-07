@@ -72,20 +72,6 @@ func (_u *AccountUpdate) SetNillableUpstreamKey(v *string) *AccountUpdate {
 	return _u
 }
 
-// SetCredentialType sets the "credential_type" field.
-func (_u *AccountUpdate) SetCredentialType(v string) *AccountUpdate {
-	_u.mutation.SetCredentialType(v)
-	return _u
-}
-
-// SetNillableCredentialType sets the "credential_type" field if the given value is not nil.
-func (_u *AccountUpdate) SetNillableCredentialType(v *string) *AccountUpdate {
-	if v != nil {
-		_u.SetCredentialType(*v)
-	}
-	return _u
-}
-
 // SetStatus sets the "status" field.
 func (_u *AccountUpdate) SetStatus(v account.Status) *AccountUpdate {
 	_u.mutation.SetStatus(v)
@@ -341,9 +327,6 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.UpstreamKey(); ok {
 		_spec.SetField(account.FieldUpstreamKey, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.CredentialType(); ok {
-		_spec.SetField(account.FieldCredentialType, field.TypeString, value)
-	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(account.FieldStatus, field.TypeEnum, value)
 	}
@@ -515,20 +498,6 @@ func (_u *AccountUpdateOne) SetUpstreamKey(v string) *AccountUpdateOne {
 func (_u *AccountUpdateOne) SetNillableUpstreamKey(v *string) *AccountUpdateOne {
 	if v != nil {
 		_u.SetUpstreamKey(*v)
-	}
-	return _u
-}
-
-// SetCredentialType sets the "credential_type" field.
-func (_u *AccountUpdateOne) SetCredentialType(v string) *AccountUpdateOne {
-	_u.mutation.SetCredentialType(v)
-	return _u
-}
-
-// SetNillableCredentialType sets the "credential_type" field if the given value is not nil.
-func (_u *AccountUpdateOne) SetNillableCredentialType(v *string) *AccountUpdateOne {
-	if v != nil {
-		_u.SetCredentialType(*v)
 	}
 	return _u
 }
@@ -817,9 +786,6 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.UpstreamKey(); ok {
 		_spec.SetField(account.FieldUpstreamKey, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.CredentialType(); ok {
-		_spec.SetField(account.FieldCredentialType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(account.FieldStatus, field.TypeEnum, value)

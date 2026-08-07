@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/service"
@@ -68,6 +69,13 @@ func TestAdminFlow(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tpl))
 	require.True(t, tpl.FormatSupports(domain.FormatOpenAIResponses, "o3"), "format_models round-trip")
 	require.False(t, tpl.FormatSupports(domain.FormatOpenAIResponses, "gpt-4o"), "responses 仅列表内模型")
+	require.Equal(t, credential.TypeAPIKey, tpl.CredentialType, "缺省 credential_type → 响应含默认 api_key")
+
+	// 非法 credential_type（号池生态类型未实现）→ 400
+	recBad := do(http.MethodPost, "/admin/templates", `{
+		"name":"bad","base_url":"https://u/v1","supported_formats":["openai-chat"],
+		"credential_type":"codex_oauth"}`)
+	require.Equal(t, 400, recBad.Code, "非法 credential_type 必须 400: %s", recBad.Body.String())
 
 	rec = do(http.MethodPost, "/admin/accounts", `{
 		"name":"acc1","template_id":`+itoa(tpl.ID)+`,"upstream_key":"sk-x","weight":80,"max_concurrency":4}`)
@@ -146,6 +154,7 @@ func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
 	// 被丢弃 → 校验失败 400）。
 	rec = do(http.MethodPut, "/admin/templates/"+itoa(tpl.ID), `{
 		"name":"openai-main-v2","base_url":"https://api.openai.com/v2",
+		"credential_type":"api_key",
 		"supported_formats":["openai-chat","anthropic"],"models":["gpt-4o","o3"],
 		"format_models":{"anthropic":["o3"]},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-06-01"}}`)
@@ -153,6 +162,7 @@ func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
 	var updated domain.Template
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
 	require.Equal(t, "openai-main-v2", updated.Name)
+	require.Equal(t, credential.TypeAPIKey, updated.CredentialType, "credential_type 全量更新透传")
 	require.Equal(t, "https://api.openai.com/v2", updated.BaseURL, "base_url must round-trip")
 	require.ElementsMatch(t, []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatAnthropic}, updated.SupportedFormats, "supported_formats must round-trip")
 	require.True(t, updated.FormatSupports(domain.FormatAnthropic, "o3"), "format_models must round-trip")

@@ -58,6 +58,20 @@ func (_u *TemplateUpdate) SetNillableBaseURL(v *string) *TemplateUpdate {
 	return _u
 }
 
+// SetCredentialType sets the "credential_type" field.
+func (_u *TemplateUpdate) SetCredentialType(v string) *TemplateUpdate {
+	_u.mutation.SetCredentialType(v)
+	return _u
+}
+
+// SetNillableCredentialType sets the "credential_type" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillableCredentialType(v *string) *TemplateUpdate {
+	if v != nil {
+		_u.SetCredentialType(*v)
+	}
+	return _u
+}
+
 // SetSupportedFormats sets the "supported_formats" field.
 func (_u *TemplateUpdate) SetSupportedFormats(v []string) *TemplateUpdate {
 	_u.mutation.SetSupportedFormats(v)
@@ -206,6 +220,9 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.BaseURL(); ok {
 		_spec.SetField(template.FieldBaseURL, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.CredentialType(); ok {
+		_spec.SetField(template.FieldCredentialType, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.SupportedFormats(); ok {
 		_spec.SetField(template.FieldSupportedFormats, field.TypeJSON, value)
 	}
@@ -323,6 +340,20 @@ func (_u *TemplateUpdateOne) SetBaseURL(v string) *TemplateUpdateOne {
 func (_u *TemplateUpdateOne) SetNillableBaseURL(v *string) *TemplateUpdateOne {
 	if v != nil {
 		_u.SetBaseURL(*v)
+	}
+	return _u
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (_u *TemplateUpdateOne) SetCredentialType(v string) *TemplateUpdateOne {
+	_u.mutation.SetCredentialType(v)
+	return _u
+}
+
+// SetNillableCredentialType sets the "credential_type" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillableCredentialType(v *string) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetCredentialType(*v)
 	}
 	return _u
 }
@@ -504,6 +535,9 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	}
 	if value, ok := _u.mutation.BaseURL(); ok {
 		_spec.SetField(template.FieldBaseURL, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.CredentialType(); ok {
+		_spec.SetField(template.FieldCredentialType, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.SupportedFormats(); ok {
 		_spec.SetField(template.FieldSupportedFormats, field.TypeJSON, value)

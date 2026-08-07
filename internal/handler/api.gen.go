@@ -54,6 +54,11 @@ const (
 	TemplateSupportedFormatsOpenaiResponses TemplateSupportedFormats = "openai-responses"
 )
 
+// Defines values for TemplateCreateCredentialType.
+const (
+	ApiKey TemplateCreateCredentialType = "api_key"
+)
+
 // Defines values for TemplateCreateSupportedFormats.
 const (
 	TemplateCreateSupportedFormatsAnthropic       TemplateCreateSupportedFormats = "anthropic"
@@ -318,6 +323,7 @@ type StatBucket struct {
 type Template struct {
 	BaseURL          string                     `json:"BaseURL"`
 	CreatedAt        time.Time                  `json:"CreatedAt"`
+	CredentialType   *string                    `json:"CredentialType,omitempty"`
 	FormatModels     *map[string][]string       `json:"FormatModels,omitempty"`
 	ID               int64                      `json:"ID"`
 	ModelMapping     *map[string]string         `json:"ModelMapping,omitempty"`
@@ -333,12 +339,16 @@ type TemplateSupportedFormats string
 // TemplateCreate defines model for TemplateCreate.
 type TemplateCreate struct {
 	BaseUrl          string                           `json:"base_url"`
+	CredentialType   *TemplateCreateCredentialType    `json:"credential_type,omitempty"`
 	FormatModels     *map[string][]string             `json:"format_models,omitempty"`
 	ModelMapping     *map[string]string               `json:"model_mapping,omitempty"`
 	Models           *[]string                        `json:"models,omitempty"`
 	Name             string                           `json:"name"`
 	SupportedFormats []TemplateCreateSupportedFormats `json:"supported_formats"`
 }
+
+// TemplateCreateCredentialType defines model for TemplateCreate.CredentialType.
+type TemplateCreateCredentialType string
 
 // TemplateCreateSupportedFormats defines model for TemplateCreate.SupportedFormats.
 type TemplateCreateSupportedFormats string

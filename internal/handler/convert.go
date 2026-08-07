@@ -20,6 +20,7 @@ func toAPITemplate(t *domain.Template) Template {
 		ID:               t.ID,
 		Name:             t.Name,
 		BaseURL:          t.BaseURL,
+		CredentialType:   ptr(string(t.CredentialType)),
 		SupportedFormats: formats,
 		Models:           &t.Models,
 		FormatModels:     toAPITemplateFormatModels(t.FormatModels),

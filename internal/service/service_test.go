@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
 )
@@ -49,6 +50,42 @@ func TestCreateTemplateValidates(t *testing.T) {
 		FormatModels:     map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {"gpt-4o"}},
 	})
 	require.NoError(t, err)
+}
+
+// TestTemplateCredentialTypeDefaultAndValid 评审 M-1：默认值兜底在 service 层
+// （repo 全字段 Set 写空串的防线）：缺省 → api_key；显式 api_key → 成功；
+// 未注册类型（号池生态未实现）→ 400；Update 同路径兜底。
+func TestTemplateCredentialTypeDefaultAndValid(t *testing.T) {
+	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+
+	created, err := svc.CreateTemplate(context.Background(), &domain.Template{
+		Name: "t-default", BaseURL: "https://u/v1",
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+	})
+	require.NoError(t, err)
+	require.Equal(t, credential.TypeAPIKey, created.CredentialType, "缺省默认 api_key")
+
+	created2, err := svc.CreateTemplate(context.Background(), &domain.Template{
+		Name: "t-api", BaseURL: "https://u/v1", CredentialType: credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+	})
+	require.NoError(t, err)
+	require.Equal(t, credential.TypeAPIKey, created2.CredentialType, "显式 api_key 成功")
+
+	_, err = svc.CreateTemplate(context.Background(), &domain.Template{
+		Name: "t-bad", BaseURL: "https://u/v1", CredentialType: credential.Type("codex_oauth"),
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+	})
+	require.ErrorIs(t, err, ErrInvalidInput, "未注册类型 → 400")
+
+	// Update 全量路径：空类型被兜底为 api_key（防全字段 Set 写空串）
+	got, err := svc.GetTemplate(context.Background(), created.ID)
+	require.NoError(t, err)
+	got.Name = "t-renamed"
+	got.CredentialType = ""
+	updated, err := svc.UpdateTemplate(context.Background(), got)
+	require.NoError(t, err)
+	require.Equal(t, credential.TypeAPIKey, updated.CredentialType, "update 缺省同样兜底 api_key")
 }
 
 func TestCreateGroupRotateKeyFlow(t *testing.T) {

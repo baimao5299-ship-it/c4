@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/scheduler"
@@ -104,6 +105,14 @@ func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleR
 }
 
 func validateTemplate(t *domain.Template) error {
+	// 评审 M-1：默认值兜底在 service 层——repo 全字段 Set 会原样写空串，
+	// handler 直传也可能缺省；空/缺省在此归一为 api_key，随后才校验合法性。
+	if t.CredentialType == "" {
+		t.CredentialType = credential.TypeAPIKey
+	}
+	if !t.CredentialType.Valid() {
+		return ErrInvalidInput
+	}
 	if t.Name == "" {
 		return ErrInvalidInput
 	}

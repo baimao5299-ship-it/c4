@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/service"
@@ -40,6 +41,8 @@ func (h *AdminAPI) PostTemplates(w http.ResponseWriter, r *http.Request) {
 	created, err := h.svc.CreateTemplate(r.Context(), &domain.Template{
 		Name:             in.Name,
 		BaseURL:          in.BaseUrl,
+		// 透传不做默认值兜底（评审 M-1：兜底在 service 层，防直接调用绕过）
+		CredentialType:   credential.Type(deref(in.CredentialType)),
 		SupportedFormats: formatsFromBody(in.SupportedFormats),
 		Models:           deref(in.Models),
 		FormatModels:     formatModelsFromBody(in.FormatModels),
@@ -93,6 +96,8 @@ func (h *AdminAPI) PutTemplatesId(w http.ResponseWriter, r *http.Request, id int
 	tpl := &domain.Template{
 		Name:             in.Name,
 		BaseURL:          in.BaseUrl,
+		// 透传不做默认值兜底（评审 M-1：兜底在 service 层）
+		CredentialType:   credential.Type(deref(in.CredentialType)),
 		SupportedFormats: formatsFromBody(in.SupportedFormats),
 		Models:           deref(in.Models),
 		FormatModels:     formatModelsFromBody(in.FormatModels),

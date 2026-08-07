@@ -184,11 +184,12 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
+		CredentialType: credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{format}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{
 		ID: 1, TemplateID: 1, Template: tpl, UpstreamKey: "sk-upstream",
-		CredentialType: credential.TypeAPIKey, Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,

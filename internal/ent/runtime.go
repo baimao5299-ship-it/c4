@@ -19,24 +19,20 @@ import (
 func init() {
 	accountFields := schema.Account{}.Fields()
 	_ = accountFields
-	// accountDescCredentialType is the schema descriptor for credential_type field.
-	accountDescCredentialType := accountFields[4].Descriptor()
-	// account.DefaultCredentialType holds the default value on creation for the credential_type field.
-	account.DefaultCredentialType = accountDescCredentialType.Default.(string)
 	// accountDescWeight is the schema descriptor for weight field.
-	accountDescWeight := accountFields[7].Descriptor()
+	accountDescWeight := accountFields[6].Descriptor()
 	// account.DefaultWeight holds the default value on creation for the weight field.
 	account.DefaultWeight = accountDescWeight.Default.(int)
 	// accountDescMaxConcurrency is the schema descriptor for max_concurrency field.
-	accountDescMaxConcurrency := accountFields[8].Descriptor()
+	accountDescMaxConcurrency := accountFields[7].Descriptor()
 	// account.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	account.DefaultMaxConcurrency = accountDescMaxConcurrency.Default.(int)
 	// accountDescCreatedAt is the schema descriptor for created_at field.
-	accountDescCreatedAt := accountFields[11].Descriptor()
+	accountDescCreatedAt := accountFields[10].Descriptor()
 	// account.DefaultCreatedAt holds the default value on creation for the created_at field.
 	account.DefaultCreatedAt = accountDescCreatedAt.Default.(func() time.Time)
 	// accountDescUpdatedAt is the schema descriptor for updated_at field.
-	accountDescUpdatedAt := accountFields[12].Descriptor()
+	accountDescUpdatedAt := accountFields[11].Descriptor()
 	// account.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	account.DefaultUpdatedAt = accountDescUpdatedAt.Default.(func() time.Time)
 	// account.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -71,12 +67,16 @@ func init() {
 	rule.UpdateDefaultUpdatedAt = ruleDescUpdatedAt.UpdateDefault.(func() time.Time)
 	templateFields := schema.Template{}.Fields()
 	_ = templateFields
+	// templateDescCredentialType is the schema descriptor for credential_type field.
+	templateDescCredentialType := templateFields[3].Descriptor()
+	// template.DefaultCredentialType holds the default value on creation for the credential_type field.
+	template.DefaultCredentialType = templateDescCredentialType.Default.(string)
 	// templateDescCreatedAt is the schema descriptor for created_at field.
-	templateDescCreatedAt := templateFields[7].Descriptor()
+	templateDescCreatedAt := templateFields[8].Descriptor()
 	// template.DefaultCreatedAt holds the default value on creation for the created_at field.
 	template.DefaultCreatedAt = templateDescCreatedAt.Default.(func() time.Time)
 	// templateDescUpdatedAt is the schema descriptor for updated_at field.
-	templateDescUpdatedAt := templateFields[8].Descriptor()
+	templateDescUpdatedAt := templateFields[9].Descriptor()
 	// template.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	template.DefaultUpdatedAt = templateDescUpdatedAt.Default.(func() time.Time)
 	// template.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/rule"
@@ -119,7 +120,8 @@ var _ repository.RuleStore = (*fakeRuleStore)(nil)
 func intPtr(v int) *int { return &v }
 
 func tpl(id int64, format domain.RequestFormat, models []string) *domain.Template {
-	return &domain.Template{ID: id, BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{format}, Models: models}
+	return &domain.Template{ID: id, BaseURL: "https://u/v1", CredentialType: credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{format}, Models: models}
 }
 
 func acc(id int64, t *domain.Template, maxConc int) *domain.Account {
@@ -162,6 +164,28 @@ func TestSelectFormatHardFilter(t *testing.T) {
 	s2 := newSched(t, m2)
 	_, err = s2.Select(10, domain.FormatOpenAIResponses, "gpt-4o")
 	require.ErrorIs(t, err, ErrFormatUnavailable)
+}
+
+// TestSelectCredentialTypeFromTemplate 钉死：Selection.CredentialType 只来自
+// 模板（账号级无该字段；一个模板 = 一种号池）。模板 api_key 默认 → 传播 api_key；
+// 模板非 api_key 类型（如未来 codex 生态）→ 原样传播（合法性由 proxy credentialFor 把关）。
+func TestSelectCredentialTypeFromTemplate(t *testing.T) {
+	codexTpl := tpl(1, domain.FormatOpenAIChat, []string{"gpt-4o"})
+	codexTpl.CredentialType = credential.Type("codex_oauth")
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, codexTpl, 4)}})
+	s := newSched(t, m)
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, credential.Type("codex_oauth"), sel.CredentialType, "类型随模板传播")
+	s.Release(sel.AccountID)
+
+	// api_key 默认模板 → Selection 携带 api_key（行为不变路径）
+	s2 := newTestScheduler(t, []*domain.Account{
+		{ID: 1, TemplateID: 1, Template: tpl(1, domain.FormatOpenAIChat, []string{"gpt-4o"}), UpstreamKey: "k", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4},
+	})
+	sel2, err := s2.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, credential.TypeAPIKey, sel2.CredentialType, "默认模板类型 api_key 传播到 Selection")
 }
 
 func TestSelectModelPreference(t *testing.T) {

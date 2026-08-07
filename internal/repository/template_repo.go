@@ -13,6 +13,8 @@ type TemplateRepo struct{ client *ent.Client }
 func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.Create().
 		SetName(t.Name).SetBaseURL(t.BaseURL).
+		// 全字段 Set（含 credential_type）：空串兜底在 service 层（M-1，防默认值被绕过）
+		SetCredentialType(string(t.CredentialType)).
 		SetSupportedFormats(formatsToStrings(t.SupportedFormats)).
 		SetModels(t.Models).
 		SetFormatModels(formatModelsToStrings(t.FormatModels)).
@@ -65,6 +67,8 @@ func (r *TemplateRepo) ListTemplates(ctx context.Context, q ListQuery) ([]*domai
 func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.UpdateOneID(t.ID).
 		SetName(t.Name).SetBaseURL(t.BaseURL).
+		// 全字段 Set（含 credential_type）：空串兜底在 service 层（M-1）
+		SetCredentialType(string(t.CredentialType)).
 		SetSupportedFormats(formatsToStrings(t.SupportedFormats)).
 		SetModels(t.Models).
 		SetFormatModels(formatModelsToStrings(t.FormatModels)).

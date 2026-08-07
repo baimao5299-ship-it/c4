@@ -542,6 +542,9 @@ components:
       properties:
         name: { type: string }
         base_url: { type: string }
+        # credential_type 模板级：一个模板 = 一种号池；缺省 = api_key。
+        # 号池生态类型后续追加枚举（codex_oauth 等）。
+        credential_type: { type: string, enum: [api_key], default: api_key }
         supported_formats:
           type: array
           minItems: 1
@@ -564,6 +567,7 @@ components:
         ID: { type: integer, format: int64 }
         Name: { type: string }
         BaseURL: { type: string }
+        CredentialType: { type: string }
         SupportedFormats:
           type: array
           items: { type: string, enum: [openai-chat, openai-responses, anthropic] }

@@ -70,7 +70,7 @@ func (s *Scheduler) pickFrom(ws *weightedSeq, format domain.RequestFormat, model
 			return &Selection{
 				AccountID: a.acc.ID, TemplateID: a.tpl.ID,
 				BaseURL: a.tpl.BaseURL, Format: format,
-				UpstreamKey: a.acc.UpstreamKey, CredentialType: a.acc.CredentialType, Model: mapped,
+				UpstreamKey: a.acc.UpstreamKey, CredentialType: a.tpl.CredentialType, Model: mapped,
 			}, true
 		}
 	}

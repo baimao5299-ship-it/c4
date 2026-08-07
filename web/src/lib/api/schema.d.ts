@@ -360,6 +360,11 @@ export interface components {
         TemplateCreate: {
             name: string;
             base_url: string;
+            /**
+             * @default api_key
+             * @enum {string}
+             */
+            credential_type: "api_key";
             supported_formats: ("openai-chat" | "openai-responses" | "anthropic")[];
             models?: string[];
             format_models?: {
@@ -374,6 +379,7 @@ export interface components {
             ID: number;
             Name: string;
             BaseURL: string;
+            CredentialType?: string;
             SupportedFormats: ("openai-chat" | "openai-responses" | "anthropic")[];
             Models?: string[];
             FormatModels?: {

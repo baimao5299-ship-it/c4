@@ -18,6 +18,8 @@ const (
 	FieldName = "name"
 	// FieldBaseURL holds the string denoting the base_url field in the database.
 	FieldBaseURL = "base_url"
+	// FieldCredentialType holds the string denoting the credential_type field in the database.
+	FieldCredentialType = "credential_type"
 	// FieldSupportedFormats holds the string denoting the supported_formats field in the database.
 	FieldSupportedFormats = "supported_formats"
 	// FieldModels holds the string denoting the models field in the database.
@@ -48,6 +50,7 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldBaseURL,
+	FieldCredentialType,
 	FieldSupportedFormats,
 	FieldModels,
 	FieldFormatModels,
@@ -67,6 +70,8 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultCredentialType holds the default value on creation for the "credential_type" field.
+	DefaultCredentialType string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -91,6 +96,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByBaseURL orders the results by the base_url field.
 func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
+}
+
+// ByCredentialType orders the results by the credential_type field.
+func ByCredentialType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCredentialType, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

@@ -24,8 +24,6 @@ type Account struct {
 	TemplateID int64 `json:"template_id,omitempty"`
 	// UpstreamKey holds the value of the "upstream_key" field.
 	UpstreamKey string `json:"upstream_key,omitempty"`
-	// CredentialType holds the value of the "credential_type" field.
-	CredentialType string `json:"credential_type,omitempty"`
 	// Status holds the value of the "status" field.
 	Status account.Status `json:"status,omitempty"`
 	// CooldownUntil holds the value of the "cooldown_until" field.
@@ -86,7 +84,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case account.FieldID, account.FieldTemplateID, account.FieldWeight, account.FieldMaxConcurrency:
 			values[i] = new(sql.NullInt64)
-		case account.FieldName, account.FieldUpstreamKey, account.FieldCredentialType, account.FieldStatus, account.FieldLastError:
+		case account.FieldName, account.FieldUpstreamKey, account.FieldStatus, account.FieldLastError:
 			values[i] = new(sql.NullString)
 		case account.FieldCooldownUntil, account.FieldLastUsedAt, account.FieldCreatedAt, account.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -128,12 +126,6 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field upstream_key", values[i])
 			} else if value.Valid {
 				_m.UpstreamKey = value.String
-			}
-		case account.FieldCredentialType:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field credential_type", values[i])
-			} else if value.Valid {
-				_m.CredentialType = value.String
 			}
 		case account.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -240,9 +232,6 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("upstream_key=")
 	builder.WriteString(_m.UpstreamKey)
-	builder.WriteString(", ")
-	builder.WriteString("credential_type=")
-	builder.WriteString(_m.CredentialType)
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Status))

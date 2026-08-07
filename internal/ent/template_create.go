@@ -35,6 +35,20 @@ func (_c *TemplateCreate) SetBaseURL(v string) *TemplateCreate {
 	return _c
 }
 
+// SetCredentialType sets the "credential_type" field.
+func (_c *TemplateCreate) SetCredentialType(v string) *TemplateCreate {
+	_c.mutation.SetCredentialType(v)
+	return _c
+}
+
+// SetNillableCredentialType sets the "credential_type" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableCredentialType(v *string) *TemplateCreate {
+	if v != nil {
+		_c.SetCredentialType(*v)
+	}
+	return _c
+}
+
 // SetSupportedFormats sets the "supported_formats" field.
 func (_c *TemplateCreate) SetSupportedFormats(v []string) *TemplateCreate {
 	_c.mutation.SetSupportedFormats(v)
@@ -143,6 +157,10 @@ func (_c *TemplateCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *TemplateCreate) defaults() {
+	if _, ok := _c.mutation.CredentialType(); !ok {
+		v := template.DefaultCredentialType
+		_c.mutation.SetCredentialType(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := template.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -160,6 +178,9 @@ func (_c *TemplateCreate) check() error {
 	}
 	if _, ok := _c.mutation.BaseURL(); !ok {
 		return &ValidationError{Name: "base_url", err: errors.New(`ent: missing required field "Template.base_url"`)}
+	}
+	if _, ok := _c.mutation.CredentialType(); !ok {
+		return &ValidationError{Name: "credential_type", err: errors.New(`ent: missing required field "Template.credential_type"`)}
 	}
 	if _, ok := _c.mutation.SupportedFormats(); !ok {
 		return &ValidationError{Name: "supported_formats", err: errors.New(`ent: missing required field "Template.supported_formats"`)}
@@ -219,6 +240,10 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.BaseURL(); ok {
 		_spec.SetField(template.FieldBaseURL, field.TypeString, value)
 		_node.BaseURL = value
+	}
+	if value, ok := _c.mutation.CredentialType(); ok {
+		_spec.SetField(template.FieldCredentialType, field.TypeString, value)
+		_node.CredentialType = value
 	}
 	if value, ok := _c.mutation.SupportedFormats(); ok {
 		_spec.SetField(template.FieldSupportedFormats, field.TypeJSON, value)
@@ -333,6 +358,18 @@ func (u *TemplateUpsert) SetBaseURL(v string) *TemplateUpsert {
 // UpdateBaseURL sets the "base_url" field to the value that was provided on create.
 func (u *TemplateUpsert) UpdateBaseURL() *TemplateUpsert {
 	u.SetExcluded(template.FieldBaseURL)
+	return u
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (u *TemplateUpsert) SetCredentialType(v string) *TemplateUpsert {
+	u.Set(template.FieldCredentialType, v)
+	return u
+}
+
+// UpdateCredentialType sets the "credential_type" field to the value that was provided on create.
+func (u *TemplateUpsert) UpdateCredentialType() *TemplateUpsert {
+	u.SetExcluded(template.FieldCredentialType)
 	return u
 }
 
@@ -481,6 +518,20 @@ func (u *TemplateUpsertOne) SetBaseURL(v string) *TemplateUpsertOne {
 func (u *TemplateUpsertOne) UpdateBaseURL() *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
 		s.UpdateBaseURL()
+	})
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (u *TemplateUpsertOne) SetCredentialType(v string) *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.SetCredentialType(v)
+	})
+}
+
+// UpdateCredentialType sets the "credential_type" field to the value that was provided on create.
+func (u *TemplateUpsertOne) UpdateCredentialType() *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.UpdateCredentialType()
 	})
 }
 
@@ -807,6 +858,20 @@ func (u *TemplateUpsertBulk) SetBaseURL(v string) *TemplateUpsertBulk {
 func (u *TemplateUpsertBulk) UpdateBaseURL() *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
 		s.UpdateBaseURL()
+	})
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (u *TemplateUpsertBulk) SetCredentialType(v string) *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.SetCredentialType(v)
+	})
+}
+
+// UpdateCredentialType sets the "credential_type" field to the value that was provided on create.
+func (u *TemplateUpsertBulk) UpdateCredentialType() *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.UpdateCredentialType()
 	})
 }
 

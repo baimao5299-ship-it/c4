@@ -50,7 +50,8 @@ type Template struct {
 	ID               int64
 	Name             string
 	BaseURL          string
-	SupportedFormats []RequestFormat            // 模板支持的格式（非空、去重）
+	CredentialType   credential.Type        // 模板级：默认 api_key（DB 默认；号池生态类型后续）
+	SupportedFormats []RequestFormat        // 模板支持的格式（非空、去重）
 	Models           []string                   // 可服务模型集合
 	FormatModels     map[RequestFormat][]string // 格式 → 该格式支持的模型列表；未配置 = 全部 Models
 	ModelMapping     map[string]string
@@ -95,7 +96,6 @@ type Account struct {
 	TemplateID     int64
 	Template       *Template
 	UpstreamKey    string
-	CredentialType credential.Type // 默认 api_key（创建时 DB 默认；本轮不可改）
 	Status         AccountStatus
 	CooldownUntil  *time.Time
 	Weight         int
