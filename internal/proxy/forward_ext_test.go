@@ -329,6 +329,44 @@ func TestProxyStreamClientAbortStillLogs(t *testing.T) {
 	require.Zero(t, ri.Concurrency, "客户端断开后并发槽必须释放")
 }
 
+// anthropic 同款：流式 + 客户端提前断开也必须记录用量（此前 finish(nil) 同样丢日志）。
+func TestProxyAnthropicStreamClientAbortStillLogs(t *testing.T) {
+	up := fakeAnthropic(t, "slow-stream")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyFormatLogs(t, up.URL, domain.FormatAnthropic, store)
+	srv := httptest.NewServer(http.HandlerFunc(p.HandleAnthropic))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/v1/messages",
+		strings.NewReader(`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer gk-1")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	// 读到第一个 SSE 事件后主动断开
+	buf := make([]byte, 512)
+	_, _ = resp.Body.Read(buf)
+	cancel()
+	_ = resp.Body.Close()
+
+	require.Eventually(t, func() bool {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return len(store.logs) == 1 || p.rec.Pending() > 0
+	}, 3*time.Second, 10*time.Millisecond, "relay 必须感知客户端断开并记录用量")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "客户端断开后上游已消费，必须记录一条用量")
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
+	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "客户端断开后并发槽必须释放")
+}
+
 func TestProxyResponsesFailoverExhausted429(t *testing.T) {
 	up := fakeResponses(t, "429")
 	defer up.Close()

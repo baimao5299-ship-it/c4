@@ -166,7 +166,9 @@ func (p *Proxy) tryAnthropic(w http.ResponseWriter, r *http.Request, reqID strin
 			// 超时只会取消子 ctx 而父 ctx（r.Context()）仍存活；上游停滞超时必须走
 			// 上游错误分支（recordStreamAbort + ResultError），不得当作客户端断开。
 			if r.Context().Err() != nil {
-				p.finish(sel.AccountID, nil)
+				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
+				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
+				p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: pt + ct, cr: cr, cc: cc}, start))
 				return true, 0, nil
 			}
 			p.recordStreamAbort(reqID, start, sel, err)
