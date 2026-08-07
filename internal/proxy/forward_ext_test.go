@@ -436,6 +436,25 @@ func TestProxyAnthropicStreamingPassthrough4xx(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
 }
 
+// base 带 /v1 后缀（openai 风格，如 opencode.ai/zen/go/v1）时，anthropic 流式
+// 请求必须发到 /v1/messages，不得拼成 /v1/v1/messages（rawPost 曾用 JoinPath
+// 追加导致双 v1；SDK 非流式用 Parse 替换尾段所以一直正常）。
+func TestProxyAnthropicStreamingBaseWithV1(t *testing.T) {
+	up := fakeAnthropic(t, "")
+	defer up.Close()
+	// base 带 /v1：fakeAnthropic 只认 /v1/messages，双 v1 会 404
+	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatAnthropic)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleAnthropic(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"type":"content_block_delta"`)
+}
+
 func TestProxyAnthropicStreaming(t *testing.T) {
 	up := fakeAnthropic(t, "")
 	defer up.Close()

@@ -104,9 +104,16 @@ func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth 
 	if err != nil {
 		return nil, err
 	}
-	// url.JoinPath：base 末尾带/不带 / 均可正确拼接（ResolveReference 对
-	// 非尾斜杠 base 会做 RFC3986 path merge，丢掉 /v1 等前缀）。
+	// 路径拼接语义与各自 SDK 一致：openai base 约定含 /v1 + 子路径追加
+	// （JoinPath → /v1/chat/completions）；anthropic SDK 用 BaseURL.Parse("v1/messages")
+	// （RFC3986 替换尾段——base 含不含 /v1 都得到 /v1/messages）。混用 JoinPath
+	// 会让 base 含 /v1 的 anthropic 请求变成 /v1/v1/messages。
 	full := u.JoinPath(path)
+	if path == "v1/messages" {
+		if full, err = u.Parse(path); err != nil {
+			return nil, err
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, full.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
