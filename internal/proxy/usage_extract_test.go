@@ -33,6 +33,7 @@ func TestChatStreamUsage(t *testing.T) {
 	require.Zero(t, cc)
 	_, _, _, cr, cc = chatStreamUsage([]byte(`{"usage":{"cached_tokens":null}}`))
 	require.Zero(t, cr, "显式 null 与缺失等价")
+	require.Zero(t, cc)
 }
 
 // —— chat 非流式（SDK UnmarshalJSON → PromptTokensDetails 直读 + RawJSON gjson） ——
