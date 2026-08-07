@@ -158,13 +158,7 @@
     "filterEmpty": "No accounts match the filters",
     "batchUpdateTitle": "Batch update accounts",
     "batchUpdateDesc": "Fill in only the fields to change; leave empty to keep current values",
-    "batchUpdateEmpty": "Fill in at least one field",
-    "sort": {
-      "cooldownUntil": "Cooldown until",
-      "lastUsedAt": "Last used",
-      "createdAt": "Created at",
-      "updatedAt": "Updated at"
-    }
+    "batchUpdateEmpty": "Fill in at least one field"
   },
   "groups": {
     "title": "Groups",
@@ -207,10 +201,7 @@
     "filterEmpty": "No groups match the filters",
     "batchUpdateTitle": "Batch update groups",
     "batchUpdateDesc": "Set a single name for the {{count}} selected groups",
-    "batchUpdateEmpty": "Enter a name",
-    "sort": {
-      "updatedAt": "Updated at"
-    }
+    "batchUpdateEmpty": "Enter a name"
   },
   "logs": {
     "title": "Logs",
@@ -252,10 +243,6 @@
   },
   "list": {
     "search": "Search name",
-    "sort": "Sort",
-    "order": "Order",
-    "asc": "Asc",
-    "desc": "Desc",
     "prev": "Prev",
     "next": "Next",
     "pageInfo": "Page {{page}} / {{totalPages}} · {{total}} entries",

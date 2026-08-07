@@ -158,13 +158,7 @@
     "filterEmpty": "没有符合条件的账号",
     "batchUpdateTitle": "批量更新账号",
     "batchUpdateDesc": "仅填写需要修改的字段，留空表示保持原值",
-    "batchUpdateEmpty": "至少填写一个字段",
-    "sort": {
-      "cooldownUntil": "冷却截止",
-      "lastUsedAt": "最近使用",
-      "createdAt": "创建时间",
-      "updatedAt": "更新时间"
-    }
+    "batchUpdateEmpty": "至少填写一个字段"
   },
   "groups": {
     "title": "分组",
@@ -207,10 +201,7 @@
     "filterEmpty": "没有符合条件的分组",
     "batchUpdateTitle": "批量更新分组",
     "batchUpdateDesc": "为选中的 {{count}} 个分组统一设置名称",
-    "batchUpdateEmpty": "请输入名称",
-    "sort": {
-      "updatedAt": "更新时间"
-    }
+    "batchUpdateEmpty": "请输入名称"
   },
   "logs": {
     "title": "日志",
@@ -252,10 +243,6 @@
   },
   "list": {
     "search": "搜索名称",
-    "sort": "排序",
-    "order": "顺序",
-    "asc": "升序",
-    "desc": "降序",
     "prev": "上一页",
     "next": "下一页",
     "pageInfo": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 条",

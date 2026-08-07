@@ -6,9 +6,9 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
 import { BatchBar } from '@/components/batch-bar'
-import { ListToolbar, type SortOrder } from '@/components/list-toolbar'
+import { ListToolbar } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
-import { SortableHeader } from '@/components/sortable-header'
+import { SortableHeader, type SortOrder } from '@/components/sortable-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -58,8 +58,6 @@ export default function Groups() {
     setSelected([])
   }
   const changeName = (v: string) => { setName(v); resetPage() }
-  const changeSort = (v: string) => { setActiveSort(v); resetPage() }
-  const changeOrder = (o: SortOrder) => { setOrder(o); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
     resetPage()
@@ -78,13 +76,6 @@ export default function Groups() {
     setName('')
     resetPage()
   }
-
-  const sortOptions = [
-    { value: 'id', label: 'ID' },
-    { value: 'name', label: t('groups.table.name') },
-    { value: 'created_at', label: t('groups.table.createdAt') },
-    { value: 'updated_at', label: t('groups.sort.updatedAt') },
-  ]
 
   // —— 批量删除/重命名 ——
   const batchDelete = useMutation({
@@ -201,11 +192,6 @@ export default function Groups() {
       <ListToolbar
         name={name}
         onNameChange={changeName}
-        sort={activeSort ?? 'id'}
-        onSortChange={changeSort}
-        order={order}
-        onOrderChange={changeOrder}
-        sortOptions={sortOptions}
       />
 
       <BatchBar

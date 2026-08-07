@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { TableHead } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
-import type { SortOrder } from '@/components/list-toolbar'
+
+export type SortOrder = 'asc' | 'desc'
 
 // 可排序列头：active 显示方向箭头，inactive hover 显示双向图标（三态由父级驱动：
 // 无排序 → 该列降序 → 升序 → 取消排序）。整列 th 可点击（按钮语义）。
