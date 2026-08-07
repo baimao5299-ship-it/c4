@@ -26,27 +26,67 @@ const KINDS = ['ok', '429', 'error'] as const
 // then.status 可选值（空 = 不设置状态）。
 const STATUSES: AccountStatus[] = ['active', 'unhealthy', '429', 'disabled']
 
-// —— 结构化 when/then 表单：空字符串 = 字段不发送 ——
-interface WhenForm {
-  kind: string
-  http_status: string
-  error_message_contains: string
-  account_id: string
-  template_id: string
-  group_id: string
-  model: string
-  window_seconds: string
-  count_429_ge: string
-  count_error_ge: string
-  count_ok_ge: string
-  count_total_ge: string
-  ratio_429_ge: string
-  ratio_error_ge: string
+// —— 条件行模型：when = kind 锚行（Select 常驻首行）+ 动态条件行 ——
+type WhenField =
+  | 'http_status' | 'error_message_contains' | 'account_id' | 'template_id' | 'group_id'
+  | 'model' | 'window_seconds' | 'count_total_ge'
+  | 'count_429_ge' | 'ratio_429_ge' | 'count_error_ge' | 'ratio_error_ge' | 'count_ok_ge'
+
+interface CondRow { field: WhenField; value: string }
+
+interface WhenFieldMeta {
+  key: WhenField
+  kinds: readonly string[] // kind 归属：'any' | '429' | 'error' | 'ok'（error_message_contains 联合归属 429|error）
+  input: 'number' | 'text'
+  placeholder?: string
+  min?: number
+  max?: number
+  step?: number
 }
+
+// 匹配器元数据表：key 与后端 when JSON 键一致；kinds 驱动"添加条件"下拉过滤；
+// input/min/max/step 决定值输入控件（操作符由字段类型隐含，无操作符选择器）。
+const WHEN_FIELDS: WhenFieldMeta[] = [
+  { key: 'http_status', kinds: ['any'], input: 'number', placeholder: '503', min: 100, max: 599 },
+  { key: 'error_message_contains', kinds: ['429', 'error'], input: 'text', placeholder: 'unhealthy' },
+  { key: 'account_id', kinds: ['any'], input: 'number', placeholder: '12' },
+  { key: 'template_id', kinds: ['any'], input: 'number', placeholder: '3' },
+  { key: 'group_id', kinds: ['any'], input: 'number', placeholder: '1' },
+  { key: 'model', kinds: ['any'], input: 'text', placeholder: 'gpt-4o' },
+  { key: 'window_seconds', kinds: ['any'], input: 'number', placeholder: '60', min: 1 },
+  { key: 'count_total_ge', kinds: ['any'], input: 'number', placeholder: '10', min: 1 },
+  { key: 'count_429_ge', kinds: ['429'], input: 'number', placeholder: '3', min: 0 },
+  { key: 'ratio_429_ge', kinds: ['429'], input: 'number', placeholder: '0.5', min: 0, max: 1, step: 0.01 },
+  { key: 'count_error_ge', kinds: ['error'], input: 'number', placeholder: '5', min: 0 },
+  { key: 'ratio_error_ge', kinds: ['error'], input: 'number', placeholder: '0.8', min: 0, max: 1, step: 0.01 },
+  { key: 'count_ok_ge', kinds: ['ok'], input: 'number', placeholder: '1', min: 0 },
+]
+const MAX_CONDITIONS = 10
+
+// WhenField key → locale 键（rules.whenFields.*）。
+const WHEN_FIELD_LOCALE: Record<WhenField, string> = {
+  http_status: 'httpStatus', error_message_contains: 'errorContains',
+  account_id: 'accountId', template_id: 'templateId', group_id: 'groupId',
+  model: 'model', window_seconds: 'windowSeconds', count_total_ge: 'countTotal',
+  count_429_ge: 'count429', ratio_429_ge: 'ratio429',
+  count_error_ge: 'countError', ratio_error_ge: 'ratioError', count_ok_ge: 'countOK',
+}
+const whenFieldLabel = (k: WhenField) => `rules.whenFields.${WHEN_FIELD_LOCALE[k]}`
+
+// kind 相关性过滤（仅"添加条件"下拉用；行渲染不过滤——越界行是合法观察者语义）。
+// kind=''（不限）→ 全部字段；否则只留归属含该 kind 的字段。
+function kindFilter(kind: string): WhenFieldMeta[] {
+  return WHEN_FIELDS.filter(f => kind === '' || f.kinds.includes(kind))
+}
+
 interface ThenForm {
   status: string
   cooldown: string
   weight: string
+}
+interface WhenForm {
+  kind: string
+  rows: CondRow[]
 }
 interface FormState {
   name: string
@@ -56,11 +96,7 @@ interface FormState {
   then: ThenForm
 }
 
-const emptyWhen = (): WhenForm => ({
-  kind: '', http_status: '', error_message_contains: '', account_id: '', template_id: '',
-  group_id: '', model: '', window_seconds: '', count_429_ge: '', count_error_ge: '',
-  count_ok_ge: '', count_total_ge: '', ratio_429_ge: '', ratio_error_ge: '',
-})
+const emptyWhen = (): WhenForm => ({ kind: '', rows: [] })
 const emptyThen = (): ThenForm => ({ status: '', cooldown: '', weight: '' })
 const emptyForm = (): FormState => ({ name: '', priority: '', enabled: true, when: emptyWhen(), then: emptyThen() })
 
@@ -71,14 +107,18 @@ function num(s: string): number | undefined {
   return Number.isNaN(n) ? undefined : n
 }
 
-// Rule.When（[key: string]: unknown）→ 表单（未知键忽略，编辑往返保留全部已知字段）。
-function whenToForm(w: Rule['When']): WhenForm {
-  const f = emptyWhen()
-  for (const k of Object.keys(f) as (keyof WhenForm)[]) {
-    const v = w[k]
-    if (v !== undefined && v !== null) f[k] = String(v)
+// Rule.When（[key: string]: unknown）→ 条件行（未知键忽略，编辑往返保留全部已知字段；
+// kind 提出放锚行）。kind 在 when 中的位置不固定（JSON 键序），回填与提交解耦。
+function whenToRows(w: Rule['When']): CondRow[] {
+  const rows: CondRow[] = []
+  for (const f of WHEN_FIELDS) {
+    const v = w[f.key]
+    if (v !== undefined && v !== null && v !== '') rows.push({ field: f.key, value: String(v) })
   }
-  return f
+  return rows
+}
+function whenToForm(w: Rule['When']): WhenForm {
+  return { kind: typeof w.kind === 'string' ? w.kind : '', rows: whenToRows(w) }
 }
 function thenToForm(th: Rule['Then']): ThenForm {
   const f = emptyThen()
@@ -97,22 +137,25 @@ function toForm(r: Rule): FormState {
   }
 }
 
-// 表单 → 请求体：仅发送非空字段（后端白名单校验，未知键 400）。
-function toWhen(f: WhenForm): Record<string, unknown> {
+// 条件行 → when JSON：number 字段 Number()（NaN 跳过）、空值跳过、未知键忽略
+// （WHEN_FIELDS 表驱动白名单，与后端字段全集一致）。
+function rowsToWhen(rows: CondRow[]): Record<string, unknown> {
   const w: Record<string, unknown> = {}
-  if (f.kind) w.kind = f.kind
-  for (const [k, v] of [
-    ['http_status', num(f.http_status)], ['account_id', num(f.account_id)],
-    ['template_id', num(f.template_id)], ['group_id', num(f.group_id)],
-    ['window_seconds', num(f.window_seconds)], ['count_429_ge', num(f.count_429_ge)],
-    ['count_error_ge', num(f.count_error_ge)], ['count_ok_ge', num(f.count_ok_ge)],
-    ['count_total_ge', num(f.count_total_ge)], ['ratio_429_ge', num(f.ratio_429_ge)],
-    ['ratio_error_ge', num(f.ratio_error_ge)],
-  ] as const) {
-    if (v !== undefined) w[k] = v
+  for (const r of rows) {
+    const meta = WHEN_FIELDS.find(f => f.key === r.field)
+    if (!meta || r.value === '') continue
+    if (meta.input === 'number') {
+      const n = num(r.value)
+      if (n !== undefined) w[r.field] = n
+    } else {
+      w[r.field] = r.value
+    }
   }
-  if (f.error_message_contains) w.error_message_contains = f.error_message_contains
-  if (f.model) w.model = f.model
+  return w
+}
+function toWhen(f: WhenForm): Record<string, unknown> {
+  const w = rowsToWhen(f.rows)
+  if (f.kind) w.kind = f.kind
   return w
 }
 function toThen(f: ThenForm): Record<string, unknown> {
@@ -126,6 +169,19 @@ function toThen(f: ThenForm): Record<string, unknown> {
 function toBody(f: FormState): RuleCreate {
   return { name: f.name.trim(), priority: Number(f.priority), enabled: f.enabled, when: toWhen(f.when), then: toThen(f.then) }
 }
+
+// —— 预设模板（点击覆盖条件行 + 动作，name/priority/enabled 保留）——
+interface TemplatePreset {
+  id: string
+  when: { [key: string]: unknown }
+  then: ThenForm
+}
+const TEMPLATES: TemplatePreset[] = [
+  { id: 'cooldown429', when: { kind: '429' }, then: { status: '429', cooldown: '30s', weight: '' } },
+  { id: 'errorBackoff', when: { kind: 'error' }, then: { status: 'unhealthy', cooldown: '5s', weight: '' } },
+  { id: 'escalate', when: { kind: '429', window_seconds: 60, count_429_ge: 3 }, then: { status: '429', cooldown: '5m', weight: '' } },
+  { id: 'recover', when: { kind: 'ok' }, then: { status: 'active', cooldown: '', weight: '' } },
+]
 
 // —— 摘要渲染 ——
 function WhenSummary({ w, t }: { w: Rule['When']; t: (k: string) => string }) {
@@ -182,15 +238,18 @@ export default function Rules() {
   const [editing, setEditing] = useState<Rule | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
   const [deleting, setDeleting] = useState<Rule | null>(null)
+  const [whenErr, setWhenErr] = useState<string | null>(null)
 
   const openCreate = () => {
     setEditing(null)
     setForm(emptyForm())
+    setWhenErr(null)
     setDialogOpen(true)
   }
   const openEdit = (r: Rule) => {
     setEditing(r)
     setForm(toForm(r))
+    setWhenErr(null)
     setDialogOpen(true)
   }
 
@@ -222,12 +281,52 @@ export default function Rules() {
     },
   })
 
+  // —— 条件行操作（kind 锚行常驻，rows 动态增删）——
+  const addRow = (field: WhenField) => {
+    setForm(f => (f.when.rows.length >= MAX_CONDITIONS
+      ? f
+      : { ...f, when: { ...f.when, rows: [...f.when.rows, { field, value: '' }] } }))
+    setWhenErr(null)
+  }
+  const removeRow = (i: number) => {
+    setForm(f => ({ ...f, when: { ...f.when, rows: f.when.rows.filter((_, j) => j !== i) } }))
+    setWhenErr(null)
+  }
+  const setRowField = (i: number, field: WhenField) => {
+    setForm(f => ({ ...f, when: { ...f.when, rows: f.when.rows.map((r, j) => (j === i ? { ...r, field } : r)) } }))
+    setWhenErr(null)
+  }
+  const setRowValue = (i: number, value: string) => {
+    setForm(f => ({ ...f, when: { ...f.when, rows: f.when.rows.map((r, j) => (j === i ? { ...r, value } : r)) } }))
+  }
+  const applyTemplate = (tp: TemplatePreset) => {
+    setForm(f => ({ ...f, when: whenToForm(tp.when), then: tp.then }))
+    setWhenErr(null)
+  }
+
+  // 添加下拉：kindFilter - 已用字段；kind 切换不丢越界行（渲染不过滤）。
+  const used = new Set(form.when.rows.map(r => r.field))
+  const addOptions = kindFilter(form.when.kind).filter(f => !used.has(f.key))
+  const addDisabled = form.when.rows.length >= MAX_CONDITIONS || addOptions.length === 0
+  const [addField, setAddField] = useState<WhenField | null>(null)
+
+  // 提交校验（仅检查实际会发送的条件；越界行是合法观察者语义，不阻止）：
+  // kind=ok + error_message_contains → 确定死配置（ok 事件错误信息恒空）；比例无总次数 → 缺失依赖。
   const submit = () => {
     if (!form.name.trim() || form.priority === '') return
+    const when = toWhen(form.when)
+    if (when.kind === 'ok' && when.error_message_contains !== undefined) {
+      setWhenErr(t('rules.whenErrOkContains'))
+      return
+    }
+    if ((when.ratio_429_ge !== undefined || when.ratio_error_ge !== undefined) && when.count_total_ge === undefined) {
+      setWhenErr(t('rules.whenErrRatio'))
+      return
+    }
+    setWhenErr(null)
     save.mutate(form)
   }
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
-  const setWhen = (k: keyof WhenForm, v: string) => setForm(f => ({ ...f, when: { ...f.when, [k]: v } }))
   const setThen = (k: keyof ThenForm, v: string) => setForm(f => ({ ...f, then: { ...f.then, [k]: v } }))
 
   return (
@@ -327,6 +426,18 @@ export default function Rules() {
             <DialogDescription>{t('rules.dialogDesc')}</DialogDescription>
           </DialogHeader>
           <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+            {/* 预设模板：一键填充条件 + 动作（name/priority/enabled 保留） */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('rules.templates.title')}</p>
+              <div className="flex flex-wrap gap-2">
+                {TEMPLATES.map(tp => (
+                  <Button key={tp.id} variant="outline" size="sm" onClick={() => applyTemplate(tp)}>
+                    {t(`rules.templates.${tp.id}`)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             {/* 基础 */}
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 space-y-1.5">
@@ -343,78 +454,87 @@ export default function Rules() {
               {t('rules.enabledLabel')}
             </label>
 
-            {/* 匹配 when（全部可选，未填不限定） */}
+            {/* 匹配 when：kind 锚行 + 动态条件行（行渲染不过滤，仅添加下拉防呆） */}
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('rules.whenTitle')}</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="flex items-end gap-2">
                 <div className="space-y-1.5">
                   <Label>{t('rules.when.kind')}</Label>
                   <Select
                     items={Object.fromEntries([['', t('rules.any')], ...KINDS.map(k => [k, t(`rules.kind.${k}`)])])}
                     value={form.when.kind || null}
-                    onValueChange={v => setWhen('kind', v)}
+                    onValueChange={v => {
+                      setForm(f => ({ ...f, when: { ...f.when, kind: v } }))
+                      setWhenErr(null)
+                    }}
                   >
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="" label={t('rules.any')}>{t('rules.any')}</SelectItem>
                       {KINDS.map(k => <SelectItem key={k} value={k} label={t(`rules.kind.${k}`)}>{t(`rules.kind.${k}`)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-http">{t('rules.when.httpStatus')}</Label>
-                  <Input id="rl-http" type="number" min={100} max={599} placeholder="503" value={form.when.http_status} onChange={e => setWhen('http_status', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-model">{t('rules.when.model')}</Label>
-                  <Input id="rl-model" placeholder="gpt-4o" value={form.when.model} onChange={e => setWhen('model', e.target.value)} />
-                </div>
-                <div className="col-span-3 space-y-1.5">
-                  <Label htmlFor="rl-errmsg">{t('rules.when.errorContains')}</Label>
-                  <Input id="rl-errmsg" placeholder="unhealthy" value={form.when.error_message_contains} onChange={e => setWhen('error_message_contains', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-acc">{t('rules.when.accountId')}</Label>
-                  <Input id="rl-acc" type="number" placeholder="12" value={form.when.account_id} onChange={e => setWhen('account_id', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-tpl">{t('rules.when.templateId')}</Label>
-                  <Input id="rl-tpl" type="number" placeholder="3" value={form.when.template_id} onChange={e => setWhen('template_id', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-grp">{t('rules.when.groupId')}</Label>
-                  <Input id="rl-grp" type="number" placeholder="1" value={form.when.group_id} onChange={e => setWhen('group_id', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-win">{t('rules.when.windowSeconds')}</Label>
-                  <Input id="rl-win" type="number" min={1} placeholder="60" value={form.when.window_seconds} onChange={e => setWhen('window_seconds', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-c429">{t('rules.when.count429')}</Label>
-                  <Input id="rl-c429" type="number" min={0} placeholder="3" value={form.when.count_429_ge} onChange={e => setWhen('count_429_ge', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-cerr">{t('rules.when.countError')}</Label>
-                  <Input id="rl-cerr" type="number" min={0} placeholder="5" value={form.when.count_error_ge} onChange={e => setWhen('count_error_ge', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-cok">{t('rules.when.countOK')}</Label>
-                  <Input id="rl-cok" type="number" min={0} placeholder="1" value={form.when.count_ok_ge} onChange={e => setWhen('count_ok_ge', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-ctot">{t('rules.when.countTotal')}</Label>
-                  <Input id="rl-ctot" type="number" min={1} placeholder="10" value={form.when.count_total_ge} onChange={e => setWhen('count_total_ge', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-r429">{t('rules.when.ratio429')}</Label>
-                  <Input id="rl-r429" type="number" min={0} max={1} step={0.01} placeholder="0.5" value={form.when.ratio_429_ge} onChange={e => setWhen('ratio_429_ge', e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="rl-rerr">{t('rules.when.ratioError')}</Label>
-                  <Input id="rl-rerr" type="number" min={0} max={1} step={0.01} placeholder="0.8" value={form.when.ratio_error_ge} onChange={e => setWhen('ratio_error_ge', e.target.value)} />
-                </div>
+                <p className="pb-2 text-xs text-muted-foreground">{t('rules.whenHint')}</p>
               </div>
-              <p className="text-xs text-muted-foreground">{t('rules.whenHint')}</p>
+
+              {form.when.rows.map((r, i) => {
+                const meta = WHEN_FIELDS.find(f => f.key === r.field)
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-6 shrink-0 text-sm text-muted-foreground">{t('rules.condOf')}</span>
+                    <Select
+                      items={Object.fromEntries(WHEN_FIELDS.map(f => [f.key, t(whenFieldLabel(f.key))]))}
+                      value={r.field}
+                      onValueChange={v => v && setRowField(i, v as WhenField)}
+                    >
+                      <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {WHEN_FIELDS.map(f => (
+                          <SelectItem key={f.key} value={f.key} label={t(whenFieldLabel(f.key))}>{t(whenFieldLabel(f.key))}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {meta && meta.input === 'number' ? (
+                      <Input type="number" min={meta.min} max={meta.max} step={meta.step} placeholder={meta.placeholder}
+                        value={r.value} onChange={e => setRowValue(i, e.target.value)} className="w-28" />
+                    ) : (
+                      <Input type="text" placeholder={meta?.placeholder} value={r.value} onChange={e => setRowValue(i, e.target.value)} className="w-44" />
+                    )}
+                    <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('rules.removeCondition')} onClick={() => removeRow(i)}>
+                      <Trash2 />
+                    </Button>
+                  </div>
+                )
+              })}
+
+              {/* 添加条件：kindFilter - 已用字段；行数上限 10 */}
+              <div className="flex items-center gap-2">
+                <Select
+                  items={Object.fromEntries(addOptions.map(f => [f.key, t(whenFieldLabel(f.key))]))}
+                  value={addField}
+                  onValueChange={v => {
+                    setAddField(null)
+                    if (v) addRow(v as WhenField)
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-48" disabled={addDisabled}>
+                    <SelectValue placeholder={t('rules.addCondition')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {addOptions.map(f => (
+                      <SelectItem key={f.key} value={f.key} label={t(whenFieldLabel(f.key))}>{t(whenFieldLabel(f.key))}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.when.rows.length >= MAX_CONDITIONS && (
+                  <span className="text-xs text-muted-foreground">{t('rules.condLimit', { max: MAX_CONDITIONS })}</span>
+                )}
+              </div>
+
+              {whenErr && (
+                <p className="text-sm text-destructive">{whenErr}</p>
+              )}
             </div>
 
             {/* 动作 then（可选组合） */}
