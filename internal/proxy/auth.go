@@ -62,8 +62,11 @@ func (a *Auth) Reload(ctx context.Context) error {
 	a.mu.Lock()
 	a.keys = m
 	a.states = u
-	a.mu.Unlock()
+	// gate.reload 迭代 m（= a.keys 当前引用）：必须持锁——Upsert/Delete
+	// 并发写 a.keys 同 map 会触发 "concurrent map iteration and map write"
+	// fatal（上机 128 并发建用户实测崩溃；map 赋值只换引用，写仍落 m）。
 	a.gate.reload(m)
+	a.mu.Unlock()
 	return nil
 }
 
