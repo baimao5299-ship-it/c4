@@ -468,6 +468,27 @@ func TestWeightActionRebuildsRoutes(t *testing.T) {
 	require.InDelta(t, ratio, 10.0, 0.5, "weight 100:10 → 频率比 ≈ 10:1（路由已按新权重重建）")
 }
 
+// TestProcessWriteMergeKeepsWeight 回归（评审 I-1）：同账号 weight 写先入队、
+// status 写（weight=nil）后入队，processWrite 合并不得丢 weight——否则 DB 不持久化，
+// ≤30s reload 后内存回退，weight 动作被静默撤销。
+func TestProcessWriteMergeKeepsWeight(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m)
+
+	// weight 写先入队、status 写后入队（weight=nil）
+	s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, intPtr(10))
+	s.enqueueWrite(1, accState{status: domain.StatusActive}, nil)
+
+	require.NoError(t, s.Close(context.Background())) // 排空触发 processWrite 合并
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Len(t, m.writes, 1, "same-account writes merged into one")
+	require.Equal(t, domain.StatusActive, m.writes[0].status, "后写 status 覆盖先写")
+	require.NotNil(t, m.writes[0].weight, "后写 weight=nil 不得丢弃已入队的 weight")
+	require.Equal(t, 10, *m.writes[0].weight, "最终写必须携带 weight")
+}
+
 // TestWorkerContract 满足 worker.Worker 契约（Global Constraints #5）：Name + 幂等 Start。
 func TestWorkerContract(t *testing.T) {
 	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})

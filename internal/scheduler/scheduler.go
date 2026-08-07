@@ -160,12 +160,18 @@ func (s *Scheduler) writebackLoop(ctx context.Context) {
 }
 
 // processWrite 处理一条状态回写：合并窗口内同一账号的重复写（幂等覆盖）后回写 DB。
+// 合并语义：后写覆盖先写，但 weight 例外——后写若不带 weight（statusWrite.weight=nil，
+// 纯状态动作），保留先前已入队的 weight（否则同账号 weight 写先入队、status 写后
+// 入队时合并丢 weight，DB 不持久化 → ≤30s reload 后内存回退，weight 动作被静默撤销）。
 func (s *Scheduler) processWrite(w statusWrite) {
 	accs := map[int64]statusWrite{w.id: w}
 	drain := true
 	for drain {
 		select {
 		case w2 := <-s.writeCh:
+			if prev, ok := accs[w2.id]; ok && w2.weight == nil && prev.weight != nil {
+				w2.weight = prev.weight
+			}
 			accs[w2.id] = w2
 		default:
 			drain = false
