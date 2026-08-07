@@ -6,7 +6,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'rec
 import { api } from '@/App'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
-import { DateTimePicker } from '@/components/ui/date-picker'
+import { DateRangePicker } from '@/components/date-range-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -111,12 +111,8 @@ export default function Stats() {
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-4">
           <div className="w-[14rem] space-y-1.5">
-            <Label>{t('stats.from')}</Label>
-            <DateTimePicker value={range.from} onChange={v => setRange(r => ({ ...r, from: v }))} />
-          </div>
-          <div className="w-[14rem] space-y-1.5">
-            <Label>{t('stats.to')}</Label>
-            <DateTimePicker value={range.to} onChange={v => setRange(r => ({ ...r, to: v }))} />
+            <Label>{t('dateRange.label')}</Label>
+            <DateRangePicker value={range} onChange={setRange} />
           </div>
           <div className="space-y-1.5">
             <Label>{t('stats.granularity')}</Label>
