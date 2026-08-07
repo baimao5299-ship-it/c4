@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"go-proxy-mini/internal/config"
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/handler"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
@@ -92,7 +93,7 @@ func main() {
 		FailoverAttempts:      cfg.Proxy.FailoverAttempts,
 		GroupKeyRPM:           cfg.Limit.GroupKeyRPM,
 		UsageCapture:          cfg.Proxy.UsageCapture,
-	}, sched, rec, clients, auth, log)
+	}, sched, credential.New(), rec, clients, auth, log)
 
 	// 管理端变更统一经 invalidate 回调生效：调度器重载快照（选号/状态）+ aiclient
 	// 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；评审发现：此前

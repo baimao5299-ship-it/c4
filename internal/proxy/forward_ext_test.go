@@ -16,6 +16,7 @@ import (
 	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/internal/scheduler"
@@ -187,7 +188,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	}
 	accs := map[int64][]*domain.Account{10: {{
 		ID: 1, TemplateID: 1, Template: tpl, UpstreamKey: "sk-upstream",
-		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+		CredentialType: credential.TypeAPIKey, Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
@@ -210,7 +211,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, rec, clients, auth, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil)
 }
 
 func TestProxyResponsesNonStreaming(t *testing.T) {

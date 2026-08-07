@@ -9,11 +9,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/internal/scheduler"
@@ -219,7 +221,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 	t.Helper()
 	accs := map[int64][]*domain.Account{10: {{
 		ID: accountID, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "sk-upstream",
-		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+		CredentialType: credential.TypeAPIKey, Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
@@ -242,7 +244,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: streamTimeout,
 	})
-	return New(cfg, sched, rec, clients, auth, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil)
 }
 
 func TestProxyStreamingChat(t *testing.T) {
@@ -428,7 +430,7 @@ func TestProxyFailoverOn429(t *testing.T) {
 	// 第二个账号（同样带映射，耗尽路径才能断言最后一次实际尝试的映射模型）
 	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}, ModelMapping: mapping}
 	sched := p.sched
-	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
+	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", CredentialType: credential.TypeAPIKey, Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
 	loader.accs[10] = append(loader.accs[10], acc2)
 	require.NoError(t, sched.InvalidateAllSync())
@@ -469,7 +471,7 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	p := newTestProxy(t, up.URL+"/v1", 1)
 	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 	sched := p.sched
-	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
+	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", CredentialType: credential.TypeAPIKey, Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
 	loader.accs[10] = append(loader.accs[10], acc2)
 	require.NoError(t, sched.InvalidateAllSync())
@@ -509,7 +511,7 @@ func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 		loader.accs[10] = append(loader.accs[10], &domain.Account{
 			ID: i, TemplateID: i, Template: tpl, UpstreamKey: "sk-upstream",
-			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+			CredentialType: credential.TypeAPIKey, Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
 		})
 	}
 	require.NoError(t, sched.InvalidateAllSync())
@@ -763,4 +765,66 @@ func TestProxySelectFailLogsModel(t *testing.T) {
 	require.Len(t, store.logs, 1, "Select 失败必须记一条用量")
 	require.Equal(t, "gpt-4o", store.logs[0].Model, "Select 失败：Model = 客户端请求模型")
 	require.Equal(t, "", store.logs[0].MappedModel, "未实际使用任何账号 → MappedModel 空")
+}
+
+// 分发实证（评审 M2）：注册自定义 provider（覆盖 api_key 类型的默认实现）→
+// 上游收到的鉴权值必须来自 provider 返回的凭据值，而非 Selection.UpstreamKey
+// 直读——证明注册表分发路径真实生效，接线非空转。
+func TestProxyCredentialDispatchUsesRegistry(t *testing.T) {
+	gotAuth := make(chan string, 1)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth <- r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "c1", "object": "chat.completion", "model": "gpt-4o",
+			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+		})
+	}))
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+	p.creds.Register(customAPIKeyProvider{val: "sk-via-registry"})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, "Bearer sk-via-registry", <-gotAuth, "上游收到的鉴权值必须来自注册表 provider")
+}
+
+type customAPIKeyProvider struct{ val string }
+
+func (c customAPIKeyProvider) Type() credential.Type { return credential.TypeAPIKey }
+func (c customAPIKeyProvider) Credential(_ context.Context, _ credential.CredentialInput) (string, error) {
+	return c.val, nil
+}
+
+// 评审 M1：未知凭据类型（号池生态类型未注册）→ credentialFor 显式错误 →
+// 网络错误路径（耗尽 502，Retry-After 不设），上游不得收到任何请求——
+// 不得静默 fallback 到 api_key（fallback 是号池类型安全隐患）。
+func TestProxyCredentialUnknownTypeRejectsNoUpstreamCall(t *testing.T) {
+	var hits atomic.Int64
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(500)
+	}))
+	defer up.Close()
+	p := newTestProxy(t, up.URL+"/v1", 1)
+	loader := p.sched.Loader().(noopLoader)
+	loader.accs[10][0].CredentialType = credential.Type("codex_oauth")
+	require.NoError(t, p.sched.InvalidateAllSync())
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, http.StatusBadGateway, rec.Code, "未知凭据类型按网络错误处理 → 耗尽 502")
+	require.Empty(t, rec.Header().Get("Retry-After"), "非 429 不设 Retry-After")
+	require.Zero(t, hits.Load(), "未知类型不得 fallback：上游一个请求都不许收到")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "凭据错误路径也必须释放并发槽")
+	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
 }

@@ -135,7 +135,11 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 		if err != nil {
 			return false, 0, nil
 		}
-		resp, err := p.clients.ResponseStreamRaw(ctx, tpl, sel.UpstreamKey, streamBody)
+		key, err := p.credentialFor(ctx, sel)
+		if err != nil {
+			return false, 0, nil // 凭据错误按网络错误处理（statusOf=0 → 耗尽路径 ErrNetwork）
+		}
+		resp, err := p.clients.ResponseStreamRaw(ctx, tpl, key, streamBody)
 		if err != nil {
 			return false, statusOf(err), upstreamBody(err)
 		}
@@ -179,7 +183,11 @@ func (p *Proxy) tryResponses(w http.ResponseWriter, r *http.Request, reqID strin
 		return true, 200, nil
 	}
 
-	resp, err := p.clients.Response(r.Context(), tpl, sel.UpstreamKey, *params)
+	key, err := p.credentialFor(r.Context(), sel)
+	if err != nil {
+		return false, 0, nil // 凭据错误按网络错误处理（statusOf=0 → 耗尽路径 ErrNetwork）
+	}
+	resp, err := p.clients.Response(r.Context(), tpl, key, *params)
 	if err != nil {
 		return false, statusOf(err), upstreamBody(err)
 	}
