@@ -32,16 +32,6 @@ func decode(r *http.Request, v any) error {
 	return dec.Decode(v)
 }
 
-func deref[T any](p *T) T {
-	if p == nil {
-		var zero T
-		return zero
-	}
-	return *p
-}
-
-func ptr[T any](v T) *T { return &v }
-
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
