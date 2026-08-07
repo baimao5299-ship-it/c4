@@ -18,16 +18,17 @@ func (s *Service) QueryStats(ctx context.Context, q repository.StatQuery, granul
 	if granularity == "hour" || len(rows) == 0 {
 		return rows, nil
 	}
-	// day 聚合：按 (日, 各维度) 合并
+	// day 聚合：按 (日, 各维度) 合并（含 UserID——/user/stats 按用户过滤，
+	// 不同用户的同维度桶不可合并）
 	merged := make(map[string]*domain.StatBucket)
 	for _, b := range rows {
-		key := b.BucketTime.Format("2006-01-02") + "|" + itoa(b.GroupID) + "|" + itoa(b.AccountID) + "|" + itoa(b.TemplateID) + "|" + b.Model + "|" + boolStr(b.IsError)
+		key := b.BucketTime.Format("2006-01-02") + "|" + itoa(b.GroupID) + "|" + itoa(b.AccountID) + "|" + itoa(b.TemplateID) + "|" + itoa(b.UserID) + "|" + b.Model + "|" + boolStr(b.IsError)
 		m, ok := merged[key]
 		if !ok {
 			day := b.BucketTime.Truncate(24 * time.Hour)
 			m = &domain.StatBucket{
 				BucketTime: day, GroupID: b.GroupID, AccountID: b.AccountID,
-				TemplateID: b.TemplateID, Model: b.Model, IsError: b.IsError,
+				TemplateID: b.TemplateID, UserID: b.UserID, Model: b.Model, IsError: b.IsError,
 			}
 			merged[key] = m
 		}

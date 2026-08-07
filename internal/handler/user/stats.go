@@ -1,4 +1,4 @@
-package handler
+package user
 
 import (
 	"net/http"
@@ -7,10 +7,10 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
-// GetStats 用量统计聚合（ServerInterface）。from/to 缺省 now-24h..now，
-// granularity 非法值回落 day。
-func (h *AdminAPI) GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams) {
-	sq := repository.StatQuery{From: time.Now().Add(-24 * time.Hour), To: time.Now()}
+// GetUserStats 我的用量统计（强制 user_id = 当前用户；from/to 缺省
+// now-24h..now，granularity 非法值回落 day，ServerInterface）。
+func (h *UserAPI) GetUserStats(w http.ResponseWriter, r *http.Request, params GetUserStatsParams) {
+	sq := repository.StatQuery{From: time.Now().Add(-24 * time.Hour), To: time.Now(), UserID: currentUserID(r)}
 	if params.From != nil {
 		sq.From = *params.From
 	}
@@ -22,9 +22,6 @@ func (h *AdminAPI) GetStats(w http.ResponseWriter, r *http.Request, params GetSt
 	}
 	if params.AccountId != nil {
 		sq.AccountID = *params.AccountId
-	}
-	if params.UserId != nil {
-		sq.UserID = *params.UserId
 	}
 	if params.Model != nil {
 		sq.Model = *params.Model

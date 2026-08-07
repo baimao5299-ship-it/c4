@@ -9,6 +9,38 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
+)
+
+// Defines values for ErrorType.
+const (
+	Abort     ErrorType = "abort"
+	Auth      ErrorType = "auth"
+	N429      ErrorType = "429"
+	N4xx      ErrorType = "4xx"
+	N5xx      ErrorType = "5xx"
+	Network   ErrorType = "network"
+	NoAccount ErrorType = "no_account"
+	None      ErrorType = "none"
+)
+
+// Defines values for GroupVisibility.
+const (
+	Private GroupVisibility = "private"
+	Public  GroupVisibility = "public"
+)
+
+// Defines values for KeyStatus.
+const (
+	KeyStatusActive   KeyStatus = "active"
+	KeyStatusDisabled KeyStatus = "disabled"
+)
+
+// Defines values for RequestFormat.
+const (
+	Anthropic       RequestFormat = "anthropic"
+	OpenaiChat      RequestFormat = "openai-chat"
+	OpenaiResponses RequestFormat = "openai-responses"
 )
 
 // Defines values for UserRole.
@@ -19,13 +51,172 @@ const (
 
 // Defines values for UserStatus.
 const (
-	Active   UserStatus = "active"
-	Disabled UserStatus = "disabled"
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
 )
+
+// Defines values for GetUserKeysParamsOrder.
+const (
+	Asc  GetUserKeysParamsOrder = "asc"
+	Desc GetUserKeysParamsOrder = "desc"
+)
+
+// Defines values for GetUserStatsParamsGranularity.
+const (
+	Day  GetUserStatsParamsGranularity = "day"
+	Hour GetUserStatsParamsGranularity = "hour"
+)
+
+// DeletedResponse defines model for DeletedResponse.
+type DeletedResponse struct {
+	Deleted bool `json:"deleted"`
+}
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// ErrorType defines model for ErrorType.
+type ErrorType string
+
+// Group defines model for Group.
+type Group struct {
+	CreatedAt  *time.Time       `json:"CreatedAt,omitempty"`
+	ID         *int64           `json:"ID,omitempty"`
+	Name       *string          `json:"Name,omitempty"`
+	UpdatedAt  *time.Time       `json:"UpdatedAt,omitempty"`
+	Visibility *GroupVisibility `json:"Visibility,omitempty"`
+}
+
+// GroupVisibility defines model for GroupVisibility.
+type GroupVisibility string
+
+// Key defines model for Key.
+type Key struct {
+	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
+	GroupID        *int64     `json:"GroupID,omitempty"`
+	ID             *int64     `json:"ID,omitempty"`
+	KeyPrefix      *string    `json:"KeyPrefix,omitempty"`
+	MaxConcurrency *int       `json:"MaxConcurrency,omitempty"`
+	Name           *string    `json:"Name,omitempty"`
+
+	// Quota 累计 token 上限；0 = 不限
+	Quota *int64 `json:"Quota,omitempty"`
+
+	// QuotaUsed 已消耗（后扣；无额度 key 恒 0）
+	QuotaUsed *int64     `json:"QuotaUsed,omitempty"`
+	Status    *KeyStatus `json:"Status,omitempty"`
+	UpdatedAt *time.Time `json:"UpdatedAt,omitempty"`
+	UserID    *int64     `json:"UserID,omitempty"`
+}
+
+// KeyCreate defines model for KeyCreate.
+type KeyCreate struct {
+	GroupId int64 `json:"group_id"`
+
+	// MaxConcurrency 单 key 在途上限；0 = 不限
+	MaxConcurrency *int   `json:"max_concurrency,omitempty"`
+	Name           string `json:"name"`
+
+	// Quota 累计 token 上限；0 = 不限
+	Quota *int64 `json:"quota,omitempty"`
+}
+
+// KeyListResponse defines model for KeyListResponse.
+type KeyListResponse struct {
+	Rows  []Key `json:"rows"`
+	Total int64 `json:"total"`
+}
+
+// KeyStatus defines model for KeyStatus.
+type KeyStatus string
+
+// KeyUpdate defines model for KeyUpdate.
+type KeyUpdate struct {
+	MaxConcurrency *int       `json:"max_concurrency,omitempty"`
+	Name           *string    `json:"name,omitempty"`
+	Quota          *int64     `json:"quota,omitempty"`
+	Status         *KeyStatus `json:"status,omitempty"`
+}
+
+// KeyWithSecret defines model for KeyWithSecret.
+type KeyWithSecret struct {
+	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
+	GroupID        *int64     `json:"GroupID,omitempty"`
+	ID             *int64     `json:"ID,omitempty"`
+	KeyPrefix      *string    `json:"KeyPrefix,omitempty"`
+	MaxConcurrency *int       `json:"MaxConcurrency,omitempty"`
+	Name           *string    `json:"Name,omitempty"`
+
+	// Quota 累计 token 上限；0 = 不限
+	Quota *int64 `json:"Quota,omitempty"`
+
+	// QuotaUsed 已消耗（后扣；无额度 key 恒 0）
+	QuotaUsed *int64     `json:"QuotaUsed,omitempty"`
+	Status    *KeyStatus `json:"Status,omitempty"`
+	UpdatedAt *time.Time `json:"UpdatedAt,omitempty"`
+	UserID    *int64     `json:"UserID,omitempty"`
+
+	// Key key 明文（创建/轮换响应仅返回一次；之后仅 KeyPrefix 可识别）
+	Key string `json:"key"`
+}
+
+// LogsResponse defines model for LogsResponse.
+type LogsResponse struct {
+	Rows  []UsageLog `json:"rows"`
+	Total int64      `json:"total"`
+}
+
+// RequestFormat defines model for RequestFormat.
+type RequestFormat string
+
+// StatBucket defines model for StatBucket.
+type StatBucket struct {
+	AccountID           *int64     `json:"AccountID,omitempty"`
+	BucketTime          *time.Time `json:"BucketTime,omitempty"`
+	CacheCreationTokens *int64     `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
+	CompletionTokens    *int64     `json:"CompletionTokens,omitempty"`
+	ErrorCount          *int64     `json:"ErrorCount,omitempty"`
+	GroupID             *int64     `json:"GroupID,omitempty"`
+	IsError             *bool      `json:"IsError,omitempty"`
+	Model               *string    `json:"Model,omitempty"`
+	PromptTokens        *int64     `json:"PromptTokens,omitempty"`
+	RequestCount        *int64     `json:"RequestCount,omitempty"`
+	TemplateID          *int64     `json:"TemplateID,omitempty"`
+	TotalLatencyMS      *int64     `json:"TotalLatencyMS,omitempty"`
+	TotalTokens         *int64     `json:"TotalTokens,omitempty"`
+
+	// UserID 鉴权归属用户；0 = 无
+	UserID *int64 `json:"UserID,omitempty"`
+}
+
+// UsageLog defines model for UsageLog.
+type UsageLog struct {
+	AccountID           *int64         `json:"AccountID,omitempty"`
+	CacheCreationTokens *int64         `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64         `json:"CacheReadTokens,omitempty"`
+	CompletionTokens    *int64         `json:"CompletionTokens,omitempty"`
+	CreatedAt           *time.Time     `json:"CreatedAt,omitempty"`
+	ErrorType           *ErrorType     `json:"ErrorType,omitempty"`
+	Format              *RequestFormat `json:"Format,omitempty"`
+	GroupID             *int64         `json:"GroupID,omitempty"`
+	ID                  *int64         `json:"ID,omitempty"`
+
+	// KeyID 鉴权归属 key；0 = 无
+	KeyID        *int64  `json:"KeyID,omitempty"`
+	LatencyMS    *int64  `json:"LatencyMS,omitempty"`
+	MappedModel  *string `json:"MappedModel"`
+	Model        *string `json:"Model,omitempty"`
+	PromptTokens *int64  `json:"PromptTokens,omitempty"`
+	RequestID    *string `json:"RequestID,omitempty"`
+	StatusCode   *int    `json:"StatusCode,omitempty"`
+	TemplateID   *int64  `json:"TemplateID,omitempty"`
+	TotalTokens  *int64  `json:"TotalTokens,omitempty"`
+
+	// UserID 鉴权归属用户；0 = 无
+	UserID *int64 `json:"UserID,omitempty"`
 }
 
 // User defines model for User.
@@ -67,11 +258,55 @@ type UserStatus string
 // Error defines model for Error.
 type Error = ErrorResponse
 
+// GetUserKeysParams defines parameters for GetUserKeys.
+type GetUserKeysParams struct {
+	Limit  *int                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                    `form:"offset,omitempty" json:"offset,omitempty"`
+	Name   *string                 `form:"name,omitempty" json:"name,omitempty"`
+	Sort   *string                 `form:"sort,omitempty" json:"sort,omitempty"`
+	Order  *GetUserKeysParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetUserKeysParamsOrder defines parameters for GetUserKeys.
+type GetUserKeysParamsOrder string
+
+// GetUserLogsParams defines parameters for GetUserLogs.
+type GetUserLogsParams struct {
+	Limit      *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     *int       `form:"offset,omitempty" json:"offset,omitempty"`
+	GroupId    *int64     `form:"group_id,omitempty" json:"group_id,omitempty"`
+	AccountId  *int64     `form:"account_id,omitempty" json:"account_id,omitempty"`
+	Model      *string    `form:"model,omitempty" json:"model,omitempty"`
+	StatusCode *int       `form:"status_code,omitempty" json:"status_code,omitempty"`
+	ErrorType  *string    `form:"error_type,omitempty" json:"error_type,omitempty"`
+	From       *time.Time `form:"from,omitempty" json:"from,omitempty"`
+	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
+}
+
+// GetUserStatsParams defines parameters for GetUserStats.
+type GetUserStatsParams struct {
+	From        *time.Time                     `form:"from,omitempty" json:"from,omitempty"`
+	To          *time.Time                     `form:"to,omitempty" json:"to,omitempty"`
+	Granularity *GetUserStatsParamsGranularity `form:"granularity,omitempty" json:"granularity,omitempty"`
+	GroupId     *int64                         `form:"group_id,omitempty" json:"group_id,omitempty"`
+	AccountId   *int64                         `form:"account_id,omitempty" json:"account_id,omitempty"`
+	Model       *string                        `form:"model,omitempty" json:"model,omitempty"`
+}
+
+// GetUserStatsParamsGranularity defines parameters for GetUserStats.
+type GetUserStatsParamsGranularity string
+
 // PostUserAuthLoginJSONRequestBody defines body for PostUserAuthLogin for application/json ContentType.
 type PostUserAuthLoginJSONRequestBody = UserAuthLogin
 
 // PostUserAuthRegisterJSONRequestBody defines body for PostUserAuthRegister for application/json ContentType.
 type PostUserAuthRegisterJSONRequestBody = UserAuthRegister
+
+// PostUserKeysJSONRequestBody defines body for PostUserKeys for application/json ContentType.
+type PostUserKeysJSONRequestBody = KeyCreate
+
+// PutUserKeysIdJSONRequestBody defines body for PutUserKeysId for application/json ContentType.
+type PutUserKeysIdJSONRequestBody = KeyUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -84,6 +319,33 @@ type ServerInterface interface {
 	// 注册（signup_enabled 开关检查；注册即登录返回 JWT）
 	// (POST /user/auth/register)
 	PostUserAuthRegister(w http.ResponseWriter, r *http.Request)
+	// 可选组列表（public 全部 + 已授予 private；只读，key 创建时选组）
+	// (GET /user/groups)
+	GetUserGroups(w http.ResponseWriter, r *http.Request)
+	// 我的 key 列表（分页/排序；KeyHash 永不下发）
+	// (GET /user/keys)
+	GetUserKeys(w http.ResponseWriter, r *http.Request, params GetUserKeysParams)
+	// 创建 key（组可选性校验：public 或已授予 private；raw 明文仅本次返回）
+	// (POST /user/keys)
+	PostUserKeys(w http.ResponseWriter, r *http.Request)
+	// 删除 key（仅本人；Auth 快照增量移除——立即失效）
+	// (DELETE /user/keys/{id})
+	DeleteUserKeysId(w http.ResponseWriter, r *http.Request, id int64)
+	// key 详情（仅本人；他人 key → 404）
+	// (GET /user/keys/{id})
+	GetUserKeysId(w http.ResponseWriter, r *http.Request, id int64)
+	// 更新 key（name/status/max_concurrency/quota；仅本人）
+	// (PUT /user/keys/{id})
+	PutUserKeysId(w http.ResponseWriter, r *http.Request, id int64)
+	// 轮换 key（仅本人；新明文仅返回一次，旧 key 立即失效）
+	// (POST /user/keys/{id}/rotate)
+	PostUserKeysIdRotate(w http.ResponseWriter, r *http.Request, id int64)
+	// 我的用量日志（强制 user_id = 当前用户，防越权）
+	// (GET /user/logs)
+	GetUserLogs(w http.ResponseWriter, r *http.Request, params GetUserLogsParams)
+	// 我的用量统计（强制 user_id = 当前用户）
+	// (GET /user/stats)
+	GetUserStats(w http.ResponseWriter, r *http.Request, params GetUserStatsParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -105,6 +367,60 @@ func (_ Unimplemented) GetUserAuthMe(w http.ResponseWriter, r *http.Request) {
 // 注册（signup_enabled 开关检查；注册即登录返回 JWT）
 // (POST /user/auth/register)
 func (_ Unimplemented) PostUserAuthRegister(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 可选组列表（public 全部 + 已授予 private；只读，key 创建时选组）
+// (GET /user/groups)
+func (_ Unimplemented) GetUserGroups(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 我的 key 列表（分页/排序；KeyHash 永不下发）
+// (GET /user/keys)
+func (_ Unimplemented) GetUserKeys(w http.ResponseWriter, r *http.Request, params GetUserKeysParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 创建 key（组可选性校验：public 或已授予 private；raw 明文仅本次返回）
+// (POST /user/keys)
+func (_ Unimplemented) PostUserKeys(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 删除 key（仅本人；Auth 快照增量移除——立即失效）
+// (DELETE /user/keys/{id})
+func (_ Unimplemented) DeleteUserKeysId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// key 详情（仅本人；他人 key → 404）
+// (GET /user/keys/{id})
+func (_ Unimplemented) GetUserKeysId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 更新 key（name/status/max_concurrency/quota；仅本人）
+// (PUT /user/keys/{id})
+func (_ Unimplemented) PutUserKeysId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 轮换 key（仅本人；新明文仅返回一次，旧 key 立即失效）
+// (POST /user/keys/{id}/rotate)
+func (_ Unimplemented) PostUserKeysIdRotate(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 我的用量日志（强制 user_id = 当前用户，防越权）
+// (GET /user/logs)
+func (_ Unimplemented) GetUserLogs(w http.ResponseWriter, r *http.Request, params GetUserLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 我的用量统计（强制 user_id = 当前用户）
+// (GET /user/stats)
+func (_ Unimplemented) GetUserStats(w http.ResponseWriter, r *http.Request, params GetUserStatsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -150,6 +466,351 @@ func (siw *ServerInterfaceWrapper) PostUserAuthRegister(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostUserAuthRegister(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserGroups operation middleware
+func (siw *ServerInterfaceWrapper) GetUserGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserKeys operation middleware
+func (siw *ServerInterfaceWrapper) GetUserKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUserKeysParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "name", r.URL.Query(), &params.Name)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserKeys(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostUserKeys operation middleware
+func (siw *ServerInterfaceWrapper) PostUserKeys(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUserKeys(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteUserKeysId operation middleware
+func (siw *ServerInterfaceWrapper) DeleteUserKeysId(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteUserKeysId(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserKeysId operation middleware
+func (siw *ServerInterfaceWrapper) GetUserKeysId(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserKeysId(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutUserKeysId operation middleware
+func (siw *ServerInterfaceWrapper) PutUserKeysId(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutUserKeysId(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostUserKeysIdRotate operation middleware
+func (siw *ServerInterfaceWrapper) PostUserKeysIdRotate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUserKeysIdRotate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserLogs operation middleware
+func (siw *ServerInterfaceWrapper) GetUserLogs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUserLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "account_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "status_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status_code", r.URL.Query(), &params.StatusCode)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_code", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "error_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "error_type", r.URL.Query(), &params.ErrorType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error_type", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserLogs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserStats operation middleware
+func (siw *ServerInterfaceWrapper) GetUserStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUserStatsParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "granularity" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "granularity", r.URL.Query(), &params.Granularity)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "granularity", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "account_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserStats(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -280,6 +941,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/user/auth/register", wrapper.PostUserAuthRegister)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/groups", wrapper.GetUserGroups)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/keys", wrapper.GetUserKeys)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/user/keys", wrapper.PostUserKeys)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/user/keys/{id}", wrapper.DeleteUserKeysId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/keys/{id}", wrapper.GetUserKeysId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/user/keys/{id}", wrapper.PutUserKeysId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/user/keys/{id}/rotate", wrapper.PostUserKeysIdRotate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/logs", wrapper.GetUserLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/stats", wrapper.GetUserStats)
 	})
 
 	return r

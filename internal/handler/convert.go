@@ -91,6 +91,22 @@ func toAPIGroup(g *domain.Group) Group {
 	}
 }
 
+// toAPIUser 用户领域对象 → 契约类型（PasswordHash 永不下发）。
+func toAPIUser(u *domain.User) User {
+	r := UserRole(u.Role)
+	st := UserStatus(u.Status)
+	return User{
+		ID:             &u.ID,
+		Email:          &u.Email,
+		Role:           &r,
+		Status:         &st,
+		MaxConcurrency: &u.MaxConcurrency,
+		Balance:        &u.Balance,
+		CreatedAt:      &u.CreatedAt,
+		UpdatedAt:      &u.UpdatedAt,
+	}
+}
+
 // toAPIUsageLog 用量日志领域对象 → 契约类型。
 func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 	f := RequestFormat(l.Format)
@@ -101,6 +117,8 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		GroupID:          &l.GroupID,
 		AccountID:        &l.AccountID,
 		TemplateID:       &l.TemplateID,
+		UserID:           &l.UserID,
+		KeyID:            &l.KeyID,
 		Model:            &l.Model,
 		MappedModel:      &l.MappedModel,
 		Format:           &f,
@@ -123,6 +141,7 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		GroupID:          &b.GroupID,
 		AccountID:        &b.AccountID,
 		TemplateID:       &b.TemplateID,
+		UserID:           &b.UserID,
 		Model:            &b.Model,
 		IsError:          &b.IsError,
 		RequestCount:     &b.RequestCount,

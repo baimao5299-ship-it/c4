@@ -27,6 +27,7 @@ type Store interface {
 	AccountStore
 	GroupStore
 	KeyStore
+	GroupAssignmentStore
 	UserStore
 	SettingStore
 	RuleStore
@@ -51,9 +52,26 @@ type SettingStore interface {
 	SetSetting(ctx context.Context, key string, typ domain.SettingType, value string) (*domain.Setting, error)
 }
 
-// KeyStore 组删除前置的 key 清理（key.group_id 外键约束）。
+// KeyStore 客户端 key 持久化（/user/keys 面 + 组删除前置清理）。
 type KeyStore interface {
+	CreateKey(ctx context.Context, k *domain.Key) (*domain.Key, error)
+	GetKey(ctx context.Context, id int64) (*domain.Key, error)
+	ListKeysByUser(ctx context.Context, userID int64, q repository.ListQuery) ([]*domain.Key, int64, error)
+	UpdateKey(ctx context.Context, k *domain.Key) (*domain.Key, error)
+	RotateKey(ctx context.Context, id int64, newHash, newPrefix string) (*domain.Key, error)
+	DeleteKey(ctx context.Context, id int64) error
+	// DeleteKeysByGroup 组删除前置清理（key.group_id 外键约束；返回被删 hash）。
 	DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error)
+}
+
+// GroupAssignmentStore private 组授予持久化（/admin/groups/{id}/assignments +
+// /user/groups 可选组列表）。
+type GroupAssignmentStore interface {
+	GrantGroup(ctx context.Context, groupID, userID int64) error
+	RevokeGroup(ctx context.Context, groupID, userID int64) error
+	ListAssignmentsByUser(ctx context.Context, userID int64) ([]*domain.GroupAssignment, error)
+	ListAssignmentsByGroup(ctx context.Context, groupID int64) ([]*domain.GroupAssignment, error)
+	ListGroupsForUser(ctx context.Context, userID int64) ([]*domain.Group, error)
 }
 
 type TemplateStore interface {
@@ -202,6 +220,8 @@ var listSortFields = map[string][]string{
 	"templates": {"id", "name", "base_url", "created_at", "updated_at"},
 	"accounts":  {"id", "name", "template_id", "status", "cooldown_until", "weight", "max_concurrency", "last_used_at", "created_at", "updated_at"},
 	"groups":    {"id", "name", "created_at", "updated_at"},
+	"users":     {"id", "email", "role", "status", "max_concurrency", "created_at", "updated_at"},
+	"keys":      {"id", "name", "status", "max_concurrency", "quota", "quota_used", "created_at", "updated_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

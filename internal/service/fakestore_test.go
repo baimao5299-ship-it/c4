@@ -13,7 +13,7 @@ import (
 
 // fakeStore 以值语义模拟真实仓库（ent 每次返回新对象、无指针别名）：
 // Create/Get/Update 均返回副本，存库条目一经写入不再被外部指针修改。
-// 若直接存/返回调用方指针，RotateGroupKey 等原地修改会透过别名污染
+// 若直接存/返回调用方指针，UpdateUser/RotateKey 等原地修改会透过别名污染
 // 测试持有的旧引用（评审发现：测试必然失败或退化为恒真断言）。
 type fakeStore struct {
 	mu        sync.Mutex
@@ -27,6 +27,7 @@ type fakeStore struct {
 	rules     map[int64]domain.Rule
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
+	assign    map[int64][]int64 // groupID → 授予 user_id 列表（group_assignments 模拟）
 	nextID    int64
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
@@ -38,7 +39,8 @@ func newFakeStore() *fakeStore {
 		tpls: make(map[int64]*domain.Template), accs: make(map[int64]*domain.Account),
 		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
 		keys: make(map[int64]*domain.Key), users: make(map[int64]*domain.User),
-		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule), nextID: 1,
+		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule),
+		assign: make(map[int64][]int64), nextID: 1,
 	}
 }
 
@@ -356,16 +358,36 @@ func (f *fakeStore) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposi
 	return nil
 }
 
+// QueryLogs 模拟 repo 过滤：user_id > 0 时强制过滤（/user/logs 防越权
+// 测试依赖此语义）；返回副本防别名污染。
 func (f *fakeStore) QueryLogs(ctx context.Context, q repository.LogQuery) ([]*domain.UsageLog, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.logs, int64(len(f.logs)), nil
+	var out []*domain.UsageLog
+	for _, l := range f.logs {
+		if q.UserID > 0 && l.UserID != q.UserID {
+			continue
+		}
+		c := *l
+		out = append(out, &c)
+	}
+	return out, int64(len(out)), nil
 }
 
+// ScanStats 模拟 repo 过滤：user_id > 0 时强制过滤（/user/stats 防越权测试
+// 依赖此语义）。
 func (f *fakeStore) ScanStats(ctx context.Context, q repository.StatQuery) ([]*domain.StatBucket, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.stats, nil
+	var out []*domain.StatBucket
+	for _, b := range f.stats {
+		if q.UserID > 0 && b.UserID != q.UserID {
+			continue
+		}
+		c := *b
+		out = append(out, &c)
+	}
+	return out, nil
 }
 
 // --- 规则（RuleStore）：priority/name 唯一冲突模拟真实 repo 的 ErrConflict ---
@@ -556,4 +578,147 @@ func (f *fakeStore) SetSetting(ctx context.Context, key string, typ domain.Setti
 	s := &domain.Setting{Key: key, Type: typ, Value: value}
 	f.settings[key] = s
 	return &domain.Setting{Key: key, Type: typ, Value: value}, nil
+}
+
+// --- Phase 3a Task 4：KeyStore / GroupAssignmentStore 假实现 ---
+
+func (f *fakeStore) CreateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	k.ID = f.nextID
+	f.nextID++
+	c := *k
+	f.keys[k.ID] = &c
+	out := c // 返回独立副本：存库条目一经写入不再被外部指针修改
+	return &out, nil
+}
+
+func (f *fakeStore) GetKey(ctx context.Context, id int64) (*domain.Key, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	k, ok := f.keys[id]
+	if !ok {
+		return nil, missingErr(id)
+	}
+	c := *k
+	return &c, nil
+}
+
+func (f *fakeStore) ListKeysByUser(ctx context.Context, userID int64, q repository.ListQuery) ([]*domain.Key, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.Key
+	for _, k := range f.keys {
+		if k.UserID != userID {
+			continue
+		}
+		if q.Name != "" && !strings.Contains(k.Name, q.Name) {
+			continue
+		}
+		c := *k
+		out = append(out, &c)
+	}
+	return out, int64(len(out)), nil
+}
+
+func (f *fakeStore) UpdateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur, ok := f.keys[k.ID]
+	if !ok {
+		return nil, missingErr(k.ID)
+	}
+	cur.Name = k.Name
+	cur.Status = k.Status
+	cur.MaxConcurrency = k.MaxConcurrency
+	cur.Quota = k.Quota
+	cur.QuotaUsed = k.QuotaUsed
+	c := *cur
+	return &c, nil
+}
+
+func (f *fakeStore) RotateKey(ctx context.Context, id int64, newHash, newPrefix string) (*domain.Key, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur, ok := f.keys[id]
+	if !ok {
+		return nil, missingErr(id)
+	}
+	c := *cur
+	c.KeyHash = newHash
+	c.KeyPrefix = newPrefix
+	f.keys[id] = &c // 替换存库条目：旧引用不受影响
+	out := c
+	return &out, nil
+}
+
+func (f *fakeStore) DeleteKey(ctx context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.keys[id]; !ok {
+		return missingErr(id)
+	}
+	delete(f.keys, id)
+	return nil
+}
+
+func (f *fakeStore) GrantGroup(ctx context.Context, groupID, userID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.Contains(f.assign[groupID], userID) {
+		f.assign[groupID] = append(f.assign[groupID], userID)
+	}
+	return nil
+}
+
+func (f *fakeStore) RevokeGroup(ctx context.Context, groupID, userID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.assign[groupID] = slices.DeleteFunc(f.assign[groupID], func(u int64) bool { return u == userID })
+	return nil
+}
+
+func (f *fakeStore) ListAssignmentsByUser(ctx context.Context, userID int64) ([]*domain.GroupAssignment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.GroupAssignment
+	for gid, users := range f.assign {
+		for _, u := range users {
+			if u == userID {
+				out = append(out, &domain.GroupAssignment{GroupID: gid, UserID: userID})
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ListAssignmentsByGroup(ctx context.Context, groupID int64) ([]*domain.GroupAssignment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.GroupAssignment
+	for _, u := range f.assign[groupID] {
+		out = append(out, &domain.GroupAssignment{GroupID: groupID, UserID: u})
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ListGroupsForUser(ctx context.Context, userID int64) ([]*domain.Group, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.Group
+	for _, g := range f.groups {
+		if g.Visibility == domain.GroupVisibilityPublic {
+			c := *g
+			out = append(out, &c)
+			continue
+		}
+		for _, u := range f.assign[g.ID] {
+			if u == userID {
+				c := *g
+				out = append(out, &c)
+				break
+			}
+		}
+	}
+	return out, nil
 }

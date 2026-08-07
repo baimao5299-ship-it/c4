@@ -86,6 +86,18 @@ const (
 	TemplatePatchSupportedFormatsOpenaiResponses TemplatePatchSupportedFormats = "openai-responses"
 )
 
+// Defines values for UserRole.
+const (
+	UserRolePlatformAdmin UserRole = "platform_admin"
+	UserRoleUser          UserRole = "user"
+)
+
+// Defines values for UserStatus.
+const (
+	Active   UserStatus = "active"
+	Disabled UserStatus = "disabled"
+)
+
 // Defines values for GetAccountsParamsOrder.
 const (
 	GetAccountsParamsOrderAsc  GetAccountsParamsOrder = "asc"
@@ -106,8 +118,14 @@ const (
 
 // Defines values for GetTemplatesParamsOrder.
 const (
-	Asc  GetTemplatesParamsOrder = "asc"
-	Desc GetTemplatesParamsOrder = "desc"
+	GetTemplatesParamsOrderAsc  GetTemplatesParamsOrder = "asc"
+	GetTemplatesParamsOrderDesc GetTemplatesParamsOrder = "desc"
+)
+
+// Defines values for GetUsersParamsOrder.
+const (
+	GetUsersParamsOrderAsc  GetUsersParamsOrder = "asc"
+	GetUsersParamsOrderDesc GetUsersParamsOrder = "desc"
 )
 
 // Account defines model for Account.
@@ -241,6 +259,17 @@ type Group struct {
 	Visibility *GroupVisibility `json:"Visibility,omitempty"`
 }
 
+// GroupAssignmentsBody defines model for GroupAssignmentsBody.
+type GroupAssignmentsBody struct {
+	// UserIds 替换语义：完整授予列表（未列出即撤销；空数组 = 清空）
+	UserIds []int64 `json:"user_ids"`
+}
+
+// GroupAssignmentsResponse defines model for GroupAssignmentsResponse.
+type GroupAssignmentsResponse struct {
+	UserIds []int64 `json:"user_ids"`
+}
+
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
 	Name       string           `json:"name"`
@@ -340,6 +369,9 @@ type StatBucket struct {
 	TemplateID          *int64     `json:"TemplateID,omitempty"`
 	TotalLatencyMS      *int64     `json:"TotalLatencyMS,omitempty"`
 	TotalTokens         *int64     `json:"TotalTokens,omitempty"`
+
+	// UserID 鉴权归属用户；0 = 无
+	UserID *int64 `json:"UserID,omitempty"`
 }
 
 // Template defines model for Template.
@@ -406,14 +438,65 @@ type UsageLog struct {
 	Format              *RequestFormat `json:"Format,omitempty"`
 	GroupID             *int64         `json:"GroupID,omitempty"`
 	ID                  *int64         `json:"ID,omitempty"`
-	LatencyMS           *int64         `json:"LatencyMS,omitempty"`
-	MappedModel         *string        `json:"MappedModel"`
-	Model               *string        `json:"Model,omitempty"`
-	PromptTokens        *int64         `json:"PromptTokens,omitempty"`
-	RequestID           *string        `json:"RequestID,omitempty"`
-	StatusCode          *int           `json:"StatusCode,omitempty"`
-	TemplateID          *int64         `json:"TemplateID,omitempty"`
-	TotalTokens         *int64         `json:"TotalTokens,omitempty"`
+
+	// KeyID 鉴权归属 key；0 = 无
+	KeyID        *int64  `json:"KeyID,omitempty"`
+	LatencyMS    *int64  `json:"LatencyMS,omitempty"`
+	MappedModel  *string `json:"MappedModel"`
+	Model        *string `json:"Model,omitempty"`
+	PromptTokens *int64  `json:"PromptTokens,omitempty"`
+	RequestID    *string `json:"RequestID,omitempty"`
+	StatusCode   *int    `json:"StatusCode,omitempty"`
+	TemplateID   *int64  `json:"TemplateID,omitempty"`
+	TotalTokens  *int64  `json:"TotalTokens,omitempty"`
+
+	// UserID 鉴权归属用户；0 = 无
+	UserID *int64 `json:"UserID,omitempty"`
+}
+
+// User defines model for User.
+type User struct {
+	Balance        *int64      `json:"Balance,omitempty"`
+	CreatedAt      *time.Time  `json:"CreatedAt,omitempty"`
+	Email          *string     `json:"Email,omitempty"`
+	ID             *int64      `json:"ID,omitempty"`
+	MaxConcurrency *int        `json:"MaxConcurrency,omitempty"`
+	Role           *UserRole   `json:"Role,omitempty"`
+	Status         *UserStatus `json:"Status,omitempty"`
+	UpdatedAt      *time.Time  `json:"UpdatedAt,omitempty"`
+}
+
+// UserCreate defines model for UserCreate.
+type UserCreate struct {
+	// Balance 余额（最小单位）；扣费 Phase 5
+	Balance *int64 `json:"balance,omitempty"`
+	Email   string `json:"email"`
+
+	// MaxConcurrency 用户级在途上限；0 = 不限
+	MaxConcurrency *int        `json:"max_concurrency,omitempty"`
+	Password       string      `json:"password"`
+	Role           *UserRole   `json:"role,omitempty"`
+	Status         *UserStatus `json:"status,omitempty"`
+}
+
+// UserListResponse defines model for UserListResponse.
+type UserListResponse struct {
+	Rows  []User `json:"rows"`
+	Total int64  `json:"total"`
+}
+
+// UserRole defines model for UserRole.
+type UserRole string
+
+// UserStatus defines model for UserStatus.
+type UserStatus string
+
+// UserUpdate defines model for UserUpdate.
+type UserUpdate struct {
+	Balance        *int64      `json:"balance,omitempty"`
+	MaxConcurrency *int        `json:"max_concurrency,omitempty"`
+	Role           *UserRole   `json:"role,omitempty"`
+	Status         *UserStatus `json:"status,omitempty"`
 }
 
 // Error defines model for Error.
@@ -451,6 +534,7 @@ type GetLogsParams struct {
 	Offset     *int       `form:"offset,omitempty" json:"offset,omitempty"`
 	GroupId    *int64     `form:"group_id,omitempty" json:"group_id,omitempty"`
 	AccountId  *int64     `form:"account_id,omitempty" json:"account_id,omitempty"`
+	UserId     *int64     `form:"user_id,omitempty" json:"user_id,omitempty"`
 	Model      *string    `form:"model,omitempty" json:"model,omitempty"`
 	StatusCode *int       `form:"status_code,omitempty" json:"status_code,omitempty"`
 	ErrorType  *string    `form:"error_type,omitempty" json:"error_type,omitempty"`
@@ -470,6 +554,7 @@ type GetStatsParams struct {
 	Granularity *GetStatsParamsGranularity `form:"granularity,omitempty" json:"granularity,omitempty"`
 	GroupId     *int64                     `form:"group_id,omitempty" json:"group_id,omitempty"`
 	AccountId   *int64                     `form:"account_id,omitempty" json:"account_id,omitempty"`
+	UserId      *int64                     `form:"user_id,omitempty" json:"user_id,omitempty"`
 	Model       *string                    `form:"model,omitempty" json:"model,omitempty"`
 }
 
@@ -487,6 +572,18 @@ type GetTemplatesParams struct {
 
 // GetTemplatesParamsOrder defines parameters for GetTemplates.
 type GetTemplatesParamsOrder string
+
+// GetUsersParams defines parameters for GetUsers.
+type GetUsersParams struct {
+	Limit  *int                 `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                 `form:"offset,omitempty" json:"offset,omitempty"`
+	Email  *string              `form:"email,omitempty" json:"email,omitempty"`
+	Sort   *string              `form:"sort,omitempty" json:"sort,omitempty"`
+	Order  *GetUsersParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetUsersParamsOrder defines parameters for GetUsers.
+type GetUsersParamsOrder string
 
 // PostAccountsJSONRequestBody defines body for PostAccounts for application/json ContentType.
 type PostAccountsJSONRequestBody = AccountCreate
@@ -512,6 +609,9 @@ type PostGroupsBatchUpdateJSONRequestBody = BatchUpdateGroupsBody
 // PutGroupsIdJSONRequestBody defines body for PutGroupsId for application/json ContentType.
 type PutGroupsIdJSONRequestBody = GroupCreate
 
+// PutGroupsIdAssignmentsJSONRequestBody defines body for PutGroupsIdAssignments for application/json ContentType.
+type PutGroupsIdAssignmentsJSONRequestBody = GroupAssignmentsBody
+
 // CreateRuleJSONRequestBody defines body for CreateRule for application/json ContentType.
 type CreateRuleJSONRequestBody = RuleCreate
 
@@ -535,6 +635,12 @@ type PostTemplatesBatchUpdateJSONRequestBody = BatchUpdateTemplatesBody
 
 // PutTemplatesIdJSONRequestBody defines body for PutTemplatesId for application/json ContentType.
 type PutTemplatesIdJSONRequestBody = TemplateCreate
+
+// PostUsersJSONRequestBody defines body for PostUsers for application/json ContentType.
+type PostUsersJSONRequestBody = UserCreate
+
+// PutUsersIdJSONRequestBody defines body for PutUsersId for application/json ContentType.
+type PutUsersIdJSONRequestBody = UserUpdate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -583,6 +689,9 @@ type ServerInterface interface {
 
 	// (PUT /groups/{id})
 	PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
+	// 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
+	// (PUT /groups/{id}/assignments)
+	PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64)
 	// 用量日志分页查询
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
@@ -631,6 +740,15 @@ type ServerInterface interface {
 
 	// (PUT /templates/{id})
 	PutTemplatesId(w http.ResponseWriter, r *http.Request, id int64)
+	// 用户列表（platform_admin 专属；分页/筛选/排序）
+	// (GET /users)
+	GetUsers(w http.ResponseWriter, r *http.Request, params GetUsersParams)
+	// 创建用户（platform_admin 专属；email 唯一/格式、密码 ≤72 字节）
+	// (POST /users)
+	PostUsers(w http.ResponseWriter, r *http.Request)
+	// 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
+	// (PUT /users/{id})
+	PutUsersId(w http.ResponseWriter, r *http.Request, id int64)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -718,6 +836,12 @@ func (_ Unimplemented) GetGroupsId(w http.ResponseWriter, r *http.Request, id in
 
 // (PUT /groups/{id})
 func (_ Unimplemented) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
+// (PUT /groups/{id}/assignments)
+func (_ Unimplemented) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -811,6 +935,24 @@ func (_ Unimplemented) GetTemplatesId(w http.ResponseWriter, r *http.Request, id
 
 // (PUT /templates/{id})
 func (_ Unimplemented) PutTemplatesId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 用户列表（platform_admin 专属；分页/筛选/排序）
+// (GET /users)
+func (_ Unimplemented) GetUsers(w http.ResponseWriter, r *http.Request, params GetUsersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 创建用户（platform_admin 专属；email 唯一/格式、密码 ≤72 字节）
+// (POST /users)
+func (_ Unimplemented) PostUsers(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
+// (PUT /users/{id})
+func (_ Unimplemented) PutUsersId(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1216,6 +1358,31 @@ func (siw *ServerInterfaceWrapper) PutGroupsId(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// PutGroupsIdAssignments operation middleware
+func (siw *ServerInterfaceWrapper) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutGroupsIdAssignments(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -1253,6 +1420,14 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
 		return
 	}
 
@@ -1488,6 +1663,14 @@ func (siw *ServerInterfaceWrapper) GetStats(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
 	// ------------- Optional query parameter "model" -------------
 
 	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
@@ -1683,6 +1866,104 @@ func (siw *ServerInterfaceWrapper) PutTemplatesId(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetUsers operation middleware
+func (siw *ServerInterfaceWrapper) GetUsers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUsersParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "email" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "email", r.URL.Query(), &params.Email)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUsers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostUsers operation middleware
+func (siw *ServerInterfaceWrapper) PostUsers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUsers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutUsersId operation middleware
+func (siw *ServerInterfaceWrapper) PutUsersId(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutUsersId(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1842,6 +2123,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/groups/{id}", wrapper.PutGroupsId)
 	})
 	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/groups/{id}/assignments", wrapper.PutGroupsIdAssignments)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
 	})
 	r.Group(func(r chi.Router) {
@@ -1888,6 +2172,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/templates/{id}", wrapper.PutTemplatesId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/users", wrapper.GetUsers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/users", wrapper.PostUsers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/users/{id}", wrapper.PutUsersId)
 	})
 
 	return r
