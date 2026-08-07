@@ -820,3 +820,36 @@ func TestSelectConcurrentCASRace(t *testing.T) {
 		s.Release(winner.AccountID) // 恢复槽位，下一轮从 0 并发开始
 	}
 }
+
+// TestReloadPreservesInFlightConcurrency：跨 reload 的在途请求 Release 后计数不得为负。
+// 根因：reload 重建快照把 concurrency 归零，在途请求（旧快照占槽）结束后 Release 命中
+// 新快照 → Add(-1) 拉成负数（管理页并发列显示负值）。修复：reload 继承旧快照并发计数。
+func TestReloadPreservesInFlightConcurrency(t *testing.T) {
+	chat := tpl(1, domain.FormatOpenAIChat, []string{"gpt-4o"})
+	s := newTestScheduler(t, []*domain.Account{acc(1, chat, 4)})
+
+	// 两个在途请求占槽
+	sel1, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	sel2, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+
+	// reload 重建快照（30s 定时同步 / 模板账号变更 invalidate）
+	require.NoError(t, s.reload(context.Background()))
+
+	// 在途请求结束后 Release（命中新快照计数）
+	s.Release(sel1.AccountID)
+	s.Release(sel2.AccountID)
+
+	ri, ok := s.Runtime(sel1.AccountID)
+	require.True(t, ok)
+	require.Equal(t, int64(0), ri.Concurrency, "reload 后并发计数必须回到 0，不得为负")
+	require.GreaterOrEqual(t, ri.Concurrency, int64(0))
+
+	// 继承语义核对：reload 时在途计数保持（新请求可继续占满剩余槽位）
+	s3, err := s.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	ri2, _ := s.Runtime(sel1.AccountID)
+	require.Equal(t, int64(1), ri2.Concurrency, "继承后新请求占槽计数为 1")
+	s.Release(s3.AccountID)
+}

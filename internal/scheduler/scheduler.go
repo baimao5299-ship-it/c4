@@ -194,7 +194,19 @@ func (s *Scheduler) reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.store.store(buildSnapshots(m, s.cfg.DefaultMaxConcurrency))
+	groups, byID := buildSnapshots(m, s.cfg.DefaultMaxConcurrency)
+	// 在途并发继承：重建快照会把 concurrency 归零，跨 reload 的在途请求结束后
+	// Release 命中新快照 → Add(-1) 把计数拉成负数（管理页并发列显示负值）。
+	// Store/Add 均原子、无竞态窗口：继承前旧快照上的 Release 计入旧值后被继承，
+	// 继承后新快照上的 Release 正常递减。
+	if old, ok := s.store.byID.Load().(map[int64]*accountSnapshot); ok {
+		for id, as := range byID {
+			if oa, ok := old[id]; ok {
+				as.concurrency.Store(oa.concurrency.Load())
+			}
+		}
+	}
+	s.store.store(groups, byID)
 	return nil
 }
 
