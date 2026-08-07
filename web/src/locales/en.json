@@ -88,6 +88,7 @@
     "emptyDesc": "Create a template first, then configure accounts",
     "table": {
       "name": "Name",
+      "credentialType": "Credential type",
       "supportedFormats": "Supported formats",
       "models": "Models",
       "formatModels": "Format models",
@@ -99,6 +100,7 @@
     "editTitle": "Edit template #{{id}}",
     "newTitle": "New template",
     "dialogDesc": "base_url must be a full upstream URL (including the /v1 prefix)",
+    "credentialTypeLabel": "Credential type",
     "nameLabel": "Name",
     "namePlaceholder": "e.g. openai-main",
     "supportedFormatsLabel": "Supported request formats",

@@ -41,6 +41,12 @@ const FORMAT_LABELS: Record<RequestFormat, string> = {
 }
 const FORMATS = Object.keys(FORMAT_LABELS) as RequestFormat[]
 
+// 凭据类型（模板级：一个模板 = 一种号池，账号继承；号池生态类型后续追加）
+const CREDENTIAL_TYPE_LABELS: Record<string, string> = {
+  api_key: 'API Key',
+}
+const CREDENTIAL_TYPES = Object.keys(CREDENTIAL_TYPE_LABELS)
+
 const LIMIT = 20
 
 // —— 多格式表单状态（supported_formats/format_models；default_format/model_formats 已废弃） ——
@@ -55,6 +61,7 @@ interface MappingRow {
 interface FormState {
   name: string
   base_url: string
+  credential_type: string // '' = 未指定（创建时后端兜底 api_key）
   supported_formats: RequestFormat[]
   modelsText: string
   format_models: FormatRow[]
@@ -64,6 +71,7 @@ interface FormState {
 const emptyForm = (): FormState => ({
   name: '',
   base_url: '',
+  credential_type: '',
   supported_formats: [],
   modelsText: '',
   format_models: [],
@@ -74,6 +82,7 @@ function toForm(t: Template): FormState {
   return {
     name: t.Name ?? '',
     base_url: t.BaseURL ?? '',
+    credential_type: t.CredentialType ?? '',
     supported_formats: [...(t.SupportedFormats ?? [])],
     modelsText: (t.Models ?? []).join(', '),
     format_models: Object.entries(t.FormatModels ?? {}).map(([format, models]) => ({
@@ -107,6 +116,7 @@ function toBody(f: FormState): TemplateCreate {
   return {
     name: f.name.trim(),
     base_url: f.base_url.trim(),
+    credential_type: (f.credential_type || 'api_key') as TemplateCreate['credential_type'],
     supported_formats: f.supported_formats,
     models: splitList(f.modelsText),
     format_models: Object.keys(format_models).length ? format_models : undefined,
@@ -138,10 +148,12 @@ function FormFields({
   form,
   setForm,
   error,
+  batch = false,
 }: {
   form: FormState
   setForm: (updater: (f: FormState) => FormState) => void
   error?: string | null
+  batch?: boolean // 批量更新隐藏凭据类型（TemplatePatch 不支持类型变更，评审 M-2）
 }) {
   const { t } = useTranslation()
 
@@ -193,6 +205,25 @@ function FormFields({
           onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
         />
       </div>
+
+      {/* credential_type：一个模板 = 一种号池（非 api_key 类型走 SDK 内置端点，base_url 忽略） */}
+      {!batch && (
+        <div className="space-y-1.5">
+          <Label htmlFor="tpl-cred-type">{t('templates.credentialTypeLabel')}</Label>
+          <Select
+            items={CREDENTIAL_TYPE_LABELS}
+            value={form.credential_type || 'api_key'}
+            onValueChange={v => setForm(f => ({ ...f, credential_type: v }))}
+          >
+            <SelectTrigger id="tpl-cred-type" className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CREDENTIAL_TYPES.map(ct => (
+                <SelectItem key={ct} value={ct} label={CREDENTIAL_TYPE_LABELS[ct]}>{CREDENTIAL_TYPE_LABELS[ct]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* supported_formats：chips 多选（非空校验） */}
       <div className="space-y-1.5">
@@ -509,6 +540,7 @@ export default function Templates() {
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={tr('templates.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="base_url" label="BaseURL" active={activeSort === 'base_url'} order={order} onToggle={onColumnToggle} />
+                  <TableHead>{tr('templates.table.credentialType')}</TableHead>
                   <TableHead>{tr('templates.table.supportedFormats')}</TableHead>
                   <TableHead>{tr('templates.table.models')}</TableHead>
                   <TableHead>{tr('templates.table.formatModels')}</TableHead>
@@ -534,6 +566,9 @@ export default function Templates() {
                       <TableCell className="tabular-nums">{t.ID}</TableCell>
                       <TableCell className="max-w-36 truncate" title={t.Name}>{t.Name}</TableCell>
                       <TableCell className="max-w-52 truncate font-mono text-xs" title={t.BaseURL}>{t.BaseURL}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{CREDENTIAL_TYPE_LABELS[t.CredentialType ?? 'api_key'] ?? t.CredentialType ?? 'api_key'}</Badge>
+                      </TableCell>
                       <TableCell>
                         <div className="flex max-w-44 flex-wrap gap-1">
                           {(t.SupportedFormats ?? []).map(f => <FormatBadge key={f} format={f} />)}
@@ -625,7 +660,7 @@ export default function Templates() {
             <DialogDescription>{tr('templates.batchUpdateDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <FormFields form={form} setForm={setForm} />
+            <FormFields form={form} setForm={setForm} batch />
             {validationMsg && <p className="text-sm text-destructive">{validationMsg}</p>}
             {batchUpdate.isError && errMsg(batchUpdate.error) && (
               <p className="text-sm text-destructive">{errMsg(batchUpdate.error)}</p>

@@ -88,6 +88,7 @@
     "emptyDesc": "先创建模板，再配置账号",
     "table": {
       "name": "名称",
+      "credentialType": "凭据类型",
       "supportedFormats": "支持格式",
       "models": "模型",
       "formatModels": "格式模型",
@@ -99,6 +100,7 @@
     "editTitle": "编辑模板 #{{id}}",
     "newTitle": "新建模板",
     "dialogDesc": "base_url 需为完整上游地址（含 /v1 前缀）",
+    "credentialTypeLabel": "凭据类型",
     "nameLabel": "名称",
     "namePlaceholder": "如 openai-main",
     "supportedFormatsLabel": "支持的请求格式",
