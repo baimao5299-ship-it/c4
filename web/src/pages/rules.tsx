@@ -480,17 +480,24 @@ export default function Rules() {
 
               {form.when.rows.map((r, i) => {
                 const meta = WHEN_FIELDS.find(f => f.key === r.field)
+                // 行内下拉按 kind 过滤（用户反馈：选事件类型后不该出现无关条件）；
+                // 越界行（kind 切换后字段不在过滤集）附加为额外选项保留——不丢行（评审 I-1）。
+                const rowOptions = kindFilter(form.when.kind)
+                if (!rowOptions.some(f => f.key === r.field)) {
+                  const cur = WHEN_FIELDS.find(f => f.key === r.field)
+                  if (cur) rowOptions.push(cur)
+                }
                 return (
                   <div key={i} className="flex items-center gap-2">
                     <span className="w-6 shrink-0 text-sm text-muted-foreground">{t('rules.condOf')}</span>
                     <Select
-                      items={Object.fromEntries(WHEN_FIELDS.map(f => [f.key, t(whenFieldLabel(f.key))]))}
+                      items={Object.fromEntries(rowOptions.map(f => [f.key, t(whenFieldLabel(f.key))]))}
                       value={r.field}
                       onValueChange={v => v && setRowField(i, v as WhenField)}
                     >
                       <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {WHEN_FIELDS.map(f => (
+                        {rowOptions.map(f => (
                           <SelectItem key={f.key} value={f.key} label={t(whenFieldLabel(f.key))}>{t(whenFieldLabel(f.key))}</SelectItem>
                         ))}
                       </SelectContent>
