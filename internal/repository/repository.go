@@ -148,6 +148,10 @@ func (r *Repos) DeleteRule(ctx context.Context, id int64) error {
 	return r.Rules.DeleteRule(ctx, id)
 }
 
+func (r *Repos) DeleteRulesBatch(ctx context.Context, ids []int64) error {
+	return r.Rules.DeleteRulesBatch(ctx, ids)
+}
+
 func (r *Repos) CountRules(ctx context.Context) (int64, error) {
 	return r.Rules.CountRules(ctx)
 }

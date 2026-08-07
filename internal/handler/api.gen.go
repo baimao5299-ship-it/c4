@@ -484,6 +484,9 @@ type PutGroupsIdAccountsJSONRequestBody = SetGroupAccountsBody
 // CreateRuleJSONRequestBody defines body for CreateRule for application/json ContentType.
 type CreateRuleJSONRequestBody = RuleCreate
 
+// PostRulesBatchDeleteJSONRequestBody defines body for PostRulesBatchDelete for application/json ContentType.
+type PostRulesBatchDeleteJSONRequestBody = BatchDeleteBody
+
 // UpdateRuleJSONRequestBody defines body for UpdateRule for application/json ContentType.
 type UpdateRuleJSONRequestBody = RulePatch
 
@@ -558,6 +561,9 @@ type ServerInterface interface {
 	// 创建规则
 	// (POST /rules)
 	CreateRule(w http.ResponseWriter, r *http.Request)
+	// 批量删除规则（事务，全成或全败）
+	// (POST /rules/batch-delete)
+	PostRulesBatchDelete(w http.ResponseWriter, r *http.Request)
 	// 删除规则
 	// (DELETE /rules/{id})
 	DeleteRule(w http.ResponseWriter, r *http.Request, id int64)
@@ -699,6 +705,12 @@ func (_ Unimplemented) ListRules(w http.ResponseWriter, r *http.Request, params 
 // 创建规则
 // (POST /rules)
 func (_ Unimplemented) CreateRule(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量删除规则（事务，全成或全败）
+// (POST /rules/batch-delete)
+func (_ Unimplemented) PostRulesBatchDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1318,6 +1330,20 @@ func (siw *ServerInterfaceWrapper) CreateRule(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// PostRulesBatchDelete operation middleware
+func (siw *ServerInterfaceWrapper) PostRulesBatchDelete(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostRulesBatchDelete(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteRule operation middleware
 func (siw *ServerInterfaceWrapper) DeleteRule(w http.ResponseWriter, r *http.Request) {
 
@@ -1780,6 +1806,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/rules", wrapper.CreateRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/rules/batch-delete", wrapper.PostRulesBatchDelete)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/rules/{id}", wrapper.DeleteRule)

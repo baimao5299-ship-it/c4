@@ -381,6 +381,20 @@ func (f *fakeStore) DeleteRule(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (f *fakeStore) DeleteRulesBatch(ctx context.Context, ids []int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, id := range ids {
+		if _, ok := f.rules[id]; !ok {
+			return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
+		}
+	}
+	for _, id := range ids {
+		delete(f.rules, id)
+	}
+	return nil
+}
+
 func (f *fakeStore) CountRules(ctx context.Context) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -12,6 +12,7 @@ import Accounts from '@/pages/accounts'
 import Groups from '@/pages/groups'
 import Logs from '@/pages/logs'
 import Stats from '@/pages/stats'
+import Rules from '@/pages/rules'
 
 export const api = new ApiClient(auth.getToken)
 
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { path: 'groups', element: <Groups /> },
       { path: 'logs', element: <Logs /> },
       { path: 'stats', element: <Stats /> },
+      { path: 'rules', element: <Rules /> },
     ],
   },
 ])

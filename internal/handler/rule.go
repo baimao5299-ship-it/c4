@@ -107,3 +107,22 @@ func (h *AdminAPI) DeleteRule(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// PostRulesBatchDelete 批量删除规则（事务，全成或全败，ServerInterface）。
+func (h *AdminAPI) PostRulesBatchDelete(w http.ResponseWriter, r *http.Request) {
+	var in BatchDeleteBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	ids, err := normalizeIDs(in.Ids)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.svc.DeleteRulesBatch(r.Context(), ids); err != nil {
+		writeBatchServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, BatchDeleteResponse{Deleted: len(ids)})
+}

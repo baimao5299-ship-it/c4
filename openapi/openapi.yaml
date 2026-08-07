@@ -422,6 +422,24 @@ paths:
               schema: { $ref: '#/components/schemas/Rule' }
         default:
           $ref: '#/components/responses/Error'
+  /rules/batch-delete:
+    post:
+      operationId: PostRulesBatchDelete
+      tags: [rules]
+      summary: 批量删除规则（事务，全成或全败）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchDeleteBody' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchDeleteResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /rules/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }

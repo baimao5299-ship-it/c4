@@ -20,6 +20,7 @@ type RuleStore interface {
 	CreateRule(ctx context.Context, r domain.Rule) (int64, error)
 	UpdateRule(ctx context.Context, r domain.Rule) error
 	DeleteRule(ctx context.Context, id int64) error
+	DeleteRulesBatch(ctx context.Context, ids []int64) error
 	CountRules(ctx context.Context) (int64, error)
 }
 
@@ -124,6 +125,19 @@ func (s *Service) UpdateRule(ctx context.Context, id int64, p RulePatch) (*domai
 // DeleteRule 删除规则；不存在 → ErrNotFound（消息含 id）。成功后规则引擎 Reload。
 func (s *Service) DeleteRule(ctx context.Context, id int64) error {
 	if err := mapRuleRepoErr(s.store.DeleteRule(ctx, id)); err != nil {
+		return err
+	}
+	s.reloadRules(ctx)
+	return nil
+}
+
+// DeleteRulesBatch 批量删除规则（事务，全成或全败）；ids 1–100 去重；
+// 缺 id → ErrNotFound（消息含缺失 id）。成功后规则引擎 Reload。
+func (s *Service) DeleteRulesBatch(ctx context.Context, ids []int64) error {
+	if err := validateIDs(ids); err != nil {
+		return err
+	}
+	if err := mapRepoErr(s.store.DeleteRulesBatch(ctx, ids)); err != nil {
 		return err
 	}
 	s.reloadRules(ctx)
