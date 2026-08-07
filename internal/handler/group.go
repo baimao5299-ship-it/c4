@@ -136,20 +136,6 @@ func groupPatchFromBody(f *GroupPatch) (repository.GroupPatch, error) {
 	return repository.GroupPatch{Name: f.Name}, nil
 }
 
-// PutGroupsIdAccounts 全量绑定账号集合（ServerInterface）。
-func (h *AdminAPI) PutGroupsIdAccounts(w http.ResponseWriter, r *http.Request, id int64) {
-	var in SetGroupAccountsBody
-	if err := decode(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
-		return
-	}
-	if err := h.svc.SetGroupAccounts(r.Context(), id, in.AccountIds); err != nil {
-		writeServiceErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, UpdatedResponse{Updated: true})
-}
-
 // PostGroupsIdRotateKey 轮换分组 key（ServerInterface）。
 func (h *AdminAPI) PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Request, id int64) {
 	raw, err := h.svc.RotateGroupKey(r.Context(), id)

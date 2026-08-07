@@ -9,6 +9,20 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
+// accountFromBody 生成类型 body → 领域对象（create/update 共用；GroupIDs
+// nil = 不设置/不变，非 nil = 替换语义含空数组清空）。
+func accountFromBody(in AccountCreate) *domain.Account {
+	return &domain.Account{
+		Name:           in.Name,
+		TemplateID:     in.TemplateId,
+		UpstreamKey:    in.UpstreamKey,
+		Status:         domain.AccountStatus(deref(in.Status)),
+		Weight:         deref(in.Weight),
+		MaxConcurrency: deref(in.MaxConcurrency),
+		GroupIDs:       in.GroupIds,
+	}
+}
+
 // PostAccounts 创建账号（ServerInterface）。
 func (h *AdminAPI) PostAccounts(w http.ResponseWriter, r *http.Request) {
 	var in AccountCreate
@@ -16,14 +30,7 @@ func (h *AdminAPI) PostAccounts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	created, err := h.svc.CreateAccount(r.Context(), &domain.Account{
-		Name:           in.Name,
-		TemplateID:     in.TemplateId,
-		UpstreamKey:    in.UpstreamKey,
-		Status:         domain.AccountStatus(deref(in.Status)),
-		Weight:         deref(in.Weight),
-		MaxConcurrency: deref(in.MaxConcurrency),
-	})
+	created, err := h.svc.CreateAccount(r.Context(), accountFromBody(in))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -85,21 +92,26 @@ func (h *AdminAPI) GetAccountsId(w http.ResponseWriter, r *http.Request, id int6
 	writeJSON(w, http.StatusOK, toAPIAccount(acc))
 }
 
-// PutAccountsId 全量更新账号（ServerInterface）。
+// GetAccountsIdGroups 账号的全部分组 id（编辑回显；账号缺 id → 404，
+// ServerInterface）。
+func (h *AdminAPI) GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, id int64) {
+	ids, err := h.svc.GetAccountGroups(r.Context(), id)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AccountGroupsResponse{GroupIds: ids})
+}
+
+// PutAccountsId 全量更新账号（ServerInterface；group_ids 缺省 = 分组不变，
+// 空数组 = 清空）。
 func (h *AdminAPI) PutAccountsId(w http.ResponseWriter, r *http.Request, id int64) {
 	var in AccountCreate
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	acc := &domain.Account{
-		Name:           in.Name,
-		TemplateID:     in.TemplateId,
-		UpstreamKey:    in.UpstreamKey,
-		Status:         domain.AccountStatus(deref(in.Status)),
-		Weight:         deref(in.Weight),
-		MaxConcurrency: deref(in.MaxConcurrency),
-	}
+	acc := accountFromBody(in)
 	acc.ID = id
 	updated, err := h.svc.UpdateAccount(r.Context(), acc)
 	if err != nil {
@@ -163,9 +175,11 @@ func (h *AdminAPI) PostAccountsBatchUpdate(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, BatchUpdateResponse{Updated: len(ids)})
 }
 
-// accountPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新）。
+// accountPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新；
+// GroupIDs nil = 不变，非 nil（含空数组） = 替换/清空）。
 // 契约 status 枚举不参与解码校验（与列表参数一致），此处显式校验；
-// 空 fields（无任何字段）视为非法输入。
+// 空 fields（无任何字段）视为非法输入——判定用 == nil（而非 len），
+// group_ids: [] 算「提供」。
 func accountPatchFromBody(f *AccountPatch) (repository.AccountPatch, error) {
 	if f.Status != nil && !validAccountStatus(string(*f.Status)) {
 		return repository.AccountPatch{}, errors.New("invalid status " + string(*f.Status))
@@ -177,9 +191,11 @@ func accountPatchFromBody(f *AccountPatch) (repository.AccountPatch, error) {
 		Status:         (*domain.AccountStatus)(f.Status),
 		Weight:         f.Weight,
 		MaxConcurrency: f.MaxConcurrency,
+		GroupIDs:       f.GroupIds,
 	}
 	if p.Name == nil && p.TemplateID == nil && p.UpstreamKey == nil &&
-		p.Status == nil && p.Weight == nil && p.MaxConcurrency == nil {
+		p.Status == nil && p.Weight == nil && p.MaxConcurrency == nil &&
+		p.GroupIDs == nil {
 		return repository.AccountPatch{}, errors.New("fields must contain at least one field")
 	}
 	return p, nil

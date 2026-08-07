@@ -111,12 +111,18 @@ type Account struct {
 
 // AccountCreate defines model for AccountCreate.
 type AccountCreate struct {
+	GroupIds       *[]int64       `json:"group_ids,omitempty"`
 	MaxConcurrency *int           `json:"max_concurrency,omitempty"`
 	Name           string         `json:"name"`
 	Status         *AccountStatus `json:"status,omitempty"`
 	TemplateId     int64          `json:"template_id"`
 	UpstreamKey    string         `json:"upstream_key"`
 	Weight         *int           `json:"weight,omitempty"`
+}
+
+// AccountGroupsResponse defines model for AccountGroupsResponse.
+type AccountGroupsResponse struct {
+	GroupIds []int64 `json:"group_ids"`
 }
 
 // AccountListResponse defines model for AccountListResponse.
@@ -127,6 +133,7 @@ type AccountListResponse struct {
 
 // AccountPatch defines model for AccountPatch.
 type AccountPatch struct {
+	GroupIds       *[]int64            `json:"group_ids,omitempty"`
 	MaxConcurrency *int                `json:"max_concurrency,omitempty"`
 	Name           *string             `json:"name,omitempty"`
 	Status         *AccountPatchStatus `json:"status,omitempty"`
@@ -289,11 +296,6 @@ type RulePatch struct {
 	When     *map[string]interface{} `json:"when,omitempty"`
 }
 
-// SetGroupAccountsBody defines model for SetGroupAccountsBody.
-type SetGroupAccountsBody struct {
-	AccountIds []int64 `json:"account_ids"`
-}
-
 // StatBucket defines model for StatBucket.
 type StatBucket struct {
 	AccountID           *int64     `json:"AccountID,omitempty"`
@@ -359,11 +361,6 @@ type TemplatePatch struct {
 
 // TemplatePatchSupportedFormats defines model for TemplatePatch.SupportedFormats.
 type TemplatePatchSupportedFormats string
-
-// UpdatedResponse defines model for UpdatedResponse.
-type UpdatedResponse struct {
-	Updated bool `json:"updated"`
-}
 
 // UsageLog defines model for UsageLog.
 type UsageLog struct {
@@ -482,9 +479,6 @@ type PostGroupsBatchUpdateJSONRequestBody = BatchUpdateGroupsBody
 // PutGroupsIdJSONRequestBody defines body for PutGroupsId for application/json ContentType.
 type PutGroupsIdJSONRequestBody = GroupCreate
 
-// PutGroupsIdAccountsJSONRequestBody defines body for PutGroupsIdAccounts for application/json ContentType.
-type PutGroupsIdAccountsJSONRequestBody = SetGroupAccountsBody
-
 // CreateRuleJSONRequestBody defines body for CreateRule for application/json ContentType.
 type CreateRuleJSONRequestBody = RuleCreate
 
@@ -529,6 +523,9 @@ type ServerInterface interface {
 
 	// (PUT /accounts/{id})
 	PutAccountsId(w http.ResponseWriter, r *http.Request, id int64)
+	// 读取账号的全部分组 id（编辑回显；不随账号列表返回）
+	// (GET /accounts/{id}/groups)
+	GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, id int64)
 	// 分组列表（分页/筛选/排序）
 	// (GET /groups)
 	GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams)
@@ -550,9 +547,6 @@ type ServerInterface interface {
 
 	// (PUT /groups/{id})
 	PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
-	// 全量绑定账号集合
-	// (PUT /groups/{id}/accounts)
-	PutGroupsIdAccounts(w http.ResponseWriter, r *http.Request, id int64)
 	// 轮换分组 key
 	// (POST /groups/{id}/rotate-key)
 	PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Request, id int64)
@@ -643,6 +637,12 @@ func (_ Unimplemented) PutAccountsId(w http.ResponseWriter, r *http.Request, id 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 读取账号的全部分组 id（编辑回显；不随账号列表返回）
+// (GET /accounts/{id}/groups)
+func (_ Unimplemented) GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // 分组列表（分页/筛选/排序）
 // (GET /groups)
 func (_ Unimplemented) GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams) {
@@ -679,12 +679,6 @@ func (_ Unimplemented) GetGroupsId(w http.ResponseWriter, r *http.Request, id in
 
 // (PUT /groups/{id})
 func (_ Unimplemented) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// 全量绑定账号集合
-// (PUT /groups/{id}/accounts)
-func (_ Unimplemented) PutGroupsIdAccounts(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -976,6 +970,31 @@ func (siw *ServerInterfaceWrapper) PutAccountsId(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetAccountsIdGroups operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountsIdGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccountsIdGroups(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetGroups operation middleware
 func (siw *ServerInterfaceWrapper) GetGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -1143,31 +1162,6 @@ func (siw *ServerInterfaceWrapper) PutGroupsId(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutGroupsId(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PutGroupsIdAccounts operation middleware
-func (siw *ServerInterfaceWrapper) PutGroupsIdAccounts(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PutGroupsIdAccounts(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1776,6 +1770,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/accounts/{id}", wrapper.PutAccountsId)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/accounts/{id}/groups", wrapper.GetAccountsIdGroups)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/groups", wrapper.GetGroups)
 	})
 	r.Group(func(r chi.Router) {
@@ -1795,9 +1792,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/groups/{id}", wrapper.PutGroupsId)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/groups/{id}/accounts", wrapper.PutGroupsIdAccounts)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/groups/{id}/rotate-key", wrapper.PostGroupsIdRotateKey)

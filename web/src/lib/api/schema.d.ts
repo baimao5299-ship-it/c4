@@ -144,6 +144,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/accounts/{id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 读取账号的全部分组 id（编辑回显；不随账号列表返回） */
+        get: operations["GetAccountsIdGroups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups": {
         parameters: {
             query?: never;
@@ -209,25 +228,6 @@ export interface paths {
         put: operations["PutGroupsId"];
         post?: never;
         delete: operations["DeleteGroupsId"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/groups/{id}/accounts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        /** 全量绑定账号集合 */
-        put: operations["PutGroupsIdAccounts"];
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -398,6 +398,7 @@ export interface components {
             status?: components["schemas"]["AccountStatus"];
             weight?: number;
             max_concurrency?: number;
+            group_ids?: number[];
         };
         Account: {
             /** Format: int64 */
@@ -507,8 +508,8 @@ export interface components {
         RotateKeyResponse: {
             key: string;
         };
-        SetGroupAccountsBody: {
-            account_ids: number[];
+        AccountGroupsResponse: {
+            group_ids: number[];
         };
         BatchDeleteBody: {
             ids: number[];
@@ -538,6 +539,7 @@ export interface components {
             status?: "active" | "unhealthy" | "429" | "disabled";
             weight?: number;
             max_concurrency?: number;
+            group_ids?: number[];
         };
         GroupPatch: {
             name?: string;
@@ -990,6 +992,29 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetAccountsIdGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分组 id 列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountGroupsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetGroups: {
         parameters: {
             query?: {
@@ -1160,33 +1185,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedResponse"];
-                };
-            };
-            default: components["responses"]["Error"];
-        };
-    };
-    PutGroupsIdAccounts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetGroupAccountsBody"];
-            };
-        };
-        responses: {
-            /** @description 绑定成功 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UpdatedResponse"];
                 };
             };
             default: components["responses"]["Error"];

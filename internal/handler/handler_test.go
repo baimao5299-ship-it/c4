@@ -84,8 +84,16 @@ func TestAdminFlow(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groupResp))
 	require.True(t, strings.HasPrefix(groupResp.Key, "gk-"), "key=%s", groupResp.Key)
 
-	rec = do(http.MethodPut, "/admin/groups/"+itoa(groupResp.Group.ID)+"/accounts", `{"account_ids":[`+itoa(acc.ID)+`]}`)
-	require.Equal(t, 200, rec.Code, "set accounts: %s", rec.Body.String())
+	// 账号侧绑定分组（替代已删的 PUT /groups/{id}/accounts）：PUT 账号 body 带
+	// group_ids；回显经 GET /accounts/{id}/groups 核对。
+	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID),
+		`{"name":"acc1","template_id":`+itoa(tpl.ID)+`,"upstream_key":"sk-x","group_ids":[`+itoa(groupResp.Group.ID)+`]}`)
+	require.Equal(t, 200, rec.Code, "account-side binding: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
+	require.Equal(t, 200, rec.Code, "get account groups: %s", rec.Body.String())
+	var accGroups AccountGroupsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &accGroups))
+	require.Equal(t, []int64{groupResp.Group.ID}, accGroups.GroupIds, "账号分组回显")
 
 	rec = do(http.MethodPost, "/admin/groups/"+itoa(groupResp.Group.ID)+"/rotate-key", "")
 	require.Equal(t, 200, rec.Code, "rotate: %s", rec.Body.String())
