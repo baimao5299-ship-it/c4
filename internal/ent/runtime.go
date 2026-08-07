@@ -5,11 +5,16 @@ package ent
 import (
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/groupassignment"
+	"go-proxy-mini/internal/ent/key"
 	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/schema"
+	"go-proxy-mini/internal/ent/setting"
+	"go-proxy-mini/internal/ent/tempbalance"
 	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
+	"go-proxy-mini/internal/ent/user"
 	"time"
 )
 
@@ -40,15 +45,45 @@ func init() {
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
 	// groupDescCreatedAt is the schema descriptor for created_at field.
-	groupDescCreatedAt := groupFields[4].Descriptor()
+	groupDescCreatedAt := groupFields[3].Descriptor()
 	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
 	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	// groupDescUpdatedAt is the schema descriptor for updated_at field.
-	groupDescUpdatedAt := groupFields[5].Descriptor()
+	groupDescUpdatedAt := groupFields[4].Descriptor()
 	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	groupassignmentFields := schema.GroupAssignment{}.Fields()
+	_ = groupassignmentFields
+	// groupassignmentDescCreatedAt is the schema descriptor for created_at field.
+	groupassignmentDescCreatedAt := groupassignmentFields[3].Descriptor()
+	// groupassignment.DefaultCreatedAt holds the default value on creation for the created_at field.
+	groupassignment.DefaultCreatedAt = groupassignmentDescCreatedAt.Default.(func() time.Time)
+	keyFields := schema.Key{}.Fields()
+	_ = keyFields
+	// keyDescMaxConcurrency is the schema descriptor for max_concurrency field.
+	keyDescMaxConcurrency := keyFields[7].Descriptor()
+	// key.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
+	key.DefaultMaxConcurrency = keyDescMaxConcurrency.Default.(int)
+	// keyDescQuota is the schema descriptor for quota field.
+	keyDescQuota := keyFields[8].Descriptor()
+	// key.DefaultQuota holds the default value on creation for the quota field.
+	key.DefaultQuota = keyDescQuota.Default.(int64)
+	// keyDescQuotaUsed is the schema descriptor for quota_used field.
+	keyDescQuotaUsed := keyFields[9].Descriptor()
+	// key.DefaultQuotaUsed holds the default value on creation for the quota_used field.
+	key.DefaultQuotaUsed = keyDescQuotaUsed.Default.(int64)
+	// keyDescCreatedAt is the schema descriptor for created_at field.
+	keyDescCreatedAt := keyFields[10].Descriptor()
+	// key.DefaultCreatedAt holds the default value on creation for the created_at field.
+	key.DefaultCreatedAt = keyDescCreatedAt.Default.(func() time.Time)
+	// keyDescUpdatedAt is the schema descriptor for updated_at field.
+	keyDescUpdatedAt := keyFields[11].Descriptor()
+	// key.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	key.DefaultUpdatedAt = keyDescUpdatedAt.Default.(func() time.Time)
+	// key.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	key.UpdateDefaultUpdatedAt = keyDescUpdatedAt.UpdateDefault.(func() time.Time)
 	ruleFields := schema.Rule{}.Fields()
 	_ = ruleFields
 	// ruleDescEnabled is the schema descriptor for enabled field.
@@ -65,6 +100,24 @@ func init() {
 	rule.DefaultUpdatedAt = ruleDescUpdatedAt.Default.(func() time.Time)
 	// rule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	rule.UpdateDefaultUpdatedAt = ruleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	settingFields := schema.Setting{}.Fields()
+	_ = settingFields
+	// settingDescValue is the schema descriptor for value field.
+	settingDescValue := settingFields[3].Descriptor()
+	// setting.DefaultValue holds the default value on creation for the value field.
+	setting.DefaultValue = settingDescValue.Default.(string)
+	// settingDescUpdatedAt is the schema descriptor for updated_at field.
+	settingDescUpdatedAt := settingFields[4].Descriptor()
+	// setting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	setting.DefaultUpdatedAt = settingDescUpdatedAt.Default.(func() time.Time)
+	// setting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	setting.UpdateDefaultUpdatedAt = settingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	tempbalanceFields := schema.TempBalance{}.Fields()
+	_ = tempbalanceFields
+	// tempbalanceDescCreatedAt is the schema descriptor for created_at field.
+	tempbalanceDescCreatedAt := tempbalanceFields[5].Descriptor()
+	// tempbalance.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tempbalance.DefaultCreatedAt = tempbalanceDescCreatedAt.Default.(func() time.Time)
 	templateFields := schema.Template{}.Fields()
 	_ = templateFields
 	// templateDescCredentialType is the schema descriptor for credential_type field.
@@ -84,43 +137,43 @@ func init() {
 	usagelogFields := schema.UsageLog{}.Fields()
 	_ = usagelogFields
 	// usagelogDescModel is the schema descriptor for model field.
-	usagelogDescModel := usagelogFields[5].Descriptor()
+	usagelogDescModel := usagelogFields[7].Descriptor()
 	// usagelog.DefaultModel holds the default value on creation for the model field.
 	usagelog.DefaultModel = usagelogDescModel.Default.(string)
 	// usagelogDescStatusCode is the schema descriptor for status_code field.
-	usagelogDescStatusCode := usagelogFields[8].Descriptor()
+	usagelogDescStatusCode := usagelogFields[10].Descriptor()
 	// usagelog.DefaultStatusCode holds the default value on creation for the status_code field.
 	usagelog.DefaultStatusCode = usagelogDescStatusCode.Default.(int)
 	// usagelogDescErrorType is the schema descriptor for error_type field.
-	usagelogDescErrorType := usagelogFields[9].Descriptor()
+	usagelogDescErrorType := usagelogFields[11].Descriptor()
 	// usagelog.DefaultErrorType holds the default value on creation for the error_type field.
 	usagelog.DefaultErrorType = usagelogDescErrorType.Default.(string)
 	// usagelogDescLatencyMs is the schema descriptor for latency_ms field.
-	usagelogDescLatencyMs := usagelogFields[10].Descriptor()
+	usagelogDescLatencyMs := usagelogFields[12].Descriptor()
 	// usagelog.DefaultLatencyMs holds the default value on creation for the latency_ms field.
 	usagelog.DefaultLatencyMs = usagelogDescLatencyMs.Default.(int64)
 	// usagelogDescPromptTokens is the schema descriptor for prompt_tokens field.
-	usagelogDescPromptTokens := usagelogFields[11].Descriptor()
+	usagelogDescPromptTokens := usagelogFields[13].Descriptor()
 	// usagelog.DefaultPromptTokens holds the default value on creation for the prompt_tokens field.
 	usagelog.DefaultPromptTokens = usagelogDescPromptTokens.Default.(int64)
 	// usagelogDescCompletionTokens is the schema descriptor for completion_tokens field.
-	usagelogDescCompletionTokens := usagelogFields[12].Descriptor()
+	usagelogDescCompletionTokens := usagelogFields[14].Descriptor()
 	// usagelog.DefaultCompletionTokens holds the default value on creation for the completion_tokens field.
 	usagelog.DefaultCompletionTokens = usagelogDescCompletionTokens.Default.(int64)
 	// usagelogDescTotalTokens is the schema descriptor for total_tokens field.
-	usagelogDescTotalTokens := usagelogFields[13].Descriptor()
+	usagelogDescTotalTokens := usagelogFields[15].Descriptor()
 	// usagelog.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	usagelog.DefaultTotalTokens = usagelogDescTotalTokens.Default.(int64)
 	// usagelogDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
-	usagelogDescCacheReadTokens := usagelogFields[14].Descriptor()
+	usagelogDescCacheReadTokens := usagelogFields[16].Descriptor()
 	// usagelog.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
 	usagelog.DefaultCacheReadTokens = usagelogDescCacheReadTokens.Default.(int64)
 	// usagelogDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
-	usagelogDescCacheCreationTokens := usagelogFields[15].Descriptor()
+	usagelogDescCacheCreationTokens := usagelogFields[17].Descriptor()
 	// usagelog.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	usagelog.DefaultCacheCreationTokens = usagelogDescCacheCreationTokens.Default.(int64)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[16].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[18].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	usagestatFields := schema.UsageStat{}.Fields()
@@ -137,50 +190,74 @@ func init() {
 	usagestatDescTemplateID := usagestatFields[4].Descriptor()
 	// usagestat.DefaultTemplateID holds the default value on creation for the template_id field.
 	usagestat.DefaultTemplateID = usagestatDescTemplateID.Default.(int64)
+	// usagestatDescUserID is the schema descriptor for user_id field.
+	usagestatDescUserID := usagestatFields[5].Descriptor()
+	// usagestat.DefaultUserID holds the default value on creation for the user_id field.
+	usagestat.DefaultUserID = usagestatDescUserID.Default.(int64)
 	// usagestatDescModel is the schema descriptor for model field.
-	usagestatDescModel := usagestatFields[5].Descriptor()
+	usagestatDescModel := usagestatFields[6].Descriptor()
 	// usagestat.DefaultModel holds the default value on creation for the model field.
 	usagestat.DefaultModel = usagestatDescModel.Default.(string)
 	// usagestatDescIsError is the schema descriptor for is_error field.
-	usagestatDescIsError := usagestatFields[6].Descriptor()
+	usagestatDescIsError := usagestatFields[7].Descriptor()
 	// usagestat.DefaultIsError holds the default value on creation for the is_error field.
 	usagestat.DefaultIsError = usagestatDescIsError.Default.(bool)
 	// usagestatDescRequestCount is the schema descriptor for request_count field.
-	usagestatDescRequestCount := usagestatFields[7].Descriptor()
+	usagestatDescRequestCount := usagestatFields[8].Descriptor()
 	// usagestat.DefaultRequestCount holds the default value on creation for the request_count field.
 	usagestat.DefaultRequestCount = usagestatDescRequestCount.Default.(int64)
 	// usagestatDescErrorCount is the schema descriptor for error_count field.
-	usagestatDescErrorCount := usagestatFields[8].Descriptor()
+	usagestatDescErrorCount := usagestatFields[9].Descriptor()
 	// usagestat.DefaultErrorCount holds the default value on creation for the error_count field.
 	usagestat.DefaultErrorCount = usagestatDescErrorCount.Default.(int64)
 	// usagestatDescPromptTokens is the schema descriptor for prompt_tokens field.
-	usagestatDescPromptTokens := usagestatFields[9].Descriptor()
+	usagestatDescPromptTokens := usagestatFields[10].Descriptor()
 	// usagestat.DefaultPromptTokens holds the default value on creation for the prompt_tokens field.
 	usagestat.DefaultPromptTokens = usagestatDescPromptTokens.Default.(int64)
 	// usagestatDescCompletionTokens is the schema descriptor for completion_tokens field.
-	usagestatDescCompletionTokens := usagestatFields[10].Descriptor()
+	usagestatDescCompletionTokens := usagestatFields[11].Descriptor()
 	// usagestat.DefaultCompletionTokens holds the default value on creation for the completion_tokens field.
 	usagestat.DefaultCompletionTokens = usagestatDescCompletionTokens.Default.(int64)
 	// usagestatDescTotalTokens is the schema descriptor for total_tokens field.
-	usagestatDescTotalTokens := usagestatFields[11].Descriptor()
+	usagestatDescTotalTokens := usagestatFields[12].Descriptor()
 	// usagestat.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	usagestat.DefaultTotalTokens = usagestatDescTotalTokens.Default.(int64)
 	// usagestatDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
-	usagestatDescCacheReadTokens := usagestatFields[12].Descriptor()
+	usagestatDescCacheReadTokens := usagestatFields[13].Descriptor()
 	// usagestat.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
 	usagestat.DefaultCacheReadTokens = usagestatDescCacheReadTokens.Default.(int64)
 	// usagestatDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
-	usagestatDescCacheCreationTokens := usagestatFields[13].Descriptor()
+	usagestatDescCacheCreationTokens := usagestatFields[14].Descriptor()
 	// usagestat.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	usagestat.DefaultCacheCreationTokens = usagestatDescCacheCreationTokens.Default.(int64)
 	// usagestatDescTotalLatencyMs is the schema descriptor for total_latency_ms field.
-	usagestatDescTotalLatencyMs := usagestatFields[14].Descriptor()
+	usagestatDescTotalLatencyMs := usagestatFields[15].Descriptor()
 	// usagestat.DefaultTotalLatencyMs holds the default value on creation for the total_latency_ms field.
 	usagestat.DefaultTotalLatencyMs = usagestatDescTotalLatencyMs.Default.(int64)
 	// usagestatDescUpdatedAt is the schema descriptor for updated_at field.
-	usagestatDescUpdatedAt := usagestatFields[15].Descriptor()
+	usagestatDescUpdatedAt := usagestatFields[16].Descriptor()
 	// usagestat.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	usagestat.DefaultUpdatedAt = usagestatDescUpdatedAt.Default.(func() time.Time)
 	// usagestat.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	usagestat.UpdateDefaultUpdatedAt = usagestatDescUpdatedAt.UpdateDefault.(func() time.Time)
+	userFields := schema.User{}.Fields()
+	_ = userFields
+	// userDescMaxConcurrency is the schema descriptor for max_concurrency field.
+	userDescMaxConcurrency := userFields[5].Descriptor()
+	// user.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
+	user.DefaultMaxConcurrency = userDescMaxConcurrency.Default.(int)
+	// userDescBalance is the schema descriptor for balance field.
+	userDescBalance := userFields[6].Descriptor()
+	// user.DefaultBalance holds the default value on creation for the balance field.
+	user.DefaultBalance = userDescBalance.Default.(int64)
+	// userDescCreatedAt is the schema descriptor for created_at field.
+	userDescCreatedAt := userFields[7].Descriptor()
+	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
+	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
+	// userDescUpdatedAt is the schema descriptor for updated_at field.
+	userDescUpdatedAt := userFields[8].Descriptor()
+	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
+	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	user.UpdateDefaultUpdatedAt = userDescUpdatedAt.UpdateDefault.(func() time.Time)
 }

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/groupassignment"
+	"go-proxy-mini/internal/ent/key"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -29,15 +31,17 @@ func (_c *GroupCreate) SetName(v string) *GroupCreate {
 	return _c
 }
 
-// SetKeyHash sets the "key_hash" field.
-func (_c *GroupCreate) SetKeyHash(v string) *GroupCreate {
-	_c.mutation.SetKeyHash(v)
+// SetVisibility sets the "visibility" field.
+func (_c *GroupCreate) SetVisibility(v group.Visibility) *GroupCreate {
+	_c.mutation.SetVisibility(v)
 	return _c
 }
 
-// SetKeyPrefix sets the "key_prefix" field.
-func (_c *GroupCreate) SetKeyPrefix(v string) *GroupCreate {
-	_c.mutation.SetKeyPrefix(v)
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableVisibility(v *group.Visibility) *GroupCreate {
+	if v != nil {
+		_c.SetVisibility(*v)
+	}
 	return _c
 }
 
@@ -90,6 +94,36 @@ func (_c *GroupCreate) AddAccounts(v ...*Account) *GroupCreate {
 	return _c.AddAccountIDs(ids...)
 }
 
+// AddKeyIDs adds the "keys" edge to the Key entity by IDs.
+func (_c *GroupCreate) AddKeyIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddKeyIDs(ids...)
+	return _c
+}
+
+// AddKeys adds the "keys" edges to the Key entity.
+func (_c *GroupCreate) AddKeys(v ...*Key) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddKeyIDs(ids...)
+}
+
+// AddAssignmentIDs adds the "assignments" edge to the GroupAssignment entity by IDs.
+func (_c *GroupCreate) AddAssignmentIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddAssignmentIDs(ids...)
+	return _c
+}
+
+// AddAssignments adds the "assignments" edges to the GroupAssignment entity.
+func (_c *GroupCreate) AddAssignments(v ...*GroupAssignment) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddAssignmentIDs(ids...)
+}
+
 // Mutation returns the GroupMutation object of the builder.
 func (_c *GroupCreate) Mutation() *GroupMutation {
 	return _c.mutation
@@ -125,6 +159,10 @@ func (_c *GroupCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *GroupCreate) defaults() {
+	if _, ok := _c.mutation.Visibility(); !ok {
+		v := group.DefaultVisibility
+		_c.mutation.SetVisibility(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := group.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -140,11 +178,13 @@ func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "Group.name"`)}
 	}
-	if _, ok := _c.mutation.KeyHash(); !ok {
-		return &ValidationError{Name: "key_hash", err: errors.New(`ent: missing required field "Group.key_hash"`)}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		return &ValidationError{Name: "visibility", err: errors.New(`ent: missing required field "Group.visibility"`)}
 	}
-	if _, ok := _c.mutation.KeyPrefix(); !ok {
-		return &ValidationError{Name: "key_prefix", err: errors.New(`ent: missing required field "Group.key_prefix"`)}
+	if v, ok := _c.mutation.Visibility(); ok {
+		if err := group.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Group.created_at"`)}
@@ -189,13 +229,9 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
-	if value, ok := _c.mutation.KeyHash(); ok {
-		_spec.SetField(group.FieldKeyHash, field.TypeString, value)
-		_node.KeyHash = value
-	}
-	if value, ok := _c.mutation.KeyPrefix(); ok {
-		_spec.SetField(group.FieldKeyPrefix, field.TypeString, value)
-		_node.KeyPrefix = value
+	if value, ok := _c.mutation.Visibility(); ok {
+		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
+		_node.Visibility = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
@@ -214,6 +250,38 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.KeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.AssignmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -285,27 +353,15 @@ func (u *GroupUpsert) UpdateName() *GroupUpsert {
 	return u
 }
 
-// SetKeyHash sets the "key_hash" field.
-func (u *GroupUpsert) SetKeyHash(v string) *GroupUpsert {
-	u.Set(group.FieldKeyHash, v)
+// SetVisibility sets the "visibility" field.
+func (u *GroupUpsert) SetVisibility(v group.Visibility) *GroupUpsert {
+	u.Set(group.FieldVisibility, v)
 	return u
 }
 
-// UpdateKeyHash sets the "key_hash" field to the value that was provided on create.
-func (u *GroupUpsert) UpdateKeyHash() *GroupUpsert {
-	u.SetExcluded(group.FieldKeyHash)
-	return u
-}
-
-// SetKeyPrefix sets the "key_prefix" field.
-func (u *GroupUpsert) SetKeyPrefix(v string) *GroupUpsert {
-	u.Set(group.FieldKeyPrefix, v)
-	return u
-}
-
-// UpdateKeyPrefix sets the "key_prefix" field to the value that was provided on create.
-func (u *GroupUpsert) UpdateKeyPrefix() *GroupUpsert {
-	u.SetExcluded(group.FieldKeyPrefix)
+// UpdateVisibility sets the "visibility" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateVisibility() *GroupUpsert {
+	u.SetExcluded(group.FieldVisibility)
 	return u
 }
 
@@ -395,31 +451,17 @@ func (u *GroupUpsertOne) UpdateName() *GroupUpsertOne {
 	})
 }
 
-// SetKeyHash sets the "key_hash" field.
-func (u *GroupUpsertOne) SetKeyHash(v string) *GroupUpsertOne {
+// SetVisibility sets the "visibility" field.
+func (u *GroupUpsertOne) SetVisibility(v group.Visibility) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
-		s.SetKeyHash(v)
+		s.SetVisibility(v)
 	})
 }
 
-// UpdateKeyHash sets the "key_hash" field to the value that was provided on create.
-func (u *GroupUpsertOne) UpdateKeyHash() *GroupUpsertOne {
+// UpdateVisibility sets the "visibility" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateVisibility() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
-		s.UpdateKeyHash()
-	})
-}
-
-// SetKeyPrefix sets the "key_prefix" field.
-func (u *GroupUpsertOne) SetKeyPrefix(v string) *GroupUpsertOne {
-	return u.Update(func(s *GroupUpsert) {
-		s.SetKeyPrefix(v)
-	})
-}
-
-// UpdateKeyPrefix sets the "key_prefix" field to the value that was provided on create.
-func (u *GroupUpsertOne) UpdateKeyPrefix() *GroupUpsertOne {
-	return u.Update(func(s *GroupUpsert) {
-		s.UpdateKeyPrefix()
+		s.UpdateVisibility()
 	})
 }
 
@@ -679,31 +721,17 @@ func (u *GroupUpsertBulk) UpdateName() *GroupUpsertBulk {
 	})
 }
 
-// SetKeyHash sets the "key_hash" field.
-func (u *GroupUpsertBulk) SetKeyHash(v string) *GroupUpsertBulk {
+// SetVisibility sets the "visibility" field.
+func (u *GroupUpsertBulk) SetVisibility(v group.Visibility) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
-		s.SetKeyHash(v)
+		s.SetVisibility(v)
 	})
 }
 
-// UpdateKeyHash sets the "key_hash" field to the value that was provided on create.
-func (u *GroupUpsertBulk) UpdateKeyHash() *GroupUpsertBulk {
+// UpdateVisibility sets the "visibility" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateVisibility() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
-		s.UpdateKeyHash()
-	})
-}
-
-// SetKeyPrefix sets the "key_prefix" field.
-func (u *GroupUpsertBulk) SetKeyPrefix(v string) *GroupUpsertBulk {
-	return u.Update(func(s *GroupUpsert) {
-		s.SetKeyPrefix(v)
-	})
-}
-
-// UpdateKeyPrefix sets the "key_prefix" field to the value that was provided on create.
-func (u *GroupUpsertBulk) UpdateKeyPrefix() *GroupUpsertBulk {
-	return u.Update(func(s *GroupUpsert) {
-		s.UpdateKeyPrefix()
+		s.UpdateVisibility()
 	})
 }
 

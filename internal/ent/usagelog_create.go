@@ -70,6 +70,34 @@ func (_c *UsageLogCreate) SetNillableTemplateID(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetUserID sets the "user_id" field.
+func (_c *UsageLogCreate) SetUserID(v int64) *UsageLogCreate {
+	_c.mutation.SetUserID(v)
+	return _c
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUserID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetUserID(*v)
+	}
+	return _c
+}
+
+// SetKeyID sets the "key_id" field.
+func (_c *UsageLogCreate) SetKeyID(v int64) *UsageLogCreate {
+	_c.mutation.SetKeyID(v)
+	return _c
+}
+
+// SetNillableKeyID sets the "key_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableKeyID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetKeyID(*v)
+	}
+	return _c
+}
+
 // SetModel sets the "model" field.
 func (_c *UsageLogCreate) SetModel(v string) *UsageLogCreate {
 	_c.mutation.SetModel(v)
@@ -405,6 +433,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldTemplateID, field.TypeInt64, value)
 		_node.TemplateID = &value
 	}
+	if value, ok := _c.mutation.UserID(); ok {
+		_spec.SetField(usagelog.FieldUserID, field.TypeInt64, value)
+		_node.UserID = &value
+	}
+	if value, ok := _c.mutation.KeyID(); ok {
+		_spec.SetField(usagelog.FieldKeyID, field.TypeInt64, value)
+		_node.KeyID = &value
+	}
 	if value, ok := _c.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)
 		_node.Model = value
@@ -586,6 +622,54 @@ func (u *UsageLogUpsert) AddTemplateID(v int64) *UsageLogUpsert {
 // ClearTemplateID clears the value of the "template_id" field.
 func (u *UsageLogUpsert) ClearTemplateID() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldTemplateID)
+	return u
+}
+
+// SetUserID sets the "user_id" field.
+func (u *UsageLogUpsert) SetUserID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldUserID, v)
+	return u
+}
+
+// UpdateUserID sets the "user_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUserID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUserID)
+	return u
+}
+
+// AddUserID adds v to the "user_id" field.
+func (u *UsageLogUpsert) AddUserID(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldUserID, v)
+	return u
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (u *UsageLogUpsert) ClearUserID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUserID)
+	return u
+}
+
+// SetKeyID sets the "key_id" field.
+func (u *UsageLogUpsert) SetKeyID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldKeyID, v)
+	return u
+}
+
+// UpdateKeyID sets the "key_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateKeyID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldKeyID)
+	return u
+}
+
+// AddKeyID adds v to the "key_id" field.
+func (u *UsageLogUpsert) AddKeyID(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldKeyID, v)
+	return u
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (u *UsageLogUpsert) ClearKeyID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldKeyID)
 	return u
 }
 
@@ -924,6 +1008,62 @@ func (u *UsageLogUpsertOne) UpdateTemplateID() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearTemplateID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearTemplateID()
+	})
+}
+
+// SetUserID sets the "user_id" field.
+func (u *UsageLogUpsertOne) SetUserID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUserID(v)
+	})
+}
+
+// AddUserID adds v to the "user_id" field.
+func (u *UsageLogUpsertOne) AddUserID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUserID(v)
+	})
+}
+
+// UpdateUserID sets the "user_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUserID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUserID()
+	})
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (u *UsageLogUpsertOne) ClearUserID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUserID()
+	})
+}
+
+// SetKeyID sets the "key_id" field.
+func (u *UsageLogUpsertOne) SetKeyID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetKeyID(v)
+	})
+}
+
+// AddKeyID adds v to the "key_id" field.
+func (u *UsageLogUpsertOne) AddKeyID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddKeyID(v)
+	})
+}
+
+// UpdateKeyID sets the "key_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateKeyID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateKeyID()
+	})
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (u *UsageLogUpsertOne) ClearKeyID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearKeyID()
 	})
 }
 
@@ -1460,6 +1600,62 @@ func (u *UsageLogUpsertBulk) UpdateTemplateID() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearTemplateID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearTemplateID()
+	})
+}
+
+// SetUserID sets the "user_id" field.
+func (u *UsageLogUpsertBulk) SetUserID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUserID(v)
+	})
+}
+
+// AddUserID adds v to the "user_id" field.
+func (u *UsageLogUpsertBulk) AddUserID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUserID(v)
+	})
+}
+
+// UpdateUserID sets the "user_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUserID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUserID()
+	})
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (u *UsageLogUpsertBulk) ClearUserID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUserID()
+	})
+}
+
+// SetKeyID sets the "key_id" field.
+func (u *UsageLogUpsertBulk) SetKeyID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetKeyID(v)
+	})
+}
+
+// AddKeyID adds v to the "key_id" field.
+func (u *UsageLogUpsertBulk) AddKeyID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddKeyID(v)
+	})
+}
+
+// UpdateKeyID sets the "key_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateKeyID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateKeyID()
+	})
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (u *UsageLogUpsertBulk) ClearKeyID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearKeyID()
 	})
 }
 

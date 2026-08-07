@@ -26,9 +26,34 @@ type Store interface {
 	TemplateStore
 	AccountStore
 	GroupStore
+	KeyStore
+	UserStore
+	SettingStore
 	RuleStore
 	LogStore
 	StatStore
+}
+
+// UserStore 用户持久化（Phase 3a）。
+type UserStore interface {
+	CreateUser(ctx context.Context, u *domain.User) (*domain.User, error)
+	GetUser(ctx context.Context, id int64) (*domain.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
+	ListUsers(ctx context.Context, q repository.ListQuery) ([]*domain.User, int64, error)
+	UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error)
+	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
+}
+
+// SettingStore 类型化配置持久化（Phase 3a）。
+type SettingStore interface {
+	GetSetting(ctx context.Context, key string) (*domain.Setting, error)
+	GetAllSettings(ctx context.Context) ([]*domain.Setting, error)
+	SetSetting(ctx context.Context, key string, typ domain.SettingType, value string) (*domain.Setting, error)
+}
+
+// KeyStore 组删除前置的 key 清理（key.group_id 外键约束）。
+type KeyStore interface {
+	DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error)
 }
 
 type TemplateStore interface {
@@ -85,9 +110,9 @@ type RuntimeProvider interface {
 	Runtime(accountID int64) (scheduler.RuntimeInfo, bool)
 }
 
-// KeyRegistrar 由 proxy.Auth 实现，供分组 key 变更时刷新。
+// KeyRegistrar 由 proxy.Auth 实现，供客户端 key 变更时增量刷新鉴权快照。
 type KeyRegistrar interface {
-	Upsert(hash string, groupID int64)
+	Upsert(hash string, meta domain.KeyMeta)
 	Delete(hash string)
 }
 

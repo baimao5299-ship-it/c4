@@ -64,9 +64,13 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 
 func (p *Proxy) Inflight() int64 { return p.inflight.Load() }
 
-// finish 收尾：释放并发槽 + 记录用量（凡持有并发槽的路径必调）。
+// finish 收尾：释放并发槽 + 额度扣减（后扣模型，usage 已知）+ 记录用量
+// （凡持有并发槽的路径必调）。无额度 key 无内存计数器 → 扣减 no-op（恒 0）。
 func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 	p.sched.Release(accountID)
+	if l != nil {
+		p.auth.DeductQuota(l.KeyID, l.TotalTokens)
+	}
 	if p.cfg.UsageCapture && l != nil {
 		p.rec.Record(l)
 	}
@@ -100,11 +104,25 @@ func mappedFor(req, used string) string {
 }
 
 // record 记录一条用量日志（无并发槽的失败路径；有槽路径走 finish）。
-func (p *Proxy) record(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
+// ctx 提供鉴权 KeyMeta（user_id/key_id 归属；401 等鉴权失败路径无 KeyMeta）。
+func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
 	if !p.cfg.UsageCapture {
 		return
 	}
-	p.rec.Record(p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start))
+	p.rec.Record(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
+}
+
+// ctxKeyMeta 是鉴权 KeyMeta 的 context 键（handleFormat 写入；日志归属读取）。
+type ctxKeyMeta struct{}
+
+// logWithCtx 从 ctx 读鉴权 KeyMeta 填日志归属（user_id/key_id；context 传递
+// ——不改变 Call/buildLog 签名；无 KeyMeta 的路径保持 0）。
+func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
+	if meta, ok := ctx.Value(ctxKeyMeta{}).(domain.KeyMeta); ok {
+		l.UserID = meta.UserID
+		l.KeyID = meta.KeyID
+	}
+	return l
 }
 
 type formatError struct {
@@ -115,10 +133,12 @@ type formatError struct {
 func (e *formatError) Error() string { return e.msg }
 
 var (
-	errInvalidKey = &formatError{status: http.StatusUnauthorized, msg: "invalid gateway key"}
-	errTooMany    = &formatError{status: http.StatusTooManyRequests, msg: "no available account"}
-	errRateLimit  = &formatError{status: http.StatusTooManyRequests, msg: "group rate limited"}
-	errBody       = &formatError{status: http.StatusRequestEntityTooLarge, msg: "request body too large"}
+	errInvalidKey     = &formatError{status: http.StatusUnauthorized, msg: "invalid gateway key"}
+	errTooMany        = &formatError{status: http.StatusTooManyRequests, msg: "no available account"}
+	errConcurrency    = &formatError{status: http.StatusTooManyRequests, msg: "concurrency limit exceeded"}
+	errQuotaExhausted = &formatError{status: http.StatusTooManyRequests, msg: "key quota exhausted"}
+	errRateLimit      = &formatError{status: http.StatusTooManyRequests, msg: "group rate limited"}
+	errBody           = &formatError{status: http.StatusRequestEntityTooLarge, msg: "request body too large"}
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -138,11 +158,11 @@ type usageTuple struct {
 	cr, cc         int64 // 缓存读取/写入 token（缺失 = 0）
 }
 
-func (p *Proxy) recordStreamAbort(reqID string, start time.Time, sel *scheduler.Selection, reqModel string, err error) {
+func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, start time.Time, sel *scheduler.Selection, reqModel string, err error) {
 	if p.log != nil {
 		p.log.Warn("upstream stream aborted", logx.String("request_id", reqID), logx.Error(err))
 	}
-	p.finish(sel.AccountID, p.buildLog(reqID, 0, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, nil, start))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, 0, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, nil, start)))
 }
 
 func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {

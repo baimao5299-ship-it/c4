@@ -19,10 +19,8 @@ type Group struct {
 	ID int64 `json:"id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
-	// KeyHash holds the value of the "key_hash" field.
-	KeyHash string `json:"key_hash,omitempty"`
-	// KeyPrefix holds the value of the "key_prefix" field.
-	KeyPrefix string `json:"key_prefix,omitempty"`
+	// Visibility holds the value of the "visibility" field.
+	Visibility group.Visibility `json:"visibility,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -37,9 +35,13 @@ type Group struct {
 type GroupEdges struct {
 	// Accounts holds the value of the accounts edge.
 	Accounts []*Account `json:"accounts,omitempty"`
+	// Keys holds the value of the keys edge.
+	Keys []*Key `json:"keys,omitempty"`
+	// Assignments holds the value of the assignments edge.
+	Assignments []*GroupAssignment `json:"assignments,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [3]bool
 }
 
 // AccountsOrErr returns the Accounts value or an error if the edge
@@ -51,6 +53,24 @@ func (e GroupEdges) AccountsOrErr() ([]*Account, error) {
 	return nil, &NotLoadedError{edge: "accounts"}
 }
 
+// KeysOrErr returns the Keys value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) KeysOrErr() ([]*Key, error) {
+	if e.loadedTypes[1] {
+		return e.Keys, nil
+	}
+	return nil, &NotLoadedError{edge: "keys"}
+}
+
+// AssignmentsOrErr returns the Assignments value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) AssignmentsOrErr() ([]*GroupAssignment, error) {
+	if e.loadedTypes[2] {
+		return e.Assignments, nil
+	}
+	return nil, &NotLoadedError{edge: "assignments"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -58,7 +78,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldID:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldKeyHash, group.FieldKeyPrefix:
+		case group.FieldName, group.FieldVisibility:
 			values[i] = new(sql.NullString)
 		case group.FieldCreatedAt, group.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -89,17 +109,11 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Name = value.String
 			}
-		case group.FieldKeyHash:
+		case group.FieldVisibility:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field key_hash", values[i])
+				return fmt.Errorf("unexpected type %T for field visibility", values[i])
 			} else if value.Valid {
-				_m.KeyHash = value.String
-			}
-		case group.FieldKeyPrefix:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field key_prefix", values[i])
-			} else if value.Valid {
-				_m.KeyPrefix = value.String
+				_m.Visibility = group.Visibility(value.String)
 			}
 		case group.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -131,6 +145,16 @@ func (_m *Group) QueryAccounts() *AccountQuery {
 	return NewGroupClient(_m.config).QueryAccounts(_m)
 }
 
+// QueryKeys queries the "keys" edge of the Group entity.
+func (_m *Group) QueryKeys() *KeyQuery {
+	return NewGroupClient(_m.config).QueryKeys(_m)
+}
+
+// QueryAssignments queries the "assignments" edge of the Group entity.
+func (_m *Group) QueryAssignments() *GroupAssignmentQuery {
+	return NewGroupClient(_m.config).QueryAssignments(_m)
+}
+
 // Update returns a builder for updating this Group.
 // Note that you need to call Group.Unwrap() before calling this method if this Group
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -157,11 +181,8 @@ func (_m *Group) String() string {
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
-	builder.WriteString("key_hash=")
-	builder.WriteString(_m.KeyHash)
-	builder.WriteString(", ")
-	builder.WriteString("key_prefix=")
-	builder.WriteString(_m.KeyPrefix)
+	builder.WriteString("visibility=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

@@ -25,8 +25,10 @@ func (fakeSched) Runtime(id int64) (scheduler.RuntimeInfo, bool) {
 
 type fakeKeys struct{ upserted, deleted []string }
 
-func (f *fakeKeys) Upsert(hash string, groupID int64) { f.upserted = append(f.upserted, hash) }
-func (f *fakeKeys) Delete(hash string)                { f.deleted = append(f.deleted, hash) }
+func (f *fakeKeys) Upsert(hash string, meta domain.KeyMeta) {
+	f.upserted = append(f.upserted, hash)
+}
+func (f *fakeKeys) Delete(hash string) { f.deleted = append(f.deleted, hash) }
 
 func newTestHandler(t *testing.T) *AdminAPI {
 	t.Helper()
@@ -85,27 +87,24 @@ func TestAdminFlow(t *testing.T) {
 
 	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
 	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
-	var groupResp struct {
-		Group domain.Group `json:"group"`
-		Key   string       `json:"key"`
-	}
+	var groupResp domain.Group
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groupResp))
-	require.True(t, strings.HasPrefix(groupResp.Key, "gk-"), "key=%s", groupResp.Key)
+	require.Equal(t, "g1", groupResp.Name)
+	require.Equal(t, domain.GroupVisibilityPublic, groupResp.Visibility, "缺省 visibility = public")
 
-	// 账号侧绑定分组（替代已删的 PUT /groups/{id}/accounts）：PUT 账号 body 带
-	// group_ids；回显经 GET /accounts/{id}/groups 核对。
+	// 账号侧绑定分组：PUT 账号 body 带 group_ids；回显经 GET /accounts/{id}/groups 核对。
 	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID),
-		`{"name":"acc1","template_id":`+itoa(tpl.ID)+`,"upstream_key":"sk-x","group_ids":[`+itoa(groupResp.Group.ID)+`]}`)
+		`{"name":"acc1","template_id":`+itoa(tpl.ID)+`,"upstream_key":"sk-x","group_ids":[`+itoa(groupResp.ID)+`]}`)
 	require.Equal(t, 200, rec.Code, "account-side binding: %s", rec.Body.String())
 	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
 	require.Equal(t, 200, rec.Code, "get account groups: %s", rec.Body.String())
 	var accGroups AccountGroupsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &accGroups))
-	require.Equal(t, []int64{groupResp.Group.ID}, accGroups.GroupIds, "账号分组回显")
+	require.Equal(t, []int64{groupResp.ID}, accGroups.GroupIds, "账号分组回显")
 
-	rec = do(http.MethodPost, "/admin/groups/"+itoa(groupResp.Group.ID)+"/rotate-key", "")
-	require.Equal(t, 200, rec.Code, "rotate: %s", rec.Body.String())
-	require.Contains(t, rec.Body.String(), `"key":"gk-`)
+	// Phase 3a：rotate-key 端点已删除（key 轮换在用户面 /user/keys/{id}/rotate）→ 404
+	rec = do(http.MethodPost, "/admin/groups/"+itoa(groupResp.ID)+"/rotate-key", "")
+	require.Equal(t, 404, rec.Code, "rotate-key 端点已删除: %s", rec.Body.String())
 
 	rec = do(http.MethodGet, "/admin/stats?granularity=day", "")
 	require.Equal(t, 200, rec.Code, "stats: %s", rec.Body.String())

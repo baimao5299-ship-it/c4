@@ -3,6 +3,7 @@
 package group
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -16,16 +17,18 @@ const (
 	FieldID = "id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
-	// FieldKeyHash holds the string denoting the key_hash field in the database.
-	FieldKeyHash = "key_hash"
-	// FieldKeyPrefix holds the string denoting the key_prefix field in the database.
-	FieldKeyPrefix = "key_prefix"
+	// FieldVisibility holds the string denoting the visibility field in the database.
+	FieldVisibility = "visibility"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// EdgeAccounts holds the string denoting the accounts edge name in mutations.
 	EdgeAccounts = "accounts"
+	// EdgeKeys holds the string denoting the keys edge name in mutations.
+	EdgeKeys = "keys"
+	// EdgeAssignments holds the string denoting the assignments edge name in mutations.
+	EdgeAssignments = "assignments"
 	// Table holds the table name of the group in the database.
 	Table = "groups"
 	// AccountsTable is the table that holds the accounts relation/edge. The primary key declared below.
@@ -33,14 +36,27 @@ const (
 	// AccountsInverseTable is the table name for the Account entity.
 	// It exists in this package in order to avoid circular dependency with the "account" package.
 	AccountsInverseTable = "accounts"
+	// KeysTable is the table that holds the keys relation/edge.
+	KeysTable = "keys"
+	// KeysInverseTable is the table name for the Key entity.
+	// It exists in this package in order to avoid circular dependency with the "key" package.
+	KeysInverseTable = "keys"
+	// KeysColumn is the table column denoting the keys relation/edge.
+	KeysColumn = "group_id"
+	// AssignmentsTable is the table that holds the assignments relation/edge.
+	AssignmentsTable = "group_assignments"
+	// AssignmentsInverseTable is the table name for the GroupAssignment entity.
+	// It exists in this package in order to avoid circular dependency with the "groupassignment" package.
+	AssignmentsInverseTable = "group_assignments"
+	// AssignmentsColumn is the table column denoting the assignments relation/edge.
+	AssignmentsColumn = "group_id"
 )
 
 // Columns holds all SQL columns for group fields.
 var Columns = []string{
 	FieldID,
 	FieldName,
-	FieldKeyHash,
-	FieldKeyPrefix,
+	FieldVisibility,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -70,6 +86,32 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 )
 
+// Visibility defines the type for the "visibility" enum field.
+type Visibility string
+
+// VisibilityPublic is the default value of the Visibility enum.
+const DefaultVisibility = VisibilityPublic
+
+// Visibility values.
+const (
+	VisibilityPublic  Visibility = "public"
+	VisibilityPrivate Visibility = "private"
+)
+
+func (v Visibility) String() string {
+	return string(v)
+}
+
+// VisibilityValidator is a validator for the "visibility" field enum values. It is called by the builders before save.
+func VisibilityValidator(v Visibility) error {
+	switch v {
+	case VisibilityPublic, VisibilityPrivate:
+		return nil
+	default:
+		return fmt.Errorf("group: invalid enum value for visibility field: %q", v)
+	}
+}
+
 // OrderOption defines the ordering options for the Group queries.
 type OrderOption func(*sql.Selector)
 
@@ -83,14 +125,9 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
 }
 
-// ByKeyHash orders the results by the key_hash field.
-func ByKeyHash(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldKeyHash, opts...).ToFunc()
-}
-
-// ByKeyPrefix orders the results by the key_prefix field.
-func ByKeyPrefix(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldKeyPrefix, opts...).ToFunc()
+// ByVisibility orders the results by the visibility field.
+func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.
@@ -116,10 +153,52 @@ func ByAccounts(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAccountsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByKeysCount orders the results by keys count.
+func ByKeysCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newKeysStep(), opts...)
+	}
+}
+
+// ByKeys orders the results by keys terms.
+func ByKeys(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newKeysStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByAssignmentsCount orders the results by assignments count.
+func ByAssignmentsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAssignmentsStep(), opts...)
+	}
+}
+
+// ByAssignments orders the results by assignments terms.
+func ByAssignments(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAssignmentsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newAccountsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, true, AccountsTable, AccountsPrimaryKey...),
+	)
+}
+func newKeysStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(KeysInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, KeysTable, KeysColumn),
+	)
+}
+func newAssignmentsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(AssignmentsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, AssignmentsTable, AssignmentsColumn),
 	)
 }

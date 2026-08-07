@@ -17,6 +17,7 @@ func (UsageStat) Fields() []ent.Field {
 		field.Int64("group_id").Default(0), // 0 = 无（唯一索引需要非 NULL）
 		field.Int64("account_id").Default(0),
 		field.Int64("template_id").Default(0),
+		field.Int64("user_id").Default(0), // 0 = 无（鉴权失败/无 key）；/user/stats 按此过滤
 		field.String("model").Default(""),
 		field.Bool("is_error").Default(false),
 		field.Int64("request_count").Default(0),
@@ -34,6 +35,6 @@ func (UsageStat) Fields() []ent.Field {
 func (UsageStat) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("bucket_time"),
-		index.Fields("bucket_time", "group_id", "account_id", "template_id", "model", "is_error").Unique(),
+		index.Fields("bucket_time", "group_id", "account_id", "template_id", "user_id", "model", "is_error").Unique(),
 	}
 }

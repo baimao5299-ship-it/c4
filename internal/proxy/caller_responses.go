@@ -67,15 +67,15 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort，
 				// token 取断前已收到的 usage 帧（无则 0）。
-				p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(reqID, start, sel, reqModel, err)
+			p.recordStreamAbort(ctx, reqID, start, sel, reqModel, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -108,6 +108,6 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		pt, ct, tt, cr, cc = responsesUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }

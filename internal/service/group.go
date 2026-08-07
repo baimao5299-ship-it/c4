@@ -5,28 +5,26 @@ import (
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/pkg/cryptox"
 	"go-proxy-mini/pkg/logx"
 )
 
-func (s *Service) CreateGroup(ctx context.Context, name string) (*domain.Group, string, error) {
+func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility) (*domain.Group, error) {
 	if name == "" {
-		return nil, "", ErrInvalidInput
+		return nil, ErrInvalidInput
 	}
-	raw, hash, prefix := cryptox.NewGroupKey()
-	g := &domain.Group{Name: name, KeyHash: hash, KeyPrefix: prefix}
+	if !visibility.Valid() {
+		visibility = domain.GroupVisibilityPublic
+	}
+	g := &domain.Group{Name: name, Visibility: visibility}
 	created, err := s.store.CreateGroup(ctx, g)
 	if err != nil {
-		return nil, "", err
-	}
-	if s.keys != nil {
-		s.keys.Upsert(hash, created.ID)
+		return nil, err
 	}
 	s.invalidate()
 	if s.log != nil {
 		s.log.Info("group created", logx.Int64("id", created.ID), logx.String("name", name))
 	}
-	return created, raw, nil
+	return created, nil
 }
 
 func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
@@ -55,13 +53,21 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	return updated, err
 }
 
+// DeleteGroup 删除组：前置清理组内全部 key（key.group_id 外键约束；Auth 增量
+// 清理），再删组。key 清理与组删除非同一事务——组删除失败时 key 已删，
+// 重试删除即可（key 被删组未删的中间态不提供服务——Auth 快照已移除）。
 func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
-	g, err := s.store.GetGroup(ctx, id)
-	if err != nil {
+	if _, err := s.store.GetGroup(ctx, id); err != nil {
 		return mapRepoErr(err)
 	}
+	hashes, err := s.store.DeleteKeysByGroup(ctx, id)
+	if err != nil {
+		return err
+	}
 	if s.keys != nil {
-		s.keys.Delete(g.KeyHash)
+		for _, h := range hashes {
+			s.keys.Delete(h)
+		}
 	}
 	if err := s.store.DeleteGroup(ctx, id); err != nil {
 		return mapRepoErr(err) // 竞态窗口缺 id → 404（前置 Get 已拦截常见路径）
@@ -75,12 +81,17 @@ func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 		return err
 	}
 	for _, id := range ids {
-		g, err := s.store.GetGroup(ctx, id)
-		if err != nil {
+		if _, err := s.store.GetGroup(ctx, id); err != nil {
 			return mapRepoErr(err) // 404 缺 id
 		}
+		hashes, err := s.store.DeleteKeysByGroup(ctx, id)
+		if err != nil {
+			return err
+		}
 		if s.keys != nil {
-			s.keys.Delete(g.KeyHash)
+			for _, h := range hashes {
+				s.keys.Delete(h)
+			}
 		}
 	}
 	if err := mapRepoErr(s.store.DeleteGroupsBatch(ctx, ids)); err != nil {
@@ -97,30 +108,12 @@ func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposito
 	if p.Name != nil && *p.Name == "" {
 		return ErrInvalidInput
 	}
+	if p.Visibility != nil && !p.Visibility.Valid() {
+		return ErrInvalidInput
+	}
 	if err := mapRepoErr(s.store.UpdateGroupsBatch(ctx, ids, p)); err != nil {
 		return err
 	}
 	s.invalidate()
 	return nil
-}
-
-// RotateGroupKey 轮换客户端 key：返回新 raw key（仅此一次明文）。
-func (s *Service) RotateGroupKey(ctx context.Context, groupID int64) (string, error) {
-	g, err := s.store.GetGroup(ctx, groupID)
-	if err != nil {
-		return "", mapRepoErr(err) // 缺 id → 404
-	}
-	oldHash := g.KeyHash
-	raw, hash, prefix := cryptox.NewGroupKey()
-	g.KeyHash = hash
-	g.KeyPrefix = prefix
-	if _, err := s.store.UpdateGroup(ctx, g); err != nil {
-		return "", err
-	}
-	if s.keys != nil {
-		s.keys.Delete(oldHash)
-		s.keys.Upsert(hash, groupID)
-	}
-	s.invalidate()
-	return raw, nil
 }

@@ -21,6 +21,8 @@ const (
 	FieldAccountID = "account_id"
 	// FieldTemplateID holds the string denoting the template_id field in the database.
 	FieldTemplateID = "template_id"
+	// FieldUserID holds the string denoting the user_id field in the database.
+	FieldUserID = "user_id"
 	// FieldModel holds the string denoting the model field in the database.
 	FieldModel = "model"
 	// FieldIsError holds the string denoting the is_error field in the database.
@@ -54,6 +56,7 @@ var Columns = []string{
 	FieldGroupID,
 	FieldAccountID,
 	FieldTemplateID,
+	FieldUserID,
 	FieldModel,
 	FieldIsError,
 	FieldRequestCount,
@@ -84,6 +87,8 @@ var (
 	DefaultAccountID int64
 	// DefaultTemplateID holds the default value on creation for the "template_id" field.
 	DefaultTemplateID int64
+	// DefaultUserID holds the default value on creation for the "user_id" field.
+	DefaultUserID int64
 	// DefaultModel holds the default value on creation for the "model" field.
 	DefaultModel string
 	// DefaultIsError holds the default value on creation for the "is_error" field.
@@ -136,6 +141,11 @@ func ByAccountID(opts ...sql.OrderTermOption) OrderOption {
 // ByTemplateID orders the results by the template_id field.
 func ByTemplateID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTemplateID, opts...).ToFunc()
+}
+
+// ByUserID orders the results by the user_id field.
+func ByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserID, opts...).ToFunc()
 }
 
 // ByModel orders the results by the model field.

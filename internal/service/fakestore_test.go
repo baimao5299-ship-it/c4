@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
 	"go-proxy-mini/internal/domain"
@@ -20,11 +21,13 @@ type fakeStore struct {
 	accs      map[int64]*domain.Account
 	groups    map[int64]*domain.Group
 	accGroups map[int64][]int64 // accountID → groupIDs（账号侧绑定，Set/GetAccountGroups）
+	keys      map[int64]*domain.Key
+	users     map[int64]*domain.User
+	settings  map[string]*domain.Setting
 	rules     map[int64]domain.Rule
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	nextID    int64
-	keyHashes map[int64]string
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
@@ -34,8 +37,23 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		tpls: make(map[int64]*domain.Template), accs: make(map[int64]*domain.Account),
 		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
-		rules: make(map[int64]domain.Rule), keyHashes: make(map[int64]string), nextID: 1,
+		keys: make(map[int64]*domain.Key), users: make(map[int64]*domain.User),
+		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule), nextID: 1,
 	}
+}
+
+// DeleteKeysByGroup 满足 KeyStore（组删除前置清理；返回被删 hash 列表）。
+func (f *fakeStore) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var hashes []string
+	for id, k := range f.keys {
+		if k.GroupID == groupID {
+			hashes = append(hashes, k.KeyHash)
+			delete(f.keys, id)
+		}
+	}
+	return hashes, nil
 }
 
 // missingErr 模拟真实 repo 单资源缺 id 错误（与批量 fake 同格式：
@@ -151,7 +169,6 @@ func (f *fakeStore) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	f.nextID++
 	c := *g
 	f.groups[g.ID] = &c
-	f.keyHashes[g.ID] = g.KeyHash
 	return g, nil
 }
 
@@ -430,4 +447,113 @@ func (f *fakeStore) ruleConflictLocked(excludeID int64, r domain.Rule) error {
 		}
 	}
 	return nil
+}
+
+// --- Phase 3a：UserStore / SettingStore 假实现 ---
+
+func (f *fakeStore) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u.ID = f.nextID
+	f.nextID++
+	c := *u
+	f.users[u.ID] = &c
+	return &c, nil
+}
+
+func (f *fakeStore) GetUser(ctx context.Context, id int64) (*domain.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[id]
+	if !ok {
+		return nil, missingErr(id)
+	}
+	c := *u
+	return &c, nil
+}
+
+func (f *fakeStore) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.users {
+		if u.Email == email {
+			c := *u
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeStore) ListUsers(ctx context.Context, q repository.ListQuery) ([]*domain.User, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.User
+	for _, u := range f.users {
+		if q.Email != "" && !strings.Contains(u.Email, q.Email) {
+			continue
+		}
+		c := *u
+		out = append(out, &c)
+	}
+	return out, int64(len(out)), nil
+}
+
+func (f *fakeStore) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur, ok := f.users[u.ID]
+	if !ok {
+		return nil, missingErr(u.ID)
+	}
+	cur.Role = u.Role
+	cur.Status = u.Status
+	cur.MaxConcurrency = u.MaxConcurrency
+	cur.Balance = u.Balance
+	c := *cur
+	return &c, nil
+}
+
+func (f *fakeStore) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[id]
+	if !ok {
+		return missingErr(id)
+	}
+	u.PasswordHash = passwordHash
+	return nil
+}
+
+func (f *fakeStore) GetSetting(ctx context.Context, key string) (*domain.Setting, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.settings[key]; ok {
+		c := *s
+		return &c, nil
+	}
+	return domain.DefaultSetting(key), nil
+}
+
+func (f *fakeStore) GetAllSettings(ctx context.Context) ([]*domain.Setting, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.Setting
+	for _, d := range domain.DefaultSettings {
+		if s, ok := f.settings[d.Key]; ok {
+			c := *s
+			out = append(out, &c)
+		} else {
+			dd := d
+			out = append(out, &dd)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) SetSetting(ctx context.Context, key string, typ domain.SettingType, value string) (*domain.Setting, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s := &domain.Setting{Key: key, Type: typ, Value: value}
+	f.settings[key] = s
+	return &domain.Setting{Key: key, Type: typ, Value: value}, nil
 }

@@ -25,6 +25,10 @@ type UsageLog struct {
 	AccountID *int64 `json:"account_id,omitempty"`
 	// TemplateID holds the value of the "template_id" field.
 	TemplateID *int64 `json:"template_id,omitempty"`
+	// UserID holds the value of the "user_id" field.
+	UserID *int64 `json:"user_id,omitempty"`
+	// KeyID holds the value of the "key_id" field.
+	KeyID *int64 `json:"key_id,omitempty"`
 	// Model holds the value of the "model" field.
 	Model string `json:"model,omitempty"`
 	// MappedModel holds the value of the "mapped_model" field.
@@ -57,7 +61,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldPromptTokens, usagelog.FieldCompletionTokens, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreationTokens:
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldPromptTokens, usagelog.FieldCompletionTokens, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreationTokens:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType:
 			values[i] = new(sql.NullString)
@@ -110,6 +114,20 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TemplateID = new(int64)
 				*_m.TemplateID = value.Int64
+			}
+		case usagelog.FieldUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field user_id", values[i])
+			} else if value.Valid {
+				_m.UserID = new(int64)
+				*_m.UserID = value.Int64
+			}
+		case usagelog.FieldKeyID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field key_id", values[i])
+			} else if value.Valid {
+				_m.KeyID = new(int64)
+				*_m.KeyID = value.Int64
 			}
 		case usagelog.FieldModel:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -235,6 +253,16 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.TemplateID; v != nil {
 		builder.WriteString("template_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UserID; v != nil {
+		builder.WriteString("user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.KeyID; v != nil {
+		builder.WriteString("key_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

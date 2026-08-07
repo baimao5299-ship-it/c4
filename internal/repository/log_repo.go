@@ -12,6 +12,8 @@ import (
 type LogQuery struct {
 	GroupID    int64 // 0 = 不过滤
 	AccountID  int64
+	UserID     int64 // 0 = 不过滤（/user/logs 强制 = 自己）
+	KeyID      int64
 	Model      string
 	StatusCode int
 	ErrorType  string
@@ -51,6 +53,12 @@ func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) erro
 		if l.TemplateID > 0 {
 			c = c.SetTemplateID(l.TemplateID)
 		}
+		if l.UserID > 0 {
+			c = c.SetUserID(l.UserID)
+		}
+		if l.KeyID > 0 {
+			c = c.SetKeyID(l.KeyID)
+		}
 		if l.MappedModel != "" {
 			c = c.SetMappedModel(l.MappedModel)
 		}
@@ -67,6 +75,12 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 	}
 	if q.AccountID > 0 {
 		pred = pred.Where(usagelog.AccountIDEQ(q.AccountID))
+	}
+	if q.UserID > 0 {
+		pred = pred.Where(usagelog.UserIDEQ(q.UserID))
+	}
+	if q.KeyID > 0 {
+		pred = pred.Where(usagelog.KeyIDEQ(q.KeyID))
 	}
 	if q.Model != "" {
 		pred = pred.Where(usagelog.ModelEQ(q.Model))
@@ -116,6 +130,12 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 		}
 		if row.TemplateID != nil {
 			l.TemplateID = *row.TemplateID
+		}
+		if row.UserID != nil {
+			l.UserID = *row.UserID
+		}
+		if row.KeyID != nil {
+			l.KeyID = *row.KeyID
 		}
 		if row.MappedModel != nil {
 			l.MappedModel = *row.MappedModel

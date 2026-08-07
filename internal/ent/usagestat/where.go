@@ -74,6 +74,11 @@ func TemplateID(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldEQ(FieldTemplateID, v))
 }
 
+// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
+func UserID(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldUserID, v))
+}
+
 // Model applies equality check predicate on the "model" field. It's identical to ModelEQ.
 func Model(v string) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldEQ(FieldModel, v))
@@ -287,6 +292,46 @@ func TemplateIDLT(v int64) predicate.UsageStat {
 // TemplateIDLTE applies the LTE predicate on the "template_id" field.
 func TemplateIDLTE(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldLTE(FieldTemplateID, v))
+}
+
+// UserIDEQ applies the EQ predicate on the "user_id" field.
+func UserIDEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldUserID, v))
+}
+
+// UserIDNEQ applies the NEQ predicate on the "user_id" field.
+func UserIDNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldUserID, v))
+}
+
+// UserIDIn applies the In predicate on the "user_id" field.
+func UserIDIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldUserID, vs...))
+}
+
+// UserIDNotIn applies the NotIn predicate on the "user_id" field.
+func UserIDNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldUserID, vs...))
+}
+
+// UserIDGT applies the GT predicate on the "user_id" field.
+func UserIDGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldUserID, v))
+}
+
+// UserIDGTE applies the GTE predicate on the "user_id" field.
+func UserIDGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldUserID, v))
+}
+
+// UserIDLT applies the LT predicate on the "user_id" field.
+func UserIDLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldUserID, v))
+}
+
+// UserIDLTE applies the LTE predicate on the "user_id" field.
+func UserIDLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldUserID, v))
 }
 
 // ModelEQ applies the EQ predicate on the "model" field.

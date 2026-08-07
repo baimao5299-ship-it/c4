@@ -40,11 +40,24 @@ const (
 	None      ErrorType = "none"
 )
 
+// Defines values for GroupVisibility.
+const (
+	Private GroupVisibility = "private"
+	Public  GroupVisibility = "public"
+)
+
 // Defines values for RequestFormat.
 const (
 	RequestFormatAnthropic       RequestFormat = "anthropic"
 	RequestFormatOpenaiChat      RequestFormat = "openai-chat"
 	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
+)
+
+// Defines values for SettingType.
+const (
+	Number SettingType = "number"
+	String SettingType = "string"
+	Switch SettingType = "switch"
 )
 
 // Defines values for TemplateSupportedFormats.
@@ -206,12 +219,6 @@ type BatchUpdateTemplatesBody struct {
 	Ids    []int64       `json:"ids"`
 }
 
-// CreateGroupResponse defines model for CreateGroupResponse.
-type CreateGroupResponse struct {
-	Group Group  `json:"group"`
-	Key   string `json:"key"`
-}
-
 // DeletedResponse defines model for DeletedResponse.
 type DeletedResponse struct {
 	Deleted bool `json:"deleted"`
@@ -227,17 +234,17 @@ type ErrorType string
 
 // Group defines model for Group.
 type Group struct {
-	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
-	ID        *int64     `json:"ID,omitempty"`
-	KeyHash   *string    `json:"KeyHash,omitempty"`
-	KeyPrefix *string    `json:"KeyPrefix,omitempty"`
-	Name      *string    `json:"Name,omitempty"`
-	UpdatedAt *time.Time `json:"UpdatedAt,omitempty"`
+	CreatedAt  *time.Time       `json:"CreatedAt,omitempty"`
+	ID         *int64           `json:"ID,omitempty"`
+	Name       *string          `json:"Name,omitempty"`
+	UpdatedAt  *time.Time       `json:"UpdatedAt,omitempty"`
+	Visibility *GroupVisibility `json:"Visibility,omitempty"`
 }
 
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
-	Name string `json:"name"`
+	Name       string           `json:"name"`
+	Visibility *GroupVisibility `json:"visibility,omitempty"`
 }
 
 // GroupListResponse defines model for GroupListResponse.
@@ -248,8 +255,12 @@ type GroupListResponse struct {
 
 // GroupPatch defines model for GroupPatch.
 type GroupPatch struct {
-	Name *string `json:"name,omitempty"`
+	Name       *string          `json:"name,omitempty"`
+	Visibility *GroupVisibility `json:"visibility,omitempty"`
 }
+
+// GroupVisibility defines model for GroupVisibility.
+type GroupVisibility string
 
 // LogsResponse defines model for LogsResponse.
 type LogsResponse struct {
@@ -259,11 +270,6 @@ type LogsResponse struct {
 
 // RequestFormat defines model for RequestFormat.
 type RequestFormat string
-
-// RotateKeyResponse defines model for RotateKeyResponse.
-type RotateKeyResponse struct {
-	Key string `json:"key"`
-}
 
 // Rule defines model for Rule.
 type Rule struct {
@@ -299,6 +305,23 @@ type RulePatch struct {
 	Priority *int                    `json:"priority,omitempty"`
 	Then     *map[string]interface{} `json:"then,omitempty"`
 	When     *map[string]interface{} `json:"when,omitempty"`
+}
+
+// Setting defines model for Setting.
+type Setting struct {
+	Key       *string      `json:"Key,omitempty"`
+	Type      *SettingType `json:"Type,omitempty"`
+	UpdatedAt *time.Time   `json:"UpdatedAt,omitempty"`
+	Value     *string      `json:"Value,omitempty"`
+}
+
+// SettingType defines model for Setting.Type.
+type SettingType string
+
+// SettingUpdate defines model for SettingUpdate.
+type SettingUpdate struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // StatBucket defines model for StatBucket.
@@ -498,6 +521,9 @@ type PostRulesBatchDeleteJSONRequestBody = BatchDeleteBody
 // UpdateRuleJSONRequestBody defines body for UpdateRule for application/json ContentType.
 type UpdateRuleJSONRequestBody = RulePatch
 
+// PutAdminSettingsJSONRequestBody defines body for PutAdminSettings for application/json ContentType.
+type PutAdminSettingsJSONRequestBody = SettingUpdate
+
 // PostTemplatesJSONRequestBody defines body for PostTemplates for application/json ContentType.
 type PostTemplatesJSONRequestBody = TemplateCreate
 
@@ -539,7 +565,7 @@ type ServerInterface interface {
 	// 分组列表（分页/筛选/排序）
 	// (GET /groups)
 	GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams)
-	// 创建分组（响应含明文 key，仅此一次）
+	// 创建分组（平台容量池；key 为独立表，由用户面 /user/keys 创建）
 	// (POST /groups)
 	PostGroups(w http.ResponseWriter, r *http.Request)
 	// 批量删除分组（事务，全成或全败）
@@ -557,9 +583,6 @@ type ServerInterface interface {
 
 	// (PUT /groups/{id})
 	PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
-	// 轮换分组 key
-	// (POST /groups/{id}/rotate-key)
-	PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Request, id int64)
 	// 用量日志分页查询
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
@@ -578,6 +601,12 @@ type ServerInterface interface {
 	// 更新规则（fields 任意子集，未提供字段保持原值）
 	// (PUT /rules/{id})
 	UpdateRule(w http.ResponseWriter, r *http.Request, id int64)
+	// 全部设置（默认值 + DB 覆盖）
+	// (GET /settings)
+	GetAdminSettings(w http.ResponseWriter, r *http.Request)
+	// 更新设置（类型化校验：switch 必须 true/false、number 必须数字）
+	// (PUT /settings)
+	PutAdminSettings(w http.ResponseWriter, r *http.Request)
 	// 用量统计聚合
 	// (GET /stats)
 	GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams)
@@ -659,7 +688,7 @@ func (_ Unimplemented) GetGroups(w http.ResponseWriter, r *http.Request, params 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 创建分组（响应含明文 key，仅此一次）
+// 创建分组（平台容量池；key 为独立表，由用户面 /user/keys 创建）
 // (POST /groups)
 func (_ Unimplemented) PostGroups(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -689,12 +718,6 @@ func (_ Unimplemented) GetGroupsId(w http.ResponseWriter, r *http.Request, id in
 
 // (PUT /groups/{id})
 func (_ Unimplemented) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// 轮换分组 key
-// (POST /groups/{id}/rotate-key)
-func (_ Unimplemented) PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -731,6 +754,18 @@ func (_ Unimplemented) DeleteRule(w http.ResponseWriter, r *http.Request, id int
 // 更新规则（fields 任意子集，未提供字段保持原值）
 // (PUT /rules/{id})
 func (_ Unimplemented) UpdateRule(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 全部设置（默认值 + DB 覆盖）
+// (GET /settings)
+func (_ Unimplemented) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 更新设置（类型化校验：switch 必须 true/false、number 必须数字）
+// (PUT /settings)
+func (_ Unimplemented) PutAdminSettings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1181,31 +1216,6 @@ func (siw *ServerInterfaceWrapper) PutGroupsId(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
-// PostGroupsIdRotateKey operation middleware
-func (siw *ServerInterfaceWrapper) PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostGroupsIdRotateKey(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // GetLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -1393,6 +1403,34 @@ func (siw *ServerInterfaceWrapper) UpdateRule(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateRule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutAdminSettings operation middleware
+func (siw *ServerInterfaceWrapper) PutAdminSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutAdminSettings(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1804,9 +1842,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/groups/{id}", wrapper.PutGroupsId)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/groups/{id}/rotate-key", wrapper.PostGroupsIdRotateKey)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
 	})
 	r.Group(func(r chi.Router) {
@@ -1823,6 +1858,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/rules/{id}", wrapper.UpdateRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/settings", wrapper.GetAdminSettings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/settings", wrapper.PutAdminSettings)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/stats", wrapper.GetStats)

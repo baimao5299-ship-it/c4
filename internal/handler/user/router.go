@@ -1,0 +1,41 @@
+package user
+
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"go-proxy-mini/internal/auth"
+	"go-proxy-mini/internal/service"
+)
+
+// Router 组装 /user 组路由（挂载于 /user/*）：
+// 公开路径（/user/auth/register、/user/auth/login）跳过 JWT；其余路径
+// RequireJWT（验证 + 内存快照用户状态校验）。生成路由的 spec 路径自带
+// /user 前缀（与 /admin 的 spec 相对路径不同——/logs 等路径已被管理面占用，
+// 不能同 spec 路径共存），故无 BaseURL。
+func Router(svc *service.Service, iss *auth.Issuer, users auth.UserStatusProvider) http.Handler {
+	publicPaths := map[string]bool{
+		"/user/auth/register": true,
+		"/user/auth/login":    true,
+	}
+	api := New(svc, iss)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if publicPaths[req.URL.Path] {
+				next.ServeHTTP(w, req)
+				return
+			}
+			auth.RequireJWT(iss, users)(next).ServeHTTP(w, req)
+		})
+	})
+	// BaseRouter 传入带中间件的路由（否则 HandlerWithOptions 内部新建裸路由，
+	// 公开/受保护分流失效）。
+	return HandlerWithOptions(api, ChiServerOptions{
+		BaseRouter: r,
+		ErrorHandlerFunc: func(w http.ResponseWriter, req *http.Request, err error) {
+			writeErr(w, http.StatusBadRequest, err.Error())
+		},
+	})
+}

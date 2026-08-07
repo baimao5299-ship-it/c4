@@ -118,10 +118,27 @@ func fakeOpenAI(t *testing.T, failMode string) *httptest.Server {
 	return srv
 }
 
-type noopKeyLoader struct{ keys map[string]int64 }
+// noopKeyLoader 测试 helper（Phase 3a：LoadGroupKeys → LoadKeys 形态升级）。
+type noopKeyLoader struct{ keys map[string]domain.KeyMeta }
 
-func (n noopKeyLoader) LoadGroupKeys(ctx context.Context) (map[string]int64, error) {
+func (n noopKeyLoader) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, error) {
 	return n.keys, nil
+}
+
+// noopUserLoader 用户状态快照 helper（NewAuth 签名扩展）。
+type noopUserLoader struct{ users map[int64]domain.UserStatus }
+
+func (n noopUserLoader) LoadUsers(ctx context.Context) (map[int64]domain.UserStatus, error) {
+	return n.users, nil
+}
+
+// activeKey 构造启用态 KeyMeta（测试默认；门禁上限 0 = 不限，行为与旧
+// LoadGroupKeys 等价）。
+func activeKey(keyID, userID, groupID int64) domain.KeyMeta {
+	return domain.KeyMeta{
+		KeyID: keyID, UserID: userID, GroupID: groupID,
+		KeyStatus: domain.KeyStatusActive, UserStatus: domain.UserStatusActive,
+	}
 }
 
 type noopLogStore struct{}
@@ -240,7 +257,9 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 		BatchSize: 100, FlushInterval: time.Hour,
 		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
 	}, logs, noopStatStore{}, nil)
-	auth := NewAuth(noopKeyLoader{keys: map[string]int64{cryptox.HashKey("gk-1"): 10}}, nil)
+	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
+	}}, noopUserLoader{}, nil)
 	hc := &http.Client{Transport: http.DefaultTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout:       5 * time.Second,

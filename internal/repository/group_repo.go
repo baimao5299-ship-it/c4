@@ -18,15 +18,13 @@ type GroupRepo struct {
 
 func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	row, err := r.client.Group.Create().
-		SetName(g.Name).SetKeyHash(g.KeyHash).SetKeyPrefix(g.KeyPrefix).
+		SetName(g.Name).
+		SetVisibility(group.Visibility(g.Visibility)).
 		Save(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Group{
-		ID: row.ID, Name: row.Name, KeyHash: row.KeyHash, KeyPrefix: row.KeyPrefix,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-	}, nil
+	return toDomainGroup(row), nil
 }
 
 func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
@@ -34,10 +32,7 @@ func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, erro
 	if err != nil {
 		return nil, errMissingID(err, id)
 	}
-	return &domain.Group{
-		ID: row.ID, Name: row.Name, KeyHash: row.KeyHash, KeyPrefix: row.KeyPrefix,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-	}, nil
+	return toDomainGroup(row), nil
 }
 
 func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Group, int64, error) {
@@ -65,25 +60,20 @@ func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Grou
 	}
 	out := make([]*domain.Group, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, &domain.Group{
-			ID: row.ID, Name: row.Name, KeyHash: row.KeyHash, KeyPrefix: row.KeyPrefix,
-			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		})
+		out = append(out, toDomainGroup(row))
 	}
 	return out, int64(total), nil
 }
 
 func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	row, err := r.client.Group.UpdateOneID(g.ID).
-		SetName(g.Name).SetKeyHash(g.KeyHash).SetKeyPrefix(g.KeyPrefix).
+		SetName(g.Name).
+		SetVisibility(group.Visibility(g.Visibility)).
 		Save(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Group{
-		ID: row.ID, Name: row.Name, KeyHash: row.KeyHash, KeyPrefix: row.KeyPrefix,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-	}, nil
+	return toDomainGroup(row), nil
 }
 
 func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
@@ -123,18 +113,6 @@ func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*do
 	out := make([]*domain.Account, 0, len(accs))
 	for _, a := range accs {
 		out = append(out, toDomainAccount(a))
-	}
-	return out, nil
-}
-
-func (r *GroupRepo) LoadGroupKeys(ctx context.Context) (map[string]int64, error) {
-	rows, err := r.client.Group.Query().Select(group.FieldKeyHash, group.FieldID).All(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]int64, len(rows))
-	for _, row := range rows {
-		out[row.KeyHash] = row.ID
 	}
 	return out, nil
 }

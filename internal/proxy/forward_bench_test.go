@@ -89,7 +89,9 @@ func benchProxy(upstream string) *Proxy {
 		BatchSize: 100, FlushInterval: time.Hour,
 		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
 	}, noopLogStore{}, noopStatStore{}, nil)
-	auth := NewAuth(noopKeyLoader{keys: map[string]int64{cryptox.HashKey("gk-1"): 10}}, nil)
+	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
+	}}, noopUserLoader{}, nil)
 	hc := &http.Client{Transport: http.DefaultTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second,

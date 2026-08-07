@@ -105,6 +105,27 @@ func (_u *UsageStatUpdate) AddTemplateID(v int64) *UsageStatUpdate {
 	return _u
 }
 
+// SetUserID sets the "user_id" field.
+func (_u *UsageStatUpdate) SetUserID(v int64) *UsageStatUpdate {
+	_u.mutation.ResetUserID()
+	_u.mutation.SetUserID(v)
+	return _u
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableUserID(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetUserID(*v)
+	}
+	return _u
+}
+
+// AddUserID adds value to the "user_id" field.
+func (_u *UsageStatUpdate) AddUserID(v int64) *UsageStatUpdate {
+	_u.mutation.AddUserID(v)
+	return _u
+}
+
 // SetModel sets the "model" field.
 func (_u *UsageStatUpdate) SetModel(v string) *UsageStatUpdate {
 	_u.mutation.SetModel(v)
@@ -378,6 +399,12 @@ func (_u *UsageStatUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedTemplateID(); ok {
 		_spec.AddField(usagestat.FieldTemplateID, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.UserID(); ok {
+		_spec.SetField(usagestat.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUserID(); ok {
+		_spec.AddField(usagestat.FieldUserID, field.TypeInt64, value)
+	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagestat.FieldModel, field.TypeString, value)
 	}
@@ -529,6 +556,27 @@ func (_u *UsageStatUpdateOne) SetNillableTemplateID(v *int64) *UsageStatUpdateOn
 // AddTemplateID adds value to the "template_id" field.
 func (_u *UsageStatUpdateOne) AddTemplateID(v int64) *UsageStatUpdateOne {
 	_u.mutation.AddTemplateID(v)
+	return _u
+}
+
+// SetUserID sets the "user_id" field.
+func (_u *UsageStatUpdateOne) SetUserID(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetUserID()
+	_u.mutation.SetUserID(v)
+	return _u
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableUserID(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetUserID(*v)
+	}
+	return _u
+}
+
+// AddUserID adds value to the "user_id" field.
+func (_u *UsageStatUpdateOne) AddUserID(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddUserID(v)
 	return _u
 }
 
@@ -834,6 +882,12 @@ func (_u *UsageStatUpdateOne) sqlSave(ctx context.Context) (_node *UsageStat, er
 	}
 	if value, ok := _u.mutation.AddedTemplateID(); ok {
 		_spec.AddField(usagestat.FieldTemplateID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.UserID(); ok {
+		_spec.SetField(usagestat.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUserID(); ok {
+		_spec.AddField(usagestat.FieldUserID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagestat.FieldModel, field.TypeString, value)

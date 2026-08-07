@@ -201,6 +201,10 @@ func writeServiceErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrConflict):
 		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrInvalidCredentials):
+		writeErr(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrSignupDisabled):
+		writeErr(w, http.StatusForbidden, err.Error())
 	default:
 		writeErr(w, http.StatusInternalServerError, "internal error")
 	}

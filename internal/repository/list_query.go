@@ -9,7 +9,9 @@ import (
 	"go-proxy-mini/internal/ent"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/key"
 	"go-proxy-mini/internal/ent/template"
+	"go-proxy-mini/internal/ent/user"
 )
 
 // ListQuery 列表查询：分页/筛选/排序。Sort 为白名单内字段名（如 "name"），
@@ -18,6 +20,7 @@ type ListQuery struct {
 	Limit         int      // <=0 → 20
 	Offset        int      // <0 → 0
 	Name          string   // 模糊匹配（不区分大小写）
+	Email         string   // 用户专属：邮箱模糊匹配
 	Sort          string   // 空 → id
 	Order         string   // asc/desc；空 → desc
 	StatusList    []string // 账号专属：多值 status
@@ -64,5 +67,16 @@ var (
 	groupSortFields = map[string]string{
 		"id": group.FieldID, "name": group.FieldName, "created_at": group.FieldCreatedAt,
 		"updated_at": group.FieldUpdatedAt,
+	}
+	userSortFields = map[string]string{
+		"id": user.FieldID, "email": user.FieldEmail, "role": user.FieldRole,
+		"status": user.FieldStatus, "max_concurrency": user.FieldMaxConcurrency,
+		"created_at": user.FieldCreatedAt, "updated_at": user.FieldUpdatedAt,
+	}
+	keySortFields = map[string]string{
+		"id": key.FieldID, "name": key.FieldName, "status": key.FieldStatus,
+		"max_concurrency": key.FieldMaxConcurrency, "quota": key.FieldQuota,
+		"quota_used": key.FieldQuotaUsed, "created_at": key.FieldCreatedAt,
+		"updated_at": key.FieldUpdatedAt,
 	}
 )

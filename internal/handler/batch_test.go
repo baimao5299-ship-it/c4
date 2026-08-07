@@ -117,11 +117,9 @@ func TestPostAccountsBatchUpdate(t *testing.T) {
 	}
 	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
 	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
-	var groupResp struct {
-		Group domain.Group `json:"group"`
-	}
+	var groupResp domain.Group
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groupResp))
-	gID := groupResp.Group.ID
+	gID := groupResp.ID
 
 	// 成功：{"ids":[...],"fields":{"status":"disabled"}} → 200 {"updated":2}
 	rec = do(http.MethodPost, "/admin/accounts/batch-update",
@@ -199,21 +197,17 @@ func TestAccountGroupsCreateUpdate(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
 	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
-	var g struct {
-		Group domain.Group `json:"group"`
-	}
+	var g domain.Group
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
 	// 第二个组（验证替换语义「只留所选」）
 	rec = do(http.MethodPost, "/admin/groups", `{"name":"g2"}`)
 	require.Equal(t, 200, rec.Code, "create group2: %s", rec.Body.String())
-	var g2 struct {
-		Group domain.Group `json:"group"`
-	}
+	var g2 domain.Group
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g2))
 
 	// 创建带分组
 	rec = do(http.MethodPost, "/admin/accounts",
-		`{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[`+itoa(g.Group.ID)+`,`+itoa(g2.Group.ID)+`]}`)
+		`{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[`+itoa(g.ID)+`,`+itoa(g2.ID)+`]}`)
 	require.Equal(t, 200, rec.Code, "create with groups: %s", rec.Body.String())
 	var acc domain.Account
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &acc))
@@ -221,7 +215,7 @@ func TestAccountGroupsCreateUpdate(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "echo: %s", rec.Body.String())
 	var ag AccountGroupsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
-	require.ElementsMatch(t, []int64{g.Group.ID, g2.Group.ID}, ag.GroupIds, "创建带分组生效")
+	require.ElementsMatch(t, []int64{g.ID, g2.ID}, ag.GroupIds, "创建带分组生效")
 
 	// 创建不带分组 → 无分组
 	rec = do(http.MethodPost, "/admin/accounts", `{"name":"a2","template_id":1,"upstream_key":"sk-x"}`)
@@ -235,12 +229,12 @@ func TestAccountGroupsCreateUpdate(t *testing.T) {
 
 	// PUT 替换：只留 g1（g2 被移除）
 	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID),
-		`{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[`+itoa(g.Group.ID)+`]}`)
+		`{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[`+itoa(g.ID)+`]}`)
 	require.Equal(t, 200, rec.Code, "put replace: %s", rec.Body.String())
 	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
 	require.Equal(t, 200, rec.Code)
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
-	require.Equal(t, []int64{g.Group.ID}, ag.GroupIds, "PUT 替换 = 只留所选")
+	require.Equal(t, []int64{g.ID}, ag.GroupIds, "PUT 替换 = 只留所选")
 
 	// PUT 清空（[]）
 	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID), `{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[]}`)
@@ -322,11 +316,10 @@ func TestPostGroupsBatchDelete(t *testing.T) {
 	for i := 1; i <= 2; i++ {
 		rec := do(http.MethodPost, "/admin/groups", `{"name":"g`+itoa(int64(i))+`"}`)
 		require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
-		var created struct {
-			Group domain.Group `json:"group"`
-		}
+		// Phase 3a：创建响应为 Group 本体（无 key 字段）
+		var created domain.Group
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
-		ids = append(ids, created.Group.ID)
+		ids = append(ids, created.ID)
 	}
 
 	// 成功 → 200 {"deleted":2}

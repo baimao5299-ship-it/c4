@@ -12,8 +12,20 @@ type Account func(*sql.Selector)
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
+// GroupAssignment is the predicate function for groupassignment builders.
+type GroupAssignment func(*sql.Selector)
+
+// Key is the predicate function for key builders.
+type Key func(*sql.Selector)
+
 // Rule is the predicate function for rule builders.
 type Rule func(*sql.Selector)
+
+// Setting is the predicate function for setting builders.
+type Setting func(*sql.Selector)
+
+// TempBalance is the predicate function for tempbalance builders.
+type TempBalance func(*sql.Selector)
 
 // Template is the predicate function for template builders.
 type Template func(*sql.Selector)
@@ -23,3 +35,6 @@ type UsageLog func(*sql.Selector)
 
 // UsageStat is the predicate function for usagestat builders.
 type UsageStat func(*sql.Selector)
+
+// User is the predicate function for user builders.
+type User func(*sql.Selector)

@@ -9,6 +9,9 @@ import (
 	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
+
+	"go-proxy-mini/internal/auth"
+	"go-proxy-mini/internal/domain"
 )
 
 func TestHealthz(t *testing.T) {
@@ -149,4 +152,80 @@ func TestInflightLimiterRejects(t *testing.T) {
 	close(release)
 	require.Equal(t, http.StatusOK, <-firstDone)
 	require.Zero(t, s.inflight.Load())
+}
+
+// --- Phase 3a：/admin 鉴权扩展（静态 token OR platform_admin JWT）+ /user 挂载 ---
+
+// fakeUserStatus 测试替身（快照用户状态 provider）。
+type fakeUserStatus struct{ disabled map[int64]bool }
+
+func (f fakeUserStatus) UserStatus(userID int64) (domain.UserStatus, bool) {
+	if f.disabled[userID] {
+		return domain.UserStatusDisabled, true
+	}
+	return domain.UserStatusActive, true
+}
+
+// 规格 Phase 3a：/admin = 静态 token OR platform_admin JWT（两个都过才拒）。
+func TestAdminAuthTokenOrPlatformJWT(t *testing.T) {
+	iss := auth.NewIssuer("secret")
+	adminTok, err := iss.Issue(1, "admin@example.com", string(domain.RolePlatformAdmin))
+	require.NoError(t, err)
+	userTok, err := iss.Issue(2, "user@example.com", string(domain.RoleUser))
+	require.NoError(t, err)
+	admin := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	s := NewServer(Options{
+		AdminToken: "tok",
+		JWTIssuer:  iss,
+		UserStatus: fakeUserStatus{},
+		AdminHandler: admin,
+	})
+
+	for _, tc := range []struct {
+		name, auth string
+		want       int
+	}{
+		{"static token", "Bearer tok", 200},
+		{"platform_admin JWT", "Bearer " + adminTok, 200},
+		{"user JWT", "Bearer " + userTok, 401},
+		{"no token", "", 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/admin/groups", nil)
+			if tc.auth != "" {
+				req.Header.Set("Authorization", tc.auth)
+			}
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			require.Equal(t, tc.want, rec.Code)
+		})
+	}
+}
+
+// 禁用 platform_admin 的 JWT → /admin 401（快照校验，不用 DB 直查）。
+func TestAdminPlatformJWTPartialAdmin(t *testing.T) {
+	iss := auth.NewIssuer("secret")
+	tok, err := iss.Issue(1, "admin@example.com", string(domain.RolePlatformAdmin))
+	require.NoError(t, err)
+	s := NewServer(Options{
+		AdminToken: "tok",
+		JWTIssuer:  iss,
+		UserStatus: fakeUserStatus{disabled: map[int64]bool{1: true}},
+		AdminHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/admin/groups", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, 401, rec.Code, "禁用 platform_admin JWT 必须拒绝")
+}
+
+// /user 挂载：注册公开可达；/user 其余路径经用户面路由器处理（401 无 JWT）。
+func TestUserMount(t *testing.T) {
+	userH := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	s := NewServer(Options{AdminToken: "tok", UserHandler: userH})
+	req := httptest.NewRequest(http.MethodGet, "/user/whatever", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, "/user/* 必须由 UserHandler 处理")
 }

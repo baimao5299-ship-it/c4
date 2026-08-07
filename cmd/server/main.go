@@ -16,9 +16,11 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	jwtauth "go-proxy-mini/internal/auth"
 	"go-proxy-mini/internal/config"
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/handler"
+	userapi "go-proxy-mini/internal/handler/user"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/rule"
@@ -44,8 +46,8 @@ func main() {
 	if err != nil {
 		fatalf("logger: %v", err)
 	}
-	if cfg.Admin.Token == "" || cfg.DB.DSN == "" {
-		fatalf("admin.token and db.dsn are required (config or GPM_ADMIN_TOKEN/GPM_DB_DSN)")
+	if cfg.Admin.Token == "" || cfg.Auth.JWTSecret == "" || cfg.DB.DSN == "" {
+		fatalf("admin.token, auth.jwt_secret and db.dsn are required (config or GPM_ADMIN_TOKEN/GPM_AUTH_JWT_SECRET/GPM_DB_DSN)")
 	}
 
 	pool, err := repository.OpenPG(context.Background(), cfg.DB.DSN, int32(cfg.DB.MaxConns))
@@ -74,7 +76,8 @@ func main() {
 		StatsFlushInterval: cfg.Usage.StatsFlushInterval,
 	}, repos.Logs, repos.Stats, log)
 
-	auth := proxy.NewAuth(repos.Groups, log)
+	auth := proxy.NewAuth(repos.Keys, repos.Users, log)
+	rec.SetQuotaWriter(repos.Keys) // 额度扣减批量回写（Recorder 节奏）
 	hc := httpx.NewClient(httpx.TransportConfig{
 		MaxIdleConns:        cfg.Upstream.MaxIdleConns,
 		MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
@@ -95,25 +98,35 @@ func main() {
 		UsageCapture:          cfg.Proxy.UsageCapture,
 	}, sched, credential.New(), rec, clients, auth, log)
 
-	// 管理端变更统一经 invalidate 回调生效：调度器重载快照（选号/状态）+ aiclient
-	// 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；评审发现：此前
-	// Factory.InvalidateAll 无人调用，模板 base_url 更新后流量仍打旧上游直至重启）。
+	// 管理端变更统一经 invalidate 回调生效：调度器重载快照（选号/状态）+
+	// aiclient 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；
+	// 评审发现：此前 Factory.InvalidateAll 无人调用，模板 base_url 更新后流量
+	// 仍打旧上游直至重启）+ Auth 鉴权快照全量刷新（用户禁用/并发/额度调整
+	// 即时生效——评审 I-2）。
 	invalidate := func() {
 		sched.InvalidateAll()
 		clients.InvalidateAll()
+		if err := auth.Reload(context.Background()); err != nil {
+			log.Warn("auth reload failed", logx.Error(err))
+		}
 	}
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
 	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
 	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)
+	iss := jwtauth.NewIssuer(cfg.Auth.JWTSecret)
+	userHandler := userapi.Router(svc, iss, auth)
 
 	srv := server.NewServer(server.Options{
 		AdminToken:        cfg.Admin.Token,
+		JWTIssuer:         iss,
+		UserStatus:        auth,
 		MaxInflight:       cfg.Proxy.MaxInflight,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 		AdminHandler:      h.RoutesMux(),
+		UserHandler:       userHandler,
 		AIHandler:         aiRouter,
 		WebFS:             webUI(),
 		Logger:            log,

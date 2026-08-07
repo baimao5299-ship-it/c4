@@ -16,14 +16,24 @@ type Tx struct {
 	Account *AccountClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
+	// GroupAssignment is the client for interacting with the GroupAssignment builders.
+	GroupAssignment *GroupAssignmentClient
+	// Key is the client for interacting with the Key builders.
+	Key *KeyClient
 	// Rule is the client for interacting with the Rule builders.
 	Rule *RuleClient
+	// Setting is the client for interacting with the Setting builders.
+	Setting *SettingClient
+	// TempBalance is the client for interacting with the TempBalance builders.
+	TempBalance *TempBalanceClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
 	// UsageStat is the client for interacting with the UsageStat builders.
 	UsageStat *UsageStatClient
+	// User is the client for interacting with the User builders.
+	User *UserClient
 
 	// lazily loaded.
 	client     *Client
@@ -157,10 +167,15 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
+	tx.GroupAssignment = NewGroupAssignmentClient(tx.config)
+	tx.Key = NewKeyClient(tx.config)
 	tx.Rule = NewRuleClient(tx.config)
+	tx.Setting = NewSettingClient(tx.config)
+	tx.TempBalance = NewTempBalanceClient(tx.config)
 	tx.Template = NewTemplateClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.UsageStat = NewUsageStatClient(tx.config)
+	tx.User = NewUserClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

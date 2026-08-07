@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/groupassignment"
+	"go-proxy-mini/internal/ent/key"
 	"go-proxy-mini/internal/ent/predicate"
 	"time"
 
@@ -43,30 +45,16 @@ func (_u *GroupUpdate) SetNillableName(v *string) *GroupUpdate {
 	return _u
 }
 
-// SetKeyHash sets the "key_hash" field.
-func (_u *GroupUpdate) SetKeyHash(v string) *GroupUpdate {
-	_u.mutation.SetKeyHash(v)
+// SetVisibility sets the "visibility" field.
+func (_u *GroupUpdate) SetVisibility(v group.Visibility) *GroupUpdate {
+	_u.mutation.SetVisibility(v)
 	return _u
 }
 
-// SetNillableKeyHash sets the "key_hash" field if the given value is not nil.
-func (_u *GroupUpdate) SetNillableKeyHash(v *string) *GroupUpdate {
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableVisibility(v *group.Visibility) *GroupUpdate {
 	if v != nil {
-		_u.SetKeyHash(*v)
-	}
-	return _u
-}
-
-// SetKeyPrefix sets the "key_prefix" field.
-func (_u *GroupUpdate) SetKeyPrefix(v string) *GroupUpdate {
-	_u.mutation.SetKeyPrefix(v)
-	return _u
-}
-
-// SetNillableKeyPrefix sets the "key_prefix" field if the given value is not nil.
-func (_u *GroupUpdate) SetNillableKeyPrefix(v *string) *GroupUpdate {
-	if v != nil {
-		_u.SetKeyPrefix(*v)
+		_u.SetVisibility(*v)
 	}
 	return _u
 }
@@ -106,6 +94,36 @@ func (_u *GroupUpdate) AddAccounts(v ...*Account) *GroupUpdate {
 	return _u.AddAccountIDs(ids...)
 }
 
+// AddKeyIDs adds the "keys" edge to the Key entity by IDs.
+func (_u *GroupUpdate) AddKeyIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddKeyIDs(ids...)
+	return _u
+}
+
+// AddKeys adds the "keys" edges to the Key entity.
+func (_u *GroupUpdate) AddKeys(v ...*Key) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddKeyIDs(ids...)
+}
+
+// AddAssignmentIDs adds the "assignments" edge to the GroupAssignment entity by IDs.
+func (_u *GroupUpdate) AddAssignmentIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddAssignmentIDs(ids...)
+	return _u
+}
+
+// AddAssignments adds the "assignments" edges to the GroupAssignment entity.
+func (_u *GroupUpdate) AddAssignments(v ...*GroupAssignment) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAssignmentIDs(ids...)
+}
+
 // Mutation returns the GroupMutation object of the builder.
 func (_u *GroupUpdate) Mutation() *GroupMutation {
 	return _u.mutation
@@ -130,6 +148,48 @@ func (_u *GroupUpdate) RemoveAccounts(v ...*Account) *GroupUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAccountIDs(ids...)
+}
+
+// ClearKeys clears all "keys" edges to the Key entity.
+func (_u *GroupUpdate) ClearKeys() *GroupUpdate {
+	_u.mutation.ClearKeys()
+	return _u
+}
+
+// RemoveKeyIDs removes the "keys" edge to Key entities by IDs.
+func (_u *GroupUpdate) RemoveKeyIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemoveKeyIDs(ids...)
+	return _u
+}
+
+// RemoveKeys removes "keys" edges to Key entities.
+func (_u *GroupUpdate) RemoveKeys(v ...*Key) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveKeyIDs(ids...)
+}
+
+// ClearAssignments clears all "assignments" edges to the GroupAssignment entity.
+func (_u *GroupUpdate) ClearAssignments() *GroupUpdate {
+	_u.mutation.ClearAssignments()
+	return _u
+}
+
+// RemoveAssignmentIDs removes the "assignments" edge to GroupAssignment entities by IDs.
+func (_u *GroupUpdate) RemoveAssignmentIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemoveAssignmentIDs(ids...)
+	return _u
+}
+
+// RemoveAssignments removes "assignments" edges to GroupAssignment entities.
+func (_u *GroupUpdate) RemoveAssignments(v ...*GroupAssignment) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAssignmentIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -168,7 +228,20 @@ func (_u *GroupUpdate) defaults() {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (_u *GroupUpdate) check() error {
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := group.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
+	if err := _u.check(); err != nil {
+		return _node, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(group.Table, group.Columns, sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -180,11 +253,8 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.KeyHash(); ok {
-		_spec.SetField(group.FieldKeyHash, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.KeyPrefix(); ok {
-		_spec.SetField(group.FieldKeyPrefix, field.TypeString, value)
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
@@ -237,6 +307,96 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.KeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedKeysIDs(); len(nodes) > 0 && !_u.mutation.KeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.KeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AssignmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAssignmentsIDs(); len(nodes) > 0 && !_u.mutation.AssignmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AssignmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{group.Label}
@@ -271,30 +431,16 @@ func (_u *GroupUpdateOne) SetNillableName(v *string) *GroupUpdateOne {
 	return _u
 }
 
-// SetKeyHash sets the "key_hash" field.
-func (_u *GroupUpdateOne) SetKeyHash(v string) *GroupUpdateOne {
-	_u.mutation.SetKeyHash(v)
+// SetVisibility sets the "visibility" field.
+func (_u *GroupUpdateOne) SetVisibility(v group.Visibility) *GroupUpdateOne {
+	_u.mutation.SetVisibility(v)
 	return _u
 }
 
-// SetNillableKeyHash sets the "key_hash" field if the given value is not nil.
-func (_u *GroupUpdateOne) SetNillableKeyHash(v *string) *GroupUpdateOne {
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableVisibility(v *group.Visibility) *GroupUpdateOne {
 	if v != nil {
-		_u.SetKeyHash(*v)
-	}
-	return _u
-}
-
-// SetKeyPrefix sets the "key_prefix" field.
-func (_u *GroupUpdateOne) SetKeyPrefix(v string) *GroupUpdateOne {
-	_u.mutation.SetKeyPrefix(v)
-	return _u
-}
-
-// SetNillableKeyPrefix sets the "key_prefix" field if the given value is not nil.
-func (_u *GroupUpdateOne) SetNillableKeyPrefix(v *string) *GroupUpdateOne {
-	if v != nil {
-		_u.SetKeyPrefix(*v)
+		_u.SetVisibility(*v)
 	}
 	return _u
 }
@@ -334,6 +480,36 @@ func (_u *GroupUpdateOne) AddAccounts(v ...*Account) *GroupUpdateOne {
 	return _u.AddAccountIDs(ids...)
 }
 
+// AddKeyIDs adds the "keys" edge to the Key entity by IDs.
+func (_u *GroupUpdateOne) AddKeyIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddKeyIDs(ids...)
+	return _u
+}
+
+// AddKeys adds the "keys" edges to the Key entity.
+func (_u *GroupUpdateOne) AddKeys(v ...*Key) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddKeyIDs(ids...)
+}
+
+// AddAssignmentIDs adds the "assignments" edge to the GroupAssignment entity by IDs.
+func (_u *GroupUpdateOne) AddAssignmentIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddAssignmentIDs(ids...)
+	return _u
+}
+
+// AddAssignments adds the "assignments" edges to the GroupAssignment entity.
+func (_u *GroupUpdateOne) AddAssignments(v ...*GroupAssignment) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddAssignmentIDs(ids...)
+}
+
 // Mutation returns the GroupMutation object of the builder.
 func (_u *GroupUpdateOne) Mutation() *GroupMutation {
 	return _u.mutation
@@ -358,6 +534,48 @@ func (_u *GroupUpdateOne) RemoveAccounts(v ...*Account) *GroupUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAccountIDs(ids...)
+}
+
+// ClearKeys clears all "keys" edges to the Key entity.
+func (_u *GroupUpdateOne) ClearKeys() *GroupUpdateOne {
+	_u.mutation.ClearKeys()
+	return _u
+}
+
+// RemoveKeyIDs removes the "keys" edge to Key entities by IDs.
+func (_u *GroupUpdateOne) RemoveKeyIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemoveKeyIDs(ids...)
+	return _u
+}
+
+// RemoveKeys removes "keys" edges to Key entities.
+func (_u *GroupUpdateOne) RemoveKeys(v ...*Key) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveKeyIDs(ids...)
+}
+
+// ClearAssignments clears all "assignments" edges to the GroupAssignment entity.
+func (_u *GroupUpdateOne) ClearAssignments() *GroupUpdateOne {
+	_u.mutation.ClearAssignments()
+	return _u
+}
+
+// RemoveAssignmentIDs removes the "assignments" edge to GroupAssignment entities by IDs.
+func (_u *GroupUpdateOne) RemoveAssignmentIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemoveAssignmentIDs(ids...)
+	return _u
+}
+
+// RemoveAssignments removes "assignments" edges to GroupAssignment entities.
+func (_u *GroupUpdateOne) RemoveAssignments(v ...*GroupAssignment) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveAssignmentIDs(ids...)
 }
 
 // Where appends a list predicates to the GroupUpdate builder.
@@ -409,7 +627,20 @@ func (_u *GroupUpdateOne) defaults() {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (_u *GroupUpdateOne) check() error {
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := group.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error) {
+	if err := _u.check(); err != nil {
+		return _node, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(group.Table, group.Columns, sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
 	if !ok {
@@ -438,11 +669,8 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.KeyHash(); ok {
-		_spec.SetField(group.FieldKeyHash, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.KeyPrefix(); ok {
-		_spec.SetField(group.FieldKeyPrefix, field.TypeString, value)
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
@@ -488,6 +716,96 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.KeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedKeysIDs(); len(nodes) > 0 && !_u.mutation.KeysCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.KeysIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.KeysTable,
+			Columns: []string{group.KeysColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(key.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.AssignmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedAssignmentsIDs(); len(nodes) > 0 && !_u.mutation.AssignmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.AssignmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.AssignmentsTable,
+			Columns: []string{group.AssignmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
