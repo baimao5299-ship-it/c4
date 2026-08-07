@@ -34,12 +34,17 @@ var (
 	duration    = flag.Duration("duration", 5*time.Minute, "test duration")
 	warmup      = flag.Duration("warmup", 10*time.Second, "untimed connection warm-up before the clock starts")
 	addr        = flag.String("addr", "http://127.0.0.1:8080", "gateway addr")
-	key         = flag.String("key", "gk-", "group key")
+	key         = flag.String("key", "gk-", "single gateway key (fallback when -keys is empty)")
+	keysFile    = flag.String("keys", "", "file with one gateway key per line; pick random per request (multi-key load)")
+	format      = flag.String("format", "chat", "request format: chat, responses or anthropic")
 	healthz     = flag.String("healthz", "", "gateway /healthz url to sample memory")
 	out         = flag.String("out", "", "write RESULT summary to this file as well")
 	pprof       = flag.String("pprof", "", "listen addr for /debug/pprof (goroutine dump on hang)")
 	mode        = flag.String("mode", "stream", "request mode: stream or chat")
 )
+
+// keyPool 多 key 模式：每请求随机取一个（-keys 文件行）；空 = 用 -key 单 key。
+var keyPool []string
 
 type metrics struct {
 	total          atomic.Int64
@@ -63,6 +68,27 @@ func main() {
 	if *mode != "stream" && *mode != "chat" {
 		fmt.Fprintf(os.Stderr, "invalid -mode %q: want stream or chat\n", *mode)
 		os.Exit(2)
+	}
+	if *format != "chat" && *format != "responses" && *format != "anthropic" {
+		fmt.Fprintf(os.Stderr, "invalid -format %q: want chat, responses or anthropic\n", *format)
+		os.Exit(2)
+	}
+	if *keysFile != "" {
+		b, err := os.ReadFile(*keysFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read -keys %s: %v\n", *keysFile, err)
+			os.Exit(2)
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				keyPool = append(keyPool, line)
+			}
+		}
+		if len(keyPool) == 0 {
+			fmt.Fprintf(os.Stderr, "-keys %s: no keys found\n", *keysFile)
+			os.Exit(2)
+		}
+		fmt.Printf("loaded %d keys from %s\n", len(keyPool), *keysFile)
 	}
 	if *pprof != "" {
 		go func() { _ = http.ListenAndServe(*pprof, nil) }() // net/http/pprof 自动挂载
@@ -138,14 +164,45 @@ func main() {
 	}
 }
 
-// newLoadtestRequest builds the minimal chat request for the selected mode.
-func newLoadtestRequest(base, groupKey, requestMode string) *http.Request {
-	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
-	if requestMode == "stream" {
-		body = `{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`
+// pickKey 每请求选 key：多 key 池随机（-keys 文件）→ 单 key（-key）兜底。
+func pickKey() string {
+	if len(keyPool) > 0 {
+		return keyPool[rand.IntN(len(keyPool))]
 	}
-	req, _ := http.NewRequest(http.MethodPost, base+"/v1/chat/completions", bytes.NewReader([]byte(body)))
-	req.Header.Set("Authorization", "Bearer "+groupKey)
+	return *key
+}
+
+// newLoadtestRequest builds the minimal request for the selected mode + format.
+// 三格式（多模板多格式压测）：chat → /v1/chat/completions（Bearer），
+// responses → /v1/responses（Bearer），anthropic → /v1/messages（x-api-key）。
+func newLoadtestRequest(base, groupKey, requestMode string) *http.Request {
+	var path, body string
+	switch *format {
+	case "responses":
+		path = "/v1/responses"
+		body = `{"model":"gpt-4o","input":"hi"}`
+		if requestMode == "stream" {
+			body = `{"model":"gpt-4o","stream":true,"input":"hi"}`
+		}
+	case "anthropic":
+		path = "/v1/messages"
+		body = `{"model":"claude-3-5-sonnet-20241022","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`
+		if requestMode == "stream" {
+			body = `{"model":"claude-3-5-sonnet-20241022","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`
+		}
+	default: // chat
+		path = "/v1/chat/completions"
+		body = `{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`
+		if requestMode == "stream" {
+			body = `{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`
+		}
+	}
+	req, _ := http.NewRequest(http.MethodPost, base+path, bytes.NewReader([]byte(body)))
+	if *format == "anthropic" {
+		req.Header.Set("x-api-key", groupKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+groupKey)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -153,7 +210,7 @@ func newLoadtestRequest(base, groupKey, requestMode string) *http.Request {
 // doRequest executes one request; count=true includes it in the result metrics.
 // Connection failures retain the jittered backoff used by the stream benchmark.
 func doRequest(client *http.Client, m *metrics, count bool) {
-	req := newLoadtestRequest(*addr, *key, *mode)
+	req := newLoadtestRequest(*addr, pickKey(), *mode)
 	reqStart := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {

@@ -67,6 +67,50 @@ func main() {
 		fl.Flush()
 	})
 
+	// openai responses 格式（Responses API）：非流式 JSON + 流式 SSE
+	// （response.output_text.delta → response.completed → [DONE]，多格式压测用）。
+	http.HandleFunc("/v1/responses", func(w http.ResponseWriter, r *http.Request) {
+		if code := failIfInjected(w, r, f429, f500); code != 0 {
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		stream, _ := body["stream"].(bool)
+		if !stream {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "rsp_1", "object": "response", "status": "completed",
+				"output": []any{},
+				"usage":  map[string]any{"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		writeData := func(v map[string]any) {
+			data, _ := json.Marshal(v)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			fl.Flush()
+		}
+		for i := 0; i < *chunks; i++ {
+			writeData(map[string]any{"type": "response.output_text.delta", "delta": "x"})
+			time.Sleep(*latency)
+		}
+		writeData(map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id": "rsp_1", "object": "response", "status": "completed",
+				"model": "gpt-4o", "output": []any{},
+				"usage": map[string]any{"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
+			},
+		})
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	})
+
 	// anthropic 官方格式流（event: 行必须带，见文件头注释）。SDK 在
 	// message_stop 后结束迭代，故 message_stop 必须是最后一个事件。
 	http.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
