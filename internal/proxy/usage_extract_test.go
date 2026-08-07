@@ -123,12 +123,33 @@ func TestResponsesUsageFromResponse(t *testing.T) {
 // —— buildLog 接线（评审 I-2）：cr/cc → UsageLog.CacheRead/CreationTokens ——
 
 func TestBuildLogWiresCacheTokens(t *testing.T) {
-	l := (&Proxy{}).buildLog("req1", 1, 2, "m", domain.FormatOpenAIChat, 200, domain.ErrNone,
+	l := (&Proxy{}).buildLog("req1", 1, 2, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone,
 		&usageTuple{pt: 10, ct: 20, tt: 30, cr: 4, cc: 6}, time.Now())
 	require.Equal(t, int64(4), l.CacheReadTokens)
 	require.Equal(t, int64(6), l.CacheCreationTokens)
 
-	nilU := (&Proxy{}).buildLog("req2", 1, 2, "m", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
+	nilU := (&Proxy{}).buildLog("req2", 1, 2, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
 	require.Zero(t, nilU.CacheReadTokens, "nil 元组 → 0（不 panic）")
 	require.Zero(t, nilU.CacheCreationTokens)
+}
+
+// —— mappedFor 判定（评审 I-1）：映射/无映射/used 空 ——
+
+func TestMappedFor(t *testing.T) {
+	require.Equal(t, "gpt-4o-upstream", mappedFor("gpt-4o", "gpt-4o-upstream"), "有映射 → 映射后模型")
+	require.Equal(t, "", mappedFor("gpt-4o", "gpt-4o"), "无映射（used == 请求模型）→ 空")
+	require.Equal(t, "", mappedFor("gpt-4o", ""), "used 空（Select 失败未使用任何账号）→ 空")
+	require.Equal(t, "", mappedFor("", ""), "请求模型缺失（401）→ 空")
+}
+
+// —— buildLog 模型语义（评审 I-1）：Model=客户端请求模型、MappedModel=映射后模型 ——
+
+func TestBuildLogModelSemantics(t *testing.T) {
+	mapped := (&Proxy{}).buildLog("r1", 1, 2, "gpt-4o", "gpt-4o-upstream", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
+	require.Equal(t, "gpt-4o", mapped.Model, "Model = 客户端请求模型")
+	require.Equal(t, "gpt-4o-upstream", mapped.MappedModel, "MappedModel = 映射后实际模型")
+
+	plain := (&Proxy{}).buildLog("r2", 1, 2, "gpt-4o", "gpt-4o", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
+	require.Equal(t, "gpt-4o", plain.Model)
+	require.Equal(t, "", plain.MappedModel, "无映射 → MappedModel 空")
 }

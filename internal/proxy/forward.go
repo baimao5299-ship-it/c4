@@ -57,14 +57,16 @@ func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 	}
 }
 
-// buildLog 组装 UsageLog（record 与 finish 共用）。
-func (p *Proxy) buildLog(reqID string, groupID, accountID int64, model string, format domain.RequestFormat, status int, et domain.ErrorType, u *usageTuple, start time.Time) *domain.UsageLog {
+// buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：
+// Model = 客户端请求模型（reqModel），MappedModel = 映射后实际模型
+// （usedModel 与请求模型不同才写入，否则空 = 未映射）。
+func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, u *usageTuple, start time.Time) *domain.UsageLog {
 	if u == nil {
 		u = &usageTuple{}
 	}
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
-		Model: model, Format: format, StatusCode: status, ErrorType: et,
+		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
 		LatencyMS:           time.Since(start).Milliseconds(),
 		PromptTokens:        u.pt, CompletionTokens: u.ct, TotalTokens: u.tt,
 		CacheReadTokens:     u.cr, CacheCreationTokens: u.cc,
@@ -72,12 +74,22 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, model string, f
 	}
 }
 
+// mappedFor 判定映射关系：实际使用的模型（used）非空且与请求模型（req）不同
+// → 返回映射后模型；无映射/失败路径（used 为空或与请求相同）→ 空。精确比较
+// 足够——ModelMapping 匹配语义即大小写敏感等值（selection.go）。
+func mappedFor(req, used string) string {
+	if used != "" && used != req {
+		return used
+	}
+	return ""
+}
+
 // record 记录一条用量日志（无并发槽的失败路径；有槽路径走 finish）。
-func (p *Proxy) record(reqID string, groupID, accountID int64, model string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
+func (p *Proxy) record(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
 	if !p.cfg.UsageCapture {
 		return
 	}
-	p.rec.Record(p.buildLog(reqID, groupID, accountID, model, format, status, et, u, start))
+	p.rec.Record(p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start))
 }
 
 type formatError struct {
@@ -111,11 +123,11 @@ type usageTuple struct {
 	cr, cc         int64 // 缓存读取/写入 token（缺失 = 0）
 }
 
-func (p *Proxy) recordStreamAbort(reqID string, start time.Time, sel *scheduler.Selection, err error) {
+func (p *Proxy) recordStreamAbort(reqID string, start time.Time, sel *scheduler.Selection, reqModel string, err error) {
 	if p.log != nil {
 		p.log.Warn("upstream stream aborted", logx.String("request_id", reqID), logx.Error(err))
 	}
-	p.finish(sel.AccountID, p.buildLog(reqID, 0, sel.AccountID, sel.Model, sel.Format, 200, domain.ErrAbort, nil, start))
+	p.finish(sel.AccountID, p.buildLog(reqID, 0, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, nil, start))
 }
 
 func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {

@@ -265,6 +265,8 @@ func TestProxyResponsesStreaming(t *testing.T) {
 	require.Equal(t, int64(3), lg.PromptTokens, "input_tokens from response.completed.response.usage")
 	require.Equal(t, int64(5), lg.CompletionTokens, "output_tokens from response.completed.response.usage")
 	require.Equal(t, int64(8), lg.TotalTokens, "total_tokens from response.completed.response.usage")
+	require.Equal(t, "gpt-4o", lg.Model, "成功流式：Model = 客户端请求模型")
+	require.Equal(t, "", lg.MappedModel, "无映射 → MappedModel 空")
 }
 
 func TestProxyAnthropicNonStreaming(t *testing.T) {
@@ -324,6 +326,8 @@ func TestProxyStreamClientAbortStillLogs(t *testing.T) {
 	require.Len(t, store.logs, 1, "客户端断开后上游已消费，必须记录一条用量")
 	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
 	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "客户端断开：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "客户端断开后并发槽必须释放")
@@ -362,6 +366,8 @@ func TestProxyAnthropicStreamClientAbortStillLogs(t *testing.T) {
 	require.Len(t, store.logs, 1, "客户端断开后上游已消费，必须记录一条用量")
 	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
 	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "客户端断开：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "客户端断开后并发槽必须释放")
@@ -526,6 +532,8 @@ func TestProxyAnthropicStreaming(t *testing.T) {
 	require.Equal(t, int64(10), lg.PromptTokens, "input_tokens from message_start.message.usage")
 	require.Equal(t, int64(20), lg.CompletionTokens, "output_tokens from message_delta.usage")
 	require.Equal(t, int64(30), lg.TotalTokens, "total = input + output")
+	require.Equal(t, "gpt-4o", lg.Model, "成功流式：Model = 客户端请求模型")
+	require.Equal(t, "", lg.MappedModel, "无映射 → MappedModel 空")
 }
 
 // 兼容性钉（Task 3）：anthropic 流式转发必须保留上游原始字节——event: 行与
