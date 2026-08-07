@@ -88,6 +88,7 @@ export class ApiClient {
   createRule = (b: components['schemas']['RuleCreate']) => this.request<components['schemas']['Rule']>('/rules', { method: 'POST', body: JSON.stringify(b) })
   updateRule = (id: number, b: components['schemas']['RulePatch']) => this.request<components['schemas']['Rule']>(`/rules/${id}`, { method: 'PUT', body: JSON.stringify(b) })
   deleteRule = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/rules/${id}`, { method: 'DELETE' })
+  deleteRulesBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/rules/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   // —— 日志 / 统计 ——
   getLogs = (params: Record<string, string | number | undefined>) => {
     const qs = new URLSearchParams()

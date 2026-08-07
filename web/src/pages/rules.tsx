@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2, ScrollText, Ban, CircleCheck } from 'lucide-react
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
+import { BatchBar } from '@/components/batch-bar'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -167,7 +168,16 @@ export default function Rules() {
   })
   const rows = data?.rows ?? []
 
-  // —— 创建/编辑/删除 ——
+  // —— 行勾选（规则表全量无分页，pageIds = 全部行）——
+  const [selected, setSelected] = useState<number[]>([])
+  const pageIds = rows.map(r => r.ID)
+  const allChecked = rows.length > 0 && pageIds.every(id => selected.includes(id))
+  const someChecked = pageIds.some(id => selected.includes(id))
+  const toggleRow = (id: number) => setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+  const toggleAll = (c: boolean) =>
+    setSelected(s => (c ? Array.from(new Set([...s, ...pageIds])) : s.filter(x => !pageIds.includes(x))))
+
+  // —— 创建/编辑/删除/批量删除 ——
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Rule | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
@@ -204,6 +214,13 @@ export default function Rules() {
       setDeleting(null)
     },
   })
+  const batchDelete = useMutation({
+    mutationFn: (ids: number[]) => api.deleteRulesBatch(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rules'] })
+      setSelected([])
+    },
+  })
 
   const submit = () => {
     if (!form.name.trim() || form.priority === '') return
@@ -222,6 +239,14 @@ export default function Rules() {
         </div>
         <Button onClick={openCreate}><Plus /> {t('rules.new')}</Button>
       </div>
+
+      <BatchBar
+        selected={selected}
+        onClear={() => setSelected([])}
+        onDelete={async () => {
+          await batchDelete.mutateAsync(selected)
+        }}
+      />
 
       {isError ? (
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
@@ -243,6 +268,13 @@ export default function Rules() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allChecked}
+                    indeterminate={someChecked && !allChecked}
+                    onCheckedChange={c => toggleAll(c === true)}
+                  />
+                </TableHead>
                 <TableHead className="w-14">ID</TableHead>
                 <TableHead>{t('rules.table.name')}</TableHead>
                 <TableHead className="w-16 text-right">{t('rules.table.priority')}</TableHead>
@@ -254,7 +286,10 @@ export default function Rules() {
             </TableHeader>
             <TableBody>
               {rows.map(r => (
-                <TableRow key={r.ID}>
+                <TableRow key={r.ID} data-state={selected.includes(r.ID) ? 'selected' : undefined}>
+                  <TableCell>
+                    <Checkbox checked={selected.includes(r.ID)} onCheckedChange={() => toggleRow(r.ID)} />
+                  </TableCell>
                   <TableCell className="tabular-nums">{r.ID}</TableCell>
                   <TableCell className="max-w-40 truncate" title={r.Name}>{r.Name}</TableCell>
                   <TableCell className="text-right tabular-nums">{r.Priority}</TableCell>
