@@ -193,17 +193,17 @@ export default function Accounts() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
       setSelected([])
-      closeBatchUpdate()
+      closeBatchUpdate('submitted')
     },
   })
   // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
   const [batchUpdateOpen, setBatchUpdateOpen] = useState(false)
   const [batchForm, setBatchForm] = useState<BatchForm>(emptyBatchForm())
   const [batchFormErr, setBatchFormErr] = useState<string | null>(null)
-  const batchResolve = useRef<(() => void) | null>(null)
-  const closeBatchUpdate = () => {
+  const batchResolve = useRef<((r: 'cancelled' | 'submitted') => void) | null>(null)
+  const closeBatchUpdate = (r: 'cancelled' | 'submitted' = 'cancelled') => {
     setBatchUpdateOpen(false)
-    batchResolve.current?.()
+    batchResolve.current?.(r)
     batchResolve.current = null
   }
   const openBatchUpdate = () => {
@@ -313,7 +313,11 @@ export default function Accounts() {
           </PopoverContent>
         </Popover>
         {/* template 精确筛选 */}
-        <Select value={templateId} onValueChange={changeTemplate}>
+        <Select
+          items={Object.fromEntries([['all', t('accounts.allTemplates')], ...templates.map(tp => [String(tp.ID), tp.Name ?? `#${tp.ID}`])])}
+          value={templateId}
+          onValueChange={changeTemplate}
+        >
           <SelectTrigger size="default" className="w-44 data-[size=default]:h-9" aria-label={t('accounts.filterTemplate')}>
             <SelectValue placeholder={t('accounts.filterTemplate')} />
           </SelectTrigger>
@@ -332,7 +336,7 @@ export default function Accounts() {
         onDelete={async () => {
           await batchDelete.mutateAsync(selected)
         }}
-        onUpdate={() => new Promise<void>(resolve => {
+        onUpdate={() => new Promise<'cancelled' | 'submitted'>(resolve => {
           batchResolve.current = resolve
           openBatchUpdate()
         })}
@@ -539,7 +543,11 @@ export default function Accounts() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{t('accounts.statusLabel')}</Label>
-                <Select value={batchForm.status} onValueChange={v => setBatchForm(f => ({ ...f, status: v as BatchStatus }))}>
+                <Select
+                  items={Object.fromEntries([['all', t('list.unchanged')], ...STATUSES.map(s => [s, t(`status.${s}`)])])}
+                  value={batchForm.status}
+                  onValueChange={v => setBatchForm(f => ({ ...f, status: v as BatchStatus }))}
+                >
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all" label={t('list.unchanged')}>{t('list.unchanged')}</SelectItem>
@@ -549,7 +557,11 @@ export default function Accounts() {
               </div>
               <div className="space-y-1.5">
                 <Label>{t('accounts.templateLabel')}</Label>
-                <Select value={batchForm.template_id} onValueChange={v => setBatchForm(f => ({ ...f, template_id: v }))}>
+                <Select
+                  items={Object.fromEntries([['all', t('list.unchanged')], ...templates.map(tp => [String(tp.ID), tp.Name ?? `#${tp.ID}`])])}
+                  value={batchForm.template_id}
+                  onValueChange={v => setBatchForm(f => ({ ...f, template_id: v }))}
+                >
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all" label={t('list.unchanged')}>{t('list.unchanged')}</SelectItem>
@@ -574,7 +586,7 @@ export default function Accounts() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeBatchUpdate} disabled={batchUpdate.isPending}>{t('common.cancel')}</Button>
+            <Button variant="outline" onClick={() => closeBatchUpdate()} disabled={batchUpdate.isPending}>{t('common.cancel')}</Button>
             <Button onClick={submitBatchUpdate} disabled={batchUpdate.isPending}>
               {batchUpdate.isPending ? t('common.saving') : t('list.batchUpdate')}
             </Button>

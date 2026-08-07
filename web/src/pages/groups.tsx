@@ -90,17 +90,17 @@ export default function Groups() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setSelected([])
-      closeBatchRename()
+      closeBatchRename('submitted')
     },
   })
   // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
   const [batchRenameOpen, setBatchRenameOpen] = useState(false)
   const [batchRenameValue, setBatchRenameValue] = useState('')
   const [batchRenameErr, setBatchRenameErr] = useState<string | null>(null)
-  const batchResolve = useRef<(() => void) | null>(null)
-  const closeBatchRename = () => {
+  const batchResolve = useRef<((r: 'cancelled' | 'submitted') => void) | null>(null)
+  const closeBatchRename = (r: 'cancelled' | 'submitted' = 'cancelled') => {
     setBatchRenameOpen(false)
-    batchResolve.current?.()
+    batchResolve.current?.(r)
     batchResolve.current = null
   }
   const openBatchRename = () => {
@@ -200,7 +200,7 @@ export default function Groups() {
         onDelete={async () => {
           await batchDelete.mutateAsync(selected)
         }}
-        onUpdate={() => new Promise<void>(resolve => {
+        onUpdate={() => new Promise<'cancelled' | 'submitted'>(resolve => {
           batchResolve.current = resolve
           openBatchRename()
         })}
@@ -472,7 +472,7 @@ export default function Groups() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeBatchRename} disabled={batchRename.isPending}>{t('common.cancel')}</Button>
+            <Button variant="outline" onClick={() => closeBatchRename()} disabled={batchRename.isPending}>{t('common.cancel')}</Button>
             <Button onClick={submitBatchRename} disabled={batchRename.isPending || !batchRenameValue.trim()}>
               {batchRename.isPending ? t('common.saving') : t('list.batchUpdate')}
             </Button>
