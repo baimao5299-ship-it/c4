@@ -19,3 +19,81 @@ func toAPIUser(u *domain.User) User {
 		UpdatedAt:      &u.UpdatedAt,
 	}
 }
+
+// toAPIGroup 组领域对象 → 契约类型（/user/groups 只读列表）。
+func toAPIGroup(g *domain.Group) Group {
+	v := GroupVisibility(g.Visibility)
+	return Group{
+		ID:         &g.ID,
+		Name:       &g.Name,
+		Visibility: &v,
+		CreatedAt:  &g.CreatedAt,
+		UpdatedAt:  &g.UpdatedAt,
+	}
+}
+
+// toAPIKey key 领域对象 → 契约类型（KeyHash 永不下发）。
+func toAPIKey(k *domain.Key) Key {
+	st := KeyStatus(k.Status)
+	return Key{
+		ID:             &k.ID,
+		UserID:         &k.UserID,
+		GroupID:        &k.GroupID,
+		Name:           &k.Name,
+		KeyPrefix:      &k.KeyPrefix,
+		Status:         &st,
+		MaxConcurrency: &k.MaxConcurrency,
+		Quota:          &k.Quota,
+		QuotaUsed:      &k.QuotaUsed,
+		CreatedAt:      &k.CreatedAt,
+		UpdatedAt:      &k.UpdatedAt,
+	}
+}
+
+// toAPIUsageLog 用量日志领域对象 → 契约类型（/user/logs）。
+func toAPIUsageLog(l *domain.UsageLog) UsageLog {
+	f := RequestFormat(l.Format)
+	et := ErrorType(l.ErrorType)
+	return UsageLog{
+		ID:               &l.ID,
+		RequestID:        &l.RequestID,
+		GroupID:          &l.GroupID,
+		AccountID:        &l.AccountID,
+		TemplateID:       &l.TemplateID,
+		UserID:           &l.UserID,
+		KeyID:            &l.KeyID,
+		Model:            &l.Model,
+		MappedModel:      &l.MappedModel,
+		Format:           &f,
+		StatusCode:       &l.StatusCode,
+		ErrorType:        &et,
+		LatencyMS:           &l.LatencyMS,
+		PromptTokens:        &l.PromptTokens,
+		CompletionTokens:    &l.CompletionTokens,
+		TotalTokens:         &l.TotalTokens,
+		CacheReadTokens:     &l.CacheReadTokens,
+		CacheCreationTokens: &l.CacheCreationTokens,
+		CreatedAt:           &l.CreatedAt,
+	}
+}
+
+// toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats）。
+func toAPIStatBucket(b *domain.StatBucket) StatBucket {
+	return StatBucket{
+		BucketTime:       &b.BucketTime,
+		GroupID:          &b.GroupID,
+		AccountID:        &b.AccountID,
+		TemplateID:       &b.TemplateID,
+		UserID:           &b.UserID,
+		Model:            &b.Model,
+		IsError:          &b.IsError,
+		RequestCount:     &b.RequestCount,
+		ErrorCount:       &b.ErrorCount,
+		PromptTokens:        &b.PromptTokens,
+		CompletionTokens:    &b.CompletionTokens,
+		TotalTokens:         &b.TotalTokens,
+		CacheReadTokens:     &b.CacheReadTokens,
+		CacheCreationTokens: &b.CacheCreationTokens,
+		TotalLatencyMS:      &b.TotalLatencyMS,
+	}
+}

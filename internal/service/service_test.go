@@ -370,10 +370,13 @@ func TestBatchUpdateAccounts(t *testing.T) {
 }
 
 type fakeKeyRegistrar struct {
-	deleted []string
+	upserted []string
+	deleted  []string
 }
 
-func (k *fakeKeyRegistrar) Upsert(hash string, meta domain.KeyMeta) {}
+func (k *fakeKeyRegistrar) Upsert(hash string, meta domain.KeyMeta) {
+	k.upserted = append(k.upserted, hash)
+}
 
 func (k *fakeKeyRegistrar) Delete(hash string) { k.deleted = append(k.deleted, hash) }
 

@@ -32,6 +32,15 @@ func decode(r *http.Request, v any) error {
 	return dec.Decode(v)
 }
 
+// deref 返回指针指向的值；nil 时返回零值。
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

@@ -1,4 +1,4 @@
-package handler
+package user
 
 import (
 	"net/http"
@@ -7,10 +7,10 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
-// GetLogs 用量日志分页查询（ServerInterface）。limit/offset 缺省 20/0
-// （契约 default），其余过滤参数仅非 nil 时生效。
-func (h *AdminAPI) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
-	lq := repository.LogQuery{Limit: 20, Offset: 0}
+// GetUserLogs 我的用量日志（强制 user_id = 当前用户——越权过滤在 service/
+// repo 层，请求侧不可指定他人，ServerInterface）。limit/offset 缺省 20/0。
+func (h *UserAPI) GetUserLogs(w http.ResponseWriter, r *http.Request, params GetUserLogsParams) {
+	lq := repository.LogQuery{Limit: 20, Offset: 0, UserID: currentUserID(r)}
 	if params.Limit != nil {
 		lq.Limit = *params.Limit
 	}
@@ -22,9 +22,6 @@ func (h *AdminAPI) GetLogs(w http.ResponseWriter, r *http.Request, params GetLog
 	}
 	if params.AccountId != nil {
 		lq.AccountID = *params.AccountId
-	}
-	if params.UserId != nil {
-		lq.UserID = *params.UserId
 	}
 	if params.Model != nil {
 		lq.Model = *params.Model

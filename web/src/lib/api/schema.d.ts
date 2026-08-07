@@ -173,7 +173,7 @@ export interface paths {
         /** 分组列表（分页/筛选/排序） */
         get: operations["GetGroups"];
         put?: never;
-        /** 创建分组（响应含明文 key，仅此一次） */
+        /** 创建分组（平台容量池；key 为独立表，由用户面 /user/keys 创建） */
         post: operations["PostGroups"];
         delete?: never;
         options?: never;
@@ -233,7 +233,188 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/groups/{id}/rotate-key": {
+    "/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 用户列表（platform_admin 专属；分页/筛选/排序） */
+        get: operations["GetUsers"];
+        put?: never;
+        /** 创建用户（platform_admin 专属；email 唯一/格式、密码 ≤72 字节） */
+        post: operations["PostUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新） */
+        put: operations["PutUsersId"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{id}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空） */
+        put: operations["PutGroupsIdAssignments"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 全部设置（默认值 + DB 覆盖） */
+        get: operations["GetAdminSettings"];
+        /** 更新设置（类型化校验：switch 必须 true/false、number 必须数字） */
+        put: operations["PutAdminSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 注册（signup_enabled 开关检查；注册即登录返回 JWT） */
+        post: operations["PostUserAuthRegister"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 登录（bcrypt 校验 → JWT） */
+        post: operations["PostUserAuthLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前用户信息（JWT） */
+        get: operations["GetUserAuthMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 可选组列表（public 全部 + 已授予 private；只读，key 创建时选组） */
+        get: operations["GetUserGroups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的 key 列表（分页/排序；KeyHash 永不下发） */
+        get: operations["GetUserKeys"];
+        put?: never;
+        /** 创建 key（组可选性校验：public 或已授予 private；raw 明文仅本次返回） */
+        post: operations["PostUserKeys"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/keys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** key 详情（仅本人；他人 key → 404） */
+        get: operations["GetUserKeysId"];
+        /** 更新 key（name/status/max_concurrency/quota；仅本人） */
+        put: operations["PutUserKeysId"];
+        post?: never;
+        /** 删除 key（仅本人；Auth 快照增量移除——立即失效） */
+        delete: operations["DeleteUserKeysId"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/keys/{id}/rotate": {
         parameters: {
             query?: never;
             header?: never;
@@ -244,8 +425,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 轮换分组 key */
-        post: operations["PostGroupsIdRotateKey"];
+        /** 轮换 key（仅本人；新明文仅返回一次，旧 key 立即失效） */
+        post: operations["PostUserKeysIdRotate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的用量日志（强制 user_id = 当前用户，防越权） */
+        get: operations["GetUserLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的用量统计（强制 user_id = 当前用户） */
+        get: operations["GetUserStats"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -446,8 +661,141 @@ export interface components {
             total: number;
             rows: components["schemas"]["Group"][];
         };
+        /** @enum {string} */
+        GroupVisibility: "public" | "private";
+        GroupAssignmentsBody: {
+            /** @description 替换语义：完整授予列表（未列出即撤销；空数组 = 清空） */
+            user_ids: number[];
+        };
+        GroupAssignmentsResponse: {
+            user_ids: number[];
+        };
+        /** @enum {string} */
+        KeyStatus: "active" | "disabled";
+        Key: {
+            /** Format: int64 */
+            ID?: number;
+            /** Format: int64 */
+            UserID?: number;
+            /** Format: int64 */
+            GroupID?: number;
+            Name?: string;
+            KeyPrefix?: string;
+            Status?: components["schemas"]["KeyStatus"];
+            MaxConcurrency?: number;
+            /**
+             * Format: int64
+             * @description 累计 token 上限；0 = 不限
+             */
+            Quota?: number;
+            /**
+             * Format: int64
+             * @description 已消耗（后扣；无额度 key 恒 0）
+             */
+            QuotaUsed?: number;
+            /** Format: date-time */
+            CreatedAt?: string;
+            /** Format: date-time */
+            UpdatedAt?: string;
+        };
+        KeyCreate: {
+            name: string;
+            /** Format: int64 */
+            group_id: number;
+            /** @description 单 key 在途上限；0 = 不限 */
+            max_concurrency?: number;
+            /**
+             * Format: int64
+             * @description 累计 token 上限；0 = 不限
+             */
+            quota?: number;
+        };
+        KeyUpdate: {
+            name?: string;
+            status?: components["schemas"]["KeyStatus"];
+            max_concurrency?: number;
+            /** Format: int64 */
+            quota?: number;
+        };
+        KeyListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Key"][];
+        };
+        KeyWithSecret: components["schemas"]["Key"] & {
+            /** @description key 明文（创建/轮换响应仅返回一次；之后仅 KeyPrefix 可识别） */
+            key: string;
+        };
+        /** @enum {string} */
+        UserRole: "platform_admin" | "user";
+        /** @enum {string} */
+        UserStatus: "active" | "disabled";
+        User: {
+            /** Format: int64 */
+            ID?: number;
+            Email?: string;
+            Role?: components["schemas"]["UserRole"];
+            Status?: components["schemas"]["UserStatus"];
+            MaxConcurrency?: number;
+            /** Format: int64 */
+            Balance?: number;
+            /** Format: date-time */
+            CreatedAt?: string;
+            /** Format: date-time */
+            UpdatedAt?: string;
+        };
+        UserAuthRegister: {
+            email: string;
+            password: string;
+        };
+        UserAuthLogin: {
+            email: string;
+            password: string;
+        };
+        UserAuthResponse: {
+            token: string;
+            user: components["schemas"]["User"];
+        };
+        UserCreate: {
+            email: string;
+            password: string;
+            role?: components["schemas"]["UserRole"];
+            status?: components["schemas"]["UserStatus"];
+            /** @description 用户级在途上限；0 = 不限 */
+            max_concurrency?: number;
+            /**
+             * Format: int64
+             * @description 余额（最小单位）；扣费 Phase 5
+             */
+            balance?: number;
+        };
+        UserUpdate: {
+            role?: components["schemas"]["UserRole"];
+            status?: components["schemas"]["UserStatus"];
+            max_concurrency?: number;
+            /** Format: int64 */
+            balance?: number;
+        };
+        UserListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["User"][];
+        };
+        Setting: {
+            Key?: string;
+            /** @enum {string} */
+            Type?: "switch" | "number" | "string";
+            Value?: string;
+            /** Format: date-time */
+            UpdatedAt?: string;
+        };
+        SettingUpdate: {
+            key: string;
+            value: string;
+        };
         GroupCreate: {
             name: string;
+            visibility?: components["schemas"]["GroupVisibility"];
         };
         RuleCreate: {
             name: string;
@@ -497,19 +845,11 @@ export interface components {
             /** Format: int64 */
             ID?: number;
             Name?: string;
-            KeyHash?: string;
-            KeyPrefix?: string;
+            Visibility?: components["schemas"]["GroupVisibility"];
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
             UpdatedAt?: string;
-        };
-        CreateGroupResponse: {
-            group: components["schemas"]["Group"];
-            key: string;
-        };
-        RotateKeyResponse: {
-            key: string;
         };
         AccountGroupsResponse: {
             group_ids: number[];
@@ -546,6 +886,7 @@ export interface components {
         };
         GroupPatch: {
             name?: string;
+            visibility?: components["schemas"]["GroupVisibility"];
         };
         BatchUpdateAccountsBody: {
             ids: number[];
@@ -571,6 +912,16 @@ export interface components {
             AccountID?: number;
             /** Format: int64 */
             TemplateID?: number;
+            /**
+             * Format: int64
+             * @description 鉴权归属用户；0 = 无
+             */
+            UserID?: number;
+            /**
+             * Format: int64
+             * @description 鉴权归属 key；0 = 无
+             */
+            KeyID?: number;
             Model?: string;
             MappedModel?: string | null;
             Format?: components["schemas"]["RequestFormat"];
@@ -605,6 +956,11 @@ export interface components {
             AccountID?: number;
             /** Format: int64 */
             TemplateID?: number;
+            /**
+             * Format: int64
+             * @description 鉴权归属用户；0 = 无
+             */
+            UserID?: number;
             Model?: string;
             IsError?: boolean;
             /** Format: int64 */
@@ -1058,13 +1414,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 分组 + 明文 key */
+            /** @description 创建后的分组 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreateGroupResponse"];
+                    "application/json": components["schemas"]["Group"];
                 };
             };
             default: components["responses"]["Error"];
@@ -1193,7 +1549,303 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    PostGroupsIdRotateKey: {
+    GetUsers: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                email?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 用户列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreate"];
+            };
+        };
+        responses: {
+            /** @description 创建后的用户（PasswordHash 永不下发） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutUsersId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的用户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutGroupsIdAssignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupAssignmentsBody"];
+            };
+        };
+        responses: {
+            /** @description 已生效的授予 user_id 列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupAssignmentsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetAdminSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 设置列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Setting"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutAdminSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingUpdate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的设置列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Setting"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUserAuthRegister: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAuthRegister"];
+            };
+        };
+        responses: {
+            /** @description JWT + 用户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserAuthResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUserAuthLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAuthLogin"];
+            };
+        };
+        responses: {
+            /** @description JWT + 用户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserAuthResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserAuthMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 用户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分组列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserKeys: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description key 列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUserKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyCreate"];
+            };
+        };
+        responses: {
+            /** @description 创建后的 key + 明文 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyWithSecret"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserKeysId: {
         parameters: {
             query?: never;
             header?: never;
@@ -1204,13 +1856,145 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 新明文 key */
+            /** @description key */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RotateKeyResponse"];
+                    "application/json": components["schemas"]["Key"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutUserKeysId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyUpdate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的 key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Key"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    DeleteUserKeysId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUserKeysIdRotate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 新 key 明文 + 更新后元数据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyWithSecret"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserLogs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                group_id?: number;
+                account_id?: number;
+                model?: string;
+                status_code?: number;
+                error_type?: string;
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserStats: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+                granularity?: "hour" | "day";
+                group_id?: number;
+                account_id?: number;
+                model?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 统计桶数组 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatBucket"][];
                 };
             };
             default: components["responses"]["Error"];
@@ -1344,6 +2128,7 @@ export interface operations {
                 offset?: number;
                 group_id?: number;
                 account_id?: number;
+                user_id?: number;
                 model?: string;
                 status_code?: number;
                 error_type?: string;
@@ -1376,6 +2161,7 @@ export interface operations {
                 granularity?: "hour" | "day";
                 group_id?: number;
                 account_id?: number;
+                user_id?: number;
                 model?: string;
             };
             header?: never;

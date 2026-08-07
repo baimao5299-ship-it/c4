@@ -75,13 +75,57 @@ func (s *Service) LoginUser(ctx context.Context, email, password string) (*domai
 	return u, nil
 }
 
-// GetUserMe 当前用户信息（/user/auth/me）。
-func (s *Service) GetUserMe(ctx context.Context, userID int64) (*domain.User, error) {
-	u, err := s.store.GetUser(ctx, userID)
+// GetUser 用户详情（/admin/users/{id} 更新前置读取）。
+func (s *Service) GetUser(ctx context.Context, id int64) (*domain.User, error) {
+	u, err := s.store.GetUser(ctx, id)
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return u, nil
+}
+
+// GetUserMe 当前用户信息（/user/auth/me）。
+func (s *Service) GetUserMe(ctx context.Context, userID int64) (*domain.User, error) {
+	return s.GetUser(ctx, userID)
+}
+
+// CreateUser 管理面创建用户（platform_admin 专属）：email 唯一/格式、密码
+// ≤72 字节 → bcrypt（sub2api 同参数）→ role/status/max_concurrency/balance
+// 落库 → invalidate（新用户入 Auth 状态快照）。
+func (s *Service) CreateUser(ctx context.Context, email, password string, role domain.Role, status domain.UserStatus, maxConcurrency int, balance int64) (*domain.User, error) {
+	if !validEmail(email) {
+		return nil, ErrInvalidInput
+	}
+	if password == "" || auth.ValidatePasswordLen(password) != nil {
+		return nil, ErrInvalidInput
+	}
+	if !role.Valid() || !status.Valid() || maxConcurrency < 0 || balance < 0 {
+		return nil, ErrInvalidInput
+	}
+	existing, err := s.store.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrConflict // email 唯一 → 409
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	created, err := s.store.CreateUser(ctx, &domain.User{
+		Email: email, PasswordHash: hash,
+		Role: role, Status: status,
+		MaxConcurrency: maxConcurrency, Balance: balance,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.invalidate()
+	if s.log != nil {
+		s.log.Info("user created by admin", logx.Int64("id", created.ID), logx.String("email", email), logx.String("role", string(role)))
+	}
+	return created, nil
 }
 
 // ListUsers 用户列表（/admin/users；platform_admin 专属）。
@@ -98,7 +142,7 @@ func (s *Service) UpdateUser(ctx context.Context, u *domain.User) (*domain.User,
 	if !u.Role.Valid() || !u.Status.Valid() {
 		return nil, ErrInvalidInput
 	}
-	if u.MaxConcurrency < 0 {
+	if u.MaxConcurrency < 0 || u.Balance < 0 {
 		return nil, ErrInvalidInput
 	}
 	updated, err := s.store.UpdateUser(ctx, u)

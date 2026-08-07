@@ -83,6 +83,22 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 	writeJSON(w, http.StatusOK, toAPIGroup(updated))
 }
 
+// PutGroupsIdAssignments 设置组的授予用户（platform_admin 专属；替换语义：
+// 未列出即撤销，空数组 = 清空；ServerInterface）。
+func (h *AdminAPI) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
+	var in GroupAssignmentsBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	applied, err := h.svc.SetGroupAssignments(r.Context(), id, in.UserIds)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, GroupAssignmentsResponse{UserIds: applied})
+}
+
 // DeleteGroupsId 删除分组（ServerInterface）。
 func (h *AdminAPI) DeleteGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
 	if err := h.svc.DeleteGroup(r.Context(), id); err != nil {
