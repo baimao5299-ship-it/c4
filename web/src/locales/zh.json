@@ -223,15 +223,18 @@
       "group": "分组",
       "account": "账号",
       "model": "模型",
-      "mappedModel": "映射模型",
       "format": "格式",
       "statusCode": "状态码",
       "errorType": "错误类型",
       "latency": "延迟",
-      "promptTokens": "PT",
-      "completionTokens": "CT",
-      "totalTokens": "TT",
-      "cache": "缓存(读/写)"
+      "tokens": "Token"
+    },
+    "tokens": {
+      "read": "读",
+      "write": "写",
+      "total": "总计",
+      "cacheRead": "缓存读",
+      "cacheWrite": "缓存写"
     },
     "pagination": {
       "total": "共 {{total}} 条",

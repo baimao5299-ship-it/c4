@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, FileText, RotateCcw } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +12,9 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDateTime, toRFC3339 } from '@/components/fmt'
+import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 
 type ErrorType = components['schemas']['ErrorType']
@@ -45,6 +47,33 @@ const FORMAT_LABELS: Record<RequestFormat, string> = {
   anthropic: 'Anthropic',
 }
 
+// 表头样式（sub2api 配方）：uppercase 小字 + sticky（评审 Minor-1：必须位于
+// 纵向滚动容器内——纯 overflow-x 容器中 sticky top 不生效）。
+function Th({ className, ...props }: React.ComponentProps<typeof TableHead>) {
+  return (
+    <TableHead
+      className={cn(
+        'sticky top-0 z-10 bg-background text-xs uppercase tracking-wider text-muted-foreground',
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+// 延迟健康色（sub2api 配方）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红——色点与数字同色。
+function latencyColor(ms: number): { dot: string; text: string } {
+  if (ms < 1000) return { dot: 'bg-emerald-500', text: 'text-emerald-500' }
+  if (ms < 5000) return { dot: 'bg-amber-500', text: 'text-amber-500' }
+  if (ms < 15000) return { dot: 'bg-orange-500', text: 'text-orange-500' }
+  return { dot: 'bg-red-500', text: 'text-red-500' }
+}
+
+// compact 千位缩写（官方仓库无内置函数，自己写——Intl 原生 API）：1234 → 1.2K。
+function compactTokens(n: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
+}
+
 const LIMITS = [10, 20, 50]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
@@ -64,7 +93,7 @@ const emptyFilters = (): LogFilters => ({
 })
 
 export default function Logs() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [filters, setFilters] = useState<LogFilters>(emptyFilters())
   const [limit, setLimit] = useState(20)
   const [offset, setOffset] = useState(0)
@@ -174,23 +203,19 @@ export default function Logs() {
       ) : (
         <>
         <Card className="overflow-hidden">
-          <Table>
+          <Table containerClassName="max-h-[calc(100vh-16rem)] overflow-y-auto">
             <TableHeader>
               <TableRow>
-                <TableHead>{t('logs.table.requestId')}</TableHead>
-                <TableHead>{t('logs.table.createdAt')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.group')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.account')}</TableHead>
-                <TableHead>{t('logs.table.model')}</TableHead>
-                <TableHead>{t('logs.table.mappedModel')}</TableHead>
-                <TableHead>{t('logs.table.format')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.statusCode')}</TableHead>
-                <TableHead>{t('logs.table.errorType')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.latency')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.promptTokens')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.completionTokens')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.totalTokens')}</TableHead>
-                <TableHead className="text-right">{t('logs.table.cache')}</TableHead>
+                <Th>{t('logs.table.requestId')}</Th>
+                <Th>{t('logs.table.createdAt')}</Th>
+                <Th className="text-right">{t('logs.table.group')}</Th>
+                <Th className="text-right">{t('logs.table.account')}</Th>
+                <Th>{t('logs.table.model')}</Th>
+                <Th>{t('logs.table.format')}</Th>
+                <Th className="text-right">{t('logs.table.statusCode')}</Th>
+                <Th>{t('logs.table.errorType')}</Th>
+                <Th className="text-right">{t('logs.table.latency')}</Th>
+                <Th className="text-right">{t('logs.table.tokens')}</Th>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -202,19 +227,65 @@ export default function Logs() {
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
                   <TableCell className="text-right tabular-nums">{l.GroupID ? `#${l.GroupID}` : '—'}</TableCell>
                   <TableCell className="text-right tabular-nums">{l.AccountID ? `#${l.AccountID}` : '—'}</TableCell>
-                  <TableCell className="max-w-32 truncate" title={l.Model}>{l.Model ?? '—'}</TableCell>
-                  <TableCell className="max-w-32 truncate" title={l.MappedModel ?? ''}>{l.MappedModel ?? '—'}</TableCell>
+                  {/* 模型链式（sub2api 纵向链）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳） */}
+                  <TableCell>
+                    <div className="space-y-0.5 text-xs">
+                      <div className="max-w-40 truncate font-medium" title={l.Model}>{l.Model ?? '—'}</div>
+                      {l.MappedModel && (
+                        <div className="max-w-40 truncate pl-3 text-muted-foreground" title={l.MappedModel}>↳{l.MappedModel}</div>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {l.Format ? <Badge variant="outline">{FORMAT_LABELS[l.Format]}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>
                   <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
-                  <TableCell className="text-right tabular-nums">{l.LatencyMS != null ? `${l.LatencyMS} ms` : '—'}</TableCell>
-                  <TableCell className="text-right tabular-nums">{l.PromptTokens ?? 0}</TableCell>
-                  <TableCell className="text-right tabular-nums">{l.CompletionTokens ?? 0}</TableCell>
-                  <TableCell className="text-right tabular-nums">{l.TotalTokens ?? 0}</TableCell>
+                  {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
                   <TableCell className="text-right tabular-nums">
-                    {l.CacheReadTokens || l.CacheCreationTokens ? `${l.CacheReadTokens ?? 0}/${l.CacheCreationTokens ?? 0}` : '—'}
+                    {l.LatencyMS != null ? (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
+                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  {/* token 合并列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + tooltip 明细 */}
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {l.PromptTokens || l.CompletionTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="block cursor-help" />}>
+                          <div className="space-y-0.5 text-xs">
+                            <div className="inline-flex items-center gap-2">
+                              <span className="inline-flex items-center gap-0.5 text-emerald-500">
+                                <ArrowDown className="size-3" />{(l.PromptTokens ?? 0).toLocaleString()}
+                              </span>
+                              <span className="inline-flex items-center gap-0.5 text-purple-500">
+                                <ArrowUp className="size-3" />{(l.CompletionTokens ?? 0).toLocaleString()}
+                              </span>
+                            </div>
+                            {l.CacheReadTokens || l.CacheCreationTokens ? (
+                              <div>
+                                <span className="text-blue-500">{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens ?? 0, i18n.language)}</span>
+                                <span className="mx-1 text-muted-foreground/50">·</span>
+                                <span className="text-amber-500">{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens ?? 0, i18n.language)}</span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t('logs.tokens.total')} {(l.TotalTokens ?? 0).toLocaleString()}
+                          <br />
+                          {t('logs.tokens.cacheRead')} {(l.CacheReadTokens ?? 0).toLocaleString()}
+                          <br />
+                          {t('logs.tokens.cacheWrite')} {(l.CacheCreationTokens ?? 0).toLocaleString()}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

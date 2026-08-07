@@ -197,6 +197,16 @@ func newTestProxyCapture(t *testing.T, upstream string, accountID int64, usageCa
 	return newTestProxyTplCapture(t, tpl, accountID, usageCapture)
 }
 
+// newTestProxyTimeoutLogs 同 newTestProxy，但注入 LogInserter（模型语义断言用捕获实现）。
+func newTestProxyTimeoutLogs(t *testing.T, upstream string, accountID int64, logs usage.LogInserter) *Proxy {
+	t.Helper()
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: upstream,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+	}
+	return newTestProxyTplTimeoutLogs(t, tpl, accountID, true, 30*time.Second, logs)
+}
+
 // newTestProxyTplCapture 用自定义模板构造测试代理（ModelMapping 等定制场景用）。
 func newTestProxyTplCapture(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool) *Proxy {
 	t.Helper()
@@ -238,7 +248,8 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 func TestProxyStreamingChat(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -256,6 +267,13 @@ func TestProxyStreamingChat(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+	// 评审 I-1：日志 Model=客户端请求模型（无映射 → MappedModel 空）
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "成功流式：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
 }
 
 // 兼容性钉（Task 3）：流式转发必须原样保留上游原始字节——chat 是 data-only
@@ -309,7 +327,8 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: map[string]string{"gpt-4o": "gpt-4o-upstream"},
 	}
-	p := newTestProxyTplCapture(t, tpl, 1, true)
+	store := &captureLogStore{}
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -323,6 +342,13 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency)
 	require.Equal(t, 1, p.rec.Pending())
+	// 评审 I-1：映射请求的日志必须保留请求模型与映射后模型
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "Model = 客户端请求模型")
+	require.Equal(t, "gpt-4o-upstream", store.logs[0].MappedModel, "MappedModel = 映射后实际模型")
 }
 
 // SSE 事件级冲刷回归（Task 9 压测发现）：sseWriter 必须每事件调用 http.Flusher.Flush()。
@@ -348,13 +374,21 @@ func TestProxyStreamingSSEFlushesPerEvent(t *testing.T) {
 func TestProxyAuthRejected(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
 	req.Header.Set("Authorization", "Bearer wrong")
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
 	require.Equal(t, 401, rec.Code)
+	// 401：无请求模型可记，Model/MappedModel 均空
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "401 必须记一条用量")
+	require.Equal(t, "", store.logs[0].Model, "401 无请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "401 MappedModel 空")
 }
 
 // 同 key 双头兼容：Anthropic 官方 SDK / Claude Code 用 x-api-key 头（而非
@@ -383,9 +417,16 @@ func TestProxyFailoverOn429(t *testing.T) {
 	// 两个账号指向同一个会 429 的上游：第一个失败后转移第二个（同样失败则最终 429）
 	up := fakeOpenAI(t, "429")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
-	// 第二个账号
-	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
+	mapping := map[string]string{"gpt-4o": "gpt-4o-upstream"}
+	store := &captureLogStore{}
+	tpl1 := &domain.Template{
+		ID: 1, Name: "t", BaseURL: up.URL + "/v1",
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+		ModelMapping: mapping,
+	}
+	p := newTestProxyTplTimeoutLogs(t, tpl1, 1, true, 30*time.Second, store)
+	// 第二个账号（同样带映射，耗尽路径才能断言最后一次实际尝试的映射模型）
+	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}, ModelMapping: mapping}
 	sched := p.sched
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
@@ -412,6 +453,13 @@ func TestProxyFailoverOn429(t *testing.T) {
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
 	// 耗尽路径（请求已完成）：以最后一次尝试的结果记一条用量
 	require.Equal(t, 1, p.rec.Pending(), "failover 耗尽必须记一条用量")
+	// 评审 I-1：耗尽路径 Model=请求模型、MappedModel=最后一次实际尝试的映射模型
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "耗尽路径：Model = 客户端请求模型")
+	require.Equal(t, "gpt-4o-upstream", store.logs[0].MappedModel, "耗尽路径：MappedModel = 最后一次实际尝试的映射模型")
 }
 
 // 5xx：触发 failover 与 MarkResult(ResultError)；全部尝试失败最终回 502（非 429 不设 Retry-After）。
@@ -484,7 +532,8 @@ func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 func TestProxyPassthrough4xx(t *testing.T) {
 	up := fakeOpenAI(t, "400")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","messages":[]}`))
@@ -502,6 +551,13 @@ func TestProxyPassthrough4xx(t *testing.T) {
 	require.Zero(t, ri.Concurrency, "4xx 透传也必须释放并发槽")
 	// 请求已完成（上游消费了请求）：必须记录用量
 	require.Equal(t, 1, p.rec.Pending(), "4xx 透传必须记录用量")
+	// 评审 I-1：4xx 透传 Model=客户端请求模型（无映射 → MappedModel 空）
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "4xx：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
 }
 
 // 流式中止：上游在流中途发非法事件（解码失败）→ ResultError + 释放并发槽 + ErrAbort 记录。
@@ -557,6 +613,8 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1, "must capture exactly one usage log")
 	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType, "超时中止按上游读失败记 ErrAbort")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "recordStreamAbort：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
 }
 
 // 回归（评审 Minor）：流式 4xx 透传必须与非流式同语义——上游非 200 响应在
@@ -599,7 +657,8 @@ func (failingResponseWriter) WriteHeader(int)             {}
 func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -612,6 +671,13 @@ func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 	require.Equal(t, domain.StatusUnhealthy, ri.Status, "客户端断开记 ResultError")
 	require.Zero(t, ri.Concurrency, "客户端断开必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "写出失败按上游读失败处理，记 ErrAbort 用量")
+	// 评审 I-1：客户端断开（recordStreamAbort）Model=客户端请求模型
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "recordStreamAbort：Model = 客户端请求模型")
 }
 
 // UsageCapture=false：Record 不得被调用（channel 零填充，否则饱和后阻塞热路径）。
@@ -649,4 +715,52 @@ func TestProxyChatFailoverSingleAccountNoPanic(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "并发槽必须释放")
 	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
+}
+
+// 评审 I-1：成功非流式路径日志 Model=客户端请求模型（无映射 → MappedModel 空）。
+func TestProxyChatNonStreamingLogsModel(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "成功非流式：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
+	require.Equal(t, int64(3), store.logs[0].PromptTokens, "非流式 usage 直读")
+	require.Equal(t, int64(5), store.logs[0].CompletionTokens)
+}
+
+// 评审 I-1：Select 失败（组内无账号支持请求格式）→ 404，日志 Model=请求模型、
+// MappedModel 空（未实际使用任何账号模型）。
+func TestProxySelectFailLogsModel(t *testing.T) {
+	up := fakeAnthropic(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	// 模板只支持 openai-chat：anthropic 请求必然 Select 失败（ErrFormatUnavailable → 404）
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleAnthropic(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code, "body=%s", rec.Body.String())
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "Select 失败必须记一条用量")
+	require.Equal(t, "gpt-4o", store.logs[0].Model, "Select 失败：Model = 客户端请求模型")
+	require.Equal(t, "", store.logs[0].MappedModel, "未实际使用任何账号 → MappedModel 空")
 }

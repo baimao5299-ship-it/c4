@@ -22,7 +22,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	groupID, ok := p.auth.Authenticate(r)
 	if !ok {
 		writeErr(w, errInvalidKey)
-		p.record(reqID, 0, 0, "", domain.FormatOpenAIChat, 401, domain.ErrAuth, 0, nil, start)
+		p.record(reqID, 0, 0, "", "", domain.FormatOpenAIChat, 401, domain.ErrAuth, 0, nil, start)
 		return
 	}
 	if !p.limit.Allow(groupID, time.Now()) {
@@ -53,7 +53,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	sel, err := p.sched.Select(groupID, domain.FormatOpenAIChat, model)
 	if err != nil {
 		p.handleSelectError(w, err)
-		p.record(reqID, groupID, 0, model, domain.FormatOpenAIChat, statusFor(err), domain.ErrNoAccount, 0, nil, start)
+		p.record(reqID, groupID, 0, model, "", domain.FormatOpenAIChat, statusFor(err), domain.ErrNoAccount, 0, nil, start)
 		return
 	}
 
@@ -75,7 +75,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// 4xx 确定性错误：透传上游状态码与原始 body，不转移（规格 §5.3）；
 			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
-			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, code, domain.Err4xx, nil, start))
+			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, model, sel.Model, domain.FormatOpenAIChat, code, domain.Err4xx, nil, start))
 			if len(body) > 0 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(code)
@@ -107,7 +107,7 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 	case lastCode == 0:
 		et = domain.ErrNetwork
 	}
-	p.record(reqID, groupID, lastSel.AccountID, lastSel.Model, domain.FormatOpenAIChat, lastCode, et, 0, nil, start)
+	p.record(reqID, groupID, lastSel.AccountID, model, lastSel.Model, domain.FormatOpenAIChat, lastCode, et, 0, nil, start)
 	if lastCode == http.StatusTooManyRequests {
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, errTooMany)
@@ -120,6 +120,9 @@ func (p *Proxy) HandleChat(w http.ResponseWriter, r *http.Request) {
 // rbody 为 HandleChat 已读出的原始请求体（流式原始转发用）。
 func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, params *openai.ChatCompletionNewParams, streaming bool, rbody []byte) (bool, int, []byte) {
 	tpl := tplOf(sel)
+	// 快照客户端请求模型：下一行 params.Model = sel.Model 覆盖后即丢失
+	// （评审 I-1——model 变量只在 HandleXxx 作用域，try* 内无）。
+	reqModel := params.Model
 	params.Model = sel.Model
 
 	if streaming {
@@ -170,15 +173,15 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 			if r.Context().Err() != nil {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
+				p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 				return true, 0, nil
 			}
-			p.recordStreamAbort(reqID, start, sel, err)
+			p.recordStreamAbort(reqID, start, sel, reqModel, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return true, 0, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
+		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 		return true, 200, nil
 	}
 
@@ -200,6 +203,6 @@ func (p *Proxy) tryChat(w http.ResponseWriter, r *http.Request, reqID string, gr
 		pt, ct, tt, cr, cc = chatUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
+	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 	return true, 200, nil
 }
