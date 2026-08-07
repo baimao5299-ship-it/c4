@@ -223,15 +223,18 @@
       "group": "Group",
       "account": "Account",
       "model": "Model",
-      "mappedModel": "Mapped model",
       "format": "Format",
       "statusCode": "Status code",
       "errorType": "Error type",
       "latency": "Latency",
-      "promptTokens": "PT",
-      "completionTokens": "CT",
-      "totalTokens": "TT",
-      "cache": "CR/CC"
+      "tokens": "Tokens"
+    },
+    "tokens": {
+      "read": "R",
+      "write": "W",
+      "total": "Total",
+      "cacheRead": "Cache read",
+      "cacheWrite": "Cache write"
     },
     "pagination": {
       "total": "{{total}} entries",
