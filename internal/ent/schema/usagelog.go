@@ -27,6 +27,8 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("prompt_tokens").Default(0),
 		field.Int64("completion_tokens").Default(0),
 		field.Int64("total_tokens").Default(0),
+		field.Int64("cache_read_tokens").Default(0),
+		field.Int64("cache_creation_tokens").Default(0),
 		field.Time("created_at").Default(time.Now),
 	}
 }

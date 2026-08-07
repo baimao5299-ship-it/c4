@@ -1,0 +1,55 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
+
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/service"
+)
+
+// TestGetLogsCacheTokens /admin/logs 响应含 cache read/creation 字段
+// （toAPIUsageLog 手写映射接线，评审 I-3）。
+func TestGetLogsCacheTokens(t *testing.T) {
+	store := newFakeStore()
+	store.logs = []*domain.UsageLog{{
+		ID: 1, RequestID: "r1", GroupID: 1, AccountID: 2, Model: "m",
+		Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
+		PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15,
+		CacheReadTokens: 4, CacheCreationTokens: 2,
+		CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+	}}
+	svc := service.New(store, fakeSched{}, func() {}, nil, &fakeKeys{}, nil)
+	h := New(svc)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/logs", nil)
+	req.Header.Set("Authorization", "Bearer admin-tok")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, "logs: %s", rec.Body.String())
+	var body LogsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, int64(1), body.Total)
+	require.Len(t, body.Rows, 1)
+	require.NotNil(t, body.Rows[0].CacheReadTokens, "响应含 CacheReadTokens")
+	require.NotNil(t, body.Rows[0].CacheCreationTokens)
+	require.Equal(t, int64(4), *body.Rows[0].CacheReadTokens)
+	require.Equal(t, int64(2), *body.Rows[0].CacheCreationTokens)
+}

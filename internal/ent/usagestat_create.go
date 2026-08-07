@@ -168,6 +168,34 @@ func (_c *UsageStatCreate) SetNillableTotalTokens(v *int64) *UsageStatCreate {
 	return _c
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (_c *UsageStatCreate) SetCacheReadTokens(v int64) *UsageStatCreate {
+	_c.mutation.SetCacheReadTokens(v)
+	return _c
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableCacheReadTokens(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetCacheReadTokens(*v)
+	}
+	return _c
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (_c *UsageStatCreate) SetCacheCreationTokens(v int64) *UsageStatCreate {
+	_c.mutation.SetCacheCreationTokens(v)
+	return _c
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableCacheCreationTokens(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetCacheCreationTokens(*v)
+	}
+	return _c
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (_c *UsageStatCreate) SetTotalLatencyMs(v int64) *UsageStatCreate {
 	_c.mutation.SetTotalLatencyMs(v)
@@ -277,6 +305,14 @@ func (_c *UsageStatCreate) defaults() {
 		v := usagestat.DefaultTotalTokens
 		_c.mutation.SetTotalTokens(v)
 	}
+	if _, ok := _c.mutation.CacheReadTokens(); !ok {
+		v := usagestat.DefaultCacheReadTokens
+		_c.mutation.SetCacheReadTokens(v)
+	}
+	if _, ok := _c.mutation.CacheCreationTokens(); !ok {
+		v := usagestat.DefaultCacheCreationTokens
+		_c.mutation.SetCacheCreationTokens(v)
+	}
 	if _, ok := _c.mutation.TotalLatencyMs(); !ok {
 		v := usagestat.DefaultTotalLatencyMs
 		_c.mutation.SetTotalLatencyMs(v)
@@ -321,6 +357,12 @@ func (_c *UsageStatCreate) check() error {
 	}
 	if _, ok := _c.mutation.TotalTokens(); !ok {
 		return &ValidationError{Name: "total_tokens", err: errors.New(`ent: missing required field "UsageStat.total_tokens"`)}
+	}
+	if _, ok := _c.mutation.CacheReadTokens(); !ok {
+		return &ValidationError{Name: "cache_read_tokens", err: errors.New(`ent: missing required field "UsageStat.cache_read_tokens"`)}
+	}
+	if _, ok := _c.mutation.CacheCreationTokens(); !ok {
+		return &ValidationError{Name: "cache_creation_tokens", err: errors.New(`ent: missing required field "UsageStat.cache_creation_tokens"`)}
 	}
 	if _, ok := _c.mutation.TotalLatencyMs(); !ok {
 		return &ValidationError{Name: "total_latency_ms", err: errors.New(`ent: missing required field "UsageStat.total_latency_ms"`)}
@@ -404,6 +446,14 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TotalTokens(); ok {
 		_spec.SetField(usagestat.FieldTotalTokens, field.TypeInt64, value)
 		_node.TotalTokens = value
+	}
+	if value, ok := _c.mutation.CacheReadTokens(); ok {
+		_spec.SetField(usagestat.FieldCacheReadTokens, field.TypeInt64, value)
+		_node.CacheReadTokens = value
+	}
+	if value, ok := _c.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
+		_node.CacheCreationTokens = value
 	}
 	if value, ok := _c.mutation.TotalLatencyMs(); ok {
 		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
@@ -642,6 +692,42 @@ func (u *UsageStatUpsert) UpdateTotalTokens() *UsageStatUpsert {
 // AddTotalTokens adds v to the "total_tokens" field.
 func (u *UsageStatUpsert) AddTotalTokens(v int64) *UsageStatUpsert {
 	u.Add(usagestat.FieldTotalTokens, v)
+	return u
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (u *UsageStatUpsert) SetCacheReadTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldCacheReadTokens, v)
+	return u
+}
+
+// UpdateCacheReadTokens sets the "cache_read_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateCacheReadTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldCacheReadTokens)
+	return u
+}
+
+// AddCacheReadTokens adds v to the "cache_read_tokens" field.
+func (u *UsageStatUpsert) AddCacheReadTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldCacheReadTokens, v)
+	return u
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (u *UsageStatUpsert) SetCacheCreationTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldCacheCreationTokens, v)
+	return u
+}
+
+// UpdateCacheCreationTokens sets the "cache_creation_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateCacheCreationTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldCacheCreationTokens)
+	return u
+}
+
+// AddCacheCreationTokens adds v to the "cache_creation_tokens" field.
+func (u *UsageStatUpsert) AddCacheCreationTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldCacheCreationTokens, v)
 	return u
 }
 
@@ -930,6 +1016,48 @@ func (u *UsageStatUpsertOne) AddTotalTokens(v int64) *UsageStatUpsertOne {
 func (u *UsageStatUpsertOne) UpdateTotalTokens() *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
 		s.UpdateTotalTokens()
+	})
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (u *UsageStatUpsertOne) SetCacheReadTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCacheReadTokens(v)
+	})
+}
+
+// AddCacheReadTokens adds v to the "cache_read_tokens" field.
+func (u *UsageStatUpsertOne) AddCacheReadTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCacheReadTokens(v)
+	})
+}
+
+// UpdateCacheReadTokens sets the "cache_read_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateCacheReadTokens() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCacheReadTokens()
+	})
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (u *UsageStatUpsertOne) SetCacheCreationTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCacheCreationTokens(v)
+	})
+}
+
+// AddCacheCreationTokens adds v to the "cache_creation_tokens" field.
+func (u *UsageStatUpsertOne) AddCacheCreationTokens(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCacheCreationTokens(v)
+	})
+}
+
+// UpdateCacheCreationTokens sets the "cache_creation_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateCacheCreationTokens() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCacheCreationTokens()
 	})
 }
 
@@ -1389,6 +1517,48 @@ func (u *UsageStatUpsertBulk) AddTotalTokens(v int64) *UsageStatUpsertBulk {
 func (u *UsageStatUpsertBulk) UpdateTotalTokens() *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
 		s.UpdateTotalTokens()
+	})
+}
+
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (u *UsageStatUpsertBulk) SetCacheReadTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCacheReadTokens(v)
+	})
+}
+
+// AddCacheReadTokens adds v to the "cache_read_tokens" field.
+func (u *UsageStatUpsertBulk) AddCacheReadTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCacheReadTokens(v)
+	})
+}
+
+// UpdateCacheReadTokens sets the "cache_read_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateCacheReadTokens() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCacheReadTokens()
+	})
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (u *UsageStatUpsertBulk) SetCacheCreationTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCacheCreationTokens(v)
+	})
+}
+
+// AddCacheCreationTokens adds v to the "cache_creation_tokens" field.
+func (u *UsageStatUpsertBulk) AddCacheCreationTokens(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCacheCreationTokens(v)
+	})
+}
+
+// UpdateCacheCreationTokens sets the "cache_creation_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateCacheCreationTokens() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCacheCreationTokens()
 	})
 }
 

@@ -290,6 +290,48 @@ func (_u *UsageLogUpdate) AddTotalTokens(v int64) *UsageLogUpdate {
 	return _u
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (_u *UsageLogUpdate) SetCacheReadTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetCacheReadTokens()
+	_u.mutation.SetCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCacheReadTokens(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheReadTokens adds value to the "cache_read_tokens" field.
+func (_u *UsageLogUpdate) AddCacheReadTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddCacheReadTokens(v)
+	return _u
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (_u *UsageLogUpdate) SetCacheCreationTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetCacheCreationTokens()
+	_u.mutation.SetCacheCreationTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCacheCreationTokens(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCacheCreationTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreationTokens adds value to the "cache_creation_tokens" field.
+func (_u *UsageLogUpdate) AddCacheCreationTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddCacheCreationTokens(v)
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *UsageLogUpdate) SetCreatedAt(v time.Time) *UsageLogUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -432,6 +474,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedTotalTokens(); ok {
 		_spec.AddField(usagelog.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheReadTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)
@@ -718,6 +772,48 @@ func (_u *UsageLogUpdateOne) AddTotalTokens(v int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) SetCacheReadTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetCacheReadTokens()
+	_u.mutation.SetCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCacheReadTokens(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheReadTokens adds value to the "cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) AddCacheReadTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddCacheReadTokens(v)
+	return _u
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (_u *UsageLogUpdateOne) SetCacheCreationTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetCacheCreationTokens()
+	_u.mutation.SetCacheCreationTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCacheCreationTokens(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCacheCreationTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreationTokens adds value to the "cache_creation_tokens" field.
+func (_u *UsageLogUpdateOne) AddCacheCreationTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddCacheCreationTokens(v)
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *UsageLogUpdateOne) SetCreatedAt(v time.Time) *UsageLogUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -890,6 +986,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedTotalTokens(); ok {
 		_spec.AddField(usagelog.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheReadTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
+		_spec.AddField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)

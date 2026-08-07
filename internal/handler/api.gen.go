@@ -296,18 +296,20 @@ type SetGroupAccountsBody struct {
 
 // StatBucket defines model for StatBucket.
 type StatBucket struct {
-	AccountID        *int64     `json:"AccountID,omitempty"`
-	BucketTime       *time.Time `json:"BucketTime,omitempty"`
-	CompletionTokens *int64     `json:"CompletionTokens,omitempty"`
-	ErrorCount       *int64     `json:"ErrorCount,omitempty"`
-	GroupID          *int64     `json:"GroupID,omitempty"`
-	IsError          *bool      `json:"IsError,omitempty"`
-	Model            *string    `json:"Model,omitempty"`
-	PromptTokens     *int64     `json:"PromptTokens,omitempty"`
-	RequestCount     *int64     `json:"RequestCount,omitempty"`
-	TemplateID       *int64     `json:"TemplateID,omitempty"`
-	TotalLatencyMS   *int64     `json:"TotalLatencyMS,omitempty"`
-	TotalTokens      *int64     `json:"TotalTokens,omitempty"`
+	AccountID           *int64     `json:"AccountID,omitempty"`
+	BucketTime          *time.Time `json:"BucketTime,omitempty"`
+	CacheCreationTokens *int64     `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
+	CompletionTokens    *int64     `json:"CompletionTokens,omitempty"`
+	ErrorCount          *int64     `json:"ErrorCount,omitempty"`
+	GroupID             *int64     `json:"GroupID,omitempty"`
+	IsError             *bool      `json:"IsError,omitempty"`
+	Model               *string    `json:"Model,omitempty"`
+	PromptTokens        *int64     `json:"PromptTokens,omitempty"`
+	RequestCount        *int64     `json:"RequestCount,omitempty"`
+	TemplateID          *int64     `json:"TemplateID,omitempty"`
+	TotalLatencyMS      *int64     `json:"TotalLatencyMS,omitempty"`
+	TotalTokens         *int64     `json:"TotalTokens,omitempty"`
 }
 
 // Template defines model for Template.
@@ -365,21 +367,23 @@ type UpdatedResponse struct {
 
 // UsageLog defines model for UsageLog.
 type UsageLog struct {
-	AccountID        *int64         `json:"AccountID,omitempty"`
-	CompletionTokens *int64         `json:"CompletionTokens,omitempty"`
-	CreatedAt        *time.Time     `json:"CreatedAt,omitempty"`
-	ErrorType        *ErrorType     `json:"ErrorType,omitempty"`
-	Format           *RequestFormat `json:"Format,omitempty"`
-	GroupID          *int64         `json:"GroupID,omitempty"`
-	ID               *int64         `json:"ID,omitempty"`
-	LatencyMS        *int64         `json:"LatencyMS,omitempty"`
-	MappedModel      *string        `json:"MappedModel"`
-	Model            *string        `json:"Model,omitempty"`
-	PromptTokens     *int64         `json:"PromptTokens,omitempty"`
-	RequestID        *string        `json:"RequestID,omitempty"`
-	StatusCode       *int           `json:"StatusCode,omitempty"`
-	TemplateID       *int64         `json:"TemplateID,omitempty"`
-	TotalTokens      *int64         `json:"TotalTokens,omitempty"`
+	AccountID           *int64         `json:"AccountID,omitempty"`
+	CacheCreationTokens *int64         `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64         `json:"CacheReadTokens,omitempty"`
+	CompletionTokens    *int64         `json:"CompletionTokens,omitempty"`
+	CreatedAt           *time.Time     `json:"CreatedAt,omitempty"`
+	ErrorType           *ErrorType     `json:"ErrorType,omitempty"`
+	Format              *RequestFormat `json:"Format,omitempty"`
+	GroupID             *int64         `json:"GroupID,omitempty"`
+	ID                  *int64         `json:"ID,omitempty"`
+	LatencyMS           *int64         `json:"LatencyMS,omitempty"`
+	MappedModel         *string        `json:"MappedModel"`
+	Model               *string        `json:"Model,omitempty"`
+	PromptTokens        *int64         `json:"PromptTokens,omitempty"`
+	RequestID           *string        `json:"RequestID,omitempty"`
+	StatusCode          *int           `json:"StatusCode,omitempty"`
+	TemplateID          *int64         `json:"TemplateID,omitempty"`
+	TotalTokens         *int64         `json:"TotalTokens,omitempty"`
 }
 
 // Error defines model for Error.

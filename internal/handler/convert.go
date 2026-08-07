@@ -105,11 +105,13 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		Format:           &f,
 		StatusCode:       &l.StatusCode,
 		ErrorType:        &et,
-		LatencyMS:        &l.LatencyMS,
-		PromptTokens:     &l.PromptTokens,
-		CompletionTokens: &l.CompletionTokens,
-		TotalTokens:      &l.TotalTokens,
-		CreatedAt:        &l.CreatedAt,
+		LatencyMS:           &l.LatencyMS,
+		PromptTokens:        &l.PromptTokens,
+		CompletionTokens:    &l.CompletionTokens,
+		TotalTokens:         &l.TotalTokens,
+		CacheReadTokens:     &l.CacheReadTokens,
+		CacheCreationTokens: &l.CacheCreationTokens,
+		CreatedAt:           &l.CreatedAt,
 	}
 }
 
@@ -124,10 +126,12 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		IsError:          &b.IsError,
 		RequestCount:     &b.RequestCount,
 		ErrorCount:       &b.ErrorCount,
-		PromptTokens:     &b.PromptTokens,
-		CompletionTokens: &b.CompletionTokens,
-		TotalTokens:      &b.TotalTokens,
-		TotalLatencyMS:   &b.TotalLatencyMS,
+		PromptTokens:        &b.PromptTokens,
+		CompletionTokens:    &b.CompletionTokens,
+		TotalTokens:         &b.TotalTokens,
+		CacheReadTokens:     &b.CacheReadTokens,
+		CacheCreationTokens: &b.CacheCreationTokens,
+		TotalLatencyMS:      &b.TotalLatencyMS,
 	}
 }
 

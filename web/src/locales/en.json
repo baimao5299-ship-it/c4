@@ -229,7 +229,8 @@
       "latency": "Latency",
       "promptTokens": "PT",
       "completionTokens": "CT",
-      "totalTokens": "TT"
+      "totalTokens": "TT",
+      "cache": "CR/CC"
     },
     "pagination": {
       "total": "{{total}} entries",

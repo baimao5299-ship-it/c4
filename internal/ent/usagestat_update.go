@@ -238,6 +238,48 @@ func (_u *UsageStatUpdate) AddTotalTokens(v int64) *UsageStatUpdate {
 	return _u
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (_u *UsageStatUpdate) SetCacheReadTokens(v int64) *UsageStatUpdate {
+	_u.mutation.ResetCacheReadTokens()
+	_u.mutation.SetCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableCacheReadTokens(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheReadTokens adds value to the "cache_read_tokens" field.
+func (_u *UsageStatUpdate) AddCacheReadTokens(v int64) *UsageStatUpdate {
+	_u.mutation.AddCacheReadTokens(v)
+	return _u
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (_u *UsageStatUpdate) SetCacheCreationTokens(v int64) *UsageStatUpdate {
+	_u.mutation.ResetCacheCreationTokens()
+	_u.mutation.SetCacheCreationTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableCacheCreationTokens(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetCacheCreationTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreationTokens adds value to the "cache_creation_tokens" field.
+func (_u *UsageStatUpdate) AddCacheCreationTokens(v int64) *UsageStatUpdate {
+	_u.mutation.AddCacheCreationTokens(v)
+	return _u
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (_u *UsageStatUpdate) SetTotalLatencyMs(v int64) *UsageStatUpdate {
 	_u.mutation.ResetTotalLatencyMs()
@@ -371,6 +413,18 @@ func (_u *UsageStatUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedTotalTokens(); ok {
 		_spec.AddField(usagestat.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheReadTokens(); ok {
+		_spec.SetField(usagestat.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheReadTokens(); ok {
+		_spec.AddField(usagestat.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
+		_spec.AddField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalLatencyMs(); ok {
 		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
@@ -611,6 +665,48 @@ func (_u *UsageStatUpdateOne) AddTotalTokens(v int64) *UsageStatUpdateOne {
 	return _u
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (_u *UsageStatUpdateOne) SetCacheReadTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetCacheReadTokens()
+	_u.mutation.SetCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableCacheReadTokens sets the "cache_read_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableCacheReadTokens(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheReadTokens adds value to the "cache_read_tokens" field.
+func (_u *UsageStatUpdateOne) AddCacheReadTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddCacheReadTokens(v)
+	return _u
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (_u *UsageStatUpdateOne) SetCacheCreationTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetCacheCreationTokens()
+	_u.mutation.SetCacheCreationTokens(v)
+	return _u
+}
+
+// SetNillableCacheCreationTokens sets the "cache_creation_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableCacheCreationTokens(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetCacheCreationTokens(*v)
+	}
+	return _u
+}
+
+// AddCacheCreationTokens adds value to the "cache_creation_tokens" field.
+func (_u *UsageStatUpdateOne) AddCacheCreationTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddCacheCreationTokens(v)
+	return _u
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (_u *UsageStatUpdateOne) SetTotalLatencyMs(v int64) *UsageStatUpdateOne {
 	_u.mutation.ResetTotalLatencyMs()
@@ -774,6 +870,18 @@ func (_u *UsageStatUpdateOne) sqlSave(ctx context.Context) (_node *UsageStat, er
 	}
 	if value, ok := _u.mutation.AddedTotalTokens(); ok {
 		_spec.AddField(usagestat.FieldTotalTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheReadTokens(); ok {
+		_spec.SetField(usagestat.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheReadTokens(); ok {
+		_spec.AddField(usagestat.FieldCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.CacheCreationTokens(); ok {
+		_spec.SetField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
+		_spec.AddField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalLatencyMs(); ok {
 		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)

@@ -3348,35 +3348,39 @@ func (m *TemplateMutation) ResetEdge(name string) error {
 // UsageLogMutation represents an operation that mutates the UsageLog nodes in the graph.
 type UsageLogMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int64
-	request_id           *string
-	group_id             *int64
-	addgroup_id          *int64
-	account_id           *int64
-	addaccount_id        *int64
-	template_id          *int64
-	addtemplate_id       *int64
-	model                *string
-	mapped_model         *string
-	format               *usagelog.Format
-	status_code          *int
-	addstatus_code       *int
-	error_type           *string
-	latency_ms           *int64
-	addlatency_ms        *int64
-	prompt_tokens        *int64
-	addprompt_tokens     *int64
-	completion_tokens    *int64
-	addcompletion_tokens *int64
-	total_tokens         *int64
-	addtotal_tokens      *int64
-	created_at           *time.Time
-	clearedFields        map[string]struct{}
-	done                 bool
-	oldValue             func(context.Context) (*UsageLog, error)
-	predicates           []predicate.UsageLog
+	op                       Op
+	typ                      string
+	id                       *int64
+	request_id               *string
+	group_id                 *int64
+	addgroup_id              *int64
+	account_id               *int64
+	addaccount_id            *int64
+	template_id              *int64
+	addtemplate_id           *int64
+	model                    *string
+	mapped_model             *string
+	format                   *usagelog.Format
+	status_code              *int
+	addstatus_code           *int
+	error_type               *string
+	latency_ms               *int64
+	addlatency_ms            *int64
+	prompt_tokens            *int64
+	addprompt_tokens         *int64
+	completion_tokens        *int64
+	addcompletion_tokens     *int64
+	total_tokens             *int64
+	addtotal_tokens          *int64
+	cache_read_tokens        *int64
+	addcache_read_tokens     *int64
+	cache_creation_tokens    *int64
+	addcache_creation_tokens *int64
+	created_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*UsageLog, error)
+	predicates               []predicate.UsageLog
 }
 
 var _ ent.Mutation = (*UsageLogMutation)(nil)
@@ -4166,6 +4170,118 @@ func (m *UsageLogMutation) ResetTotalTokens() {
 	m.addtotal_tokens = nil
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (m *UsageLogMutation) SetCacheReadTokens(i int64) {
+	m.cache_read_tokens = &i
+	m.addcache_read_tokens = nil
+}
+
+// CacheReadTokens returns the value of the "cache_read_tokens" field in the mutation.
+func (m *UsageLogMutation) CacheReadTokens() (r int64, exists bool) {
+	v := m.cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheReadTokens returns the old "cache_read_tokens" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldCacheReadTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheReadTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheReadTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheReadTokens: %w", err)
+	}
+	return oldValue.CacheReadTokens, nil
+}
+
+// AddCacheReadTokens adds i to the "cache_read_tokens" field.
+func (m *UsageLogMutation) AddCacheReadTokens(i int64) {
+	if m.addcache_read_tokens != nil {
+		*m.addcache_read_tokens += i
+	} else {
+		m.addcache_read_tokens = &i
+	}
+}
+
+// AddedCacheReadTokens returns the value that was added to the "cache_read_tokens" field in this mutation.
+func (m *UsageLogMutation) AddedCacheReadTokens() (r int64, exists bool) {
+	v := m.addcache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheReadTokens resets all changes to the "cache_read_tokens" field.
+func (m *UsageLogMutation) ResetCacheReadTokens() {
+	m.cache_read_tokens = nil
+	m.addcache_read_tokens = nil
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (m *UsageLogMutation) SetCacheCreationTokens(i int64) {
+	m.cache_creation_tokens = &i
+	m.addcache_creation_tokens = nil
+}
+
+// CacheCreationTokens returns the value of the "cache_creation_tokens" field in the mutation.
+func (m *UsageLogMutation) CacheCreationTokens() (r int64, exists bool) {
+	v := m.cache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheCreationTokens returns the old "cache_creation_tokens" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldCacheCreationTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheCreationTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheCreationTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheCreationTokens: %w", err)
+	}
+	return oldValue.CacheCreationTokens, nil
+}
+
+// AddCacheCreationTokens adds i to the "cache_creation_tokens" field.
+func (m *UsageLogMutation) AddCacheCreationTokens(i int64) {
+	if m.addcache_creation_tokens != nil {
+		*m.addcache_creation_tokens += i
+	} else {
+		m.addcache_creation_tokens = &i
+	}
+}
+
+// AddedCacheCreationTokens returns the value that was added to the "cache_creation_tokens" field in this mutation.
+func (m *UsageLogMutation) AddedCacheCreationTokens() (r int64, exists bool) {
+	v := m.addcache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheCreationTokens resets all changes to the "cache_creation_tokens" field.
+func (m *UsageLogMutation) ResetCacheCreationTokens() {
+	m.cache_creation_tokens = nil
+	m.addcache_creation_tokens = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *UsageLogMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -4236,7 +4352,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 16)
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
 	}
@@ -4276,6 +4392,12 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.total_tokens != nil {
 		fields = append(fields, usagelog.FieldTotalTokens)
 	}
+	if m.cache_read_tokens != nil {
+		fields = append(fields, usagelog.FieldCacheReadTokens)
+	}
+	if m.cache_creation_tokens != nil {
+		fields = append(fields, usagelog.FieldCacheCreationTokens)
+	}
 	if m.created_at != nil {
 		fields = append(fields, usagelog.FieldCreatedAt)
 	}
@@ -4313,6 +4435,10 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.CompletionTokens()
 	case usagelog.FieldTotalTokens:
 		return m.TotalTokens()
+	case usagelog.FieldCacheReadTokens:
+		return m.CacheReadTokens()
+	case usagelog.FieldCacheCreationTokens:
+		return m.CacheCreationTokens()
 	case usagelog.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -4350,6 +4476,10 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldCompletionTokens(ctx)
 	case usagelog.FieldTotalTokens:
 		return m.OldTotalTokens(ctx)
+	case usagelog.FieldCacheReadTokens:
+		return m.OldCacheReadTokens(ctx)
+	case usagelog.FieldCacheCreationTokens:
+		return m.OldCacheCreationTokens(ctx)
 	case usagelog.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -4452,6 +4582,20 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTotalTokens(v)
 		return nil
+	case usagelog.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheReadTokens(v)
+		return nil
+	case usagelog.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheCreationTokens(v)
+		return nil
 	case usagelog.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -4491,6 +4635,12 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addtotal_tokens != nil {
 		fields = append(fields, usagelog.FieldTotalTokens)
 	}
+	if m.addcache_read_tokens != nil {
+		fields = append(fields, usagelog.FieldCacheReadTokens)
+	}
+	if m.addcache_creation_tokens != nil {
+		fields = append(fields, usagelog.FieldCacheCreationTokens)
+	}
 	return fields
 }
 
@@ -4515,6 +4665,10 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedCompletionTokens()
 	case usagelog.FieldTotalTokens:
 		return m.AddedTotalTokens()
+	case usagelog.FieldCacheReadTokens:
+		return m.AddedCacheReadTokens()
+	case usagelog.FieldCacheCreationTokens:
+		return m.AddedCacheCreationTokens()
 	}
 	return nil, false
 }
@@ -4579,6 +4733,20 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddTotalTokens(v)
+		return nil
+	case usagelog.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheReadTokens(v)
+		return nil
+	case usagelog.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheCreationTokens(v)
 		return nil
 	}
 	return fmt.Errorf("unknown UsageLog numeric field %s", name)
@@ -4673,6 +4841,12 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldTotalTokens:
 		m.ResetTotalTokens()
 		return nil
+	case usagelog.FieldCacheReadTokens:
+		m.ResetCacheReadTokens()
+		return nil
+	case usagelog.FieldCacheCreationTokens:
+		m.ResetCacheCreationTokens()
+		return nil
 	case usagelog.FieldCreatedAt:
 		m.ResetCreatedAt()
 		return nil
@@ -4731,35 +4905,39 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 // UsageStatMutation represents an operation that mutates the UsageStat nodes in the graph.
 type UsageStatMutation struct {
 	config
-	op                   Op
-	typ                  string
-	id                   *int64
-	bucket_time          *time.Time
-	group_id             *int64
-	addgroup_id          *int64
-	account_id           *int64
-	addaccount_id        *int64
-	template_id          *int64
-	addtemplate_id       *int64
-	model                *string
-	is_error             *bool
-	request_count        *int64
-	addrequest_count     *int64
-	error_count          *int64
-	adderror_count       *int64
-	prompt_tokens        *int64
-	addprompt_tokens     *int64
-	completion_tokens    *int64
-	addcompletion_tokens *int64
-	total_tokens         *int64
-	addtotal_tokens      *int64
-	total_latency_ms     *int64
-	addtotal_latency_ms  *int64
-	updated_at           *time.Time
-	clearedFields        map[string]struct{}
-	done                 bool
-	oldValue             func(context.Context) (*UsageStat, error)
-	predicates           []predicate.UsageStat
+	op                       Op
+	typ                      string
+	id                       *int64
+	bucket_time              *time.Time
+	group_id                 *int64
+	addgroup_id              *int64
+	account_id               *int64
+	addaccount_id            *int64
+	template_id              *int64
+	addtemplate_id           *int64
+	model                    *string
+	is_error                 *bool
+	request_count            *int64
+	addrequest_count         *int64
+	error_count              *int64
+	adderror_count           *int64
+	prompt_tokens            *int64
+	addprompt_tokens         *int64
+	completion_tokens        *int64
+	addcompletion_tokens     *int64
+	total_tokens             *int64
+	addtotal_tokens          *int64
+	cache_read_tokens        *int64
+	addcache_read_tokens     *int64
+	cache_creation_tokens    *int64
+	addcache_creation_tokens *int64
+	total_latency_ms         *int64
+	addtotal_latency_ms      *int64
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*UsageStat, error)
+	predicates               []predicate.UsageStat
 }
 
 var _ ent.Mutation = (*UsageStatMutation)(nil)
@@ -5422,6 +5600,118 @@ func (m *UsageStatMutation) ResetTotalTokens() {
 	m.addtotal_tokens = nil
 }
 
+// SetCacheReadTokens sets the "cache_read_tokens" field.
+func (m *UsageStatMutation) SetCacheReadTokens(i int64) {
+	m.cache_read_tokens = &i
+	m.addcache_read_tokens = nil
+}
+
+// CacheReadTokens returns the value of the "cache_read_tokens" field in the mutation.
+func (m *UsageStatMutation) CacheReadTokens() (r int64, exists bool) {
+	v := m.cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheReadTokens returns the old "cache_read_tokens" field's value of the UsageStat entity.
+// If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageStatMutation) OldCacheReadTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheReadTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheReadTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheReadTokens: %w", err)
+	}
+	return oldValue.CacheReadTokens, nil
+}
+
+// AddCacheReadTokens adds i to the "cache_read_tokens" field.
+func (m *UsageStatMutation) AddCacheReadTokens(i int64) {
+	if m.addcache_read_tokens != nil {
+		*m.addcache_read_tokens += i
+	} else {
+		m.addcache_read_tokens = &i
+	}
+}
+
+// AddedCacheReadTokens returns the value that was added to the "cache_read_tokens" field in this mutation.
+func (m *UsageStatMutation) AddedCacheReadTokens() (r int64, exists bool) {
+	v := m.addcache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheReadTokens resets all changes to the "cache_read_tokens" field.
+func (m *UsageStatMutation) ResetCacheReadTokens() {
+	m.cache_read_tokens = nil
+	m.addcache_read_tokens = nil
+}
+
+// SetCacheCreationTokens sets the "cache_creation_tokens" field.
+func (m *UsageStatMutation) SetCacheCreationTokens(i int64) {
+	m.cache_creation_tokens = &i
+	m.addcache_creation_tokens = nil
+}
+
+// CacheCreationTokens returns the value of the "cache_creation_tokens" field in the mutation.
+func (m *UsageStatMutation) CacheCreationTokens() (r int64, exists bool) {
+	v := m.cache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheCreationTokens returns the old "cache_creation_tokens" field's value of the UsageStat entity.
+// If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageStatMutation) OldCacheCreationTokens(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheCreationTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheCreationTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheCreationTokens: %w", err)
+	}
+	return oldValue.CacheCreationTokens, nil
+}
+
+// AddCacheCreationTokens adds i to the "cache_creation_tokens" field.
+func (m *UsageStatMutation) AddCacheCreationTokens(i int64) {
+	if m.addcache_creation_tokens != nil {
+		*m.addcache_creation_tokens += i
+	} else {
+		m.addcache_creation_tokens = &i
+	}
+}
+
+// AddedCacheCreationTokens returns the value that was added to the "cache_creation_tokens" field in this mutation.
+func (m *UsageStatMutation) AddedCacheCreationTokens() (r int64, exists bool) {
+	v := m.addcache_creation_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheCreationTokens resets all changes to the "cache_creation_tokens" field.
+func (m *UsageStatMutation) ResetCacheCreationTokens() {
+	m.cache_creation_tokens = nil
+	m.addcache_creation_tokens = nil
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (m *UsageStatMutation) SetTotalLatencyMs(i int64) {
 	m.total_latency_ms = &i
@@ -5548,7 +5838,7 @@ func (m *UsageStatMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageStatMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 15)
 	if m.bucket_time != nil {
 		fields = append(fields, usagestat.FieldBucketTime)
 	}
@@ -5581,6 +5871,12 @@ func (m *UsageStatMutation) Fields() []string {
 	}
 	if m.total_tokens != nil {
 		fields = append(fields, usagestat.FieldTotalTokens)
+	}
+	if m.cache_read_tokens != nil {
+		fields = append(fields, usagestat.FieldCacheReadTokens)
+	}
+	if m.cache_creation_tokens != nil {
+		fields = append(fields, usagestat.FieldCacheCreationTokens)
 	}
 	if m.total_latency_ms != nil {
 		fields = append(fields, usagestat.FieldTotalLatencyMs)
@@ -5618,6 +5914,10 @@ func (m *UsageStatMutation) Field(name string) (ent.Value, bool) {
 		return m.CompletionTokens()
 	case usagestat.FieldTotalTokens:
 		return m.TotalTokens()
+	case usagestat.FieldCacheReadTokens:
+		return m.CacheReadTokens()
+	case usagestat.FieldCacheCreationTokens:
+		return m.CacheCreationTokens()
 	case usagestat.FieldTotalLatencyMs:
 		return m.TotalLatencyMs()
 	case usagestat.FieldUpdatedAt:
@@ -5653,6 +5953,10 @@ func (m *UsageStatMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldCompletionTokens(ctx)
 	case usagestat.FieldTotalTokens:
 		return m.OldTotalTokens(ctx)
+	case usagestat.FieldCacheReadTokens:
+		return m.OldCacheReadTokens(ctx)
+	case usagestat.FieldCacheCreationTokens:
+		return m.OldCacheCreationTokens(ctx)
 	case usagestat.FieldTotalLatencyMs:
 		return m.OldTotalLatencyMs(ctx)
 	case usagestat.FieldUpdatedAt:
@@ -5743,6 +6047,20 @@ func (m *UsageStatMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTotalTokens(v)
 		return nil
+	case usagestat.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheReadTokens(v)
+		return nil
+	case usagestat.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheCreationTokens(v)
+		return nil
 	case usagestat.FieldTotalLatencyMs:
 		v, ok := value.(int64)
 		if !ok {
@@ -5789,6 +6107,12 @@ func (m *UsageStatMutation) AddedFields() []string {
 	if m.addtotal_tokens != nil {
 		fields = append(fields, usagestat.FieldTotalTokens)
 	}
+	if m.addcache_read_tokens != nil {
+		fields = append(fields, usagestat.FieldCacheReadTokens)
+	}
+	if m.addcache_creation_tokens != nil {
+		fields = append(fields, usagestat.FieldCacheCreationTokens)
+	}
 	if m.addtotal_latency_ms != nil {
 		fields = append(fields, usagestat.FieldTotalLatencyMs)
 	}
@@ -5816,6 +6140,10 @@ func (m *UsageStatMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedCompletionTokens()
 	case usagestat.FieldTotalTokens:
 		return m.AddedTotalTokens()
+	case usagestat.FieldCacheReadTokens:
+		return m.AddedCacheReadTokens()
+	case usagestat.FieldCacheCreationTokens:
+		return m.AddedCacheCreationTokens()
 	case usagestat.FieldTotalLatencyMs:
 		return m.AddedTotalLatencyMs()
 	}
@@ -5883,6 +6211,20 @@ func (m *UsageStatMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddTotalTokens(v)
 		return nil
+	case usagestat.FieldCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheReadTokens(v)
+		return nil
+	case usagestat.FieldCacheCreationTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheCreationTokens(v)
+		return nil
 	case usagestat.FieldTotalLatencyMs:
 		v, ok := value.(int64)
 		if !ok {
@@ -5949,6 +6291,12 @@ func (m *UsageStatMutation) ResetField(name string) error {
 		return nil
 	case usagestat.FieldTotalTokens:
 		m.ResetTotalTokens()
+		return nil
+	case usagestat.FieldCacheReadTokens:
+		m.ResetCacheReadTokens()
+		return nil
+	case usagestat.FieldCacheCreationTokens:
+		m.ResetCacheCreationTokens()
 		return nil
 	case usagestat.FieldTotalLatencyMs:
 		m.ResetTotalLatencyMs()

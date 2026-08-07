@@ -579,6 +579,10 @@ export interface components {
             CompletionTokens?: number;
             /** Format: int64 */
             TotalTokens?: number;
+            /** Format: int64 */
+            CacheReadTokens?: number;
+            /** Format: int64 */
+            CacheCreationTokens?: number;
             /** Format: date-time */
             CreatedAt?: string;
         };
@@ -608,6 +612,10 @@ export interface components {
             CompletionTokens?: number;
             /** Format: int64 */
             TotalTokens?: number;
+            /** Format: int64 */
+            CacheReadTokens?: number;
+            /** Format: int64 */
+            CacheCreationTokens?: number;
             /** Format: int64 */
             TotalLatencyMS?: number;
         };
