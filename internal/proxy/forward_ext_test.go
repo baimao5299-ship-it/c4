@@ -63,10 +63,15 @@ func fakeResponses(t *testing.T, failMode string) *httptest.Server {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			fl := w.(http.Flusher)
+			// "slow-stream"：第二个事件前停 50ms，模拟上游长生成——客户端
+			// 可在流中途断开，代理 relay 写失败感知断开（断开记录测试用）。
 			// 真实 Responses API 的 SSE 带 event: 行（openai SDK 只按 data JSON
 			// 的 type 分发，event 行不影响 SDK 消费）；代理 relay 后原样保留。
 			fmt.Fprint(w, `event: response.output_text.delta`+"\n"+`data: {"type":"response.output_text.delta","delta":"hi"}`+"\n\n")
 			fl.Flush()
+			if failMode == "slow-stream" {
+				time.Sleep(50 * time.Millisecond)
+			}
 			fmt.Fprint(w, `event: response.completed`+"\n"+`data: {"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, "data: [DONE]\n\n")
@@ -120,11 +125,19 @@ func fakeAnthropic(t *testing.T, failMode string) *httptest.Server {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			fl := w.(http.Flusher)
+			// "slow-stream"：事件间隔 50ms，模拟上游长生成——客户端可在流
+			// 中途断开，代理 relay 写失败感知断开（客户端断开记录测试用）。
+			if failMode == "slow-stream" {
+				time.Sleep(50 * time.Millisecond)
+			}
 			// anthropic SSE 带 event: 行；SDK 按 event 类型分发事件（无 event 行的事件被跳过）。
 			// 用量按真实 API 分布：input_tokens 在 message_start.message.usage，
 			// output_tokens 在 message_delta.usage（message_delta 不带 input_tokens）。
 			fmt.Fprint(w, `event: message_start`+"\n"+`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"gpt-4o","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}`+"\n\n")
 			fl.Flush()
+			if failMode == "slow-stream" {
+				time.Sleep(50 * time.Millisecond)
+			}
 			fmt.Fprint(w, `event: content_block_delta`+"\n"+`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`+"\n\n")
 			fl.Flush()
 			fmt.Fprint(w, `event: message_delta`+"\n"+`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":20}}`+"\n\n")
@@ -274,6 +287,46 @@ func TestProxyAnthropicNonStreaming(t *testing.T) {
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
 	require.Equal(t, 1, p.rec.Pending(), "成功路径必须记录一条用量")
+}
+
+// 流式 + 客户端提前断开：上游已消费请求（成功），仍必须记录一条用量
+// （修复：此前 finish(nil) 只释放并发槽不落日志，成功请求丢日志）。
+func TestProxyStreamClientAbortStillLogs(t *testing.T) {
+	up := fakeResponses(t, "slow-stream")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyFormatLogs(t, up.URL+"/v1", domain.FormatOpenAIResponses, store)
+	srv := httptest.NewServer(http.HandlerFunc(p.HandleResponses))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/v1/responses",
+		strings.NewReader(`{"model":"gpt-4o","input":"hi","stream":true}`))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer gk-1")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	// 读到第一个 SSE 事件后主动断开（模拟 SDK 迭代完/工具退出关闭连接）
+	buf := make([]byte, 512)
+	_, _ = resp.Body.Read(buf)
+	cancel()
+	_ = resp.Body.Close()
+
+	// relay 感知断开是异步的：先等记录进队列（Pending>0 或已自动 flush），再 Close 兜底 flush
+	require.Eventually(t, func() bool {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return len(store.logs) == 1 || p.rec.Pending() > 0
+	}, 3*time.Second, 10*time.Millisecond, "relay 必须感知客户端断开并记录用量")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "客户端断开后上游已消费，必须记录一条用量")
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
+	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "客户端断开后并发槽必须释放")
 }
 
 func TestProxyResponsesFailoverExhausted429(t *testing.T) {
