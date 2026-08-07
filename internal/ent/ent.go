@@ -8,10 +8,15 @@ import (
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/groupassignment"
+	"go-proxy-mini/internal/ent/key"
 	"go-proxy-mini/internal/ent/rule"
+	"go-proxy-mini/internal/ent/setting"
+	"go-proxy-mini/internal/ent/tempbalance"
 	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
+	"go-proxy-mini/internal/ent/user"
 	"reflect"
 	"sync"
 
@@ -78,12 +83,17 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			account.Table:   account.ValidColumn,
-			group.Table:     group.ValidColumn,
-			rule.Table:      rule.ValidColumn,
-			template.Table:  template.ValidColumn,
-			usagelog.Table:  usagelog.ValidColumn,
-			usagestat.Table: usagestat.ValidColumn,
+			account.Table:         account.ValidColumn,
+			group.Table:           group.ValidColumn,
+			groupassignment.Table: groupassignment.ValidColumn,
+			key.Table:             key.ValidColumn,
+			rule.Table:            rule.ValidColumn,
+			setting.Table:         setting.ValidColumn,
+			tempbalance.Table:     tempbalance.ValidColumn,
+			template.Table:        template.ValidColumn,
+			usagelog.Table:        usagelog.ValidColumn,
+			usagestat.Table:       usagestat.ValidColumn,
+			user.Table:            user.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

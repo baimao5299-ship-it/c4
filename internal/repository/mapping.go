@@ -7,6 +7,45 @@ import (
 	"go-proxy-mini/internal/ent/template"
 )
 
+func toDomainUser(u *ent.User) *domain.User {
+	return &domain.User{
+		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash,
+		Role: domain.Role(u.Role), Status: domain.UserStatus(u.Status),
+		MaxConcurrency: u.MaxConcurrency, Balance: u.Balance,
+		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+	}
+}
+
+func toDomainKey(k *ent.Key) *domain.Key {
+	return &domain.Key{
+		ID: k.ID, UserID: k.UserID, GroupID: k.GroupID, Name: k.Name,
+		KeyHash: k.KeyHash, KeyPrefix: k.KeyPrefix,
+		Status: domain.KeyStatus(k.Status), MaxConcurrency: k.MaxConcurrency,
+		Quota: k.Quota, QuotaUsed: k.QuotaUsed,
+		CreatedAt: k.CreatedAt, UpdatedAt: k.UpdatedAt,
+	}
+}
+
+func toDomainGroup(g *ent.Group) *domain.Group {
+	return &domain.Group{
+		ID: g.ID, Name: g.Name, Visibility: domain.GroupVisibility(g.Visibility),
+		CreatedAt: g.CreatedAt, UpdatedAt: g.UpdatedAt,
+	}
+}
+
+func toDomainGroupAssignment(a *ent.GroupAssignment) *domain.GroupAssignment {
+	return &domain.GroupAssignment{
+		ID: a.ID, GroupID: a.GroupID, UserID: a.UserID, CreatedAt: a.CreatedAt,
+	}
+}
+
+func toDomainSetting(s *ent.Setting) *domain.Setting {
+	return &domain.Setting{
+		ID: s.ID, Key: s.Key, Type: domain.SettingType(s.Type),
+		Value: s.Value, UpdatedAt: s.UpdatedAt,
+	}
+}
+
 func toDomainTemplate(t *ent.Template) *domain.Template {
 	formats := make([]domain.RequestFormat, 0, len(t.SupportedFormats))
 	for _, f := range t.SupportedFormats {

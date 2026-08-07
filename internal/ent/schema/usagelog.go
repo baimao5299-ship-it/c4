@@ -17,6 +17,8 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("group_id").Optional().Nillable(),
 		field.Int64("account_id").Optional().Nillable(),
 		field.Int64("template_id").Optional().Nillable(),
+		field.Int64("user_id").Optional().Nillable(), // 鉴权 key 归属用户（context 传递，0 = 无）
+		field.Int64("key_id").Optional().Nillable(),  // 鉴权 key（context 传递，0 = 无）
 		field.String("model").Default(""),
 		field.String("mapped_model").Optional().Nillable(),
 		field.Enum("format").
@@ -38,5 +40,7 @@ func (UsageLog) Indexes() []ent.Index {
 		index.Fields("created_at"),
 		index.Fields("group_id", "created_at"),
 		index.Fields("account_id", "created_at"),
+		index.Fields("user_id", "created_at"),
+		index.Fields("key_id", "created_at"),
 	}
 }

@@ -1,0 +1,341 @@
+package repository_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/user"
+	"go-proxy-mini/internal/repository"
+)
+
+// ---------------------------------------------------------------------------
+// Phase 3a 真实 PostgreSQL 测试基座（评审 B1 延续：新表/新语义一律真实 PG）。
+// 启动方式：
+//   docker compose -f deploy/test-compose.yml up -d
+//   TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15432/gpm_test \
+//     go test ./internal/repository/ -run PG -v
+// 未设置 TEST_DATABASE_URL → t.Skip。
+// ---------------------------------------------------------------------------
+
+// seedPGUser 建用户（role 缺省 user；返回创建的 domain.User）。
+func seedPGUser(t *testing.T, repos *repository.Repos, email string) *domain.User {
+	t.Helper()
+	u, err := repos.CreateUser(context.Background(), &domain.User{
+		Email: email, PasswordHash: "bcrypt-hash-" + email,
+		Role: domain.RoleUser, Status: domain.UserStatusActive, MaxConcurrency: 0,
+	})
+	require.NoError(t, err)
+	return u
+}
+
+func TestPGUserCRUD(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	u := seedPGUser(t, repos, "a@example.com")
+	require.True(t, u.ID > 0)
+	require.Equal(t, domain.RoleUser, u.Role, "role 缺省 user")
+	require.Equal(t, domain.UserStatusActive, u.Status, "status 缺省 active")
+	require.Zero(t, u.Balance, "balance 默认 0")
+
+	// GetByEmail（未找到 → nil,nil；找到 → 完整回读）
+	got, err := repos.GetUserByEmail(ctx, "a@example.com")
+	require.NoError(t, err)
+	require.Equal(t, u.ID, got.ID)
+	missing, err := repos.GetUserByEmail(ctx, "nope@example.com")
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	// Update（role/status/max_concurrency/balance）
+	u.Role = domain.RolePlatformAdmin
+	u.Status = domain.UserStatusDisabled
+	u.MaxConcurrency = 3
+	u.Balance = 12345
+	updated, err := repos.UpdateUser(ctx, u)
+	require.NoError(t, err)
+	require.Equal(t, domain.RolePlatformAdmin, updated.Role)
+	require.Equal(t, domain.UserStatusDisabled, updated.Status)
+	require.Equal(t, 3, updated.MaxConcurrency)
+	require.Equal(t, int64(12345), updated.Balance)
+
+	// UpdateUserPassword（独立路径；不影响其他字段）
+	require.NoError(t, repos.UpdateUserPassword(ctx, u.ID, "new-hash"))
+	got2, err := repos.GetUser(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, "new-hash", got2.PasswordHash)
+	require.Equal(t, domain.RolePlatformAdmin, got2.Role, "改密不动其他字段")
+
+	// ListUsers（email 过滤 + 分页 + sort 白名单）
+	seedPGUser(t, repos, "b@example.com")
+	rows, total, err := repos.ListUsers(ctx, repository.ListQuery{Email: "b@", Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
+	require.Equal(t, "b@example.com", rows[0].Email)
+
+	// LoadUsers 状态快照（Auth RequireJWT 用）
+	states, err := repos.Users.LoadUsers(ctx)
+	require.NoError(t, err)
+	require.Contains(t, states, u.ID)
+	require.Equal(t, domain.UserStatusDisabled, states[u.ID], "用户禁用后快照反映")
+}
+
+func TestPGKeyLifecycle(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	u := seedPGUser(t, repos, "keys@example.com")
+	g, err := repos.Groups.CreateGroup(ctx, &domain.Group{Name: "kg", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+
+	k, err := repos.CreateKey(ctx, &domain.Key{
+		UserID: u.ID, GroupID: g.ID, Name: "k1",
+		KeyHash: "hash-k1", KeyPrefix: "gk-aaaa",
+		Status: domain.KeyStatusActive, MaxConcurrency: 0,
+		Quota: 100, QuotaUsed: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, k.ID > 0)
+
+	// GetKeyByHash（未找到 → nil,nil）
+	got, err := repos.GetKeyByHash(ctx, "hash-k1")
+	require.NoError(t, err)
+	require.Equal(t, k.ID, got.ID)
+	require.Equal(t, int64(10), got.QuotaUsed)
+	missing, err := repos.GetKeyByHash(ctx, "hash-nope")
+	require.NoError(t, err)
+	require.Nil(t, missing)
+
+	// ListKeysByUser
+	rows, total, err := repos.ListKeysByUser(ctx, u.ID, repository.ListQuery{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, "k1", rows[0].Name)
+
+	// UpdateKey（status/并发/额度）
+	k.Name = "k1-renamed"
+	k.Status = domain.KeyStatusDisabled
+	k.MaxConcurrency = 2
+	k.Quota = 200
+	k.QuotaUsed = 15
+	updated, err := repos.UpdateKey(ctx, k)
+	require.NoError(t, err)
+	require.Equal(t, domain.KeyStatusDisabled, updated.Status)
+	require.Equal(t, 2, updated.MaxConcurrency)
+	require.Equal(t, int64(200), updated.Quota)
+
+	// RotateKey（hash/key_prefix 换新）
+	rotated, err := repos.RotateKey(ctx, k.ID, "hash-k1-new", "gk-bbbb")
+	require.NoError(t, err)
+	require.Equal(t, "hash-k1-new", rotated.KeyHash)
+
+	// AddQuotaUsed 增量回写（Recorder 节奏）
+	require.NoError(t, repos.Keys.AddQuotaUsed(ctx, map[int64]int64{k.ID: 5, 99999: 3}))
+	got2, err := repos.GetKey(ctx, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(20), got2.QuotaUsed, "5 增量生效；缺失 key 静默跳过")
+
+	// DeleteKey
+	require.NoError(t, repos.DeleteKey(ctx, k.ID))
+	_, err = repos.GetKey(ctx, k.ID)
+	require.Error(t, err, "删除后不可见")
+
+	// DeleteKeysByGroup（组删除前置清理；返回被删 hash）
+	_, err = repos.CreateKey(ctx, &domain.Key{
+		UserID: u.ID, GroupID: g.ID, Name: "k2",
+		KeyHash: "hash-k2", KeyPrefix: "gk-cccc", Status: domain.KeyStatusActive,
+	})
+	require.NoError(t, err)
+	hashes, err := repos.DeleteKeysByGroup(ctx, g.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"hash-k2"}, hashes)
+}
+
+func TestPGLoadKeysSnapshot(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	u := seedPGUser(t, repos, "snap@example.com")
+	g, err := repos.Groups.CreateGroup(ctx, &domain.Group{Name: "sg", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	// 用户禁用 + key 禁用各一个，验证快照携带状态
+	_, err = repos.CreateKey(ctx, &domain.Key{
+		UserID: u.ID, GroupID: g.ID, Name: "active", KeyHash: "hash-a", KeyPrefix: "gk-1",
+		Status: domain.KeyStatusActive, MaxConcurrency: 4, Quota: 1000, QuotaUsed: 77,
+	})
+	require.NoError(t, err)
+	_, err = repos.CreateKey(ctx, &domain.Key{
+		UserID: u.ID, GroupID: g.ID, Name: "disabled", KeyHash: "hash-d", KeyPrefix: "gk-2",
+		Status: domain.KeyStatusDisabled,
+	})
+	require.NoError(t, err)
+
+	m, err := repos.Keys.LoadKeys(ctx)
+	require.NoError(t, err)
+	require.Len(t, m, 2)
+	a, ok := m["hash-a"]
+	require.True(t, ok)
+	require.Equal(t, u.ID, a.UserID, "KeyMeta 携带 userID")
+	require.Equal(t, g.ID, a.GroupID)
+	require.Equal(t, domain.KeyStatusActive, a.KeyStatus)
+	require.Equal(t, 4, a.KeyMaxConc)
+	require.True(t, a.HasQuota, "quota>0 → HasQuota")
+	require.Equal(t, int64(1000), a.Quota)
+	require.Equal(t, int64(77), a.QuotaUsed)
+	require.Equal(t, domain.UserStatusActive, a.UserStatus)
+	require.Equal(t, 0, a.UserMaxConc, "用户 max_concurrency 快照")
+	d, ok := m["hash-d"]
+	require.True(t, ok)
+	require.Equal(t, domain.KeyStatusDisabled, d.KeyStatus)
+	require.False(t, d.HasQuota, "quota=0 → HasQuota false")
+
+	// 用户禁用后快照同步（invalidate → Reload 的数据源）
+	u.Status = domain.UserStatusDisabled
+	_, err = repos.UpdateUser(ctx, u)
+	require.NoError(t, err)
+	m2, err := repos.Keys.LoadKeys(ctx)
+	require.NoError(t, err)
+	require.Equal(t, domain.UserStatusDisabled, m2["hash-a"].UserStatus, "用户禁用随快照下发")
+}
+
+func TestPGGroupAssignments(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	u1 := seedPGUser(t, repos, "u1@example.com")
+	u2 := seedPGUser(t, repos, "u2@example.com")
+	pub, err := repos.Groups.CreateGroup(ctx, &domain.Group{Name: "pub", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	priv, err := repos.Groups.CreateGroup(ctx, &domain.Group{Name: "priv", Visibility: domain.GroupVisibilityPrivate})
+	require.NoError(t, err)
+
+	// Grant/Revoke（重复授予幂等——联合唯一兜底）
+	require.NoError(t, repos.GrantGroup(ctx, priv.ID, u1.ID))
+	require.NoError(t, repos.GrantGroup(ctx, priv.ID, u1.ID))
+	list, err := repos.Assignments.ListByGroup(ctx, priv.ID)
+	require.NoError(t, err)
+	require.Len(t, list, 1, "重复授予幂等")
+	require.Equal(t, u1.ID, list[0].UserID)
+
+	// ListByUser
+	assigns, err := repos.ListAssignmentsByUser(ctx, u1.ID)
+	require.NoError(t, err)
+	require.Len(t, assigns, 1)
+
+	// ListGroupsForUser：public 全部 + 已授予 private
+	groupsFor, err := repos.ListGroupsForUser(ctx, u1.ID)
+	require.NoError(t, err)
+	ids := make([]int64, 0, len(groupsFor))
+	for _, g := range groupsFor {
+		ids = append(ids, g.ID)
+	}
+	require.Contains(t, ids, pub.ID, "public 全部可见")
+	require.Contains(t, ids, priv.ID, "已授予 private 可见")
+	groupsFor2, err := repos.ListGroupsForUser(ctx, u2.ID)
+	require.NoError(t, err)
+	require.Len(t, groupsFor2, 1, "未授予用户只见 public")
+	require.Equal(t, pub.ID, groupsFor2[0].ID)
+
+	// Revoke
+	require.NoError(t, repos.RevokeGroup(ctx, priv.ID, u1.ID))
+	groupsFor3, err := repos.ListGroupsForUser(ctx, u1.ID)
+	require.NoError(t, err)
+	require.Len(t, groupsFor3, 1, "撤销后 private 不可见")
+}
+
+func TestPGGroupVisibilityRoundTrip(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	g, err := repos.Groups.CreateGroup(ctx, &domain.Group{Name: "vis", Visibility: domain.GroupVisibilityPrivate})
+	require.NoError(t, err)
+	require.Equal(t, domain.GroupVisibilityPrivate, g.Visibility)
+	got, err := repos.Groups.GetGroup(ctx, g.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.GroupVisibilityPrivate, got.Visibility)
+	g.Visibility = domain.GroupVisibilityPublic
+	updated, err := repos.Groups.UpdateGroup(ctx, g)
+	require.NoError(t, err)
+	require.Equal(t, domain.GroupVisibilityPublic, updated.Visibility)
+}
+
+func TestPGSettingDefaultsAndSet(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	// DB 无行 → 默认（signup_enabled=true）
+	s, err := repos.GetSetting(ctx, "signup_enabled")
+	require.NoError(t, err)
+	require.Equal(t, domain.SettingTypeSwitch, s.Type)
+	require.Equal(t, "true", s.Value)
+
+	// Set 建行（upsert）
+	set, err := repos.SetSetting(ctx, "signup_enabled", domain.SettingTypeSwitch, "false")
+	require.NoError(t, err)
+	require.Equal(t, "false", set.Value)
+	s2, err := repos.GetSetting(ctx, "signup_enabled")
+	require.NoError(t, err)
+	require.Equal(t, "false", s2.Value)
+
+	// GetAll：默认 + DB 覆盖
+	all, err := repos.GetAllSettings(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 1, "仅内置项")
+	require.Equal(t, "false", all[0].Value)
+
+	// 重复 Set 覆盖（upsert 更新）
+	_, err = repos.SetSetting(ctx, "signup_enabled", domain.SettingTypeSwitch, "true")
+	require.NoError(t, err)
+	s3, _ := repos.GetSetting(ctx, "signup_enabled")
+	require.Equal(t, "true", s3.Value)
+}
+
+func TestPGUsageLogUserKeyRoundTrip(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	u := seedPGUser(t, repos, "log@example.com")
+	err := repos.Logs.InsertBatch(ctx, []*domain.UsageLog{
+		{RequestID: "r-user", GroupID: 1, AccountID: 2, UserID: u.ID, KeyID: 7,
+			Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
+			LatencyMS: 1, TotalTokens: 100, CreatedAt: time.Now()},
+		{RequestID: "r-nouser", GroupID: 1, AccountID: 2,
+			Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
+			LatencyMS: 1, TotalTokens: 50, CreatedAt: time.Now()},
+	})
+	require.NoError(t, err)
+
+	// user_id 过滤（/user/logs 语义：只看到自己的）
+	rows, total, err := repos.Logs.QueryLogs(ctx, repository.LogQuery{UserID: u.ID, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, int64(7), rows[0].KeyID, "key_id 回读")
+
+	// key_id 过滤
+	rows2, total2, err := repos.Logs.QueryLogs(ctx, repository.LogQuery{KeyID: 7, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total2)
+	require.Equal(t, u.ID, rows2[0].UserID)
+
+	// 无 user 的日志 user_id 为 NULL → 0
+	rows3, _, err := repos.Logs.QueryLogs(ctx, repository.LogQuery{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, rows3, 2)
+	for _, l := range rows3 {
+		if l.RequestID == "r-nouser" {
+			require.Zero(t, l.UserID)
+			require.Zero(t, l.KeyID)
+		}
+	}
+}
+
+// 编译期钉：ent 生成的枚举类型名（Phase 3a 字段）。
+var _ = group.VisibilityPublic
+var _ = user.RoleUser
+var _ = key.StatusActive

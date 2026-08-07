@@ -25,6 +25,8 @@ type UsageStat struct {
 	AccountID int64 `json:"account_id,omitempty"`
 	// TemplateID holds the value of the "template_id" field.
 	TemplateID int64 `json:"template_id,omitempty"`
+	// UserID holds the value of the "user_id" field.
+	UserID int64 `json:"user_id,omitempty"`
 	// Model holds the value of the "model" field.
 	Model string `json:"model,omitempty"`
 	// IsError holds the value of the "is_error" field.
@@ -57,7 +59,7 @@ func (*UsageStat) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagestat.FieldIsError:
 			values[i] = new(sql.NullBool)
-		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldPromptTokens, usagestat.FieldCompletionTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldTotalLatencyMs:
+		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldPromptTokens, usagestat.FieldCompletionTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldTotalLatencyMs:
 			values[i] = new(sql.NullInt64)
 		case usagestat.FieldModel:
 			values[i] = new(sql.NullString)
@@ -107,6 +109,12 @@ func (_m *UsageStat) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field template_id", values[i])
 			} else if value.Valid {
 				_m.TemplateID = value.Int64
+			}
+		case usagestat.FieldUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field user_id", values[i])
+			} else if value.Valid {
+				_m.UserID = value.Int64
 			}
 		case usagestat.FieldModel:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -221,6 +229,9 @@ func (_m *UsageStat) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("template_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TemplateID))
+	builder.WriteString(", ")
+	builder.WriteString("user_id=")
+	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
 	builder.WriteString(", ")
 	builder.WriteString("model=")
 	builder.WriteString(_m.Model)

@@ -27,11 +27,92 @@ func (f RequestFormat) Valid() bool {
 type AccountStatus string
 
 const (
-	StatusActive   AccountStatus = "active"
+	StatusActive    AccountStatus = "active"
 	StatusUnhealthy AccountStatus = "unhealthy"
-	Status429      AccountStatus = "429"
-	StatusDisabled AccountStatus = "disabled"
+	Status429       AccountStatus = "429"
+	StatusDisabled  AccountStatus = "disabled"
 )
+
+// Role 用户角色（两级：platform_admin | user）。
+type Role string
+
+const (
+	RolePlatformAdmin Role = "platform_admin"
+	RoleUser          Role = "user"
+)
+
+func (r Role) Valid() bool {
+	switch r {
+	case RolePlatformAdmin, RoleUser:
+		return true
+	}
+	return false
+}
+
+// UserStatus 用户状态。
+type UserStatus string
+
+const (
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
+)
+
+func (s UserStatus) Valid() bool {
+	switch s {
+	case UserStatusActive, UserStatusDisabled:
+		return true
+	}
+	return false
+}
+
+// KeyStatus 客户端 key 状态。
+type KeyStatus string
+
+const (
+	KeyStatusActive   KeyStatus = "active"
+	KeyStatusDisabled KeyStatus = "disabled"
+)
+
+func (s KeyStatus) Valid() bool {
+	switch s {
+	case KeyStatusActive, KeyStatusDisabled:
+		return true
+	}
+	return false
+}
+
+// GroupVisibility 组可见性：public 全部用户可选；private 仅授予用户。
+type GroupVisibility string
+
+const (
+	GroupVisibilityPublic  GroupVisibility = "public"
+	GroupVisibilityPrivate GroupVisibility = "private"
+)
+
+func (v GroupVisibility) Valid() bool {
+	switch v {
+	case GroupVisibilityPublic, GroupVisibilityPrivate:
+		return true
+	}
+	return false
+}
+
+// SettingType settings 值类型。
+type SettingType string
+
+const (
+	SettingTypeSwitch SettingType = "switch"
+	SettingTypeNumber SettingType = "number"
+	SettingTypeString SettingType = "string"
+)
+
+func (t SettingType) Valid() bool {
+	switch t {
+	case SettingTypeSwitch, SettingTypeNumber, SettingTypeString:
+		return true
+	}
+	return false
+}
 
 type ErrorType string
 
@@ -111,20 +192,88 @@ type Account struct {
 }
 
 type Group struct {
+	ID         int64
+	Name       string
+	Visibility GroupVisibility
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// User 用户（顶层实体，无租户）。标识 = 邮箱；PasswordHash 为 bcrypt
+// DefaultCost(10)（与 sub2api 同参数，存量 hash 可迁移验证）。
+// Balance 最小单位，本轮只建模型（管理面可读写），扣费 Phase 5。
+type User struct {
+	ID             int64
+	Email          string
+	PasswordHash   string
+	Role           Role
+	Status         UserStatus
+	MaxConcurrency int
+	Balance        int64
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// Key 客户端 API key（独立表，重建 group 内嵌 key 语义）。
+type Key struct {
+	ID             int64
+	UserID         int64
+	GroupID        int64
+	Name           string
+	KeyHash        string
+	KeyPrefix      string
+	Status         KeyStatus
+	MaxConcurrency int
+	Quota          int64 // 累计 token 上限；0 = 不限
+	QuotaUsed      int64 // 已消耗（后扣；无额度 key 恒 0）
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// HasQuota 是否有额度上限（quota > 0）。热路径门禁/扣减短路标志。
+func (k *Key) HasQuota() bool { return k.Quota > 0 }
+
+// GroupAssignment private 组的授予记录（用户 ↔ 组多对多）。
+type GroupAssignment struct {
 	ID        int64
-	Name      string
-	KeyHash   string
-	KeyPrefix string
+	GroupID   int64
+	UserID    int64
 	CreatedAt time.Time
+}
+
+// Setting 类型化配置（key/type/value；signup_enabled 注册开关等）。
+type Setting struct {
+	ID        int64
+	Key       string
+	Type      SettingType
+	Value     string
 	UpdatedAt time.Time
 }
 
+// KeyMeta 鉴权快照条目：key + 归属用户的关键门禁字段（Auth 内存表元素，
+// repository.LoadKeys 构建；热路径零 DB 读取）。
+type KeyMeta struct {
+	KeyID          int64
+	UserID         int64
+	GroupID        int64
+	KeyStatus      KeyStatus
+	KeyMaxConc     int
+	UserStatus     UserStatus
+	UserMaxConc    int
+	HasQuota       bool
+	Quota          int64
+	QuotaUsed      int64 // 快照值（reload 时从 DB 读）；在途扣减走内存计数
+}
+
+// UsageLog 用量日志：user_id/key_id 为鉴权归属（context 传递，0 = 无）。
 type UsageLog struct {
 	ID               int64
 	RequestID        string
 	GroupID          int64 // 0 = 无
 	AccountID        int64 // 0 = 无
 	TemplateID       int64 // 0 = 无
+	UserID           int64 // 0 = 无（鉴权失败/无 key）
+	KeyID            int64 // 0 = 无
 	Model            string
 	MappedModel      string // 空 = 未映射
 	Format           RequestFormat
@@ -144,6 +293,7 @@ type StatBucket struct {
 	GroupID          int64     // 0 = 无
 	AccountID        int64     // 0 = 无
 	TemplateID       int64     // 0 = 无
+	UserID           int64     // 0 = 无（鉴权失败/无 key）；/user/stats 按此过滤
 	Model            string
 	IsError          bool
 	RequestCount     int64

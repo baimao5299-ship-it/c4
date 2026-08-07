@@ -57,7 +57,7 @@ func seedPGTemplate(t *testing.T, repos *repository.Repos) *domain.Template {
 
 func seedPGGroup(t *testing.T, repos *repository.Repos, name string) *domain.Group {
 	t.Helper()
-	g, err := repos.Groups.CreateGroup(context.Background(), &domain.Group{Name: name, KeyHash: "h-" + name, KeyPrefix: "gk-" + name})
+	g, err := repos.Groups.CreateGroup(context.Background(), &domain.Group{Name: name, Visibility: domain.GroupVisibilityPublic})
 	require.NoError(t, err)
 	return g
 }

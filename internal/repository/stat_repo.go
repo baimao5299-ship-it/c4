@@ -12,6 +12,7 @@ import (
 type StatQuery struct {
 	GroupID   int64
 	AccountID int64
+	UserID    int64 // 0 = 不过滤（/user/stats 强制 = 自己）
 	Model     string
 	From      time.Time
 	To        time.Time
@@ -27,6 +28,7 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 			SetGroupID(b.GroupID).
 			SetAccountID(b.AccountID).
 			SetTemplateID(b.TemplateID).
+			SetUserID(b.UserID).
 			SetModel(b.Model).
 			SetIsError(b.IsError).
 			SetRequestCount(b.RequestCount).
@@ -37,7 +39,7 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 			SetCacheReadTokens(b.CacheReadTokens).
 			SetCacheCreationTokens(b.CacheCreationTokens).
 			SetTotalLatencyMs(b.TotalLatencyMS).
-			OnConflictColumns("bucket_time", "group_id", "account_id", "template_id", "model", "is_error").
+			OnConflictColumns("bucket_time", "group_id", "account_id", "template_id", "user_id", "model", "is_error").
 			Update(func(u *ent.UsageStatUpsert) {
 				u.AddRequestCount(b.RequestCount)
 				u.AddErrorCount(b.ErrorCount)
@@ -69,6 +71,9 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 	if q.AccountID > 0 {
 		pred = pred.Where(usagestat.AccountIDEQ(q.AccountID))
 	}
+	if q.UserID > 0 {
+		pred = pred.Where(usagestat.UserIDEQ(q.UserID))
+	}
 	if q.Model != "" {
 		pred = pred.Where(usagestat.ModelEQ(q.Model))
 	}
@@ -80,7 +85,7 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 	for _, row := range rows {
 		out = append(out, &domain.StatBucket{
 			BucketTime: row.BucketTime, GroupID: row.GroupID, AccountID: row.AccountID,
-			TemplateID: row.TemplateID, Model: row.Model, IsError: row.IsError,
+			TemplateID: row.TemplateID, UserID: row.UserID, Model: row.Model, IsError: row.IsError,
 			RequestCount: row.RequestCount, ErrorCount: row.ErrorCount,
 			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
 			TotalTokens: row.TotalTokens, TotalLatencyMS: row.TotalLatencyMs,

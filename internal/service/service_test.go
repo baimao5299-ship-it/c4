@@ -88,19 +88,20 @@ func TestTemplateCredentialTypeDefaultAndValid(t *testing.T) {
 	require.Equal(t, credential.TypeAPIKey, updated.CredentialType, "update 缺省同样兜底 api_key")
 }
 
-func TestCreateGroupRotateKeyFlow(t *testing.T) {
+// Phase 3a：分组 = 平台容量池（无内嵌 key）。创建返回分组本身（visibility
+// 缺省 public）；key 为独立表（用户面 /user/keys 创建）。
+func TestCreateGroupFlow(t *testing.T) {
 	fs := newFakeStore()
 	svc := &Service{store: fs, invalidate: func() {}, log: nil}
-	g, raw, err := svc.CreateGroup(context.Background(), "g1")
+	g, err := svc.CreateGroup(context.Background(), "g1", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
-	require.NotEmpty(t, g.KeyHash)
-	require.NotEmpty(t, raw, "key must be generated")
-	raw2, err := svc.RotateGroupKey(context.Background(), g.ID)
+	require.Equal(t, domain.GroupVisibilityPublic, g.Visibility, "visibility 落库")
+	g2, err := svc.CreateGroup(context.Background(), "g2", domain.GroupVisibilityPrivate)
 	require.NoError(t, err)
-	require.NotEqual(t, raw, raw2, "rotated key must differ")
-	g2, err := svc.GetGroup(context.Background(), g.ID)
+	require.Equal(t, domain.GroupVisibilityPrivate, g2.Visibility)
+	got, err := svc.GetGroup(context.Background(), g.ID)
 	require.NoError(t, err)
-	require.NotEqual(t, g.KeyHash, g2.KeyHash, "hash must change")
+	require.Equal(t, "g1", got.Name)
 }
 
 func TestQueryStatsGranularity(t *testing.T) {
@@ -223,9 +224,9 @@ func TestCreateAccountGroups(t *testing.T) {
 	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
 	ctx := context.Background()
 	tpl := seedTemplate(t, svc, "t")
-	g1, _, err := svc.CreateGroup(ctx, "g1")
+	g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
-	g2, _, err := svc.CreateGroup(ctx, "g2")
+	g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
 
 	// 创建带分组
@@ -295,7 +296,7 @@ func TestBatchUpdateAccountsGroupIDs(t *testing.T) {
 	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
 	ctx := context.Background()
 	tpl := seedTemplate(t, svc, "t")
-	g1, _, err := svc.CreateGroup(ctx, "g1")
+	g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
 	a1 := seedAccount(t, svc, tpl.ID, "a1")
 	a2 := seedAccount(t, svc, tpl.ID, "a2")
@@ -370,7 +371,7 @@ type fakeKeyRegistrar struct {
 	deleted []string
 }
 
-func (k *fakeKeyRegistrar) Upsert(hash string, groupID int64) {}
+func (k *fakeKeyRegistrar) Upsert(hash string, meta domain.KeyMeta) {}
 
 func (k *fakeKeyRegistrar) Delete(hash string) { k.deleted = append(k.deleted, hash) }
 
@@ -380,14 +381,15 @@ func TestBatchDeleteGroupsKeyCleanup(t *testing.T) {
 	invalidated := 0
 	svc := &Service{store: fs, invalidate: func() { invalidated++ }, keys: keys, log: nil}
 	ctx := context.Background()
-	g1, _, err := svc.CreateGroup(ctx, "g1")
+	g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
-	g2, _, err := svc.CreateGroup(ctx, "g2")
+	g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
 	before := invalidated
 	require.NoError(t, svc.DeleteGroupsBatch(ctx, []int64{g1.ID, g2.ID}))
 	require.Greater(t, invalidated, before, "批量删除成功后必须 invalidate")
-	require.ElementsMatch(t, []string{g1.KeyHash, g2.KeyHash}, keys.deleted, "分组 key 必须全部清理")
+	// Phase 3a：组删除前置清理组内 key（无 key 时无 hash 可清理）
+	require.Empty(t, keys.deleted, "无 key 的组删除不触发 Auth 增量清理")
 	_, err = svc.GetGroup(ctx, g1.ID)
 	require.ErrorIs(t, err, ErrNotFound, "批量删除后分组必须消失")
 }
@@ -397,7 +399,7 @@ func TestBatchUpdateGroups(t *testing.T) {
 	invalidated := 0
 	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
 	ctx := context.Background()
-	g, _, err := svc.CreateGroup(ctx, "g1")
+	g, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic)
 	require.NoError(t, err)
 	name := "renamed"
 	before := invalidated
@@ -530,11 +532,10 @@ func TestCreateAccountMissingTemplate(t *testing.T) {
 	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
 }
 
-// TestRotateGroupKeyMissing RotateGroupKey 前置 GetGroup 缺 id →
-// service.ErrNotFound（消息含缺失 id）。
-func TestRotateGroupKeyMissing(t *testing.T) {
+// TestDeleteGroupMissing 组删除前置 GetGroup 缺 id → service.ErrNotFound。
+func TestDeleteGroupMissing(t *testing.T) {
 	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
-	_, err := svc.RotateGroupKey(context.Background(), 999)
+	err := svc.DeleteGroup(context.Background(), 999)
 	require.ErrorIs(t, err, ErrNotFound, "分组缺 id → 404")
 	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
 }

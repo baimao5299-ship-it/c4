@@ -4,22 +4,28 @@ import (
 	"errors"
 	"net/http"
 
+	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
 )
 
-// PostGroups 创建分组（响应含明文 key，仅此一次，ServerInterface）。
+// PostGroups 创建分组（平台容量池；key 为独立表，用户面 /user/keys 创建，
+// ServerInterface）。
 func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	var in GroupCreate
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	g, raw, err := h.svc.CreateGroup(r.Context(), in.Name)
+	visibility := domain.GroupVisibilityPublic
+	if in.Visibility != nil {
+		visibility = domain.GroupVisibility(*in.Visibility)
+	}
+	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, CreateGroupResponse{Group: toAPIGroup(g), Key: raw})
+	writeJSON(w, http.StatusOK, toAPIGroup(g))
 }
 
 // GetGroups 分组列表（分页/筛选/排序，ServerInterface）。
@@ -66,6 +72,9 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 		return
 	}
 	g.Name = in.Name
+	if in.Visibility != nil {
+		g.Visibility = domain.GroupVisibility(*in.Visibility)
+	}
 	updated, err := h.svc.UpdateGroup(r.Context(), g)
 	if err != nil {
 		writeServiceErr(w, err)
@@ -127,21 +136,15 @@ func (h *AdminAPI) PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, BatchUpdateResponse{Updated: len(ids)})
 }
 
-// groupPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新；
-// 当前仅 name 字段）。
+// groupPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新）。
 func groupPatchFromBody(f *GroupPatch) (repository.GroupPatch, error) {
-	if f.Name == nil {
+	if f.Name == nil && f.Visibility == nil {
 		return repository.GroupPatch{}, errors.New("fields must contain at least one field")
 	}
-	return repository.GroupPatch{Name: f.Name}, nil
-}
-
-// PostGroupsIdRotateKey 轮换分组 key（ServerInterface）。
-func (h *AdminAPI) PostGroupsIdRotateKey(w http.ResponseWriter, r *http.Request, id int64) {
-	raw, err := h.svc.RotateGroupKey(r.Context(), id)
-	if err != nil {
-		writeServiceErr(w, err)
-		return
+	p := repository.GroupPatch{Name: f.Name}
+	if f.Visibility != nil {
+		v := domain.GroupVisibility(*f.Visibility)
+		p.Visibility = &v
 	}
-	writeJSON(w, http.StatusOK, RotateKeyResponse{Key: raw})
+	return p, nil
 }

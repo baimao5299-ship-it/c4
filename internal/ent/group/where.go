@@ -60,16 +60,6 @@ func Name(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldName, v))
 }
 
-// KeyHash applies equality check predicate on the "key_hash" field. It's identical to KeyHashEQ.
-func KeyHash(v string) predicate.Group {
-	return predicate.Group(sql.FieldEQ(FieldKeyHash, v))
-}
-
-// KeyPrefix applies equality check predicate on the "key_prefix" field. It's identical to KeyPrefixEQ.
-func KeyPrefix(v string) predicate.Group {
-	return predicate.Group(sql.FieldEQ(FieldKeyPrefix, v))
-}
-
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldCreatedAt, v))
@@ -145,134 +135,24 @@ func NameContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldName, v))
 }
 
-// KeyHashEQ applies the EQ predicate on the "key_hash" field.
-func KeyHashEQ(v string) predicate.Group {
-	return predicate.Group(sql.FieldEQ(FieldKeyHash, v))
+// VisibilityEQ applies the EQ predicate on the "visibility" field.
+func VisibilityEQ(v Visibility) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldVisibility, v))
 }
 
-// KeyHashNEQ applies the NEQ predicate on the "key_hash" field.
-func KeyHashNEQ(v string) predicate.Group {
-	return predicate.Group(sql.FieldNEQ(FieldKeyHash, v))
+// VisibilityNEQ applies the NEQ predicate on the "visibility" field.
+func VisibilityNEQ(v Visibility) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldVisibility, v))
 }
 
-// KeyHashIn applies the In predicate on the "key_hash" field.
-func KeyHashIn(vs ...string) predicate.Group {
-	return predicate.Group(sql.FieldIn(FieldKeyHash, vs...))
+// VisibilityIn applies the In predicate on the "visibility" field.
+func VisibilityIn(vs ...Visibility) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldVisibility, vs...))
 }
 
-// KeyHashNotIn applies the NotIn predicate on the "key_hash" field.
-func KeyHashNotIn(vs ...string) predicate.Group {
-	return predicate.Group(sql.FieldNotIn(FieldKeyHash, vs...))
-}
-
-// KeyHashGT applies the GT predicate on the "key_hash" field.
-func KeyHashGT(v string) predicate.Group {
-	return predicate.Group(sql.FieldGT(FieldKeyHash, v))
-}
-
-// KeyHashGTE applies the GTE predicate on the "key_hash" field.
-func KeyHashGTE(v string) predicate.Group {
-	return predicate.Group(sql.FieldGTE(FieldKeyHash, v))
-}
-
-// KeyHashLT applies the LT predicate on the "key_hash" field.
-func KeyHashLT(v string) predicate.Group {
-	return predicate.Group(sql.FieldLT(FieldKeyHash, v))
-}
-
-// KeyHashLTE applies the LTE predicate on the "key_hash" field.
-func KeyHashLTE(v string) predicate.Group {
-	return predicate.Group(sql.FieldLTE(FieldKeyHash, v))
-}
-
-// KeyHashContains applies the Contains predicate on the "key_hash" field.
-func KeyHashContains(v string) predicate.Group {
-	return predicate.Group(sql.FieldContains(FieldKeyHash, v))
-}
-
-// KeyHashHasPrefix applies the HasPrefix predicate on the "key_hash" field.
-func KeyHashHasPrefix(v string) predicate.Group {
-	return predicate.Group(sql.FieldHasPrefix(FieldKeyHash, v))
-}
-
-// KeyHashHasSuffix applies the HasSuffix predicate on the "key_hash" field.
-func KeyHashHasSuffix(v string) predicate.Group {
-	return predicate.Group(sql.FieldHasSuffix(FieldKeyHash, v))
-}
-
-// KeyHashEqualFold applies the EqualFold predicate on the "key_hash" field.
-func KeyHashEqualFold(v string) predicate.Group {
-	return predicate.Group(sql.FieldEqualFold(FieldKeyHash, v))
-}
-
-// KeyHashContainsFold applies the ContainsFold predicate on the "key_hash" field.
-func KeyHashContainsFold(v string) predicate.Group {
-	return predicate.Group(sql.FieldContainsFold(FieldKeyHash, v))
-}
-
-// KeyPrefixEQ applies the EQ predicate on the "key_prefix" field.
-func KeyPrefixEQ(v string) predicate.Group {
-	return predicate.Group(sql.FieldEQ(FieldKeyPrefix, v))
-}
-
-// KeyPrefixNEQ applies the NEQ predicate on the "key_prefix" field.
-func KeyPrefixNEQ(v string) predicate.Group {
-	return predicate.Group(sql.FieldNEQ(FieldKeyPrefix, v))
-}
-
-// KeyPrefixIn applies the In predicate on the "key_prefix" field.
-func KeyPrefixIn(vs ...string) predicate.Group {
-	return predicate.Group(sql.FieldIn(FieldKeyPrefix, vs...))
-}
-
-// KeyPrefixNotIn applies the NotIn predicate on the "key_prefix" field.
-func KeyPrefixNotIn(vs ...string) predicate.Group {
-	return predicate.Group(sql.FieldNotIn(FieldKeyPrefix, vs...))
-}
-
-// KeyPrefixGT applies the GT predicate on the "key_prefix" field.
-func KeyPrefixGT(v string) predicate.Group {
-	return predicate.Group(sql.FieldGT(FieldKeyPrefix, v))
-}
-
-// KeyPrefixGTE applies the GTE predicate on the "key_prefix" field.
-func KeyPrefixGTE(v string) predicate.Group {
-	return predicate.Group(sql.FieldGTE(FieldKeyPrefix, v))
-}
-
-// KeyPrefixLT applies the LT predicate on the "key_prefix" field.
-func KeyPrefixLT(v string) predicate.Group {
-	return predicate.Group(sql.FieldLT(FieldKeyPrefix, v))
-}
-
-// KeyPrefixLTE applies the LTE predicate on the "key_prefix" field.
-func KeyPrefixLTE(v string) predicate.Group {
-	return predicate.Group(sql.FieldLTE(FieldKeyPrefix, v))
-}
-
-// KeyPrefixContains applies the Contains predicate on the "key_prefix" field.
-func KeyPrefixContains(v string) predicate.Group {
-	return predicate.Group(sql.FieldContains(FieldKeyPrefix, v))
-}
-
-// KeyPrefixHasPrefix applies the HasPrefix predicate on the "key_prefix" field.
-func KeyPrefixHasPrefix(v string) predicate.Group {
-	return predicate.Group(sql.FieldHasPrefix(FieldKeyPrefix, v))
-}
-
-// KeyPrefixHasSuffix applies the HasSuffix predicate on the "key_prefix" field.
-func KeyPrefixHasSuffix(v string) predicate.Group {
-	return predicate.Group(sql.FieldHasSuffix(FieldKeyPrefix, v))
-}
-
-// KeyPrefixEqualFold applies the EqualFold predicate on the "key_prefix" field.
-func KeyPrefixEqualFold(v string) predicate.Group {
-	return predicate.Group(sql.FieldEqualFold(FieldKeyPrefix, v))
-}
-
-// KeyPrefixContainsFold applies the ContainsFold predicate on the "key_prefix" field.
-func KeyPrefixContainsFold(v string) predicate.Group {
-	return predicate.Group(sql.FieldContainsFold(FieldKeyPrefix, v))
+// VisibilityNotIn applies the NotIn predicate on the "visibility" field.
+func VisibilityNotIn(vs ...Visibility) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldVisibility, vs...))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -370,6 +250,52 @@ func HasAccounts() predicate.Group {
 func HasAccountsWith(preds ...predicate.Account) predicate.Group {
 	return predicate.Group(func(s *sql.Selector) {
 		step := newAccountsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasKeys applies the HasEdge predicate on the "keys" edge.
+func HasKeys() predicate.Group {
+	return predicate.Group(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, KeysTable, KeysColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasKeysWith applies the HasEdge predicate on the "keys" edge with a given conditions (other predicates).
+func HasKeysWith(preds ...predicate.Key) predicate.Group {
+	return predicate.Group(func(s *sql.Selector) {
+		step := newKeysStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAssignments applies the HasEdge predicate on the "assignments" edge.
+func HasAssignments() predicate.Group {
+	return predicate.Group(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, AssignmentsTable, AssignmentsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAssignmentsWith applies the HasEdge predicate on the "assignments" edge with a given conditions (other predicates).
+func HasAssignmentsWith(preds ...predicate.GroupAssignment) predicate.Group {
+	return predicate.Group(func(s *sql.Selector) {
+		step := newAssignmentsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

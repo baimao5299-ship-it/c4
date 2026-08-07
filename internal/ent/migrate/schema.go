@@ -41,8 +41,7 @@ var (
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString, Unique: true},
-		{Name: "key_hash", Type: field.TypeString, Unique: true},
-		{Name: "key_prefix", Type: field.TypeString},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"public", "private"}, Default: "public"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -51,6 +50,75 @@ var (
 		Name:       "groups",
 		Columns:    GroupsColumns,
 		PrimaryKey: []*schema.Column{GroupsColumns[0]},
+	}
+	// GroupAssignmentsColumns holds the columns for the "group_assignments" table.
+	GroupAssignmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// GroupAssignmentsTable holds the schema information for the "group_assignments" table.
+	GroupAssignmentsTable = &schema.Table{
+		Name:       "group_assignments",
+		Columns:    GroupAssignmentsColumns,
+		PrimaryKey: []*schema.Column{GroupAssignmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "group_assignments_groups_assignments",
+				Columns:    []*schema.Column{GroupAssignmentsColumns[2]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "group_assignments_users_group_assignments",
+				Columns:    []*schema.Column{GroupAssignmentsColumns[3]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "groupassignment_group_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{GroupAssignmentsColumns[2], GroupAssignmentsColumns[3]},
+			},
+		},
+	}
+	// KeysColumns holds the columns for the "keys" table.
+	KeysColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "key_hash", Type: field.TypeString, Unique: true},
+		{Name: "key_prefix", Type: field.TypeString},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
+		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
+		{Name: "quota", Type: field.TypeInt64, Default: 0},
+		{Name: "quota_used", Type: field.TypeInt64, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// KeysTable holds the schema information for the "keys" table.
+	KeysTable = &schema.Table{
+		Name:       "keys",
+		Columns:    KeysColumns,
+		PrimaryKey: []*schema.Column{KeysColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "keys_groups_keys",
+				Columns:    []*schema.Column{KeysColumns[10]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "keys_users_keys",
+				Columns:    []*schema.Column{KeysColumns[11]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
 	}
 	// RulesColumns holds the columns for the "rules" table.
 	RulesColumns = []*schema.Column{
@@ -68,6 +136,43 @@ var (
 		Name:       "rules",
 		Columns:    RulesColumns,
 		PrimaryKey: []*schema.Column{RulesColumns[0]},
+	}
+	// SettingsColumns holds the columns for the "settings" table.
+	SettingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "key", Type: field.TypeString, Unique: true},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"switch", "number", "string"}},
+		{Name: "value", Type: field.TypeString, Default: ""},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// SettingsTable holds the schema information for the "settings" table.
+	SettingsTable = &schema.Table{
+		Name:       "settings",
+		Columns:    SettingsColumns,
+		PrimaryKey: []*schema.Column{SettingsColumns[0]},
+	}
+	// TempBalancesColumns holds the columns for the "temp_balances" table.
+	TempBalancesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "amount", Type: field.TypeInt64},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "note", Type: field.TypeString, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// TempBalancesTable holds the schema information for the "temp_balances" table.
+	TempBalancesTable = &schema.Table{
+		Name:       "temp_balances",
+		Columns:    TempBalancesColumns,
+		PrimaryKey: []*schema.Column{TempBalancesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "temp_balances_users_temp_balances",
+				Columns:    []*schema.Column{TempBalancesColumns[5]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
 	}
 	// TemplatesColumns holds the columns for the "templates" table.
 	TemplatesColumns = []*schema.Column{
@@ -95,6 +200,8 @@ var (
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "account_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "template_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "model", Type: field.TypeString, Default: ""},
 		{Name: "mapped_model", Type: field.TypeString, Nullable: true},
 		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "anthropic"}},
@@ -117,17 +224,27 @@ var (
 			{
 				Name:    "usagelog_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[16]},
+				Columns: []*schema.Column{UsageLogsColumns[18]},
 			},
 			{
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[16]},
+				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[18]},
 			},
 			{
 				Name:    "usagelog_account_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[3], UsageLogsColumns[16]},
+				Columns: []*schema.Column{UsageLogsColumns[3], UsageLogsColumns[18]},
+			},
+			{
+				Name:    "usagelog_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[5], UsageLogsColumns[18]},
+			},
+			{
+				Name:    "usagelog_key_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[6], UsageLogsColumns[18]},
 			},
 		},
 	}
@@ -138,6 +255,7 @@ var (
 		{Name: "group_id", Type: field.TypeInt64, Default: 0},
 		{Name: "account_id", Type: field.TypeInt64, Default: 0},
 		{Name: "template_id", Type: field.TypeInt64, Default: 0},
+		{Name: "user_id", Type: field.TypeInt64, Default: 0},
 		{Name: "model", Type: field.TypeString, Default: ""},
 		{Name: "is_error", Type: field.TypeBool, Default: false},
 		{Name: "request_count", Type: field.TypeInt64, Default: 0},
@@ -162,11 +280,29 @@ var (
 				Columns: []*schema.Column{UsageStatsColumns[1]},
 			},
 			{
-				Name:    "usagestat_bucket_time_group_id_account_id_template_id_model_is_error",
+				Name:    "usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error",
 				Unique:  true,
-				Columns: []*schema.Column{UsageStatsColumns[1], UsageStatsColumns[2], UsageStatsColumns[3], UsageStatsColumns[4], UsageStatsColumns[5], UsageStatsColumns[6]},
+				Columns: []*schema.Column{UsageStatsColumns[1], UsageStatsColumns[2], UsageStatsColumns[3], UsageStatsColumns[4], UsageStatsColumns[5], UsageStatsColumns[6], UsageStatsColumns[7]},
 			},
 		},
+	}
+	// UsersColumns holds the columns for the "users" table.
+	UsersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "email", Type: field.TypeString, Unique: true},
+		{Name: "password_hash", Type: field.TypeString},
+		{Name: "role", Type: field.TypeEnum, Enums: []string{"platform_admin", "user"}, Default: "user"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
+		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
+		{Name: "balance", Type: field.TypeInt64, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// UsersTable holds the schema information for the "users" table.
+	UsersTable = &schema.Table{
+		Name:       "users",
+		Columns:    UsersColumns,
+		PrimaryKey: []*schema.Column{UsersColumns[0]},
 	}
 	// AccountGroupsColumns holds the columns for the "account_groups" table.
 	AccountGroupsColumns = []*schema.Column{
@@ -197,16 +333,26 @@ var (
 	Tables = []*schema.Table{
 		AccountsTable,
 		GroupsTable,
+		GroupAssignmentsTable,
+		KeysTable,
 		RulesTable,
+		SettingsTable,
+		TempBalancesTable,
 		TemplatesTable,
 		UsageLogsTable,
 		UsageStatsTable,
+		UsersTable,
 		AccountGroupsTable,
 	}
 )
 
 func init() {
 	AccountsTable.ForeignKeys[0].RefTable = TemplatesTable
+	GroupAssignmentsTable.ForeignKeys[0].RefTable = GroupsTable
+	GroupAssignmentsTable.ForeignKeys[1].RefTable = UsersTable
+	KeysTable.ForeignKeys[0].RefTable = GroupsTable
+	KeysTable.ForeignKeys[1].RefTable = UsersTable
+	TempBalancesTable.ForeignKeys[0].RefTable = UsersTable
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable
 }

@@ -70,6 +70,20 @@ func (_c *UsageStatCreate) SetNillableTemplateID(v *int64) *UsageStatCreate {
 	return _c
 }
 
+// SetUserID sets the "user_id" field.
+func (_c *UsageStatCreate) SetUserID(v int64) *UsageStatCreate {
+	_c.mutation.SetUserID(v)
+	return _c
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableUserID(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetUserID(*v)
+	}
+	return _c
+}
+
 // SetModel sets the "model" field.
 func (_c *UsageStatCreate) SetModel(v string) *UsageStatCreate {
 	_c.mutation.SetModel(v)
@@ -277,6 +291,10 @@ func (_c *UsageStatCreate) defaults() {
 		v := usagestat.DefaultTemplateID
 		_c.mutation.SetTemplateID(v)
 	}
+	if _, ok := _c.mutation.UserID(); !ok {
+		v := usagestat.DefaultUserID
+		_c.mutation.SetUserID(v)
+	}
 	if _, ok := _c.mutation.Model(); !ok {
 		v := usagestat.DefaultModel
 		_c.mutation.SetModel(v)
@@ -336,6 +354,9 @@ func (_c *UsageStatCreate) check() error {
 	}
 	if _, ok := _c.mutation.TemplateID(); !ok {
 		return &ValidationError{Name: "template_id", err: errors.New(`ent: missing required field "UsageStat.template_id"`)}
+	}
+	if _, ok := _c.mutation.UserID(); !ok {
+		return &ValidationError{Name: "user_id", err: errors.New(`ent: missing required field "UsageStat.user_id"`)}
 	}
 	if _, ok := _c.mutation.Model(); !ok {
 		return &ValidationError{Name: "model", err: errors.New(`ent: missing required field "UsageStat.model"`)}
@@ -418,6 +439,10 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TemplateID(); ok {
 		_spec.SetField(usagestat.FieldTemplateID, field.TypeInt64, value)
 		_node.TemplateID = value
+	}
+	if value, ok := _c.mutation.UserID(); ok {
+		_spec.SetField(usagestat.FieldUserID, field.TypeInt64, value)
+		_node.UserID = value
 	}
 	if value, ok := _c.mutation.Model(); ok {
 		_spec.SetField(usagestat.FieldModel, field.TypeString, value)
@@ -578,6 +603,24 @@ func (u *UsageStatUpsert) UpdateTemplateID() *UsageStatUpsert {
 // AddTemplateID adds v to the "template_id" field.
 func (u *UsageStatUpsert) AddTemplateID(v int64) *UsageStatUpsert {
 	u.Add(usagestat.FieldTemplateID, v)
+	return u
+}
+
+// SetUserID sets the "user_id" field.
+func (u *UsageStatUpsert) SetUserID(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldUserID, v)
+	return u
+}
+
+// UpdateUserID sets the "user_id" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateUserID() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldUserID)
+	return u
+}
+
+// AddUserID adds v to the "user_id" field.
+func (u *UsageStatUpsert) AddUserID(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldUserID, v)
 	return u
 }
 
@@ -883,6 +926,27 @@ func (u *UsageStatUpsertOne) AddTemplateID(v int64) *UsageStatUpsertOne {
 func (u *UsageStatUpsertOne) UpdateTemplateID() *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
 		s.UpdateTemplateID()
+	})
+}
+
+// SetUserID sets the "user_id" field.
+func (u *UsageStatUpsertOne) SetUserID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetUserID(v)
+	})
+}
+
+// AddUserID adds v to the "user_id" field.
+func (u *UsageStatUpsertOne) AddUserID(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddUserID(v)
+	})
+}
+
+// UpdateUserID sets the "user_id" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateUserID() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateUserID()
 	})
 }
 
@@ -1384,6 +1448,27 @@ func (u *UsageStatUpsertBulk) AddTemplateID(v int64) *UsageStatUpsertBulk {
 func (u *UsageStatUpsertBulk) UpdateTemplateID() *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
 		s.UpdateTemplateID()
+	})
+}
+
+// SetUserID sets the "user_id" field.
+func (u *UsageStatUpsertBulk) SetUserID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetUserID(v)
+	})
+}
+
+// AddUserID adds v to the "user_id" field.
+func (u *UsageStatUpsertBulk) AddUserID(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddUserID(v)
+	})
+}
+
+// UpdateUserID sets the "user_id" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateUserID() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateUserID()
 	})
 }
 

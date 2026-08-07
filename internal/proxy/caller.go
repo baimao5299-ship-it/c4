@@ -32,18 +32,41 @@ type UpstreamCaller interface {
 		start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (code int, respBody []byte, handled bool, err error)
 }
 
-// handleFormat 通用转发骨架（从原 HandleXxx 提取，三格式共用）：鉴权 → 限流 →
+// handleFormat 通用转发骨架（从原 HandleXxx 提取，三格式共用）：鉴权 →
+// quota 检查（纯读）→ 两级并发门禁 acquire（user → key，失败回滚）→ 限流 →
 // 读体 → stream 探测（peek unmarshal）+ model 提取（gjson，零分配）→ 选号 →
 // failover 循环（每轮 credentialFor + caller.Call + code 分支）→ 耗尽记录写出。
+// 门禁全部内存原子（零 DB 零锁）；release 与 quota 扣减在请求结束统一完成。
 func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	reqID := uuid.NewString()
-	groupID, ok := p.auth.Authenticate(r)
+	meta, ok := p.auth.Authenticate(r)
 	if !ok {
 		writeErr(w, errInvalidKey)
-		p.record(reqID, 0, 0, "", "", format, 401, domain.ErrAuth, 0, nil, start)
+		p.record(r.Context(), reqID, 0, 0, "", "", format, 401, domain.ErrAuth, 0, nil, start)
 		return
 	}
+	groupID := meta.GroupID
+	// 鉴权元数据入 context（user_id/key_id 日志归属；不改变 Call/buildLog 签名）
+	r = r.WithContext(context.WithValue(r.Context(), ctxKeyMeta{}, meta))
+
+	// quota 检查在并发 acquire 之前（评审提醒①：纯读失败无计数副作用；
+	// 未设置额度 key 短路零成本）
+	if p.auth.QuotaExhausted(meta) {
+		writeErr(w, errQuotaExhausted)
+		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, nil, start)
+		return
+	}
+	// 两级并发门禁（user → key；两步回滚由 gate 内部完成；release 仅释放
+	// 已 acquire 层级——defer 覆盖全部返回路径）
+	acquired, ok := p.auth.Acquire(meta)
+	if !ok {
+		writeErr(w, errConcurrency)
+		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, nil, start)
+		return
+	}
+	defer p.auth.Release(meta, acquired)
+
 	if !p.limit.Allow(groupID, time.Now()) {
 		writeErr(w, errRateLimit)
 		return
@@ -72,7 +95,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	sel, err := p.sched.Select(groupID, format, reqModel)
 	if err != nil {
 		p.handleSelectError(w, err)
-		p.record(reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, nil, start)
+		p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, nil, start)
 		return
 	}
 
@@ -111,7 +134,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		} else {
 			// 4xx 确定性错误：透传上游状态码与原始 body，不转移（规格 §5.3）；
 			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
-			p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, nil, start))
+			p.finish(sel.AccountID, logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, nil, start)))
 			if len(respBody) > 0 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(code)
@@ -143,7 +166,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	case lastCode == 0:
 		et = domain.ErrNetwork
 	}
-	p.record(reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, 0, nil, start)
+	p.record(r.Context(), reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, 0, nil, start)
 	if lastCode == http.StatusTooManyRequests {
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, errTooMany)

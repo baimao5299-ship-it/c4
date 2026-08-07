@@ -22,6 +22,10 @@ const (
 	FieldAccountID = "account_id"
 	// FieldTemplateID holds the string denoting the template_id field in the database.
 	FieldTemplateID = "template_id"
+	// FieldUserID holds the string denoting the user_id field in the database.
+	FieldUserID = "user_id"
+	// FieldKeyID holds the string denoting the key_id field in the database.
+	FieldKeyID = "key_id"
 	// FieldModel holds the string denoting the model field in the database.
 	FieldModel = "model"
 	// FieldMappedModel holds the string denoting the mapped_model field in the database.
@@ -57,6 +61,8 @@ var Columns = []string{
 	FieldGroupID,
 	FieldAccountID,
 	FieldTemplateID,
+	FieldUserID,
+	FieldKeyID,
 	FieldModel,
 	FieldMappedModel,
 	FieldFormat,
@@ -154,6 +160,16 @@ func ByAccountID(opts ...sql.OrderTermOption) OrderOption {
 // ByTemplateID orders the results by the template_id field.
 func ByTemplateID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTemplateID, opts...).ToFunc()
+}
+
+// ByUserID orders the results by the user_id field.
+func ByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByKeyID orders the results by the key_id field.
+func ByKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKeyID, opts...).ToFunc()
 }
 
 // ByModel orders the results by the model field.

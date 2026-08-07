@@ -26,9 +26,15 @@ type Store interface {
 	TemplateStore
 	AccountStore
 	GroupStore
+	KeyStore
 	RuleStore
 	LogStore
 	StatStore
+}
+
+// KeyStore 组删除前置的 key 清理（key.group_id 外键约束）。
+type KeyStore interface {
+	DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error)
 }
 
 type TemplateStore interface {
@@ -85,9 +91,9 @@ type RuntimeProvider interface {
 	Runtime(accountID int64) (scheduler.RuntimeInfo, bool)
 }
 
-// KeyRegistrar 由 proxy.Auth 实现，供分组 key 变更时刷新。
+// KeyRegistrar 由 proxy.Auth 实现，供客户端 key 变更时增量刷新鉴权快照。
 type KeyRegistrar interface {
-	Upsert(hash string, groupID int64)
+	Upsert(hash string, meta domain.KeyMeta)
 	Delete(hash string)
 }
 

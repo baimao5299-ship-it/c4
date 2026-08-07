@@ -20,6 +20,7 @@ import (
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/repository"
 )
@@ -276,9 +277,9 @@ func TestAccountAndGroup(t *testing.T) {
 			pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
 
-	// Group create
+	// Group create（Phase 3a：无 key 字段，visibility 默认 public）
 	tr.pool.ExpectQuery(q(`INSERT INTO "groups"`)).
-		WithArgs("g1", "h1", "gk-aaaa", pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs("g1", group.VisibilityPublic, pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
 	// SetAccountGroups -> checkGroupExist 预校验（SELECT groups）+ 自动 Tx（M2M
@@ -309,8 +310,8 @@ func TestAccountAndGroup(t *testing.T) {
 
 	// LoadGroupsAccounts -> groups + accounts(join account_groups) + templates
 	tr.pool.ExpectQuery(q(`FROM "groups"`)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "key_hash", "key_prefix", "created_at", "updated_at"}).
-			AddRow(int64(3), "g1", "h1", "gk-aaaa",
+		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "visibility", "created_at", "updated_at"}).
+			AddRow(int64(3), "g1", "public",
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 	tr.pool.ExpectQuery(q(`JOIN "account_groups"`)).
 		WithArgs(int64(3)).
@@ -323,10 +324,6 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.pool.ExpectQuery(q(`FROM "templates"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(templateRow())
-
-	// LoadGroupKeys
-	tr.pool.ExpectQuery(q(`SELECT "groups"."id"`)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "key_hash"}).AddRow(int64(3), "h1"))
 
 	// UpdateStatus -> Tx: UPDATE + re-SELECT + Commit
 	tr.pool.ExpectBegin()
@@ -351,7 +348,7 @@ func TestAccountAndGroup(t *testing.T) {
 		Name: "acc1", TemplateID: tpl.ID, UpstreamKey: "sk-x", Weight: 80, MaxConcurrency: 4,
 	})
 	require.NoError(t, err)
-	g, err := tr.repos.Groups.CreateGroup(ctx(), &domain.Group{Name: "g1", KeyHash: "h1", KeyPrefix: "gk-aaaa"})
+	g, err := tr.repos.Groups.CreateGroup(ctx(), &domain.Group{Name: "g1", Visibility: domain.GroupVisibilityPublic})
 	require.NoError(t, err)
 	require.NoError(t, tr.repos.Accounts.SetAccountGroups(ctx(), acc.ID, []int64{g.ID}))
 	gIDs, err := tr.repos.Accounts.GetAccountGroups(ctx(), acc.ID)
@@ -363,10 +360,8 @@ func TestAccountAndGroup(t *testing.T) {
 	require.Len(t, got, 1)
 	require.Equal(t, acc.ID, got[0].ID)
 	require.NotNil(t, got[0].Template)
-	keys, err := tr.repos.Groups.LoadGroupKeys(ctx())
-	require.NoError(t, err)
-	require.Len(t, keys, 1)
-	require.Equal(t, g.ID, keys["h1"])
+	// Phase 3a：LoadGroupKeys 已删除（key 独立表；LoadKeys 覆盖见真实 PG 测试
+	// pg_auth_keys_test.go）
 	require.NoError(t, tr.repos.Accounts.UpdateAccountStatus(ctx(), acc.ID, domain.Status429, nil, nil, nil))
 	a2, err := tr.repos.Accounts.GetAccount(ctx(), acc.ID)
 	require.NoError(t, err)
@@ -556,12 +551,12 @@ func TestLogsAndStats(t *testing.T) {
 	// Stats Upsert x2 -> INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING id
 	//（DO UPDATE 的 COALESCE 增量以 $16.. 追加为独立参数，含 cache 两列）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
-		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), "m", false,
+		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
 			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(30), pgxmock.AnyArg(),
 			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(30)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
-		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), "m", false,
+		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
 			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(40), pgxmock.AnyArg(),
 			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(40)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))

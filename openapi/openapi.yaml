@@ -260,7 +260,7 @@ paths:
     post:
       operationId: PostGroups
       tags: [groups]
-      summary: 创建分组（响应含明文 key，仅此一次）
+      summary: 创建分组（平台容量池；key 为独立表，由用户面 /user/keys 创建）
       requestBody:
         required: true
         content:
@@ -268,10 +268,10 @@ paths:
             schema: { $ref: '#/components/schemas/GroupCreate' }
       responses:
         '200':
-          description: 分组 + 明文 key
+          description: 创建后的分组
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CreateGroupResponse' }
+              schema: { $ref: '#/components/schemas/Group' }
         default:
           $ref: '#/components/responses/Error'
     get:
@@ -367,21 +367,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
-        default:
-          $ref: '#/components/responses/Error'
-  /groups/{id}/rotate-key:
-    parameters:
-      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
-    post:
-      operationId: PostGroupsIdRotateKey
-      tags: [groups]
-      summary: 轮换分组 key
-      responses:
-        '200':
-          description: 新明文 key
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/RotateKeyResponse' }
         default:
           $ref: '#/components/responses/Error'
   # 注意 chi 路径顺序：/rules 必须先于 /rules/{id} 注册（生成器按 spec 顺序注册）。
@@ -646,11 +631,15 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/Group' }
+    GroupVisibility:
+      type: string
+      enum: [public, private]
     GroupCreate:
       type: object
       required: [name]
       properties:
         name: { type: string }
+        visibility: { $ref: '#/components/schemas/GroupVisibility' }
     RuleCreate:
       type: object
       required: [name, priority]
@@ -705,21 +694,9 @@ components:
       properties:
         ID: { type: integer, format: int64 }
         Name: { type: string }
-        KeyHash: { type: string }
-        KeyPrefix: { type: string }
+        Visibility: { $ref: '#/components/schemas/GroupVisibility' }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
-    CreateGroupResponse:
-      type: object
-      required: [group, key]
-      properties:
-        group: { $ref: '#/components/schemas/Group' }
-        key: { type: string }
-    RotateKeyResponse:
-      type: object
-      required: [key]
-      properties:
-        key: { type: string }
     AccountGroupsResponse:
       type: object
       required: [group_ids]
@@ -784,6 +761,7 @@ components:
       type: object
       properties:
         name: { type: string }
+        visibility: { $ref: '#/components/schemas/GroupVisibility' }
     BatchUpdateAccountsBody:
       type: object
       required: [ids, fields]

@@ -20,11 +20,11 @@ type fakeStore struct {
 	accs      map[int64]*domain.Account
 	groups    map[int64]*domain.Group
 	accGroups map[int64][]int64 // accountID → groupIDs（账号侧绑定，Set/GetAccountGroups）
+	keys      map[int64]*domain.Key
 	rules     map[int64]domain.Rule
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	nextID    int64
-	keyHashes map[int64]string
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
@@ -34,8 +34,22 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		tpls: make(map[int64]*domain.Template), accs: make(map[int64]*domain.Account),
 		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
-		rules: make(map[int64]domain.Rule), keyHashes: make(map[int64]string), nextID: 1,
+		keys: make(map[int64]*domain.Key), rules: make(map[int64]domain.Rule), nextID: 1,
 	}
+}
+
+// DeleteKeysByGroup 满足 KeyStore（组删除前置清理；返回被删 hash 列表）。
+func (f *fakeStore) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var hashes []string
+	for id, k := range f.keys {
+		if k.GroupID == groupID {
+			hashes = append(hashes, k.KeyHash)
+			delete(f.keys, id)
+		}
+	}
+	return hashes, nil
 }
 
 // missingErr 模拟真实 repo 单资源缺 id 错误（与批量 fake 同格式：
@@ -151,7 +165,6 @@ func (f *fakeStore) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	f.nextID++
 	c := *g
 	f.groups[g.ID] = &c
-	f.keyHashes[g.ID] = g.KeyHash
 	return g, nil
 }
 

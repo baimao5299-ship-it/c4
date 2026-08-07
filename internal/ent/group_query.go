@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/groupassignment"
+	"go-proxy-mini/internal/ent/key"
 	"go-proxy-mini/internal/ent/predicate"
 	"math"
 
@@ -20,11 +22,13 @@ import (
 // GroupQuery is the builder for querying Group entities.
 type GroupQuery struct {
 	config
-	ctx          *QueryContext
-	order        []group.OrderOption
-	inters       []Interceptor
-	predicates   []predicate.Group
-	withAccounts *AccountQuery
+	ctx             *QueryContext
+	order           []group.OrderOption
+	inters          []Interceptor
+	predicates      []predicate.Group
+	withAccounts    *AccountQuery
+	withKeys        *KeyQuery
+	withAssignments *GroupAssignmentQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -76,6 +80,50 @@ func (_q *GroupQuery) QueryAccounts() *AccountQuery {
 			sqlgraph.From(group.Table, group.FieldID, selector),
 			sqlgraph.To(account.Table, account.FieldID),
 			sqlgraph.Edge(sqlgraph.M2M, true, group.AccountsTable, group.AccountsPrimaryKey...),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryKeys chains the current query on the "keys" edge.
+func (_q *GroupQuery) QueryKeys() *KeyQuery {
+	query := (&KeyClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(group.Table, group.FieldID, selector),
+			sqlgraph.To(key.Table, key.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, group.KeysTable, group.KeysColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryAssignments chains the current query on the "assignments" edge.
+func (_q *GroupQuery) QueryAssignments() *GroupAssignmentQuery {
+	query := (&GroupAssignmentClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(group.Table, group.FieldID, selector),
+			sqlgraph.To(groupassignment.Table, groupassignment.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, group.AssignmentsTable, group.AssignmentsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -270,12 +318,14 @@ func (_q *GroupQuery) Clone() *GroupQuery {
 		return nil
 	}
 	return &GroupQuery{
-		config:       _q.config,
-		ctx:          _q.ctx.Clone(),
-		order:        append([]group.OrderOption{}, _q.order...),
-		inters:       append([]Interceptor{}, _q.inters...),
-		predicates:   append([]predicate.Group{}, _q.predicates...),
-		withAccounts: _q.withAccounts.Clone(),
+		config:          _q.config,
+		ctx:             _q.ctx.Clone(),
+		order:           append([]group.OrderOption{}, _q.order...),
+		inters:          append([]Interceptor{}, _q.inters...),
+		predicates:      append([]predicate.Group{}, _q.predicates...),
+		withAccounts:    _q.withAccounts.Clone(),
+		withKeys:        _q.withKeys.Clone(),
+		withAssignments: _q.withAssignments.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -290,6 +340,28 @@ func (_q *GroupQuery) WithAccounts(opts ...func(*AccountQuery)) *GroupQuery {
 		opt(query)
 	}
 	_q.withAccounts = query
+	return _q
+}
+
+// WithKeys tells the query-builder to eager-load the nodes that are connected to
+// the "keys" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *GroupQuery) WithKeys(opts ...func(*KeyQuery)) *GroupQuery {
+	query := (&KeyClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withKeys = query
+	return _q
+}
+
+// WithAssignments tells the query-builder to eager-load the nodes that are connected to
+// the "assignments" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *GroupQuery) WithAssignments(opts ...func(*GroupAssignmentQuery)) *GroupQuery {
+	query := (&GroupAssignmentClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withAssignments = query
 	return _q
 }
 
@@ -371,8 +443,10 @@ func (_q *GroupQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Group,
 	var (
 		nodes       = []*Group{}
 		_spec       = _q.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [3]bool{
 			_q.withAccounts != nil,
+			_q.withKeys != nil,
+			_q.withAssignments != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -397,6 +471,20 @@ func (_q *GroupQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Group,
 		if err := _q.loadAccounts(ctx, query, nodes,
 			func(n *Group) { n.Edges.Accounts = []*Account{} },
 			func(n *Group, e *Account) { n.Edges.Accounts = append(n.Edges.Accounts, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withKeys; query != nil {
+		if err := _q.loadKeys(ctx, query, nodes,
+			func(n *Group) { n.Edges.Keys = []*Key{} },
+			func(n *Group, e *Key) { n.Edges.Keys = append(n.Edges.Keys, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withAssignments; query != nil {
+		if err := _q.loadAssignments(ctx, query, nodes,
+			func(n *Group) { n.Edges.Assignments = []*GroupAssignment{} },
+			func(n *Group, e *GroupAssignment) { n.Edges.Assignments = append(n.Edges.Assignments, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -461,6 +549,66 @@ func (_q *GroupQuery) loadAccounts(ctx context.Context, query *AccountQuery, nod
 		for kn := range nodes {
 			assign(kn, n)
 		}
+	}
+	return nil
+}
+func (_q *GroupQuery) loadKeys(ctx context.Context, query *KeyQuery, nodes []*Group, init func(*Group), assign func(*Group, *Key)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Group)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(key.FieldGroupID)
+	}
+	query.Where(predicate.Key(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(group.KeysColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.GroupID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "group_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *GroupQuery) loadAssignments(ctx context.Context, query *GroupAssignmentQuery, nodes []*Group, init func(*Group), assign func(*Group, *GroupAssignment)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Group)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(groupassignment.FieldGroupID)
+	}
+	query.Where(predicate.GroupAssignment(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(group.AssignmentsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.GroupID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "group_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

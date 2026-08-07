@@ -13,8 +13,8 @@ import (
 
 // fakeStore 以值语义模拟真实仓库（ent 每次返回新对象、无指针别名）：
 // Create/Get/Update 均返回副本，存库条目一经写入不再被外部指针修改。
-// 若直接存/返回调用方指针，RotateGroupKey 等原地修改会透过别名污染
-// 测试持有的旧引用（评审发现：测试必然失败或退化为恒真断言）。
+// 若直接存/返回调用方指针，原地修改会透过别名污染测试持有的旧引用
+// （评审发现：测试必然失败或退化为恒真断言）。
 // 实现 service.Store 接口，供 handler 测试使用。
 type fakeStore struct {
 	mu        sync.Mutex
@@ -22,11 +22,11 @@ type fakeStore struct {
 	accs      map[int64]*domain.Account
 	groups    map[int64]*domain.Group
 	accGroups map[int64][]int64 // accountID → groupIDs（账号侧绑定，Set/GetAccountGroups）
+	keys      map[int64]*domain.Key
 	rules     map[int64]domain.Rule
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	nextID    int64
-	keyHashes map[int64]string
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
@@ -36,8 +36,22 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		tpls: make(map[int64]*domain.Template), accs: make(map[int64]*domain.Account),
 		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
-		rules: make(map[int64]domain.Rule), keyHashes: make(map[int64]string), nextID: 1,
+		keys: make(map[int64]*domain.Key), rules: make(map[int64]domain.Rule), nextID: 1,
 	}
+}
+
+// DeleteKeysByGroup 满足 KeyStore（组删除前置清理；返回被删 hash 列表）。
+func (f *fakeStore) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var hashes []string
+	for id, k := range f.keys {
+		if k.GroupID == groupID {
+			hashes = append(hashes, k.KeyHash)
+			delete(f.keys, id)
+		}
+	}
+	return hashes, nil
 }
 
 var _ service.Store = (*fakeStore)(nil)
@@ -155,7 +169,6 @@ func (f *fakeStore) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	f.nextID++
 	c := *g
 	f.groups[g.ID] = &c
-	f.keyHashes[g.ID] = g.KeyHash
 	return g, nil
 }
 
@@ -340,7 +353,6 @@ func (f *fakeStore) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	}
 	for _, id := range ids {
 		delete(f.groups, id)
-		delete(f.keyHashes, id)
 	}
 	return nil
 }

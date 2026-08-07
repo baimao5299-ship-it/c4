@@ -13,13 +13,17 @@ import (
 
 // Repos 聚合各实体仓库。
 type Repos struct {
-	Templates *TemplateRepo
-	Accounts  *AccountRepo
-	Groups    *GroupRepo
-	Logs      *LogRepo
-	Stats     *StatRepo
-	Rules     RuleStore
-	Client    *ent.Client
+	Templates   *TemplateRepo
+	Accounts    *AccountRepo
+	Groups      *GroupRepo
+	Users       *UserRepo
+	Keys        *KeyRepo
+	Assignments *GroupAssignmentRepo
+	Settings    *SettingRepo
+	Logs        *LogRepo
+	Stats       *StatRepo
+	Rules       RuleStore
+	Client      *ent.Client
 }
 
 // New 用既有 driver 构建仓库（PG 生产：entsql.OpenDB(dialect.Postgres, db)；测试：pgxmock 适配器）。
@@ -32,13 +36,17 @@ func New(drv dialect.Driver, migrate bool) (*Repos, error) {
 	}
 	accounts := &AccountRepo{client: client}
 	return &Repos{
-		Templates: &TemplateRepo{client: client},
-		Accounts:  accounts,
-		Groups:    &GroupRepo{client: client, accounts: accounts},
-		Logs:      &LogRepo{client: client},
-		Stats:     &StatRepo{client: client},
-		Rules:     &RuleRepo{client: client},
-		Client:    client,
+		Templates:   &TemplateRepo{client: client},
+		Accounts:    accounts,
+		Groups:      &GroupRepo{client: client, accounts: accounts},
+		Users:       &UserRepo{client: client},
+		Keys:        &KeyRepo{client: client},
+		Assignments: &GroupAssignmentRepo{client: client},
+		Settings:    &SettingRepo{client: client},
+		Logs:        &LogRepo{client: client},
+		Stats:       &StatRepo{client: client},
+		Rules:       &RuleRepo{client: client},
+		Client:      client,
 	}, nil
 }
 
@@ -134,6 +142,102 @@ func (r *Repos) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 
 func (r *Repos) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupPatch) error {
 	return r.Groups.UpdateGroupsBatch(ctx, ids, p)
+}
+
+// --- 用户（Phase 3a） ---
+
+func (r *Repos) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
+	return r.Users.CreateUser(ctx, u)
+}
+
+func (r *Repos) GetUser(ctx context.Context, id int64) (*domain.User, error) {
+	return r.Users.GetUser(ctx, id)
+}
+
+func (r *Repos) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+	return r.Users.GetUserByEmail(ctx, email)
+}
+
+func (r *Repos) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, int64, error) {
+	return r.Users.ListUsers(ctx, q)
+}
+
+func (r *Repos) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
+	return r.Users.UpdateUser(ctx, u)
+}
+
+func (r *Repos) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	return r.Users.UpdateUserPassword(ctx, id, passwordHash)
+}
+
+// --- 客户端 key（Phase 3a） ---
+
+func (r *Repos) CreateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
+	return r.Keys.CreateKey(ctx, k)
+}
+
+func (r *Repos) GetKey(ctx context.Context, id int64) (*domain.Key, error) {
+	return r.Keys.GetKey(ctx, id)
+}
+
+func (r *Repos) GetKeyByHash(ctx context.Context, hash string) (*domain.Key, error) {
+	return r.Keys.GetKeyByHash(ctx, hash)
+}
+
+func (r *Repos) ListKeysByUser(ctx context.Context, userID int64, q ListQuery) ([]*domain.Key, int64, error) {
+	return r.Keys.ListKeysByUser(ctx, userID, q)
+}
+
+func (r *Repos) UpdateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
+	return r.Keys.UpdateKey(ctx, k)
+}
+
+func (r *Repos) RotateKey(ctx context.Context, id int64, newHash, newPrefix string) (*domain.Key, error) {
+	return r.Keys.RotateKey(ctx, id, newHash, newPrefix)
+}
+
+func (r *Repos) DeleteKey(ctx context.Context, id int64) error {
+	return r.Keys.DeleteKey(ctx, id)
+}
+
+func (r *Repos) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error) {
+	return r.Keys.DeleteKeysByGroup(ctx, groupID)
+}
+
+// --- 组授予（Phase 3a） ---
+
+func (r *Repos) GrantGroup(ctx context.Context, groupID, userID int64) error {
+	return r.Assignments.Grant(ctx, groupID, userID)
+}
+
+func (r *Repos) RevokeGroup(ctx context.Context, groupID, userID int64) error {
+	return r.Assignments.Revoke(ctx, groupID, userID)
+}
+
+func (r *Repos) ListAssignmentsByUser(ctx context.Context, userID int64) ([]*domain.GroupAssignment, error) {
+	return r.Assignments.ListByUser(ctx, userID)
+}
+
+func (r *Repos) ListAssignmentsByGroup(ctx context.Context, groupID int64) ([]*domain.GroupAssignment, error) {
+	return r.Assignments.ListByGroup(ctx, groupID)
+}
+
+func (r *Repos) ListGroupsForUser(ctx context.Context, userID int64) ([]*domain.Group, error) {
+	return r.Assignments.ListGroupsForUser(ctx, userID)
+}
+
+// --- settings（Phase 3a） ---
+
+func (r *Repos) GetSetting(ctx context.Context, key string) (*domain.Setting, error) {
+	return r.Settings.Get(ctx, key)
+}
+
+func (r *Repos) GetAllSettings(ctx context.Context) ([]*domain.Setting, error) {
+	return r.Settings.GetAll(ctx)
+}
+
+func (r *Repos) SetSetting(ctx context.Context, key string, typ domain.SettingType, value string) (*domain.Setting, error) {
+	return r.Settings.Set(ctx, key, typ, value)
 }
 
 func (r *Repos) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {

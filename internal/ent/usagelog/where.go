@@ -74,6 +74,16 @@ func TemplateID(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldTemplateID, v))
 }
 
+// UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
+func UserID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUserID, v))
+}
+
+// KeyID applies equality check predicate on the "key_id" field. It's identical to KeyIDEQ.
+func KeyID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldKeyID, v))
+}
+
 // Model applies equality check predicate on the "model" field. It's identical to ModelEQ.
 func Model(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldModel, v))
@@ -342,6 +352,106 @@ func TemplateIDIsNil() predicate.UsageLog {
 // TemplateIDNotNil applies the NotNil predicate on the "template_id" field.
 func TemplateIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldTemplateID))
+}
+
+// UserIDEQ applies the EQ predicate on the "user_id" field.
+func UserIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUserID, v))
+}
+
+// UserIDNEQ applies the NEQ predicate on the "user_id" field.
+func UserIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUserID, v))
+}
+
+// UserIDIn applies the In predicate on the "user_id" field.
+func UserIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUserID, vs...))
+}
+
+// UserIDNotIn applies the NotIn predicate on the "user_id" field.
+func UserIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUserID, vs...))
+}
+
+// UserIDGT applies the GT predicate on the "user_id" field.
+func UserIDGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUserID, v))
+}
+
+// UserIDGTE applies the GTE predicate on the "user_id" field.
+func UserIDGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUserID, v))
+}
+
+// UserIDLT applies the LT predicate on the "user_id" field.
+func UserIDLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUserID, v))
+}
+
+// UserIDLTE applies the LTE predicate on the "user_id" field.
+func UserIDLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUserID, v))
+}
+
+// UserIDIsNil applies the IsNil predicate on the "user_id" field.
+func UserIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldUserID))
+}
+
+// UserIDNotNil applies the NotNil predicate on the "user_id" field.
+func UserIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldUserID))
+}
+
+// KeyIDEQ applies the EQ predicate on the "key_id" field.
+func KeyIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldKeyID, v))
+}
+
+// KeyIDNEQ applies the NEQ predicate on the "key_id" field.
+func KeyIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldKeyID, v))
+}
+
+// KeyIDIn applies the In predicate on the "key_id" field.
+func KeyIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldKeyID, vs...))
+}
+
+// KeyIDNotIn applies the NotIn predicate on the "key_id" field.
+func KeyIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldKeyID, vs...))
+}
+
+// KeyIDGT applies the GT predicate on the "key_id" field.
+func KeyIDGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldKeyID, v))
+}
+
+// KeyIDGTE applies the GTE predicate on the "key_id" field.
+func KeyIDGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldKeyID, v))
+}
+
+// KeyIDLT applies the LT predicate on the "key_id" field.
+func KeyIDLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldKeyID, v))
+}
+
+// KeyIDLTE applies the LTE predicate on the "key_id" field.
+func KeyIDLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldKeyID, v))
+}
+
+// KeyIDIsNil applies the IsNil predicate on the "key_id" field.
+func KeyIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldKeyID))
+}
+
+// KeyIDNotNil applies the NotNil predicate on the "key_id" field.
+func KeyIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldKeyID))
 }
 
 // ModelEQ applies the EQ predicate on the "model" field.

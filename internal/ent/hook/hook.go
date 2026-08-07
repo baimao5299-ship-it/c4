@@ -32,6 +32,30 @@ func (f GroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupMutation", m)
 }
 
+// The GroupAssignmentFunc type is an adapter to allow the use of ordinary
+// function as GroupAssignment mutator.
+type GroupAssignmentFunc func(context.Context, *ent.GroupAssignmentMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GroupAssignmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.GroupAssignmentMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupAssignmentMutation", m)
+}
+
+// The KeyFunc type is an adapter to allow the use of ordinary
+// function as Key mutator.
+type KeyFunc func(context.Context, *ent.KeyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f KeyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.KeyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.KeyMutation", m)
+}
+
 // The RuleFunc type is an adapter to allow the use of ordinary
 // function as Rule mutator.
 type RuleFunc func(context.Context, *ent.RuleMutation) (ent.Value, error)
@@ -42,6 +66,30 @@ func (f RuleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RuleMutation", m)
+}
+
+// The SettingFunc type is an adapter to allow the use of ordinary
+// function as Setting mutator.
+type SettingFunc func(context.Context, *ent.SettingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SettingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SettingMutation", m)
+}
+
+// The TempBalanceFunc type is an adapter to allow the use of ordinary
+// function as TempBalance mutator.
+type TempBalanceFunc func(context.Context, *ent.TempBalanceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TempBalanceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TempBalanceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TempBalanceMutation", m)
 }
 
 // The TemplateFunc type is an adapter to allow the use of ordinary
@@ -78,6 +126,18 @@ func (f UsageStatFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, e
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UsageStatMutation", m)
+}
+
+// The UserFunc type is an adapter to allow the use of ordinary
+// function as User mutator.
+type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserMutation", m)
 }
 
 // Condition is a hook condition function.

@@ -123,6 +123,60 @@ func (_u *UsageLogUpdate) ClearTemplateID() *UsageLogUpdate {
 	return _u
 }
 
+// SetUserID sets the "user_id" field.
+func (_u *UsageLogUpdate) SetUserID(v int64) *UsageLogUpdate {
+	_u.mutation.ResetUserID()
+	_u.mutation.SetUserID(v)
+	return _u
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUserID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUserID(*v)
+	}
+	return _u
+}
+
+// AddUserID adds value to the "user_id" field.
+func (_u *UsageLogUpdate) AddUserID(v int64) *UsageLogUpdate {
+	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (_u *UsageLogUpdate) ClearUserID() *UsageLogUpdate {
+	_u.mutation.ClearUserID()
+	return _u
+}
+
+// SetKeyID sets the "key_id" field.
+func (_u *UsageLogUpdate) SetKeyID(v int64) *UsageLogUpdate {
+	_u.mutation.ResetKeyID()
+	_u.mutation.SetKeyID(v)
+	return _u
+}
+
+// SetNillableKeyID sets the "key_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableKeyID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetKeyID(*v)
+	}
+	return _u
+}
+
+// AddKeyID adds value to the "key_id" field.
+func (_u *UsageLogUpdate) AddKeyID(v int64) *UsageLogUpdate {
+	_u.mutation.AddKeyID(v)
+	return _u
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (_u *UsageLogUpdate) ClearKeyID() *UsageLogUpdate {
+	_u.mutation.ClearKeyID()
+	return _u
+}
+
 // SetModel sets the "model" field.
 func (_u *UsageLogUpdate) SetModel(v string) *UsageLogUpdate {
 	_u.mutation.SetModel(v)
@@ -430,6 +484,24 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.TemplateIDCleared() {
 		_spec.ClearField(usagelog.FieldTemplateID, field.TypeInt64)
 	}
+	if value, ok := _u.mutation.UserID(); ok {
+		_spec.SetField(usagelog.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUserID(); ok {
+		_spec.AddField(usagelog.FieldUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.UserIDCleared() {
+		_spec.ClearField(usagelog.FieldUserID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.KeyID(); ok {
+		_spec.SetField(usagelog.FieldKeyID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedKeyID(); ok {
+		_spec.AddField(usagelog.FieldKeyID, field.TypeInt64, value)
+	}
+	if _u.mutation.KeyIDCleared() {
+		_spec.ClearField(usagelog.FieldKeyID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)
 	}
@@ -602,6 +674,60 @@ func (_u *UsageLogUpdateOne) AddTemplateID(v int64) *UsageLogUpdateOne {
 // ClearTemplateID clears the value of the "template_id" field.
 func (_u *UsageLogUpdateOne) ClearTemplateID() *UsageLogUpdateOne {
 	_u.mutation.ClearTemplateID()
+	return _u
+}
+
+// SetUserID sets the "user_id" field.
+func (_u *UsageLogUpdateOne) SetUserID(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetUserID()
+	_u.mutation.SetUserID(v)
+	return _u
+}
+
+// SetNillableUserID sets the "user_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUserID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUserID(*v)
+	}
+	return _u
+}
+
+// AddUserID adds value to the "user_id" field.
+func (_u *UsageLogUpdateOne) AddUserID(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddUserID(v)
+	return _u
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (_u *UsageLogUpdateOne) ClearUserID() *UsageLogUpdateOne {
+	_u.mutation.ClearUserID()
+	return _u
+}
+
+// SetKeyID sets the "key_id" field.
+func (_u *UsageLogUpdateOne) SetKeyID(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetKeyID()
+	_u.mutation.SetKeyID(v)
+	return _u
+}
+
+// SetNillableKeyID sets the "key_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableKeyID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetKeyID(*v)
+	}
+	return _u
+}
+
+// AddKeyID adds value to the "key_id" field.
+func (_u *UsageLogUpdateOne) AddKeyID(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddKeyID(v)
+	return _u
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (_u *UsageLogUpdateOne) ClearKeyID() *UsageLogUpdateOne {
+	_u.mutation.ClearKeyID()
 	return _u
 }
 
@@ -941,6 +1067,24 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.TemplateIDCleared() {
 		_spec.ClearField(usagelog.FieldTemplateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UserID(); ok {
+		_spec.SetField(usagelog.FieldUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUserID(); ok {
+		_spec.AddField(usagelog.FieldUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.UserIDCleared() {
+		_spec.ClearField(usagelog.FieldUserID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.KeyID(); ok {
+		_spec.SetField(usagelog.FieldKeyID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedKeyID(); ok {
+		_spec.AddField(usagelog.FieldKeyID, field.TypeInt64, value)
+	}
+	if _u.mutation.KeyIDCleared() {
+		_spec.ClearField(usagelog.FieldKeyID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Model(); ok {
 		_spec.SetField(usagelog.FieldModel, field.TypeString, value)

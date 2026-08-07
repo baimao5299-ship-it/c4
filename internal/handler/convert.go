@@ -81,13 +81,13 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 
 // toAPIGroup 分组领域对象 → 契约类型。
 func toAPIGroup(g *domain.Group) Group {
+	v := GroupVisibility(g.Visibility)
 	return Group{
-		ID:        &g.ID,
-		Name:      &g.Name,
-		KeyHash:   &g.KeyHash,
-		KeyPrefix: &g.KeyPrefix,
-		CreatedAt: &g.CreatedAt,
-		UpdatedAt: &g.UpdatedAt,
+		ID:         &g.ID,
+		Name:       &g.Name,
+		Visibility: &v,
+		CreatedAt:  &g.CreatedAt,
+		UpdatedAt:  &g.UpdatedAt,
 	}
 }
 

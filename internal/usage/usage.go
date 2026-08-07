@@ -29,14 +29,22 @@ type StatUpserter interface {
 	Upsert(ctx context.Context, buckets []*domain.StatBucket) error
 }
 
+// QuotaWriter 批量回写 key 额度消耗（增量；内存权威，DB 滞后 ≤ flush 间隔）。
+// 由 proxy 的 gate 计数 + 本 Recorder 的 flush 节奏落库（Phase 3a：额度后扣）。
+type QuotaWriter interface {
+	AddQuotaUsed(ctx context.Context, deltas map[int64]int64) error
+}
+
 type Recorder struct {
 	cfg       UsageConfig
 	logs      LogInserter
 	stats     StatUpserter
+	quota     QuotaWriter // 可选（nil = 不回写额度）
 	log       *logx.Logger
 	logCh     chan *domain.UsageLog
 	mu        sync.Mutex
 	counters  map[string]*statCounters
+	quotaUsed map[int64]int64 // key_id → 待回写 token 增量
 	startOnce atomic.Bool
 }
 
@@ -46,13 +54,21 @@ type statCounters struct {
 
 func New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger) *Recorder {
 	return &Recorder{
-		cfg:      cfg,
-		logs:     logs,
-		stats:    stats,
-		log:      log,
-		logCh:    make(chan *domain.UsageLog, 16384),
-		counters: make(map[string]*statCounters),
+		cfg:       cfg,
+		logs:      logs,
+		stats:     stats,
+		log:       log,
+		logCh:     make(chan *domain.UsageLog, 16384),
+		counters:  make(map[string]*statCounters),
+		quotaUsed: make(map[int64]int64),
 	}
+}
+
+// SetQuotaWriter 注入额度回写器（装配期调用；nil = 关闭回写）。
+func (r *Recorder) SetQuotaWriter(q QuotaWriter) {
+	r.mu.Lock()
+	r.quota = q
+	r.mu.Unlock()
 }
 
 // Name 满足 worker.Worker 契约（Global Constraints #5）；重复 Start 幂等。
@@ -82,16 +98,20 @@ func (r *Recorder) Pending() int { return len(r.logCh) }
 func (r *Recorder) aggregate(l *domain.UsageLog) {
 	hour := l.CreatedAt.UTC().Truncate(time.Hour)
 	isErr := l.ErrorType != domain.ErrNone
-	key := fmt.Sprintf("%d|%d|%d|%d|%s|%v", hour.Unix(), l.GroupID, l.AccountID, l.TemplateID, l.Model, isErr)
+	key := fmt.Sprintf("%d|%d|%d|%d|%d|%s|%v", hour.Unix(), l.GroupID, l.AccountID, l.TemplateID, l.UserID, l.Model, isErr)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c, ok := r.counters[key]
 	if !ok {
 		c = &statCounters{bucket: domain.StatBucket{
 			BucketTime: hour, GroupID: l.GroupID, AccountID: l.AccountID,
-			TemplateID: l.TemplateID, Model: l.Model, IsError: isErr,
+			TemplateID: l.TemplateID, UserID: l.UserID, Model: l.Model, IsError: isErr,
 		}}
 		r.counters[key] = c
+	}
+	// quota_used 增量聚合（key 级；Recorder 节奏批量回写，内存权威在 proxy gate）
+	if l.KeyID > 0 {
+		r.quotaUsed[l.KeyID] += l.TotalTokens
 	}
 	c.bucket.RequestCount++
 	if isErr {
@@ -158,7 +178,23 @@ func (r *Recorder) flushStats() {
 		buckets = append(buckets, &b)
 	}
 	r.counters = make(map[string]*statCounters)
+	quota := r.quotaUsed
+	r.quotaUsed = make(map[int64]int64)
+	qw := r.quota
 	r.mu.Unlock()
+	// 额度回写（增量；失败回灌，下次 flush 重试——与 stats 同语义）
+	if qw != nil && len(quota) > 0 {
+		if err := qw.AddQuotaUsed(context.Background(), quota); err != nil {
+			if r.log != nil {
+				r.log.Warn("usage quota writeback failed", logx.Error(err))
+			}
+			r.mu.Lock()
+			for k, v := range quota {
+				r.quotaUsed[k] += v
+			}
+			r.mu.Unlock()
+		}
+	}
 	if len(buckets) == 0 {
 		return
 	}
@@ -169,7 +205,7 @@ func (r *Recorder) flushStats() {
 		// 失败回灌：避免计数丢失
 		r.mu.Lock()
 		for _, b := range buckets {
-			key := fmt.Sprintf("%d|%d|%d|%d|%s|%v", b.BucketTime.Unix(), b.GroupID, b.AccountID, b.TemplateID, b.Model, b.IsError)
+			key := fmt.Sprintf("%d|%d|%d|%d|%d|%s|%v", b.BucketTime.Unix(), b.GroupID, b.AccountID, b.TemplateID, b.UserID, b.Model, b.IsError)
 			if c, ok := r.counters[key]; ok {
 				c.bucket.RequestCount += b.RequestCount
 				c.bucket.ErrorCount += b.ErrorCount

@@ -41,7 +41,8 @@ type AccountPatch struct {
 }
 
 type GroupPatch struct {
-	Name *string
+	Name       *string
+	Visibility *domain.GroupVisibility
 }
 
 // --- 批量删除（事务，全成或全败） ---
@@ -195,6 +196,9 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 		u := tx.Group.UpdateOneID(id)
 		if p.Name != nil {
 			u = u.SetName(*p.Name)
+		}
+		if p.Visibility != nil {
+			u = u.SetVisibility(group.Visibility(*p.Visibility))
 		}
 		if _, err := u.Save(ctx); err != nil {
 			return errMissingID(err, id)
