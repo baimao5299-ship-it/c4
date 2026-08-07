@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
@@ -56,24 +55,19 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	}
 	// SDK v1.x 参数里没有 Stream 字段（流式由 NewStreaming 在请求选项层注入
 	// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
+	// model 一并在此提取（评审 I-2：不解析完整 params）：string 类型字段让
+	// 非字符串 model 在解码时报错 → 400；显式 null 与缺失等同（encoding/json
+	// 的 null → 零值语义）。与 gjson 顶层提取语义等价，但零额外分配（热路径
+	// alloc/op 硬标准：与现状 peek 单次 unmarshal 相同）。
 	var peek struct {
-		Stream bool `json:"stream"`
+		Stream bool   `json:"stream"`
+		Model  string `json:"model"`
 	}
 	if err := json.Unmarshal(body, &peek); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
 		return
 	}
-	// model 提取（评审 I-2）：gjson 顶层直取、零分配，不解析完整 params。
-	// 类型校验对齐现状完整 params 解析对 model 字段的校验：非字符串 → 400；
-	// 显式 null 与缺失等同（encoding/json 的 null → 零值语义）。
-	reqModel := ""
-	if mv := gjson.GetBytes(body, "model"); mv.Exists() {
-		if mv.Type != gjson.Null && mv.Type != gjson.String {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: model must be a string"}})
-			return
-		}
-		reqModel = mv.String()
-	}
+	reqModel := peek.Model
 
 	sel, err := p.sched.Select(groupID, format, reqModel)
 	if err != nil {
@@ -102,7 +96,9 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		if err != nil {
 			code = 0 // 凭据错误按网络错误处理（等价现状 try* 内 false,0,nil → 耗尽 ErrNetwork）
 		} else {
-			code, respBody, handled, err = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, peek.Stream)
+			// err 返回值为接口契约保留（评审 I-1 语义表），实际分类已由
+			// code 承载（0=连接级/凭据错、4xx、429、5xx），骨架无需 err。
+			code, respBody, handled, _ = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, peek.Stream)
 		}
 		if handled {
 			return // caller 已处理完毕（成功/客户端断开/流中止已记录；本地拒绝已写出无记录）

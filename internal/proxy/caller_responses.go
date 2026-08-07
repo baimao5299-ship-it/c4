@@ -22,10 +22,11 @@ type responsesCaller struct{ p *Proxy }
 func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 	tpl := tplOf(sel)
-	// 客户端请求模型：gjson 顶层提取，零分配（ResponsesModel 即 string 别名）。
-	reqModel := gjson.GetBytes(body, "model").String()
 
 	if stream {
+		// 客户端请求模型：流式无完整 params 解析（评审 I-2），gjson 顶层
+		// 提取（1 次分配，远低于旧的完整参数解析）。ResponsesModel 即 string 别名。
+		reqModel := gjson.GetBytes(body, "model").String()
 		ctx, cancel := context.WithTimeout(ctx, p.cfg.UpstreamStreamTimeout)
 		defer cancel()
 		// 模型改写：与 SDK 路径 params.Model = sel.Model 等价（ModelMapping 语义）。
@@ -86,6 +87,8 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		p.sched.Release(sel.AccountID)
 		return 400, nil, true, nil
 	}
+	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
+	reqModel := params.Model
 	params.Model = responses.ResponsesModel(sel.Model)
 	resp, err := p.clients.Response(ctx, tpl, cred, params)
 	if err != nil {
