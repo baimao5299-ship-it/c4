@@ -149,6 +149,6 @@ func (r *GroupRepo) LoadGroupKeys(ctx context.Context) (map[string]int64, error)
 }
 
 // UpdateAccountStatus 满足 scheduler.Loader：账号状态回写委托 AccountRepo。
-func (r *GroupRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string) error {
-	return r.accounts.UpdateAccountStatus(ctx, id, status, cooldownUntil, lastError)
+func (r *GroupRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error {
+	return r.accounts.UpdateAccountStatus(ctx, id, status, cooldownUntil, lastError, weight)
 }

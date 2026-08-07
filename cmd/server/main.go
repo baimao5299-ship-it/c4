@@ -20,6 +20,7 @@ import (
 	"go-proxy-mini/internal/handler"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
+	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/server"
 	"go-proxy-mini/internal/service"
@@ -59,13 +60,12 @@ func main() {
 		fatalf("migrate: %v", err)
 	}
 
+	// 规则引擎先行构造（不 Reload——New 只建结构）：scheduler 构造期注册 apply 回调。
+	ruleEngine := rule.New(rule.Config{}, repos.Rules, log)
 	sched := scheduler.New(scheduler.Config{
 		DefaultMaxConcurrency: cfg.Scheduler.DefaultMaxConcurrency,
-		Cooldown429:           cfg.Scheduler.Cooldown429,
-		BackoffBase:           cfg.Scheduler.BackoffBase,
-		BackoffMax:            cfg.Scheduler.BackoffMax,
 		SyncInterval:          cfg.Scheduler.SyncInterval,
-	}, repos.Groups, log)
+	}, repos.Groups, ruleEngine, log)
 	rec := usage.New(usage.UsageConfig{
 		BatchSize:          cfg.Usage.BatchSize,
 		FlushInterval:      cfg.Usage.FlushInterval,
@@ -119,9 +119,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空（usage 先排明细）。
+	// 规则表是状态管理唯一路径：启动前显式 Reload（空表写种子），失败即 fatalf。
+	if err := ruleEngine.Reload(ctx); err != nil {
+		fatalf("rule engine reload: %v", err)
+	}
+	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
+	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
-	wm.Register(sched, rec)
+	wm.Register(sched, ruleEngine, rec)
 	if err := wm.StartAll(ctx); err != nil {
 		fatalf("worker start: %v", err)
 	}

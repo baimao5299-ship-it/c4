@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/usage"
@@ -168,6 +170,19 @@ func upstreamBody(err error) []byte {
 		}
 	}
 	return nil
+}
+
+// upstreamErrMsg 提取上游错误 body 的 message（规则 when.error_message_contains
+// 匹配用）：OpenAI/Anthropic 错误格式均为 {"error":{"message":...}}。
+func upstreamErrMsg(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	s := gjson.GetBytes(body, "error.message").String()
+	if s == "" {
+		s = gjson.GetBytes(body, "message").String()
+	}
+	return s
 }
 
 // readUpstreamBody 读取并关闭非 200 响应的 body（4xx/5xx 透传用）。

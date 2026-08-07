@@ -39,6 +39,21 @@ func (e *RuleEngine) loop(ctx context.Context) {
 	}
 }
 
+// Flush 同步排空队列：处理完当前队列中的全部事件后返回（测试与优雅关闭用）。
+// 幂等，未 Start 时也可安全排空。
+func (e *RuleEngine) Flush(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-e.ch:
+			e.HandleEvent(ctx, ev)
+		default:
+			return
+		}
+	}
+}
+
 // Close 排空剩余事件（限时，复用 scheduler.Close 模式）；幂等，
 // 未 Start 时也可安全排空。循环本身随 Start 的 ctx 取消而退出。
 func (e *RuleEngine) Close(ctx context.Context) error {

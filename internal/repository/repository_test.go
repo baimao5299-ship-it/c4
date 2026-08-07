@@ -353,7 +353,7 @@ func TestAccountAndGroup(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	require.Equal(t, g.ID, keys["h1"])
-	require.NoError(t, tr.repos.Accounts.UpdateAccountStatus(ctx(), acc.ID, domain.Status429, nil, nil))
+	require.NoError(t, tr.repos.Accounts.UpdateAccountStatus(ctx(), acc.ID, domain.Status429, nil, nil, nil))
 	a2, err := tr.repos.Accounts.GetAccount(ctx(), acc.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.Status429, a2.Status, "status persisted")

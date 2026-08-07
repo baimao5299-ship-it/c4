@@ -1,11 +1,23 @@
 package scheduler
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/rule"
 )
+
+// newTestRuleEngine 空规则引擎（bench 不依赖规则路径，满足 New 的非 nil 要求）。
+func newTestRuleEngine(b *testing.B) *rule.RuleEngine {
+	b.Helper()
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	if err := re.Reload(context.Background()); err != nil {
+		b.Fatal(err)
+	}
+	return re
+}
 
 // 5000 账号快照（压测场景复现）：Select 单次耗时对照（O(1) 序列取用）。
 func BenchmarkSelect5000Accounts(b *testing.B) {
@@ -30,7 +42,7 @@ func schedulerWithAccounts(b *testing.B, n int) *Scheduler {
 			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 100000,
 		})
 	}
-	s := New(Config{DefaultMaxConcurrency: 100000, SyncInterval: time.Hour}, newMemLoader(accs), nil)
+	s := New(Config{DefaultMaxConcurrency: 100000, SyncInterval: time.Hour}, newMemLoader(accs), newTestRuleEngine(b), nil)
 	if err := s.InvalidateAllSync(); err != nil {
 		b.Fatal(err)
 	}
