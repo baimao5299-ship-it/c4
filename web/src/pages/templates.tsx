@@ -235,7 +235,11 @@ function FormFields({
         <div className="space-y-1.5">
           {form.format_models.map((row, i) => (
             <div key={i} className="flex items-center gap-1.5">
-              <Select items={formatOptions} value={row.format} onValueChange={v => setFormatRow(i, { format: v as RequestFormat })}>
+              <Select
+                items={formatOptions}
+                value={row.format}
+                onValueChange={v => setFormatRow(i, { format: v as RequestFormat })}
+              >
                 <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {form.supported_formats.map(f => (
@@ -348,7 +352,7 @@ export default function Templates() {
   const [validationMsg, setValidationMsg] = useState<string | null>(null)
   // —— 批量更新对话框 ——
   const [batchOpen, setBatchOpen] = useState(false)
-  const batchResolve = useRef<(() => void) | null>(null)
+  const batchResolve = useRef<((r: 'cancelled' | 'submitted') => void) | null>(null)
   // —— 删除确认 ——
   const [deleting, setDeleting] = useState<Template | null>(null)
 
@@ -365,17 +369,17 @@ export default function Templates() {
     setDialogOpen(true)
   }
   // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
-  const closeBatchUpdate = () => {
+  const closeBatchUpdate = (r: 'cancelled' | 'submitted' = 'cancelled') => {
     setBatchOpen(false)
     setValidationMsg(null)
-    batchResolve.current?.()
+    batchResolve.current?.(r)
     batchResolve.current = null
   }
   const openBatchUpdate = () => {
     setForm(emptyForm())
     setValidationMsg(null)
     setBatchOpen(true)
-    return new Promise<void>(resolve => {
+    return new Promise<'cancelled' | 'submitted'>(resolve => {
       batchResolve.current = resolve
     })
   }
@@ -410,7 +414,7 @@ export default function Templates() {
     mutationFn: ({ ids, fields }: { ids: number[]; fields: TemplatePatch }) => api.updateTemplatesBatch(ids, fields),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] })
-      closeBatchUpdate()
+      closeBatchUpdate('submitted')
       setSelected([])
     },
     // onError 不 resolve：对话框保持打开就地展示错误，取消时由 closeBatchUpdate resolve
@@ -628,7 +632,7 @@ export default function Templates() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeBatchUpdate}>{tr('common.cancel')}</Button>
+            <Button variant="outline" onClick={() => closeBatchUpdate()}>{tr('common.cancel')}</Button>
             <Button onClick={submitBatch} disabled={batchUpdate.isPending}>
               {batchUpdate.isPending ? tr('common.saving') : tr('common.saveChanges')}
             </Button>

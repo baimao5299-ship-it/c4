@@ -24,7 +24,7 @@ export function BatchBar({
   selected: number[]
   onClear: () => void
   onDelete: () => void | Promise<void>
-  onUpdate?: () => void | Promise<void>
+  onUpdate?: () => void | Promise<void | 'cancelled' | 'submitted'>
   deleteLabel?: string
   updateLabel?: string
 }) {
@@ -39,11 +39,12 @@ export function BatchBar({
 
   const count = selected.length
 
-  function run(action: 'delete' | 'update', fn: () => void | Promise<void>) {
+  function run(action: 'delete' | 'update', fn: () => void | Promise<void | 'cancelled' | 'submitted'>) {
     setPending(action)
     setError(null)
     Promise.resolve(fn())
-      .then(() => {
+      .then((result) => {
+        if (result === 'cancelled') return
         setDone(action)
         clearTimeout(doneTimer.current)
         doneTimer.current = setTimeout(() => setDone(null), 2000)
