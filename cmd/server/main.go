@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -36,7 +37,11 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "config.toml", "path to TOML config")
+	pprofAddr := flag.String("pprof", "", "listen addr for /debug/pprof (heap/goroutine profile under load)")
 	flag.Parse()
+	if *pprofAddr != "" {
+		go func() { _ = http.ListenAndServe(*pprofAddr, nil) }() // net/http/pprof 自动挂载
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
