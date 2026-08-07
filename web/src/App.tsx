@@ -3,6 +3,7 @@ import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
 import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
 import { ThemeProvider } from '@/components/theme-provider'
 import { auth } from '@/lib/auth'
+import { Toaster } from '@/components/ui/toast'
 import Login from '@/pages/login'
 import Layout from '@/components/layout'
 import Dashboard from '@/pages/dashboard'
@@ -57,6 +58,7 @@ export default function App() {
       <QueryClientProvider client={qc}>
         <RouterProvider router={router} />
       </QueryClientProvider>
+      <Toaster />
     </ThemeProvider>
   )
 }
