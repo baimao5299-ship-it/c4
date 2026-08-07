@@ -462,16 +462,17 @@ export default function Rules() {
                 <div className="space-y-1.5">
                   <Label>{t('rules.when.kind')}</Label>
                   <Select
-                    items={Object.fromEntries([['', t('rules.any')], ...KINDS.map(k => [k, t(`rules.kind.${k}`)])])}
-                    value={form.when.kind || null}
+                    // 哨兵 'any' 表示"不限"（状态存 ''，UI 显示"不限"——'' 作为 value 时 SelectValue 无内容显示空白）
+                    items={Object.fromEntries([['any', t('rules.any')], ...KINDS.map(k => [k, t(`rules.kind.${k}`)])])}
+                    value={form.when.kind === '' ? 'any' : form.when.kind}
                     onValueChange={v => {
-                      setForm(f => ({ ...f, when: { ...f.when, kind: v } }))
+                      setForm(f => ({ ...f, when: { ...f.when, kind: v === 'any' ? '' : v } }))
                       setWhenErr(null)
                     }}
                   >
                     <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="" label={t('rules.any')}>{t('rules.any')}</SelectItem>
+                      <SelectItem value="any" label={t('rules.any')}>{t('rules.any')}</SelectItem>
                       {KINDS.map(k => <SelectItem key={k} value={k} label={t(`rules.kind.${k}`)}>{t(`rules.kind.${k}`)}</SelectItem>)}
                     </SelectContent>
                   </Select>
