@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, CheckCircle2, Trash2, X } from 'lucide-react'
+import { Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { toast } from '@/components/ui/toast'
 
 // 列表页批量操作条：已选计数 + 批量删除（带确认弹窗）+ 可选批量更新 + 清除选择。
 // onDelete/onUpdate 可为异步；resolve 后就地显示短暂成功反馈（batch.deleted / batch.updated），reject 时就地显示错误（2s 自动消失）。
@@ -31,9 +32,6 @@ export function BatchBar({
   const { t } = useTranslation()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pending, setPending] = useState<'delete' | 'update' | null>(null)
-  const [done, setDone] = useState<'delete' | 'update' | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   if (selected.length === 0) return null
 
@@ -41,35 +39,23 @@ export function BatchBar({
 
   function run(action: 'delete' | 'update', fn: () => void | Promise<void | 'cancelled' | 'submitted'>) {
     setPending(action)
-    setError(null)
     Promise.resolve(fn())
       .then((result) => {
         if (result === 'cancelled') return
-        setDone(action)
-        clearTimeout(doneTimer.current)
-        doneTimer.current = setTimeout(() => setDone(null), 2000)
+        toast.add({
+          title: t(action === 'delete' ? 'batch.deleted' : 'batch.updated', { count }),
+          type: 'success',
+        })
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-        clearTimeout(doneTimer.current)
-        doneTimer.current = setTimeout(() => setError(null), 2000)
+        toast.add({ title: err instanceof Error ? err.message : String(err), type: 'error' })
       })
       .finally(() => setPending(null))
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
-      {done ? (
-        <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-          <CheckCircle2 className="size-4" />
-          {t(done === 'delete' ? 'batch.deleted' : 'batch.updated', { count })}
-        </span>
-      ) : error ? (
-        <span className="flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400">
-          <AlertCircle className="size-4" />
-          {error}
-        </span>
-      ) : (
+      {(
         <>
           <span className="rounded-md bg-background px-2 py-0.5 text-sm font-medium text-foreground tabular-nums">
             {t('list.selected', { count })}
