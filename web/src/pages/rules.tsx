@@ -73,10 +73,11 @@ const WHEN_FIELD_LOCALE: Record<WhenField, string> = {
 }
 const whenFieldLabel = (k: WhenField) => `rules.whenFields.${WHEN_FIELD_LOCALE[k]}`
 
-// kind 相关性过滤（仅"添加条件"下拉用；行渲染不过滤——越界行是合法观察者语义）。
-// kind=''（不限）→ 全部字段；否则只留归属含该 kind 的字段。
+// kind 相关性过滤（"添加条件"与行内字段下拉共用）。
+// kind=''（不限）→ 全部字段；否则只留归属含该 kind 的字段——
+// 通用字段（kinds=['any']，如 window_seconds/count_total_ge/账号/模板等）对任何 kind 放行。
 function kindFilter(kind: string): WhenFieldMeta[] {
-  return WHEN_FIELDS.filter(f => kind === '' || f.kinds.includes(kind))
+  return WHEN_FIELDS.filter(f => kind === '' || f.kinds.includes(kind) || f.kinds.includes('any'))
 }
 
 interface ThenForm {
