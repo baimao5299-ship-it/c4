@@ -357,6 +357,28 @@ func TestProxyAuthRejected(t *testing.T) {
 	require.Equal(t, 401, rec.Code)
 }
 
+// 同 key 双头兼容：Anthropic 官方 SDK / Claude Code 用 x-api-key 头（而非
+// Authorization: Bearer）→ /v1/messages 必须能通过网关认证；错误 key 同样 401。
+func TestProxyAuthXAPIKey(t *testing.T) {
+	up := fakeAnthropic(t, "")
+	defer up.Close()
+	p := newTestProxyFormat(t, up.URL, domain.FormatAnthropic)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("x-api-key", "gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleAnthropic(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
+		`{"model":"gpt-4o","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`))
+	req2.Header.Set("x-api-key", "wrong")
+	rec2 := httptest.NewRecorder()
+	p.HandleAnthropic(rec2, req2)
+	require.Equal(t, 401, rec2.Code, "body=%s", rec2.Body.String())
+}
+
 func TestProxyFailoverOn429(t *testing.T) {
 	// 两个账号指向同一个会 429 的上游：第一个失败后转移第二个（同样失败则最终 429）
 	up := fakeOpenAI(t, "429")

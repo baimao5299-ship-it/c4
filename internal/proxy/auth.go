@@ -52,13 +52,16 @@ func (a *Auth) Delete(hash string) {
 	a.mu.Unlock()
 }
 
-// Authenticate 解析 Bearer key 并返回 groupID。
+// Authenticate 解析网关 key 并返回 groupID。兼容两种客户端口径：
+// OpenAI 客户端发 Authorization: Bearer；Anthropic 官方 SDK / Claude Code
+// 发 x-api-key 头。两者同时提供时以 Authorization 为准。
 func (a *Auth) Authenticate(r *http.Request) (int64, bool) {
-	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, "Bearer ") {
-		return 0, false
+	raw := ""
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		raw = strings.TrimPrefix(h, "Bearer ")
+	} else if h := r.Header.Get("x-api-key"); h != "" {
+		raw = h
 	}
-	raw := strings.TrimPrefix(h, "Bearer ")
 	if raw == "" {
 		return 0, false
 	}
