@@ -9,7 +9,6 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
@@ -145,17 +144,18 @@ func (p *Proxy) tryAnthropic(w http.ResponseWriter, r *http.Request, reqID strin
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var pt, ct, tt int64
+		var pt, ct, tt, cr, cc int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
-				// 真实 API 的流式用量分两处携带：input_tokens 在 message_start
-				// 事件的 message.usage 里，output_tokens 在 message_delta 事件的
-				// usage 里（message_delta.usage 不含 input_tokens）。
+				// 真实 API 的流式用量分两处携带：input/cache 在 message_start 事件的
+				// message.usage 里（评审 M1：前缀 message.usage.*，非顶层），
+				// output_tokens 在 message_delta 事件的 usage 里
+				// （message_delta.usage 不含 input_tokens）。
 				switch string(ev.Event) {
 				case "message_start":
-					pt = gjson.GetBytes(ev.Data, "message.usage.input_tokens").Int()
+					pt, cr, cc = anthropicStartUsage(ev.Data)
 				case "message_delta":
-					ct = gjson.GetBytes(ev.Data, "usage.output_tokens").Int()
+					ct = anthropicDeltaOutput(ev.Data)
 				}
 			},
 		})
@@ -175,7 +175,7 @@ func (p *Proxy) tryAnthropic(w http.ResponseWriter, r *http.Request, reqID strin
 		}
 		tt = pt + ct
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+		p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 		return true, 200, nil
 	}
 
@@ -190,11 +190,12 @@ func (p *Proxy) tryAnthropic(w http.ResponseWriter, r *http.Request, reqID strin
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-	var pt, ct, tt int64
+	var pt, ct, tt, cr, cc int64
 	if resp.JSON.Usage.Valid() {
-		pt, ct, tt = resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.InputTokens+resp.Usage.OutputTokens
+		// 非流式：SDK v1.56.0 Usage 结构体直读。
+		pt, ct, tt, cr, cc = anthropicUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{pt, ct, tt}, start))
+	p.finish(sel.AccountID, p.buildLog(reqID, groupID, sel.AccountID, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start))
 	return true, 200, nil
 }
