@@ -527,11 +527,6 @@ components:
       required: [deleted]
       properties:
         deleted: { type: boolean }
-    UpdatedResponse:
-      type: object
-      required: [updated]
-      properties:
-        updated: { type: boolean }
     RequestFormat:
       type: string
       enum: [openai-chat, openai-responses, anthropic]

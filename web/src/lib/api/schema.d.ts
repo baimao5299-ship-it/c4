@@ -351,9 +351,6 @@ export interface components {
         DeletedResponse: {
             deleted: boolean;
         };
-        UpdatedResponse: {
-            updated: boolean;
-        };
         /** @enum {string} */
         RequestFormat: "openai-chat" | "openai-responses" | "anthropic";
         /** @enum {string} */
