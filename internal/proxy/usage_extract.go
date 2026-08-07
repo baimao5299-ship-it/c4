@@ -23,11 +23,13 @@ func cacheCreationFromRaw(raw string) int64 {
 
 // chatStreamUsage 流式 chat usage 帧 → 元组（调用方已用
 // usage.Type == gjson.JSON 判定非空，显式 null 帧不得清零）。
+// cached_tokens 在 prompt_tokens_details 下（评审 I-1：与 SDK
+// CompletionUsage 结构体一致——顶层无该字段，流式/非流式同构）。
 func chatStreamUsage(data []byte) (pt, ct, tt, cr, cc int64) {
 	return gjson.GetBytes(data, "usage.prompt_tokens").Int(),
 		gjson.GetBytes(data, "usage.completion_tokens").Int(),
 		gjson.GetBytes(data, "usage.total_tokens").Int(),
-		gjson.GetBytes(data, "usage.cached_tokens").Int(),
+		gjson.GetBytes(data, "usage.prompt_tokens_details.cached_tokens").Int(),
 		gjson.GetBytes(data, "usage.cache_creation.ephemeral_5m_input_tokens").Int() +
 			gjson.GetBytes(data, "usage.cache_creation.ephemeral_1h_input_tokens").Int()
 }

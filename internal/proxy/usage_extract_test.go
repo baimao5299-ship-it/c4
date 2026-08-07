@@ -16,22 +16,23 @@ import (
 // 提取单测用真实上游 JSON 构造（评审 I-1：不得用结构体 marshal 自证——
 // RawJSON 路径必须经过 SDK UnmarshalJSON 才能得到原始字节）。
 
-// —— chat 流式 usage 帧（顶层 usage.*） ——
+// —— chat 流式 usage 帧（顶层 usage.*；cached_tokens 嵌套于
+// prompt_tokens_details，与 SDK CompletionUsage 结构体一致——评审 I-1） ——
 
 func TestChatStreamUsage(t *testing.T) {
-	frame := []byte(`{"id":"x","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30,"cached_tokens":5,"cache_creation":{"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":2}}}`)
+	frame := []byte(`{"id":"x","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30,"prompt_tokens_details":{"cached_tokens":5},"cache_creation":{"ephemeral_5m_input_tokens":4,"ephemeral_1h_input_tokens":2}}}`)
 	pt, ct, tt, cr, cc := chatStreamUsage(frame)
 	require.Equal(t, int64(10), pt)
 	require.Equal(t, int64(20), ct)
 	require.Equal(t, int64(30), tt)
-	require.Equal(t, int64(5), cr, "cached_tokens 直读")
+	require.Equal(t, int64(5), cr, "prompt_tokens_details.cached_tokens 直读")
 	require.Equal(t, int64(6), cc, "ephemeral 5m+1h 聚合")
 
 	// 缺失/显式 null → 0（不阻塞采集）
 	_, _, _, cr, cc = chatStreamUsage([]byte(`{"usage":{}}`))
 	require.Zero(t, cr)
 	require.Zero(t, cc)
-	_, _, _, cr, cc = chatStreamUsage([]byte(`{"usage":{"cached_tokens":null}}`))
+	_, _, _, cr, cc = chatStreamUsage([]byte(`{"usage":{"prompt_tokens_details":{"cached_tokens":null}}}`))
 	require.Zero(t, cr, "显式 null 与缺失等价")
 	require.Zero(t, cc)
 }
