@@ -16,6 +16,7 @@ func (Account) Fields() []ent.Field {
 		field.String("name"),
 		field.Int64("template_id"),
 		field.String("upstream_key"),
+		field.String("credential_type").Default("api_key"),
 		field.Enum("status").
 			Values("active", "unhealthy", "429", "disabled").
 			Default("active"),

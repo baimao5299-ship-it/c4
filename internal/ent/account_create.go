@@ -42,6 +42,20 @@ func (_c *AccountCreate) SetUpstreamKey(v string) *AccountCreate {
 	return _c
 }
 
+// SetCredentialType sets the "credential_type" field.
+func (_c *AccountCreate) SetCredentialType(v string) *AccountCreate {
+	_c.mutation.SetCredentialType(v)
+	return _c
+}
+
+// SetNillableCredentialType sets the "credential_type" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCredentialType(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetCredentialType(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *AccountCreate) SetStatus(v account.Status) *AccountCreate {
 	_c.mutation.SetStatus(v)
@@ -215,6 +229,10 @@ func (_c *AccountCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *AccountCreate) defaults() {
+	if _, ok := _c.mutation.CredentialType(); !ok {
+		v := account.DefaultCredentialType
+		_c.mutation.SetCredentialType(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := account.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -247,6 +265,9 @@ func (_c *AccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.UpstreamKey(); !ok {
 		return &ValidationError{Name: "upstream_key", err: errors.New(`ent: missing required field "Account.upstream_key"`)}
+	}
+	if _, ok := _c.mutation.CredentialType(); !ok {
+		return &ValidationError{Name: "credential_type", err: errors.New(`ent: missing required field "Account.credential_type"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "Account.status"`)}
@@ -311,6 +332,10 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.UpstreamKey(); ok {
 		_spec.SetField(account.FieldUpstreamKey, field.TypeString, value)
 		_node.UpstreamKey = value
+	}
+	if value, ok := _c.mutation.CredentialType(); ok {
+		_spec.SetField(account.FieldCredentialType, field.TypeString, value)
+		_node.CredentialType = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(account.FieldStatus, field.TypeEnum, value)
@@ -462,6 +487,18 @@ func (u *AccountUpsert) SetUpstreamKey(v string) *AccountUpsert {
 // UpdateUpstreamKey sets the "upstream_key" field to the value that was provided on create.
 func (u *AccountUpsert) UpdateUpstreamKey() *AccountUpsert {
 	u.SetExcluded(account.FieldUpstreamKey)
+	return u
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (u *AccountUpsert) SetCredentialType(v string) *AccountUpsert {
+	u.Set(account.FieldCredentialType, v)
+	return u
+}
+
+// UpdateCredentialType sets the "credential_type" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCredentialType() *AccountUpsert {
+	u.SetExcluded(account.FieldCredentialType)
 	return u
 }
 
@@ -678,6 +715,20 @@ func (u *AccountUpsertOne) SetUpstreamKey(v string) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateUpstreamKey() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateUpstreamKey()
+	})
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (u *AccountUpsertOne) SetCredentialType(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCredentialType(v)
+	})
+}
+
+// UpdateCredentialType sets the "credential_type" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCredentialType() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCredentialType()
 	})
 }
 
@@ -1081,6 +1132,20 @@ func (u *AccountUpsertBulk) SetUpstreamKey(v string) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateUpstreamKey() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateUpstreamKey()
+	})
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (u *AccountUpsertBulk) SetCredentialType(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCredentialType(v)
+	})
+}
+
+// UpdateCredentialType sets the "credential_type" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCredentialType() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCredentialType()
 	})
 }
 
