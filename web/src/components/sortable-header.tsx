@@ -28,7 +28,7 @@ export function SortableHeader({
         type="button"
         onClick={() => onToggle(field)}
         className={cn(
-          'group inline-flex w-full cursor-pointer items-center gap-1 font-medium',
+          'group relative inline-flex w-full cursor-pointer items-center gap-1 font-medium',
           active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
         )}
       >
@@ -36,7 +36,9 @@ export function SortableHeader({
         {active ? (
           order === 'desc' ? <ArrowDown className="size-3.5" /> : <ArrowUp className="size-3.5" />
         ) : (
-          <ArrowUpDown className="size-3.5 opacity-0 transition-opacity group-hover:opacity-60" />
+          // 非 active 箭头不占位（absolute，th px-2 padding 区内浮显）：
+          // 占位会让右对齐列的表头文字比数据偏左一个箭头宽（字段与内容不对齐）。
+          <ArrowUpDown className="pointer-events-none absolute -right-2 top-1/2 size-3.5 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-60" />
         )}
       </button>
     </TableHead>
