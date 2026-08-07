@@ -178,6 +178,136 @@ func TestBatchDeleteAccounts(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound, "批量删除后账号必须消失")
 }
 
+// TestCreateAccountGroups 账号侧分组：创建带分组 / 更新替换/清空/不变 /
+// 组缺失 404 / GetAccountGroups 缺账号 404。
+func TestCreateAccountGroups(t *testing.T) {
+	fs := newFakeStore()
+	invalidated := 0
+	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	ctx := context.Background()
+	tpl := seedTemplate(t, svc, "t")
+	g1, _, err := svc.CreateGroup(ctx, "g1")
+	require.NoError(t, err)
+	g2, _, err := svc.CreateGroup(ctx, "g2")
+	require.NoError(t, err)
+
+	// 创建带分组
+	before := invalidated
+	acc, err := svc.CreateAccount(ctx, &domain.Account{
+		Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: &[]int64{g1.ID, g2.ID},
+	})
+	require.NoError(t, err)
+	require.Greater(t, invalidated, before, "创建带分组必须 invalidate")
+	got, err := svc.GetAccountGroups(ctx, acc.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []int64{g1.ID, g2.ID}, got)
+
+	// 更新替换：只剩 g2
+	before = invalidated
+	_, err = svc.UpdateAccount(ctx, &domain.Account{
+		ID: acc.ID, Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: &[]int64{g2.ID},
+	})
+	require.NoError(t, err)
+	require.Greater(t, invalidated, before, "更新分组必须 invalidate")
+	got, err = svc.GetAccountGroups(ctx, acc.ID)
+	require.NoError(t, err)
+	require.Equal(t, []int64{g2.ID}, got)
+
+	// 更新清空（空数组）
+	_, err = svc.UpdateAccount(ctx, &domain.Account{
+		ID: acc.ID, Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: &[]int64{},
+	})
+	require.NoError(t, err)
+	got, err = svc.GetAccountGroups(ctx, acc.ID)
+	require.NoError(t, err)
+	require.Empty(t, got, "[] = 清空")
+
+	// 更新不变（nil）
+	_, err = svc.UpdateAccount(ctx, &domain.Account{
+		ID: acc.ID, Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: nil,
+	})
+	require.NoError(t, err)
+	got, err = svc.GetAccountGroups(ctx, acc.ID)
+	require.NoError(t, err)
+	require.Empty(t, got, "nil = 不变")
+
+	// 创建带缺失组 → 404 含 id
+	_, err = svc.CreateAccount(ctx, &domain.Account{
+		Name: "a2", TemplateID: tpl.ID, UpstreamKey: "sk-a2", GroupIDs: &[]int64{999},
+	})
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Contains(t, err.Error(), "999")
+
+	// 更新带缺失组 → 404
+	_, err = svc.UpdateAccount(ctx, &domain.Account{
+		ID: acc.ID, Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: &[]int64{999},
+	})
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Contains(t, err.Error(), "999")
+
+	// GetAccountGroups 缺账号 → 404
+	_, err = svc.GetAccountGroups(ctx, 999)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+// TestBatchUpdateAccountsGroupIDs 批量 group_ids：替换生效 + lastPatch 记录
+// （M3）+ 校验（长度/去重/元素 <= 0 → ErrInvalidInput，nil/空数组合法）。
+func TestBatchUpdateAccountsGroupIDs(t *testing.T) {
+	fs := newFakeStore()
+	invalidated := 0
+	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	ctx := context.Background()
+	tpl := seedTemplate(t, svc, "t")
+	g1, _, err := svc.CreateGroup(ctx, "g1")
+	require.NoError(t, err)
+	a1 := seedAccount(t, svc, tpl.ID, "a1")
+	a2 := seedAccount(t, svc, tpl.ID, "a2")
+
+	// 批量替换：两个账号都进 g1
+	before := invalidated
+	require.NoError(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID, a2.ID},
+		repository.AccountPatch{GroupIDs: &[]int64{g1.ID}}))
+	require.Greater(t, invalidated, before)
+	for _, id := range []int64{a1.ID, a2.ID} {
+		got, err := svc.GetAccountGroups(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, []int64{g1.ID}, got)
+	}
+	require.NotNil(t, fs.lastPatch.GroupIDs, "lastPatch 记录 group_ids 提供状态")
+	require.Equal(t, []int64{g1.ID}, *fs.lastPatch.GroupIDs)
+
+	// 批量清空（[]）→ 提供 + 清空
+	require.NoError(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID, a2.ID},
+		repository.AccountPatch{GroupIDs: &[]int64{}}))
+	require.NotNil(t, fs.lastPatch.GroupIDs)
+	require.Empty(t, *fs.lastPatch.GroupIDs, "[] 也算提供（清空）")
+	for _, id := range []int64{a1.ID, a2.ID} {
+		got, err := svc.GetAccountGroups(ctx, id)
+		require.NoError(t, err)
+		require.Empty(t, got)
+	}
+
+	// 批量组缺失 → 404 含 id（校验在 store 调用前？否——存在性在 repo 层，service 映射）
+	err = svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &[]int64{999}})
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Contains(t, err.Error(), "999")
+
+	// 校验失败 → ErrInvalidInput（store 不被调用）
+	before = invalidated
+	dup := []int64{g1.ID, g1.ID}
+	require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &dup}), ErrInvalidInput, "重复 group_ids")
+	neg := []int64{-1}
+	require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &neg}), ErrInvalidInput, "元素 <= 0")
+	over := make([]int64, 101)
+	require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &over}), ErrInvalidInput, "超长")
+	require.Equal(t, before, invalidated, "校验失败不 invalidate")
+	// nil 合法（不变）
+	require.NoError(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{Name: ptr("renamed")}))
+	require.Nil(t, fs.lastPatch.GroupIDs, "nil = 未提供")
+}
+
+func ptr(s string) *string { return &s }
+
 func TestBatchUpdateAccounts(t *testing.T) {
 	fs := newFakeStore()
 	invalidated := 0
@@ -285,6 +415,13 @@ func TestBatchUpdatePatchValidation(t *testing.T) {
 		require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{1}, repository.AccountPatch{Weight: &badWeight}), ErrInvalidInput, "Weight < 0")
 		badMC := 0
 		require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{1}, repository.AccountPatch{MaxConcurrency: &badMC}), ErrInvalidInput, "MaxConcurrency < 1")
+		// group_ids：超长 / 重复 / 元素 <= 0 → ErrInvalidInput；nil 与空数组合法
+		over := make([]int64, 101)
+		require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{1}, repository.AccountPatch{GroupIDs: &over}), ErrInvalidInput, "GroupIDs 超长")
+		dup := []int64{1, 1}
+		require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{1}, repository.AccountPatch{GroupIDs: &dup}), ErrInvalidInput, "GroupIDs 重复")
+		zero := []int64{0}
+		require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{1}, repository.AccountPatch{GroupIDs: &zero}), ErrInvalidInput, "GroupIDs 元素 <= 0")
 	})
 	t.Run("groups", func(t *testing.T) {
 		require.ErrorIs(t, svc.UpdateGroupsBatch(ctx, []int64{1}, repository.GroupPatch{Name: &empty}), ErrInvalidInput, "空 name")

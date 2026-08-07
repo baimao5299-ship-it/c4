@@ -101,6 +101,10 @@ type Account struct {
 	LastUsedAt     *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// GroupIDs 写路径（创建/更新）专用：nil = 不设置/不变；非 nil = 替换账号
+	// 全部分组（含空数组 = 清空）。读路径忽略——编辑回显走 GetAccountGroups
+	// 独立查询（toDomainAccount 不填充该字段）。
+	GroupIDs *[]int64
 }
 
 type Group struct {

@@ -104,14 +104,6 @@ func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposito
 	return nil
 }
 
-func (s *Service) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
-	if err := s.store.SetGroupAccounts(ctx, groupID, accountIDs); err != nil {
-		return err
-	}
-	s.invalidate()
-	return nil
-}
-
 // RotateGroupKey 轮换客户端 key：返回新 raw key（仅此一次明文）。
 func (s *Service) RotateGroupKey(ctx context.Context, groupID int64) (string, error) {
 	g, err := s.store.GetGroup(ctx, groupID)

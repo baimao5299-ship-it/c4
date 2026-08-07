@@ -93,15 +93,6 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 	return nil
 }
 
-// SetAccounts 全量替换分组账号成员（规格 §8）。
-func (r *GroupRepo) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
-	_, err := r.client.Group.UpdateOneID(groupID).
-		ClearAccounts().
-		AddAccountIDs(accountIDs...).
-		Save(ctx)
-	return err
-}
-
 func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
 	groups, err := r.client.Group.Query().
 		WithAccounts(func(q *ent.AccountQuery) { q.WithTemplate() }).

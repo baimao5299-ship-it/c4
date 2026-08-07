@@ -21,18 +21,21 @@ type fakeStore struct {
 	tpls      map[int64]*domain.Template
 	accs      map[int64]*domain.Account
 	groups    map[int64]*domain.Group
-	members   map[int64][]int64
+	accGroups map[int64][]int64 // accountID → groupIDs（账号侧绑定，Set/GetAccountGroups）
 	rules     map[int64]domain.Rule
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	nextID    int64
 	keyHashes map[int64]string
+	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
+	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
+	lastPatch repository.AccountPatch
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		tpls: make(map[int64]*domain.Template), accs: make(map[int64]*domain.Account),
-		groups: make(map[int64]*domain.Group), members: make(map[int64][]int64),
+		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
 		rules: make(map[int64]domain.Rule), keyHashes: make(map[int64]string), nextID: 1,
 	}
 }
@@ -196,11 +199,17 @@ func (f *fakeStore) DeleteGroup(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeStore) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
+func (f *fakeStore) SetAccountGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.members[groupID] = accountIDs
+	f.accGroups[accountID] = slices.Clone(groupIDs)
 	return nil
+}
+
+func (f *fakeStore) GetAccountGroups(ctx context.Context, accountID int64) ([]int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.accGroups[accountID]), nil
 }
 
 func (f *fakeStore) QueryLogs(ctx context.Context, q repository.LogQuery) ([]*domain.UsageLog, int64, error) {
@@ -287,6 +296,15 @@ func (f *fakeStore) UpdateAccountsBatch(ctx context.Context, ids []int64, p repo
 	if id, ok := f.missingID(ids, func(id int64) bool { _, ok := f.accs[id]; return ok }); ok {
 		return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, id)
 	}
+	// 组存在性（与真实 repo 的 checkGroupExist 同级语义：非空 group_ids 全查）
+	if p.GroupIDs != nil {
+		for _, gid := range *p.GroupIDs {
+			if _, ok := f.groups[gid]; !ok {
+				return fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, gid)
+			}
+		}
+	}
+	f.lastPatch = p
 	for _, id := range ids {
 		a := f.accs[id]
 		if p.Name != nil {
@@ -306,6 +324,9 @@ func (f *fakeStore) UpdateAccountsBatch(ctx context.Context, ids []int64, p repo
 		}
 		if p.MaxConcurrency != nil {
 			a.MaxConcurrency = *p.MaxConcurrency
+		}
+		if p.GroupIDs != nil {
+			f.accGroups[id] = slices.Clone(*p.GroupIDs)
 		}
 	}
 	return nil
