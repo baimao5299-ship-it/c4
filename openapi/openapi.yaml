@@ -369,6 +369,90 @@ paths:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /settings:
+    get:
+      operationId: GetAdminSettings
+      tags: [settings]
+      summary: 全部设置（默认值 + DB 覆盖）
+      responses:
+        '200':
+          description: 设置列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Setting' }
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: PutAdminSettings
+      tags: [settings]
+      summary: 更新设置（类型化校验：switch 必须 true/false、number 必须数字）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingUpdate' }
+      responses:
+        '200':
+          description: 更新后的设置列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Setting' }
+        default:
+          $ref: '#/components/responses/Error'
+  # --- /user 面（tag: user；生成到 internal/handler/user 独立 ServerInterface） ---
+  /user/auth/register:
+    post:
+      operationId: PostUserAuthRegister
+      tags: [user]
+      summary: 注册（signup_enabled 开关检查；注册即登录返回 JWT）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserAuthRegister' }
+      responses:
+        '200':
+          description: JWT + 用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserAuthResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /user/auth/login:
+    post:
+      operationId: PostUserAuthLogin
+      tags: [user]
+      summary: 登录（bcrypt 校验 → JWT）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserAuthLogin' }
+      responses:
+        '200':
+          description: JWT + 用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserAuthResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /user/auth/me:
+    get:
+      operationId: GetUserAuthMe
+      tags: [user]
+      summary: 当前用户信息（JWT）
+      responses:
+        '200':
+          description: 用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        default:
+          $ref: '#/components/responses/Error'
   # 注意 chi 路径顺序：/rules 必须先于 /rules/{id} 注册（生成器按 spec 顺序注册）。
   /rules:
     get:
@@ -634,6 +718,54 @@ components:
     GroupVisibility:
       type: string
       enum: [public, private]
+    UserRole:
+      type: string
+      enum: [platform_admin, user]
+    UserStatus:
+      type: string
+      enum: [active, disabled]
+    User:
+      type: object
+      properties:
+        ID: { type: integer, format: int64 }
+        Email: { type: string }
+        Role: { $ref: '#/components/schemas/UserRole' }
+        Status: { $ref: '#/components/schemas/UserStatus' }
+        MaxConcurrency: { type: integer }
+        Balance: { type: integer, format: int64 }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    UserAuthRegister:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    UserAuthLogin:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    UserAuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+    Setting:
+      type: object
+      properties:
+        Key: { type: string }
+        Type: { type: string, enum: [switch, number, string] }
+        Value: { type: string }
+        UpdatedAt: { type: string, format: date-time }
+    SettingUpdate:
+      type: object
+      required: [key, value]
+      properties:
+        key: { type: string }
+        value: { type: string }
     GroupCreate:
       type: object
       required: [name]

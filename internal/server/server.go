@@ -1,4 +1,5 @@
-// Package server 装配 chi 路由：/admin/*（admin token）+ 三个 AI 端点 + /healthz。
+// Package server 装配 chi 路由：/admin/*（静态 token OR platform_admin JWT）+
+// /user/*（JWT 保护，register/login 公开）+ 三个 AI 端点 + /healthz。
 package server
 
 import (
@@ -10,15 +11,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"go-proxy-mini/internal/auth"
+	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/pkg/logx"
 )
 
 type Options struct {
 	AdminToken        string
+	JWTIssuer         *auth.Issuer         // platform_admin JWT 鉴权（/admin 扩展）
+	UserStatus        auth.UserStatusProvider // 用户状态快照（JWT 鉴权路径禁用即拒）
 	MaxInflight       int64
 	ReadHeaderTimeout time.Duration
 	MaxHeaderBytes    int
 	AdminHandler      http.Handler // 已挂 /admin/* 路由
+	UserHandler       http.Handler // 已挂 /user/* 路由（内部完成公开/JWT 分流）
 	AIHandler         http.Handler // proxy 三个端点
 	WebFS             fs.FS        // 前端构建产物（nil = 不挂静态资源）
 	Logger            *logx.Logger
@@ -57,13 +63,29 @@ func NewServer(opts Options) *Server {
 	})
 
 	r.Group(func(r chi.Router) {
-		r.Use(func(next http.Handler) http.Handler { // admin token 认证
+		// /admin 鉴权 = 静态 admin token OR platform_admin JWT（两个都过才拒）。
+		// JWT 路径同样做快照用户状态校验（禁用即拒；评审定夺②）。
+		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				if req.Header.Get("Authorization") != "Bearer "+opts.AdminToken {
-					writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+				authz := req.Header.Get("Authorization")
+				if authz == "Bearer "+opts.AdminToken {
+					next.ServeHTTP(w, req)
 					return
 				}
-				next.ServeHTTP(w, req)
+				if opts.JWTIssuer != nil && strings.HasPrefix(authz, "Bearer ") {
+					claims, err := opts.JWTIssuer.Verify(strings.TrimPrefix(authz, "Bearer "))
+					if err == nil && claims.Role == string(domain.RolePlatformAdmin) {
+						if opts.UserStatus == nil {
+							next.ServeHTTP(w, req)
+							return
+						}
+						if st, ok := opts.UserStatus.UserStatus(claims.UserID); ok && st == domain.UserStatusActive {
+							next.ServeHTTP(w, req)
+							return
+						}
+					}
+				}
+				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
 			})
 		})
 		if opts.AdminHandler != nil {
@@ -73,6 +95,11 @@ func NewServer(opts Options) *Server {
 			r.Handle("/admin/*", opts.AdminHandler)
 		}
 	})
+
+	// /user 组：内部完成公开（register/login）与 JWT 保护分流。
+	if opts.UserHandler != nil {
+		r.Handle("/user/*", opts.UserHandler)
+	}
 
 	r.Group(func(r chi.Router) {
 		r.Use(inflightLimiter(opts.MaxInflight, &s.inflight))
@@ -101,7 +128,7 @@ func NewServer(opts Options) *Server {
 		})
 		// SPA fallback：非 API/静态路径回 index.html
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/v1") || r.URL.Path == "/healthz" {
+			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/user") || strings.HasPrefix(r.URL.Path, "/v1") || r.URL.Path == "/healthz" {
 				http.NotFound(w, r)
 				return
 			}

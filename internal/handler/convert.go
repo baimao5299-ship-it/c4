@@ -136,6 +136,17 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	}
 }
 
+// toAPISetting 设置领域对象 → 契约类型。
+func toAPISetting(s *domain.Setting) Setting {
+	t := SettingType(s.Type)
+	return Setting{
+		Key:       &s.Key,
+		Type:      &t,
+		Value:     &s.Value,
+		UpdatedAt: &s.UpdatedAt,
+	}
+}
+
 // toAPITemplateFormatModels 把领域 map（键为 domain.RequestFormat）转换为契约
 // map（键为 string）；nil 输入产出指向 nil map 的指针（wire 上仍为 "FormatModels":null）。
 func toAPITemplateFormatModels(m map[domain.RequestFormat][]string) *map[string][]string {

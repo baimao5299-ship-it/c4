@@ -27,9 +27,28 @@ type Store interface {
 	AccountStore
 	GroupStore
 	KeyStore
+	UserStore
+	SettingStore
 	RuleStore
 	LogStore
 	StatStore
+}
+
+// UserStore 用户持久化（Phase 3a）。
+type UserStore interface {
+	CreateUser(ctx context.Context, u *domain.User) (*domain.User, error)
+	GetUser(ctx context.Context, id int64) (*domain.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
+	ListUsers(ctx context.Context, q repository.ListQuery) ([]*domain.User, int64, error)
+	UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error)
+	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
+}
+
+// SettingStore 类型化配置持久化（Phase 3a）。
+type SettingStore interface {
+	GetSetting(ctx context.Context, key string) (*domain.Setting, error)
+	GetAllSettings(ctx context.Context) ([]*domain.Setting, error)
+	SetSetting(ctx context.Context, key string, typ domain.SettingType, value string) (*domain.Setting, error)
 }
 
 // KeyStore 组删除前置的 key 清理（key.group_id 外键约束）。

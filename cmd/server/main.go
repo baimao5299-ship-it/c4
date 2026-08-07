@@ -16,9 +16,11 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	jwtauth "go-proxy-mini/internal/auth"
 	"go-proxy-mini/internal/config"
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/handler"
+	userapi "go-proxy-mini/internal/handler/user"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/rule"
@@ -44,8 +46,8 @@ func main() {
 	if err != nil {
 		fatalf("logger: %v", err)
 	}
-	if cfg.Admin.Token == "" || cfg.DB.DSN == "" {
-		fatalf("admin.token and db.dsn are required (config or GPM_ADMIN_TOKEN/GPM_DB_DSN)")
+	if cfg.Admin.Token == "" || cfg.Auth.JWTSecret == "" || cfg.DB.DSN == "" {
+		fatalf("admin.token, auth.jwt_secret and db.dsn are required (config or GPM_ADMIN_TOKEN/GPM_AUTH_JWT_SECRET/GPM_DB_DSN)")
 	}
 
 	pool, err := repository.OpenPG(context.Background(), cfg.DB.DSN, int32(cfg.DB.MaxConns))
@@ -113,13 +115,18 @@ func main() {
 	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
 	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)
+	iss := jwtauth.NewIssuer(cfg.Auth.JWTSecret)
+	userHandler := userapi.Router(svc, iss, auth)
 
 	srv := server.NewServer(server.Options{
 		AdminToken:        cfg.Admin.Token,
+		JWTIssuer:         iss,
+		UserStatus:        auth,
 		MaxInflight:       cfg.Proxy.MaxInflight,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 		AdminHandler:      h.RoutesMux(),
+		UserHandler:       userHandler,
 		AIHandler:         aiRouter,
 		WebFS:             webUI(),
 		Logger:            log,

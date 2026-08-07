@@ -15,6 +15,7 @@ type Config struct {
 	Server    ServerConfig    `koanf:"server"`
 	Log       LogConfig       `koanf:"log"`
 	Admin     AdminConfig     `koanf:"admin"`
+	Auth      AuthConfig      `koanf:"auth"`
 	DB        DBConfig        `koanf:"db"`
 	Proxy     ProxyConfig     `koanf:"proxy"`
 	Upstream  UpstreamConfig  `koanf:"upstream"`
@@ -36,6 +37,12 @@ type LogConfig struct {
 
 type AdminConfig struct {
 	Token string `koanf:"token"`
+}
+
+// AuthConfig JWT 密钥：强制（GPM_AUTH_JWT_SECRET），缺失启动失败——
+// 随机生成 = 重启全失效 + 多实例不一致（评审定夺①）。
+type AuthConfig struct {
+	JWTSecret string `koanf:"jwt_secret"`
 }
 
 type DBConfig struct {
@@ -117,6 +124,9 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Admin.Token == "" {
 		c.Admin.Token = os.Getenv("GPM_ADMIN_TOKEN")
+	}
+	if c.Auth.JWTSecret == "" {
+		c.Auth.JWTSecret = os.Getenv("GPM_AUTH_JWT_SECRET")
 	}
 	if c.DB.DSN == "" {
 		c.DB.DSN = os.Getenv("GPM_DB_DSN")

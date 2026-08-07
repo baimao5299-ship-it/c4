@@ -53,6 +53,13 @@ const (
 	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
 )
 
+// Defines values for SettingType.
+const (
+	Number SettingType = "number"
+	String SettingType = "string"
+	Switch SettingType = "switch"
+)
+
 // Defines values for TemplateSupportedFormats.
 const (
 	TemplateSupportedFormatsAnthropic       TemplateSupportedFormats = "anthropic"
@@ -300,6 +307,23 @@ type RulePatch struct {
 	When     *map[string]interface{} `json:"when,omitempty"`
 }
 
+// Setting defines model for Setting.
+type Setting struct {
+	Key       *string      `json:"Key,omitempty"`
+	Type      *SettingType `json:"Type,omitempty"`
+	UpdatedAt *time.Time   `json:"UpdatedAt,omitempty"`
+	Value     *string      `json:"Value,omitempty"`
+}
+
+// SettingType defines model for Setting.Type.
+type SettingType string
+
+// SettingUpdate defines model for SettingUpdate.
+type SettingUpdate struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // StatBucket defines model for StatBucket.
 type StatBucket struct {
 	AccountID           *int64     `json:"AccountID,omitempty"`
@@ -497,6 +521,9 @@ type PostRulesBatchDeleteJSONRequestBody = BatchDeleteBody
 // UpdateRuleJSONRequestBody defines body for UpdateRule for application/json ContentType.
 type UpdateRuleJSONRequestBody = RulePatch
 
+// PutAdminSettingsJSONRequestBody defines body for PutAdminSettings for application/json ContentType.
+type PutAdminSettingsJSONRequestBody = SettingUpdate
+
 // PostTemplatesJSONRequestBody defines body for PostTemplates for application/json ContentType.
 type PostTemplatesJSONRequestBody = TemplateCreate
 
@@ -574,6 +601,12 @@ type ServerInterface interface {
 	// 更新规则（fields 任意子集，未提供字段保持原值）
 	// (PUT /rules/{id})
 	UpdateRule(w http.ResponseWriter, r *http.Request, id int64)
+	// 全部设置（默认值 + DB 覆盖）
+	// (GET /settings)
+	GetAdminSettings(w http.ResponseWriter, r *http.Request)
+	// 更新设置（类型化校验：switch 必须 true/false、number 必须数字）
+	// (PUT /settings)
+	PutAdminSettings(w http.ResponseWriter, r *http.Request)
 	// 用量统计聚合
 	// (GET /stats)
 	GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams)
@@ -721,6 +754,18 @@ func (_ Unimplemented) DeleteRule(w http.ResponseWriter, r *http.Request, id int
 // 更新规则（fields 任意子集，未提供字段保持原值）
 // (PUT /rules/{id})
 func (_ Unimplemented) UpdateRule(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 全部设置（默认值 + DB 覆盖）
+// (GET /settings)
+func (_ Unimplemented) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 更新设置（类型化校验：switch 必须 true/false、number 必须数字）
+// (PUT /settings)
+func (_ Unimplemented) PutAdminSettings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1367,6 +1412,34 @@ func (siw *ServerInterfaceWrapper) UpdateRule(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// GetAdminSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutAdminSettings operation middleware
+func (siw *ServerInterfaceWrapper) PutAdminSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutAdminSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetStats operation middleware
 func (siw *ServerInterfaceWrapper) GetStats(w http.ResponseWriter, r *http.Request) {
 
@@ -1785,6 +1858,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/rules/{id}", wrapper.UpdateRule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/settings", wrapper.GetAdminSettings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/settings", wrapper.PutAdminSettings)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/stats", wrapper.GetStats)
