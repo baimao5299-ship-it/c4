@@ -62,7 +62,7 @@ func chatReq(key string) *http.Request {
 func TestProxyConcurrencyLimit429(t *testing.T) {
 	up, release := blockingUpstream(t)
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	meta := activeKey(1, 1, 10)
 	meta.KeyMaxConc = 1
 	p.auth.Upsert(cryptox.HashKey("gk-1"), meta)
@@ -96,7 +96,7 @@ func TestProxyConcurrencyLimit429(t *testing.T) {
 func TestProxyUserConcurrencyAcrossKeys(t *testing.T) {
 	up, release := blockingUpstream(t)
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	meta1 := activeKey(1, 1, 10)
 	meta1.UserMaxConc = 1
 	meta2 := activeKey(2, 1, 10)
@@ -128,7 +128,7 @@ func TestProxyUserConcurrencyAcrossKeys(t *testing.T) {
 func TestProxyQuotaExhaustedAndDeduct(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	meta := activeKey(1, 1, 10)
 	meta.HasQuota = true
 	meta.Quota = 10 // fakeOpenAI 非流式 total_tokens=8
@@ -153,7 +153,7 @@ func TestProxyQuotaExhaustedAndDeduct(t *testing.T) {
 func TestProxyNoQuotaKeyZeroCost(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1) // activeKey 默认 HasQuota=false
+	p := newTestProxy(t, up.URL, 1) // activeKey 默认 HasQuota=false
 
 	for i := 0; i < 3; i++ {
 		rec := httptest.NewRecorder()
@@ -169,7 +169,7 @@ func TestProxyNoQuotaKeyZeroCost(t *testing.T) {
 func TestProxyKeyDisableImmediate(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, chatReq("gk-1"))
 	require.Equal(t, http.StatusOK, rec.Code, "禁用前正常")
@@ -187,7 +187,7 @@ func TestProxyKeyDisableImmediate(t *testing.T) {
 func TestProxyUserDisableImmediate(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	meta := activeKey(1, 1, 10)
 	meta.UserStatus = domain.UserStatusDisabled
 	p.auth.Upsert(cryptox.HashKey("gk-1"), meta)
@@ -202,7 +202,7 @@ func TestProxyUsageLogCarriesUserAndKey(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, chatReq("gk-1"))
@@ -221,7 +221,7 @@ func TestProxyUsageLogAuthFailureNoOwner(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	req := chatReq("wrong-key")
 	rec := httptest.NewRecorder()
@@ -240,7 +240,7 @@ func TestProxyUsageLogAuthFailureNoOwner(t *testing.T) {
 func TestProxyGateReloadInherits(t *testing.T) {
 	up, release := blockingUpstream(t)
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	meta := activeKey(1, 1, 10)
 	meta.KeyMaxConc = 2
 	p.auth.Upsert(cryptox.HashKey("gk-1"), meta)
