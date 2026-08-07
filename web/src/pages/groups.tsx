@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, FolderOpen, Link2, RefreshCw, Filter } from 'lucide-react'
+import { Plus, Pencil, Trash2, FolderOpen, RefreshCw, Filter } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
@@ -17,7 +17,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { StatusBadge } from '@/components/status-badge'
 import { KeyBox } from '@/components/key-box'
 import { formatDateTime, truncate } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
@@ -40,8 +39,6 @@ export default function Groups() {
     queryKey: ['groups', { limit: LIMIT, offset, name, sort: activeSort ?? 'id', order }],
     queryFn: () => api.listGroups({ limit: LIMIT, offset, name: name || undefined, sort: activeSort ?? 'id', order }),
   })
-  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts({ limit: 100 }) })
-  const accounts = accountsQ.data?.rows ?? []
   const rows = data?.rows ?? []
 
   // —— 行勾选（跨页保留，筛选/翻页后清空）——
@@ -123,9 +120,6 @@ export default function Groups() {
   // —— 编辑（重命名）——
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
-  // —— 绑定账号 ——
-  const [bindTarget, setBindTarget] = useState<Group | null>(null)
-  const [bindChecked, setBindChecked] = useState<number[]>([])
   // —— 轮换 key（确认 → 明文 key 展示）——
   const [rotateTarget, setRotateTarget] = useState<Group | null>(null)
   const [rotateResult, setRotateResult] = useState<{ name: string; key: string } | null>(null)
@@ -146,13 +140,6 @@ export default function Groups() {
       setEditTarget(null)
     },
   })
-  const bind = useMutation({
-    mutationFn: () => api.setGroupAccounts(bindTarget!.ID!, bindChecked),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['groups'] })
-      setBindTarget(null)
-    },
-  })
   const rotate = useMutation({
     mutationFn: (id: number) => api.rotateGroupKey(id),
     onSuccess: (res) => {
@@ -170,14 +157,6 @@ export default function Groups() {
   })
 
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
-
-  const openBind = (g: Group) => {
-    // API 无读取当前绑定的端点，绑定对话框为全量重选（不勾选 = 全解绑）。
-    setBindTarget(g)
-    setBindChecked([])
-  }
-  const toggleChecked = (id: number) =>
-    setBindChecked(cs => (cs.includes(id) ? cs.filter(c => c !== id) : [...cs, id]))
 
   return (
     <div className="space-y-4">
@@ -262,7 +241,6 @@ export default function Groups() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? '') }}><Pencil /></Button>
-                        <Button variant="ghost" size="icon-sm" title={t('groups.bind')} onClick={() => openBind(g)}><Link2 /></Button>
                         <Button variant="ghost" size="icon-sm" title={t('groups.rotate')} onClick={() => setRotateTarget(g)}><RefreshCw /></Button>
                         <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
                       </div>
@@ -345,44 +323,6 @@ export default function Groups() {
             <Button variant="outline" onClick={() => setEditTarget(null)} disabled={rename.isPending}>{t('common.cancel')}</Button>
             <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim()}>
               {rename.isPending ? t('common.saving') : t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* —— 绑定账号 —— */}
-      <Dialog open={!!bindTarget} onOpenChange={o => { if (!o && !bind.isPending) setBindTarget(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('groups.bindTitle', { name: bindTarget?.Name })}</DialogTitle>
-            <DialogDescription>
-              {t('groups.bindDesc', { count: bindChecked.length })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-2">
-            {accounts.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">{t('groups.noAccounts')}</p>
-            ) : (
-              accounts.map(a => (
-                <label
-                  key={a.ID}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted"
-                >
-                  <Checkbox checked={bindChecked.includes(a.ID!)} onCheckedChange={() => toggleChecked(a.ID!)} />
-                  <span className="flex-1 truncate text-sm">{a.Name}</span>
-                  <span className="max-w-32 truncate text-xs text-muted-foreground">{a.Template?.Name ?? `#${a.TemplateID}`}</span>
-                  <StatusBadge status={a.Status} />
-                </label>
-              ))
-            )}
-          </div>
-          {bind.isError && errMsg(bind.error) && (
-            <p className="text-sm text-destructive">{errMsg(bind.error)}</p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBindTarget(null)} disabled={bind.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => bind.mutate()} disabled={bind.isPending}>
-              {bind.isPending ? t('common.saving') : t('groups.saveBind', { count: bindChecked.length })}
             </Button>
           </DialogFooter>
         </DialogContent>

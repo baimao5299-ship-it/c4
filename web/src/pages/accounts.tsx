@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, Users, Ban, CircleCheck, Filter } from 'lucide-react'
@@ -28,6 +28,7 @@ type AccountView = components['schemas']['AccountView']
 type AccountCreate = components['schemas']['AccountCreate']
 type AccountPatch = components['schemas']['AccountPatch']
 type AccountStatus = components['schemas']['AccountStatus']
+type Group = components['schemas']['Group']
 // 批量更新表单里 status/template_id 的「不修改」哨兵值。
 type BatchStatus = 'all' | AccountStatus
 
@@ -41,6 +42,7 @@ interface FormState {
   status: AccountStatus
   weight: string
   max_concurrency: string
+  group_ids: number[]
 }
 
 const emptyForm = (): FormState => ({
@@ -50,6 +52,7 @@ const emptyForm = (): FormState => ({
   status: 'active',
   weight: '0',
   max_concurrency: '8',
+  group_ids: [],
 })
 
 function toForm(a: AccountView): FormState {
@@ -60,12 +63,17 @@ function toForm(a: AccountView): FormState {
     status: a.Status ?? 'active',
     weight: String(a.Weight ?? 0),
     max_concurrency: String(a.MaxConcurrency ?? 8),
+    // 编辑回显不走账号列表（I-1 方案 B）：对话框挂载时经 getAccountGroups
+    // 拉取，加载完成前禁用保存（防误发 [] 清空）。
+    group_ids: [],
   }
 }
 
 // PUT 全量替换：重建 AccountCreate（只带契约字段，不带运行时字段）。
-function toBody(f: FormState): AccountCreate {
-  return {
+// editing = true 时总是发送 group_ids（含空数组 = 清空）；创建态未选 = 不发送
+// （null = 创建时无分组）。
+function toBody(f: FormState, editing: boolean): AccountCreate {
+  const body: AccountCreate = {
     name: f.name.trim(),
     template_id: Number(f.template_id),
     upstream_key: f.upstream_key,
@@ -73,6 +81,29 @@ function toBody(f: FormState): AccountCreate {
     weight: f.weight === '' ? 0 : Number(f.weight),
     max_concurrency: f.max_concurrency === '' ? 8 : Number(f.max_concurrency),
   }
+  if (editing) body.group_ids = f.group_ids
+  return body
+}
+
+// 分组多选（替换语义 UI；disabled 用于回显加载中/批量清空勾选时）。
+function GroupMultiSelect({ groups, value, onChange, disabled }: {
+  groups: Group[]
+  value: number[]
+  onChange: (v: number[]) => void
+  disabled?: boolean
+}) {
+  const toggle = (id: number) => onChange(value.includes(id) ? value.filter(x => x !== id) : [...value, id])
+  return (
+    <div className={`max-h-48 space-y-1 overflow-y-auto rounded-lg border p-2 ${disabled ? 'pointer-events-none opacity-50' : ''}`}>
+      {groups.map(g => (
+        <label key={g.ID} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted">
+          <Checkbox checked={value.includes(g.ID!)} onCheckedChange={() => toggle(g.ID!)} />
+          <span className="flex-1 truncate text-sm">{g.Name}</span>
+          <span className="text-xs text-muted-foreground">#{g.ID}</span>
+        </label>
+      ))}
+    </div>
+  )
 }
 
 // 禁用/启用 quick action：取当前对象重建请求体 + status 翻转。
@@ -95,6 +126,8 @@ interface BatchForm {
   weight: string
   max_concurrency: string
   template_id: string
+  group_ids: string[]
+  clearGroups: boolean // 评审 I-2：勾选发送 group_ids: [] 并禁用分组多选
 }
 
 const emptyBatchForm = (): BatchForm => ({
@@ -104,6 +137,8 @@ const emptyBatchForm = (): BatchForm => ({
   weight: '',
   max_concurrency: '',
   template_id: 'all',
+  group_ids: [],
+  clearGroups: false,
 })
 
 export default function Accounts() {
@@ -137,6 +172,8 @@ export default function Accounts() {
   })
   const templatesQ = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates({ limit: 100 }) })
   const templates = templatesQ.data?.rows ?? []
+  const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups({ limit: 100 }) })
+  const groups = groupsQ.data?.rows ?? []
   const rows = data?.rows ?? []
 
   // —— 行勾选（跨页保留，筛选/翻页后清空）——
@@ -219,6 +256,8 @@ export default function Accounts() {
     if (batchForm.weight !== '') fields.weight = Number(batchForm.weight)
     if (batchForm.max_concurrency !== '') fields.max_concurrency = Number(batchForm.max_concurrency)
     if (batchForm.template_id !== 'all') fields.template_id = Number(batchForm.template_id)
+    if (batchForm.clearGroups) fields.group_ids = []
+    else if (batchForm.group_ids.length > 0) fields.group_ids = batchForm.group_ids.map(Number)
     if (Object.keys(fields).length === 0) {
       setBatchFormErr(t('accounts.batchUpdateEmpty'))
       return
@@ -231,6 +270,20 @@ export default function Accounts() {
   const [editing, setEditing] = useState<AccountView | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
   const [deleting, setDeleting] = useState<AccountView | null>(null)
+
+  // 编辑回显（评审 I-1 方案 B）：对话框挂载时拉取当前分组；数据未到前禁用
+  // 保存与分组多选（防未加载完提交误发 [] 清空）。
+  const groupsEcho = useQuery({
+    queryKey: ['account-groups', editing?.ID],
+    queryFn: () => api.getAccountGroups(editing!.ID!),
+    enabled: !!editing && dialogOpen,
+  })
+  const groupsLoaded = !editing || (groupsEcho.data !== undefined && !groupsEcho.isError)
+  useEffect(() => {
+    if (groupsEcho.data) {
+      setForm(f => ({ ...f, group_ids: [...groupsEcho.data!.group_ids] }))
+    }
+  }, [groupsEcho.data])
 
   const openCreate = () => {
     setEditing(null)
@@ -245,7 +298,7 @@ export default function Accounts() {
 
   const save = useMutation({
     mutationFn: (f: FormState) =>
-      editing ? api.updateAccount(editing.ID!, toBody(f)) : api.createAccount(toBody(f)),
+      editing ? api.updateAccount(editing.ID!, toBody(f, true)) : api.createAccount(toBody(f, false)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
       setDialogOpen(false)
@@ -490,13 +543,26 @@ export default function Accounts() {
                 <Input id="acc-max" type="number" min={1} value={form.max_concurrency} onChange={e => setForm(f => ({ ...f, max_concurrency: e.target.value }))} />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label>{t('accounts.groupLabel')}</Label>
+              <GroupMultiSelect
+                groups={groups}
+                value={form.group_ids}
+                onChange={v => setForm(f => ({ ...f, group_ids: v }))}
+                disabled={editing && !groupsLoaded}
+              />
+              <p className="text-xs text-muted-foreground">{t('accounts.groupHint')}</p>
+              {editing && groupsEcho.isError && (
+                <p className="text-sm text-destructive">{t('accounts.loadGroupsFailed')}</p>
+              )}
+            </div>
             {save.isError && errMsg(save.error) && (
               <p className="text-sm text-destructive">{errMsg(save.error)}</p>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={submit} disabled={save.isPending || !form.name.trim() || !form.template_id || !form.upstream_key}>
+            <Button onClick={submit} disabled={save.isPending || !form.name.trim() || !form.template_id || !form.upstream_key || (editing && !groupsLoaded)}>
               {save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}
             </Button>
           </DialogFooter>
@@ -579,6 +645,20 @@ export default function Accounts() {
                 <Label htmlFor="ba-max">{t('accounts.maxLabel')}</Label>
                 <Input id="ba-max" type="number" min={1} value={batchForm.max_concurrency} placeholder="8" onChange={e => setBatchForm(f => ({ ...f, max_concurrency: e.target.value }))} />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('accounts.batchGroupLabel')}</Label>
+              <GroupMultiSelect
+                groups={groups}
+                value={batchForm.group_ids.map(Number)}
+                onChange={v => setBatchForm(f => ({ ...f, group_ids: v.map(String) }))}
+                disabled={batchForm.clearGroups}
+              />
+              <p className="text-xs text-muted-foreground">{t('accounts.batchGroupHint')}</p>
+              <label className="flex cursor-pointer items-center gap-2.5 py-0.5">
+                <Checkbox checked={batchForm.clearGroups} onCheckedChange={c => setBatchForm(f => ({ ...f, clearGroups: c === true }))} />
+                <span className="text-sm">{t('accounts.clearGroups')}</span>
+              </label>
             </div>
             {batchFormErr && <p className="text-sm text-destructive">{batchFormErr}</p>}
             {batchUpdate.isError && errMsg(batchUpdate.error) && (

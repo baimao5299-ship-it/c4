@@ -159,7 +159,13 @@
     "filterEmpty": "没有符合条件的账号",
     "batchUpdateTitle": "批量更新账号",
     "batchUpdateDesc": "仅填写需要修改的字段，留空表示保持原值",
-    "batchUpdateEmpty": "至少填写一个字段"
+    "batchUpdateEmpty": "至少填写一个字段",
+    "groupLabel": "分组",
+    "groupHint": "保存后替换账号原有分组；不在任何分组中的账号不会被调度。",
+    "loadGroupsFailed": "读取当前分组失败，已禁用保存",
+    "batchGroupLabel": "分组",
+    "batchGroupHint": "替换所选账号的原有分组——未选中的分组将被移除。",
+    "clearGroups": "清空分组"
   },
   "groups": {
     "title": "分组",
@@ -172,7 +178,6 @@
       "createdAt": "创建时间",
       "actions": "操作"
     },
-    "bind": "绑定账号",
     "rotate": "轮换 key",
     "createdTitle": "分组已创建",
     "createdDesc": "明文 key 仅此一次展示，请立即复制保存",
@@ -184,10 +189,6 @@
     "nameLabel": "名称",
     "namePlaceholder": "如 prod-web",
     "editTitle": "编辑分组 # {{id}}",
-    "bindTitle": "绑定账号 — {{name}}",
-    "bindDesc": "全量重选绑定集合；已选 {{count}} 个，未勾选即从该分组解绑",
-    "noAccounts": "暂无账号，请先到「账号」页创建",
-    "saveBind": "保存绑定（{{count}}）",
     "rotateTitle": "轮换 key",
     "rotateDesc": "确认轮换分组「{{name}}」的访问 key？旧 key 立即失效，新 key 仅展示一次。",
     "rotating": "轮换中…",

@@ -159,7 +159,13 @@
     "filterEmpty": "No accounts match the filters",
     "batchUpdateTitle": "Batch update accounts",
     "batchUpdateDesc": "Fill in only the fields to change; leave empty to keep current values",
-    "batchUpdateEmpty": "Fill in at least one field"
+    "batchUpdateEmpty": "Fill in at least one field",
+    "groupLabel": "Groups",
+    "groupHint": "Saving replaces the account's current groups. Accounts in no group are not scheduled.",
+    "loadGroupsFailed": "Failed to load current groups — saving is disabled",
+    "batchGroupLabel": "Groups",
+    "batchGroupHint": "Replaces the selected accounts' current groups — groups you don't select are removed.",
+    "clearGroups": "Clear all groups"
   },
   "groups": {
     "title": "Groups",
@@ -172,7 +178,6 @@
       "createdAt": "Created at",
       "actions": "Actions"
     },
-    "bind": "Bind accounts",
     "rotate": "Rotate key",
     "createdTitle": "Group created",
     "createdDesc": "The plaintext key is shown only once — copy and save it now",
@@ -184,10 +189,6 @@
     "nameLabel": "Name",
     "namePlaceholder": "e.g. prod-web",
     "editTitle": "Edit group # {{id}}",
-    "bindTitle": "Bind accounts — {{name}}",
-    "bindDesc": "Full re-selection of the binding set; {{count}} selected, unchecked accounts are unbound from this group",
-    "noAccounts": "No accounts yet — create one on the Accounts page first",
-    "saveBind": "Save binding ({{count}})",
     "rotateTitle": "Rotate key",
     "rotateDesc": "Rotate the access key of group \"{{name}}\"? The old key is invalidated immediately; the new key is shown only once.",
     "rotating": "Rotating…",
