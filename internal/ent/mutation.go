@@ -45,6 +45,7 @@ type AccountMutation struct {
 	id                 *int64
 	name               *string
 	upstream_key       *string
+	credential_type    *string
 	status             *account.Status
 	cooldown_until     *time.Time
 	weight             *int
@@ -276,6 +277,42 @@ func (m *AccountMutation) OldUpstreamKey(ctx context.Context) (v string, err err
 // ResetUpstreamKey resets all changes to the "upstream_key" field.
 func (m *AccountMutation) ResetUpstreamKey() {
 	m.upstream_key = nil
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (m *AccountMutation) SetCredentialType(s string) {
+	m.credential_type = &s
+}
+
+// CredentialType returns the value of the "credential_type" field in the mutation.
+func (m *AccountMutation) CredentialType() (r string, exists bool) {
+	v := m.credential_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCredentialType returns the old "credential_type" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldCredentialType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCredentialType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCredentialType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCredentialType: %w", err)
+	}
+	return oldValue.CredentialType, nil
+}
+
+// ResetCredentialType resets all changes to the "credential_type" field.
+func (m *AccountMutation) ResetCredentialType() {
+	m.credential_type = nil
 }
 
 // SetStatus sets the "status" field.
@@ -760,7 +797,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.name != nil {
 		fields = append(fields, account.FieldName)
 	}
@@ -769,6 +806,9 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.upstream_key != nil {
 		fields = append(fields, account.FieldUpstreamKey)
+	}
+	if m.credential_type != nil {
+		fields = append(fields, account.FieldCredentialType)
 	}
 	if m.status != nil {
 		fields = append(fields, account.FieldStatus)
@@ -808,6 +848,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.TemplateID()
 	case account.FieldUpstreamKey:
 		return m.UpstreamKey()
+	case account.FieldCredentialType:
+		return m.CredentialType()
 	case account.FieldStatus:
 		return m.Status()
 	case account.FieldCooldownUntil:
@@ -839,6 +881,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldTemplateID(ctx)
 	case account.FieldUpstreamKey:
 		return m.OldUpstreamKey(ctx)
+	case account.FieldCredentialType:
+		return m.OldCredentialType(ctx)
 	case account.FieldStatus:
 		return m.OldStatus(ctx)
 	case account.FieldCooldownUntil:
@@ -884,6 +928,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpstreamKey(v)
+		return nil
+	case account.FieldCredentialType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCredentialType(v)
 		return nil
 	case account.FieldStatus:
 		v, ok := value.(account.Status)
@@ -1046,6 +1097,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldUpstreamKey:
 		m.ResetUpstreamKey()
+		return nil
+	case account.FieldCredentialType:
+		m.ResetCredentialType()
 		return nil
 	case account.FieldStatus:
 		m.ResetStatus()

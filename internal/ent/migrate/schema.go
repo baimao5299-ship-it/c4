@@ -13,6 +13,7 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString},
 		{Name: "upstream_key", Type: field.TypeString},
+		{Name: "credential_type", Type: field.TypeString, Default: "api_key"},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "unhealthy", "429", "disabled"}, Default: "active"},
 		{Name: "cooldown_until", Type: field.TypeTime, Nullable: true},
 		{Name: "weight", Type: field.TypeInt, Default: 100},
@@ -31,7 +32,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "accounts_templates_accounts",
-				Columns:    []*schema.Column{AccountsColumns[11]},
+				Columns:    []*schema.Column{AccountsColumns[12]},
 				RefColumns: []*schema.Column{TemplatesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},

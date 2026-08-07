@@ -21,6 +21,8 @@ const (
 	FieldTemplateID = "template_id"
 	// FieldUpstreamKey holds the string denoting the upstream_key field in the database.
 	FieldUpstreamKey = "upstream_key"
+	// FieldCredentialType holds the string denoting the credential_type field in the database.
+	FieldCredentialType = "credential_type"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldCooldownUntil holds the string denoting the cooldown_until field in the database.
@@ -63,6 +65,7 @@ var Columns = []string{
 	FieldName,
 	FieldTemplateID,
 	FieldUpstreamKey,
+	FieldCredentialType,
 	FieldStatus,
 	FieldCooldownUntil,
 	FieldWeight,
@@ -90,6 +93,8 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultCredentialType holds the default value on creation for the "credential_type" field.
+	DefaultCredentialType string
 	// DefaultWeight holds the default value on creation for the "weight" field.
 	DefaultWeight int
 	// DefaultMaxConcurrency holds the default value on creation for the "max_concurrency" field.
@@ -151,6 +156,11 @@ func ByTemplateID(opts ...sql.OrderTermOption) OrderOption {
 // ByUpstreamKey orders the results by the upstream_key field.
 func ByUpstreamKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpstreamKey, opts...).ToFunc()
+}
+
+// ByCredentialType orders the results by the credential_type field.
+func ByCredentialType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCredentialType, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/pkg/logx"
@@ -44,12 +45,13 @@ const (
 )
 
 type Selection struct {
-	AccountID   int64
-	TemplateID  int64
-	BaseURL     string
-	Format      domain.RequestFormat
-	UpstreamKey string
-	Model       string // 已应用模型映射
+	AccountID      int64
+	TemplateID     int64
+	BaseURL        string
+	Format         domain.RequestFormat
+	UpstreamKey    string
+	CredentialType credential.Type
+	Model          string // 已应用模型映射
 }
 
 type RuntimeInfo struct {

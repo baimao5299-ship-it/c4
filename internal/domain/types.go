@@ -4,6 +4,8 @@ package domain
 import (
 	"slices"
 	"time"
+
+	"go-proxy-mini/internal/credential"
 )
 
 type RequestFormat string
@@ -93,6 +95,7 @@ type Account struct {
 	TemplateID     int64
 	Template       *Template
 	UpstreamKey    string
+	CredentialType credential.Type // 默认 api_key（创建时 DB 默认；本轮不可改）
 	Status         AccountStatus
 	CooldownUntil  *time.Time
 	Weight         int

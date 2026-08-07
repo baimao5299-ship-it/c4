@@ -17,6 +17,7 @@ import (
 	"github.com/pashagolub/pgxmock/v4"
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/usagelog"
@@ -184,10 +185,10 @@ func templateRow() *pgxmock.Rows {
 }
 
 func accountRow(status string) *pgxmock.Rows {
-	return pgxmock.NewRows([]string{"id", "name", "template_id", "upstream_key", "status",
+	return pgxmock.NewRows([]string{"id", "name", "template_id", "upstream_key", "credential_type", "status",
 		"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
 		"created_at", "updated_at"}).
-		AddRow(int64(2), "acc1", int64(1), "sk-x", status, time.Time{}, int64(80), int64(4), "", time.Time{},
+		AddRow(int64(2), "acc1", int64(1), "sk-x", "api_key", status, time.Time{}, int64(80), int64(4), "", time.Time{},
 			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
@@ -267,9 +268,9 @@ func TestAccountAndGroup(t *testing.T) {
 			pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
 
-	// Account create
+	// Account create（credential_type 未显式 Set → ent 客户端默认 "api_key" 入参）
 	tr.pool.ExpectQuery(q(`INSERT INTO "accounts"`)).
-		WithArgs("acc1", "sk-x", account.Status("active"), int(80), int(4),
+		WithArgs("acc1", "sk-x", "api_key", account.Status("active"), int(80), int(4),
 			pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
 
@@ -312,10 +313,10 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.pool.ExpectQuery(q(`JOIN "account_groups"`)).
 		WithArgs(int64(3)).
 		// 注意：M2M 边加载把 join 列（group_id）放在 SELECT 的第一列。
-		WillReturnRows(pgxmock.NewRows([]string{"group_id", "id", "name", "template_id", "upstream_key", "status",
+		WillReturnRows(pgxmock.NewRows([]string{"group_id", "id", "name", "template_id", "upstream_key", "credential_type", "status",
 			"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
 			"created_at", "updated_at"}).
-			AddRow(int64(3), int64(2), "acc1", int64(1), "sk-x", "active", time.Time{}, int64(80), int64(4), "", time.Time{},
+			AddRow(int64(3), int64(2), "acc1", int64(1), "sk-x", "api_key", "active", time.Time{}, int64(80), int64(4), "", time.Time{},
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 	tr.pool.ExpectQuery(q(`FROM "templates"`)).
 		WithArgs(int64(1)).
@@ -368,6 +369,7 @@ func TestAccountAndGroup(t *testing.T) {
 	a2, err := tr.repos.Accounts.GetAccount(ctx(), acc.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.Status429, a2.Status, "status persisted")
+	require.Equal(t, credential.TypeAPIKey, a2.CredentialType, "credential_type 默认 api_key 映射")
 	tr.expectDone(t)
 }
 

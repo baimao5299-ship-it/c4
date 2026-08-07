@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
 	"go-proxy-mini/internal/ent/template"
@@ -30,7 +31,8 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 	}
 	return &domain.Account{
 		ID: a.ID, Name: a.Name, TemplateID: a.TemplateID, Template: tpl,
-		UpstreamKey: a.UpstreamKey, Status: domain.AccountStatus(a.Status),
+		UpstreamKey: a.UpstreamKey, CredentialType: credential.Type(a.CredentialType),
+		Status: domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,
 		LastError: a.LastError, LastUsedAt: a.LastUsedAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,

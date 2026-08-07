@@ -3,8 +3,10 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/usage"
@@ -32,6 +35,7 @@ type Config struct {
 type Proxy struct {
 	cfg      Config
 	sched    *scheduler.Scheduler
+	creds    *credential.Registry
 	rec      *usage.Recorder
 	clients  *aiclient.Factory
 	auth     *Auth
@@ -40,9 +44,11 @@ type Proxy struct {
 	inflight atomic.Int64
 }
 
-func New(cfg Config, sched *scheduler.Scheduler, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger) *Proxy {
+// New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
+// 不用 Config 字段——避免 nil 运行时才炸）。
+func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger) *Proxy {
 	return &Proxy{
-		cfg: cfg, sched: sched, rec: rec, clients: clients, auth: auth,
+		cfg: cfg, sched: sched, creds: creds, rec: rec, clients: clients, auth: auth,
 		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log,
 	}
 }
@@ -230,6 +236,18 @@ func setModel(body []byte, model string) ([]byte, error) {
 	}
 	m["model"] = model
 	return json.Marshal(m)
+}
+
+// credentialFor 从 Selection 取当前凭据值（注册表分发；api_key 类型直读静态 Key）。
+// 未知类型（未来号池类型未注册）→ 显式错误，不静默 fallback（评审 M1：
+// fallback 到 api_key 是号池类型安全隐患）。
+func (p *Proxy) credentialFor(ctx context.Context, sel *scheduler.Selection) (string, error) {
+	if !sel.CredentialType.Valid() {
+		return "", fmt.Errorf("unsupported credential type %q", sel.CredentialType)
+	}
+	return p.creds.For(sel.CredentialType).Credential(ctx, credential.CredentialInput{
+		AccountID: sel.AccountID, Type: sel.CredentialType, APIKey: sel.UpstreamKey,
+	})
 }
 
 // tplOf 从 Selection 构造轻量模板对象（仅用于 aiclient 取 SDK 客户端）。
