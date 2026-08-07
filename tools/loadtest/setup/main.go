@@ -129,7 +129,10 @@ func main() {
 			"template_id":  tplIDs[i%len(tplIDs)],
 			"upstream_key": "sk-upstream",
 			"group_ids":    []int64{groupIDs[i%len(groupIDs)]},
-			"weight":       100, "max_concurrency": 0,
+			// max_concurrency 显式 100000：service 校验把 0 兜底为 8，
+			// 8 槽 × 1666 chat 账号 = 13k 槽 < 30k 并发 → 大量 429 选号失败
+			// （压测目标 = 网关热路径，账号槽不设限，与 §7 SQL 直插同语义）
+			"weight": 100, "max_concurrency": 100000,
 		}, &out)
 	}
 	fmt.Printf("accounts: %d\n", *accounts)
