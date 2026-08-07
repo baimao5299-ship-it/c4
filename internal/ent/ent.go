@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
@@ -79,6 +80,7 @@ func checkColumn(t, c string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			account.Table:   account.ValidColumn,
 			group.Table:     group.ValidColumn,
+			rule.Table:      rule.ValidColumn,
 			template.Table:  template.ValidColumn,
 			usagelog.Table:  usagelog.ValidColumn,
 			usagestat.Table: usagestat.ValidColumn,

@@ -18,6 +18,7 @@ type Repos struct {
 	Groups    *GroupRepo
 	Logs      *LogRepo
 	Stats     *StatRepo
+	Rules     RuleStore
 	Client    *ent.Client
 }
 
@@ -36,6 +37,7 @@ func New(drv dialect.Driver, migrate bool) (*Repos, error) {
 		Groups:    &GroupRepo{client: client, accounts: accounts},
 		Logs:      &LogRepo{client: client},
 		Stats:     &StatRepo{client: client},
+		Rules:     &RuleRepo{client: client},
 		Client:    client,
 	}, nil
 }

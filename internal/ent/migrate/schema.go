@@ -52,6 +52,23 @@ var (
 		Columns:    GroupsColumns,
 		PrimaryKey: []*schema.Column{GroupsColumns[0]},
 	}
+	// RulesColumns holds the columns for the "rules" table.
+	RulesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "name", Type: field.TypeString, Unique: true},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "priority", Type: field.TypeInt, Unique: true},
+		{Name: "when", Type: field.TypeJSON},
+		{Name: "then", Type: field.TypeJSON},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// RulesTable holds the schema information for the "rules" table.
+	RulesTable = &schema.Table{
+		Name:       "rules",
+		Columns:    RulesColumns,
+		PrimaryKey: []*schema.Column{RulesColumns[0]},
+	}
 	// TemplatesColumns holds the columns for the "templates" table.
 	TemplatesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -175,6 +192,7 @@ var (
 	Tables = []*schema.Table{
 		AccountsTable,
 		GroupsTable,
+		RulesTable,
 		TemplatesTable,
 		UsageLogsTable,
 		UsageStatsTable,

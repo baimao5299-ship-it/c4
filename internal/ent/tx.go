@@ -16,6 +16,8 @@ type Tx struct {
 	Account *AccountClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
+	// Rule is the client for interacting with the Rule builders.
+	Rule *RuleClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -155,6 +157,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
+	tx.Rule = NewRuleClient(tx.config)
 	tx.Template = NewTemplateClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.UsageStat = NewUsageStatClient(tx.config)
