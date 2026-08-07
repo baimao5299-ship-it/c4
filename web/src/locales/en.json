@@ -99,7 +99,7 @@
     },
     "editTitle": "Edit template #{{id}}",
     "newTitle": "New template",
-    "dialogDesc": "base_url must be a full upstream URL (including the /v1 prefix)",
+    "dialogDesc": "base_url must be the upstream root (no /v1 — the /v1 path is added per protocol)",
     "credentialTypeLabel": "Credential type",
     "nameLabel": "Name",
     "namePlaceholder": "e.g. openai-main",

@@ -201,7 +201,7 @@ function FormFields({
         <Input
           id="tpl-base"
           value={form.base_url}
-          placeholder="https://api.openai.com/v1"
+          placeholder="https://api.openai.com"
           onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
         />
       </div>

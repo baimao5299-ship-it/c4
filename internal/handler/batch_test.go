@@ -16,7 +16,7 @@ func TestPostTemplatesBatchDelete(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
 	for _, name := range []string{"t1", "t2", "t3"} {
-		rec := do(http.MethodPost, "/admin/templates", `{"name":"`+name+`","base_url":"https://api.openai.com/v1","supported_formats":["openai-chat"]}`)
+		rec := do(http.MethodPost, "/admin/templates", `{"name":"`+name+`","base_url":"https://api.openai.com","supported_formats":["openai-chat"]}`)
 		require.Equal(t, 200, rec.Code, "create %s: %s", name, rec.Body.String())
 	}
 
@@ -72,7 +72,7 @@ func TestPostTemplatesBatchDeleteMissing(t *testing.T) {
 func TestPostTemplatesBatchUpdate(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
-	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com/v1","supported_formats":["openai-chat"]}`)
+	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com","supported_formats":["openai-chat"]}`)
 	require.Equal(t, 200, rec.Code, "create: %s", rec.Body.String())
 
 	// 成功：改名 + base_url → 200 {"updated":1}
@@ -105,7 +105,7 @@ func TestPostTemplatesBatchUpdate(t *testing.T) {
 func TestPostAccountsBatchUpdate(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
-	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com/v1","supported_formats":["openai-chat"]}`)
+	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com","supported_formats":["openai-chat"]}`)
 	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	ids := make([]int64, 0, 2)
 	for i := 1; i <= 2; i++ {
@@ -195,7 +195,7 @@ func TestPostAccountsBatchUpdate(t *testing.T) {
 func TestAccountGroupsCreateUpdate(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
-	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com/v1","supported_formats":["openai-chat"]}`)
+	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com","supported_formats":["openai-chat"]}`)
 	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
 	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
@@ -280,7 +280,7 @@ func TestPostGroupsBatchDeleteMissing(t *testing.T) {
 func TestPostAccountsBatchDelete(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
-	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com/v1","supported_formats":["openai-chat"]}`)
+	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com","supported_formats":["openai-chat"]}`)
 	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	ids := make([]int64, 0, 3)
 	for i := 1; i <= 3; i++ {

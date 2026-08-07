@@ -18,21 +18,23 @@ func TestCreateTemplateValidates(t *testing.T) {
 		name string
 		tpl  *domain.Template
 	}{
-		{"name empty", &domain.Template{Name: "", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
+		{"name empty", &domain.Template{Name: "", BaseURL: "https://u", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
 		{"bad url", &domain.Template{Name: "t", BaseURL: "not-a-url", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
-		{"empty supported_formats", &domain.Template{Name: "t", BaseURL: "https://u/v1"}},
-		{"invalid enum", &domain.Template{Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.RequestFormat("nope")}}},
-		{"duplicate formats", &domain.Template{Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIChat}}},
+		{"trailing /v1 rejected", &domain.Template{Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
+		{"trailing /v1/ rejected", &domain.Template{Name: "t", BaseURL: "https://u/v1/", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}}},
+		{"empty supported_formats", &domain.Template{Name: "t", BaseURL: "https://u"}},
+		{"invalid enum", &domain.Template{Name: "t", BaseURL: "https://u", SupportedFormats: []domain.RequestFormat{domain.RequestFormat("nope")}}},
+		{"duplicate formats", &domain.Template{Name: "t", BaseURL: "https://u", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIChat}}},
 		{"format_models key not in supported", &domain.Template{
-			Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+			Name: "t", BaseURL: "https://u", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 			FormatModels: map[domain.RequestFormat][]string{domain.FormatAnthropic: {"m"}},
 		}},
 		{"format_models empty list", &domain.Template{
-			Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+			Name: "t", BaseURL: "https://u", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 			FormatModels: map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {}},
 		}},
 		{"format_models model outside serve set", &domain.Template{
-			Name: "t", BaseURL: "https://u/v1", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+			Name: "t", BaseURL: "https://u", SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 			FormatModels: map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {"gpt-4o"}},
 		}},
 	}
@@ -44,7 +46,7 @@ func TestCreateTemplateValidates(t *testing.T) {
 	}
 	// 合法：format_models 模型 ∈ Models
 	_, err := svc.CreateTemplate(context.Background(), &domain.Template{
-		Name: "t", BaseURL: "https://u/v1",
+		Name: "t", BaseURL: "https://u",
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 		Models:           []string{"gpt-4o"},
 		FormatModels:     map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {"gpt-4o"}},
@@ -59,21 +61,21 @@ func TestTemplateCredentialTypeDefaultAndValid(t *testing.T) {
 	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
 
 	created, err := svc.CreateTemplate(context.Background(), &domain.Template{
-		Name: "t-default", BaseURL: "https://u/v1",
+		Name: "t-default", BaseURL: "https://u",
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 	})
 	require.NoError(t, err)
 	require.Equal(t, credential.TypeAPIKey, created.CredentialType, "缺省默认 api_key")
 
 	created2, err := svc.CreateTemplate(context.Background(), &domain.Template{
-		Name: "t-api", BaseURL: "https://u/v1", CredentialType: credential.TypeAPIKey,
+		Name: "t-api", BaseURL: "https://u", CredentialType: credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 	})
 	require.NoError(t, err)
 	require.Equal(t, credential.TypeAPIKey, created2.CredentialType, "显式 api_key 成功")
 
 	_, err = svc.CreateTemplate(context.Background(), &domain.Template{
-		Name: "t-bad", BaseURL: "https://u/v1", CredentialType: credential.Type("codex_oauth"),
+		Name: "t-bad", BaseURL: "https://u", CredentialType: credential.Type("codex_oauth"),
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 	})
 	require.ErrorIs(t, err, ErrInvalidInput, "未注册类型 → 400")
@@ -439,6 +441,8 @@ func TestBatchUpdatePatchValidation(t *testing.T) {
 	t.Run("templates", func(t *testing.T) {
 		require.ErrorIs(t, svc.UpdateTemplatesBatch(ctx, []int64{1}, repository.TemplatePatch{Name: &empty}), ErrInvalidInput, "空 name")
 		require.ErrorIs(t, svc.UpdateTemplatesBatch(ctx, []int64{1}, repository.TemplatePatch{BaseURL: &badURL}), ErrInvalidInput, "非法 BaseURL")
+		trailingV1 := "https://u/v1"
+		require.ErrorIs(t, svc.UpdateTemplatesBatch(ctx, []int64{1}, repository.TemplatePatch{BaseURL: &trailingV1}), ErrInvalidInput, "尾 /v1（裸根约定）")
 		require.ErrorIs(t, svc.UpdateTemplatesBatch(ctx, []int64{1}, repository.TemplatePatch{SupportedFormats: &[]domain.RequestFormat{badFormat}}), ErrInvalidInput, "非法 SupportedFormats")
 		require.ErrorIs(t, svc.UpdateTemplatesBatch(ctx, []int64{1}, repository.TemplatePatch{FormatModels: &map[domain.RequestFormat][]string{badFormat: {"m"}}}), ErrInvalidInput, "非法 FormatModels key")
 		require.ErrorIs(t, svc.UpdateTemplatesBatch(ctx, []int64{1}, repository.TemplatePatch{FormatModels: &map[domain.RequestFormat][]string{domain.FormatOpenAIChat: {}}}), ErrInvalidInput, "空 FormatModels 列表")

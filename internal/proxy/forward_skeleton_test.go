@@ -20,7 +20,7 @@ import (
 func TestSkeletonChatBodyNotJSONStreamAndNonStream(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	for _, tc := range []struct {
 		name string
@@ -50,7 +50,7 @@ func TestSkeletonChatBodyNotJSONStreamAndNonStream(t *testing.T) {
 func TestSkeletonModelNonString400(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	for _, tc := range []struct {
 		name string
@@ -79,7 +79,7 @@ func TestSkeletonModelNonString400(t *testing.T) {
 func TestSkeletonModelNullLikeMissing(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":null,"messages":[{"role":"user","content":"hi"}]}`))
@@ -113,7 +113,7 @@ func TestCallerLocalReject400NoRecordNoLeak(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			up := fakeOpenAI(t, "") // 本地拒绝不触达上游，fake 只为构造 Proxy
 			defer up.Close()
-			p := newTestProxyFormat(t, up.URL+"/v1", tc.format)
+			p := newTestProxyFormat(t, up.URL, tc.format)
 
 			sel, err := p.sched.Select(10, tc.format, "gpt-4o")
 			require.NoError(t, err, "Select 占槽")

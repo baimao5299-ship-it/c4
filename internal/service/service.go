@@ -104,6 +104,20 @@ func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleR
 	return &Service{store: store, sched: sched, invalidate: invalidate, ruleReload: ruleReload, keys: keys, log: log}
 }
 
+// validateBaseURL 校验 base_url：可解析、有 scheme/host，且为裸根（不含尾
+// /v1）。/v1 是协议细节（aiclient 按格式追加；anthropic SDK 自带 v1 前缀，
+// base 含 /v1 会拼出 /v1/v1/messages 404）——约定裸根，防呆拒绝含 /v1。
+func validateBaseURL(base string) error {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ErrInvalidInput
+	}
+	if strings.HasSuffix(strings.TrimSuffix(base, "/"), "/v1") {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
 func validateTemplate(t *domain.Template) error {
 	// 评审 M-1：默认值兜底在 service 层——repo 全字段 Set 会原样写空串，
 	// handler 直传也可能缺省；空/缺省在此归一为 api_key，随后才校验合法性。
@@ -116,9 +130,8 @@ func validateTemplate(t *domain.Template) error {
 	if t.Name == "" {
 		return ErrInvalidInput
 	}
-	u, err := url.Parse(t.BaseURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ErrInvalidInput
+	if err := validateBaseURL(t.BaseURL); err != nil {
+		return err
 	}
 	if len(t.SupportedFormats) == 0 {
 		return ErrInvalidInput
@@ -203,9 +216,8 @@ func validateTemplatePatch(p repository.TemplatePatch) error {
 		return ErrInvalidInput
 	}
 	if p.BaseURL != nil {
-		u, err := url.Parse(*p.BaseURL)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return ErrInvalidInput
+		if err := validateBaseURL(*p.BaseURL); err != nil {
+			return err
 		}
 	}
 	var supported map[domain.RequestFormat]bool

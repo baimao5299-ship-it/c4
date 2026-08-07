@@ -99,7 +99,7 @@
     },
     "editTitle": "编辑模板 #{{id}}",
     "newTitle": "新建模板",
-    "dialogDesc": "base_url 需为完整上游地址（含 /v1 前缀）",
+    "dialogDesc": "base_url 需为上游根地址（不含 /v1——/v1 由协议按格式自动拼接）",
     "credentialTypeLabel": "凭据类型",
     "nameLabel": "名称",
     "namePlaceholder": "如 openai-main",

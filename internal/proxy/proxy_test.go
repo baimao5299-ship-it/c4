@@ -253,7 +253,7 @@ func TestProxyStreamingChat(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -285,7 +285,7 @@ func TestProxyStreamingChat(t *testing.T) {
 func TestProxyStreamingChatPreservesRawBytes(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -327,7 +327,7 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 	}))
 	defer srv.Close()
 	tpl := &domain.Template{
-		ID: 1, Name: "t", BaseURL: srv.URL + "/v1",
+		ID: 1, Name: "t", BaseURL: srv.URL,
 		CredentialType: credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: map[string]string{"gpt-4o": "gpt-4o-upstream"},
@@ -363,7 +363,7 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 func TestProxyStreamingSSEFlushesPerEvent(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -380,7 +380,7 @@ func TestProxyAuthRejected(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
 	req.Header.Set("Authorization", "Bearer wrong")
@@ -425,14 +425,14 @@ func TestProxyFailoverOn429(t *testing.T) {
 	mapping := map[string]string{"gpt-4o": "gpt-4o-upstream"}
 	store := &captureLogStore{}
 	tpl1 := &domain.Template{
-		ID: 1, Name: "t", BaseURL: up.URL + "/v1",
+		ID: 1, Name: "t", BaseURL: up.URL,
 		CredentialType: credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: mapping,
 	}
 	p := newTestProxyTplTimeoutLogs(t, tpl1, 1, true, 30*time.Second, store)
 	// 第二个账号（同样带映射，耗尽路径才能断言最后一次实际尝试的映射模型）
-	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", CredentialType: credential.TypeAPIKey, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}, ModelMapping: mapping}
+	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL, CredentialType: credential.TypeAPIKey, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}, ModelMapping: mapping}
 	sched := p.sched
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
@@ -472,8 +472,8 @@ func TestProxyFailoverOn429(t *testing.T) {
 func TestProxyFailoverOn5xx(t *testing.T) {
 	up := fakeOpenAI(t, "500")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
-	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL + "/v1", CredentialType: credential.TypeAPIKey, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
+	p := newTestProxy(t, up.URL, 1)
+	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL, CredentialType: credential.TypeAPIKey, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 	sched := p.sched
 	acc2 := &domain.Account{ID: 2, TemplateID: 2, Template: tpl2, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 	loader := p.sched.Loader().(noopLoader)
@@ -507,11 +507,11 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 	up := fakeOpenAI(t, "429")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	sched := p.sched
 	loader := p.sched.Loader().(noopLoader)
 	for i := int64(2); i <= 3; i++ {
-		tpl := &domain.Template{ID: i, Name: fmt.Sprintf("t%d", i), BaseURL: up.URL + "/v1",
+		tpl := &domain.Template{ID: i, Name: fmt.Sprintf("t%d", i), BaseURL: up.URL,
 			CredentialType: credential.TypeAPIKey,
 			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 		loader.accs[10] = append(loader.accs[10], &domain.Account{
@@ -540,7 +540,7 @@ func TestProxyPassthrough4xx(t *testing.T) {
 	up := fakeOpenAI(t, "400")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","messages":[]}`))
@@ -571,7 +571,7 @@ func TestProxyPassthrough4xx(t *testing.T) {
 func TestProxyStreamAbortFreesSlot(t *testing.T) {
 	up := fakeOpenAI(t, "abort-stream")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -597,7 +597,7 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 	defer up.Close()
 	store := &captureLogStore{}
 	tpl := &domain.Template{
-		ID: 1, Name: "t", BaseURL: up.URL + "/v1",
+		ID: 1, Name: "t", BaseURL: up.URL,
 		CredentialType: credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
@@ -632,7 +632,7 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 func TestProxyChatStreamingPassthrough4xx(t *testing.T) {
 	up := fakeOpenAI(t, "400-stream")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -666,7 +666,7 @@ func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -692,7 +692,7 @@ func TestProxyClientDisconnectFreesSlot(t *testing.T) {
 func TestProxyUsageCaptureDisabled(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
-	p := newTestProxyCapture(t, up.URL+"/v1", 1, false)
+	p := newTestProxyCapture(t, up.URL, 1, false)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -710,7 +710,7 @@ func TestProxyUsageCaptureDisabled(t *testing.T) {
 func TestProxyChatFailoverSingleAccountNoPanic(t *testing.T) {
 	up := fakeOpenAI(t, "429")
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","messages":[]}`))
@@ -730,7 +730,7 @@ func TestProxyChatNonStreamingLogsModel(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyTimeoutLogs(t, up.URL+"/v1", 1, store)
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
@@ -787,7 +787,7 @@ func TestProxyCredentialDispatchUsesRegistry(t *testing.T) {
 		})
 	}))
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	p.creds.Register(customAPIKeyProvider{val: "sk-via-registry"})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
@@ -816,7 +816,7 @@ func TestProxyCredentialUnknownTypeRejectsNoUpstreamCall(t *testing.T) {
 		w.WriteHeader(500)
 	}))
 	defer up.Close()
-	p := newTestProxy(t, up.URL+"/v1", 1)
+	p := newTestProxy(t, up.URL, 1)
 	loader := p.sched.Loader().(noopLoader)
 	loader.accs[10][0].Template.CredentialType = credential.Type("codex_oauth")
 	require.NoError(t, p.sched.InvalidateAllSync())

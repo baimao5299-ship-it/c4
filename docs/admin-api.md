@@ -37,7 +37,7 @@
 ```json
 {
   "name": "openai-main",
-  "base_url": "https://api.openai.com/v1",
+  "base_url": "https://api.openai.com",
   "supported_formats": ["openai-chat", "openai-responses"],
   "models": ["gpt-4o", "gpt-4o-mini"],
   "format_models": { "openai-responses": ["gpt-4o-mini"] },
@@ -48,7 +48,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `name` | string | ✅ | 模板名 |
-| `base_url` | string | ✅ | 上游地址（含 `/v1` 前缀；流式/非流式均基于此） |
+| `base_url` | string | ✅ | 上游**根**地址（**不含 `/v1`**——`/v1` 是协议细节，网关按格式追加：openai 系拼 `/v1/...`，anthropic SDK 自带 `v1` 前缀；含尾 `/v1` 会被拒（`400`）） |
 | `supported_formats` | string[] | ✅ | 支持的请求格式枚举数组（至少 1 项，项枚举见上；重复/非法枚举返回 `400`） |
 | `models` | string[] | 否 | 可服务模型名集合 |
 | `format_models` | object | 否 | 格式级模型覆盖：`{格式: [模型名]}`，key 必须是 `supported_formats` 子集、模型必须是 `models` 子集（否则 `400`）；未配置的格式 = 全部 `models` |
@@ -62,7 +62,7 @@
 {
   "ID": 1,
   "Name": "openai-main",
-  "BaseURL": "https://api.openai.com/v1",
+  "BaseURL": "https://api.openai.com",
   "SupportedFormats": ["openai-chat", "openai-responses"],
   "Models": ["gpt-4o", "gpt-4o-mini"],
   "FormatModels": { "openai-responses": ["gpt-4o-mini"] },
@@ -92,7 +92,7 @@
 {
   "total": 2,
   "rows": [
-    { "ID": 1, "Name": "openai-main", "BaseURL": "https://api.openai.com/v1", "...": "模板对象字段" }
+    { "ID": 1, "Name": "openai-main", "BaseURL": "https://api.openai.com", "...": "模板对象字段" }
   ]
 }
 ```

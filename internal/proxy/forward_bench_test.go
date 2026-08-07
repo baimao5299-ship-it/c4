@@ -100,7 +100,7 @@ func benchProxy(upstream string) *Proxy {
 func benchForwardChat(b *testing.B, streaming bool) {
 	up := benchUpstream()
 	defer up.Close()
-	p := benchProxy(up.URL + "/v1")
+	p := benchProxy(up.URL)
 	r := AIRouter(p)
 	stream := "false"
 	if streaming {

@@ -32,7 +32,9 @@ func TestChatCompletionStreamRawHeadersAndPath(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFactory(srv.Client(), Config{})
-	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL+"/v1"), "sk-test", []byte(`{"stream":true}`))
+	// 裸根约定：base_url 不含 /v1，openai 系由 rawPost 补 /v1 后拼路径
+	// （/v1/chat/completions）；若 base 带 /v1 会拼出 /v1/v1/... 404。
+	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL), "sk-test", []byte(`{"stream":true}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -75,7 +77,7 @@ func TestResponseStreamRawPath(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFactory(srv.Client(), Config{})
-	resp, err := f.ResponseStreamRaw(context.Background(), testTemplate(srv.URL+"/v1"), "sk-test", []byte(`{"stream":true}`))
+	resp, err := f.ResponseStreamRaw(context.Background(), testTemplate(srv.URL), "sk-test", []byte(`{"stream":true}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -91,7 +93,7 @@ func TestStreamRawPreservesRequestBody(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFactory(srv.Client(), Config{})
-	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL+"/v1"), "sk-test", []byte(`{"model":"gpt-4o","stream":true}`))
+	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL), "sk-test", []byte(`{"model":"gpt-4o","stream":true}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, "gpt-4o", gotBody["model"])
@@ -106,7 +108,7 @@ func TestStreamRawNon200ResponseReturnsResponse(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFactory(srv.Client(), Config{})
-	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL+"/v1"), "sk-test", []byte(`{"stream":true}`))
+	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL), "sk-test", []byte(`{"stream":true}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -124,7 +126,8 @@ func TestStreamRawBaseURLWithTrailingSlash(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFactory(srv.Client(), Config{})
-	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL+"/v1/"), "sk-test", []byte(`{"stream":true}`))
+	// 尾斜杠：裸根 + "/" 同样被 openaiBaseURL 归一（TrimSuffix）后补 /v1
+	resp, err := f.ChatCompletionStreamRaw(context.Background(), testTemplate(srv.URL+"/"), "sk-test", []byte(`{"stream":true}`))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -140,6 +143,6 @@ func TestStreamRawContextTimeout(t *testing.T) {
 	f := NewFactory(srv.Client(), Config{})
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := f.ChatCompletionStreamRaw(ctx, testTemplate(srv.URL+"/v1"), "sk-test", []byte(`{"stream":true}`))
+	_, err := f.ChatCompletionStreamRaw(ctx, testTemplate(srv.URL), "sk-test", []byte(`{"stream":true}`))
 	require.Error(t, err)
 }

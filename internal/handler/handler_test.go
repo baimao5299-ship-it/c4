@@ -60,7 +60,7 @@ func TestAdminFlow(t *testing.T) {
 	}
 
 	rec := do(http.MethodPost, "/admin/templates", `{
-		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"name":"openai-main","base_url":"https://api.openai.com",
 		"supported_formats":["openai-chat","openai-responses"],"models":["gpt-4o","o3"],
 		"format_models":{"openai-responses":["o3"]},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-01-01"}}`)
@@ -73,7 +73,7 @@ func TestAdminFlow(t *testing.T) {
 
 	// 非法 credential_type（号池生态类型未实现）→ 400
 	recBad := do(http.MethodPost, "/admin/templates", `{
-		"name":"bad","base_url":"https://u/v1","supported_formats":["openai-chat"],
+		"name":"bad","base_url":"https://u","supported_formats":["openai-chat"],
 		"credential_type":"codex_oauth"}`)
 	require.Equal(t, 400, recBad.Code, "非法 credential_type 必须 400: %s", recBad.Body.String())
 
@@ -141,7 +141,7 @@ func TestAdminUpdateTemplateRoundTrip(t *testing.T) {
 	}
 
 	rec := do(http.MethodPost, "/admin/templates", `{
-		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"name":"openai-main","base_url":"https://api.openai.com",
 		"supported_formats":["openai-chat","openai-responses"],"models":["gpt-4o","gpt-4o-mini","o3"],
 		"format_models":{"openai-responses":["o3"]},
 		"model_mapping":{"gpt-4o":"gpt-4o-2026-01-01"}}`)
@@ -276,7 +276,7 @@ func newListTestRouter(t *testing.T) (*AdminAPI, http.Handler, func(method, path
 func TestGetTemplatesParams(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 	rec := do(http.MethodPost, "/admin/templates", `{
-		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"name":"openai-main","base_url":"https://api.openai.com",
 		"supported_formats":["openai-chat"],"models":["gpt-4o"]}`)
 	require.Equal(t, 200, rec.Code, "create: %s", rec.Body.String())
 
@@ -294,7 +294,7 @@ func TestGetTemplatesParams(t *testing.T) {
 func TestGetAccountsStatusMulti(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 	rec := do(http.MethodPost, "/admin/templates", `{
-		"name":"openai-main","base_url":"https://api.openai.com/v1",
+		"name":"openai-main","base_url":"https://api.openai.com",
 		"supported_formats":["openai-chat"]}`)
 	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
 	rec = do(http.MethodPost, "/admin/accounts", `{

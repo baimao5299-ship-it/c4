@@ -14,6 +14,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,21 +100,26 @@ func (f *Factory) AnthMessageStreamRaw(ctx context.Context, tpl *domain.Template
 
 // rawPost 构造并发出原始 POST；authHeader 为 Authorization 值（anthropic 用
 // x-api-key，传 key 本身）。
+// openaiBaseURL 规范化 openai 系 SDK 的 BaseURL：openai-go 约定 BaseURL 含 /v1
+// （内部拼接 "chat/completions"）。模板 base_url 约定为**裸根**（不含 /v1——
+// /v1 是协议细节，由本层按格式追加，见模板校验），故 openai 系在此补 /v1。
+func openaiBaseURL(base string) string {
+	return strings.TrimSuffix(base, "/") + "/v1"
+}
+
 func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth string, body []byte) (*http.Response, error) {
-	u, err := url.Parse(tpl.BaseURL)
+	base := tpl.BaseURL
+	if path != "v1/messages" {
+		base = openaiBaseURL(base) // openai 系：裸根 + /v1
+	}
+	u, err := url.Parse(base)
 	if err != nil {
 		return nil, err
 	}
-	// 路径拼接语义与各自 SDK 一致：openai base 约定含 /v1 + 子路径追加
-	// （JoinPath → /v1/chat/completions）；anthropic SDK 用 BaseURL.Parse("v1/messages")
-	// （RFC3986 替换尾段——base 含不含 /v1 都得到 /v1/messages）。混用 JoinPath
-	// 会让 base 含 /v1 的 anthropic 请求变成 /v1/v1/messages。
+	// 统一 JoinPath：openai → /v1/chat/completions；anthropic → /v1/messages
+	// （anthropic SDK 自带 v1 前缀，base 裸根直拼）。不做 Parse 尾段替换——
+	// 那是对 base 约定含 /v1 时代的 hack，约定根除后不再需要。
 	full := u.JoinPath(path)
-	if path == "v1/messages" {
-		if full, err = u.Parse(path); err != nil {
-			return nil, err
-		}
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, full.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -135,7 +141,7 @@ func (f *Factory) chat(tpl *domain.Template) *openai.Client {
 	tc := f.ensure(tpl.ID)
 	if tc.chat == nil {
 		c := openai.NewClient(
-			openaioption.WithBaseURL(tpl.BaseURL),
+			openaioption.WithBaseURL(openaiBaseURL(tpl.BaseURL)),
 			openaioption.WithHTTPClient(f.hc),
 			// 关闭 SDK 内置重试：转移/退避由调度器统一控制（规格 §5），
 			// SDK 在单次调用内静默重试会让 429 背压放大并阻塞热路径。
@@ -152,7 +158,7 @@ func (f *Factory) responses(tpl *domain.Template) *openai.Client {
 	tc := f.ensure(tpl.ID)
 	if tc.responses == nil {
 		c := openai.NewClient(
-			openaioption.WithBaseURL(tpl.BaseURL),
+			openaioption.WithBaseURL(openaiBaseURL(tpl.BaseURL)),
 			openaioption.WithHTTPClient(f.hc),
 			openaioption.WithMaxRetries(0),
 		)

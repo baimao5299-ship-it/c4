@@ -218,7 +218,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 func TestProxyResponsesNonStreaming(t *testing.T) {
 	up := fakeResponses(t, "")
 	defer up.Close()
-	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+	p := newTestProxyFormat(t, up.URL, domain.FormatOpenAIResponses)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
 		`{"model":"gpt-4o","input":"hi"}`))
@@ -240,7 +240,7 @@ func TestProxyResponsesStreaming(t *testing.T) {
 	up := fakeResponses(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyFormatLogs(t, up.URL+"/v1", domain.FormatOpenAIResponses, store)
+	p := newTestProxyFormatLogs(t, up.URL, domain.FormatOpenAIResponses, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
 		`{"model":"gpt-4o","input":"hi","stream":true}`))
@@ -299,7 +299,7 @@ func TestProxyStreamClientAbortStillLogs(t *testing.T) {
 	up := fakeResponses(t, "slow-stream")
 	defer up.Close()
 	store := &captureLogStore{}
-	p := newTestProxyFormatLogs(t, up.URL+"/v1", domain.FormatOpenAIResponses, store)
+	p := newTestProxyFormatLogs(t, up.URL, domain.FormatOpenAIResponses, store)
 	srv := httptest.NewServer(http.HandlerFunc(p.HandleResponses))
 	defer srv.Close()
 
@@ -378,7 +378,7 @@ func TestProxyAnthropicStreamClientAbortStillLogs(t *testing.T) {
 func TestProxyResponsesFailoverExhausted429(t *testing.T) {
 	up := fakeResponses(t, "429")
 	defer up.Close()
-	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+	p := newTestProxyFormat(t, up.URL, domain.FormatOpenAIResponses)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-4o"}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -397,7 +397,7 @@ func TestProxyResponsesFailoverExhausted429(t *testing.T) {
 func TestProxyResponsesPassthrough4xx(t *testing.T) {
 	up := fakeResponses(t, "400")
 	defer up.Close()
-	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+	p := newTestProxyFormat(t, up.URL, domain.FormatOpenAIResponses)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
 		`{"model":"gpt-4o","input":"hi"}`))
@@ -418,7 +418,7 @@ func TestProxyResponsesPassthrough4xx(t *testing.T) {
 func TestProxyResponsesStreamingPassthrough4xx(t *testing.T) {
 	up := fakeResponses(t, "400-stream")
 	defer up.Close()
-	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatOpenAIResponses)
+	p := newTestProxyFormat(t, up.URL, domain.FormatOpenAIResponses)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
 		`{"model":"gpt-4o","input":"hi","stream":true}`))
@@ -482,14 +482,14 @@ func TestProxyAnthropicStreamingPassthrough4xx(t *testing.T) {
 	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
 }
 
-// base 带 /v1 后缀（openai 风格，如 opencode.ai/zen/go/v1）时，anthropic 流式
-// 请求必须发到 /v1/messages，不得拼成 /v1/v1/messages（rawPost 曾用 JoinPath
-// 追加导致双 v1；SDK 非流式用 Parse 替换尾段所以一直正常）。
-func TestProxyAnthropicStreamingBaseWithV1(t *testing.T) {
+// 裸根约定的 anthropic 流式回归：base_url 为裸根（模板校验拒绝尾 /v1，
+// 见 service.validateBaseURL），anthropic SDK 自带 v1 前缀，流式原始请求
+// 必须发到 /v1/messages——不得再拼出 /v1/v1/messages 404（旧约定曾双拼）。
+func TestProxyAnthropicStreamingBaseBareRoot(t *testing.T) {
 	up := fakeAnthropic(t, "")
 	defer up.Close()
-	// base 带 /v1：fakeAnthropic 只认 /v1/messages，双 v1 会 404
-	p := newTestProxyFormat(t, up.URL+"/v1", domain.FormatAnthropic)
+	// 裸根 base：fakeAnthropic 只认 /v1/messages，若拼出双 v1 会 404
+	p := newTestProxyFormat(t, up.URL, domain.FormatAnthropic)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(
 		`{"model":"gpt-4o","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
