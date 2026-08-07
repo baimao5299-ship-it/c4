@@ -91,12 +91,15 @@ func main() {
 		call(method, path, "Bearer "+*adminToken, body, out)
 	}
 
-	// 1) 模板 ×3（三格式；base_url 裸根）
-	tplIDs := make([]int64, 0, 3)
+	// 1) 模板（三格式 × 每格式 2 个 = 多模板；base_url 裸根）
+	tplIDs := make([]int64, 0, 6)
 	for _, t := range []struct{ name, format, model string }{
 		{"chat", "openai-chat", "gpt-4o"},
+		{"chat-b", "openai-chat", "gpt-4o"},
 		{"responses", "openai-responses", "gpt-4o"},
+		{"responses-b", "openai-responses", "gpt-4o"},
 		{"anthropic", "anthropic", "claude-3-5-sonnet-20241022"},
+		{"anthropic-b", "anthropic", "claude-3-5-sonnet-20241022"},
 	} {
 		var out tpl
 		admin(http.MethodPost, "/admin/templates", map[string]any{
