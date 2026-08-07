@@ -15,8 +15,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gpm}
       POSTGRES_DB: go_proxy_mini
     volumes:
-      # 目录挂载：PG 数据落盘宿主 ./data/pg（备份/迁移直接拷目录）
-      - ./data/pg:/var/lib/postgresql/data
+      # 目录挂载：PG 数据落盘宿主 ./data/pg（备份/迁移直接拷目录）。
+      # PG 18+ 要求挂载 /var/lib/postgresql（数据在 data 子目录，支持 pg_upgrade --link）
+      - ./data/pg:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d go_proxy_mini"]
       interval: 5s
