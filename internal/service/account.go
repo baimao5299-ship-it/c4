@@ -14,9 +14,20 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 	if _, err := s.store.GetTemplate(ctx, a.TemplateID); err != nil {
 		return nil, mapRepoErr(err) // 模板缺 id → 404
 	}
+	if a.GroupIDs != nil {
+		if err := s.checkGroupsExist(ctx, *a.GroupIDs); err != nil {
+			return nil, err // 组缺 id → 404
+		}
+	}
 	created, err := s.store.CreateAccount(ctx, a)
 	if err != nil {
 		return nil, err
+	}
+	if a.GroupIDs != nil {
+		// 创建才有 id；替换语义（含空数组 = 清空，对新建账号即无分组）。
+		if err := mapRepoErr(s.store.SetAccountGroups(ctx, created.ID, *a.GroupIDs)); err != nil {
+			return nil, err
+		}
 	}
 	s.invalidate()
 	return created, nil
@@ -41,12 +52,41 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 	if err := validateAccount(a); err != nil {
 		return nil, err
 	}
+	if a.GroupIDs != nil {
+		if err := s.checkGroupsExist(ctx, *a.GroupIDs); err != nil {
+			return nil, err // 组缺 id → 404
+		}
+	}
 	updated, err := s.store.UpdateAccount(ctx, a)
 	if err != nil {
 		return nil, err
 	}
+	if a.GroupIDs != nil {
+		// nil = 不变；非 nil = 替换（含空数组 = 清空）。
+		if err := mapRepoErr(s.store.SetAccountGroups(ctx, a.ID, *a.GroupIDs)); err != nil {
+			return nil, err
+		}
+	}
 	s.invalidate()
 	return updated, nil
+}
+
+// GetAccountGroups 账号的分组 id 列表（编辑回显）。账号缺 id → 404。
+func (s *Service) GetAccountGroups(ctx context.Context, id int64) ([]int64, error) {
+	if _, err := s.store.GetAccount(ctx, id); err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return s.store.GetAccountGroups(ctx, id)
+}
+
+// checkGroupsExist 校验分组全部存在（缺失 → service.ErrNotFound 含 id）。
+func (s *Service) checkGroupsExist(ctx context.Context, ids []int64) error {
+	for _, id := range ids {
+		if _, err := s.store.GetGroup(ctx, id); err != nil {
+			return mapRepoErr(err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, id int64) error {

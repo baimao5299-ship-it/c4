@@ -81,7 +81,7 @@ export class ApiClient {
   deleteGroup = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/groups/${id}`, { method: 'DELETE' })
   deleteGroupsBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/groups/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   updateGroupsBatch = (ids: number[], fields: components['schemas']['GroupPatch']) => this.request<components['schemas']['BatchUpdateResponse']>('/groups/batch-update', { method: 'POST', body: JSON.stringify({ ids, fields }) })
-  setGroupAccounts = (id: number, accountIds: number[]) => this.request<components['schemas']['UpdatedResponse']>(`/groups/${id}/accounts`, { method: 'PUT', body: JSON.stringify({ account_ids: accountIds }) })
+  getAccountGroups = (id: number) => this.request<components['schemas']['AccountGroupsResponse']>(`/accounts/${id}/groups`)
   rotateGroupKey = (id: number) => this.request<components['schemas']['RotateKeyResponse']>(`/groups/${id}/rotate-key`, { method: 'POST' })
   // —— 规则 ——
   listRules = (p?: ListParams & { enabled?: boolean }) => this.request<components['schemas']['RuleListResponse']>('/rules', { params: toQuery(p) })

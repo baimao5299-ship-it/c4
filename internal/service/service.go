@@ -48,6 +48,11 @@ type AccountStore interface {
 	DeleteAccount(ctx context.Context, id int64) error
 	DeleteAccountsBatch(ctx context.Context, ids []int64) error
 	UpdateAccountsBatch(ctx context.Context, ids []int64, p repository.AccountPatch) error
+	// SetAccountGroups 替换账号的全部分组（替换语义；空数组 = 清空）。
+	SetAccountGroups(ctx context.Context, accountID int64, groupIDs []int64) error
+	// GetAccountGroups 账号的分组 id 列表（编辑回显；账号缺 id 由调用方先
+	// GetAccount 拦截）。
+	GetAccountGroups(ctx context.Context, accountID int64) ([]int64, error)
 }
 
 type GroupStore interface {
@@ -56,7 +61,6 @@ type GroupStore interface {
 	ListGroups(ctx context.Context, q repository.ListQuery) ([]*domain.Group, int64, error)
 	UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error)
 	DeleteGroup(ctx context.Context, id int64) error
-	SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error
 	DeleteGroupsBatch(ctx context.Context, ids []int64) error
 	UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error
 }
@@ -237,6 +241,24 @@ func validateAccountPatch(p repository.AccountPatch) error {
 	}
 	if p.MaxConcurrency != nil && *p.MaxConcurrency < 1 {
 		return ErrInvalidInput
+	}
+	// GroupIDs：nil/空数组合法（nil = 不变，[] = 清空）；非空要求长度 ≤ 100、
+	// 去重、元素 > 0（与 template_id 对齐：非法 id 值在 service 层拦截为 400，
+	// 不落到 repo 层变 404 语义）。
+	if p.GroupIDs != nil {
+		if len(*p.GroupIDs) > 100 {
+			return ErrInvalidInput
+		}
+		seen := make(map[int64]struct{}, len(*p.GroupIDs))
+		for _, id := range *p.GroupIDs {
+			if id <= 0 {
+				return ErrInvalidInput
+			}
+			if _, ok := seen[id]; ok {
+				return ErrInvalidInput
+			}
+			seen[id] = struct{}{}
+		}
 	}
 	return nil
 }

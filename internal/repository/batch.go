@@ -36,6 +36,8 @@ type AccountPatch struct {
 	Status         *domain.AccountStatus
 	Weight         *int
 	MaxConcurrency *int
+	// GroupIDs nil = 不变；非 nil = 替换账号全部分组（含空数组 = 清空）。
+	GroupIDs *[]int64
 }
 
 type GroupPatch struct {
@@ -142,6 +144,12 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 	if err := checkAccountExist(ctx, tx.Account.Query(), ids); err != nil {
 		return err
 	}
+	// 组存在性校验：循环外一次完成（空数组跳过查询——[] = 清空，无依赖组）。
+	if p.GroupIDs != nil && len(*p.GroupIDs) > 0 {
+		if err := checkGroupExist(ctx, tx.Group.Query(), *p.GroupIDs); err != nil {
+			return err
+		}
+	}
 	for _, id := range ids {
 		u := tx.Account.UpdateOneID(id)
 		if p.Name != nil {
@@ -161,6 +169,11 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 		}
 		if p.MaxConcurrency != nil {
 			u = u.SetMaxConcurrency(*p.MaxConcurrency)
+		}
+		if p.GroupIDs != nil {
+			// ent 无 SetGroups：ClearGroups + AddGroupIDs 实现整组替换
+			// （AddGroupIDs 内部 map 去重，重复 id 安全）。
+			u = u.ClearGroups().AddGroupIDs(*p.GroupIDs...)
 		}
 		if _, err := u.Save(ctx); err != nil {
 			return errMissingID(err, id)

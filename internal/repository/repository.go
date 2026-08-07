@@ -100,6 +100,14 @@ func (r *Repos) UpdateAccountsBatch(ctx context.Context, ids []int64, p AccountP
 	return r.Accounts.UpdateAccountsBatch(ctx, ids, p)
 }
 
+func (r *Repos) SetAccountGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	return r.Accounts.SetAccountGroups(ctx, accountID, groupIDs)
+}
+
+func (r *Repos) GetAccountGroups(ctx context.Context, accountID int64) ([]int64, error) {
+	return r.Accounts.GetAccountGroups(ctx, accountID)
+}
+
 func (r *Repos) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	return r.Groups.CreateGroup(ctx, g)
 }
@@ -118,10 +126,6 @@ func (r *Repos) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group
 
 func (r *Repos) DeleteGroup(ctx context.Context, id int64) error {
 	return r.Groups.DeleteGroup(ctx, id)
-}
-
-func (r *Repos) SetGroupAccounts(ctx context.Context, groupID int64, accountIDs []int64) error {
-	return r.Groups.SetGroupAccounts(ctx, groupID, accountIDs)
 }
 
 func (r *Repos) DeleteGroupsBatch(ctx context.Context, ids []int64) error {

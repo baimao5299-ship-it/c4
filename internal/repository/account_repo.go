@@ -106,6 +106,33 @@ func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
 	return nil
 }
 
+// SetAccountGroups 替换账号的全部分组（替换语义：给定集合 = 账号全部分组；
+// 空数组 = 清空）。组 id 先做存在性校验（缺失 → ErrNotFound 含 id）；
+// 账号缺 id → ErrNotFound（errMissingID）。
+func (r *AccountRepo) SetAccountGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	if len(groupIDs) > 0 {
+		if err := checkGroupExist(ctx, r.client.Group.Query(), groupIDs); err != nil {
+			return err
+		}
+	}
+	_, err := r.client.Account.UpdateOneID(accountID).
+		ClearGroups().
+		AddGroupIDs(groupIDs...).
+		Save(ctx)
+	return errMissingID(err, accountID)
+}
+
+// GetAccountGroups 读取账号的全部分组 id（编辑回显专用端点数据源；
+// 不 eager-load，GetAccount/ListAccounts 读路径不加 groups edge）。
+// 账号是否存在由调用方（service.GetAccountGroups 先 GetAccount）负责——
+// 本方法对不存在账号返回空集而非错误。
+func (r *AccountRepo) GetAccountGroups(ctx context.Context, accountID int64) ([]int64, error) {
+	return r.client.Account.Query().
+		Where(account.ID(accountID)).
+		QueryGroups().
+		IDs(ctx)
+}
+
 // UpdateAccountStatus 满足 scheduler.Loader：状态/冷却/错误信息回写；weight 非 nil
 // 时一并更新（规则引擎权重动作，nil = 不动 weight）。
 func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error {

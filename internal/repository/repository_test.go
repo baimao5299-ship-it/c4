@@ -278,23 +278,31 @@ func TestAccountAndGroup(t *testing.T) {
 		WithArgs("g1", "h1", "gk-aaaa", pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
-	// SetAccounts -> Tx: update updated_at + clear M2M + add M2M + re-SELECT + Commit
+	// SetAccountGroups -> checkGroupExist 预校验（SELECT groups）+ 自动 Tx（M2M
+	// 边变更）：update updated_at + clear M2M + add M2M + re-SELECT + Commit
+	//（账号侧绑定，替代已删的 SetGroupAccounts）
+	tr.pool.ExpectQuery(q(`SELECT "groups"."id" FROM "groups" WHERE`)).
+		WithArgs(int64(3)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 	tr.pool.ExpectBegin()
-	tr.pool.ExpectExec(q(`UPDATE "groups" SET`)).
-		WithArgs(pgxmock.AnyArg(), int64(3)).
+	tr.pool.ExpectExec(q(`UPDATE "accounts" SET`)).
+		WithArgs(pgxmock.AnyArg(), int64(2)).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 	tr.pool.ExpectExec(q(`DELETE FROM "account_groups"`)).
-		WithArgs(int64(3)).
+		WithArgs(int64(2)).
 		WillReturnResult(pgxmock.NewResult("DELETE", 1))
 	tr.pool.ExpectExec(q(`INSERT INTO "account_groups"`)).
 		WithArgs(int64(2), int64(3)).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	tr.pool.ExpectQuery(q(`FROM "groups" WHERE`)).
-		WithArgs(int64(3)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "key_hash", "key_prefix", "created_at", "updated_at"}).
-			AddRow(int64(3), "g1", "h1", "gk-aaaa",
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	tr.pool.ExpectQuery(q(`FROM "accounts" WHERE`)).
+		WithArgs(int64(2)).
+		WillReturnRows(accountRow("active"))
 	tr.pool.ExpectCommit()
+
+	// GetAccountGroups -> JOIN (SELECT ... FROM "account_groups" ...) 读分组 id
+	tr.pool.ExpectQuery(q(`FROM "account_groups"`)).
+		WithArgs(int64(2)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
 	// LoadGroupsAccounts -> groups + accounts(join account_groups) + templates
 	tr.pool.ExpectQuery(q(`FROM "groups"`)).
@@ -342,7 +350,10 @@ func TestAccountAndGroup(t *testing.T) {
 	require.NoError(t, err)
 	g, err := tr.repos.Groups.CreateGroup(ctx(), &domain.Group{Name: "g1", KeyHash: "h1", KeyPrefix: "gk-aaaa"})
 	require.NoError(t, err)
-	require.NoError(t, tr.repos.Groups.SetGroupAccounts(ctx(), g.ID, []int64{acc.ID}))
+	require.NoError(t, tr.repos.Accounts.SetAccountGroups(ctx(), acc.ID, []int64{g.ID}))
+	gIDs, err := tr.repos.Accounts.GetAccountGroups(ctx(), acc.ID)
+	require.NoError(t, err)
+	require.Equal(t, []int64{g.ID}, gIDs, "GetAccountGroups round-trip")
 	m, err := tr.repos.Groups.LoadGroupsAccounts(ctx())
 	require.NoError(t, err)
 	got := m[g.ID]

@@ -100,7 +100,8 @@ func TestPostTemplatesBatchUpdate(t *testing.T) {
 }
 
 // TestPostAccountsBatchUpdate 批量更新账号：成功（status=disabled 生效）/
-// 非法 status 400 / 空 fields 400 / 缺 id 404。
+// group_ids 提供（替换）/ 空数组（清空）/ null（不变）/ 非法 status 400 /
+// 空 fields 400 / 缺 id 404。
 func TestPostAccountsBatchUpdate(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
@@ -114,6 +115,13 @@ func TestPostAccountsBatchUpdate(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
 		ids = append(ids, created.ID)
 	}
+	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
+	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
+	var groupResp struct {
+		Group domain.Group `json:"group"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groupResp))
+	gID := groupResp.Group.ID
 
 	// 成功：{"ids":[...],"fields":{"status":"disabled"}} → 200 {"updated":2}
 	rec = do(http.MethodPost, "/admin/accounts/batch-update",
@@ -130,6 +138,38 @@ func TestPostAccountsBatchUpdate(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &acc))
 	require.Equal(t, domain.StatusDisabled, acc.Status)
 
+	// group_ids 提供 → 替换生效（回显核对）
+	rec = do(http.MethodPost, "/admin/accounts/batch-update",
+		`{"ids":[`+itoa(ids[0])+`,`+itoa(ids[1])+`],"fields":{"group_ids":[`+itoa(gID)+`]}}`)
+	require.Equal(t, 200, rec.Code, "batch set groups: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(ids[0])+"/groups", "")
+	require.Equal(t, 200, rec.Code, "get groups: %s", rec.Body.String())
+	var ag AccountGroupsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Equal(t, []int64{gID}, ag.GroupIds, "批量 group_ids 替换生效")
+
+	// group_ids: [] → 清空
+	rec = do(http.MethodPost, "/admin/accounts/batch-update",
+		`{"ids":[`+itoa(ids[0])+`],"fields":{"group_ids":[]}}`)
+	require.Equal(t, 200, rec.Code, "batch clear groups: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(ids[0])+"/groups", "")
+	require.Equal(t, 200, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Empty(t, ag.GroupIds, "[] = 清空")
+
+	// group_ids: null → 不变（先塞回 g1，再 null 不动；null 不算提供字段，
+	// 需带其他字段才非空 fields）
+	rec = do(http.MethodPost, "/admin/accounts/batch-update",
+		`{"ids":[`+itoa(ids[0])+`],"fields":{"group_ids":[`+itoa(gID)+`]}}`)
+	require.Equal(t, 200, rec.Code, "re-set groups: %s", rec.Body.String())
+	rec = do(http.MethodPost, "/admin/accounts/batch-update",
+		`{"ids":[`+itoa(ids[0])+`],"fields":{"name":"acc1","group_ids":null}}`)
+	require.Equal(t, 200, rec.Code, "null group_ids: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(ids[0])+"/groups", "")
+	require.Equal(t, 200, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Equal(t, []int64{gID}, ag.GroupIds, "null = 不变")
+
 	// 非法 status 枚举 → 400（handler 显式校验）
 	rec = do(http.MethodPost, "/admin/accounts/batch-update",
 		`{"ids":[`+itoa(ids[0])+`],"fields":{"status":"bogus"}}`)
@@ -140,9 +180,91 @@ func TestPostAccountsBatchUpdate(t *testing.T) {
 		`{"ids":[`+itoa(ids[0])+`],"fields":{}}`)
 	require.Equal(t, 400, rec.Code, "empty fields: %s", rec.Body.String())
 
+	// 全 null fields → 400（null 不算提供）
+	rec = do(http.MethodPost, "/admin/accounts/batch-update",
+		`{"ids":[`+itoa(ids[0])+`],"fields":{"name":null,"group_ids":null}}`)
+	require.Equal(t, 400, rec.Code, "all-null fields: %s", rec.Body.String())
+
 	// 缺 id → 404
 	rec = do(http.MethodPost, "/admin/accounts/batch-update", `{"ids":[999],"fields":{"name":"x"}}`)
 	require.Equal(t, 404, rec.Code, "missing id: %s", rec.Body.String())
+}
+
+// TestAccountGroupsCreateUpdate 单账号创建/更新带 group_ids（替换语义映射）：
+// 创建带分组 → 回显；PUT 替换/清空/不变；GET /accounts/{id}/groups 404。
+func TestAccountGroupsCreateUpdate(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+
+	rec := do(http.MethodPost, "/admin/templates", `{"name":"t1","base_url":"https://api.openai.com/v1","supported_formats":["openai-chat"]}`)
+	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
+	rec = do(http.MethodPost, "/admin/groups", `{"name":"g1"}`)
+	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
+	var g struct {
+		Group domain.Group `json:"group"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
+	// 第二个组（验证替换语义「只留所选」）
+	rec = do(http.MethodPost, "/admin/groups", `{"name":"g2"}`)
+	require.Equal(t, 200, rec.Code, "create group2: %s", rec.Body.String())
+	var g2 struct {
+		Group domain.Group `json:"group"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g2))
+
+	// 创建带分组
+	rec = do(http.MethodPost, "/admin/accounts",
+		`{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[`+itoa(g.Group.ID)+`,`+itoa(g2.Group.ID)+`]}`)
+	require.Equal(t, 200, rec.Code, "create with groups: %s", rec.Body.String())
+	var acc domain.Account
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &acc))
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
+	require.Equal(t, 200, rec.Code, "echo: %s", rec.Body.String())
+	var ag AccountGroupsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.ElementsMatch(t, []int64{g.Group.ID, g2.Group.ID}, ag.GroupIds, "创建带分组生效")
+
+	// 创建不带分组 → 无分组
+	rec = do(http.MethodPost, "/admin/accounts", `{"name":"a2","template_id":1,"upstream_key":"sk-x"}`)
+	require.Equal(t, 200, rec.Code)
+	var acc2 domain.Account
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &acc2))
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc2.ID)+"/groups", "")
+	require.Equal(t, 200, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Empty(t, ag.GroupIds, "创建不带 group_ids = 无分组")
+
+	// PUT 替换：只留 g1（g2 被移除）
+	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID),
+		`{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[`+itoa(g.Group.ID)+`]}`)
+	require.Equal(t, 200, rec.Code, "put replace: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
+	require.Equal(t, 200, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Equal(t, []int64{g.Group.ID}, ag.GroupIds, "PUT 替换 = 只留所选")
+
+	// PUT 清空（[]）
+	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID), `{"name":"a1","template_id":1,"upstream_key":"sk-x","group_ids":[]}`)
+	require.Equal(t, 200, rec.Code, "put clear: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
+	require.Equal(t, 200, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Empty(t, ag.GroupIds, "PUT [] = 清空")
+
+	// PUT 缺省 group_ids = 不变（仍为空）
+	rec = do(http.MethodPut, "/admin/accounts/"+itoa(acc.ID), `{"name":"a1","template_id":1,"upstream_key":"sk-x"}`)
+	require.Equal(t, 200, rec.Code, "put without group_ids: %s", rec.Body.String())
+	rec = do(http.MethodGet, "/admin/accounts/"+itoa(acc.ID)+"/groups", "")
+	require.Equal(t, 200, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ag))
+	require.Empty(t, ag.GroupIds, "PUT 缺省 = 不变")
+
+	// 创建带缺失组 → 404 含 id
+	rec = do(http.MethodPost, "/admin/accounts", `{"name":"a3","template_id":1,"upstream_key":"sk-x","group_ids":[999]}`)
+	require.Equal(t, 404, rec.Code, "create missing group: %s", rec.Body.String())
+
+	// GET /accounts/{id}/groups 缺账号 → 404
+	rec = do(http.MethodGet, "/admin/accounts/999/groups", "")
+	require.Equal(t, 404, rec.Code, "missing account groups: %s", rec.Body.String())
 }
 
 // TestPostGroupsBatchDeleteMissing 批量删除分组缺 id → 404（service 先
