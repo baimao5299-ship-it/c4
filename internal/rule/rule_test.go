@@ -151,6 +151,8 @@ func TestValidateWhen(t *testing.T) {
 		{"empty when matches everything", domain.RuleWhen{}, true},
 		{"kind 429", domain.RuleWhen{Kind: strPtr("429")}, true},
 		{"bad kind", domain.RuleWhen{Kind: strPtr("banana")}, false},
+		{"kind ok with error_message_contains dead", domain.RuleWhen{Kind: strPtr("ok"), ErrorMessageContains: strPtr("boom")}, false},
+		{"kind ok observer count_429", domain.RuleWhen{Kind: strPtr("ok"), Count429GE: intPtr(3)}, true},
 		{"window zero", domain.RuleWhen{WindowSeconds: intPtr(0)}, false},
 		{"negative count", domain.RuleWhen{Count429GE: intPtr(-1)}, false},
 		{"negative count total", domain.RuleWhen{CountTotalGE: intPtr(-2)}, false},

@@ -10,11 +10,17 @@ import (
 // ValidateWhen when 语义校验（字段白名单/未知字段由 service 层 JSON 反序列化
 // DisallowUnknownFields 挡下；此处查语义）：
 //   - kind 必须为 ok/429/error 之一
+//   - kind=ok 与 error_message_contains 不兼容（ok 事件错误信息恒空 → 永不命中）
 //   - 计数阈值 ≥ 0、window_seconds ≥ 1
 //   - 比例 ∈ [0,1] 且必须配 count_total_ge（比例样本下限）
 func ValidateWhen(w domain.RuleWhen) error {
 	if w.Kind != nil && kindFromString(*w.Kind) < 0 {
 		return fmt.Errorf("when.kind must be ok/429/error, got %q", *w.Kind)
+	}
+	// 确定性死配置：ok 事件不带错误信息，contains 恒假 → 规则永不命中。
+	// 其余 kind 交叉组合（如 kind=ok + count_429_ge）为合法观察者语义，放行。
+	if w.Kind != nil && kindFromString(*w.Kind) == KindOK && w.ErrorMessageContains != nil {
+		return fmt.Errorf("when.error_message_contains is incompatible with when.kind=ok")
 	}
 	if w.WindowSeconds != nil && *w.WindowSeconds < 1 {
 		return fmt.Errorf("when.window_seconds must be >= 1, got %d", *w.WindowSeconds)
