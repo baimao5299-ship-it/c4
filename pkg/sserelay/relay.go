@@ -43,6 +43,7 @@ type relay struct {
 	lastTick time.Time
 
 	timer     *time.Timer
+	timerArmed bool // 按需武装：仅当存在待 flush 数据时 timer 才在跑（瞬时短流零 timer 开销）
 	stopFlush chan struct{} // 关闭后 timer goroutine 退出
 	timerDone chan struct{}
 }
@@ -206,16 +207,34 @@ func (r *relay) write(p []byte) error {
 	if first {
 		// 首事件立即 flush，保证首字节延迟；不重置 pending——首事件字节仍计入
 		// 阈值，后续小事件可叠加触发一次批量 flush（区分于阈值 flush 的归零语义）
-		return r.flushNoResetLocked()
+		if err := r.flushNoResetLocked(); err != nil {
+			return err
+		}
 	}
 	if r.pending >= r.cfg.FlushBytes {
 		return r.flushLocked()
 	}
+	// 按需武装 flush timer：仅当有待 flush 数据时 timer 才运行。**瞬时短流
+	// （上游秒回、首事件已 flush）绝无 timer 开销**——否则每流一个 1ms 周期
+	// timer + goroutine，万级并发流 = 每秒千万次 timer 唤醒，runtime 计时器
+	// 堆 + 锁打满 CPU（50k 并发上机实测：timers.run 26% + timer 锁 16%，
+	// 吞吐从 11.9k/s 崩到 3k/s 的死亡螺旋；短流 ~1ms 结束所以旧行为不炸）。
+	r.armFlushTimerLocked()
 	return nil
 }
 
+// armFlushTimerLocked 武装 flush timer（一次写入只武装一次；触发后由 timer
+// goroutine 置回未武装，下次写入按需重新武装）。
+func (r *relay) armFlushTimerLocked() {
+	if !r.timerArmed {
+		r.timerArmed = true
+		r.timer.Reset(r.cfg.FlushInterval)
+	}
+}
+
 func (r *relay) startFlushTimer() {
-	r.timer = time.NewTimer(r.cfg.FlushInterval)
+	r.timer = time.NewTimer(time.Hour)
+	r.timer.Stop() // 初始未武装（见 armFlushTimerLocked 注释）
 	go func() {
 		defer close(r.timerDone)
 		for {
@@ -226,9 +245,9 @@ func (r *relay) startFlushTimer() {
 				return
 			case <-r.timer.C:
 				r.mu.Lock()
-				_ = r.flushLocked()
+				_ = r.flushLocked() // 触发时必有待 flush 数据（武装前提），pending 归零
+				r.timerArmed = false
 				r.mu.Unlock()
-				r.timer.Reset(r.cfg.FlushInterval)
 			}
 		}
 	}()
