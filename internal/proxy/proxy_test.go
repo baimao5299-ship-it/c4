@@ -174,6 +174,9 @@ func (f *fakeRuleStore) CreateRule(ctx context.Context, r domain.Rule) (int64, e
 
 func (f *fakeRuleStore) UpdateRule(ctx context.Context, r domain.Rule) error { return nil }
 func (f *fakeRuleStore) DeleteRule(ctx context.Context, id int64) error      { return nil }
+func (f *fakeRuleStore) DeleteRulesBatch(ctx context.Context, ids []int64) error {
+	return nil
+}
 func (f *fakeRuleStore) CountRules(ctx context.Context) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

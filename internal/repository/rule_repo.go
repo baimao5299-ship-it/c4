@@ -18,6 +18,7 @@ type RuleStore interface {
 	CreateRule(ctx context.Context, r domain.Rule) (int64, error)
 	UpdateRule(ctx context.Context, r domain.Rule) error
 	DeleteRule(ctx context.Context, id int64) error
+	DeleteRulesBatch(ctx context.Context, ids []int64) error
 	CountRules(ctx context.Context) (int64, error)
 }
 
@@ -74,6 +75,33 @@ func (r *RuleRepo) DeleteRule(ctx context.Context, id int64) error {
 		return errMissingID(err, id)
 	}
 	return nil
+}
+
+// DeleteRulesBatch 批量删除规则（事务，全成或全败；与 templates/accounts 同构）。
+func (r *RuleRepo) DeleteRulesBatch(ctx context.Context, ids []int64) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // nolint:errcheck // Commit 成功后 Rollback 返回 ErrTxDone，忽略
+	if err := checkRuleExist(ctx, tx.Rule.Query(), ids); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := tx.Rule.DeleteOneID(id).Exec(ctx); err != nil {
+			return errMissingID(err, id)
+		}
+	}
+	return tx.Commit()
+}
+
+// checkRuleExist 事务内存在性检查：ids 必须全部存在，否则 ErrNotFound（含第一个缺失 id）。
+func checkRuleExist(ctx context.Context, q *ent.RuleQuery, ids []int64) error {
+	existing, err := q.Where(rule.IDIn(ids...)).IDs(ctx)
+	if err != nil {
+		return err
+	}
+	return diffMissing(existing, ids)
 }
 
 func (r *RuleRepo) CountRules(ctx context.Context) (int64, error) {

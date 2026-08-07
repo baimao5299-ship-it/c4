@@ -2,6 +2,7 @@ package repository_test
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -125,6 +126,65 @@ func TestRuleCRUD(t *testing.T) {
 	require.Equal(t, int64(3), n)
 
 	tr.expectDone(t)
+}
+
+// TestDeleteRulesBatch 批量删除规则（ent.Tx 事务，全成或全败）。
+func TestDeleteRulesBatch(t *testing.T) {
+	// 成功：存在性通过 → 逐个 DELETE → Commit
+	t.Run("all exist commit", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		tr.pool.ExpectQuery(q(`SELECT "rules"."id" FROM "rules" WHERE`)).
+			WithArgs(int64(1), int64(2)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
+			WithArgs(int64(1)).
+			WillReturnResult(pgxmock.NewResult("DELETE", 1))
+		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
+			WithArgs(int64(2)).
+			WillReturnResult(pgxmock.NewResult("DELETE", 1))
+		tr.pool.ExpectCommit()
+
+		require.NoError(t, tr.repos.Rules.DeleteRulesBatch(ctx(), []int64{1, 2}))
+		tr.expectDone(t)
+	})
+
+	// 缺失 id → ErrNotFound（含缺失 id），且无任何 DELETE 执行
+	t.Run("missing id returns ErrNotFound without DELETE", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		// 存在性检查：SELECT id WHERE id IN (1,2,3) 只返回 2 行（id=3 缺失）
+		tr.pool.ExpectQuery(q(`SELECT "rules"."id" FROM "rules" WHERE`)).
+			WithArgs(int64(1), int64(2), int64(3)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectRollback()
+
+		err := tr.repos.Rules.DeleteRulesBatch(ctx(), []int64{1, 2, 3})
+		require.ErrorIs(t, err, repository.ErrNotFound)
+		require.Contains(t, err.Error(), "id=3 missing")
+		tr.expectDone(t)
+	})
+
+	// 中途 DB 错误 → 整体回滚（无 Commit）
+	t.Run("midway db error rolls back without commit", func(t *testing.T) {
+		tr := newRepos(t)
+		tr.pool.ExpectBegin()
+		tr.pool.ExpectQuery(q(`SELECT "rules"."id" FROM "rules" WHERE`)).
+			WithArgs(int64(1), int64(2)).
+			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
+		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
+			WithArgs(int64(1)).
+			WillReturnResult(pgxmock.NewResult("DELETE", 1))
+		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
+			WithArgs(int64(2)).
+			WillReturnError(errors.New("midway db error"))
+		tr.pool.ExpectRollback()
+
+		err := tr.repos.Rules.DeleteRulesBatch(ctx(), []int64{1, 2})
+		require.Error(t, err)
+		require.NotErrorIs(t, err, repository.ErrNotFound, "DB 错误不应伪装成 not found")
+		tr.expectDone(t)
+	})
 }
 
 // TestRuleStoreContract RuleStore 接口与 Repos.Rules 装配断言。
