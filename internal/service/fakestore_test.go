@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -28,10 +29,25 @@ type fakeStore struct {
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	assign    map[int64][]int64 // groupID → 授予 user_id 列表（group_assignments 模拟）
+	codes     map[int64]*domain.RedemptionCode
+	uses      map[int64]*domain.RedemptionUse
+	temps     []*fakeTempRow
 	nextID    int64
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
+	// codesConflictAlways 模拟 code 唯一冲突恒失败（GenerateCodes 重试 N=5
+	// 终止路径的测试注入）。
+	codesConflictAlways bool
+}
+
+// fakeTempRow 临时额度行模拟（domain 无 TempBalance 类型，CreateTempBalance
+// 标量参数即全字段）。
+type fakeTempRow struct {
+	UserID    int64
+	Amount    int64
+	ExpiresAt time.Time
+	Note      string
 }
 
 func newFakeStore() *fakeStore {
@@ -40,7 +56,8 @@ func newFakeStore() *fakeStore {
 		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
 		keys: make(map[int64]*domain.Key), users: make(map[int64]*domain.User),
 		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule),
-		assign: make(map[int64][]int64), nextID: 1,
+		assign: make(map[int64][]int64), codes: make(map[int64]*domain.RedemptionCode),
+		uses: make(map[int64]*domain.RedemptionUse), nextID: 1,
 	}
 }
 
@@ -755,4 +772,328 @@ func (f *fakeStore) ListGroupsForUser(ctx context.Context, userID int64) ([]*dom
 		}
 	}
 	return out, nil
+}
+
+// --- 原子资源更新（UserStore 扩展，评审 I-1；tx 版见 fakeTx） ---
+
+func (f *fakeStore) UpdateUserBalance(ctx context.Context, userID, delta int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[userID]
+	if !ok {
+		return missingErr(userID)
+	}
+	u.Balance += delta
+	return nil
+}
+
+func (f *fakeStore) UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, ok := f.users[userID]
+	if !ok {
+		return missingErr(userID)
+	}
+	if u.MaxConcurrency == 0 {
+		u.MaxConcurrency = value // 0 = 不限 → 直接设为 value（决策 2）
+	} else {
+		u.MaxConcurrency += value
+	}
+	return nil
+}
+
+func (f *fakeStore) CreateTempBalance(ctx context.Context, userID, amount int64, expiresAt time.Time, note string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.temps = append(f.temps, &fakeTempRow{UserID: userID, Amount: amount, ExpiresAt: expiresAt, Note: note})
+	return nil
+}
+
+// --- 兑换码（RedemptionStore，Phase 5 计费前基础设施） ---
+
+// WithTx 事务语义模拟（评审 I-1）：fn 内变更先入暂存（fakeTx 持有主视图的
+// 深拷贝），fn 返回 nil → 提交（整体替换主视图），返回错误 → 丢弃（主视图
+// 不变）——回滚断言（use 冲突/用尽 → 余额/并发不变）的前提。持锁贯穿整个
+// 事务，模拟串行执行。
+func (f *fakeStore) WithTx(ctx context.Context, fn func(repository.TxStore) error) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tx := &fakeTx{
+		codes:  cloneCodeMap(f.codes),
+		uses:   cloneUseMap(f.uses),
+		users:  cloneUserMap(f.users),
+		temps:  slices.Clone(f.temps),
+		nextID: f.nextID,
+	}
+	if err := fn(tx); err != nil {
+		return err // 回滚：暂存丢弃
+	}
+	f.codes, f.uses, f.users, f.temps, f.nextID = tx.codes, tx.uses, tx.users, tx.temps, tx.nextID
+	return nil
+}
+
+func cloneCodeMap(m map[int64]*domain.RedemptionCode) map[int64]*domain.RedemptionCode {
+	out := make(map[int64]*domain.RedemptionCode, len(m))
+	for k, v := range m {
+		c := *v
+		out[k] = &c
+	}
+	return out
+}
+
+func cloneUseMap(m map[int64]*domain.RedemptionUse) map[int64]*domain.RedemptionUse {
+	out := make(map[int64]*domain.RedemptionUse, len(m))
+	for k, v := range m {
+		c := *v
+		out[k] = &c
+	}
+	return out
+}
+
+func cloneUserMap(m map[int64]*domain.User) map[int64]*domain.User {
+	out := make(map[int64]*domain.User, len(m))
+	for k, v := range m {
+		c := *v
+		out[k] = &c
+	}
+	return out
+}
+
+// fakeTx 事务暂存视图（WithTx 内）：方法语义镜像真实 repo（错误格式同源），
+// 变更只落暂存，提交/回滚由 WithTx 决定。
+type fakeTx struct {
+	codes  map[int64]*domain.RedemptionCode
+	uses   map[int64]*domain.RedemptionUse
+	users  map[int64]*domain.User
+	temps  []*fakeTempRow
+	nextID int64
+}
+
+var _ repository.TxStore = (*fakeTx)(nil)
+
+func (t *fakeTx) CreateCodes(ctx context.Context, codes []*domain.RedemptionCode) error {
+	for _, c := range codes {
+		for _, e := range t.codes {
+			if e.Code == c.Code {
+				return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", repository.ErrConflict)
+			}
+		}
+		cc := *c
+		cc.ID = t.nextID
+		t.nextID++
+		t.codes[cc.ID] = &cc
+	}
+	return nil
+}
+
+func (t *fakeTx) GetByCode(ctx context.Context, code string) (*domain.RedemptionCode, error) {
+	for _, c := range t.codes {
+		if c.Code == code {
+			cc := *c
+			return &cc, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: code=%q", repository.ErrNotFound, code)
+}
+
+func (t *fakeTx) GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error) {
+	for _, u := range t.uses {
+		if u.CodeID == codeID && u.UserID == userID {
+			cc := *u
+			return &cc, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: code_id=%d user_id=%d", repository.ErrNotFound, codeID, userID)
+}
+
+func (t *fakeTx) UpdateUserBalance(ctx context.Context, userID, delta int64) error {
+	u, ok := t.users[userID]
+	if !ok {
+		return missingErr(userID)
+	}
+	u.Balance += delta
+	return nil
+}
+
+func (t *fakeTx) UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error {
+	u, ok := t.users[userID]
+	if !ok {
+		return missingErr(userID)
+	}
+	if u.MaxConcurrency == 0 {
+		u.MaxConcurrency = value
+	} else {
+		u.MaxConcurrency += value
+	}
+	return nil
+}
+
+func (t *fakeTx) CreateTempBalance(ctx context.Context, userID, amount int64, expiresAt time.Time, note string) error {
+	t.temps = append(t.temps, &fakeTempRow{UserID: userID, Amount: amount, ExpiresAt: expiresAt, Note: note})
+	return nil
+}
+
+func (t *fakeTx) CreateUse(ctx context.Context, use *domain.RedemptionUse) error {
+	for _, u := range t.uses {
+		if u.CodeID == use.CodeID && u.UserID == use.UserID {
+			return fmt.Errorf("%w: code_id=%d user_id=%d", repository.ErrConflict, use.CodeID, use.UserID)
+		}
+	}
+	c := *use
+	c.ID = t.nextID
+	t.nextID++
+	t.uses[c.ID] = &c
+	return nil
+}
+
+func (t *fakeTx) IncrementUsed(ctx context.Context, codeID int64) (bool, error) {
+	c, ok := t.codes[codeID]
+	if !ok {
+		return false, nil // 0 行受影响（真实：WHERE id 不命中）
+	}
+	if c.UsedCount >= c.MaxUses {
+		return false, nil // 已用尽（评审 I-2）
+	}
+	c.UsedCount++
+	return true, nil
+}
+
+// --- 兑换码非事务面（管理端 CRUD 用；错误格式镜像真实 repo） ---
+
+func (f *fakeStore) CreateCodes(ctx context.Context, codes []*domain.RedemptionCode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.codesConflictAlways {
+		return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", repository.ErrConflict)
+	}
+	for _, c := range codes {
+		for _, e := range f.codes {
+			if e.Code == c.Code {
+				return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", repository.ErrConflict)
+			}
+		}
+		cc := *c
+		cc.ID = f.nextID
+		f.nextID++
+		f.codes[cc.ID] = &cc
+	}
+	return nil
+}
+
+func (f *fakeStore) GetByCode(ctx context.Context, code string) (*domain.RedemptionCode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.codes {
+		if c.Code == code {
+			cc := *c
+			return &cc, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: code=%q", repository.ErrNotFound, code)
+}
+
+func (f *fakeStore) GetCode(ctx context.Context, id int64) (*domain.RedemptionCode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.codes[id]
+	if !ok {
+		return nil, missingErr(id)
+	}
+	cc := *c
+	return &cc, nil
+}
+
+func (f *fakeStore) ListCodes(ctx context.Context, q repository.ListQuery, typ *domain.RedemptionType, status *domain.RedemptionStatus) ([]*domain.RedemptionCode, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.RedemptionCode
+	for _, c := range f.codes {
+		if typ != nil && c.Type != *typ {
+			continue
+		}
+		if status != nil && c.Status != *status {
+			continue
+		}
+		cc := *c
+		out = append(out, &cc)
+	}
+	return out, int64(len(out)), nil
+}
+
+func (f *fakeStore) ListCodeUses(ctx context.Context, codeID int64, q repository.ListQuery) ([]*domain.RedemptionUse, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.RedemptionUse
+	for _, u := range f.uses {
+		if u.CodeID != codeID {
+			continue
+		}
+		c := *u
+		out = append(out, &c)
+	}
+	return out, int64(len(out)), nil
+}
+
+func (f *fakeStore) GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.uses {
+		if u.CodeID == codeID && u.UserID == userID {
+			c := *u
+			return &c, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: code_id=%d user_id=%d", repository.ErrNotFound, codeID, userID)
+}
+
+func (f *fakeStore) CreateUse(ctx context.Context, use *domain.RedemptionUse) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.uses {
+		if u.CodeID == use.CodeID && u.UserID == use.UserID {
+			return fmt.Errorf("%w: code_id=%d user_id=%d", repository.ErrConflict, use.CodeID, use.UserID)
+		}
+	}
+	c := *use
+	c.ID = f.nextID
+	f.nextID++
+	f.uses[c.ID] = &c
+	return nil
+}
+
+func (f *fakeStore) IncrementUsed(ctx context.Context, codeID int64) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.codes[codeID]
+	if !ok {
+		return false, nil
+	}
+	if c.UsedCount >= c.MaxUses {
+		return false, nil
+	}
+	c.UsedCount++
+	return true, nil
+}
+
+// DeactivateCodes 批量失效（单事务模拟）：已 disabled no-op；缺失 id 由
+// service 层先查（fake 同真实 repo：不报错，评审 M-2）。返回新失效数。
+func (f *fakeStore) DeactivateCodes(ctx context.Context, ids []int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var n int64
+	for _, id := range ids {
+		c, ok := f.codes[id]
+		if !ok {
+			continue
+		}
+		if c.Status == domain.RedemptionStatusDisabled {
+			continue
+		}
+		c.Status = domain.RedemptionStatusDisabled
+		n++
+	}
+	return n, nil
 }

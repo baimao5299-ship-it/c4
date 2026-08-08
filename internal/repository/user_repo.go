@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -62,6 +63,24 @@ func (r *UserRepo) UpdateUserMaxConcurrency(ctx context.Context, userID int64, v
 	}
 	if n == 0 {
 		return fmt.Errorf("%w: id=%d missing", ErrNotFound, userID)
+	}
+	return nil
+}
+
+// CreateTempBalance 插入临时额度行（兑换码 temp_balance 兑换用——评审 I-1：
+// WithTx 事务内经 tx client 插入，随整体提交/回滚；普通 client 亦可用）。
+// note 为来源说明（兑换码固定 "redemption code"）；expiresAt 零值 = 永久
+// （兑换码路径必非零：temp_balance 码 resource_expires_at 生成时必填，决策 4）。
+func (r *UserRepo) CreateTempBalance(ctx context.Context, userID, amount int64, expiresAt time.Time, note string) error {
+	b := r.client.TempBalance.Create().
+		SetUserID(userID).
+		SetAmount(amount).
+		SetNote(note)
+	if !expiresAt.IsZero() {
+		b = b.SetExpiresAt(expiresAt)
+	}
+	if _, err := b.Save(ctx); err != nil {
+		return err
 	}
 	return nil
 }

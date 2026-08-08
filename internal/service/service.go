@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
@@ -33,6 +34,11 @@ type Store interface {
 	RuleStore
 	LogStore
 	StatStore
+	RedemptionStore
+	// WithTx 在单事务内执行 fn（评审 I-1）：真实仓库为 tx 版 Repository（全部走
+	// tx 连接）；fake 为事务语义模拟（fn 内变更先入暂存、成功提交/失败丢弃——
+	// 回滚断言的前提）。
+	WithTx(ctx context.Context, fn func(repository.TxStore) error) error
 }
 
 // UserStore 用户持久化（Phase 3a）。
@@ -43,6 +49,11 @@ type UserStore interface {
 	ListUsers(ctx context.Context, q repository.ListQuery) ([]*domain.User, int64, error)
 	UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error)
 	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
+	// 原子资源更新（评审 I-1：兑换码 applier 用；普通 client 与 tx client 均可用）。
+	UpdateUserBalance(ctx context.Context, userID, delta int64) error
+	UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error
+	// CreateTempBalance 插入临时额度行（兑换码 temp_balance 兑换用）。
+	CreateTempBalance(ctx context.Context, userID, amount int64, expiresAt time.Time, note string) error
 }
 
 // SettingStore 类型化配置持久化（Phase 3a）。
@@ -107,6 +118,20 @@ type GroupStore interface {
 	DeleteGroup(ctx context.Context, id int64) error
 	DeleteGroupsBatch(ctx context.Context, ids []int64) error
 	UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error
+}
+
+// RedemptionStore 兑换码 + 兑换审计持久化（Phase 5 计费前基础设施）。
+// 兑换事务编排（Redeem）经 Store.WithTx 以 repository.TxStore 面访问。
+type RedemptionStore interface {
+	CreateCodes(ctx context.Context, codes []*domain.RedemptionCode) error
+	GetByCode(ctx context.Context, code string) (*domain.RedemptionCode, error)
+	GetCode(ctx context.Context, id int64) (*domain.RedemptionCode, error)
+	ListCodes(ctx context.Context, q repository.ListQuery, typ *domain.RedemptionType, status *domain.RedemptionStatus) ([]*domain.RedemptionCode, int64, error)
+	ListCodeUses(ctx context.Context, codeID int64, q repository.ListQuery) ([]*domain.RedemptionUse, int64, error)
+	DeactivateCodes(ctx context.Context, ids []int64) (int64, error)
+	GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error)
+	CreateUse(ctx context.Context, use *domain.RedemptionUse) error
+	IncrementUsed(ctx context.Context, codeID int64) (bool, error)
 }
 
 type LogStore interface {
@@ -222,6 +247,8 @@ var listSortFields = map[string][]string{
 	"groups":    {"id", "name", "created_at", "updated_at"},
 	"users":     {"id", "email", "role", "status", "max_concurrency", "created_at", "updated_at"},
 	"keys":      {"id", "name", "status", "max_concurrency", "quota", "quota_used", "created_at", "updated_at"},
+	// 与 repo 层 redemptionCodeSortFields 白名单一致（双保险）。
+	"redemption_codes": {"id", "code", "type", "value", "max_uses", "used_count", "status", "created_by", "created_at", "updated_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

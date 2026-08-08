@@ -294,7 +294,7 @@ func TestWithTxPG(t *testing.T) {
 	t.Run("commit all ops", func(t *testing.T) {
 		u := seedPGUser(t, repos, "tx-commit@example.com")
 		code := codeFor("TX0001", domain.RedemptionTypeBalance, 1)
-		err := repos.WithTx(ctx, func(tr *repository.Repository) error {
+		err := repos.WithTx(ctx, func(tr repository.TxStore) error {
 			if err := tr.CreateCodes(ctx, []*domain.RedemptionCode{code}); err != nil {
 				return err
 			}
@@ -333,7 +333,7 @@ func TestWithTxPG(t *testing.T) {
 	t.Run("rollback on fn error", func(t *testing.T) {
 		u := seedPGUser(t, repos, "tx-rollback@example.com")
 		code := codeFor("TX0002", domain.RedemptionTypeConcurrency, 1)
-		err := repos.WithTx(ctx, func(tr *repository.Repository) error {
+		err := repos.WithTx(ctx, func(tr repository.TxStore) error {
 			if err := tr.CreateCodes(ctx, []*domain.RedemptionCode{code}); err != nil {
 				return err
 			}
