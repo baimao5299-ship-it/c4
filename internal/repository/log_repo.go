@@ -164,8 +164,3 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 	}
 	return out, int64(total), nil
 }
-
-func (r *LogRepo) PurgeLogs(ctx context.Context, olderThan time.Time) error {
-	_, err := r.client.UsageLog.Delete().Where(usagelog.CreatedAtLT(olderThan)).Exec(ctx)
-	return err
-}

@@ -16,7 +16,6 @@ import (
 type noopLogInserter struct{}
 
 func (noopLogInserter) InsertBatch(ctx context.Context, l []*domain.UsageLog) error { return nil }
-func (noopLogInserter) PurgeLogs(ctx context.Context, t time.Time) error            { return nil }
 
 type noopStatUpserter struct{}
 
@@ -49,7 +48,7 @@ func (f *fakeDeductWriter) DeductAndLog(ctx context.Context, userID, cost int64,
 func newTestFlusher(writer *fakeDeductWriter) *Flusher {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
 	}, noopLogInserter{}, noopStatUpserter{}, nil)
 	bal := NewBalances(fakeBalLoader{m: map[int64]int64{1: 1000, 2: 1000}}, nil)
 	return NewFlusher(FlushConfig{

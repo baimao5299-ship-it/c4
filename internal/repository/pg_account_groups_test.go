@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -41,6 +42,9 @@ func newPGRepos(t *testing.T) *repository.Repository {
 	require.NoError(t, err)
 	repos, err := repository.New(entsql.OpenDB(dialect.Postgres, db), true)
 	require.NoError(t, err)
+	// T4.5：usagelog 已从 ent migrate 列表排除（usageLogMigrateHook），分区表
+	// 由 bootstrap 独占建表——所有 PG 测试共用同一分区表基座。
+	require.NoError(t, repos.EnsureUsageLogPartitioned(ctx, time.Now()))
 	return repos
 }
 

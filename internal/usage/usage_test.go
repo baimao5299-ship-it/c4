@@ -54,7 +54,6 @@ func testCfg() UsageConfig {
 	return UsageConfig{
 		BatchSize:          2,
 		FlushInterval:      50 * time.Millisecond,
-		LogRetentionDays:   30,
 		StatsFlushInterval: 30 * time.Millisecond,
 	}
 }

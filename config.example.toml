@@ -29,6 +29,8 @@ scheduler = {
 usage = {
   batch_size = 500,
   flush_interval = "500ms",
+  # usagelog 按日分区保留天数（Phase 5 T4.5）：保留期外分区由 retention worker
+  # DROP TABLE O(1) 清理（默认 30 天 = 30 个日分区）；<= 0 = 不删除。
   log_retention_days = 30,
   stats_flush_interval = "10s",
 }
