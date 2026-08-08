@@ -1,0 +1,70 @@
+// Package billing 计费核心：service_tier 归一化 + 价格矩阵纯函数 + 余额快照
+// + 批量扣费 flusher（T2/T3）。扣费落库与请求路径分离。
+package billing
+
+import (
+	"context"
+	"sync/atomic"
+
+	"go-proxy-mini/pkg/logx"
+)
+
+// BalanceLoader 余额快照数据源（repository.UserRepo 实现）。
+type BalanceLoader interface {
+	LoadBalances(ctx context.Context) (map[int64]int64, error)
+}
+
+// Balances 余额只读快照（毫分；对齐 pricing 快照模式）：atomic.Pointer 换整表，
+// 热路径零锁零分配。预检读滞后 ≤ BalanceRefreshInterval（多实例条件扣 DB 兜底）。
+type Balances struct {
+	loader BalanceLoader
+	log    *logx.Logger
+	snap   atomic.Pointer[map[int64]int64]
+}
+
+// NewBalances 构造余额快照（初始空表——未 Reload 前预检全部 402 拒绝，安全侧）。
+func NewBalances(loader BalanceLoader, log *logx.Logger) *Balances {
+	b := &Balances{loader: loader, log: log}
+	m := make(map[int64]int64)
+	b.snap.Store(&m)
+	return b
+}
+
+// Reload 全量重载（启动同步 + BalanceRefreshInterval ticker + 管理面改余额/
+// Redeem 后 invalidate 调用）。失败 fail-safe：Warn + 保留旧快照（不替换，
+// 预检继续用旧值，条件扣 DB 兜底）。
+func (b *Balances) Reload(ctx context.Context) error {
+	m, err := b.loader.LoadBalances(ctx)
+	if err != nil {
+		if b.log != nil {
+			b.log.Warn("balance snapshot reload failed", logx.Error(err))
+		}
+		return err
+	}
+	b.snap.Store(&m)
+	return nil
+}
+
+// Set 扣费后定向刷新单用户余额（DeductAndLog 成功后调用）：复制 map 换新快照
+// （O(用户数) 拷贝——扣费频率 = flush 节奏，非热路径；新用户（快照缺失）经此
+// 补入）。
+func (b *Balances) Set(uid, bal int64) {
+	old := b.snap.Load()
+	m := make(map[int64]int64, len(*old)+1)
+	for k, v := range *old {
+		m[k] = v
+	}
+	m[uid] = bal
+	b.snap.Store(&m)
+}
+
+// BalanceOf 快照读余额（毫分）：命中返回 (bal, true)（含 0）；缺失 → (0, false)
+// （用户无快照 = 预检 402 拒绝，不按 0 放行）。
+func (b *Balances) BalanceOf(uid int64) (int64, bool) {
+	if m := b.snap.Load(); m != nil {
+		if v, ok := (*m)[uid]; ok {
+			return v, true
+		}
+	}
+	return 0, false
+}

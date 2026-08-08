@@ -15,11 +15,14 @@ type PriceLookup interface {
 }
 
 // BillingHooks 计费钩子（proxy.New 参数；nil = 计费全关：不查价、不记
-// BillingTier、不处理 service_tier 转发策略）。
-// 中间态（T2）：只含 Prices + TierPolicy；Balances/Flusher 在 T3 扩展
-// （类型届时定义，本任务不留 nil 容忍分支）。
+// BillingTier、不处理 service_tier 转发策略、不做余额预检）。
+// T3 填满（中间态清理终点）：Balances/Flusher 为真实类型直接接线，无 nil
+// 容忍分支——装配方（main）保证 bill 非 nil 时四字段齐备（计费开关 =
+// config.Billing.Enabled，与 hooks 装配同一判定）。
 type BillingHooks struct {
-	Prices PriceLookup
+	Prices   PriceLookup
+	Balances *billing.Balances // 余额只读快照（预检 + 扣费后定向刷新）
+	Flusher  *billing.Flusher  // 批量扣费落库（billed 路由终点）
 	// TierPolicy 读取 service_tier 转发策略（nil = 恒透传）：priority/flex
 	// 分别按 settings service_tier_policy_priority / service_tier_policy_flex
 	// 快照取值（装配方注入闭包，零 DB）。
@@ -29,6 +32,9 @@ type BillingHooks struct {
 var (
 	// errNoPrice 402：模型缺价（计费启用后未设价/未同步；空价格表 = 全模型 402）。
 	errNoPrice = &formatError{status: http.StatusPaymentRequired, msg: "no price configured for this model"}
+	// errInsufficientBalance 402：余额预检拒绝（快照缺失或 ≤0；免费放行路径
+	// T3.5 价格倍率扩展）。
+	errInsufficientBalance = &formatError{status: http.StatusPaymentRequired, msg: "insufficient balance"}
 	// errServiceTierRejected 400：service_tier 策略 reject（不转发，记 ErrBilling）。
 	errServiceTierRejected = &formatError{status: http.StatusBadRequest, msg: "service_tier rejected by gateway policy"}
 )

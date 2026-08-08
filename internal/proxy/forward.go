@@ -31,6 +31,7 @@ type Config struct {
 	FailoverAttempts      int
 	GroupKeyRPM           int
 	UsageCapture          bool
+	BillingCapture        bool // 计费开关（config.Billing.Enabled 映射；shouldBill 路由判定）
 }
 
 type Proxy struct {
@@ -69,7 +70,8 @@ func (p *Proxy) Inflight() int64 { return p.inflight.Load() }
 
 // finish 收尾：释放并发槽 + 额度扣减（后扣模型，usage 已知）+ 计费计算 +
 // 记录用量（凡持有并发槽的路径必调）。无额度 key 无内存计数器 → 扣减
-// no-op（恒 0）。
+// no-op（恒 0）。计费路由（评审 C-4 共用判定）：billed → flusher.Record
+//（聚合 + 周期落库），其余 → rec.Record——每日志恰好一个写者。
 func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 	p.sched.Release(accountID)
 	if l != nil {
@@ -77,8 +79,19 @@ func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 		p.auth.DeductQuota(l.KeyID, l.TotalTokens)
 	}
 	if p.cfg.UsageCapture && l != nil {
-		p.rec.Record(l)
+		if p.shouldBill(l) {
+			p.bill.Flusher.Record(l)
+		} else {
+			p.rec.Record(l)
+		}
 	}
+}
+
+// shouldBill 计费路由判定（评审 C-4：record() 与 finish() 两处调用同一判定，
+// 共用函数保证 billed/非 billed 边界一致）：billed = 计费开关 && 有用户归属
+// && 计费钩子已装配。billed 只进 Flusher、其余只进 rec。
+func (p *Proxy) shouldBill(l *domain.UsageLog) bool {
+	return p.cfg.BillingCapture && l != nil && l.UserID > 0 && p.bill != nil
 }
 
 // applyBilling 计费计算（T2 中间态：只算不扣，扣费落库在 T3）：价格快照读 →
@@ -117,9 +130,9 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
-		LatencyMS:           time.Since(start).Milliseconds(),
-		PromptTokens:        u.pt, CompletionTokens: u.ct, TotalTokens: u.tt,
-		CacheReadTokens:     u.cr, CacheCreationTokens: u.cc,
+		LatencyMS:    time.Since(start).Milliseconds(),
+		PromptTokens: u.pt, CompletionTokens: u.ct, TotalTokens: u.tt,
+		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
 		CreatedAt: time.Now(),
 	}
 }
@@ -136,11 +149,17 @@ func mappedFor(req, used string) string {
 
 // record 记录一条用量日志（无并发槽的失败路径；有槽路径走 finish）。
 // ctx 提供鉴权 KeyMeta（user_id/key_id 归属；401 等鉴权失败路径无 KeyMeta）。
+// 计费路由与 finish 同一 shouldBill 判定（评审 C-4）。
 func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
 	if !p.cfg.UsageCapture {
 		return
 	}
-	p.rec.Record(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
+	l := logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start))
+	if p.shouldBill(l) {
+		p.bill.Flusher.Record(l)
+	} else {
+		p.rec.Record(l)
+	}
 }
 
 // ctxKeyMeta 是鉴权 KeyMeta 的 context 键（handleFormat 写入；日志归属读取）。
@@ -193,8 +212,8 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 // --- 辅助 ---
 
 type usageTuple struct {
-	pt, ct, tt     int64
-	cr, cc         int64 // 缓存读取/写入 token（缺失 = 0）
+	pt, ct, tt int64
+	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
 }
 
 // recordStreamAbort 上游流中止记录（客户端断开/上游停滞统一入口）：先已收

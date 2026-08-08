@@ -309,12 +309,12 @@ func doRequest(client *http.Client, m *metrics, rng *rand.Rand, count bool) {
 	}
 	br := sseReaderPool.Get().(*bufio.Reader)
 	br.Reset(resp.Body)
-	drainSSE(br)
+	_ = drainSSE(br) // 排空尽力而为：读错误（服务端提前断流）不影响压测统计
 	// [DONE] 后把响应体尾部读到 EOF（chunked/Content-Length 的 EOF 由帧结构
 	// 决定，µs 级到达）：让传输层判定 body 完整、keep-alive 连接回池复用——
 	// 原实现每请求关连接重拨（profile 里 dialConn 占 11% CPU）。服务端不
 	// 结束流时 drainTail 50ms 超时放弃，不挂死。
-	drainTail(resp.Body)
+	_ = drainTail(resp.Body) // 超时/EOF 均属预期，尽力而为
 	br.Reset(nil)
 	sseReaderPool.Put(br)
 	resp.Body.Close()

@@ -1,0 +1,235 @@
+package repository_test
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
+)
+
+// logFor 构造测试计费日志（DeductAndLog 插入断言用）。
+func logFor(userID int64, requestID string) *domain.UsageLog {
+	return &domain.UsageLog{
+		RequestID: requestID, UserID: userID, Model: "gpt-4o",
+		Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
+		LatencyMS: 10, PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8,
+		Cost: 130, BillingTier: "auto",
+		CreatedAt: time.Now(),
+	}
+}
+
+// seedTempBalance 直插临时额度行（返回行 id，断言扣减用）。
+func seedTempBalance(t *testing.T, repos *repository.Repository, userID, amount int64, expiresAt *time.Time) int64 {
+	t.Helper()
+	row, err := repos.Client.TempBalance.Create().
+		SetUserID(userID).SetAmount(amount).SetNillableExpiresAt(expiresAt).
+		Save(context.Background())
+	require.NoError(t, err)
+	return row.ID
+}
+
+func tempBalanceAmount(t *testing.T, repos *repository.Repository, id int64) int64 {
+	t.Helper()
+	row, err := repos.Client.TempBalance.Get(context.Background(), id)
+	require.NoError(t, err)
+	return row.Amount
+}
+
+// countLogs 统计用户日志数。
+func countLogs(t *testing.T, repos *repository.Repository, userID int64) int64 {
+	t.Helper()
+	_, n, err := repos.Logs.QueryLogs(context.Background(), repository.LogQuery{UserID: userID, Limit: 1000})
+	require.NoError(t, err)
+	return n
+}
+
+// TestPGDeductFEFOOrder FEFO 扣临时额度：最早到期先扣、永久最后、已过期不参与；
+// 临时额度充足时余额不被触碰。
+func TestPGDeductFEFOOrder(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "fefo@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 100000))
+
+	exp1 := time.Now().Add(time.Hour).Truncate(time.Second)
+	exp2 := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	expired := time.Now().Add(-time.Hour).Truncate(time.Second)
+	t1 := seedTempBalance(t, repos, u.ID, 30000, &exp1)    // 最早到期
+	t2 := seedTempBalance(t, repos, u.ID, 50000, &exp2)    // 次到期
+	tp := seedTempBalance(t, repos, u.ID, 70000, nil)      // 永久最后
+	te := seedTempBalance(t, repos, u.ID, 90000, &expired) // 已过期不参与
+
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 40000, []*domain.UsageLog{logFor(u.ID, "r1")})
+	require.NoError(t, err)
+	require.False(t, od, "临时额度充足不透支")
+	require.Equal(t, int64(100000), bal, "余额未被触碰")
+	require.Equal(t, int64(0), tempBalanceAmount(t, repos, t1), "最早到期先扣完")
+	require.Equal(t, int64(40000), tempBalanceAmount(t, repos, t2), "次到期补足剩余 10000")
+	require.Equal(t, int64(70000), tempBalanceAmount(t, repos, tp), "永久额度不动")
+	require.Equal(t, int64(90000), tempBalanceAmount(t, repos, te), "已过期不参与扣减")
+	require.Equal(t, int64(1), countLogs(t, repos, u.ID))
+}
+
+// TestPGDeductPermanentLast FEFO 全档耗尽后扣到永久额度（永久最后）。
+func TestPGDeductPermanentLast(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "perm@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 100000))
+
+	exp1 := time.Now().Add(time.Hour).Truncate(time.Second)
+	t1 := seedTempBalance(t, repos, u.ID, 30000, &exp1)
+	tp := seedTempBalance(t, repos, u.ID, 70000, nil)
+
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 100000, []*domain.UsageLog{logFor(u.ID, "r1")})
+	require.NoError(t, err)
+	require.False(t, od)
+	require.Equal(t, int64(100000), bal, "临时额度 100000 恰好覆盖，余额不动")
+	require.Equal(t, int64(0), tempBalanceAmount(t, repos, t1))
+	require.Equal(t, int64(0), tempBalanceAmount(t, repos, tp), "永久额度最后扣 70000")
+}
+
+// TestPGDeductTempPartialAndBalance 临时额度部分扣 + 余额补足。
+func TestPGDeductTempPartialAndBalance(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "partial@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 100000))
+
+	tp := seedTempBalance(t, repos, u.ID, 150000, nil) // 150000 毫分临时额度
+
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 200000, []*domain.UsageLog{logFor(u.ID, "r1")})
+	require.NoError(t, err)
+	require.False(t, od, "余额充足不透支")
+	require.Equal(t, int64(50000), bal, "临时扣 150000 + 余额补 50000")
+	require.Equal(t, int64(0), tempBalanceAmount(t, repos, tp))
+}
+
+// TestPGDeductConditionalSuccess 无临时额度：余额充足走条件扣成功（不透支）。
+func TestPGDeductConditionalSuccess(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "cond@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 100000))
+
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 40000, []*domain.UsageLog{logFor(u.ID, "r1")})
+	require.NoError(t, err)
+	require.False(t, od)
+	require.Equal(t, int64(60000), bal)
+}
+
+// TestPGDeductOverdraft 余额不足 → 无条件扣允许透支（负余额），日志标记 Overdraft。
+func TestPGDeductOverdraft(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "od@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 10000))
+
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 40000, []*domain.UsageLog{logFor(u.ID, "r1")})
+	require.NoError(t, err)
+	require.True(t, od, "允许透支")
+	require.Equal(t, int64(-30000), bal, "透支后负余额")
+	require.Equal(t, int64(1), countLogs(t, repos, u.ID))
+	rows, _, err := repos.Logs.QueryLogs(context.Background(), repository.LogQuery{UserID: u.ID, Limit: 10})
+	require.NoError(t, err)
+	require.True(t, rows[0].Overdraft, "日志 Overdraft 标记")
+}
+
+// TestPGDeductConcurrentSameUser 并发抢同一用户：行锁串行——一个条件扣成功，
+// 一个透支（100000 - 120000 = -20000），两笔日志都在（多实例安全语义）。
+func TestPGDeductConcurrentSameUser(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "conc@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 100000))
+
+	type result struct {
+		od  bool
+		err error
+	}
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			od, _, err := repos.DeductAndLog(ctx, u.ID, 60000, []*domain.UsageLog{logFor(u.ID, fmt.Sprintf("c%d", n))})
+			results <- result{od: od, err: err}
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	odCount := 0
+	for r := range results {
+		require.NoError(t, r.err)
+		if r.od {
+			odCount++
+		}
+	}
+	require.Equal(t, 1, odCount, "并发抢同一用户：一成一透")
+	got, err := repos.GetUser(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(-20000), got.Balance, "100000 - 2×60000")
+	require.Equal(t, int64(2), countLogs(t, repos, u.ID))
+}
+
+// TestPGDeductRollbackOnFailure 同事务回滚：日志插入失败（非法 format 枚举）→
+// 扣费与日志全部回滚（余额/temp/日志均不变）。
+func TestPGDeductRollbackOnFailure(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "rollback@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 50000))
+	tp := seedTempBalance(t, repos, u.ID, 30000, nil)
+
+	bad := logFor(u.ID, "bad")
+	bad.Format = domain.RequestFormat("bogus") // 非法枚举 → 插入报错
+	_, _, err := repos.DeductAndLog(ctx, u.ID, 40000, []*domain.UsageLog{bad})
+	require.Error(t, err, "日志插入失败必须整体回滚")
+	got, err := repos.GetUser(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(50000), got.Balance, "余额回滚")
+	require.Equal(t, int64(30000), tempBalanceAmount(t, repos, tp), "临时额度回滚")
+	require.Zero(t, countLogs(t, repos, u.ID), "日志回滚（0 行）")
+}
+
+// TestPGDeductZeroCostOnlyLogs cost=0 → 只插日志：不扣款，overdrafted=false，
+// balanceAfter = 当前余额原值。
+func TestPGDeductZeroCostOnlyLogs(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "zerocost@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 50000))
+	tp := seedTempBalance(t, repos, u.ID, 30000, nil)
+
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 0, []*domain.UsageLog{
+		logFor(u.ID, "z1"), logFor(u.ID, "z2"),
+	})
+	require.NoError(t, err)
+	require.False(t, od)
+	require.Equal(t, int64(50000), bal, "balanceAfter = 当前余额原值")
+	require.Equal(t, int64(30000), tempBalanceAmount(t, repos, tp), "临时额度不动")
+	require.Equal(t, int64(2), countLogs(t, repos, u.ID))
+	rows, _, err := repos.Logs.QueryLogs(context.Background(), repository.LogQuery{UserID: u.ID, Limit: 10})
+	require.NoError(t, err)
+	require.False(t, rows[0].Overdraft, "cost=0 恒不透支")
+}
+
+// TestPGDeductUserMissing 用户不存在 → 跳过扣减仍插日志（usagelog 无 FK）；
+// balanceAfter 0、不透支、无错误。
+func TestPGDeductUserMissing(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	od, bal, err := repos.DeductAndLog(ctx, 999999, 50000, []*domain.UsageLog{logFor(999999, "ghost")})
+	require.NoError(t, err, "用户不存在不报错（跳过扣减仍插日志）")
+	require.False(t, od)
+	require.Zero(t, bal, "balanceAfter 0")
+	require.Equal(t, int64(1), countLogs(t, repos, 999999), "日志照常插入")
+}

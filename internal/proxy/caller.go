@@ -39,6 +39,8 @@ type UpstreamCaller interface {
 // failover 循环（每轮 credentialFor + caller.Call + code 分支）→ 耗尽记录写出。
 // 门禁全部内存原子（零 DB 零锁）；release 与 quota 扣减在请求结束统一完成。
 func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter, r *http.Request) {
+	p.inflight.Add(1) // 优雅停机等在途归零（main waitForInflight 轮询 Inflight()）
+	defer p.inflight.Add(-1)
 	start := time.Now()
 	reqID := uuid.NewString()
 	meta, ok := p.auth.Authenticate(r)
@@ -57,6 +59,17 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		writeErr(w, errQuotaExhausted)
 		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, nil, start)
 		return
+	}
+	// 余额预检（Phase 5 计费；评审 I-1 无槽位问题）：快照读零 DB（滞后 ≤
+	// BalanceRefreshInterval，多实例条件扣 DB 兜底）。快照缺失（用户不在
+	// 快照 = 无余额记录）或 ≤0 → 402 errInsufficientBalance（不按 0 记账）。
+	// 在 Acquire 前 → 不占用并发槽。
+	if p.cfg.BillingCapture && p.bill != nil {
+		if bal, ok := p.bill.Balances.BalanceOf(meta.UserID); !ok || bal <= 0 {
+			writeErr(w, errInsufficientBalance)
+			p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, nil, start)
+			return
+		}
 	}
 	// 两级并发门禁（user → key；两步回滚由 gate 内部完成；release 仅释放
 	// 已 acquire 层级——defer 覆盖全部返回路径）

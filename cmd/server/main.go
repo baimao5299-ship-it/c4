@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	jwtauth "go-proxy-mini/internal/auth"
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/config"
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/handler"
@@ -99,20 +100,41 @@ func main() {
 	// aiclient 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；
 	// 评审发现：此前 Factory.InvalidateAll 无人调用，模板 base_url 更新后流量
 	// 仍打旧上游直至重启）+ Auth 鉴权快照全量刷新（用户禁用/并发/额度调整
-	// 即时生效——评审 I-2）。
+	// 即时生效——评审 I-2）+ 余额快照全量刷新（管理面改余额/Redeem 后计费
+	// 预检即时生效，Phase 5 T3）。
+	var billBalances *billing.Balances
 	invalidate := func() {
 		sched.InvalidateAll()
 		clients.InvalidateAll()
 		if err := auth.Reload(context.Background()); err != nil {
 			log.Warn("auth reload failed", logx.Error(err))
 		}
+		if billBalances != nil {
+			_ = billBalances.Reload(context.Background()) // fail-safe：内部 Warn + 保留旧快照
+		}
 	}
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
 	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
-	// Phase 5 计费钩子（T2 中间态：只含 Prices + TierPolicy；Balances/Flusher
-	// 在 T3 扩展）。Prices = svc 价格快照（零 DB）；TierPolicy = settings 快照
-	// 闭包（service_tier_policy_priority/flex）。
+	// Phase 5 计费装配（T3：余额快照 + 批量 flusher；T2 中间态清理终点——hooks
+	// 四字段齐备，无 nil 容忍分支）。Enabled 默认关（opt-in）：关 → billHooks
+	// nil → proxy 计费全关（不查价/不预检/不路由）。
+	var billHooks *proxy.BillingHooks
+	var billFlusher *billing.Flusher
+	if cfg.Billing.Enabled {
+		billBalances = billing.NewBalances(repos.Users, log)
+		_ = billBalances.Reload(context.Background()) // 启动同步，fail-safe（失败保留空快照 → 预检全 402 拒绝，安全侧）
+		billFlusher = billing.NewFlusher(billing.FlushConfig{
+			FlushInterval:          cfg.Billing.FlushInterval,
+			BalanceRefreshInterval: cfg.Billing.BalanceRefreshInterval,
+		}, repos, rec, billBalances, log)
+		billHooks = &proxy.BillingHooks{
+			Prices:     svc,
+			Balances:   billBalances,
+			Flusher:    billFlusher,
+			TierPolicy: svc.ServiceTierPolicy,
+		}
+	}
 	px := proxy.New(proxy.Config{
 		MaxBodySize:           cfg.Proxy.MaxBodySize,
 		MaxInflight:           cfg.Proxy.MaxInflight,
@@ -120,10 +142,8 @@ func main() {
 		FailoverAttempts:      cfg.Proxy.FailoverAttempts,
 		GroupKeyRPM:           cfg.Limit.GroupKeyRPM,
 		UsageCapture:          cfg.Proxy.UsageCapture,
-	}, sched, credential.New(), rec, clients, auth, log, &proxy.BillingHooks{
-		Prices:     svc,
-		TierPolicy: svc.ServiceTierPolicy,
-	})
+		BillingCapture:        cfg.Billing.Enabled,
+	}, sched, credential.New(), rec, clients, auth, log, billHooks)
 	// litellm 价格同步 worker：启动异步拉取一次（不阻塞启动）+ price_sync_cron
 	// 定期循环；source_url/cron 每轮从 svc 的 settings 快照现读（变更下次循环
 	// 生效，无热加载通道）；同步成功后刷新 svc 价格快照（Phase 5 计费读零 DB）。
@@ -167,6 +187,9 @@ func main() {
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
 	wm.Register(sched, ruleEngine, rec, pricingSync)
+	if billFlusher != nil {
+		wm.Register(billFlusher) // 计费 flusher 最后注册 → 反向排空最先（扣费 + 计费日志全量落库）
+	}
 	if err := wm.StartAll(ctx); err != nil {
 		fatalf("worker start: %v", err)
 	}
@@ -191,10 +214,35 @@ func main() {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = httpSrv.Shutdown(shutdownCtx)
-	_ = wm.Shutdown(shutdownCtx) // 反向：usage 先排空明细，scheduler 后排空回写
+	// 优雅停机链（Phase 5 计费不丢窗口）：
+	// 1) Shutdown(2s) 优雅窗口：快速请求收尾（长连接流式超时留给 Close 强断）
+	// 2) Close 强制断长连接 → 客户端断开 → recordStreamAbort → finish（断前
+	//    usage 帧照常计费）
+	// 3) waitForInflight：等在途归零（100ms 轮询；超时 Warn 继续不阻塞退出）
+	// 4) wm.Shutdown 反向排空：billingFlusher 最先（扣费 + 计费日志全量落库）
+	//    → rec 排空明细 → rule → sched
+	srvCtx, cancelSrv := context.WithTimeout(shutdownCtx, 2*time.Second)
+	_ = httpSrv.Shutdown(srvCtx)
+	cancelSrv()
+	_ = httpSrv.Close()
+	waitForInflight(px, shutdownCtx, log)
+	_ = wm.Shutdown(shutdownCtx)
 	log.Info("shutdown complete")
 	_ = log.Sync()
+}
+
+// waitForInflight 等在途请求归零（优雅停机第 3 步）：100ms 轮询 px.Inflight()；
+// 超出剩余预算 → Warn 继续（不阻塞退出——极限情况丢 ≤1 flush 窗口，可接受，
+// 见计划风险节）。
+func waitForInflight(px *proxy.Proxy, ctx context.Context, log *logx.Logger) {
+	for px.Inflight() > 0 {
+		select {
+		case <-ctx.Done():
+			log.Warn("shutdown: inflight requests not drained, continuing")
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 func fatalf(format string, args ...any) {

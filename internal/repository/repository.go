@@ -29,6 +29,7 @@ type Repository struct {
 	Rules       RuleStore
 	Redemptions *RedemptionRepo
 	Pricing     *PricingRepo
+	Billing     *BillingRepo // 扣费落库（Phase 5 T3）
 	Client      *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
@@ -64,6 +65,7 @@ func newRepository(client *ent.Client, drv dialect.Driver) *Repository {
 		Rules:       &RuleRepo{client: client},
 		Redemptions: &RedemptionRepo{client: client, driver: drv},
 		Pricing:     &PricingRepo{client: client, driver: drv},
+		Billing:     &BillingRepo{client: client, driver: drv},
 		Client:      client,
 		driver:      drv,
 	}
@@ -435,6 +437,17 @@ func (r *Repository) GetPricing(ctx context.Context, model string) (*domain.Pric
 
 func (r *Repository) UpdateUserBalance(ctx context.Context, userID, delta int64) error {
 	return r.Users.UpdateUserBalance(ctx, userID, delta)
+}
+
+// DeductAndLog 批量扣费 + 计费日志落库（Phase 5 T3 计费 flusher 写路径）：
+// FEFO 临时额度优先 + 条件扣费（允许透支）+ 同事务批量日志，见 BillingRepo。
+func (r *Repository) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (overdrafted bool, balanceAfter int64, err error) {
+	return r.Billing.DeductAndLog(ctx, userID, cost, logs)
+}
+
+// LoadBalances 全量余额快照（Phase 5 计费余额预检数据源）。
+func (r *Repository) LoadBalances(ctx context.Context) (map[int64]int64, error) {
+	return r.Users.LoadBalances(ctx)
 }
 
 func (r *Repository) UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error {
