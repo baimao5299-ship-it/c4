@@ -22,6 +22,7 @@ import (
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/handler"
 	userapi "go-proxy-mini/internal/handler/user"
+	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/rule"
@@ -118,6 +119,16 @@ func main() {
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
 	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
+	// litellm 价格同步 worker：启动异步拉取一次（不阻塞启动）+ price_sync_cron
+	// 定期循环；source_url/cron 每轮从 svc 的 settings 快照现读（变更下次循环
+	// 生效，无热加载通道）；同步成功后刷新 svc 价格快照（Phase 5 计费读零 DB）。
+	pricingSync := pricing.NewSyncWorker(pricing.SyncWorkerConfig{
+		Fetcher:  pricing.NewFetcher(hc),
+		Repo:     repos,
+		Settings: svc,
+		Reload:   svc.ReloadPricing,
+		Log:      log,
+	})
 	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)
 	iss := jwtauth.NewIssuer(cfg.Auth.JWTSecret)
@@ -147,7 +158,7 @@ func main() {
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
-	wm.Register(sched, ruleEngine, rec)
+	wm.Register(sched, ruleEngine, rec, pricingSync)
 	if err := wm.StartAll(ctx); err != nil {
 		fatalf("worker start: %v", err)
 	}
