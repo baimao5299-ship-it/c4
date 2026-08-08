@@ -16,6 +16,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -46,14 +48,19 @@ var (
 // keyPool 多 key 模式：每请求随机取一个（-keys 文件行）；空 = 用 -key 单 key。
 var keyPool []string
 
+// 采样桶数：10ms/桶 → 覆盖 0-10.24s；超出区间（≥10.24s）进边界桶 1023。
+const sampleBuckets = 1024
+
 type metrics struct {
-	total          atomic.Int64
-	errs           atomic.Int64
-	firstByteMS    atomic.Int64 // stream 首字节延迟之和
-	latencyMS      atomic.Int64 // chat 完整响应延迟之和
-	mu             sync.Mutex
-	samples        map[int64]int64 // stream 首字节延迟采样：桶(ms/10) → 计数
-	latencySamples map[int64]int64 // chat 完整响应延迟采样：桶(ms/10) → 计数
+	total       atomic.Int64
+	errs        atomic.Int64
+	firstByteMS atomic.Int64 // stream 首字节延迟之和
+	latencyMS   atomic.Int64 // chat 完整响应延迟之和
+	// 延迟采样直方图：固定桶数组 + 原子自增，无锁。原 mutex map 在
+	// 30k 并发下每请求抢同一把锁（最大热点）；p99 遍历数组同样无锁。
+	samples        [sampleBuckets]atomic.Int64 // stream 首字节延迟采样：10ms/桶
+	latencySamples [sampleBuckets]atomic.Int64 // chat 完整响应延迟采样：10ms/桶
+	mu             sync.Mutex                  // 仅保护 errDetail（错误路径低频，0 错误零锁）
 	errDetail      map[string]int64
 }
 
@@ -93,10 +100,8 @@ func main() {
 	if *pprof != "" {
 		go func() { _ = http.ListenAndServe(*pprof, nil) }() // net/http/pprof 自动挂载
 	}
-	m := &metrics{
-		samples: make(map[int64]int64), latencySamples: make(map[int64]int64),
-		errDetail: make(map[string]int64),
-	}
+	m := &metrics{errDetail: make(map[string]int64)}
+	buildReqTemplate()
 	warmEnd := time.Now().Add(*warmup)
 	start := warmEnd
 	stop := start.Add(*duration)
@@ -111,21 +116,24 @@ func main() {
 		MaxIdleConnsPerHost: *concurrency,
 		IdleConnTimeout:     90 * time.Second,
 	}
+	// 每 worker 自建局部随机源：math/rand/v2 全局源带锁，30k 并发下
+	// pickKey/退避抢同一把锁；按 worker 索引分种子，退避不会同频共振。
+	randSeed := uint64(time.Now().UnixNano())
 	var wg sync.WaitGroup
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
-		go func() {
+		go func(rng *rand.Rand) {
 			defer wg.Done()
 			client := &http.Client{Timeout: 10 * time.Minute, Transport: transport}
 			// 预热：先跑不计数的流，把突发拨号造成的 RST 吸收在计时窗口外，
 			// 同时让 keep-alive 连接池就位（Windows backlog≈200，见错误退避注释）。
 			for time.Now().Before(warmEnd) {
-				doRequest(client, m, false)
+				doRequest(client, m, rng, false)
 			}
 			for time.Now().Before(stop) {
-				doRequest(client, m, true)
+				doRequest(client, m, rng, true)
 			}
-		}()
+		}(rand.New(rand.NewPCG(randSeed, uint64(i+1))))
 	}
 
 	// 采样 goroutine：打印即时进度 + /healthz 内存
@@ -175,9 +183,10 @@ func main() {
 }
 
 // pickKey 每请求选 key：多 key 池随机（-keys 文件）→ 单 key（-key）兜底。
-func pickKey() string {
+// rng 为 worker 局部随机源（全局 rand 带锁，见 main 内注释）。
+func pickKey(rng *rand.Rand) string {
 	if len(keyPool) > 0 {
-		return keyPool[rand.IntN(len(keyPool))]
+		return keyPool[rng.IntN(len(keyPool))]
 	}
 	return *key
 }
@@ -217,10 +226,40 @@ func newLoadtestRequest(base, groupKey, requestMode string) *http.Request {
 	return req
 }
 
+// 请求模板：format×mode 在进程内固定，URL/body/固定头只构建一次；每请求
+// Clone + 换 key，避免 http.NewRequest 的 URL 解析 + body 字符串复制 +
+// 头表构建（4 万+ req/s 下是 GC 的主要来源之一，见上机 profile）。
+var (
+	reqTmpl  *http.Request
+	tmplBody []byte
+)
+
+// buildReqTemplate 按当前 flags 预构建请求模板（main 启动时调用一次）。
+func buildReqTemplate() {
+	reqTmpl = newLoadtestRequest(*addr, *key, *mode)
+	tmplBody, _ = io.ReadAll(reqTmpl.Body)
+	reqTmpl.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(tmplBody)), nil
+	}
+}
+
+// newRequestFromTemplate 克隆模板并按 key 设置认证头（其余静态）。
+func newRequestFromTemplate(groupKey string) *http.Request {
+	req := reqTmpl.Clone(context.Background())
+	if *format == "anthropic" {
+		req.Header.Set("x-api-key", groupKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+groupKey)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(tmplBody))
+	req.ContentLength = int64(len(tmplBody))
+	return req
+}
+
 // doRequest executes one request; count=true includes it in the result metrics.
 // Connection failures retain the jittered backoff used by the stream benchmark.
-func doRequest(client *http.Client, m *metrics, count bool) {
-	req := newLoadtestRequest(*addr, pickKey(), *mode)
+func doRequest(client *http.Client, m *metrics, rng *rand.Rand, count bool) {
+	req := newRequestFromTemplate(pickKey(rng))
 	reqStart := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
@@ -232,7 +271,7 @@ func doRequest(client *http.Client, m *metrics, count bool) {
 		// 连接级失败退避（100-300ms 抖动）：Windows 监听 backlog（SOMAXCONN≈200）
 		// 下突发拨号会被 RST，无退避的立即重试会形成自持拒绝风暴
 		// （Task 9 实测：500 并发无退避 99.4% refused，150 并发无失败）。
-		time.Sleep(time.Duration(100+rand.IntN(200)) * time.Millisecond)
+		time.Sleep(time.Duration(100+rng.IntN(200)) * time.Millisecond)
 		return
 	}
 	if resp.StatusCode != 200 {
@@ -268,60 +307,109 @@ func doRequest(client *http.Client, m *metrics, count bool) {
 		m.firstByteMS.Add(firstByte)
 		storeSample(m, firstByte)
 	}
-	br := bufio.NewReader(resp.Body)
-	for {
-		line, err := br.ReadString('\n')
-		if strings.Contains(line, "[DONE]") || err != nil {
-			break
-		}
-	}
+	br := sseReaderPool.Get().(*bufio.Reader)
+	br.Reset(resp.Body)
+	drainSSE(br)
+	// [DONE] 后把响应体尾部读到 EOF（chunked/Content-Length 的 EOF 由帧结构
+	// 决定，µs 级到达）：让传输层判定 body 完整、keep-alive 连接回池复用——
+	// 原实现每请求关连接重拨（profile 里 dialConn 占 11% CPU）。服务端不
+	// 结束流时 drainTail 50ms 超时放弃，不挂死。
+	drainTail(resp.Body)
+	br.Reset(nil)
+	sseReaderPool.Put(br)
 	resp.Body.Close()
 	if count {
 		m.total.Add(1)
 	}
 }
 
+// sseReaderPool 复用每请求的 bufio.Reader（4KB 缓冲，4 万+ req/s 下零化/
+// 分配量可观）；回池前 Reset(nil) 丢弃跨连接残留缓冲数据。
+var sseReaderPool = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
+
+// errDrainTimeout [DONE] 后服务端未在 50ms 内结束响应体：放弃该连接复用。
+var errDrainTimeout = errors.New("drainTail: body not ended within 50ms")
+
+// drainTail [DONE] 后把响应体剩余字节读到 EOF，使传输层判定 body 完整 →
+// 连接回池复用；服务端不主动结束流时 50ms 超时 Close 放弃（Close 会解除
+// 阻塞中的 Read，不留泄漏 goroutine）。返回 nil 表示读到 EOF（连接可复用）。
+func drainTail(body io.ReadCloser) error {
+	drained := make(chan error, 1)
+	go func() { _, err := io.Copy(io.Discard, body); drained <- err }()
+	select {
+	case err := <-drained:
+		return err
+	case <-time.After(50 * time.Millisecond):
+		body.Close()
+		return errDrainTimeout
+	}
+}
+
+// sseDone 每行检查复用同一 []byte，避免逐行转换分配。
+var sseDone = []byte("[DONE]")
+
+// drainSSE 读完整条流直到 [DONE] 行（返回 nil）或流结束（返回读取错误）。
+// 原 ReadString 每行分配一个 string，30k 并发下堆压力大；ReadSlice 复用
+// bufio 内部缓冲零分配，长行（ErrBufferFull）分段累积到局部 buf，行尾
+// 一次性检查。注意 ReadSlice 返回的 slice 在下次读取后即失效，须立即消费。
+func drainSSE(br *bufio.Reader) error {
+	var buf []byte
+	for {
+		line, err := br.ReadSlice('\n')
+		if err == bufio.ErrBufferFull { // 长行：累积分段，等后续续行
+			buf = append(buf, line...)
+			continue
+		}
+		if len(buf) > 0 {
+			line = append(buf, line...) // 行完整：拼接分段后立即检查
+			buf = buf[:0]
+		}
+		if bytes.Contains(line, sseDone) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func storeSample(m *metrics, v int64) {
-	m.mu.Lock()
-	m.samples[v/10]++
-	m.mu.Unlock()
+	idx := v / 10
+	if idx >= sampleBuckets {
+		idx = sampleBuckets - 1
+	}
+	m.samples[idx].Add(1)
 }
 
 func storeLatencySample(m *metrics, v int64) {
-	m.mu.Lock()
-	m.latencySamples[v/10]++
-	m.mu.Unlock()
+	idx := v / 10
+	if idx >= sampleBuckets {
+		idx = sampleBuckets - 1
+	}
+	m.latencySamples[idx].Add(1)
 }
 
-func p99(m *metrics) int64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return p99Buckets(m.samples)
-}
+func p99(m *metrics) int64 { return p99Buckets(&m.samples) }
 
-func p99Latency(m *metrics) int64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return p99Buckets(m.latencySamples)
-}
+func p99Latency(m *metrics) int64 { return p99Buckets(&m.latencySamples) }
 
-func p99Buckets(samples map[int64]int64) int64 {
+// p99Buckets 遍历固定桶数组求 99% 分位（无锁），语义与旧 mutex map 版
+// 一致：从低到高累积计数，首个累积 ≥ total*99/100 的桶返回上界（b*10 ms）。
+func p99Buckets(samples *[sampleBuckets]atomic.Int64) int64 {
 	var total int64
-	for _, c := range samples {
-		total += c
+	for i := range samples {
+		total += samples[i].Load()
 	}
 	if total == 0 {
 		return -1
 	}
 	target := total * 99 / 100
 	var acc int64
-	for b := int64(0); ; b++ {
-		acc += samples[b]
+	for i := range samples {
+		acc += samples[i].Load()
 		if acc >= target {
-			return b * 10
-		}
-		if b > 1_000_000 {
-			return -1
+			return int64(i) * 10
 		}
 	}
+	return -1 // 不可达：桶总和 = total > target，必有桶越过阈值
 }
