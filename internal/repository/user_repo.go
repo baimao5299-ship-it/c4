@@ -2,6 +2,10 @@ package repository
 
 import (
 	"context"
+	"fmt"
+
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/sql"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
@@ -9,7 +13,58 @@ import (
 )
 
 // UserRepo 用户（顶层实体）持久化。
-type UserRepo struct{ client *ent.Client }
+type UserRepo struct {
+	client *ent.Client
+	// driver 为 raw SQL（原子资源方法）用：普通 client 与 tx client（WithTx 内）
+	// 均可用——评审 I-1。ent v0.14 生成代码无 ExecContext/QueryContext，
+	// raw SQL 经 dialect.Driver 统一执行。
+	driver dialect.Driver
+}
+
+// UpdateUserBalance 原子增减余额（评审 I-1）：SET balance = balance + delta——
+// 服务端原子，不读改写（并发增量不丢）；普通 client 与 tx client 均可用。
+// 用户不存在 → ErrNotFound（0 行受影响 = 用户已删除，兑换编排整体回滚）。
+func (r *UserRepo) UpdateUserBalance(ctx context.Context, userID, delta int64) error {
+	u := sql.Update(user.Table).
+		Set(user.FieldBalance, sql.ExprFunc(func(b *sql.Builder) {
+			b.Ident(user.FieldBalance).WriteString(" + ").Arg(delta)
+		})).
+		Where(sql.EQ(user.FieldID, userID))
+	n, err := execUpdate(ctx, r.driver, u)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, userID)
+	}
+	return nil
+}
+
+// UpdateUserMaxConcurrency 原子更新并发上限（评审 I-1）：0 = 不限语义特判入 SQL
+// 单语句（CASE WHEN max_concurrency = 0 THEN value ELSE max_concurrency + value
+// END）——当前不限直接设为 value，非 0 累加，无读改写竞态。
+// 用户不存在 → ErrNotFound。
+func (r *UserRepo) UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error {
+	u := sql.Update(user.Table).
+		Set(user.FieldMaxConcurrency, sql.ExprFunc(func(b *sql.Builder) {
+			b.WriteString("CASE WHEN ").
+				Ident(user.FieldMaxConcurrency).WriteString(" = 0 THEN ")
+			b.Arg(value)
+			b.WriteString(" ELSE ").
+				Ident(user.FieldMaxConcurrency).WriteString(" + ")
+			b.Arg(value)
+			b.WriteString(" END")
+		})).
+		Where(sql.EQ(user.FieldID, userID))
+	n, err := execUpdate(ctx, r.driver, u)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, userID)
+	}
+	return nil
+}
 
 func (r *UserRepo) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
 	row, err := r.client.User.Create().

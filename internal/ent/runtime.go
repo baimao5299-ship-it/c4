@@ -7,6 +7,8 @@ import (
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/redemptioncode"
+	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/schema"
 	"go-proxy-mini/internal/ent/setting"
@@ -84,6 +86,36 @@ func init() {
 	key.DefaultUpdatedAt = keyDescUpdatedAt.Default.(func() time.Time)
 	// key.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	key.UpdateDefaultUpdatedAt = keyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	redemptioncodeFields := schema.RedemptionCode{}.Fields()
+	_ = redemptioncodeFields
+	// redemptioncodeDescMaxUses is the schema descriptor for max_uses field.
+	redemptioncodeDescMaxUses := redemptioncodeFields[7].Descriptor()
+	// redemptioncode.DefaultMaxUses holds the default value on creation for the max_uses field.
+	redemptioncode.DefaultMaxUses = redemptioncodeDescMaxUses.Default.(int)
+	// redemptioncodeDescUsedCount is the schema descriptor for used_count field.
+	redemptioncodeDescUsedCount := redemptioncodeFields[8].Descriptor()
+	// redemptioncode.DefaultUsedCount holds the default value on creation for the used_count field.
+	redemptioncode.DefaultUsedCount = redemptioncodeDescUsedCount.Default.(int)
+	// redemptioncodeDescCreatedBy is the schema descriptor for created_by field.
+	redemptioncodeDescCreatedBy := redemptioncodeFields[10].Descriptor()
+	// redemptioncode.DefaultCreatedBy holds the default value on creation for the created_by field.
+	redemptioncode.DefaultCreatedBy = redemptioncodeDescCreatedBy.Default.(int64)
+	// redemptioncodeDescCreatedAt is the schema descriptor for created_at field.
+	redemptioncodeDescCreatedAt := redemptioncodeFields[11].Descriptor()
+	// redemptioncode.DefaultCreatedAt holds the default value on creation for the created_at field.
+	redemptioncode.DefaultCreatedAt = redemptioncodeDescCreatedAt.Default.(func() time.Time)
+	// redemptioncodeDescUpdatedAt is the schema descriptor for updated_at field.
+	redemptioncodeDescUpdatedAt := redemptioncodeFields[12].Descriptor()
+	// redemptioncode.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	redemptioncode.DefaultUpdatedAt = redemptioncodeDescUpdatedAt.Default.(func() time.Time)
+	// redemptioncode.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	redemptioncode.UpdateDefaultUpdatedAt = redemptioncodeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	redemptionuseFields := schema.RedemptionUse{}.Fields()
+	_ = redemptionuseFields
+	// redemptionuseDescCreatedAt is the schema descriptor for created_at field.
+	redemptionuseDescCreatedAt := redemptionuseFields[5].Descriptor()
+	// redemptionuse.DefaultCreatedAt holds the default value on creation for the created_at field.
+	redemptionuse.DefaultCreatedAt = redemptionuseDescCreatedAt.Default.(func() time.Time)
 	ruleFields := schema.Rule{}.Fields()
 	_ = ruleFields
 	// ruleDescEnabled is the schema descriptor for enabled field.

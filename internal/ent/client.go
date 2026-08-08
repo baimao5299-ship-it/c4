@@ -15,6 +15,8 @@ import (
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/redemptioncode"
+	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/setting"
 	"go-proxy-mini/internal/ent/tempbalance"
@@ -42,6 +44,10 @@ type Client struct {
 	GroupAssignment *GroupAssignmentClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
+	// RedemptionCode is the client for interacting with the RedemptionCode builders.
+	RedemptionCode *RedemptionCodeClient
+	// RedemptionUse is the client for interacting with the RedemptionUse builders.
+	RedemptionUse *RedemptionUseClient
 	// Rule is the client for interacting with the Rule builders.
 	Rule *RuleClient
 	// Setting is the client for interacting with the Setting builders.
@@ -71,6 +77,8 @@ func (c *Client) init() {
 	c.Group = NewGroupClient(c.config)
 	c.GroupAssignment = NewGroupAssignmentClient(c.config)
 	c.Key = NewKeyClient(c.config)
+	c.RedemptionCode = NewRedemptionCodeClient(c.config)
+	c.RedemptionUse = NewRedemptionUseClient(c.config)
 	c.Rule = NewRuleClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.TempBalance = NewTempBalanceClient(c.config)
@@ -174,6 +182,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
+		RedemptionCode:  NewRedemptionCodeClient(cfg),
+		RedemptionUse:   NewRedemptionUseClient(cfg),
 		Rule:            NewRuleClient(cfg),
 		Setting:         NewSettingClient(cfg),
 		TempBalance:     NewTempBalanceClient(cfg),
@@ -204,6 +214,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
+		RedemptionCode:  NewRedemptionCodeClient(cfg),
+		RedemptionUse:   NewRedemptionUseClient(cfg),
 		Rule:            NewRuleClient(cfg),
 		Setting:         NewSettingClient(cfg),
 		TempBalance:     NewTempBalanceClient(cfg),
@@ -240,8 +252,8 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Account, c.Group, c.GroupAssignment, c.Key, c.Rule, c.Setting, c.TempBalance,
-		c.Template, c.UsageLog, c.UsageStat, c.User,
+		c.Account, c.Group, c.GroupAssignment, c.Key, c.RedemptionCode, c.RedemptionUse,
+		c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -251,8 +263,8 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Account, c.Group, c.GroupAssignment, c.Key, c.Rule, c.Setting, c.TempBalance,
-		c.Template, c.UsageLog, c.UsageStat, c.User,
+		c.Account, c.Group, c.GroupAssignment, c.Key, c.RedemptionCode, c.RedemptionUse,
+		c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -269,6 +281,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.GroupAssignment.mutate(ctx, m)
 	case *KeyMutation:
 		return c.Key.mutate(ctx, m)
+	case *RedemptionCodeMutation:
+		return c.RedemptionCode.mutate(ctx, m)
+	case *RedemptionUseMutation:
+		return c.RedemptionUse.mutate(ctx, m)
 	case *RuleMutation:
 		return c.Rule.mutate(ctx, m)
 	case *SettingMutation:
@@ -961,6 +977,304 @@ func (c *KeyClient) mutate(ctx context.Context, m *KeyMutation) (Value, error) {
 		return (&KeyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Key mutation op: %q", m.Op())
+	}
+}
+
+// RedemptionCodeClient is a client for the RedemptionCode schema.
+type RedemptionCodeClient struct {
+	config
+}
+
+// NewRedemptionCodeClient returns a client for the RedemptionCode from the given config.
+func NewRedemptionCodeClient(c config) *RedemptionCodeClient {
+	return &RedemptionCodeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `redemptioncode.Hooks(f(g(h())))`.
+func (c *RedemptionCodeClient) Use(hooks ...Hook) {
+	c.hooks.RedemptionCode = append(c.hooks.RedemptionCode, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `redemptioncode.Intercept(f(g(h())))`.
+func (c *RedemptionCodeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RedemptionCode = append(c.inters.RedemptionCode, interceptors...)
+}
+
+// Create returns a builder for creating a RedemptionCode entity.
+func (c *RedemptionCodeClient) Create() *RedemptionCodeCreate {
+	mutation := newRedemptionCodeMutation(c.config, OpCreate)
+	return &RedemptionCodeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RedemptionCode entities.
+func (c *RedemptionCodeClient) CreateBulk(builders ...*RedemptionCodeCreate) *RedemptionCodeCreateBulk {
+	return &RedemptionCodeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RedemptionCodeClient) MapCreateBulk(slice any, setFunc func(*RedemptionCodeCreate, int)) *RedemptionCodeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RedemptionCodeCreateBulk{err: fmt.Errorf("calling to RedemptionCodeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RedemptionCodeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RedemptionCodeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RedemptionCode.
+func (c *RedemptionCodeClient) Update() *RedemptionCodeUpdate {
+	mutation := newRedemptionCodeMutation(c.config, OpUpdate)
+	return &RedemptionCodeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RedemptionCodeClient) UpdateOne(_m *RedemptionCode) *RedemptionCodeUpdateOne {
+	mutation := newRedemptionCodeMutation(c.config, OpUpdateOne, withRedemptionCode(_m))
+	return &RedemptionCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RedemptionCodeClient) UpdateOneID(id int64) *RedemptionCodeUpdateOne {
+	mutation := newRedemptionCodeMutation(c.config, OpUpdateOne, withRedemptionCodeID(id))
+	return &RedemptionCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RedemptionCode.
+func (c *RedemptionCodeClient) Delete() *RedemptionCodeDelete {
+	mutation := newRedemptionCodeMutation(c.config, OpDelete)
+	return &RedemptionCodeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RedemptionCodeClient) DeleteOne(_m *RedemptionCode) *RedemptionCodeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RedemptionCodeClient) DeleteOneID(id int64) *RedemptionCodeDeleteOne {
+	builder := c.Delete().Where(redemptioncode.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RedemptionCodeDeleteOne{builder}
+}
+
+// Query returns a query builder for RedemptionCode.
+func (c *RedemptionCodeClient) Query() *RedemptionCodeQuery {
+	return &RedemptionCodeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRedemptionCode},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RedemptionCode entity by its id.
+func (c *RedemptionCodeClient) Get(ctx context.Context, id int64) (*RedemptionCode, error) {
+	return c.Query().Where(redemptioncode.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RedemptionCodeClient) GetX(ctx context.Context, id int64) *RedemptionCode {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUses queries the uses edge of a RedemptionCode.
+func (c *RedemptionCodeClient) QueryUses(_m *RedemptionCode) *RedemptionUseQuery {
+	query := (&RedemptionUseClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(redemptioncode.Table, redemptioncode.FieldID, id),
+			sqlgraph.To(redemptionuse.Table, redemptionuse.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, redemptioncode.UsesTable, redemptioncode.UsesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RedemptionCodeClient) Hooks() []Hook {
+	return c.hooks.RedemptionCode
+}
+
+// Interceptors returns the client interceptors.
+func (c *RedemptionCodeClient) Interceptors() []Interceptor {
+	return c.inters.RedemptionCode
+}
+
+func (c *RedemptionCodeClient) mutate(ctx context.Context, m *RedemptionCodeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RedemptionCodeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RedemptionCodeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RedemptionCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RedemptionCodeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RedemptionCode mutation op: %q", m.Op())
+	}
+}
+
+// RedemptionUseClient is a client for the RedemptionUse schema.
+type RedemptionUseClient struct {
+	config
+}
+
+// NewRedemptionUseClient returns a client for the RedemptionUse from the given config.
+func NewRedemptionUseClient(c config) *RedemptionUseClient {
+	return &RedemptionUseClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `redemptionuse.Hooks(f(g(h())))`.
+func (c *RedemptionUseClient) Use(hooks ...Hook) {
+	c.hooks.RedemptionUse = append(c.hooks.RedemptionUse, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `redemptionuse.Intercept(f(g(h())))`.
+func (c *RedemptionUseClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RedemptionUse = append(c.inters.RedemptionUse, interceptors...)
+}
+
+// Create returns a builder for creating a RedemptionUse entity.
+func (c *RedemptionUseClient) Create() *RedemptionUseCreate {
+	mutation := newRedemptionUseMutation(c.config, OpCreate)
+	return &RedemptionUseCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RedemptionUse entities.
+func (c *RedemptionUseClient) CreateBulk(builders ...*RedemptionUseCreate) *RedemptionUseCreateBulk {
+	return &RedemptionUseCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RedemptionUseClient) MapCreateBulk(slice any, setFunc func(*RedemptionUseCreate, int)) *RedemptionUseCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RedemptionUseCreateBulk{err: fmt.Errorf("calling to RedemptionUseClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RedemptionUseCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RedemptionUseCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RedemptionUse.
+func (c *RedemptionUseClient) Update() *RedemptionUseUpdate {
+	mutation := newRedemptionUseMutation(c.config, OpUpdate)
+	return &RedemptionUseUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RedemptionUseClient) UpdateOne(_m *RedemptionUse) *RedemptionUseUpdateOne {
+	mutation := newRedemptionUseMutation(c.config, OpUpdateOne, withRedemptionUse(_m))
+	return &RedemptionUseUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RedemptionUseClient) UpdateOneID(id int64) *RedemptionUseUpdateOne {
+	mutation := newRedemptionUseMutation(c.config, OpUpdateOne, withRedemptionUseID(id))
+	return &RedemptionUseUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RedemptionUse.
+func (c *RedemptionUseClient) Delete() *RedemptionUseDelete {
+	mutation := newRedemptionUseMutation(c.config, OpDelete)
+	return &RedemptionUseDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RedemptionUseClient) DeleteOne(_m *RedemptionUse) *RedemptionUseDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RedemptionUseClient) DeleteOneID(id int64) *RedemptionUseDeleteOne {
+	builder := c.Delete().Where(redemptionuse.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RedemptionUseDeleteOne{builder}
+}
+
+// Query returns a query builder for RedemptionUse.
+func (c *RedemptionUseClient) Query() *RedemptionUseQuery {
+	return &RedemptionUseQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRedemptionUse},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RedemptionUse entity by its id.
+func (c *RedemptionUseClient) Get(ctx context.Context, id int64) (*RedemptionUse, error) {
+	return c.Query().Where(redemptionuse.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RedemptionUseClient) GetX(ctx context.Context, id int64) *RedemptionUse {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCode queries the code edge of a RedemptionUse.
+func (c *RedemptionUseClient) QueryCode(_m *RedemptionUse) *RedemptionCodeQuery {
+	query := (&RedemptionCodeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(redemptionuse.Table, redemptionuse.FieldID, id),
+			sqlgraph.To(redemptioncode.Table, redemptioncode.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, redemptionuse.CodeTable, redemptionuse.CodeColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RedemptionUseClient) Hooks() []Hook {
+	return c.hooks.RedemptionUse
+}
+
+// Interceptors returns the client interceptors.
+func (c *RedemptionUseClient) Interceptors() []Interceptor {
+	return c.inters.RedemptionUse
+}
+
+func (c *RedemptionUseClient) mutate(ctx context.Context, m *RedemptionUseMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RedemptionUseCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RedemptionUseUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RedemptionUseUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RedemptionUseDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RedemptionUse mutation op: %q", m.Op())
 	}
 }
 
@@ -1978,11 +2292,11 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, Group, GroupAssignment, Key, Rule, Setting, TempBalance, Template,
-		UsageLog, UsageStat, User []ent.Hook
+		Account, Group, GroupAssignment, Key, RedemptionCode, RedemptionUse, Rule,
+		Setting, TempBalance, Template, UsageLog, UsageStat, User []ent.Hook
 	}
 	inters struct {
-		Account, Group, GroupAssignment, Key, Rule, Setting, TempBalance, Template,
-		UsageLog, UsageStat, User []ent.Interceptor
+		Account, Group, GroupAssignment, Key, RedemptionCode, RedemptionUse, Rule,
+		Setting, TempBalance, Template, UsageLog, UsageStat, User []ent.Interceptor
 	}
 )
