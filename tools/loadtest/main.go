@@ -1,6 +1,12 @@
 // loadtest 对网关打压测：固定并发 goroutine 持续请求，支持流式首字节和非流式完整响应延迟。
 // 用法: go run ./tools/loadtest -mode stream -addr http://127.0.0.1:8080 -key gk-xxx -concurrency 10000 -duration 5m -healthz http://127.0.0.1:8080/healthz
 //
+//	go run ./tools/loadtest -mode fill -fill-type users -admin-token <GPM_ADMIN_TOKEN> -concurrency 2000 -duration 5m
+//
+// 混合压测（模型请求 + 填充 API 并发）：开两个 loadtest 进程同时跑——一个
+// -mode stream -keys keys.txt、一个 -mode fill，各自 -out 落盘。同机交错跑 +
+// 每请求 CPU 对比（压测机 loadavg 50+，单进程内混流会让 fill 请求被流式
+// 长连接饿死，双进程是简单可靠的分流）。
 // 相对 brief 原代码的修正（均标注在行内）：
 //   - os import 用 -out 兜底：把 RESULT 摘要同时写入文件（验收记录留档）。
 //   - 采样 goroutine 的 elapsed 直接取真实经过时间（brief 里 time.Since 套
@@ -17,6 +23,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -42,7 +49,15 @@ var (
 	healthz     = flag.String("healthz", "", "gateway /healthz url to sample memory")
 	out         = flag.String("out", "", "write RESULT summary to this file as well")
 	pprof       = flag.String("pprof", "", "listen addr for /debug/pprof (goroutine dump on hang)")
-	mode        = flag.String("mode", "stream", "request mode: stream or chat")
+	mode        = flag.String("mode", "stream", "request mode: stream, chat or fill")
+	// fill 模式（管理面填充 API 压测）：并发创建用户/key/账号/组/模板/定价。
+	adminToken   = flag.String("admin-token", "", "GPM_ADMIN_TOKEN (fill mode admin APIs; keys fill 走用户面不需要)")
+	fillType     = flag.String("fill-type", "users", "fill mode entity: users, keys, accounts, groups, templates, pricing or mixed")
+	fillUser     = flag.String("fill-user", "user0@loadtest.test:loadtest-pass-1", "keys fill: 登录账号 email:password（-fill-user-file 为空时兜底）")
+	fillUserFile = flag.String("fill-user-file", "", "keys fill: 每行 email:password 的账号文件，随机挑（分散登录压力，对齐 setup 用户命名）")
+	fillTplID    = flag.Int64("fill-template-id", 1, "accounts fill: 模板 ID（setup 创建的第 1 个模板，压测前确认存在）")
+	fillGroupID  = flag.Int64("fill-group-id", 1, "keys/accounts fill: 组 ID（setup 创建的第 1 个组）")
+	fillUpstream = flag.String("fill-upstream", "http://127.0.0.1:9100", "templates fill: base_url（裸根约定）")
 )
 
 // keyPool 多 key 模式：每请求随机取一个（-keys 文件行）；空 = 用 -key 单 key。
@@ -72,9 +87,12 @@ func (m *metrics) addErr(detail string) {
 
 func main() {
 	flag.Parse()
-	if *mode != "stream" && *mode != "chat" {
-		fmt.Fprintf(os.Stderr, "invalid -mode %q: want stream or chat\n", *mode)
+	if *mode != "stream" && *mode != "chat" && *mode != "fill" {
+		fmt.Fprintf(os.Stderr, "invalid -mode %q: want stream, chat or fill\n", *mode)
 		os.Exit(2)
+	}
+	if *mode == "fill" {
+		validateFillFlags()
 	}
 	if *format != "chat" && *format != "responses" && *format != "anthropic" {
 		fmt.Fprintf(os.Stderr, "invalid -format %q: want chat, responses or anthropic\n", *format)
@@ -101,7 +119,9 @@ func main() {
 		go func() { _ = http.ListenAndServe(*pprof, nil) }() // net/http/pprof 自动挂载
 	}
 	m := &metrics{errDetail: make(map[string]int64)}
-	buildReqTemplate()
+	if *mode != "fill" {
+		buildReqTemplate()
+	}
 	warmEnd := time.Now().Add(*warmup)
 	start := warmEnd
 	stop := start.Add(*duration)
@@ -128,10 +148,18 @@ func main() {
 			// 预热：先跑不计数的流，把突发拨号造成的 RST 吸收在计时窗口外，
 			// 同时让 keep-alive 连接池就位（Windows backlog≈200，见错误退避注释）。
 			for time.Now().Before(warmEnd) {
-				doRequest(client, m, rng, false)
+				if *mode == "fill" {
+					doFillRequest(client, m, rng, false)
+				} else {
+					doRequest(client, m, rng, false)
+				}
 			}
 			for time.Now().Before(stop) {
-				doRequest(client, m, rng, true)
+				if *mode == "fill" {
+					doFillRequest(client, m, rng, true)
+				} else {
+					doRequest(client, m, rng, true)
+				}
 			}
 		}(rand.New(rand.NewPCG(randSeed, uint64(i+1))))
 	}
@@ -158,8 +186,12 @@ func main() {
 	}()
 
 	wg.Wait()
-	result := fmt.Sprintf("\n=== RESULT ===\nmode=%s\ntotal=%d errs=%d\n", *mode, m.total.Load(), m.errs.Load())
-	if *mode == "chat" {
+	result := fmt.Sprintf("\n=== RESULT ===\nmode=%s\n", *mode)
+	if *mode == "fill" {
+		result += fmt.Sprintf("fill_type=%s\n", *fillType)
+	}
+	result += fmt.Sprintf("total=%d errs=%d\n", m.total.Load(), m.errs.Load())
+	if *mode == "chat" || *mode == "fill" {
 		result += fmt.Sprintf("avg_latency_ms=%.1f\n", float64(m.latencyMS.Load())/float64(max(1, m.total.Load()-m.errs.Load())))
 		result += fmt.Sprintf("p99_latency_ms=%d\n", p99Latency(m))
 	} else {
@@ -326,6 +358,195 @@ func doRequest(client *http.Client, m *metrics, rng *rand.Rand, count bool) {
 // sseReaderPool 复用每请求的 bufio.Reader（4KB 缓冲，4 万+ req/s 下零化/
 // 分配量可观）；回池前 Reset(nil) 丢弃跨连接残留缓冲数据。
 var sseReaderPool = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
+
+// ---- fill 模式：管理面填充 API 压测 ----
+
+// fillSeq 全局请求序号（实体名/邮箱后缀，同进程内必唯一）。
+var fillSeq atomic.Int64
+
+// fillProc 进程号：与 fillSeq 组合成全局唯一名——单进程无重复键；多进程
+// 并跑同服务时撞键 → 服务端 409/400 计入错误明细（预期，不特殊重试）。
+var fillProc = int64(os.Getpid())
+
+// fillMix mixed 填充类型的循环轮转序。
+var fillMix = []string{"users", "keys", "accounts", "groups", "templates", "pricing"}
+
+// fillFormats templates 填充轮流格式。
+var fillFormats = []string{"openai-chat", "openai-responses", "anthropic"}
+
+// fillModels 模板/定价填充的模型名池（fakeup 回显不做真实性校验）。
+var fillModels = []string{
+	"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-5", "o3-mini",
+	"claude-3-5-sonnet-20241022", "claude-opus-4-6", "gemini-2.5-pro",
+	"llama-3.3-70b-instruct", "deepseek-chat", "qwen-max", "mistral-large-latest",
+}
+
+// fillUserPool keys 填充的登录账号池（-fill-user-file 每行 email:password）；
+// 空 = 单账号 -fill-user 兜底（对齐 setup 用户命名约定）。
+var fillUserPool []string
+
+// validateFillFlags fill 模式启动校验：fill-type 枚举 + admin token 依赖 +
+// 登录账号文件加载。
+func validateFillFlags() {
+	switch *fillType {
+	case "users", "accounts", "groups", "templates", "pricing", "mixed":
+		if *adminToken == "" {
+			fmt.Fprintf(os.Stderr, "-mode fill with -fill-type %s requires -admin-token (GPM_ADMIN_TOKEN)\n", *fillType)
+			os.Exit(2)
+		}
+	case "keys":
+		// keys 填充走用户面（登录 + /user/keys），不需要 admin token
+	default:
+		fmt.Fprintf(os.Stderr, "invalid -fill-type %q: want users, keys, accounts, groups, templates, pricing or mixed\n", *fillType)
+		os.Exit(2)
+	}
+	if *fillUserFile != "" {
+		b, err := os.ReadFile(*fillUserFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read -fill-user-file %s: %v\n", *fillUserFile, err)
+			os.Exit(2)
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				fillUserPool = append(fillUserPool, line)
+			}
+		}
+		if len(fillUserPool) == 0 {
+			fmt.Fprintf(os.Stderr, "-fill-user-file %s: no entries found\n", *fillUserFile)
+			os.Exit(2)
+		}
+		fmt.Printf("loaded %d fill users from %s\n", len(fillUserPool), *fillUserFile)
+	}
+}
+
+// fillTypeFor mixed 模式按全局请求序号循环轮流（每请求一种填充类型）。
+func fillTypeFor(seq int64) string {
+	return fillMix[int(seq-1)%len(fillMix)]
+}
+
+// pickFillUser 随机挑登录账号：池内（-fill-user-file）→ 单账号（-fill-user）兜底。
+func pickFillUser(rng *rand.Rand) (email, password string) {
+	entry := *fillUser
+	if len(fillUserPool) > 0 {
+		entry = fillUserPool[rng.IntN(len(fillUserPool))]
+	}
+	email, password, _ = strings.Cut(entry, ":")
+	return
+}
+
+// newFillRequest 构造一次填充请求：实体名带 进程号+全局序号（不重复创建）；
+// keys 类型先登录取 JWT（登录失败返回 preErr 非空，调用方计为错误）。
+func newFillRequest(client *http.Client, rng *rand.Rand) (req *http.Request, preErr string) {
+	seq := fillSeq.Add(1)
+	tag := fmt.Sprintf("fill-%d-%d", fillProc, seq)
+	mk := func(method, path string, body any) *http.Request {
+		b, _ := json.Marshal(body)
+		req, _ := http.NewRequest(method, *addr+path, bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+*adminToken)
+		req.Header.Set("Content-Type", "application/json")
+		return req
+	}
+	typ := *fillType
+	if typ == "mixed" {
+		typ = fillTypeFor(seq)
+	}
+	switch typ {
+	case "users":
+		// 含余额/并发：计费预检需要用户有钱（余额快照）+ 用户级在途门禁
+		return mk(http.MethodPost, "/admin/users", map[string]any{
+			"email": tag + "@loadtest.test", "password": "fill-pass-1",
+			"balance": 100.0, "max_concurrency": 8,
+		}), ""
+	case "keys":
+		// 登录（bcrypt 校验，管理面最重路径之一）+ 建 key，同一事务计延迟
+		email, password := pickFillUser(rng)
+		loginBody, _ := json.Marshal(map[string]any{"email": email, "password": password})
+		req, _ := http.NewRequest(http.MethodPost, *addr+"/user/auth/login", bytes.NewReader(loginBody))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, "login:do:" + err.Error()
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return nil, fmt.Sprintf("login:status:%d", resp.StatusCode)
+		}
+		var lr struct {
+			Token string `json:"token"`
+		}
+		_ = json.Unmarshal(b, &lr)
+		req = mk(http.MethodPost, "/user/keys", map[string]any{
+			"name": "fill-key-" + tag, "group_id": *fillGroupID,
+		})
+		req.Header.Set("Authorization", "Bearer "+lr.Token)
+		return req, ""
+	case "accounts":
+		return mk(http.MethodPost, "/admin/accounts", map[string]any{
+			"name": tag, "template_id": *fillTplID, "upstream_key": "sk-fill",
+			"group_ids": []int64{*fillGroupID}, "weight": 100, "max_concurrency": 100000,
+		}), ""
+	case "groups":
+		return mk(http.MethodPost, "/admin/groups", map[string]any{
+			"name": "grp-" + tag, "visibility": "public",
+		}), ""
+	case "templates":
+		return mk(http.MethodPost, "/admin/templates", map[string]any{
+			"name": "tpl-" + tag, "base_url": *fillUpstream,
+			"supported_formats": []string{fillFormats[int(seq-1)%len(fillFormats)]},
+			"models":            []string{fillModels[rng.IntN(len(fillModels))]},
+		}), ""
+	case "pricing":
+		// PUT 幂等 upsert：同模型重复设价 = 覆盖更新，不撞唯一键
+		return mk(http.MethodPut, "/admin/pricing/"+fillModels[rng.IntN(len(fillModels))], map[string]any{
+			"prompt_price_per_million":     250000 + rng.Int64N(250000),
+			"completion_price_per_million": 1000000 + rng.Int64N(1000000),
+		}), ""
+	}
+	return nil, "fill:unknown-type:" + typ // 不可达（validateFillFlags 已校验）
+}
+
+// doFillRequest 执行一次填充事务（count=true 计入结果统计）：成功（200）计
+// 完整响应延迟（入 latency 直方图，同 chat 模式语义）；非 200 计错误明细
+// （撞键 409/400 属预期）；连接级失败沿用请求模式的抖动退避防 RST 风暴。
+func doFillRequest(client *http.Client, m *metrics, rng *rand.Rand, count bool) {
+	reqStart := time.Now()
+	req, preErr := newFillRequest(client, rng)
+	if preErr != "" {
+		if count {
+			m.errs.Add(1)
+			m.total.Add(1)
+			m.addErr(preErr)
+		}
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		if count {
+			m.errs.Add(1)
+			m.total.Add(1)
+			m.addErr("do:" + err.Error())
+		}
+		time.Sleep(time.Duration(100+rng.IntN(200)) * time.Millisecond)
+		return
+	}
+	_, _ = io.Copy(io.Discard, resp.Body) // 响应体排空，连接回池复用
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		if count {
+			m.errs.Add(1)
+			m.total.Add(1)
+			m.addErr(fmt.Sprintf("status:%d", resp.StatusCode))
+		}
+		return
+	}
+	if count {
+		latency := time.Since(reqStart).Milliseconds()
+		m.latencyMS.Add(latency)
+		storeLatencySample(m, latency)
+		m.total.Add(1)
+	}
+}
 
 // errDrainTimeout [DONE] 后服务端未在 50ms 内结束响应体：放弃该连接复用。
 var errDrainTimeout = errors.New("drainTail: body not ended within 50ms")

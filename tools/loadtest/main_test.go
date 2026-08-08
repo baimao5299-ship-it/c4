@@ -5,7 +5,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -131,4 +135,111 @@ func TestStreamRequestBodyEnablesStream(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
 	require.Equal(t, true, body["stream"])
+}
+
+// ---- fill 模式（管理面填充压测）----
+
+// fillFlag 测试辅助：临时改全局 flag 值，defer 恢复（flag 包全局单例，
+// 其余测试依赖默认 mode=stream）。
+func fillFlag(t *testing.T, m, ft, tok string) {
+	t.Helper()
+	prevMode, prevType, prevTok := *mode, *fillType, *adminToken
+	*mode, *fillType, *adminToken = m, ft, tok
+	t.Cleanup(func() { *mode, *fillType, *adminToken = prevMode, prevType, prevTok })
+}
+
+func TestFillTypeMixedCycles(t *testing.T) {
+	want := []string{"users", "keys", "accounts", "groups", "templates", "pricing"}
+	for i, w := range want {
+		require.Equal(t, w, fillTypeFor(int64(i+1)))
+	}
+	require.Equal(t, "users", fillTypeFor(7)) // 7 = 回到首轮
+}
+
+func TestFillRequestUsersBody(t *testing.T) {
+	fillFlag(t, "fill", "users", "tok-test")
+	fillProc = 42
+	fillSeq.Store(0)
+	req, preErr := newFillRequest(&http.Client{Timeout: time.Second}, rand.New(rand.NewPCG(1, 1)))
+	require.Empty(t, preErr)
+	require.Equal(t, "Bearer tok-test", req.Header.Get("Authorization"))
+	require.Equal(t, "http://127.0.0.1:8080/admin/users", req.URL.String())
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+	require.Equal(t, "fill-42-1@loadtest.test", body["email"])
+	require.Equal(t, float64(100), body["balance"])
+	require.Equal(t, float64(8), body["max_concurrency"])
+}
+
+func TestFillRequestNamesUniquePerRequest(t *testing.T) {
+	fillFlag(t, "fill", "users", "tok")
+	fillProc = 42
+	fillSeq.Store(0)
+	rng := rand.New(rand.NewPCG(1, 1))
+	// 序号推进：同一进程内实体名必不重复（重复创建 409 归类错误明细的前提）
+	names := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		req, preErr := newFillRequest(&http.Client{Timeout: time.Second}, rng)
+		require.Empty(t, preErr)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
+		names[body["email"].(string)] = true
+	}
+	require.Len(t, names, 100)
+}
+
+func TestPickFillUser(t *testing.T) {
+	prevUser, prevPool := *fillUser, fillUserPool
+	*fillUser = "a@b.com:pw1"
+	fillUserPool = []string{"c@d.com:pw2", "e@f.com:pw3"}
+	t.Cleanup(func() { *fillUser, fillUserPool = prevUser, prevPool })
+	rng := rand.New(rand.NewPCG(1, 1))
+	seen := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		email, pw := pickFillUser(rng)
+		seen[email+":"+pw] = true
+	}
+	require.Len(t, seen, 2)
+	require.Contains(t, seen, "c@d.com:pw2")
+	require.Contains(t, seen, "e@f.com:pw3")
+	// 空池 → -fill-user 兜底
+	fillUserPool = nil
+	email, pw := pickFillUser(rng)
+	require.Equal(t, "a@b.com", email)
+	require.Equal(t, "pw1", pw)
+}
+
+func TestFillRequestSuccessRecordsLatency(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintln(w, `{"ID":1}`)
+	}))
+	defer srv.Close()
+	prevAddr := *addr
+	*addr = srv.URL
+	t.Cleanup(func() { *addr = prevAddr })
+	fillFlag(t, "fill", "users", "tok")
+	m := &metrics{errDetail: make(map[string]int64)}
+	doFillRequest(&http.Client{Timeout: 5 * time.Second}, m, rand.New(rand.NewPCG(1, 1)), true)
+	require.Equal(t, int64(1), m.total.Load())
+	require.Equal(t, int64(0), m.errs.Load())
+	require.GreaterOrEqual(t, p99Latency(m), int64(0)) // 成功 → latency 直方图有采样
+}
+
+func TestFillRequestNon200CountsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = fmt.Fprintln(w, `{"error":"dup"}`)
+	}))
+	defer srv.Close()
+	prevAddr := *addr
+	*addr = srv.URL
+	t.Cleanup(func() { *addr = prevAddr })
+	fillFlag(t, "fill", "users", "tok")
+	m := &metrics{errDetail: make(map[string]int64)}
+	doFillRequest(&http.Client{Timeout: 5 * time.Second}, m, rand.New(rand.NewPCG(1, 1)), true)
+	require.Equal(t, int64(1), m.total.Load())
+	require.Equal(t, int64(1), m.errs.Load())
+	m.mu.Lock()
+	require.Equal(t, int64(1), m.errDetail["status:409"])
+	m.mu.Unlock()
 }
