@@ -120,6 +120,24 @@ var (
 			},
 		},
 	}
+	// PricingsColumns holds the columns for the "pricings" table.
+	PricingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "model", Type: field.TypeString, Unique: true},
+		{Name: "prompt_price_per_million", Type: field.TypeInt64},
+		{Name: "completion_price_per_million", Type: field.TypeInt64},
+		{Name: "max_input_tokens", Type: field.TypeInt64, Nullable: true},
+		{Name: "max_output_tokens", Type: field.TypeInt64, Nullable: true},
+		{Name: "source", Type: field.TypeEnum, Enums: []string{"litellm", "manual"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// PricingsTable holds the schema information for the "pricings" table.
+	PricingsTable = &schema.Table{
+		Name:       "pricings",
+		Columns:    PricingsColumns,
+		PrimaryKey: []*schema.Column{PricingsColumns[0]},
+	}
 	// RedemptionCodesColumns holds the columns for the "redemption_codes" table.
 	RedemptionCodesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -387,6 +405,7 @@ var (
 		GroupsTable,
 		GroupAssignmentsTable,
 		KeysTable,
+		PricingsTable,
 		RedemptionCodesTable,
 		RedemptionUsesTable,
 		RulesTable,

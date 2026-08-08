@@ -15,6 +15,7 @@ import (
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/pricing"
 	"go-proxy-mini/internal/ent/redemptioncode"
 	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/rule"
@@ -44,6 +45,8 @@ type Client struct {
 	GroupAssignment *GroupAssignmentClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
+	// Pricing is the client for interacting with the Pricing builders.
+	Pricing *PricingClient
 	// RedemptionCode is the client for interacting with the RedemptionCode builders.
 	RedemptionCode *RedemptionCodeClient
 	// RedemptionUse is the client for interacting with the RedemptionUse builders.
@@ -77,6 +80,7 @@ func (c *Client) init() {
 	c.Group = NewGroupClient(c.config)
 	c.GroupAssignment = NewGroupAssignmentClient(c.config)
 	c.Key = NewKeyClient(c.config)
+	c.Pricing = NewPricingClient(c.config)
 	c.RedemptionCode = NewRedemptionCodeClient(c.config)
 	c.RedemptionUse = NewRedemptionUseClient(c.config)
 	c.Rule = NewRuleClient(c.config)
@@ -182,6 +186,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
+		Pricing:         NewPricingClient(cfg),
 		RedemptionCode:  NewRedemptionCodeClient(cfg),
 		RedemptionUse:   NewRedemptionUseClient(cfg),
 		Rule:            NewRuleClient(cfg),
@@ -214,6 +219,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
+		Pricing:         NewPricingClient(cfg),
 		RedemptionCode:  NewRedemptionCodeClient(cfg),
 		RedemptionUse:   NewRedemptionUseClient(cfg),
 		Rule:            NewRuleClient(cfg),
@@ -252,8 +258,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Account, c.Group, c.GroupAssignment, c.Key, c.RedemptionCode, c.RedemptionUse,
-		c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog, c.UsageStat, c.User,
+		c.Account, c.Group, c.GroupAssignment, c.Key, c.Pricing, c.RedemptionCode,
+		c.RedemptionUse, c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog,
+		c.UsageStat, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -263,8 +270,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Account, c.Group, c.GroupAssignment, c.Key, c.RedemptionCode, c.RedemptionUse,
-		c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog, c.UsageStat, c.User,
+		c.Account, c.Group, c.GroupAssignment, c.Key, c.Pricing, c.RedemptionCode,
+		c.RedemptionUse, c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog,
+		c.UsageStat, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -281,6 +289,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.GroupAssignment.mutate(ctx, m)
 	case *KeyMutation:
 		return c.Key.mutate(ctx, m)
+	case *PricingMutation:
+		return c.Pricing.mutate(ctx, m)
 	case *RedemptionCodeMutation:
 		return c.RedemptionCode.mutate(ctx, m)
 	case *RedemptionUseMutation:
@@ -977,6 +987,139 @@ func (c *KeyClient) mutate(ctx context.Context, m *KeyMutation) (Value, error) {
 		return (&KeyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Key mutation op: %q", m.Op())
+	}
+}
+
+// PricingClient is a client for the Pricing schema.
+type PricingClient struct {
+	config
+}
+
+// NewPricingClient returns a client for the Pricing from the given config.
+func NewPricingClient(c config) *PricingClient {
+	return &PricingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `pricing.Hooks(f(g(h())))`.
+func (c *PricingClient) Use(hooks ...Hook) {
+	c.hooks.Pricing = append(c.hooks.Pricing, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `pricing.Intercept(f(g(h())))`.
+func (c *PricingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Pricing = append(c.inters.Pricing, interceptors...)
+}
+
+// Create returns a builder for creating a Pricing entity.
+func (c *PricingClient) Create() *PricingCreate {
+	mutation := newPricingMutation(c.config, OpCreate)
+	return &PricingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Pricing entities.
+func (c *PricingClient) CreateBulk(builders ...*PricingCreate) *PricingCreateBulk {
+	return &PricingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PricingClient) MapCreateBulk(slice any, setFunc func(*PricingCreate, int)) *PricingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PricingCreateBulk{err: fmt.Errorf("calling to PricingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PricingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PricingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Pricing.
+func (c *PricingClient) Update() *PricingUpdate {
+	mutation := newPricingMutation(c.config, OpUpdate)
+	return &PricingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PricingClient) UpdateOne(_m *Pricing) *PricingUpdateOne {
+	mutation := newPricingMutation(c.config, OpUpdateOne, withPricing(_m))
+	return &PricingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PricingClient) UpdateOneID(id int64) *PricingUpdateOne {
+	mutation := newPricingMutation(c.config, OpUpdateOne, withPricingID(id))
+	return &PricingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Pricing.
+func (c *PricingClient) Delete() *PricingDelete {
+	mutation := newPricingMutation(c.config, OpDelete)
+	return &PricingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PricingClient) DeleteOne(_m *Pricing) *PricingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PricingClient) DeleteOneID(id int64) *PricingDeleteOne {
+	builder := c.Delete().Where(pricing.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PricingDeleteOne{builder}
+}
+
+// Query returns a query builder for Pricing.
+func (c *PricingClient) Query() *PricingQuery {
+	return &PricingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePricing},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Pricing entity by its id.
+func (c *PricingClient) Get(ctx context.Context, id int64) (*Pricing, error) {
+	return c.Query().Where(pricing.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PricingClient) GetX(ctx context.Context, id int64) *Pricing {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PricingClient) Hooks() []Hook {
+	return c.hooks.Pricing
+}
+
+// Interceptors returns the client interceptors.
+func (c *PricingClient) Interceptors() []Interceptor {
+	return c.inters.Pricing
+}
+
+func (c *PricingClient) mutate(ctx context.Context, m *PricingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PricingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PricingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PricingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PricingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Pricing mutation op: %q", m.Op())
 	}
 }
 
@@ -2292,11 +2435,12 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, Group, GroupAssignment, Key, RedemptionCode, RedemptionUse, Rule,
-		Setting, TempBalance, Template, UsageLog, UsageStat, User []ent.Hook
+		Account, Group, GroupAssignment, Key, Pricing, RedemptionCode, RedemptionUse,
+		Rule, Setting, TempBalance, Template, UsageLog, UsageStat, User []ent.Hook
 	}
 	inters struct {
-		Account, Group, GroupAssignment, Key, RedemptionCode, RedemptionUse, Rule,
-		Setting, TempBalance, Template, UsageLog, UsageStat, User []ent.Interceptor
+		Account, Group, GroupAssignment, Key, Pricing, RedemptionCode, RedemptionUse,
+		Rule, Setting, TempBalance, Template, UsageLog, UsageStat,
+		User []ent.Interceptor
 	}
 )

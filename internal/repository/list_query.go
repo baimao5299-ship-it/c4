@@ -10,6 +10,7 @@ import (
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/pricing"
 	"go-proxy-mini/internal/ent/redemptioncode"
 	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/template"
@@ -92,5 +93,9 @@ var (
 		"id": redemptionuse.FieldID, "code_id": redemptionuse.FieldCodeID,
 		"user_id": redemptionuse.FieldUserID, "value": redemptionuse.FieldValue,
 		"created_at": redemptionuse.FieldCreatedAt,
+	}
+	pricingSortFields = map[string]string{
+		"id": pricing.FieldID, "model": pricing.FieldModel,
+		"updated_at": pricing.FieldUpdatedAt,
 	}
 )

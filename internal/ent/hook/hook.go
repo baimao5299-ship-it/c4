@@ -56,6 +56,18 @@ func (f KeyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.KeyMutation", m)
 }
 
+// The PricingFunc type is an adapter to allow the use of ordinary
+// function as Pricing mutator.
+type PricingFunc func(context.Context, *ent.PricingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PricingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PricingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PricingMutation", m)
+}
+
 // The RedemptionCodeFunc type is an adapter to allow the use of ordinary
 // function as RedemptionCode mutator.
 type RedemptionCodeFunc func(context.Context, *ent.RedemptionCodeMutation) (ent.Value, error)
