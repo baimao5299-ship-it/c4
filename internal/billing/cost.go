@@ -3,6 +3,7 @@
 package billing
 
 import (
+	"math"
 	"strings"
 
 	"go-proxy-mini/internal/domain"
@@ -60,13 +61,32 @@ const (
 	TierPolicyReject      TierPolicyMode = "reject"      // 直接 400 拒绝（不转发）
 )
 
-// 溢出预算（评审 I-2）：单段 t×p ≤ 1e13（毫分×1e6 原始单位），四分量合计
-// ≤ 4e13；fast 万分数 ≤ 1e5（实测 ×6.0 = 60000，留余量）→ 4e13×1e5 = 4e18
-// < MaxInt64。价格列已由写路径校验 ≥ 0（service 校验/fetcher validCost）；
-// 负数 token 钳 0。除 1e6 在求和后一次完成（毫分/1M tokens → 毫分）。
+// 溢出预算（评审 I-2）：合法域单段 t×p ≤ 1e13（毫分×1e6 原始单位），四分量
+// 合计 ≤ 4e13；fast 万分数 ≤ 1e5（实测 ×6.0 = 60000，留余量）→ 4e13×1e5
+// = 4e18 < MaxInt64。价格列已由写路径校验 ≥ 0（service 校验/fetcher
+// validCost）；负数 token 钳 0。除 1e6 在求和后一次完成（毫分/1M tokens
+// → 毫分）。
 const (
-	milliPerMillion = 1e6 // 毫分/1M tokens → 毫分的除数
+	milliPerMillion = 1_000_000 // 毫分/1M tokens → 毫分的除数
 )
+
+// segBudget 单乘积上界（评审 I-1 溢出钳制）：每分量至多 2 个乘法（阈值内/
+// 超额），四分量共 ≤ 8 个；各乘积钳制后总和 ≤ 8×segBudget ≤ MaxInt64 -
+// milliPerMillion/2，末次 (raw + 5e5) 四舍五入不回绕。
+const segBudget = (math.MaxInt64 - milliPerMillion/2) / 8
+
+// clampToken 恶意防护：恶意/异常上游可报超大 token 数（如 9e15），t×p 会
+// 回绕成负 cost（T3 扣费变反向入账）。乘法前把 token 钳到 segBudget/p，乘积
+// 恒 ≤ segBudget；合法输入（t ≤ 1e6、p ≤ 1e7 → 乘积 ≤ 1e13）远低于上界，
+// 正常路径仅一次除法一次比较，零分配。负数 token 已在 Cost 入口钳 0。
+func clampToken(t, p int64) int64 {
+	if p > 0 {
+		if lim := segBudget / p; t > lim {
+			return lim
+		}
+	}
+	return t
+}
 
 // Cost 计费纯函数：按 tier 选价 → per 分量独立分段（above）→ fast 整单倍率 →
 // 求和毫分（1 USD = 100,000 毫分；零换算零取整误差，与 balance 直接相减）。
@@ -153,10 +173,10 @@ func Cost(p *domain.Pricing, tier Tier, pt, ct, cr, cc int64) (int64, bool) {
 	for i := 0; i < 4; i++ {
 		t, base, ov := toks[i], units[i], above[i]
 		if thr != nil && ov != nil && t > *thr {
-			raw += *thr*base + (t-*thr)**ov // 预算内：单段 ≤ 1e13，合计 ≤ 4e13
+			raw += clampToken(*thr, base)*base + clampToken(t-*thr, *ov)**ov // 钳制后单乘积 ≤ segBudget
 			aboveHit = true
 		} else {
-			raw += t * base
+			raw += clampToken(t, base) * base
 		}
 	}
 	cost := (raw + milliPerMillion/2) / milliPerMillion // 四舍五入 → 毫分

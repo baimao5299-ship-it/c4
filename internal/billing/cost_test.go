@@ -208,3 +208,51 @@ func TestCostOverflowBudget(t *testing.T) {
 	require.Equal(t, int64(4e8), cost, "fast ×1e5：4e7×1e5 = 4e12，无溢出")
 	require.False(t, hit)
 }
+
+// TestCostTokenClamp 溢出钳制（评审 I-1）：恶意/异常上游报超大 token（9e15/
+// 1e13 量级）时乘法前钳制，防 int64 回绕成负 cost（负 cost 会让 T3 扣费变
+// 反向入账）。钳制后 cost 恒 ≥ 0；正常值结果不变（TestCost 表驱动已钉死）。
+func TestCostTokenClamp(t *testing.T) {
+	i64 := func(v int64) *int64 { return &v }
+	// 极端价 1e11/1M（同 TestCostOverflowBudget）：9e15 token 每分量钳到
+	// segBudget/1e11 = 11529215 → 乘积 1.1529215e18，4 分量合计 4.611686e18
+	// < MaxInt64，无回绕。
+	extreme := &domain.Pricing{
+		PromptPricePerMillion:        1e11,
+		CompletionPricePerMillion:    1e11,
+		CacheReadPricePerMillion:     i64(1e11),
+		CacheCreationPricePerMillion: i64(1e11),
+	}
+	cost, hit := Cost(extreme, TierAuto, 9e15, 9e15, 9e15, 9e15)
+	require.Equal(t, int64(4611686000000), cost, "4×1.1529215e18 → 4.611686e12 毫分，无回绕")
+	require.False(t, hit)
+
+	// 8 乘积极端：above 价 2e11 更高，全分量拆段（thr 272000×基础价 +
+	// 超额钳到 segBudget/2e11 = 5764607 × above 价）。
+	extremeAbove := &domain.Pricing{
+		PromptPricePerMillion:             1e11,
+		CompletionPricePerMillion:         1e11,
+		CacheReadPricePerMillion:          i64(1e11),
+		CacheCreationPricePerMillion:      i64(1e11),
+		AboveThreshold:                    i64(272000),
+		AbovePromptPricePerMillion:        i64(2e11),
+		AboveCompletionPricePerMillion:    i64(2e11),
+		AboveCacheReadPricePerMillion:     i64(2e11),
+		AboveCacheCreationPricePerMillion: i64(2e11),
+	}
+	cost, hit = Cost(extremeAbove, TierAuto, 9e15, 9e15, 9e15, 9e15)
+	require.Equal(t, int64(4720485600000), cost, "4×(2.72e16+1.1529214e18) → 4.7204856e12 毫分")
+	require.True(t, hit)
+
+	// 1e13 量级：钳制后 cost ≥ 0 且不回绕。
+	cost, hit = Cost(extreme, TierAuto, 1e13, 0, 0, 0)
+	require.Equal(t, int64(1152921500000), cost, "钳到 11529215×1e11 → 1.1529215e12 毫分")
+	require.False(t, hit)
+
+	// 1e13 token × 正常价 1e5（乘积 1e18 本就不溢出）：钳制不上界 → 结果不变。
+	p := fixturePricing("future-256k")
+	p.AboveThreshold = nil // 去掉 above 分段，纯基础价
+	cost, hit = Cost(p, TierAuto, 1e13, 0, 0, 0)
+	require.Equal(t, int64(1000000000000), cost, "1e13×1e5 = 1e18 → 1e12 毫分")
+	require.False(t, hit)
+}
