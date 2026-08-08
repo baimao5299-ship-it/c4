@@ -122,8 +122,11 @@ func main() {
 	// litellm 价格同步 worker：启动异步拉取一次（不阻塞启动）+ price_sync_cron
 	// 定期循环；source_url/cron 每轮从 svc 的 settings 快照现读（变更下次循环
 	// 生效，无热加载通道）；同步成功后刷新 svc 价格快照（Phase 5 计费读零 DB）。
+	// fetcher 与 svc 共享同一实例（手动 sync 端点 /admin/pricing/sync 同路径）。
+	priceFetcher := pricing.NewFetcher(hc)
+	svc.SetPriceFetcher(priceFetcher)
 	pricingSync := pricing.NewSyncWorker(pricing.SyncWorkerConfig{
-		Fetcher:  pricing.NewFetcher(hc),
+		Fetcher:  priceFetcher,
 		Repo:     repos,
 		Settings: svc,
 		Reload:   svc.ReloadPricing,

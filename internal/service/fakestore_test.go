@@ -45,7 +45,9 @@ type fakeStore struct {
 	pricings map[string]*domain.Pricing
 	// pricingListErr 注入 ListPricing 失败（快照 fail-safe 测试）。
 	pricingListErr error
-	nextID         int64
+	// pricingUpsertErr 注入 UpsertFromLiteLLM 失败（手动 sync 失败路径测试）。
+	pricingUpsertErr error
+	nextID           int64
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
@@ -1155,6 +1157,9 @@ func (f *fakeStore) DeactivateCodes(ctx context.Context, ids []int64) (int64, er
 func (f *fakeStore) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.pricingUpsertErr != nil {
+		return 0, f.pricingUpsertErr
+	}
 	n := 0
 	for _, p := range rows {
 		if cur, ok := f.pricings[p.Model]; ok && cur.Source == domain.PricingSourceManual {

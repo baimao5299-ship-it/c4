@@ -380,6 +380,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at） */
+        get: operations["GetPricing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pricing/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动触发一次价格同步（fetch 官方价格表 → upsert → 快照重载；失败保留旧价） */
+        post: operations["PostPricingSync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pricing/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行） */
+        put: operations["PutPricingModel"];
+        post?: never;
+        /** 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回） */
+        delete: operations["DeletePricingModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/user/auth/register": {
         parameters: {
             query?: never;
@@ -1118,6 +1172,55 @@ export interface components {
         BatchDeactivateResponse: {
             /** @description 新失效数（已 disabled no-op 不计） */
             deactivated: number;
+        };
+        /** @enum {string} */
+        PricingSource: "litellm" | "manual";
+        Pricing: {
+            Model: string;
+            /**
+             * Format: int64
+             * @description 毫分/1M tokens（1 USD = 100
+             */
+            PromptPricePerMillion: number;
+            /**
+             * Format: int64
+             * @description 毫分/1M tokens
+             */
+            CompletionPricePerMillion: number;
+            /**
+             * Format: int64
+             * @description litellm 自带上下文窗口；nil = 未知
+             */
+            MaxInputTokens?: number | null;
+            /** Format: int64 */
+            MaxOutputTokens?: number | null;
+            Source: components["schemas"]["PricingSource"];
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        PricingUpsert: {
+            /**
+             * Format: int64
+             * @description 毫分/1M tokens；≥ 0
+             */
+            prompt_price_per_million: number;
+            /** Format: int64 */
+            completion_price_per_million: number;
+        };
+        PricingListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["Pricing"][];
+        };
+        PricingSyncResponse: {
+            /** @description 拉取到的有效模型行数 */
+            rows: number;
+            /** @description 解析时跳过的非法行数 */
+            skipped: number;
+            /** @description upsert 落库数（manual 行不计） */
+            updated: number;
         };
         RedeemRequest: {
             code: string;
@@ -2053,6 +2156,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeactivateResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetPricing: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                source?: "litellm" | "manual";
+                model?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 价格列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostPricingSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 拉取统计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingSyncResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutPricingModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PricingUpsert"];
+            };
+        };
+        responses: {
+            /** @description 设价后的价格行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pricing"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    DeletePricingModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
                 };
             };
             default: components["responses"]["Error"];

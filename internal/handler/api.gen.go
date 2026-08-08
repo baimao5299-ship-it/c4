@@ -46,6 +46,12 @@ const (
 	Public  GroupVisibility = "public"
 )
 
+// Defines values for PricingSource.
+const (
+	PricingSourceLitellm PricingSource = "litellm"
+	PricingSourceManual  PricingSource = "manual"
+)
+
 // Defines values for RedemptionStatus.
 const (
 	RedemptionStatusActive   RedemptionStatus = "active"
@@ -123,6 +129,18 @@ const (
 	GetGroupsParamsOrderDesc GetGroupsParamsOrder = "desc"
 )
 
+// Defines values for GetPricingParamsSource.
+const (
+	GetPricingParamsSourceLitellm GetPricingParamsSource = "litellm"
+	GetPricingParamsSourceManual  GetPricingParamsSource = "manual"
+)
+
+// Defines values for GetPricingParamsOrder.
+const (
+	GetPricingParamsOrderAsc  GetPricingParamsOrder = "asc"
+	GetPricingParamsOrderDesc GetPricingParamsOrder = "desc"
+)
+
 // Defines values for GetRedemptionCodesParamsType.
 const (
 	GetRedemptionCodesParamsTypeBalance     GetRedemptionCodesParamsType = "balance"
@@ -156,8 +174,8 @@ const (
 
 // Defines values for GetUsersParamsOrder.
 const (
-	Asc  GetUsersParamsOrder = "asc"
-	Desc GetUsersParamsOrder = "desc"
+	GetUsersParamsOrderAsc  GetUsersParamsOrder = "asc"
+	GetUsersParamsOrderDesc GetUsersParamsOrder = "desc"
 )
 
 // Account defines model for Account.
@@ -371,6 +389,52 @@ type GroupVisibility string
 type LogsResponse struct {
 	Rows  []UsageLog `json:"rows"`
 	Total int64      `json:"total"`
+}
+
+// Pricing defines model for Pricing.
+type Pricing struct {
+	// CompletionPricePerMillion 毫分/1M tokens
+	CompletionPricePerMillion int64     `json:"CompletionPricePerMillion"`
+	CreatedAt                 time.Time `json:"CreatedAt"`
+
+	// MaxInputTokens litellm 自带上下文窗口；nil = 未知
+	MaxInputTokens  *int64 `json:"MaxInputTokens"`
+	MaxOutputTokens *int64 `json:"MaxOutputTokens"`
+	Model           string `json:"Model"`
+
+	// PromptPricePerMillion 毫分/1M tokens（1 USD = 100
+	PromptPricePerMillion int64         `json:"PromptPricePerMillion"`
+	Source                PricingSource `json:"Source"`
+	UpdatedAt             time.Time     `json:"UpdatedAt"`
+}
+
+// PricingListResponse defines model for PricingListResponse.
+type PricingListResponse struct {
+	Rows  []Pricing `json:"rows"`
+	Total int64     `json:"total"`
+}
+
+// PricingSource defines model for PricingSource.
+type PricingSource string
+
+// PricingSyncResponse defines model for PricingSyncResponse.
+type PricingSyncResponse struct {
+	// Rows 拉取到的有效模型行数
+	Rows int `json:"rows"`
+
+	// Skipped 解析时跳过的非法行数
+	Skipped int `json:"skipped"`
+
+	// Updated upsert 落库数（manual 行不计）
+	Updated int `json:"updated"`
+}
+
+// PricingUpsert defines model for PricingUpsert.
+type PricingUpsert struct {
+	CompletionPricePerMillion int64 `json:"completion_price_per_million"`
+
+	// PromptPricePerMillion 毫分/1M tokens；≥ 0
+	PromptPricePerMillion int64 `json:"prompt_price_per_million"`
 }
 
 // RedemptionCode defines model for RedemptionCode.
@@ -678,6 +742,22 @@ type GetLogsParams struct {
 	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// GetPricingParams defines parameters for GetPricing.
+type GetPricingParams struct {
+	Page     *int                    `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                    `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Source   *GetPricingParamsSource `form:"source,omitempty" json:"source,omitempty"`
+	Model    *string                 `form:"model,omitempty" json:"model,omitempty"`
+	Sort     *string                 `form:"sort,omitempty" json:"sort,omitempty"`
+	Order    *GetPricingParamsOrder  `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetPricingParamsSource defines parameters for GetPricing.
+type GetPricingParamsSource string
+
+// GetPricingParamsOrder defines parameters for GetPricing.
+type GetPricingParamsOrder string
+
 // GetRedemptionCodesParams defines parameters for GetRedemptionCodes.
 type GetRedemptionCodesParams struct {
 	Page     *int                            `form:"page,omitempty" json:"page,omitempty"`
@@ -766,6 +846,9 @@ type PutGroupsIdJSONRequestBody = GroupCreate
 
 // PutGroupsIdAssignmentsJSONRequestBody defines body for PutGroupsIdAssignments for application/json ContentType.
 type PutGroupsIdAssignmentsJSONRequestBody = GroupAssignmentsBody
+
+// PutPricingModelJSONRequestBody defines body for PutPricingModel for application/json ContentType.
+type PutPricingModelJSONRequestBody = PricingUpsert
 
 // PostRedemptionCodesJSONRequestBody defines body for PostRedemptionCodes for application/json ContentType.
 type PostRedemptionCodesJSONRequestBody = GenerateRequest
@@ -859,6 +942,18 @@ type ServerInterface interface {
 	// 用量日志分页查询
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
+	// 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+	// (GET /pricing)
+	GetPricing(w http.ResponseWriter, r *http.Request, params GetPricingParams)
+	// 手动触发一次价格同步（fetch 官方价格表 → upsert → 快照重载；失败保留旧价）
+	// (POST /pricing/sync)
+	PostPricingSync(w http.ResponseWriter, r *http.Request)
+	// 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+	// (DELETE /pricing/{model})
+	DeletePricingModel(w http.ResponseWriter, r *http.Request, model string)
+	// 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行）
+	// (PUT /pricing/{model})
+	PutPricingModel(w http.ResponseWriter, r *http.Request, model string)
 	// 兑换码列表（增强分页范式 page/page_size；type/status 筛选；sort 白名单）
 	// (GET /redemption-codes)
 	GetRedemptionCodes(w http.ResponseWriter, r *http.Request, params GetRedemptionCodesParams)
@@ -1027,6 +1122,30 @@ func (_ Unimplemented) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Req
 // 用量日志分页查询
 // (GET /logs)
 func (_ Unimplemented) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+// (GET /pricing)
+func (_ Unimplemented) GetPricing(w http.ResponseWriter, r *http.Request, params GetPricingParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 手动触发一次价格同步（fetch 官方价格表 → upsert → 快照重载；失败保留旧价）
+// (POST /pricing/sync)
+func (_ Unimplemented) PostPricingSync(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+// (DELETE /pricing/{model})
+func (_ Unimplemented) DeletePricingModel(w http.ResponseWriter, r *http.Request, model string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行）
+// (PUT /pricing/{model})
+func (_ Unimplemented) PutPricingModel(w http.ResponseWriter, r *http.Request, model string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1682,6 +1801,137 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetLogs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPricing operation middleware
+func (siw *ServerInterfaceWrapper) GetPricing(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPricingParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "source" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "source", r.URL.Query(), &params.Source)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPricing(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostPricingSync operation middleware
+func (siw *ServerInterfaceWrapper) PostPricingSync(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostPricingSync(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePricingModel operation middleware
+func (siw *ServerInterfaceWrapper) DeletePricingModel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "model" -------------
+	var model string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "model", chi.URLParam(r, "model"), &model, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePricingModel(w, r, model)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutPricingModel operation middleware
+func (siw *ServerInterfaceWrapper) PutPricingModel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "model" -------------
+	var model string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "model", chi.URLParam(r, "model"), &model, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutPricingModel(w, r, model)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2481,6 +2731,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/pricing", wrapper.GetPricing)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/pricing/sync", wrapper.PostPricingSync)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/pricing/{model}", wrapper.DeletePricingModel)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/pricing/{model}", wrapper.PutPricingModel)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/redemption-codes", wrapper.GetRedemptionCodes)

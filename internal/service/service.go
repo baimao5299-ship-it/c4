@@ -13,6 +13,7 @@ import (
 
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/pkg/logx"
@@ -188,7 +189,11 @@ type Service struct {
 	// Phase 5 计费读路径（GetPrice）零 DB 直读；New 初始化 + 管理端改价
 	// （UpsertManualPricing/DeleteManualPricing）+ 同步拉取成功后重载（低频，无锁）。
 	pricing atomic.Pointer[map[string]*domain.Pricing]
-	log     *logx.Logger
+	// priceFetcher 价格拉取器（pricing.Fetcher 实现）：管理端手动 sync
+	// （SyncPricingNow）与 cron worker 共享同一实例（main 装配注入；nil 时
+	// SyncPricingNow 返回错误——启动配置缺失，不应发生）。
+	priceFetcher pricing.Fetcher
+	log          *logx.Logger
 }
 
 func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
@@ -277,6 +282,8 @@ var listSortFields = map[string][]string{
 	"redemption_codes": {"id", "code", "type", "value", "max_uses", "used_count", "status", "created_by", "created_at", "updated_at"},
 	// 与 repo 层 redemptionUseSortFields 白名单一致（双保险；/user/redemptions）。
 	"redemption_uses": {"id", "code_id", "user_id", "value", "created_at"},
+	// 与 repo 层 pricingSortFields 白名单一致（双保险；/admin/pricing）。
+	"pricing": {"model", "updated_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

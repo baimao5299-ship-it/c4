@@ -14,6 +14,7 @@ tags:
   - name: logs
   - name: stats
   - name: redemptions
+  - name: pricing
 paths:
   /templates:
     post:
@@ -573,6 +574,74 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeactivateResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  # --- litellm 模型价格（tag: pricing；Phase 5 计费价格来源） ---
+  # 注意 chi 路径顺序：/pricing/sync 必须先于 /pricing/{model} 注册（生成器按
+  # spec 顺序注册，防 "sync" 被 {model} 捕获，对齐 /redemption-codes/batch-deactivate 先例）。
+  /pricing:
+    get:
+      operationId: GetPricing
+      tags: [pricing]
+      summary: 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
+        - { name: model, in: query, schema: { type: string, description: 模型名模糊搜索（大小写不敏感） } }
+        - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 价格列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /pricing/sync:
+    post:
+      operationId: PostPricingSync
+      tags: [pricing]
+      summary: 手动触发一次价格同步（fetch 官方价格表 → upsert → 快照重载；失败保留旧价）
+      responses:
+        '200':
+          description: 拉取统计
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingSyncResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /pricing/{model}:
+    parameters:
+      - { name: model, in: path, required: true, schema: { type: string, description: 模型名 } }
+    put:
+      operationId: PutPricingModel
+      tags: [pricing]
+      summary: 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PricingUpsert' }
+      responses:
+        '200':
+          description: 设价后的价格行
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pricing' }
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: DeletePricingModel
+      tags: [pricing]
+      summary: 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedResponse' }
         default:
           $ref: '#/components/responses/Error'
   # --- /user 面（tag: user；生成到 internal/handler/user 独立 ServerInterface） ---
@@ -1487,6 +1556,43 @@ components:
       required: [deactivated]
       properties:
         deactivated: { type: integer, description: 新失效数（已 disabled no-op 不计） }
+    # --- litellm 模型价格（Phase 5 计费价格来源） ---
+    PricingSource:
+      type: string
+      enum: [litellm, manual]
+    Pricing:
+      type: object
+      required: [Model, PromptPricePerMillion, CompletionPricePerMillion, Source, CreatedAt, UpdatedAt]
+      properties:
+        Model: { type: string }
+        PromptPricePerMillion: { type: integer, format: int64, description: 毫分/1M tokens（1 USD = 100,000 毫分） }
+        CompletionPricePerMillion: { type: integer, format: int64, description: 毫分/1M tokens }
+        MaxInputTokens: { type: integer, format: int64, nullable: true, description: litellm 自带上下文窗口；nil = 未知 }
+        MaxOutputTokens: { type: integer, format: int64, nullable: true }
+        Source: { $ref: '#/components/schemas/PricingSource' }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    PricingUpsert:
+      type: object
+      required: [prompt_price_per_million, completion_price_per_million]
+      properties:
+        prompt_price_per_million: { type: integer, format: int64, minimum: 0, description: 毫分/1M tokens；≥ 0 }
+        completion_price_per_million: { type: integer, format: int64, minimum: 0 }
+    PricingListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/Pricing' }
+    PricingSyncResponse:
+      type: object
+      required: [rows, skipped, updated]
+      properties:
+        rows: { type: integer, description: 拉取到的有效模型行数 }
+        skipped: { type: integer, description: 解析时跳过的非法行数 }
+        updated: { type: integer, description: upsert 落库数（manual 行不计） }
     RedeemRequest:
       type: object
       required: [code]
