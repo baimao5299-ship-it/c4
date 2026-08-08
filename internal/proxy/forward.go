@@ -15,6 +15,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
@@ -41,16 +42,18 @@ type Proxy struct {
 	auth     *Auth
 	limit    *fixedWindowLimiter
 	log      *logx.Logger
+	bill     *BillingHooks // 计费钩子；nil = 计费全关
 	inflight atomic.Int64
 	callers  map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
 }
 
 // New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
-// 不用 Config 字段——避免 nil 运行时才炸）。
-func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger) *Proxy {
+// 不用 Config 字段——避免 nil 运行时才炸）。bill 为计费钩子（Phase 5；
+// nil = 计费全关——现有调用点/测试兼容）。
+func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger, bill *BillingHooks) *Proxy {
 	p := &Proxy{
 		cfg: cfg, sched: sched, creds: creds, rec: rec, clients: clients, auth: auth,
-		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log,
+		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log, bill: bill,
 	}
 	// 注册表：每格式一 caller，New 时一次性构造（per-request 零分配）。
 	// 新格式（Gemini/Grok/ollama 等）= 1 个 caller 文件 + 此处一行注册。
@@ -64,16 +67,44 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 
 func (p *Proxy) Inflight() int64 { return p.inflight.Load() }
 
-// finish 收尾：释放并发槽 + 额度扣减（后扣模型，usage 已知）+ 记录用量
-// （凡持有并发槽的路径必调）。无额度 key 无内存计数器 → 扣减 no-op（恒 0）。
+// finish 收尾：释放并发槽 + 额度扣减（后扣模型，usage 已知）+ 计费计算 +
+// 记录用量（凡持有并发槽的路径必调）。无额度 key 无内存计数器 → 扣减
+// no-op（恒 0）。
 func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 	p.sched.Release(accountID)
 	if l != nil {
+		p.applyBilling(l)
 		p.auth.DeductQuota(l.KeyID, l.TotalTokens)
 	}
 	if p.cfg.UsageCapture && l != nil {
 		p.rec.Record(l)
 	}
+}
+
+// applyBilling 计费计算（T2 中间态：只算不扣，扣费落库在 T3）：价格快照读 →
+// billing.Cost 填 l.Cost/l.AboveHit。计费模型 = MappedModel ?? Model。价格缺失
+// （预检后快照被删竞态）→ Warn + BillingTier="no_price" + cost 0（运行时
+// 防御，审计留痕不按 0 计价；非兼容分支）。
+func (p *Proxy) applyBilling(l *domain.UsageLog) {
+	if p.bill == nil || p.bill.Prices == nil {
+		return
+	}
+	model := l.MappedModel
+	if model == "" {
+		model = l.Model
+	}
+	if model == "" {
+		return // 未选号失败路径（无模型可计费；cost 恒 0）
+	}
+	pr, err := p.bill.Prices.GetPrice(model)
+	if err != nil || pr == nil {
+		if p.log != nil {
+			p.log.Warn("billing price lookup failed", logx.String("model", model), logx.Error(err))
+		}
+		l.BillingTier = "no_price"
+		return
+	}
+	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.PromptTokens, l.CompletionTokens, l.CacheReadTokens, l.CacheCreationTokens)
 }
 
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：
@@ -115,12 +146,20 @@ func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int
 // ctxKeyMeta 是鉴权 KeyMeta 的 context 键（handleFormat 写入；日志归属读取）。
 type ctxKeyMeta struct{}
 
+// ctxKeyTier 是归一化 service_tier 的 context 键（handleFormat 计费启用时
+// 写入；日志 BillingTier 归属读取；计费全关不写入）。
+type ctxKeyTier struct{}
+
 // logWithCtx 从 ctx 读鉴权 KeyMeta 填日志归属（user_id/key_id；context 传递
-// ——不改变 Call/buildLog 签名；无 KeyMeta 的路径保持 0）。
+// ——不改变 Call/buildLog 签名；无 KeyMeta 的路径保持 0）+ service_tier 归一化
+// 值填 BillingTier（计费启用路径；无 tier 的路径保持空）。
 func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 	if meta, ok := ctx.Value(ctxKeyMeta{}).(domain.KeyMeta); ok {
 		l.UserID = meta.UserID
 		l.KeyID = meta.KeyID
+	}
+	if tier, ok := ctx.Value(ctxKeyTier{}).(billing.Tier); ok {
+		l.BillingTier = tier.String()
 	}
 	return l
 }
@@ -158,11 +197,15 @@ type usageTuple struct {
 	cr, cc         int64 // 缓存读取/写入 token（缺失 = 0）
 }
 
-func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, start time.Time, sel *scheduler.Selection, reqModel string, err error) {
+// recordStreamAbort 上游流中止记录（客户端断开/上游停滞统一入口）：先已收
+// 到的 usage 帧照常计费。u 为 Observer 已累积的用量元组（评审 M-2：此前传
+// nil → tokens 全 0 → 中止路径消费不扣费；buildLog 填 l.Cost 由 finish 的
+// applyBilling 承担）。
+func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, start time.Time, sel *scheduler.Selection, reqModel string, u *usageTuple, err error) {
 	if p.log != nil {
 		p.log.Warn("upstream stream aborted", logx.String("request_id", reqID), logx.Error(err))
 	}
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, 0, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, nil, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, 0, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, u, start)))
 }
 
 func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {

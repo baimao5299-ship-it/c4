@@ -225,18 +225,19 @@ func newTestProxyTimeoutLogs(t *testing.T, upstream string, accountID int64, log
 		CredentialType: credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
-	return newTestProxyTplTimeoutLogs(t, tpl, accountID, true, 30*time.Second, logs)
+	return newTestProxyTplTimeoutLogs(t, tpl, accountID, true, 30*time.Second, logs, nil)
 }
 
 // newTestProxyTplCapture 用自定义模板构造测试代理（ModelMapping 等定制场景用）。
 func newTestProxyTplCapture(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool) *Proxy {
 	t.Helper()
-	return newTestProxyTplTimeoutLogs(t, tpl, accountID, usageCapture, 30*time.Second, noopLogStore{})
+	return newTestProxyTplTimeoutLogs(t, tpl, accountID, usageCapture, 30*time.Second, noopLogStore{}, nil)
 }
 
 // newTestProxyTplTimeoutLogs 用自定义模板、流式超时与日志存储构造测试代理
 // （流式超时回归、用量值断言场景用；默认 30s 超时走 newTestProxyTplCapture）。
-func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, logs usage.LogInserter) *Proxy {
+// bill 为计费钩子（nil = 计费全关，默认测试路径）。
+func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, logs usage.LogInserter, bill *BillingHooks) *Proxy {
 	t.Helper()
 	accs := map[int64][]*domain.Account{10: {{
 		ID: accountID, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "sk-upstream",
@@ -265,7 +266,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: streamTimeout,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, bill)
 }
 
 func TestProxyStreamingChat(t *testing.T) {
@@ -352,7 +353,7 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 		ModelMapping: map[string]string{"gpt-4o": "gpt-4o-upstream"},
 	}
 	store := &captureLogStore{}
-	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, store)
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, store, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
@@ -449,7 +450,7 @@ func TestProxyFailoverOn429(t *testing.T) {
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: mapping,
 	}
-	p := newTestProxyTplTimeoutLogs(t, tpl1, 1, true, 30*time.Second, store)
+	p := newTestProxyTplTimeoutLogs(t, tpl1, 1, true, 30*time.Second, store, nil)
 	// 第二个账号（同样带映射，耗尽路径才能断言最后一次实际尝试的映射模型）
 	tpl2 := &domain.Template{ID: 2, Name: "t2", BaseURL: up.URL, CredentialType: credential.TypeAPIKey, SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}, ModelMapping: mapping}
 	sched := p.sched
@@ -621,7 +622,7 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	// 小超时保证断言在测试生命周期内触发（父 ctx 不取消，仅子 ctx 超时）
-	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 100*time.Millisecond, store)
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 100*time.Millisecond, store, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
 		`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`))

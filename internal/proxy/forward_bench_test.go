@@ -96,7 +96,7 @@ func benchProxy(upstream string) *Proxy {
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil)
 }
 
 func benchForwardChat(b *testing.B, streaming bool) {
