@@ -1,6 +1,6 @@
 # Admin API 文档
 
-管理端 API（配置模板 / 账号 / 分组 / 日志 / 统计）。与 AI 推理请求（`/v1/*`，模型请求）相对，本组接口为网关管理面，不对上游转发。
+管理端 API（配置模板 / 账号 / 分组 / 兑换码 / 日志 / 统计）。与 AI 推理请求（`/v1/*`，模型请求）相对，本组接口为网关管理面，不对上游转发。
 
 ## 通用约定
 
@@ -19,6 +19,8 @@
 | `format`（请求格式） | `openai-chat` / `openai-responses` / `anthropic` |
 | `status`（账号） | `active` / `unhealthy` / `429` / `disabled` |
 | `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` |
+| `type`（兑换码） | `balance`（充值余额，最小单位分）/ `concurrency`（加并发数）/ `temp_balance`（临时余额，兑换后资源到期） |
+| `status`（兑换码） | `active` / `disabled`（不可编辑，仅可失效） |
 
 ---
 
@@ -508,14 +510,172 @@
 
 > 配置变更：`scheduler.cooldown_429` / `scheduler.backoff_base` / `scheduler.backoff_max` **已废弃**（不再参与任何决策，仅保留读取兼容）。429 冷却、错误退避与恢复节奏统一由规则引擎的种子规则与自定义规则接管。
 
+## 兑换码 Redemption Codes
+
+兑换码是资源发放的通用载体（Phase 5 计费前基础设施）：生成一批码 → 分发给用户 → 用户在 `/user/redemptions` 兑换 → 资源按码类型即时生效。管理面 5 个端点 + 用户面 2 个端点。
+
+### 生成兑换码
+
+`POST /admin/redemption-codes`
+
+请求体：
+
+```json
+{
+  "type": "balance",
+  "value": 100,
+  "remark": "618 活动",
+  "expires_at": "2026-12-31T23:59:59+08:00",
+  "resource_expires_at": "2027-01-15T00:00:00+08:00",
+  "max_uses": 1,
+  "count": 5
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `type` | string | ✅ | 枚举：`balance` / `concurrency` / `temp_balance`；非法 → `400` |
+| `value` | int64 | ✅ | 资源值（最小单位：分为 `balance` 的"分"、`concurrency` 为并发数）；`> 0`，否则 `400` |
+| `remark` | string | 否 | 备注 |
+| `expires_at` | datetime | 否 | 码**未兑换即过期**；缺省 = 永久；必须晚于当前时间（过去时间 → `400`） |
+| `resource_expires_at` | datetime | 否 | 兑换后**资源到期**；`temp_balance` 必填且必须晚于当前时间，其余类型恒为 `null` |
+| `max_uses` | int | 否 | 可兑换次数：`1` = 单次码（缺省）；`>1` = 多人码；`< 0` → `400` |
+| `count` | int | 否 | 一次生成个数 `1–1000`（缺省 `1`）；`0` 或缺省 = 1；越界 → `400` |
+
+响应 `200`：生成的完整码列表（`count` 个，码格式 `XXXXXX-XXXXXX`，字符集去易混淆的 `I/O/0/1`）。
+
+```json
+{
+  "codes": [
+    {
+      "ID": 1,
+      "Code": "JQVF2X-LD7SJQ",
+      "Type": "balance",
+      "Value": 100,
+      "Remark": "618 活动",
+      "ExpiresAt": "2026-12-31T23:59:59+08:00",
+      "ResourceExpiresAt": null,
+      "MaxUses": 1,
+      "UsedCount": 0,
+      "Status": "active",
+      "CreatedBy": 0,
+      "CreatedAt": "2026-08-08T10:00:00Z",
+      "UpdatedAt": "2026-08-08T10:00:00Z"
+    }
+  ]
+}
+```
+
+### 兑换码列表
+
+`GET /admin/redemption-codes`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `page` | int | 1 | 页码，**1-based**；缺省或 `< 1` 按 1（不报错） |
+| `page_size` | int | 20 | 每页行数；越界（`< 1` 或 `> 100`）→ `400` |
+| `type` | string | — | 筛选枚举：`balance` / `concurrency` / `temp_balance`；非法 → `400` |
+| `status` | string | — | 筛选枚举：`active` / `disabled`；非法 → `400` |
+| `sort` | string | `id` | 白名单：`id` / `code` / `type` / `value` / `max_uses` / `used_count` / `status` / `created_by` / `created_at` / `updated_at`；非法 → `400` |
+| `order` | string | `desc` | `asc` / `desc`；其他值 → `400` |
+
+响应 `200`：`{"total": N, "rows": [兑换码对象]}`（增强分页范式，与 templates 等旧 `limit`/`offset` 端点不同）。
+
+### 批量失效
+
+`POST /admin/redemption-codes/batch-deactivate`
+
+请求体：`{"ids": [1, 2, 3]}`（`1–100` 条，去重；空或超 100 → `400`）。
+
+| 响应 | 说明 |
+|---|---|
+| `200` | `{"deactivated": N}`——N 为**新失效数**（已 `disabled` 的 id 为 no-op 不计入） |
+| `404` | 任一 id 不存在：`{"error": "...id=999 missing..."}`（先查后失效，事务全成或全败） |
+
+批量失效为单事务；重复提交（全部已失效）返回 `{"deactivated": 0}`（幂等重放友好）。
+
+### 单码失效
+
+`POST /admin/redemption-codes/{id}/deactivate`
+
+无请求体。已失效再次调用为 no-op 成功（响应仍为 `{"deactivated": true}`，表示操作成功而非"本次新失效"）；`404`：id 不存在（消息含缺失 id）。
+
+### 兑换记录（审计）
+
+`GET /admin/redemption-codes/{id}/uses`
+
+响应 `200`：
+
+```json
+{
+  "total": 1,
+  "rows": [
+    { "ID": 1, "CodeID": 1, "UserID": 7, "Value": 100, "ResourceExpiresAt": null, "CreatedAt": "2026-08-08T10:05:00Z" }
+  ]
+}
+```
+
+`Value` 为兑换时的值快照（码后续失效不影响历史记录）；`404`：码不存在。
+
+### 用户面：兑换
+
+`POST /user/redemptions`（JWT 鉴权，非 admin 面——见下方"鉴权与 created_by 约定"）
+
+请求体：`{"code": "JQVF2X-LD7SJQ"}`。
+
+响应 `200`：
+
+```json
+{
+  "applied": {
+    "type": "balance",
+    "value": 100,
+    "resource_expires_at": null
+  }
+}
+```
+
+`applied` 为实际生效的资源（事务内应用）：`balance` 加余额、`concurrency` 加并发数、`temp_balance` 加临时余额（`resource_expires_at` 非空）。任一步失败（含并发用尽/重复兑换）整体回滚，资源不变。
+
+| 状态码 | 场景 |
+|---|---|
+| `200` | 兑换成功 |
+| `400` | `invalid code`：码不存在 / 已失效 / 已过期 / 用尽——**统一不泄露具体原因**（防枚举探测） |
+| `409` | `already redeemed`：本用户已兑换过该码（重复请求稳定 409，即使码随后失效也用尽，也与"已兑换"事实一致） |
+| `401` | 无 / 非法 JWT |
+
+### 用户面：我的兑换记录
+
+`GET /user/redemptions`（JWT 鉴权）
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `page` | int | 1 | 1-based；缺省或 `< 1` 按 1 |
+| `page_size` | int | 20 | 越界（`< 1` 或 `> 100`）→ `400` |
+| `sort` | string | `id` | 白名单：`id` / `code_id` / `user_id` / `value` / `created_at`；非法 → `400` |
+| `order` | string | `desc` | `asc` / `desc`；其他值 → `400` |
+
+响应 `200`：`{"total": N, "rows": [兑换记录]}`——记录含码的 `Code` / `CodeType` / `Remark` 联查快照。**强制只返回当前 JWT 用户本人的记录**（`user_id` 取自 JWT，无法通过参数指定他人——用户 A 永远看不到用户 B 的兑换记录）。
+
+### 鉴权与 created_by 约定
+
+| 路径 | 鉴权方式 | `created_by` 语义 |
+|---|---|---|
+| 静态 admin token（`Authorization: Bearer <admin.token>`） | `config.toml` 的 `admin.token` | 生成码时 `created_by = 0`（**0 = 系统**，未注入用户身份） |
+| platform_admin JWT（`Authorization: Bearer <jwt>`） | 与 /user 面同签发的 JWT，且 `role == platform_admin` | 生成码时 `created_by = 该用户 id`（>`0`） |
+
+`/admin/*` 两条路径任一通过即可；普通 `user` 角色的 JWT 访问 `/admin/*` → `401`。`created_by` 用于审计"哪个管理员/系统创建了这批发码"。
+
+---
+
 ## 认证失败与错误码
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 |
-| `401` | admin token 缺失或错误 |
+| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节） |
+| `401` | admin token 缺失或错误；普通 `user` 角色 JWT 访问 `/admin/*` |
 | `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |
-| `409` | 规则 `priority`/`name` 唯一冲突 |
+| `409` | 规则 `priority`/`name` 唯一冲突 / 兑换码重复兑换（`already redeemed`） |
 | `500` | 服务端错误（DB 等） |
 
 错误响应体统一为 `{"error": "<消息>"}`。
