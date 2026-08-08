@@ -32,6 +32,7 @@ const (
 const (
 	Abort     ErrorType = "abort"
 	Auth      ErrorType = "auth"
+	Billing   ErrorType = "billing"
 	N429      ErrorType = "429"
 	N4xx      ErrorType = "4xx"
 	N5xx      ErrorType = "5xx"
@@ -346,11 +347,14 @@ type GenerateResponse struct {
 
 // Group defines model for Group.
 type Group struct {
-	CreatedAt  *time.Time       `json:"CreatedAt,omitempty"`
-	ID         *int64           `json:"ID,omitempty"`
-	Name       *string          `json:"Name,omitempty"`
-	UpdatedAt  *time.Time       `json:"UpdatedAt,omitempty"`
-	Visibility *GroupVisibility `json:"Visibility,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+	ID        *int64     `json:"ID,omitempty"`
+	Name      *string    `json:"Name,omitempty"`
+
+	// PriceMultiplier 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）
+	PriceMultiplier *int             `json:"PriceMultiplier,omitempty"`
+	UpdatedAt       *time.Time       `json:"UpdatedAt,omitempty"`
+	Visibility      *GroupVisibility `json:"Visibility,omitempty"`
 }
 
 // GroupAssignmentsBody defines model for GroupAssignmentsBody.
@@ -366,8 +370,11 @@ type GroupAssignmentsResponse struct {
 
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
-	Name       string           `json:"name"`
-	Visibility *GroupVisibility `json:"visibility,omitempty"`
+	Name string `json:"name"`
+
+	// PriceMultiplier 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）。显式 0（免费组）请经 PUT 设置——POST 路径 0 视为未指定
+	PriceMultiplier *int             `json:"price_multiplier,omitempty"`
+	Visibility      *GroupVisibility `json:"visibility,omitempty"`
 }
 
 // GroupListResponse defines model for GroupListResponse.
@@ -393,6 +400,28 @@ type LogsResponse struct {
 
 // Pricing defines model for Pricing.
 type Pricing struct {
+	AboveCacheCreationPricePerMillion     *int64 `json:"AboveCacheCreationPricePerMillion"`
+	AboveCacheReadPricePerMillion         *int64 `json:"AboveCacheReadPricePerMillion"`
+	AboveCompletionPricePerMillion        *int64 `json:"AboveCompletionPricePerMillion"`
+	AboveFlexCacheCreationPricePerMillion *int64 `json:"AboveFlexCacheCreationPricePerMillion"`
+	AboveFlexCacheReadPricePerMillion     *int64 `json:"AboveFlexCacheReadPricePerMillion"`
+	AboveFlexCompletionPricePerMillion    *int64 `json:"AboveFlexCompletionPricePerMillion"`
+
+	// AboveFlexPromptPricePerMillion 超阈值分段价（flex 组，gpt-5.6-sol 形态）；nil = 该档回退基础 above 组
+	AboveFlexPromptPricePerMillion            *int64 `json:"AboveFlexPromptPricePerMillion"`
+	AbovePriorityCacheCreationPricePerMillion *int64 `json:"AbovePriorityCacheCreationPricePerMillion"`
+	AbovePriorityCacheReadPricePerMillion     *int64 `json:"AbovePriorityCacheReadPricePerMillion"`
+	AbovePriorityCompletionPricePerMillion    *int64 `json:"AbovePriorityCompletionPricePerMillion"`
+
+	// AbovePriorityPromptPricePerMillion 超阈值分段价（priority 组，azure 形态）；nil = 该档回退基础 above 组
+	AbovePriorityPromptPricePerMillion *int64 `json:"AbovePriorityPromptPricePerMillion"`
+
+	// AbovePromptPricePerMillion 超阈值分段价（基础组，毫分/1M tokens）；nil = 该分量不拆段
+	AbovePromptPricePerMillion *int64 `json:"AbovePromptPricePerMillion"`
+
+	// AboveThreshold 上下文分段阈值（tokens）；nil = 无分段
+	AboveThreshold *int64 `json:"AboveThreshold"`
+
 	// CacheCreationPricePerMillion 缓存写入价（litellm cache_creation_input_token_cost 换算）；nil = 无缓存价
 	CacheCreationPricePerMillion *int64 `json:"CacheCreationPricePerMillion"`
 
@@ -403,13 +432,28 @@ type Pricing struct {
 	CompletionPricePerMillion int64     `json:"CompletionPricePerMillion"`
 	CreatedAt                 time.Time `json:"CreatedAt"`
 
+	// FastMultiplier Anthropic Fast Mode 整单倍率（万分数，20000 = ×2.0）；nil = 无倍率
+	FastMultiplier                   *int64 `json:"FastMultiplier"`
+	FlexCacheCreationPricePerMillion *int64 `json:"FlexCacheCreationPricePerMillion"`
+	FlexCacheReadPricePerMillion     *int64 `json:"FlexCacheReadPricePerMillion"`
+	FlexCompletionPricePerMillion    *int64 `json:"FlexCompletionPricePerMillion"`
+
+	// FlexPromptPricePerMillion service_tier=flex 单价替换档（毫分/1M tokens）；nil = 无该档价，计费回退基础价
+	FlexPromptPricePerMillion *int64 `json:"FlexPromptPricePerMillion"`
+
 	// MaxInputTokens litellm 自带上下文窗口；nil = 未知
 	MaxInputTokens  *int64 `json:"MaxInputTokens"`
 	MaxOutputTokens *int64 `json:"MaxOutputTokens"`
 
 	// Mode litellm mode（chat/completion/embedding 等）
-	Mode  *string `json:"Mode"`
-	Model string  `json:"Model"`
+	Mode                                 *string `json:"Mode"`
+	Model                                string  `json:"Model"`
+	PriorityCacheCreationPricePerMillion *int64  `json:"PriorityCacheCreationPricePerMillion"`
+	PriorityCacheReadPricePerMillion     *int64  `json:"PriorityCacheReadPricePerMillion"`
+	PriorityCompletionPricePerMillion    *int64  `json:"PriorityCompletionPricePerMillion"`
+
+	// PriorityPromptPricePerMillion service_tier=priority 单价替换档（毫分/1M tokens）；nil = 无该档价，计费回退基础价
+	PriorityPromptPricePerMillion *int64 `json:"PriorityPromptPricePerMillion"`
 
 	// PromptPricePerMillion 毫分/1M tokens（1 USD = 100
 	PromptPricePerMillion int64 `json:"PromptPricePerMillion"`
@@ -446,12 +490,49 @@ type PricingSyncResponse struct {
 
 // PricingUpsert defines model for PricingUpsert.
 type PricingUpsert struct {
+	AboveCacheCreationPricePerMillion     *int64 `json:"above_cache_creation_price_per_million"`
+	AboveCacheReadPricePerMillion         *int64 `json:"above_cache_read_price_per_million"`
+	AboveCompletionPricePerMillion        *int64 `json:"above_completion_price_per_million"`
+	AboveFlexCacheCreationPricePerMillion *int64 `json:"above_flex_cache_creation_price_per_million"`
+	AboveFlexCacheReadPricePerMillion     *int64 `json:"above_flex_cache_read_price_per_million"`
+	AboveFlexCompletionPricePerMillion    *int64 `json:"above_flex_completion_price_per_million"`
+
+	// AboveFlexPromptPricePerMillion 超阈值分段价（flex 组，gpt-5.6-sol 形态）；缺省/null = 该档回退基础 above 组
+	AboveFlexPromptPricePerMillion            *int64 `json:"above_flex_prompt_price_per_million"`
+	AbovePriorityCacheCreationPricePerMillion *int64 `json:"above_priority_cache_creation_price_per_million"`
+	AbovePriorityCacheReadPricePerMillion     *int64 `json:"above_priority_cache_read_price_per_million"`
+	AbovePriorityCompletionPricePerMillion    *int64 `json:"above_priority_completion_price_per_million"`
+
+	// AbovePriorityPromptPricePerMillion 超阈值分段价（priority 组，azure 形态）；缺省/null = 该档回退基础 above 组
+	AbovePriorityPromptPricePerMillion *int64 `json:"above_priority_prompt_price_per_million"`
+
+	// AbovePromptPricePerMillion 超阈值分段价（基础组，毫分/1M tokens）；缺省/null = 该分量不拆段
+	AbovePromptPricePerMillion *int64 `json:"above_prompt_price_per_million"`
+
+	// AboveThreshold 上下文分段阈值（tokens）；缺省/null = 不设（无分段）
+	AboveThreshold *int64 `json:"above_threshold"`
+
 	// CacheCreationPricePerMillion 缓存写入价；缺省 = 不设缓存价（落库 NULL）
 	CacheCreationPricePerMillion *int64 `json:"cache_creation_price_per_million"`
 
 	// CacheReadPricePerMillion 缓存读取价（毫分/1M tokens）；缺省 = 不设缓存价（落库 NULL）
 	CacheReadPricePerMillion  *int64 `json:"cache_read_price_per_million"`
 	CompletionPricePerMillion int64  `json:"completion_price_per_million"`
+
+	// FastMultiplier Anthropic Fast Mode 整单倍率（万分数，0 < m ≤ 100000，20000 = ×2.0）；缺省/null = 不设
+	FastMultiplier                   *int64 `json:"fast_multiplier"`
+	FlexCacheCreationPricePerMillion *int64 `json:"flex_cache_creation_price_per_million"`
+	FlexCacheReadPricePerMillion     *int64 `json:"flex_cache_read_price_per_million"`
+	FlexCompletionPricePerMillion    *int64 `json:"flex_completion_price_per_million"`
+
+	// FlexPromptPricePerMillion service_tier=flex 单价替换档（毫分/1M tokens）；缺省/null = 不设（落库 NULL，计费回退基础价）
+	FlexPromptPricePerMillion            *int64 `json:"flex_prompt_price_per_million"`
+	PriorityCacheCreationPricePerMillion *int64 `json:"priority_cache_creation_price_per_million"`
+	PriorityCacheReadPricePerMillion     *int64 `json:"priority_cache_read_price_per_million"`
+	PriorityCompletionPricePerMillion    *int64 `json:"priority_completion_price_per_million"`
+
+	// PriorityPromptPricePerMillion service_tier=priority 单价替换档（毫分/1M tokens）；缺省/null = 不设（落库 NULL，计费回退基础价）
+	PriorityPromptPricePerMillion *int64 `json:"priority_prompt_price_per_million"`
 
 	// PromptPricePerMillion 毫分/1M tokens；≥ 0
 	PromptPricePerMillion int64 `json:"prompt_price_per_million"`
@@ -580,15 +661,18 @@ type StatBucket struct {
 	CacheCreationTokens *int64     `json:"CacheCreationTokens,omitempty"`
 	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
 	CompletionTokens    *int64     `json:"CompletionTokens,omitempty"`
-	ErrorCount          *int64     `json:"ErrorCount,omitempty"`
-	GroupID             *int64     `json:"GroupID,omitempty"`
-	IsError             *bool      `json:"IsError,omitempty"`
-	Model               *string    `json:"Model,omitempty"`
-	PromptTokens        *int64     `json:"PromptTokens,omitempty"`
-	RequestCount        *int64     `json:"RequestCount,omitempty"`
-	TemplateID          *int64     `json:"TemplateID,omitempty"`
-	TotalLatencyMS      *int64     `json:"TotalLatencyMS,omitempty"`
-	TotalTokens         *int64     `json:"TotalTokens,omitempty"`
+
+	// Cost 计费成本（毫分，1 USD = 100
+	Cost           *int64  `json:"Cost,omitempty"`
+	ErrorCount     *int64  `json:"ErrorCount,omitempty"`
+	GroupID        *int64  `json:"GroupID,omitempty"`
+	IsError        *bool   `json:"IsError,omitempty"`
+	Model          *string `json:"Model,omitempty"`
+	PromptTokens   *int64  `json:"PromptTokens,omitempty"`
+	RequestCount   *int64  `json:"RequestCount,omitempty"`
+	TemplateID     *int64  `json:"TemplateID,omitempty"`
+	TotalLatencyMS *int64  `json:"TotalLatencyMS,omitempty"`
+	TotalTokens    *int64  `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`
@@ -649,21 +733,32 @@ type TemplatePatchSupportedFormats string
 
 // UsageLog defines model for UsageLog.
 type UsageLog struct {
-	AccountID           *int64         `json:"AccountID,omitempty"`
-	CacheCreationTokens *int64         `json:"CacheCreationTokens,omitempty"`
-	CacheReadTokens     *int64         `json:"CacheReadTokens,omitempty"`
-	CompletionTokens    *int64         `json:"CompletionTokens,omitempty"`
-	CreatedAt           *time.Time     `json:"CreatedAt,omitempty"`
-	ErrorType           *ErrorType     `json:"ErrorType,omitempty"`
-	Format              *RequestFormat `json:"Format,omitempty"`
-	GroupID             *int64         `json:"GroupID,omitempty"`
-	ID                  *int64         `json:"ID,omitempty"`
+	// AboveHit 任一分量超 above 阈值命中分段
+	AboveHit  *bool  `json:"AboveHit,omitempty"`
+	AccountID *int64 `json:"AccountID,omitempty"`
+
+	// BillingTier 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径
+	BillingTier         *string `json:"BillingTier,omitempty"`
+	CacheCreationTokens *int64  `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64  `json:"CacheReadTokens,omitempty"`
+	CompletionTokens    *int64  `json:"CompletionTokens,omitempty"`
+
+	// Cost 计费成本（毫分，1 USD = 100
+	Cost      *int64         `json:"Cost,omitempty"`
+	CreatedAt *time.Time     `json:"CreatedAt,omitempty"`
+	ErrorType *ErrorType     `json:"ErrorType,omitempty"`
+	Format    *RequestFormat `json:"Format,omitempty"`
+	GroupID   *int64         `json:"GroupID,omitempty"`
+	ID        *int64         `json:"ID,omitempty"`
 
 	// KeyID 鉴权归属 key；0 = 无
-	KeyID        *int64  `json:"KeyID,omitempty"`
-	LatencyMS    *int64  `json:"LatencyMS,omitempty"`
-	MappedModel  *string `json:"MappedModel"`
-	Model        *string `json:"Model,omitempty"`
+	KeyID       *int64  `json:"KeyID,omitempty"`
+	LatencyMS   *int64  `json:"LatencyMS,omitempty"`
+	MappedModel *string `json:"MappedModel"`
+	Model       *string `json:"Model,omitempty"`
+
+	// Overdraft 本次扣费透支（余额不足扣为负余额）
+	Overdraft    *bool   `json:"Overdraft,omitempty"`
 	PromptTokens *int64  `json:"PromptTokens,omitempty"`
 	RequestID    *string `json:"RequestID,omitempty"`
 	StatusCode   *int    `json:"StatusCode,omitempty"`
@@ -676,27 +771,34 @@ type UsageLog struct {
 
 // User defines model for User.
 type User struct {
-	Balance        *int64      `json:"Balance,omitempty"`
-	CreatedAt      *time.Time  `json:"CreatedAt,omitempty"`
-	Email          *string     `json:"Email,omitempty"`
-	ID             *int64      `json:"ID,omitempty"`
-	MaxConcurrency *int        `json:"MaxConcurrency,omitempty"`
-	Role           *UserRole   `json:"Role,omitempty"`
-	Status         *UserStatus `json:"Status,omitempty"`
-	UpdatedAt      *time.Time  `json:"UpdatedAt,omitempty"`
+	// Balance 余额 USD（浮点；内部存储毫分——1 USD = 100
+	Balance        *float64   `json:"Balance,omitempty"`
+	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
+	Email          *string    `json:"Email,omitempty"`
+	ID             *int64     `json:"ID,omitempty"`
+	MaxConcurrency *int       `json:"MaxConcurrency,omitempty"`
+
+	// PriceMultiplier 用户专属价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）；null = 未设置（用组倍率）
+	PriceMultiplier *int        `json:"PriceMultiplier"`
+	Role            *UserRole   `json:"Role,omitempty"`
+	Status          *UserStatus `json:"Status,omitempty"`
+	UpdatedAt       *time.Time  `json:"UpdatedAt,omitempty"`
 }
 
 // UserCreate defines model for UserCreate.
 type UserCreate struct {
-	// Balance 余额（最小单位）；扣费 Phase 5
-	Balance *int64 `json:"balance,omitempty"`
-	Email   string `json:"email"`
+	// Balance 余额 USD（浮点，≥ 0；1 USD = 100
+	Balance *float64 `json:"balance,omitempty"`
+	Email   string   `json:"email"`
 
 	// MaxConcurrency 用户级在途上限；0 = 不限
-	MaxConcurrency *int        `json:"max_concurrency,omitempty"`
-	Password       string      `json:"password"`
-	Role           *UserRole   `json:"role,omitempty"`
-	Status         *UserStatus `json:"status,omitempty"`
+	MaxConcurrency *int   `json:"max_concurrency,omitempty"`
+	Password       string `json:"password"`
+
+	// PriceMultiplier 用户专属价格倍率（万分数，0 = 免费，10000 = ×1）；null/缺省 = 未设置（用组倍率）
+	PriceMultiplier *int        `json:"price_multiplier"`
+	Role            *UserRole   `json:"role,omitempty"`
+	Status          *UserStatus `json:"status,omitempty"`
 }
 
 // UserListResponse defines model for UserListResponse.
@@ -713,10 +815,14 @@ type UserStatus string
 
 // UserUpdate defines model for UserUpdate.
 type UserUpdate struct {
-	Balance        *int64      `json:"balance,omitempty"`
-	MaxConcurrency *int        `json:"max_concurrency,omitempty"`
-	Role           *UserRole   `json:"role,omitempty"`
-	Status         *UserStatus `json:"status,omitempty"`
+	// Balance 余额 USD（浮点，≥ 0；1 USD = 100
+	Balance        *float64 `json:"balance,omitempty"`
+	MaxConcurrency *int     `json:"max_concurrency,omitempty"`
+
+	// PriceMultiplier 用户专属价格倍率（万分数，0 = 免费）；null = 清除为未设置（回退组倍率）；缺省 = 不变
+	PriceMultiplier *int        `json:"price_multiplier"`
+	Role            *UserRole   `json:"role,omitempty"`
+	Status          *UserStatus `json:"status,omitempty"`
 }
 
 // Error defines model for Error.

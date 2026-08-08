@@ -215,6 +215,9 @@ func (f *fakeStore) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	}
 	g.ID = f.nextID
 	f.nextID++
+	if g.PriceMultiplier == 0 {
+		g.PriceMultiplier = 10000 // 与真实 repo 同语义：0 = 未指定 → DB 默认 ×1
+	}
 	c := *g
 	f.groups[g.ID] = &c
 	return g, nil
@@ -602,6 +605,7 @@ func (f *fakeStore) UpdateUser(ctx context.Context, u *domain.User) (*domain.Use
 	cur.Status = u.Status
 	cur.MaxConcurrency = u.MaxConcurrency
 	cur.Balance = u.Balance
+	cur.PriceMultiplier = u.PriceMultiplier
 	c := *cur
 	return &c, nil
 }

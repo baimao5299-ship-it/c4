@@ -716,7 +716,7 @@ export interface components {
         /** @enum {string} */
         AccountStatus: "active" | "unhealthy" | "429" | "disabled";
         /** @enum {string} */
-        ErrorType: "none" | "429" | "4xx" | "5xx" | "network" | "auth" | "no_account" | "abort";
+        ErrorType: "none" | "429" | "4xx" | "5xx" | "network" | "auth" | "no_account" | "abort" | "billing";
         TemplateCreate: {
             name: string;
             base_url: string;
@@ -882,8 +882,13 @@ export interface components {
             Role?: components["schemas"]["UserRole"];
             Status?: components["schemas"]["UserStatus"];
             MaxConcurrency?: number;
-            /** Format: int64 */
+            /**
+             * Format: double
+             * @description 余额 USD（浮点；内部存储毫分——1 USD = 100
+             */
             Balance?: number;
+            /** @description 用户专属价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）；null = 未设置（用组倍率） */
+            PriceMultiplier?: number | null;
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
@@ -909,17 +914,24 @@ export interface components {
             /** @description 用户级在途上限；0 = 不限 */
             max_concurrency?: number;
             /**
-             * Format: int64
-             * @description 余额（最小单位）；扣费 Phase 5
+             * Format: double
+             * @description 余额 USD（浮点，≥ 0；1 USD = 100
              */
             balance?: number;
+            /** @description 用户专属价格倍率（万分数，0 = 免费，10000 = ×1）；null/缺省 = 未设置（用组倍率） */
+            price_multiplier?: number | null;
         };
         UserUpdate: {
             role?: components["schemas"]["UserRole"];
             status?: components["schemas"]["UserStatus"];
             max_concurrency?: number;
-            /** Format: int64 */
+            /**
+             * Format: double
+             * @description 余额 USD（浮点，≥ 0；1 USD = 100
+             */
             balance?: number;
+            /** @description 用户专属价格倍率（万分数，0 = 免费）；null = 清除为未设置（回退组倍率）；缺省 = 不变 */
+            price_multiplier?: number | null;
         };
         UserListResponse: {
             /** Format: int64 */
@@ -941,6 +953,8 @@ export interface components {
         GroupCreate: {
             name: string;
             visibility?: components["schemas"]["GroupVisibility"];
+            /** @description 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）。显式 0（免费组）请经 PUT 设置——POST 路径 0 视为未指定 */
+            price_multiplier?: number;
         };
         RuleCreate: {
             name: string;
@@ -991,6 +1005,8 @@ export interface components {
             ID?: number;
             Name?: string;
             Visibility?: components["schemas"]["GroupVisibility"];
+            /** @description 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10） */
+            PriceMultiplier?: number;
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
@@ -1204,6 +1220,71 @@ export interface components {
              * @description 缓存写入价（litellm cache_creation_input_token_cost 换算）；nil = 无缓存价
              */
             CacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description service_tier=priority 单价替换档（毫分/1M tokens）；nil = 无该档价，计费回退基础价
+             */
+            PriorityPromptPricePerMillion?: number | null;
+            /** Format: int64 */
+            PriorityCompletionPricePerMillion?: number | null;
+            /** Format: int64 */
+            PriorityCacheReadPricePerMillion?: number | null;
+            /** Format: int64 */
+            PriorityCacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description service_tier=flex 单价替换档（毫分/1M tokens）；nil = 无该档价，计费回退基础价
+             */
+            FlexPromptPricePerMillion?: number | null;
+            /** Format: int64 */
+            FlexCompletionPricePerMillion?: number | null;
+            /** Format: int64 */
+            FlexCacheReadPricePerMillion?: number | null;
+            /** Format: int64 */
+            FlexCacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description 上下文分段阈值（tokens）；nil = 无分段
+             */
+            AboveThreshold?: number | null;
+            /**
+             * Format: int64
+             * @description 超阈值分段价（基础组，毫分/1M tokens）；nil = 该分量不拆段
+             */
+            AbovePromptPricePerMillion?: number | null;
+            /** Format: int64 */
+            AboveCompletionPricePerMillion?: number | null;
+            /** Format: int64 */
+            AboveCacheReadPricePerMillion?: number | null;
+            /** Format: int64 */
+            AboveCacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description 超阈值分段价（priority 组，azure 形态）；nil = 该档回退基础 above 组
+             */
+            AbovePriorityPromptPricePerMillion?: number | null;
+            /** Format: int64 */
+            AbovePriorityCompletionPricePerMillion?: number | null;
+            /** Format: int64 */
+            AbovePriorityCacheReadPricePerMillion?: number | null;
+            /** Format: int64 */
+            AbovePriorityCacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description 超阈值分段价（flex 组，gpt-5.6-sol 形态）；nil = 该档回退基础 above 组
+             */
+            AboveFlexPromptPricePerMillion?: number | null;
+            /** Format: int64 */
+            AboveFlexCompletionPricePerMillion?: number | null;
+            /** Format: int64 */
+            AboveFlexCacheReadPricePerMillion?: number | null;
+            /** Format: int64 */
+            AboveFlexCacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description Anthropic Fast Mode 整单倍率（万分数，20000 = ×2.0）；nil = 无倍率
+             */
+            FastMultiplier?: number | null;
             /** @description litellm_provider（litellm 行才有；manual 行 nil） */
             Provider?: string | null;
             /** @description litellm mode（chat/completion/embedding 等） */
@@ -1234,6 +1315,71 @@ export interface components {
              * @description 缓存写入价；缺省 = 不设缓存价（落库 NULL）
              */
             cache_creation_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description service_tier=priority 单价替换档（毫分/1M tokens）；缺省/null = 不设（落库 NULL，计费回退基础价）
+             */
+            priority_prompt_price_per_million?: number | null;
+            /** Format: int64 */
+            priority_completion_price_per_million?: number | null;
+            /** Format: int64 */
+            priority_cache_read_price_per_million?: number | null;
+            /** Format: int64 */
+            priority_cache_creation_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description service_tier=flex 单价替换档（毫分/1M tokens）；缺省/null = 不设（落库 NULL，计费回退基础价）
+             */
+            flex_prompt_price_per_million?: number | null;
+            /** Format: int64 */
+            flex_completion_price_per_million?: number | null;
+            /** Format: int64 */
+            flex_cache_read_price_per_million?: number | null;
+            /** Format: int64 */
+            flex_cache_creation_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description 上下文分段阈值（tokens）；缺省/null = 不设（无分段）
+             */
+            above_threshold?: number | null;
+            /**
+             * Format: int64
+             * @description 超阈值分段价（基础组，毫分/1M tokens）；缺省/null = 该分量不拆段
+             */
+            above_prompt_price_per_million?: number | null;
+            /** Format: int64 */
+            above_completion_price_per_million?: number | null;
+            /** Format: int64 */
+            above_cache_read_price_per_million?: number | null;
+            /** Format: int64 */
+            above_cache_creation_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description 超阈值分段价（priority 组，azure 形态）；缺省/null = 该档回退基础 above 组
+             */
+            above_priority_prompt_price_per_million?: number | null;
+            /** Format: int64 */
+            above_priority_completion_price_per_million?: number | null;
+            /** Format: int64 */
+            above_priority_cache_read_price_per_million?: number | null;
+            /** Format: int64 */
+            above_priority_cache_creation_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description 超阈值分段价（flex 组，gpt-5.6-sol 形态）；缺省/null = 该档回退基础 above 组
+             */
+            above_flex_prompt_price_per_million?: number | null;
+            /** Format: int64 */
+            above_flex_completion_price_per_million?: number | null;
+            /** Format: int64 */
+            above_flex_cache_read_price_per_million?: number | null;
+            /** Format: int64 */
+            above_flex_cache_creation_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description Anthropic Fast Mode 整单倍率（万分数，0 < m ≤ 100000，20000 = ×2.0）；缺省/null = 不设
+             */
+            fast_multiplier?: number | null;
         };
         PricingListResponse: {
             /** Format: int64 */
@@ -1297,6 +1443,17 @@ export interface components {
             CacheReadTokens?: number;
             /** Format: int64 */
             CacheCreationTokens?: number;
+            /**
+             * Format: int64
+             * @description 计费成本（毫分，1 USD = 100
+             */
+            Cost?: number;
+            /** @description 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径 */
+            BillingTier?: string;
+            /** @description 任一分量超 above 阈值命中分段 */
+            AboveHit?: boolean;
+            /** @description 本次扣费透支（余额不足扣为负余额） */
+            Overdraft?: boolean;
             /** Format: date-time */
             CreatedAt?: string;
         };
@@ -1335,6 +1492,11 @@ export interface components {
             CacheReadTokens?: number;
             /** Format: int64 */
             CacheCreationTokens?: number;
+            /**
+             * Format: int64
+             * @description 计费成本（毫分，1 USD = 100
+             */
+            Cost?: number;
             /** Format: int64 */
             TotalLatencyMS?: number;
         };

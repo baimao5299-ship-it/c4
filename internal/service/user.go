@@ -104,9 +104,10 @@ func (s *Service) GetUserMe(ctx context.Context, userID int64) (*domain.User, er
 }
 
 // CreateUser 管理面创建用户（platform_admin 专属）：email 唯一/格式、密码
-// ≤72 字节 → bcrypt（sub2api 同参数）→ role/status/max_concurrency/balance
-// 落库 → invalidate（新用户入 Auth 状态快照）。
-func (s *Service) CreateUser(ctx context.Context, email, password string, role domain.Role, status domain.UserStatus, maxConcurrency int, balance int64) (*domain.User, error) {
+// ≤72 字节 → bcrypt（sub2api 同参数）→ role/status/max_concurrency/balance/
+// price_multiplier 落库 → invalidate（新用户入 Auth 状态快照）。倍率万分数
+// 0~100000（nil = 未设置，用组倍率）；超界 → 400。
+func (s *Service) CreateUser(ctx context.Context, email, password string, role domain.Role, status domain.UserStatus, maxConcurrency int, balance int64, priceMultiplier *int) (*domain.User, error) {
 	if !validEmail(email) {
 		return nil, ErrInvalidInput
 	}
@@ -114,6 +115,9 @@ func (s *Service) CreateUser(ctx context.Context, email, password string, role d
 		return nil, ErrInvalidInput
 	}
 	if !role.Valid() || !status.Valid() || maxConcurrency < 0 || balance < 0 {
+		return nil, ErrInvalidInput
+	}
+	if priceMultiplier != nil && (*priceMultiplier < 0 || *priceMultiplier > 100000) {
 		return nil, ErrInvalidInput
 	}
 	existing, err := s.store.GetUserByEmail(ctx, email)
@@ -131,6 +135,7 @@ func (s *Service) CreateUser(ctx context.Context, email, password string, role d
 		Email: email, PasswordHash: hash,
 		Role: role, Status: status,
 		MaxConcurrency: maxConcurrency, Balance: balance,
+		PriceMultiplier: priceMultiplier,
 	})
 	if err != nil {
 		return nil, err
@@ -150,13 +155,17 @@ func (s *Service) ListUsers(ctx context.Context, q repository.ListQuery) ([]*dom
 	return s.store.ListUsers(ctx, q)
 }
 
-// UpdateUser 用户管理面更新（role/status/max_concurrency/balance）。
-// 用户状态/并发/额度变更 → invalidate → Auth.Reload 全量刷新（评审 I-2）。
+// UpdateUser 用户管理面更新（role/status/max_concurrency/balance/
+// price_multiplier）。用户状态/并发/额度变更 → invalidate → Auth.Reload 全量
+// 刷新（评审 I-2）。倍率万分数 0~100000；nil = 清除为未设置（repo Clear）。
 func (s *Service) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
 	if !u.Role.Valid() || !u.Status.Valid() {
 		return nil, ErrInvalidInput
 	}
 	if u.MaxConcurrency < 0 || u.Balance < 0 {
+		return nil, ErrInvalidInput
+	}
+	if u.PriceMultiplier != nil && (*u.PriceMultiplier < 0 || *u.PriceMultiplier > 100000) {
 		return nil, ErrInvalidInput
 	}
 	updated, err := s.store.UpdateUser(ctx, u)

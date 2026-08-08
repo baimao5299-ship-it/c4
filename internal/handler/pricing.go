@@ -44,7 +44,7 @@ func (h *AdminAPI) GetPricing(w http.ResponseWriter, r *http.Request, params Get
 // PutPricingModel 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管
 // litellm 行；负数/model 空 → 400，service 校验）。可选字段（cache 价 + Phase 5
 // 矩阵 22 列）缺省（nil）→ 清空（接管行该矩阵价清除，PUT 全量替换语义），
-// ServerInterface。矩阵字段解码在 T4 契约扩展时随 openapi 生成补全。
+// ServerInterface。
 func (h *AdminAPI) PutPricingModel(w http.ResponseWriter, r *http.Request, model string) {
 	var in PricingUpsert
 	if err := decode(r, &in); err != nil {
@@ -57,6 +57,28 @@ func (h *AdminAPI) PutPricingModel(w http.ResponseWriter, r *http.Request, model
 		CompletionPricePerMillion:    in.CompletionPricePerMillion,
 		CacheReadPricePerMillion:     in.CacheReadPricePerMillion,
 		CacheCreationPricePerMillion: in.CacheCreationPricePerMillion,
+		PriorityPromptPricePerMillion:        in.PriorityPromptPricePerMillion,
+		PriorityCompletionPricePerMillion:    in.PriorityCompletionPricePerMillion,
+		PriorityCacheReadPricePerMillion:     in.PriorityCacheReadPricePerMillion,
+		PriorityCacheCreationPricePerMillion: in.PriorityCacheCreationPricePerMillion,
+		FlexPromptPricePerMillion:            in.FlexPromptPricePerMillion,
+		FlexCompletionPricePerMillion:        in.FlexCompletionPricePerMillion,
+		FlexCacheReadPricePerMillion:         in.FlexCacheReadPricePerMillion,
+		FlexCacheCreationPricePerMillion:     in.FlexCacheCreationPricePerMillion,
+		AboveThreshold:                       in.AboveThreshold,
+		AbovePromptPricePerMillion:           in.AbovePromptPricePerMillion,
+		AboveCompletionPricePerMillion:       in.AboveCompletionPricePerMillion,
+		AboveCacheReadPricePerMillion:        in.AboveCacheReadPricePerMillion,
+		AboveCacheCreationPricePerMillion:    in.AboveCacheCreationPricePerMillion,
+		AbovePriorityPromptPricePerMillion:   in.AbovePriorityPromptPricePerMillion,
+		AbovePriorityCompletionPricePerMillion: in.AbovePriorityCompletionPricePerMillion,
+		AbovePriorityCacheReadPricePerMillion:  in.AbovePriorityCacheReadPricePerMillion,
+		AbovePriorityCacheCreationPricePerMillion: in.AbovePriorityCacheCreationPricePerMillion,
+		AboveFlexPromptPricePerMillion:           in.AboveFlexPromptPricePerMillion,
+		AboveFlexCompletionPricePerMillion:       in.AboveFlexCompletionPricePerMillion,
+		AboveFlexCacheReadPricePerMillion:        in.AboveFlexCacheReadPricePerMillion,
+		AboveFlexCacheCreationPricePerMillion:    in.AboveFlexCacheCreationPricePerMillion,
+		FastMultiplier:                           in.FastMultiplier,
 	})
 	if err != nil {
 		writeServiceErr(w, err)
@@ -103,6 +125,28 @@ func toAPIPricing(p *domain.Pricing) Pricing {
 		MaxOutputTokens:              p.MaxOutputTokens,
 		CacheReadPricePerMillion:     p.CacheReadPricePerMillion,
 		CacheCreationPricePerMillion: p.CacheCreationPricePerMillion,
+		PriorityPromptPricePerMillion:        p.PriorityPromptPricePerMillion,
+		PriorityCompletionPricePerMillion:    p.PriorityCompletionPricePerMillion,
+		PriorityCacheReadPricePerMillion:     p.PriorityCacheReadPricePerMillion,
+		PriorityCacheCreationPricePerMillion: p.PriorityCacheCreationPricePerMillion,
+		FlexPromptPricePerMillion:            p.FlexPromptPricePerMillion,
+		FlexCompletionPricePerMillion:        p.FlexCompletionPricePerMillion,
+		FlexCacheReadPricePerMillion:         p.FlexCacheReadPricePerMillion,
+		FlexCacheCreationPricePerMillion:     p.FlexCacheCreationPricePerMillion,
+		AboveThreshold:                       p.AboveThreshold,
+		AbovePromptPricePerMillion:           p.AbovePromptPricePerMillion,
+		AboveCompletionPricePerMillion:       p.AboveCompletionPricePerMillion,
+		AboveCacheReadPricePerMillion:        p.AboveCacheReadPricePerMillion,
+		AboveCacheCreationPricePerMillion:    p.AboveCacheCreationPricePerMillion,
+		AbovePriorityPromptPricePerMillion:   p.AbovePriorityPromptPricePerMillion,
+		AbovePriorityCompletionPricePerMillion: p.AbovePriorityCompletionPricePerMillion,
+		AbovePriorityCacheReadPricePerMillion:  p.AbovePriorityCacheReadPricePerMillion,
+		AbovePriorityCacheCreationPricePerMillion: p.AbovePriorityCacheCreationPricePerMillion,
+		AboveFlexPromptPricePerMillion:           p.AboveFlexPromptPricePerMillion,
+		AboveFlexCompletionPricePerMillion:       p.AboveFlexCompletionPricePerMillion,
+		AboveFlexCacheReadPricePerMillion:        p.AboveFlexCacheReadPricePerMillion,
+		AboveFlexCacheCreationPricePerMillion:    p.AboveFlexCacheCreationPricePerMillion,
+		FastMultiplier:                           p.FastMultiplier,
 		Provider:                     p.Provider,
 		Mode:                         p.Mode,
 		SupportsPromptCaching:        p.SupportsPromptCaching,

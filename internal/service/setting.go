@@ -13,9 +13,17 @@ func (s *Service) GetSettings(ctx context.Context) ([]*domain.Setting, error) {
 	return s.store.GetAllSettings(ctx)
 }
 
+// serviceTierPolicyKeys service_tier 转发策略设置（值域 passthrough/strip/reject，
+// 见 domain.DefaultSettings 注释；非法值 → 400）。
+var serviceTierPolicyKeys = map[string]bool{
+	"service_tier_policy_priority": true,
+	"service_tier_policy_flex":     true,
+}
+
 // UpdateSetting 类型化校验后更新（/admin/settings PUT）：
 // key ∈ 内置注册表（未知 key → 400）；switch 必须 true/false；number 必须
-// 数字。更新成功后同步内存快照——注册等读路径即时生效。
+// 数字；service_tier_policy_* 必须 passthrough/strip/reject。更新成功后同步
+// 内存快照——注册等读路径即时生效。
 func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain.Setting, error) {
 	def := domain.DefaultSetting(key)
 	if def == nil {
@@ -30,6 +38,9 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 		if _, err := strconv.ParseInt(value, 10, 64); err != nil {
 			return nil, ErrInvalidInput
 		}
+	}
+	if serviceTierPolicyKeys[key] && value != "passthrough" && value != "strip" && value != "reject" {
+		return nil, ErrInvalidInput
 	}
 	set, err := s.store.SetSetting(ctx, key, def.Type, value)
 	if err != nil {

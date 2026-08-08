@@ -41,6 +41,9 @@ func deref[T any](p *T) T {
 	return *p
 }
 
+// ptr 返回指向 v 的指针（构造契约指针字段）。
+func ptr[T any](v T) *T { return &v }
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
