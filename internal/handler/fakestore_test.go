@@ -34,7 +34,10 @@ type fakeStore struct {
 	codes     map[int64]*domain.RedemptionCode
 	uses      map[int64]*domain.RedemptionUse
 	temps     []*fakeTempRow // 临时额度行（domain 无 TempBalance 类型，标量参数即全字段）
-	nextID    int64
+	// pricings 模型价格（key = model，一行 = 最终生效价；manual > litellm 优先级
+	// 语义与真实仓库一致）。
+	pricings map[string]*domain.Pricing
+	nextID   int64
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
@@ -47,7 +50,8 @@ func newFakeStore() *fakeStore {
 		keys: make(map[int64]*domain.Key), users: make(map[int64]*domain.User),
 		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule),
 		assign: make(map[int64][]int64), codes: make(map[int64]*domain.RedemptionCode),
-		uses: make(map[int64]*domain.RedemptionUse), nextID: 1,
+		uses: make(map[int64]*domain.RedemptionUse), pricings: make(map[string]*domain.Pricing),
+		nextID: 1,
 	}
 }
 
@@ -1119,4 +1123,107 @@ func (f *fakeStore) UpdateUserMaxConcurrency(ctx context.Context, userID int64, 
 		u.MaxConcurrency += value
 	}
 	return nil
+}
+
+// --- 模型价格（service.PricingStore，Phase 5 计费价格来源） ---
+
+// UpsertFromLiteLLM 模拟批量 upsert + manual 行级互斥（已存在 manual 行不覆盖、
+// 不计入更新数；source 恒 litellm）。
+func (f *fakeStore) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, p := range rows {
+		if cur, ok := f.pricings[p.Model]; ok && cur.Source == domain.PricingSourceManual {
+			continue
+		}
+		c := *p
+		c.Source = domain.PricingSourceLitellm
+		f.pricings[p.Model] = &c
+		n++
+	}
+	return n, nil
+}
+
+// UpsertManual 模拟手动设价（可接管 litellm 行；返回副本）。
+func (f *fakeStore) UpsertManual(ctx context.Context, model string, promptP, completionP int64) (*domain.Pricing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := &domain.Pricing{
+		Model: model, PromptPricePerMillion: promptP,
+		CompletionPricePerMillion: completionP, Source: domain.PricingSourceManual,
+	}
+	f.pricings[model] = p
+	c := *p
+	return &c, nil
+}
+
+// DeleteManual 模拟删除：仅 source=manual 可删（litellm 行 → ErrConflict）；
+// 不存在 → ErrNotFound。
+func (f *fakeStore) DeleteManual(ctx context.Context, model string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur, ok := f.pricings[model]
+	if !ok {
+		return fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
+	}
+	if cur.Source != domain.PricingSourceManual {
+		return fmt.Errorf("%w: model=%q source=litellm（只允许删手动价）", repository.ErrConflict, model)
+	}
+	delete(f.pricings, model)
+	return nil
+}
+
+// ListPricing 模拟列表：source/model 筛选 + model 排序 + 分页。
+func (f *fakeStore) ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var rows []*domain.Pricing
+	for _, p := range f.pricings {
+		if source != nil && p.Source != *source {
+			continue
+		}
+		if model != "" && !strings.Contains(strings.ToLower(p.Model), strings.ToLower(model)) {
+			continue
+		}
+		c := *p
+		rows = append(rows, &c)
+	}
+	if q.Sort != "" && q.Sort != "model" && q.Sort != "updated_at" {
+		return nil, 0, repository.ErrInvalidSort
+	}
+	if q.Sort == "model" {
+		slices.SortFunc(rows, func(a, b *domain.Pricing) int {
+			if q.Order == "desc" {
+				return -strings.Compare(a.Model, b.Model)
+			}
+			return strings.Compare(a.Model, b.Model)
+		})
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	end := q.Offset + q.Limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	if q.Offset > len(rows) {
+		q.Offset = len(rows)
+	}
+	return rows[q.Offset:end], int64(len(rows)), nil
+}
+
+// GetPricing 模拟按 model 取行（缺失 → repository.ErrNotFound）。
+func (f *fakeStore) GetPricing(ctx context.Context, model string) (*domain.Pricing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.pricings[model]
+	if !ok {
+		return nil, fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
+	}
+	c := *p
+	return &c, nil
 }

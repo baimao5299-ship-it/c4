@@ -36,6 +36,7 @@ type Store interface {
 	LogStore
 	StatStore
 	RedemptionStore
+	PricingStore
 	// WithTx 在单事务内执行 fn（评审 I-1）：真实仓库为 tx 版 Repository（全部走
 	// tx 连接）；fake 为事务语义模拟（fn 内变更先入暂存、成功提交/失败丢弃——
 	// 回滚断言的前提）。
@@ -138,6 +139,17 @@ type RedemptionStore interface {
 	IncrementUsed(ctx context.Context, codeID int64) (bool, error)
 }
 
+// PricingStore 模型价格持久化（Phase 5 计费价格来源）。source 行级互斥优先级
+// manual > litellm 由仓库保证（拉取 upsert 永不覆盖手动价）；service 层快照
+// 构建与仓库同语义。
+type PricingStore interface {
+	UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error)
+	UpsertManual(ctx context.Context, model string, promptP, completionP int64) (*domain.Pricing, error)
+	DeleteManual(ctx context.Context, model string) error
+	ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error)
+	GetPricing(ctx context.Context, model string) (*domain.Pricing, error)
+}
+
 type LogStore interface {
 	QueryLogs(ctx context.Context, q repository.LogQuery) ([]*domain.UsageLog, int64, error)
 }
@@ -172,12 +184,17 @@ type Service struct {
 	// settings 设置全量内存快照（默认值 + DB 覆盖）：公开读路径（注册等）
 	// 零 DB 直读；仅管理面 UpdateSetting 后重载（低频，无锁）。
 	settings atomic.Pointer[map[string]*domain.Setting]
-	log      *logx.Logger
+	// pricing 模型价格全量内存快照（key = model 名；表内一行 = 最终生效价）：
+	// Phase 5 计费读路径（GetPrice）零 DB 直读；New 初始化 + 管理端改价
+	// （UpsertManualPricing/DeleteManualPricing）+ 同步拉取成功后重载（低频，无锁）。
+	pricing atomic.Pointer[map[string]*domain.Pricing]
+	log     *logx.Logger
 }
 
 func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
 	s := &Service{store: store, sched: sched, invalidate: invalidate, ruleReload: ruleReload, keys: keys, log: log}
 	s.reloadSettings(context.Background())
+	s.reloadPricing(context.Background())
 	return s
 }
 
