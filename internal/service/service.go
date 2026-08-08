@@ -130,6 +130,8 @@ type RedemptionStore interface {
 	GetCode(ctx context.Context, id int64) (*domain.RedemptionCode, error)
 	ListCodes(ctx context.Context, q repository.ListQuery, typ *domain.RedemptionType, status *domain.RedemptionStatus) ([]*domain.RedemptionCode, int64, error)
 	ListCodeUses(ctx context.Context, codeID int64, q repository.ListQuery) ([]*domain.RedemptionUse, int64, error)
+	// ListUsesByUser 某用户的兑换记录（/user/redemptions；use + 码联查视图）。
+	ListUsesByUser(ctx context.Context, userID int64, q repository.ListQuery) ([]*domain.RedemptionRecord, int64, error)
 	DeactivateCodes(ctx context.Context, ids []int64) (int64, error)
 	GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error)
 	CreateUse(ctx context.Context, use *domain.RedemptionUse) error
@@ -256,6 +258,8 @@ var listSortFields = map[string][]string{
 	"keys":      {"id", "name", "status", "max_concurrency", "quota", "quota_used", "created_at", "updated_at"},
 	// 与 repo 层 redemptionCodeSortFields 白名单一致（双保险）。
 	"redemption_codes": {"id", "code", "type", "value", "max_uses", "used_count", "status", "created_by", "created_at", "updated_at"},
+	// 与 repo 层 redemptionUseSortFields 白名单一致（双保险；/user/redemptions）。
+	"redemption_uses": {"id", "code_id", "user_id", "value", "created_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

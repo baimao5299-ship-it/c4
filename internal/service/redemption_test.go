@@ -328,8 +328,10 @@ func TestRedeem(t *testing.T) {
 		row := fs.temps[0]
 		require.Equal(t, u.ID, row.UserID)
 		require.Equal(t, int64(1000), row.Amount)
-		require.Equal(t, re, row.ExpiresAt, "expires_at = resource_expires_at")
-		require.Equal(t, "redemption code", row.Note)
+		require.NotNil(t, row.ExpiresAt)
+		require.Equal(t, re, *row.ExpiresAt, "expires_at = resource_expires_at")
+		require.NotNil(t, row.Note)
+		require.Equal(t, "redemption code", *row.Note)
 		got, err := fs.GetUser(ctx, u.ID)
 		require.NoError(t, err)
 		require.Zero(t, got.Balance, "temp_balance 不动 users.balance")

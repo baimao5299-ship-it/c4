@@ -72,3 +72,16 @@ type RedemptionApply struct {
 	Value             int64
 	ResourceExpiresAt *time.Time
 }
+
+// RedemptionRecord 我的兑换记录（/user/redemptions GET 行）：use 快照 + 码的
+// type/remark 联查（use 行不存码类型；码生成后 type/remark 不可变，失效不影响）。
+type RedemptionRecord struct {
+	ID                int64
+	CodeID            int64
+	Code              string
+	CodeType          RedemptionType
+	Value             int64
+	Remark            *string
+	ResourceExpiresAt *time.Time
+	CreatedAt         time.Time
+}

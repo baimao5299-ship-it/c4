@@ -307,6 +307,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/redemption-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 兑换码列表（增强分页范式 page/page_size；type/status 筛选；sort 白名单） */
+        get: operations["GetRedemptionCodes"];
+        put?: never;
+        /** 生成兑换码（1..count 个；count 默认 1，上限 1000；type 枚举/value>0/temp_balance 必填 resource_expires_at） */
+        post: operations["PostRedemptionCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/redemption-codes/batch-deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量失效兑换码（单事务；已失效 no-op；缺失 id → 404 含缺失详情） */
+        post: operations["PostRedemptionCodesBatchDeactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/redemption-codes/{id}/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 某码的兑换记录（审计；码缺失 → 404） */
+        get: operations["GetRedemptionCodesIdUses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/redemption-codes/{id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 单码失效（已失效 no-op；缺失 → 404） */
+        post: operations["PostRedemptionCodesIdDeactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/user/auth/register": {
         parameters: {
             query?: never;
@@ -461,6 +534,24 @@ export interface paths {
         get: operations["GetUserStats"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/redemptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的兑换记录（use 快照 + 码的 type/remark 联查；强制 user_id = 当前用户，防越权） */
+        get: operations["GetUserRedemptions"];
+        put?: never;
+        /** 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换） */
+        post: operations["PostUserRedemptions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -901,6 +992,144 @@ export interface components {
         };
         BatchUpdateResponse: {
             updated: number;
+        };
+        /** @enum {string} */
+        RedemptionType: "balance" | "concurrency" | "temp_balance";
+        /** @enum {string} */
+        RedemptionStatus: "active" | "disabled";
+        RedemptionCode: {
+            /** Format: int64 */
+            ID: number;
+            /** @description XXXXXX-XXXXXX（生成后不可编辑，仅可失效） */
+            Code: string;
+            Type: components["schemas"]["RedemptionType"];
+            /**
+             * Format: int64
+             * @description 最小单位（分/并发数）
+             */
+            Value: number;
+            Remark?: string | null;
+            /**
+             * Format: date-time
+             * @description 码未兑换即过期；null = 永久
+             */
+            ExpiresAt?: string | null;
+            /**
+             * Format: date-time
+             * @description 兑换后资源到期；temp_balance 必有，其余恒 null
+             */
+            ResourceExpiresAt?: string | null;
+            /** @description 1 = 单次码；>1 = 多人码 */
+            MaxUses: number;
+            /** @description 已兑换次数 */
+            UsedCount: number;
+            Status: components["schemas"]["RedemptionStatus"];
+            /**
+             * Format: int64
+             * @description 0 = 系统（静态 admin token）；>0 = platform_admin 用户 id
+             */
+            CreatedBy: number;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        RedemptionUse: {
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            CodeID: number;
+            /** Format: int64 */
+            UserID: number;
+            /**
+             * Format: int64
+             * @description 兑换时的值快照
+             */
+            Value: number;
+            /** Format: date-time */
+            ResourceExpiresAt?: string | null;
+            /** Format: date-time */
+            CreatedAt: string;
+        };
+        RedemptionRecord: {
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            CodeID: number;
+            Code: string;
+            CodeType: components["schemas"]["RedemptionType"];
+            /** Format: int64 */
+            Value: number;
+            Remark?: string | null;
+            /** Format: date-time */
+            ResourceExpiresAt?: string | null;
+            /** Format: date-time */
+            CreatedAt: string;
+        };
+        RedemptionCodeListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["RedemptionCode"][];
+        };
+        RedemptionUseListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["RedemptionUse"][];
+        };
+        RedemptionRecordListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["RedemptionRecord"][];
+        };
+        GenerateRequest: {
+            type: components["schemas"]["RedemptionType"];
+            /**
+             * Format: int64
+             * @description 最小单位（分/并发数）；> 0
+             */
+            value: number;
+            remark?: string;
+            /**
+             * Format: date-time
+             * @description 码未兑换即过期；缺省 = 永久
+             */
+            expires_at?: string;
+            /**
+             * Format: date-time
+             * @description 兑换后资源到期；temp_balance 必填（决策 4）
+             */
+            resource_expires_at?: string;
+            /** @description 1 = 单次码（缺省）；>1 = 多人码 */
+            max_uses?: number;
+            /** @description 生成个数 1-1000（缺省 1） */
+            count?: number;
+        };
+        GenerateResponse: {
+            codes: components["schemas"]["RedemptionCode"][];
+        };
+        /** @description 单码失效无请求体（保留空 schema 对齐批量端点命名） */
+        DeactivateRequest: Record<string, never>;
+        DeactivateResponse: {
+            deactivated: boolean;
+        };
+        BatchDeactivateRequest: {
+            ids: number[];
+        };
+        BatchDeactivateResponse: {
+            /** @description 新失效数（已 disabled no-op 不计） */
+            deactivated: number;
+        };
+        RedeemRequest: {
+            code: string;
+        };
+        RedeemResponse: {
+            applied: {
+                type: components["schemas"]["RedemptionType"];
+                /** Format: int64 */
+                value: number;
+                /** Format: date-time */
+                resource_expires_at?: string | null;
+            };
         };
         UsageLog: {
             /** Format: int64 */
@@ -1701,6 +1930,134 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetRedemptionCodes: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                type?: "balance" | "concurrency" | "temp_balance";
+                status?: "active" | "disabled";
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 兑换码列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionCodeListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostRedemptionCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description 生成的完整码列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostRedemptionCodesBatchDeactivate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchDeactivateRequest"];
+            };
+        };
+        responses: {
+            /** @description 新失效数（已 disabled 不计） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchDeactivateResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetRedemptionCodesIdUses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 兑换记录列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionUseListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostRedemptionCodesIdDeactivate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DeactivateRequest"];
+            };
+        };
+        responses: {
+            /** @description 失效成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeactivateResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     PostUserAuthRegister: {
         parameters: {
             query?: never;
@@ -1995,6 +2352,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatBucket"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserRedemptions: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionRecordListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUserRedemptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description 兑换成功回执 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemResponse"];
                 };
             };
             default: components["responses"]["Error"];

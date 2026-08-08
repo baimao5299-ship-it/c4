@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"runtime"
@@ -69,18 +70,23 @@ func NewServer(opts Options) *Server {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				authz := req.Header.Get("Authorization")
 				if authz == "Bearer "+opts.AdminToken {
+					// 静态 admin token 路径不注入 UserID（决策 5：handler 读到 0 = 系统）
 					next.ServeHTTP(w, req)
 					return
 				}
 				if opts.JWTIssuer != nil && strings.HasPrefix(authz, "Bearer ") {
 					claims, err := opts.JWTIssuer.Verify(strings.TrimPrefix(authz, "Bearer "))
 					if err == nil && claims.Role == string(domain.RolePlatformAdmin) {
+						active := false
 						if opts.UserStatus == nil {
-							next.ServeHTTP(w, req)
-							return
+							active = true
+						} else if st, ok := opts.UserStatus.UserStatus(claims.UserID); ok && st == domain.UserStatusActive {
+							active = true
 						}
-						if st, ok := opts.UserStatus.UserStatus(claims.UserID); ok && st == domain.UserStatusActive {
-							next.ServeHTTP(w, req)
+						if active {
+							// JWT 路径注入 claims.UserID（兑换码 created_by 用，决策 5）
+							ctx := context.WithValue(req.Context(), adminUserIDKey{}, claims.UserID)
+							next.ServeHTTP(w, req.WithContext(ctx))
 							return
 						}
 					}

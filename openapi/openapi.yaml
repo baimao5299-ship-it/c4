@@ -13,6 +13,7 @@ tags:
   - name: rules
   - name: logs
   - name: stats
+  - name: redemptions
 paths:
   /templates:
     post:
@@ -480,6 +481,100 @@ paths:
                 items: { $ref: '#/components/schemas/Setting' }
         default:
           $ref: '#/components/responses/Error'
+  # --- 兑换码（tag: redemptions；Phase 5 计费前基础设施——资源发放的通用载体） ---
+  # 注意 chi 路径顺序：/redemption-codes/batch-deactivate 必须先于
+  # /redemption-codes/{id}/... 注册（生成器按 spec 顺序注册，防 "batch-deactivate"
+  # 被 {id} 捕获，对齐 /templates/batch-delete 先例）。
+  /redemption-codes:
+    post:
+      operationId: PostRedemptionCodes
+      tags: [redemptions]
+      summary: 生成兑换码（1..count 个；count 默认 1，上限 1000；type 枚举/value>0/temp_balance 必填 resource_expires_at）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateRequest' }
+      responses:
+        '200':
+          description: 生成的完整码列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GenerateResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: GetRedemptionCodes
+      tags: [redemptions]
+      summary: 兑换码列表（增强分页范式 page/page_size；type/status 筛选；sort 白名单）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: type, in: query, schema: { type: string, enum: [balance, concurrency, temp_balance] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, disabled] } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 兑换码列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedemptionCodeListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /redemption-codes/batch-deactivate:
+    post:
+      operationId: PostRedemptionCodesBatchDeactivate
+      tags: [redemptions]
+      summary: 批量失效兑换码（单事务；已失效 no-op；缺失 id → 404 含缺失详情）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchDeactivateRequest' }
+      responses:
+        '200':
+          description: 新失效数（已 disabled 不计）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchDeactivateResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /redemption-codes/{id}/uses:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: GetRedemptionCodesIdUses
+      tags: [redemptions]
+      summary: 某码的兑换记录（审计；码缺失 → 404）
+      responses:
+        '200':
+          description: 兑换记录列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedemptionUseListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /redemption-codes/{id}/deactivate:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: PostRedemptionCodesIdDeactivate
+      tags: [redemptions]
+      summary: 单码失效（已失效 no-op；缺失 → 404）
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeactivateRequest' }
+      responses:
+        '200':
+          description: 失效成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeactivateResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   # --- /user 面（tag: user；生成到 internal/handler/user 独立 ServerInterface） ---
   /user/auth/register:
     post:
@@ -685,6 +780,41 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/StatBucket' }
+        default:
+          $ref: '#/components/responses/Error'
+  /user/redemptions:
+    post:
+      operationId: PostUserRedemptions
+      tags: [user]
+      summary: 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RedeemRequest' }
+      responses:
+        '200':
+          description: 兑换成功回执
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: GetUserRedemptions
+      tags: [user]
+      summary: 我的兑换记录（use 快照 + 码的 type/remark 联查；强制 user_id = 当前用户，防越权）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 分页结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedemptionRecordListResponse' }
         default:
           $ref: '#/components/responses/Error'
   # 注意 chi 路径顺序：/rules 必须先于 /rules/{id} 注册（生成器按 spec 顺序注册）。
@@ -1247,6 +1377,132 @@ components:
       required: [updated]
       properties:
         updated: { type: integer }
+    # --- 兑换码（Phase 5 计费前基础设施：资源发放的通用载体） ---
+    RedemptionType:
+      type: string
+      enum: [balance, concurrency, temp_balance]
+    RedemptionStatus:
+      type: string
+      enum: [active, disabled]
+    RedemptionCode:
+      type: object
+      required: [ID, Code, Type, Value, MaxUses, UsedCount, Status, CreatedBy, CreatedAt, UpdatedAt]
+      properties:
+        ID: { type: integer, format: int64 }
+        Code: { type: string, description: XXXXXX-XXXXXX（生成后不可编辑，仅可失效） }
+        Type: { $ref: '#/components/schemas/RedemptionType' }
+        Value: { type: integer, format: int64, description: 最小单位（分/并发数） }
+        Remark: { type: string, nullable: true }
+        ExpiresAt: { type: string, format: date-time, nullable: true, description: 码未兑换即过期；null = 永久 }
+        ResourceExpiresAt: { type: string, format: date-time, nullable: true, description: 兑换后资源到期；temp_balance 必有，其余恒 null }
+        MaxUses: { type: integer, description: 1 = 单次码；>1 = 多人码 }
+        UsedCount: { type: integer, description: 已兑换次数 }
+        Status: { $ref: '#/components/schemas/RedemptionStatus' }
+        CreatedBy: { type: integer, format: int64, description: 0 = 系统（静态 admin token）；>0 = platform_admin 用户 id }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    RedemptionUse:
+      type: object
+      required: [ID, CodeID, UserID, Value, CreatedAt]
+      properties:
+        ID: { type: integer, format: int64 }
+        CodeID: { type: integer, format: int64 }
+        UserID: { type: integer, format: int64 }
+        Value: { type: integer, format: int64, description: 兑换时的值快照 }
+        ResourceExpiresAt: { type: string, format: date-time, nullable: true }
+        CreatedAt: { type: string, format: date-time }
+    RedemptionRecord:
+      type: object
+      required: [ID, CodeID, Code, CodeType, Value, CreatedAt]
+      properties:
+        ID: { type: integer, format: int64 }
+        CodeID: { type: integer, format: int64 }
+        Code: { type: string }
+        CodeType: { $ref: '#/components/schemas/RedemptionType' }
+        Value: { type: integer, format: int64 }
+        Remark: { type: string, nullable: true }
+        ResourceExpiresAt: { type: string, format: date-time, nullable: true }
+        CreatedAt: { type: string, format: date-time }
+    RedemptionCodeListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/RedemptionCode' }
+    RedemptionUseListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/RedemptionUse' }
+    RedemptionRecordListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/RedemptionRecord' }
+    GenerateRequest:
+      type: object
+      required: [type, value]
+      properties:
+        type: { $ref: '#/components/schemas/RedemptionType' }
+        value: { type: integer, format: int64, description: 最小单位（分/并发数）；> 0 }
+        remark: { type: string }
+        expires_at: { type: string, format: date-time, description: 码未兑换即过期；缺省 = 永久 }
+        resource_expires_at: { type: string, format: date-time, description: 兑换后资源到期；temp_balance 必填（决策 4） }
+        max_uses: { type: integer, description: 1 = 单次码（缺省）；>1 = 多人码 }
+        count: { type: integer, description: 生成个数 1-1000（缺省 1） }
+    GenerateResponse:
+      type: object
+      required: [codes]
+      properties:
+        codes:
+          type: array
+          items: { $ref: '#/components/schemas/RedemptionCode' }
+    DeactivateRequest:
+      type: object
+      description: 单码失效无请求体（保留空 schema 对齐批量端点命名）
+    DeactivateResponse:
+      type: object
+      required: [deactivated]
+      properties:
+        deactivated: { type: boolean }
+    BatchDeactivateRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, format: int64 }
+          minItems: 1
+          maxItems: 100
+    BatchDeactivateResponse:
+      type: object
+      required: [deactivated]
+      properties:
+        deactivated: { type: integer, description: 新失效数（已 disabled no-op 不计） }
+    RedeemRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string }
+    RedeemResponse:
+      type: object
+      required: [applied]
+      properties:
+        applied:
+          type: object
+          required: [type, value]
+          properties:
+            type: { $ref: '#/components/schemas/RedemptionType' }
+            value: { type: integer, format: int64 }
+            resource_expires_at: { type: string, format: date-time, nullable: true }
     UsageLog:
       type: object
       properties:
