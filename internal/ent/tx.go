@@ -20,6 +20,10 @@ type Tx struct {
 	GroupAssignment *GroupAssignmentClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
+	// RedemptionCode is the client for interacting with the RedemptionCode builders.
+	RedemptionCode *RedemptionCodeClient
+	// RedemptionUse is the client for interacting with the RedemptionUse builders.
+	RedemptionUse *RedemptionUseClient
 	// Rule is the client for interacting with the Rule builders.
 	Rule *RuleClient
 	// Setting is the client for interacting with the Setting builders.
@@ -169,6 +173,8 @@ func (tx *Tx) init() {
 	tx.Group = NewGroupClient(tx.config)
 	tx.GroupAssignment = NewGroupAssignmentClient(tx.config)
 	tx.Key = NewKeyClient(tx.config)
+	tx.RedemptionCode = NewRedemptionCodeClient(tx.config)
+	tx.RedemptionUse = NewRedemptionUseClient(tx.config)
 	tx.Rule = NewRuleClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.TempBalance = NewTempBalanceClient(tx.config)

@@ -150,7 +150,7 @@ func (r commandTagResult) RowsAffected() (int64, error) { return r.tag.RowsAffec
 // ---------------------------------------------------------------------------
 
 type testRepos struct {
-	repos *repository.Repos
+	repos *repository.Repository
 	pool  pgxmock.PgxPoolIface
 }
 

@@ -56,6 +56,30 @@ func (f KeyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.KeyMutation", m)
 }
 
+// The RedemptionCodeFunc type is an adapter to allow the use of ordinary
+// function as RedemptionCode mutator.
+type RedemptionCodeFunc func(context.Context, *ent.RedemptionCodeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RedemptionCodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RedemptionCodeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RedemptionCodeMutation", m)
+}
+
+// The RedemptionUseFunc type is an adapter to allow the use of ordinary
+// function as RedemptionUse mutator.
+type RedemptionUseFunc func(context.Context, *ent.RedemptionUseMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RedemptionUseFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RedemptionUseMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RedemptionUseMutation", m)
+}
+
 // The RuleFunc type is an adapter to allow the use of ordinary
 // function as Rule mutator.
 type RuleFunc func(context.Context, *ent.RuleMutation) (ent.Value, error)

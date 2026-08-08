@@ -10,6 +10,8 @@ import (
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/redemptioncode"
+	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/rule"
 	"go-proxy-mini/internal/ent/setting"
 	"go-proxy-mini/internal/ent/tempbalance"
@@ -87,6 +89,8 @@ func checkColumn(t, c string) error {
 			group.Table:           group.ValidColumn,
 			groupassignment.Table: groupassignment.ValidColumn,
 			key.Table:             key.ValidColumn,
+			redemptioncode.Table:  redemptioncode.ValidColumn,
+			redemptionuse.Table:   redemptionuse.ValidColumn,
 			rule.Table:            rule.ValidColumn,
 			setting.Table:         setting.ValidColumn,
 			tempbalance.Table:     tempbalance.ValidColumn,

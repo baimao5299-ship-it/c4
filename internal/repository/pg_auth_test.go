@@ -24,7 +24,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // seedPGUser 建用户（role 缺省 user；返回创建的 domain.User）。
-func seedPGUser(t *testing.T, repos *repository.Repos, email string) *domain.User {
+func seedPGUser(t *testing.T, repos *repository.Repository, email string) *domain.User {
 	t.Helper()
 	u, err := repos.CreateUser(context.Background(), &domain.User{
 		Email: email, PasswordHash: "bcrypt-hash-" + email,
