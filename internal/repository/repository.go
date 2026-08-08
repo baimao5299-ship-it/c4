@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -238,6 +239,12 @@ func (r *Repository) UpdateUser(ctx context.Context, u *domain.User) (*domain.Us
 
 func (r *Repository) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
 	return r.Users.UpdateUserPassword(ctx, id, passwordHash)
+}
+
+// CreateTempBalance 临时额度行（注册赠品；UserRepo 扩展方法，不新增独立
+// repo 字段——避免与并行任务的门面改动冲突）。
+func (r *Repository) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
+	return r.Users.CreateTempBalance(ctx, userID, amount, expiresAt, note)
 }
 
 // --- 客户端 key（Phase 3a） ---
