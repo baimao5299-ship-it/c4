@@ -120,6 +120,58 @@ var (
 			},
 		},
 	}
+	// RedemptionCodesColumns holds the columns for the "redemption_codes" table.
+	RedemptionCodesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "code", Type: field.TypeString, Unique: true},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"balance", "concurrency", "temp_balance"}},
+		{Name: "value", Type: field.TypeInt64},
+		{Name: "remark", Type: field.TypeString, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "resource_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "max_uses", Type: field.TypeInt, Default: 1},
+		{Name: "used_count", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
+		{Name: "created_by", Type: field.TypeInt64, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// RedemptionCodesTable holds the schema information for the "redemption_codes" table.
+	RedemptionCodesTable = &schema.Table{
+		Name:       "redemption_codes",
+		Columns:    RedemptionCodesColumns,
+		PrimaryKey: []*schema.Column{RedemptionCodesColumns[0]},
+	}
+	// RedemptionUsesColumns holds the columns for the "redemption_uses" table.
+	RedemptionUsesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "value", Type: field.TypeInt64},
+		{Name: "resource_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "code_id", Type: field.TypeInt64},
+	}
+	// RedemptionUsesTable holds the schema information for the "redemption_uses" table.
+	RedemptionUsesTable = &schema.Table{
+		Name:       "redemption_uses",
+		Columns:    RedemptionUsesColumns,
+		PrimaryKey: []*schema.Column{RedemptionUsesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "redemption_uses_redemption_codes_uses",
+				Columns:    []*schema.Column{RedemptionUsesColumns[5]},
+				RefColumns: []*schema.Column{RedemptionCodesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "redemptionuse_code_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{RedemptionUsesColumns[5], RedemptionUsesColumns[1]},
+			},
+		},
+	}
 	// RulesColumns holds the columns for the "rules" table.
 	RulesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -335,6 +387,8 @@ var (
 		GroupsTable,
 		GroupAssignmentsTable,
 		KeysTable,
+		RedemptionCodesTable,
+		RedemptionUsesTable,
 		RulesTable,
 		SettingsTable,
 		TempBalancesTable,
@@ -352,6 +406,7 @@ func init() {
 	GroupAssignmentsTable.ForeignKeys[1].RefTable = UsersTable
 	KeysTable.ForeignKeys[0].RefTable = GroupsTable
 	KeysTable.ForeignKeys[1].RefTable = UsersTable
+	RedemptionUsesTable.ForeignKeys[0].RefTable = RedemptionCodesTable
 	TempBalancesTable.ForeignKeys[0].RefTable = UsersTable
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable

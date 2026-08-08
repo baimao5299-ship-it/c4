@@ -10,6 +10,8 @@ import (
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/redemptioncode"
+	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/template"
 	"go-proxy-mini/internal/ent/user"
 )
@@ -78,5 +80,17 @@ var (
 		"max_concurrency": key.FieldMaxConcurrency, "quota": key.FieldQuota,
 		"quota_used": key.FieldQuotaUsed, "created_at": key.FieldCreatedAt,
 		"updated_at": key.FieldUpdatedAt,
+	}
+	redemptionCodeSortFields = map[string]string{
+		"id": redemptioncode.FieldID, "code": redemptioncode.FieldCode, "type": redemptioncode.FieldType,
+		"value": redemptioncode.FieldValue, "max_uses": redemptioncode.FieldMaxUses,
+		"used_count": redemptioncode.FieldUsedCount, "status": redemptioncode.FieldStatus,
+		"created_by": redemptioncode.FieldCreatedBy, "created_at": redemptioncode.FieldCreatedAt,
+		"updated_at": redemptioncode.FieldUpdatedAt,
+	}
+	redemptionUseSortFields = map[string]string{
+		"id": redemptionuse.FieldID, "code_id": redemptionuse.FieldCodeID,
+		"user_id": redemptionuse.FieldUserID, "value": redemptionuse.FieldValue,
+		"created_at": redemptionuse.FieldCreatedAt,
 	}
 )

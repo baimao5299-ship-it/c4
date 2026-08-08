@@ -24,7 +24,7 @@ import (
 // 未设置 TEST_DATABASE_URL → t.Skip（不炸本地/CI 无库环境）。
 // ---------------------------------------------------------------------------
 
-func newPGRepos(t *testing.T) *repository.Repos {
+func newPGRepos(t *testing.T) *repository.Repository {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -45,7 +45,7 @@ func newPGRepos(t *testing.T) *repository.Repos {
 }
 
 // seedPGTemplate 建模板（accounts.template_id 有外键，必先建）。
-func seedPGTemplate(t *testing.T, repos *repository.Repos) *domain.Template {
+func seedPGTemplate(t *testing.T, repos *repository.Repository) *domain.Template {
 	t.Helper()
 	tpl, err := repos.Templates.CreateTemplate(context.Background(), &domain.Template{
 		Name: "t", BaseURL: "https://u/v1",
@@ -55,14 +55,14 @@ func seedPGTemplate(t *testing.T, repos *repository.Repos) *domain.Template {
 	return tpl
 }
 
-func seedPGGroup(t *testing.T, repos *repository.Repos, name string) *domain.Group {
+func seedPGGroup(t *testing.T, repos *repository.Repository, name string) *domain.Group {
 	t.Helper()
 	g, err := repos.Groups.CreateGroup(context.Background(), &domain.Group{Name: name, Visibility: domain.GroupVisibilityPublic})
 	require.NoError(t, err)
 	return g
 }
 
-func seedPGAccount(t *testing.T, repos *repository.Repos, tplID int64, name string) *domain.Account {
+func seedPGAccount(t *testing.T, repos *repository.Repository, tplID int64, name string) *domain.Account {
 	t.Helper()
 	a, err := repos.Accounts.CreateAccount(context.Background(), &domain.Account{
 		Name: name, TemplateID: tplID, UpstreamKey: "sk-" + name, Weight: 1, MaxConcurrency: 8,
