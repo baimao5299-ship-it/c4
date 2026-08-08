@@ -1297,7 +1297,7 @@ components:
       properties:
         name: { type: string }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
-        price_multiplier: { type: integer, minimum: 0, maximum: 100000, description: 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变） }
+        price_multiplier: { type: integer, minimum: 0, maximum: 100000, description: 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）。显式 0（免费组）请经 PUT 设置——POST 路径 0 视为未指定 }
     RuleCreate:
       type: object
       required: [name, priority]
@@ -1633,7 +1633,7 @@ components:
         above_flex_completion_price_per_million: { type: integer, format: int64, minimum: 0, nullable: true }
         above_flex_cache_read_price_per_million: { type: integer, format: int64, minimum: 0, nullable: true }
         above_flex_cache_creation_price_per_million: { type: integer, format: int64, minimum: 0, nullable: true }
-        fast_multiplier: { type: integer, format: int64, minimum: 0, maximum: 100000, nullable: true, description: Anthropic Fast Mode 整单倍率（万分数，0 < m ≤ 100000，20000 = ×2.0）；缺省/null = 不设 }
+        fast_multiplier: { type: integer, format: int64, minimum: 1, maximum: 100000, nullable: true, description: Anthropic Fast Mode 整单倍率（万分数，0 < m ≤ 100000，20000 = ×2.0）；缺省/null = 不设 }
     PricingListResponse:
       type: object
       required: [total, rows]

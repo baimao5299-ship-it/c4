@@ -489,7 +489,7 @@
 | `AboveHit` | bool | 任一分量超 `above_threshold` 命中分段计价 |
 | `Overdraft` | bool | 本次扣费透支（余额不足扣为负余额；`[billing]` 开启且允许透支时可能为 true） |
 
-> **明细存储**：`usagelog` 为 PostgreSQL **按日分区表**（`PARTITION BY RANGE(created_at)`，分区名 `usagelog_YYYYMMDD`）。保留期由配置 `usage.log_retention_days` 决定（管理员设置 = 分区保留天数，默认 30 天）；retention worker 每小时 `DROP` 过期分区（O(1)）并预建未来分区。跨分区查询按时间范围走分区剪枝。
+> **明细存储**：`usage_logs` 为 PostgreSQL **按日分区表**（`PARTITION BY RANGE(created_at)`，分区名 `usage_logs_YYYYMMDD`）。保留期由配置 `usage.log_retention_days` 决定（管理员设置 = 分区保留天数，默认 30 天）；retention worker 每小时 `DROP` 过期分区（O(1)）并预建未来分区。跨分区查询按时间范围走分区剪枝。
 
 ### 查询用量统计
 
@@ -902,7 +902,7 @@
 
 ## 计费 Billing
 
-Phase 5 计费链路：请求前**预检**（价格快照缺价 / 余额快照 ≤0 → `402`）→ 请求完成聚合计费（`internal/billing` 纯函数：tier 选价 + above 分段 + fast 倍率 + 价格倍率）→ 内存聚合、周期批量**条件扣费**（毫分直接扣减，零换算）→ 明细落 `usagelog`（cost/tier/above_hit/overdraft 列）。
+Phase 5 计费链路：请求前**预检**（价格快照缺价 / 余额快照 ≤0 → `402`）→ 请求完成聚合计费（`internal/billing` 纯函数：tier 选价 + above 分段 + fast 倍率 + 价格倍率）→ 内存聚合、周期批量**条件扣费**（毫分直接扣减，零换算）→ 明细落 `usage_logs`（cost/tier/above_hit/overdraft 列）。
 
 ### 启用顺序（config.toml）
 
@@ -916,7 +916,7 @@ billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "1
 | `billing.flush_interval` | `1s` | 扣费批量落库周期（内存聚合满或周期到 → 逐 user 小事务条件扣费） |
 | `billing.balance_refresh_interval` | `10s` | 余额快照全量刷新周期（预检读快照；扣费后定向即时刷新该 user） |
 
-关联配置：`proxy.usage_capture`（日志开关；billing 路由判定包含它）、`usage.log_retention_days`（usagelog 分区保留天数，见「日志与统计」）。
+关联配置：`proxy.usage_capture`（日志开关；billing 路由判定包含它）、`usage.log_retention_days`（usage_logs 分区保留天数，见「日志与统计」）。
 
 ### 402 语义（计费拒绝）
 

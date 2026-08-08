@@ -953,7 +953,7 @@ export interface components {
         GroupCreate: {
             name: string;
             visibility?: components["schemas"]["GroupVisibility"];
-            /** @description 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变） */
+            /** @description 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）。显式 0（免费组）请经 PUT 设置——POST 路径 0 视为未指定 */
             price_multiplier?: number;
         };
         RuleCreate: {

@@ -372,7 +372,7 @@ type GroupAssignmentsResponse struct {
 type GroupCreate struct {
 	Name string `json:"name"`
 
-	// PriceMultiplier 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）
+	// PriceMultiplier 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）。显式 0（免费组）请经 PUT 设置——POST 路径 0 视为未指定
 	PriceMultiplier *int             `json:"price_multiplier,omitempty"`
 	Visibility      *GroupVisibility `json:"visibility,omitempty"`
 }
