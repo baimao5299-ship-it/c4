@@ -60,6 +60,11 @@ func Name(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldName, v))
 }
 
+// PriceMultiplier applies equality check predicate on the "price_multiplier" field. It's identical to PriceMultiplierEQ.
+func PriceMultiplier(v int) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPriceMultiplier, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldCreatedAt, v))
@@ -153,6 +158,46 @@ func VisibilityIn(vs ...Visibility) predicate.Group {
 // VisibilityNotIn applies the NotIn predicate on the "visibility" field.
 func VisibilityNotIn(vs ...Visibility) predicate.Group {
 	return predicate.Group(sql.FieldNotIn(FieldVisibility, vs...))
+}
+
+// PriceMultiplierEQ applies the EQ predicate on the "price_multiplier" field.
+func PriceMultiplierEQ(v int) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierNEQ applies the NEQ predicate on the "price_multiplier" field.
+func PriceMultiplierNEQ(v int) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierIn applies the In predicate on the "price_multiplier" field.
+func PriceMultiplierIn(vs ...int) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldPriceMultiplier, vs...))
+}
+
+// PriceMultiplierNotIn applies the NotIn predicate on the "price_multiplier" field.
+func PriceMultiplierNotIn(vs ...int) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldPriceMultiplier, vs...))
+}
+
+// PriceMultiplierGT applies the GT predicate on the "price_multiplier" field.
+func PriceMultiplierGT(v int) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierGTE applies the GTE predicate on the "price_multiplier" field.
+func PriceMultiplierGTE(v int) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierLT applies the LT predicate on the "price_multiplier" field.
+func PriceMultiplierLT(v int) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierLTE applies the LTE predicate on the "price_multiplier" field.
+func PriceMultiplierLTE(v int) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldPriceMultiplier, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

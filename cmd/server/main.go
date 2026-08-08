@@ -122,7 +122,9 @@ func main() {
 	var billHooks *proxy.BillingHooks
 	var billFlusher *billing.Flusher
 	if cfg.Billing.Enabled {
-		billBalances = billing.NewBalances(repos.Users, log)
+		// loader = Repository 门面（BalanceLoader：余额+用户倍率 → Users，
+		// 组倍率 → Groups，T3.5）。
+		billBalances = billing.NewBalances(repos, log)
 		_ = billBalances.Reload(context.Background()) // 启动同步，fail-safe（失败保留空快照 → 预检全 402 拒绝，安全侧）
 		billFlusher = billing.NewFlusher(billing.FlushConfig{
 			FlushInterval:          cfg.Billing.FlushInterval,

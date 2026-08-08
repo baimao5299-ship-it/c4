@@ -93,6 +93,20 @@ func (_c *UserCreate) SetNillableBalance(v *int64) *UserCreate {
 	return _c
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_c *UserCreate) SetPriceMultiplier(v int) *UserCreate {
+	_c.mutation.SetPriceMultiplier(v)
+	return _c
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePriceMultiplier(v *int) *UserCreate {
+	if v != nil {
+		_c.SetPriceMultiplier(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *UserCreate) SetCreatedAt(v time.Time) *UserCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -326,6 +340,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldBalance, field.TypeInt64, value)
 		_node.Balance = value
 	}
+	if value, ok := _c.mutation.PriceMultiplier(); ok {
+		_spec.SetField(user.FieldPriceMultiplier, field.TypeInt, value)
+		_node.PriceMultiplier = &value
+	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -518,6 +536,30 @@ func (u *UserUpsert) AddBalance(v int64) *UserUpsert {
 	return u
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *UserUpsert) SetPriceMultiplier(v int) *UserUpsert {
+	u.Set(user.FieldPriceMultiplier, v)
+	return u
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *UserUpsert) UpdatePriceMultiplier() *UserUpsert {
+	u.SetExcluded(user.FieldPriceMultiplier)
+	return u
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *UserUpsert) AddPriceMultiplier(v int) *UserUpsert {
+	u.Add(user.FieldPriceMultiplier, v)
+	return u
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (u *UserUpsert) ClearPriceMultiplier() *UserUpsert {
+	u.SetNull(user.FieldPriceMultiplier)
+	return u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (u *UserUpsert) SetCreatedAt(v time.Time) *UserUpsert {
 	u.Set(user.FieldCreatedAt, v)
@@ -685,6 +727,34 @@ func (u *UserUpsertOne) AddBalance(v int64) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateBalance() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *UserUpsertOne) SetPriceMultiplier(v int) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPriceMultiplier(v)
+	})
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *UserUpsertOne) AddPriceMultiplier(v int) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPriceMultiplier(v)
+	})
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdatePriceMultiplier() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePriceMultiplier()
+	})
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (u *UserUpsertOne) ClearPriceMultiplier() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearPriceMultiplier()
 	})
 }
 
@@ -1025,6 +1095,34 @@ func (u *UserUpsertBulk) AddBalance(v int64) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateBalance() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *UserUpsertBulk) SetPriceMultiplier(v int) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPriceMultiplier(v)
+	})
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *UserUpsertBulk) AddPriceMultiplier(v int) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPriceMultiplier(v)
+	})
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdatePriceMultiplier() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePriceMultiplier()
+	})
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (u *UserUpsertBulk) ClearPriceMultiplier() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearPriceMultiplier()
 	})
 }
 

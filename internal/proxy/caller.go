@@ -62,10 +62,18 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	}
 	// 余额预检（Phase 5 计费；评审 I-1 无槽位问题）：快照读零 DB（滞后 ≤
 	// BalanceRefreshInterval，多实例条件扣 DB 兜底）。快照缺失（用户不在
-	// 快照 = 无余额记录）或 ≤0 → 402 errInsufficientBalance（不按 0 记账）。
+	// 快照 = 无余额记录）→ 402 errInsufficientBalance（不按 0 记账）。
+	// 免费放行（T3.5）：有效倍率 0 = 免费用户/组 → 余额 0 不 402（与
+	// applyBilling 同一快照同一判定；cost 0 只记日志不扣费）。
 	// 在 Acquire 前 → 不占用并发槽。
 	if p.cfg.BillingCapture && p.bill != nil {
-		if bal, ok := p.bill.Balances.BalanceOf(meta.UserID); !ok || bal <= 0 {
+		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
+		if !ok {
+			writeErr(w, errInsufficientBalance)
+			p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, nil, start)
+			return
+		}
+		if bal <= 0 && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
 			writeErr(w, errInsufficientBalance)
 			p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, nil, start)
 			return

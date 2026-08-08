@@ -196,8 +196,11 @@ type Group struct {
 	ID         int64
 	Name       string
 	Visibility GroupVisibility
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// PriceMultiplier 万分数（T3.5 价格倍率）：组默认 10000 = ×1；0 = 免费。
+	// 写路径语义：Create 0 = 未指定（走 DB 默认）；Update 恒写入（PUT 全量替换）。
+	PriceMultiplier int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // User 用户（顶层实体，无租户）。标识 = 邮箱；PasswordHash 为 bcrypt
@@ -212,8 +215,11 @@ type User struct {
 	Status         UserStatus
 	MaxConcurrency int
 	Balance        int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// PriceMultiplier 万分数（T3.5 价格倍率）；nil = 未设置 → 用组倍率（用户
+	// 覆盖组语义；0 = 免费）。Update 路径 nil = 清除为未设置（ClearPriceMultiplier）。
+	PriceMultiplier *int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Key 客户端 API key（独立表，重建 group 内嵌 key 语义）。

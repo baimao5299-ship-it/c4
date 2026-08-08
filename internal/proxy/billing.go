@@ -49,3 +49,15 @@ func stripServiceTier(body []byte) ([]byte, error) {
 	delete(m, "service_tier")
 	return json.Marshal(m)
 }
+
+// applyMultiplier 价格倍率应用（T3.5 用户拍板：整单 round-half-up）：
+// (cost×m + 5000)/10000。m==10000（×1 未设置/组默认）恒等短路——默认路径
+// 逐指令等价零 round 偏差（函数可内联）。m==0 → cost 0（免费，不扣费）。
+// 溢出安全：cost 毫分正常 ≤1e7 量级（恶意 token 经 cost.go 溢出钳制后仍
+// ≤ MaxInt64/1e6）× 倍率上限 1e5 → 远小于 MaxInt64。
+func applyMultiplier(cost int64, m int) int64 {
+	if m == 10000 {
+		return cost
+	}
+	return (cost*int64(m) + 5000) / 10000
+}

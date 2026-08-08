@@ -118,6 +118,10 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		return
 	}
 	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.PromptTokens, l.CompletionTokens, l.CacheReadTokens, l.CacheCreationTokens)
+	// 价格倍率（T3.5，用户拍板）：整单 × 有效倍率（万分数；用户覆盖组——
+	// 用户已设置 → 用户值，否则组倍率，均缺 ×1）。m==10000 恒等短路零开销；
+	// m==0 免费（cost 0，仍记日志不扣费）。倍率不改变 aboveHit 语义。
+	l.Cost = applyMultiplier(l.Cost, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
 }
 
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：

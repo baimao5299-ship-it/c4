@@ -17,6 +17,7 @@ func (Group) Fields() []ent.Field {
 		field.Int64("id"),
 		field.String("name").Unique(),
 		field.Enum("visibility").Values("public", "private").Default("public"),
+		field.Int("price_multiplier").Default(10000), // 万分数（T3.5 价格倍率）：组默认 ×1；0 = 免费
 		field.Time("created_at").Default(time.Now),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}

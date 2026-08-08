@@ -59,7 +59,8 @@ func (f *fakePriceLookup) GetPrice(model string) (*domain.Pricing, error) {
 }
 
 // newTestProxyBillingLogs 构造注入计费钩子的测试代理（默认 gpt-4o 模板 + 捕获
-// 日志；policy nil = 恒透传）。
+// 日志；policy nil = 恒透传）。Balances 空快照 → 倍率默认 ×1（T2 断言恒等，
+// T3.5 无 nil 容忍：hooks 四字段齐备）。
 func newTestProxyBillingLogs(t *testing.T, upstream string, prices *fakePriceLookup, policy func(billing.Tier) billing.TierPolicyMode, logs usage.LogInserter) *Proxy {
 	t.Helper()
 	tpl := &domain.Template{
@@ -69,6 +70,7 @@ func newTestProxyBillingLogs(t *testing.T, upstream string, prices *fakePriceLoo
 	}
 	return newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, logs, &BillingHooks{
 		Prices:     prices,
+		Balances:   billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
 		TierPolicy: policy,
 	})
 }
@@ -292,7 +294,8 @@ func TestProxyBillingStreamAbortCostsTokens(t *testing.T) {
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 100*time.Millisecond, store, &BillingHooks{
-		Prices: &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		Prices:   &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		Balances: billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
@@ -343,11 +346,19 @@ func TestProxyBillingDisabledPassthrough(t *testing.T) {
 // T3：余额预检 402 + shouldBill 路由切换
 // ---------------------------------------------------------------------------
 
-// fakeBalanceLoader 余额快照测试 loader。
-type fakeBalanceLoader struct{ m map[int64]int64 }
+// fakeBalanceLoader 余额 + 倍率快照测试 loader（um/gm 缺省 = 空倍率表）。
+type fakeBalanceLoader struct {
+	m  map[int64]int64 // 余额
+	um map[int64]int   // 用户倍率（仅已设置行）
+	gm map[int64]int   // 组倍率
+}
 
-func (f fakeBalanceLoader) LoadBalances(ctx context.Context) (map[int64]int64, error) {
-	return f.m, nil
+func (f fakeBalanceLoader) LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error) {
+	return f.m, f.um, nil
+}
+
+func (f fakeBalanceLoader) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
+	return f.gm, nil
 }
 
 // fakeDeductWriter 记录 DeductAndLog 调用（T3 billed 路由断言）。
@@ -477,4 +488,169 @@ func TestProxyBillingRoutesToFlusher(t *testing.T) {
 	got, ok := bal.BalanceOf(1)
 	require.True(t, ok)
 	require.Equal(t, int64(900000), got, "扣费成功 → 余额快照定向刷新")
+}
+
+// ---------------------------------------------------------------------------
+// T3.5：价格倍率（applyMultiplier 纯函数 + 用户/组倍率应用 + 免费放行）
+// ---------------------------------------------------------------------------
+
+// TestApplyMultiplier 倍率纯函数表驱动：×2 上浮 / ×0.5 折扣 round（奇数 cost
+// 验证四舍五入）/ 0 免费 / ×10 上限 / m==10000 恒等短路。
+func TestApplyMultiplier(t *testing.T) {
+	cases := []struct {
+		name string
+		cost int64
+		m    int
+		want int64
+	}{
+		{"×2 上浮", 130, 20000, 260},
+		{"×1.5 精确", 130, 15000, 195},
+		{"×0.5 折扣 half-up（131×0.5=65.5 → 66）", 131, 5000, 66},
+		{"×0.5 折扣 half-up（129×0.5=64.5 → 65）", 129, 5000, 65},
+		{"0 免费", 130, 0, 0},
+		{"×10 上限", 130, 100000, 1300},
+		{"m==10000 恒等", 130, 10000, 130},
+		{"0 成本 × 倍率恒 0", 0, 20000, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, applyMultiplier(c.cost, c.m))
+		})
+	}
+}
+
+// TestProxyBillingMultiplierUser 用户专属倍率（T3.5 用户覆盖组）：×2 → 扣费
+// cost 翻倍（130×2 = 260），billed 路由 + 快照刷新照常。
+func TestProxyBillingMultiplierUser(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	bal := billing.NewBalances(fakeBalanceLoader{
+		m: map[int64]int64{1: 50000}, um: map[int64]int{1: 20000},
+	}, nil)
+	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 50000 + 用户倍率 ×2）")
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	recw := httptest.NewRecorder()
+	p.HandleChat(recw, req)
+	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String())
+
+	require.NoError(t, f.Close(context.Background()))
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 1)
+	require.Equal(t, int64(260), writer.calls[0].cost, "用户倍率 ×2：130×2 = 260 毫分")
+	require.Equal(t, int64(260), writer.calls[0].logs[0].Cost)
+}
+
+// TestProxyBillingMultiplierGroup 组倍率（用户未设置 → 用组倍率）：×1.5 →
+// 130×15000/10000 = 195；用户未设置不落入用户覆盖分支。
+func TestProxyBillingMultiplierGroup(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	bal := billing.NewBalances(fakeBalanceLoader{
+		m: map[int64]int64{1: 50000}, gm: map[int64]int{10: 15000}, // gk-1 → groupID 10
+	}, nil)
+	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 50000 + 组倍率 ×1.5）")
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	recw := httptest.NewRecorder()
+	p.HandleChat(recw, req)
+	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String())
+
+	require.NoError(t, f.Close(context.Background()))
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 1)
+	require.Equal(t, int64(195), writer.calls[0].cost, "组倍率 ×1.5：130×15000/10000 = 195 毫分")
+}
+
+// TestProxyBillingFreeUserPasses 免费用户放行（T3.5）：有效倍率 0 → 余额 0
+// 不 402——正常转发，cost 0（只记日志不扣费）。
+func TestProxyBillingFreeUserPasses(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	bal := billing.NewBalances(fakeBalanceLoader{
+		m: map[int64]int64{1: 0}, um: map[int64]int{1: 0}, // 余额 0 + 用户倍率 0（免费）
+	}, nil)
+	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 0 + 免费倍率）")
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	recw := httptest.NewRecorder()
+	p.HandleChat(recw, req)
+	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String(), "免费用户余额 0 不 402")
+	require.Zero(t, p.rec.Pending(), "billed 日志不进 rec.logCh")
+
+	require.NoError(t, f.Close(context.Background()))
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 1)
+	require.Zero(t, writer.calls[0].cost, "免费：cost 0 不扣费")
+	require.Zero(t, writer.calls[0].logs[0].Cost)
+	require.Equal(t, int64(1), writer.calls[0].logs[0].UserID)
+}
+
+// TestProxyBillingFreeGroupPasses 免费组放行（T3.5）：组倍率 0（用户未设置）
+// → 余额 0 放行；与用户免费同判定（EffectiveMultiplier 共用）。
+func TestProxyBillingFreeGroupPasses(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	bal := billing.NewBalances(fakeBalanceLoader{
+		m: map[int64]int64{1: 0}, gm: map[int64]int{10: 0}, // gk-1 → groupID 10；组免费
+	}, nil)
+	require.NoError(t, bal.Reload(context.Background()))
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	recw := httptest.NewRecorder()
+	p.HandleChat(recw, req)
+	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String(), "免费组余额 0 不 402")
+
+	require.NoError(t, f.Close(context.Background()))
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 1)
+	require.Zero(t, writer.calls[0].cost, "免费组：cost 0 不扣费")
 }

@@ -45,6 +45,20 @@ func (_c *GroupCreate) SetNillableVisibility(v *group.Visibility) *GroupCreate {
 	return _c
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_c *GroupCreate) SetPriceMultiplier(v int) *GroupCreate {
+	_c.mutation.SetPriceMultiplier(v)
+	return _c
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_c *GroupCreate) SetNillablePriceMultiplier(v *int) *GroupCreate {
+	if v != nil {
+		_c.SetPriceMultiplier(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *GroupCreate) SetCreatedAt(v time.Time) *GroupCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -163,6 +177,10 @@ func (_c *GroupCreate) defaults() {
 		v := group.DefaultVisibility
 		_c.mutation.SetVisibility(v)
 	}
+	if _, ok := _c.mutation.PriceMultiplier(); !ok {
+		v := group.DefaultPriceMultiplier
+		_c.mutation.SetPriceMultiplier(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := group.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -185,6 +203,9 @@ func (_c *GroupCreate) check() error {
 		if err := group.VisibilityValidator(v); err != nil {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.PriceMultiplier(); !ok {
+		return &ValidationError{Name: "price_multiplier", err: errors.New(`ent: missing required field "Group.price_multiplier"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Group.created_at"`)}
@@ -232,6 +253,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 		_node.Visibility = value
+	}
+	if value, ok := _c.mutation.PriceMultiplier(); ok {
+		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
+		_node.PriceMultiplier = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
@@ -365,6 +390,24 @@ func (u *GroupUpsert) UpdateVisibility() *GroupUpsert {
 	return u
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *GroupUpsert) SetPriceMultiplier(v int) *GroupUpsert {
+	u.Set(group.FieldPriceMultiplier, v)
+	return u
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *GroupUpsert) UpdatePriceMultiplier() *GroupUpsert {
+	u.SetExcluded(group.FieldPriceMultiplier)
+	return u
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *GroupUpsert) AddPriceMultiplier(v int) *GroupUpsert {
+	u.Add(group.FieldPriceMultiplier, v)
+	return u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (u *GroupUpsert) SetCreatedAt(v time.Time) *GroupUpsert {
 	u.Set(group.FieldCreatedAt, v)
@@ -462,6 +505,27 @@ func (u *GroupUpsertOne) SetVisibility(v group.Visibility) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateVisibility() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateVisibility()
+	})
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *GroupUpsertOne) SetPriceMultiplier(v int) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPriceMultiplier(v)
+	})
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *GroupUpsertOne) AddPriceMultiplier(v int) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddPriceMultiplier(v)
+	})
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdatePriceMultiplier() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePriceMultiplier()
 	})
 }
 
@@ -732,6 +796,27 @@ func (u *GroupUpsertBulk) SetVisibility(v group.Visibility) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateVisibility() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateVisibility()
+	})
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *GroupUpsertBulk) SetPriceMultiplier(v int) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPriceMultiplier(v)
+	})
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *GroupUpsertBulk) AddPriceMultiplier(v int) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.AddPriceMultiplier(v)
+	})
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdatePriceMultiplier() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePriceMultiplier()
 	})
 }
 
