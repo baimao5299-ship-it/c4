@@ -30,6 +30,7 @@ type Repository struct {
 	Redemptions *RedemptionRepo
 	Pricing     *PricingRepo
 	Billing     *BillingRepo // 扣费落库（Phase 5 T3）
+	Partitions  *PartitionRepo // usagelog 按日分区 bootstrap/retention（Phase 5 T4.5）
 	Client      *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
@@ -41,7 +42,10 @@ type Repository struct {
 func New(drv dialect.Driver, migrate bool) (*Repository, error) {
 	client := ent.NewClient(ent.Driver(drv))
 	if migrate {
-		if err := client.Schema.Create(context.Background()); err != nil {
+		// usagelog 经 usageLogMigrateHook 从迁移列表过滤——分区表 DDL 由
+		// Partitions.EnsureUsageLogPartitioned 独占管理（atlas 对分区表 diff
+		// 规划期必失败，真实 PG 实测结论见 partition.go）。
+		if err := client.Schema.Create(context.Background(), usageLogMigrateHook()); err != nil {
 			return nil, err
 		}
 	}
@@ -66,6 +70,7 @@ func newRepository(client *ent.Client, drv dialect.Driver) *Repository {
 		Redemptions: &RedemptionRepo{client: client, driver: drv},
 		Pricing:     &PricingRepo{client: client, driver: drv},
 		Billing:     &BillingRepo{client: client, driver: drv},
+		Partitions:  &PartitionRepo{driver: drv},
 		Client:      client,
 		driver:      drv,
 	}
@@ -443,6 +448,26 @@ func (r *Repository) UpdateUserBalance(ctx context.Context, userID, delta int64)
 // FEFO 临时额度优先 + 条件扣费（允许透支）+ 同事务批量日志，见 BillingRepo。
 func (r *Repository) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (overdrafted bool, balanceAfter int64, err error) {
 	return r.Billing.DeductAndLog(ctx, userID, cost, logs)
+}
+
+// --- usagelog 按日分区（Phase 5 T4.5；main 装配 bootstrap + retention worker） ---
+
+// EnsureUsageLogPartitioned 分区 bootstrap（幂等）：未分区 → DROP 重建分区表
+// + 预建当日/明日分区 + 索引；已分区 → 仅补齐分区。
+func (r *Repository) EnsureUsageLogPartitioned(ctx context.Context, now time.Time) error {
+	return r.Partitions.EnsureUsageLogPartitioned(ctx, now)
+}
+
+// EnsureUsageLogPartitions 预建 当日 → until 每日分区（retention worker 防日界
+// 竞态；幂等）。
+func (r *Repository) EnsureUsageLogPartitions(ctx context.Context, until time.Time) error {
+	return r.Partitions.EnsureUsageLogPartitions(ctx, until)
+}
+
+// DropUsageLogPartitionsBefore DROP 分区下界 < cutoff 的分区（O(1)；返回删除
+// 个数）。retention worker 按 LogRetentionDays 调。
+func (r *Repository) DropUsageLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	return r.Partitions.DropUsageLogPartitionsBefore(ctx, cutoff)
 }
 
 // LoadBalances 全量余额 + 用户专属倍率快照（Phase 5 计费余额预检数据源）。

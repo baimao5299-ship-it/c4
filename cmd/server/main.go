@@ -69,6 +69,13 @@ func main() {
 	if err != nil {
 		fatalf("migrate: %v", err)
 	}
+	// usagelog 分区 bootstrap（Phase 5 T4.5）：ent migrate 已跳过该表
+	// （usageLogMigrateHook——atlas 对分区表 diff 规划期必失败，实测结论见
+	// internal/repository/partition.go），此处独占建分区表 + 预建当日/明日
+	// 分区 + 索引；幂等（已分区 → 仅补齐分区），失败即 fatal（明细表不可缺）。
+	if err := repos.EnsureUsageLogPartitioned(context.Background(), time.Now()); err != nil {
+		fatalf("usagelog partition bootstrap: %v", err)
+	}
 
 	// 规则引擎先行构造（不 Reload——New 只建结构）：scheduler 构造期注册 apply 回调。
 	ruleEngine := rule.New(rule.Config{}, repos.Rules, log)
@@ -79,9 +86,14 @@ func main() {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize:          cfg.Usage.BatchSize,
 		FlushInterval:      cfg.Usage.FlushInterval,
-		LogRetentionDays:   cfg.Usage.LogRetentionDays,
 		StatsFlushInterval: cfg.Usage.StatsFlushInterval,
 	}, repos.Logs, repos.Stats, log)
+	// retention worker：usagelog 按日分区保留（T4.5，替代已删的 Recorder
+	// janitorLoop——逐行 DELETE → DROP PARTITION O(1)）；保留天数同源
+	// config usage.log_retention_days（语义 = 分区保留天数）。
+	retention := usage.NewRetention(usage.RetentionConfig{
+		LogRetentionDays: cfg.Usage.LogRetentionDays,
+	}, repos, log)
 
 	auth := proxy.NewAuth(repos.Keys, repos.Users, log)
 	rec.SetQuotaWriter(repos.Keys) // 额度扣减批量回写（Recorder 节奏）
@@ -188,7 +200,7 @@ func main() {
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
-	wm.Register(sched, ruleEngine, rec, pricingSync)
+	wm.Register(sched, ruleEngine, rec, pricingSync, retention) // retention 顺序无依赖（DROP/预建均幂等）
 	if billFlusher != nil {
 		wm.Register(billFlusher) // 计费 flusher 最后注册 → 反向排空最先（扣费 + 计费日志全量落库）
 	}

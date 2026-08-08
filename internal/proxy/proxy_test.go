@@ -144,7 +144,6 @@ func activeKey(keyID, userID, groupID int64) domain.KeyMeta {
 type noopLogStore struct{}
 
 func (noopLogStore) InsertBatch(ctx context.Context, l []*domain.UsageLog) error { return nil }
-func (noopLogStore) PurgeLogs(ctx context.Context, t time.Time) error            { return nil }
 
 type noopStatStore struct{}
 
@@ -256,7 +255,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
 	}, logs, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),

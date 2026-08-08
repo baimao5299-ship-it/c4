@@ -87,7 +87,7 @@ func benchProxy(upstream string) *Proxy {
 	}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
 	}, noopLogStore{}, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),

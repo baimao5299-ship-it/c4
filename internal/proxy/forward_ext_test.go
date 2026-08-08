@@ -171,8 +171,6 @@ func (c *captureLogStore) InsertBatch(ctx context.Context, l []*domain.UsageLog)
 	return nil
 }
 
-func (c *captureLogStore) PurgeLogs(ctx context.Context, t time.Time) error { return nil }
-
 // newTestProxyFormat 构造指定模板格式的测试代理（调度器按模板 FormatSupports 做格式硬过滤）。
 func newTestProxyFormat(t *testing.T, upstream string, format domain.RequestFormat) *Proxy {
 	t.Helper()
@@ -204,7 +202,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
 	}, logs, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),

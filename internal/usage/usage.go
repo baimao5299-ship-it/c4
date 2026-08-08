@@ -1,4 +1,5 @@
-// Package usage 承载请求明细的异步落库与预聚合统计（规格 §7.2/§10.5）。
+// Package usage 承载请求明细的异步落库与预聚合统计（规格 §7.2/§10.5）以及
+// usagelog 保留策略（retention worker，Phase 5 T4.5：按日分区 DROP 清理）。
 // 统计聚合永不失真（同步进内存计数），明细经有界 channel 批量落库、
 // 饱和时阻塞反压（用户决策 2026-08-05：不得丢数据）。
 package usage
@@ -17,7 +18,6 @@ import (
 type UsageConfig struct {
 	BatchSize          int
 	FlushInterval      time.Duration
-	LogRetentionDays   int
 	StatsFlushInterval time.Duration
 }
 
@@ -80,7 +80,6 @@ func (r *Recorder) Start(ctx context.Context) error {
 	}
 	go r.logWriterLoop(ctx)
 	go r.statsFlushLoop(ctx)
-	go r.janitorLoop(ctx)
 	return nil
 }
 
@@ -257,32 +256,4 @@ func (r *Recorder) Close(ctx context.Context) error {
 	}
 	r.flushStats()
 	return nil
-}
-
-func (r *Recorder) janitorLoop(ctx context.Context) {
-	if r.cfg.LogRetentionDays <= 0 {
-		return
-	}
-	t := time.NewTicker(time.Hour)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			r.purgeLogs()
-		}
-	}
-}
-
-// purgeLogs 依赖 LogInserter 扩展接口（可选实现）。
-func (r *Recorder) purgeLogs() {
-	if p, ok := r.logs.(interface {
-		PurgeLogs(ctx context.Context, olderThan time.Time) error
-	}); ok {
-		cutoff := time.Now().Add(-time.Duration(r.cfg.LogRetentionDays) * 24 * time.Hour)
-		if err := p.PurgeLogs(context.Background(), cutoff); err != nil && r.log != nil {
-			r.log.Warn("usage log purge failed", logx.Error(err))
-		}
-	}
 }
