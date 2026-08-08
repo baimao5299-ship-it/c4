@@ -804,12 +804,12 @@ func (f *fakeStore) WithTx(ctx context.Context, fn func(repository.TxStore) erro
 	return nil
 }
 
-// fakeTempRow 临时额度行模拟（CreateTempBalance 标量参数即全字段）。
+// fakeTempRow 临时额度行模拟（CreateTempBalance 指针参数即全字段）。
 type fakeTempRow struct {
 	UserID    int64
 	Amount    int64
-	ExpiresAt time.Time
-	Note      string
+	ExpiresAt *time.Time
+	Note      *string
 }
 
 type fakeTx struct {
@@ -906,7 +906,7 @@ func (t *fakeTx) UpdateUserMaxConcurrency(ctx context.Context, userID int64, val
 	return nil
 }
 
-func (t *fakeTx) CreateTempBalance(ctx context.Context, userID, amount int64, expiresAt time.Time, note string) error {
+func (t *fakeTx) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
 	t.temps = append(t.temps, &fakeTempRow{UserID: userID, Amount: amount, ExpiresAt: expiresAt, Note: note})
 	return nil
 }
@@ -1097,9 +1097,3 @@ func (f *fakeStore) UpdateUserMaxConcurrency(ctx context.Context, userID int64, 
 	return nil
 }
 
-func (f *fakeStore) CreateTempBalance(ctx context.Context, userID, amount int64, expiresAt time.Time, note string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.temps = append(f.temps, &fakeTempRow{UserID: userID, Amount: amount, ExpiresAt: expiresAt, Note: note})
-	return nil
-}
