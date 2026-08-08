@@ -14,7 +14,7 @@ func (s *Service) CreateTemplate(ctx context.Context, t *domain.Template) (*doma
 	}
 	created, err := s.store.CreateTemplate(ctx, t)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
 	}
 	s.invalidate()
 	if s.log != nil {
@@ -44,7 +44,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, t *domain.Template) (*doma
 	}
 	updated, err := s.store.UpdateTemplate(ctx, t)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）
 	}
 	s.invalidate()
 	return updated, nil

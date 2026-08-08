@@ -33,7 +33,7 @@ func (s *Service) CreateKey(ctx context.Context, userID int64, name string, grou
 		Quota: quota, QuotaUsed: 0,
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, "", mapRepoErr(err) // key_hash 唯一冲突 → ErrConflict（409）
 	}
 	if err := s.upsertKeyMeta(ctx, created); err != nil {
 		return nil, "", err

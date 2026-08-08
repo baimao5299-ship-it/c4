@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
+
+	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
@@ -21,6 +24,9 @@ func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (
 		SetModelMapping(t.ModelMapping).
 		Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: name=%q", ErrConflict, t.Name)
+		}
 		return nil, err
 	}
 	return toDomainTemplate(row), nil
@@ -75,6 +81,9 @@ func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (
 		SetModelMapping(t.ModelMapping).
 		Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: name=%q", ErrConflict, t.Name)
+		}
 		return nil, err
 	}
 	return toDomainTemplate(row), nil

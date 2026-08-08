@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
@@ -22,6 +25,9 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 		SetVisibility(group.Visibility(g.Visibility)).
 		Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: name=%q", ErrConflict, g.Name)
+		}
 		return nil, err
 	}
 	return toDomainGroup(row), nil
@@ -71,6 +77,9 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 		SetVisibility(group.Visibility(g.Visibility)).
 		Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: name=%q", ErrConflict, g.Name)
+		}
 		return nil, err
 	}
 	return toDomainGroup(row), nil
