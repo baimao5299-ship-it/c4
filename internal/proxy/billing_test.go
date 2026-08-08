@@ -319,6 +319,52 @@ func TestProxyBillingStreamAbortCostsTokens(t *testing.T) {
 	require.Equal(t, int64(190), store.logs[0].Cost, "5×1e7+7×2e7 → 190 毫分（计费不丢）")
 }
 
+// TestProxyBillingStreamAbortGroupMultiplier 评审 M-1：recordStreamAbort 传
+// groupID → 中止路径组倍率生效（此前硬编码 0 → 组查找恒 miss → 按 ×1 计费，
+// 上浮倍率少收/折扣倍率多收）。组倍率 15000（gk-1 → groupID 10）：
+// 190×15000/10000 = 285 毫分，与正常路径一致。
+func TestProxyBillingStreamAbortGroupMultiplier(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":7,"total_tokens":12}}`+"\n\n")
+		fl.Flush()
+		<-r.Context().Done() // 首帧后停滞 → UpstreamStreamTimeout 触发中止
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: up.URL,
+		CredentialType:   credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+	}
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 100*time.Millisecond, store, &BillingHooks{
+		Prices: &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		Balances: func() *billing.Balances {
+			bal := billing.NewBalances(fakeBalanceLoader{
+				m: map[int64]int64{}, gm: map[int64]int{10: 15000}, // 组倍率 ×1.5（用户未设置）
+			}, nil)
+			require.NoError(t, bal.Reload(context.Background()), "倍率快照加载（组倍率进快照）")
+			return bal
+		}(),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	p.sched.FlushRules()
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
+	require.Equal(t, int64(285), store.logs[0].Cost, "中止路径组倍率生效：190×15000/10000 = 285 毫分")
+}
+
 // TestProxyBillingDisabledPassthrough 计费全关（bill nil）：service_tier 恒透传
 // （不 402、不 reject、不剥离），BillingTier 不落日志（空 = 未计费路径）。
 func TestProxyBillingDisabledPassthrough(t *testing.T) {
@@ -405,6 +451,9 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 	}{
 		{"余额 0", billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 0}}, nil)},
 		{"快照缺失", billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil)},
+		// 评审 I-1：快照缺失 + 组倍率显式 ×1（非免费）→ 仍 402（免费放行只对
+		// 有效倍率 0 生效；缺失且非免费 = 无余额记录，语义不变）。
+		{"快照缺失 + 组倍率 10000", billing.NewBalances(fakeBalanceLoader{gm: map[int64]int{10: 10000}}, nil)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -653,4 +702,41 @@ func TestProxyBillingFreeGroupPasses(t *testing.T) {
 	defer writer.mu.Unlock()
 	require.Len(t, writer.calls, 1)
 	require.Zero(t, writer.calls[0].cost, "免费组：cost 0 不扣费")
+}
+
+// TestProxyBillingFreeGroupSnapshotMissing 评审 I-1：快照缺失（Reload 滞后
+// 窗口内用户无余额记录）但组免费（倍率 0）→ 放行不 402（此前只在 BalanceOf
+// 命中时查倍率 → 免费组误 402）。缺失且非免费仍 402（见
+// TestProxyBillingInsufficientBalance402）。
+func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	// 余额快照为空（用户 1 不在快照）+ 组免费（gk-1 → groupID 10）。
+	bal := billing.NewBalances(fakeBalanceLoader{
+		m: map[int64]int64{}, gm: map[int64]int{10: 0},
+	}, nil)
+	require.NoError(t, bal.Reload(context.Background()))
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	recw := httptest.NewRecorder()
+	p.HandleChat(recw, req)
+	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String(), "快照缺失窗口内免费组不 402")
+
+	require.NoError(t, f.Close(context.Background()))
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 1)
+	require.Zero(t, writer.calls[0].cost, "免费组：cost 0 不扣费")
+	require.Zero(t, writer.calls[0].logs[0].Cost)
 }
