@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -122,6 +123,14 @@ func TestUsageLogPartitionBootstrapPG(t *testing.T) {
 	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'usage_logs' AND indexname IN ('usagelog_created_at','usagelog_group_id_created_at','usagelog_account_id_created_at','usagelog_user_id_created_at','usagelog_key_id_created_at')`).Scan(&n)
 	require.NoError(t, err)
 	require.Equal(t, int64(5), n, "bootstrap 建齐 5 个查询索引")
+
+	// start 边界由传入 now 推导（评审 I-2）：now=+3 天 → 预建 +3/+4 天分区，
+	// 而非仅当日/明日（内部 time.Now() 语义下该调用不可能建出未来分区）
+	injected := time.Now().UTC().AddDate(0, 0, 3)
+	require.NoError(t, repos.EnsureUsageLogPartitions(ctx, injected, injected.AddDate(0, 0, 1)))
+	names = pgPartitionNames(t, pool)
+	require.Contains(t, names, "usage_logs_"+injected.Format("20060102"))
+	require.Contains(t, names, "usage_logs_"+injected.AddDate(0, 0, 1).Format("20060102"))
 }
 
 // TestUsageLogPartitionRoutingPG 跨日边界插入路由：InsertBatch（buildUsageLogCreate
@@ -164,6 +173,27 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 		got[r.RequestID] = true
 	}
 	require.True(t, got["today-1"] && got["today-2"] && got["tomorrow-1"])
+
+	// 精确日界路由（评审 I-4）：PG RANGE 分区下界含（INCLUSIVE）上界不含
+	// （EXCLUSIVE）——
+	//   today 00:00:00.000000（= 分区 FROM）      → 今日分区
+	//   today 23:59:59.999999（= 明日 FROM 前 1µs）→ 今日分区
+	//   tomorrow 00:00:00.000000（= 今日 TO）     → 明日分区
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	lastMicro := midnight.Add(24*time.Hour - time.Microsecond)
+	tomorrowMidnight := midnight.Add(24 * time.Hour)
+	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{
+		usageLogFor("bound-low-incl", midnight),
+		usageLogFor("bound-up-excl", lastMicro),
+		usageLogFor("bound-next-day", tomorrowMidnight),
+	}))
+	for _, tc := range []struct{ part string; want int64 }{
+		{"usage_logs_" + midnight.Format("20060102"), 4},            // today-1/2 + low-incl + up-excl
+		{"usage_logs_" + tomorrowMidnight.Format("20060102"), 2},    // tomorrow-1 + next-day
+	} {
+		require.Equal(t, tc.want, pgCount(t, pool, `SELECT COUNT(*) FROM `+tc.part),
+			"日界路由：分区 %s 落库行数（下界含/上界不含）", tc.part)
+	}
 }
 
 // TestUsageLogPartitionRetentionPG DROP 保留边界：删除分区下界 < cutoff，
@@ -273,6 +303,54 @@ func TestUsageLogPartitionUpgradePG(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Equal(t, "post-upgrade", rows[0].RequestID)
+}
+
+// TestUsageLogPartitionConcurrentBootstrapPG 多实例并发 bootstrap（评审 I-1）：
+// 两实例同时启动（barrier 对齐，双方都通过 is-partitioned=false 判定）→
+// CREATE TABLE/索引/日分区撞名 42P07 → 容忍后幂等收敛，双方都不 fatal；收敛
+// 后插入路由正常。每轮重建 schema 保证双方从同一初始状态出发（3 轮跑
+// 叠加重压撞名路径）。
+func TestUsageLogPartitionConcurrentBootstrapPG(t *testing.T) {
+	ctx := context.Background()
+	db := pgTestDB(t)
+	_, err := db.ExecContext(ctx, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`)
+	require.NoError(t, err)
+	// 与生产启动顺序一致：migrate（钩子）建其余表，bootstrap 由并发调用承担
+	repos, err := repository.New(entsql.OpenDB(dialect.Postgres, db), true)
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		if i > 0 { // 首轮 schema 已清空；后续轮次重建
+			_, err := db.ExecContext(ctx, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`)
+			require.NoError(t, err)
+			repos, err = repository.New(entsql.OpenDB(dialect.Postgres, db), true)
+			require.NoError(t, err)
+		}
+		start := make(chan struct{})
+		errs := make([]error, 2)
+		var wg sync.WaitGroup
+		for g := 0; g < 2; g++ {
+			wg.Add(1)
+			go func(g int) {
+				defer wg.Done()
+				<-start
+				errs[g] = repos.EnsureUsageLogPartitioned(ctx, time.Now())
+			}(g)
+		}
+		close(start)
+		wg.Wait()
+		require.NoError(t, errs[0], "实例 A bootstrap 不得 fatal")
+		require.NoError(t, errs[1], "实例 B 撞 42P07 必须容忍后成功")
+
+		parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
+		require.NoError(t, err)
+		require.True(t, parted, "并发 bootstrap 收敛为分区表")
+		require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("concurrent", time.Now().UTC())}))
+		rows, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+		require.NoError(t, err)
+		require.Equal(t, int64(1), total, "收敛后插入路由正常")
+		require.Equal(t, "concurrent", rows[0].RequestID)
+	}
 }
 
 // mustISODate 把 YYYYMMDD 转 ISO 日期（分区边界构造用）。

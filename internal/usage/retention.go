@@ -13,9 +13,10 @@ import (
 )
 
 // PartitionManager 分区管理面（repository.Repository 实现）：保留策略只需
-// DROP 过期分区 + 预建未来分区，不感知分区表内部 DDL。
+// DROP 过期分区 + 预建未来分区，不感知分区表内部 DDL。now/until 由调用方
+// 传入（start 边界由 now 推导，测试可注入时钟）。
 type PartitionManager interface {
-	EnsureUsageLogPartitions(ctx context.Context, until time.Time) error
+	EnsureUsageLogPartitions(ctx context.Context, now, until time.Time) error
 	DropUsageLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
 }
 
@@ -30,6 +31,12 @@ type RetentionConfig struct {
 //   - DROP 分区下界 < now - LogRetentionDays 的分区（DROP TABLE O(1)，比
 //     逐行 DELETE 快 5~6 个量级；按分区名日期判定，无需查元数据）
 //   - 预建 当日 + 未来 1 天 分区（PG 无自动建分区，防日界跨区插入失败）
+//
+// DROP × 在途插入竞态（评审 I-3）：DROP TABLE 需 ACCESS EXCLUSIVE 锁，与
+// 在途插入事务串行；能落进被 DROP 分区（保留期前，通常 >30 天前）的行只有
+// 回放/陈旧 created_at 的延迟日志——该分区数据本就在保留语义内（要清理）。
+// 万一插入恰好失败 → 走 logWriterLoop 的 InsertBatch 失败路径（Warn + 丢弃，
+// 与普通批量落库失败同语义，不自愈不重试），可接受。
 //
 // 与 Recorder 解耦（不依赖 rec.logCh）：DROP 幂等，无排空需求，Close 直接
 // 返回 nil。
@@ -74,7 +81,8 @@ func (w *RetentionWorker) loop(ctx context.Context) {
 }
 
 // runOnce 单轮巡检：DROP 过期分区 + 预建未来分区；失败 Warn 不中断循环
-// （下一轮重试）。
+// （下一轮重试）。now 现取一次，cutoff/ensure 边界共用同一时钟
+// （评审 I-2：边界由调用方 now 推导，不各取各的）。
 func (w *RetentionWorker) runOnce() {
 	now := time.Now()
 	if w.cfg.LogRetentionDays > 0 {
@@ -88,7 +96,7 @@ func (w *RetentionWorker) runOnce() {
 			w.log.Info("retention dropped partitions", logx.Int("count", n))
 		}
 	}
-	if err := w.parts.EnsureUsageLogPartitions(context.Background(), now.AddDate(0, 0, 1)); err != nil {
+	if err := w.parts.EnsureUsageLogPartitions(context.Background(), now, now.AddDate(0, 0, 1)); err != nil {
 		if w.log != nil {
 			w.log.Warn("retention pre-create partitions failed", logx.Error(err))
 		}

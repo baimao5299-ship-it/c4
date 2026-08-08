@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/schema"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"go-proxy-mini/internal/ent/usagelog"
 )
@@ -128,11 +130,45 @@ func (r *PartitionRepo) execDDL(ctx context.Context, query string) error {
 	return r.driver.Exec(ctx, query, []any{}, &res)
 }
 
+// isDuplicateObject 判断"对象已存在"类竞态错误（多实例并发 bootstrap/预建
+// 分区撞名容忍；ent Conn.Exec 原样透传 pgconn 错误，无需解包）：
+//   - 42P07 duplicate_object：无 IF NOT EXISTS 的 CREATE（分区表/索引/日分区）
+//     撞已存在对象；
+//   - 23505 unique_violation：IF NOT EXISTS 的 CREATE SEQUENCE 并发创建时
+//     "检查-插入"在 pg_class 唯一索引上竞态（PG 已知行为，实测出现）——
+//     仅在 bootstrap 的 CREATE 步骤使用本判定，23505 只能来自并发建对象。
+func isDuplicateObject(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "42P07" || pgErr.Code == "23505"
+}
+
+// execDDLTolerateDup 执行 DDL；对象已存在类错误（42P07/23505，见
+// isDuplicateObject）视为成功（并发实例已建，多实例语义见
+// EnsureUsageLogPartitioned），其余错误原样返回。
+func (r *PartitionRepo) execDDLTolerateDup(ctx context.Context, query string) error {
+	if err := r.execDDL(ctx, query); err != nil {
+		if isDuplicateObject(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // EnsureUsageLogPartitioned bootstrap（幂等，main 装配在 ent migrate 之后调用）：
-// usagelog 已是分区表 → 仅确保当日/明日分区存在后返回；未分区（含 ent migrate
-// 之前按旧 schema 建的普通表）→ DROP 重建分区表 + 序列 + 索引 + 预建分区。
-// 该删删语义（用户决策 2026-08-09）：不向后兼容，存量普通表数据直接丢弃
-// （DB 可重建；usagelog 为明细流水，无外键引用）。
+// usagelog 已是分区表 → 仅确保 当日→明日 分区存在后返回；未分区（含 ent
+// migrate 之前按旧 schema 建的普通表）→ DROP 重建分区表 + 序列 + 索引 + 预建
+// 分区。该删删语义（用户决策 2026-08-09）：不向后兼容，存量普通表数据直接
+// 丢弃（DB 可重建；usagelog 为明细流水，无外键引用）。
+//
+// 多实例语义（评审 I-1）：两实例同时启动/升级时，"是否已分区"判定与 CREATE
+// 之间另一实例可能已建对象——所有 CREATE 步骤（分区表/索引/日分区）对 42P07
+// （duplicate_object）容忍后继续，双方幂等收敛。DROP 为 IF EXISTS 不报错；
+// 理论窗口下并发实例的 DROP 误删对方刚建的分区表时，双方同样经 42P07 容忍
+// 重建索引/分区，最终状态一致（对象集合收敛）。
 func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.Time) error {
 	parted, err := r.IsUsageLogPartitioned(ctx)
 	if err != nil {
@@ -143,31 +179,34 @@ func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.
 			return fmt.Errorf("drop plain usage_logs: %w", err)
 		}
 		// 序列独立于表创建（CREATE TABLE 的 DEFAULT 需先存在）；OWNED BY 使
-		// DROP TABLE 级联回收（serial 同款生命周期）。
-		if err := r.execDDL(ctx, `CREATE SEQUENCE IF NOT EXISTS usage_logs_id_seq`); err != nil {
+		// DROP TABLE 级联回收（serial 同款生命周期）。IF NOT EXISTS 并发下
+		// 仍可能 23505（catalog 唯一索引竞态，实测），同样容忍。
+		if err := r.execDDLTolerateDup(ctx, `CREATE SEQUENCE IF NOT EXISTS usage_logs_id_seq`); err != nil {
 			return fmt.Errorf("create usage_logs_id_seq: %w", err)
 		}
-		if err := r.execDDL(ctx, usageLogCreateDDL); err != nil {
+		if err := r.execDDLTolerateDup(ctx, usageLogCreateDDL); err != nil {
 			return fmt.Errorf("create partitioned usage_logs: %w", err)
 		}
 		if err := r.execDDL(ctx, `ALTER SEQUENCE usage_logs_id_seq OWNED BY usage_logs.id`); err != nil {
 			return fmt.Errorf("own sequence: %w", err)
 		}
 		for _, idx := range usageLogIndexDDLs {
-			if err := r.execDDL(ctx, idx); err != nil {
+			if err := r.execDDLTolerateDup(ctx, idx); err != nil {
 				return fmt.Errorf("create usagelog index: %w", err)
 			}
 		}
 	}
-	return r.EnsureUsageLogPartitions(ctx, now.AddDate(0, 0, 1))
+	return r.EnsureUsageLogPartitions(ctx, now, now.AddDate(0, 0, 1))
 }
 
-// EnsureUsageLogPartitions 确保 当日 → until 每日分区存在（幂等：已存在跳过；
-// until 早于当日 → 仅当日）。bootstrap 与 retention worker 共用——防日界
-// 竞态：分区未建时插入跨日 row 会整体失败（PG 对分区表无自动建分区），
-// 必须预留未来分区。
-func (r *PartitionRepo) EnsureUsageLogPartitions(ctx context.Context, until time.Time) error {
-	start := time.Now().UTC().Truncate(24 * time.Hour)
+// EnsureUsageLogPartitions 确保 [trunc(now), trunc(until)] 每日分区存在
+// （幂等：已存在跳过；until 早于 now → 仅 now 当日）。bootstrap 与 retention
+// worker 共用——防日界竞态：分区未建时插入跨日 row 会整体失败（PG 对分区表
+// 无自动建分区），必须预留未来分区。start/end 边界统一由调用方传入的 now
+// 推导（评审 I-2：不内部取 time.Now()，测试可注入任意时钟；worker 每轮
+// 现取 now 传入）。
+func (r *PartitionRepo) EnsureUsageLogPartitions(ctx context.Context, now, until time.Time) error {
+	start := now.UTC().Truncate(24 * time.Hour)
 	end := until.UTC().Truncate(24 * time.Hour)
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		name := usageLogPartitionName(d)
@@ -181,6 +220,17 @@ func (r *PartitionRepo) EnsureUsageLogPartitions(ctx context.Context, until time
 		from := d.Format("2006-01-02 15:04:05-07")
 		to := d.AddDate(0, 0, 1).Format("2006-01-02 15:04:05-07")
 		if err := r.execDDL(ctx, fmt.Sprintf(`CREATE TABLE %s PARTITION OF usage_logs FOR VALUES FROM ('%s') TO ('%s')`, name, from, to)); err != nil {
+			if isDuplicateObject(err) {
+				// 并发实例已建该分区：重查确认后继续（多实例语义同上）
+				ok2, err2 := r.partitionExists(ctx, name)
+				if err2 != nil {
+					return err2
+				}
+				if ok2 {
+					continue
+				}
+				return fmt.Errorf("create partition %s: %w", name, err)
+			}
 			return fmt.Errorf("create partition %s: %w", name, err)
 		}
 	}

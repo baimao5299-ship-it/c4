@@ -17,7 +17,8 @@ var errBoom = errors.New("boom")
 type fakePartitionManager struct {
 	mu        sync.Mutex
 	drops     []time.Time // cutoff 参数
-	ensures   []time.Time // until 参数
+	nows      []time.Time // ensure 的 now 参数
+	ensures   []time.Time // ensure 的 until 参数
 	dropErr   error
 	ensureErr error
 }
@@ -29,9 +30,10 @@ func (f *fakePartitionManager) DropUsageLogPartitionsBefore(ctx context.Context,
 	return 0, f.dropErr
 }
 
-func (f *fakePartitionManager) EnsureUsageLogPartitions(ctx context.Context, until time.Time) error {
+func (f *fakePartitionManager) EnsureUsageLogPartitions(ctx context.Context, now, until time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.nows = append(f.nows, now)
 	f.ensures = append(f.ensures, until)
 	return f.ensureErr
 }
@@ -79,6 +81,9 @@ func TestRetentionWorkerTicks(t *testing.T) {
 	// until 语义：now + 1 天（预建当日/明日分区）
 	until := pm.ensures[0]
 	require.WithinDuration(t, time.Now().AddDate(0, 0, 1), until, 2*time.Second)
+	// now 语义（评审 I-2）：ensure 的 now = 巡检时刻（与 until 同源，边界
+	// 由同一 now 推导）
+	require.WithinDuration(t, time.Now(), pm.nows[0], 2*time.Second)
 }
 
 // TestRetentionWorkerStartsWithImmediateRun 启动即巡检（不等到第一个 tick）。

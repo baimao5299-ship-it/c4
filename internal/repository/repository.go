@@ -458,10 +458,10 @@ func (r *Repository) EnsureUsageLogPartitioned(ctx context.Context, now time.Tim
 	return r.Partitions.EnsureUsageLogPartitioned(ctx, now)
 }
 
-// EnsureUsageLogPartitions 预建 当日 → until 每日分区（retention worker 防日界
-// 竞态；幂等）。
-func (r *Repository) EnsureUsageLogPartitions(ctx context.Context, until time.Time) error {
-	return r.Partitions.EnsureUsageLogPartitions(ctx, until)
+// EnsureUsageLogPartitions 预建 [trunc(now), trunc(until)] 每日分区（retention
+// worker 防日界竞态；start 边界由传入 now 推导，幂等）。
+func (r *Repository) EnsureUsageLogPartitions(ctx context.Context, now, until time.Time) error {
+	return r.Partitions.EnsureUsageLogPartitions(ctx, now, until)
 }
 
 // DropUsageLogPartitionsBefore DROP 分区下界 < cutoff 的分区（O(1)；返回删除
