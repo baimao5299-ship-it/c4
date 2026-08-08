@@ -676,9 +676,11 @@
 - `litellm`：从 litellm 官方价格表拉取（`price_source_url` 配置的 JSON，默认 GitHub raw `model_prices_and_context_window.json`）。启动时异步拉取一次 + `price_sync_cron` 定时（默认 `0 3 * * *`，cron 表达式）。拉取为批量 upsert，**永不覆盖已存在的手动价**（`ON CONFLICT (model) DO UPDATE ... WHERE source != 'manual'`）。
 - `manual`：管理端手动设价（PUT），**优先级最高**——upsert 强制 `source=manual`，可直接接管已存在的 litellm 行。
 
-**单位换算**：1 USD = 100,000 毫分（10⁻⁵ USD 精度）。litellm 价格为 per-token USD，换算公式 `× 1e6 tokens × 1e5 毫分 = × 1e11`，四舍五入取整。PUT 请求体中 `prompt_price_per_million` / `completion_price_per_million` 即毫分/1M tokens 整数（≥ 0）。例如 `2.5e-6` USD/token → `250000` 毫分/1M（=$2.5/1M tokens）。
+**单位换算**：1 USD = 100,000 毫分（10⁻⁵ USD 精度）。litellm 价格为 per-token USD，换算公式 `× 1e6 tokens × 1e5 毫分 = × 1e11`，四舍五入取整。PUT 请求体中 `prompt_price_per_million` / `completion_price_per_million` / `cache_read_price_per_million` / `cache_creation_price_per_million` 均为毫分/1M tokens 整数（≥ 0）。例如 `2.5e-6` USD/token → `250000` 毫分/1M（=$2.5/1M tokens）。
 
-**生效与缺失语义**：表内一行即最终生效价；手动设价/拉取成功后服务端价格快照即时重载（Phase 5 计费热路径读内存快照，零 DB）。删除手动价后该模型在下一轮拉取前存在缺失窗口——计费侧对无价格模型**拒绝计费并显式报错**（不按 0 计价）。`max_input_tokens` / `max_output_tokens` 为 litellm 自带上下文窗口，`nil` = 未知。
+**缓存价语义**：`cache_read` / `cache_creation` 对应 litellm 的 `cache_read_input_token_cost` / `cache_creation_input_token_cost`（OpenAI 系缓存命中按 read 价替换计价；Anthropic 系缓存独立计价，见 Phase 5 计费公式）。`nil` = 无缓存价（OpenAI 常规模型无 cache_creation 价，写缓存不计费）。litellm 行 0 → 落库 `nil`；manual 显式设 0 → 落库 0。
+
+**生效与缺失语义**：表内一行即最终生效价；手动设价/拉取成功后服务端价格快照即时重载（Phase 5 计费热路径读内存快照，零 DB）。删除手动价后该模型在下一轮拉取前存在缺失窗口——计费侧对无价格模型**拒绝计费并显式报错**（不按 0 计价）。`max_input_tokens` / `max_output_tokens` 为 litellm 自带上下文窗口，`nil` = 未知。`provider` / `mode` / `supports_prompt_caching` 为 litellm 元数据（manual 行 `nil`）。litellm 官方表完整原始条目（149 字段）镜像存于数据库 `raw` JSONB 列，**不通过 API 暴露**（manual 行接管后清空）。
 
 ### 价格列表
 
@@ -705,6 +707,11 @@
       "CompletionPricePerMillion": 1000000,
       "MaxInputTokens": 128000,
       "MaxOutputTokens": 16384,
+      "CacheReadPricePerMillion": 25000,
+      "CacheCreationPricePerMillion": null,
+      "Provider": "openai",
+      "Mode": "chat",
+      "SupportsPromptCaching": true,
       "Source": "litellm",
       "CreatedAt": "2026-08-08T19:26:35+08:00",
       "UpdatedAt": "2026-08-08T19:26:35+08:00"
@@ -717,7 +724,7 @@
 
 `PUT /admin/pricing/{model}`
 
-请求体：`{"prompt_price_per_million": 111111, "completion_price_per_million": 222222}`（毫分/1M tokens，**必须 ≥ 0**；负数 → `400`，model 缺失 → `404`）。
+请求体：`{"prompt_price_per_million": 111111, "completion_price_per_million": 222222}`（毫分/1M tokens，**必须 ≥ 0**；负数 → `400`，model 缺失 → `404`）。可选字段 `cache_read_price_per_million` / `cache_creation_price_per_million`（毫分/1M tokens，≥ 0，缺省或 `null` = 不设缓存价，落库 NULL）。
 
 语义：upsert 并强制 `source=manual`——模型已存在 litellm 行时**直接接管**（该行来源改为 manual，后续拉取不再覆盖）。响应 `200` 为更新后的价格对象。
 
