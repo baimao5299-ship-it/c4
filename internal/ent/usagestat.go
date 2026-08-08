@@ -45,6 +45,8 @@ type UsageStat struct {
 	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
 	// CacheCreationTokens holds the value of the "cache_creation_tokens" field.
 	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
+	// Cost holds the value of the "cost" field.
+	Cost int64 `json:"cost,omitempty"`
 	// TotalLatencyMs holds the value of the "total_latency_ms" field.
 	TotalLatencyMs int64 `json:"total_latency_ms,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -59,7 +61,7 @@ func (*UsageStat) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagestat.FieldIsError:
 			values[i] = new(sql.NullBool)
-		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldPromptTokens, usagestat.FieldCompletionTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldTotalLatencyMs:
+		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldPromptTokens, usagestat.FieldCompletionTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldCost, usagestat.FieldTotalLatencyMs:
 			values[i] = new(sql.NullInt64)
 		case usagestat.FieldModel:
 			values[i] = new(sql.NullString)
@@ -170,6 +172,12 @@ func (_m *UsageStat) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.CacheCreationTokens = value.Int64
 			}
+		case usagestat.FieldCost:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cost", values[i])
+			} else if value.Valid {
+				_m.Cost = value.Int64
+			}
 		case usagestat.FieldTotalLatencyMs:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field total_latency_ms", values[i])
@@ -259,6 +267,9 @@ func (_m *UsageStat) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("cache_creation_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CacheCreationTokens))
+	builder.WriteString(", ")
+	builder.WriteString("cost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Cost))
 	builder.WriteString(", ")
 	builder.WriteString("total_latency_ms=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TotalLatencyMs))

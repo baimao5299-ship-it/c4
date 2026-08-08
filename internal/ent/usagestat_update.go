@@ -301,6 +301,27 @@ func (_u *UsageStatUpdate) AddCacheCreationTokens(v int64) *UsageStatUpdate {
 	return _u
 }
 
+// SetCost sets the "cost" field.
+func (_u *UsageStatUpdate) SetCost(v int64) *UsageStatUpdate {
+	_u.mutation.ResetCost()
+	_u.mutation.SetCost(v)
+	return _u
+}
+
+// SetNillableCost sets the "cost" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableCost(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetCost(*v)
+	}
+	return _u
+}
+
+// AddCost adds value to the "cost" field.
+func (_u *UsageStatUpdate) AddCost(v int64) *UsageStatUpdate {
+	_u.mutation.AddCost(v)
+	return _u
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (_u *UsageStatUpdate) SetTotalLatencyMs(v int64) *UsageStatUpdate {
 	_u.mutation.ResetTotalLatencyMs()
@@ -452,6 +473,12 @@ func (_u *UsageStatUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
 		_spec.AddField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.Cost(); ok {
+		_spec.SetField(usagestat.FieldCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCost(); ok {
+		_spec.AddField(usagestat.FieldCost, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalLatencyMs(); ok {
 		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
@@ -755,6 +782,27 @@ func (_u *UsageStatUpdateOne) AddCacheCreationTokens(v int64) *UsageStatUpdateOn
 	return _u
 }
 
+// SetCost sets the "cost" field.
+func (_u *UsageStatUpdateOne) SetCost(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetCost()
+	_u.mutation.SetCost(v)
+	return _u
+}
+
+// SetNillableCost sets the "cost" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableCost(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetCost(*v)
+	}
+	return _u
+}
+
+// AddCost adds value to the "cost" field.
+func (_u *UsageStatUpdateOne) AddCost(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddCost(v)
+	return _u
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (_u *UsageStatUpdateOne) SetTotalLatencyMs(v int64) *UsageStatUpdateOne {
 	_u.mutation.ResetTotalLatencyMs()
@@ -936,6 +984,12 @@ func (_u *UsageStatUpdateOne) sqlSave(ctx context.Context) (_node *UsageStat, er
 	}
 	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
 		_spec.AddField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.Cost(); ok {
+		_spec.SetField(usagestat.FieldCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCost(); ok {
+		_spec.AddField(usagestat.FieldCost, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalLatencyMs(); ok {
 		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)

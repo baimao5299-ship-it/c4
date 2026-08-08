@@ -31,41 +31,55 @@ func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) erro
 	}
 	builders := make([]*ent.UsageLogCreate, 0, len(logs))
 	for _, l := range logs {
-		c := r.client.UsageLog.Create().
-			SetRequestID(l.RequestID).
-			SetModel(l.Model).
-			SetFormat(usagelog.Format(l.Format)).
-			SetStatusCode(l.StatusCode).
-			SetErrorType(string(l.ErrorType)).
-			SetLatencyMs(l.LatencyMS).
-			SetPromptTokens(l.PromptTokens).
-			SetCompletionTokens(l.CompletionTokens).
-			SetTotalTokens(l.TotalTokens).
-			SetCacheReadTokens(l.CacheReadTokens).
-			SetCacheCreationTokens(l.CacheCreationTokens).
-			SetCreatedAt(l.CreatedAt)
-		if l.GroupID > 0 {
-			c = c.SetGroupID(l.GroupID)
-		}
-		if l.AccountID > 0 {
-			c = c.SetAccountID(l.AccountID)
-		}
-		if l.TemplateID > 0 {
-			c = c.SetTemplateID(l.TemplateID)
-		}
-		if l.UserID > 0 {
-			c = c.SetUserID(l.UserID)
-		}
-		if l.KeyID > 0 {
-			c = c.SetKeyID(l.KeyID)
-		}
-		if l.MappedModel != "" {
-			c = c.SetMappedModel(l.MappedModel)
-		}
-		builders = append(builders, c)
+		builders = append(builders, buildUsageLogCreate(r.client, l))
 	}
 	_, err := r.client.UsageLog.CreateBulk(builders...).Save(ctx)
 	return err
+}
+
+// buildUsageLogCreate 构建单条 usagelog 插入构建器（InsertBatch 与计费事务
+// DeductAndLog 共用——tx client 经同一 client 传入即同一事务连接）。
+// 计费列（Phase 5）：Cost 毫分（0 = 未计费/错误路径）；BillingTier 空 = 未计费
+// 路径（落库 NULL）；AboveHit/Overdraft 布尔直接落。
+func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCreate {
+	c := client.UsageLog.Create().
+		SetRequestID(l.RequestID).
+		SetModel(l.Model).
+		SetFormat(usagelog.Format(l.Format)).
+		SetStatusCode(l.StatusCode).
+		SetErrorType(string(l.ErrorType)).
+		SetLatencyMs(l.LatencyMS).
+		SetPromptTokens(l.PromptTokens).
+		SetCompletionTokens(l.CompletionTokens).
+		SetTotalTokens(l.TotalTokens).
+		SetCacheReadTokens(l.CacheReadTokens).
+		SetCacheCreationTokens(l.CacheCreationTokens).
+		SetCost(l.Cost).
+		SetAboveHit(l.AboveHit).
+		SetOverdraft(l.Overdraft).
+		SetCreatedAt(l.CreatedAt)
+	if l.GroupID > 0 {
+		c = c.SetGroupID(l.GroupID)
+	}
+	if l.AccountID > 0 {
+		c = c.SetAccountID(l.AccountID)
+	}
+	if l.TemplateID > 0 {
+		c = c.SetTemplateID(l.TemplateID)
+	}
+	if l.UserID > 0 {
+		c = c.SetUserID(l.UserID)
+	}
+	if l.KeyID > 0 {
+		c = c.SetKeyID(l.KeyID)
+	}
+	if l.MappedModel != "" {
+		c = c.SetMappedModel(l.MappedModel)
+	}
+	if l.BillingTier != "" {
+		c = c.SetBillingTier(l.BillingTier)
+	}
+	return c
 }
 
 func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
@@ -120,6 +134,9 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 			TotalTokens:         row.TotalTokens,
 			CacheReadTokens:     row.CacheReadTokens,
 			CacheCreationTokens: row.CacheCreationTokens,
+			Cost:                row.Cost,
+			AboveHit:            row.AboveHit,
+			Overdraft:           row.Overdraft,
 			CreatedAt:           row.CreatedAt,
 		}
 		if row.GroupID != nil {
@@ -139,6 +156,9 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 		}
 		if row.MappedModel != nil {
 			l.MappedModel = *row.MappedModel
+		}
+		if row.BillingTier != nil {
+			l.BillingTier = *row.BillingTier
 		}
 		out = append(out, l)
 	}

@@ -41,6 +41,8 @@ const (
 	FieldCacheReadTokens = "cache_read_tokens"
 	// FieldCacheCreationTokens holds the string denoting the cache_creation_tokens field in the database.
 	FieldCacheCreationTokens = "cache_creation_tokens"
+	// FieldCost holds the string denoting the cost field in the database.
+	FieldCost = "cost"
 	// FieldTotalLatencyMs holds the string denoting the total_latency_ms field in the database.
 	FieldTotalLatencyMs = "total_latency_ms"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -66,6 +68,7 @@ var Columns = []string{
 	FieldTotalTokens,
 	FieldCacheReadTokens,
 	FieldCacheCreationTokens,
+	FieldCost,
 	FieldTotalLatencyMs,
 	FieldUpdatedAt,
 }
@@ -107,6 +110,8 @@ var (
 	DefaultCacheReadTokens int64
 	// DefaultCacheCreationTokens holds the default value on creation for the "cache_creation_tokens" field.
 	DefaultCacheCreationTokens int64
+	// DefaultCost holds the default value on creation for the "cost" field.
+	DefaultCost int64
 	// DefaultTotalLatencyMs holds the default value on creation for the "total_latency_ms" field.
 	DefaultTotalLatencyMs int64
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -191,6 +196,11 @@ func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByCacheCreationTokens orders the results by the cache_creation_tokens field.
 func ByCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheCreationTokens, opts...).ToFunc()
+}
+
+// ByCost orders the results by the cost field.
+func ByCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCost, opts...).ToFunc()
 }
 
 // ByTotalLatencyMs orders the results by the total_latency_ms field.

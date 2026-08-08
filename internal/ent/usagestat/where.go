@@ -124,6 +124,11 @@ func CacheCreationTokens(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldEQ(FieldCacheCreationTokens, v))
 }
 
+// Cost applies equality check predicate on the "cost" field. It's identical to CostEQ.
+func Cost(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldCost, v))
+}
+
 // TotalLatencyMs applies equality check predicate on the "total_latency_ms" field. It's identical to TotalLatencyMsEQ.
 func TotalLatencyMs(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldEQ(FieldTotalLatencyMs, v))
@@ -687,6 +692,46 @@ func CacheCreationTokensLT(v int64) predicate.UsageStat {
 // CacheCreationTokensLTE applies the LTE predicate on the "cache_creation_tokens" field.
 func CacheCreationTokensLTE(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldLTE(FieldCacheCreationTokens, v))
+}
+
+// CostEQ applies the EQ predicate on the "cost" field.
+func CostEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldCost, v))
+}
+
+// CostNEQ applies the NEQ predicate on the "cost" field.
+func CostNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldCost, v))
+}
+
+// CostIn applies the In predicate on the "cost" field.
+func CostIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldCost, vs...))
+}
+
+// CostNotIn applies the NotIn predicate on the "cost" field.
+func CostNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldCost, vs...))
+}
+
+// CostGT applies the GT predicate on the "cost" field.
+func CostGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldCost, v))
+}
+
+// CostGTE applies the GTE predicate on the "cost" field.
+func CostGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldCost, v))
+}
+
+// CostLT applies the LT predicate on the "cost" field.
+func CostLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldCost, v))
+}
+
+// CostLTE applies the LTE predicate on the "cost" field.
+func CostLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldCost, v))
 }
 
 // TotalLatencyMsEQ applies the EQ predicate on the "total_latency_ms" field.

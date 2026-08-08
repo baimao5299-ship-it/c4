@@ -210,6 +210,20 @@ func (_c *UsageStatCreate) SetNillableCacheCreationTokens(v *int64) *UsageStatCr
 	return _c
 }
 
+// SetCost sets the "cost" field.
+func (_c *UsageStatCreate) SetCost(v int64) *UsageStatCreate {
+	_c.mutation.SetCost(v)
+	return _c
+}
+
+// SetNillableCost sets the "cost" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableCost(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetCost(*v)
+	}
+	return _c
+}
+
 // SetTotalLatencyMs sets the "total_latency_ms" field.
 func (_c *UsageStatCreate) SetTotalLatencyMs(v int64) *UsageStatCreate {
 	_c.mutation.SetTotalLatencyMs(v)
@@ -331,6 +345,10 @@ func (_c *UsageStatCreate) defaults() {
 		v := usagestat.DefaultCacheCreationTokens
 		_c.mutation.SetCacheCreationTokens(v)
 	}
+	if _, ok := _c.mutation.Cost(); !ok {
+		v := usagestat.DefaultCost
+		_c.mutation.SetCost(v)
+	}
 	if _, ok := _c.mutation.TotalLatencyMs(); !ok {
 		v := usagestat.DefaultTotalLatencyMs
 		_c.mutation.SetTotalLatencyMs(v)
@@ -384,6 +402,9 @@ func (_c *UsageStatCreate) check() error {
 	}
 	if _, ok := _c.mutation.CacheCreationTokens(); !ok {
 		return &ValidationError{Name: "cache_creation_tokens", err: errors.New(`ent: missing required field "UsageStat.cache_creation_tokens"`)}
+	}
+	if _, ok := _c.mutation.Cost(); !ok {
+		return &ValidationError{Name: "cost", err: errors.New(`ent: missing required field "UsageStat.cost"`)}
 	}
 	if _, ok := _c.mutation.TotalLatencyMs(); !ok {
 		return &ValidationError{Name: "total_latency_ms", err: errors.New(`ent: missing required field "UsageStat.total_latency_ms"`)}
@@ -479,6 +500,10 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CacheCreationTokens(); ok {
 		_spec.SetField(usagestat.FieldCacheCreationTokens, field.TypeInt64, value)
 		_node.CacheCreationTokens = value
+	}
+	if value, ok := _c.mutation.Cost(); ok {
+		_spec.SetField(usagestat.FieldCost, field.TypeInt64, value)
+		_node.Cost = value
 	}
 	if value, ok := _c.mutation.TotalLatencyMs(); ok {
 		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
@@ -771,6 +796,24 @@ func (u *UsageStatUpsert) UpdateCacheCreationTokens() *UsageStatUpsert {
 // AddCacheCreationTokens adds v to the "cache_creation_tokens" field.
 func (u *UsageStatUpsert) AddCacheCreationTokens(v int64) *UsageStatUpsert {
 	u.Add(usagestat.FieldCacheCreationTokens, v)
+	return u
+}
+
+// SetCost sets the "cost" field.
+func (u *UsageStatUpsert) SetCost(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldCost, v)
+	return u
+}
+
+// UpdateCost sets the "cost" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateCost() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldCost)
+	return u
+}
+
+// AddCost adds v to the "cost" field.
+func (u *UsageStatUpsert) AddCost(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldCost, v)
 	return u
 }
 
@@ -1122,6 +1165,27 @@ func (u *UsageStatUpsertOne) AddCacheCreationTokens(v int64) *UsageStatUpsertOne
 func (u *UsageStatUpsertOne) UpdateCacheCreationTokens() *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
 		s.UpdateCacheCreationTokens()
+	})
+}
+
+// SetCost sets the "cost" field.
+func (u *UsageStatUpsertOne) SetCost(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCost(v)
+	})
+}
+
+// AddCost adds v to the "cost" field.
+func (u *UsageStatUpsertOne) AddCost(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCost(v)
+	})
+}
+
+// UpdateCost sets the "cost" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateCost() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCost()
 	})
 }
 
@@ -1644,6 +1708,27 @@ func (u *UsageStatUpsertBulk) AddCacheCreationTokens(v int64) *UsageStatUpsertBu
 func (u *UsageStatUpsertBulk) UpdateCacheCreationTokens() *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
 		s.UpdateCacheCreationTokens()
+	})
+}
+
+// SetCost sets the "cost" field.
+func (u *UsageStatUpsertBulk) SetCost(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetCost(v)
+	})
+}
+
+// AddCost adds v to the "cost" field.
+func (u *UsageStatUpsertBulk) AddCost(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddCost(v)
+	})
+}
+
+// UpdateCost sets the "cost" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateCost() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateCost()
 	})
 }
 

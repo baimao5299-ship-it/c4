@@ -1173,20 +1173,42 @@ func (f *fakeStore) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricin
 	return n, nil
 }
 
-// UpsertManual 模拟手动设价（可接管 litellm 行；返回副本）。
-// cacheRead/cacheCreation：nil = 不设缓存价（NULL 语义）；非 nil = 设价。
-func (f *fakeStore) UpsertManual(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error) {
+// UpsertManual 模拟手动设价（可接管 litellm 行；返回副本）。可选字段
+// （cache 价 + 矩阵 22 列）：nil = 不设价（NULL 语义）；非 nil = 设价。
+func (f *fakeStore) UpsertManual(ctx context.Context, m *repository.PricingManual) (*domain.Pricing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p := &domain.Pricing{
-		Model:                        model,
-		PromptPricePerMillion:        promptP,
-		CompletionPricePerMillion:    completionP,
-		CacheReadPricePerMillion:     cacheRead,
-		CacheCreationPricePerMillion: cacheCreation,
+		Model:                        m.Model,
+		PromptPricePerMillion:        m.PromptPricePerMillion,
+		CompletionPricePerMillion:    m.CompletionPricePerMillion,
+		CacheReadPricePerMillion:     m.CacheReadPricePerMillion,
+		CacheCreationPricePerMillion: m.CacheCreationPricePerMillion,
+		PriorityPromptPricePerMillion:        m.PriorityPromptPricePerMillion,
+		PriorityCompletionPricePerMillion:    m.PriorityCompletionPricePerMillion,
+		PriorityCacheReadPricePerMillion:     m.PriorityCacheReadPricePerMillion,
+		PriorityCacheCreationPricePerMillion: m.PriorityCacheCreationPricePerMillion,
+		FlexPromptPricePerMillion:            m.FlexPromptPricePerMillion,
+		FlexCompletionPricePerMillion:        m.FlexCompletionPricePerMillion,
+		FlexCacheReadPricePerMillion:         m.FlexCacheReadPricePerMillion,
+		FlexCacheCreationPricePerMillion:     m.FlexCacheCreationPricePerMillion,
+		AboveThreshold:                       m.AboveThreshold,
+		AbovePromptPricePerMillion:           m.AbovePromptPricePerMillion,
+		AboveCompletionPricePerMillion:       m.AboveCompletionPricePerMillion,
+		AboveCacheReadPricePerMillion:        m.AboveCacheReadPricePerMillion,
+		AboveCacheCreationPricePerMillion:    m.AboveCacheCreationPricePerMillion,
+		AbovePriorityPromptPricePerMillion:   m.AbovePriorityPromptPricePerMillion,
+		AbovePriorityCompletionPricePerMillion: m.AbovePriorityCompletionPricePerMillion,
+		AbovePriorityCacheReadPricePerMillion:  m.AbovePriorityCacheReadPricePerMillion,
+		AbovePriorityCacheCreationPricePerMillion: m.AbovePriorityCacheCreationPricePerMillion,
+		AboveFlexPromptPricePerMillion:           m.AboveFlexPromptPricePerMillion,
+		AboveFlexCompletionPricePerMillion:       m.AboveFlexCompletionPricePerMillion,
+		AboveFlexCacheReadPricePerMillion:        m.AboveFlexCacheReadPricePerMillion,
+		AboveFlexCacheCreationPricePerMillion:    m.AboveFlexCacheCreationPricePerMillion,
+		FastMultiplier:                           m.FastMultiplier,
 		Source:                       domain.PricingSourceManual,
 	}
-	f.pricings[model] = p
+	f.pricings[m.Model] = p
 	c := *p
 	return &c, nil
 }

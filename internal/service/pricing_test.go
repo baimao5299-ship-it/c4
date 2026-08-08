@@ -43,6 +43,20 @@ func litellmRow(model string, prompt, completion int64) *domain.Pricing {
 
 func int64Ptr(v int64) *int64 { return &v }
 
+// manualReq 构造 PricingManual（可选 cache 价；矩阵字段走显式设置）。
+func manualReq(model string, prompt, completion int64, cache ...*int64) *repository.PricingManual {
+	m := &repository.PricingManual{
+		Model: model, PromptPricePerMillion: prompt, CompletionPricePerMillion: completion,
+	}
+	if len(cache) >= 1 {
+		m.CacheReadPricePerMillion = cache[0]
+	}
+	if len(cache) >= 2 {
+		m.CacheCreationPricePerMillion = cache[1]
+	}
+	return m
+}
+
 // TestPricingSnapshotLoadNew New 初始化从 DB 全量加载：GetPrice 快照命中
 // （litellm + manual 行），缺失 → ErrNotFound（计费拒绝而非按 0 计价）。
 func TestPricingSnapshotLoadNew(t *testing.T) {
@@ -52,7 +66,7 @@ func TestPricingSnapshotLoadNew(t *testing.T) {
 		litellmRow("claude-3-5-sonnet", 300000, 1500000),
 	})
 	require.NoError(t, err)
-	_, err = fs.UpsertManual(context.Background(), "gpt-4o-mini", 100, 200, nil, nil)
+	_, err = fs.UpsertManual(context.Background(), manualReq("gpt-4o-mini", 100, 200))
 	require.NoError(t, err)
 
 	svc := newPricingSvc(t, fs)
@@ -79,7 +93,7 @@ func TestPricingSnapshotReload(t *testing.T) {
 	svc := newPricingSvc(t, fs)
 
 	// 库内新增行：快照未刷新前读不到
-	_, err = fs.UpsertManual(context.Background(), "m-b", 3, 4, nil, nil)
+	_, err = fs.UpsertManual(context.Background(), manualReq("m-b", 3, 4))
 	require.NoError(t, err)
 	_, err = svc.GetPrice("m-b")
 	require.ErrorIs(t, err, ErrNotFound, "快照未刷新（DB 新增不自动可见）")
@@ -100,20 +114,30 @@ func TestUpsertManualPricing(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("validation", func(t *testing.T) {
-		_, err := svc.UpsertManualPricing(ctx, "", 1, 2, nil, nil)
+		_, err := svc.UpsertManualPricing(ctx, manualReq("", 1, 2))
 		require.ErrorIs(t, err, ErrInvalidInput, "model 空 → 400")
-		_, err = svc.UpsertManualPricing(ctx, "m", -1, 2, nil, nil)
+		_, err = svc.UpsertManualPricing(ctx, manualReq("m", -1, 2))
 		require.ErrorIs(t, err, ErrInvalidInput, "负价 → 400")
-		_, err = svc.UpsertManualPricing(ctx, "m", 1, -2, nil, nil)
+		_, err = svc.UpsertManualPricing(ctx, manualReq("m", 1, -2))
 		require.ErrorIs(t, err, ErrInvalidInput)
-		_, err = svc.UpsertManualPricing(ctx, "m", 1, 2, int64Ptr(-1), nil)
+		_, err = svc.UpsertManualPricing(ctx, manualReq("m", 1, 2, int64Ptr(-1)))
 		require.ErrorIs(t, err, ErrInvalidInput, "负 cache 价 → 400")
-		_, err = svc.UpsertManualPricing(ctx, "m", 1, 2, nil, int64Ptr(-2))
+		_, err = svc.UpsertManualPricing(ctx, manualReq("m", 1, 2, nil, int64Ptr(-2)))
 		require.ErrorIs(t, err, ErrInvalidInput)
+		_, err = svc.UpsertManualPricing(ctx, manualReq("m", 1, 2, nil, int64Ptr(-2)))
+		require.ErrorIs(t, err, ErrInvalidInput, "负矩阵价 → 400（矩阵字段全量校验）")
+		m := manualReq("m", 1, 2)
+		m.PriorityPromptPricePerMillion = int64Ptr(-3)
+		_, err = svc.UpsertManualPricing(ctx, m)
+		require.ErrorIs(t, err, ErrInvalidInput, "负 priority 价 → 400")
+		m = manualReq("m", 1, 2)
+		m.FastMultiplier = int64Ptr(200000)
+		_, err = svc.UpsertManualPricing(ctx, m)
+		require.ErrorIs(t, err, ErrInvalidInput, "fast 万分数超上限（>×10.0）→ 400")
 	})
 
 	t.Run("takeover litellm row and reload snapshot", func(t *testing.T) {
-		p, err := svc.UpsertManualPricing(ctx, "gpt-4o", 999, 888, nil, nil)
+		p, err := svc.UpsertManualPricing(ctx, manualReq("gpt-4o", 999, 888))
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
 		got, err := svc.GetPrice("gpt-4o")
@@ -124,7 +148,7 @@ func TestUpsertManualPricing(t *testing.T) {
 	})
 
 	t.Run("manual with cache prices", func(t *testing.T) {
-		p, err := svc.UpsertManualPricing(ctx, "m-cache", 10, 20, int64Ptr(30), int64Ptr(40))
+		p, err := svc.UpsertManualPricing(ctx, manualReq("m-cache", 10, 20, int64Ptr(30), int64Ptr(40)))
 		require.NoError(t, err)
 		require.NotNil(t, p.CacheReadPricePerMillion)
 		require.Equal(t, int64(30), *p.CacheReadPricePerMillion)
@@ -137,10 +161,36 @@ func TestUpsertManualPricing(t *testing.T) {
 	})
 
 	t.Run("manual without cache prices", func(t *testing.T) {
-		p, err := svc.UpsertManualPricing(ctx, "m-nocache", 10, 20, nil, nil)
+		p, err := svc.UpsertManualPricing(ctx, manualReq("m-nocache", 10, 20))
 		require.NoError(t, err)
 		require.Nil(t, p.CacheReadPricePerMillion, "缺省 → nil")
 		require.Nil(t, p.CacheCreationPricePerMillion)
+	})
+
+	t.Run("manual with matrix prices", func(t *testing.T) {
+		m := manualReq("m-matrix", 100, 200)
+		m.PriorityPromptPricePerMillion = int64Ptr(150)
+		m.PriorityCompletionPricePerMillion = int64Ptr(300)
+		m.FlexPromptPricePerMillion = int64Ptr(90)
+		m.AboveThreshold = int64Ptr(272000)
+		m.AbovePromptPricePerMillion = int64Ptr(80)
+		m.AboveCompletionPricePerMillion = int64Ptr(160)
+		m.AboveFlexPromptPricePerMillion = int64Ptr(70)
+		m.FastMultiplier = int64Ptr(20000)
+		p, err := svc.UpsertManualPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, int64(150), *p.PriorityPromptPricePerMillion)
+		require.Equal(t, int64(90), *p.FlexPromptPricePerMillion)
+		require.Equal(t, int64(272000), *p.AboveThreshold)
+		require.Equal(t, int64(80), *p.AbovePromptPricePerMillion)
+		require.Equal(t, int64(70), *p.AboveFlexPromptPricePerMillion)
+		require.Equal(t, int64(20000), *p.FastMultiplier)
+		require.Nil(t, p.AbovePriorityPromptPricePerMillion, "未设置组 → nil")
+
+		got, err := svc.GetPrice("m-matrix")
+		require.NoError(t, err, "快照重载后矩阵价即时生效")
+		require.Equal(t, int64(150), *got.PriorityPromptPricePerMillion)
+		require.Equal(t, int64(20000), *got.FastMultiplier)
 	})
 }
 
@@ -150,7 +200,7 @@ func TestDeleteManualPricing(t *testing.T) {
 	fs := newFakeStore()
 	_, err := fs.UpsertFromLiteLLM(context.Background(), []*domain.Pricing{litellmRow("m-litellm", 1, 2)})
 	require.NoError(t, err)
-	_, err = fs.UpsertManual(context.Background(), "m-manual", 3, 4, nil, nil)
+	_, err = fs.UpsertManual(context.Background(), manualReq("m-manual", 3, 4))
 	require.NoError(t, err)
 	svc := newPricingSvc(t, fs)
 	ctx := context.Background()
@@ -238,7 +288,7 @@ func TestListPricing(t *testing.T) {
 		litellmRow("claude-3-5-sonnet", 300000, 1500000),
 	})
 	require.NoError(t, err)
-	_, err = fs.UpsertManual(context.Background(), "gpt-4o-mini", 100, 200, nil, nil)
+	_, err = fs.UpsertManual(context.Background(), manualReq("gpt-4o-mini", 100, 200))
 	require.NoError(t, err)
 	svc := newPricingSvc(t, fs)
 	ctx := context.Background()
@@ -300,7 +350,7 @@ func TestSyncPricingNow(t *testing.T) {
 
 	t.Run("success: stats + upsert + snapshot reload", func(t *testing.T) {
 		fs := newFakeStore()
-		_, err := fs.UpsertManual(context.Background(), "gpt-4o", 999, 888, nil, nil)
+		_, err := fs.UpsertManual(context.Background(), manualReq("gpt-4o", 999, 888))
 		require.NoError(t, err) // manual 行：拉取不得覆盖
 		svc := newPricingSvc(t, fs)
 		f := &fakePriceFetcher{res: &pricing.FetchResult{Rows: litellmRows, Skipped: 3}}

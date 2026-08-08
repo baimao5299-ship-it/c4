@@ -19,6 +19,20 @@ import (
 
 func int64Ptr(v int64) *int64 { return &v }
 
+// manualReq 构造 PricingManual（可选 cache 价；矩阵字段走显式设置）。
+func manualReq(model string, prompt, completion int64, cache ...*int64) *repository.PricingManual {
+	m := &repository.PricingManual{
+		Model: model, PromptPricePerMillion: prompt, CompletionPricePerMillion: completion,
+	}
+	if len(cache) >= 1 {
+		m.CacheReadPricePerMillion = cache[0]
+	}
+	if len(cache) >= 2 {
+		m.CacheCreationPricePerMillion = cache[1]
+	}
+	return m
+}
+
 // litellmRow 构造拉取源价格行。
 func litellmRow(model string, prompt, completion int64) *domain.Pricing {
 	return &domain.Pricing{
@@ -37,7 +51,7 @@ func TestPricingPriorityPG(t *testing.T) {
 
 	t.Run("litellm sync does not overwrite manual price", func(t *testing.T) {
 		m := "gpm-pri-manual-a"
-		p, err := repos.UpsertManual(ctx, m, 100, 200, nil, nil)
+		p, err := repos.UpsertManual(ctx, manualReq(m, 100, 200))
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
 		require.Equal(t, m, p.Model)
@@ -63,7 +77,7 @@ func TestPricingPriorityPG(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceLitellm, got.Source)
 
-		p, err := repos.UpsertManual(ctx, m, 300, 400, nil, nil)
+		p, err := repos.UpsertManual(ctx, manualReq(m, 300, 400))
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
 		require.Equal(t, int64(300), p.PromptPricePerMillion, "litellm 行被接管")
@@ -80,7 +94,7 @@ func TestPricingPriorityPG(t *testing.T) {
 		m := "gpm-pri-restore-c"
 		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow(m, 10, 20)})
 		require.NoError(t, err)
-		_, err = repos.UpsertManual(ctx, m, 500, 600, nil, nil)
+		_, err = repos.UpsertManual(ctx, manualReq(m, 500, 600))
 		require.NoError(t, err)
 		require.NoError(t, repos.DeleteManual(ctx, m), "manual 行可删")
 
@@ -122,7 +136,7 @@ func TestPricingDeleteManualPG(t *testing.T) {
 
 	t.Run("manual row deleted", func(t *testing.T) {
 		m := "gpm-del-manual"
-		_, err := repos.UpsertManual(ctx, m, 1, 2, nil, nil)
+		_, err := repos.UpsertManual(ctx, manualReq(m, 1, 2))
 		require.NoError(t, err)
 		require.NoError(t, repos.DeleteManual(ctx, m))
 		_, err = repos.GetPricing(ctx, m)
@@ -170,7 +184,7 @@ func TestPricingUpsertLitellmBatchPG(t *testing.T) {
 
 	// 2) 批内含手动行：DO UPDATE 被 WHERE 过滤，成功数 = 总行数 - 1
 	manualModel := "litellm-batch-0600"
-	_, err = repos.UpsertManual(ctx, manualModel, 777, 888, nil, nil)
+	_, err = repos.UpsertManual(ctx, manualReq(manualModel, 777, 888))
 	require.NoError(t, err)
 	n, err = repos.UpsertFromLiteLLM(ctx, rows)
 	require.NoError(t, err)
@@ -210,9 +224,9 @@ func TestPricingListPG(t *testing.T) {
 		litellmRow("claude-sonnet", 3, 4),
 	})
 	require.NoError(t, err)
-	_, err = repos.UpsertManual(ctx, "gpt-4o-mini", 5, 6, nil, nil)
+	_, err = repos.UpsertManual(ctx, manualReq("gpt-4o-mini", 5, 6))
 	require.NoError(t, err)
-	_, err = repos.UpsertManual(ctx, "gemini-pro", 7, 8, nil, nil)
+	_, err = repos.UpsertManual(ctx, manualReq("gemini-pro", 7, 8))
 	require.NoError(t, err)
 
 	// 全量（默认分页 id desc）
@@ -341,7 +355,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 
 	t.Run("manual with cache prices", func(t *testing.T) {
 		m := "gpm-cache-manual"
-		p, err := repos.UpsertManual(ctx, m, 5, 6, int64Ptr(7), int64Ptr(8))
+		p, err := repos.UpsertManual(ctx, manualReq(m, 5, 6, int64Ptr(7), int64Ptr(8)))
 		require.NoError(t, err)
 		require.Equal(t, int64(7), *p.CacheReadPricePerMillion, "manual 返回行含 cache 价")
 		require.Equal(t, int64(8), *p.CacheCreationPricePerMillion)
@@ -357,7 +371,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 
 	t.Run("manual without cache prices stores NULL", func(t *testing.T) {
 		m := "gpm-cache-manual-nil"
-		p, err := repos.UpsertManual(ctx, m, 5, 6, nil, nil)
+		p, err := repos.UpsertManual(ctx, manualReq(m, 5, 6))
 		require.NoError(t, err)
 		require.Nil(t, p.CacheReadPricePerMillion, "不设 cache 价 → nil")
 		require.Nil(t, p.CacheCreationPricePerMillion)
@@ -378,7 +392,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 		require.NoError(t, err)
 
 		// 接管且不设 cache 价 → 原 litellm 缓存价清为 NULL
-		_, err = repos.UpsertManual(ctx, m, 1, 2, nil, nil)
+		_, err = repos.UpsertManual(ctx, manualReq(m, 1, 2))
 		require.NoError(t, err)
 		got, err := repos.GetPricing(ctx, m)
 		require.NoError(t, err)
@@ -386,5 +400,144 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 		require.Nil(t, got.CacheReadPricePerMillion, "接管不设 cache → NULL")
 		require.Nil(t, got.CacheCreationPricePerMillion)
 		require.Nil(t, got.Raw, "manual 接管后 raw 清为 NULL")
+	})
+}
+
+// TestPricingMatrixFieldsPG Phase 5 矩阵 22 列落库闭环：
+//  1. litellm 行全矩阵（priority/flex/above 三组/fast）roundtrip；缺矩阵行 → nil；
+//  2. 再拉取更新（矩阵变化）→ DO UPDATE 覆盖（非 manual 行），缺失列置 NULL；
+//  3. manual 设矩阵价落库；manual 接管带矩阵的 litellm 行且不设 → 矩阵清为 NULL。
+func TestPricingMatrixFieldsPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	t.Run("litellm row full matrix roundtrip", func(t *testing.T) {
+		m := "gpm-matrix-a"
+		row := litellmRow(m, 100, 200)
+		row.PriorityPromptPricePerMillion = int64Ptr(110)
+		row.PriorityCompletionPricePerMillion = int64Ptr(220)
+		row.PriorityCacheReadPricePerMillion = int64Ptr(330)
+		row.PriorityCacheCreationPricePerMillion = int64Ptr(440)
+		row.FlexPromptPricePerMillion = int64Ptr(90)
+		row.FlexCompletionPricePerMillion = int64Ptr(180)
+		row.FlexCacheReadPricePerMillion = int64Ptr(270)
+		row.FlexCacheCreationPricePerMillion = int64Ptr(360)
+		row.AboveThreshold = int64Ptr(272000)
+		row.AbovePromptPricePerMillion = int64Ptr(80)
+		row.AboveCompletionPricePerMillion = int64Ptr(160)
+		row.AboveCacheReadPricePerMillion = int64Ptr(240)
+		row.AboveCacheCreationPricePerMillion = int64Ptr(320)
+		row.AbovePriorityPromptPricePerMillion = int64Ptr(70)
+		row.AbovePriorityCompletionPricePerMillion = int64Ptr(140)
+		row.AbovePriorityCacheReadPricePerMillion = int64Ptr(210)
+		row.AbovePriorityCacheCreationPricePerMillion = int64Ptr(280)
+		row.AboveFlexPromptPricePerMillion = int64Ptr(60)
+		row.AboveFlexCompletionPricePerMillion = int64Ptr(120)
+		row.AboveFlexCacheReadPricePerMillion = int64Ptr(180)
+		row.AboveFlexCacheCreationPricePerMillion = int64Ptr(240)
+		row.FastMultiplier = int64Ptr(60000)
+		n, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, int64(110), *got.PriorityPromptPricePerMillion, "priority 矩阵落库")
+		require.Equal(t, int64(440), *got.PriorityCacheCreationPricePerMillion)
+		require.Equal(t, int64(90), *got.FlexPromptPricePerMillion, "flex 矩阵落库")
+		require.Equal(t, int64(360), *got.FlexCacheCreationPricePerMillion)
+		require.Equal(t, int64(272000), *got.AboveThreshold, "above 阈值落库")
+		require.Equal(t, int64(80), *got.AbovePromptPricePerMillion, "above 基础组落库")
+		require.Equal(t, int64(320), *got.AboveCacheCreationPricePerMillion)
+		require.Equal(t, int64(70), *got.AbovePriorityPromptPricePerMillion, "above_priority 组落库")
+		require.Equal(t, int64(280), *got.AbovePriorityCacheCreationPricePerMillion)
+		require.Equal(t, int64(60), *got.AboveFlexPromptPricePerMillion, "above_flex 组落库")
+		require.Equal(t, int64(240), *got.AboveFlexCacheCreationPricePerMillion)
+		require.Equal(t, int64(60000), *got.FastMultiplier, "fast 万分数落库")
+		require.Equal(t, domain.PricingSourceLitellm, got.Source)
+
+		// 无矩阵行 → nil
+		n, err = repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow("gpm-matrix-b", 1, 2)})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+		got, err = repos.GetPricing(ctx, "gpm-matrix-b")
+		require.NoError(t, err)
+		require.Nil(t, got.PriorityPromptPricePerMillion)
+		require.Nil(t, got.FastMultiplier)
+		require.Nil(t, got.AboveThreshold)
+	})
+
+	t.Run("re-upsert overwrites matrix and clears missing cols", func(t *testing.T) {
+		m := "gpm-matrix-c"
+		row := litellmRow(m, 10, 20)
+		row.PriorityPromptPricePerMillion = int64Ptr(111)
+		row.FastMultiplier = int64Ptr(20000)
+		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row})
+		require.NoError(t, err)
+
+		// 第二次拉取：矩阵变化 + 缺失列 → NULL
+		row2 := litellmRow(m, 10, 20)
+		row2.PriorityPromptPricePerMillion = int64Ptr(222)
+		row2.AboveThreshold = int64Ptr(200000)
+		n, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row2})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, int64(222), *got.PriorityPromptPricePerMillion, "矩阵更新")
+		require.Equal(t, int64(200000), *got.AboveThreshold)
+		require.Nil(t, got.FastMultiplier, "缺失矩阵列 → NULL（计费回退语义）")
+	})
+
+	t.Run("manual matrix prices roundtrip", func(t *testing.T) {
+		m := "gpm-matrix-manual"
+		req := manualReq(m, 5, 6)
+		req.PriorityPromptPricePerMillion = int64Ptr(50)
+		req.PriorityCompletionPricePerMillion = int64Ptr(60)
+		req.FlexPromptPricePerMillion = int64Ptr(40)
+		req.FlexCompletionPricePerMillion = int64Ptr(48)
+		req.AboveThreshold = int64Ptr(100000)
+		req.AbovePromptPricePerMillion = int64Ptr(30)
+		req.AboveCompletionPricePerMillion = int64Ptr(36)
+		req.AboveFlexPromptPricePerMillion = int64Ptr(25)
+		req.AboveFlexCompletionPricePerMillion = int64Ptr(30)
+		req.FastMultiplier = int64Ptr(20000)
+		p, err := repos.UpsertManual(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), *p.PriorityPromptPricePerMillion, "manual 返回行含矩阵")
+		require.Equal(t, int64(25), *p.AboveFlexPromptPricePerMillion)
+		require.Equal(t, int64(20000), *p.FastMultiplier)
+		require.Nil(t, p.AbovePriorityPromptPricePerMillion, "未设置组 → nil")
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), *got.PriorityPromptPricePerMillion, "manual 矩阵落库")
+		require.Equal(t, int64(100000), *got.AboveThreshold)
+		require.Equal(t, int64(20000), *got.FastMultiplier)
+	})
+
+	t.Run("manual takeover clears litellm matrix when unset", func(t *testing.T) {
+		m := "gpm-matrix-takeover"
+		row := litellmRow(m, 10, 20)
+		row.PriorityPromptPricePerMillion = int64Ptr(999)
+		row.FlexPromptPricePerMillion = int64Ptr(888)
+		row.AboveThreshold = int64Ptr(272000)
+		row.AbovePromptPricePerMillion = int64Ptr(777)
+		row.FastMultiplier = int64Ptr(60000)
+		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row})
+		require.NoError(t, err)
+
+		// 接管且不设矩阵 → 原 litellm 矩阵全清为 NULL
+		_, err = repos.UpsertManual(ctx, manualReq(m, 1, 2))
+		require.NoError(t, err)
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, domain.PricingSourceManual, got.Source)
+		require.Nil(t, got.PriorityPromptPricePerMillion, "接管不设 priority → NULL")
+		require.Nil(t, got.FlexPromptPricePerMillion)
+		require.Nil(t, got.AboveThreshold)
+		require.Nil(t, got.AbovePromptPricePerMillion)
+		require.Nil(t, got.FastMultiplier, "接管不设 fast → NULL")
 	})
 }

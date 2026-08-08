@@ -89,6 +89,116 @@ func CacheCreationPricePerMillion(v int64) predicate.Pricing {
 	return predicate.Pricing(sql.FieldEQ(FieldCacheCreationPricePerMillion, v))
 }
 
+// PriorityPromptPricePerMillion applies equality check predicate on the "priority_prompt_price_per_million" field. It's identical to PriorityPromptPricePerMillionEQ.
+func PriorityPromptPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillion applies equality check predicate on the "priority_completion_price_per_million" field. It's identical to PriorityCompletionPricePerMillionEQ.
+func PriorityCompletionPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillion applies equality check predicate on the "priority_cache_read_price_per_million" field. It's identical to PriorityCacheReadPricePerMillionEQ.
+func PriorityCacheReadPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillion applies equality check predicate on the "priority_cache_creation_price_per_million" field. It's identical to PriorityCacheCreationPricePerMillionEQ.
+func PriorityCacheCreationPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillion applies equality check predicate on the "flex_prompt_price_per_million" field. It's identical to FlexPromptPricePerMillionEQ.
+func FlexPromptPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillion applies equality check predicate on the "flex_completion_price_per_million" field. It's identical to FlexCompletionPricePerMillionEQ.
+func FlexCompletionPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillion applies equality check predicate on the "flex_cache_read_price_per_million" field. It's identical to FlexCacheReadPricePerMillionEQ.
+func FlexCacheReadPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillion applies equality check predicate on the "flex_cache_creation_price_per_million" field. It's identical to FlexCacheCreationPricePerMillionEQ.
+func FlexCacheCreationPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveThreshold applies equality check predicate on the "above_threshold" field. It's identical to AboveThresholdEQ.
+func AboveThreshold(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveThreshold, v))
+}
+
+// AbovePromptPricePerMillion applies equality check predicate on the "above_prompt_price_per_million" field. It's identical to AbovePromptPricePerMillionEQ.
+func AbovePromptPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePromptPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillion applies equality check predicate on the "above_completion_price_per_million" field. It's identical to AboveCompletionPricePerMillionEQ.
+func AboveCompletionPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillion applies equality check predicate on the "above_cache_read_price_per_million" field. It's identical to AboveCacheReadPricePerMillionEQ.
+func AboveCacheReadPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillion applies equality check predicate on the "above_cache_creation_price_per_million" field. It's identical to AboveCacheCreationPricePerMillionEQ.
+func AboveCacheCreationPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillion applies equality check predicate on the "above_priority_prompt_price_per_million" field. It's identical to AbovePriorityPromptPricePerMillionEQ.
+func AbovePriorityPromptPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillion applies equality check predicate on the "above_priority_completion_price_per_million" field. It's identical to AbovePriorityCompletionPricePerMillionEQ.
+func AbovePriorityCompletionPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillion applies equality check predicate on the "above_priority_cache_read_price_per_million" field. It's identical to AbovePriorityCacheReadPricePerMillionEQ.
+func AbovePriorityCacheReadPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillion applies equality check predicate on the "above_priority_cache_creation_price_per_million" field. It's identical to AbovePriorityCacheCreationPricePerMillionEQ.
+func AbovePriorityCacheCreationPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillion applies equality check predicate on the "above_flex_prompt_price_per_million" field. It's identical to AboveFlexPromptPricePerMillionEQ.
+func AboveFlexPromptPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillion applies equality check predicate on the "above_flex_completion_price_per_million" field. It's identical to AboveFlexCompletionPricePerMillionEQ.
+func AboveFlexCompletionPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillion applies equality check predicate on the "above_flex_cache_read_price_per_million" field. It's identical to AboveFlexCacheReadPricePerMillionEQ.
+func AboveFlexCacheReadPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillion applies equality check predicate on the "above_flex_cache_creation_price_per_million" field. It's identical to AboveFlexCacheCreationPricePerMillionEQ.
+func AboveFlexCacheCreationPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// FastMultiplier applies equality check predicate on the "fast_multiplier" field. It's identical to FastMultiplierEQ.
+func FastMultiplier(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFastMultiplier, v))
+}
+
 // Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
 func Provider(v string) predicate.Pricing {
 	return predicate.Pricing(sql.FieldEQ(FieldProvider, v))
@@ -457,6 +567,1106 @@ func CacheCreationPricePerMillionIsNil() predicate.Pricing {
 // CacheCreationPricePerMillionNotNil applies the NotNil predicate on the "cache_creation_price_per_million" field.
 func CacheCreationPricePerMillionNotNil() predicate.Pricing {
 	return predicate.Pricing(sql.FieldNotNull(FieldCacheCreationPricePerMillion))
+}
+
+// PriorityPromptPricePerMillionEQ applies the EQ predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityPromptPricePerMillionNEQ applies the NEQ predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityPromptPricePerMillionIn applies the In predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldPriorityPromptPricePerMillion, vs...))
+}
+
+// PriorityPromptPricePerMillionNotIn applies the NotIn predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldPriorityPromptPricePerMillion, vs...))
+}
+
+// PriorityPromptPricePerMillionGT applies the GT predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityPromptPricePerMillionGTE applies the GTE predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityPromptPricePerMillionLT applies the LT predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityPromptPricePerMillionLTE applies the LTE predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldPriorityPromptPricePerMillion, v))
+}
+
+// PriorityPromptPricePerMillionIsNil applies the IsNil predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldPriorityPromptPricePerMillion))
+}
+
+// PriorityPromptPricePerMillionNotNil applies the NotNil predicate on the "priority_prompt_price_per_million" field.
+func PriorityPromptPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldPriorityPromptPricePerMillion))
+}
+
+// PriorityCompletionPricePerMillionEQ applies the EQ predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillionNEQ applies the NEQ predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillionIn applies the In predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldPriorityCompletionPricePerMillion, vs...))
+}
+
+// PriorityCompletionPricePerMillionNotIn applies the NotIn predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldPriorityCompletionPricePerMillion, vs...))
+}
+
+// PriorityCompletionPricePerMillionGT applies the GT predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillionGTE applies the GTE predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillionLT applies the LT predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillionLTE applies the LTE predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldPriorityCompletionPricePerMillion, v))
+}
+
+// PriorityCompletionPricePerMillionIsNil applies the IsNil predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldPriorityCompletionPricePerMillion))
+}
+
+// PriorityCompletionPricePerMillionNotNil applies the NotNil predicate on the "priority_completion_price_per_million" field.
+func PriorityCompletionPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldPriorityCompletionPricePerMillion))
+}
+
+// PriorityCacheReadPricePerMillionEQ applies the EQ predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillionNEQ applies the NEQ predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillionIn applies the In predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldPriorityCacheReadPricePerMillion, vs...))
+}
+
+// PriorityCacheReadPricePerMillionNotIn applies the NotIn predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldPriorityCacheReadPricePerMillion, vs...))
+}
+
+// PriorityCacheReadPricePerMillionGT applies the GT predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillionGTE applies the GTE predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillionLT applies the LT predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillionLTE applies the LTE predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldPriorityCacheReadPricePerMillion, v))
+}
+
+// PriorityCacheReadPricePerMillionIsNil applies the IsNil predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldPriorityCacheReadPricePerMillion))
+}
+
+// PriorityCacheReadPricePerMillionNotNil applies the NotNil predicate on the "priority_cache_read_price_per_million" field.
+func PriorityCacheReadPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldPriorityCacheReadPricePerMillion))
+}
+
+// PriorityCacheCreationPricePerMillionEQ applies the EQ predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillionNEQ applies the NEQ predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillionIn applies the In predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldPriorityCacheCreationPricePerMillion, vs...))
+}
+
+// PriorityCacheCreationPricePerMillionNotIn applies the NotIn predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldPriorityCacheCreationPricePerMillion, vs...))
+}
+
+// PriorityCacheCreationPricePerMillionGT applies the GT predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillionGTE applies the GTE predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillionLT applies the LT predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillionLTE applies the LTE predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldPriorityCacheCreationPricePerMillion, v))
+}
+
+// PriorityCacheCreationPricePerMillionIsNil applies the IsNil predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldPriorityCacheCreationPricePerMillion))
+}
+
+// PriorityCacheCreationPricePerMillionNotNil applies the NotNil predicate on the "priority_cache_creation_price_per_million" field.
+func PriorityCacheCreationPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldPriorityCacheCreationPricePerMillion))
+}
+
+// FlexPromptPricePerMillionEQ applies the EQ predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillionNEQ applies the NEQ predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillionIn applies the In predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldFlexPromptPricePerMillion, vs...))
+}
+
+// FlexPromptPricePerMillionNotIn applies the NotIn predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldFlexPromptPricePerMillion, vs...))
+}
+
+// FlexPromptPricePerMillionGT applies the GT predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillionGTE applies the GTE predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillionLT applies the LT predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillionLTE applies the LTE predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldFlexPromptPricePerMillion, v))
+}
+
+// FlexPromptPricePerMillionIsNil applies the IsNil predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldFlexPromptPricePerMillion))
+}
+
+// FlexPromptPricePerMillionNotNil applies the NotNil predicate on the "flex_prompt_price_per_million" field.
+func FlexPromptPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldFlexPromptPricePerMillion))
+}
+
+// FlexCompletionPricePerMillionEQ applies the EQ predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillionNEQ applies the NEQ predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillionIn applies the In predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldFlexCompletionPricePerMillion, vs...))
+}
+
+// FlexCompletionPricePerMillionNotIn applies the NotIn predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldFlexCompletionPricePerMillion, vs...))
+}
+
+// FlexCompletionPricePerMillionGT applies the GT predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillionGTE applies the GTE predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillionLT applies the LT predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillionLTE applies the LTE predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldFlexCompletionPricePerMillion, v))
+}
+
+// FlexCompletionPricePerMillionIsNil applies the IsNil predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldFlexCompletionPricePerMillion))
+}
+
+// FlexCompletionPricePerMillionNotNil applies the NotNil predicate on the "flex_completion_price_per_million" field.
+func FlexCompletionPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldFlexCompletionPricePerMillion))
+}
+
+// FlexCacheReadPricePerMillionEQ applies the EQ predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillionNEQ applies the NEQ predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillionIn applies the In predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldFlexCacheReadPricePerMillion, vs...))
+}
+
+// FlexCacheReadPricePerMillionNotIn applies the NotIn predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldFlexCacheReadPricePerMillion, vs...))
+}
+
+// FlexCacheReadPricePerMillionGT applies the GT predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillionGTE applies the GTE predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillionLT applies the LT predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillionLTE applies the LTE predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldFlexCacheReadPricePerMillion, v))
+}
+
+// FlexCacheReadPricePerMillionIsNil applies the IsNil predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldFlexCacheReadPricePerMillion))
+}
+
+// FlexCacheReadPricePerMillionNotNil applies the NotNil predicate on the "flex_cache_read_price_per_million" field.
+func FlexCacheReadPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldFlexCacheReadPricePerMillion))
+}
+
+// FlexCacheCreationPricePerMillionEQ applies the EQ predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillionNEQ applies the NEQ predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillionIn applies the In predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldFlexCacheCreationPricePerMillion, vs...))
+}
+
+// FlexCacheCreationPricePerMillionNotIn applies the NotIn predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldFlexCacheCreationPricePerMillion, vs...))
+}
+
+// FlexCacheCreationPricePerMillionGT applies the GT predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillionGTE applies the GTE predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillionLT applies the LT predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillionLTE applies the LTE predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldFlexCacheCreationPricePerMillion, v))
+}
+
+// FlexCacheCreationPricePerMillionIsNil applies the IsNil predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldFlexCacheCreationPricePerMillion))
+}
+
+// FlexCacheCreationPricePerMillionNotNil applies the NotNil predicate on the "flex_cache_creation_price_per_million" field.
+func FlexCacheCreationPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldFlexCacheCreationPricePerMillion))
+}
+
+// AboveThresholdEQ applies the EQ predicate on the "above_threshold" field.
+func AboveThresholdEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveThreshold, v))
+}
+
+// AboveThresholdNEQ applies the NEQ predicate on the "above_threshold" field.
+func AboveThresholdNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveThreshold, v))
+}
+
+// AboveThresholdIn applies the In predicate on the "above_threshold" field.
+func AboveThresholdIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveThreshold, vs...))
+}
+
+// AboveThresholdNotIn applies the NotIn predicate on the "above_threshold" field.
+func AboveThresholdNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveThreshold, vs...))
+}
+
+// AboveThresholdGT applies the GT predicate on the "above_threshold" field.
+func AboveThresholdGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveThreshold, v))
+}
+
+// AboveThresholdGTE applies the GTE predicate on the "above_threshold" field.
+func AboveThresholdGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveThreshold, v))
+}
+
+// AboveThresholdLT applies the LT predicate on the "above_threshold" field.
+func AboveThresholdLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveThreshold, v))
+}
+
+// AboveThresholdLTE applies the LTE predicate on the "above_threshold" field.
+func AboveThresholdLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveThreshold, v))
+}
+
+// AboveThresholdIsNil applies the IsNil predicate on the "above_threshold" field.
+func AboveThresholdIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveThreshold))
+}
+
+// AboveThresholdNotNil applies the NotNil predicate on the "above_threshold" field.
+func AboveThresholdNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveThreshold))
+}
+
+// AbovePromptPricePerMillionEQ applies the EQ predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePromptPricePerMillion, v))
+}
+
+// AbovePromptPricePerMillionNEQ applies the NEQ predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAbovePromptPricePerMillion, v))
+}
+
+// AbovePromptPricePerMillionIn applies the In predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAbovePromptPricePerMillion, vs...))
+}
+
+// AbovePromptPricePerMillionNotIn applies the NotIn predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAbovePromptPricePerMillion, vs...))
+}
+
+// AbovePromptPricePerMillionGT applies the GT predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAbovePromptPricePerMillion, v))
+}
+
+// AbovePromptPricePerMillionGTE applies the GTE predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAbovePromptPricePerMillion, v))
+}
+
+// AbovePromptPricePerMillionLT applies the LT predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAbovePromptPricePerMillion, v))
+}
+
+// AbovePromptPricePerMillionLTE applies the LTE predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAbovePromptPricePerMillion, v))
+}
+
+// AbovePromptPricePerMillionIsNil applies the IsNil predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAbovePromptPricePerMillion))
+}
+
+// AbovePromptPricePerMillionNotNil applies the NotNil predicate on the "above_prompt_price_per_million" field.
+func AbovePromptPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAbovePromptPricePerMillion))
+}
+
+// AboveCompletionPricePerMillionEQ applies the EQ predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillionNEQ applies the NEQ predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillionIn applies the In predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveCompletionPricePerMillion, vs...))
+}
+
+// AboveCompletionPricePerMillionNotIn applies the NotIn predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveCompletionPricePerMillion, vs...))
+}
+
+// AboveCompletionPricePerMillionGT applies the GT predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillionGTE applies the GTE predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillionLT applies the LT predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillionLTE applies the LTE predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveCompletionPricePerMillion, v))
+}
+
+// AboveCompletionPricePerMillionIsNil applies the IsNil predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveCompletionPricePerMillion))
+}
+
+// AboveCompletionPricePerMillionNotNil applies the NotNil predicate on the "above_completion_price_per_million" field.
+func AboveCompletionPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveCompletionPricePerMillion))
+}
+
+// AboveCacheReadPricePerMillionEQ applies the EQ predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillionNEQ applies the NEQ predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillionIn applies the In predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveCacheReadPricePerMillion, vs...))
+}
+
+// AboveCacheReadPricePerMillionNotIn applies the NotIn predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveCacheReadPricePerMillion, vs...))
+}
+
+// AboveCacheReadPricePerMillionGT applies the GT predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillionGTE applies the GTE predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillionLT applies the LT predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillionLTE applies the LTE predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveCacheReadPricePerMillion, v))
+}
+
+// AboveCacheReadPricePerMillionIsNil applies the IsNil predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveCacheReadPricePerMillion))
+}
+
+// AboveCacheReadPricePerMillionNotNil applies the NotNil predicate on the "above_cache_read_price_per_million" field.
+func AboveCacheReadPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveCacheReadPricePerMillion))
+}
+
+// AboveCacheCreationPricePerMillionEQ applies the EQ predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillionNEQ applies the NEQ predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillionIn applies the In predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveCacheCreationPricePerMillion, vs...))
+}
+
+// AboveCacheCreationPricePerMillionNotIn applies the NotIn predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveCacheCreationPricePerMillion, vs...))
+}
+
+// AboveCacheCreationPricePerMillionGT applies the GT predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillionGTE applies the GTE predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillionLT applies the LT predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillionLTE applies the LTE predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveCacheCreationPricePerMillion, v))
+}
+
+// AboveCacheCreationPricePerMillionIsNil applies the IsNil predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveCacheCreationPricePerMillion))
+}
+
+// AboveCacheCreationPricePerMillionNotNil applies the NotNil predicate on the "above_cache_creation_price_per_million" field.
+func AboveCacheCreationPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveCacheCreationPricePerMillion))
+}
+
+// AbovePriorityPromptPricePerMillionEQ applies the EQ predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillionNEQ applies the NEQ predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillionIn applies the In predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAbovePriorityPromptPricePerMillion, vs...))
+}
+
+// AbovePriorityPromptPricePerMillionNotIn applies the NotIn predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAbovePriorityPromptPricePerMillion, vs...))
+}
+
+// AbovePriorityPromptPricePerMillionGT applies the GT predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillionGTE applies the GTE predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillionLT applies the LT predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillionLTE applies the LTE predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAbovePriorityPromptPricePerMillion, v))
+}
+
+// AbovePriorityPromptPricePerMillionIsNil applies the IsNil predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAbovePriorityPromptPricePerMillion))
+}
+
+// AbovePriorityPromptPricePerMillionNotNil applies the NotNil predicate on the "above_priority_prompt_price_per_million" field.
+func AbovePriorityPromptPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAbovePriorityPromptPricePerMillion))
+}
+
+// AbovePriorityCompletionPricePerMillionEQ applies the EQ predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillionNEQ applies the NEQ predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillionIn applies the In predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAbovePriorityCompletionPricePerMillion, vs...))
+}
+
+// AbovePriorityCompletionPricePerMillionNotIn applies the NotIn predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAbovePriorityCompletionPricePerMillion, vs...))
+}
+
+// AbovePriorityCompletionPricePerMillionGT applies the GT predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillionGTE applies the GTE predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillionLT applies the LT predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillionLTE applies the LTE predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAbovePriorityCompletionPricePerMillion, v))
+}
+
+// AbovePriorityCompletionPricePerMillionIsNil applies the IsNil predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAbovePriorityCompletionPricePerMillion))
+}
+
+// AbovePriorityCompletionPricePerMillionNotNil applies the NotNil predicate on the "above_priority_completion_price_per_million" field.
+func AbovePriorityCompletionPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAbovePriorityCompletionPricePerMillion))
+}
+
+// AbovePriorityCacheReadPricePerMillionEQ applies the EQ predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillionNEQ applies the NEQ predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillionIn applies the In predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAbovePriorityCacheReadPricePerMillion, vs...))
+}
+
+// AbovePriorityCacheReadPricePerMillionNotIn applies the NotIn predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAbovePriorityCacheReadPricePerMillion, vs...))
+}
+
+// AbovePriorityCacheReadPricePerMillionGT applies the GT predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillionGTE applies the GTE predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillionLT applies the LT predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillionLTE applies the LTE predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAbovePriorityCacheReadPricePerMillion, v))
+}
+
+// AbovePriorityCacheReadPricePerMillionIsNil applies the IsNil predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAbovePriorityCacheReadPricePerMillion))
+}
+
+// AbovePriorityCacheReadPricePerMillionNotNil applies the NotNil predicate on the "above_priority_cache_read_price_per_million" field.
+func AbovePriorityCacheReadPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAbovePriorityCacheReadPricePerMillion))
+}
+
+// AbovePriorityCacheCreationPricePerMillionEQ applies the EQ predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillionNEQ applies the NEQ predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillionIn applies the In predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAbovePriorityCacheCreationPricePerMillion, vs...))
+}
+
+// AbovePriorityCacheCreationPricePerMillionNotIn applies the NotIn predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAbovePriorityCacheCreationPricePerMillion, vs...))
+}
+
+// AbovePriorityCacheCreationPricePerMillionGT applies the GT predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillionGTE applies the GTE predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillionLT applies the LT predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillionLTE applies the LTE predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAbovePriorityCacheCreationPricePerMillion, v))
+}
+
+// AbovePriorityCacheCreationPricePerMillionIsNil applies the IsNil predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAbovePriorityCacheCreationPricePerMillion))
+}
+
+// AbovePriorityCacheCreationPricePerMillionNotNil applies the NotNil predicate on the "above_priority_cache_creation_price_per_million" field.
+func AbovePriorityCacheCreationPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAbovePriorityCacheCreationPricePerMillion))
+}
+
+// AboveFlexPromptPricePerMillionEQ applies the EQ predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillionNEQ applies the NEQ predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillionIn applies the In predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveFlexPromptPricePerMillion, vs...))
+}
+
+// AboveFlexPromptPricePerMillionNotIn applies the NotIn predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveFlexPromptPricePerMillion, vs...))
+}
+
+// AboveFlexPromptPricePerMillionGT applies the GT predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillionGTE applies the GTE predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillionLT applies the LT predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillionLTE applies the LTE predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveFlexPromptPricePerMillion, v))
+}
+
+// AboveFlexPromptPricePerMillionIsNil applies the IsNil predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveFlexPromptPricePerMillion))
+}
+
+// AboveFlexPromptPricePerMillionNotNil applies the NotNil predicate on the "above_flex_prompt_price_per_million" field.
+func AboveFlexPromptPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveFlexPromptPricePerMillion))
+}
+
+// AboveFlexCompletionPricePerMillionEQ applies the EQ predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillionNEQ applies the NEQ predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillionIn applies the In predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveFlexCompletionPricePerMillion, vs...))
+}
+
+// AboveFlexCompletionPricePerMillionNotIn applies the NotIn predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveFlexCompletionPricePerMillion, vs...))
+}
+
+// AboveFlexCompletionPricePerMillionGT applies the GT predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillionGTE applies the GTE predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillionLT applies the LT predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillionLTE applies the LTE predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveFlexCompletionPricePerMillion, v))
+}
+
+// AboveFlexCompletionPricePerMillionIsNil applies the IsNil predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveFlexCompletionPricePerMillion))
+}
+
+// AboveFlexCompletionPricePerMillionNotNil applies the NotNil predicate on the "above_flex_completion_price_per_million" field.
+func AboveFlexCompletionPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveFlexCompletionPricePerMillion))
+}
+
+// AboveFlexCacheReadPricePerMillionEQ applies the EQ predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillionNEQ applies the NEQ predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillionIn applies the In predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveFlexCacheReadPricePerMillion, vs...))
+}
+
+// AboveFlexCacheReadPricePerMillionNotIn applies the NotIn predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveFlexCacheReadPricePerMillion, vs...))
+}
+
+// AboveFlexCacheReadPricePerMillionGT applies the GT predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillionGTE applies the GTE predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillionLT applies the LT predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillionLTE applies the LTE predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveFlexCacheReadPricePerMillion, v))
+}
+
+// AboveFlexCacheReadPricePerMillionIsNil applies the IsNil predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveFlexCacheReadPricePerMillion))
+}
+
+// AboveFlexCacheReadPricePerMillionNotNil applies the NotNil predicate on the "above_flex_cache_read_price_per_million" field.
+func AboveFlexCacheReadPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveFlexCacheReadPricePerMillion))
+}
+
+// AboveFlexCacheCreationPricePerMillionEQ applies the EQ predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillionNEQ applies the NEQ predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillionIn applies the In predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldAboveFlexCacheCreationPricePerMillion, vs...))
+}
+
+// AboveFlexCacheCreationPricePerMillionNotIn applies the NotIn predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldAboveFlexCacheCreationPricePerMillion, vs...))
+}
+
+// AboveFlexCacheCreationPricePerMillionGT applies the GT predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillionGTE applies the GTE predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillionLT applies the LT predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillionLTE applies the LTE predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldAboveFlexCacheCreationPricePerMillion, v))
+}
+
+// AboveFlexCacheCreationPricePerMillionIsNil applies the IsNil predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldAboveFlexCacheCreationPricePerMillion))
+}
+
+// AboveFlexCacheCreationPricePerMillionNotNil applies the NotNil predicate on the "above_flex_cache_creation_price_per_million" field.
+func AboveFlexCacheCreationPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldAboveFlexCacheCreationPricePerMillion))
+}
+
+// FastMultiplierEQ applies the EQ predicate on the "fast_multiplier" field.
+func FastMultiplierEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldFastMultiplier, v))
+}
+
+// FastMultiplierNEQ applies the NEQ predicate on the "fast_multiplier" field.
+func FastMultiplierNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldFastMultiplier, v))
+}
+
+// FastMultiplierIn applies the In predicate on the "fast_multiplier" field.
+func FastMultiplierIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldFastMultiplier, vs...))
+}
+
+// FastMultiplierNotIn applies the NotIn predicate on the "fast_multiplier" field.
+func FastMultiplierNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldFastMultiplier, vs...))
+}
+
+// FastMultiplierGT applies the GT predicate on the "fast_multiplier" field.
+func FastMultiplierGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldFastMultiplier, v))
+}
+
+// FastMultiplierGTE applies the GTE predicate on the "fast_multiplier" field.
+func FastMultiplierGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldFastMultiplier, v))
+}
+
+// FastMultiplierLT applies the LT predicate on the "fast_multiplier" field.
+func FastMultiplierLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldFastMultiplier, v))
+}
+
+// FastMultiplierLTE applies the LTE predicate on the "fast_multiplier" field.
+func FastMultiplierLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldFastMultiplier, v))
+}
+
+// FastMultiplierIsNil applies the IsNil predicate on the "fast_multiplier" field.
+func FastMultiplierIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldFastMultiplier))
+}
+
+// FastMultiplierNotNil applies the NotNil predicate on the "fast_multiplier" field.
+func FastMultiplierNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldFastMultiplier))
 }
 
 // ProviderEQ applies the EQ predicate on the "provider" field.

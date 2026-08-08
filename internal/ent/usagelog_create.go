@@ -244,6 +244,62 @@ func (_c *UsageLogCreate) SetNillableCacheCreationTokens(v *int64) *UsageLogCrea
 	return _c
 }
 
+// SetCost sets the "cost" field.
+func (_c *UsageLogCreate) SetCost(v int64) *UsageLogCreate {
+	_c.mutation.SetCost(v)
+	return _c
+}
+
+// SetNillableCost sets the "cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableCost(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetCost(*v)
+	}
+	return _c
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (_c *UsageLogCreate) SetBillingTier(v string) *UsageLogCreate {
+	_c.mutation.SetBillingTier(v)
+	return _c
+}
+
+// SetNillableBillingTier sets the "billing_tier" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableBillingTier(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetBillingTier(*v)
+	}
+	return _c
+}
+
+// SetAboveHit sets the "above_hit" field.
+func (_c *UsageLogCreate) SetAboveHit(v bool) *UsageLogCreate {
+	_c.mutation.SetAboveHit(v)
+	return _c
+}
+
+// SetNillableAboveHit sets the "above_hit" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableAboveHit(v *bool) *UsageLogCreate {
+	if v != nil {
+		_c.SetAboveHit(*v)
+	}
+	return _c
+}
+
+// SetOverdraft sets the "overdraft" field.
+func (_c *UsageLogCreate) SetOverdraft(v bool) *UsageLogCreate {
+	_c.mutation.SetOverdraft(v)
+	return _c
+}
+
+// SetNillableOverdraft sets the "overdraft" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableOverdraft(v *bool) *UsageLogCreate {
+	if v != nil {
+		_c.SetOverdraft(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *UsageLogCreate) SetCreatedAt(v time.Time) *UsageLogCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -335,6 +391,18 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultCacheCreationTokens
 		_c.mutation.SetCacheCreationTokens(v)
 	}
+	if _, ok := _c.mutation.Cost(); !ok {
+		v := usagelog.DefaultCost
+		_c.mutation.SetCost(v)
+	}
+	if _, ok := _c.mutation.AboveHit(); !ok {
+		v := usagelog.DefaultAboveHit
+		_c.mutation.SetAboveHit(v)
+	}
+	if _, ok := _c.mutation.Overdraft(); !ok {
+		v := usagelog.DefaultOverdraft
+		_c.mutation.SetOverdraft(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := usagelog.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -380,6 +448,15 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.CacheCreationTokens(); !ok {
 		return &ValidationError{Name: "cache_creation_tokens", err: errors.New(`ent: missing required field "UsageLog.cache_creation_tokens"`)}
+	}
+	if _, ok := _c.mutation.Cost(); !ok {
+		return &ValidationError{Name: "cost", err: errors.New(`ent: missing required field "UsageLog.cost"`)}
+	}
+	if _, ok := _c.mutation.AboveHit(); !ok {
+		return &ValidationError{Name: "above_hit", err: errors.New(`ent: missing required field "UsageLog.above_hit"`)}
+	}
+	if _, ok := _c.mutation.Overdraft(); !ok {
+		return &ValidationError{Name: "overdraft", err: errors.New(`ent: missing required field "UsageLog.overdraft"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "UsageLog.created_at"`)}
@@ -484,6 +561,22 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CacheCreationTokens(); ok {
 		_spec.SetField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
 		_node.CacheCreationTokens = value
+	}
+	if value, ok := _c.mutation.Cost(); ok {
+		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
+		_node.Cost = value
+	}
+	if value, ok := _c.mutation.BillingTier(); ok {
+		_spec.SetField(usagelog.FieldBillingTier, field.TypeString, value)
+		_node.BillingTier = &value
+	}
+	if value, ok := _c.mutation.AboveHit(); ok {
+		_spec.SetField(usagelog.FieldAboveHit, field.TypeBool, value)
+		_node.AboveHit = value
+	}
+	if value, ok := _c.mutation.Overdraft(); ok {
+		_spec.SetField(usagelog.FieldOverdraft, field.TypeBool, value)
+		_node.Overdraft = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)
@@ -850,6 +943,66 @@ func (u *UsageLogUpsert) UpdateCacheCreationTokens() *UsageLogUpsert {
 // AddCacheCreationTokens adds v to the "cache_creation_tokens" field.
 func (u *UsageLogUpsert) AddCacheCreationTokens(v int64) *UsageLogUpsert {
 	u.Add(usagelog.FieldCacheCreationTokens, v)
+	return u
+}
+
+// SetCost sets the "cost" field.
+func (u *UsageLogUpsert) SetCost(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldCost, v)
+	return u
+}
+
+// UpdateCost sets the "cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCost)
+	return u
+}
+
+// AddCost adds v to the "cost" field.
+func (u *UsageLogUpsert) AddCost(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldCost, v)
+	return u
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (u *UsageLogUpsert) SetBillingTier(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldBillingTier, v)
+	return u
+}
+
+// UpdateBillingTier sets the "billing_tier" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateBillingTier() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldBillingTier)
+	return u
+}
+
+// ClearBillingTier clears the value of the "billing_tier" field.
+func (u *UsageLogUpsert) ClearBillingTier() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldBillingTier)
+	return u
+}
+
+// SetAboveHit sets the "above_hit" field.
+func (u *UsageLogUpsert) SetAboveHit(v bool) *UsageLogUpsert {
+	u.Set(usagelog.FieldAboveHit, v)
+	return u
+}
+
+// UpdateAboveHit sets the "above_hit" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateAboveHit() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldAboveHit)
+	return u
+}
+
+// SetOverdraft sets the "overdraft" field.
+func (u *UsageLogUpsert) SetOverdraft(v bool) *UsageLogUpsert {
+	u.Set(usagelog.FieldOverdraft, v)
+	return u
+}
+
+// UpdateOverdraft sets the "overdraft" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateOverdraft() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldOverdraft)
 	return u
 }
 
@@ -1274,6 +1427,76 @@ func (u *UsageLogUpsertOne) AddCacheCreationTokens(v int64) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateCacheCreationTokens() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateCacheCreationTokens()
+	})
+}
+
+// SetCost sets the "cost" field.
+func (u *UsageLogUpsertOne) SetCost(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCost(v)
+	})
+}
+
+// AddCost adds v to the "cost" field.
+func (u *UsageLogUpsertOne) AddCost(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCost(v)
+	})
+}
+
+// UpdateCost sets the "cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCost()
+	})
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (u *UsageLogUpsertOne) SetBillingTier(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingTier(v)
+	})
+}
+
+// UpdateBillingTier sets the "billing_tier" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateBillingTier() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingTier()
+	})
+}
+
+// ClearBillingTier clears the value of the "billing_tier" field.
+func (u *UsageLogUpsertOne) ClearBillingTier() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearBillingTier()
+	})
+}
+
+// SetAboveHit sets the "above_hit" field.
+func (u *UsageLogUpsertOne) SetAboveHit(v bool) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAboveHit(v)
+	})
+}
+
+// UpdateAboveHit sets the "above_hit" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateAboveHit() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAboveHit()
+	})
+}
+
+// SetOverdraft sets the "overdraft" field.
+func (u *UsageLogUpsertOne) SetOverdraft(v bool) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetOverdraft(v)
+	})
+}
+
+// UpdateOverdraft sets the "overdraft" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateOverdraft() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateOverdraft()
 	})
 }
 
@@ -1866,6 +2089,76 @@ func (u *UsageLogUpsertBulk) AddCacheCreationTokens(v int64) *UsageLogUpsertBulk
 func (u *UsageLogUpsertBulk) UpdateCacheCreationTokens() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateCacheCreationTokens()
+	})
+}
+
+// SetCost sets the "cost" field.
+func (u *UsageLogUpsertBulk) SetCost(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCost(v)
+	})
+}
+
+// AddCost adds v to the "cost" field.
+func (u *UsageLogUpsertBulk) AddCost(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCost(v)
+	})
+}
+
+// UpdateCost sets the "cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCost()
+	})
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (u *UsageLogUpsertBulk) SetBillingTier(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingTier(v)
+	})
+}
+
+// UpdateBillingTier sets the "billing_tier" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateBillingTier() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingTier()
+	})
+}
+
+// ClearBillingTier clears the value of the "billing_tier" field.
+func (u *UsageLogUpsertBulk) ClearBillingTier() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearBillingTier()
+	})
+}
+
+// SetAboveHit sets the "above_hit" field.
+func (u *UsageLogUpsertBulk) SetAboveHit(v bool) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAboveHit(v)
+	})
+}
+
+// UpdateAboveHit sets the "above_hit" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateAboveHit() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAboveHit()
+	})
+}
+
+// SetOverdraft sets the "overdraft" field.
+func (u *UsageLogUpsertBulk) SetOverdraft(v bool) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetOverdraft(v)
+	})
+}
+
+// UpdateOverdraft sets the "overdraft" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateOverdraft() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateOverdraft()
 	})
 }
 

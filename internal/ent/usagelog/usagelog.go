@@ -48,6 +48,14 @@ const (
 	FieldCacheReadTokens = "cache_read_tokens"
 	// FieldCacheCreationTokens holds the string denoting the cache_creation_tokens field in the database.
 	FieldCacheCreationTokens = "cache_creation_tokens"
+	// FieldCost holds the string denoting the cost field in the database.
+	FieldCost = "cost"
+	// FieldBillingTier holds the string denoting the billing_tier field in the database.
+	FieldBillingTier = "billing_tier"
+	// FieldAboveHit holds the string denoting the above_hit field in the database.
+	FieldAboveHit = "above_hit"
+	// FieldOverdraft holds the string denoting the overdraft field in the database.
+	FieldOverdraft = "overdraft"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// Table holds the table name of the usagelog in the database.
@@ -74,6 +82,10 @@ var Columns = []string{
 	FieldTotalTokens,
 	FieldCacheReadTokens,
 	FieldCacheCreationTokens,
+	FieldCost,
+	FieldBillingTier,
+	FieldAboveHit,
+	FieldOverdraft,
 	FieldCreatedAt,
 }
 
@@ -106,6 +118,12 @@ var (
 	DefaultCacheReadTokens int64
 	// DefaultCacheCreationTokens holds the default value on creation for the "cache_creation_tokens" field.
 	DefaultCacheCreationTokens int64
+	// DefaultCost holds the default value on creation for the "cost" field.
+	DefaultCost int64
+	// DefaultAboveHit holds the default value on creation for the "above_hit" field.
+	DefaultAboveHit bool
+	// DefaultOverdraft holds the default value on creation for the "overdraft" field.
+	DefaultOverdraft bool
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -225,6 +243,26 @@ func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByCacheCreationTokens orders the results by the cache_creation_tokens field.
 func ByCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheCreationTokens, opts...).ToFunc()
+}
+
+// ByCost orders the results by the cost field.
+func ByCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCost, opts...).ToFunc()
+}
+
+// ByBillingTier orders the results by the billing_tier field.
+func ByBillingTier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingTier, opts...).ToFunc()
+}
+
+// ByAboveHit orders the results by the above_hit field.
+func ByAboveHit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveHit, opts...).ToFunc()
+}
+
+// ByOverdraft orders the results by the overdraft field.
+func ByOverdraft(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOverdraft, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

@@ -31,6 +31,14 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("total_tokens").Default(0),
 		field.Int64("cache_read_tokens").Default(0),
 		field.Int64("cache_creation_tokens").Default(0),
+		// 计费列（Phase 5）：cost 毫分（1 USD = 100,000 毫分）；billing_tier
+		// 请求 service_tier 归一化值（priority/flex/fast/auto；nil = 未计费路径）；
+		// above_hit 任一分量超 above_threshold 命中分段；overdraft 本次扣费透支
+		// （负余额）。错误请求（402/4xx）cost = 0。
+		field.Int64("cost").Default(0),
+		field.String("billing_tier").Optional().Nillable(),
+		field.Bool("above_hit").Default(false),
+		field.Bool("overdraft").Default(false),
 		field.Time("created_at").Default(time.Now),
 	}
 }

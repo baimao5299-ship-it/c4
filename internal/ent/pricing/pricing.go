@@ -28,6 +28,50 @@ const (
 	FieldCacheReadPricePerMillion = "cache_read_price_per_million"
 	// FieldCacheCreationPricePerMillion holds the string denoting the cache_creation_price_per_million field in the database.
 	FieldCacheCreationPricePerMillion = "cache_creation_price_per_million"
+	// FieldPriorityPromptPricePerMillion holds the string denoting the priority_prompt_price_per_million field in the database.
+	FieldPriorityPromptPricePerMillion = "priority_prompt_price_per_million"
+	// FieldPriorityCompletionPricePerMillion holds the string denoting the priority_completion_price_per_million field in the database.
+	FieldPriorityCompletionPricePerMillion = "priority_completion_price_per_million"
+	// FieldPriorityCacheReadPricePerMillion holds the string denoting the priority_cache_read_price_per_million field in the database.
+	FieldPriorityCacheReadPricePerMillion = "priority_cache_read_price_per_million"
+	// FieldPriorityCacheCreationPricePerMillion holds the string denoting the priority_cache_creation_price_per_million field in the database.
+	FieldPriorityCacheCreationPricePerMillion = "priority_cache_creation_price_per_million"
+	// FieldFlexPromptPricePerMillion holds the string denoting the flex_prompt_price_per_million field in the database.
+	FieldFlexPromptPricePerMillion = "flex_prompt_price_per_million"
+	// FieldFlexCompletionPricePerMillion holds the string denoting the flex_completion_price_per_million field in the database.
+	FieldFlexCompletionPricePerMillion = "flex_completion_price_per_million"
+	// FieldFlexCacheReadPricePerMillion holds the string denoting the flex_cache_read_price_per_million field in the database.
+	FieldFlexCacheReadPricePerMillion = "flex_cache_read_price_per_million"
+	// FieldFlexCacheCreationPricePerMillion holds the string denoting the flex_cache_creation_price_per_million field in the database.
+	FieldFlexCacheCreationPricePerMillion = "flex_cache_creation_price_per_million"
+	// FieldAboveThreshold holds the string denoting the above_threshold field in the database.
+	FieldAboveThreshold = "above_threshold"
+	// FieldAbovePromptPricePerMillion holds the string denoting the above_prompt_price_per_million field in the database.
+	FieldAbovePromptPricePerMillion = "above_prompt_price_per_million"
+	// FieldAboveCompletionPricePerMillion holds the string denoting the above_completion_price_per_million field in the database.
+	FieldAboveCompletionPricePerMillion = "above_completion_price_per_million"
+	// FieldAboveCacheReadPricePerMillion holds the string denoting the above_cache_read_price_per_million field in the database.
+	FieldAboveCacheReadPricePerMillion = "above_cache_read_price_per_million"
+	// FieldAboveCacheCreationPricePerMillion holds the string denoting the above_cache_creation_price_per_million field in the database.
+	FieldAboveCacheCreationPricePerMillion = "above_cache_creation_price_per_million"
+	// FieldAbovePriorityPromptPricePerMillion holds the string denoting the above_priority_prompt_price_per_million field in the database.
+	FieldAbovePriorityPromptPricePerMillion = "above_priority_prompt_price_per_million"
+	// FieldAbovePriorityCompletionPricePerMillion holds the string denoting the above_priority_completion_price_per_million field in the database.
+	FieldAbovePriorityCompletionPricePerMillion = "above_priority_completion_price_per_million"
+	// FieldAbovePriorityCacheReadPricePerMillion holds the string denoting the above_priority_cache_read_price_per_million field in the database.
+	FieldAbovePriorityCacheReadPricePerMillion = "above_priority_cache_read_price_per_million"
+	// FieldAbovePriorityCacheCreationPricePerMillion holds the string denoting the above_priority_cache_creation_price_per_million field in the database.
+	FieldAbovePriorityCacheCreationPricePerMillion = "above_priority_cache_creation_price_per_million"
+	// FieldAboveFlexPromptPricePerMillion holds the string denoting the above_flex_prompt_price_per_million field in the database.
+	FieldAboveFlexPromptPricePerMillion = "above_flex_prompt_price_per_million"
+	// FieldAboveFlexCompletionPricePerMillion holds the string denoting the above_flex_completion_price_per_million field in the database.
+	FieldAboveFlexCompletionPricePerMillion = "above_flex_completion_price_per_million"
+	// FieldAboveFlexCacheReadPricePerMillion holds the string denoting the above_flex_cache_read_price_per_million field in the database.
+	FieldAboveFlexCacheReadPricePerMillion = "above_flex_cache_read_price_per_million"
+	// FieldAboveFlexCacheCreationPricePerMillion holds the string denoting the above_flex_cache_creation_price_per_million field in the database.
+	FieldAboveFlexCacheCreationPricePerMillion = "above_flex_cache_creation_price_per_million"
+	// FieldFastMultiplier holds the string denoting the fast_multiplier field in the database.
+	FieldFastMultiplier = "fast_multiplier"
 	// FieldProvider holds the string denoting the provider field in the database.
 	FieldProvider = "provider"
 	// FieldMode holds the string denoting the mode field in the database.
@@ -56,6 +100,28 @@ var Columns = []string{
 	FieldMaxOutputTokens,
 	FieldCacheReadPricePerMillion,
 	FieldCacheCreationPricePerMillion,
+	FieldPriorityPromptPricePerMillion,
+	FieldPriorityCompletionPricePerMillion,
+	FieldPriorityCacheReadPricePerMillion,
+	FieldPriorityCacheCreationPricePerMillion,
+	FieldFlexPromptPricePerMillion,
+	FieldFlexCompletionPricePerMillion,
+	FieldFlexCacheReadPricePerMillion,
+	FieldFlexCacheCreationPricePerMillion,
+	FieldAboveThreshold,
+	FieldAbovePromptPricePerMillion,
+	FieldAboveCompletionPricePerMillion,
+	FieldAboveCacheReadPricePerMillion,
+	FieldAboveCacheCreationPricePerMillion,
+	FieldAbovePriorityPromptPricePerMillion,
+	FieldAbovePriorityCompletionPricePerMillion,
+	FieldAbovePriorityCacheReadPricePerMillion,
+	FieldAbovePriorityCacheCreationPricePerMillion,
+	FieldAboveFlexPromptPricePerMillion,
+	FieldAboveFlexCompletionPricePerMillion,
+	FieldAboveFlexCacheReadPricePerMillion,
+	FieldAboveFlexCacheCreationPricePerMillion,
+	FieldFastMultiplier,
 	FieldProvider,
 	FieldMode,
 	FieldSupportsPromptCaching,
@@ -148,6 +214,116 @@ func ByCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
 // ByCacheCreationPricePerMillion orders the results by the cache_creation_price_per_million field.
 func ByCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByPriorityPromptPricePerMillion orders the results by the priority_prompt_price_per_million field.
+func ByPriorityPromptPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriorityPromptPricePerMillion, opts...).ToFunc()
+}
+
+// ByPriorityCompletionPricePerMillion orders the results by the priority_completion_price_per_million field.
+func ByPriorityCompletionPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriorityCompletionPricePerMillion, opts...).ToFunc()
+}
+
+// ByPriorityCacheReadPricePerMillion orders the results by the priority_cache_read_price_per_million field.
+func ByPriorityCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriorityCacheReadPricePerMillion, opts...).ToFunc()
+}
+
+// ByPriorityCacheCreationPricePerMillion orders the results by the priority_cache_creation_price_per_million field.
+func ByPriorityCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriorityCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByFlexPromptPricePerMillion orders the results by the flex_prompt_price_per_million field.
+func ByFlexPromptPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFlexPromptPricePerMillion, opts...).ToFunc()
+}
+
+// ByFlexCompletionPricePerMillion orders the results by the flex_completion_price_per_million field.
+func ByFlexCompletionPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFlexCompletionPricePerMillion, opts...).ToFunc()
+}
+
+// ByFlexCacheReadPricePerMillion orders the results by the flex_cache_read_price_per_million field.
+func ByFlexCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFlexCacheReadPricePerMillion, opts...).ToFunc()
+}
+
+// ByFlexCacheCreationPricePerMillion orders the results by the flex_cache_creation_price_per_million field.
+func ByFlexCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFlexCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveThreshold orders the results by the above_threshold field.
+func ByAboveThreshold(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveThreshold, opts...).ToFunc()
+}
+
+// ByAbovePromptPricePerMillion orders the results by the above_prompt_price_per_million field.
+func ByAbovePromptPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAbovePromptPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveCompletionPricePerMillion orders the results by the above_completion_price_per_million field.
+func ByAboveCompletionPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveCompletionPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveCacheReadPricePerMillion orders the results by the above_cache_read_price_per_million field.
+func ByAboveCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveCacheReadPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveCacheCreationPricePerMillion orders the results by the above_cache_creation_price_per_million field.
+func ByAboveCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByAbovePriorityPromptPricePerMillion orders the results by the above_priority_prompt_price_per_million field.
+func ByAbovePriorityPromptPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAbovePriorityPromptPricePerMillion, opts...).ToFunc()
+}
+
+// ByAbovePriorityCompletionPricePerMillion orders the results by the above_priority_completion_price_per_million field.
+func ByAbovePriorityCompletionPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAbovePriorityCompletionPricePerMillion, opts...).ToFunc()
+}
+
+// ByAbovePriorityCacheReadPricePerMillion orders the results by the above_priority_cache_read_price_per_million field.
+func ByAbovePriorityCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAbovePriorityCacheReadPricePerMillion, opts...).ToFunc()
+}
+
+// ByAbovePriorityCacheCreationPricePerMillion orders the results by the above_priority_cache_creation_price_per_million field.
+func ByAbovePriorityCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAbovePriorityCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveFlexPromptPricePerMillion orders the results by the above_flex_prompt_price_per_million field.
+func ByAboveFlexPromptPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveFlexPromptPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveFlexCompletionPricePerMillion orders the results by the above_flex_completion_price_per_million field.
+func ByAboveFlexCompletionPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveFlexCompletionPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveFlexCacheReadPricePerMillion orders the results by the above_flex_cache_read_price_per_million field.
+func ByAboveFlexCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveFlexCacheReadPricePerMillion, opts...).ToFunc()
+}
+
+// ByAboveFlexCacheCreationPricePerMillion orders the results by the above_flex_cache_creation_price_per_million field.
+func ByAboveFlexCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAboveFlexCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByFastMultiplier orders the results by the fast_multiplier field.
+func ByFastMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFastMultiplier, opts...).ToFunc()
 }
 
 // ByProvider orders the results by the provider field.

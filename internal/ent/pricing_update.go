@@ -194,6 +194,600 @@ func (_u *PricingUpdate) ClearCacheCreationPricePerMillion() *PricingUpdate {
 	return _u
 }
 
+// SetPriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field.
+func (_u *PricingUpdate) SetPriorityPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetPriorityPromptPricePerMillion()
+	_u.mutation.SetPriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillablePriorityPromptPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetPriorityPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityPromptPricePerMillion adds value to the "priority_prompt_price_per_million" field.
+func (_u *PricingUpdate) AddPriorityPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddPriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityPromptPricePerMillion clears the value of the "priority_prompt_price_per_million" field.
+func (_u *PricingUpdate) ClearPriorityPromptPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearPriorityPromptPricePerMillion()
+	return _u
+}
+
+// SetPriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field.
+func (_u *PricingUpdate) SetPriorityCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetPriorityCompletionPricePerMillion()
+	_u.mutation.SetPriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillablePriorityCompletionPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetPriorityCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityCompletionPricePerMillion adds value to the "priority_completion_price_per_million" field.
+func (_u *PricingUpdate) AddPriorityCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddPriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityCompletionPricePerMillion clears the value of the "priority_completion_price_per_million" field.
+func (_u *PricingUpdate) ClearPriorityCompletionPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearPriorityCompletionPricePerMillion()
+	return _u
+}
+
+// SetPriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field.
+func (_u *PricingUpdate) SetPriorityCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetPriorityCacheReadPricePerMillion()
+	_u.mutation.SetPriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillablePriorityCacheReadPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetPriorityCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityCacheReadPricePerMillion adds value to the "priority_cache_read_price_per_million" field.
+func (_u *PricingUpdate) AddPriorityCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddPriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityCacheReadPricePerMillion clears the value of the "priority_cache_read_price_per_million" field.
+func (_u *PricingUpdate) ClearPriorityCacheReadPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearPriorityCacheReadPricePerMillion()
+	return _u
+}
+
+// SetPriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) SetPriorityCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetPriorityCacheCreationPricePerMillion()
+	_u.mutation.SetPriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillablePriorityCacheCreationPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetPriorityCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityCacheCreationPricePerMillion adds value to the "priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) AddPriorityCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddPriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityCacheCreationPricePerMillion clears the value of the "priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) ClearPriorityCacheCreationPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearPriorityCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field.
+func (_u *PricingUpdate) SetFlexPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetFlexPromptPricePerMillion()
+	_u.mutation.SetFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableFlexPromptPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetFlexPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexPromptPricePerMillion adds value to the "flex_prompt_price_per_million" field.
+func (_u *PricingUpdate) AddFlexPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexPromptPricePerMillion clears the value of the "flex_prompt_price_per_million" field.
+func (_u *PricingUpdate) ClearFlexPromptPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearFlexPromptPricePerMillion()
+	return _u
+}
+
+// SetFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field.
+func (_u *PricingUpdate) SetFlexCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetFlexCompletionPricePerMillion()
+	_u.mutation.SetFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableFlexCompletionPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetFlexCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexCompletionPricePerMillion adds value to the "flex_completion_price_per_million" field.
+func (_u *PricingUpdate) AddFlexCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexCompletionPricePerMillion clears the value of the "flex_completion_price_per_million" field.
+func (_u *PricingUpdate) ClearFlexCompletionPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearFlexCompletionPricePerMillion()
+	return _u
+}
+
+// SetFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field.
+func (_u *PricingUpdate) SetFlexCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetFlexCacheReadPricePerMillion()
+	_u.mutation.SetFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableFlexCacheReadPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetFlexCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexCacheReadPricePerMillion adds value to the "flex_cache_read_price_per_million" field.
+func (_u *PricingUpdate) AddFlexCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexCacheReadPricePerMillion clears the value of the "flex_cache_read_price_per_million" field.
+func (_u *PricingUpdate) ClearFlexCacheReadPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearFlexCacheReadPricePerMillion()
+	return _u
+}
+
+// SetFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) SetFlexCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetFlexCacheCreationPricePerMillion()
+	_u.mutation.SetFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableFlexCacheCreationPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetFlexCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexCacheCreationPricePerMillion adds value to the "flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) AddFlexCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexCacheCreationPricePerMillion clears the value of the "flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) ClearFlexCacheCreationPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearFlexCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetAboveThreshold sets the "above_threshold" field.
+func (_u *PricingUpdate) SetAboveThreshold(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveThreshold()
+	_u.mutation.SetAboveThreshold(v)
+	return _u
+}
+
+// SetNillableAboveThreshold sets the "above_threshold" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveThreshold(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveThreshold(*v)
+	}
+	return _u
+}
+
+// AddAboveThreshold adds value to the "above_threshold" field.
+func (_u *PricingUpdate) AddAboveThreshold(v int64) *PricingUpdate {
+	_u.mutation.AddAboveThreshold(v)
+	return _u
+}
+
+// ClearAboveThreshold clears the value of the "above_threshold" field.
+func (_u *PricingUpdate) ClearAboveThreshold() *PricingUpdate {
+	_u.mutation.ClearAboveThreshold()
+	return _u
+}
+
+// SetAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field.
+func (_u *PricingUpdate) SetAbovePromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAbovePromptPricePerMillion()
+	_u.mutation.SetAbovePromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAbovePromptPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAbovePromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePromptPricePerMillion adds value to the "above_prompt_price_per_million" field.
+func (_u *PricingUpdate) AddAbovePromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAbovePromptPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePromptPricePerMillion clears the value of the "above_prompt_price_per_million" field.
+func (_u *PricingUpdate) ClearAbovePromptPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAbovePromptPricePerMillion()
+	return _u
+}
+
+// SetAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field.
+func (_u *PricingUpdate) SetAboveCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveCompletionPricePerMillion()
+	_u.mutation.SetAboveCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveCompletionPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveCompletionPricePerMillion adds value to the "above_completion_price_per_million" field.
+func (_u *PricingUpdate) AddAboveCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveCompletionPricePerMillion clears the value of the "above_completion_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveCompletionPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveCompletionPricePerMillion()
+	return _u
+}
+
+// SetAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field.
+func (_u *PricingUpdate) SetAboveCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveCacheReadPricePerMillion()
+	_u.mutation.SetAboveCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveCacheReadPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveCacheReadPricePerMillion adds value to the "above_cache_read_price_per_million" field.
+func (_u *PricingUpdate) AddAboveCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveCacheReadPricePerMillion clears the value of the "above_cache_read_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveCacheReadPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveCacheReadPricePerMillion()
+	return _u
+}
+
+// SetAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) SetAboveCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveCacheCreationPricePerMillion()
+	_u.mutation.SetAboveCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveCacheCreationPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveCacheCreationPricePerMillion adds value to the "above_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) AddAboveCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveCacheCreationPricePerMillion clears the value of the "above_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveCacheCreationPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field.
+func (_u *PricingUpdate) SetAbovePriorityPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAbovePriorityPromptPricePerMillion()
+	_u.mutation.SetAbovePriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAbovePriorityPromptPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAbovePriorityPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityPromptPricePerMillion adds value to the "above_priority_prompt_price_per_million" field.
+func (_u *PricingUpdate) AddAbovePriorityPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAbovePriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityPromptPricePerMillion clears the value of the "above_priority_prompt_price_per_million" field.
+func (_u *PricingUpdate) ClearAbovePriorityPromptPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAbovePriorityPromptPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field.
+func (_u *PricingUpdate) SetAbovePriorityCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAbovePriorityCompletionPricePerMillion()
+	_u.mutation.SetAbovePriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAbovePriorityCompletionPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAbovePriorityCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityCompletionPricePerMillion adds value to the "above_priority_completion_price_per_million" field.
+func (_u *PricingUpdate) AddAbovePriorityCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAbovePriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityCompletionPricePerMillion clears the value of the "above_priority_completion_price_per_million" field.
+func (_u *PricingUpdate) ClearAbovePriorityCompletionPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAbovePriorityCompletionPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field.
+func (_u *PricingUpdate) SetAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAbovePriorityCacheReadPricePerMillion()
+	_u.mutation.SetAbovePriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAbovePriorityCacheReadPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAbovePriorityCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityCacheReadPricePerMillion adds value to the "above_priority_cache_read_price_per_million" field.
+func (_u *PricingUpdate) AddAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAbovePriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityCacheReadPricePerMillion clears the value of the "above_priority_cache_read_price_per_million" field.
+func (_u *PricingUpdate) ClearAbovePriorityCacheReadPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAbovePriorityCacheReadPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) SetAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAbovePriorityCacheCreationPricePerMillion()
+	_u.mutation.SetAbovePriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAbovePriorityCacheCreationPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAbovePriorityCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityCacheCreationPricePerMillion adds value to the "above_priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) AddAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAbovePriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityCacheCreationPricePerMillion clears the value of the "above_priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) ClearAbovePriorityCacheCreationPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAbovePriorityCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field.
+func (_u *PricingUpdate) SetAboveFlexPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveFlexPromptPricePerMillion()
+	_u.mutation.SetAboveFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveFlexPromptPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveFlexPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexPromptPricePerMillion adds value to the "above_flex_prompt_price_per_million" field.
+func (_u *PricingUpdate) AddAboveFlexPromptPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexPromptPricePerMillion clears the value of the "above_flex_prompt_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveFlexPromptPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveFlexPromptPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field.
+func (_u *PricingUpdate) SetAboveFlexCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveFlexCompletionPricePerMillion()
+	_u.mutation.SetAboveFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveFlexCompletionPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveFlexCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexCompletionPricePerMillion adds value to the "above_flex_completion_price_per_million" field.
+func (_u *PricingUpdate) AddAboveFlexCompletionPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexCompletionPricePerMillion clears the value of the "above_flex_completion_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveFlexCompletionPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveFlexCompletionPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field.
+func (_u *PricingUpdate) SetAboveFlexCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveFlexCacheReadPricePerMillion()
+	_u.mutation.SetAboveFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveFlexCacheReadPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveFlexCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexCacheReadPricePerMillion adds value to the "above_flex_cache_read_price_per_million" field.
+func (_u *PricingUpdate) AddAboveFlexCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexCacheReadPricePerMillion clears the value of the "above_flex_cache_read_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveFlexCacheReadPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveFlexCacheReadPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) SetAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetAboveFlexCacheCreationPricePerMillion()
+	_u.mutation.SetAboveFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableAboveFlexCacheCreationPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetAboveFlexCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexCacheCreationPricePerMillion adds value to the "above_flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) AddAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddAboveFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexCacheCreationPricePerMillion clears the value of the "above_flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdate) ClearAboveFlexCacheCreationPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearAboveFlexCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetFastMultiplier sets the "fast_multiplier" field.
+func (_u *PricingUpdate) SetFastMultiplier(v int64) *PricingUpdate {
+	_u.mutation.ResetFastMultiplier()
+	_u.mutation.SetFastMultiplier(v)
+	return _u
+}
+
+// SetNillableFastMultiplier sets the "fast_multiplier" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableFastMultiplier(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetFastMultiplier(*v)
+	}
+	return _u
+}
+
+// AddFastMultiplier adds value to the "fast_multiplier" field.
+func (_u *PricingUpdate) AddFastMultiplier(v int64) *PricingUpdate {
+	_u.mutation.AddFastMultiplier(v)
+	return _u
+}
+
+// ClearFastMultiplier clears the value of the "fast_multiplier" field.
+func (_u *PricingUpdate) ClearFastMultiplier() *PricingUpdate {
+	_u.mutation.ClearFastMultiplier()
+	return _u
+}
+
 // SetProvider sets the "provider" field.
 func (_u *PricingUpdate) SetProvider(v string) *PricingUpdate {
 	_u.mutation.SetProvider(v)
@@ -420,6 +1014,204 @@ func (_u *PricingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.CacheCreationPricePerMillionCleared() {
 		_spec.ClearField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64)
 	}
+	if value, ok := _u.mutation.PriorityPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveThreshold(); ok {
+		_spec.SetField(pricing.FieldAboveThreshold, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveThreshold(); ok {
+		_spec.AddField(pricing.FieldAboveThreshold, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveThresholdCleared() {
+		_spec.ClearField(pricing.FieldAboveThreshold, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FastMultiplier(); ok {
+		_spec.SetField(pricing.FieldFastMultiplier, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFastMultiplier(); ok {
+		_spec.AddField(pricing.FieldFastMultiplier, field.TypeInt64, value)
+	}
+	if _u.mutation.FastMultiplierCleared() {
+		_spec.ClearField(pricing.FieldFastMultiplier, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.Provider(); ok {
 		_spec.SetField(pricing.FieldProvider, field.TypeString, value)
 	}
@@ -639,6 +1431,600 @@ func (_u *PricingUpdateOne) AddCacheCreationPricePerMillion(v int64) *PricingUpd
 // ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
 func (_u *PricingUpdateOne) ClearCacheCreationPricePerMillion() *PricingUpdateOne {
 	_u.mutation.ClearCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetPriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) SetPriorityPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetPriorityPromptPricePerMillion()
+	_u.mutation.SetPriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillablePriorityPromptPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetPriorityPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityPromptPricePerMillion adds value to the "priority_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) AddPriorityPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddPriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityPromptPricePerMillion clears the value of the "priority_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) ClearPriorityPromptPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearPriorityPromptPricePerMillion()
+	return _u
+}
+
+// SetPriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field.
+func (_u *PricingUpdateOne) SetPriorityCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetPriorityCompletionPricePerMillion()
+	_u.mutation.SetPriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillablePriorityCompletionPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetPriorityCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityCompletionPricePerMillion adds value to the "priority_completion_price_per_million" field.
+func (_u *PricingUpdateOne) AddPriorityCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddPriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityCompletionPricePerMillion clears the value of the "priority_completion_price_per_million" field.
+func (_u *PricingUpdateOne) ClearPriorityCompletionPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearPriorityCompletionPricePerMillion()
+	return _u
+}
+
+// SetPriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) SetPriorityCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetPriorityCacheReadPricePerMillion()
+	_u.mutation.SetPriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillablePriorityCacheReadPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetPriorityCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityCacheReadPricePerMillion adds value to the "priority_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) AddPriorityCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddPriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityCacheReadPricePerMillion clears the value of the "priority_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) ClearPriorityCacheReadPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearPriorityCacheReadPricePerMillion()
+	return _u
+}
+
+// SetPriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) SetPriorityCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetPriorityCacheCreationPricePerMillion()
+	_u.mutation.SetPriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillablePriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillablePriorityCacheCreationPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetPriorityCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddPriorityCacheCreationPricePerMillion adds value to the "priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) AddPriorityCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddPriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearPriorityCacheCreationPricePerMillion clears the value of the "priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) ClearPriorityCacheCreationPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearPriorityCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) SetFlexPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetFlexPromptPricePerMillion()
+	_u.mutation.SetFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableFlexPromptPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetFlexPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexPromptPricePerMillion adds value to the "flex_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) AddFlexPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexPromptPricePerMillion clears the value of the "flex_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) ClearFlexPromptPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearFlexPromptPricePerMillion()
+	return _u
+}
+
+// SetFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field.
+func (_u *PricingUpdateOne) SetFlexCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetFlexCompletionPricePerMillion()
+	_u.mutation.SetFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableFlexCompletionPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetFlexCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexCompletionPricePerMillion adds value to the "flex_completion_price_per_million" field.
+func (_u *PricingUpdateOne) AddFlexCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexCompletionPricePerMillion clears the value of the "flex_completion_price_per_million" field.
+func (_u *PricingUpdateOne) ClearFlexCompletionPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearFlexCompletionPricePerMillion()
+	return _u
+}
+
+// SetFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) SetFlexCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetFlexCacheReadPricePerMillion()
+	_u.mutation.SetFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableFlexCacheReadPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetFlexCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexCacheReadPricePerMillion adds value to the "flex_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) AddFlexCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexCacheReadPricePerMillion clears the value of the "flex_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) ClearFlexCacheReadPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearFlexCacheReadPricePerMillion()
+	return _u
+}
+
+// SetFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) SetFlexCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetFlexCacheCreationPricePerMillion()
+	_u.mutation.SetFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableFlexCacheCreationPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetFlexCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddFlexCacheCreationPricePerMillion adds value to the "flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) AddFlexCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearFlexCacheCreationPricePerMillion clears the value of the "flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) ClearFlexCacheCreationPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearFlexCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetAboveThreshold sets the "above_threshold" field.
+func (_u *PricingUpdateOne) SetAboveThreshold(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveThreshold()
+	_u.mutation.SetAboveThreshold(v)
+	return _u
+}
+
+// SetNillableAboveThreshold sets the "above_threshold" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveThreshold(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveThreshold(*v)
+	}
+	return _u
+}
+
+// AddAboveThreshold adds value to the "above_threshold" field.
+func (_u *PricingUpdateOne) AddAboveThreshold(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveThreshold(v)
+	return _u
+}
+
+// ClearAboveThreshold clears the value of the "above_threshold" field.
+func (_u *PricingUpdateOne) ClearAboveThreshold() *PricingUpdateOne {
+	_u.mutation.ClearAboveThreshold()
+	return _u
+}
+
+// SetAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) SetAbovePromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAbovePromptPricePerMillion()
+	_u.mutation.SetAbovePromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAbovePromptPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAbovePromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePromptPricePerMillion adds value to the "above_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) AddAbovePromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAbovePromptPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePromptPricePerMillion clears the value of the "above_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAbovePromptPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAbovePromptPricePerMillion()
+	return _u
+}
+
+// SetAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveCompletionPricePerMillion()
+	_u.mutation.SetAboveCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveCompletionPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveCompletionPricePerMillion adds value to the "above_completion_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveCompletionPricePerMillion clears the value of the "above_completion_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveCompletionPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveCompletionPricePerMillion()
+	return _u
+}
+
+// SetAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveCacheReadPricePerMillion()
+	_u.mutation.SetAboveCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveCacheReadPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveCacheReadPricePerMillion adds value to the "above_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveCacheReadPricePerMillion clears the value of the "above_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveCacheReadPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveCacheReadPricePerMillion()
+	return _u
+}
+
+// SetAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveCacheCreationPricePerMillion()
+	_u.mutation.SetAboveCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveCacheCreationPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveCacheCreationPricePerMillion adds value to the "above_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveCacheCreationPricePerMillion clears the value of the "above_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveCacheCreationPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) SetAbovePriorityPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAbovePriorityPromptPricePerMillion()
+	_u.mutation.SetAbovePriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAbovePriorityPromptPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAbovePriorityPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityPromptPricePerMillion adds value to the "above_priority_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) AddAbovePriorityPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAbovePriorityPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityPromptPricePerMillion clears the value of the "above_priority_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAbovePriorityPromptPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAbovePriorityPromptPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field.
+func (_u *PricingUpdateOne) SetAbovePriorityCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAbovePriorityCompletionPricePerMillion()
+	_u.mutation.SetAbovePriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAbovePriorityCompletionPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAbovePriorityCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityCompletionPricePerMillion adds value to the "above_priority_completion_price_per_million" field.
+func (_u *PricingUpdateOne) AddAbovePriorityCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAbovePriorityCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityCompletionPricePerMillion clears the value of the "above_priority_completion_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAbovePriorityCompletionPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAbovePriorityCompletionPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) SetAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAbovePriorityCacheReadPricePerMillion()
+	_u.mutation.SetAbovePriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAbovePriorityCacheReadPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAbovePriorityCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityCacheReadPricePerMillion adds value to the "above_priority_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) AddAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAbovePriorityCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityCacheReadPricePerMillion clears the value of the "above_priority_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAbovePriorityCacheReadPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAbovePriorityCacheReadPricePerMillion()
+	return _u
+}
+
+// SetAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) SetAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAbovePriorityCacheCreationPricePerMillion()
+	_u.mutation.SetAbovePriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAbovePriorityCacheCreationPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAbovePriorityCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAbovePriorityCacheCreationPricePerMillion adds value to the "above_priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) AddAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAbovePriorityCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearAbovePriorityCacheCreationPricePerMillion clears the value of the "above_priority_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAbovePriorityCacheCreationPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAbovePriorityCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveFlexPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveFlexPromptPricePerMillion()
+	_u.mutation.SetAboveFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveFlexPromptPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveFlexPromptPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexPromptPricePerMillion adds value to the "above_flex_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveFlexPromptPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveFlexPromptPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexPromptPricePerMillion clears the value of the "above_flex_prompt_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveFlexPromptPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveFlexPromptPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveFlexCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveFlexCompletionPricePerMillion()
+	_u.mutation.SetAboveFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveFlexCompletionPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveFlexCompletionPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexCompletionPricePerMillion adds value to the "above_flex_completion_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveFlexCompletionPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveFlexCompletionPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexCompletionPricePerMillion clears the value of the "above_flex_completion_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveFlexCompletionPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveFlexCompletionPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveFlexCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveFlexCacheReadPricePerMillion()
+	_u.mutation.SetAboveFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveFlexCacheReadPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveFlexCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexCacheReadPricePerMillion adds value to the "above_flex_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveFlexCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveFlexCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexCacheReadPricePerMillion clears the value of the "above_flex_cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveFlexCacheReadPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveFlexCacheReadPricePerMillion()
+	return _u
+}
+
+// SetAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) SetAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetAboveFlexCacheCreationPricePerMillion()
+	_u.mutation.SetAboveFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableAboveFlexCacheCreationPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetAboveFlexCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddAboveFlexCacheCreationPricePerMillion adds value to the "above_flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) AddAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddAboveFlexCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearAboveFlexCacheCreationPricePerMillion clears the value of the "above_flex_cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) ClearAboveFlexCacheCreationPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearAboveFlexCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetFastMultiplier sets the "fast_multiplier" field.
+func (_u *PricingUpdateOne) SetFastMultiplier(v int64) *PricingUpdateOne {
+	_u.mutation.ResetFastMultiplier()
+	_u.mutation.SetFastMultiplier(v)
+	return _u
+}
+
+// SetNillableFastMultiplier sets the "fast_multiplier" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableFastMultiplier(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetFastMultiplier(*v)
+	}
+	return _u
+}
+
+// AddFastMultiplier adds value to the "fast_multiplier" field.
+func (_u *PricingUpdateOne) AddFastMultiplier(v int64) *PricingUpdateOne {
+	_u.mutation.AddFastMultiplier(v)
+	return _u
+}
+
+// ClearFastMultiplier clears the value of the "fast_multiplier" field.
+func (_u *PricingUpdateOne) ClearFastMultiplier() *PricingUpdateOne {
+	_u.mutation.ClearFastMultiplier()
 	return _u
 }
 
@@ -897,6 +2283,204 @@ func (_u *PricingUpdateOne) sqlSave(ctx context.Context) (_node *Pricing, err er
 	}
 	if _u.mutation.CacheCreationPricePerMillionCleared() {
 		_spec.ClearField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriorityCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriorityCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.PriorityCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FlexCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFlexCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.FlexCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveThreshold(); ok {
+		_spec.SetField(pricing.FieldAboveThreshold, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveThreshold(); ok {
+		_spec.AddField(pricing.FieldAboveThreshold, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveThresholdCleared() {
+		_spec.ClearField(pricing.FieldAboveThreshold, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AbovePriorityCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAbovePriorityCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AbovePriorityCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexPromptPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexPromptPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexCompletionPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexCompletionPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexCacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.AboveFlexCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedAboveFlexCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.AboveFlexCacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.FastMultiplier(); ok {
+		_spec.SetField(pricing.FieldFastMultiplier, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedFastMultiplier(); ok {
+		_spec.AddField(pricing.FieldFastMultiplier, field.TypeInt64, value)
+	}
+	if _u.mutation.FastMultiplierCleared() {
+		_spec.ClearField(pricing.FieldFastMultiplier, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Provider(); ok {
 		_spec.SetField(pricing.FieldProvider, field.TypeString, value)
