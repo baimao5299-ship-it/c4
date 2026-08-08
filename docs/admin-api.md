@@ -18,7 +18,7 @@
 |---|---|
 | `format`（请求格式） | `openai-chat` / `openai-responses` / `anthropic` |
 | `status`（账号） | `active` / `unhealthy` / `429` / `disabled` |
-| `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` |
+| `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` / `billing`（计费拒绝 402） |
 | `type`（兑换码） | `balance`（充值余额，最小单位毫分，1 USD = 100,000 毫分）/ `concurrency`（加并发数）/ `temp_balance`（临时余额，兑换后资源到期） |
 | `status`（兑换码） | `active` / `disabled`（不可编辑，仅可失效） |
 | `source`（模型价格） | `litellm`（官方价格表拉取）/ `manual`（管理端手动设价，优先级最高） |
@@ -284,19 +284,35 @@
 `POST /admin/groups`
 
 ```json
-{ "name": "bench" }
+{ "name": "bench", "price_multiplier": 20000 }
 ```
 
-响应 `200`：
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | ✅ | 分组名（唯一） |
+| `price_multiplier` | int | 否 | **价格倍率**（万分数：`0` = 免费、`10000` = ×1、上限 `100000` = ×10；Phase 5 计费）。缺省/`null` = 不设置——**创建时落库组默认 `10000`（×1）**；显式 `0` 免费组请经 `PUT` 设置（创建路径 0 视为未指定）。超界 → `400` |
+
+响应 `200`：创建后的分组对象：
 
 ```json
 {
-  "group": { "ID": 1, "Name": "bench", "KeyHash": "<sha256>", "KeyPrefix": "gk-2d61", "CreatedAt": "...", "UpdatedAt": "..." },
-  "key": "gk-2d61..."
+  "ID": 1,
+  "Name": "bench",
+  "Visibility": "public",
+  "PriceMultiplier": 20000,
+  "CreatedAt": "2026-08-09T10:00:00+08:00",
+  "UpdatedAt": "2026-08-09T10:00:00+08:00"
 }
 ```
 
-> `key` 为**明文分组 key，仅此一次返回**（数据库只存 SHA-256 哈希）。遗失需 `rotate-key` 轮换。
+### 分组对象结构（响应）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `ID` | int64 | 分组 id |
+| `Name` | string | 分组名 |
+| `Visibility` | `public` / `private` | public 全部用户可选；private 仅授予用户（`/admin/groups/{id}/assignments`） |
+| `PriceMultiplier` | int | **价格倍率**（万分数，见上）；计费按 `用户倍率 ?? 组倍率 ?? ×1` 生效（见「用户 Users」章节） |
 
 ### 分组列表
 
@@ -333,12 +349,86 @@
 | 方法/路径 | 说明 | 响应 |
 |---|---|---|
 | `GET /admin/groups/{id}` | 单个分组 | `200`：分组对象 |
-| `PUT /admin/groups/{id}` | 重命名 | `200`：更新后分组对象 |
+| `PUT /admin/groups/{id}` | 全量更新分组（`name` / `visibility` / `price_multiplier`） | `200`：更新后分组对象；`price_multiplier` 缺省 = 保持原值、显式提供（含 `0` = 免费）即写入 |
 | `DELETE /admin/groups/{id}` | 删除（先删注册 key 再删 DB） | `200`：`{"deleted": true}`；`404` 资源不存在（消息含缺失 id） |
 | `PUT /admin/groups/{id}/accounts` | 绑定账号集合 | 请求体 `{"account_ids": [1, 2, 3]}`；`200`：`{"updated": true}` |
 | `POST /admin/groups/{id}/rotate-key` | 轮换分组 key | `200`：`{"key": "gk-<新明文>"}`（旧 key 立即失效） |
 
 > `setGroupAccounts` 为**全量替换**绑定关系（传空数组清空）。变更即时触发调度器快照重建（invalidate）。
+
+---
+
+## 用户 Users
+
+用户是鉴权与计费的顶层实体（标识 = 邮箱）。**余额字段在 API 边界统一换算 USD float64**——内部存储恒为毫分（1 USD = 100,000 毫分 = 10⁻⁵ USD 精度，扣费零换算零取整误差）；输入 `math.Round(usd × 1e5)`、展示 `毫分 / 1e5`（如 `1.5` = $1.50 = 150,000 毫分）。
+
+### 创建用户
+
+`POST /admin/users`（platform_admin 专属）
+
+```json
+{
+  "email": "alice@example.com",
+  "password": "s3cret-pass",
+  "max_concurrency": 4,
+  "balance": 10,
+  "price_multiplier": 20000
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `email` | string | ✅ | 邮箱（唯一/格式校验） |
+| `password` | string | ✅ | bcrypt 散列存储；≤ 72 字节 |
+| `role` | `platform_admin` / `user` | 否 | 缺省 `user` |
+| `status` | `active` / `disabled` | 否 | 缺省 `active` |
+| `max_concurrency` | int | 否 | 用户级在途上限；0 = 不限 |
+| `balance` | number（USD） | 否 | 余额 USD float64（≥ 0；`10` = $10 = 1,000,000 毫分） |
+| `price_multiplier` | int / null | 否 | **用户专属价格倍率**（万分数，0~100000）；`null`/缺省 = 未设置（计费回退组倍率） |
+
+### 用户列表
+
+`GET /admin/users?limit=20&offset=0&email=alice&sort=id&order=desc`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `limit` / `offset` | int | 20 / 0 | 分页 |
+| `email` | string | — | 邮箱模糊匹配 |
+| `sort` / `order` | string | `id` / `desc` | 白名单排序；非法 → `400` |
+
+响应 `200`：`{"total": N, "rows": [用户对象...]}`。**`PasswordHash` 永不下发**；`Balance` 为 USD float64；`PriceMultiplier` 为 `int` 或 `null`（null = 未设置）。
+
+### 更新用户
+
+`PUT /admin/users/{id}`
+
+```json
+{ "balance": 5.25, "price_multiplier": null }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `role` / `status` / `max_concurrency` | 同创建；缺省 = 不变 |
+| `balance` | USD float64（≥ 0）；缺省 = 不变 |
+| `price_multiplier` | 万分数（0~100000）；**`null` = 清除为未设置**（回退组倍率）；缺省 = 不变 |
+
+变更即时生效（鉴权/余额快照刷新，计费预检读内存快照）。错误映射：email 重复 → `409`；非法输入（格式/超界倍率/负余额）→ `400`；用户不存在 → `404`。
+
+### 用户面
+
+- `POST /user/auth/register` / `POST /user/auth/login`：注册（受 `signup_enabled` 设置）与登录，返回 JWT + 用户对象（`Balance` 同样 USD float64）。
+- `GET /user/auth/me`：当前用户信息。
+- 兑换码（`/user/redemptions`）：`balance` / `temp_balance` 类型向毫分余额/临时额度充值，见「兑换码 Redemption Codes」章节。
+
+### 价格倍率语义（计费生效）
+
+计费倍率作用在**整单计费成本**上（含 fast 倍率之后）：`cost = round(cost × mult / 10000)`，取数顺序为**用户覆盖组**：
+
+1. `users.price_multiplier` 已设置（非 null）→ 用户倍率；
+2. 否则 `groups.price_multiplier`（组默认 `10000` = ×1）；
+3. 两者均未设置 → ×1 原价。
+
+`0` = **免费**（cost = 0 不扣费；请求仍须有价格，否则 402）；上限 `100000` = ×10。倍率预检：免费用户/组余额为 0 不 402。
 
 ---
 
@@ -380,11 +470,26 @@
       "PromptTokens": 10,
       "CompletionTokens": 20,
       "TotalTokens": 30,
+      "Cost": 500,
+      "BillingTier": "auto",
+      "AboveHit": false,
+      "Overdraft": false,
       "CreatedAt": "2026-08-06T10:00:00Z"
     }
   ]
 }
 ```
+
+**计费字段**（Phase 5）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `Cost` | int64 | 计费成本（**毫分**，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0 |
+| `BillingTier` | string | 请求 `service_tier` 归一化值：`priority` / `flex` / `fast` / `auto`（未知/空值归一 auto）；空 = 未计费路径（billing 关闭或未鉴权） |
+| `AboveHit` | bool | 任一分量超 `above_threshold` 命中分段计价 |
+| `Overdraft` | bool | 本次扣费透支（余额不足扣为负余额；`[billing]` 开启且允许透支时可能为 true） |
+
+> **明细存储**：`usagelog` 为 PostgreSQL **按日分区表**（`PARTITION BY RANGE(created_at)`，分区名 `usagelog_YYYYMMDD`）。保留期由配置 `usage.log_retention_days` 决定（管理员设置 = 分区保留天数，默认 30 天）；retention worker 每小时 `DROP` 过期分区（O(1)）并预建未来分区。跨分区查询按时间范围走分区剪枝。
 
 ### 查询用量统计
 
@@ -412,12 +517,13 @@
     "PromptTokens": 1000,
     "CompletionTokens": 2000,
     "TotalTokens": 3000,
+    "Cost": 50000,
     "TotalLatencyMS": 12500
   }
 ]
 ```
 
-> 统计由用量管线异步预聚合（批量 upsert），查询结果可能有秒级延迟。
+> `Cost`（int64 毫分）为计费成本**预聚合**（billing flusher 与 usage 统计同管线累加，花费统计不扫明细）。统计由用量管线异步预聚合（批量 upsert），查询结果可能有秒级延迟。
 
 ---
 
@@ -680,6 +786,20 @@
 
 **缓存价语义**：`cache_read` / `cache_creation` 对应 litellm 的 `cache_read_input_token_cost` / `cache_creation_input_token_cost`（OpenAI 系缓存命中按 read 价替换计价；Anthropic 系缓存独立计价，见 Phase 5 计费公式）。`nil` = 无缓存价（OpenAI 常规模型无 cache_creation 价，写缓存不计费）。litellm 行 0 → 落库 `nil`；manual 显式设 0 → 落库 0。
 
+**价格矩阵（Phase 5，22 列）**：除 4 个基础价外，每行还可设置 service_tier 单价替换档与上下文分段价——全部 `int64` 毫分/1M tokens、`nil` = 无该档价（计费回退）：
+
+| 列组 | 字段（API 大写下发 / 请求体 snake_case） | 语义 |
+|---|---|---|
+| priority 档（4） | `PriorityPromptPricePerMillion` / `PriorityCompletionPricePerMillion` / `PriorityCacheReadPricePerMillion` / `PriorityCacheCreationPricePerMillion` | 请求 `service_tier=priority` 时的单价替换档；缺失回退基础价 |
+| flex 档（4） | `Flex*PricePerMillion`（同上 4 列） | 请求 `service_tier=flex` 时的单价替换档；缺失回退基础价 |
+| 分段阈值 | `AboveThreshold` | 上下文分段阈值（**tokens**）；`nil` = 无分段。litellm 行由 `*_above_<N>k_tokens` 精确 key 动态提取（阈值 = N×1000），未来新档自动跟随 |
+| above 基础组（4） | `AbovePromptPricePerMillion` 等 4 列 | 任一分量 `tokens > threshold` 时超量部分按 above 价计价（该分量 above 缺失 → 该分量不拆段） |
+| above priority 组（4） | `AbovePriority*PricePerMillion`（azure 形态 `_above_<N>k_tokens_priority`） | priority 请求的分段价；缺失回退 above 基础组 |
+| above flex 组（4） | `AboveFlex*PricePerMillion`（gpt-5.6-sol 形态 `_above_<N>k_tokens_flex`） | flex 请求的分段价；缺失回退 above 基础组 |
+| fast 倍率 | `FastMultiplier` | Anthropic Fast Mode **整单倍率**（万分数，`20000` = ×2.0；上限 `100000` = ×10）；`nil` = 无倍率。源自 litellm `provider_specific_entry.fast`（opus-4-6/4-7 6.0 → 60000） |
+
+**分段计费规则**：单价组合优先 `above+tier > above > tier > 基础`（above 按请求 tier 选组：priority → above_priority ?? above；flex → above_flex ?? above；auto/fast → above）；无价 → 基础价（不涨价）。`tokens > threshold` 才拆段（`==` 不拆）：`within = min(t, thr) × 档内价 + excess × above 价`。fast 请求且表有 `FastMultiplier` → 整单 `×(万分数/10000)`。litellm 行矩阵从 raw 提取（含 above 干扰键排除：character/audio 阶梯、`above_1hr` 缓存档不匹配精确 key）。
+
 **生效与缺失语义**：表内一行即最终生效价；手动设价/拉取成功后服务端价格快照即时重载（Phase 5 计费热路径读内存快照，零 DB）。删除手动价后该模型在下一轮拉取前存在缺失窗口——计费侧对无价格模型**拒绝计费并显式报错**（不按 0 计价）。`max_input_tokens` / `max_output_tokens` 为 litellm 自带上下文窗口，`nil` = 未知。`provider` / `mode` / `supports_prompt_caching` 为 litellm 元数据（manual 行 `nil`）。litellm 官方表完整原始条目（149 字段）镜像存于数据库 `raw` JSONB 列，**不通过 API 暴露**（manual 行接管后清空）。
 
 ### 价格列表
@@ -724,9 +844,12 @@
 
 `PUT /admin/pricing/{model}`
 
-请求体：`{"prompt_price_per_million": 111111, "completion_price_per_million": 222222}`（毫分/1M tokens，**必须 ≥ 0**；负数 → `400`，model 缺失 → `404`）。可选字段 `cache_read_price_per_million` / `cache_creation_price_per_million`（毫分/1M tokens，≥ 0，缺省或 `null` = 不设缓存价，落库 NULL）。
+请求体：`{"prompt_price_per_million": 111111, "completion_price_per_million": 222222}`（毫分/1M tokens，**必须 ≥ 0**；负数 → `400`，model 缺失 → `404`）。可选字段：
 
-语义：upsert 并强制 `source=manual`——模型已存在 litellm 行时**直接接管**（该行来源改为 manual，后续拉取不再覆盖）。响应 `200` 为更新后的价格对象。
+- 缓存价：`cache_read_price_per_million` / `cache_creation_price_per_million`（毫分/1M tokens，≥ 0）
+- **矩阵 22 列**：`priority_prompt_price_per_million` 等 priority/flex 各 4 列、`above_threshold`（tokens）+ above 三组各 4 列、`fast_multiplier`（万分数，0 < m ≤ 100000）——全部 ≥ 0、缺省或 `null` = 不设该价（落库 NULL）
+
+语义：**PUT 全量替换**——请求体中未提供的可选字段一律清空（接管 litellm 行时该矩阵价清除、回退基础价）；显式设 0 表示该价明确为 0。upsert 强制 `source=manual`——模型已存在 litellm 行时**直接接管**（该行来源改为 manual，后续拉取不再覆盖）。响应 `200` 为更新后的价格对象（22 矩阵列全部回显）。
 
 ### 删除手动价
 
@@ -770,6 +893,47 @@
 |---|---|---|
 | `price_source_url` | litellm 官方价格表 JSON raw URL | 拉取源（可换，如本地镜像）；空 → sync 拒绝（400） |
 | `price_sync_cron` | `0 3 * * *` | 拉取 cron 表达式；变更下次循环生效 |
+| `service_tier_policy_priority` | `passthrough` | 请求 `service_tier=priority` 的**转发策略**：`passthrough`（原样转发，默认）/ `strip`（转发体删除该字段）/ `reject`（400 拒绝，不转发） |
+| `service_tier_policy_flex` | `passthrough` | 同上，作用于 `service_tier=flex` 请求 |
+
+> 策略仅影响**转发体**；计费读取不受影响（剥离/拒绝路径照常按 priority/flex 档计价）。`auto`/空/未知 tier 恒透传。非法值（非三值）→ `400`。
+
+---
+
+## 计费 Billing
+
+Phase 5 计费链路：请求前**预检**（价格快照缺价 / 余额快照 ≤0 → `402`）→ 请求完成聚合计费（`internal/billing` 纯函数：tier 选价 + above 分段 + fast 倍率 + 价格倍率）→ 内存聚合、周期批量**条件扣费**（毫分直接扣减，零换算）→ 明细落 `usagelog`（cost/tier/above_hit/overdraft 列）。
+
+### 启用顺序（config.toml）
+
+```toml
+billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "10s" }
+```
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `billing.enabled` | `false` | **默认关闭（opt-in）**。启用前必须先同步价格（`POST /admin/pricing/sync` 或等待定时拉取）——空价格表 = 全模型 402（契约语义：缺价不按 0 计价） |
+| `billing.flush_interval` | `1s` | 扣费批量落库周期（内存聚合满或周期到 → 逐 user 小事务条件扣费） |
+| `billing.balance_refresh_interval` | `10s` | 余额快照全量刷新周期（预检读快照；扣费后定向即时刷新该 user） |
+
+关联配置：`proxy.usage_capture`（日志开关；billing 路由判定包含它）、`usage.log_retention_days`（usagelog 分区保留天数，见「日志与统计」）。
+
+### 402 语义（计费拒绝）
+
+| 场景 | 行为 |
+|---|---|
+| 模型无价格（价格表缺行 / 快照缺失） | 请求前预检 `402`，错误类型 `billing`，不计费不转发 |
+| 余额快照缺失或 ≤ 0（非免费用户/组） | 请求前预检 `402`（错误类型 `billing`） |
+| 余额不足（快照滞后导致预检通过） | 条件扣费允许**透支**（`balance` 可为负），日志 `overdraft = true` |
+| 免费（用户/组倍率 0） | 预检放行且不扣费（请求仍须有价格） |
+| 价格在请求处理中被删（竞态） | 运行时防御：`Warn` + 该请求计费 0（`billing_tier = "no_price"` 审计） |
+
+### 扣费与明细
+
+- **临时额度 FEFO**：未过期 `temp_balances` 按 `expires_at` 升序逐行扣至 0（最早到期先扣，永久额度最后），剩余扣 `users.balance`。
+- **全毫分直接扣减**：1 USD = 100,000 毫分，cost/balance/temp_balance/兑换码 Value 同单位，无换算无取整。
+- **优雅停机**：SIGTERM → 2s 优雅窗口 → 强断长连接（在途流式按已累积 token 计费）→ 等在途归零 → 排空扣费（计费 flusher 最先排空，日志 cost 不丢）。崩溃丢 ≤ 1 flush 窗口（接受）。
+- 管理面余额 API 均以 USD float64 输入/展示（换算见「用户 Users」章节）。
 
 ---
 
@@ -777,8 +941,9 @@
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
+| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `fast_multiplier` 越界 / 倍率（用户/组 `price_multiplier`）越界 / `service_tier_policy_*` 非法值 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
 | `401` | admin token 缺失或错误；普通 `user` 角色 JWT 访问 `/admin/*` |
+| `402` | **计费拒绝**（`error_type=billing`）：模型缺价 / 余额快照缺失或 ≤ 0（AI 请求面，非管理面） |
 | `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |
 | `409` | 规则 `priority`/`name` 唯一冲突 / 兑换码重复兑换（`already redeemed`）/ 删除 litellm 价格行 |
 | `500` | 服务端错误（DB 等） |

@@ -9,7 +9,8 @@ import (
 )
 
 // PostGroups 创建分组（平台容量池；key 为独立表，用户面 /user/keys 创建，
-// ServerInterface）。
+// ServerInterface）。price_multiplier 缺省/null = 未指定（repo 落库组默认
+// 10000 = ×1）；显式提供（含 0 = 免费）经 PUT 写入。
 func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	var in GroupCreate
 	if err := decode(r, &in); err != nil {
@@ -20,7 +21,7 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	if in.Visibility != nil {
 		visibility = domain.GroupVisibility(*in.Visibility)
 	}
-	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility)
+	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility, deref(in.PriceMultiplier))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -59,7 +60,8 @@ func (h *AdminAPI) GetGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 	writeJSON(w, http.StatusOK, toAPIGroup(g))
 }
 
-// PutGroupsId 全量更新分组（ServerInterface）。
+// PutGroupsId 全量更新分组（ServerInterface）。price_multiplier 提供（含 0 =
+// 免费）即写入；缺省 = 保持原值。
 func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
 	var in GroupCreate
 	if err := decode(r, &in); err != nil {
@@ -74,6 +76,13 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 	g.Name = in.Name
 	if in.Visibility != nil {
 		g.Visibility = domain.GroupVisibility(*in.Visibility)
+	}
+	if in.PriceMultiplier != nil {
+		if *in.PriceMultiplier < 0 || *in.PriceMultiplier > 100000 {
+			writeErr(w, http.StatusBadRequest, "price_multiplier must be in [0, 100000]")
+			return
+		}
+		g.PriceMultiplier = *in.PriceMultiplier
 	}
 	updated, err := h.svc.UpdateGroup(r.Context(), g)
 	if err != nil {

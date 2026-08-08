@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"math"
+
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/service"
 )
@@ -83,27 +85,38 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
 	return Group{
-		ID:         &g.ID,
-		Name:       &g.Name,
-		Visibility: &v,
-		CreatedAt:  &g.CreatedAt,
-		UpdatedAt:  &g.UpdatedAt,
+		ID:              &g.ID,
+		Name:            &g.Name,
+		Visibility:      &v,
+		PriceMultiplier: &g.PriceMultiplier,
+		CreatedAt:       &g.CreatedAt,
+		UpdatedAt:       &g.UpdatedAt,
 	}
 }
 
-// toAPIUser 用户领域对象 → 契约类型（PasswordHash 永不下发）。
+// millisToUSD 毫分 → USD float64（1 USD = 100,000 毫分；handler 边界展示换算，
+// 内部存储恒毫分）。
+func millisToUSD(millis int64) float64 { return float64(millis) / 1e5 }
+
+// usdToMillis USD float64 → 毫分（math.Round 消除浮点取整误差；API 输入边界
+// 换算，内部存储恒毫分）。
+func usdToMillis(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
+
+// toAPIUser 用户领域对象 → 契约类型（PasswordHash 永不下发；Balance 毫分 →
+// USD 展示换算）。
 func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
 	return User{
-		ID:             &u.ID,
-		Email:          &u.Email,
-		Role:           &r,
-		Status:         &st,
-		MaxConcurrency: &u.MaxConcurrency,
-		Balance:        &u.Balance,
-		CreatedAt:      &u.CreatedAt,
-		UpdatedAt:      &u.UpdatedAt,
+		ID:              &u.ID,
+		Email:           &u.Email,
+		Role:            &r,
+		Status:          &st,
+		MaxConcurrency:  &u.MaxConcurrency,
+		Balance:         ptr(millisToUSD(u.Balance)),
+		PriceMultiplier: u.PriceMultiplier,
+		CreatedAt:       &u.CreatedAt,
+		UpdatedAt:       &u.UpdatedAt,
 	}
 }
 
@@ -130,6 +143,10 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		TotalTokens:         &l.TotalTokens,
 		CacheReadTokens:     &l.CacheReadTokens,
 		CacheCreationTokens: &l.CacheCreationTokens,
+		Cost:                &l.Cost,
+		BillingTier:         &l.BillingTier,
+		AboveHit:            &l.AboveHit,
+		Overdraft:           &l.Overdraft,
 		CreatedAt:           &l.CreatedAt,
 	}
 }
@@ -151,6 +168,7 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		TotalTokens:         &b.TotalTokens,
 		CacheReadTokens:     &b.CacheReadTokens,
 		CacheCreationTokens: &b.CacheCreationTokens,
+		Cost:                &b.Cost,
 		TotalLatencyMS:      &b.TotalLatencyMS,
 	}
 }

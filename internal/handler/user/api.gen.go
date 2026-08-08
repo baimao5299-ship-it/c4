@@ -16,6 +16,7 @@ import (
 const (
 	Abort     ErrorType = "abort"
 	Auth      ErrorType = "auth"
+	Billing   ErrorType = "billing"
 	N429      ErrorType = "429"
 	N4xx      ErrorType = "4xx"
 	N5xx      ErrorType = "5xx"
@@ -95,11 +96,14 @@ type ErrorType string
 
 // Group defines model for Group.
 type Group struct {
-	CreatedAt  *time.Time       `json:"CreatedAt,omitempty"`
-	ID         *int64           `json:"ID,omitempty"`
-	Name       *string          `json:"Name,omitempty"`
-	UpdatedAt  *time.Time       `json:"UpdatedAt,omitempty"`
-	Visibility *GroupVisibility `json:"Visibility,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+	ID        *int64     `json:"ID,omitempty"`
+	Name      *string    `json:"Name,omitempty"`
+
+	// PriceMultiplier 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）
+	PriceMultiplier *int             `json:"PriceMultiplier,omitempty"`
+	UpdatedAt       *time.Time       `json:"UpdatedAt,omitempty"`
+	Visibility      *GroupVisibility `json:"Visibility,omitempty"`
 }
 
 // GroupVisibility defines model for GroupVisibility.
@@ -226,15 +230,18 @@ type StatBucket struct {
 	CacheCreationTokens *int64     `json:"CacheCreationTokens,omitempty"`
 	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
 	CompletionTokens    *int64     `json:"CompletionTokens,omitempty"`
-	ErrorCount          *int64     `json:"ErrorCount,omitempty"`
-	GroupID             *int64     `json:"GroupID,omitempty"`
-	IsError             *bool      `json:"IsError,omitempty"`
-	Model               *string    `json:"Model,omitempty"`
-	PromptTokens        *int64     `json:"PromptTokens,omitempty"`
-	RequestCount        *int64     `json:"RequestCount,omitempty"`
-	TemplateID          *int64     `json:"TemplateID,omitempty"`
-	TotalLatencyMS      *int64     `json:"TotalLatencyMS,omitempty"`
-	TotalTokens         *int64     `json:"TotalTokens,omitempty"`
+
+	// Cost 计费成本（毫分，1 USD = 100
+	Cost           *int64  `json:"Cost,omitempty"`
+	ErrorCount     *int64  `json:"ErrorCount,omitempty"`
+	GroupID        *int64  `json:"GroupID,omitempty"`
+	IsError        *bool   `json:"IsError,omitempty"`
+	Model          *string `json:"Model,omitempty"`
+	PromptTokens   *int64  `json:"PromptTokens,omitempty"`
+	RequestCount   *int64  `json:"RequestCount,omitempty"`
+	TemplateID     *int64  `json:"TemplateID,omitempty"`
+	TotalLatencyMS *int64  `json:"TotalLatencyMS,omitempty"`
+	TotalTokens    *int64  `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`
@@ -242,21 +249,32 @@ type StatBucket struct {
 
 // UsageLog defines model for UsageLog.
 type UsageLog struct {
-	AccountID           *int64         `json:"AccountID,omitempty"`
-	CacheCreationTokens *int64         `json:"CacheCreationTokens,omitempty"`
-	CacheReadTokens     *int64         `json:"CacheReadTokens,omitempty"`
-	CompletionTokens    *int64         `json:"CompletionTokens,omitempty"`
-	CreatedAt           *time.Time     `json:"CreatedAt,omitempty"`
-	ErrorType           *ErrorType     `json:"ErrorType,omitempty"`
-	Format              *RequestFormat `json:"Format,omitempty"`
-	GroupID             *int64         `json:"GroupID,omitempty"`
-	ID                  *int64         `json:"ID,omitempty"`
+	// AboveHit 任一分量超 above 阈值命中分段
+	AboveHit  *bool  `json:"AboveHit,omitempty"`
+	AccountID *int64 `json:"AccountID,omitempty"`
+
+	// BillingTier 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径
+	BillingTier         *string `json:"BillingTier,omitempty"`
+	CacheCreationTokens *int64  `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64  `json:"CacheReadTokens,omitempty"`
+	CompletionTokens    *int64  `json:"CompletionTokens,omitempty"`
+
+	// Cost 计费成本（毫分，1 USD = 100
+	Cost      *int64         `json:"Cost,omitempty"`
+	CreatedAt *time.Time     `json:"CreatedAt,omitempty"`
+	ErrorType *ErrorType     `json:"ErrorType,omitempty"`
+	Format    *RequestFormat `json:"Format,omitempty"`
+	GroupID   *int64         `json:"GroupID,omitempty"`
+	ID        *int64         `json:"ID,omitempty"`
 
 	// KeyID 鉴权归属 key；0 = 无
-	KeyID        *int64  `json:"KeyID,omitempty"`
-	LatencyMS    *int64  `json:"LatencyMS,omitempty"`
-	MappedModel  *string `json:"MappedModel"`
-	Model        *string `json:"Model,omitempty"`
+	KeyID       *int64  `json:"KeyID,omitempty"`
+	LatencyMS   *int64  `json:"LatencyMS,omitempty"`
+	MappedModel *string `json:"MappedModel"`
+	Model       *string `json:"Model,omitempty"`
+
+	// Overdraft 本次扣费透支（余额不足扣为负余额）
+	Overdraft    *bool   `json:"Overdraft,omitempty"`
 	PromptTokens *int64  `json:"PromptTokens,omitempty"`
 	RequestID    *string `json:"RequestID,omitempty"`
 	StatusCode   *int    `json:"StatusCode,omitempty"`
@@ -269,14 +287,18 @@ type UsageLog struct {
 
 // User defines model for User.
 type User struct {
-	Balance        *int64      `json:"Balance,omitempty"`
-	CreatedAt      *time.Time  `json:"CreatedAt,omitempty"`
-	Email          *string     `json:"Email,omitempty"`
-	ID             *int64      `json:"ID,omitempty"`
-	MaxConcurrency *int        `json:"MaxConcurrency,omitempty"`
-	Role           *UserRole   `json:"Role,omitempty"`
-	Status         *UserStatus `json:"Status,omitempty"`
-	UpdatedAt      *time.Time  `json:"UpdatedAt,omitempty"`
+	// Balance 余额 USD（浮点；内部存储毫分——1 USD = 100
+	Balance        *float64   `json:"Balance,omitempty"`
+	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
+	Email          *string    `json:"Email,omitempty"`
+	ID             *int64     `json:"ID,omitempty"`
+	MaxConcurrency *int       `json:"MaxConcurrency,omitempty"`
+
+	// PriceMultiplier 用户专属价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）；null = 未设置（用组倍率）
+	PriceMultiplier *int        `json:"PriceMultiplier"`
+	Role            *UserRole   `json:"Role,omitempty"`
+	Status          *UserStatus `json:"Status,omitempty"`
+	UpdatedAt       *time.Time  `json:"UpdatedAt,omitempty"`
 }
 
 // UserAuthLogin defines model for UserAuthLogin.

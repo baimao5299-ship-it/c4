@@ -8,14 +8,20 @@ import (
 	"go-proxy-mini/pkg/logx"
 )
 
-func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility) (*domain.Group, error) {
+// CreateGroup 创建分组（平台容量池）。priceMultiplier 万分数：0 = 未指定
+// （repo 落库组默认 10000 = ×1）；1~100000 显式写入（免费组 0 经 UpdateGroup
+// 设置）；超界 → 400。
+func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier int) (*domain.Group, error) {
 	if name == "" {
 		return nil, ErrInvalidInput
 	}
 	if !visibility.Valid() {
 		visibility = domain.GroupVisibilityPublic
 	}
-	g := &domain.Group{Name: name, Visibility: visibility}
+	if priceMultiplier < 0 || priceMultiplier > 100000 {
+		return nil, ErrInvalidInput
+	}
+	g := &domain.Group{Name: name, Visibility: visibility, PriceMultiplier: priceMultiplier}
 	created, err := s.store.CreateGroup(ctx, g)
 	if err != nil {
 		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
@@ -44,6 +50,9 @@ func (s *Service) ListGroups(ctx context.Context, q repository.ListQuery) ([]*do
 
 func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	if g.Name == "" {
+		return nil, ErrInvalidInput
+	}
+	if g.PriceMultiplier < 0 || g.PriceMultiplier > 100000 {
 		return nil, ErrInvalidInput
 	}
 	updated, err := s.store.UpdateGroup(ctx, g)

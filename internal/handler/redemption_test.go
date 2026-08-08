@@ -258,7 +258,7 @@ func TestRedeemThreeTypes(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "me: %s", rec.Body.String())
 	var me userapi.User
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &me))
-	require.Equal(t, int64(100), *me.Balance, "balance 码已加余额")
+	require.Equal(t, 0.001, *me.Balance, "balance 码已加余额（API 展示 USD 换算：100 毫分 = $0.001）")
 	require.Equal(t, 5, *me.MaxConcurrency, "concurrency 码 0 特判直接设值")
 }
 

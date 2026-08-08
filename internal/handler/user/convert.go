@@ -4,19 +4,21 @@ import (
 	"go-proxy-mini/internal/domain"
 )
 
-// toAPIUser 用户领域对象 → 契约类型（口令散列永不下发）。
+// toAPIUser 用户领域对象 → 契约类型（口令散列永不下发；Balance 毫分 → USD
+// 展示换算——1 USD = 100,000 毫分，与 /admin 用户端点同语义）。
 func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
 	return User{
-		ID:             &u.ID,
-		Email:          &u.Email,
-		Role:           &r,
-		Status:         &st,
-		MaxConcurrency: &u.MaxConcurrency,
-		Balance:        &u.Balance,
-		CreatedAt:      &u.CreatedAt,
-		UpdatedAt:      &u.UpdatedAt,
+		ID:              &u.ID,
+		Email:           &u.Email,
+		Role:            &r,
+		Status:          &st,
+		MaxConcurrency:  &u.MaxConcurrency,
+		Balance:         ptr(float64(u.Balance) / 1e5),
+		PriceMultiplier: u.PriceMultiplier,
+		CreatedAt:       &u.CreatedAt,
+		UpdatedAt:       &u.UpdatedAt,
 	}
 }
 
@@ -24,11 +26,12 @@ func toAPIUser(u *domain.User) User {
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
 	return Group{
-		ID:         &g.ID,
-		Name:       &g.Name,
-		Visibility: &v,
-		CreatedAt:  &g.CreatedAt,
-		UpdatedAt:  &g.UpdatedAt,
+		ID:              &g.ID,
+		Name:            &g.Name,
+		Visibility:      &v,
+		PriceMultiplier: &g.PriceMultiplier,
+		CreatedAt:       &g.CreatedAt,
+		UpdatedAt:       &g.UpdatedAt,
 	}
 }
 
@@ -73,6 +76,10 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		TotalTokens:         &l.TotalTokens,
 		CacheReadTokens:     &l.CacheReadTokens,
 		CacheCreationTokens: &l.CacheCreationTokens,
+		Cost:                &l.Cost,
+		BillingTier:         &l.BillingTier,
+		AboveHit:            &l.AboveHit,
+		Overdraft:           &l.Overdraft,
 		CreatedAt:           &l.CreatedAt,
 	}
 }
@@ -94,6 +101,7 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		TotalTokens:         &b.TotalTokens,
 		CacheReadTokens:     &b.CacheReadTokens,
 		CacheCreationTokens: &b.CacheCreationTokens,
+		Cost:                &b.Cost,
 		TotalLatencyMS:      &b.TotalLatencyMS,
 	}
 }

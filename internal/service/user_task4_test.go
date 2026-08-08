@@ -193,7 +193,7 @@ func TestCreateUserAdmin(t *testing.T) {
 	ctx := context.Background()
 
 	u, err := svc.CreateUser(ctx, "admin@example.com", "s3cret-pass",
-		domain.RolePlatformAdmin, domain.UserStatusActive, 4, 100)
+		domain.RolePlatformAdmin, domain.UserStatusActive, 4, 100, nil)
 	require.NoError(t, err)
 	require.Equal(t, domain.RolePlatformAdmin, u.Role)
 	require.Equal(t, 4, u.MaxConcurrency)
@@ -201,18 +201,18 @@ func TestCreateUserAdmin(t *testing.T) {
 	require.Greater(t, invalidated, 0, "创建用户必须 invalidate（Auth 状态快照）")
 
 	// email 重复 → 409
-	_, err = svc.CreateUser(ctx, "admin@example.com", "x", domain.RoleUser, domain.UserStatusActive, 0, 0)
+	_, err = svc.CreateUser(ctx, "admin@example.com", "x", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)
 	require.ErrorIs(t, err, ErrConflict)
 
 	// 非法输入
-	_, err = svc.CreateUser(ctx, "bad", "x", domain.RoleUser, domain.UserStatusActive, 0, 0)
+	_, err = svc.CreateUser(ctx, "bad", "x", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "", domain.RoleUser, domain.UserStatusActive, 0, 0)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.Role("bogus"), domain.UserStatusActive, 0, 0)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.Role("bogus"), domain.UserStatusActive, 0, 0, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatus("bogus"), 0, 0)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatus("bogus"), 0, 0, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatusActive, -1, 0)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatusActive, -1, 0, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
