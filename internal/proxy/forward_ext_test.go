@@ -214,7 +214,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil)
 }
 
 func TestProxyResponsesNonStreaming(t *testing.T) {

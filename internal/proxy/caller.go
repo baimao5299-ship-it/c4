@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
 )
@@ -80,17 +81,39 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
 	// model 一并在此提取（评审 I-2：不解析完整 params）：string 类型字段让
 	// 非字符串 model 在解码时报错 → 400；显式 null 与缺失等同（encoding/json
-	// 的 null → 零值语义）。与 gjson 顶层提取语义等价，但零额外分配（热路径
+	// 的 null → 零值语义）。service_tier（Phase 5 计费）同一次 unmarshal 提取，
+	// 零额外分配。与 gjson 顶层提取语义等价，但零额外分配（热路径
 	// alloc/op 硬标准：与现状 peek 单次 unmarshal 相同）。
 	var peek struct {
-		Stream bool   `json:"stream"`
-		Model  string `json:"model"`
+		Stream      bool   `json:"stream"`
+		Model       string `json:"model"`
+		ServiceTier string `json:"service_tier"`
 	}
 	if err := json.Unmarshal(body, &peek); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
 		return
 	}
 	reqModel := peek.Model
+	// service_tier 归一化 + 转发策略（计费启用才处理；auto/空/未知恒透传）：
+	// strip → 转发体删该字段；reject → 直接 400（记 ErrBilling，不转发）。
+	// 归一化 tier 先入 ctx（ctxKeyTier），剥离/拒绝路径计费读取照常。
+	if p.bill != nil {
+		tier := billing.NormalizeTier(peek.ServiceTier)
+		r = r.WithContext(context.WithValue(r.Context(), ctxKeyTier{}, tier))
+		if (tier == billing.TierPriority || tier == billing.TierFlex) && p.bill.TierPolicy != nil {
+			switch p.bill.TierPolicy(tier) {
+			case billing.TierPolicyStrip:
+				if body, err = stripServiceTier(body); err != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+					return
+				}
+			case billing.TierPolicyReject:
+				writeErr(w, errServiceTierRejected)
+				p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, nil, start)
+				return
+			}
+		}
+	}
 
 	sel, err := p.sched.Select(groupID, format, reqModel)
 	if err != nil {
@@ -108,6 +131,16 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
+		// 缺价预检（评审 I-1）：每轮 sel 更新后、Call 前查价——计费启用时模型
+		// 无价格 → 释放并发槽 + 402（不按 0 计价），零 DB（快照读）。
+		if p.bill != nil && p.bill.Prices != nil {
+			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
+				p.sched.Release(sel.AccountID)
+				p.record(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, nil, start)
+				writeErr(w, errNoPrice)
+				return
+			}
+		}
 		// 凭据每轮取（评审 I-3）：尾部 Select 后 Selection 变化，凭据随账号；
 		// 循环外取一次会把旧账号 key 发给新账号上游。
 		cred, err := p.credentialFor(r.Context(), sel)

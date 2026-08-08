@@ -95,15 +95,6 @@ func main() {
 		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
 		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
 	})
-	px := proxy.New(proxy.Config{
-		MaxBodySize:           cfg.Proxy.MaxBodySize,
-		MaxInflight:           cfg.Proxy.MaxInflight,
-		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
-		FailoverAttempts:      cfg.Proxy.FailoverAttempts,
-		GroupKeyRPM:           cfg.Limit.GroupKeyRPM,
-		UsageCapture:          cfg.Proxy.UsageCapture,
-	}, sched, credential.New(), rec, clients, auth, log)
-
 	// 管理端变更统一经 invalidate 回调生效：调度器重载快照（选号/状态）+
 	// aiclient 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；
 	// 评审发现：此前 Factory.InvalidateAll 无人调用，模板 base_url 更新后流量
@@ -119,6 +110,20 @@ func main() {
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
 	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
+	// Phase 5 计费钩子（T2 中间态：只含 Prices + TierPolicy；Balances/Flusher
+	// 在 T3 扩展）。Prices = svc 价格快照（零 DB）；TierPolicy = settings 快照
+	// 闭包（service_tier_policy_priority/flex）。
+	px := proxy.New(proxy.Config{
+		MaxBodySize:           cfg.Proxy.MaxBodySize,
+		MaxInflight:           cfg.Proxy.MaxInflight,
+		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
+		FailoverAttempts:      cfg.Proxy.FailoverAttempts,
+		GroupKeyRPM:           cfg.Limit.GroupKeyRPM,
+		UsageCapture:          cfg.Proxy.UsageCapture,
+	}, sched, credential.New(), rec, clients, auth, log, &proxy.BillingHooks{
+		Prices:     svc,
+		TierPolicy: svc.ServiceTierPolicy,
+	})
 	// litellm 价格同步 worker：启动异步拉取一次（不阻塞启动）+ price_sync_cron
 	// 定期循环；source_url/cron 每轮从 svc 的 settings 快照现读（变更下次循环
 	// 生效，无热加载通道）；同步成功后刷新 svc 价格快照（Phase 5 计费读零 DB）。

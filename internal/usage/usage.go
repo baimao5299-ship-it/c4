@@ -88,8 +88,15 @@ func (r *Recorder) Start(ctx context.Context) error {
 // 常时非阻塞；channel 饱和时阻塞反压（用户决策 2026-08-05：不得丢数据），
 // 反压传导至请求路径，由 HTTP 层过载保护（max_inflight，规格 §10.6）兜底。
 func (r *Recorder) Record(l *domain.UsageLog) {
-	r.aggregate(l)
+	r.Aggregate(l)
 	r.logCh <- l
+}
+
+// Aggregate 同步聚合统计（请求数/错误/tokens/cost 进 StatBucket，不入明细
+// channel）——T3 计费 Flusher 复用同一聚合（billed 请求只经 Flusher 不落本
+// 明细 channel；每日志恰好一个写者）。与 Record 等价，仅跳过明细投递。
+func (r *Recorder) Aggregate(l *domain.UsageLog) {
+	r.aggregate(l)
 }
 
 // Pending 返回尚未落库的明细条数（测试与背压观测用）。
@@ -122,6 +129,7 @@ func (r *Recorder) aggregate(l *domain.UsageLog) {
 	c.bucket.TotalTokens += l.TotalTokens
 	c.bucket.CacheReadTokens += l.CacheReadTokens
 	c.bucket.CacheCreationTokens += l.CacheCreationTokens
+	c.bucket.Cost += l.Cost
 	c.bucket.TotalLatencyMS += l.LatencyMS
 }
 
@@ -214,6 +222,7 @@ func (r *Recorder) flushStats() {
 				c.bucket.TotalTokens += b.TotalTokens
 				c.bucket.CacheReadTokens += b.CacheReadTokens
 				c.bucket.CacheCreationTokens += b.CacheCreationTokens
+				c.bucket.Cost += b.Cost
 				c.bucket.TotalLatencyMS += b.TotalLatencyMS
 			} else {
 				r.counters[key] = &statCounters{bucket: *b}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/repository"
@@ -78,6 +79,25 @@ func (s *Service) GetPrice(model string) (*domain.Pricing, error) {
 		}
 	}
 	return nil, fmt.Errorf("%w: model=%q（无价格数据：请管理端设价或等待 litellm 同步）", ErrNotFound, model)
+}
+
+// ServiceTierPolicy 读取 service_tier 转发策略（settings 快照，零 DB；
+// BillingHooks.TierPolicy 实现，main 装配）：priority/flex 分别按
+// service_tier_policy_priority / service_tier_policy_flex 取值；缺失/未知值 →
+// passthrough 默认（auto/空恒透传在 proxy 侧短路，不查策略）。
+func (s *Service) ServiceTierPolicy(tier billing.Tier) billing.TierPolicyMode {
+	key := "service_tier_policy_priority"
+	if tier == billing.TierFlex {
+		key = "service_tier_policy_flex"
+	}
+	switch s.settingValue(key) {
+	case "strip":
+		return billing.TierPolicyStrip
+	case "reject":
+		return billing.TierPolicyReject
+	default:
+		return billing.TierPolicyPassthrough
+	}
 }
 
 // UpsertManualPricing 手动设价（管理端 PUT /admin/pricing/{model}）：校验 + 落库

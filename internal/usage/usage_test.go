@@ -96,9 +96,9 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	require.NoError(t, r.Start(ctx))
 
 	now := time.Now().Truncate(time.Hour)
-	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, LatencyMS: 5, CacheReadTokens: 4, CacheCreationTokens: 2, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, LatencyMS: 5, CacheReadTokens: 4, CacheCreationTokens: 2, Cost: 100, CreatedAt: now})
 	r.Record(&domain.UsageLog{RequestID: "b", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 7, CreatedAt: now})
-	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, LatencyMS: 9, CacheReadTokens: 6, CacheCreationTokens: 3, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, LatencyMS: 9, CacheReadTokens: 6, CacheCreationTokens: 3, Cost: 50, CreatedAt: now})
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -126,6 +126,7 @@ func TestRecorderAggregatesStats(t *testing.T) {
 	require.Equal(t, int64(40), okB.TotalTokens)
 	require.Equal(t, int64(10), okB.CacheReadTokens, "cache read SUM 进聚合桶")
 	require.Equal(t, int64(5), okB.CacheCreationTokens, "cache creation SUM 进聚合桶")
+	require.Equal(t, int64(150), okB.Cost, "cost SUM 进聚合桶（100+50）")
 	require.NotNil(t, errB)
 	require.Equal(t, int64(1), errB.RequestCount)
 	require.Equal(t, int64(1), errB.ErrorCount)
@@ -156,8 +157,8 @@ func TestFlushStatsRefeedsCacheTokens(t *testing.T) {
 	r := New(UsageConfig{BatchSize: 10}, ls, ss, nil)
 
 	now := time.Now().Truncate(time.Hour)
-	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CacheReadTokens: 4, CacheCreationTokens: 2, CreatedAt: now})
-	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, CacheReadTokens: 6, CacheCreationTokens: 3, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CacheReadTokens: 4, CacheCreationTokens: 2, Cost: 5, CreatedAt: now})
+	r.Record(&domain.UsageLog{RequestID: "c", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 30, CacheReadTokens: 6, CacheCreationTokens: 3, Cost: 15, CreatedAt: now})
 
 	// 第一次 flush 失败 → 计数回灌
 	ss.fail = true
@@ -170,7 +171,25 @@ func TestFlushStatsRefeedsCacheTokens(t *testing.T) {
 	require.Len(t, ss.buckets, 1)
 	require.Equal(t, int64(10), ss.buckets[0].CacheReadTokens, "回灌后 cache read 不丢")
 	require.Equal(t, int64(5), ss.buckets[0].CacheCreationTokens, "回灌后 cache creation 不丢")
+	require.Equal(t, int64(20), ss.buckets[0].Cost, "回灌后 cost 不丢")
 	require.Equal(t, int64(2), ss.buckets[0].RequestCount)
+}
+
+// TestAggregateSkipsLogChannel Aggregate 只聚合统计（含 cost 进 StatBucket），
+// 不入明细 channel——T3 计费 Flusher 复用同一聚合（每日志恰好一个写者）。
+func TestAggregateSkipsLogChannel(t *testing.T) {
+	ls := &memLogStore{}
+	ss := &memStatStore{}
+	r := New(testCfg(), ls, ss, nil)
+	now := time.Now().Truncate(time.Hour)
+	r.Aggregate(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, Cost: 123, CreatedAt: now})
+	require.Zero(t, r.Pending(), "Aggregate 不得入明细 channel")
+	r.flushStats()
+	require.Len(t, ss.buckets, 1)
+	require.Equal(t, int64(1), ss.buckets[0].RequestCount)
+	require.Equal(t, int64(10), ss.buckets[0].TotalTokens)
+	require.Equal(t, int64(123), ss.buckets[0].Cost, "cost 进 StatBucket")
+	require.Empty(t, ls.logs, "Aggregate 不落明细")
 }
 
 func TestRecordBackpressureWhenFull(t *testing.T) {
