@@ -389,6 +389,10 @@ func (r *Repository) ListCodeUses(ctx context.Context, codeID int64, q ListQuery
 	return r.Redemptions.ListCodeUses(ctx, codeID, q)
 }
 
+func (r *Repository) ListUsesByUser(ctx context.Context, userID int64, q ListQuery) ([]*domain.RedemptionRecord, int64, error) {
+	return r.Redemptions.ListUsesByUser(ctx, userID, q)
+}
+
 func (r *Repository) GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error) {
 	return r.Redemptions.GetUse(ctx, codeID, userID)
 }

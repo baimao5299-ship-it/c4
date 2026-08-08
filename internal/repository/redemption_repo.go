@@ -24,6 +24,8 @@ type RedemptionRepo struct {
 
 // CreateCodes 批量插入兑换码（单条 INSERT 多 VALUES；全字段 Set，含 status/used_count，
 // 无默认值依赖）；code 唯一冲突 → ErrConflict（service 层重试换码，N=5）。
+// Save 返回落库行：把 DB 分配的 id/时间戳回填到入参（响应 {codes: [...]} 需
+// 完整可用——Task 3 评审发现 Exec 丢弃结果行导致响应 id=0）。
 func (r *RedemptionRepo) CreateCodes(ctx context.Context, codes []*domain.RedemptionCode) error {
 	if len(codes) == 0 {
 		return nil
@@ -42,11 +44,17 @@ func (r *RedemptionRepo) CreateCodes(ctx context.Context, codes []*domain.Redemp
 			SetStatus(redemptioncode.Status(c.Status)).
 			SetCreatedBy(c.CreatedBy))
 	}
-	if err := r.client.RedemptionCode.CreateBulk(builders...).Exec(ctx); err != nil {
+	created, err := r.client.RedemptionCode.CreateBulk(builders...).Save(ctx)
+	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", ErrConflict)
 		}
 		return err
+	}
+	for i, row := range created {
+		codes[i].ID = row.ID
+		codes[i].CreatedAt = row.CreatedAt
+		codes[i].UpdatedAt = row.UpdatedAt
 	}
 	return nil
 }
@@ -133,6 +141,42 @@ func (r *RedemptionRepo) ListCodeUses(ctx context.Context, codeID int64, q ListQ
 	out := make([]*domain.RedemptionUse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toDomainRedemptionUse(row))
+	}
+	return out, int64(total), nil
+}
+
+// ListUsesByUser 某用户的兑换记录（/user/redemptions）：use + 码联查
+// （WithCode 边，Required 恒非空；码的 type/remark 随记录返回），分页/排序
+// （sort 白名单）。
+func (r *RedemptionRepo) ListUsesByUser(ctx context.Context, userID int64, q ListQuery) ([]*domain.RedemptionRecord, int64, error) {
+	pred := r.client.RedemptionUse.Query().Where(redemptionuse.UserID(userID))
+	total, err := pred.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	order, err := q.sortOrder(redemptionUseSortFields)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	rows, err := pred.WithCode().Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]*domain.RedemptionRecord, 0, len(rows))
+	for _, row := range rows {
+		rec := toDomainRedemptionRecord(row)
+		if code := row.Edges.Code; code != nil { // Required 边恒非空，防御性判空
+			rec.Code = code.Code
+			rec.CodeType = domain.RedemptionType(code.Type)
+			rec.Remark = code.Remark
+		}
+		out = append(out, rec)
 	}
 	return out, int64(total), nil
 }
@@ -233,6 +277,14 @@ func toDomainRedemptionCode(c *ent.RedemptionCode) *domain.RedemptionCode {
 func toDomainRedemptionUse(u *ent.RedemptionUse) *domain.RedemptionUse {
 	return &domain.RedemptionUse{
 		ID: u.ID, CodeID: u.CodeID, UserID: u.UserID, Value: u.Value,
+		ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+	}
+}
+
+// toDomainRedemptionRecord use 行 → 记录视图（码字段由调用方经 WithCode 边填充）。
+func toDomainRedemptionRecord(u *ent.RedemptionUse) *domain.RedemptionRecord {
+	return &domain.RedemptionRecord{
+		ID: u.ID, CodeID: u.CodeID, Value: u.Value,
 		ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
 	}
 }

@@ -202,6 +202,52 @@ func TestAdminAuthTokenOrPlatformJWT(t *testing.T) {
 	}
 }
 
+// 中间件注入（决策 5）：JWT 鉴权路径把 claims.UserID 写入 context（兑换码
+// created_by 用）；静态 admin token 路径不注入（handler 读到 0 = 系统）。
+func TestAdminUserIDContextInjection(t *testing.T) {
+	iss := auth.NewIssuer("secret")
+	tok, err := iss.Issue(7, "admin@example.com", string(domain.RolePlatformAdmin))
+	require.NoError(t, err)
+	var gotID int64
+	var gotOK bool
+	admin := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotID, gotOK = UserIDFromContext(r.Context())
+		w.WriteHeader(200)
+	})
+
+	for _, tc := range []struct {
+		name, auth string
+		wantOK     bool
+		wantID     int64
+	}{
+		{"platform_admin JWT 注入 UserID", "Bearer " + tok, true, 7},
+		{"静态 admin token 不注入", "Bearer tok", false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewServer(Options{AdminToken: "tok", JWTIssuer: iss, UserStatus: fakeUserStatus{}, AdminHandler: admin})
+			req := httptest.NewRequest(http.MethodGet, "/admin/groups", nil)
+			req.Header.Set("Authorization", tc.auth)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			require.Equal(t, 200, rec.Code)
+			require.Equal(t, tc.wantOK, gotOK, "context 注入标记")
+			require.Equal(t, tc.wantID, gotID, "UserID 值")
+		})
+	}
+
+	// 无 UserStatus provider（UserStatus=nil）的 JWT 路径同样注入。
+	t.Run("UserStatus nil 仍注入", func(t *testing.T) {
+		s := NewServer(Options{AdminToken: "tok", JWTIssuer: iss, AdminHandler: admin})
+		req := httptest.NewRequest(http.MethodGet, "/admin/groups", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		require.Equal(t, 200, rec.Code)
+		require.True(t, gotOK)
+		require.Equal(t, int64(7), gotID)
+	})
+}
+
 // 禁用 platform_admin 的 JWT → /admin 401（快照校验，不用 DB 直查）。
 func TestAdminPlatformJWTPartialAdmin(t *testing.T) {
 	iss := auth.NewIssuer("secret")

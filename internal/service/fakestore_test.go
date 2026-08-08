@@ -898,9 +898,9 @@ func (t *fakeTx) CreateCodes(ctx context.Context, codes []*domain.RedemptionCode
 				return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", repository.ErrConflict)
 			}
 		}
-		cc := *c
-		cc.ID = t.nextID
+		c.ID = t.nextID // 回填 id（响应 {codes: [...]} 需完整可用）
 		t.nextID++
+		cc := *c
 		t.codes[cc.ID] = &cc
 	}
 	return nil
@@ -992,9 +992,9 @@ func (f *fakeStore) CreateCodes(ctx context.Context, codes []*domain.RedemptionC
 				return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", repository.ErrConflict)
 			}
 		}
-		cc := *c
-		cc.ID = f.nextID
+		c.ID = f.nextID // 回填 id（响应 {codes: [...]} 需完整可用）
 		f.nextID++
+		cc := *c
 		f.codes[cc.ID] = &cc
 	}
 	return nil
@@ -1050,6 +1050,30 @@ func (f *fakeStore) ListCodeUses(ctx context.Context, codeID int64, q repository
 		}
 		c := *u
 		out = append(out, &c)
+	}
+	return out, int64(len(out)), nil
+}
+
+// ListUsesByUser 某用户的兑换记录（/user/redemptions）：use + 码联查（码的
+// type/remark 随记录返回，对齐真实 repo 的 WithCode 边）。
+func (f *fakeStore) ListUsesByUser(ctx context.Context, userID int64, q repository.ListQuery) ([]*domain.RedemptionRecord, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.RedemptionRecord
+	for _, u := range f.uses {
+		if u.UserID != userID {
+			continue
+		}
+		rec := &domain.RedemptionRecord{
+			ID: u.ID, CodeID: u.CodeID, Value: u.Value,
+			ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+		}
+		if code, ok := f.codes[u.CodeID]; ok {
+			rec.Code = code.Code
+			rec.CodeType = code.Type
+			rec.Remark = code.Remark
+		}
+		out = append(out, rec)
 	}
 	return out, int64(len(out)), nil
 }

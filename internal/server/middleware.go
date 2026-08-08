@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync/atomic"
@@ -10,6 +11,17 @@ import (
 
 	"go-proxy-mini/pkg/logx"
 )
+
+// adminUserIDKey /admin 认证中间件写入的 platform_admin 用户 id（created_by 用，
+// 决策 5：0 = 系统）。静态 admin token 路径不写入（handler 读到 0）。
+type adminUserIDKey struct{}
+
+// UserIDFromContext 取 /admin JWT 鉴权路径注入的用户 id（兑换码生成 created_by
+// 用）；静态 admin token 路径未注入 → (0, false)。
+func UserIDFromContext(ctx context.Context) (int64, bool) {
+	id, ok := ctx.Value(adminUserIDKey{}).(int64)
+	return id, ok
+}
 
 type inflightCounter struct{ v atomic.Int64 }
 

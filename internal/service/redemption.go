@@ -147,6 +147,16 @@ func (s *Service) GetCodeUses(ctx context.Context, codeID int64) ([]*domain.Rede
 	return s.store.ListCodeUses(ctx, codeID, repository.ListQuery{})
 }
 
+// ListMyRedemptions 我的兑换记录（/user/redemptions）：use 快照 + 码的 type/remark
+// 联查；userID 由 handler 从 JWT 取（强制本人数据，防越权）。sort/order 白名单
+// 校验（非法 → 400）。
+func (s *Service) ListMyRedemptions(ctx context.Context, userID int64, q repository.ListQuery) ([]*domain.RedemptionRecord, int64, error) {
+	if err := validateListQuery(q, listSortFields["redemption_uses"]); err != nil {
+		return nil, 0, err
+	}
+	return s.store.ListUsesByUser(ctx, userID, q)
+}
+
 // DeactivateCode 单码失效（/admin/redemption-codes/{id}/deactivate）：
 // 不存在 → 404 含详情；已 disabled → no-op 成功（幂等重放友好，决策 6）。
 func (s *Service) DeactivateCode(ctx context.Context, id int64) error {

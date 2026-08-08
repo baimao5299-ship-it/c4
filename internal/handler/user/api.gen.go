@@ -36,6 +36,13 @@ const (
 	KeyStatusDisabled KeyStatus = "disabled"
 )
 
+// Defines values for RedemptionType.
+const (
+	Balance     RedemptionType = "balance"
+	Concurrency RedemptionType = "concurrency"
+	TempBalance RedemptionType = "temp_balance"
+)
+
 // Defines values for RequestFormat.
 const (
 	Anthropic       RequestFormat = "anthropic"
@@ -57,8 +64,14 @@ const (
 
 // Defines values for GetUserKeysParamsOrder.
 const (
-	Asc  GetUserKeysParamsOrder = "asc"
-	Desc GetUserKeysParamsOrder = "desc"
+	GetUserKeysParamsOrderAsc  GetUserKeysParamsOrder = "asc"
+	GetUserKeysParamsOrderDesc GetUserKeysParamsOrder = "desc"
+)
+
+// Defines values for GetUserRedemptionsParamsOrder.
+const (
+	GetUserRedemptionsParamsOrderAsc  GetUserRedemptionsParamsOrder = "asc"
+	GetUserRedemptionsParamsOrderDesc GetUserRedemptionsParamsOrder = "desc"
 )
 
 // Defines values for GetUserStatsParamsGranularity.
@@ -167,6 +180,41 @@ type LogsResponse struct {
 	Rows  []UsageLog `json:"rows"`
 	Total int64      `json:"total"`
 }
+
+// RedeemRequest defines model for RedeemRequest.
+type RedeemRequest struct {
+	Code string `json:"code"`
+}
+
+// RedeemResponse defines model for RedeemResponse.
+type RedeemResponse struct {
+	Applied struct {
+		ResourceExpiresAt *time.Time     `json:"resource_expires_at"`
+		Type              RedemptionType `json:"type"`
+		Value             int64          `json:"value"`
+	} `json:"applied"`
+}
+
+// RedemptionRecord defines model for RedemptionRecord.
+type RedemptionRecord struct {
+	Code              string         `json:"Code"`
+	CodeID            int64          `json:"CodeID"`
+	CodeType          RedemptionType `json:"CodeType"`
+	CreatedAt         time.Time      `json:"CreatedAt"`
+	ID                int64          `json:"ID"`
+	Remark            *string        `json:"Remark"`
+	ResourceExpiresAt *time.Time     `json:"ResourceExpiresAt"`
+	Value             int64          `json:"Value"`
+}
+
+// RedemptionRecordListResponse defines model for RedemptionRecordListResponse.
+type RedemptionRecordListResponse struct {
+	Rows  []RedemptionRecord `json:"rows"`
+	Total int64              `json:"total"`
+}
+
+// RedemptionType defines model for RedemptionType.
+type RedemptionType string
 
 // RequestFormat defines model for RequestFormat.
 type RequestFormat string
@@ -283,6 +331,17 @@ type GetUserLogsParams struct {
 	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// GetUserRedemptionsParams defines parameters for GetUserRedemptions.
+type GetUserRedemptionsParams struct {
+	Page     *int                           `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                           `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Sort     *string                        `form:"sort,omitempty" json:"sort,omitempty"`
+	Order    *GetUserRedemptionsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetUserRedemptionsParamsOrder defines parameters for GetUserRedemptions.
+type GetUserRedemptionsParamsOrder string
+
 // GetUserStatsParams defines parameters for GetUserStats.
 type GetUserStatsParams struct {
 	From        *time.Time                     `form:"from,omitempty" json:"from,omitempty"`
@@ -307,6 +366,9 @@ type PostUserKeysJSONRequestBody = KeyCreate
 
 // PutUserKeysIdJSONRequestBody defines body for PutUserKeysId for application/json ContentType.
 type PutUserKeysIdJSONRequestBody = KeyUpdate
+
+// PostUserRedemptionsJSONRequestBody defines body for PostUserRedemptions for application/json ContentType.
+type PostUserRedemptionsJSONRequestBody = RedeemRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -343,6 +405,12 @@ type ServerInterface interface {
 	// 我的用量日志（强制 user_id = 当前用户，防越权）
 	// (GET /user/logs)
 	GetUserLogs(w http.ResponseWriter, r *http.Request, params GetUserLogsParams)
+	// 我的兑换记录（use 快照 + 码的 type/remark 联查；强制 user_id = 当前用户，防越权）
+	// (GET /user/redemptions)
+	GetUserRedemptions(w http.ResponseWriter, r *http.Request, params GetUserRedemptionsParams)
+	// 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换）
+	// (POST /user/redemptions)
+	PostUserRedemptions(w http.ResponseWriter, r *http.Request)
 	// 我的用量统计（强制 user_id = 当前用户）
 	// (GET /user/stats)
 	GetUserStats(w http.ResponseWriter, r *http.Request, params GetUserStatsParams)
@@ -415,6 +483,18 @@ func (_ Unimplemented) PostUserKeysIdRotate(w http.ResponseWriter, r *http.Reque
 // 我的用量日志（强制 user_id = 当前用户，防越权）
 // (GET /user/logs)
 func (_ Unimplemented) GetUserLogs(w http.ResponseWriter, r *http.Request, params GetUserLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 我的兑换记录（use 快照 + 码的 type/remark 联查；强制 user_id = 当前用户，防越权）
+// (GET /user/redemptions)
+func (_ Unimplemented) GetUserRedemptions(w http.ResponseWriter, r *http.Request, params GetUserRedemptionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换）
+// (POST /user/redemptions)
+func (_ Unimplemented) PostUserRedemptions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -753,6 +833,71 @@ func (siw *ServerInterfaceWrapper) GetUserLogs(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetUserRedemptions operation middleware
+func (siw *ServerInterfaceWrapper) GetUserRedemptions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUserRedemptionsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserRedemptions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostUserRedemptions operation middleware
+func (siw *ServerInterfaceWrapper) PostUserRedemptions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUserRedemptions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserStats operation middleware
 func (siw *ServerInterfaceWrapper) GetUserStats(w http.ResponseWriter, r *http.Request) {
 
@@ -965,6 +1110,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/user/logs", wrapper.GetUserLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/redemptions", wrapper.GetUserRedemptions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/user/redemptions", wrapper.PostUserRedemptions)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/user/stats", wrapper.GetUserStats)

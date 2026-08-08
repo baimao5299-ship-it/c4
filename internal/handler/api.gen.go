@@ -46,6 +46,19 @@ const (
 	Public  GroupVisibility = "public"
 )
 
+// Defines values for RedemptionStatus.
+const (
+	RedemptionStatusActive   RedemptionStatus = "active"
+	RedemptionStatusDisabled RedemptionStatus = "disabled"
+)
+
+// Defines values for RedemptionType.
+const (
+	RedemptionTypeBalance     RedemptionType = "balance"
+	RedemptionTypeConcurrency RedemptionType = "concurrency"
+	RedemptionTypeTempBalance RedemptionType = "temp_balance"
+)
+
 // Defines values for RequestFormat.
 const (
 	RequestFormatAnthropic       RequestFormat = "anthropic"
@@ -94,8 +107,8 @@ const (
 
 // Defines values for UserStatus.
 const (
-	Active   UserStatus = "active"
-	Disabled UserStatus = "disabled"
+	UserStatusActive   UserStatus = "active"
+	UserStatusDisabled UserStatus = "disabled"
 )
 
 // Defines values for GetAccountsParamsOrder.
@@ -108,6 +121,25 @@ const (
 const (
 	GetGroupsParamsOrderAsc  GetGroupsParamsOrder = "asc"
 	GetGroupsParamsOrderDesc GetGroupsParamsOrder = "desc"
+)
+
+// Defines values for GetRedemptionCodesParamsType.
+const (
+	GetRedemptionCodesParamsTypeBalance     GetRedemptionCodesParamsType = "balance"
+	GetRedemptionCodesParamsTypeConcurrency GetRedemptionCodesParamsType = "concurrency"
+	GetRedemptionCodesParamsTypeTempBalance GetRedemptionCodesParamsType = "temp_balance"
+)
+
+// Defines values for GetRedemptionCodesParamsStatus.
+const (
+	Active   GetRedemptionCodesParamsStatus = "active"
+	Disabled GetRedemptionCodesParamsStatus = "disabled"
+)
+
+// Defines values for GetRedemptionCodesParamsOrder.
+const (
+	GetRedemptionCodesParamsOrderAsc  GetRedemptionCodesParamsOrder = "asc"
+	GetRedemptionCodesParamsOrderDesc GetRedemptionCodesParamsOrder = "desc"
 )
 
 // Defines values for GetStatsParamsGranularity.
@@ -124,8 +156,8 @@ const (
 
 // Defines values for GetUsersParamsOrder.
 const (
-	GetUsersParamsOrderAsc  GetUsersParamsOrder = "asc"
-	GetUsersParamsOrderDesc GetUsersParamsOrder = "desc"
+	Asc  GetUsersParamsOrder = "asc"
+	Desc GetUsersParamsOrder = "desc"
 )
 
 // Account defines model for Account.
@@ -204,6 +236,17 @@ type AccountView struct {
 	ErrRate        *float64       `json:"err_rate,omitempty"`
 }
 
+// BatchDeactivateRequest defines model for BatchDeactivateRequest.
+type BatchDeactivateRequest struct {
+	Ids []int64 `json:"ids"`
+}
+
+// BatchDeactivateResponse defines model for BatchDeactivateResponse.
+type BatchDeactivateResponse struct {
+	// Deactivated 新失效数（已 disabled no-op 不计）
+	Deactivated int `json:"deactivated"`
+}
+
 // BatchDeleteBody defines model for BatchDeleteBody.
 type BatchDeleteBody struct {
 	Ids []int64 `json:"ids"`
@@ -237,6 +280,14 @@ type BatchUpdateTemplatesBody struct {
 	Ids    []int64       `json:"ids"`
 }
 
+// DeactivateRequest 单码失效无请求体（保留空 schema 对齐批量端点命名）
+type DeactivateRequest = map[string]interface{}
+
+// DeactivateResponse defines model for DeactivateResponse.
+type DeactivateResponse struct {
+	Deactivated bool `json:"deactivated"`
+}
+
 // DeletedResponse defines model for DeletedResponse.
 type DeletedResponse struct {
 	Deleted bool `json:"deleted"`
@@ -249,6 +300,31 @@ type ErrorResponse struct {
 
 // ErrorType defines model for ErrorType.
 type ErrorType string
+
+// GenerateRequest defines model for GenerateRequest.
+type GenerateRequest struct {
+	// Count 生成个数 1-1000（缺省 1）
+	Count *int `json:"count,omitempty"`
+
+	// ExpiresAt 码未兑换即过期；缺省 = 永久
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// MaxUses 1 = 单次码（缺省）；>1 = 多人码
+	MaxUses *int    `json:"max_uses,omitempty"`
+	Remark  *string `json:"remark,omitempty"`
+
+	// ResourceExpiresAt 兑换后资源到期；temp_balance 必填（决策 4）
+	ResourceExpiresAt *time.Time     `json:"resource_expires_at,omitempty"`
+	Type              RedemptionType `json:"type"`
+
+	// Value 最小单位（分/并发数）；> 0
+	Value int64 `json:"value"`
+}
+
+// GenerateResponse defines model for GenerateResponse.
+type GenerateResponse struct {
+	Codes []RedemptionCode `json:"codes"`
+}
 
 // Group defines model for Group.
 type Group struct {
@@ -295,6 +371,66 @@ type GroupVisibility string
 type LogsResponse struct {
 	Rows  []UsageLog `json:"rows"`
 	Total int64      `json:"total"`
+}
+
+// RedemptionCode defines model for RedemptionCode.
+type RedemptionCode struct {
+	// Code XXXXXX-XXXXXX（生成后不可编辑，仅可失效）
+	Code      string    `json:"Code"`
+	CreatedAt time.Time `json:"CreatedAt"`
+
+	// CreatedBy 0 = 系统（静态 admin token）；>0 = platform_admin 用户 id
+	CreatedBy int64 `json:"CreatedBy"`
+
+	// ExpiresAt 码未兑换即过期；null = 永久
+	ExpiresAt *time.Time `json:"ExpiresAt"`
+	ID        int64      `json:"ID"`
+
+	// MaxUses 1 = 单次码；>1 = 多人码
+	MaxUses int     `json:"MaxUses"`
+	Remark  *string `json:"Remark"`
+
+	// ResourceExpiresAt 兑换后资源到期；temp_balance 必有，其余恒 null
+	ResourceExpiresAt *time.Time       `json:"ResourceExpiresAt"`
+	Status            RedemptionStatus `json:"Status"`
+	Type              RedemptionType   `json:"Type"`
+	UpdatedAt         time.Time        `json:"UpdatedAt"`
+
+	// UsedCount 已兑换次数
+	UsedCount int `json:"UsedCount"`
+
+	// Value 最小单位（分/并发数）
+	Value int64 `json:"Value"`
+}
+
+// RedemptionCodeListResponse defines model for RedemptionCodeListResponse.
+type RedemptionCodeListResponse struct {
+	Rows  []RedemptionCode `json:"rows"`
+	Total int64            `json:"total"`
+}
+
+// RedemptionStatus defines model for RedemptionStatus.
+type RedemptionStatus string
+
+// RedemptionType defines model for RedemptionType.
+type RedemptionType string
+
+// RedemptionUse defines model for RedemptionUse.
+type RedemptionUse struct {
+	CodeID            int64      `json:"CodeID"`
+	CreatedAt         time.Time  `json:"CreatedAt"`
+	ID                int64      `json:"ID"`
+	ResourceExpiresAt *time.Time `json:"ResourceExpiresAt"`
+	UserID            int64      `json:"UserID"`
+
+	// Value 兑换时的值快照
+	Value int64 `json:"Value"`
+}
+
+// RedemptionUseListResponse defines model for RedemptionUseListResponse.
+type RedemptionUseListResponse struct {
+	Rows  []RedemptionUse `json:"rows"`
+	Total int64           `json:"total"`
 }
 
 // RequestFormat defines model for RequestFormat.
@@ -542,6 +678,25 @@ type GetLogsParams struct {
 	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// GetRedemptionCodesParams defines parameters for GetRedemptionCodes.
+type GetRedemptionCodesParams struct {
+	Page     *int                            `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                            `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Type     *GetRedemptionCodesParamsType   `form:"type,omitempty" json:"type,omitempty"`
+	Status   *GetRedemptionCodesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Sort     *string                         `form:"sort,omitempty" json:"sort,omitempty"`
+	Order    *GetRedemptionCodesParamsOrder  `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetRedemptionCodesParamsType defines parameters for GetRedemptionCodes.
+type GetRedemptionCodesParamsType string
+
+// GetRedemptionCodesParamsStatus defines parameters for GetRedemptionCodes.
+type GetRedemptionCodesParamsStatus string
+
+// GetRedemptionCodesParamsOrder defines parameters for GetRedemptionCodes.
+type GetRedemptionCodesParamsOrder string
+
 // ListRulesParams defines parameters for ListRules.
 type ListRulesParams struct {
 	Enabled *bool `form:"enabled,omitempty" json:"enabled,omitempty"`
@@ -611,6 +766,15 @@ type PutGroupsIdJSONRequestBody = GroupCreate
 
 // PutGroupsIdAssignmentsJSONRequestBody defines body for PutGroupsIdAssignments for application/json ContentType.
 type PutGroupsIdAssignmentsJSONRequestBody = GroupAssignmentsBody
+
+// PostRedemptionCodesJSONRequestBody defines body for PostRedemptionCodes for application/json ContentType.
+type PostRedemptionCodesJSONRequestBody = GenerateRequest
+
+// PostRedemptionCodesBatchDeactivateJSONRequestBody defines body for PostRedemptionCodesBatchDeactivate for application/json ContentType.
+type PostRedemptionCodesBatchDeactivateJSONRequestBody = BatchDeactivateRequest
+
+// PostRedemptionCodesIdDeactivateJSONRequestBody defines body for PostRedemptionCodesIdDeactivate for application/json ContentType.
+type PostRedemptionCodesIdDeactivateJSONRequestBody = DeactivateRequest
 
 // CreateRuleJSONRequestBody defines body for CreateRule for application/json ContentType.
 type CreateRuleJSONRequestBody = RuleCreate
@@ -695,6 +859,21 @@ type ServerInterface interface {
 	// 用量日志分页查询
 	// (GET /logs)
 	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
+	// 兑换码列表（增强分页范式 page/page_size；type/status 筛选；sort 白名单）
+	// (GET /redemption-codes)
+	GetRedemptionCodes(w http.ResponseWriter, r *http.Request, params GetRedemptionCodesParams)
+	// 生成兑换码（1..count 个；count 默认 1，上限 1000；type 枚举/value>0/temp_balance 必填 resource_expires_at）
+	// (POST /redemption-codes)
+	PostRedemptionCodes(w http.ResponseWriter, r *http.Request)
+	// 批量失效兑换码（单事务；已失效 no-op；缺失 id → 404 含缺失详情）
+	// (POST /redemption-codes/batch-deactivate)
+	PostRedemptionCodesBatchDeactivate(w http.ResponseWriter, r *http.Request)
+	// 单码失效（已失效 no-op；缺失 → 404）
+	// (POST /redemption-codes/{id}/deactivate)
+	PostRedemptionCodesIdDeactivate(w http.ResponseWriter, r *http.Request, id int64)
+	// 某码的兑换记录（审计；码缺失 → 404）
+	// (GET /redemption-codes/{id}/uses)
+	GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Request, id int64)
 	// 规则列表（enabled 过滤，priority 升序）
 	// (GET /rules)
 	ListRules(w http.ResponseWriter, r *http.Request, params ListRulesParams)
@@ -848,6 +1027,36 @@ func (_ Unimplemented) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Req
 // 用量日志分页查询
 // (GET /logs)
 func (_ Unimplemented) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 兑换码列表（增强分页范式 page/page_size；type/status 筛选；sort 白名单）
+// (GET /redemption-codes)
+func (_ Unimplemented) GetRedemptionCodes(w http.ResponseWriter, r *http.Request, params GetRedemptionCodesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 生成兑换码（1..count 个；count 默认 1，上限 1000；type 枚举/value>0/temp_balance 必填 resource_expires_at）
+// (POST /redemption-codes)
+func (_ Unimplemented) PostRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 批量失效兑换码（单事务；已失效 no-op；缺失 id → 404 含缺失详情）
+// (POST /redemption-codes/batch-deactivate)
+func (_ Unimplemented) PostRedemptionCodesBatchDeactivate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 单码失效（已失效 no-op；缺失 → 404）
+// (POST /redemption-codes/{id}/deactivate)
+func (_ Unimplemented) PostRedemptionCodesIdDeactivate(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 某码的兑换记录（审计；码缺失 → 404）
+// (GET /redemption-codes/{id}/uses)
+func (_ Unimplemented) GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1473,6 +1682,151 @@ func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetLogs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRedemptionCodes operation middleware
+func (siw *ServerInterfaceWrapper) GetRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRedemptionCodesParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "type", r.URL.Query(), &params.Type)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "type", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status", r.URL.Query(), &params.Status)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRedemptionCodes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostRedemptionCodes operation middleware
+func (siw *ServerInterfaceWrapper) PostRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostRedemptionCodes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostRedemptionCodesBatchDeactivate operation middleware
+func (siw *ServerInterfaceWrapper) PostRedemptionCodesBatchDeactivate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostRedemptionCodesBatchDeactivate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostRedemptionCodesIdDeactivate operation middleware
+func (siw *ServerInterfaceWrapper) PostRedemptionCodesIdDeactivate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostRedemptionCodesIdDeactivate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRedemptionCodesIdUses operation middleware
+func (siw *ServerInterfaceWrapper) GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRedemptionCodesIdUses(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2127,6 +2481,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/redemption-codes", wrapper.GetRedemptionCodes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/redemption-codes", wrapper.PostRedemptionCodes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/redemption-codes/batch-deactivate", wrapper.PostRedemptionCodesBatchDeactivate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/redemption-codes/{id}/deactivate", wrapper.PostRedemptionCodesIdDeactivate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/redemption-codes/{id}/uses", wrapper.GetRedemptionCodesIdUses)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/rules", wrapper.ListRules)
