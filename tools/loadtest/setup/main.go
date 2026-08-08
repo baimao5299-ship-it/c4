@@ -158,9 +158,14 @@ func main() {
 	tplIDs := make([]int64, 0, *templates)
 	for i := 0; i < *templates; i++ {
 		f := tplFormats[(i/2)%len(tplFormats)]
+		// 名字仅 6 个唯一（3 格式 ×2），-templates > 6 会撞唯一键 409；
+		// 从第 7 个起追加序号保证唯一（名字仅装饰，压测用 ID 引用）。
 		name := fmt.Sprintf("tpl-%s", f)
 		if i%2 == 1 {
 			name += "-b"
+		}
+		if i >= len(tplFormats)*2 {
+			name += fmt.Sprintf("-%d", i)
 		}
 		var out tpl
 		admin(http.MethodPost, "/admin/templates", map[string]any{
@@ -183,15 +188,17 @@ func main() {
 	}
 	fmt.Printf("groups: %d (%s)\n", len(groupIDs), time.Since(gStart).Round(time.Millisecond))
 
-	// 3) 账号 ×N：模板/组轮流分配
+	// 3) 账号 ×N：模板/组随机分配（必须解耦——若模板与组同用 i%N，组 g 只会
+	// 绑到单个模板，三格式请求在非对应组 404 "no account supports this
+	// request format"；随机化后每组含全格式模板账号，且每模板都分布到多组）
 	aStart := time.Now()
 	for i := 0; i < *accounts; i++ {
 		var out acc
 		admin(http.MethodPost, "/admin/accounts", map[string]any{
 			"name":         fmt.Sprintf("acc-%d", i),
-			"template_id":  tplIDs[i%len(tplIDs)],
+			"template_id":  tplIDs[rng.IntN(len(tplIDs))],
 			"upstream_key": "sk-upstream",
-			"group_ids":    []int64{groupIDs[i%len(groupIDs)]},
+			"group_ids":    []int64{groupIDs[rng.IntN(len(groupIDs))]},
 			// max_concurrency 显式 100000：service 校验把 0 兜底为 8，
 			// 8 槽 × 1666 chat 账号 = 13k 槽 < 30k 并发 → 大量 429 选号失败
 			// （压测目标 = 网关热路径，账号槽不设限，与 §7 SQL 直插同语义）
