@@ -10,6 +10,10 @@ var DefaultSettings = []Setting{
 	{Key: "default_user_balance", Type: SettingTypeNumber, Value: "0"},         // 最小单位
 	{Key: "default_user_temp_balance", Type: SettingTypeNumber, Value: "0"},    // 0 = 不送
 	{Key: "default_user_temp_balance_ttl_days", Type: SettingTypeNumber, Value: "30"},
+	// litellm 模型价格同步（Phase 5 计费价格来源）：worker 定期拉取 + 管理端手动设价。
+	{Key: "price_source_url", Type: SettingTypeString,
+		Value: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"},
+	{Key: "price_sync_cron", Type: SettingTypeString, Value: "0 3 * * *"}, // cron 表达式（gronx 解析）
 }
 
 // DefaultSetting 返回内置 key 的默认设置；未知 key 返回 nil。

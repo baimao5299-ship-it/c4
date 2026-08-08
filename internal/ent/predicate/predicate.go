@@ -18,6 +18,9 @@ type GroupAssignment func(*sql.Selector)
 // Key is the predicate function for key builders.
 type Key func(*sql.Selector)
 
+// Pricing is the predicate function for pricing builders.
+type Pricing func(*sql.Selector)
+
 // RedemptionCode is the predicate function for redemptioncode builders.
 type RedemptionCode func(*sql.Selector)
 

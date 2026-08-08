@@ -28,6 +28,7 @@ type Repository struct {
 	Stats       *StatRepo
 	Rules       RuleStore
 	Redemptions *RedemptionRepo
+	Pricing     *PricingRepo
 	Client      *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
@@ -62,6 +63,7 @@ func newRepository(client *ent.Client, drv dialect.Driver) *Repository {
 		Stats:       &StatRepo{client: client},
 		Rules:       &RuleRepo{client: client},
 		Redemptions: &RedemptionRepo{client: client, driver: drv},
+		Pricing:     &PricingRepo{client: client, driver: drv},
 		Client:      client,
 		driver:      drv,
 	}
@@ -401,6 +403,28 @@ func (r *Repository) IncrementUsed(ctx context.Context, codeID int64) (bool, err
 
 func (r *Repository) DeactivateCodes(ctx context.Context, ids []int64) (int64, error) {
 	return r.Redemptions.DeactivateCodes(ctx, ids)
+}
+
+// --- 模型价格（Phase 5 计费价格来源） ---
+
+func (r *Repository) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
+	return r.Pricing.UpsertFromLiteLLM(ctx, rows)
+}
+
+func (r *Repository) UpsertManual(ctx context.Context, model string, promptP, completionP int64) (*domain.Pricing, error) {
+	return r.Pricing.UpsertManual(ctx, model, promptP, completionP)
+}
+
+func (r *Repository) DeleteManual(ctx context.Context, model string) error {
+	return r.Pricing.DeleteManual(ctx, model)
+}
+
+func (r *Repository) ListPricing(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error) {
+	return r.Pricing.ListPricing(ctx, q, source, model)
+}
+
+func (r *Repository) GetPricing(ctx context.Context, model string) (*domain.Pricing, error) {
+	return r.Pricing.GetPricing(ctx, model)
 }
 
 // --- 原子资源更新（评审 I-1：UserStore 扩展；普通 client 与 tx client 均可用） ---

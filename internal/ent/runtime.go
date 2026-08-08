@@ -7,6 +7,7 @@ import (
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
+	"go-proxy-mini/internal/ent/pricing"
 	"go-proxy-mini/internal/ent/redemptioncode"
 	"go-proxy-mini/internal/ent/redemptionuse"
 	"go-proxy-mini/internal/ent/rule"
@@ -86,6 +87,18 @@ func init() {
 	key.DefaultUpdatedAt = keyDescUpdatedAt.Default.(func() time.Time)
 	// key.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	key.UpdateDefaultUpdatedAt = keyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	pricingFields := schema.Pricing{}.Fields()
+	_ = pricingFields
+	// pricingDescCreatedAt is the schema descriptor for created_at field.
+	pricingDescCreatedAt := pricingFields[7].Descriptor()
+	// pricing.DefaultCreatedAt holds the default value on creation for the created_at field.
+	pricing.DefaultCreatedAt = pricingDescCreatedAt.Default.(func() time.Time)
+	// pricingDescUpdatedAt is the schema descriptor for updated_at field.
+	pricingDescUpdatedAt := pricingFields[8].Descriptor()
+	// pricing.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	pricing.DefaultUpdatedAt = pricingDescUpdatedAt.Default.(func() time.Time)
+	// pricing.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	pricing.UpdateDefaultUpdatedAt = pricingDescUpdatedAt.UpdateDefault.(func() time.Time)
 	redemptioncodeFields := schema.RedemptionCode{}.Fields()
 	_ = redemptioncodeFields
 	// redemptioncodeDescMaxUses is the schema descriptor for max_uses field.
