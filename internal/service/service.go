@@ -329,12 +329,17 @@ func validateAccountPatch(p repository.AccountPatch) error {
 	return nil
 }
 
-// mapRepoErr 批量存储错误映射：repository.ErrNotFound → ErrNotFound（保留缺失 id
-// 详情，404 响应带 "id=5 missing"）。其他错误原样返回。
+// mapRepoErr 存储错误映射：repository.ErrNotFound → ErrNotFound（保留缺失 id
+// 详情，404 响应带 "id=5 missing"）；repository.ErrConflict → ErrConflict
+// （保留冲突详情，409 响应带 "name=\"x\""）。其他错误原样返回。
 func mapRepoErr(err error) error {
-	if errors.Is(err, repository.ErrNotFound) {
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
 		detail := strings.TrimPrefix(err.Error(), repository.ErrNotFound.Error()+": ")
 		return fmt.Errorf("%w: %s", ErrNotFound, detail)
+	case errors.Is(err, repository.ErrConflict):
+		detail := strings.TrimPrefix(err.Error(), repository.ErrConflict.Error()+": ")
+		return fmt.Errorf("%w: %s", ErrConflict, detail)
 	}
 	return err
 }

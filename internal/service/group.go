@@ -18,7 +18,7 @@ func (s *Service) CreateGroup(ctx context.Context, name string, visibility domai
 	g := &domain.Group{Name: name, Visibility: visibility}
 	created, err := s.store.CreateGroup(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
 	}
 	s.invalidate()
 	if s.log != nil {
@@ -47,10 +47,11 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 		return nil, ErrInvalidInput
 	}
 	updated, err := s.store.UpdateGroup(ctx, g)
-	if err == nil {
-		s.invalidate()
+	if err != nil {
+		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）
 	}
-	return updated, err
+	s.invalidate()
+	return updated, nil
 }
 
 // DeleteGroup 删除组：前置清理组内全部 key（key.group_id 外键约束；Auth 增量

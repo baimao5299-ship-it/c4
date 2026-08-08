@@ -325,6 +325,38 @@ func TestGetGroupsSortInvalid(t *testing.T) {
 	require.Contains(t, errBody, "error", "must be ErrorResponse JSON")
 }
 
+// TestTemplateGroupConflict409 重复 name 创建模板/组 → 409（此前裸透传 repo 唯一
+// 约束错误 → 500），且响应消息含冲突详情（name 值）。
+func TestTemplateGroupConflict409(t *testing.T) {
+	_, _, do := newListTestRouter(t)
+
+	rec := do(http.MethodPost, "/admin/templates", `{
+		"name":"dup","base_url":"https://api.example.com","supported_formats":["openai-chat"]}`)
+	require.Equal(t, 200, rec.Code, "create template: %s", rec.Body.String())
+
+	rec = do(http.MethodPost, "/admin/templates", `{
+		"name":"dup","base_url":"https://api2.example.com","supported_formats":["openai-chat"]}`)
+	require.Equal(t, 409, rec.Code, "重复 name 创建模板必须 409: %s", rec.Body.String())
+	require.Contains(t, errMsg(t, rec), `name="dup"`, "409 消息含冲突详情")
+
+	rec = do(http.MethodPost, "/admin/groups", `{"name":"dup-g"}`)
+	require.Equal(t, 200, rec.Code, "create group: %s", rec.Body.String())
+
+	rec = do(http.MethodPost, "/admin/groups", `{"name":"dup-g"}`)
+	require.Equal(t, 409, rec.Code, "重复 name 创建分组必须 409: %s", rec.Body.String())
+	require.Contains(t, errMsg(t, rec), `name="dup-g"`, "409 消息含冲突详情")
+}
+
+// errMsg 解析 {"error": ...} 响应体的 error 字段（引号经 JSON 转义，需解码后断言）。
+func errMsg(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	s, ok := body["error"].(string)
+	require.True(t, ok, "error must be string: %s", rec.Body.String())
+	return s
+}
+
 // TestSingleResourceMissingID 单资源 GET/DELETE 缺 id → 404，且响应体消息
 // 含缺失 id（与批量 404 同语义；Minor T5-2 清账：handler fake 的 Get/Delete
 // 需返回带 id 错误，此前仅状态码断言/缺失）。

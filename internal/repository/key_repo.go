@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
+
+	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
@@ -24,6 +27,9 @@ func (r *KeyRepo) CreateKey(ctx context.Context, k *domain.Key) (*domain.Key, er
 		SetQuotaUsed(k.QuotaUsed).
 		Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: key_hash=%q", ErrConflict, k.KeyHash)
+		}
 		return nil, err
 	}
 	return toDomainKey(row), nil
@@ -98,6 +104,9 @@ func (r *KeyRepo) UpdateKey(ctx context.Context, k *domain.Key) (*domain.Key, er
 func (r *KeyRepo) RotateKey(ctx context.Context, id int64, newHash, newPrefix string) (*domain.Key, error) {
 	row, err := r.client.Key.UpdateOneID(id).SetKeyHash(newHash).SetKeyPrefix(newPrefix).Save(ctx)
 	if err != nil {
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: key_hash=%q", ErrConflict, newHash)
+		}
 		return nil, errMissingID(err, id)
 	}
 	return toDomainKey(row), nil

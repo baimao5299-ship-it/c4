@@ -67,6 +67,9 @@ func missingErr(id int64) error {
 func (f *fakeStore) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.templateNameConflictLocked(0, t.Name); err != nil {
+		return nil, err
+	}
 	t.ID = f.nextID
 	f.nextID++
 	c := *t
@@ -99,6 +102,9 @@ func (f *fakeStore) ListTemplates(ctx context.Context, q repository.ListQuery) (
 func (f *fakeStore) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.templateNameConflictLocked(t.ID, t.Name); err != nil {
+		return nil, err
+	}
 	c := *t
 	f.tpls[t.ID] = &c
 	return &c, nil
@@ -167,6 +173,9 @@ func (f *fakeStore) DeleteAccount(ctx context.Context, id int64) error {
 func (f *fakeStore) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.groupNameConflictLocked(0, g.Name); err != nil {
+		return nil, err
+	}
 	g.ID = f.nextID
 	f.nextID++
 	c := *g
@@ -199,6 +208,9 @@ func (f *fakeStore) ListGroups(ctx context.Context, q repository.ListQuery) ([]*
 func (f *fakeStore) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.groupNameConflictLocked(g.ID, g.Name); err != nil {
+		return nil, err
+	}
 	c := *g
 	f.groups[g.ID] = &c
 	return &c, nil
@@ -466,6 +478,28 @@ func (f *fakeStore) ruleConflictLocked(excludeID int64, r domain.Rule) error {
 	for _, e := range f.rules {
 		if e.ID != excludeID && (e.Priority == r.Priority || e.Name == r.Name) {
 			return fmt.Errorf("%w: priority=%d or name=%q", repository.ErrConflict, r.Priority, r.Name)
+		}
+	}
+	return nil
+}
+
+// templateNameConflictLocked 检查模板 name 唯一冲突（持锁调用；excludeID 为
+// 更新目标自身；与真实 repo 的 ErrConflict 同格式）。
+func (f *fakeStore) templateNameConflictLocked(excludeID int64, name string) error {
+	for _, e := range f.tpls {
+		if e.ID != excludeID && e.Name == name {
+			return fmt.Errorf("%w: name=%q", repository.ErrConflict, name)
+		}
+	}
+	return nil
+}
+
+// groupNameConflictLocked 检查分组 name 唯一冲突（持锁调用；excludeID 为更新
+// 目标自身；与真实 repo 的 ErrConflict 同格式）。
+func (f *fakeStore) groupNameConflictLocked(excludeID int64, name string) error {
+	for _, e := range f.groups {
+		if e.ID != excludeID && e.Name == name {
+			return fmt.Errorf("%w: name=%q", repository.ErrConflict, name)
 		}
 	}
 	return nil

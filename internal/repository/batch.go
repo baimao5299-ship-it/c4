@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"entgo.io/ent/dialect/sql/sqlgraph"
+
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
 	"go-proxy-mini/internal/ent/account"
@@ -130,6 +132,9 @@ func (r *TemplateRepo) UpdateTemplatesBatch(ctx context.Context, ids []int64, p 
 			u = u.SetModelMapping(*p.ModelMapping)
 		}
 		if _, err := u.Save(ctx); err != nil {
+			if sqlgraph.IsUniqueConstraintError(err) {
+				return fmt.Errorf("%w: name=%q", ErrConflict, *p.Name)
+			}
 			return errMissingID(err, id)
 		}
 	}
@@ -201,6 +206,9 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 			u = u.SetVisibility(group.Visibility(*p.Visibility))
 		}
 		if _, err := u.Save(ctx); err != nil {
+			if sqlgraph.IsUniqueConstraintError(err) {
+				return fmt.Errorf("%w: name=%q", ErrConflict, *p.Name)
+			}
 			return errMissingID(err, id)
 		}
 	}
