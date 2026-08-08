@@ -338,3 +338,143 @@ func TestProxyBillingDisabledPassthrough(t *testing.T) {
 	require.Equal(t, "", store.logs[0].BillingTier, "计费全关：BillingTier 空")
 	require.Zero(t, store.logs[0].Cost)
 }
+
+// ---------------------------------------------------------------------------
+// T3：余额预检 402 + shouldBill 路由切换
+// ---------------------------------------------------------------------------
+
+// fakeBalanceLoader 余额快照测试 loader。
+type fakeBalanceLoader struct{ m map[int64]int64 }
+
+func (f fakeBalanceLoader) LoadBalances(ctx context.Context) (map[int64]int64, error) {
+	return f.m, nil
+}
+
+// fakeDeductWriter 记录 DeductAndLog 调用（T3 billed 路由断言）。
+type fakeDeductWriter struct {
+	mu    sync.Mutex
+	calls []deductCall
+}
+
+type deductCall struct {
+	userID, cost int64
+	logs         []*domain.UsageLog
+}
+
+func (f *fakeDeductWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, deductCall{userID: userID, cost: cost, logs: logs})
+	return false, 900000, nil
+}
+
+// newTestProxyBillingT3Logs 构造注入完整计费钩子（Prices+Balances+Flusher）的
+// 测试代理：BillingCapture 开（shouldBill 路由 + 余额预检生效）。
+func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceLookup, bal *billing.Balances, f *billing.Flusher, logs usage.LogInserter) *Proxy {
+	t.Helper()
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: upstream,
+		CredentialType:   credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+	}
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, logs, &BillingHooks{
+		Prices: prices, Balances: bal, Flusher: f,
+	})
+	p.cfg.BillingCapture = true
+	return p
+}
+
+// TestProxyBillingInsufficientBalance402 余额预检（评审 I-1 无槽位问题）：
+// 快照 ≤0 或缺失 → 402 + 上游零命中 + ErrBilling 日志（billed 路由进 flusher，
+// 不进 rec.logCh），预检在 Acquire 前不占用并发槽。
+func TestProxyBillingInsufficientBalance402(t *testing.T) {
+	cases := []struct {
+		name string
+		bal  *billing.Balances
+	}{
+		{"余额 0", billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 0}}, nil)},
+		{"快照缺失", billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var hits atomic.Int64
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(500)
+			}))
+			defer up.Close()
+			store := &captureLogStore{}
+			rec := usage.New(usage.UsageConfig{
+				BatchSize: 100, FlushInterval: time.Hour,
+				LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+			}, store, noopStatStore{}, nil)
+			require.NoError(t, c.bal.Reload(context.Background()), "快照加载（余额 0 / 空表）")
+			writer := &fakeDeductWriter{}
+			f := billing.NewFlusher(billing.FlushConfig{
+				FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+			}, writer, rec, c.bal, nil)
+			p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, c.bal, f, store)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+			req.Header.Set("Authorization", "Bearer gk-1")
+			recw := httptest.NewRecorder()
+			p.HandleChat(recw, req)
+
+			require.Equal(t, http.StatusPaymentRequired, recw.Code, "body=%s", recw.Body.String())
+			require.Contains(t, recw.Body.String(), "insufficient balance", "402 文案说明余额不足")
+			require.Zero(t, hits.Load(), "预检拒绝不得转发上游")
+			ri, ok := p.sched.Runtime(1)
+			require.True(t, ok)
+			require.Zero(t, ri.Concurrency, "预检在 Acquire 前：不占用并发槽")
+			require.Zero(t, p.rec.Pending(), "billed 日志不进 rec.logCh")
+
+			require.NoError(t, f.Close(context.Background()))
+			writer.mu.Lock()
+			defer writer.mu.Unlock()
+			require.Len(t, writer.calls, 1)
+			require.Equal(t, domain.ErrBilling, writer.calls[0].logs[0].ErrorType)
+			require.Equal(t, http.StatusPaymentRequired, writer.calls[0].logs[0].StatusCode)
+			require.Zero(t, writer.calls[0].logs[0].Cost, "预检拒绝 cost 0")
+		})
+	}
+}
+
+// TestProxyBillingRoutesToFlusher shouldBill 路由切换（评审 C-4）：billed 日志
+// 只进 flusher（rec.logCh 零残留——每日志恰好一个写者），扣费按聚合 cost 落库
+// + 余额快照定向刷新。
+func TestProxyBillingRoutesToFlusher(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		LogRetentionDays: 30, StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	bal := billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 50000}}, nil)
+	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 50000）")
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	recw := httptest.NewRecorder()
+	p.HandleChat(recw, req)
+	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String())
+	require.Zero(t, p.rec.Pending(), "billed 日志不进 rec.logCh（每日志恰好一个写者）")
+
+	require.NoError(t, f.Close(context.Background())) // 未 Start：排空 + 全量 flush
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 1)
+	require.Equal(t, int64(1), writer.calls[0].userID)
+	require.Equal(t, int64(130), writer.calls[0].cost, "3×1e7+5×2e7 → 130 毫分")
+	require.Len(t, writer.calls[0].logs, 1)
+	require.Equal(t, int64(130), writer.calls[0].logs[0].Cost)
+	require.Equal(t, int64(1), writer.calls[0].logs[0].UserID)
+	got, ok := bal.BalanceOf(1)
+	require.True(t, ok)
+	require.Equal(t, int64(900000), got, "扣费成功 → 余额快照定向刷新")
+}

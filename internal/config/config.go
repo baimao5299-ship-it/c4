@@ -22,6 +22,7 @@ type Config struct {
 	Limit     LimitConfig     `koanf:"limit"`
 	Scheduler SchedulerConfig `koanf:"scheduler"`
 	Usage     UsageConfig     `koanf:"usage"`
+	Billing   BillingConfig   `koanf:"billing"`
 }
 
 type ServerConfig struct {
@@ -86,6 +87,15 @@ type UsageConfig struct {
 	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"`
 }
 
+// BillingConfig 计费（Phase 5 T3）：Enabled 默认关（评审 C-1 opt-in——启用前
+// 需先同步价格：空价格表 = 全模型 402 契约语义；余额预检 + FEFO 条件扣费 +
+// 优雅停机排空全链随之生效）。
+type BillingConfig struct {
+	Enabled                bool          `koanf:"enabled"`
+	FlushInterval          time.Duration `koanf:"flush_interval"`           // 扣费落库周期
+	BalanceRefreshInterval time.Duration `koanf:"balance_refresh_interval"` // 余额快照全量刷新周期
+}
+
 func defaults() *Config {
 	return &Config{
 		Server:    ServerConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 1 << 20},
@@ -95,6 +105,7 @@ func defaults() *Config {
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, Cooldown429: 30 * time.Second, BackoffBase: 5 * time.Second, BackoffMax: 5 * time.Minute, SyncInterval: 30 * time.Second},
 		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second},
+		Billing:   BillingConfig{Enabled: false, FlushInterval: 1 * time.Second, BalanceRefreshInterval: 10 * time.Second},
 	}
 }
 

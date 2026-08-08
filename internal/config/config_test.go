@@ -17,6 +17,9 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, 500, c.Usage.BatchSize)
 	require.Equal(t, "tok", c.Admin.Token)
 	require.Equal(t, 30*time.Second, c.Scheduler.SyncInterval)
+	require.False(t, c.Billing.Enabled, "计费默认关（opt-in，评审 C-1）")
+	require.Equal(t, 1*time.Second, c.Billing.FlushInterval)
+	require.Equal(t, 10*time.Second, c.Billing.BalanceRefreshInterval)
 }
 
 func TestEnvOverlay(t *testing.T) {

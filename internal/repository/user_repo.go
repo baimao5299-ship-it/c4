@@ -181,3 +181,17 @@ func (r *UserRepo) LoadUsers(ctx context.Context) (map[int64]domain.UserStatus, 
 	}
 	return out, nil
 }
+
+// LoadBalances 全量余额快照（id → balance 毫分；Phase 5 计费余额预检数据源，
+// billing.Balances.Reload 调用）。失败返回错误——调用方 fail-safe 保留旧快照。
+func (r *UserRepo) LoadBalances(ctx context.Context) (map[int64]int64, error) {
+	rows, err := r.client.User.Query().Select(user.FieldID, user.FieldBalance).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int64, len(rows))
+	for _, row := range rows {
+		out[row.ID] = row.Balance
+	}
+	return out, nil
+}
