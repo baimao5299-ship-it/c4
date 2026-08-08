@@ -1,6 +1,6 @@
 # Admin API 文档
 
-管理端 API（配置模板 / 账号 / 分组 / 兑换码 / 日志 / 统计）。与 AI 推理请求（`/v1/*`，模型请求）相对，本组接口为网关管理面，不对上游转发。
+管理端 API（配置模板 / 账号 / 分组 / 兑换码 / 模型价格 / 日志 / 统计）。与 AI 推理请求（`/v1/*`，模型请求）相对，本组接口为网关管理面，不对上游转发。
 
 ## 通用约定
 
@@ -10,7 +10,7 @@
 - **错误格式**：非 2xx 响应体为 `{"error": "<消息>"}`。404 的消息含缺失资源 id（如 `service: not found: id=999 missing`），便于定位。
 - **ID**：路径参数 `{id}` 为模板/账号/分组的整数 ID。
 - **更新语义**：`PUT` 为**全量替换**——请求体中的字段整体覆盖，未提供的字段清零（仅提供部分字段的 `PUT` 会把缺失字段重置为空/零值）。批量 `batch-update` 为**部分更新**（只改 `fields` 中提供的字段）。
-- **列表响应**：三个列表端点（templates / accounts / groups）统一返回 `{"total": <满足筛选的总数>, "rows": [...]}`，支持 `limit` / `offset` 分页、筛选参数与白名单 `sort` / `order` 排序（非法 `sort` / `order` → `400`）。
+- **列表响应**：templates / accounts / groups 三个旧端点统一返回 `{"total": <满足筛选的总数>, "rows": [...]}`，支持 `limit` / `offset` 分页、筛选参数与白名单 `sort` / `order` 排序（非法 `sort` / `order` → `400`）。兑换码与模型价格为**增强分页范式**（`page` / `page_size`，1-based），见对应章节。
 
 ## 枚举值
 
@@ -21,6 +21,7 @@
 | `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` |
 | `type`（兑换码） | `balance`（充值余额，最小单位分）/ `concurrency`（加并发数）/ `temp_balance`（临时余额，兑换后资源到期） |
 | `status`（兑换码） | `active` / `disabled`（不可编辑，仅可失效） |
+| `source`（模型价格） | `litellm`（官方价格表拉取）/ `manual`（管理端手动设价，优先级最高） |
 
 ---
 
@@ -668,14 +669,112 @@
 
 ---
 
+## 模型价格 Model Pricing
+
+模型计费价格表（`pricing` 表）：每行一个模型，价格以**毫分/1M tokens** 为单位的整数存储。价格来源分两路，**行级互斥**：
+
+- `litellm`：从 litellm 官方价格表拉取（`price_source_url` 配置的 JSON，默认 GitHub raw `model_prices_and_context_window.json`）。启动时异步拉取一次 + `price_sync_cron` 定时（默认 `0 3 * * *`，cron 表达式）。拉取为批量 upsert，**永不覆盖已存在的手动价**（`ON CONFLICT (model) DO UPDATE ... WHERE source != 'manual'`）。
+- `manual`：管理端手动设价（PUT），**优先级最高**——upsert 强制 `source=manual`，可直接接管已存在的 litellm 行。
+
+**单位换算**：1 USD = 100,000 毫分（10⁻⁵ USD 精度）。litellm 价格为 per-token USD，换算公式 `× 1e6 tokens × 1e5 毫分 = × 1e11`，四舍五入取整。PUT 请求体中 `prompt_price_per_million` / `completion_price_per_million` 即毫分/1M tokens 整数（≥ 0）。例如 `2.5e-6` USD/token → `250000` 毫分/1M（=$2.5/1M tokens）。
+
+**生效与缺失语义**：表内一行即最终生效价；手动设价/拉取成功后服务端价格快照即时重载（Phase 5 计费热路径读内存快照，零 DB）。删除手动价后该模型在下一轮拉取前存在缺失窗口——计费侧对无价格模型**拒绝计费并显式报错**（不按 0 计价）。`max_input_tokens` / `max_output_tokens` 为 litellm 自带上下文窗口，`nil` = 未知。
+
+### 价格列表
+
+`GET /admin/pricing`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `page` | int | 1 | 页码，**1-based**；缺省或 `< 1` 按 1（不报错） |
+| `page_size` | int | 20 | 每页行数；越界（`< 1` 或 `> 100`）→ `400` |
+| `source` | string | — | 筛选枚举：`litellm` / `manual`；非法 → `400` |
+| `model` | string | — | 模型名模糊搜索（大小写不敏感） |
+| `sort` | string | `id` | 白名单：`model` / `updated_at`（空或缺省 → 实际按 `id` 排）；非法 → `400` |
+| `order` | string | `desc` | `asc` / `desc`（空或缺省 → `desc`）；其他值 → `400` |
+
+响应 `200`：
+
+```json
+{
+  "total": 4,
+  "rows": [
+    {
+      "Model": "gpt-4o",
+      "PromptPricePerMillion": 250000,
+      "CompletionPricePerMillion": 1000000,
+      "MaxInputTokens": 128000,
+      "MaxOutputTokens": 16384,
+      "Source": "litellm",
+      "CreatedAt": "2026-08-08T19:26:35+08:00",
+      "UpdatedAt": "2026-08-08T19:26:35+08:00"
+    }
+  ]
+}
+```
+
+### 手动设价
+
+`PUT /admin/pricing/{model}`
+
+请求体：`{"prompt_price_per_million": 111111, "completion_price_per_million": 222222}`（毫分/1M tokens，**必须 ≥ 0**；负数 → `400`，model 缺失 → `404`）。
+
+语义：upsert 并强制 `source=manual`——模型已存在 litellm 行时**直接接管**（该行来源改为 manual，后续拉取不再覆盖）。响应 `200` 为更新后的价格对象。
+
+### 删除手动价
+
+`DELETE /admin/pricing/{model}`
+
+| 响应 | 说明 |
+|---|---|
+| `200` | `{"deleted": true}`——仅 `source=manual` 行可删；删除后该模型恢复 litellm 价（下轮拉取补回，此前缺失窗口按上文语义处理） |
+| `409` | 目标是 litellm 行（不可删——下轮拉取会重新写入，语义上只允许删手动价） |
+| `404` | 模型不存在 |
+
+### 手动触发同步
+
+`POST /admin/pricing/sync`
+
+手动触发一次价格拉取（与定时 worker 同路径：fetch → 批量 upsert → 快照重载），不等 cron。响应 `200`：
+
+```json
+{"rows": 4, "skipped": 6, "updated": 3}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `rows` | 拉取到的有效模型行数 |
+| `skipped` | 解析时跳过的非法行数（缺价/非正数/NaN/字段类型非法） |
+| `updated` | upsert 落库数（`manual` 行不计——手动价不被覆盖） |
+
+错误映射：
+
+| 状态码 | 场景 |
+|---|---|
+| `400` | `price_source_url` 未配置（空字符串） |
+| `502` | 拉取上游失败（非 200 / 网络错误 / JSON 解析失败）——**保留旧价格**，下个周期或下次手动重试 |
+| `500` | 落库失败（DB 等） |
+
+手动 sync 与 cron 可并发（幂等 upsert，最坏浪费一次 fetch，无额外冲突处理）。
+
+### 相关 settings（PUT /admin/settings）
+
+| key | 默认 | 说明 |
+|---|---|---|
+| `price_source_url` | litellm 官方价格表 JSON raw URL | 拉取源（可换，如本地镜像）；空 → sync 拒绝（400） |
+| `price_sync_cron` | `0 3 * * *` | 拉取 cron 表达式；变更下次循环生效 |
+
+---
+
 ## 认证失败与错误码
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节） |
+| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
 | `401` | admin token 缺失或错误；普通 `user` 角色 JWT 访问 `/admin/*` |
 | `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |
-| `409` | 规则 `priority`/`name` 唯一冲突 / 兑换码重复兑换（`already redeemed`） |
+| `409` | 规则 `priority`/`name` 唯一冲突 / 兑换码重复兑换（`already redeemed`）/ 删除 litellm 价格行 |
 | `500` | 服务端错误（DB 等） |
+| `502` | 价格同步拉取上游失败（保留旧价格） |
 
 错误响应体统一为 `{"error": "<消息>"}`。
