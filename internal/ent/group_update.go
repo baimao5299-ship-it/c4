@@ -59,6 +59,27 @@ func (_u *GroupUpdate) SetNillableVisibility(v *group.Visibility) *GroupUpdate {
 	return _u
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_u *GroupUpdate) SetPriceMultiplier(v int) *GroupUpdate {
+	_u.mutation.ResetPriceMultiplier()
+	_u.mutation.SetPriceMultiplier(v)
+	return _u
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePriceMultiplier(v *int) *GroupUpdate {
+	if v != nil {
+		_u.SetPriceMultiplier(*v)
+	}
+	return _u
+}
+
+// AddPriceMultiplier adds value to the "price_multiplier" field.
+func (_u *GroupUpdate) AddPriceMultiplier(v int) *GroupUpdate {
+	_u.mutation.AddPriceMultiplier(v)
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *GroupUpdate) SetCreatedAt(v time.Time) *GroupUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -256,6 +277,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 	}
+	if value, ok := _u.mutation.PriceMultiplier(); ok {
+		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
+		_spec.AddField(group.FieldPriceMultiplier, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
 	}
@@ -442,6 +469,27 @@ func (_u *GroupUpdateOne) SetNillableVisibility(v *group.Visibility) *GroupUpdat
 	if v != nil {
 		_u.SetVisibility(*v)
 	}
+	return _u
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_u *GroupUpdateOne) SetPriceMultiplier(v int) *GroupUpdateOne {
+	_u.mutation.ResetPriceMultiplier()
+	_u.mutation.SetPriceMultiplier(v)
+	return _u
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePriceMultiplier(v *int) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPriceMultiplier(*v)
+	}
+	return _u
+}
+
+// AddPriceMultiplier adds value to the "price_multiplier" field.
+func (_u *GroupUpdateOne) AddPriceMultiplier(v int) *GroupUpdateOne {
+	_u.mutation.AddPriceMultiplier(v)
 	return _u
 }
 
@@ -671,6 +719,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
+	}
+	if value, ok := _u.mutation.PriceMultiplier(); ok {
+		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
+		_spec.AddField(group.FieldPriceMultiplier, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)

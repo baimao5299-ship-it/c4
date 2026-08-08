@@ -90,6 +90,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, u *domain.User) (*domain.User
 		SetStatus(user.Status(u.Status)).
 		SetMaxConcurrency(u.MaxConcurrency).
 		SetBalance(u.Balance).
+		SetNillablePriceMultiplier(u.PriceMultiplier). // nil = 未设置（用组倍率）
 		Save(ctx)
 	if err != nil {
 		return nil, err
@@ -148,15 +149,23 @@ func (r *UserRepo) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, 
 	return out, int64(total), nil
 }
 
-// UpdateUser 更新 role/status/max_concurrency/balance（email 不可变、
-// 密码走 UpdateUserPassword）。
+// UpdateUser 更新 role/status/max_concurrency/balance/price_multiplier（email
+// 不可变、密码走 UpdateUserPassword）。price_multiplier 语义：nil = 清除为
+// 未设置（ClearPriceMultiplier——用户覆盖组回退到组倍率；SetNillable 的 nil
+// 是 no-op 不清除，故显式分支）；管理面 PUT 为读改写（fetch → 改 → 写回），
+// 未触及该字段时携带原值自然保留。
 func (r *UserRepo) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
-	row, err := r.client.User.UpdateOneID(u.ID).
+	q := r.client.User.UpdateOneID(u.ID).
 		SetRole(user.Role(u.Role)).
 		SetStatus(user.Status(u.Status)).
 		SetMaxConcurrency(u.MaxConcurrency).
-		SetBalance(u.Balance).
-		Save(ctx)
+		SetBalance(u.Balance)
+	if u.PriceMultiplier != nil {
+		q = q.SetPriceMultiplier(*u.PriceMultiplier)
+	} else {
+		q = q.ClearPriceMultiplier()
+	}
+	row, err := q.Save(ctx)
 	if err != nil {
 		return nil, errMissingID(err, u.ID)
 	}
@@ -182,16 +191,21 @@ func (r *UserRepo) LoadUsers(ctx context.Context) (map[int64]domain.UserStatus, 
 	return out, nil
 }
 
-// LoadBalances 全量余额快照（id → balance 毫分；Phase 5 计费余额预检数据源，
+// LoadBalances 全量余额 + 用户专属倍率快照（id → balance 毫分；id → 倍率
+// 万分数，仅 price_multiplier 非 NULL 行；Phase 5 计费余额预检数据源，
 // billing.Balances.Reload 调用）。失败返回错误——调用方 fail-safe 保留旧快照。
-func (r *UserRepo) LoadBalances(ctx context.Context) (map[int64]int64, error) {
-	rows, err := r.client.User.Query().Select(user.FieldID, user.FieldBalance).All(ctx)
+func (r *UserRepo) LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error) {
+	rows, err := r.client.User.Query().Select(user.FieldID, user.FieldBalance, user.FieldPriceMultiplier).All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make(map[int64]int64, len(rows))
+	mult := make(map[int64]int)
 	for _, row := range rows {
 		out[row.ID] = row.Balance
+		if row.PriceMultiplier != nil {
+			mult[row.ID] = *row.PriceMultiplier
+		}
 	}
-	return out, nil
+	return out, mult, nil
 }

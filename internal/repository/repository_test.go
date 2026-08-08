@@ -277,9 +277,10 @@ func TestAccountAndGroup(t *testing.T) {
 			pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
 
-	// Group create（Phase 3a：无 key 字段，visibility 默认 public）
+	// Group create（Phase 3a：无 key 字段，visibility 默认 public；
+	// price_multiplier 有默认值 → ent 恒入 INSERT，未指定 = 默认 10000）
 	tr.pool.ExpectQuery(q(`INSERT INTO "groups"`)).
-		WithArgs("g1", group.VisibilityPublic, pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs("g1", group.VisibilityPublic, pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
 	// SetAccountGroups -> checkGroupExist 预校验（SELECT groups）+ 自动 Tx（M2M
@@ -310,8 +311,8 @@ func TestAccountAndGroup(t *testing.T) {
 
 	// LoadGroupsAccounts -> groups + accounts(join account_groups) + templates
 	tr.pool.ExpectQuery(q(`FROM "groups"`)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "visibility", "created_at", "updated_at"}).
-			AddRow(int64(3), "g1", "public",
+		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "visibility", "price_multiplier", "created_at", "updated_at"}).
+			AddRow(int64(3), "g1", "public", int64(10000),
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 	tr.pool.ExpectQuery(q(`JOIN "account_groups"`)).
 		WithArgs(int64(3)).

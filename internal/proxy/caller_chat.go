@@ -77,7 +77,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, start, sel, reqModel, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}

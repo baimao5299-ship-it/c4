@@ -169,6 +169,10 @@ func TestFlusherSaturationBlocks(t *testing.T) {
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
 	require.Len(t, writer.calls, 2, "按 user 两笔")
-	require.Equal(t, int64(16384), writer.calls[0].cost, "user1 聚合 16384")
-	require.Equal(t, int64(1), writer.calls[1].cost, "user2 阻塞解除后入队")
+	byUID := map[int64]deductCall{}
+	for _, c := range writer.calls {
+		byUID[c.userID] = c
+	}
+	require.Equal(t, int64(16384), byUID[1].cost, "user1 聚合 16384")
+	require.Equal(t, int64(1), byUID[2].cost, "user2 阻塞解除后入队")
 }

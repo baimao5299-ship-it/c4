@@ -20,10 +20,15 @@ type GroupRepo struct {
 }
 
 func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
-	row, err := r.client.Group.Create().
+	// price_multiplier 0 = 未指定 → 不设置该列（DB 默认 10000 = ×1）。0 是合法
+	// 倍率（免费组），显式设置经 UpdateGroup（或后续管理面契约）写入。
+	q := r.client.Group.Create().
 		SetName(g.Name).
-		SetVisibility(group.Visibility(g.Visibility)).
-		Save(ctx)
+		SetVisibility(group.Visibility(g.Visibility))
+	if g.PriceMultiplier != 0 {
+		q = q.SetPriceMultiplier(g.PriceMultiplier)
+	}
+	row, err := q.Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: name=%q", ErrConflict, g.Name)
@@ -72,9 +77,12 @@ func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Grou
 }
 
 func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
+	// price_multiplier 恒写入（PUT 全量替换语义；管理面 PUT 读改写——fetch →
+	// 改 name/visibility → 写回，未触及倍率时携带原值自然保留；显式 0 = 免费组）。
 	row, err := r.client.Group.UpdateOneID(g.ID).
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
+		SetPriceMultiplier(g.PriceMultiplier).
 		Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
@@ -106,6 +114,21 @@ func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 			accs = append(accs, toDomainAccount(a))
 		}
 		out[g.ID] = accs
+	}
+	return out, nil
+}
+
+// LoadGroupMultipliers 全量组倍率快照（id → 万分数；groups.price_multiplier
+// NOT NULL 默认 10000——每行都有值；billing.Balances.Reload 调用）。独立方法
+// 不并入 LoadGroupsAccounts（后者是账号路由快照，语义/带宽不同）。
+func (r *GroupRepo) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
+	rows, err := r.client.Group.Query().Select(group.FieldID, group.FieldPriceMultiplier).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int, len(rows))
+	for _, row := range rows {
+		out[row.ID] = row.PriceMultiplier
 	}
 	return out, nil
 }

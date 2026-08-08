@@ -19,6 +19,8 @@ const (
 	FieldName = "name"
 	// FieldVisibility holds the string denoting the visibility field in the database.
 	FieldVisibility = "visibility"
+	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
+	FieldPriceMultiplier = "price_multiplier"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -57,6 +59,7 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldVisibility,
+	FieldPriceMultiplier,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -78,6 +81,8 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultPriceMultiplier holds the default value on creation for the "price_multiplier" field.
+	DefaultPriceMultiplier int
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -128,6 +133,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByVisibility orders the results by the visibility field.
 func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
+}
+
+// ByPriceMultiplier orders the results by the price_multiplier field.
+func ByPriceMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceMultiplier, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

@@ -9,9 +9,21 @@ import (
 	"go-proxy-mini/pkg/logx"
 )
 
-// BalanceLoader 余额快照数据源（repository.UserRepo 实现）。
+// BalanceLoader 余额 + 倍率快照数据源（repository.Repository 门面实现：
+// LoadBalances 委托 Users，LoadGroupMultipliers 委托 Groups）。
 type BalanceLoader interface {
-	LoadBalances(ctx context.Context) (map[int64]int64, error)
+	// LoadBalances 全量余额（毫分）+ 用户专属倍率（万分数；仅 price_multiplier
+	// 非 NULL 行——缺失 = 未设置 → 用组倍率）。
+	LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error)
+	// LoadGroupMultipliers 全量组倍率（万分数；组默认 10000 恒在表内）。
+	LoadGroupMultipliers(ctx context.Context) (map[int64]int, error)
+}
+
+// multipliers 倍率快照（T3.5 价格倍率；并行快照与余额分离——Set 定向刷新只
+// 拷贝余额 map，不牵动倍率）。
+type multipliers struct {
+	users  map[int64]int // 仅设置了 price_multiplier 的用户（存在 = 已设置）
+	groups map[int64]int // 全部组（NOT NULL 默认 10000）
 }
 
 // Balances 余额只读快照（毫分；对齐 pricing 快照模式）：atomic.Pointer 换整表，
@@ -20,9 +32,11 @@ type Balances struct {
 	loader BalanceLoader
 	log    *logx.Logger
 	snap   atomic.Pointer[map[int64]int64]
+	mult   atomic.Pointer[multipliers]
 }
 
-// NewBalances 构造余额快照（初始空表——未 Reload 前预检全部 402 拒绝，安全侧）。
+// NewBalances 构造余额快照（初始空表——未 Reload 前预检全部 402 拒绝，安全侧；
+// 倍率空表 → EffectiveMultiplier 默认 10000 ×1）。
 func NewBalances(loader BalanceLoader, log *logx.Logger) *Balances {
 	b := &Balances{loader: loader, log: log}
 	m := make(map[int64]int64)
@@ -31,17 +45,26 @@ func NewBalances(loader BalanceLoader, log *logx.Logger) *Balances {
 }
 
 // Reload 全量重载（启动同步 + BalanceRefreshInterval ticker + 管理面改余额/
-// Redeem 后 invalidate 调用）。失败 fail-safe：Warn + 保留旧快照（不替换，
-// 预检继续用旧值，条件扣 DB 兜底）。
+// 倍率/Redeem 后 invalidate 调用）。失败 fail-safe：Warn + 保留旧快照（不替换，
+// 预检继续用旧值，条件扣 DB 兜底）。余额与倍率两路都成功才整体换新——任一路
+// 失败两路都保留旧值（快照内自洽）。
 func (b *Balances) Reload(ctx context.Context) error {
-	m, err := b.loader.LoadBalances(ctx)
+	m, um, err := b.loader.LoadBalances(ctx)
 	if err != nil {
 		if b.log != nil {
 			b.log.Warn("balance snapshot reload failed", logx.Error(err))
 		}
 		return err
 	}
+	gm, err := b.loader.LoadGroupMultipliers(ctx)
+	if err != nil {
+		if b.log != nil {
+			b.log.Warn("group multiplier snapshot reload failed", logx.Error(err))
+		}
+		return err
+	}
 	b.snap.Store(&m)
+	b.mult.Store(&multipliers{users: um, groups: gm})
 	return nil
 }
 
@@ -67,4 +90,22 @@ func (b *Balances) BalanceOf(uid int64) (int64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// EffectiveMultiplier 有效价格倍率（万分数，T3.5）：用户覆盖组——用户
+// price_multiplier 已设置（非 nil）→ 用户值；否则组倍率；均缺 → 10000（×1）。
+// 热路径零分配无锁：一次 atomic.Load + ≤2 次 map 查找，与 BalanceOf 同级。
+// m==10000 的恒等短路由调用方 applyMultiplier 承担（默认路径逐指令等价）。
+func (b *Balances) EffectiveMultiplier(userID, groupID int64) int {
+	m := b.mult.Load()
+	if m == nil {
+		return 10000
+	}
+	if um, ok := m.users[userID]; ok {
+		return um
+	}
+	if gm, ok := m.groups[groupID]; ok {
+		return gm
+	}
+	return 10000
 }

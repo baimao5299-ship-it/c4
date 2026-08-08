@@ -27,6 +27,8 @@ const (
 	FieldMaxConcurrency = "max_concurrency"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
+	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
+	FieldPriceMultiplier = "price_multiplier"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -71,6 +73,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldMaxConcurrency,
 	FieldBalance,
+	FieldPriceMultiplier,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -186,6 +189,11 @@ func ByMaxConcurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByBalance orders the results by the balance field.
 func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalance, opts...).ToFunc()
+}
+
+// ByPriceMultiplier orders the results by the price_multiplier field.
+func ByPriceMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceMultiplier, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

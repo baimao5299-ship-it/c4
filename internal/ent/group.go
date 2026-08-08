@@ -21,6 +21,8 @@ type Group struct {
 	Name string `json:"name,omitempty"`
 	// Visibility holds the value of the "visibility" field.
 	Visibility group.Visibility `json:"visibility,omitempty"`
+	// PriceMultiplier holds the value of the "price_multiplier" field.
+	PriceMultiplier int `json:"price_multiplier,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -76,7 +78,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case group.FieldID:
+		case group.FieldID, group.FieldPriceMultiplier:
 			values[i] = new(sql.NullInt64)
 		case group.FieldName, group.FieldVisibility:
 			values[i] = new(sql.NullString)
@@ -114,6 +116,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field visibility", values[i])
 			} else if value.Valid {
 				_m.Visibility = group.Visibility(value.String)
+			}
+		case group.FieldPriceMultiplier:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_multiplier", values[i])
+			} else if value.Valid {
+				_m.PriceMultiplier = int(value.Int64)
 			}
 		case group.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -183,6 +191,9 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("visibility=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
+	builder.WriteString(", ")
+	builder.WriteString("price_multiplier=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PriceMultiplier))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

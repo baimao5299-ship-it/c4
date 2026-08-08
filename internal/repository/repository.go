@@ -445,9 +445,14 @@ func (r *Repository) DeductAndLog(ctx context.Context, userID, cost int64, logs 
 	return r.Billing.DeductAndLog(ctx, userID, cost, logs)
 }
 
-// LoadBalances 全量余额快照（Phase 5 计费余额预检数据源）。
-func (r *Repository) LoadBalances(ctx context.Context) (map[int64]int64, error) {
+// LoadBalances 全量余额 + 用户专属倍率快照（Phase 5 计费余额预检数据源）。
+func (r *Repository) LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error) {
 	return r.Users.LoadBalances(ctx)
+}
+
+// LoadGroupMultipliers 全量组倍率快照（Phase 5 T3.5 价格倍率数据源）。
+func (r *Repository) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
+	return r.Groups.LoadGroupMultipliers(ctx)
 }
 
 func (r *Repository) UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error {

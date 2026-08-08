@@ -12,7 +12,8 @@ func toDomainUser(u *ent.User) *domain.User {
 		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash,
 		Role: domain.Role(u.Role), Status: domain.UserStatus(u.Status),
 		MaxConcurrency: u.MaxConcurrency, Balance: u.Balance,
-		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+		PriceMultiplier: u.PriceMultiplier,
+		CreatedAt:       u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
 }
 
@@ -29,7 +30,8 @@ func toDomainKey(k *ent.Key) *domain.Key {
 func toDomainGroup(g *ent.Group) *domain.Group {
 	return &domain.Group{
 		ID: g.ID, Name: g.Name, Visibility: domain.GroupVisibility(g.Visibility),
-		CreatedAt: g.CreatedAt, UpdatedAt: g.UpdatedAt,
+		PriceMultiplier: g.PriceMultiplier,
+		CreatedAt:       g.CreatedAt, UpdatedAt: g.UpdatedAt,
 	}
 }
 

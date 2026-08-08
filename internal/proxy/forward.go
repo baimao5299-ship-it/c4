@@ -118,6 +118,10 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		return
 	}
 	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.PromptTokens, l.CompletionTokens, l.CacheReadTokens, l.CacheCreationTokens)
+	// 价格倍率（T3.5，用户拍板）：整单 × 有效倍率（万分数；用户覆盖组——
+	// 用户已设置 → 用户值，否则组倍率，均缺 ×1）。m==10000 恒等短路零开销；
+	// m==0 免费（cost 0，仍记日志不扣费）。倍率不改变 aboveHit 语义。
+	l.Cost = applyMultiplier(l.Cost, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
 }
 
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：
@@ -219,12 +223,13 @@ type usageTuple struct {
 // recordStreamAbort 上游流中止记录（客户端断开/上游停滞统一入口）：先已收
 // 到的 usage 帧照常计费。u 为 Observer 已累积的用量元组（评审 M-2：此前传
 // nil → tokens 全 0 → 中止路径消费不扣费；buildLog 填 l.Cost 由 finish 的
-// applyBilling 承担）。
-func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, start time.Time, sel *scheduler.Selection, reqModel string, u *usageTuple, err error) {
+// applyBilling 承担）。groupID 由各 caller 作用域传入（评审 M-1：此前硬编码
+// 0 → 中止路径组倍率查找恒 miss → 组倍率 ≠10000 时计费与正常路径不一致）。
+func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, u *usageTuple, err error) {
 	if p.log != nil {
 		p.log.Warn("upstream stream aborted", logx.String("request_id", reqID), logx.Error(err))
 	}
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, 0, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, u, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, u, start)))
 }
 
 func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {

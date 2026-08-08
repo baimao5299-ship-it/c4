@@ -75,6 +75,11 @@ func Balance(v int64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
 }
 
+// PriceMultiplier applies equality check predicate on the "price_multiplier" field. It's identical to PriceMultiplierEQ.
+func PriceMultiplier(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPriceMultiplier, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -333,6 +338,56 @@ func BalanceLT(v int64) predicate.User {
 // BalanceLTE applies the LTE predicate on the "balance" field.
 func BalanceLTE(v int64) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldBalance, v))
+}
+
+// PriceMultiplierEQ applies the EQ predicate on the "price_multiplier" field.
+func PriceMultiplierEQ(v int) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierNEQ applies the NEQ predicate on the "price_multiplier" field.
+func PriceMultiplierNEQ(v int) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierIn applies the In predicate on the "price_multiplier" field.
+func PriceMultiplierIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPriceMultiplier, vs...))
+}
+
+// PriceMultiplierNotIn applies the NotIn predicate on the "price_multiplier" field.
+func PriceMultiplierNotIn(vs ...int) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPriceMultiplier, vs...))
+}
+
+// PriceMultiplierGT applies the GT predicate on the "price_multiplier" field.
+func PriceMultiplierGT(v int) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierGTE applies the GTE predicate on the "price_multiplier" field.
+func PriceMultiplierGTE(v int) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierLT applies the LT predicate on the "price_multiplier" field.
+func PriceMultiplierLT(v int) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierLTE applies the LTE predicate on the "price_multiplier" field.
+func PriceMultiplierLTE(v int) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierIsNil applies the IsNil predicate on the "price_multiplier" field.
+func PriceMultiplierIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldPriceMultiplier))
+}
+
+// PriceMultiplierNotNil applies the NotNil predicate on the "price_multiplier" field.
+func PriceMultiplierNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldPriceMultiplier))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
