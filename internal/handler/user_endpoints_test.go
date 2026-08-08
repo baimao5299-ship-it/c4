@@ -29,7 +29,8 @@ func (f fakeUserStatus) UserStatus(userID int64) (domain.UserStatus, bool) {
 }
 
 // newTestUserRouter /user 测试路由（真实 svc + fake store + 真实 Issuer）。
-func newTestUserRouter(t *testing.T) (func(method, path, body, token string) *httptest.ResponseRecorder, *fakeStore, *auth.Issuer) {
+// svc 一并返回：settings 快照测试需经 UpdateSetting（快照重载）改配置。
+func newTestUserRouter(t *testing.T) (func(method, path, body, token string) *httptest.ResponseRecorder, *fakeStore, *auth.Issuer, *service.Service) {
 	t.Helper()
 	store := newFakeStore()
 	svc := service.New(store, fakeSched{}, func() {}, nil, &fakeKeys{}, nil)
@@ -45,11 +46,11 @@ func newTestUserRouter(t *testing.T) (func(method, path, body, token string) *ht
 		router.ServeHTTP(rec, req)
 		return rec
 	}
-	return do, store, iss
+	return do, store, iss, svc
 }
 
 func TestUserRegisterLoginMe(t *testing.T) {
-	do, _, _ := newTestUserRouter(t)
+	do, _, _, _ := newTestUserRouter(t)
 
 	// 注册成功（注册即登录：返回 JWT + 用户）
 	rec := do(http.MethodPost, "/user/auth/register", `{"email":"new@example.com","password":"s3cret-pass"}`, "")
@@ -95,10 +96,10 @@ func TestUserRegisterLoginMe(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code, "long password: %s", rec.Body.String())
 }
 
-// 注册开关（settings.signup_enabled）关闭 → 403（DB 直读即时生效）。
+// 注册开关（settings.signup_enabled）关闭 → 403（UpdateSetting 后快照即时生效）。
 func TestUserRegisterSignupDisabled(t *testing.T) {
-	do, store, _ := newTestUserRouter(t)
-	_, err := store.SetSetting(t.Context(), "signup_enabled", domain.SettingTypeSwitch, "false")
+	do, _, _, svc := newTestUserRouter(t)
+	_, err := svc.UpdateSetting(t.Context(), "signup_enabled", "false")
 	require.NoError(t, err)
 	rec := do(http.MethodPost, "/user/auth/register", `{"email":"x@example.com","password":"s3cret-pass"}`, "")
 	require.Equal(t, http.StatusForbidden, rec.Code, "signup disabled: %s", rec.Body.String())
@@ -106,7 +107,7 @@ func TestUserRegisterSignupDisabled(t *testing.T) {
 
 // 禁用用户登录 → 401（与口令错误同文案，防枚举）。
 func TestUserLoginDisabled(t *testing.T) {
-	do, store, iss := newTestUserRouter(t)
+	do, store, iss, _ := newTestUserRouter(t)
 	rec := do(http.MethodPost, "/user/auth/register", `{"email":"d@example.com","password":"s3cret-pass"}`, "")
 	require.Equal(t, 200, rec.Code)
 	u, err := store.GetUserByEmail(t.Context(), "d@example.com")
@@ -129,12 +130,12 @@ func TestUserLoginDisabled(t *testing.T) {
 func TestAdminSettings(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
-	// GET：默认值（signup_enabled=true）
+	// GET：全部默认值（注册表逐项）
 	rec := do(http.MethodGet, "/admin/settings", "")
 	require.Equal(t, http.StatusOK, rec.Code, "get: %s", rec.Body.String())
 	var rows []Setting
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rows))
-	require.Len(t, rows, 1)
+	require.Len(t, rows, len(domain.DefaultSettings))
 	require.Equal(t, "signup_enabled", *rows[0].Key)
 	require.Equal(t, "true", *rows[0].Value)
 
@@ -152,7 +153,9 @@ func TestAdminSettings(t *testing.T) {
 	rec = do(http.MethodPut, "/admin/settings", `{"key":"unknown_key","value":"1"}`)
 	require.Equal(t, http.StatusBadRequest, rec.Code, "unknown key: %s", rec.Body.String())
 
-	// PUT：number 类型校验（当前无 number 内置项——用非法场景兜底验证拒绝路径）
-	rec = do(http.MethodPut, "/admin/settings", `{"key":"signup_enabled","value":"42"}`)
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	// PUT：number 类型校验（number 内置项传非数字 → 400；合法数字 → 200）
+	rec = do(http.MethodPut, "/admin/settings", `{"key":"default_user_max_concurrency","value":"abc"}`)
+	require.Equal(t, http.StatusBadRequest, rec.Code, "number 传非数字必须 400")
+	rec = do(http.MethodPut, "/admin/settings", `{"key":"default_user_max_concurrency","value":"5"}`)
+	require.Equal(t, http.StatusOK, rec.Code, "number 合法值: %s", rec.Body.String())
 }

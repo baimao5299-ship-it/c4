@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
@@ -43,6 +45,8 @@ type UserStore interface {
 	ListUsers(ctx context.Context, q repository.ListQuery) ([]*domain.User, int64, error)
 	UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error)
 	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
+	// CreateTempBalance 创建临时额度行（注册赠品等；user_id 外键必存在）。
+	CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error
 }
 
 // SettingStore 类型化配置持久化（Phase 3a）。
@@ -140,11 +144,16 @@ type Service struct {
 	invalidate func() // 调度快照失效（全量重载）
 	ruleReload RuleReloader
 	keys       KeyRegistrar
-	log        *logx.Logger
+	// settings 设置全量内存快照（默认值 + DB 覆盖）：公开读路径（注册等）
+	// 零 DB 直读；仅管理面 UpdateSetting 后重载（低频，无锁）。
+	settings atomic.Pointer[map[string]*domain.Setting]
+	log      *logx.Logger
 }
 
 func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
-	return &Service{store: store, sched: sched, invalidate: invalidate, ruleReload: ruleReload, keys: keys, log: log}
+	s := &Service{store: store, sched: sched, invalidate: invalidate, ruleReload: ruleReload, keys: keys, log: log}
+	s.reloadSettings(context.Background())
+	return s
 }
 
 // validateBaseURL 校验 base_url：可解析、有 scheme/host，且为裸根（不含尾

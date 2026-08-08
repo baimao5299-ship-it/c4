@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -64,6 +65,19 @@ func (r *UserRepo) UpdateUserMaxConcurrency(ctx context.Context, userID int64, v
 		return fmt.Errorf("%w: id=%d missing", ErrNotFound, userID)
 	}
 	return nil
+}
+
+// CreateTempBalance 创建临时额度行（注册赠品等）：每笔独立行、独立到期
+// （多笔不同到期共存，Phase 5 FEFO 扣费）。user_id 外键必存在（服务层先
+// CreateUser 拿到 id）。expiresAt/note 为 nil 时不落该列（nil = 永久）。
+func (r *UserRepo) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
+	_, err := r.client.TempBalance.Create().
+		SetUserID(userID).
+		SetAmount(amount).
+		SetNillableExpiresAt(expiresAt).
+		SetNillableNote(note).
+		Save(ctx)
+	return err
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {

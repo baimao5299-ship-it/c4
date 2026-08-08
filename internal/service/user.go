@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/mail"
 	"strings"
+	"time"
 
 	"go-proxy-mini/internal/auth"
 	"go-proxy-mini/internal/domain"
@@ -18,14 +19,12 @@ var (
 )
 
 // RegisterUser 注册（注册即登录——handler 侧签发 JWT）：
-// settings.signup_enabled 开关（DB 直读，即时生效）→ email 唯一/格式 →
-// 密码 ≤72 字节 → bcrypt DefaultCost(10)（sub2api 同参数）。
+// 快照读 settings.signup_enabled 开关（UpdateSetting 即时生效）→ email
+// 唯一/格式 → 密码 ≤72 字节 → bcrypt DefaultCost(10)（sub2api 同参数）→
+// 快照读 4 个新用户初始资源默认值 → CreateUser → temp_balance > 0 送临时
+// 额度（插行失败不阻断注册，评审 M-2）。
 func (s *Service) RegisterUser(ctx context.Context, email, password string) (*domain.User, error) {
-	setting, err := s.store.GetSetting(ctx, "signup_enabled")
-	if err != nil {
-		return nil, err
-	}
-	if setting.Value != "true" {
+	if s.settingValue("signup_enabled") != "true" {
 		return nil, ErrSignupDisabled
 	}
 	if !validEmail(email) {
@@ -45,12 +44,27 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 	if err != nil {
 		return nil, err
 	}
+	// 新用户初始资源：仅公开注册路径套默认；管理面 CreateUser 显式传值
+	// （用户拍板，0 就是 0）。
 	created, err := s.store.CreateUser(ctx, &domain.User{
 		Email: email, PasswordHash: hash,
 		Role: domain.RoleUser, Status: domain.UserStatusActive,
+		MaxConcurrency: int(s.settingInt("default_user_max_concurrency")),
+		Balance:        s.settingInt("default_user_balance"),
 	})
 	if err != nil {
 		return nil, err
+	}
+	if temp := s.settingInt("default_user_temp_balance"); temp > 0 {
+		expiresAt := time.Now().AddDate(0, 0, int(s.settingInt("default_user_temp_balance_ttl_days")))
+		note := "signup bonus"
+		if err := s.store.CreateTempBalance(ctx, created.ID, temp, &expiresAt, &note); err != nil {
+			// 评审 M-2：赠品插行失败不阻断注册（否则注册报错 → 客户端重试
+			// → 409 email 死锁）；仅告警，用户已创建成功。
+			if s.log != nil {
+				s.log.Warn("signup temp balance insert failed", logx.Int64("user_id", created.ID), logx.Error(err))
+			}
+		}
 	}
 	s.invalidate()
 	if s.log != nil {

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -15,6 +16,14 @@ import (
 // Create/Get/Update 均返回副本，存库条目一经写入不再被外部指针修改。
 // 若直接存/返回调用方指针，UpdateUser/RotateKey 等原地修改会透过别名污染
 // 测试持有的旧引用（评审发现：测试必然失败或退化为恒真断言）。
+// fakeTempBalance 注册赠品等临时额度行（domain 无对应类型，仅测试断言用）。
+type fakeTempBalance struct {
+	UserID    int64
+	Amount    int64
+	ExpiresAt *time.Time
+	Note      *string
+}
+
 type fakeStore struct {
 	mu        sync.Mutex
 	tpls      map[int64]*domain.Template
@@ -32,6 +41,10 @@ type fakeStore struct {
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
+	// tempBalances 临时额度行（注册赠品断言用）。
+	tempBalances []fakeTempBalance
+	// tempBalanceErr 注入 CreateTempBalance 失败（评审 M-2：注册不阻断）。
+	tempBalanceErr error
 }
 
 func newFakeStore() *fakeStore {
@@ -577,6 +590,21 @@ func (f *fakeStore) UpdateUserPassword(ctx context.Context, id int64, passwordHa
 		return missingErr(id)
 	}
 	u.PasswordHash = passwordHash
+	return nil
+}
+
+// CreateTempBalance 临时额度行（注册赠品）；tempBalanceErr 非 nil 时注入失败
+// （评审 M-2 测试）。
+func (f *fakeStore) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.tempBalanceErr != nil {
+		return f.tempBalanceErr
+	}
+	if _, ok := f.users[userID]; !ok {
+		return missingErr(userID)
+	}
+	f.tempBalances = append(f.tempBalances, fakeTempBalance{UserID: userID, Amount: amount, ExpiresAt: expiresAt, Note: note})
 	return nil
 }
 

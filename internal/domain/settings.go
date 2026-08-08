@@ -5,6 +5,11 @@ package domain
 // 同步（service.ValidateSetting 用）。
 var DefaultSettings = []Setting{
 	{Key: "signup_enabled", Type: SettingTypeSwitch, Value: "true"},
+	// 新用户初始资源：公开注册路径应用；管理面 CreateUser 不套默认（显式传值）。
+	{Key: "default_user_max_concurrency", Type: SettingTypeNumber, Value: "0"}, // 0 = 不限
+	{Key: "default_user_balance", Type: SettingTypeNumber, Value: "0"},         // 最小单位
+	{Key: "default_user_temp_balance", Type: SettingTypeNumber, Value: "0"},    // 0 = 不送
+	{Key: "default_user_temp_balance_ttl_days", Type: SettingTypeNumber, Value: "30"},
 }
 
 // DefaultSetting 返回内置 key 的默认设置；未知 key 返回 nil。

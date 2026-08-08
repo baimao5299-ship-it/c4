@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
@@ -589,6 +590,16 @@ func (f *fakeStore) UpdateUserPassword(ctx context.Context, id int64, passwordHa
 		return missingErr(id)
 	}
 	u.PasswordHash = passwordHash
+	return nil
+}
+
+// CreateTempBalance 临时额度行（注册赠品；handler 测试无断言需求，静默成功）。
+func (f *fakeStore) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.users[userID]; !ok {
+		return missingErr(userID)
+	}
 	return nil
 }
 

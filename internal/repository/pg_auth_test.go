@@ -283,11 +283,28 @@ func TestPGSettingDefaultsAndSet(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "false", s2.Value)
 
-	// GetAll：默认 + DB 覆盖
+	// GetAll：默认 + DB 覆盖（注册表逐项返回；signup_enabled 为 DB 覆盖值）
 	all, err := repos.GetAllSettings(ctx)
 	require.NoError(t, err)
-	require.Len(t, all, 1, "仅内置项")
+	require.Len(t, all, len(domain.DefaultSettings))
 	require.Equal(t, "false", all[0].Value)
+
+	// 新用户初始资源 4 key 默认值（DB 无行即默认）
+	for _, key := range []string{"default_user_max_concurrency", "default_user_balance", "default_user_temp_balance", "default_user_temp_balance_ttl_days"} {
+		d := domain.DefaultSetting(key)
+		require.NotNil(t, d, "内置注册表必须含 %s", key)
+		require.Equal(t, domain.SettingTypeNumber, d.Type)
+		got, err := repos.GetSetting(ctx, key)
+		require.NoError(t, err)
+		require.Equal(t, d.Value, got.Value, "DB 无行 → 默认 %s=%s", key, d.Value)
+	}
+	// 新 key 经 Set 落库覆盖默认
+	set, err = repos.SetSetting(ctx, "default_user_balance", domain.SettingTypeNumber, "500")
+	require.NoError(t, err)
+	require.Equal(t, "500", set.Value)
+	got, err := repos.GetSetting(ctx, "default_user_balance")
+	require.NoError(t, err)
+	require.Equal(t, "500", got.Value)
 
 	// 重复 Set 覆盖（upsert 更新）
 	_, err = repos.SetSetting(ctx, "signup_enabled", domain.SettingTypeSwitch, "true")
