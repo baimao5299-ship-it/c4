@@ -19,7 +19,7 @@
 | `format`（请求格式） | `openai-chat` / `openai-responses` / `anthropic` |
 | `status`（账号） | `active` / `unhealthy` / `429` / `disabled` |
 | `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` |
-| `type`（兑换码） | `balance`（充值余额，最小单位分）/ `concurrency`（加并发数）/ `temp_balance`（临时余额，兑换后资源到期） |
+| `type`（兑换码） | `balance`（充值余额，最小单位毫分，1 USD = 100,000 毫分）/ `concurrency`（加并发数）/ `temp_balance`（临时余额，兑换后资源到期） |
 | `status`（兑换码） | `active` / `disabled`（不可编辑，仅可失效） |
 | `source`（模型价格） | `litellm`（官方价格表拉取）/ `manual`（管理端手动设价，优先级最高） |
 
@@ -536,7 +536,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `type` | string | ✅ | 枚举：`balance` / `concurrency` / `temp_balance`；非法 → `400` |
-| `value` | int64 | ✅ | 资源值（最小单位：分为 `balance` 的"分"、`concurrency` 为并发数）；`> 0`，否则 `400` |
+| `value` | int64 | ✅ | 资源值（最小单位：毫分——1 USD = 100,000 毫分，`balance` 即毫分金额；`concurrency` 为并发数）；`> 0`，否则 `400` |
 | `remark` | string | 否 | 备注 |
 | `expires_at` | datetime | 否 | 码**未兑换即过期**；缺省 = 永久；必须晚于当前时间（过去时间 → `400`） |
 | `resource_expires_at` | datetime | 否 | 兑换后**资源到期**；`temp_balance` 必填且必须晚于当前时间，其余类型恒为 `null` |

@@ -134,6 +134,26 @@ func CacheCreationTokens(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreationTokens, v))
 }
 
+// Cost applies equality check predicate on the "cost" field. It's identical to CostEQ.
+func Cost(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCost, v))
+}
+
+// BillingTier applies equality check predicate on the "billing_tier" field. It's identical to BillingTierEQ.
+func BillingTier(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingTier, v))
+}
+
+// AboveHit applies equality check predicate on the "above_hit" field. It's identical to AboveHitEQ.
+func AboveHit(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldAboveHit, v))
+}
+
+// Overdraft applies equality check predicate on the "overdraft" field. It's identical to OverdraftEQ.
+func Overdraft(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOverdraft, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCreatedAt, v))
@@ -957,6 +977,141 @@ func CacheCreationTokensLT(v int64) predicate.UsageLog {
 // CacheCreationTokensLTE applies the LTE predicate on the "cache_creation_tokens" field.
 func CacheCreationTokensLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldCacheCreationTokens, v))
+}
+
+// CostEQ applies the EQ predicate on the "cost" field.
+func CostEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCost, v))
+}
+
+// CostNEQ applies the NEQ predicate on the "cost" field.
+func CostNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCost, v))
+}
+
+// CostIn applies the In predicate on the "cost" field.
+func CostIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCost, vs...))
+}
+
+// CostNotIn applies the NotIn predicate on the "cost" field.
+func CostNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCost, vs...))
+}
+
+// CostGT applies the GT predicate on the "cost" field.
+func CostGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCost, v))
+}
+
+// CostGTE applies the GTE predicate on the "cost" field.
+func CostGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCost, v))
+}
+
+// CostLT applies the LT predicate on the "cost" field.
+func CostLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCost, v))
+}
+
+// CostLTE applies the LTE predicate on the "cost" field.
+func CostLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCost, v))
+}
+
+// BillingTierEQ applies the EQ predicate on the "billing_tier" field.
+func BillingTierEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingTier, v))
+}
+
+// BillingTierNEQ applies the NEQ predicate on the "billing_tier" field.
+func BillingTierNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldBillingTier, v))
+}
+
+// BillingTierIn applies the In predicate on the "billing_tier" field.
+func BillingTierIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldBillingTier, vs...))
+}
+
+// BillingTierNotIn applies the NotIn predicate on the "billing_tier" field.
+func BillingTierNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldBillingTier, vs...))
+}
+
+// BillingTierGT applies the GT predicate on the "billing_tier" field.
+func BillingTierGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldBillingTier, v))
+}
+
+// BillingTierGTE applies the GTE predicate on the "billing_tier" field.
+func BillingTierGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldBillingTier, v))
+}
+
+// BillingTierLT applies the LT predicate on the "billing_tier" field.
+func BillingTierLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldBillingTier, v))
+}
+
+// BillingTierLTE applies the LTE predicate on the "billing_tier" field.
+func BillingTierLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldBillingTier, v))
+}
+
+// BillingTierContains applies the Contains predicate on the "billing_tier" field.
+func BillingTierContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldBillingTier, v))
+}
+
+// BillingTierHasPrefix applies the HasPrefix predicate on the "billing_tier" field.
+func BillingTierHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldBillingTier, v))
+}
+
+// BillingTierHasSuffix applies the HasSuffix predicate on the "billing_tier" field.
+func BillingTierHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldBillingTier, v))
+}
+
+// BillingTierIsNil applies the IsNil predicate on the "billing_tier" field.
+func BillingTierIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldBillingTier))
+}
+
+// BillingTierNotNil applies the NotNil predicate on the "billing_tier" field.
+func BillingTierNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldBillingTier))
+}
+
+// BillingTierEqualFold applies the EqualFold predicate on the "billing_tier" field.
+func BillingTierEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldBillingTier, v))
+}
+
+// BillingTierContainsFold applies the ContainsFold predicate on the "billing_tier" field.
+func BillingTierContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldBillingTier, v))
+}
+
+// AboveHitEQ applies the EQ predicate on the "above_hit" field.
+func AboveHitEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldAboveHit, v))
+}
+
+// AboveHitNEQ applies the NEQ predicate on the "above_hit" field.
+func AboveHitNEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldAboveHit, v))
+}
+
+// OverdraftEQ applies the EQ predicate on the "overdraft" field.
+func OverdraftEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOverdraft, v))
+}
+
+// OverdraftNEQ applies the NEQ predicate on the "overdraft" field.
+func OverdraftNEQ(v bool) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldOverdraft, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

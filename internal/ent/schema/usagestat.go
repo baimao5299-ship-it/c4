@@ -27,6 +27,7 @@ func (UsageStat) Fields() []ent.Field {
 		field.Int64("total_tokens").Default(0),
 		field.Int64("cache_read_tokens").Default(0),
 		field.Int64("cache_creation_tokens").Default(0),
+		field.Int64("cost").Default(0), // 毫分（1 USD = 100,000 毫分）；计费预聚合，花费统计不扫明细
 		field.Int64("total_latency_ms").Default(0),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}

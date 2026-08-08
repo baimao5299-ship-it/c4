@@ -37,6 +37,9 @@ func (s *Service) QueryStats(ctx context.Context, q repository.StatQuery, granul
 		m.PromptTokens += b.PromptTokens
 		m.CompletionTokens += b.CompletionTokens
 		m.TotalTokens += b.TotalTokens
+		m.CacheReadTokens += b.CacheReadTokens
+		m.CacheCreationTokens += b.CacheCreationTokens
+		m.Cost += b.Cost
 		m.TotalLatencyMS += b.TotalLatencyMS
 	}
 	out := make([]*domain.StatBucket, 0, len(merged))

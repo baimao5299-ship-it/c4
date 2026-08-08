@@ -12,7 +12,22 @@ import (
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/pricing"
+	"go-proxy-mini/internal/repository"
 )
+
+// manualReq 构造 PricingManual（可选 cache 价；矩阵字段走显式设置）。
+func manualReq(model string, prompt, completion int64, cache ...*int64) *repository.PricingManual {
+	m := &repository.PricingManual{
+		Model: model, PromptPricePerMillion: prompt, CompletionPricePerMillion: completion,
+	}
+	if len(cache) >= 1 {
+		m.CacheReadPricePerMillion = cache[0]
+	}
+	if len(cache) >= 2 {
+		m.CacheCreationPricePerMillion = cache[1]
+	}
+	return m
+}
 
 // fakePriceFetcher 测试用价格拉取器（返回注入结果/错误）。
 type fakePriceFetcher struct {
@@ -45,9 +60,9 @@ func seedPricing(t *testing.T, h *AdminAPI, f pricing.Fetcher) {
 	h.svc.SetPriceFetcher(f)
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err, "seed sync")
-	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300, nil, nil)
+	_, err = h.svc.UpsertManualPricing(context.Background(), manualReq("gpt-4o", 100, 300))
 	require.NoError(t, err)
-	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o-mini", 50, 150, nil, nil)
+	_, err = h.svc.UpsertManualPricing(context.Background(), manualReq("gpt-4o-mini", 50, 150))
 	require.NoError(t, err)
 }
 
@@ -194,7 +209,7 @@ func TestDeletePricing(t *testing.T) {
 	h, do := newPricingRouter(t, f)
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
-	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300, nil, nil)
+	_, err = h.svc.UpsertManualPricing(context.Background(), manualReq("gpt-4o", 100, 300))
 	require.NoError(t, err)
 
 	// 删除手动行成功
@@ -260,7 +275,7 @@ func TestPricingSync(t *testing.T) {
 			{Model: "gpt-4o", PromptPricePerMillion: 250000, CompletionPricePerMillion: 1000000, Source: domain.PricingSourceLitellm},
 		}}}
 		h, do := newPricingRouter(t, f)
-		_, err := h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300, nil, nil)
+		_, err := h.svc.UpsertManualPricing(context.Background(), manualReq("gpt-4o", 100, 300))
 		require.NoError(t, err)
 
 		rec := do(http.MethodPost, "/admin/pricing/sync", "")

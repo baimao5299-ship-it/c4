@@ -51,6 +51,14 @@ type UsageLog struct {
 	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
 	// CacheCreationTokens holds the value of the "cache_creation_tokens" field.
 	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
+	// Cost holds the value of the "cost" field.
+	Cost int64 `json:"cost,omitempty"`
+	// BillingTier holds the value of the "billing_tier" field.
+	BillingTier *string `json:"billing_tier,omitempty"`
+	// AboveHit holds the value of the "above_hit" field.
+	AboveHit bool `json:"above_hit,omitempty"`
+	// Overdraft holds the value of the "overdraft" field.
+	Overdraft bool `json:"overdraft,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt    time.Time `json:"created_at,omitempty"`
 	selectValues sql.SelectValues
@@ -61,9 +69,11 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldPromptTokens, usagelog.FieldCompletionTokens, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreationTokens:
+		case usagelog.FieldAboveHit, usagelog.FieldOverdraft:
+			values[i] = new(sql.NullBool)
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldPromptTokens, usagelog.FieldCompletionTokens, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCost:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType:
+		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldBillingTier:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -196,6 +206,31 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.CacheCreationTokens = value.Int64
 			}
+		case usagelog.FieldCost:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cost", values[i])
+			} else if value.Valid {
+				_m.Cost = value.Int64
+			}
+		case usagelog.FieldBillingTier:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_tier", values[i])
+			} else if value.Valid {
+				_m.BillingTier = new(string)
+				*_m.BillingTier = value.String
+			}
+		case usagelog.FieldAboveHit:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field above_hit", values[i])
+			} else if value.Valid {
+				_m.AboveHit = value.Bool
+			}
+		case usagelog.FieldOverdraft:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field overdraft", values[i])
+			} else if value.Valid {
+				_m.Overdraft = value.Bool
+			}
 		case usagelog.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -300,6 +335,20 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("cache_creation_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CacheCreationTokens))
+	builder.WriteString(", ")
+	builder.WriteString("cost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Cost))
+	builder.WriteString(", ")
+	if v := _m.BillingTier; v != nil {
+		builder.WriteString("billing_tier=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("above_hit=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AboveHit))
+	builder.WriteString(", ")
+	builder.WriteString("overdraft=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Overdraft))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

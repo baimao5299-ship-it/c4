@@ -125,6 +125,7 @@ const (
 	ErrAuth      ErrorType = "auth"
 	ErrNoAccount ErrorType = "no_account"
 	ErrAbort     ErrorType = "abort"
+	ErrBilling   ErrorType = "billing" // 计费拒绝（缺价/余额不足 402）
 )
 
 type Template struct {
@@ -201,7 +202,8 @@ type Group struct {
 
 // User 用户（顶层实体，无租户）。标识 = 邮箱；PasswordHash 为 bcrypt
 // DefaultCost(10)（与 sub2api 同参数，存量 hash 可迁移验证）。
-// Balance 最小单位，本轮只建模型（管理面可读写），扣费 Phase 5。
+// Balance 最小单位（毫分；1 USD = 100,000 毫分，Phase 5 计费统一单位，
+// 管理面 API 展示/输入换算 USD）。
 type User struct {
 	ID             int64
 	Email          string
@@ -266,6 +268,9 @@ type KeyMeta struct {
 }
 
 // UsageLog 用量日志：user_id/key_id 为鉴权归属（context 传递，0 = 无）。
+// 计费列（Phase 5）：Cost 毫分（1 USD = 100,000 毫分）；BillingTier 请求
+// service_tier 归一化值（priority/flex/fast/auto，空 = 未计费路径）；AboveHit
+// 任一分量超 above 阈值命中分段；Overdraft 本次扣费透支（负余额）。
 type UsageLog struct {
 	ID               int64
 	RequestID        string
@@ -285,6 +290,10 @@ type UsageLog struct {
 	TotalTokens         int64
 	CacheReadTokens     int64 // 缓存读取 token（跨协议归一化，sub2api 计费语义）
 	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
+	Cost                int64 // 毫分；错误请求（402/4xx）为 0
+	BillingTier         string // priority/flex/fast/auto；空 = 未计费路径
+	AboveHit            bool
+	Overdraft           bool
 	CreatedAt           time.Time
 }
 
@@ -303,6 +312,7 @@ type StatBucket struct {
 	TotalTokens         int64
 	CacheReadTokens     int64 // 缓存读取 token
 	CacheCreationTokens int64 // 缓存写入 token
+	Cost                int64 // 毫分（计费预聚合，花费统计不扫明细）
 	TotalLatencyMS      int64
 }
 

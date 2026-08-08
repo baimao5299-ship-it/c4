@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/service"
 )
 
@@ -41,17 +42,22 @@ func (h *AdminAPI) GetPricing(w http.ResponseWriter, r *http.Request, params Get
 }
 
 // PutPricingModel 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管
-// litellm 行；负数/model 空 → 400，service 校验）。cache_read/creation 可选：
-// 缺省（nil）→ 不设缓存价（落库 NULL），ServerInterface。
+// litellm 行；负数/model 空 → 400，service 校验）。可选字段（cache 价 + Phase 5
+// 矩阵 22 列）缺省（nil）→ 清空（接管行该矩阵价清除，PUT 全量替换语义），
+// ServerInterface。矩阵字段解码在 T4 契约扩展时随 openapi 生成补全。
 func (h *AdminAPI) PutPricingModel(w http.ResponseWriter, r *http.Request, model string) {
 	var in PricingUpsert
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	p, err := h.svc.UpsertManualPricing(r.Context(), model,
-		in.PromptPricePerMillion, in.CompletionPricePerMillion,
-		in.CacheReadPricePerMillion, in.CacheCreationPricePerMillion)
+	p, err := h.svc.UpsertManualPricing(r.Context(), &repository.PricingManual{
+		Model:                        model,
+		PromptPricePerMillion:        in.PromptPricePerMillion,
+		CompletionPricePerMillion:    in.CompletionPricePerMillion,
+		CacheReadPricePerMillion:     in.CacheReadPricePerMillion,
+		CacheCreationPricePerMillion: in.CacheCreationPricePerMillion,
+	})
 	if err != nil {
 		writeServiceErr(w, err)
 		return

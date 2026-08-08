@@ -415,8 +415,8 @@ func (r *Repository) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Prici
 	return r.Pricing.UpsertFromLiteLLM(ctx, rows)
 }
 
-func (r *Repository) UpsertManual(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error) {
-	return r.Pricing.UpsertManual(ctx, model, promptP, completionP, cacheRead, cacheCreation)
+func (r *Repository) UpsertManual(ctx context.Context, m *PricingManual) (*domain.Pricing, error) {
+	return r.Pricing.UpsertManual(ctx, m)
 }
 
 func (r *Repository) DeleteManual(ctx context.Context, model string) error {

@@ -145,7 +145,7 @@ type RedemptionStore interface {
 // 构建与仓库同语义。
 type PricingStore interface {
 	UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error)
-	UpsertManual(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error)
+	UpsertManual(ctx context.Context, m *repository.PricingManual) (*domain.Pricing, error)
 	DeleteManual(ctx context.Context, model string) error
 	ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error)
 	GetPricing(ctx context.Context, model string) (*domain.Pricing, error)

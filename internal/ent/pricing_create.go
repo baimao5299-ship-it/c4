@@ -97,6 +97,314 @@ func (_c *PricingCreate) SetNillableCacheCreationPricePerMillion(v *int64) *Pric
 	return _c
 }
 
+// SetPriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field.
+func (_c *PricingCreate) SetPriorityPromptPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetPriorityPromptPricePerMillion(v)
+	return _c
+}
+
+// SetNillablePriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillablePriorityPromptPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetPriorityPromptPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetPriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field.
+func (_c *PricingCreate) SetPriorityCompletionPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetPriorityCompletionPricePerMillion(v)
+	return _c
+}
+
+// SetNillablePriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillablePriorityCompletionPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetPriorityCompletionPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetPriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field.
+func (_c *PricingCreate) SetPriorityCacheReadPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetPriorityCacheReadPricePerMillion(v)
+	return _c
+}
+
+// SetNillablePriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillablePriorityCacheReadPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetPriorityCacheReadPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetPriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field.
+func (_c *PricingCreate) SetPriorityCacheCreationPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetPriorityCacheCreationPricePerMillion(v)
+	return _c
+}
+
+// SetNillablePriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillablePriorityCacheCreationPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetPriorityCacheCreationPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field.
+func (_c *PricingCreate) SetFlexPromptPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetFlexPromptPricePerMillion(v)
+	return _c
+}
+
+// SetNillableFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableFlexPromptPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetFlexPromptPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field.
+func (_c *PricingCreate) SetFlexCompletionPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetFlexCompletionPricePerMillion(v)
+	return _c
+}
+
+// SetNillableFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableFlexCompletionPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetFlexCompletionPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field.
+func (_c *PricingCreate) SetFlexCacheReadPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetFlexCacheReadPricePerMillion(v)
+	return _c
+}
+
+// SetNillableFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableFlexCacheReadPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetFlexCacheReadPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field.
+func (_c *PricingCreate) SetFlexCacheCreationPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetFlexCacheCreationPricePerMillion(v)
+	return _c
+}
+
+// SetNillableFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableFlexCacheCreationPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetFlexCacheCreationPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveThreshold sets the "above_threshold" field.
+func (_c *PricingCreate) SetAboveThreshold(v int64) *PricingCreate {
+	_c.mutation.SetAboveThreshold(v)
+	return _c
+}
+
+// SetNillableAboveThreshold sets the "above_threshold" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveThreshold(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveThreshold(*v)
+	}
+	return _c
+}
+
+// SetAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field.
+func (_c *PricingCreate) SetAbovePromptPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAbovePromptPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAbovePromptPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAbovePromptPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field.
+func (_c *PricingCreate) SetAboveCompletionPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveCompletionPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveCompletionPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveCompletionPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field.
+func (_c *PricingCreate) SetAboveCacheReadPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveCacheReadPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveCacheReadPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveCacheReadPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field.
+func (_c *PricingCreate) SetAboveCacheCreationPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveCacheCreationPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveCacheCreationPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveCacheCreationPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field.
+func (_c *PricingCreate) SetAbovePriorityPromptPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAbovePriorityPromptPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAbovePriorityPromptPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAbovePriorityPromptPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field.
+func (_c *PricingCreate) SetAbovePriorityCompletionPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAbovePriorityCompletionPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAbovePriorityCompletionPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAbovePriorityCompletionPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field.
+func (_c *PricingCreate) SetAbovePriorityCacheReadPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAbovePriorityCacheReadPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAbovePriorityCacheReadPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAbovePriorityCacheReadPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field.
+func (_c *PricingCreate) SetAbovePriorityCacheCreationPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAbovePriorityCacheCreationPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAbovePriorityCacheCreationPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAbovePriorityCacheCreationPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field.
+func (_c *PricingCreate) SetAboveFlexPromptPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveFlexPromptPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveFlexPromptPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveFlexPromptPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field.
+func (_c *PricingCreate) SetAboveFlexCompletionPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveFlexCompletionPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveFlexCompletionPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveFlexCompletionPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field.
+func (_c *PricingCreate) SetAboveFlexCacheReadPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveFlexCacheReadPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveFlexCacheReadPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveFlexCacheReadPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field.
+func (_c *PricingCreate) SetAboveFlexCacheCreationPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetAboveFlexCacheCreationPricePerMillion(v)
+	return _c
+}
+
+// SetNillableAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableAboveFlexCacheCreationPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetAboveFlexCacheCreationPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetFastMultiplier sets the "fast_multiplier" field.
+func (_c *PricingCreate) SetFastMultiplier(v int64) *PricingCreate {
+	_c.mutation.SetFastMultiplier(v)
+	return _c
+}
+
+// SetNillableFastMultiplier sets the "fast_multiplier" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableFastMultiplier(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetFastMultiplier(*v)
+	}
+	return _c
+}
+
 // SetProvider sets the "provider" field.
 func (_c *PricingCreate) SetProvider(v string) *PricingCreate {
 	_c.mutation.SetProvider(v)
@@ -315,6 +623,94 @@ func (_c *PricingCreate) createSpec() (*Pricing, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.CacheCreationPricePerMillion(); ok {
 		_spec.SetField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64, value)
 		_node.CacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.PriorityPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityPromptPricePerMillion, field.TypeInt64, value)
+		_node.PriorityPromptPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.PriorityCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCompletionPricePerMillion, field.TypeInt64, value)
+		_node.PriorityCompletionPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.PriorityCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCacheReadPricePerMillion, field.TypeInt64, value)
+		_node.PriorityCacheReadPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.PriorityCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldPriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+		_node.PriorityCacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.FlexPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexPromptPricePerMillion, field.TypeInt64, value)
+		_node.FlexPromptPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.FlexCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCompletionPricePerMillion, field.TypeInt64, value)
+		_node.FlexCompletionPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.FlexCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCacheReadPricePerMillion, field.TypeInt64, value)
+		_node.FlexCacheReadPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.FlexCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+		_node.FlexCacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveThreshold(); ok {
+		_spec.SetField(pricing.FieldAboveThreshold, field.TypeInt64, value)
+		_node.AboveThreshold = &value
+	}
+	if value, ok := _c.mutation.AbovePromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePromptPricePerMillion, field.TypeInt64, value)
+		_node.AbovePromptPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCompletionPricePerMillion, field.TypeInt64, value)
+		_node.AboveCompletionPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCacheReadPricePerMillion, field.TypeInt64, value)
+		_node.AboveCacheReadPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveCacheCreationPricePerMillion, field.TypeInt64, value)
+		_node.AboveCacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AbovePriorityPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityPromptPricePerMillion, field.TypeInt64, value)
+		_node.AbovePriorityPromptPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AbovePriorityCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCompletionPricePerMillion, field.TypeInt64, value)
+		_node.AbovePriorityCompletionPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AbovePriorityCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCacheReadPricePerMillion, field.TypeInt64, value)
+		_node.AbovePriorityCacheReadPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AbovePriorityCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAbovePriorityCacheCreationPricePerMillion, field.TypeInt64, value)
+		_node.AbovePriorityCacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveFlexPromptPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexPromptPricePerMillion, field.TypeInt64, value)
+		_node.AboveFlexPromptPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveFlexCompletionPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCompletionPricePerMillion, field.TypeInt64, value)
+		_node.AboveFlexCompletionPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveFlexCacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCacheReadPricePerMillion, field.TypeInt64, value)
+		_node.AboveFlexCacheReadPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.AboveFlexCacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldAboveFlexCacheCreationPricePerMillion, field.TypeInt64, value)
+		_node.AboveFlexCacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.FastMultiplier(); ok {
+		_spec.SetField(pricing.FieldFastMultiplier, field.TypeInt64, value)
+		_node.FastMultiplier = &value
 	}
 	if value, ok := _c.mutation.Provider(); ok {
 		_spec.SetField(pricing.FieldProvider, field.TypeString, value)
@@ -537,6 +933,534 @@ func (u *PricingUpsert) AddCacheCreationPricePerMillion(v int64) *PricingUpsert 
 // ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
 func (u *PricingUpsert) ClearCacheCreationPricePerMillion() *PricingUpsert {
 	u.SetNull(pricing.FieldCacheCreationPricePerMillion)
+	return u
+}
+
+// SetPriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field.
+func (u *PricingUpsert) SetPriorityPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldPriorityPromptPricePerMillion, v)
+	return u
+}
+
+// UpdatePriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdatePriorityPromptPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldPriorityPromptPricePerMillion)
+	return u
+}
+
+// AddPriorityPromptPricePerMillion adds v to the "priority_prompt_price_per_million" field.
+func (u *PricingUpsert) AddPriorityPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldPriorityPromptPricePerMillion, v)
+	return u
+}
+
+// ClearPriorityPromptPricePerMillion clears the value of the "priority_prompt_price_per_million" field.
+func (u *PricingUpsert) ClearPriorityPromptPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldPriorityPromptPricePerMillion)
+	return u
+}
+
+// SetPriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field.
+func (u *PricingUpsert) SetPriorityCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldPriorityCompletionPricePerMillion, v)
+	return u
+}
+
+// UpdatePriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdatePriorityCompletionPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldPriorityCompletionPricePerMillion)
+	return u
+}
+
+// AddPriorityCompletionPricePerMillion adds v to the "priority_completion_price_per_million" field.
+func (u *PricingUpsert) AddPriorityCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldPriorityCompletionPricePerMillion, v)
+	return u
+}
+
+// ClearPriorityCompletionPricePerMillion clears the value of the "priority_completion_price_per_million" field.
+func (u *PricingUpsert) ClearPriorityCompletionPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldPriorityCompletionPricePerMillion)
+	return u
+}
+
+// SetPriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsert) SetPriorityCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldPriorityCacheReadPricePerMillion, v)
+	return u
+}
+
+// UpdatePriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdatePriorityCacheReadPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldPriorityCacheReadPricePerMillion)
+	return u
+}
+
+// AddPriorityCacheReadPricePerMillion adds v to the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsert) AddPriorityCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldPriorityCacheReadPricePerMillion, v)
+	return u
+}
+
+// ClearPriorityCacheReadPricePerMillion clears the value of the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsert) ClearPriorityCacheReadPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldPriorityCacheReadPricePerMillion)
+	return u
+}
+
+// SetPriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsert) SetPriorityCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldPriorityCacheCreationPricePerMillion, v)
+	return u
+}
+
+// UpdatePriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdatePriorityCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldPriorityCacheCreationPricePerMillion)
+	return u
+}
+
+// AddPriorityCacheCreationPricePerMillion adds v to the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsert) AddPriorityCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldPriorityCacheCreationPricePerMillion, v)
+	return u
+}
+
+// ClearPriorityCacheCreationPricePerMillion clears the value of the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsert) ClearPriorityCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldPriorityCacheCreationPricePerMillion)
+	return u
+}
+
+// SetFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field.
+func (u *PricingUpsert) SetFlexPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldFlexPromptPricePerMillion, v)
+	return u
+}
+
+// UpdateFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateFlexPromptPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldFlexPromptPricePerMillion)
+	return u
+}
+
+// AddFlexPromptPricePerMillion adds v to the "flex_prompt_price_per_million" field.
+func (u *PricingUpsert) AddFlexPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldFlexPromptPricePerMillion, v)
+	return u
+}
+
+// ClearFlexPromptPricePerMillion clears the value of the "flex_prompt_price_per_million" field.
+func (u *PricingUpsert) ClearFlexPromptPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldFlexPromptPricePerMillion)
+	return u
+}
+
+// SetFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field.
+func (u *PricingUpsert) SetFlexCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldFlexCompletionPricePerMillion, v)
+	return u
+}
+
+// UpdateFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateFlexCompletionPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldFlexCompletionPricePerMillion)
+	return u
+}
+
+// AddFlexCompletionPricePerMillion adds v to the "flex_completion_price_per_million" field.
+func (u *PricingUpsert) AddFlexCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldFlexCompletionPricePerMillion, v)
+	return u
+}
+
+// ClearFlexCompletionPricePerMillion clears the value of the "flex_completion_price_per_million" field.
+func (u *PricingUpsert) ClearFlexCompletionPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldFlexCompletionPricePerMillion)
+	return u
+}
+
+// SetFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsert) SetFlexCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldFlexCacheReadPricePerMillion, v)
+	return u
+}
+
+// UpdateFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateFlexCacheReadPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldFlexCacheReadPricePerMillion)
+	return u
+}
+
+// AddFlexCacheReadPricePerMillion adds v to the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsert) AddFlexCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldFlexCacheReadPricePerMillion, v)
+	return u
+}
+
+// ClearFlexCacheReadPricePerMillion clears the value of the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsert) ClearFlexCacheReadPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldFlexCacheReadPricePerMillion)
+	return u
+}
+
+// SetFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsert) SetFlexCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldFlexCacheCreationPricePerMillion, v)
+	return u
+}
+
+// UpdateFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateFlexCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldFlexCacheCreationPricePerMillion)
+	return u
+}
+
+// AddFlexCacheCreationPricePerMillion adds v to the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsert) AddFlexCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldFlexCacheCreationPricePerMillion, v)
+	return u
+}
+
+// ClearFlexCacheCreationPricePerMillion clears the value of the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsert) ClearFlexCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldFlexCacheCreationPricePerMillion)
+	return u
+}
+
+// SetAboveThreshold sets the "above_threshold" field.
+func (u *PricingUpsert) SetAboveThreshold(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveThreshold, v)
+	return u
+}
+
+// UpdateAboveThreshold sets the "above_threshold" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveThreshold() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveThreshold)
+	return u
+}
+
+// AddAboveThreshold adds v to the "above_threshold" field.
+func (u *PricingUpsert) AddAboveThreshold(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveThreshold, v)
+	return u
+}
+
+// ClearAboveThreshold clears the value of the "above_threshold" field.
+func (u *PricingUpsert) ClearAboveThreshold() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveThreshold)
+	return u
+}
+
+// SetAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field.
+func (u *PricingUpsert) SetAbovePromptPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAbovePromptPricePerMillion, v)
+	return u
+}
+
+// UpdateAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAbovePromptPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAbovePromptPricePerMillion)
+	return u
+}
+
+// AddAbovePromptPricePerMillion adds v to the "above_prompt_price_per_million" field.
+func (u *PricingUpsert) AddAbovePromptPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAbovePromptPricePerMillion, v)
+	return u
+}
+
+// ClearAbovePromptPricePerMillion clears the value of the "above_prompt_price_per_million" field.
+func (u *PricingUpsert) ClearAbovePromptPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAbovePromptPricePerMillion)
+	return u
+}
+
+// SetAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field.
+func (u *PricingUpsert) SetAboveCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveCompletionPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveCompletionPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveCompletionPricePerMillion)
+	return u
+}
+
+// AddAboveCompletionPricePerMillion adds v to the "above_completion_price_per_million" field.
+func (u *PricingUpsert) AddAboveCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveCompletionPricePerMillion, v)
+	return u
+}
+
+// ClearAboveCompletionPricePerMillion clears the value of the "above_completion_price_per_million" field.
+func (u *PricingUpsert) ClearAboveCompletionPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveCompletionPricePerMillion)
+	return u
+}
+
+// SetAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field.
+func (u *PricingUpsert) SetAboveCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveCacheReadPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveCacheReadPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveCacheReadPricePerMillion)
+	return u
+}
+
+// AddAboveCacheReadPricePerMillion adds v to the "above_cache_read_price_per_million" field.
+func (u *PricingUpsert) AddAboveCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveCacheReadPricePerMillion, v)
+	return u
+}
+
+// ClearAboveCacheReadPricePerMillion clears the value of the "above_cache_read_price_per_million" field.
+func (u *PricingUpsert) ClearAboveCacheReadPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveCacheReadPricePerMillion)
+	return u
+}
+
+// SetAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsert) SetAboveCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveCacheCreationPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveCacheCreationPricePerMillion)
+	return u
+}
+
+// AddAboveCacheCreationPricePerMillion adds v to the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsert) AddAboveCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveCacheCreationPricePerMillion, v)
+	return u
+}
+
+// ClearAboveCacheCreationPricePerMillion clears the value of the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsert) ClearAboveCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveCacheCreationPricePerMillion)
+	return u
+}
+
+// SetAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsert) SetAbovePriorityPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAbovePriorityPromptPricePerMillion, v)
+	return u
+}
+
+// UpdateAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAbovePriorityPromptPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAbovePriorityPromptPricePerMillion)
+	return u
+}
+
+// AddAbovePriorityPromptPricePerMillion adds v to the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsert) AddAbovePriorityPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAbovePriorityPromptPricePerMillion, v)
+	return u
+}
+
+// ClearAbovePriorityPromptPricePerMillion clears the value of the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsert) ClearAbovePriorityPromptPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAbovePriorityPromptPricePerMillion)
+	return u
+}
+
+// SetAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsert) SetAbovePriorityCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAbovePriorityCompletionPricePerMillion, v)
+	return u
+}
+
+// UpdateAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAbovePriorityCompletionPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAbovePriorityCompletionPricePerMillion)
+	return u
+}
+
+// AddAbovePriorityCompletionPricePerMillion adds v to the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsert) AddAbovePriorityCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAbovePriorityCompletionPricePerMillion, v)
+	return u
+}
+
+// ClearAbovePriorityCompletionPricePerMillion clears the value of the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsert) ClearAbovePriorityCompletionPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAbovePriorityCompletionPricePerMillion)
+	return u
+}
+
+// SetAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsert) SetAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAbovePriorityCacheReadPricePerMillion, v)
+	return u
+}
+
+// UpdateAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAbovePriorityCacheReadPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAbovePriorityCacheReadPricePerMillion)
+	return u
+}
+
+// AddAbovePriorityCacheReadPricePerMillion adds v to the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsert) AddAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAbovePriorityCacheReadPricePerMillion, v)
+	return u
+}
+
+// ClearAbovePriorityCacheReadPricePerMillion clears the value of the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsert) ClearAbovePriorityCacheReadPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAbovePriorityCacheReadPricePerMillion)
+	return u
+}
+
+// SetAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsert) SetAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAbovePriorityCacheCreationPricePerMillion, v)
+	return u
+}
+
+// UpdateAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAbovePriorityCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAbovePriorityCacheCreationPricePerMillion)
+	return u
+}
+
+// AddAbovePriorityCacheCreationPricePerMillion adds v to the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsert) AddAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAbovePriorityCacheCreationPricePerMillion, v)
+	return u
+}
+
+// ClearAbovePriorityCacheCreationPricePerMillion clears the value of the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsert) ClearAbovePriorityCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAbovePriorityCacheCreationPricePerMillion)
+	return u
+}
+
+// SetAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsert) SetAboveFlexPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveFlexPromptPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveFlexPromptPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveFlexPromptPricePerMillion)
+	return u
+}
+
+// AddAboveFlexPromptPricePerMillion adds v to the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsert) AddAboveFlexPromptPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveFlexPromptPricePerMillion, v)
+	return u
+}
+
+// ClearAboveFlexPromptPricePerMillion clears the value of the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsert) ClearAboveFlexPromptPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveFlexPromptPricePerMillion)
+	return u
+}
+
+// SetAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsert) SetAboveFlexCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveFlexCompletionPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveFlexCompletionPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveFlexCompletionPricePerMillion)
+	return u
+}
+
+// AddAboveFlexCompletionPricePerMillion adds v to the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsert) AddAboveFlexCompletionPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveFlexCompletionPricePerMillion, v)
+	return u
+}
+
+// ClearAboveFlexCompletionPricePerMillion clears the value of the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsert) ClearAboveFlexCompletionPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveFlexCompletionPricePerMillion)
+	return u
+}
+
+// SetAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsert) SetAboveFlexCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveFlexCacheReadPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveFlexCacheReadPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveFlexCacheReadPricePerMillion)
+	return u
+}
+
+// AddAboveFlexCacheReadPricePerMillion adds v to the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsert) AddAboveFlexCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveFlexCacheReadPricePerMillion, v)
+	return u
+}
+
+// ClearAboveFlexCacheReadPricePerMillion clears the value of the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsert) ClearAboveFlexCacheReadPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveFlexCacheReadPricePerMillion)
+	return u
+}
+
+// SetAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsert) SetAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldAboveFlexCacheCreationPricePerMillion, v)
+	return u
+}
+
+// UpdateAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateAboveFlexCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldAboveFlexCacheCreationPricePerMillion)
+	return u
+}
+
+// AddAboveFlexCacheCreationPricePerMillion adds v to the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsert) AddAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldAboveFlexCacheCreationPricePerMillion, v)
+	return u
+}
+
+// ClearAboveFlexCacheCreationPricePerMillion clears the value of the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsert) ClearAboveFlexCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldAboveFlexCacheCreationPricePerMillion)
+	return u
+}
+
+// SetFastMultiplier sets the "fast_multiplier" field.
+func (u *PricingUpsert) SetFastMultiplier(v int64) *PricingUpsert {
+	u.Set(pricing.FieldFastMultiplier, v)
+	return u
+}
+
+// UpdateFastMultiplier sets the "fast_multiplier" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateFastMultiplier() *PricingUpsert {
+	u.SetExcluded(pricing.FieldFastMultiplier)
+	return u
+}
+
+// AddFastMultiplier adds v to the "fast_multiplier" field.
+func (u *PricingUpsert) AddFastMultiplier(v int64) *PricingUpsert {
+	u.Add(pricing.FieldFastMultiplier, v)
+	return u
+}
+
+// ClearFastMultiplier clears the value of the "fast_multiplier" field.
+func (u *PricingUpsert) ClearFastMultiplier() *PricingUpsert {
+	u.SetNull(pricing.FieldFastMultiplier)
 	return u
 }
 
@@ -861,6 +1785,622 @@ func (u *PricingUpsertOne) UpdateCacheCreationPricePerMillion() *PricingUpsertOn
 func (u *PricingUpsertOne) ClearCacheCreationPricePerMillion() *PricingUpsertOne {
 	return u.Update(func(s *PricingUpsert) {
 		s.ClearCacheCreationPricePerMillion()
+	})
+}
+
+// SetPriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field.
+func (u *PricingUpsertOne) SetPriorityPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityPromptPricePerMillion(v)
+	})
+}
+
+// AddPriorityPromptPricePerMillion adds v to the "priority_prompt_price_per_million" field.
+func (u *PricingUpsertOne) AddPriorityPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityPromptPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdatePriorityPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityPromptPricePerMillion()
+	})
+}
+
+// ClearPriorityPromptPricePerMillion clears the value of the "priority_prompt_price_per_million" field.
+func (u *PricingUpsertOne) ClearPriorityPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityPromptPricePerMillion()
+	})
+}
+
+// SetPriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field.
+func (u *PricingUpsertOne) SetPriorityCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityCompletionPricePerMillion(v)
+	})
+}
+
+// AddPriorityCompletionPricePerMillion adds v to the "priority_completion_price_per_million" field.
+func (u *PricingUpsertOne) AddPriorityCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityCompletionPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdatePriorityCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityCompletionPricePerMillion()
+	})
+}
+
+// ClearPriorityCompletionPricePerMillion clears the value of the "priority_completion_price_per_million" field.
+func (u *PricingUpsertOne) ClearPriorityCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityCompletionPricePerMillion()
+	})
+}
+
+// SetPriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) SetPriorityCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// AddPriorityCacheReadPricePerMillion adds v to the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) AddPriorityCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdatePriorityCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityCacheReadPricePerMillion()
+	})
+}
+
+// ClearPriorityCacheReadPricePerMillion clears the value of the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) ClearPriorityCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityCacheReadPricePerMillion()
+	})
+}
+
+// SetPriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) SetPriorityCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddPriorityCacheCreationPricePerMillion adds v to the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) AddPriorityCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdatePriorityCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityCacheCreationPricePerMillion()
+	})
+}
+
+// ClearPriorityCacheCreationPricePerMillion clears the value of the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) ClearPriorityCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityCacheCreationPricePerMillion()
+	})
+}
+
+// SetFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field.
+func (u *PricingUpsertOne) SetFlexPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexPromptPricePerMillion(v)
+	})
+}
+
+// AddFlexPromptPricePerMillion adds v to the "flex_prompt_price_per_million" field.
+func (u *PricingUpsertOne) AddFlexPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexPromptPricePerMillion(v)
+	})
+}
+
+// UpdateFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateFlexPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexPromptPricePerMillion()
+	})
+}
+
+// ClearFlexPromptPricePerMillion clears the value of the "flex_prompt_price_per_million" field.
+func (u *PricingUpsertOne) ClearFlexPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexPromptPricePerMillion()
+	})
+}
+
+// SetFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field.
+func (u *PricingUpsertOne) SetFlexCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexCompletionPricePerMillion(v)
+	})
+}
+
+// AddFlexCompletionPricePerMillion adds v to the "flex_completion_price_per_million" field.
+func (u *PricingUpsertOne) AddFlexCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateFlexCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexCompletionPricePerMillion()
+	})
+}
+
+// ClearFlexCompletionPricePerMillion clears the value of the "flex_completion_price_per_million" field.
+func (u *PricingUpsertOne) ClearFlexCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexCompletionPricePerMillion()
+	})
+}
+
+// SetFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) SetFlexCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// AddFlexCacheReadPricePerMillion adds v to the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) AddFlexCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateFlexCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexCacheReadPricePerMillion()
+	})
+}
+
+// ClearFlexCacheReadPricePerMillion clears the value of the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) ClearFlexCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexCacheReadPricePerMillion()
+	})
+}
+
+// SetFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) SetFlexCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddFlexCacheCreationPricePerMillion adds v to the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) AddFlexCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateFlexCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexCacheCreationPricePerMillion()
+	})
+}
+
+// ClearFlexCacheCreationPricePerMillion clears the value of the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) ClearFlexCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexCacheCreationPricePerMillion()
+	})
+}
+
+// SetAboveThreshold sets the "above_threshold" field.
+func (u *PricingUpsertOne) SetAboveThreshold(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveThreshold(v)
+	})
+}
+
+// AddAboveThreshold adds v to the "above_threshold" field.
+func (u *PricingUpsertOne) AddAboveThreshold(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveThreshold(v)
+	})
+}
+
+// UpdateAboveThreshold sets the "above_threshold" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveThreshold() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveThreshold()
+	})
+}
+
+// ClearAboveThreshold clears the value of the "above_threshold" field.
+func (u *PricingUpsertOne) ClearAboveThreshold() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveThreshold()
+	})
+}
+
+// SetAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field.
+func (u *PricingUpsertOne) SetAbovePromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePromptPricePerMillion(v)
+	})
+}
+
+// AddAbovePromptPricePerMillion adds v to the "above_prompt_price_per_million" field.
+func (u *PricingUpsertOne) AddAbovePromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePromptPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAbovePromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePromptPricePerMillion()
+	})
+}
+
+// ClearAbovePromptPricePerMillion clears the value of the "above_prompt_price_per_million" field.
+func (u *PricingUpsertOne) ClearAbovePromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePromptPricePerMillion()
+	})
+}
+
+// SetAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveCompletionPricePerMillion(v)
+	})
+}
+
+// AddAboveCompletionPricePerMillion adds v to the "above_completion_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveCompletionPricePerMillion()
+	})
+}
+
+// ClearAboveCompletionPricePerMillion clears the value of the "above_completion_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveCompletionPricePerMillion()
+	})
+}
+
+// SetAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveCacheReadPricePerMillion(v)
+	})
+}
+
+// AddAboveCacheReadPricePerMillion adds v to the "above_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveCacheReadPricePerMillion()
+	})
+}
+
+// ClearAboveCacheReadPricePerMillion clears the value of the "above_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveCacheReadPricePerMillion()
+	})
+}
+
+// SetAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddAboveCacheCreationPricePerMillion adds v to the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveCacheCreationPricePerMillion()
+	})
+}
+
+// ClearAboveCacheCreationPricePerMillion clears the value of the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveCacheCreationPricePerMillion()
+	})
+}
+
+// SetAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsertOne) SetAbovePriorityPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityPromptPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityPromptPricePerMillion adds v to the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsertOne) AddAbovePriorityPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityPromptPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAbovePriorityPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityPromptPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityPromptPricePerMillion clears the value of the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsertOne) ClearAbovePriorityPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityPromptPricePerMillion()
+	})
+}
+
+// SetAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsertOne) SetAbovePriorityCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityCompletionPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityCompletionPricePerMillion adds v to the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsertOne) AddAbovePriorityCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAbovePriorityCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityCompletionPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityCompletionPricePerMillion clears the value of the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsertOne) ClearAbovePriorityCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityCompletionPricePerMillion()
+	})
+}
+
+// SetAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) SetAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityCacheReadPricePerMillion adds v to the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) AddAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAbovePriorityCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityCacheReadPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityCacheReadPricePerMillion clears the value of the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) ClearAbovePriorityCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityCacheReadPricePerMillion()
+	})
+}
+
+// SetAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) SetAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityCacheCreationPricePerMillion adds v to the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) AddAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAbovePriorityCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityCacheCreationPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityCacheCreationPricePerMillion clears the value of the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) ClearAbovePriorityCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityCacheCreationPricePerMillion()
+	})
+}
+
+// SetAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveFlexPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexPromptPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexPromptPricePerMillion adds v to the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveFlexPromptPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexPromptPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveFlexPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexPromptPricePerMillion()
+	})
+}
+
+// ClearAboveFlexPromptPricePerMillion clears the value of the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveFlexPromptPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexPromptPricePerMillion()
+	})
+}
+
+// SetAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveFlexCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexCompletionPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexCompletionPricePerMillion adds v to the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveFlexCompletionPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveFlexCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexCompletionPricePerMillion()
+	})
+}
+
+// ClearAboveFlexCompletionPricePerMillion clears the value of the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveFlexCompletionPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexCompletionPricePerMillion()
+	})
+}
+
+// SetAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveFlexCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexCacheReadPricePerMillion adds v to the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveFlexCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveFlexCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexCacheReadPricePerMillion()
+	})
+}
+
+// ClearAboveFlexCacheReadPricePerMillion clears the value of the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveFlexCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexCacheReadPricePerMillion()
+	})
+}
+
+// SetAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) SetAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexCacheCreationPricePerMillion adds v to the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) AddAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateAboveFlexCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexCacheCreationPricePerMillion()
+	})
+}
+
+// ClearAboveFlexCacheCreationPricePerMillion clears the value of the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) ClearAboveFlexCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexCacheCreationPricePerMillion()
+	})
+}
+
+// SetFastMultiplier sets the "fast_multiplier" field.
+func (u *PricingUpsertOne) SetFastMultiplier(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFastMultiplier(v)
+	})
+}
+
+// AddFastMultiplier adds v to the "fast_multiplier" field.
+func (u *PricingUpsertOne) AddFastMultiplier(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFastMultiplier(v)
+	})
+}
+
+// UpdateFastMultiplier sets the "fast_multiplier" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateFastMultiplier() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFastMultiplier()
+	})
+}
+
+// ClearFastMultiplier clears the value of the "fast_multiplier" field.
+func (u *PricingUpsertOne) ClearFastMultiplier() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFastMultiplier()
 	})
 }
 
@@ -1369,6 +2909,622 @@ func (u *PricingUpsertBulk) UpdateCacheCreationPricePerMillion() *PricingUpsertB
 func (u *PricingUpsertBulk) ClearCacheCreationPricePerMillion() *PricingUpsertBulk {
 	return u.Update(func(s *PricingUpsert) {
 		s.ClearCacheCreationPricePerMillion()
+	})
+}
+
+// SetPriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) SetPriorityPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityPromptPricePerMillion(v)
+	})
+}
+
+// AddPriorityPromptPricePerMillion adds v to the "priority_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) AddPriorityPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityPromptPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityPromptPricePerMillion sets the "priority_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdatePriorityPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityPromptPricePerMillion()
+	})
+}
+
+// ClearPriorityPromptPricePerMillion clears the value of the "priority_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) ClearPriorityPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityPromptPricePerMillion()
+	})
+}
+
+// SetPriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field.
+func (u *PricingUpsertBulk) SetPriorityCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityCompletionPricePerMillion(v)
+	})
+}
+
+// AddPriorityCompletionPricePerMillion adds v to the "priority_completion_price_per_million" field.
+func (u *PricingUpsertBulk) AddPriorityCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityCompletionPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityCompletionPricePerMillion sets the "priority_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdatePriorityCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityCompletionPricePerMillion()
+	})
+}
+
+// ClearPriorityCompletionPricePerMillion clears the value of the "priority_completion_price_per_million" field.
+func (u *PricingUpsertBulk) ClearPriorityCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityCompletionPricePerMillion()
+	})
+}
+
+// SetPriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) SetPriorityCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// AddPriorityCacheReadPricePerMillion adds v to the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) AddPriorityCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityCacheReadPricePerMillion sets the "priority_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdatePriorityCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityCacheReadPricePerMillion()
+	})
+}
+
+// ClearPriorityCacheReadPricePerMillion clears the value of the "priority_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) ClearPriorityCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityCacheReadPricePerMillion()
+	})
+}
+
+// SetPriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) SetPriorityCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetPriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddPriorityCacheCreationPricePerMillion adds v to the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) AddPriorityCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddPriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdatePriorityCacheCreationPricePerMillion sets the "priority_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdatePriorityCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdatePriorityCacheCreationPricePerMillion()
+	})
+}
+
+// ClearPriorityCacheCreationPricePerMillion clears the value of the "priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) ClearPriorityCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearPriorityCacheCreationPricePerMillion()
+	})
+}
+
+// SetFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) SetFlexPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexPromptPricePerMillion(v)
+	})
+}
+
+// AddFlexPromptPricePerMillion adds v to the "flex_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) AddFlexPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexPromptPricePerMillion(v)
+	})
+}
+
+// UpdateFlexPromptPricePerMillion sets the "flex_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateFlexPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexPromptPricePerMillion()
+	})
+}
+
+// ClearFlexPromptPricePerMillion clears the value of the "flex_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) ClearFlexPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexPromptPricePerMillion()
+	})
+}
+
+// SetFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field.
+func (u *PricingUpsertBulk) SetFlexCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexCompletionPricePerMillion(v)
+	})
+}
+
+// AddFlexCompletionPricePerMillion adds v to the "flex_completion_price_per_million" field.
+func (u *PricingUpsertBulk) AddFlexCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateFlexCompletionPricePerMillion sets the "flex_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateFlexCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexCompletionPricePerMillion()
+	})
+}
+
+// ClearFlexCompletionPricePerMillion clears the value of the "flex_completion_price_per_million" field.
+func (u *PricingUpsertBulk) ClearFlexCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexCompletionPricePerMillion()
+	})
+}
+
+// SetFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) SetFlexCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// AddFlexCacheReadPricePerMillion adds v to the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) AddFlexCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateFlexCacheReadPricePerMillion sets the "flex_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateFlexCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexCacheReadPricePerMillion()
+	})
+}
+
+// ClearFlexCacheReadPricePerMillion clears the value of the "flex_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) ClearFlexCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexCacheReadPricePerMillion()
+	})
+}
+
+// SetFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) SetFlexCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddFlexCacheCreationPricePerMillion adds v to the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) AddFlexCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateFlexCacheCreationPricePerMillion sets the "flex_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateFlexCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFlexCacheCreationPricePerMillion()
+	})
+}
+
+// ClearFlexCacheCreationPricePerMillion clears the value of the "flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) ClearFlexCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFlexCacheCreationPricePerMillion()
+	})
+}
+
+// SetAboveThreshold sets the "above_threshold" field.
+func (u *PricingUpsertBulk) SetAboveThreshold(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveThreshold(v)
+	})
+}
+
+// AddAboveThreshold adds v to the "above_threshold" field.
+func (u *PricingUpsertBulk) AddAboveThreshold(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveThreshold(v)
+	})
+}
+
+// UpdateAboveThreshold sets the "above_threshold" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveThreshold() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveThreshold()
+	})
+}
+
+// ClearAboveThreshold clears the value of the "above_threshold" field.
+func (u *PricingUpsertBulk) ClearAboveThreshold() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveThreshold()
+	})
+}
+
+// SetAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) SetAbovePromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePromptPricePerMillion(v)
+	})
+}
+
+// AddAbovePromptPricePerMillion adds v to the "above_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) AddAbovePromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePromptPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePromptPricePerMillion sets the "above_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAbovePromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePromptPricePerMillion()
+	})
+}
+
+// ClearAbovePromptPricePerMillion clears the value of the "above_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAbovePromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePromptPricePerMillion()
+	})
+}
+
+// SetAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveCompletionPricePerMillion(v)
+	})
+}
+
+// AddAboveCompletionPricePerMillion adds v to the "above_completion_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateAboveCompletionPricePerMillion sets the "above_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveCompletionPricePerMillion()
+	})
+}
+
+// ClearAboveCompletionPricePerMillion clears the value of the "above_completion_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveCompletionPricePerMillion()
+	})
+}
+
+// SetAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveCacheReadPricePerMillion(v)
+	})
+}
+
+// AddAboveCacheReadPricePerMillion adds v to the "above_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateAboveCacheReadPricePerMillion sets the "above_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveCacheReadPricePerMillion()
+	})
+}
+
+// ClearAboveCacheReadPricePerMillion clears the value of the "above_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveCacheReadPricePerMillion()
+	})
+}
+
+// SetAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddAboveCacheCreationPricePerMillion adds v to the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateAboveCacheCreationPricePerMillion sets the "above_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveCacheCreationPricePerMillion()
+	})
+}
+
+// ClearAboveCacheCreationPricePerMillion clears the value of the "above_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveCacheCreationPricePerMillion()
+	})
+}
+
+// SetAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) SetAbovePriorityPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityPromptPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityPromptPricePerMillion adds v to the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) AddAbovePriorityPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityPromptPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityPromptPricePerMillion sets the "above_priority_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAbovePriorityPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityPromptPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityPromptPricePerMillion clears the value of the "above_priority_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAbovePriorityPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityPromptPricePerMillion()
+	})
+}
+
+// SetAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsertBulk) SetAbovePriorityCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityCompletionPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityCompletionPricePerMillion adds v to the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsertBulk) AddAbovePriorityCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityCompletionPricePerMillion sets the "above_priority_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAbovePriorityCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityCompletionPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityCompletionPricePerMillion clears the value of the "above_priority_completion_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAbovePriorityCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityCompletionPricePerMillion()
+	})
+}
+
+// SetAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) SetAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityCacheReadPricePerMillion adds v to the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) AddAbovePriorityCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityCacheReadPricePerMillion sets the "above_priority_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAbovePriorityCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityCacheReadPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityCacheReadPricePerMillion clears the value of the "above_priority_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAbovePriorityCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityCacheReadPricePerMillion()
+	})
+}
+
+// SetAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) SetAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAbovePriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddAbovePriorityCacheCreationPricePerMillion adds v to the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) AddAbovePriorityCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAbovePriorityCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateAbovePriorityCacheCreationPricePerMillion sets the "above_priority_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAbovePriorityCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAbovePriorityCacheCreationPricePerMillion()
+	})
+}
+
+// ClearAbovePriorityCacheCreationPricePerMillion clears the value of the "above_priority_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAbovePriorityCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAbovePriorityCacheCreationPricePerMillion()
+	})
+}
+
+// SetAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveFlexPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexPromptPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexPromptPricePerMillion adds v to the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveFlexPromptPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexPromptPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexPromptPricePerMillion sets the "above_flex_prompt_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveFlexPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexPromptPricePerMillion()
+	})
+}
+
+// ClearAboveFlexPromptPricePerMillion clears the value of the "above_flex_prompt_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveFlexPromptPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexPromptPricePerMillion()
+	})
+}
+
+// SetAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveFlexCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexCompletionPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexCompletionPricePerMillion adds v to the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveFlexCompletionPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexCompletionPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexCompletionPricePerMillion sets the "above_flex_completion_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveFlexCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexCompletionPricePerMillion()
+	})
+}
+
+// ClearAboveFlexCompletionPricePerMillion clears the value of the "above_flex_completion_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveFlexCompletionPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexCompletionPricePerMillion()
+	})
+}
+
+// SetAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveFlexCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexCacheReadPricePerMillion adds v to the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveFlexCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexCacheReadPricePerMillion sets the "above_flex_cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveFlexCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexCacheReadPricePerMillion()
+	})
+}
+
+// ClearAboveFlexCacheReadPricePerMillion clears the value of the "above_flex_cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveFlexCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexCacheReadPricePerMillion()
+	})
+}
+
+// SetAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) SetAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetAboveFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddAboveFlexCacheCreationPricePerMillion adds v to the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) AddAboveFlexCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddAboveFlexCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateAboveFlexCacheCreationPricePerMillion sets the "above_flex_cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateAboveFlexCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateAboveFlexCacheCreationPricePerMillion()
+	})
+}
+
+// ClearAboveFlexCacheCreationPricePerMillion clears the value of the "above_flex_cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) ClearAboveFlexCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearAboveFlexCacheCreationPricePerMillion()
+	})
+}
+
+// SetFastMultiplier sets the "fast_multiplier" field.
+func (u *PricingUpsertBulk) SetFastMultiplier(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetFastMultiplier(v)
+	})
+}
+
+// AddFastMultiplier adds v to the "fast_multiplier" field.
+func (u *PricingUpsertBulk) AddFastMultiplier(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddFastMultiplier(v)
+	})
+}
+
+// UpdateFastMultiplier sets the "fast_multiplier" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateFastMultiplier() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateFastMultiplier()
+	})
+}
+
+// ClearFastMultiplier clears the value of the "fast_multiplier" field.
+func (u *PricingUpsertBulk) ClearFastMultiplier() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearFastMultiplier()
 	})
 }
 

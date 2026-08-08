@@ -117,7 +117,7 @@ func TestSyncFlowPG(t *testing.T) {
 	}
 
 	// 手动价接管 litellm 行后再次同步：WHERE source != 'manual' 过滤 → 手动价不变
-	_, err = repos.UpsertManual(ctx, "gpt-4o", 42, 42, nil, nil)
+	_, err = repos.UpsertManual(ctx, &repository.PricingManual{Model: "gpt-4o", PromptPricePerMillion: 42, CompletionPricePerMillion: 42})
 	require.NoError(t, err)
 	require.NoError(t, w.Sync(ctx))
 	require.Equal(t, 2, reloads)

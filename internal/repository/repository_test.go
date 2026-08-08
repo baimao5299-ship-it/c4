@@ -520,18 +520,20 @@ func TestListTemplatesQuery(t *testing.T) {
 func TestLogsAndStats(t *testing.T) {
 	tr := newRepos(t)
 
-	// InsertBatch -> 批量 INSERT ... RETURNING id（列序：account_id, cache_creation_tokens,
-	// cache_read_tokens, completion_tokens, created_at, ... total_tokens）
+	// InsertBatch -> 批量 INSERT ... RETURNING id（sqlgraph 批量创建列按名字母序：
+	// above_hit, account_id, cache_creation_tokens, ..., completion_tokens, cost, ...,
+	// overdraft, prompt_tokens, ...；billing_tier 未设置不落列保持 NULL）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_logs"`)).
-		WithArgs(int64(2), int64(2), int64(4), int64(0), pgxmock.AnyArg(), "none",
-			usagelog.Format("openai-chat"), int64(1), int64(10), "m", int64(0), "r1",
+		WithArgs(false, int64(2), int64(2), int64(4), int64(0), int64(0), pgxmock.AnyArg(), "none",
+			usagelog.Format("openai-chat"), int64(1), int64(10), "m", false, int64(0), "r1",
 			int(200), int64(3), int64(100),
-			int64(2), int64(3), int64(5), int64(0), pgxmock.AnyArg(), "5xx",
-			usagelog.Format("openai-chat"), int64(1), int64(20), "m", int64(0), "r2",
+			false, int64(2), int64(3), int64(5), int64(0), int64(0), pgxmock.AnyArg(), "5xx",
+			usagelog.Format("openai-chat"), int64(1), int64(20), "m", false, int64(0), "r2",
 			int(500), int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
-	// Log Query -> Count + SELECT（cache 两列在 total_tokens 与 created_at 之间）
+	// Log Query -> Count + SELECT（计费四列 cost/billing_tier/above_hit/overdraft
+	// 按 schema 序在 cache_creation_tokens 与 created_at 之间）
 	tr.pool.ExpectQuery(q(`SELECT COUNT(`)).
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
@@ -540,25 +542,28 @@ func TestLogsAndStats(t *testing.T) {
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
 			"model", "mapped_model", "format", "status_code", "error_type", "latency_ms",
 			"prompt_tokens", "completion_tokens", "total_tokens", "cache_read_tokens",
-			"cache_creation_tokens", "created_at"}).
+			"cache_creation_tokens", "cost", "billing_tier", "above_hit", "overdraft", "created_at"}).
 			AddRow(int64(1), "r1", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				int(200), "none", int64(10), int64(0), int64(0), int64(100), int64(4), int64(2),
+				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 			AddRow(int64(2), "r2", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				int(500), "5xx", int64(20), int64(0), int64(0), int64(0), int64(5), int64(3),
+				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 	// Stats Upsert x2 -> INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING id
-	//（DO UPDATE 的 COALESCE 增量以 $16.. 追加为独立参数，含 cache 两列）
+	//（单条创建按生成 createSpec 字段序；DO UPDATE 的 COALESCE 增量以 $18..
+	// 追加为独立参数，与 Upsert 内 AddXxx 注册序一致，含 cost）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(30), pgxmock.AnyArg(),
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(30)).
+			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(0), int64(30), pgxmock.AnyArg(),
+			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(0), int64(30)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(40), pgxmock.AnyArg(),
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(40)).
+			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(0), int64(40), pgxmock.AnyArg(),
+			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(0), int64(40)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
 
 	// Stats Scan（测试未过滤 group_id，仅 bucket_time 范围两个参数）
@@ -567,9 +572,9 @@ func TestLogsAndStats(t *testing.T) {
 		WillReturnRows(pgxmock.NewRows([]string{"id", "bucket_time", "group_id", "account_id", "template_id",
 			"model", "is_error", "request_count", "error_count", "prompt_tokens",
 			"completion_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
-			"total_latency_ms", "updated_at"}).
+			"cost", "total_latency_ms", "updated_at"}).
 			AddRow(int64(1), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(1), int64(0), int64(0),
-				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(30),
+				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(0), int64(30),
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 	logs := []*domain.UsageLog{
@@ -585,6 +590,10 @@ func TestLogsAndStats(t *testing.T) {
 	require.Equal(t, int64(2), rows[0].CacheCreationTokens, "cache creation round-trip")
 	require.Equal(t, int64(5), rows[1].CacheReadTokens)
 	require.Equal(t, int64(3), rows[1].CacheCreationTokens)
+	require.Equal(t, int64(0), rows[0].Cost, "cost round-trip")
+	require.Equal(t, "", rows[0].BillingTier, "billing_tier round-trip（空 = 未计费）")
+	require.False(t, rows[0].AboveHit, "above_hit round-trip")
+	require.False(t, rows[0].Overdraft, "overdraft round-trip")
 	bucket := time.Now().Truncate(time.Hour)
 	require.NoError(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
 		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30, CacheReadTokens: 4, CacheCreationTokens: 2},
@@ -599,6 +608,7 @@ func TestLogsAndStats(t *testing.T) {
 	require.Equal(t, int64(300), scanned[0].TotalTokens)
 	require.Equal(t, int64(10), scanned[0].CacheReadTokens, "cache read accumulates")
 	require.Equal(t, int64(5), scanned[0].CacheCreationTokens, "cache creation accumulates")
+	require.Equal(t, int64(0), scanned[0].Cost, "cost accumulates")
 	tr.expectDone(t)
 }
 

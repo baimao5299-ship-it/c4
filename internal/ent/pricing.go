@@ -32,6 +32,50 @@ type Pricing struct {
 	CacheReadPricePerMillion *int64 `json:"cache_read_price_per_million,omitempty"`
 	// CacheCreationPricePerMillion holds the value of the "cache_creation_price_per_million" field.
 	CacheCreationPricePerMillion *int64 `json:"cache_creation_price_per_million,omitempty"`
+	// PriorityPromptPricePerMillion holds the value of the "priority_prompt_price_per_million" field.
+	PriorityPromptPricePerMillion *int64 `json:"priority_prompt_price_per_million,omitempty"`
+	// PriorityCompletionPricePerMillion holds the value of the "priority_completion_price_per_million" field.
+	PriorityCompletionPricePerMillion *int64 `json:"priority_completion_price_per_million,omitempty"`
+	// PriorityCacheReadPricePerMillion holds the value of the "priority_cache_read_price_per_million" field.
+	PriorityCacheReadPricePerMillion *int64 `json:"priority_cache_read_price_per_million,omitempty"`
+	// PriorityCacheCreationPricePerMillion holds the value of the "priority_cache_creation_price_per_million" field.
+	PriorityCacheCreationPricePerMillion *int64 `json:"priority_cache_creation_price_per_million,omitempty"`
+	// FlexPromptPricePerMillion holds the value of the "flex_prompt_price_per_million" field.
+	FlexPromptPricePerMillion *int64 `json:"flex_prompt_price_per_million,omitempty"`
+	// FlexCompletionPricePerMillion holds the value of the "flex_completion_price_per_million" field.
+	FlexCompletionPricePerMillion *int64 `json:"flex_completion_price_per_million,omitempty"`
+	// FlexCacheReadPricePerMillion holds the value of the "flex_cache_read_price_per_million" field.
+	FlexCacheReadPricePerMillion *int64 `json:"flex_cache_read_price_per_million,omitempty"`
+	// FlexCacheCreationPricePerMillion holds the value of the "flex_cache_creation_price_per_million" field.
+	FlexCacheCreationPricePerMillion *int64 `json:"flex_cache_creation_price_per_million,omitempty"`
+	// AboveThreshold holds the value of the "above_threshold" field.
+	AboveThreshold *int64 `json:"above_threshold,omitempty"`
+	// AbovePromptPricePerMillion holds the value of the "above_prompt_price_per_million" field.
+	AbovePromptPricePerMillion *int64 `json:"above_prompt_price_per_million,omitempty"`
+	// AboveCompletionPricePerMillion holds the value of the "above_completion_price_per_million" field.
+	AboveCompletionPricePerMillion *int64 `json:"above_completion_price_per_million,omitempty"`
+	// AboveCacheReadPricePerMillion holds the value of the "above_cache_read_price_per_million" field.
+	AboveCacheReadPricePerMillion *int64 `json:"above_cache_read_price_per_million,omitempty"`
+	// AboveCacheCreationPricePerMillion holds the value of the "above_cache_creation_price_per_million" field.
+	AboveCacheCreationPricePerMillion *int64 `json:"above_cache_creation_price_per_million,omitempty"`
+	// AbovePriorityPromptPricePerMillion holds the value of the "above_priority_prompt_price_per_million" field.
+	AbovePriorityPromptPricePerMillion *int64 `json:"above_priority_prompt_price_per_million,omitempty"`
+	// AbovePriorityCompletionPricePerMillion holds the value of the "above_priority_completion_price_per_million" field.
+	AbovePriorityCompletionPricePerMillion *int64 `json:"above_priority_completion_price_per_million,omitempty"`
+	// AbovePriorityCacheReadPricePerMillion holds the value of the "above_priority_cache_read_price_per_million" field.
+	AbovePriorityCacheReadPricePerMillion *int64 `json:"above_priority_cache_read_price_per_million,omitempty"`
+	// AbovePriorityCacheCreationPricePerMillion holds the value of the "above_priority_cache_creation_price_per_million" field.
+	AbovePriorityCacheCreationPricePerMillion *int64 `json:"above_priority_cache_creation_price_per_million,omitempty"`
+	// AboveFlexPromptPricePerMillion holds the value of the "above_flex_prompt_price_per_million" field.
+	AboveFlexPromptPricePerMillion *int64 `json:"above_flex_prompt_price_per_million,omitempty"`
+	// AboveFlexCompletionPricePerMillion holds the value of the "above_flex_completion_price_per_million" field.
+	AboveFlexCompletionPricePerMillion *int64 `json:"above_flex_completion_price_per_million,omitempty"`
+	// AboveFlexCacheReadPricePerMillion holds the value of the "above_flex_cache_read_price_per_million" field.
+	AboveFlexCacheReadPricePerMillion *int64 `json:"above_flex_cache_read_price_per_million,omitempty"`
+	// AboveFlexCacheCreationPricePerMillion holds the value of the "above_flex_cache_creation_price_per_million" field.
+	AboveFlexCacheCreationPricePerMillion *int64 `json:"above_flex_cache_creation_price_per_million,omitempty"`
+	// FastMultiplier holds the value of the "fast_multiplier" field.
+	FastMultiplier *int64 `json:"fast_multiplier,omitempty"`
 	// Provider holds the value of the "provider" field.
 	Provider *string `json:"provider,omitempty"`
 	// Mode holds the value of the "mode" field.
@@ -58,7 +102,7 @@ func (*Pricing) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case pricing.FieldSupportsPromptCaching:
 			values[i] = new(sql.NullBool)
-		case pricing.FieldID, pricing.FieldPromptPricePerMillion, pricing.FieldCompletionPricePerMillion, pricing.FieldMaxInputTokens, pricing.FieldMaxOutputTokens, pricing.FieldCacheReadPricePerMillion, pricing.FieldCacheCreationPricePerMillion:
+		case pricing.FieldID, pricing.FieldPromptPricePerMillion, pricing.FieldCompletionPricePerMillion, pricing.FieldMaxInputTokens, pricing.FieldMaxOutputTokens, pricing.FieldCacheReadPricePerMillion, pricing.FieldCacheCreationPricePerMillion, pricing.FieldPriorityPromptPricePerMillion, pricing.FieldPriorityCompletionPricePerMillion, pricing.FieldPriorityCacheReadPricePerMillion, pricing.FieldPriorityCacheCreationPricePerMillion, pricing.FieldFlexPromptPricePerMillion, pricing.FieldFlexCompletionPricePerMillion, pricing.FieldFlexCacheReadPricePerMillion, pricing.FieldFlexCacheCreationPricePerMillion, pricing.FieldAboveThreshold, pricing.FieldAbovePromptPricePerMillion, pricing.FieldAboveCompletionPricePerMillion, pricing.FieldAboveCacheReadPricePerMillion, pricing.FieldAboveCacheCreationPricePerMillion, pricing.FieldAbovePriorityPromptPricePerMillion, pricing.FieldAbovePriorityCompletionPricePerMillion, pricing.FieldAbovePriorityCacheReadPricePerMillion, pricing.FieldAbovePriorityCacheCreationPricePerMillion, pricing.FieldAboveFlexPromptPricePerMillion, pricing.FieldAboveFlexCompletionPricePerMillion, pricing.FieldAboveFlexCacheReadPricePerMillion, pricing.FieldAboveFlexCacheCreationPricePerMillion, pricing.FieldFastMultiplier:
 			values[i] = new(sql.NullInt64)
 		case pricing.FieldModel, pricing.FieldProvider, pricing.FieldMode, pricing.FieldSource:
 			values[i] = new(sql.NullString)
@@ -130,6 +174,160 @@ func (_m *Pricing) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.CacheCreationPricePerMillion = new(int64)
 				*_m.CacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldPriorityPromptPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field priority_prompt_price_per_million", values[i])
+			} else if value.Valid {
+				_m.PriorityPromptPricePerMillion = new(int64)
+				*_m.PriorityPromptPricePerMillion = value.Int64
+			}
+		case pricing.FieldPriorityCompletionPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field priority_completion_price_per_million", values[i])
+			} else if value.Valid {
+				_m.PriorityCompletionPricePerMillion = new(int64)
+				*_m.PriorityCompletionPricePerMillion = value.Int64
+			}
+		case pricing.FieldPriorityCacheReadPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field priority_cache_read_price_per_million", values[i])
+			} else if value.Valid {
+				_m.PriorityCacheReadPricePerMillion = new(int64)
+				*_m.PriorityCacheReadPricePerMillion = value.Int64
+			}
+		case pricing.FieldPriorityCacheCreationPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field priority_cache_creation_price_per_million", values[i])
+			} else if value.Valid {
+				_m.PriorityCacheCreationPricePerMillion = new(int64)
+				*_m.PriorityCacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldFlexPromptPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field flex_prompt_price_per_million", values[i])
+			} else if value.Valid {
+				_m.FlexPromptPricePerMillion = new(int64)
+				*_m.FlexPromptPricePerMillion = value.Int64
+			}
+		case pricing.FieldFlexCompletionPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field flex_completion_price_per_million", values[i])
+			} else if value.Valid {
+				_m.FlexCompletionPricePerMillion = new(int64)
+				*_m.FlexCompletionPricePerMillion = value.Int64
+			}
+		case pricing.FieldFlexCacheReadPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field flex_cache_read_price_per_million", values[i])
+			} else if value.Valid {
+				_m.FlexCacheReadPricePerMillion = new(int64)
+				*_m.FlexCacheReadPricePerMillion = value.Int64
+			}
+		case pricing.FieldFlexCacheCreationPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field flex_cache_creation_price_per_million", values[i])
+			} else if value.Valid {
+				_m.FlexCacheCreationPricePerMillion = new(int64)
+				*_m.FlexCacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveThreshold:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_threshold", values[i])
+			} else if value.Valid {
+				_m.AboveThreshold = new(int64)
+				*_m.AboveThreshold = value.Int64
+			}
+		case pricing.FieldAbovePromptPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_prompt_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AbovePromptPricePerMillion = new(int64)
+				*_m.AbovePromptPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveCompletionPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_completion_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveCompletionPricePerMillion = new(int64)
+				*_m.AboveCompletionPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveCacheReadPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_cache_read_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveCacheReadPricePerMillion = new(int64)
+				*_m.AboveCacheReadPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveCacheCreationPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_cache_creation_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveCacheCreationPricePerMillion = new(int64)
+				*_m.AboveCacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldAbovePriorityPromptPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_priority_prompt_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AbovePriorityPromptPricePerMillion = new(int64)
+				*_m.AbovePriorityPromptPricePerMillion = value.Int64
+			}
+		case pricing.FieldAbovePriorityCompletionPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_priority_completion_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AbovePriorityCompletionPricePerMillion = new(int64)
+				*_m.AbovePriorityCompletionPricePerMillion = value.Int64
+			}
+		case pricing.FieldAbovePriorityCacheReadPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_priority_cache_read_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AbovePriorityCacheReadPricePerMillion = new(int64)
+				*_m.AbovePriorityCacheReadPricePerMillion = value.Int64
+			}
+		case pricing.FieldAbovePriorityCacheCreationPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_priority_cache_creation_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AbovePriorityCacheCreationPricePerMillion = new(int64)
+				*_m.AbovePriorityCacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveFlexPromptPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_flex_prompt_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveFlexPromptPricePerMillion = new(int64)
+				*_m.AboveFlexPromptPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveFlexCompletionPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_flex_completion_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveFlexCompletionPricePerMillion = new(int64)
+				*_m.AboveFlexCompletionPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveFlexCacheReadPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_flex_cache_read_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveFlexCacheReadPricePerMillion = new(int64)
+				*_m.AboveFlexCacheReadPricePerMillion = value.Int64
+			}
+		case pricing.FieldAboveFlexCacheCreationPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field above_flex_cache_creation_price_per_million", values[i])
+			} else if value.Valid {
+				_m.AboveFlexCacheCreationPricePerMillion = new(int64)
+				*_m.AboveFlexCacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldFastMultiplier:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field fast_multiplier", values[i])
+			} else if value.Valid {
+				_m.FastMultiplier = new(int64)
+				*_m.FastMultiplier = value.Int64
 			}
 		case pricing.FieldProvider:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -240,6 +438,116 @@ func (_m *Pricing) String() string {
 	builder.WriteString(", ")
 	if v := _m.CacheCreationPricePerMillion; v != nil {
 		builder.WriteString("cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PriorityPromptPricePerMillion; v != nil {
+		builder.WriteString("priority_prompt_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PriorityCompletionPricePerMillion; v != nil {
+		builder.WriteString("priority_completion_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PriorityCacheReadPricePerMillion; v != nil {
+		builder.WriteString("priority_cache_read_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PriorityCacheCreationPricePerMillion; v != nil {
+		builder.WriteString("priority_cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.FlexPromptPricePerMillion; v != nil {
+		builder.WriteString("flex_prompt_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.FlexCompletionPricePerMillion; v != nil {
+		builder.WriteString("flex_completion_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.FlexCacheReadPricePerMillion; v != nil {
+		builder.WriteString("flex_cache_read_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.FlexCacheCreationPricePerMillion; v != nil {
+		builder.WriteString("flex_cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveThreshold; v != nil {
+		builder.WriteString("above_threshold=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AbovePromptPricePerMillion; v != nil {
+		builder.WriteString("above_prompt_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveCompletionPricePerMillion; v != nil {
+		builder.WriteString("above_completion_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveCacheReadPricePerMillion; v != nil {
+		builder.WriteString("above_cache_read_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveCacheCreationPricePerMillion; v != nil {
+		builder.WriteString("above_cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AbovePriorityPromptPricePerMillion; v != nil {
+		builder.WriteString("above_priority_prompt_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AbovePriorityCompletionPricePerMillion; v != nil {
+		builder.WriteString("above_priority_completion_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AbovePriorityCacheReadPricePerMillion; v != nil {
+		builder.WriteString("above_priority_cache_read_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AbovePriorityCacheCreationPricePerMillion; v != nil {
+		builder.WriteString("above_priority_cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveFlexPromptPricePerMillion; v != nil {
+		builder.WriteString("above_flex_prompt_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveFlexCompletionPricePerMillion; v != nil {
+		builder.WriteString("above_flex_completion_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveFlexCacheReadPricePerMillion; v != nil {
+		builder.WriteString("above_flex_cache_read_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AboveFlexCacheCreationPricePerMillion; v != nil {
+		builder.WriteString("above_flex_cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.FastMultiplier; v != nil {
+		builder.WriteString("fast_multiplier=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

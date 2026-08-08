@@ -219,3 +219,155 @@ func TestFetchHTTP(t *testing.T) {
 	_, err = f.Fetch(ctx, srv.URL)
 	require.Error(t, err)
 }
+
+// matrixFixtureJSON Phase 5 矩阵字段提取 fixture（对齐 litellm 官方表实测形态）：
+//   - gpt-5.6-sol：priority/flex 单价档 + above_flex 组（_above_272k_tokens_flex）
+//     4 分量 + provider_specific_entry.fast ×2.0（→ 20000 万分数）
+//   - azure/gpt-5.6-sol：above_priority 组（_above_272k_tokens_priority，
+//     无 cache_creation —— 组内缺失分量 = nil）+ fast ×6.0（→ 60000）
+//   - future-256k：above 基础组 256k 档（N 任意动态识别）
+//   - multi-tier：多档并存（200k 有 cache_read、500k 无）→ 取含完整
+//     prompt+completion 的最大 N
+//   - noisy-model：干扰键（字符阶梯 *_cost_per_character_above_*、缓存 TTL
+//     above_1hr、long_context_*）不得匹配
+//   - bad-matrix：矩阵价 0/负 → 该档丢弃 → 全 nil
+const matrixFixtureJSON = `{
+  "gpt-5.6-sol": {
+    "input_cost_per_token": 2e-06,
+    "output_cost_per_token": 8e-06,
+    "input_cost_per_token_priority": 3e-06,
+    "output_cost_per_token_priority": 1.2e-05,
+    "cache_read_input_token_cost_priority": 1e-06,
+    "cache_creation_input_token_cost_priority": 2e-06,
+    "input_cost_per_token_flex": 1.5e-06,
+    "output_cost_per_token_flex": 6e-06,
+    "cache_read_input_token_cost_flex": 5e-07,
+    "cache_creation_input_token_cost_flex": 1e-06,
+    "input_cost_per_token_above_272k_tokens_flex": 1.2e-06,
+    "output_cost_per_token_above_272k_tokens_flex": 4.8e-06,
+    "cache_read_input_token_cost_above_272k_tokens_flex": 4e-07,
+    "cache_creation_input_token_cost_above_272k_tokens_flex": 8e-07,
+    "provider_specific_entry": {"fast": 2.0},
+    "max_input_tokens": 272000,
+    "litellm_provider": "openai"
+  },
+  "azure/gpt-5.6-sol": {
+    "input_cost_per_token": 2e-06,
+    "output_cost_per_token": 8e-06,
+    "input_cost_per_token_priority": 3e-06,
+    "output_cost_per_token_priority": 1.2e-05,
+    "input_cost_per_token_above_272k_tokens_priority": 1.8e-06,
+    "output_cost_per_token_above_272k_tokens_priority": 7.2e-06,
+    "cache_read_input_token_cost_above_272k_tokens_priority": 6e-07,
+    "provider_specific_entry": {"fast": 6.0},
+    "litellm_provider": "azure"
+  },
+  "future-256k": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_token_above_256k_tokens": 9e-07,
+    "output_cost_per_token_above_256k_tokens": 1.8e-06,
+    "cache_read_input_token_cost_above_256k_tokens": 3e-07
+  },
+  "multi-tier": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_token_above_200k_tokens": 9e-07,
+    "output_cost_per_token_above_200k_tokens": 1.8e-06,
+    "input_cost_per_token_above_500k_tokens": 8e-07,
+    "output_cost_per_token_above_500k_tokens": 1.6e-06,
+    "cache_read_input_token_cost_above_200k_tokens": 3e-07
+  },
+  "noisy-model": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_character_above_1m_tokens": 1.0,
+    "output_cost_per_character_above_1m_tokens": 2.0,
+    "input_cost_per_token_above_1hr": 5e-06,
+    "output_cost_per_token_above_1hr": 6e-06,
+    "cache_read_input_token_cost_above_1hr": 7e-06,
+    "long_context_input_cost_per_token": 3e-06,
+    "long_context_output_cost_per_token": 4e-06
+  },
+  "bad-matrix": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 2e-06,
+    "input_cost_per_token_above_128k_tokens": 0,
+    "output_cost_per_token_above_128k_tokens": -1e-06,
+    "input_cost_per_token_priority": 0,
+    "provider_specific_entry": {"fast": 0}
+  }
+}`
+
+// TestParseMatrixFields Phase 5 矩阵提取：priority/flex 单价档 + above 三组
+// （动态阈值 N×1000，锚定精确 key 排除干扰）+ fast 万分数换算。矩阵价缺失/
+// 无效不参与行有效性判定（行仍解析成功）。
+func TestParseMatrixFields(t *testing.T) {
+	res, err := Parse([]byte(matrixFixtureJSON))
+	require.NoError(t, err)
+	require.Equal(t, 6, len(res.Rows), "矩阵 fixture 全部数值有效（矩阵价无效不影响行有效性）")
+
+	byModel := map[string]*domain.Pricing{}
+	for _, p := range res.Rows {
+		byModel[p.Model] = p
+	}
+
+	// gpt-5.6-sol：priority/flex 单价换算 + above_flex 组 4 分量 + 共享阈值 + fast ×2.0
+	g := byModel["gpt-5.6-sol"]
+	require.Equal(t, int64(300000), *g.PriorityPromptPricePerMillion, "3e-6 × 1e11 = 300000 毫分/1M")
+	require.Equal(t, int64(1200000), *g.PriorityCompletionPricePerMillion)
+	require.Equal(t, int64(100000), *g.PriorityCacheReadPricePerMillion)
+	require.Equal(t, int64(200000), *g.PriorityCacheCreationPricePerMillion)
+	require.Equal(t, int64(150000), *g.FlexPromptPricePerMillion, "1.5e-6 → 150000")
+	require.Equal(t, int64(600000), *g.FlexCompletionPricePerMillion)
+	require.Equal(t, int64(50000), *g.FlexCacheReadPricePerMillion)
+	require.Equal(t, int64(100000), *g.FlexCacheCreationPricePerMillion)
+	require.Equal(t, int64(272000), *g.AboveThreshold, "272k → 阈值 272000 tokens")
+	require.Nil(t, g.AbovePromptPricePerMillion, "无 above 基础组 → nil")
+	require.Nil(t, g.AbovePriorityPromptPricePerMillion, "无 above_priority 组 → nil")
+	require.Equal(t, int64(120000), *g.AboveFlexPromptPricePerMillion, "above_flex 1.2e-6 → 120000")
+	require.Equal(t, int64(480000), *g.AboveFlexCompletionPricePerMillion)
+	require.Equal(t, int64(40000), *g.AboveFlexCacheReadPricePerMillion)
+	require.Equal(t, int64(80000), *g.AboveFlexCacheCreationPricePerMillion)
+	require.Equal(t, int64(20000), *g.FastMultiplier, "fast ×2.0 → 20000 万分数")
+
+	// azure/gpt-5.6-sol：above_priority 组 + fast ×6.0；组内缺失 cache_creation → nil
+	a := byModel["azure/gpt-5.6-sol"]
+	require.Equal(t, int64(272000), *a.AboveThreshold, "阈值跨组共享（maxN×1000）")
+	require.Equal(t, int64(180000), *a.AbovePriorityPromptPricePerMillion)
+	require.Equal(t, int64(720000), *a.AbovePriorityCompletionPricePerMillion)
+	require.Equal(t, int64(60000), *a.AbovePriorityCacheReadPricePerMillion)
+	require.Nil(t, a.AbovePriorityCacheCreationPricePerMillion, "azure 无 above_priority cache_creation → nil（实测形态）")
+	require.Nil(t, a.AboveFlexPromptPricePerMillion, "无 above_flex 组 → nil")
+	require.Equal(t, int64(60000), *a.FastMultiplier, "fast ×6.0 → 60000 万分数")
+
+	// future-256k：above 基础组 256k（N 任意动态）
+	f := byModel["future-256k"]
+	require.Equal(t, int64(256000), *f.AboveThreshold)
+	require.Equal(t, int64(90000), *f.AbovePromptPricePerMillion)
+	require.Equal(t, int64(180000), *f.AboveCompletionPricePerMillion)
+	require.Equal(t, int64(30000), *f.AboveCacheReadPricePerMillion)
+	require.Nil(t, f.AboveCacheCreationPricePerMillion, "组内缺失分量 → nil")
+	require.Nil(t, f.FastMultiplier)
+
+	// multi-tier：200k/500k 并存 → 取含完整 prompt+completion 的最大 N（500k）
+	mt := byModel["multi-tier"]
+	require.Equal(t, int64(500000), *mt.AboveThreshold, "多档取最大 N")
+	require.Equal(t, int64(80000), *mt.AbovePromptPricePerMillion)
+	require.Equal(t, int64(160000), *mt.AboveCompletionPricePerMillion)
+	require.Nil(t, mt.AboveCacheReadPricePerMillion, "500k 档无 cache_read → nil（200k 档的 cache_read 不串档）")
+
+	// noisy-model：字符阶梯/above_1hr/long_context 全部不匹配
+	n := byModel["noisy-model"]
+	require.Nil(t, n.AboveThreshold, "干扰键不匹配 → 无分段")
+	require.Nil(t, n.AbovePromptPricePerMillion)
+	require.Nil(t, n.PriorityPromptPricePerMillion)
+	require.Nil(t, n.FastMultiplier)
+
+	// bad-matrix：0/负矩阵价丢弃 → 全 nil（行仍有效）
+	bm := byModel["bad-matrix"]
+	require.Equal(t, int64(100000), bm.PromptPricePerMillion, "基础价正常解析")
+	require.Nil(t, bm.AboveThreshold, "above 全无效 → nil")
+	require.Nil(t, bm.PriorityPromptPricePerMillion)
+	require.Nil(t, bm.FastMultiplier)
+}

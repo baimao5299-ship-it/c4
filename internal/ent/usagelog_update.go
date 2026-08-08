@@ -386,6 +386,75 @@ func (_u *UsageLogUpdate) AddCacheCreationTokens(v int64) *UsageLogUpdate {
 	return _u
 }
 
+// SetCost sets the "cost" field.
+func (_u *UsageLogUpdate) SetCost(v int64) *UsageLogUpdate {
+	_u.mutation.ResetCost()
+	_u.mutation.SetCost(v)
+	return _u
+}
+
+// SetNillableCost sets the "cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCost(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCost(*v)
+	}
+	return _u
+}
+
+// AddCost adds value to the "cost" field.
+func (_u *UsageLogUpdate) AddCost(v int64) *UsageLogUpdate {
+	_u.mutation.AddCost(v)
+	return _u
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (_u *UsageLogUpdate) SetBillingTier(v string) *UsageLogUpdate {
+	_u.mutation.SetBillingTier(v)
+	return _u
+}
+
+// SetNillableBillingTier sets the "billing_tier" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableBillingTier(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetBillingTier(*v)
+	}
+	return _u
+}
+
+// ClearBillingTier clears the value of the "billing_tier" field.
+func (_u *UsageLogUpdate) ClearBillingTier() *UsageLogUpdate {
+	_u.mutation.ClearBillingTier()
+	return _u
+}
+
+// SetAboveHit sets the "above_hit" field.
+func (_u *UsageLogUpdate) SetAboveHit(v bool) *UsageLogUpdate {
+	_u.mutation.SetAboveHit(v)
+	return _u
+}
+
+// SetNillableAboveHit sets the "above_hit" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableAboveHit(v *bool) *UsageLogUpdate {
+	if v != nil {
+		_u.SetAboveHit(*v)
+	}
+	return _u
+}
+
+// SetOverdraft sets the "overdraft" field.
+func (_u *UsageLogUpdate) SetOverdraft(v bool) *UsageLogUpdate {
+	_u.mutation.SetOverdraft(v)
+	return _u
+}
+
+// SetNillableOverdraft sets the "overdraft" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableOverdraft(v *bool) *UsageLogUpdate {
+	if v != nil {
+		_u.SetOverdraft(*v)
+	}
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *UsageLogUpdate) SetCreatedAt(v time.Time) *UsageLogUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -558,6 +627,24 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.Cost(); ok {
+		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCost(); ok {
+		_spec.AddField(usagelog.FieldCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.BillingTier(); ok {
+		_spec.SetField(usagelog.FieldBillingTier, field.TypeString, value)
+	}
+	if _u.mutation.BillingTierCleared() {
+		_spec.ClearField(usagelog.FieldBillingTier, field.TypeString)
+	}
+	if value, ok := _u.mutation.AboveHit(); ok {
+		_spec.SetField(usagelog.FieldAboveHit, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Overdraft(); ok {
+		_spec.SetField(usagelog.FieldOverdraft, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)
@@ -940,6 +1027,75 @@ func (_u *UsageLogUpdateOne) AddCacheCreationTokens(v int64) *UsageLogUpdateOne 
 	return _u
 }
 
+// SetCost sets the "cost" field.
+func (_u *UsageLogUpdateOne) SetCost(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetCost()
+	_u.mutation.SetCost(v)
+	return _u
+}
+
+// SetNillableCost sets the "cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCost(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCost(*v)
+	}
+	return _u
+}
+
+// AddCost adds value to the "cost" field.
+func (_u *UsageLogUpdateOne) AddCost(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddCost(v)
+	return _u
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (_u *UsageLogUpdateOne) SetBillingTier(v string) *UsageLogUpdateOne {
+	_u.mutation.SetBillingTier(v)
+	return _u
+}
+
+// SetNillableBillingTier sets the "billing_tier" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableBillingTier(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetBillingTier(*v)
+	}
+	return _u
+}
+
+// ClearBillingTier clears the value of the "billing_tier" field.
+func (_u *UsageLogUpdateOne) ClearBillingTier() *UsageLogUpdateOne {
+	_u.mutation.ClearBillingTier()
+	return _u
+}
+
+// SetAboveHit sets the "above_hit" field.
+func (_u *UsageLogUpdateOne) SetAboveHit(v bool) *UsageLogUpdateOne {
+	_u.mutation.SetAboveHit(v)
+	return _u
+}
+
+// SetNillableAboveHit sets the "above_hit" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableAboveHit(v *bool) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetAboveHit(*v)
+	}
+	return _u
+}
+
+// SetOverdraft sets the "overdraft" field.
+func (_u *UsageLogUpdateOne) SetOverdraft(v bool) *UsageLogUpdateOne {
+	_u.mutation.SetOverdraft(v)
+	return _u
+}
+
+// SetNillableOverdraft sets the "overdraft" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableOverdraft(v *bool) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetOverdraft(*v)
+	}
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *UsageLogUpdateOne) SetCreatedAt(v time.Time) *UsageLogUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -1142,6 +1298,24 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.Cost(); ok {
+		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCost(); ok {
+		_spec.AddField(usagelog.FieldCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.BillingTier(); ok {
+		_spec.SetField(usagelog.FieldBillingTier, field.TypeString, value)
+	}
+	if _u.mutation.BillingTierCleared() {
+		_spec.ClearField(usagelog.FieldBillingTier, field.TypeString)
+	}
+	if value, ok := _u.mutation.AboveHit(); ok {
+		_spec.SetField(usagelog.FieldAboveHit, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.Overdraft(); ok {
+		_spec.SetField(usagelog.FieldOverdraft, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(usagelog.FieldCreatedAt, field.TypeTime, value)

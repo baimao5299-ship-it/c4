@@ -20,7 +20,8 @@ type StatQuery struct {
 
 type StatRepo struct{ client *ent.Client }
 
-// Upsert 逐 bucket 冲突累加（规格 §10.5：聚合不可失真）。
+// Upsert 逐 bucket 冲突累加（规格 §10.5：聚合不可失真）。Cost 毫分
+// （Phase 5 计费预聚合：统计面花费不扫明细）。
 func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) error {
 	for _, b := range buckets {
 		_, err := r.client.UsageStat.Create().
@@ -38,6 +39,7 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 			SetTotalTokens(b.TotalTokens).
 			SetCacheReadTokens(b.CacheReadTokens).
 			SetCacheCreationTokens(b.CacheCreationTokens).
+			SetCost(b.Cost).
 			SetTotalLatencyMs(b.TotalLatencyMS).
 			OnConflictColumns("bucket_time", "group_id", "account_id", "template_id", "user_id", "model", "is_error").
 			Update(func(u *ent.UsageStatUpsert) {
@@ -48,6 +50,7 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 				u.AddTotalTokens(b.TotalTokens)
 				u.AddCacheReadTokens(b.CacheReadTokens)
 				u.AddCacheCreationTokens(b.CacheCreationTokens)
+				u.AddCost(b.Cost)
 				u.AddTotalLatencyMs(b.TotalLatencyMS)
 			}).
 			ID(ctx)
@@ -90,6 +93,7 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
 			TotalTokens: row.TotalTokens, TotalLatencyMS: row.TotalLatencyMs,
 			CacheReadTokens: row.CacheReadTokens, CacheCreationTokens: row.CacheCreationTokens,
+			Cost: row.Cost,
 		})
 	}
 	return out, nil

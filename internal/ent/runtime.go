@@ -90,11 +90,11 @@ func init() {
 	pricingFields := schema.Pricing{}.Fields()
 	_ = pricingFields
 	// pricingDescCreatedAt is the schema descriptor for created_at field.
-	pricingDescCreatedAt := pricingFields[13].Descriptor()
+	pricingDescCreatedAt := pricingFields[35].Descriptor()
 	// pricing.DefaultCreatedAt holds the default value on creation for the created_at field.
 	pricing.DefaultCreatedAt = pricingDescCreatedAt.Default.(func() time.Time)
 	// pricingDescUpdatedAt is the schema descriptor for updated_at field.
-	pricingDescUpdatedAt := pricingFields[14].Descriptor()
+	pricingDescUpdatedAt := pricingFields[36].Descriptor()
 	// pricing.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	pricing.DefaultUpdatedAt = pricingDescUpdatedAt.Default.(func() time.Time)
 	// pricing.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -217,8 +217,20 @@ func init() {
 	usagelogDescCacheCreationTokens := usagelogFields[17].Descriptor()
 	// usagelog.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	usagelog.DefaultCacheCreationTokens = usagelogDescCacheCreationTokens.Default.(int64)
+	// usagelogDescCost is the schema descriptor for cost field.
+	usagelogDescCost := usagelogFields[18].Descriptor()
+	// usagelog.DefaultCost holds the default value on creation for the cost field.
+	usagelog.DefaultCost = usagelogDescCost.Default.(int64)
+	// usagelogDescAboveHit is the schema descriptor for above_hit field.
+	usagelogDescAboveHit := usagelogFields[20].Descriptor()
+	// usagelog.DefaultAboveHit holds the default value on creation for the above_hit field.
+	usagelog.DefaultAboveHit = usagelogDescAboveHit.Default.(bool)
+	// usagelogDescOverdraft is the schema descriptor for overdraft field.
+	usagelogDescOverdraft := usagelogFields[21].Descriptor()
+	// usagelog.DefaultOverdraft holds the default value on creation for the overdraft field.
+	usagelog.DefaultOverdraft = usagelogDescOverdraft.Default.(bool)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[18].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[22].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	usagestatFields := schema.UsageStat{}.Fields()
@@ -275,12 +287,16 @@ func init() {
 	usagestatDescCacheCreationTokens := usagestatFields[14].Descriptor()
 	// usagestat.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	usagestat.DefaultCacheCreationTokens = usagestatDescCacheCreationTokens.Default.(int64)
+	// usagestatDescCost is the schema descriptor for cost field.
+	usagestatDescCost := usagestatFields[15].Descriptor()
+	// usagestat.DefaultCost holds the default value on creation for the cost field.
+	usagestat.DefaultCost = usagestatDescCost.Default.(int64)
 	// usagestatDescTotalLatencyMs is the schema descriptor for total_latency_ms field.
-	usagestatDescTotalLatencyMs := usagestatFields[15].Descriptor()
+	usagestatDescTotalLatencyMs := usagestatFields[16].Descriptor()
 	// usagestat.DefaultTotalLatencyMs holds the default value on creation for the total_latency_ms field.
 	usagestat.DefaultTotalLatencyMs = usagestatDescTotalLatencyMs.Default.(int64)
 	// usagestatDescUpdatedAt is the schema descriptor for updated_at field.
-	usagestatDescUpdatedAt := usagestatFields[16].Descriptor()
+	usagestatDescUpdatedAt := usagestatFields[17].Descriptor()
 	// usagestat.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	usagestat.DefaultUpdatedAt = usagestatDescUpdatedAt.Default.(func() time.Time)
 	// usagestat.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

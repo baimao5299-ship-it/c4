@@ -82,19 +82,48 @@ func (s *Service) GetPrice(model string) (*domain.Pricing, error) {
 
 // UpsertManualPricing 手动设价（管理端 PUT /admin/pricing/{model}）：校验 + 落库
 // （upsert 强制 source=manual，可接管 litellm 行）+ 成功后重载快照（读路径
-// 即时生效）。cacheRead/cacheCreation 可选（*int64）：nil = 不设缓存价（落库
-// NULL）；非 nil 且 < 0 → 400（与主价一致）。manual 行不写 raw/provider/mode。
-func (s *Service) UpsertManualPricing(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error) {
-	if model == "" {
+// 即时生效）。PricingManual 可选字段（nil = 清空）校验语义：非 nil 且 < 0 →
+// 400（与主价一致）；FastMultiplier 万分数 0 < m ≤ 100000（×1.0..×10.0，评审
+// I-2 上限——Anthropic Fast Mode 实测 ≤ ×6.0）。manual 行不写 raw/provider/mode。
+func (s *Service) UpsertManualPricing(ctx context.Context, m *repository.PricingManual) (*domain.Pricing, error) {
+	if m.Model == "" {
 		return nil, fmt.Errorf("%w: model is required", ErrInvalidInput)
 	}
-	if promptP < 0 || completionP < 0 {
+	if m.PromptPricePerMillion < 0 || m.CompletionPricePerMillion < 0 {
 		return nil, fmt.Errorf("%w: prices must be >= 0", ErrInvalidInput)
 	}
-	if (cacheRead != nil && *cacheRead < 0) || (cacheCreation != nil && *cacheCreation < 0) {
-		return nil, fmt.Errorf("%w: cache prices must be >= 0", ErrInvalidInput)
+	nonNeg := func(v *int64, name string) error {
+		if v != nil && *v < 0 {
+			return fmt.Errorf("%w: %s must be >= 0", ErrInvalidInput, name)
+		}
+		return nil
 	}
-	p, err := s.store.UpsertManual(ctx, model, promptP, completionP, cacheRead, cacheCreation)
+	// 可选字段逐个校验（显式字段序 → 报错字段名确定，评审 I-1：map 迭代顺序随机）。
+	for _, f := range []struct {
+		name string
+		v    *int64
+	}{
+		{"cache_read", m.CacheReadPricePerMillion}, {"cache_creation", m.CacheCreationPricePerMillion},
+		{"priority_prompt", m.PriorityPromptPricePerMillion}, {"priority_completion", m.PriorityCompletionPricePerMillion},
+		{"priority_cache_read", m.PriorityCacheReadPricePerMillion}, {"priority_cache_creation", m.PriorityCacheCreationPricePerMillion},
+		{"flex_prompt", m.FlexPromptPricePerMillion}, {"flex_completion", m.FlexCompletionPricePerMillion},
+		{"flex_cache_read", m.FlexCacheReadPricePerMillion}, {"flex_cache_creation", m.FlexCacheCreationPricePerMillion},
+		{"above_threshold", m.AboveThreshold},
+		{"above_prompt", m.AbovePromptPricePerMillion}, {"above_completion", m.AboveCompletionPricePerMillion},
+		{"above_cache_read", m.AboveCacheReadPricePerMillion}, {"above_cache_creation", m.AboveCacheCreationPricePerMillion},
+		{"above_priority_prompt", m.AbovePriorityPromptPricePerMillion}, {"above_priority_completion", m.AbovePriorityCompletionPricePerMillion},
+		{"above_priority_cache_read", m.AbovePriorityCacheReadPricePerMillion}, {"above_priority_cache_creation", m.AbovePriorityCacheCreationPricePerMillion},
+		{"above_flex_prompt", m.AboveFlexPromptPricePerMillion}, {"above_flex_completion", m.AboveFlexCompletionPricePerMillion},
+		{"above_flex_cache_read", m.AboveFlexCacheReadPricePerMillion}, {"above_flex_cache_creation", m.AboveFlexCacheCreationPricePerMillion},
+	} {
+		if err := nonNeg(f.v, f.name); err != nil {
+			return nil, err
+		}
+	}
+	if m.FastMultiplier != nil && (*m.FastMultiplier <= 0 || *m.FastMultiplier > 100000) {
+		return nil, fmt.Errorf("%w: fast_multiplier must be in (0, 100000] (×1.0..×10.0)", ErrInvalidInput)
+	}
+	p, err := s.store.UpsertManual(ctx, m)
 	if err != nil {
 		return nil, err
 	}
