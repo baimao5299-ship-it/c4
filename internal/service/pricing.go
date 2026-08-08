@@ -98,21 +98,25 @@ func (s *Service) UpsertManualPricing(ctx context.Context, m *repository.Pricing
 		}
 		return nil
 	}
-	for name, v := range map[string]*int64{
-		"cache_read": m.CacheReadPricePerMillion, "cache_creation": m.CacheCreationPricePerMillion,
-		"priority_prompt": m.PriorityPromptPricePerMillion, "priority_completion": m.PriorityCompletionPricePerMillion,
-		"priority_cache_read": m.PriorityCacheReadPricePerMillion, "priority_cache_creation": m.PriorityCacheCreationPricePerMillion,
-		"flex_prompt": m.FlexPromptPricePerMillion, "flex_completion": m.FlexCompletionPricePerMillion,
-		"flex_cache_read": m.FlexCacheReadPricePerMillion, "flex_cache_creation": m.FlexCacheCreationPricePerMillion,
-		"above_threshold": m.AboveThreshold,
-		"above_prompt": m.AbovePromptPricePerMillion, "above_completion": m.AboveCompletionPricePerMillion,
-		"above_cache_read": m.AboveCacheReadPricePerMillion, "above_cache_creation": m.AboveCacheCreationPricePerMillion,
-		"above_priority_prompt": m.AbovePriorityPromptPricePerMillion, "above_priority_completion": m.AbovePriorityCompletionPricePerMillion,
-		"above_priority_cache_read": m.AbovePriorityCacheReadPricePerMillion, "above_priority_cache_creation": m.AbovePriorityCacheCreationPricePerMillion,
-		"above_flex_prompt": m.AboveFlexPromptPricePerMillion, "above_flex_completion": m.AboveFlexCompletionPricePerMillion,
-		"above_flex_cache_read": m.AboveFlexCacheReadPricePerMillion, "above_flex_cache_creation": m.AboveFlexCacheCreationPricePerMillion,
+	// 可选字段逐个校验（显式字段序 → 报错字段名确定，评审 I-1：map 迭代顺序随机）。
+	for _, f := range []struct {
+		name string
+		v    *int64
+	}{
+		{"cache_read", m.CacheReadPricePerMillion}, {"cache_creation", m.CacheCreationPricePerMillion},
+		{"priority_prompt", m.PriorityPromptPricePerMillion}, {"priority_completion", m.PriorityCompletionPricePerMillion},
+		{"priority_cache_read", m.PriorityCacheReadPricePerMillion}, {"priority_cache_creation", m.PriorityCacheCreationPricePerMillion},
+		{"flex_prompt", m.FlexPromptPricePerMillion}, {"flex_completion", m.FlexCompletionPricePerMillion},
+		{"flex_cache_read", m.FlexCacheReadPricePerMillion}, {"flex_cache_creation", m.FlexCacheCreationPricePerMillion},
+		{"above_threshold", m.AboveThreshold},
+		{"above_prompt", m.AbovePromptPricePerMillion}, {"above_completion", m.AboveCompletionPricePerMillion},
+		{"above_cache_read", m.AboveCacheReadPricePerMillion}, {"above_cache_creation", m.AboveCacheCreationPricePerMillion},
+		{"above_priority_prompt", m.AbovePriorityPromptPricePerMillion}, {"above_priority_completion", m.AbovePriorityCompletionPricePerMillion},
+		{"above_priority_cache_read", m.AbovePriorityCacheReadPricePerMillion}, {"above_priority_cache_creation", m.AbovePriorityCacheCreationPricePerMillion},
+		{"above_flex_prompt", m.AboveFlexPromptPricePerMillion}, {"above_flex_completion", m.AboveFlexCompletionPricePerMillion},
+		{"above_flex_cache_read", m.AboveFlexCacheReadPricePerMillion}, {"above_flex_cache_creation", m.AboveFlexCacheCreationPricePerMillion},
 	} {
-		if err := nonNeg(v, name); err != nil {
+		if err := nonNeg(f.v, f.name); err != nil {
 			return nil, err
 		}
 	}

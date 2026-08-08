@@ -43,7 +43,7 @@ type RedemptionCode struct {
 	ID                int64
 	Code              string
 	Type              RedemptionType
-	Value             int64            // 最小单位（分/并发数）
+	Value             int64            // 毫分（1 USD = 100,000 毫分；concurrency 类型为并发数）
 	Remark            *string          // 运营备注，可选
 	ExpiresAt         *time.Time       // 码未兑换即过期；nil = 永久
 	ResourceExpiresAt *time.Time       // 兑换后资源到期；temp_balance 必填（service 校验）
@@ -60,7 +60,7 @@ type RedemptionUse struct {
 	ID                int64
 	CodeID            int64
 	UserID            int64
-	Value             int64 // 兑换时的值快照
+	Value             int64 // 兑换时的值快照（毫分；concurrency 类型为并发数）
 	ResourceExpiresAt *time.Time
 	CreatedAt         time.Time
 }
@@ -69,7 +69,7 @@ type RedemptionUse struct {
 // ResourceExpiresAt = 兑换后资源到期（temp_balance 必有；balance/concurrency 恒 nil）。
 type RedemptionApply struct {
 	Type              RedemptionType
-	Value             int64
+	Value             int64            // 兑换值（毫分；concurrency 类型为并发数）
 	ResourceExpiresAt *time.Time
 }
 
@@ -80,7 +80,7 @@ type RedemptionRecord struct {
 	CodeID            int64
 	Code              string
 	CodeType          RedemptionType
-	Value             int64
+	Value             int64            // 兑换值快照（毫分；concurrency 类型为并发数）
 	Remark            *string
 	ResourceExpiresAt *time.Time
 	CreatedAt         time.Time
