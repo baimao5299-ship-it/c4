@@ -89,11 +89,27 @@ func (d *txDriver) Query(ctx context.Context, query string, args, v any) error {
 	return d.tx.Query(ctx, query, args, v)
 }
 
+// TxStore WithTx 事务回调面（评审 I-1）：兑换编排/测试在单事务内仅经此面访问
+// 资源更新与兑换数据。*Repository 实现（WithTx 注入 tx 版实例，全部走同一事务
+// 连接）；service 层 fake 实现同面做事务语义模拟（评审 I-1 回滚断言的前提——
+// 回调参数因此用接口而非 *Repository，同时约束 applier 无法绕过 tx 面）。
+// 面内任一步失败 → 整体回滚。
+type TxStore interface {
+	CreateCodes(ctx context.Context, codes []*domain.RedemptionCode) error
+	GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error)
+	GetByCode(ctx context.Context, code string) (*domain.RedemptionCode, error)
+	UpdateUserBalance(ctx context.Context, userID, delta int64) error
+	UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error
+	CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error
+	CreateUse(ctx context.Context, use *domain.RedemptionUse) error
+	IncrementUsed(ctx context.Context, codeID int64) (bool, error)
+}
+
 // WithTx 在单事务内执行 fn（评审 I-1）：ent `Tx().Client()` 模式构造 tx 版 Repository
 // （复用 newRepository，注入 tx client + 事务驱动），fn 内所有方法调用（含原子资源
 // 方法）都走 tx；fn 返回错误 → 整体回滚，nil → Commit。兑换编排（Task 2）用：
-// applier 必须只经 tx repos 调资源更新，任一步失败（含 use 冲突/计数用尽）全部回滚。
-func (r *Repository) WithTx(ctx context.Context, fn func(*Repository) error) error {
+// applier 必须只经 tx 面调资源更新，任一步失败（含 use 冲突/计数用尽）全部回滚。
+func (r *Repository) WithTx(ctx context.Context, fn func(TxStore) error) error {
 	tx, err := r.driver.Tx(ctx)
 	if err != nil {
 		return err

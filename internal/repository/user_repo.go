@@ -67,9 +67,11 @@ func (r *UserRepo) UpdateUserMaxConcurrency(ctx context.Context, userID int64, v
 	return nil
 }
 
-// CreateTempBalance 创建临时额度行（注册赠品等）：每笔独立行、独立到期
-// （多笔不同到期共存，Phase 5 FEFO 扣费）。user_id 外键必存在（服务层先
-// CreateUser 拿到 id）。expiresAt/note 为 nil 时不落该列（nil = 永久）。
+// CreateTempBalance 创建临时额度行（注册赠品、兑换码兑换等）：每笔独立行、
+// 独立到期（多笔不同到期共存，Phase 5 FEFO 扣费）。user_id 外键必存在
+// （服务层先 CreateUser 拿到 id）。expiresAt/note 为 nil 时不落该列（nil = 永久）；
+// 兑换码路径必非零（temp_balance 码 resource_expires_at 生成时必填，决策 4）。
+// WithTx 事务内经 tx client 插入，随整体提交/回滚；普通 client 亦可用。
 func (r *UserRepo) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
 	_, err := r.client.TempBalance.Create().
 		SetUserID(userID).

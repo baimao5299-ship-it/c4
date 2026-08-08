@@ -64,3 +64,11 @@ type RedemptionUse struct {
 	ResourceExpiresAt *time.Time
 	CreatedAt         time.Time
 }
+
+// RedemptionApply 兑换成功回执（/user/redemptions POST 响应体）。
+// ResourceExpiresAt = 兑换后资源到期（temp_balance 必有；balance/concurrency 恒 nil）。
+type RedemptionApply struct {
+	Type              RedemptionType
+	Value             int64
+	ResourceExpiresAt *time.Time
+}
