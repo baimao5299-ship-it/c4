@@ -85,10 +85,29 @@ func TestSyncFlowPG(t *testing.T) {
 	require.NotNil(t, got.MaxInputTokens)
 	require.Equal(t, int64(128000), *got.MaxInputTokens)
 	require.Equal(t, domain.PricingSourceLitellm, got.Source)
+	// T5/T5b：cache 价 + 元数据 + raw 完整镜像随真实 sync 落库
+	require.NotNil(t, got.CacheReadPricePerMillion)
+	require.Equal(t, int64(100000), *got.CacheReadPricePerMillion, "cache_read 1e-6 → 100000 毫分/1M")
+	require.NotNil(t, got.CacheCreationPricePerMillion)
+	require.Equal(t, int64(200000), *got.CacheCreationPricePerMillion)
+	require.NotNil(t, got.Provider)
+	require.Equal(t, "openai", *got.Provider)
+	require.NotNil(t, got.SupportsPromptCaching)
+	require.True(t, *got.SupportsPromptCaching)
+	require.NotNil(t, got.Raw, "raw 完整镜像落库")
+	require.Contains(t, string(got.Raw), `"supports_vision"`, "raw 含未映射字段")
 
 	got, err = repos.GetPricing(ctx, "no-max-tokens")
 	require.NoError(t, err)
 	require.Nil(t, got.MaxInputTokens, "null/0 max_tokens → nil")
+	require.Nil(t, got.CacheReadPricePerMillion, "cache 价 0 → nil")
+	require.Nil(t, got.CacheCreationPricePerMillion, "cache 价 null → nil")
+
+	got, err = repos.GetPricing(ctx, "claude-3-5-sonnet")
+	require.NoError(t, err)
+	require.Nil(t, got.CacheReadPricePerMillion, "cache 价缺失 → nil")
+	require.NotNil(t, got.Provider)
+	require.Equal(t, "anthropic", *got.Provider)
 
 	// 无效行（0 价/缺 output/负价/字符串/溢出/非对象）不落库
 	for _, m := range []string{"zero-cost", "missing-output", "negative-cost",
@@ -98,7 +117,7 @@ func TestSyncFlowPG(t *testing.T) {
 	}
 
 	// 手动价接管 litellm 行后再次同步：WHERE source != 'manual' 过滤 → 手动价不变
-	_, err = repos.UpsertManual(ctx, "gpt-4o", 42, 42)
+	_, err = repos.UpsertManual(ctx, "gpt-4o", 42, 42, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, w.Sync(ctx))
 	require.Equal(t, 2, reloads)

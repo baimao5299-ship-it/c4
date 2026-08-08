@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"go-proxy-mini/internal/ent/pricing"
 	"strings"
@@ -27,6 +28,18 @@ type Pricing struct {
 	MaxInputTokens *int64 `json:"max_input_tokens,omitempty"`
 	// MaxOutputTokens holds the value of the "max_output_tokens" field.
 	MaxOutputTokens *int64 `json:"max_output_tokens,omitempty"`
+	// CacheReadPricePerMillion holds the value of the "cache_read_price_per_million" field.
+	CacheReadPricePerMillion *int64 `json:"cache_read_price_per_million,omitempty"`
+	// CacheCreationPricePerMillion holds the value of the "cache_creation_price_per_million" field.
+	CacheCreationPricePerMillion *int64 `json:"cache_creation_price_per_million,omitempty"`
+	// Provider holds the value of the "provider" field.
+	Provider *string `json:"provider,omitempty"`
+	// Mode holds the value of the "mode" field.
+	Mode *string `json:"mode,omitempty"`
+	// SupportsPromptCaching holds the value of the "supports_prompt_caching" field.
+	SupportsPromptCaching *bool `json:"supports_prompt_caching,omitempty"`
+	// Raw holds the value of the "raw" field.
+	Raw json.RawMessage `json:"raw,omitempty"`
 	// Source holds the value of the "source" field.
 	Source pricing.Source `json:"source,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -41,9 +54,13 @@ func (*Pricing) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case pricing.FieldID, pricing.FieldPromptPricePerMillion, pricing.FieldCompletionPricePerMillion, pricing.FieldMaxInputTokens, pricing.FieldMaxOutputTokens:
+		case pricing.FieldRaw:
+			values[i] = new([]byte)
+		case pricing.FieldSupportsPromptCaching:
+			values[i] = new(sql.NullBool)
+		case pricing.FieldID, pricing.FieldPromptPricePerMillion, pricing.FieldCompletionPricePerMillion, pricing.FieldMaxInputTokens, pricing.FieldMaxOutputTokens, pricing.FieldCacheReadPricePerMillion, pricing.FieldCacheCreationPricePerMillion:
 			values[i] = new(sql.NullInt64)
-		case pricing.FieldModel, pricing.FieldSource:
+		case pricing.FieldModel, pricing.FieldProvider, pricing.FieldMode, pricing.FieldSource:
 			values[i] = new(sql.NullString)
 		case pricing.FieldCreatedAt, pricing.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -99,6 +116,49 @@ func (_m *Pricing) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.MaxOutputTokens = new(int64)
 				*_m.MaxOutputTokens = value.Int64
+			}
+		case pricing.FieldCacheReadPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_read_price_per_million", values[i])
+			} else if value.Valid {
+				_m.CacheReadPricePerMillion = new(int64)
+				*_m.CacheReadPricePerMillion = value.Int64
+			}
+		case pricing.FieldCacheCreationPricePerMillion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_creation_price_per_million", values[i])
+			} else if value.Valid {
+				_m.CacheCreationPricePerMillion = new(int64)
+				*_m.CacheCreationPricePerMillion = value.Int64
+			}
+		case pricing.FieldProvider:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider", values[i])
+			} else if value.Valid {
+				_m.Provider = new(string)
+				*_m.Provider = value.String
+			}
+		case pricing.FieldMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field mode", values[i])
+			} else if value.Valid {
+				_m.Mode = new(string)
+				*_m.Mode = value.String
+			}
+		case pricing.FieldSupportsPromptCaching:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field supports_prompt_caching", values[i])
+			} else if value.Valid {
+				_m.SupportsPromptCaching = new(bool)
+				*_m.SupportsPromptCaching = value.Bool
+			}
+		case pricing.FieldRaw:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field raw", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Raw); err != nil {
+					return fmt.Errorf("unmarshal field raw: %w", err)
+				}
 			}
 		case pricing.FieldSource:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -172,6 +232,34 @@ func (_m *Pricing) String() string {
 		builder.WriteString("max_output_tokens=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	if v := _m.CacheReadPricePerMillion; v != nil {
+		builder.WriteString("cache_read_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.CacheCreationPricePerMillion; v != nil {
+		builder.WriteString("cache_creation_price_per_million=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.Provider; v != nil {
+		builder.WriteString("provider=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.Mode; v != nil {
+		builder.WriteString("mode=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.SupportsPromptCaching; v != nil {
+		builder.WriteString("supports_prompt_caching=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("raw=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Raw))
 	builder.WriteString(", ")
 	builder.WriteString("source=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Source))

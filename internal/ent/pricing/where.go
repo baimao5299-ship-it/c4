@@ -79,6 +79,31 @@ func MaxOutputTokens(v int64) predicate.Pricing {
 	return predicate.Pricing(sql.FieldEQ(FieldMaxOutputTokens, v))
 }
 
+// CacheReadPricePerMillion applies equality check predicate on the "cache_read_price_per_million" field. It's identical to CacheReadPricePerMillionEQ.
+func CacheReadPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillion applies equality check predicate on the "cache_creation_price_per_million" field. It's identical to CacheCreationPricePerMillionEQ.
+func CacheCreationPricePerMillion(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldCacheCreationPricePerMillion, v))
+}
+
+// Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
+func Provider(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldProvider, v))
+}
+
+// Mode applies equality check predicate on the "mode" field. It's identical to ModeEQ.
+func Mode(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldMode, v))
+}
+
+// SupportsPromptCaching applies equality check predicate on the "supports_prompt_caching" field. It's identical to SupportsPromptCachingEQ.
+func SupportsPromptCaching(v bool) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldSupportsPromptCaching, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.Pricing {
 	return predicate.Pricing(sql.FieldEQ(FieldCreatedAt, v))
@@ -332,6 +357,286 @@ func MaxOutputTokensIsNil() predicate.Pricing {
 // MaxOutputTokensNotNil applies the NotNil predicate on the "max_output_tokens" field.
 func MaxOutputTokensNotNil() predicate.Pricing {
 	return predicate.Pricing(sql.FieldNotNull(FieldMaxOutputTokens))
+}
+
+// CacheReadPricePerMillionEQ applies the EQ predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheReadPricePerMillionNEQ applies the NEQ predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheReadPricePerMillionIn applies the In predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldCacheReadPricePerMillion, vs...))
+}
+
+// CacheReadPricePerMillionNotIn applies the NotIn predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldCacheReadPricePerMillion, vs...))
+}
+
+// CacheReadPricePerMillionGT applies the GT predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheReadPricePerMillionGTE applies the GTE predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheReadPricePerMillionLT applies the LT predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheReadPricePerMillionLTE applies the LTE predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldCacheReadPricePerMillion, v))
+}
+
+// CacheReadPricePerMillionIsNil applies the IsNil predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldCacheReadPricePerMillion))
+}
+
+// CacheReadPricePerMillionNotNil applies the NotNil predicate on the "cache_read_price_per_million" field.
+func CacheReadPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldCacheReadPricePerMillion))
+}
+
+// CacheCreationPricePerMillionEQ applies the EQ predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldCacheCreationPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillionNEQ applies the NEQ predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionNEQ(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldCacheCreationPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillionIn applies the In predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldCacheCreationPricePerMillion, vs...))
+}
+
+// CacheCreationPricePerMillionNotIn applies the NotIn predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionNotIn(vs ...int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldCacheCreationPricePerMillion, vs...))
+}
+
+// CacheCreationPricePerMillionGT applies the GT predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionGT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldCacheCreationPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillionGTE applies the GTE predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionGTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldCacheCreationPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillionLT applies the LT predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionLT(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldCacheCreationPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillionLTE applies the LTE predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionLTE(v int64) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldCacheCreationPricePerMillion, v))
+}
+
+// CacheCreationPricePerMillionIsNil applies the IsNil predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldCacheCreationPricePerMillion))
+}
+
+// CacheCreationPricePerMillionNotNil applies the NotNil predicate on the "cache_creation_price_per_million" field.
+func CacheCreationPricePerMillionNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldCacheCreationPricePerMillion))
+}
+
+// ProviderEQ applies the EQ predicate on the "provider" field.
+func ProviderEQ(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldProvider, v))
+}
+
+// ProviderNEQ applies the NEQ predicate on the "provider" field.
+func ProviderNEQ(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldProvider, v))
+}
+
+// ProviderIn applies the In predicate on the "provider" field.
+func ProviderIn(vs ...string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldProvider, vs...))
+}
+
+// ProviderNotIn applies the NotIn predicate on the "provider" field.
+func ProviderNotIn(vs ...string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldProvider, vs...))
+}
+
+// ProviderGT applies the GT predicate on the "provider" field.
+func ProviderGT(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldProvider, v))
+}
+
+// ProviderGTE applies the GTE predicate on the "provider" field.
+func ProviderGTE(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldProvider, v))
+}
+
+// ProviderLT applies the LT predicate on the "provider" field.
+func ProviderLT(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldProvider, v))
+}
+
+// ProviderLTE applies the LTE predicate on the "provider" field.
+func ProviderLTE(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldProvider, v))
+}
+
+// ProviderContains applies the Contains predicate on the "provider" field.
+func ProviderContains(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldContains(FieldProvider, v))
+}
+
+// ProviderHasPrefix applies the HasPrefix predicate on the "provider" field.
+func ProviderHasPrefix(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldHasPrefix(FieldProvider, v))
+}
+
+// ProviderHasSuffix applies the HasSuffix predicate on the "provider" field.
+func ProviderHasSuffix(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldHasSuffix(FieldProvider, v))
+}
+
+// ProviderIsNil applies the IsNil predicate on the "provider" field.
+func ProviderIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldProvider))
+}
+
+// ProviderNotNil applies the NotNil predicate on the "provider" field.
+func ProviderNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldProvider))
+}
+
+// ProviderEqualFold applies the EqualFold predicate on the "provider" field.
+func ProviderEqualFold(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEqualFold(FieldProvider, v))
+}
+
+// ProviderContainsFold applies the ContainsFold predicate on the "provider" field.
+func ProviderContainsFold(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldContainsFold(FieldProvider, v))
+}
+
+// ModeEQ applies the EQ predicate on the "mode" field.
+func ModeEQ(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldMode, v))
+}
+
+// ModeNEQ applies the NEQ predicate on the "mode" field.
+func ModeNEQ(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldMode, v))
+}
+
+// ModeIn applies the In predicate on the "mode" field.
+func ModeIn(vs ...string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldIn(FieldMode, vs...))
+}
+
+// ModeNotIn applies the NotIn predicate on the "mode" field.
+func ModeNotIn(vs ...string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotIn(FieldMode, vs...))
+}
+
+// ModeGT applies the GT predicate on the "mode" field.
+func ModeGT(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGT(FieldMode, v))
+}
+
+// ModeGTE applies the GTE predicate on the "mode" field.
+func ModeGTE(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldGTE(FieldMode, v))
+}
+
+// ModeLT applies the LT predicate on the "mode" field.
+func ModeLT(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLT(FieldMode, v))
+}
+
+// ModeLTE applies the LTE predicate on the "mode" field.
+func ModeLTE(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldLTE(FieldMode, v))
+}
+
+// ModeContains applies the Contains predicate on the "mode" field.
+func ModeContains(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldContains(FieldMode, v))
+}
+
+// ModeHasPrefix applies the HasPrefix predicate on the "mode" field.
+func ModeHasPrefix(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldHasPrefix(FieldMode, v))
+}
+
+// ModeHasSuffix applies the HasSuffix predicate on the "mode" field.
+func ModeHasSuffix(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldHasSuffix(FieldMode, v))
+}
+
+// ModeIsNil applies the IsNil predicate on the "mode" field.
+func ModeIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldMode))
+}
+
+// ModeNotNil applies the NotNil predicate on the "mode" field.
+func ModeNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldMode))
+}
+
+// ModeEqualFold applies the EqualFold predicate on the "mode" field.
+func ModeEqualFold(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEqualFold(FieldMode, v))
+}
+
+// ModeContainsFold applies the ContainsFold predicate on the "mode" field.
+func ModeContainsFold(v string) predicate.Pricing {
+	return predicate.Pricing(sql.FieldContainsFold(FieldMode, v))
+}
+
+// SupportsPromptCachingEQ applies the EQ predicate on the "supports_prompt_caching" field.
+func SupportsPromptCachingEQ(v bool) predicate.Pricing {
+	return predicate.Pricing(sql.FieldEQ(FieldSupportsPromptCaching, v))
+}
+
+// SupportsPromptCachingNEQ applies the NEQ predicate on the "supports_prompt_caching" field.
+func SupportsPromptCachingNEQ(v bool) predicate.Pricing {
+	return predicate.Pricing(sql.FieldNEQ(FieldSupportsPromptCaching, v))
+}
+
+// SupportsPromptCachingIsNil applies the IsNil predicate on the "supports_prompt_caching" field.
+func SupportsPromptCachingIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldSupportsPromptCaching))
+}
+
+// SupportsPromptCachingNotNil applies the NotNil predicate on the "supports_prompt_caching" field.
+func SupportsPromptCachingNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldSupportsPromptCaching))
+}
+
+// RawIsNil applies the IsNil predicate on the "raw" field.
+func RawIsNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldIsNull(FieldRaw))
+}
+
+// RawNotNil applies the NotNil predicate on the "raw" field.
+func RawNotNil() predicate.Pricing {
+	return predicate.Pricing(sql.FieldNotNull(FieldRaw))
 }
 
 // SourceEQ applies the EQ predicate on the "source" field.

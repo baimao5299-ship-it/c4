@@ -82,15 +82,19 @@ func (s *Service) GetPrice(model string) (*domain.Pricing, error) {
 
 // UpsertManualPricing 手动设价（管理端 PUT /admin/pricing/{model}）：校验 + 落库
 // （upsert 强制 source=manual，可接管 litellm 行）+ 成功后重载快照（读路径
-// 即时生效）。
-func (s *Service) UpsertManualPricing(ctx context.Context, model string, promptP, completionP int64) (*domain.Pricing, error) {
+// 即时生效）。cacheRead/cacheCreation 可选（*int64）：nil = 不设缓存价（落库
+// NULL）；非 nil 且 < 0 → 400（与主价一致）。manual 行不写 raw/provider/mode。
+func (s *Service) UpsertManualPricing(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error) {
 	if model == "" {
 		return nil, fmt.Errorf("%w: model is required", ErrInvalidInput)
 	}
 	if promptP < 0 || completionP < 0 {
 		return nil, fmt.Errorf("%w: prices must be >= 0", ErrInvalidInput)
 	}
-	p, err := s.store.UpsertManual(ctx, model, promptP, completionP)
+	if (cacheRead != nil && *cacheRead < 0) || (cacheCreation != nil && *cacheCreation < 0) {
+		return nil, fmt.Errorf("%w: cache prices must be >= 0", ErrInvalidInput)
+	}
+	p, err := s.store.UpsertManual(ctx, model, promptP, completionP, cacheRead, cacheCreation)
 	if err != nil {
 		return nil, err
 	}

@@ -79,11 +79,11 @@ type txDriver struct {
 	tx  dialect.Tx
 }
 
-func (d *txDriver) Dialect() string              { return d.drv.Dialect() }
-func (d *txDriver) Close() error                 { return nil }
+func (d *txDriver) Dialect() string                        { return d.drv.Dialect() }
+func (d *txDriver) Close() error                           { return nil }
 func (d *txDriver) Tx(context.Context) (dialect.Tx, error) { return d, nil }
-func (d *txDriver) Commit() error                { return nil }
-func (d *txDriver) Rollback() error              { return nil }
+func (d *txDriver) Commit() error                          { return nil }
+func (d *txDriver) Rollback() error                        { return nil }
 func (d *txDriver) Exec(ctx context.Context, query string, args, v any) error {
 	return d.tx.Exec(ctx, query, args, v)
 }
@@ -415,8 +415,8 @@ func (r *Repository) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Prici
 	return r.Pricing.UpsertFromLiteLLM(ctx, rows)
 }
 
-func (r *Repository) UpsertManual(ctx context.Context, model string, promptP, completionP int64) (*domain.Pricing, error) {
-	return r.Pricing.UpsertManual(ctx, model, promptP, completionP)
+func (r *Repository) UpsertManual(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error) {
+	return r.Pricing.UpsertManual(ctx, model, promptP, completionP, cacheRead, cacheCreation)
 }
 
 func (r *Repository) DeleteManual(ctx context.Context, model string) error {

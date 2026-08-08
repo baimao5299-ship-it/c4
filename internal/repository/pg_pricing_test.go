@@ -2,6 +2,7 @@ package repository_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -13,7 +14,8 @@ import (
 
 // 真实 PG 基座（newPGRepos；TEST_DATABASE_URL 未设置 → Skip）：
 // 模型价格 Task 1 全部测试 —— 优先级闭环（manual > litellm）、DeleteManual
-// 语义、UpsertFromLiteLLM 分批/部分成功（评审 M-2）、ListPricing 筛选/分页/sort。
+// 语义、UpsertFromLiteLLM 分批/部分成功（评审 M-2）、ListPricing 筛选/分页/sort；
+// T5/T5b —— cache 价 + provider/mode/supports_prompt_caching/raw JSONB 落库。
 
 func int64Ptr(v int64) *int64 { return &v }
 
@@ -35,7 +37,7 @@ func TestPricingPriorityPG(t *testing.T) {
 
 	t.Run("litellm sync does not overwrite manual price", func(t *testing.T) {
 		m := "gpm-pri-manual-a"
-		p, err := repos.UpsertManual(ctx, m, 100, 200)
+		p, err := repos.UpsertManual(ctx, m, 100, 200, nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
 		require.Equal(t, m, p.Model)
@@ -61,7 +63,7 @@ func TestPricingPriorityPG(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceLitellm, got.Source)
 
-		p, err := repos.UpsertManual(ctx, m, 300, 400)
+		p, err := repos.UpsertManual(ctx, m, 300, 400, nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
 		require.Equal(t, int64(300), p.PromptPricePerMillion, "litellm 行被接管")
@@ -78,7 +80,7 @@ func TestPricingPriorityPG(t *testing.T) {
 		m := "gpm-pri-restore-c"
 		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow(m, 10, 20)})
 		require.NoError(t, err)
-		_, err = repos.UpsertManual(ctx, m, 500, 600)
+		_, err = repos.UpsertManual(ctx, m, 500, 600, nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, repos.DeleteManual(ctx, m), "manual 行可删")
 
@@ -120,7 +122,7 @@ func TestPricingDeleteManualPG(t *testing.T) {
 
 	t.Run("manual row deleted", func(t *testing.T) {
 		m := "gpm-del-manual"
-		_, err := repos.UpsertManual(ctx, m, 1, 2)
+		_, err := repos.UpsertManual(ctx, m, 1, 2, nil, nil)
 		require.NoError(t, err)
 		require.NoError(t, repos.DeleteManual(ctx, m))
 		_, err = repos.GetPricing(ctx, m)
@@ -129,10 +131,10 @@ func TestPricingDeleteManualPG(t *testing.T) {
 }
 
 // TestPricingUpsertLitellmBatchPG 分批（评审 M-2）：
-// 1) 1200 行（3 批）全成功，成功数 = 总行数，max_tokens 空/非空 roundtrip；
-// 2) 批内含手动行 → WHERE 过滤不覆盖，成功数相应减少；
-// 3) 部分成功：批 0 内同 model 重复（同批互冲突 → 整批失败）→ 其余批成功，
-//    返回成功条数 + 首个错误。
+//  1. 1200 行（3 批）全成功，成功数 = 总行数，max_tokens 空/非空 roundtrip；
+//  2. 批内含手动行 → WHERE 过滤不覆盖，成功数相应减少；
+//  3. 部分成功：批 0 内同 model 重复（同批互冲突 → 整批失败）→ 其余批成功，
+//     返回成功条数 + 首个错误。
 func TestPricingUpsertLitellmBatchPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()
@@ -168,7 +170,7 @@ func TestPricingUpsertLitellmBatchPG(t *testing.T) {
 
 	// 2) 批内含手动行：DO UPDATE 被 WHERE 过滤，成功数 = 总行数 - 1
 	manualModel := "litellm-batch-0600"
-	_, err = repos.UpsertManual(ctx, manualModel, 777, 888)
+	_, err = repos.UpsertManual(ctx, manualModel, 777, 888, nil, nil)
 	require.NoError(t, err)
 	n, err = repos.UpsertFromLiteLLM(ctx, rows)
 	require.NoError(t, err)
@@ -208,9 +210,9 @@ func TestPricingListPG(t *testing.T) {
 		litellmRow("claude-sonnet", 3, 4),
 	})
 	require.NoError(t, err)
-	_, err = repos.UpsertManual(ctx, "gpt-4o-mini", 5, 6)
+	_, err = repos.UpsertManual(ctx, "gpt-4o-mini", 5, 6, nil, nil)
 	require.NoError(t, err)
-	_, err = repos.UpsertManual(ctx, "gemini-pro", 7, 8)
+	_, err = repos.UpsertManual(ctx, "gemini-pro", 7, 8, nil, nil)
 	require.NoError(t, err)
 
 	// 全量（默认分页 id desc）
@@ -250,4 +252,139 @@ func TestPricingListPG(t *testing.T) {
 	// 非法 sort → ErrInvalidSort
 	_, _, err = repos.ListPricing(ctx, repository.ListQuery{Sort: "bogus"}, nil, "")
 	require.ErrorIs(t, err, repository.ErrInvalidSort)
+}
+
+// TestPricingCacheAndMetaFieldsPG T5/T5b 字段落库闭环：
+//  1. litellm 行 cache 价 + provider/mode/supports_prompt_caching 落库 roundtrip；
+//     缺 cache 价行 → nil；
+//  2. 再拉取更新（cache 价变化）→ DO UPDATE 覆盖（非 manual 行）；
+//  3. manual 设 cache 价落库；manual 不设（nil）→ 落库 NULL；
+//  4. manual 接管带 cache 价的 litellm 行且不设 cache → 缓存价被清为 NULL。
+func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	t.Run("litellm row with cache/meta fields roundtrip", func(t *testing.T) {
+		m := "gpm-cache-a"
+		row := litellmRow(m, 100, 200)
+		row.CacheReadPricePerMillion = int64Ptr(300)
+		row.CacheCreationPricePerMillion = int64Ptr(400)
+		prov, mode, spc := "openai", "chat", true
+		row.Provider, row.Mode, row.SupportsPromptCaching = &prov, &mode, &spc
+		row.Raw = json.RawMessage(`{"input_cost_per_token":1e-06,"rpm":600,"supports_vision":true}`)
+		n, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.NotNil(t, got.CacheReadPricePerMillion)
+		require.Equal(t, int64(300), *got.CacheReadPricePerMillion, "cache_read 落库")
+		require.NotNil(t, got.CacheCreationPricePerMillion)
+		require.Equal(t, int64(400), *got.CacheCreationPricePerMillion)
+		require.NotNil(t, got.Provider)
+		require.Equal(t, "openai", *got.Provider)
+		require.NotNil(t, got.Mode)
+		require.Equal(t, "chat", *got.Mode)
+		require.NotNil(t, got.SupportsPromptCaching)
+		require.True(t, *got.SupportsPromptCaching)
+		require.Equal(t, domain.PricingSourceLitellm, got.Source)
+
+		// raw JSONB roundtrip：完整镜像保留未映射字段
+		require.NotNil(t, got.Raw, "raw JSONB 落库")
+		var raw map[string]any
+		require.NoError(t, json.Unmarshal(got.Raw, &raw))
+		require.Equal(t, float64(600), raw["rpm"], "raw 保留未映射字段")
+		require.Equal(t, true, raw["supports_vision"], "raw 保留未映射字段")
+
+		// 无 cache 价行 → nil
+		n, err = repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow("gpm-cache-b", 1, 2)})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+		got, err = repos.GetPricing(ctx, "gpm-cache-b")
+		require.NoError(t, err)
+		require.Nil(t, got.CacheReadPricePerMillion)
+		require.Nil(t, got.CacheCreationPricePerMillion)
+		require.Nil(t, got.Provider)
+		require.Nil(t, got.Raw, "无 raw → NULL")
+	})
+
+	t.Run("re-upsert updates cache/meta/raw", func(t *testing.T) {
+		m := "gpm-cache-c"
+		row := litellmRow(m, 10, 20)
+		row.CacheReadPricePerMillion = int64Ptr(111)
+		prov := "openai"
+		row.Provider = &prov
+		row.Raw = json.RawMessage(`{"k":"v1"}`)
+		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row})
+		require.NoError(t, err)
+
+		row2 := litellmRow(m, 10, 20)
+		row2.CacheReadPricePerMillion = int64Ptr(222)
+		row2.CacheCreationPricePerMillion = int64Ptr(333)
+		prov2 := "anthropic"
+		row2.Provider = &prov2
+		row2.Raw = json.RawMessage(`{"k":"v2","extra":true}`)
+		n, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row2})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, int64(222), *got.CacheReadPricePerMillion, "cache 价更新")
+		require.Equal(t, int64(333), *got.CacheCreationPricePerMillion)
+		require.Equal(t, "anthropic", *got.Provider, "provider 更新")
+		var raw map[string]any
+		require.NoError(t, json.Unmarshal(got.Raw, &raw))
+		require.Equal(t, true, raw["extra"], "raw 更新为最新镜像")
+	})
+
+	t.Run("manual with cache prices", func(t *testing.T) {
+		m := "gpm-cache-manual"
+		p, err := repos.UpsertManual(ctx, m, 5, 6, int64Ptr(7), int64Ptr(8))
+		require.NoError(t, err)
+		require.Equal(t, int64(7), *p.CacheReadPricePerMillion, "manual 返回行含 cache 价")
+		require.Equal(t, int64(8), *p.CacheCreationPricePerMillion)
+		require.Nil(t, p.Provider, "manual 行无 provider")
+		require.Nil(t, p.Raw, "manual 行 raw 恒 NULL")
+		require.Equal(t, domain.PricingSourceManual, p.Source)
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, int64(7), *got.CacheReadPricePerMillion, "manual cache 价落库")
+		require.Nil(t, got.Raw, "manual 行 raw=NULL 落库")
+	})
+
+	t.Run("manual without cache prices stores NULL", func(t *testing.T) {
+		m := "gpm-cache-manual-nil"
+		p, err := repos.UpsertManual(ctx, m, 5, 6, nil, nil)
+		require.NoError(t, err)
+		require.Nil(t, p.CacheReadPricePerMillion, "不设 cache 价 → nil")
+		require.Nil(t, p.CacheCreationPricePerMillion)
+
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Nil(t, got.CacheReadPricePerMillion, "落库 NULL")
+		require.Nil(t, got.CacheCreationPricePerMillion)
+	})
+
+	t.Run("manual takeover clears litellm cache prices when unset", func(t *testing.T) {
+		m := "gpm-cache-takeover"
+		row := litellmRow(m, 10, 20)
+		row.CacheReadPricePerMillion = int64Ptr(999)
+		row.CacheCreationPricePerMillion = int64Ptr(888)
+		row.Raw = json.RawMessage(`{"input_cost_per_token":1e-06}`)
+		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{row})
+		require.NoError(t, err)
+
+		// 接管且不设 cache 价 → 原 litellm 缓存价清为 NULL
+		_, err = repos.UpsertManual(ctx, m, 1, 2, nil, nil)
+		require.NoError(t, err)
+		got, err := repos.GetPricing(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, domain.PricingSourceManual, got.Source)
+		require.Nil(t, got.CacheReadPricePerMillion, "接管不设 cache → NULL")
+		require.Nil(t, got.CacheCreationPricePerMillion)
+		require.Nil(t, got.Raw, "manual 接管后 raw 清为 NULL")
+	})
 }

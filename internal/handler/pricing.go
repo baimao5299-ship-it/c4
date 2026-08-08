@@ -41,14 +41,17 @@ func (h *AdminAPI) GetPricing(w http.ResponseWriter, r *http.Request, params Get
 }
 
 // PutPricingModel 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管
-// litellm 行；负数/model 空 → 400，service 校验），ServerInterface。
+// litellm 行；负数/model 空 → 400，service 校验）。cache_read/creation 可选：
+// 缺省（nil）→ 不设缓存价（落库 NULL），ServerInterface。
 func (h *AdminAPI) PutPricingModel(w http.ResponseWriter, r *http.Request, model string) {
 	var in PricingUpsert
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	p, err := h.svc.UpsertManualPricing(r.Context(), model, in.PromptPricePerMillion, in.CompletionPricePerMillion)
+	p, err := h.svc.UpsertManualPricing(r.Context(), model,
+		in.PromptPricePerMillion, in.CompletionPricePerMillion,
+		in.CacheReadPricePerMillion, in.CacheCreationPricePerMillion)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -83,16 +86,22 @@ func (h *AdminAPI) PostPricingSync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// toAPIPricing 价格领域对象 → 契约类型。
+// toAPIPricing 价格领域对象 → 契约类型（raw 完整镜像不对外暴露——前端无需
+// litellm 原始条目；如需可后续加端点）。
 func toAPIPricing(p *domain.Pricing) Pricing {
 	return Pricing{
-		Model:                     p.Model,
-		PromptPricePerMillion:     p.PromptPricePerMillion,
-		CompletionPricePerMillion: p.CompletionPricePerMillion,
-		MaxInputTokens:            p.MaxInputTokens,
-		MaxOutputTokens:           p.MaxOutputTokens,
-		Source:                    PricingSource(p.Source),
-		CreatedAt:                 p.CreatedAt,
-		UpdatedAt:                 p.UpdatedAt,
+		Model:                        p.Model,
+		PromptPricePerMillion:        p.PromptPricePerMillion,
+		CompletionPricePerMillion:    p.CompletionPricePerMillion,
+		MaxInputTokens:               p.MaxInputTokens,
+		MaxOutputTokens:              p.MaxOutputTokens,
+		CacheReadPricePerMillion:     p.CacheReadPricePerMillion,
+		CacheCreationPricePerMillion: p.CacheCreationPricePerMillion,
+		Provider:                     p.Provider,
+		Mode:                         p.Mode,
+		SupportsPromptCaching:        p.SupportsPromptCaching,
+		Source:                       PricingSource(p.Source),
+		CreatedAt:                    p.CreatedAt,
+		UpdatedAt:                    p.UpdatedAt,
 	}
 }

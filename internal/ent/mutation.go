@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
@@ -3566,25 +3567,34 @@ func (m *KeyMutation) ResetEdge(name string) error {
 // PricingMutation represents an operation that mutates the Pricing nodes in the graph.
 type PricingMutation struct {
 	config
-	op                              Op
-	typ                             string
-	id                              *int64
-	model                           *string
-	prompt_price_per_million        *int64
-	addprompt_price_per_million     *int64
-	completion_price_per_million    *int64
-	addcompletion_price_per_million *int64
-	max_input_tokens                *int64
-	addmax_input_tokens             *int64
-	max_output_tokens               *int64
-	addmax_output_tokens            *int64
-	source                          *pricing.Source
-	created_at                      *time.Time
-	updated_at                      *time.Time
-	clearedFields                   map[string]struct{}
-	done                            bool
-	oldValue                        func(context.Context) (*Pricing, error)
-	predicates                      []predicate.Pricing
+	op                                  Op
+	typ                                 string
+	id                                  *int64
+	model                               *string
+	prompt_price_per_million            *int64
+	addprompt_price_per_million         *int64
+	completion_price_per_million        *int64
+	addcompletion_price_per_million     *int64
+	max_input_tokens                    *int64
+	addmax_input_tokens                 *int64
+	max_output_tokens                   *int64
+	addmax_output_tokens                *int64
+	cache_read_price_per_million        *int64
+	addcache_read_price_per_million     *int64
+	cache_creation_price_per_million    *int64
+	addcache_creation_price_per_million *int64
+	provider                            *string
+	mode                                *string
+	supports_prompt_caching             *bool
+	raw                                 *json.RawMessage
+	appendraw                           json.RawMessage
+	source                              *pricing.Source
+	created_at                          *time.Time
+	updated_at                          *time.Time
+	clearedFields                       map[string]struct{}
+	done                                bool
+	oldValue                            func(context.Context) (*Pricing, error)
+	predicates                          []predicate.Pricing
 }
 
 var _ ent.Mutation = (*PricingMutation)(nil)
@@ -3979,6 +3989,358 @@ func (m *PricingMutation) ResetMaxOutputTokens() {
 	delete(m.clearedFields, pricing.FieldMaxOutputTokens)
 }
 
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (m *PricingMutation) SetCacheReadPricePerMillion(i int64) {
+	m.cache_read_price_per_million = &i
+	m.addcache_read_price_per_million = nil
+}
+
+// CacheReadPricePerMillion returns the value of the "cache_read_price_per_million" field in the mutation.
+func (m *PricingMutation) CacheReadPricePerMillion() (r int64, exists bool) {
+	v := m.cache_read_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheReadPricePerMillion returns the old "cache_read_price_per_million" field's value of the Pricing entity.
+// If the Pricing object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PricingMutation) OldCacheReadPricePerMillion(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheReadPricePerMillion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheReadPricePerMillion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheReadPricePerMillion: %w", err)
+	}
+	return oldValue.CacheReadPricePerMillion, nil
+}
+
+// AddCacheReadPricePerMillion adds i to the "cache_read_price_per_million" field.
+func (m *PricingMutation) AddCacheReadPricePerMillion(i int64) {
+	if m.addcache_read_price_per_million != nil {
+		*m.addcache_read_price_per_million += i
+	} else {
+		m.addcache_read_price_per_million = &i
+	}
+}
+
+// AddedCacheReadPricePerMillion returns the value that was added to the "cache_read_price_per_million" field in this mutation.
+func (m *PricingMutation) AddedCacheReadPricePerMillion() (r int64, exists bool) {
+	v := m.addcache_read_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCacheReadPricePerMillion clears the value of the "cache_read_price_per_million" field.
+func (m *PricingMutation) ClearCacheReadPricePerMillion() {
+	m.cache_read_price_per_million = nil
+	m.addcache_read_price_per_million = nil
+	m.clearedFields[pricing.FieldCacheReadPricePerMillion] = struct{}{}
+}
+
+// CacheReadPricePerMillionCleared returns if the "cache_read_price_per_million" field was cleared in this mutation.
+func (m *PricingMutation) CacheReadPricePerMillionCleared() bool {
+	_, ok := m.clearedFields[pricing.FieldCacheReadPricePerMillion]
+	return ok
+}
+
+// ResetCacheReadPricePerMillion resets all changes to the "cache_read_price_per_million" field.
+func (m *PricingMutation) ResetCacheReadPricePerMillion() {
+	m.cache_read_price_per_million = nil
+	m.addcache_read_price_per_million = nil
+	delete(m.clearedFields, pricing.FieldCacheReadPricePerMillion)
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (m *PricingMutation) SetCacheCreationPricePerMillion(i int64) {
+	m.cache_creation_price_per_million = &i
+	m.addcache_creation_price_per_million = nil
+}
+
+// CacheCreationPricePerMillion returns the value of the "cache_creation_price_per_million" field in the mutation.
+func (m *PricingMutation) CacheCreationPricePerMillion() (r int64, exists bool) {
+	v := m.cache_creation_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheCreationPricePerMillion returns the old "cache_creation_price_per_million" field's value of the Pricing entity.
+// If the Pricing object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PricingMutation) OldCacheCreationPricePerMillion(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheCreationPricePerMillion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheCreationPricePerMillion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheCreationPricePerMillion: %w", err)
+	}
+	return oldValue.CacheCreationPricePerMillion, nil
+}
+
+// AddCacheCreationPricePerMillion adds i to the "cache_creation_price_per_million" field.
+func (m *PricingMutation) AddCacheCreationPricePerMillion(i int64) {
+	if m.addcache_creation_price_per_million != nil {
+		*m.addcache_creation_price_per_million += i
+	} else {
+		m.addcache_creation_price_per_million = &i
+	}
+}
+
+// AddedCacheCreationPricePerMillion returns the value that was added to the "cache_creation_price_per_million" field in this mutation.
+func (m *PricingMutation) AddedCacheCreationPricePerMillion() (r int64, exists bool) {
+	v := m.addcache_creation_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
+func (m *PricingMutation) ClearCacheCreationPricePerMillion() {
+	m.cache_creation_price_per_million = nil
+	m.addcache_creation_price_per_million = nil
+	m.clearedFields[pricing.FieldCacheCreationPricePerMillion] = struct{}{}
+}
+
+// CacheCreationPricePerMillionCleared returns if the "cache_creation_price_per_million" field was cleared in this mutation.
+func (m *PricingMutation) CacheCreationPricePerMillionCleared() bool {
+	_, ok := m.clearedFields[pricing.FieldCacheCreationPricePerMillion]
+	return ok
+}
+
+// ResetCacheCreationPricePerMillion resets all changes to the "cache_creation_price_per_million" field.
+func (m *PricingMutation) ResetCacheCreationPricePerMillion() {
+	m.cache_creation_price_per_million = nil
+	m.addcache_creation_price_per_million = nil
+	delete(m.clearedFields, pricing.FieldCacheCreationPricePerMillion)
+}
+
+// SetProvider sets the "provider" field.
+func (m *PricingMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *PricingMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the Pricing entity.
+// If the Pricing object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PricingMutation) OldProvider(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (m *PricingMutation) ClearProvider() {
+	m.provider = nil
+	m.clearedFields[pricing.FieldProvider] = struct{}{}
+}
+
+// ProviderCleared returns if the "provider" field was cleared in this mutation.
+func (m *PricingMutation) ProviderCleared() bool {
+	_, ok := m.clearedFields[pricing.FieldProvider]
+	return ok
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *PricingMutation) ResetProvider() {
+	m.provider = nil
+	delete(m.clearedFields, pricing.FieldProvider)
+}
+
+// SetMode sets the "mode" field.
+func (m *PricingMutation) SetMode(s string) {
+	m.mode = &s
+}
+
+// Mode returns the value of the "mode" field in the mutation.
+func (m *PricingMutation) Mode() (r string, exists bool) {
+	v := m.mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMode returns the old "mode" field's value of the Pricing entity.
+// If the Pricing object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PricingMutation) OldMode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMode: %w", err)
+	}
+	return oldValue.Mode, nil
+}
+
+// ClearMode clears the value of the "mode" field.
+func (m *PricingMutation) ClearMode() {
+	m.mode = nil
+	m.clearedFields[pricing.FieldMode] = struct{}{}
+}
+
+// ModeCleared returns if the "mode" field was cleared in this mutation.
+func (m *PricingMutation) ModeCleared() bool {
+	_, ok := m.clearedFields[pricing.FieldMode]
+	return ok
+}
+
+// ResetMode resets all changes to the "mode" field.
+func (m *PricingMutation) ResetMode() {
+	m.mode = nil
+	delete(m.clearedFields, pricing.FieldMode)
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (m *PricingMutation) SetSupportsPromptCaching(b bool) {
+	m.supports_prompt_caching = &b
+}
+
+// SupportsPromptCaching returns the value of the "supports_prompt_caching" field in the mutation.
+func (m *PricingMutation) SupportsPromptCaching() (r bool, exists bool) {
+	v := m.supports_prompt_caching
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSupportsPromptCaching returns the old "supports_prompt_caching" field's value of the Pricing entity.
+// If the Pricing object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PricingMutation) OldSupportsPromptCaching(ctx context.Context) (v *bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSupportsPromptCaching is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSupportsPromptCaching requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSupportsPromptCaching: %w", err)
+	}
+	return oldValue.SupportsPromptCaching, nil
+}
+
+// ClearSupportsPromptCaching clears the value of the "supports_prompt_caching" field.
+func (m *PricingMutation) ClearSupportsPromptCaching() {
+	m.supports_prompt_caching = nil
+	m.clearedFields[pricing.FieldSupportsPromptCaching] = struct{}{}
+}
+
+// SupportsPromptCachingCleared returns if the "supports_prompt_caching" field was cleared in this mutation.
+func (m *PricingMutation) SupportsPromptCachingCleared() bool {
+	_, ok := m.clearedFields[pricing.FieldSupportsPromptCaching]
+	return ok
+}
+
+// ResetSupportsPromptCaching resets all changes to the "supports_prompt_caching" field.
+func (m *PricingMutation) ResetSupportsPromptCaching() {
+	m.supports_prompt_caching = nil
+	delete(m.clearedFields, pricing.FieldSupportsPromptCaching)
+}
+
+// SetRaw sets the "raw" field.
+func (m *PricingMutation) SetRaw(jm json.RawMessage) {
+	m.raw = &jm
+	m.appendraw = nil
+}
+
+// Raw returns the value of the "raw" field in the mutation.
+func (m *PricingMutation) Raw() (r json.RawMessage, exists bool) {
+	v := m.raw
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRaw returns the old "raw" field's value of the Pricing entity.
+// If the Pricing object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PricingMutation) OldRaw(ctx context.Context) (v json.RawMessage, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRaw is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRaw requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRaw: %w", err)
+	}
+	return oldValue.Raw, nil
+}
+
+// AppendRaw adds jm to the "raw" field.
+func (m *PricingMutation) AppendRaw(jm json.RawMessage) {
+	m.appendraw = append(m.appendraw, jm...)
+}
+
+// AppendedRaw returns the list of values that were appended to the "raw" field in this mutation.
+func (m *PricingMutation) AppendedRaw() (json.RawMessage, bool) {
+	if len(m.appendraw) == 0 {
+		return nil, false
+	}
+	return m.appendraw, true
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (m *PricingMutation) ClearRaw() {
+	m.raw = nil
+	m.appendraw = nil
+	m.clearedFields[pricing.FieldRaw] = struct{}{}
+}
+
+// RawCleared returns if the "raw" field was cleared in this mutation.
+func (m *PricingMutation) RawCleared() bool {
+	_, ok := m.clearedFields[pricing.FieldRaw]
+	return ok
+}
+
+// ResetRaw resets all changes to the "raw" field.
+func (m *PricingMutation) ResetRaw() {
+	m.raw = nil
+	m.appendraw = nil
+	delete(m.clearedFields, pricing.FieldRaw)
+}
+
 // SetSource sets the "source" field.
 func (m *PricingMutation) SetSource(pr pricing.Source) {
 	m.source = &pr
@@ -4121,7 +4483,7 @@ func (m *PricingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PricingMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 14)
 	if m.model != nil {
 		fields = append(fields, pricing.FieldModel)
 	}
@@ -4136,6 +4498,24 @@ func (m *PricingMutation) Fields() []string {
 	}
 	if m.max_output_tokens != nil {
 		fields = append(fields, pricing.FieldMaxOutputTokens)
+	}
+	if m.cache_read_price_per_million != nil {
+		fields = append(fields, pricing.FieldCacheReadPricePerMillion)
+	}
+	if m.cache_creation_price_per_million != nil {
+		fields = append(fields, pricing.FieldCacheCreationPricePerMillion)
+	}
+	if m.provider != nil {
+		fields = append(fields, pricing.FieldProvider)
+	}
+	if m.mode != nil {
+		fields = append(fields, pricing.FieldMode)
+	}
+	if m.supports_prompt_caching != nil {
+		fields = append(fields, pricing.FieldSupportsPromptCaching)
+	}
+	if m.raw != nil {
+		fields = append(fields, pricing.FieldRaw)
 	}
 	if m.source != nil {
 		fields = append(fields, pricing.FieldSource)
@@ -4164,6 +4544,18 @@ func (m *PricingMutation) Field(name string) (ent.Value, bool) {
 		return m.MaxInputTokens()
 	case pricing.FieldMaxOutputTokens:
 		return m.MaxOutputTokens()
+	case pricing.FieldCacheReadPricePerMillion:
+		return m.CacheReadPricePerMillion()
+	case pricing.FieldCacheCreationPricePerMillion:
+		return m.CacheCreationPricePerMillion()
+	case pricing.FieldProvider:
+		return m.Provider()
+	case pricing.FieldMode:
+		return m.Mode()
+	case pricing.FieldSupportsPromptCaching:
+		return m.SupportsPromptCaching()
+	case pricing.FieldRaw:
+		return m.Raw()
 	case pricing.FieldSource:
 		return m.Source()
 	case pricing.FieldCreatedAt:
@@ -4189,6 +4581,18 @@ func (m *PricingMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldMaxInputTokens(ctx)
 	case pricing.FieldMaxOutputTokens:
 		return m.OldMaxOutputTokens(ctx)
+	case pricing.FieldCacheReadPricePerMillion:
+		return m.OldCacheReadPricePerMillion(ctx)
+	case pricing.FieldCacheCreationPricePerMillion:
+		return m.OldCacheCreationPricePerMillion(ctx)
+	case pricing.FieldProvider:
+		return m.OldProvider(ctx)
+	case pricing.FieldMode:
+		return m.OldMode(ctx)
+	case pricing.FieldSupportsPromptCaching:
+		return m.OldSupportsPromptCaching(ctx)
+	case pricing.FieldRaw:
+		return m.OldRaw(ctx)
 	case pricing.FieldSource:
 		return m.OldSource(ctx)
 	case pricing.FieldCreatedAt:
@@ -4239,6 +4643,48 @@ func (m *PricingMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetMaxOutputTokens(v)
 		return nil
+	case pricing.FieldCacheReadPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheReadPricePerMillion(v)
+		return nil
+	case pricing.FieldCacheCreationPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheCreationPricePerMillion(v)
+		return nil
+	case pricing.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case pricing.FieldMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMode(v)
+		return nil
+	case pricing.FieldSupportsPromptCaching:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSupportsPromptCaching(v)
+		return nil
+	case pricing.FieldRaw:
+		v, ok := value.(json.RawMessage)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRaw(v)
+		return nil
 	case pricing.FieldSource:
 		v, ok := value.(pricing.Source)
 		if !ok {
@@ -4280,6 +4726,12 @@ func (m *PricingMutation) AddedFields() []string {
 	if m.addmax_output_tokens != nil {
 		fields = append(fields, pricing.FieldMaxOutputTokens)
 	}
+	if m.addcache_read_price_per_million != nil {
+		fields = append(fields, pricing.FieldCacheReadPricePerMillion)
+	}
+	if m.addcache_creation_price_per_million != nil {
+		fields = append(fields, pricing.FieldCacheCreationPricePerMillion)
+	}
 	return fields
 }
 
@@ -4296,6 +4748,10 @@ func (m *PricingMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedMaxInputTokens()
 	case pricing.FieldMaxOutputTokens:
 		return m.AddedMaxOutputTokens()
+	case pricing.FieldCacheReadPricePerMillion:
+		return m.AddedCacheReadPricePerMillion()
+	case pricing.FieldCacheCreationPricePerMillion:
+		return m.AddedCacheCreationPricePerMillion()
 	}
 	return nil, false
 }
@@ -4333,6 +4789,20 @@ func (m *PricingMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddMaxOutputTokens(v)
 		return nil
+	case pricing.FieldCacheReadPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheReadPricePerMillion(v)
+		return nil
+	case pricing.FieldCacheCreationPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheCreationPricePerMillion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Pricing numeric field %s", name)
 }
@@ -4346,6 +4816,24 @@ func (m *PricingMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(pricing.FieldMaxOutputTokens) {
 		fields = append(fields, pricing.FieldMaxOutputTokens)
+	}
+	if m.FieldCleared(pricing.FieldCacheReadPricePerMillion) {
+		fields = append(fields, pricing.FieldCacheReadPricePerMillion)
+	}
+	if m.FieldCleared(pricing.FieldCacheCreationPricePerMillion) {
+		fields = append(fields, pricing.FieldCacheCreationPricePerMillion)
+	}
+	if m.FieldCleared(pricing.FieldProvider) {
+		fields = append(fields, pricing.FieldProvider)
+	}
+	if m.FieldCleared(pricing.FieldMode) {
+		fields = append(fields, pricing.FieldMode)
+	}
+	if m.FieldCleared(pricing.FieldSupportsPromptCaching) {
+		fields = append(fields, pricing.FieldSupportsPromptCaching)
+	}
+	if m.FieldCleared(pricing.FieldRaw) {
+		fields = append(fields, pricing.FieldRaw)
 	}
 	return fields
 }
@@ -4366,6 +4854,24 @@ func (m *PricingMutation) ClearField(name string) error {
 		return nil
 	case pricing.FieldMaxOutputTokens:
 		m.ClearMaxOutputTokens()
+		return nil
+	case pricing.FieldCacheReadPricePerMillion:
+		m.ClearCacheReadPricePerMillion()
+		return nil
+	case pricing.FieldCacheCreationPricePerMillion:
+		m.ClearCacheCreationPricePerMillion()
+		return nil
+	case pricing.FieldProvider:
+		m.ClearProvider()
+		return nil
+	case pricing.FieldMode:
+		m.ClearMode()
+		return nil
+	case pricing.FieldSupportsPromptCaching:
+		m.ClearSupportsPromptCaching()
+		return nil
+	case pricing.FieldRaw:
+		m.ClearRaw()
 		return nil
 	}
 	return fmt.Errorf("unknown Pricing nullable field %s", name)
@@ -4389,6 +4895,24 @@ func (m *PricingMutation) ResetField(name string) error {
 		return nil
 	case pricing.FieldMaxOutputTokens:
 		m.ResetMaxOutputTokens()
+		return nil
+	case pricing.FieldCacheReadPricePerMillion:
+		m.ResetCacheReadPricePerMillion()
+		return nil
+	case pricing.FieldCacheCreationPricePerMillion:
+		m.ResetCacheCreationPricePerMillion()
+		return nil
+	case pricing.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case pricing.FieldMode:
+		m.ResetMode()
+		return nil
+	case pricing.FieldSupportsPromptCaching:
+		m.ResetSupportsPromptCaching()
+		return nil
+	case pricing.FieldRaw:
+		m.ResetRaw()
 		return nil
 	case pricing.FieldSource:
 		m.ResetSource()

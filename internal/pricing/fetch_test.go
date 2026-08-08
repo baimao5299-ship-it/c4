@@ -2,6 +2,7 @@ package pricing
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,22 +14,30 @@ import (
 )
 
 // litellmFixtureJSON 模拟 litellm 官方价格表结构（model_name → 行）：
-// 正常行（含 max_tokens/未知字段）+ 无效行（缺 output 价 / 0 价 / null /
-// 负价 / 字符串类型 / 溢出数字 / 非对象行）。
+// 正常行（含 max_tokens/cache 价/元数据/未映射字段）+ 无效行（缺 output 价 /
+// 0 价 / null / 负价 / 字符串类型 / 溢出数字 / 非对象行）。
 const litellmFixtureJSON = `{
   "gpt-4o": {
     "input_cost_per_token": 2.5e-06,
     "output_cost_per_token": 1e-05,
+    "cache_read_input_token_cost": 1e-06,
+    "cache_creation_input_token_cost": 2e-06,
     "max_input_tokens": 128000,
     "max_output_tokens": 16384,
+    "litellm_provider": "openai",
+    "mode": "chat",
+    "supports_prompt_caching": true,
     "input_cost_per_character": 1.0,
     "output_cost_per_character": 2.0,
-    "litellm_provider": "openai"
+    "rpm": 600,
+    "supports_vision": true
   },
   "claude-3-5-sonnet": {
     "input_cost_per_token": 3e-06,
     "output_cost_per_token": 1.5e-05,
-    "max_input_tokens": 200000
+    "max_input_tokens": 200000,
+    "litellm_provider": "anthropic",
+    "mode": "chat"
   },
   "tiny-rounding": {
     "input_cost_per_token": 6.123456789e-07,
@@ -38,7 +47,9 @@ const litellmFixtureJSON = `{
     "input_cost_per_token": 1e-06,
     "output_cost_per_token": 2e-06,
     "max_input_tokens": null,
-    "max_output_tokens": 0
+    "max_output_tokens": 0,
+    "cache_read_input_token_cost": 0,
+    "cache_creation_input_token_cost": null
   },
   "missing-output": {
     "input_cost_per_token": 1e-06
@@ -68,7 +79,8 @@ const litellmFixtureJSON = `{
 
 // TestParseValidRows 解析 + 毫分换算精确断言（×1e11 四舍五入）：
 // 2.5e-6 USD/token → 250000 毫分/1M（=$2.5/1M）；3e-6 → 300000；1.5e-5 →
-// 1500000；6.123456789e-7 → 61235（round）；max_tokens roundtrip（含 null/0 → nil）。
+// 1500000；6.123456789e-7 → 61235（round）；cache 价换算 + 元数据提取 +
+// max_tokens roundtrip（含 null/0 → nil）。
 func TestParseValidRows(t *testing.T) {
 	res, err := Parse([]byte(litellmFixtureJSON))
 	require.NoError(t, err)
@@ -80,7 +92,8 @@ func TestParseValidRows(t *testing.T) {
 		byModel[p.Model] = p
 	}
 
-	// gpt-4o：换算精确 + max_tokens roundtrip + 未知字段忽略 + source=litellm
+	// gpt-4o：换算精确 + max_tokens roundtrip + cache 价换算 + 元数据提取 +
+	// raw 完整镜像 + source=litellm
 	g := byModel["gpt-4o"]
 	require.Equal(t, int64(250000), g.PromptPricePerMillion, "2.5e-6 USD/token × 1e11 = 250000 毫分/1M")
 	require.Equal(t, int64(1000000), g.CompletionPricePerMillion, "1e-5 × 1e11 = 1000000")
@@ -88,23 +101,57 @@ func TestParseValidRows(t *testing.T) {
 	require.Equal(t, int64(128000), *g.MaxInputTokens)
 	require.NotNil(t, g.MaxOutputTokens)
 	require.Equal(t, int64(16384), *g.MaxOutputTokens)
+	require.NotNil(t, g.CacheReadPricePerMillion)
+	require.Equal(t, int64(100000), *g.CacheReadPricePerMillion, "cache_read 1e-6 USD/token × 1e11 = 100000 毫分/1M")
+	require.NotNil(t, g.CacheCreationPricePerMillion)
+	require.Equal(t, int64(200000), *g.CacheCreationPricePerMillion, "cache_creation 2e-6 → 200000")
+	require.NotNil(t, g.Provider)
+	require.Equal(t, "openai", *g.Provider)
+	require.NotNil(t, g.Mode)
+	require.Equal(t, "chat", *g.Mode)
+	require.NotNil(t, g.SupportsPromptCaching)
+	require.True(t, *g.SupportsPromptCaching)
 	require.Equal(t, domain.PricingSourceLitellm, g.Source)
 
-	// claude-3-5-sonnet：max_output_tokens 缺失 → nil
+	// raw 完整镜像：含未映射字段（rpm/supports_vision/字符价）且无字段丢失。
+	require.NotNil(t, g.Raw, "raw 必须保存（含未映射字段）")
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(g.Raw, &raw))
+	for _, k := range []string{"input_cost_per_token", "output_cost_per_token",
+		"cache_read_input_token_cost", "cache_creation_input_token_cost",
+		"max_input_tokens", "max_output_tokens", "litellm_provider", "mode",
+		"supports_prompt_caching", "input_cost_per_character",
+		"output_cost_per_character", "rpm", "supports_vision"} {
+		_, ok := raw[k]
+		require.True(t, ok, "raw 无字段丢失: %s", k)
+	}
+	require.Equal(t, float64(600), raw["rpm"], "raw 保留未映射字段 rpm")
+	require.Equal(t, true, raw["supports_vision"], "raw 保留未映射字段 supports_vision")
+	require.Equal(t, float64(1.0), raw["input_cost_per_character"], "raw 保留字符价字段")
+
+	// claude-3-5-sonnet：max_output_tokens/cache 价/supports_prompt_caching
+	// 缺失 → nil；provider/mode 提取
 	c := byModel["claude-3-5-sonnet"]
 	require.Equal(t, int64(300000), c.PromptPricePerMillion)
 	require.Equal(t, int64(1500000), c.CompletionPricePerMillion)
 	require.NotNil(t, c.MaxInputTokens)
 	require.Equal(t, int64(200000), *c.MaxInputTokens)
 	require.Nil(t, c.MaxOutputTokens, "缺失 → nil")
+	require.Nil(t, c.CacheReadPricePerMillion, "cache 价缺失 → nil")
+	require.Nil(t, c.CacheCreationPricePerMillion)
+	require.NotNil(t, c.Provider)
+	require.Equal(t, "anthropic", *c.Provider)
+	require.Nil(t, c.SupportsPromptCaching, "supports_prompt_caching 缺失 → nil")
 
 	// 四舍五入取整：6.123456789e-7 × 1e11 = 61234.56789 → 61235
 	require.Equal(t, int64(61235), byModel["tiny-rounding"].PromptPricePerMillion)
 
-	// null/0 max_tokens → nil
+	// null/0 max_tokens 与 cache 价 → nil
 	nm := byModel["no-max-tokens"]
 	require.Nil(t, nm.MaxInputTokens)
 	require.Nil(t, nm.MaxOutputTokens)
+	require.Nil(t, nm.CacheReadPricePerMillion, "cache 价 0 → nil（litellm 表 0 占位语义）")
+	require.Nil(t, nm.CacheCreationPricePerMillion, "cache 价 null → nil")
 }
 
 // TestParseInvalidRowsSkipped 无效行全部跳过：

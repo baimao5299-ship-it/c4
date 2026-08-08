@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/predicate"
@@ -12,6 +13,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 )
 
@@ -135,6 +137,138 @@ func (_u *PricingUpdate) AddMaxOutputTokens(v int64) *PricingUpdate {
 // ClearMaxOutputTokens clears the value of the "max_output_tokens" field.
 func (_u *PricingUpdate) ClearMaxOutputTokens() *PricingUpdate {
 	_u.mutation.ClearMaxOutputTokens()
+	return _u
+}
+
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (_u *PricingUpdate) SetCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetCacheReadPricePerMillion()
+	_u.mutation.SetCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableCacheReadPricePerMillion sets the "cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableCacheReadPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddCacheReadPricePerMillion adds value to the "cache_read_price_per_million" field.
+func (_u *PricingUpdate) AddCacheReadPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearCacheReadPricePerMillion clears the value of the "cache_read_price_per_million" field.
+func (_u *PricingUpdate) ClearCacheReadPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearCacheReadPricePerMillion()
+	return _u
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (_u *PricingUpdate) SetCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.ResetCacheCreationPricePerMillion()
+	_u.mutation.SetCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableCacheCreationPricePerMillion(v *int64) *PricingUpdate {
+	if v != nil {
+		_u.SetCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddCacheCreationPricePerMillion adds value to the "cache_creation_price_per_million" field.
+func (_u *PricingUpdate) AddCacheCreationPricePerMillion(v int64) *PricingUpdate {
+	_u.mutation.AddCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
+func (_u *PricingUpdate) ClearCacheCreationPricePerMillion() *PricingUpdate {
+	_u.mutation.ClearCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *PricingUpdate) SetProvider(v string) *PricingUpdate {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableProvider(v *string) *PricingUpdate {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *PricingUpdate) ClearProvider() *PricingUpdate {
+	_u.mutation.ClearProvider()
+	return _u
+}
+
+// SetMode sets the "mode" field.
+func (_u *PricingUpdate) SetMode(v string) *PricingUpdate {
+	_u.mutation.SetMode(v)
+	return _u
+}
+
+// SetNillableMode sets the "mode" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableMode(v *string) *PricingUpdate {
+	if v != nil {
+		_u.SetMode(*v)
+	}
+	return _u
+}
+
+// ClearMode clears the value of the "mode" field.
+func (_u *PricingUpdate) ClearMode() *PricingUpdate {
+	_u.mutation.ClearMode()
+	return _u
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (_u *PricingUpdate) SetSupportsPromptCaching(v bool) *PricingUpdate {
+	_u.mutation.SetSupportsPromptCaching(v)
+	return _u
+}
+
+// SetNillableSupportsPromptCaching sets the "supports_prompt_caching" field if the given value is not nil.
+func (_u *PricingUpdate) SetNillableSupportsPromptCaching(v *bool) *PricingUpdate {
+	if v != nil {
+		_u.SetSupportsPromptCaching(*v)
+	}
+	return _u
+}
+
+// ClearSupportsPromptCaching clears the value of the "supports_prompt_caching" field.
+func (_u *PricingUpdate) ClearSupportsPromptCaching() *PricingUpdate {
+	_u.mutation.ClearSupportsPromptCaching()
+	return _u
+}
+
+// SetRaw sets the "raw" field.
+func (_u *PricingUpdate) SetRaw(v json.RawMessage) *PricingUpdate {
+	_u.mutation.SetRaw(v)
+	return _u
+}
+
+// AppendRaw appends value to the "raw" field.
+func (_u *PricingUpdate) AppendRaw(v json.RawMessage) *PricingUpdate {
+	_u.mutation.AppendRaw(v)
+	return _u
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (_u *PricingUpdate) ClearRaw() *PricingUpdate {
+	_u.mutation.ClearRaw()
 	return _u
 }
 
@@ -267,6 +401,53 @@ func (_u *PricingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.MaxOutputTokensCleared() {
 		_spec.ClearField(pricing.FieldMaxOutputTokens, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.CacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.CacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(pricing.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(pricing.FieldProvider, field.TypeString)
+	}
+	if value, ok := _u.mutation.Mode(); ok {
+		_spec.SetField(pricing.FieldMode, field.TypeString, value)
+	}
+	if _u.mutation.ModeCleared() {
+		_spec.ClearField(pricing.FieldMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.SupportsPromptCaching(); ok {
+		_spec.SetField(pricing.FieldSupportsPromptCaching, field.TypeBool, value)
+	}
+	if _u.mutation.SupportsPromptCachingCleared() {
+		_spec.ClearField(pricing.FieldSupportsPromptCaching, field.TypeBool)
+	}
+	if value, ok := _u.mutation.Raw(); ok {
+		_spec.SetField(pricing.FieldRaw, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRaw(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, pricing.FieldRaw, value)
+		})
+	}
+	if _u.mutation.RawCleared() {
+		_spec.ClearField(pricing.FieldRaw, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.Source(); ok {
 		_spec.SetField(pricing.FieldSource, field.TypeEnum, value)
@@ -404,6 +585,138 @@ func (_u *PricingUpdateOne) AddMaxOutputTokens(v int64) *PricingUpdateOne {
 // ClearMaxOutputTokens clears the value of the "max_output_tokens" field.
 func (_u *PricingUpdateOne) ClearMaxOutputTokens() *PricingUpdateOne {
 	_u.mutation.ClearMaxOutputTokens()
+	return _u
+}
+
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) SetCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetCacheReadPricePerMillion()
+	_u.mutation.SetCacheReadPricePerMillion(v)
+	return _u
+}
+
+// SetNillableCacheReadPricePerMillion sets the "cache_read_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableCacheReadPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetCacheReadPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddCacheReadPricePerMillion adds value to the "cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) AddCacheReadPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddCacheReadPricePerMillion(v)
+	return _u
+}
+
+// ClearCacheReadPricePerMillion clears the value of the "cache_read_price_per_million" field.
+func (_u *PricingUpdateOne) ClearCacheReadPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearCacheReadPricePerMillion()
+	return _u
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) SetCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.ResetCacheCreationPricePerMillion()
+	_u.mutation.SetCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// SetNillableCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableCacheCreationPricePerMillion(v *int64) *PricingUpdateOne {
+	if v != nil {
+		_u.SetCacheCreationPricePerMillion(*v)
+	}
+	return _u
+}
+
+// AddCacheCreationPricePerMillion adds value to the "cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) AddCacheCreationPricePerMillion(v int64) *PricingUpdateOne {
+	_u.mutation.AddCacheCreationPricePerMillion(v)
+	return _u
+}
+
+// ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
+func (_u *PricingUpdateOne) ClearCacheCreationPricePerMillion() *PricingUpdateOne {
+	_u.mutation.ClearCacheCreationPricePerMillion()
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *PricingUpdateOne) SetProvider(v string) *PricingUpdateOne {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableProvider(v *string) *PricingUpdateOne {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *PricingUpdateOne) ClearProvider() *PricingUpdateOne {
+	_u.mutation.ClearProvider()
+	return _u
+}
+
+// SetMode sets the "mode" field.
+func (_u *PricingUpdateOne) SetMode(v string) *PricingUpdateOne {
+	_u.mutation.SetMode(v)
+	return _u
+}
+
+// SetNillableMode sets the "mode" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableMode(v *string) *PricingUpdateOne {
+	if v != nil {
+		_u.SetMode(*v)
+	}
+	return _u
+}
+
+// ClearMode clears the value of the "mode" field.
+func (_u *PricingUpdateOne) ClearMode() *PricingUpdateOne {
+	_u.mutation.ClearMode()
+	return _u
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (_u *PricingUpdateOne) SetSupportsPromptCaching(v bool) *PricingUpdateOne {
+	_u.mutation.SetSupportsPromptCaching(v)
+	return _u
+}
+
+// SetNillableSupportsPromptCaching sets the "supports_prompt_caching" field if the given value is not nil.
+func (_u *PricingUpdateOne) SetNillableSupportsPromptCaching(v *bool) *PricingUpdateOne {
+	if v != nil {
+		_u.SetSupportsPromptCaching(*v)
+	}
+	return _u
+}
+
+// ClearSupportsPromptCaching clears the value of the "supports_prompt_caching" field.
+func (_u *PricingUpdateOne) ClearSupportsPromptCaching() *PricingUpdateOne {
+	_u.mutation.ClearSupportsPromptCaching()
+	return _u
+}
+
+// SetRaw sets the "raw" field.
+func (_u *PricingUpdateOne) SetRaw(v json.RawMessage) *PricingUpdateOne {
+	_u.mutation.SetRaw(v)
+	return _u
+}
+
+// AppendRaw appends value to the "raw" field.
+func (_u *PricingUpdateOne) AppendRaw(v json.RawMessage) *PricingUpdateOne {
+	_u.mutation.AppendRaw(v)
+	return _u
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (_u *PricingUpdateOne) ClearRaw() *PricingUpdateOne {
+	_u.mutation.ClearRaw()
 	return _u
 }
 
@@ -566,6 +879,53 @@ func (_u *PricingUpdateOne) sqlSave(ctx context.Context) (_node *Pricing, err er
 	}
 	if _u.mutation.MaxOutputTokensCleared() {
 		_spec.ClearField(pricing.FieldMaxOutputTokens, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheReadPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.CacheReadPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheCreationPricePerMillion(); ok {
+		_spec.AddField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64, value)
+	}
+	if _u.mutation.CacheCreationPricePerMillionCleared() {
+		_spec.ClearField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(pricing.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(pricing.FieldProvider, field.TypeString)
+	}
+	if value, ok := _u.mutation.Mode(); ok {
+		_spec.SetField(pricing.FieldMode, field.TypeString, value)
+	}
+	if _u.mutation.ModeCleared() {
+		_spec.ClearField(pricing.FieldMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.SupportsPromptCaching(); ok {
+		_spec.SetField(pricing.FieldSupportsPromptCaching, field.TypeBool, value)
+	}
+	if _u.mutation.SupportsPromptCachingCleared() {
+		_spec.ClearField(pricing.FieldSupportsPromptCaching, field.TypeBool)
+	}
+	if value, ok := _u.mutation.Raw(); ok {
+		_spec.SetField(pricing.FieldRaw, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRaw(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, pricing.FieldRaw, value)
+		})
+	}
+	if _u.mutation.RawCleared() {
+		_spec.ClearField(pricing.FieldRaw, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.Source(); ok {
 		_spec.SetField(pricing.FieldSource, field.TypeEnum, value)

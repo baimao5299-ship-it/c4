@@ -71,21 +71,28 @@ func (f *httpFetcher) Fetch(ctx context.Context, sourceURL string) (*FetchResult
 	return Parse(data)
 }
 
-// litellmEntry litellm 价格表单模型行的目标字段（input/output_cost_per_token 为
-// USD/token；max_*_tokens 为上下文窗口；其余字段（缓存/字符/音频价格等）忽略）。
-// 指针字段：null/缺失 → nil。
+// litellmEntry litellm 价格表单模型行的目标字段（input/output_cost_per_token 与
+// cache_read/creation_input_token_cost 为 USD/token；max_*_tokens 为上下文窗口；
+// provider/mode/supports_prompt_caching 为显式元数据；其余字段（字符/音频价格、
+// rpm/supports_vision 等）仅经 raw 完整镜像保留）。指针字段：null/缺失 → nil。
 type litellmEntry struct {
-	InputCostPerToken  *float64 `json:"input_cost_per_token"`
-	OutputCostPerToken *float64 `json:"output_cost_per_token"`
-	MaxInputTokens     *float64 `json:"max_input_tokens"`
-	MaxOutputTokens    *float64 `json:"max_output_tokens"`
+	InputCostPerToken           *float64 `json:"input_cost_per_token"`
+	OutputCostPerToken          *float64 `json:"output_cost_per_token"`
+	CacheReadInputTokenCost     *float64 `json:"cache_read_input_token_cost"`
+	CacheCreationInputTokenCost *float64 `json:"cache_creation_input_token_cost"`
+	MaxInputTokens              *float64 `json:"max_input_tokens"`
+	MaxOutputTokens             *float64 `json:"max_output_tokens"`
+	Provider                    *string  `json:"litellm_provider"`
+	Mode                        *string  `json:"mode"`
+	SupportsPromptCaching       *bool    `json:"supports_prompt_caching"`
 }
 
 // Parse 解析 litellm 价格表 JSON：顶层 map model_name → 行。换算：per-token USD
 // × 1e11 四舍五入取整 → 毫分/1M tokens（1 USD = 100,000 毫分 = 10⁻⁵ USD 精度；
 // ×1e6 tokens × 1e5 毫分）。只保留数值有效行：input/output 价格均存在、有限且
-// > 0（NaN/缺失/非正数/字段类型非法 → 跳过）；max_tokens 非法/非正 → nil
-// （unknown），不参与有效性判定。
+// > 0（NaN/缺失/非正数/字段类型非法 → 跳过）；max_tokens/cache 价/元数据非法
+// 或缺失 → nil（unknown），不参与有效性判定；raw 对通过判定的行无条件保存
+// （整个原始条目 JSON 完整镜像，含未映射字段，如 rpm/supports_vision）。
 func Parse(data []byte) (*FetchResult, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -116,6 +123,8 @@ func parseEntry(model string, raw json.RawMessage) (*domain.Pricing, error) {
 		PromptPricePerMillion:     toMilliCentsPerMillion(*e.InputCostPerToken),
 		CompletionPricePerMillion: toMilliCentsPerMillion(*e.OutputCostPerToken),
 		Source:                    domain.PricingSourceLitellm,
+		// raw 完整镜像：整个原始条目原样保存（含未映射字段；manual 行恒为 nil）。
+		Raw: raw,
 	}
 	if t := windowTokens(e.MaxInputTokens); t > 0 {
 		p.MaxInputTokens = &t
@@ -123,7 +132,28 @@ func parseEntry(model string, raw json.RawMessage) (*domain.Pricing, error) {
 	if t := windowTokens(e.MaxOutputTokens); t > 0 {
 		p.MaxOutputTokens = &t
 	}
+	// cache 价与 litellm 表一致可缺失/为 0（很多模型无缓存价）→ nil；有效（非
+	// nil、有限、> 0）→ ×1e11 毫分取指针。nil 不参与行有效性判定。
+	if v := cacheCost(e.CacheReadInputTokenCost); v != nil {
+		p.CacheReadPricePerMillion = v
+	}
+	if v := cacheCost(e.CacheCreationInputTokenCost); v != nil {
+		p.CacheCreationPricePerMillion = v
+	}
+	// 显式元数据：缺失/非法 → nil（不影响行有效性；raw 已完整保留）。
+	p.Provider = e.Provider
+	p.Mode = e.Mode
+	p.SupportsPromptCaching = e.SupportsPromptCaching
 	return p, nil
+}
+
+// cacheCost 缓存价换算：缺失/非正/NaN/Inf → nil；有效 → 毫分/1M tokens 指针。
+func cacheCost(v *float64) *int64 {
+	if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) || *v <= 0 {
+		return nil
+	}
+	m := toMilliCentsPerMillion(*v)
+	return &m
 }
 
 // validCost 价格有效性：存在、有限、正数（litellm 表含 0/负/缺失占位行）。

@@ -1194,6 +1194,22 @@ export interface components {
             MaxInputTokens?: number | null;
             /** Format: int64 */
             MaxOutputTokens?: number | null;
+            /**
+             * Format: int64
+             * @description 缓存读取价（litellm cache_read_input_token_cost 换算）；nil = 无缓存价
+             */
+            CacheReadPricePerMillion?: number | null;
+            /**
+             * Format: int64
+             * @description 缓存写入价（litellm cache_creation_input_token_cost 换算）；nil = 无缓存价
+             */
+            CacheCreationPricePerMillion?: number | null;
+            /** @description litellm_provider（litellm 行才有；manual 行 nil） */
+            Provider?: string | null;
+            /** @description litellm mode（chat/completion/embedding 等） */
+            Mode?: string | null;
+            /** @description litellm supports_prompt_caching */
+            SupportsPromptCaching?: boolean | null;
             Source: components["schemas"]["PricingSource"];
             /** Format: date-time */
             CreatedAt: string;
@@ -1208,6 +1224,16 @@ export interface components {
             prompt_price_per_million: number;
             /** Format: int64 */
             completion_price_per_million: number;
+            /**
+             * Format: int64
+             * @description 缓存读取价（毫分/1M tokens）；缺省 = 不设缓存价（落库 NULL）
+             */
+            cache_read_price_per_million?: number | null;
+            /**
+             * Format: int64
+             * @description 缓存写入价；缺省 = 不设缓存价（落库 NULL）
+             */
+            cache_creation_price_per_million?: number | null;
         };
         PricingListResponse: {
             /** Format: int64 */

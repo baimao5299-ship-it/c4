@@ -393,6 +393,12 @@ type LogsResponse struct {
 
 // Pricing defines model for Pricing.
 type Pricing struct {
+	// CacheCreationPricePerMillion 缓存写入价（litellm cache_creation_input_token_cost 换算）；nil = 无缓存价
+	CacheCreationPricePerMillion *int64 `json:"CacheCreationPricePerMillion"`
+
+	// CacheReadPricePerMillion 缓存读取价（litellm cache_read_input_token_cost 换算）；nil = 无缓存价
+	CacheReadPricePerMillion *int64 `json:"CacheReadPricePerMillion"`
+
 	// CompletionPricePerMillion 毫分/1M tokens
 	CompletionPricePerMillion int64     `json:"CompletionPricePerMillion"`
 	CreatedAt                 time.Time `json:"CreatedAt"`
@@ -400,12 +406,21 @@ type Pricing struct {
 	// MaxInputTokens litellm 自带上下文窗口；nil = 未知
 	MaxInputTokens  *int64 `json:"MaxInputTokens"`
 	MaxOutputTokens *int64 `json:"MaxOutputTokens"`
-	Model           string `json:"Model"`
+
+	// Mode litellm mode（chat/completion/embedding 等）
+	Mode  *string `json:"Mode"`
+	Model string  `json:"Model"`
 
 	// PromptPricePerMillion 毫分/1M tokens（1 USD = 100
-	PromptPricePerMillion int64         `json:"PromptPricePerMillion"`
-	Source                PricingSource `json:"Source"`
-	UpdatedAt             time.Time     `json:"UpdatedAt"`
+	PromptPricePerMillion int64 `json:"PromptPricePerMillion"`
+
+	// Provider litellm_provider（litellm 行才有；manual 行 nil）
+	Provider *string       `json:"Provider"`
+	Source   PricingSource `json:"Source"`
+
+	// SupportsPromptCaching litellm supports_prompt_caching
+	SupportsPromptCaching *bool     `json:"SupportsPromptCaching"`
+	UpdatedAt             time.Time `json:"UpdatedAt"`
 }
 
 // PricingListResponse defines model for PricingListResponse.
@@ -431,7 +446,12 @@ type PricingSyncResponse struct {
 
 // PricingUpsert defines model for PricingUpsert.
 type PricingUpsert struct {
-	CompletionPricePerMillion int64 `json:"completion_price_per_million"`
+	// CacheCreationPricePerMillion 缓存写入价；缺省 = 不设缓存价（落库 NULL）
+	CacheCreationPricePerMillion *int64 `json:"cache_creation_price_per_million"`
+
+	// CacheReadPricePerMillion 缓存读取价（毫分/1M tokens）；缺省 = 不设缓存价（落库 NULL）
+	CacheReadPricePerMillion  *int64 `json:"cache_read_price_per_million"`
+	CompletionPricePerMillion int64  `json:"completion_price_per_million"`
 
 	// PromptPricePerMillion 毫分/1M tokens；≥ 0
 	PromptPricePerMillion int64 `json:"prompt_price_per_million"`

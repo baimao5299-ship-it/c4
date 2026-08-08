@@ -90,11 +90,11 @@ func init() {
 	pricingFields := schema.Pricing{}.Fields()
 	_ = pricingFields
 	// pricingDescCreatedAt is the schema descriptor for created_at field.
-	pricingDescCreatedAt := pricingFields[7].Descriptor()
+	pricingDescCreatedAt := pricingFields[13].Descriptor()
 	// pricing.DefaultCreatedAt holds the default value on creation for the created_at field.
 	pricing.DefaultCreatedAt = pricingDescCreatedAt.Default.(func() time.Time)
 	// pricingDescUpdatedAt is the schema descriptor for updated_at field.
-	pricingDescUpdatedAt := pricingFields[8].Descriptor()
+	pricingDescUpdatedAt := pricingFields[14].Descriptor()
 	// pricing.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	pricing.DefaultUpdatedAt = pricingDescUpdatedAt.Default.(func() time.Time)
 	// pricing.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

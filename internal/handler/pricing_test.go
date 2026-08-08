@@ -45,9 +45,9 @@ func seedPricing(t *testing.T, h *AdminAPI, f pricing.Fetcher) {
 	h.svc.SetPriceFetcher(f)
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err, "seed sync")
-	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300)
+	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300, nil, nil)
 	require.NoError(t, err)
-	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o-mini", 50, 150)
+	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o-mini", 50, 150, nil, nil)
 	require.NoError(t, err)
 }
 
@@ -149,11 +149,37 @@ func TestPutPricing(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
 	require.Equal(t, int64(1), list.Total, "接管后行 source=manual")
 
-	// 负数 400
+	// 带 cache 价设价：响应与列表 roundtrip
+	rec = do(http.MethodPut, "/admin/pricing/m-cache",
+		`{"prompt_price_per_million":10,"completion_price_per_million":20,"cache_read_price_per_million":30,"cache_creation_price_per_million":40}`)
+	require.Equal(t, 200, rec.Code, "put with cache: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	require.Equal(t, int64(30), *p.CacheReadPricePerMillion, "响应含 cache_read")
+	require.Equal(t, int64(40), *p.CacheCreationPricePerMillion, "响应含 cache_creation")
+	rec = do(http.MethodGet, "/admin/pricing?model=m-cache", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Len(t, list.Rows, 1)
+	require.Equal(t, int64(30), *list.Rows[0].CacheReadPricePerMillion, "列表 roundtrip cache_read")
+	require.Equal(t, int64(40), *list.Rows[0].CacheCreationPricePerMillion)
+
+	// 缺省 cache 字段 → nil（不设缓存价）
+	rec = do(http.MethodPut, "/admin/pricing/m-nocache", `{"prompt_price_per_million":1,"completion_price_per_million":2}`)
+	require.Equal(t, 200, rec.Code, "put without cache: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	require.Nil(t, p.CacheReadPricePerMillion, "缺省 → nil")
+	require.Nil(t, p.CacheCreationPricePerMillion)
+
+	// 负数 400（含 cache 价负数）
 	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{"prompt_price_per_million":-1,"completion_price_per_million":10}`)
 	require.Equal(t, 400, rec.Code, "negative: %s", rec.Body.String())
 	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{"prompt_price_per_million":10,"completion_price_per_million":-1}`)
 	require.Equal(t, 400, rec.Code, "negative completion: %s", rec.Body.String())
+	rec = do(http.MethodPut, "/admin/pricing/m-neg",
+		`{"prompt_price_per_million":10,"completion_price_per_million":10,"cache_read_price_per_million":-1}`)
+	require.Equal(t, 400, rec.Code, "negative cache_read: %s", rec.Body.String())
+	rec = do(http.MethodPut, "/admin/pricing/m-neg",
+		`{"prompt_price_per_million":10,"completion_price_per_million":10,"cache_creation_price_per_million":-1}`)
+	require.Equal(t, 400, rec.Code, "negative cache_creation: %s", rec.Body.String())
 
 	// 非法 JSON 400
 	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{`)
@@ -168,7 +194,7 @@ func TestDeletePricing(t *testing.T) {
 	h, do := newPricingRouter(t, f)
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
-	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300)
+	_, err = h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300, nil, nil)
 	require.NoError(t, err)
 
 	// 删除手动行成功
@@ -234,7 +260,7 @@ func TestPricingSync(t *testing.T) {
 			{Model: "gpt-4o", PromptPricePerMillion: 250000, CompletionPricePerMillion: 1000000, Source: domain.PricingSourceLitellm},
 		}}}
 		h, do := newPricingRouter(t, f)
-		_, err := h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300)
+		_, err := h.svc.UpsertManualPricing(context.Background(), "gpt-4o", 100, 300, nil, nil)
 		require.NoError(t, err)
 
 		rec := do(http.MethodPost, "/admin/pricing/sync", "")

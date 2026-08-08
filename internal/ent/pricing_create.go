@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/pricing"
@@ -65,6 +66,82 @@ func (_c *PricingCreate) SetNillableMaxOutputTokens(v *int64) *PricingCreate {
 	if v != nil {
 		_c.SetMaxOutputTokens(*v)
 	}
+	return _c
+}
+
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (_c *PricingCreate) SetCacheReadPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetCacheReadPricePerMillion(v)
+	return _c
+}
+
+// SetNillableCacheReadPricePerMillion sets the "cache_read_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableCacheReadPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetCacheReadPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (_c *PricingCreate) SetCacheCreationPricePerMillion(v int64) *PricingCreate {
+	_c.mutation.SetCacheCreationPricePerMillion(v)
+	return _c
+}
+
+// SetNillableCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableCacheCreationPricePerMillion(v *int64) *PricingCreate {
+	if v != nil {
+		_c.SetCacheCreationPricePerMillion(*v)
+	}
+	return _c
+}
+
+// SetProvider sets the "provider" field.
+func (_c *PricingCreate) SetProvider(v string) *PricingCreate {
+	_c.mutation.SetProvider(v)
+	return _c
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableProvider(v *string) *PricingCreate {
+	if v != nil {
+		_c.SetProvider(*v)
+	}
+	return _c
+}
+
+// SetMode sets the "mode" field.
+func (_c *PricingCreate) SetMode(v string) *PricingCreate {
+	_c.mutation.SetMode(v)
+	return _c
+}
+
+// SetNillableMode sets the "mode" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableMode(v *string) *PricingCreate {
+	if v != nil {
+		_c.SetMode(*v)
+	}
+	return _c
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (_c *PricingCreate) SetSupportsPromptCaching(v bool) *PricingCreate {
+	_c.mutation.SetSupportsPromptCaching(v)
+	return _c
+}
+
+// SetNillableSupportsPromptCaching sets the "supports_prompt_caching" field if the given value is not nil.
+func (_c *PricingCreate) SetNillableSupportsPromptCaching(v *bool) *PricingCreate {
+	if v != nil {
+		_c.SetSupportsPromptCaching(*v)
+	}
+	return _c
+}
+
+// SetRaw sets the "raw" field.
+func (_c *PricingCreate) SetRaw(v json.RawMessage) *PricingCreate {
+	_c.mutation.SetRaw(v)
 	return _c
 }
 
@@ -231,6 +308,30 @@ func (_c *PricingCreate) createSpec() (*Pricing, *sqlgraph.CreateSpec) {
 		_spec.SetField(pricing.FieldMaxOutputTokens, field.TypeInt64, value)
 		_node.MaxOutputTokens = &value
 	}
+	if value, ok := _c.mutation.CacheReadPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldCacheReadPricePerMillion, field.TypeInt64, value)
+		_node.CacheReadPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.CacheCreationPricePerMillion(); ok {
+		_spec.SetField(pricing.FieldCacheCreationPricePerMillion, field.TypeInt64, value)
+		_node.CacheCreationPricePerMillion = &value
+	}
+	if value, ok := _c.mutation.Provider(); ok {
+		_spec.SetField(pricing.FieldProvider, field.TypeString, value)
+		_node.Provider = &value
+	}
+	if value, ok := _c.mutation.Mode(); ok {
+		_spec.SetField(pricing.FieldMode, field.TypeString, value)
+		_node.Mode = &value
+	}
+	if value, ok := _c.mutation.SupportsPromptCaching(); ok {
+		_spec.SetField(pricing.FieldSupportsPromptCaching, field.TypeBool, value)
+		_node.SupportsPromptCaching = &value
+	}
+	if value, ok := _c.mutation.Raw(); ok {
+		_spec.SetField(pricing.FieldRaw, field.TypeJSON, value)
+		_node.Raw = value
+	}
 	if value, ok := _c.mutation.Source(); ok {
 		_spec.SetField(pricing.FieldSource, field.TypeEnum, value)
 		_node.Source = value
@@ -388,6 +489,126 @@ func (u *PricingUpsert) AddMaxOutputTokens(v int64) *PricingUpsert {
 // ClearMaxOutputTokens clears the value of the "max_output_tokens" field.
 func (u *PricingUpsert) ClearMaxOutputTokens() *PricingUpsert {
 	u.SetNull(pricing.FieldMaxOutputTokens)
+	return u
+}
+
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (u *PricingUpsert) SetCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldCacheReadPricePerMillion, v)
+	return u
+}
+
+// UpdateCacheReadPricePerMillion sets the "cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateCacheReadPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldCacheReadPricePerMillion)
+	return u
+}
+
+// AddCacheReadPricePerMillion adds v to the "cache_read_price_per_million" field.
+func (u *PricingUpsert) AddCacheReadPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldCacheReadPricePerMillion, v)
+	return u
+}
+
+// ClearCacheReadPricePerMillion clears the value of the "cache_read_price_per_million" field.
+func (u *PricingUpsert) ClearCacheReadPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldCacheReadPricePerMillion)
+	return u
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (u *PricingUpsert) SetCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Set(pricing.FieldCacheCreationPricePerMillion, v)
+	return u
+}
+
+// UpdateCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetExcluded(pricing.FieldCacheCreationPricePerMillion)
+	return u
+}
+
+// AddCacheCreationPricePerMillion adds v to the "cache_creation_price_per_million" field.
+func (u *PricingUpsert) AddCacheCreationPricePerMillion(v int64) *PricingUpsert {
+	u.Add(pricing.FieldCacheCreationPricePerMillion, v)
+	return u
+}
+
+// ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
+func (u *PricingUpsert) ClearCacheCreationPricePerMillion() *PricingUpsert {
+	u.SetNull(pricing.FieldCacheCreationPricePerMillion)
+	return u
+}
+
+// SetProvider sets the "provider" field.
+func (u *PricingUpsert) SetProvider(v string) *PricingUpsert {
+	u.Set(pricing.FieldProvider, v)
+	return u
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateProvider() *PricingUpsert {
+	u.SetExcluded(pricing.FieldProvider)
+	return u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *PricingUpsert) ClearProvider() *PricingUpsert {
+	u.SetNull(pricing.FieldProvider)
+	return u
+}
+
+// SetMode sets the "mode" field.
+func (u *PricingUpsert) SetMode(v string) *PricingUpsert {
+	u.Set(pricing.FieldMode, v)
+	return u
+}
+
+// UpdateMode sets the "mode" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateMode() *PricingUpsert {
+	u.SetExcluded(pricing.FieldMode)
+	return u
+}
+
+// ClearMode clears the value of the "mode" field.
+func (u *PricingUpsert) ClearMode() *PricingUpsert {
+	u.SetNull(pricing.FieldMode)
+	return u
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (u *PricingUpsert) SetSupportsPromptCaching(v bool) *PricingUpsert {
+	u.Set(pricing.FieldSupportsPromptCaching, v)
+	return u
+}
+
+// UpdateSupportsPromptCaching sets the "supports_prompt_caching" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateSupportsPromptCaching() *PricingUpsert {
+	u.SetExcluded(pricing.FieldSupportsPromptCaching)
+	return u
+}
+
+// ClearSupportsPromptCaching clears the value of the "supports_prompt_caching" field.
+func (u *PricingUpsert) ClearSupportsPromptCaching() *PricingUpsert {
+	u.SetNull(pricing.FieldSupportsPromptCaching)
+	return u
+}
+
+// SetRaw sets the "raw" field.
+func (u *PricingUpsert) SetRaw(v json.RawMessage) *PricingUpsert {
+	u.Set(pricing.FieldRaw, v)
+	return u
+}
+
+// UpdateRaw sets the "raw" field to the value that was provided on create.
+func (u *PricingUpsert) UpdateRaw() *PricingUpsert {
+	u.SetExcluded(pricing.FieldRaw)
+	return u
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (u *PricingUpsert) ClearRaw() *PricingUpsert {
+	u.SetNull(pricing.FieldRaw)
 	return u
 }
 
@@ -584,6 +805,146 @@ func (u *PricingUpsertOne) UpdateMaxOutputTokens() *PricingUpsertOne {
 func (u *PricingUpsertOne) ClearMaxOutputTokens() *PricingUpsertOne {
 	return u.Update(func(s *PricingUpsert) {
 		s.ClearMaxOutputTokens()
+	})
+}
+
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (u *PricingUpsertOne) SetCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetCacheReadPricePerMillion(v)
+	})
+}
+
+// AddCacheReadPricePerMillion adds v to the "cache_read_price_per_million" field.
+func (u *PricingUpsertOne) AddCacheReadPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateCacheReadPricePerMillion sets the "cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateCacheReadPricePerMillion()
+	})
+}
+
+// ClearCacheReadPricePerMillion clears the value of the "cache_read_price_per_million" field.
+func (u *PricingUpsertOne) ClearCacheReadPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearCacheReadPricePerMillion()
+	})
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) SetCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddCacheCreationPricePerMillion adds v to the "cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) AddCacheCreationPricePerMillion(v int64) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateCacheCreationPricePerMillion()
+	})
+}
+
+// ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
+func (u *PricingUpsertOne) ClearCacheCreationPricePerMillion() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearCacheCreationPricePerMillion()
+	})
+}
+
+// SetProvider sets the "provider" field.
+func (u *PricingUpsertOne) SetProvider(v string) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetProvider(v)
+	})
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateProvider() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateProvider()
+	})
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *PricingUpsertOne) ClearProvider() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearProvider()
+	})
+}
+
+// SetMode sets the "mode" field.
+func (u *PricingUpsertOne) SetMode(v string) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetMode(v)
+	})
+}
+
+// UpdateMode sets the "mode" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateMode() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateMode()
+	})
+}
+
+// ClearMode clears the value of the "mode" field.
+func (u *PricingUpsertOne) ClearMode() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearMode()
+	})
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (u *PricingUpsertOne) SetSupportsPromptCaching(v bool) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetSupportsPromptCaching(v)
+	})
+}
+
+// UpdateSupportsPromptCaching sets the "supports_prompt_caching" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateSupportsPromptCaching() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateSupportsPromptCaching()
+	})
+}
+
+// ClearSupportsPromptCaching clears the value of the "supports_prompt_caching" field.
+func (u *PricingUpsertOne) ClearSupportsPromptCaching() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearSupportsPromptCaching()
+	})
+}
+
+// SetRaw sets the "raw" field.
+func (u *PricingUpsertOne) SetRaw(v json.RawMessage) *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetRaw(v)
+	})
+}
+
+// UpdateRaw sets the "raw" field to the value that was provided on create.
+func (u *PricingUpsertOne) UpdateRaw() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateRaw()
+	})
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (u *PricingUpsertOne) ClearRaw() *PricingUpsertOne {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearRaw()
 	})
 }
 
@@ -952,6 +1313,146 @@ func (u *PricingUpsertBulk) UpdateMaxOutputTokens() *PricingUpsertBulk {
 func (u *PricingUpsertBulk) ClearMaxOutputTokens() *PricingUpsertBulk {
 	return u.Update(func(s *PricingUpsert) {
 		s.ClearMaxOutputTokens()
+	})
+}
+
+// SetCacheReadPricePerMillion sets the "cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) SetCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetCacheReadPricePerMillion(v)
+	})
+}
+
+// AddCacheReadPricePerMillion adds v to the "cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) AddCacheReadPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddCacheReadPricePerMillion(v)
+	})
+}
+
+// UpdateCacheReadPricePerMillion sets the "cache_read_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateCacheReadPricePerMillion()
+	})
+}
+
+// ClearCacheReadPricePerMillion clears the value of the "cache_read_price_per_million" field.
+func (u *PricingUpsertBulk) ClearCacheReadPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearCacheReadPricePerMillion()
+	})
+}
+
+// SetCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) SetCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetCacheCreationPricePerMillion(v)
+	})
+}
+
+// AddCacheCreationPricePerMillion adds v to the "cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) AddCacheCreationPricePerMillion(v int64) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.AddCacheCreationPricePerMillion(v)
+	})
+}
+
+// UpdateCacheCreationPricePerMillion sets the "cache_creation_price_per_million" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateCacheCreationPricePerMillion()
+	})
+}
+
+// ClearCacheCreationPricePerMillion clears the value of the "cache_creation_price_per_million" field.
+func (u *PricingUpsertBulk) ClearCacheCreationPricePerMillion() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearCacheCreationPricePerMillion()
+	})
+}
+
+// SetProvider sets the "provider" field.
+func (u *PricingUpsertBulk) SetProvider(v string) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetProvider(v)
+	})
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateProvider() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateProvider()
+	})
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *PricingUpsertBulk) ClearProvider() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearProvider()
+	})
+}
+
+// SetMode sets the "mode" field.
+func (u *PricingUpsertBulk) SetMode(v string) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetMode(v)
+	})
+}
+
+// UpdateMode sets the "mode" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateMode() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateMode()
+	})
+}
+
+// ClearMode clears the value of the "mode" field.
+func (u *PricingUpsertBulk) ClearMode() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearMode()
+	})
+}
+
+// SetSupportsPromptCaching sets the "supports_prompt_caching" field.
+func (u *PricingUpsertBulk) SetSupportsPromptCaching(v bool) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetSupportsPromptCaching(v)
+	})
+}
+
+// UpdateSupportsPromptCaching sets the "supports_prompt_caching" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateSupportsPromptCaching() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateSupportsPromptCaching()
+	})
+}
+
+// ClearSupportsPromptCaching clears the value of the "supports_prompt_caching" field.
+func (u *PricingUpsertBulk) ClearSupportsPromptCaching() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearSupportsPromptCaching()
+	})
+}
+
+// SetRaw sets the "raw" field.
+func (u *PricingUpsertBulk) SetRaw(v json.RawMessage) *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.SetRaw(v)
+	})
+}
+
+// UpdateRaw sets the "raw" field to the value that was provided on create.
+func (u *PricingUpsertBulk) UpdateRaw() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.UpdateRaw()
+	})
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (u *PricingUpsertBulk) ClearRaw() *PricingUpsertBulk {
+	return u.Update(func(s *PricingUpsert) {
+		s.ClearRaw()
 	})
 }
 

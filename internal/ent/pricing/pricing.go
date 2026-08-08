@@ -24,6 +24,18 @@ const (
 	FieldMaxInputTokens = "max_input_tokens"
 	// FieldMaxOutputTokens holds the string denoting the max_output_tokens field in the database.
 	FieldMaxOutputTokens = "max_output_tokens"
+	// FieldCacheReadPricePerMillion holds the string denoting the cache_read_price_per_million field in the database.
+	FieldCacheReadPricePerMillion = "cache_read_price_per_million"
+	// FieldCacheCreationPricePerMillion holds the string denoting the cache_creation_price_per_million field in the database.
+	FieldCacheCreationPricePerMillion = "cache_creation_price_per_million"
+	// FieldProvider holds the string denoting the provider field in the database.
+	FieldProvider = "provider"
+	// FieldMode holds the string denoting the mode field in the database.
+	FieldMode = "mode"
+	// FieldSupportsPromptCaching holds the string denoting the supports_prompt_caching field in the database.
+	FieldSupportsPromptCaching = "supports_prompt_caching"
+	// FieldRaw holds the string denoting the raw field in the database.
+	FieldRaw = "raw"
 	// FieldSource holds the string denoting the source field in the database.
 	FieldSource = "source"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -42,6 +54,12 @@ var Columns = []string{
 	FieldCompletionPricePerMillion,
 	FieldMaxInputTokens,
 	FieldMaxOutputTokens,
+	FieldCacheReadPricePerMillion,
+	FieldCacheCreationPricePerMillion,
+	FieldProvider,
+	FieldMode,
+	FieldSupportsPromptCaching,
+	FieldRaw,
 	FieldSource,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -120,6 +138,31 @@ func ByMaxInputTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByMaxOutputTokens orders the results by the max_output_tokens field.
 func ByMaxOutputTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMaxOutputTokens, opts...).ToFunc()
+}
+
+// ByCacheReadPricePerMillion orders the results by the cache_read_price_per_million field.
+func ByCacheReadPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheReadPricePerMillion, opts...).ToFunc()
+}
+
+// ByCacheCreationPricePerMillion orders the results by the cache_creation_price_per_million field.
+func ByCacheCreationPricePerMillion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheCreationPricePerMillion, opts...).ToFunc()
+}
+
+// ByProvider orders the results by the provider field.
+func ByProvider(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProvider, opts...).ToFunc()
+}
+
+// ByMode orders the results by the mode field.
+func ByMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMode, opts...).ToFunc()
+}
+
+// BySupportsPromptCaching orders the results by the supports_prompt_caching field.
+func BySupportsPromptCaching(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSupportsPromptCaching, opts...).ToFunc()
 }
 
 // BySource orders the results by the source field.

@@ -1174,12 +1174,17 @@ func (f *fakeStore) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricin
 }
 
 // UpsertManual 模拟手动设价（可接管 litellm 行；返回副本）。
-func (f *fakeStore) UpsertManual(ctx context.Context, model string, promptP, completionP int64) (*domain.Pricing, error) {
+// cacheRead/cacheCreation：nil = 不设缓存价（NULL 语义）；非 nil = 设价。
+func (f *fakeStore) UpsertManual(ctx context.Context, model string, promptP, completionP int64, cacheRead, cacheCreation *int64) (*domain.Pricing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p := &domain.Pricing{
-		Model: model, PromptPricePerMillion: promptP,
-		CompletionPricePerMillion: completionP, Source: domain.PricingSourceManual,
+		Model:                        model,
+		PromptPricePerMillion:        promptP,
+		CompletionPricePerMillion:    completionP,
+		CacheReadPricePerMillion:     cacheRead,
+		CacheCreationPricePerMillion: cacheCreation,
+		Source:                       domain.PricingSourceManual,
 	}
 	f.pricings[model] = p
 	c := *p
