@@ -301,6 +301,38 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// 就绪后关闭日志文件句柄（Windows 上句柄未关可能阻止后续读取；退出码仍由 Wait 捕获）
 	_ = srvLog.Close()
 
+	// 失败诊断（O1 收尾）：任何场景失败 → 转储内置网关 server.log 与最新
+	// usage_logs 行（flusher 落库时序/DB 状态疑点直接可见——此前失败无日志
+	// 难定位）。Cleanup LIFO：先于 srv.Kill / pool.Close 执行，数据完整。
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		if data, err := os.ReadFile(filepath.Join(env.tmp, "server.log")); err == nil {
+			t.Logf("--- server.log (test failed) ---\n%s", data)
+		}
+		rows, err := env.pg.Query(ctx, `SELECT id, user_id, model, cost, status_code, COALESCE(error_type,''), created_at FROM usage_logs ORDER BY id DESC LIMIT 20`)
+		if err != nil {
+			t.Logf("usage_logs 状态转储失败: %v", err)
+			return
+		}
+		defer rows.Close()
+		var sb strings.Builder
+		for rows.Next() {
+			var id, uid, cost int64
+			var model, etype string
+			var status int
+			var created time.Time
+			if err := rows.Scan(&id, &uid, &model, &cost, &status, &etype, &created); err != nil {
+				t.Logf("usage_logs 扫描失败: %v", err)
+				break
+			}
+			fmt.Fprintf(&sb, "id=%d user=%d model=%s cost=%d status=%d err=%s created=%s\n",
+				id, uid, model, cost, status, etype, created.Format(time.RFC3339Nano))
+		}
+		t.Logf("--- usage_logs latest 20 (test failed) ---\n%s", sb.String())
+	})
+
 	// --- 2. 基建：模板/账号/组 ---
 	tplID := env.create("/templates", map[string]any{
 		"name": "e2e-tpl", "base_url": "http://" + upAddr,
@@ -612,7 +644,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	})
 	require.Equal(t, 200, c, "新用户立即请求必须 200（余额快照未收敛 → 402）: %s", rbNew)
 	require.Less(t, time.Since(t0), 500*time.Millisecond,
-		"建用户 → 请求全链 <0.5s（去抖 200ms + 重载 + login 余量；若 invalidate 未按矩阵去抖合并会超时或 402）")
+		"userKey 后 <0.5s（去抖窗口 200ms + 一次重载 + 请求余量；若 invalidate 未按矩阵去抖合并会超时或 402）")
 	sleepFlush()
 	r = env.lastLogFor("e2e-model")
 	require.Equal(t, int64(500), r.Cost, "新用户计费正常（快照内余额扣减）")

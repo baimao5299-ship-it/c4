@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -121,6 +122,29 @@ func TestFaviconServedFromWebFS(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code)
 	require.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
+}
+
+// O1 收尾（评审项）：/assets/* 不得渲染 HTML 目录列表——目录请求 404、文件
+// 200（go:embed all:dist 裸 FileServerFS 会把目录枚举成 HTML 列表，静态资源
+// 被遍历暴露）。
+func TestAssetsNoDirectoryListing(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.html":    &fstest.MapFile{Data: []byte(`<html></html>`)},
+		"assets":        &fstest.MapFile{Mode: fs.ModeDir},
+		"assets/app.js": &fstest.MapFile{Data: []byte(`console.log(1)`)},
+	}
+	s := NewServer(Options{AdminToken: "tok", WebFS: fsys})
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code, "目录请求 404（不渲染目录列表）")
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "文件请求不受影响")
+	require.Contains(t, rec.Body.String(), "console.log(1)")
 }
 
 // 规格 §10.6：全局在途上限，超限立即 429 + Retry-After: 1。

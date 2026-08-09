@@ -3,6 +3,9 @@ package billing
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +14,7 @@ import (
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/usage"
+	"go-proxy-mini/pkg/logx"
 )
 
 type noopLogInserter struct{}
@@ -82,23 +86,58 @@ func (w *blockingWriter) DeductAndLog(ctx context.Context, userID, cost int64, l
 	return false, 900000, nil
 }
 
-// concWriter 记录并发调用峰值（分片并行断言）。
-type concWriter struct {
-	mu        sync.Mutex
-	calls     []deductCall
-	cur, max  int
+// barrierWriter 并发屏障（评审 I-：并行峰值断言不得依赖调度时机）：第 barrier
+// 个在途调用到齐后一起放行（此后通道已闭，后续调用直接通过）——4 分片 × 首
+// user 必然同时到齐，单核/慢 CI 不 flake（此前 20ms sleep 放大窗口在慢机上有
+// 并发不足风险）。
+type barrierWriter struct {
+	mu       sync.Mutex
+	barrier  int
+	calls    []deductCall
+	cur, max int
+	release  chan struct{}
+	released bool
 }
 
-func (w *concWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+func newBarrierWriter(barrier int) *barrierWriter {
+	return &barrierWriter{barrier: barrier, release: make(chan struct{})}
+}
+
+func (w *barrierWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
 	w.mu.Lock()
 	w.cur++
 	if w.cur > w.max {
 		w.max = w.cur
 	}
+	if !w.released && w.cur == w.barrier {
+		w.released = true
+		close(w.release)
+	}
+	ch := w.release
 	w.mu.Unlock()
-	time.Sleep(20 * time.Millisecond) // 放大重叠窗口
+	<-ch
 	w.mu.Lock()
 	w.cur--
+	w.calls = append(w.calls, deductCall{userID: userID, cost: cost, logs: logs})
+	w.mu.Unlock()
+	return false, 900000, nil
+}
+
+// ctxWriter DeductAndLog 尊重 ctx（模拟可取消的慢 DB）：latency 内 ctx 到期 →
+// 返回 ctx.Err（在途事务取消语义），否则记录调用。
+type ctxWriter struct {
+	mu      sync.Mutex
+	latency time.Duration
+	calls   []deductCall
+}
+
+func (w *ctxWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+	select {
+	case <-ctx.Done():
+		return false, 0, ctx.Err()
+	case <-time.After(w.latency):
+	}
+	w.mu.Lock()
 	w.calls = append(w.calls, deductCall{userID: userID, cost: cost, logs: logs})
 	w.mu.Unlock()
 	return false, 900000, nil
@@ -296,9 +335,10 @@ func TestFlusherFlushSerialized(t *testing.T) {
 }
 
 // TestFlusherParallelWorkers 分片并行：N worker 并发逐 user DeductAndLog——
-// 峰值并发 = worker 数（8 user / 4 worker），每用户恰好一笔（同 user 恒同桶）。
+// 峰值并发 = worker 数（8 user / 4 worker，barrier 构造保证到齐，确定性断言），
+// 每用户恰好一笔（同 user 恒同桶）。
 func TestFlusherParallelWorkers(t *testing.T) {
-	writer := &concWriter{}
+	writer := newBarrierWriter(4)
 	f := newTestFlusherWorkers(writer, 4)
 	for i := 0; i < 8; i++ {
 		f.Record(&domain.UsageLog{UserID: int64(i + 1), Cost: 10})
@@ -350,4 +390,70 @@ func TestFlusherBilledAggregatesStats(t *testing.T) {
 	require.Equal(t, int64(5), b.CompletionTokens)
 	require.Equal(t, "gpt-4o", b.Model)
 	require.Equal(t, int64(1), b.UserID)
+}
+
+// newTestLogger warn 级文件 logger（Warn 断言用；Windows 上 zap 句柄不释放，
+// 目录清理 best-effort）。
+func newTestLogger(t *testing.T) (*logx.Logger, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "flusher-test-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	out := filepath.Join(dir, "out.json")
+	logger, err := logx.New("warn", out)
+	require.NoError(t, err)
+	return logger, out
+}
+
+// TestFlusherCloseTruncatesOnBudget 停机排空受 ctx 预算约束（O1 复测根因）：
+// deadline 到期 → 截断退出 + Warn（含已排空/剩余条数），不无界阻塞停机；在途
+// 事务经 ctx 取消快速失败回灌（不丢，可统计）。无 deadline 完整排空由
+// TestFlusherGroupsByUser / TestFlusherCloseAfterStart 等覆盖。
+func TestFlusherCloseTruncatesOnBudget(t *testing.T) {
+	writer := &ctxWriter{latency: 500 * time.Millisecond}
+	f := newTestFlusher(writer)
+	f.Record(&domain.UsageLog{UserID: 1, Cost: 100})
+	f.Record(&domain.UsageLog{UserID: 2, Cost: 100})
+	logger, out := newTestLogger(t)
+	f.log = logger
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(150*time.Millisecond))
+	defer cancel()
+	require.NoError(t, f.Close(ctx))
+
+	require.Equal(t, 2, f.pendingCount(), "预算到期未处理条目回灌不丢")
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "shutdown budget exceeded, truncated drain")
+	require.Contains(t, string(b), `"flushed_logs":0`)
+	require.Contains(t, string(b), `"remaining_logs":2`)
+}
+
+// TestFlusherWaterlineWarns 水线按聚合日志条数计（评审 C-1）：pending 日志条数
+// 超阈值 → Warn（429 风暴 24.5k 日志/s 才是无界增长场景；按去重用户数计 ≤1M
+// 用户不可达恒不告警）。注入小阈值触发；flush 回落复位后再超阈值再次 Warn。
+func TestFlusherWaterlineWarns(t *testing.T) {
+	old := pendingWaterline
+	pendingWaterline = 100
+	t.Cleanup(func() { pendingWaterline = old })
+
+	logger, out := newTestLogger(t)
+	writer := &fakeDeductWriter{}
+	f := newTestFlusher(writer)
+	f.log = logger
+	for i := 0; i < 110; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+	f.flush() // 回落复位（pendingN < 水线 → warned 复位）
+	for i := 0; i < 110; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(b), "billing pending exceeds waterline"),
+		"超阈值 Warn，回落复位后再次超阈值再次 Warn")
+	require.Contains(t, string(b), `"waterline":100`)
+	require.NoError(t, f.Close(context.Background()))
 }
