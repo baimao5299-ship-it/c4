@@ -135,7 +135,7 @@ func TestRedemptionCodesList(t *testing.T) {
 	require.Equal(t, int64(2), list.Total)
 
 	// page_size 越界 → 400（handler 校验）
-	rec = do(http.MethodGet, "/admin/redemption-codes?page_size=101", "")
+	rec = do(http.MethodGet, "/admin/redemption-codes?page_size=1001", "")
 	require.Equal(t, 400, rec.Code, "page_size 越界: %s", rec.Body.String())
 
 	// 非法 sort → 400（service 白名单）
