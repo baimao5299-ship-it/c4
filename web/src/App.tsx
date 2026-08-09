@@ -9,6 +9,7 @@ import Layout from '@/components/layout'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
 import Accounts from '@/pages/accounts'
+import Users from '@/pages/users'
 import Groups from '@/pages/groups'
 import Logs from '@/pages/logs'
 import Stats from '@/pages/stats'
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'templates', element: <Templates /> },
       { path: 'accounts', element: <Accounts /> },
+      { path: 'users', element: <Users /> },
       { path: 'groups', element: <Groups /> },
       { path: 'logs', element: <Logs /> },
       { path: 'stats', element: <Stats /> },
