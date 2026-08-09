@@ -158,8 +158,9 @@ export default function Groups() {
   const [assignQuery, setAssignQuery] = useState('')
   const [assignOffset, setAssignOffset] = useState(0)
   const [assignLimit, setAssignLimit] = useState(20)
-  // 上次提交成功的响应本地保留（弹窗内提示「已保存的授予」；契约无 GET 端点）。
-  const [assignSaved, setAssignSaved] = useState<GroupAssignmentsResponse | null>(null)
+  // 上次提交成功的响应按组本地保留（弹窗内提示「已保存的授予」；契约无 GET 端点）。
+  // 带 groupId：仅对同一组的重开显示，避免换组后残留上次他组的保存提示。
+  const [assignSaved, setAssignSaved] = useState<{ groupId: number; resp: GroupAssignmentsResponse } | null>(null)
 
   const openAssign = (g: Group) => {
     setAssignTarget(g)
@@ -167,6 +168,7 @@ export default function Groups() {
     setAssignMult({})
     setAssignQuery('')
     setAssignOffset(0)
+    assign.reset() // 清掉上次提交失败的就地错误，换组重开不残留
   }
   const toggleAssignUser = (id: number, on: boolean) =>
     setAssignChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
@@ -199,9 +201,14 @@ export default function Groups() {
       return api.setGroupAssignments(assignTarget!.ID!, body)
     },
     onSuccess: (resp) => {
-      setAssignSaved(resp)
+      setAssignSaved({ groupId: assignTarget!.ID!, resp })
       setAssignTarget(null)
-      toast.add({ title: t('groups.assignSuccess'), description: t('groups.assignSuccessDesc', { count: resp.user_ids.length }), type: 'success' })
+      // 空勾选提交 = 清空（契约语义）：toast 用清空文案，避免「已授予 0 个用户」歧义
+      toast.add({
+        title: t('groups.assignSuccess'),
+        description: resp.user_ids.length > 0 ? t('groups.assignSuccessDesc', { count: resp.user_ids.length }) : t('groups.assignClearedDesc'),
+        type: 'success',
+      })
     },
   })
   const setRowMult = (uid: number, mult: string) => setAssignMult(m => ({ ...m, [uid]: { mult, cleared: false } }))
@@ -513,8 +520,8 @@ export default function Groups() {
             <DialogDescription>{t('groups.assignDesc')}</DialogDescription>
             <p className="text-xs text-muted-foreground">{t('groups.assignMultiplierHint')}</p>
             <p className="text-xs text-amber-600 dark:text-amber-400">{t('groups.assignEchoNote')}</p>
-            {assignSaved && assignSaved.user_ids.length > 0 && (
-              <p className="text-xs text-muted-foreground">{t('groups.assignSavedNote', { count: assignSaved.user_ids.length })}</p>
+            {assignSaved && assignSaved.groupId === assignTarget?.ID && assignSaved.resp.user_ids.length > 0 && (
+              <p className="text-xs text-muted-foreground">{t('groups.assignSavedNote', { count: assignSaved.resp.user_ids.length })}</p>
             )}
           </DialogHeader>
           <div className="space-y-3">
@@ -557,7 +564,7 @@ export default function Groups() {
                               variant="ghost"
                               size="icon-sm"
                               title={t('groups.assignMultiplierClear')}
-                              disabled={!row?.mult}
+                              disabled={!row?.mult && !row?.cleared}
                               onClick={() => clearRowMult(u.ID!)}
                             >
                               <X />

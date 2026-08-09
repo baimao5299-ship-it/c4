@@ -250,12 +250,13 @@
     "assignEchoNote": "接口限制：无法回显当前已授予状态；提交后重新打开为全部未勾选，请按需勾选。",
     "assignSavedNote": "上次保存：已授予 {{count}} 个用户",
     "assignSearchPlaceholder": "搜索用户邮箱",
-    "assignMultiplierPlaceholder": "留空沿用组倍率",
+    "assignMultiplierPlaceholder": "留空沿用当前值",
     "assignMultiplierClear": "清除为未设置",
     "assignMultiplierUnset": "回退组倍率",
     "assignEmpty": "没有符合条件的用户",
     "assignSuccess": "授予已保存",
-    "assignSuccessDesc": "已授予 {{count}} 个用户"
+    "assignSuccessDesc": "已授予 {{count}} 个用户",
+    "assignClearedDesc": "已清空该组的全部授予"
   },
   "logs": {
     "title": "日志",

@@ -255,7 +255,8 @@
     "assignMultiplierUnset": "Fall back to group multiplier",
     "assignEmpty": "No users match",
     "assignSuccess": "Assignments saved",
-    "assignSuccessDesc": "{{count}} users granted"
+    "assignSuccessDesc": "{{count}} users granted",
+    "assignClearedDesc": "All assignments cleared"
   },
   "logs": {
     "title": "Logs",
