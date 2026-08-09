@@ -14,11 +14,12 @@ var DefaultSettings = []Setting{
 	{Key: "price_source_url", Type: SettingTypeString,
 		Value: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"},
 	{Key: "price_sync_cron", Type: SettingTypeString, Value: "0 3 * * *"}, // cron 表达式（gronx 解析）
-	// service_tier 转发策略（Phase 5 计费）：priority/flex 请求分别按对应 key
+	// service_tier 转发策略（Phase 5 计费）：priority/flex/fast 请求分别按对应 key
 	// 处理转发体——passthrough（默认，原样转发）/ strip（删除该字段）/ reject
 	// （400 拒绝，不转发）；auto/空恒透传。值域校验见 service.UpdateSetting。
 	{Key: "service_tier_policy_priority", Type: SettingTypeString, Value: "passthrough"},
 	{Key: "service_tier_policy_flex", Type: SettingTypeString, Value: "passthrough"},
+	{Key: "service_tier_policy_fast", Type: SettingTypeString, Value: "passthrough"},
 }
 
 // DefaultSetting 返回内置 key 的默认设置；未知 key 返回 nil。

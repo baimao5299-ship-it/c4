@@ -51,8 +51,8 @@ func NormalizeTier(raw string) Tier {
 }
 
 // TierPolicyMode service_tier 转发策略（settings 键 service_tier_policy_priority
-// / service_tier_policy_flex；缺失/未知值 → passthrough 默认）。auto/空恒透传
-// （proxy 侧短路，不查策略）。
+// / service_tier_policy_flex / service_tier_policy_fast；缺失/未知值 →
+// passthrough 默认）。auto/空恒透传（proxy 侧短路，不查策略）。
 type TierPolicyMode string
 
 const (

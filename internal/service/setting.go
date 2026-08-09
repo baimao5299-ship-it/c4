@@ -18,6 +18,7 @@ func (s *Service) GetSettings(ctx context.Context) ([]*domain.Setting, error) {
 var serviceTierPolicyKeys = map[string]bool{
 	"service_tier_policy_priority": true,
 	"service_tier_policy_flex":     true,
+	"service_tier_policy_fast":     true,
 }
 
 // UpdateSetting 类型化校验后更新（/admin/settings PUT）：
