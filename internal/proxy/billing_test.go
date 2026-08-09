@@ -740,3 +740,42 @@ func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
 	require.Zero(t, writer.calls[0].cost, "免费组：cost 0 不扣费")
 	require.Zero(t, writer.calls[0].logs[0].Cost)
 }
+
+// TestProxyBillingNewUserImmediatelyUsable 评审 M-2 回归：新建用户（store 插入）
+// → 全量 Reload → 立即请求 → 200（不得 402）。O1 前 Set 兜底补入新用户掩盖了
+// 该窗口；O1 后 Set 仅限已存在条目（缺失忽略）——新用户必须经 Reload 进快照
+//（创建路径不走 Set）。窗口显式暴露：创建前快照缺失 → 402（不用 sleep 掩盖）。
+func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	writer := &fakeDeductWriter{}
+	loader := &fakeBalanceLoader{m: map[int64]int64{}} // 用户 1 尚未创建
+	bal := billing.NewBalances(loader, nil)
+	require.NoError(t, bal.Reload(context.Background()))
+	f := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, writer, rec, bal, nil)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+
+	req := func() int {
+		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+		r.Header.Set("Authorization", "Bearer gk-1")
+		rr := httptest.NewRecorder()
+		p.HandleChat(rr, r)
+		return rr.Code
+	}
+	// 窗口显式暴露：新用户未入快照 → 402（不得 sleep 掩盖）
+	require.Equal(t, http.StatusPaymentRequired, req(), "创建前快照缺失 → 402 窗口如实暴露")
+
+	// 用户创建 → invalidate → 全量 Reload（创建路径不走 Set）
+	loader.m[1] = 50000
+	require.NoError(t, bal.Reload(context.Background()))
+
+	require.Equal(t, 200, req(), "新建用户 Reload 后立即请求不得 402（评审 M-2）")
+	require.NoError(t, f.Close(context.Background()))
+}

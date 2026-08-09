@@ -20,6 +20,7 @@ func TestDefaults(t *testing.T) {
 	require.False(t, c.Billing.Enabled, "计费默认关（opt-in，评审 C-1）")
 	require.Equal(t, 1*time.Second, c.Billing.FlushInterval)
 	require.Equal(t, 10*time.Second, c.Billing.BalanceRefreshInterval)
+	require.Equal(t, 4, c.Billing.FlushWorkers, "flush 并行 worker 默认 4（O1）")
 }
 
 func TestEnvOverlay(t *testing.T) {
