@@ -141,28 +141,45 @@ func (r *KeyRepo) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]strin
 
 // LoadKeys 构建 Auth 鉴权快照：key_hash → KeyMeta（含归属用户状态/并发/
 // 额度）。热路径数据源（reload 时一次查询；请求路径零 DB）。
+//
+// 崩溃修复：旧实现 `WithUser()` eager-load 的 m2o 邻接跳生成
+// `SELECT * FROM users WHERE id IN (全部 key 的归属用户 id)`——key 数
+// >65,535（用户数也随之超限）即超 PG 参数上限 65535。改为分片：先全表扫
+// key id（零参数），按 ≤inChunkSize 切块逐块 `Where(key.IDIn(块))` 加载
+// （单块 key ≤8192，其 m2o 邻接 IN ≤8192 个用户 id——每 key 恰一个归属
+// 用户，邻接恒被块大小约束）。
 func (r *KeyRepo) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, error) {
-	rows, err := r.client.Key.Query().WithUser().All(ctx)
+	keyIDs, err := r.client.Key.Query().Order(ent.Asc(key.FieldID)).IDs(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load keys (scan ids): %w", err)
 	}
-	out := make(map[string]domain.KeyMeta, len(rows))
-	for _, row := range rows {
-		meta := domain.KeyMeta{
-			KeyID:      row.ID,
-			UserID:     row.UserID,
-			GroupID:    row.GroupID,
-			KeyStatus:  domain.KeyStatus(row.Status),
-			KeyMaxConc: row.MaxConcurrency,
-			HasQuota:   row.Quota > 0,
-			Quota:      row.Quota,
-			QuotaUsed:  row.QuotaUsed,
+	out := make(map[string]domain.KeyMeta, len(keyIDs))
+	chunks := chunkIDs(keyIDs, inChunkSize)
+	for i, chunk := range chunks {
+		rows, err := r.client.Key.Query().
+			Where(key.IDIn(chunk...)).
+			WithUser().
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load keys (chunk %d/%d, %d ids): %w", i+1, len(chunks), len(chunk), err)
 		}
-		if row.Edges.User != nil {
-			meta.UserStatus = domain.UserStatus(row.Edges.User.Status)
-			meta.UserMaxConc = row.Edges.User.MaxConcurrency
+		for _, row := range rows {
+			meta := domain.KeyMeta{
+				KeyID:      row.ID,
+				UserID:     row.UserID,
+				GroupID:    row.GroupID,
+				KeyStatus:  domain.KeyStatus(row.Status),
+				KeyMaxConc: row.MaxConcurrency,
+				HasQuota:   row.Quota > 0,
+				Quota:      row.Quota,
+				QuotaUsed:  row.QuotaUsed,
+			}
+			if row.Edges.User != nil {
+				meta.UserStatus = domain.UserStatus(row.Edges.User.Status)
+				meta.UserMaxConc = row.Edges.User.MaxConcurrency
+			}
+			out[row.KeyHash] = meta
 		}
-		out[row.KeyHash] = meta
 	}
 	return out, nil
 }

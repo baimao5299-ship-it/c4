@@ -111,7 +111,7 @@ func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
 // 账号缺 id → ErrNotFound（errMissingID）。
 func (r *AccountRepo) SetAccountGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
 	if len(groupIDs) > 0 {
-		if err := checkGroupExist(ctx, r.client.Group.Query(), groupIDs); err != nil {
+		if err := checkGroupExist(ctx, r.client.Group.Query, groupIDs); err != nil {
 			return err
 		}
 	}

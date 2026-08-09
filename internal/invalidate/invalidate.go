@@ -238,8 +238,10 @@ func (d *Debouncer) flush() {
 // BalanceRefreshInterval ticker 兜底收敛）。
 func (d *Debouncer) reloadAll(st *State) {
 	if st.Kinds&KindUsers != 0 {
+		// Auth.Reload 内部已对失败打 Warn（覆盖 NewAuth 启动/无 logger 调用方），
+		// 此处 Debug 防双 Warn（评审 I-3）；错误本身仍由内部 Warn 报告。
 		if err := d.cfg.Auth.Reload(context.Background()); err != nil && d.cfg.Log != nil {
-			d.cfg.Log.Warn("auth reload failed", logx.Error(err))
+			d.cfg.Log.Debug("auth reload failed", logx.Error(err))
 		}
 		if d.cfg.Balances != nil {
 			_ = d.cfg.Balances.Reload(context.Background()) // fail-safe：内部 Warn + 保留旧快照
