@@ -8,6 +8,11 @@ import Login from '@/pages/login'
 import Layout from '@/components/layout'
 import UserLogin from '@/pages/user/login'
 import UserRegister from '@/pages/user/register'
+import UserOverview from '@/pages/user/overview'
+import UserKeys from '@/pages/user/keys'
+import UserLogs from '@/pages/user/logs'
+import UserStats from '@/pages/user/stats'
+import UserRedemptions from '@/pages/user/redemptions'
 import UserLayout from '@/components/user-layout'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
@@ -31,8 +36,11 @@ const router = createBrowserRouter([
     path: '/user',
     element: <UserLayout />,
     children: [
-      // 总览页由后续任务替换；keys/logs/stats/redemptions 路由待对应页面落地后补注册
-      { index: true, element: <Navigate to="/user/keys" replace /> },
+      { index: true, element: <UserOverview /> },
+      { path: 'keys', element: <UserKeys /> },
+      { path: 'logs', element: <UserLogs /> },
+      { path: 'stats', element: <UserStats /> },
+      { path: 'redemptions', element: <UserRedemptions /> },
     ],
   },
   {
