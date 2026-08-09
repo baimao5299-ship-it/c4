@@ -163,6 +163,11 @@ func (e *e2eEnv) balance(userID int64) int64 {
 // sleepFlush 等待 flusher 周期落库（配置 flush_interval=300ms，留足余量）。
 func sleepFlush() { time.Sleep(900 * time.Millisecond) }
 
+// waitSnapshot 等待去抖窗口 + 一次重载完成（O2：管理面变更生效延迟 ≤200ms
+// 窗口 + 一次重载时长——变更后的断言性请求须落在重载之后，等效旧实现同步
+// invalidate 的"变更即生效"，只是生效点推迟到窗口到点）。
+func waitSnapshot() { time.Sleep(300 * time.Millisecond) }
+
 // lastLog 最新一条计费日志的计费列。
 type billLogRow struct {
 	Cost       int64
@@ -340,6 +345,8 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// --- 4. 用户/密钥 ---
 	u1 := createUser(t, env, "e2e-user@example.com", 10.0) // 1,000,000 毫分
 	_, u1Key := userKey(t, env, u1, g1)
+	// O2 去抖：u1 须在余额快照中才能通过计费预检（窗口 200ms + 重载）。
+	waitSnapshot()
 
 	// ============ 场景 1：矩阵计费 + 余额毫分扣减 ============
 	t.Log("场景 1：manual 矩阵设价 → usagelog cost 断言 + 余额毫分扣减")
@@ -397,6 +404,8 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	t.Log("场景 2：FEFO 临时额度优先扣；余额不足 402")
 	u2 := createUser(t, env, "fefo@example.com", 0.01) // 1,000 毫分
 	u2Token, u2Key := userKey(t, env, u2, g1)
+	// O2 去抖：u2 须在余额快照中（下方首个请求的计费预检依赖）。
+	waitSnapshot()
 	// temp_balance 兑换码 500 毫分
 	codeResp, respBody := env.admin(http.MethodPost, "/redemption-codes", map[string]any{
 		"type": "temp_balance", "value": 500, "resource_expires_at": "2030-01-01T00:00:00Z", "count": 1,
@@ -487,6 +496,8 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	t.Log("场景 5：组倍率 ×2 → 扣费 ×2；用户专属倍率覆盖组；0 = 免费不扣费")
 	u4 := createUser(t, env, "mult@example.com", 10.0) // grp2 倍率 20000
 	_, u4Key := userKey(t, env, u4, g2)
+	// O2 去抖：u4 须在余额快照中（下方首个请求的计费预检依赖）。
+	waitSnapshot()
 	chat := func(key string, model string) {
 		c, rb := env.aiReq(http.MethodPost, "/v1/chat/completions", key, map[string]any{
 			"model": model, "stream": true,
@@ -504,6 +515,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// 用户覆盖组：倍率 5000 → 500×0.5 = 250
 	c, rb10 := env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10), map[string]any{"price_multiplier": 5000})
 	require.Equal(t, 200, c, "set user mult: %s", rb10)
+	waitSnapshot() // O2 去抖：新倍率须已进快照（请求按快照计费）
 	chat(u4Key, "e2e-mult-model")
 	r = env.lastLogFor("e2e-mult-model")
 	require.Equal(t, int64(250), r.Cost, "用户专属倍率覆盖组倍率")
@@ -512,6 +524,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// 用户倍率 0 = 免费：cost 0 不扣费
 	c, _ = env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10), map[string]any{"price_multiplier": 0})
 	require.Equal(t, 200, c, "set free mult")
+	waitSnapshot() // O2 去抖：新倍率须已进快照
 	chat(u4Key, "e2e-mult-model")
 	r = env.lastLogFor("e2e-mult-model")
 	require.Equal(t, int64(0), r.Cost, "0 = 免费（cost 0）")
@@ -522,6 +535,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	_, u5Key := userKey(t, env, u5, g3)
 	c, rb11 := env.admin(http.MethodPut, "/groups/"+strconv.FormatInt(g3, 10), map[string]any{"name": "e2e-grp3", "price_multiplier": 0})
 	require.Equal(t, 200, c, "set group free: %s", rb11)
+	waitSnapshot() // O2 去抖：u5 入余额快照 + g3 倍率 0 进倍率快照（同窗口合并一次重载）
 	chat(u5Key, "e2e-mult-model")
 	r = env.lastLogFor("e2e-mult-model")
 	require.Equal(t, int64(0), r.Cost, "组倍率 0 = 免费")
@@ -582,8 +596,30 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.NoError(t, err)
 	require.Equal(t, total, partTotal, "全部行落入当日分区")
 
-	// ============ 场景 8：SIGTERM 优雅停机（流式中断 → 日志 cost 不丢） ============
-	t.Log("场景 8：优雅停机——流式中断计费完整 flush")
+	// ============ 场景 8：新用户 402 窗口回归（评审 M-2 / O2） ============
+	// 建用户 → 立即请求（<0.5s）→ 200：新用户必须在去抖窗口 + 一次重载后
+	// 即刻进入余额快照（防 ≤10s BalanceRefreshInterval 402 窗口）。
+	t.Log("场景 8：建用户 → 立即请求（<0.5s）→ 200（去抖窗口内余额快照收敛）")
+	uNew := createUser(t, env, "fresh-e2e@example.com", 10.0) // 1,000,000 毫分
+	waitSnapshot() // 去抖窗口（200ms）+ 重载；随后请求须落在重载之后
+	_, uNewKey := userKey(t, env, uNew, g1)
+	// 评审 I-1：t0 从 userKey 返回后起算（用户已就绪、密钥已取）——createUser/
+	// login 的 API 往返不计入 <0.5s 预算，只测"用户就绪后首次请求"的去抖收敛链。
+	t0 := time.Now()
+	c, rbNew := env.aiReq(http.MethodPost, "/v1/chat/completions", uNewKey, map[string]any{
+		"model": "e2e-model", "stream": true,
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	require.Equal(t, 200, c, "新用户立即请求必须 200（余额快照未收敛 → 402）: %s", rbNew)
+	require.Less(t, time.Since(t0), 500*time.Millisecond,
+		"建用户 → 请求全链 <0.5s（去抖 200ms + 重载 + login 余量；若 invalidate 未按矩阵去抖合并会超时或 402）")
+	sleepFlush()
+	r = env.lastLogFor("e2e-model")
+	require.Equal(t, int64(500), r.Cost, "新用户计费正常（快照内余额扣减）")
+	require.Equal(t, int64(1000000-500), env.balance(uNew), "新用户余额扣减")
+
+	// ============ 场景 9：SIGTERM 优雅停机（流式中断 → 日志 cost 不丢） ============
+	t.Log("场景 9：优雅停机——流式中断计费完整 flush")
 	balBefore := env.balance(u1)
 	// anthropic 长流（chunks 1000 × 5ms ≈ 5s > Shutdown 2s 优雅窗口：强断发生
 	// 时流仍在途）：message_start 已带 pt=10，停机强断后按已累积 token 计费：

@@ -278,6 +278,6 @@ func (s *Service) Redeem(ctx context.Context, code string, userID int64) (*domai
 	if err != nil {
 		return nil, err
 	}
-	s.invalidate() // 余额/并发已变更 → Auth 快照刷新（决策 8）
+	s.inv.Users() // 余额/并发已变更 → Auth + 余额快照刷新（O2 矩阵：用户面变更，去抖窗口内全量）
 	return apply, nil
 }

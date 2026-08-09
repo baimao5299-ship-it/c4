@@ -16,12 +16,12 @@ import (
 // codeRe 兑换码格式：XXXXXX-XXXXXX，字符集大写 A-Z 去 I/O + 数字 2-9 去 0/1。
 var codeRe = regexp.MustCompile(`^[A-HJ-NP-Z2-9]{6}-[A-HJ-NP-Z2-9]{6}$`)
 
-// newRedemptionSvc 构造带计数 invalidate 的 Service（兑换成功后必须刷新 auth 快照）。
-func newRedemptionSvc() (*Service, *fakeStore, *int) {
+// newRedemptionSvc 构造带记录 inv 的 Service（兑换成功后必须刷新 auth 快照）。
+func newRedemptionSvc() (*Service, *fakeStore, *invRecorder) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
-	return svc, fs, &invalidated
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
+	return svc, fs, rec
 }
 
 // seedUser 建用户（Balance/MaxConcurrency 可预置）。
@@ -273,13 +273,13 @@ func TestDeactivateCodesBatch(t *testing.T) {
 
 // TestRedeem 兑换成功（三类型）+ 错误语义（409/400）+ invalidate 时机。
 func TestRedeem(t *testing.T) {
-	svc, fs, invalidated := newRedemptionSvc()
+	svc, fs, rec := newRedemptionSvc()
 	ctx := context.Background()
 
 	t.Run("balance 加值 + invalidate", func(t *testing.T) {
 		u := seedUser(t, fs, "bal@example.com", 0, 0)
 		c := genOne(t, svc, GenerateRequest{Type: domain.RedemptionTypeBalance, Value: 500}, 0)
-		before := *invalidated
+		before := rec.total()
 		apply, err := svc.Redeem(ctx, c.Code, u.ID)
 		require.NoError(t, err)
 		require.Equal(t, domain.RedemptionTypeBalance, apply.Type)
@@ -288,7 +288,7 @@ func TestRedeem(t *testing.T) {
 		got, err := fs.GetUser(ctx, u.ID)
 		require.NoError(t, err)
 		require.Equal(t, int64(500), got.Balance, "余额 += value")
-		require.Greater(t, *invalidated, before, "兑换成功后必须 invalidate（决策 8：auth 快照刷新）")
+		require.Greater(t, rec.total(), before, "兑换成功后必须 invalidate（决策 8：auth 快照刷新）")
 		stored, err := fs.GetByCode(ctx, c.Code)
 		require.NoError(t, err)
 		require.Equal(t, 1, stored.UsedCount, "used_count 条件递增")
@@ -343,11 +343,11 @@ func TestRedeem(t *testing.T) {
 		c := genOne(t, svc, GenerateRequest{Type: domain.RedemptionTypeBalance, Value: 100}, 0)
 		_, err := svc.Redeem(ctx, c.Code, u.ID)
 		require.NoError(t, err)
-		before := *invalidated
+		before := rec.total()
 		_, err = svc.Redeem(ctx, c.Code, u.ID)
 		require.ErrorIs(t, err, ErrConflict)
 		require.Contains(t, err.Error(), "already redeemed")
-		require.Equal(t, before, *invalidated, "失败路径不 invalidate")
+		require.Equal(t, before, rec.total(), "失败路径不 invalidate")
 		got, err := fs.GetUser(ctx, u.ID)
 		require.NoError(t, err)
 		require.Equal(t, int64(100), got.Balance, "重复兑换余额不变")

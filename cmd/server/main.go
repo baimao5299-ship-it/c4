@@ -23,6 +23,7 @@ import (
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/handler"
 	userapi "go-proxy-mini/internal/handler/user"
+	"go-proxy-mini/internal/invalidate"
 	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
@@ -108,36 +109,45 @@ func main() {
 		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
 		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
 	})
-	// 管理端变更统一经 invalidate 回调生效：调度器重载快照（选号/状态）+
-	// aiclient 工厂丢弃 SDK 客户端（base_url 变化下次使用时按新地址重建；
-	// 评审发现：此前 Factory.InvalidateAll 无人调用，模板 base_url 更新后流量
-	// 仍打旧上游直至重启）+ Auth 鉴权快照全量刷新（用户禁用/并发/额度调整
-	// 即时生效——评审 I-2）+ 余额快照全量刷新（管理面改余额/Redeem 后计费
-	// 预检即时生效，Phase 5 T3）。
-	var billBalances *billing.Balances
-	invalidate := func() {
-		sched.InvalidateAll()
-		clients.InvalidateAll()
-		if err := auth.Reload(context.Background()); err != nil {
-			log.Warn("auth reload failed", logx.Error(err))
-		}
-		if billBalances != nil {
-			_ = billBalances.Reload(context.Background()) // fail-safe：内部 Warn + 保留旧快照
-		}
-	}
-	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
-	// 不能随模板/账号/分组等任意资源变更触发）。
-	svc := service.New(repos, sched, invalidate, ruleEngine, auth, log)
-	// Phase 5 计费装配（T3：余额快照 + 批量 flusher；T2 中间态清理终点——hooks
-	// 四字段齐备，无 nil 容忍分支）。Enabled 默认关（opt-in）：关 → billHooks
-	// nil → proxy 计费全关（不查价/不预检/不路由）。
-	var billHooks *proxy.BillingHooks
+	// 管理端变更统一经 invalidate 去抖器生效（O2 接线矩阵，评审 M-1）：
+	// - 用户 CRUD（含创建）/余额变更 → auth + 余额快照全量 Reload（去抖窗口
+	//   内合并；新用户必须即刻进余额快照——评审 M-2，防 ≤10s 402 窗口）
+	// - 模板（base_url/models/映射）→ sched 全量 + clients 失效（base_url
+	//   变更需按新地址重建 SDK 客户端；评审发现：此前 Factory.InvalidateAll
+	//   无人调用，模板 base_url 更新后流量仍打旧上游直至重启）
+	// - 账号 → sched 组级定向 InvalidateGroup（full ⊇ 组级 ⊇ 无）；upstream_key
+	//   变更 → clients 失效
+	// - 组倍率 → 余额倍率快照定向刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）
+	// - key/pricing → 现状（auth 增量 Upsert/Delete / 内部 reloadPricing，不进
+	//   invalidate）
+	// 去抖窗口 200ms：管理面变更生效延迟 ≤ 窗口 + 一次重载时长；后沿语义
+	// （评审 C-6：完成后又脏立即再执行，不按固定间隔 throttle——不与长 reload
+	// 重叠）。读端永不阻塞：Mark 路径零锁零 DB，重载单 goroutine 串行（消除
+	// Phase 6 压测实证的 33,705 goroutine reloadMu 串行雪崩）。
+	//
+	// 计费装配提前到 svc 之前：去抖器装配需要余额快照引用；billHooks 仍需
+	// svc，在 svc 之后组装。
 	var billFlusher *billing.Flusher
+	var billHooks *proxy.BillingHooks
+	var billBalances *billing.Balances
 	if cfg.Billing.Enabled {
 		// loader = Repository 门面（BalanceLoader：余额+用户倍率 → Users，
 		// 组倍率 → Groups，T3.5）。
 		billBalances = billing.NewBalances(repos, log)
 		_ = billBalances.Reload(context.Background()) // 启动同步，fail-safe（失败保留空快照 → 预检全 402 拒绝，安全侧）
+	}
+	inv := invalidate.New(invalidate.Config{
+		Window:   invalidate.DefaultWindow, // 200ms（生效延迟语义见 invalidate 包注释）
+		Sched:    sched,
+		Clients:  clients,
+		Auth:     auth,
+		Balances: billBalances, // billing.enabled=false → nil（flush 跳过余额路径）
+		Log:      log,
+	})
+	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
+	// 不能随模板/账号/分组等任意资源变更触发）。
+	svc := service.New(repos, sched, inv, ruleEngine, auth, log)
+	if cfg.Billing.Enabled {
 		billFlusher = billing.NewFlusher(billing.FlushConfig{
 			FlushInterval:          cfg.Billing.FlushInterval,
 			BalanceRefreshInterval: cfg.Billing.BalanceRefreshInterval,
@@ -201,7 +211,7 @@ func main() {
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
-	wm.Register(sched, ruleEngine, rec, pricingSync, retention) // retention 顺序无依赖（DROP/预建均幂等）
+	wm.Register(inv, sched, ruleEngine, rec, pricingSync, retention) // invalidate 去抖器执行 goroutine（单 goroutine 串行）；retention 顺序无依赖（DROP/预建均幂等）
 	if billFlusher != nil {
 		wm.Register(billFlusher) // 计费 flusher 最后注册 → 反向排空最先（扣费 + 计费日志全量落库）
 	}

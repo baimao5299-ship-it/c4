@@ -16,7 +16,7 @@ import (
 // newPricingSvc 构造 Service（New 全路径：settings + pricing 快照初始化）。
 func newPricingSvc(t *testing.T, fs *fakeStore) *Service {
 	t.Helper()
-	return New(fs, nil, func() {}, nil, nil, nil)
+	return New(fs, nil, NopInvalidator{}, nil, nil, nil)
 }
 
 // fakePriceFetcher 测试用拉取器（记录收到的 URL + 返回注入结果/错误）。

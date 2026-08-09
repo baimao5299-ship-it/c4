@@ -1,0 +1,262 @@
+// Package invalidate 管理面变更的去抖定向失效（Phase 6 O2）：
+//
+// 脏标记（Mark 路径零锁零 DB——atomic CAS 合并 + 非阻塞唤醒，不阻塞任何
+// 调用方；消除 Phase 6 压测实证的 33,705 goroutine reloadMu 串行雪崩）+
+// 定时窗口到点批量执行一次合并重载；后沿语义（评审 C-6：执行完成后若又脏
+// 立即再执行，不按固定间隔 throttle——不与长 reload 重叠）。
+//
+// 接线矩阵（评审 M-1 定稿，reloadAll 实现）：
+//   - 用户 CRUD（含创建）/余额变更 → auth + 余额快照全量（新用户必须即刻在
+//     快照——评审 M-2，防 ≤10s 402 窗口，回归测试 tools/e2e）
+//   - 模板（base_url/models/映射）→ sched 全量 + clients 失效（base_url
+//     变更需按新地址重建 SDK 客户端）
+//   - 账号 → sched 组级定向 InvalidateGroup（包含关系：full ⊇ 组级 ⊇ 无）
+//   - 组倍率 → 余额倍率快照定向刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）
+//   - key/pricing → 现状（auth 增量 / 内部 reloadPricing，不进 invalidate）
+//
+// 读端永不阻塞：重载在单 goroutine 串行执行；各实体快照原子替换由实体自身
+// 保证（scheduler snapshotStore / Balances atomic.Pointer / Auth RWMutex 换
+// 整体），本包只在变更侧去抖合并。
+package invalidate
+
+import (
+	"context"
+	"fmt"
+	"sync/atomic"
+	"time"
+
+	"go-proxy-mini/pkg/logx"
+)
+
+// Kind 是需要"全量重载"的脏位；纯组级定向不占位（走 State.Groups）。
+type Kind uint8
+
+const (
+	// KindUsers 用户 CRUD（含创建）/余额变更：auth + 余额快照全量 Reload。
+	KindUsers Kind = 1 << iota
+	// KindTemplates 模板（base_url/models/映射）变更：sched 全量 + clients 失效。
+	KindTemplates
+	// KindClients aiclient 工厂失效（模板 base_url / 账号 upstream_key 变更）。
+	KindClients
+	// KindMultipliers 组倍率（price_multiplier）变更：余额倍率快照定向刷新。
+	KindMultipliers
+)
+
+// State 一次到点执行的合并脏集合（同窗口多实体变更并集）。
+// 包含关系：full（KindTemplates 的 sched 全量）⊇ 组级定向 ⊇ 无——模板变更
+// 与账号组变更同窗口时跳过组级重载（reloadAll）。
+type State struct {
+	Kinds  Kind
+	Groups map[int64]struct{} // 组级定向（账号变更的受影响组）
+}
+
+// DefaultWindow 去抖窗口。生效延迟语义：管理面变更在 ≤200ms 窗口到点后执行
+// 一次合并重载（总延迟 = 窗口 + 一次重载时长；评审 M-1/M-2 定稿 ≤200ms 可
+// 接受——新用户 402 窗口回归测试对"建用户 → <0.5s 请求 → 200"做硬断言）。
+const DefaultWindow = 200 * time.Millisecond
+
+// SchedReloader 调度器快照重载（scheduler.Scheduler 实现）。
+type SchedReloader interface {
+	InvalidateAll()
+	InvalidateGroup(groupID int64)
+}
+
+// ClientsReloader aiclient 工厂客户端失效（aiclient.Factory 实现）。
+type ClientsReloader interface {
+	InvalidateAll()
+}
+
+// AuthReloader 鉴权快照全量重载（proxy.Auth 实现）。
+type AuthReloader interface {
+	Reload(ctx context.Context) error
+}
+
+// BalancesReloader 余额/倍率快照（billing.Balances 实现；billing 关闭时 nil，
+// reloadAll 跳过余额路径）。
+type BalancesReloader interface {
+	Reload(ctx context.Context) error
+	ReloadMultipliers(ctx context.Context) error
+}
+
+// Config 装配参数（main 接线）。
+type Config struct {
+	Window   time.Duration    // 去抖窗口（0 → DefaultWindow）
+	Sched    SchedReloader    // 必填
+	Clients  ClientsReloader  // 必填
+	Auth     AuthReloader     // 必填
+	Balances BalancesReloader // billing.enabled=false → nil
+	Log      *logx.Logger     // 可空（nil = 不记日志）
+}
+
+// Debouncer 去抖器（O2 核心）：
+//   - Mark 路径（Users/Templates/Accounts/Multipliers）：零锁零 DB——原子 CAS
+//     合并脏状态 + 非阻塞 channel 唤醒；任何调用方（含 50k 并发 fill）不阻塞。
+//   - 执行路径：单 goroutine 串行（Start 启动），窗口到点消费脏状态执行合并
+//     重载；执行期间新变更 → 完成后立即再执行（后沿语义，评审 C-6）。
+//
+// 同时满足 service.Invalidator 接口（main 装配传给 service.New）。
+type Debouncer struct {
+	cfg      Config
+	newTimer func(time.Duration) <-chan time.Time // 测试注入 fake 时钟（默认 time.NewTimer）
+	state    atomic.Pointer[State]
+	wake     chan struct{} // 空 → 非空置脏唤醒执行 goroutine（cap 1）
+	startOnce atomic.Bool
+}
+
+// New 构造去抖器（reloadAll 目标经 cfg 注入）。
+func New(cfg Config) *Debouncer {
+	if cfg.Window <= 0 {
+		cfg.Window = DefaultWindow
+	}
+	d := &Debouncer{cfg: cfg, wake: make(chan struct{}, 1)}
+	d.newTimer = func(dur time.Duration) <-chan time.Time { return time.NewTimer(dur).C }
+	return d
+}
+
+// mark 合并一次变更进脏状态（零锁零 DB）。CAS 自旋（低频 admin 路径，竞争
+// 可忽略）；首次置脏（empty → non-empty）唤醒执行 goroutine。唤醒丢失无碍：
+// 执行 goroutine 在 flush 后沿复查脏状态，缓冲满 = 已有待消费唤醒。
+func (d *Debouncer) mark(k Kind, gids []int64) {
+	for {
+		old := d.state.Load()
+		next := &State{Kinds: k, Groups: make(map[int64]struct{}, len(gids))}
+		if old != nil {
+			next.Kinds |= old.Kinds
+			for g := range old.Groups {
+				next.Groups[g] = struct{}{}
+			}
+		}
+		for _, g := range gids {
+			next.Groups[g] = struct{}{}
+		}
+		if d.state.CompareAndSwap(old, next) {
+			if old == nil {
+				select {
+				case d.wake <- struct{}{}:
+				default:
+				}
+			}
+			return
+		}
+	}
+}
+
+// Users 用户 CRUD（含创建）/余额变更：auth + 余额快照全量（评审 M-2：新用户
+// 必须即刻进余额快照——去抖窗口内收敛，防 ≤10s 402 窗口；回归测试
+// tools/e2e "建用户 → <0.5s 请求 → 200"）。
+//
+// auth 定向回退规则（评审 I-3）：本轮不做 Auth.UpsertUser 定向刷新，先全量
+// Reload（加载在锁外——Auth.Reload 内部先 LoadKeys/LoadUsers 再整体换快照，
+// 读端 RWMutex 不阻塞）。回退规则：仅当压测复测用户 fill <100/s 且 pprof
+// 显示 auth.Reload 为热点时才新增 UpsertUser 定向路径。
+func (d *Debouncer) Users() { d.mark(KindUsers, nil) }
+
+// Templates 模板（base_url/models/映射）变更：sched 全量 + clients 失效
+// （base_url 变更需按新地址重建 SDK 客户端——评审发现：此前
+// Factory.InvalidateAll 无人调用，模板 base_url 更新后流量仍打旧上游直至
+// 重启）。
+func (d *Debouncer) Templates() { d.mark(KindTemplates|KindClients, nil) }
+
+// Multipliers 组倍率（price_multiplier）变更（含组创建/删除——新组倍率须
+// 即刻进快照，防 ×1 计费窗口）：余额倍率快照定向刷新（小表单查，非全量
+// Reload——EffectiveMultiplier 陈旧 ≤10s 不可接受）。
+func (d *Debouncer) Multipliers() { d.mark(KindMultipliers, nil) }
+
+// Accounts 账号变更（创建/更新/删除/批量）：sched 组级定向重载受影响组
+// （gids；与全量位同窗口时被包含跳过）；keyChanged（upstream_key 变更）→
+// clients 失效。gids 空且 keyChanged=false（无分组账号变更）→ 无任何快照
+// 受影响，直接 no-op（不入脏）。
+func (d *Debouncer) Accounts(gids []int64, keyChanged bool) {
+	if len(gids) == 0 && !keyChanged {
+		return
+	}
+	d.mark(0, gids)
+	if keyChanged {
+		d.mark(KindClients, nil)
+	}
+}
+
+// Name 满足 worker.Worker 契约。
+func (d *Debouncer) Name() string { return "invalidate" }
+
+// Start 启动执行 goroutine（幂等：重复 Start 返回错误；worker 契约）。
+func (d *Debouncer) Start(ctx context.Context) error {
+	if !d.startOnce.CompareAndSwap(false, true) {
+		return fmt.Errorf("invalidate: already started")
+	}
+	go d.loop(ctx)
+	return nil
+}
+
+// Close 无操作：循环随 Start 的 ctx 取消退出（worker 契约：幂等、未 Start 也
+// 安全）。停机不补最后 flush——DB 权威，残留变更随下次启动全量加载。
+func (d *Debouncer) Close(ctx context.Context) error { return nil }
+
+// loop 执行 goroutine（单 goroutine 串行，重载从不互相重叠）：
+// 唤醒（首次置脏）→ 起窗口定时器 → 到点 flush；空唤醒（状态已被消费）跳过。
+func (d *Debouncer) loop(ctx context.Context) {
+	var timerC <-chan time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.wake:
+			if d.state.Load() == nil {
+				continue // 空唤醒（状态已被 flush 消费）
+			}
+			if timerC == nil {
+				// 窗口自首次变更起计时（生效延迟 = 窗口 + 一次重载时长）。
+				timerC = d.newTimer(d.cfg.Window)
+			}
+		case <-timerC:
+			timerC = nil
+			d.flush()
+		}
+	}
+}
+
+// flush 消费脏状态执行一次合并重载；完成后若仍脏（执行期间新变更）→ 立即
+// 再执行（后沿语义，评审 C-6：完成后又脏立即再执行，禁止按固定间隔
+// throttle——固定间隔会与长 reload 重叠放大）。窗口内新变更只并入当前窗口。
+func (d *Debouncer) flush() {
+	st := d.state.Swap(nil)
+	if st == nil {
+		return
+	}
+	d.reloadAll(st)
+	for d.state.Load() != nil {
+		st = d.state.Swap(nil)
+		d.reloadAll(st)
+	}
+}
+
+// reloadAll 按接线矩阵执行一次合并重载（评审 M-1）：
+// 用户 → auth + 余额全量（加载在锁外——Auth.Reload 内部构建后整体换；
+// 余额 Reload 构建后原子换指针）；模板 → sched 全量 + clients；组级 → sched
+// InvalidateGroup 逐个（full 位存在时被包含跳过）；组倍率 → 余额倍率定向
+// 刷新。全部 fail-safe：Warn + 保留旧快照（调度器 ≤30s 同步 /
+// BalanceRefreshInterval ticker 兜底收敛）。
+func (d *Debouncer) reloadAll(st *State) {
+	if st.Kinds&KindUsers != 0 {
+		if err := d.cfg.Auth.Reload(context.Background()); err != nil && d.cfg.Log != nil {
+			d.cfg.Log.Warn("auth reload failed", logx.Error(err))
+		}
+		if d.cfg.Balances != nil {
+			_ = d.cfg.Balances.Reload(context.Background()) // fail-safe：内部 Warn + 保留旧快照
+		}
+	}
+	if st.Kinds&KindTemplates != 0 {
+		d.cfg.Sched.InvalidateAll()
+	}
+	if len(st.Groups) > 0 && st.Kinds&KindTemplates == 0 {
+		for gid := range st.Groups {
+			d.cfg.Sched.InvalidateGroup(gid)
+		}
+	}
+	if st.Kinds&(KindTemplates|KindClients) != 0 {
+		d.cfg.Clients.InvalidateAll()
+	}
+	if st.Kinds&KindMultipliers != 0 && d.cfg.Balances != nil {
+		_ = d.cfg.Balances.ReloadMultipliers(context.Background()) // fail-safe：内部 Warn + 保留旧快照
+	}
+}

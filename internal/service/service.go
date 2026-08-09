@@ -159,6 +159,36 @@ type StatStore interface {
 	ScanStats(ctx context.Context, q repository.StatQuery) ([]*domain.StatBucket, error)
 }
 
+// Invalidator 管理面变更的去抖定向失效回调（O2 接线矩阵，评审 M-1）：
+// service 各 CRUD 在变更落库成功后调用对应方法；实现 = invalidate.Debouncer
+// （去抖窗口合并 + 单 goroutine 串行执行 + 按矩阵定向重载，main 装配）。
+// key/pricing 变更不走此接口（auth 增量 Upsert/Delete / 内部 reloadPricing，
+// 已轻量）。Mark 路径零锁零 DB，不阻塞任何调用方。
+type Invalidator interface {
+	// Users 用户 CRUD（含创建）与用户余额变更（含 Redeem）：auth + 余额快照
+	// 全量 Reload（去抖窗口内合并；新用户必须即刻进余额快照——评审 M-2，
+	// 防 ≤10s 402 窗口，回归测试 tools/e2e）。
+	Users()
+	// Templates 模板（base_url/models/映射）变更：sched 全量 + clients 失效
+	// （base_url 变更需按新地址重建 SDK 客户端）。
+	Templates()
+	// Accounts 账号变更（创建/更新/删除/批量）：sched 组级定向重载受影响组
+	// （gids）；keyChanged（upstream_key 变更）→ clients 失效。
+	Accounts(gids []int64, keyChanged bool)
+	// Multipliers 组倍率（price_multiplier）变更（含组创建/删除——新组倍率
+	// 须即刻进快照）：余额倍率快照定向刷新（EffectiveMultiplier 陈旧 ≤10s
+	// 不可接受）。
+	Multipliers()
+}
+
+// NopInvalidator 无效化 no-op（测试与无关路径）。
+type NopInvalidator struct{}
+
+func (NopInvalidator) Users()                 {}
+func (NopInvalidator) Templates()             {}
+func (NopInvalidator) Accounts([]int64, bool) {}
+func (NopInvalidator) Multipliers()           {}
+
 // RuleReloader 由 rule.RuleEngine 实现：规则 CRUD 后全量重载（invalidate 钩子）。
 // 独立于通用 invalidate——规则重载会重置窗口计数，不能随任意资源变更触发。
 type RuleReloader interface {
@@ -179,7 +209,7 @@ type KeyRegistrar interface {
 type Service struct {
 	store      Store
 	sched      RuntimeProvider
-	invalidate func() // 调度快照失效（全量重载）
+	inv        Invalidator // 管理面变更去抖失效（O2 接线矩阵；nil = 不失效）
 	ruleReload RuleReloader
 	keys       KeyRegistrar
 	// settings 设置全量内存快照（默认值 + DB 覆盖）：公开读路径（注册等）
@@ -196,8 +226,8 @@ type Service struct {
 	log          *logx.Logger
 }
 
-func New(store Store, sched RuntimeProvider, invalidate func(), ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
-	s := &Service{store: store, sched: sched, invalidate: invalidate, ruleReload: ruleReload, keys: keys, log: log}
+func New(store Store, sched RuntimeProvider, invalidate Invalidator, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
+	s := &Service{store: store, sched: sched, inv: invalidate, ruleReload: ruleReload, keys: keys, log: log}
 	s.reloadSettings(context.Background())
 	s.reloadPricing(context.Background())
 	return s

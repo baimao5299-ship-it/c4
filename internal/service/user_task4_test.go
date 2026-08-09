@@ -13,7 +13,7 @@ import (
 func newTask4Svc() (*Service, *fakeStore, *fakeKeyRegistrar) {
 	fs := newFakeStore()
 	keys := &fakeKeyRegistrar{}
-	svc := &Service{store: fs, invalidate: func() {}, keys: keys, log: nil}
+	svc := &Service{store: fs, inv: &invRecorder{}, keys: keys, log: nil}
 	return svc, fs, keys
 }
 
@@ -188,8 +188,8 @@ func TestSetGroupAssignments(t *testing.T) {
 // 校验；创建后 invalidate。
 func TestCreateUserAdmin(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 
 	u, err := svc.CreateUser(ctx, "admin@example.com", "s3cret-pass",
@@ -198,7 +198,7 @@ func TestCreateUserAdmin(t *testing.T) {
 	require.Equal(t, domain.RolePlatformAdmin, u.Role)
 	require.Equal(t, 4, u.MaxConcurrency)
 	require.Equal(t, int64(100), u.Balance)
-	require.Greater(t, invalidated, 0, "创建用户必须 invalidate（Auth 状态快照）")
+	require.Greater(t, rec.total(), 0, "创建用户必须 invalidate（Auth 状态快照）")
 
 	// email 重复 → 409
 	_, err = svc.CreateUser(ctx, "admin@example.com", "x", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)

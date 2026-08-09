@@ -18,7 +18,7 @@ func intPtr(v int) *int { return &v }
 
 func TestUserMultiplierValidation(t *testing.T) {
 	fs := newFakeStore()
-	svc := &Service{store: fs, invalidate: func() {}, log: nil}
+	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
 	// 创建：nil / 0 / 100000 合法（email 唯一，逐次不同）
@@ -53,7 +53,7 @@ func TestUserMultiplierValidation(t *testing.T) {
 
 func TestGroupMultiplierValidation(t *testing.T) {
 	fs := newFakeStore()
-	svc := &Service{store: fs, invalidate: func() {}, log: nil}
+	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
 	// 创建：0 = 未指定（fake 落 10000）；20000 显式
@@ -76,7 +76,7 @@ func TestGroupMultiplierValidation(t *testing.T) {
 
 func TestServiceTierPolicySettingValidation(t *testing.T) {
 	fs := newFakeStore()
-	svc := &Service{store: fs, invalidate: func() {}, log: nil}
+	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
 	// 三值均可

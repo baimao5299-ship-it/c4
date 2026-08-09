@@ -16,7 +16,7 @@ import (
 // 错误消息含冲突详情（与真实 repo 的 repository.ErrConflict 包装同构）；改名撞
 // 已有 name（更新路径）同样映射。
 func TestCreateTemplateNameConflict(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
 	_, err := svc.CreateTemplate(ctx, &domain.Template{
@@ -46,7 +46,7 @@ func TestCreateTemplateNameConflict(t *testing.T) {
 // TestCreateGroupNameConflict 重复 name 创建分组 → service.ErrConflict（409 语义），
 // 错误消息含冲突详情。
 func TestCreateGroupNameConflict(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
 	_, err := svc.CreateGroup(ctx, "dup-g", domain.GroupVisibilityPublic, 0)

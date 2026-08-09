@@ -81,6 +81,28 @@ func (b *Balances) Reload(ctx context.Context) error {
 	return nil
 }
 
+// ReloadMultipliers 定向刷新倍率快照（O2 接线矩阵：组倍率变更 ≠ 余额变更，
+// 不走全量 Reload——避免 O(n) 用户余额重载）。仅查询组倍率小表（LoadGroup
+// Multipliers）；用户专属倍率沿用当前快照（用户倍率只随用户 CRUD 的全量
+// Reload 更新，与组倍率变更互不覆盖——两个变更源更新倍率 map 的不同分区）。
+// 失败 fail-safe：Warn + 保留旧倍率快照（组倍率错误 ≤ BalanceRefreshInterval
+// ticker 兜底收敛）。
+func (b *Balances) ReloadMultipliers(ctx context.Context) error {
+	gm, err := b.loader.LoadGroupMultipliers(ctx)
+	if err != nil {
+		if b.log != nil {
+			b.log.Warn("group multiplier snapshot reload failed", logx.Error(err))
+		}
+		return err
+	}
+	var um map[int64]int
+	if m := b.mult.Load(); m != nil {
+		um = m.users
+	}
+	b.mult.Store(&multipliers{users: um, groups: gm})
+	return nil
+}
+
 // Set 扣费后定向刷新单用户余额（DeductAndLog 成功后调用）：已存在条目原地
 // Store（O(1) 零拷贝——扣费频率 = flush 节奏）。缺失条目忽略：仅限已存在用户
 // 的余额变更（PUT/Redeem/flush 回写，预检时已在快照内恒命中）；新用户创建
