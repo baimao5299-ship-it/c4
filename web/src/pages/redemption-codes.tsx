@@ -163,7 +163,8 @@ export default function RedemptionCodes() {
   const [genForm, setGenForm] = useState<GenForm>(emptyGenForm())
   const [genErr, setGenErr] = useState<string | null>(null)
   const [generated, setGenerated] = useState<RedemptionCode[] | null>(null)
-  const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [copiedId, setCopiedId] = useState<number | null>(null) // 列表行内单码复制反馈
+  const [copiedAll, setCopiedAll] = useState(false) // 生成结果「复制全部」反馈
   const generate = useMutation({
     mutationFn: (b: GenerateRequest) => api.generateRedemptionCodes(b),
     onSuccess: res => {
@@ -176,12 +177,21 @@ export default function RedemptionCodes() {
     setGenErr(null)
     setGenerated(null)
     setCopiedId(null)
+    setCopiedAll(false)
     setGenOpen(true)
   }
   const copyCode = async (c: RedemptionCode) => {
     if (await copyText(c.Code)) {
       setCopiedId(c.ID)
       setTimeout(() => setCopiedId(null), 2000)
+    }
+  }
+  // 复制全部：整段多行文本（每码一行 + 换行）一次写入剪贴板。
+  const copyAllCodes = async () => {
+    if (!generated) return
+    if (await copyText(generated.map(c => c.Code).join('\n'))) {
+      setCopiedAll(true)
+      setTimeout(() => setCopiedAll(false), 2000)
     }
   }
   const updateGenForm = (patch: Partial<GenForm>) => {
@@ -385,18 +395,22 @@ export default function RedemptionCodes() {
           </DialogHeader>
           {generated ? (
             <>
-              <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border p-2">
-                {generated.map(c => (
-                  <div key={c.ID} className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
-                    <code className="flex-1 font-mono text-sm select-all">{c.Code}</code>
-                    <Button size="sm" variant="outline" className="h-7 shrink-0" onClick={() => copyCode(c)}>
-                      {copiedId === c.ID ? <Check /> : <Copy />}
-                      {copiedId === c.ID ? t('keybox.copied') : t('keybox.copy')}
-                    </Button>
-                  </div>
-                ))}
+              {generated.length > 1 && (
+                <p className="text-sm text-muted-foreground">
+                  {t('redemptions.generatedCount', { count: generated.length })}
+                </p>
+              )}
+              {/* 单框展示所有码（每行一个）：点击全选便于手动复制；超出 max-h 滚动 */}
+              <div className="max-h-48 overflow-auto rounded-lg border bg-muted/40 p-3">
+                <code className="select-all whitespace-pre font-mono text-sm leading-6">
+                  {generated.map(c => c.Code).join('\n')}
+                </code>
               </div>
-              <DialogFooter>
+              <DialogFooter className="sm:justify-between">
+                <Button variant="outline" onClick={copyAllCodes}>
+                  {copiedAll ? <Check /> : <Copy />}
+                  {copiedAll ? t('redemptions.copiedAll') : t('redemptions.copyAll')}
+                </Button>
                 <Button onClick={() => setGenOpen(false)}>{t('common.done')}</Button>
               </DialogFooter>
             </>
