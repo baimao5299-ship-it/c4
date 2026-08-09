@@ -10,6 +10,7 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
 )
@@ -312,6 +313,12 @@ func (r *Repository) GrantGroup(ctx context.Context, groupID, userID int64) erro
 	return r.Assignments.Grant(ctx, groupID, userID)
 }
 
+// SetAssignmentMultiplier 设置/清除该用户在该组的专属价格倍率（T3.5 修正：
+// 按组；m = nil → 清除为未设置 → 回退组倍率）。
+func (r *Repository) SetAssignmentMultiplier(ctx context.Context, groupID, userID int64, m *int) error {
+	return r.Assignments.SetMultiplier(ctx, groupID, userID, m)
+}
+
 func (r *Repository) RevokeGroup(ctx context.Context, groupID, userID int64) error {
 	return r.Assignments.Revoke(ctx, groupID, userID)
 }
@@ -470,14 +477,20 @@ func (r *Repository) DropUsageLogPartitionsBefore(ctx context.Context, cutoff ti
 	return r.Partitions.DropUsageLogPartitionsBefore(ctx, cutoff)
 }
 
-// LoadBalances 全量余额 + 用户专属倍率快照（Phase 5 计费余额预检数据源）。
-func (r *Repository) LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error) {
+// LoadBalances 全量余额快照（Phase 5 计费余额预检数据源）。
+func (r *Repository) LoadBalances(ctx context.Context) (map[int64]int64, error) {
 	return r.Users.LoadBalances(ctx)
 }
 
 // LoadGroupMultipliers 全量组倍率快照（Phase 5 T3.5 价格倍率数据源）。
 func (r *Repository) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
 	return r.Groups.LoadGroupMultipliers(ctx)
+}
+
+// LoadAssignmentMultipliers 全量用户-组专属倍率快照（T3.5 修正：用户专属倍率
+// 按组挂载——billing.Balances.Reload/ReloadMultipliers 数据源）。
+func (r *Repository) LoadAssignmentMultipliers(ctx context.Context) (map[billing.AssignmentKey]int, error) {
+	return r.Groups.LoadAssignmentMultipliers(ctx)
 }
 
 func (r *Repository) UpdateUserMaxConcurrency(ctx context.Context, userID int64, value int) error {

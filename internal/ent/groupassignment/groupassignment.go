@@ -18,6 +18,8 @@ const (
 	FieldGroupID = "group_id"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
+	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
+	FieldPriceMultiplier = "price_multiplier"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
@@ -47,6 +49,7 @@ var Columns = []string{
 	FieldID,
 	FieldGroupID,
 	FieldUserID,
+	FieldPriceMultiplier,
 	FieldCreatedAt,
 }
 
@@ -81,6 +84,11 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 // ByUserID orders the results by the user_id field.
 func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUserID, opts...).ToFunc()
+}
+
+// ByPriceMultiplier orders the results by the price_multiplier field.
+func ByPriceMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceMultiplier, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

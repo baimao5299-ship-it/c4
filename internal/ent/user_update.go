@@ -129,33 +129,6 @@ func (_u *UserUpdate) AddBalance(v int64) *UserUpdate {
 	return _u
 }
 
-// SetPriceMultiplier sets the "price_multiplier" field.
-func (_u *UserUpdate) SetPriceMultiplier(v int) *UserUpdate {
-	_u.mutation.ResetPriceMultiplier()
-	_u.mutation.SetPriceMultiplier(v)
-	return _u
-}
-
-// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
-func (_u *UserUpdate) SetNillablePriceMultiplier(v *int) *UserUpdate {
-	if v != nil {
-		_u.SetPriceMultiplier(*v)
-	}
-	return _u
-}
-
-// AddPriceMultiplier adds value to the "price_multiplier" field.
-func (_u *UserUpdate) AddPriceMultiplier(v int) *UserUpdate {
-	_u.mutation.AddPriceMultiplier(v)
-	return _u
-}
-
-// ClearPriceMultiplier clears the value of the "price_multiplier" field.
-func (_u *UserUpdate) ClearPriceMultiplier() *UserUpdate {
-	_u.mutation.ClearPriceMultiplier()
-	return _u
-}
-
 // SetCreatedAt sets the "created_at" field.
 func (_u *UserUpdate) SetCreatedAt(v time.Time) *UserUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -375,15 +348,6 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.PriceMultiplier(); ok {
-		_spec.SetField(user.FieldPriceMultiplier, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
-		_spec.AddField(user.FieldPriceMultiplier, field.TypeInt, value)
-	}
-	if _u.mutation.PriceMultiplierCleared() {
-		_spec.ClearField(user.FieldPriceMultiplier, field.TypeInt)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)
@@ -644,33 +608,6 @@ func (_u *UserUpdateOne) AddBalance(v int64) *UserUpdateOne {
 	return _u
 }
 
-// SetPriceMultiplier sets the "price_multiplier" field.
-func (_u *UserUpdateOne) SetPriceMultiplier(v int) *UserUpdateOne {
-	_u.mutation.ResetPriceMultiplier()
-	_u.mutation.SetPriceMultiplier(v)
-	return _u
-}
-
-// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
-func (_u *UserUpdateOne) SetNillablePriceMultiplier(v *int) *UserUpdateOne {
-	if v != nil {
-		_u.SetPriceMultiplier(*v)
-	}
-	return _u
-}
-
-// AddPriceMultiplier adds value to the "price_multiplier" field.
-func (_u *UserUpdateOne) AddPriceMultiplier(v int) *UserUpdateOne {
-	_u.mutation.AddPriceMultiplier(v)
-	return _u
-}
-
-// ClearPriceMultiplier clears the value of the "price_multiplier" field.
-func (_u *UserUpdateOne) ClearPriceMultiplier() *UserUpdateOne {
-	_u.mutation.ClearPriceMultiplier()
-	return _u
-}
-
 // SetCreatedAt sets the "created_at" field.
 func (_u *UserUpdateOne) SetCreatedAt(v time.Time) *UserUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -920,15 +857,6 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.PriceMultiplier(); ok {
-		_spec.SetField(user.FieldPriceMultiplier, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
-		_spec.AddField(user.FieldPriceMultiplier, field.TypeInt, value)
-	}
-	if _u.mutation.PriceMultiplierCleared() {
-		_spec.ClearField(user.FieldPriceMultiplier, field.TypeInt)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)

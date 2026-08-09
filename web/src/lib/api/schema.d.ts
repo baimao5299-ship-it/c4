@@ -811,9 +811,17 @@ export interface components {
         GroupAssignmentsBody: {
             /** @description 替换语义：完整授予列表（未列出即撤销；空数组 = 清空） */
             user_ids: number[];
+            /** @description 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值 */
+            multipliers?: {
+                [key: string]: number | null;
+            };
         };
         GroupAssignmentsResponse: {
             user_ids: number[];
+            /** @description 该组当前各用户的专属价格倍率（正常值；null/缺省 = 未设置 → 用组倍率） */
+            multipliers?: {
+                [key: string]: number | null;
+            };
         };
         /** @enum {string} */
         KeyStatus: "active" | "disabled";
@@ -887,8 +895,6 @@ export interface components {
              * @description 余额 USD（浮点；内部存储毫分——1 USD = 100
              */
             Balance?: number;
-            /** @description 用户专属价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）；null = 未设置（用组倍率） */
-            PriceMultiplier?: number | null;
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
@@ -918,8 +924,6 @@ export interface components {
              * @description 余额 USD（浮点，≥ 0；1 USD = 100
              */
             balance?: number;
-            /** @description 用户专属价格倍率（万分数，0 = 免费，10000 = ×1）；null/缺省 = 未设置（用组倍率） */
-            price_multiplier?: number | null;
         };
         UserUpdate: {
             role?: components["schemas"]["UserRole"];
@@ -930,8 +934,6 @@ export interface components {
              * @description 余额 USD（浮点，≥ 0；1 USD = 100
              */
             balance?: number;
-            /** @description 用户专属价格倍率（万分数，0 = 免费）；null = 清除为未设置（回退组倍率）；缺省 = 不变 */
-            price_multiplier?: number | null;
         };
         UserListResponse: {
             /** Format: int64 */
@@ -953,8 +955,11 @@ export interface components {
         GroupCreate: {
             name: string;
             visibility?: components["schemas"]["GroupVisibility"];
-            /** @description 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000）；缺省/null = 不设置（POST 落库组默认 10000；PUT 保持原值不变）。显式 0（免费组）请经 PUT 设置——POST 路径 0 视为未指定 */
-            price_multiplier?: number;
+            /**
+             * Format: double
+             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
+             */
+            price_multiplier?: number | null;
         };
         RuleCreate: {
             name: string;
@@ -1005,7 +1010,10 @@ export interface components {
             ID?: number;
             Name?: string;
             Visibility?: components["schemas"]["GroupVisibility"];
-            /** @description 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10） */
+            /**
+             * Format: double
+             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
+             */
             PriceMultiplier?: number;
             /** Format: date-time */
             CreatedAt?: string;
@@ -1194,13 +1202,13 @@ export interface components {
         Pricing: {
             Model: string;
             /**
-             * Format: int64
-             * @description 毫分/1M tokens（1 USD = 100
+             * Format: double
+             * @description USD/1M tokens（API 边界换算；内部存储毫分——1 USD = 100
              */
             PromptPricePerMillion: number;
             /**
-             * Format: int64
-             * @description 毫分/1M tokens
+             * Format: double
+             * @description USD/1M tokens（API 边界换算；内部存储毫分——1 USD = 100
              */
             CompletionPricePerMillion: number;
             /**
@@ -1211,80 +1219,80 @@ export interface components {
             /** Format: int64 */
             MaxOutputTokens?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 缓存读取价（litellm cache_read_input_token_cost 换算）；nil = 无缓存价
              */
             CacheReadPricePerMillion?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 缓存写入价（litellm cache_creation_input_token_cost 换算）；nil = 无缓存价
              */
             CacheCreationPricePerMillion?: number | null;
             /**
-             * Format: int64
-             * @description service_tier=priority 单价替换档（毫分/1M tokens）；nil = 无该档价，计费回退基础价
+             * Format: double
+             * @description service_tier=priority 单价替换档（OpenAI 专属：gpt-5 系列 priority 价；USD/1M tokens，内部存储毫分——1 USD = 100
              */
             PriorityPromptPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             PriorityCompletionPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             PriorityCacheReadPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             PriorityCacheCreationPricePerMillion?: number | null;
             /**
-             * Format: int64
-             * @description service_tier=flex 单价替换档（毫分/1M tokens）；nil = 无该档价，计费回退基础价
+             * Format: double
+             * @description service_tier=flex 单价替换档（OpenAI 专属：gpt-5.6-sol flex 价；USD/1M tokens，内部存储毫分——1 USD = 100
              */
             FlexPromptPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             FlexCompletionPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             FlexCacheReadPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             FlexCacheCreationPricePerMillion?: number | null;
+            /**
+             * Format: double
+             * @description Anthropic 专属（claude 系列 Fast Mode 整单倍率，正常值 2.0 = ×2.0；fast 挡计费 = 基础价 × 此倍率；API 边界换算）；nil = 无倍率
+             */
+            FastMultiplier?: number | null;
             /**
              * Format: int64
              * @description 上下文分段阈值（tokens）；nil = 无分段
              */
             AboveThreshold?: number | null;
             /**
-             * Format: int64
-             * @description 超阈值分段价（基础组，毫分/1M tokens）；nil = 该分量不拆段
+             * Format: double
+             * @description 超阈值分段价（基础组，USD/1M tokens（API 边界换算；内部存储毫分——1 USD = 100
              */
             AbovePromptPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AboveCompletionPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AboveCacheReadPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AboveCacheCreationPricePerMillion?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 超阈值分段价（priority 组，azure 形态）；nil = 该档回退基础 above 组
              */
             AbovePriorityPromptPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AbovePriorityCompletionPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AbovePriorityCacheReadPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AbovePriorityCacheCreationPricePerMillion?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 超阈值分段价（flex 组，gpt-5.6-sol 形态）；nil = 该档回退基础 above 组
              */
             AboveFlexPromptPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AboveFlexCompletionPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AboveFlexCacheReadPricePerMillion?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             AboveFlexCacheCreationPricePerMillion?: number | null;
-            /**
-             * Format: int64
-             * @description Anthropic Fast Mode 整单倍率（万分数，20000 = ×2.0）；nil = 无倍率
-             */
-            FastMultiplier?: number | null;
             /** @description litellm_provider（litellm 行才有；manual 行 nil） */
             Provider?: string | null;
             /** @description litellm mode（chat/completion/embedding 等） */
@@ -1299,87 +1307,87 @@ export interface components {
         };
         PricingUpsert: {
             /**
-             * Format: int64
-             * @description 毫分/1M tokens；≥ 0
+             * Format: double
+             * @description USD/1M tokens（API 边界换算；内部存储毫分——1 USD = 100
              */
             prompt_price_per_million: number;
-            /** Format: int64 */
+            /** Format: double */
             completion_price_per_million: number;
             /**
-             * Format: int64
-             * @description 缓存读取价（毫分/1M tokens）；缺省 = 不设缓存价（落库 NULL）
+             * Format: double
+             * @description 缓存读取价（USD/1M tokens；内部存储毫分——1 USD = 100
              */
             cache_read_price_per_million?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 缓存写入价；缺省 = 不设缓存价（落库 NULL）
              */
             cache_creation_price_per_million?: number | null;
             /**
-             * Format: int64
-             * @description service_tier=priority 单价替换档（毫分/1M tokens）；缺省/null = 不设（落库 NULL，计费回退基础价）
+             * Format: double
+             * @description service_tier=priority 单价替换档（OpenAI 专属：gpt-5 系列 priority 价；USD/1M tokens，内部存储毫分——1 USD = 100
              */
             priority_prompt_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             priority_completion_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             priority_cache_read_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             priority_cache_creation_price_per_million?: number | null;
             /**
-             * Format: int64
-             * @description service_tier=flex 单价替换档（毫分/1M tokens）；缺省/null = 不设（落库 NULL，计费回退基础价）
+             * Format: double
+             * @description service_tier=flex 单价替换档（OpenAI 专属：gpt-5.6-sol flex 价；USD/1M tokens，内部存储毫分——1 USD = 100
              */
             flex_prompt_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             flex_completion_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             flex_cache_read_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             flex_cache_creation_price_per_million?: number | null;
+            /**
+             * Format: double
+             * @description Anthropic 专属（claude 系列 Fast Mode 整单倍率，正常值 0 < m ≤ 10，2.0 = ×2.0；fast 挡计费 = 基础价 × 此倍率；API 边界换算）；缺省/null = 不设
+             */
+            fast_multiplier?: number | null;
             /**
              * Format: int64
              * @description 上下文分段阈值（tokens）；缺省/null = 不设（无分段）
              */
             above_threshold?: number | null;
             /**
-             * Format: int64
-             * @description 超阈值分段价（基础组，毫分/1M tokens）；缺省/null = 该分量不拆段
+             * Format: double
+             * @description 超阈值分段价（基础组，USD/1M tokens（API 边界换算；内部存储毫分——1 USD = 100
              */
             above_prompt_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_completion_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_cache_read_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_cache_creation_price_per_million?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 超阈值分段价（priority 组，azure 形态）；缺省/null = 该档回退基础 above 组
              */
             above_priority_prompt_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_priority_completion_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_priority_cache_read_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_priority_cache_creation_price_per_million?: number | null;
             /**
-             * Format: int64
+             * Format: double
              * @description 超阈值分段价（flex 组，gpt-5.6-sol 形态）；缺省/null = 该档回退基础 above 组
              */
             above_flex_prompt_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_flex_completion_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_flex_cache_read_price_per_million?: number | null;
-            /** Format: int64 */
+            /** Format: double */
             above_flex_cache_creation_price_per_million?: number | null;
-            /**
-             * Format: int64
-             * @description Anthropic Fast Mode 整单倍率（万分数，0 < m ≤ 100000，20000 = ×2.0）；缺省/null = 不设
-             */
-            fast_multiplier?: number | null;
         };
         PricingListResponse: {
             /** Format: int64 */

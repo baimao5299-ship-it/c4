@@ -215,7 +215,9 @@ type Group struct {
 	Name       string
 	Visibility GroupVisibility
 	// PriceMultiplier 万分数（T3.5 价格倍率）：组默认 10000 = ×1；0 = 免费。
-	// 写路径语义：Create 0 = 未指定（走 DB 默认）；Update 恒写入（PUT 全量替换）。
+	// 写路径语义：Create 缺省（nil，service 归一为 10000）恒写入；Update 恒写入
+	// （PUT 全量替换）。API 边界（handler/convert.go）与正常值 float64 换算
+	// （1.5 ↔ 15000）。
 	PriceMultiplier int
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -225,6 +227,8 @@ type Group struct {
 // DefaultCost(10)（与 sub2api 同参数，存量 hash 可迁移验证）。
 // Balance 最小单位（毫分；1 USD = 100,000 毫分，Phase 5 计费统一单位，
 // 管理面 API 展示/输入换算 USD）。
+// 价格倍率按组（T3.5 修正）：挂在 group_assignment 上（GroupAssignment.
+// PriceMultiplier），用户不同组可有不同倍率——User 无倍率字段。
 type User struct {
 	ID             int64
 	Email          string
@@ -233,11 +237,8 @@ type User struct {
 	Status         UserStatus
 	MaxConcurrency int
 	Balance        int64
-	// PriceMultiplier 万分数（T3.5 价格倍率）；nil = 未设置 → 用组倍率（用户
-	// 覆盖组语义；0 = 免费）。Update 路径 nil = 清除为未设置（ClearPriceMultiplier）。
-	PriceMultiplier *int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Key 客户端 API key（独立表，重建 group 内嵌 key 语义）。
@@ -260,11 +261,14 @@ type Key struct {
 func (k *Key) HasQuota() bool { return k.Quota > 0 }
 
 // GroupAssignment private 组的授予记录（用户 ↔ 组多对多）。
+// PriceMultiplier 该用户在该组的专属价格倍率（万分数，T3.5 修正：按组——
+// 用户在不同组可有不同倍率）；nil = 未设置 → 用组倍率；0 = 免费。
 type GroupAssignment struct {
-	ID        int64
-	GroupID   int64
-	UserID    int64
-	CreatedAt time.Time
+	ID              int64
+	GroupID         int64
+	UserID          int64
+	PriceMultiplier *int
+	CreatedAt       time.Time
 }
 
 // Setting 类型化配置（key/type/value；signup_enabled 注册开关等）。

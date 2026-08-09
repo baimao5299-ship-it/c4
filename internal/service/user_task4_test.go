@@ -146,7 +146,7 @@ func TestSetGroupAssignments(t *testing.T) {
 	require.NoError(t, err)
 
 	// 授予两人 → 列表一致
-	applied, err := svc.SetGroupAssignments(ctx, g.ID, []int64{u1.ID, u2.ID})
+	applied, _, err := svc.SetGroupAssignments(ctx, g.ID, []int64{u1.ID, u2.ID}, nil)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []int64{u1.ID, u2.ID}, applied)
 	got, err := fs.ListAssignmentsByGroup(ctx, g.ID)
@@ -154,7 +154,7 @@ func TestSetGroupAssignments(t *testing.T) {
 	require.Len(t, got, 2)
 
 	// 替换为只留 u1（u2 撤销）
-	applied, err = svc.SetGroupAssignments(ctx, g.ID, []int64{u1.ID})
+	applied, _, err = svc.SetGroupAssignments(ctx, g.ID, []int64{u1.ID}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []int64{u1.ID}, applied)
 	got, err = fs.ListAssignmentsByGroup(ctx, g.ID)
@@ -163,7 +163,7 @@ func TestSetGroupAssignments(t *testing.T) {
 	require.Equal(t, u1.ID, got[0].UserID)
 
 	// 清空
-	applied, err = svc.SetGroupAssignments(ctx, g.ID, nil)
+	applied, _, err = svc.SetGroupAssignments(ctx, g.ID, nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, applied)
 	got, err = fs.ListAssignmentsByGroup(ctx, g.ID)
@@ -171,16 +171,16 @@ func TestSetGroupAssignments(t *testing.T) {
 	require.Empty(t, got)
 
 	// 校验：组缺失 → 404；用户缺失 → 404；重复 → 400；超长 → 400
-	_, err = svc.SetGroupAssignments(ctx, 99999, []int64{u1.ID})
+	_, _, err = svc.SetGroupAssignments(ctx, 99999, []int64{u1.ID}, nil)
 	require.ErrorIs(t, err, ErrNotFound)
-	_, err = svc.SetGroupAssignments(ctx, g.ID, []int64{99999})
+	_, _, err = svc.SetGroupAssignments(ctx, g.ID, []int64{99999}, nil)
 	require.ErrorIs(t, err, ErrNotFound)
-	_, err = svc.SetGroupAssignments(ctx, g.ID, []int64{u1.ID, u1.ID})
+	_, _, err = svc.SetGroupAssignments(ctx, g.ID, []int64{u1.ID, u1.ID}, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.SetGroupAssignments(ctx, g.ID, []int64{0})
+	_, _, err = svc.SetGroupAssignments(ctx, g.ID, []int64{0}, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
 	big := make([]int64, 101)
-	_, err = svc.SetGroupAssignments(ctx, g.ID, big)
+	_, _, err = svc.SetGroupAssignments(ctx, g.ID, big, nil)
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
@@ -193,7 +193,7 @@ func TestCreateUserAdmin(t *testing.T) {
 	ctx := context.Background()
 
 	u, err := svc.CreateUser(ctx, "admin@example.com", "s3cret-pass",
-		domain.RolePlatformAdmin, domain.UserStatusActive, 4, 100, nil)
+		domain.RolePlatformAdmin, domain.UserStatusActive, 4, 100)
 	require.NoError(t, err)
 	require.Equal(t, domain.RolePlatformAdmin, u.Role)
 	require.Equal(t, 4, u.MaxConcurrency)
@@ -201,18 +201,18 @@ func TestCreateUserAdmin(t *testing.T) {
 	require.Greater(t, rec.total(), 0, "创建用户必须 invalidate（Auth 状态快照）")
 
 	// email 重复 → 409
-	_, err = svc.CreateUser(ctx, "admin@example.com", "x", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)
+	_, err = svc.CreateUser(ctx, "admin@example.com", "x", domain.RoleUser, domain.UserStatusActive, 0, 0)
 	require.ErrorIs(t, err, ErrConflict)
 
 	// 非法输入
-	_, err = svc.CreateUser(ctx, "bad", "x", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)
+	_, err = svc.CreateUser(ctx, "bad", "x", domain.RoleUser, domain.UserStatusActive, 0, 0)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "", domain.RoleUser, domain.UserStatusActive, 0, 0, nil)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "", domain.RoleUser, domain.UserStatusActive, 0, 0)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.Role("bogus"), domain.UserStatusActive, 0, 0, nil)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.Role("bogus"), domain.UserStatusActive, 0, 0)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatus("bogus"), 0, 0, nil)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatus("bogus"), 0, 0)
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatusActive, -1, 0, nil)
+	_, err = svc.CreateUser(ctx, "ok@example.com", "short", domain.RoleUser, domain.UserStatusActive, -1, 0)
 	require.ErrorIs(t, err, ErrInvalidInput)
 }

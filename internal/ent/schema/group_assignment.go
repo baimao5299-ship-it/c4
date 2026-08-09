@@ -17,6 +17,10 @@ func (GroupAssignment) Fields() []ent.Field {
 		field.Int64("id"),
 		field.Int64("group_id"),
 		field.Int64("user_id"),
+		// 用户在该组的专属价格倍率（万分数，T3.5 修正：按组——用户在不同组
+		// 可有不同倍率）；nil = 未设置 → 用组倍率（区分"设了 ×1"与"未设置"）。
+		// 0 = 免费；上限 100000 = ×10。
+		field.Int("price_multiplier").Optional().Nillable(),
 		field.Time("created_at").Default(time.Now),
 	}
 }

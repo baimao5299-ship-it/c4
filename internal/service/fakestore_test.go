@@ -37,6 +37,7 @@ type fakeStore struct {
 	logs      []*domain.UsageLog
 	stats     []*domain.StatBucket
 	assign    map[int64][]int64 // groupID → 授予 user_id 列表（group_assignments 模拟）
+	assignMult map[[2]int64]*int // (groupID, userID) → 专属价格倍率（nil = 未设置；T3.5 按组）
 	codes     map[int64]*domain.RedemptionCode
 	uses      map[int64]*domain.RedemptionUse
 	temps     []*fakeTempRow
@@ -75,7 +76,8 @@ func newFakeStore() *fakeStore {
 		groups: make(map[int64]*domain.Group), accGroups: make(map[int64][]int64),
 		keys: make(map[int64]*domain.Key), users: make(map[int64]*domain.User),
 		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule),
-		assign: make(map[int64][]int64), codes: make(map[int64]*domain.RedemptionCode),
+		assign: make(map[int64][]int64), assignMult: make(map[[2]int64]*int),
+		codes: make(map[int64]*domain.RedemptionCode),
 		uses: make(map[int64]*domain.RedemptionUse), pricings: make(map[string]*domain.Pricing),
 		nextID: 1,
 	}
@@ -215,9 +217,6 @@ func (f *fakeStore) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	}
 	g.ID = f.nextID
 	f.nextID++
-	if g.PriceMultiplier == 0 {
-		g.PriceMultiplier = 10000 // 与真实 repo 同语义：0 = 未指定 → DB 默认 ×1
-	}
 	c := *g
 	f.groups[g.ID] = &c
 	return g, nil
@@ -605,7 +604,6 @@ func (f *fakeStore) UpdateUser(ctx context.Context, u *domain.User) (*domain.Use
 	cur.Status = u.Status
 	cur.MaxConcurrency = u.MaxConcurrency
 	cur.Balance = u.Balance
-	cur.PriceMultiplier = u.PriceMultiplier
 	c := *cur
 	return &c, nil
 }
@@ -765,6 +763,19 @@ func (f *fakeStore) RevokeGroup(ctx context.Context, groupID, userID int64) erro
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.assign[groupID] = slices.DeleteFunc(f.assign[groupID], func(u int64) bool { return u == userID })
+	delete(f.assignMult, [2]int64{groupID, userID}) // 撤销即清除专属倍率（真实 FK 级联同行）
+	return nil
+}
+
+// SetAssignmentMultiplier 设置/清除该用户在该组的专属价格倍率（T3.5 修正：
+// 按组——用户在不同组可有不同倍率；nil = 清除为未设置 → 回退组倍率）。
+func (f *fakeStore) SetAssignmentMultiplier(ctx context.Context, groupID, userID int64, m *int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.Contains(f.assign[groupID], userID) {
+		return missingErr(userID) // 授予行必须已存在（service 先 Grant 再 Set）
+	}
+	f.assignMult[[2]int64{groupID, userID}] = m
 	return nil
 }
 
@@ -775,7 +786,10 @@ func (f *fakeStore) ListAssignmentsByUser(ctx context.Context, userID int64) ([]
 	for gid, users := range f.assign {
 		for _, u := range users {
 			if u == userID {
-				out = append(out, &domain.GroupAssignment{GroupID: gid, UserID: userID})
+				out = append(out, &domain.GroupAssignment{
+					GroupID: gid, UserID: userID,
+					PriceMultiplier: f.assignMult[[2]int64{gid, userID}],
+				})
 			}
 		}
 	}
@@ -787,7 +801,10 @@ func (f *fakeStore) ListAssignmentsByGroup(ctx context.Context, groupID int64) (
 	defer f.mu.Unlock()
 	var out []*domain.GroupAssignment
 	for _, u := range f.assign[groupID] {
-		out = append(out, &domain.GroupAssignment{GroupID: groupID, UserID: u})
+		out = append(out, &domain.GroupAssignment{
+			GroupID: groupID, UserID: u,
+			PriceMultiplier: f.assignMult[[2]int64{groupID, u}],
+		})
 	}
 	return out, nil
 }

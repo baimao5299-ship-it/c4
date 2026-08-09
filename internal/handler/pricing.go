@@ -41,10 +41,10 @@ func (h *AdminAPI) GetPricing(w http.ResponseWriter, r *http.Request, params Get
 	writeJSON(w, http.StatusOK, PricingListResponse{Total: total, Rows: out})
 }
 
-// PutPricingModel 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管
-// litellm 行；负数/model 空 → 400，service 校验）。可选字段（cache 价 + Phase 5
-// 矩阵 22 列）缺省（nil）→ 清空（接管行该矩阵价清除，PUT 全量替换语义），
-// ServerInterface。
+// PutPricingModel 手动设价（API 边界换算：价格列 USD/1M → 毫分/1M、fast
+// 倍率正常值 → 万分数；upsert 强制 source=manual，可接管 litellm 行；负数/
+// model 空 → 400，service 校验）。可选字段（cache 价 + Phase 5 矩阵 22 列）
+// 缺省（nil）→ 清空（接管行该矩阵价清除，PUT 全量替换语义），ServerInterface。
 func (h *AdminAPI) PutPricingModel(w http.ResponseWriter, r *http.Request, model string) {
 	var in PricingUpsert
 	if err := decode(r, &in); err != nil {
@@ -52,33 +52,33 @@ func (h *AdminAPI) PutPricingModel(w http.ResponseWriter, r *http.Request, model
 		return
 	}
 	p, err := h.svc.UpsertManualPricing(r.Context(), &repository.PricingManual{
-		Model:                        model,
-		PromptPricePerMillion:        in.PromptPricePerMillion,
-		CompletionPricePerMillion:    in.CompletionPricePerMillion,
-		CacheReadPricePerMillion:     in.CacheReadPricePerMillion,
-		CacheCreationPricePerMillion: in.CacheCreationPricePerMillion,
-		PriorityPromptPricePerMillion:        in.PriorityPromptPricePerMillion,
-		PriorityCompletionPricePerMillion:    in.PriorityCompletionPricePerMillion,
-		PriorityCacheReadPricePerMillion:     in.PriorityCacheReadPricePerMillion,
-		PriorityCacheCreationPricePerMillion: in.PriorityCacheCreationPricePerMillion,
-		FlexPromptPricePerMillion:            in.FlexPromptPricePerMillion,
-		FlexCompletionPricePerMillion:        in.FlexCompletionPricePerMillion,
-		FlexCacheReadPricePerMillion:         in.FlexCacheReadPricePerMillion,
-		FlexCacheCreationPricePerMillion:     in.FlexCacheCreationPricePerMillion,
+		Model:                     model,
+		PromptPricePerMillion:     usdToMillis(in.PromptPricePerMillion),
+		CompletionPricePerMillion: usdToMillis(in.CompletionPricePerMillion),
+		CacheReadPricePerMillion:  usdToMillisPtr(in.CacheReadPricePerMillion),
+		CacheCreationPricePerMillion: usdToMillisPtr(in.CacheCreationPricePerMillion),
+		PriorityPromptPricePerMillion:        usdToMillisPtr(in.PriorityPromptPricePerMillion),
+		PriorityCompletionPricePerMillion:    usdToMillisPtr(in.PriorityCompletionPricePerMillion),
+		PriorityCacheReadPricePerMillion:     usdToMillisPtr(in.PriorityCacheReadPricePerMillion),
+		PriorityCacheCreationPricePerMillion: usdToMillisPtr(in.PriorityCacheCreationPricePerMillion),
+		FlexPromptPricePerMillion:            usdToMillisPtr(in.FlexPromptPricePerMillion),
+		FlexCompletionPricePerMillion:        usdToMillisPtr(in.FlexCompletionPricePerMillion),
+		FlexCacheReadPricePerMillion:         usdToMillisPtr(in.FlexCacheReadPricePerMillion),
+		FlexCacheCreationPricePerMillion:     usdToMillisPtr(in.FlexCacheCreationPricePerMillion),
 		AboveThreshold:                       in.AboveThreshold,
-		AbovePromptPricePerMillion:           in.AbovePromptPricePerMillion,
-		AboveCompletionPricePerMillion:       in.AboveCompletionPricePerMillion,
-		AboveCacheReadPricePerMillion:        in.AboveCacheReadPricePerMillion,
-		AboveCacheCreationPricePerMillion:    in.AboveCacheCreationPricePerMillion,
-		AbovePriorityPromptPricePerMillion:   in.AbovePriorityPromptPricePerMillion,
-		AbovePriorityCompletionPricePerMillion: in.AbovePriorityCompletionPricePerMillion,
-		AbovePriorityCacheReadPricePerMillion:  in.AbovePriorityCacheReadPricePerMillion,
-		AbovePriorityCacheCreationPricePerMillion: in.AbovePriorityCacheCreationPricePerMillion,
-		AboveFlexPromptPricePerMillion:           in.AboveFlexPromptPricePerMillion,
-		AboveFlexCompletionPricePerMillion:       in.AboveFlexCompletionPricePerMillion,
-		AboveFlexCacheReadPricePerMillion:        in.AboveFlexCacheReadPricePerMillion,
-		AboveFlexCacheCreationPricePerMillion:    in.AboveFlexCacheCreationPricePerMillion,
-		FastMultiplier:                           in.FastMultiplier,
+		AbovePromptPricePerMillion:           usdToMillisPtr(in.AbovePromptPricePerMillion),
+		AboveCompletionPricePerMillion:       usdToMillisPtr(in.AboveCompletionPricePerMillion),
+		AboveCacheReadPricePerMillion:        usdToMillisPtr(in.AboveCacheReadPricePerMillion),
+		AboveCacheCreationPricePerMillion:    usdToMillisPtr(in.AboveCacheCreationPricePerMillion),
+		AbovePriorityPromptPricePerMillion:   usdToMillisPtr(in.AbovePriorityPromptPricePerMillion),
+		AbovePriorityCompletionPricePerMillion: usdToMillisPtr(in.AbovePriorityCompletionPricePerMillion),
+		AbovePriorityCacheReadPricePerMillion:  usdToMillisPtr(in.AbovePriorityCacheReadPricePerMillion),
+		AbovePriorityCacheCreationPricePerMillion: usdToMillisPtr(in.AbovePriorityCacheCreationPricePerMillion),
+		AboveFlexPromptPricePerMillion:           usdToMillisPtr(in.AboveFlexPromptPricePerMillion),
+		AboveFlexCompletionPricePerMillion:       usdToMillisPtr(in.AboveFlexCompletionPricePerMillion),
+		AboveFlexCacheReadPricePerMillion:        usdToMillisPtr(in.AboveFlexCacheReadPricePerMillion),
+		AboveFlexCacheCreationPricePerMillion:    usdToMillisPtr(in.AboveFlexCacheCreationPricePerMillion),
+		FastMultiplier:                           normalToMultI64Ptr(in.FastMultiplier),
 	})
 	if err != nil {
 		writeServiceErr(w, err)
@@ -114,39 +114,40 @@ func (h *AdminAPI) PostPricingSync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// toAPIPricing 价格领域对象 → 契约类型（raw 完整镜像不对外暴露——前端无需
-// litellm 原始条目；如需可后续加端点）。
+// toAPIPricing 价格领域对象 → 契约类型（API 边界换算：毫分/1M → USD/1M、
+// 万分数 → 正常值；raw 完整镜像不对外暴露——前端无需 litellm 原始条目；
+// 如需可后续加端点）。
 func toAPIPricing(p *domain.Pricing) Pricing {
 	return Pricing{
 		Model:                        p.Model,
-		PromptPricePerMillion:        p.PromptPricePerMillion,
-		CompletionPricePerMillion:    p.CompletionPricePerMillion,
+		PromptPricePerMillion:        millisToUSD(p.PromptPricePerMillion),
+		CompletionPricePerMillion:    millisToUSD(p.CompletionPricePerMillion),
 		MaxInputTokens:               p.MaxInputTokens,
 		MaxOutputTokens:              p.MaxOutputTokens,
-		CacheReadPricePerMillion:     p.CacheReadPricePerMillion,
-		CacheCreationPricePerMillion: p.CacheCreationPricePerMillion,
-		PriorityPromptPricePerMillion:        p.PriorityPromptPricePerMillion,
-		PriorityCompletionPricePerMillion:    p.PriorityCompletionPricePerMillion,
-		PriorityCacheReadPricePerMillion:     p.PriorityCacheReadPricePerMillion,
-		PriorityCacheCreationPricePerMillion: p.PriorityCacheCreationPricePerMillion,
-		FlexPromptPricePerMillion:            p.FlexPromptPricePerMillion,
-		FlexCompletionPricePerMillion:        p.FlexCompletionPricePerMillion,
-		FlexCacheReadPricePerMillion:         p.FlexCacheReadPricePerMillion,
-		FlexCacheCreationPricePerMillion:     p.FlexCacheCreationPricePerMillion,
+		CacheReadPricePerMillion:     millisToUSDPtr(p.CacheReadPricePerMillion),
+		CacheCreationPricePerMillion: millisToUSDPtr(p.CacheCreationPricePerMillion),
+		PriorityPromptPricePerMillion:        millisToUSDPtr(p.PriorityPromptPricePerMillion),
+		PriorityCompletionPricePerMillion:    millisToUSDPtr(p.PriorityCompletionPricePerMillion),
+		PriorityCacheReadPricePerMillion:     millisToUSDPtr(p.PriorityCacheReadPricePerMillion),
+		PriorityCacheCreationPricePerMillion: millisToUSDPtr(p.PriorityCacheCreationPricePerMillion),
+		FlexPromptPricePerMillion:            millisToUSDPtr(p.FlexPromptPricePerMillion),
+		FlexCompletionPricePerMillion:        millisToUSDPtr(p.FlexCompletionPricePerMillion),
+		FlexCacheReadPricePerMillion:         millisToUSDPtr(p.FlexCacheReadPricePerMillion),
+		FlexCacheCreationPricePerMillion:     millisToUSDPtr(p.FlexCacheCreationPricePerMillion),
 		AboveThreshold:                       p.AboveThreshold,
-		AbovePromptPricePerMillion:           p.AbovePromptPricePerMillion,
-		AboveCompletionPricePerMillion:       p.AboveCompletionPricePerMillion,
-		AboveCacheReadPricePerMillion:        p.AboveCacheReadPricePerMillion,
-		AboveCacheCreationPricePerMillion:    p.AboveCacheCreationPricePerMillion,
-		AbovePriorityPromptPricePerMillion:   p.AbovePriorityPromptPricePerMillion,
-		AbovePriorityCompletionPricePerMillion: p.AbovePriorityCompletionPricePerMillion,
-		AbovePriorityCacheReadPricePerMillion:  p.AbovePriorityCacheReadPricePerMillion,
-		AbovePriorityCacheCreationPricePerMillion: p.AbovePriorityCacheCreationPricePerMillion,
-		AboveFlexPromptPricePerMillion:           p.AboveFlexPromptPricePerMillion,
-		AboveFlexCompletionPricePerMillion:       p.AboveFlexCompletionPricePerMillion,
-		AboveFlexCacheReadPricePerMillion:        p.AboveFlexCacheReadPricePerMillion,
-		AboveFlexCacheCreationPricePerMillion:    p.AboveFlexCacheCreationPricePerMillion,
-		FastMultiplier:                           p.FastMultiplier,
+		AbovePromptPricePerMillion:           millisToUSDPtr(p.AbovePromptPricePerMillion),
+		AboveCompletionPricePerMillion:       millisToUSDPtr(p.AboveCompletionPricePerMillion),
+		AboveCacheReadPricePerMillion:        millisToUSDPtr(p.AboveCacheReadPricePerMillion),
+		AboveCacheCreationPricePerMillion:    millisToUSDPtr(p.AboveCacheCreationPricePerMillion),
+		AbovePriorityPromptPricePerMillion:   millisToUSDPtr(p.AbovePriorityPromptPricePerMillion),
+		AbovePriorityCompletionPricePerMillion: millisToUSDPtr(p.AbovePriorityCompletionPricePerMillion),
+		AbovePriorityCacheReadPricePerMillion:  millisToUSDPtr(p.AbovePriorityCacheReadPricePerMillion),
+		AbovePriorityCacheCreationPricePerMillion: millisToUSDPtr(p.AbovePriorityCacheCreationPricePerMillion),
+		AboveFlexPromptPricePerMillion:           millisToUSDPtr(p.AboveFlexPromptPricePerMillion),
+		AboveFlexCompletionPricePerMillion:       millisToUSDPtr(p.AboveFlexCompletionPricePerMillion),
+		AboveFlexCacheReadPricePerMillion:        millisToUSDPtr(p.AboveFlexCacheReadPricePerMillion),
+		AboveFlexCacheCreationPricePerMillion:    millisToUSDPtr(p.AboveFlexCacheCreationPricePerMillion),
+		FastMultiplier:                           multI64ToNormalPtr(p.FastMultiplier),
 		Provider:                     p.Provider,
 		Mode:                         p.Mode,
 		SupportsPromptCaching:        p.SupportsPromptCaching,

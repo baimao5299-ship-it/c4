@@ -100,8 +100,8 @@ type Group struct {
 	ID        *int64     `json:"ID,omitempty"`
 	Name      *string    `json:"Name,omitempty"`
 
-	// PriceMultiplier 价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）
-	PriceMultiplier *int             `json:"PriceMultiplier,omitempty"`
+	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
+	PriceMultiplier *float64         `json:"PriceMultiplier,omitempty"`
 	UpdatedAt       *time.Time       `json:"UpdatedAt,omitempty"`
 	Visibility      *GroupVisibility `json:"Visibility,omitempty"`
 }
@@ -288,17 +288,14 @@ type UsageLog struct {
 // User defines model for User.
 type User struct {
 	// Balance 余额 USD（浮点；内部存储毫分——1 USD = 100
-	Balance        *float64   `json:"Balance,omitempty"`
-	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
-	Email          *string    `json:"Email,omitempty"`
-	ID             *int64     `json:"ID,omitempty"`
-	MaxConcurrency *int       `json:"MaxConcurrency,omitempty"`
-
-	// PriceMultiplier 用户专属价格倍率（万分数，0 = 免费，10000 = ×1，上限 100000 = ×10）；null = 未设置（用组倍率）
-	PriceMultiplier *int        `json:"PriceMultiplier"`
-	Role            *UserRole   `json:"Role,omitempty"`
-	Status          *UserStatus `json:"Status,omitempty"`
-	UpdatedAt       *time.Time  `json:"UpdatedAt,omitempty"`
+	Balance        *float64    `json:"Balance,omitempty"`
+	CreatedAt      *time.Time  `json:"CreatedAt,omitempty"`
+	Email          *string     `json:"Email,omitempty"`
+	ID             *int64      `json:"ID,omitempty"`
+	MaxConcurrency *int        `json:"MaxConcurrency,omitempty"`
+	Role           *UserRole   `json:"Role,omitempty"`
+	Status         *UserStatus `json:"Status,omitempty"`
+	UpdatedAt      *time.Time  `json:"UpdatedAt,omitempty"`
 }
 
 // UserAuthLogin defines model for UserAuthLogin.

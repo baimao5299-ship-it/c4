@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,64 +9,35 @@ import (
 	"go-proxy-mini/internal/domain"
 )
 
-// 本文件覆盖 Phase 5 T4 service 层契约校验：用户/组倍率范围、service_tier
-// policy 设置值域、用户余额负值。
+// 本文件覆盖 Phase 5 T4 service 层契约校验：组倍率范围（万分数）、
+// service_tier policy 设置值域、用户余额负值。用户倍率按组（T3.5 修正）经
+// SetGroupAssignments 校验（见 assignment 测试）。
 
 // intPtr *int 构造（service 包既有 ptr 为 string 专用）。
 func intPtr(v int) *int { return &v }
-
-func TestUserMultiplierValidation(t *testing.T) {
-	fs := newFakeStore()
-	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
-	ctx := context.Background()
-
-	// 创建：nil / 0 / 100000 合法（email 唯一，逐次不同）
-	for i, mult := range []*int{nil, intPtr(0), intPtr(100000)} {
-		u, err := svc.CreateUser(ctx, fmt.Sprintf("m%d@example.com", i), "s3cret-pass",
-			domain.RoleUser, domain.UserStatusActive, 0, 0, mult)
-		require.NoError(t, err, "mult=%v", mult)
-		if mult == nil {
-			require.Nil(t, u.PriceMultiplier)
-		} else {
-			require.NotNil(t, u.PriceMultiplier)
-			require.Equal(t, *mult, *u.PriceMultiplier)
-		}
-	}
-	// 超界 → 400
-	for _, mult := range []int{-1, 100001} {
-		_, err := svc.CreateUser(ctx, "x@example.com", "s3cret-pass",
-			domain.RoleUser, domain.UserStatusActive, 0, 0, intPtr(mult))
-		require.ErrorIs(t, err, ErrInvalidInput, "mult=%d", mult)
-	}
-
-	// 更新：合法值/超界
-	u, err := svc.GetUser(ctx, 1)
-	require.NoError(t, err)
-	u.PriceMultiplier = intPtr(5000)
-	_, err = svc.UpdateUser(ctx, u)
-	require.NoError(t, err)
-	u.PriceMultiplier = intPtr(100001)
-	_, err = svc.UpdateUser(ctx, u)
-	require.ErrorIs(t, err, ErrInvalidInput)
-}
 
 func TestGroupMultiplierValidation(t *testing.T) {
 	fs := newFakeStore()
 	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
-	// 创建：0 = 未指定（fake 落 10000）；20000 显式
-	g, err := svc.CreateGroup(ctx, "g0", domain.GroupVisibilityPublic, 0)
+	// 创建：nil = 未指定 → ×1（service 归一 10000 恒写入）；20000 显式；
+	// 显式 0 = 免费组（T3.5 修正：API 边界 nullable 可表达，service 不再把 0
+	// 当未指定）
+	g, err := svc.CreateGroup(ctx, "g0", domain.GroupVisibilityPublic, nil)
 	require.NoError(t, err)
-	require.Equal(t, 10000, g.PriceMultiplier, "0 = 未指定 → 组默认 ×1")
-	g, err = svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 20000)
+	require.Equal(t, 10000, g.PriceMultiplier, "nil = 未指定 → ×1")
+	g, err = svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, intPtr(20000))
 	require.NoError(t, err)
 	require.Equal(t, 20000, g.PriceMultiplier)
+	g, err = svc.CreateGroup(ctx, "g-free", domain.GroupVisibilityPublic, intPtr(0))
+	require.NoError(t, err)
+	require.Equal(t, 0, g.PriceMultiplier, "显式 0 = 免费组（恒写入）")
 
 	// 创建/更新超界 → 400
-	_, err = svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, -1)
+	_, err = svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, intPtr(-1))
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = svc.CreateGroup(ctx, "g3", domain.GroupVisibilityPublic, 100001)
+	_, err = svc.CreateGroup(ctx, "g3", domain.GroupVisibilityPublic, intPtr(100001))
 	require.ErrorIs(t, err, ErrInvalidInput)
 	g.PriceMultiplier = 100001
 	_, err = svc.UpdateGroup(ctx, g)

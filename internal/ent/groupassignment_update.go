@@ -58,6 +58,33 @@ func (_u *GroupAssignmentUpdate) SetNillableUserID(v *int64) *GroupAssignmentUpd
 	return _u
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_u *GroupAssignmentUpdate) SetPriceMultiplier(v int) *GroupAssignmentUpdate {
+	_u.mutation.ResetPriceMultiplier()
+	_u.mutation.SetPriceMultiplier(v)
+	return _u
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_u *GroupAssignmentUpdate) SetNillablePriceMultiplier(v *int) *GroupAssignmentUpdate {
+	if v != nil {
+		_u.SetPriceMultiplier(*v)
+	}
+	return _u
+}
+
+// AddPriceMultiplier adds value to the "price_multiplier" field.
+func (_u *GroupAssignmentUpdate) AddPriceMultiplier(v int) *GroupAssignmentUpdate {
+	_u.mutation.AddPriceMultiplier(v)
+	return _u
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (_u *GroupAssignmentUpdate) ClearPriceMultiplier() *GroupAssignmentUpdate {
+	_u.mutation.ClearPriceMultiplier()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *GroupAssignmentUpdate) SetCreatedAt(v time.Time) *GroupAssignmentUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -148,6 +175,15 @@ func (_u *GroupAssignmentUpdate) sqlSave(ctx context.Context) (_node int, err er
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.PriceMultiplier(); ok {
+		_spec.SetField(groupassignment.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
+		_spec.AddField(groupassignment.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if _u.mutation.PriceMultiplierCleared() {
+		_spec.ClearField(groupassignment.FieldPriceMultiplier, field.TypeInt)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(groupassignment.FieldCreatedAt, field.TypeTime, value)
@@ -255,6 +291,33 @@ func (_u *GroupAssignmentUpdateOne) SetNillableUserID(v *int64) *GroupAssignment
 	if v != nil {
 		_u.SetUserID(*v)
 	}
+	return _u
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_u *GroupAssignmentUpdateOne) SetPriceMultiplier(v int) *GroupAssignmentUpdateOne {
+	_u.mutation.ResetPriceMultiplier()
+	_u.mutation.SetPriceMultiplier(v)
+	return _u
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_u *GroupAssignmentUpdateOne) SetNillablePriceMultiplier(v *int) *GroupAssignmentUpdateOne {
+	if v != nil {
+		_u.SetPriceMultiplier(*v)
+	}
+	return _u
+}
+
+// AddPriceMultiplier adds value to the "price_multiplier" field.
+func (_u *GroupAssignmentUpdateOne) AddPriceMultiplier(v int) *GroupAssignmentUpdateOne {
+	_u.mutation.AddPriceMultiplier(v)
+	return _u
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (_u *GroupAssignmentUpdateOne) ClearPriceMultiplier() *GroupAssignmentUpdateOne {
+	_u.mutation.ClearPriceMultiplier()
 	return _u
 }
 
@@ -378,6 +441,15 @@ func (_u *GroupAssignmentUpdateOne) sqlSave(ctx context.Context) (_node *GroupAs
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.PriceMultiplier(); ok {
+		_spec.SetField(groupassignment.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
+		_spec.AddField(groupassignment.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if _u.mutation.PriceMultiplierCleared() {
+		_spec.ClearField(groupassignment.FieldPriceMultiplier, field.TypeInt)
 	}
 	if value, ok := _u.mutation.CreatedAt(); ok {
 		_spec.SetField(groupassignment.FieldCreatedAt, field.TypeTime, value)
