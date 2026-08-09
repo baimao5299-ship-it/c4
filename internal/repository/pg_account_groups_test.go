@@ -40,7 +40,7 @@ func newPGRepos(t *testing.T) *repository.Repository {
 	// 每测试重建 schema（AutoMigrate 幂等；DROP 保证表间无残留）
 	_, err = db.ExecContext(ctx, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`)
 	require.NoError(t, err)
-	repos, err := repository.New(entsql.OpenDB(dialect.Postgres, db), true)
+	repos, err := repository.NewWithPG(entsql.OpenDB(dialect.Postgres, db), true, pool) // pool 注入 Stats（Upsert COPY 两阶段真实路径）
 	require.NoError(t, err)
 	// T4.5：usagelog 已从 ent migrate 列表排除（usageLogMigrateHook），分区表
 	// 由 bootstrap 独占建表——所有 PG 测试共用同一分区表基座。

@@ -551,31 +551,14 @@ func TestLogsAndStats(t *testing.T) {
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
-	// Stats Upsert x2 -> 单条批量 INSERT ... ON CONFLICT ... DO UPDATE（raw SQL
-	// 批量 upsert，O1 批量化：#15 验收 10k 桶逐 key 轮询 → 单语句/块，冲突累加
-	// EXCLUDED 行值）。列序 = schema 序（bucket_time, group_id, account_id,
-	// template_id, user_id, model, is_error, request_count, error_count,
-	// prompt_tokens, completion_tokens, total_tokens, cache_read_tokens,
-	// cache_creation_tokens, cost, total_latency_ms, updated_at）。
-	tr.pool.ExpectExec(q(`INSERT INTO "usage_stats"`)).
-		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(0), int64(30), pgxmock.AnyArg()).
-		WillReturnResult(pgxmock.NewResult("INSERT", 1))
-	tr.pool.ExpectExec(q(`INSERT INTO "usage_stats"`)).
-		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(0), int64(40), pgxmock.AnyArg()).
-		WillReturnResult(pgxmock.NewResult("INSERT", 1))
-
-	// Stats Scan（测试未过滤 group_id，仅 bucket_time 范围两个参数）
-	tr.pool.ExpectQuery(q(`FROM "usage_stats"`)).
-		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "bucket_time", "group_id", "account_id", "template_id",
-			"model", "is_error", "request_count", "error_count", "input_tokens",
-			"output_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
-			"cost", "total_latency_ms", "updated_at"}).
-			AddRow(int64(1), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(1), int64(0), int64(0),
-				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(0), int64(30),
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	// Stats Upsert 已改 COPY 两阶段（#17），需要 pgx 原生连接池（NewWithPG
+	// 注入）：pgxmock 的 Acquire 未实现（无法 mock COPY）→ New 未注入池时
+	// Upsert 返回显式错误，不静默降级。COPY 语义覆盖在真实 PG
+	// （pg_stat_test.go TestPGStatUpsertConflictAccumulates / TestPGStatUpsertCopyBulk）。
+	bucket := time.Now().Truncate(time.Hour)
+	require.Error(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
+		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30, CacheReadTokens: 4, CacheCreationTokens: 2},
+	}), "未注入 pgx 池（New）→ 显式错误")
 
 	logs := []*domain.UsageLog{
 		{RequestID: "r1", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, LatencyMS: 10, TotalTokens: 100, CacheReadTokens: 4, CacheCreationTokens: 2},
@@ -594,13 +577,16 @@ func TestLogsAndStats(t *testing.T) {
 	require.Equal(t, "", rows[0].BillingTier, "billing_tier round-trip（空 = 未计费）")
 	require.False(t, rows[0].AboveHit, "above_hit round-trip")
 	require.False(t, rows[0].Overdraft, "overdraft round-trip")
-	bucket := time.Now().Truncate(time.Hour)
-	require.NoError(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
-		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30, CacheReadTokens: 4, CacheCreationTokens: 2},
-	}))
-	require.NoError(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
-		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 3, ErrorCount: 1, TotalTokens: 200, TotalLatencyMS: 40, CacheReadTokens: 6, CacheCreationTokens: 3},
-	}))
+	// Stats Scan（测试未过滤 group_id，仅 bucket_time 范围两个参数）
+	tr.pool.ExpectQuery(q(`FROM "usage_stats"`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "bucket_time", "group_id", "account_id", "template_id",
+			"model", "is_error", "request_count", "error_count", "input_tokens",
+			"output_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
+			"cost", "total_latency_ms", "updated_at"}).
+			AddRow(int64(1), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(1), int64(0), int64(0),
+				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(0), int64(30),
+				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 	scanned, err := tr.repos.Stats.ScanStats(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
 	require.NoError(t, err)
 	require.Len(t, scanned, 1)
