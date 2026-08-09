@@ -21,7 +21,7 @@ func TestGetLogsCacheTokens(t *testing.T) {
 	store.logs = []*domain.UsageLog{{
 		ID: 1, RequestID: "r1", GroupID: 1, AccountID: 2, Model: "m",
 		Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
-		PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15,
+		InputTokens: 10, OutputTokens: 5, TotalTokens: 15,
 		CacheReadTokens: 4, CacheCreationTokens: 2,
 		CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 	}}

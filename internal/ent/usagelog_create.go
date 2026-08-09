@@ -160,6 +160,20 @@ func (_c *UsageLogCreate) SetNillableErrorType(v *string) *UsageLogCreate {
 	return _c
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (_c *UsageLogCreate) SetErrorMessage(v string) *UsageLogCreate {
+	_c.mutation.SetErrorMessage(v)
+	return _c
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableErrorMessage(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetErrorMessage(*v)
+	}
+	return _c
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (_c *UsageLogCreate) SetLatencyMs(v int64) *UsageLogCreate {
 	_c.mutation.SetLatencyMs(v)
@@ -174,30 +188,30 @@ func (_c *UsageLogCreate) SetNillableLatencyMs(v *int64) *UsageLogCreate {
 	return _c
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (_c *UsageLogCreate) SetPromptTokens(v int64) *UsageLogCreate {
-	_c.mutation.SetPromptTokens(v)
+// SetInputTokens sets the "input_tokens" field.
+func (_c *UsageLogCreate) SetInputTokens(v int64) *UsageLogCreate {
+	_c.mutation.SetInputTokens(v)
 	return _c
 }
 
-// SetNillablePromptTokens sets the "prompt_tokens" field if the given value is not nil.
-func (_c *UsageLogCreate) SetNillablePromptTokens(v *int64) *UsageLogCreate {
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableInputTokens(v *int64) *UsageLogCreate {
 	if v != nil {
-		_c.SetPromptTokens(*v)
+		_c.SetInputTokens(*v)
 	}
 	return _c
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (_c *UsageLogCreate) SetCompletionTokens(v int64) *UsageLogCreate {
-	_c.mutation.SetCompletionTokens(v)
+// SetOutputTokens sets the "output_tokens" field.
+func (_c *UsageLogCreate) SetOutputTokens(v int64) *UsageLogCreate {
+	_c.mutation.SetOutputTokens(v)
 	return _c
 }
 
-// SetNillableCompletionTokens sets the "completion_tokens" field if the given value is not nil.
-func (_c *UsageLogCreate) SetNillableCompletionTokens(v *int64) *UsageLogCreate {
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableOutputTokens(v *int64) *UsageLogCreate {
 	if v != nil {
-		_c.SetCompletionTokens(*v)
+		_c.SetOutputTokens(*v)
 	}
 	return _c
 }
@@ -371,13 +385,13 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultLatencyMs
 		_c.mutation.SetLatencyMs(v)
 	}
-	if _, ok := _c.mutation.PromptTokens(); !ok {
-		v := usagelog.DefaultPromptTokens
-		_c.mutation.SetPromptTokens(v)
+	if _, ok := _c.mutation.InputTokens(); !ok {
+		v := usagelog.DefaultInputTokens
+		_c.mutation.SetInputTokens(v)
 	}
-	if _, ok := _c.mutation.CompletionTokens(); !ok {
-		v := usagelog.DefaultCompletionTokens
-		_c.mutation.SetCompletionTokens(v)
+	if _, ok := _c.mutation.OutputTokens(); !ok {
+		v := usagelog.DefaultOutputTokens
+		_c.mutation.SetOutputTokens(v)
 	}
 	if _, ok := _c.mutation.TotalTokens(); !ok {
 		v := usagelog.DefaultTotalTokens
@@ -434,11 +448,11 @@ func (_c *UsageLogCreate) check() error {
 	if _, ok := _c.mutation.LatencyMs(); !ok {
 		return &ValidationError{Name: "latency_ms", err: errors.New(`ent: missing required field "UsageLog.latency_ms"`)}
 	}
-	if _, ok := _c.mutation.PromptTokens(); !ok {
-		return &ValidationError{Name: "prompt_tokens", err: errors.New(`ent: missing required field "UsageLog.prompt_tokens"`)}
+	if _, ok := _c.mutation.InputTokens(); !ok {
+		return &ValidationError{Name: "input_tokens", err: errors.New(`ent: missing required field "UsageLog.input_tokens"`)}
 	}
-	if _, ok := _c.mutation.CompletionTokens(); !ok {
-		return &ValidationError{Name: "completion_tokens", err: errors.New(`ent: missing required field "UsageLog.completion_tokens"`)}
+	if _, ok := _c.mutation.OutputTokens(); !ok {
+		return &ValidationError{Name: "output_tokens", err: errors.New(`ent: missing required field "UsageLog.output_tokens"`)}
 	}
 	if _, ok := _c.mutation.TotalTokens(); !ok {
 		return &ValidationError{Name: "total_tokens", err: errors.New(`ent: missing required field "UsageLog.total_tokens"`)}
@@ -538,17 +552,21 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldErrorType, field.TypeString, value)
 		_node.ErrorType = value
 	}
+	if value, ok := _c.mutation.ErrorMessage(); ok {
+		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
+		_node.ErrorMessage = &value
+	}
 	if value, ok := _c.mutation.LatencyMs(); ok {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 		_node.LatencyMs = value
 	}
-	if value, ok := _c.mutation.PromptTokens(); ok {
-		_spec.SetField(usagelog.FieldPromptTokens, field.TypeInt64, value)
-		_node.PromptTokens = value
+	if value, ok := _c.mutation.InputTokens(); ok {
+		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt64, value)
+		_node.InputTokens = value
 	}
-	if value, ok := _c.mutation.CompletionTokens(); ok {
-		_spec.SetField(usagelog.FieldCompletionTokens, field.TypeInt64, value)
-		_node.CompletionTokens = value
+	if value, ok := _c.mutation.OutputTokens(); ok {
+		_spec.SetField(usagelog.FieldOutputTokens, field.TypeInt64, value)
+		_node.OutputTokens = value
 	}
 	if value, ok := _c.mutation.TotalTokens(); ok {
 		_spec.SetField(usagelog.FieldTotalTokens, field.TypeInt64, value)
@@ -838,6 +856,24 @@ func (u *UsageLogUpsert) UpdateErrorType() *UsageLogUpsert {
 	return u
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (u *UsageLogUpsert) SetErrorMessage(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldErrorMessage, v)
+	return u
+}
+
+// UpdateErrorMessage sets the "error_message" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateErrorMessage() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldErrorMessage)
+	return u
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (u *UsageLogUpsert) ClearErrorMessage() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldErrorMessage)
+	return u
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (u *UsageLogUpsert) SetLatencyMs(v int64) *UsageLogUpsert {
 	u.Set(usagelog.FieldLatencyMs, v)
@@ -856,39 +892,39 @@ func (u *UsageLogUpsert) AddLatencyMs(v int64) *UsageLogUpsert {
 	return u
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (u *UsageLogUpsert) SetPromptTokens(v int64) *UsageLogUpsert {
-	u.Set(usagelog.FieldPromptTokens, v)
+// SetInputTokens sets the "input_tokens" field.
+func (u *UsageLogUpsert) SetInputTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldInputTokens, v)
 	return u
 }
 
-// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
-func (u *UsageLogUpsert) UpdatePromptTokens() *UsageLogUpsert {
-	u.SetExcluded(usagelog.FieldPromptTokens)
+// UpdateInputTokens sets the "input_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateInputTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldInputTokens)
 	return u
 }
 
-// AddPromptTokens adds v to the "prompt_tokens" field.
-func (u *UsageLogUpsert) AddPromptTokens(v int64) *UsageLogUpsert {
-	u.Add(usagelog.FieldPromptTokens, v)
+// AddInputTokens adds v to the "input_tokens" field.
+func (u *UsageLogUpsert) AddInputTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldInputTokens, v)
 	return u
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (u *UsageLogUpsert) SetCompletionTokens(v int64) *UsageLogUpsert {
-	u.Set(usagelog.FieldCompletionTokens, v)
+// SetOutputTokens sets the "output_tokens" field.
+func (u *UsageLogUpsert) SetOutputTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldOutputTokens, v)
 	return u
 }
 
-// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
-func (u *UsageLogUpsert) UpdateCompletionTokens() *UsageLogUpsert {
-	u.SetExcluded(usagelog.FieldCompletionTokens)
+// UpdateOutputTokens sets the "output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateOutputTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldOutputTokens)
 	return u
 }
 
-// AddCompletionTokens adds v to the "completion_tokens" field.
-func (u *UsageLogUpsert) AddCompletionTokens(v int64) *UsageLogUpsert {
-	u.Add(usagelog.FieldCompletionTokens, v)
+// AddOutputTokens adds v to the "output_tokens" field.
+func (u *UsageLogUpsert) AddOutputTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldOutputTokens, v)
 	return u
 }
 
@@ -1304,6 +1340,27 @@ func (u *UsageLogUpsertOne) UpdateErrorType() *UsageLogUpsertOne {
 	})
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (u *UsageLogUpsertOne) SetErrorMessage(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetErrorMessage(v)
+	})
+}
+
+// UpdateErrorMessage sets the "error_message" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateErrorMessage() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateErrorMessage()
+	})
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (u *UsageLogUpsertOne) ClearErrorMessage() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearErrorMessage()
+	})
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (u *UsageLogUpsertOne) SetLatencyMs(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1325,45 +1382,45 @@ func (u *UsageLogUpsertOne) UpdateLatencyMs() *UsageLogUpsertOne {
 	})
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (u *UsageLogUpsertOne) SetPromptTokens(v int64) *UsageLogUpsertOne {
+// SetInputTokens sets the "input_tokens" field.
+func (u *UsageLogUpsertOne) SetInputTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.SetPromptTokens(v)
+		s.SetInputTokens(v)
 	})
 }
 
-// AddPromptTokens adds v to the "prompt_tokens" field.
-func (u *UsageLogUpsertOne) AddPromptTokens(v int64) *UsageLogUpsertOne {
+// AddInputTokens adds v to the "input_tokens" field.
+func (u *UsageLogUpsertOne) AddInputTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.AddPromptTokens(v)
+		s.AddInputTokens(v)
 	})
 }
 
-// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
-func (u *UsageLogUpsertOne) UpdatePromptTokens() *UsageLogUpsertOne {
+// UpdateInputTokens sets the "input_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateInputTokens() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdatePromptTokens()
+		s.UpdateInputTokens()
 	})
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (u *UsageLogUpsertOne) SetCompletionTokens(v int64) *UsageLogUpsertOne {
+// SetOutputTokens sets the "output_tokens" field.
+func (u *UsageLogUpsertOne) SetOutputTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.SetCompletionTokens(v)
+		s.SetOutputTokens(v)
 	})
 }
 
-// AddCompletionTokens adds v to the "completion_tokens" field.
-func (u *UsageLogUpsertOne) AddCompletionTokens(v int64) *UsageLogUpsertOne {
+// AddOutputTokens adds v to the "output_tokens" field.
+func (u *UsageLogUpsertOne) AddOutputTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.AddCompletionTokens(v)
+		s.AddOutputTokens(v)
 	})
 }
 
-// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
-func (u *UsageLogUpsertOne) UpdateCompletionTokens() *UsageLogUpsertOne {
+// UpdateOutputTokens sets the "output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateOutputTokens() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateCompletionTokens()
+		s.UpdateOutputTokens()
 	})
 }
 
@@ -1966,6 +2023,27 @@ func (u *UsageLogUpsertBulk) UpdateErrorType() *UsageLogUpsertBulk {
 	})
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (u *UsageLogUpsertBulk) SetErrorMessage(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetErrorMessage(v)
+	})
+}
+
+// UpdateErrorMessage sets the "error_message" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateErrorMessage() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateErrorMessage()
+	})
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (u *UsageLogUpsertBulk) ClearErrorMessage() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearErrorMessage()
+	})
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (u *UsageLogUpsertBulk) SetLatencyMs(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1987,45 +2065,45 @@ func (u *UsageLogUpsertBulk) UpdateLatencyMs() *UsageLogUpsertBulk {
 	})
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (u *UsageLogUpsertBulk) SetPromptTokens(v int64) *UsageLogUpsertBulk {
+// SetInputTokens sets the "input_tokens" field.
+func (u *UsageLogUpsertBulk) SetInputTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.SetPromptTokens(v)
+		s.SetInputTokens(v)
 	})
 }
 
-// AddPromptTokens adds v to the "prompt_tokens" field.
-func (u *UsageLogUpsertBulk) AddPromptTokens(v int64) *UsageLogUpsertBulk {
+// AddInputTokens adds v to the "input_tokens" field.
+func (u *UsageLogUpsertBulk) AddInputTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.AddPromptTokens(v)
+		s.AddInputTokens(v)
 	})
 }
 
-// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
-func (u *UsageLogUpsertBulk) UpdatePromptTokens() *UsageLogUpsertBulk {
+// UpdateInputTokens sets the "input_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateInputTokens() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdatePromptTokens()
+		s.UpdateInputTokens()
 	})
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (u *UsageLogUpsertBulk) SetCompletionTokens(v int64) *UsageLogUpsertBulk {
+// SetOutputTokens sets the "output_tokens" field.
+func (u *UsageLogUpsertBulk) SetOutputTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.SetCompletionTokens(v)
+		s.SetOutputTokens(v)
 	})
 }
 
-// AddCompletionTokens adds v to the "completion_tokens" field.
-func (u *UsageLogUpsertBulk) AddCompletionTokens(v int64) *UsageLogUpsertBulk {
+// AddOutputTokens adds v to the "output_tokens" field.
+func (u *UsageLogUpsertBulk) AddOutputTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.AddCompletionTokens(v)
+		s.AddOutputTokens(v)
 	})
 }
 
-// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
-func (u *UsageLogUpsertBulk) UpdateCompletionTokens() *UsageLogUpsertBulk {
+// UpdateOutputTokens sets the "output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateOutputTokens() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateCompletionTokens()
+		s.UpdateOutputTokens()
 	})
 }
 

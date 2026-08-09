@@ -140,30 +140,30 @@ func (_c *UsageStatCreate) SetNillableErrorCount(v *int64) *UsageStatCreate {
 	return _c
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (_c *UsageStatCreate) SetPromptTokens(v int64) *UsageStatCreate {
-	_c.mutation.SetPromptTokens(v)
+// SetInputTokens sets the "input_tokens" field.
+func (_c *UsageStatCreate) SetInputTokens(v int64) *UsageStatCreate {
+	_c.mutation.SetInputTokens(v)
 	return _c
 }
 
-// SetNillablePromptTokens sets the "prompt_tokens" field if the given value is not nil.
-func (_c *UsageStatCreate) SetNillablePromptTokens(v *int64) *UsageStatCreate {
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableInputTokens(v *int64) *UsageStatCreate {
 	if v != nil {
-		_c.SetPromptTokens(*v)
+		_c.SetInputTokens(*v)
 	}
 	return _c
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (_c *UsageStatCreate) SetCompletionTokens(v int64) *UsageStatCreate {
-	_c.mutation.SetCompletionTokens(v)
+// SetOutputTokens sets the "output_tokens" field.
+func (_c *UsageStatCreate) SetOutputTokens(v int64) *UsageStatCreate {
+	_c.mutation.SetOutputTokens(v)
 	return _c
 }
 
-// SetNillableCompletionTokens sets the "completion_tokens" field if the given value is not nil.
-func (_c *UsageStatCreate) SetNillableCompletionTokens(v *int64) *UsageStatCreate {
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableOutputTokens(v *int64) *UsageStatCreate {
 	if v != nil {
-		_c.SetCompletionTokens(*v)
+		_c.SetOutputTokens(*v)
 	}
 	return _c
 }
@@ -325,13 +325,13 @@ func (_c *UsageStatCreate) defaults() {
 		v := usagestat.DefaultErrorCount
 		_c.mutation.SetErrorCount(v)
 	}
-	if _, ok := _c.mutation.PromptTokens(); !ok {
-		v := usagestat.DefaultPromptTokens
-		_c.mutation.SetPromptTokens(v)
+	if _, ok := _c.mutation.InputTokens(); !ok {
+		v := usagestat.DefaultInputTokens
+		_c.mutation.SetInputTokens(v)
 	}
-	if _, ok := _c.mutation.CompletionTokens(); !ok {
-		v := usagestat.DefaultCompletionTokens
-		_c.mutation.SetCompletionTokens(v)
+	if _, ok := _c.mutation.OutputTokens(); !ok {
+		v := usagestat.DefaultOutputTokens
+		_c.mutation.SetOutputTokens(v)
 	}
 	if _, ok := _c.mutation.TotalTokens(); !ok {
 		v := usagestat.DefaultTotalTokens
@@ -388,11 +388,11 @@ func (_c *UsageStatCreate) check() error {
 	if _, ok := _c.mutation.ErrorCount(); !ok {
 		return &ValidationError{Name: "error_count", err: errors.New(`ent: missing required field "UsageStat.error_count"`)}
 	}
-	if _, ok := _c.mutation.PromptTokens(); !ok {
-		return &ValidationError{Name: "prompt_tokens", err: errors.New(`ent: missing required field "UsageStat.prompt_tokens"`)}
+	if _, ok := _c.mutation.InputTokens(); !ok {
+		return &ValidationError{Name: "input_tokens", err: errors.New(`ent: missing required field "UsageStat.input_tokens"`)}
 	}
-	if _, ok := _c.mutation.CompletionTokens(); !ok {
-		return &ValidationError{Name: "completion_tokens", err: errors.New(`ent: missing required field "UsageStat.completion_tokens"`)}
+	if _, ok := _c.mutation.OutputTokens(); !ok {
+		return &ValidationError{Name: "output_tokens", err: errors.New(`ent: missing required field "UsageStat.output_tokens"`)}
 	}
 	if _, ok := _c.mutation.TotalTokens(); !ok {
 		return &ValidationError{Name: "total_tokens", err: errors.New(`ent: missing required field "UsageStat.total_tokens"`)}
@@ -481,13 +481,13 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagestat.FieldErrorCount, field.TypeInt64, value)
 		_node.ErrorCount = value
 	}
-	if value, ok := _c.mutation.PromptTokens(); ok {
-		_spec.SetField(usagestat.FieldPromptTokens, field.TypeInt64, value)
-		_node.PromptTokens = value
+	if value, ok := _c.mutation.InputTokens(); ok {
+		_spec.SetField(usagestat.FieldInputTokens, field.TypeInt64, value)
+		_node.InputTokens = value
 	}
-	if value, ok := _c.mutation.CompletionTokens(); ok {
-		_spec.SetField(usagestat.FieldCompletionTokens, field.TypeInt64, value)
-		_node.CompletionTokens = value
+	if value, ok := _c.mutation.OutputTokens(); ok {
+		_spec.SetField(usagestat.FieldOutputTokens, field.TypeInt64, value)
+		_node.OutputTokens = value
 	}
 	if value, ok := _c.mutation.TotalTokens(); ok {
 		_spec.SetField(usagestat.FieldTotalTokens, field.TypeInt64, value)
@@ -709,39 +709,39 @@ func (u *UsageStatUpsert) AddErrorCount(v int64) *UsageStatUpsert {
 	return u
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (u *UsageStatUpsert) SetPromptTokens(v int64) *UsageStatUpsert {
-	u.Set(usagestat.FieldPromptTokens, v)
+// SetInputTokens sets the "input_tokens" field.
+func (u *UsageStatUpsert) SetInputTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldInputTokens, v)
 	return u
 }
 
-// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
-func (u *UsageStatUpsert) UpdatePromptTokens() *UsageStatUpsert {
-	u.SetExcluded(usagestat.FieldPromptTokens)
+// UpdateInputTokens sets the "input_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateInputTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldInputTokens)
 	return u
 }
 
-// AddPromptTokens adds v to the "prompt_tokens" field.
-func (u *UsageStatUpsert) AddPromptTokens(v int64) *UsageStatUpsert {
-	u.Add(usagestat.FieldPromptTokens, v)
+// AddInputTokens adds v to the "input_tokens" field.
+func (u *UsageStatUpsert) AddInputTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldInputTokens, v)
 	return u
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (u *UsageStatUpsert) SetCompletionTokens(v int64) *UsageStatUpsert {
-	u.Set(usagestat.FieldCompletionTokens, v)
+// SetOutputTokens sets the "output_tokens" field.
+func (u *UsageStatUpsert) SetOutputTokens(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldOutputTokens, v)
 	return u
 }
 
-// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
-func (u *UsageStatUpsert) UpdateCompletionTokens() *UsageStatUpsert {
-	u.SetExcluded(usagestat.FieldCompletionTokens)
+// UpdateOutputTokens sets the "output_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateOutputTokens() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldOutputTokens)
 	return u
 }
 
-// AddCompletionTokens adds v to the "completion_tokens" field.
-func (u *UsageStatUpsert) AddCompletionTokens(v int64) *UsageStatUpsert {
-	u.Add(usagestat.FieldCompletionTokens, v)
+// AddOutputTokens adds v to the "output_tokens" field.
+func (u *UsageStatUpsert) AddOutputTokens(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldOutputTokens, v)
 	return u
 }
 
@@ -1063,45 +1063,45 @@ func (u *UsageStatUpsertOne) UpdateErrorCount() *UsageStatUpsertOne {
 	})
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (u *UsageStatUpsertOne) SetPromptTokens(v int64) *UsageStatUpsertOne {
+// SetInputTokens sets the "input_tokens" field.
+func (u *UsageStatUpsertOne) SetInputTokens(v int64) *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.SetPromptTokens(v)
+		s.SetInputTokens(v)
 	})
 }
 
-// AddPromptTokens adds v to the "prompt_tokens" field.
-func (u *UsageStatUpsertOne) AddPromptTokens(v int64) *UsageStatUpsertOne {
+// AddInputTokens adds v to the "input_tokens" field.
+func (u *UsageStatUpsertOne) AddInputTokens(v int64) *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.AddPromptTokens(v)
+		s.AddInputTokens(v)
 	})
 }
 
-// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
-func (u *UsageStatUpsertOne) UpdatePromptTokens() *UsageStatUpsertOne {
+// UpdateInputTokens sets the "input_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateInputTokens() *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.UpdatePromptTokens()
+		s.UpdateInputTokens()
 	})
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (u *UsageStatUpsertOne) SetCompletionTokens(v int64) *UsageStatUpsertOne {
+// SetOutputTokens sets the "output_tokens" field.
+func (u *UsageStatUpsertOne) SetOutputTokens(v int64) *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.SetCompletionTokens(v)
+		s.SetOutputTokens(v)
 	})
 }
 
-// AddCompletionTokens adds v to the "completion_tokens" field.
-func (u *UsageStatUpsertOne) AddCompletionTokens(v int64) *UsageStatUpsertOne {
+// AddOutputTokens adds v to the "output_tokens" field.
+func (u *UsageStatUpsertOne) AddOutputTokens(v int64) *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.AddCompletionTokens(v)
+		s.AddOutputTokens(v)
 	})
 }
 
-// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
-func (u *UsageStatUpsertOne) UpdateCompletionTokens() *UsageStatUpsertOne {
+// UpdateOutputTokens sets the "output_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateOutputTokens() *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.UpdateCompletionTokens()
+		s.UpdateOutputTokens()
 	})
 }
 
@@ -1606,45 +1606,45 @@ func (u *UsageStatUpsertBulk) UpdateErrorCount() *UsageStatUpsertBulk {
 	})
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (u *UsageStatUpsertBulk) SetPromptTokens(v int64) *UsageStatUpsertBulk {
+// SetInputTokens sets the "input_tokens" field.
+func (u *UsageStatUpsertBulk) SetInputTokens(v int64) *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.SetPromptTokens(v)
+		s.SetInputTokens(v)
 	})
 }
 
-// AddPromptTokens adds v to the "prompt_tokens" field.
-func (u *UsageStatUpsertBulk) AddPromptTokens(v int64) *UsageStatUpsertBulk {
+// AddInputTokens adds v to the "input_tokens" field.
+func (u *UsageStatUpsertBulk) AddInputTokens(v int64) *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.AddPromptTokens(v)
+		s.AddInputTokens(v)
 	})
 }
 
-// UpdatePromptTokens sets the "prompt_tokens" field to the value that was provided on create.
-func (u *UsageStatUpsertBulk) UpdatePromptTokens() *UsageStatUpsertBulk {
+// UpdateInputTokens sets the "input_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateInputTokens() *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.UpdatePromptTokens()
+		s.UpdateInputTokens()
 	})
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (u *UsageStatUpsertBulk) SetCompletionTokens(v int64) *UsageStatUpsertBulk {
+// SetOutputTokens sets the "output_tokens" field.
+func (u *UsageStatUpsertBulk) SetOutputTokens(v int64) *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.SetCompletionTokens(v)
+		s.SetOutputTokens(v)
 	})
 }
 
-// AddCompletionTokens adds v to the "completion_tokens" field.
-func (u *UsageStatUpsertBulk) AddCompletionTokens(v int64) *UsageStatUpsertBulk {
+// AddOutputTokens adds v to the "output_tokens" field.
+func (u *UsageStatUpsertBulk) AddOutputTokens(v int64) *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.AddCompletionTokens(v)
+		s.AddOutputTokens(v)
 	})
 }
 
-// UpdateCompletionTokens sets the "completion_tokens" field to the value that was provided on create.
-func (u *UsageStatUpsertBulk) UpdateCompletionTokens() *UsageStatUpsertBulk {
+// UpdateOutputTokens sets the "output_tokens" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateOutputTokens() *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.UpdateCompletionTokens()
+		s.UpdateOutputTokens()
 	})
 }
 

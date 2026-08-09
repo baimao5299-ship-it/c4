@@ -21,7 +21,7 @@ func createdBy(r *http.Request) int64 {
 }
 
 // pageToQuery 增强分页范式（page 1-based + page_size）→ repository.ListQuery。
-// page 缺省/越下界按 1；page_size 缺省 20，越界（<1 或 >100）→ ErrInvalidInput 400。
+// page 缺省/越下界按 1；page_size 缺省 20，越界（<1 或 >1000）→ ErrInvalidInput 400。
 func pageToQuery(page, pageSize *int) (repository.ListQuery, error) {
 	p := 1
 	if page != nil && *page > 1 {
@@ -31,7 +31,7 @@ func pageToQuery(page, pageSize *int) (repository.ListQuery, error) {
 	if pageSize != nil {
 		size = *pageSize
 	}
-	if size < 1 || size > 100 {
+	if size < 1 || size > 1000 {
 		return repository.ListQuery{}, service.ErrInvalidInput
 	}
 	return repository.ListQuery{Limit: size, Offset: (p - 1) * size}, nil

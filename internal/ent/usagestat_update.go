@@ -196,45 +196,45 @@ func (_u *UsageStatUpdate) AddErrorCount(v int64) *UsageStatUpdate {
 	return _u
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (_u *UsageStatUpdate) SetPromptTokens(v int64) *UsageStatUpdate {
-	_u.mutation.ResetPromptTokens()
-	_u.mutation.SetPromptTokens(v)
+// SetInputTokens sets the "input_tokens" field.
+func (_u *UsageStatUpdate) SetInputTokens(v int64) *UsageStatUpdate {
+	_u.mutation.ResetInputTokens()
+	_u.mutation.SetInputTokens(v)
 	return _u
 }
 
-// SetNillablePromptTokens sets the "prompt_tokens" field if the given value is not nil.
-func (_u *UsageStatUpdate) SetNillablePromptTokens(v *int64) *UsageStatUpdate {
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableInputTokens(v *int64) *UsageStatUpdate {
 	if v != nil {
-		_u.SetPromptTokens(*v)
+		_u.SetInputTokens(*v)
 	}
 	return _u
 }
 
-// AddPromptTokens adds value to the "prompt_tokens" field.
-func (_u *UsageStatUpdate) AddPromptTokens(v int64) *UsageStatUpdate {
-	_u.mutation.AddPromptTokens(v)
+// AddInputTokens adds value to the "input_tokens" field.
+func (_u *UsageStatUpdate) AddInputTokens(v int64) *UsageStatUpdate {
+	_u.mutation.AddInputTokens(v)
 	return _u
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (_u *UsageStatUpdate) SetCompletionTokens(v int64) *UsageStatUpdate {
-	_u.mutation.ResetCompletionTokens()
-	_u.mutation.SetCompletionTokens(v)
+// SetOutputTokens sets the "output_tokens" field.
+func (_u *UsageStatUpdate) SetOutputTokens(v int64) *UsageStatUpdate {
+	_u.mutation.ResetOutputTokens()
+	_u.mutation.SetOutputTokens(v)
 	return _u
 }
 
-// SetNillableCompletionTokens sets the "completion_tokens" field if the given value is not nil.
-func (_u *UsageStatUpdate) SetNillableCompletionTokens(v *int64) *UsageStatUpdate {
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableOutputTokens(v *int64) *UsageStatUpdate {
 	if v != nil {
-		_u.SetCompletionTokens(*v)
+		_u.SetOutputTokens(*v)
 	}
 	return _u
 }
 
-// AddCompletionTokens adds value to the "completion_tokens" field.
-func (_u *UsageStatUpdate) AddCompletionTokens(v int64) *UsageStatUpdate {
-	_u.mutation.AddCompletionTokens(v)
+// AddOutputTokens adds value to the "output_tokens" field.
+func (_u *UsageStatUpdate) AddOutputTokens(v int64) *UsageStatUpdate {
+	_u.mutation.AddOutputTokens(v)
 	return _u
 }
 
@@ -444,17 +444,17 @@ func (_u *UsageStatUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedErrorCount(); ok {
 		_spec.AddField(usagestat.FieldErrorCount, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.PromptTokens(); ok {
-		_spec.SetField(usagestat.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.InputTokens(); ok {
+		_spec.SetField(usagestat.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedPromptTokens(); ok {
-		_spec.AddField(usagestat.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedInputTokens(); ok {
+		_spec.AddField(usagestat.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.CompletionTokens(); ok {
-		_spec.SetField(usagestat.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.OutputTokens(); ok {
+		_spec.SetField(usagestat.FieldOutputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedCompletionTokens(); ok {
-		_spec.AddField(usagestat.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedOutputTokens(); ok {
+		_spec.AddField(usagestat.FieldOutputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalTokens(); ok {
 		_spec.SetField(usagestat.FieldTotalTokens, field.TypeInt64, value)
@@ -677,45 +677,45 @@ func (_u *UsageStatUpdateOne) AddErrorCount(v int64) *UsageStatUpdateOne {
 	return _u
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (_u *UsageStatUpdateOne) SetPromptTokens(v int64) *UsageStatUpdateOne {
-	_u.mutation.ResetPromptTokens()
-	_u.mutation.SetPromptTokens(v)
+// SetInputTokens sets the "input_tokens" field.
+func (_u *UsageStatUpdateOne) SetInputTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetInputTokens()
+	_u.mutation.SetInputTokens(v)
 	return _u
 }
 
-// SetNillablePromptTokens sets the "prompt_tokens" field if the given value is not nil.
-func (_u *UsageStatUpdateOne) SetNillablePromptTokens(v *int64) *UsageStatUpdateOne {
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableInputTokens(v *int64) *UsageStatUpdateOne {
 	if v != nil {
-		_u.SetPromptTokens(*v)
+		_u.SetInputTokens(*v)
 	}
 	return _u
 }
 
-// AddPromptTokens adds value to the "prompt_tokens" field.
-func (_u *UsageStatUpdateOne) AddPromptTokens(v int64) *UsageStatUpdateOne {
-	_u.mutation.AddPromptTokens(v)
+// AddInputTokens adds value to the "input_tokens" field.
+func (_u *UsageStatUpdateOne) AddInputTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddInputTokens(v)
 	return _u
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (_u *UsageStatUpdateOne) SetCompletionTokens(v int64) *UsageStatUpdateOne {
-	_u.mutation.ResetCompletionTokens()
-	_u.mutation.SetCompletionTokens(v)
+// SetOutputTokens sets the "output_tokens" field.
+func (_u *UsageStatUpdateOne) SetOutputTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetOutputTokens()
+	_u.mutation.SetOutputTokens(v)
 	return _u
 }
 
-// SetNillableCompletionTokens sets the "completion_tokens" field if the given value is not nil.
-func (_u *UsageStatUpdateOne) SetNillableCompletionTokens(v *int64) *UsageStatUpdateOne {
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableOutputTokens(v *int64) *UsageStatUpdateOne {
 	if v != nil {
-		_u.SetCompletionTokens(*v)
+		_u.SetOutputTokens(*v)
 	}
 	return _u
 }
 
-// AddCompletionTokens adds value to the "completion_tokens" field.
-func (_u *UsageStatUpdateOne) AddCompletionTokens(v int64) *UsageStatUpdateOne {
-	_u.mutation.AddCompletionTokens(v)
+// AddOutputTokens adds value to the "output_tokens" field.
+func (_u *UsageStatUpdateOne) AddOutputTokens(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddOutputTokens(v)
 	return _u
 }
 
@@ -955,17 +955,17 @@ func (_u *UsageStatUpdateOne) sqlSave(ctx context.Context) (_node *UsageStat, er
 	if value, ok := _u.mutation.AddedErrorCount(); ok {
 		_spec.AddField(usagestat.FieldErrorCount, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.PromptTokens(); ok {
-		_spec.SetField(usagestat.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.InputTokens(); ok {
+		_spec.SetField(usagestat.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedPromptTokens(); ok {
-		_spec.AddField(usagestat.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedInputTokens(); ok {
+		_spec.AddField(usagestat.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.CompletionTokens(); ok {
-		_spec.SetField(usagestat.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.OutputTokens(); ok {
+		_spec.SetField(usagestat.FieldOutputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedCompletionTokens(); ok {
-		_spec.AddField(usagestat.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedOutputTokens(); ok {
+		_spec.AddField(usagestat.FieldOutputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalTokens(); ok {
 		_spec.SetField(usagestat.FieldTotalTokens, field.TypeInt64, value)

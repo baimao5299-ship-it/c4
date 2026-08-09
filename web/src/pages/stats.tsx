@@ -37,8 +37,8 @@ interface BucketRow {
   label: string
   RequestCount: number
   ErrorCount: number
-  PromptTokens: number
-  CompletionTokens: number
+  InputTokens: number
+  OutputTokens: number
   TotalTokens: number
   TotalLatencyMS: number
 }
@@ -55,14 +55,14 @@ function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[]
         label: granularity === 'hour'
           ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
           : `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
-        RequestCount: 0, ErrorCount: 0, PromptTokens: 0, CompletionTokens: 0, TotalTokens: 0, TotalLatencyMS: 0,
+        RequestCount: 0, ErrorCount: 0, InputTokens: 0, OutputTokens: 0, TotalTokens: 0, TotalLatencyMS: 0,
       }
       map.set(r.BucketTime, b)
     }
     b.RequestCount += r.RequestCount ?? 0
     b.ErrorCount += r.ErrorCount ?? 0
-    b.PromptTokens += r.PromptTokens ?? 0
-    b.CompletionTokens += r.CompletionTokens ?? 0
+    b.InputTokens += r.InputTokens ?? 0
+    b.OutputTokens += r.OutputTokens ?? 0
     b.TotalTokens += r.TotalTokens ?? 0
     b.TotalLatencyMS += r.TotalLatencyMS ?? 0
   }
@@ -223,8 +223,8 @@ export default function Stats() {
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">{formatDateTime(r.time)}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.RequestCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.ErrorCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.PromptTokens}</TableCell>
-                      <TableCell className="text-right tabular-nums">{r.CompletionTokens}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.InputTokens}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.OutputTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.TotalTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{avgLatency(r)}</TableCell>
                     </TableRow>

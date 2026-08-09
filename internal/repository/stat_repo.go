@@ -35,14 +35,14 @@ type StatRepo struct {
 // NOT NULL 无默认，行值 = time.Now()）。
 var statUpsertCols = []string{
 	"bucket_time", "group_id", "account_id", "template_id", "user_id", "model", "is_error",
-	"request_count", "error_count", "prompt_tokens", "completion_tokens", "total_tokens",
+	"request_count", "error_count", "input_tokens", "output_tokens", "total_tokens",
 	"cache_read_tokens", "cache_creation_tokens", "cost", "total_latency_ms", "updated_at",
 }
 
 // statUpsertMeasureCols DO UPDATE SET 的冲突累加列（测量列；维度列只作
 // ON CONFLICT 目标，不做加法——见 Upsert 注释）。
 var statUpsertMeasureCols = []string{
-	"request_count", "error_count", "prompt_tokens", "completion_tokens", "total_tokens",
+	"request_count", "error_count", "input_tokens", "output_tokens", "total_tokens",
 	"cache_read_tokens", "cache_creation_tokens", "cost", "total_latency_ms",
 }
 
@@ -131,10 +131,10 @@ func statColValue(b *domain.StatBucket, col string) any {
 		return b.RequestCount
 	case "error_count":
 		return b.ErrorCount
-	case "prompt_tokens":
-		return b.PromptTokens
-	case "completion_tokens":
-		return b.CompletionTokens
+	case "input_tokens":
+		return b.InputTokens
+	case "output_tokens":
+		return b.OutputTokens
 	case "total_tokens":
 		return b.TotalTokens
 	case "cache_read_tokens":
@@ -178,7 +178,7 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 			BucketTime: row.BucketTime, GroupID: row.GroupID, AccountID: row.AccountID,
 			TemplateID: row.TemplateID, UserID: row.UserID, Model: row.Model, IsError: row.IsError,
 			RequestCount: row.RequestCount, ErrorCount: row.ErrorCount,
-			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
+			InputTokens: row.InputTokens, OutputTokens: row.OutputTokens,
 			TotalTokens: row.TotalTokens, TotalLatencyMS: row.TotalLatencyMs,
 			CacheReadTokens: row.CacheReadTokens, CacheCreationTokens: row.CacheCreationTokens,
 			Cost: row.Cost,

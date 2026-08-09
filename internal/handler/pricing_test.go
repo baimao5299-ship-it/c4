@@ -122,7 +122,7 @@ func TestPricingList(t *testing.T) {
 	for _, tc := range []struct{ name, query string }{
 		{"source 非法", "?source=bogus"},
 		{"sort 非法", "?sort=bogus"},
-		{"page_size 越界", "?page_size=101"},
+		{"page_size 越界", "?page_size=1001"},
 		{"page_size 非数字", "?page_size=abc"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

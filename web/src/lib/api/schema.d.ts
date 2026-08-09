@@ -1434,9 +1434,9 @@ export interface components {
             /** Format: int64 */
             LatencyMS?: number;
             /** Format: int64 */
-            PromptTokens?: number;
+            InputTokens?: number;
             /** Format: int64 */
-            CompletionTokens?: number;
+            OutputTokens?: number;
             /** Format: int64 */
             TotalTokens?: number;
             /** Format: int64 */
@@ -1483,9 +1483,9 @@ export interface components {
             /** Format: int64 */
             ErrorCount?: number;
             /** Format: int64 */
-            PromptTokens?: number;
+            InputTokens?: number;
             /** Format: int64 */
-            CompletionTokens?: number;
+            OutputTokens?: number;
             /** Format: int64 */
             TotalTokens?: number;
             /** Format: int64 */

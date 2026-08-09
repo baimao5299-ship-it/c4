@@ -764,8 +764,8 @@ func TestProxyChatNonStreamingLogsModel(t *testing.T) {
 	require.Len(t, store.logs, 1, "must capture exactly one usage log")
 	require.Equal(t, "gpt-4o", store.logs[0].Model, "成功非流式：Model = 客户端请求模型")
 	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
-	require.Equal(t, int64(3), store.logs[0].PromptTokens, "非流式 usage 直读")
-	require.Equal(t, int64(5), store.logs[0].CompletionTokens)
+	require.Equal(t, int64(3), store.logs[0].InputTokens, "非流式 usage 直读")
+	require.Equal(t, int64(5), store.logs[0].OutputTokens)
 }
 
 // 评审 I-1：Select 失败（组内无账号支持请求格式）→ 404，日志 Model=请求模型、

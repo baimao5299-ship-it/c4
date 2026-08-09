@@ -49,8 +49,8 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 		SetStatusCode(l.StatusCode).
 		SetErrorType(string(l.ErrorType)).
 		SetLatencyMs(l.LatencyMS).
-		SetPromptTokens(l.PromptTokens).
-		SetCompletionTokens(l.CompletionTokens).
+		SetInputTokens(l.InputTokens).
+		SetOutputTokens(l.OutputTokens).
 		SetTotalTokens(l.TotalTokens).
 		SetCacheReadTokens(l.CacheReadTokens).
 		SetCacheCreationTokens(l.CacheCreationTokens).
@@ -75,6 +75,9 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	}
 	if l.MappedModel != "" {
 		c = c.SetMappedModel(l.MappedModel)
+	}
+	if l.ErrorMessage != nil {
+		c = c.SetErrorMessage(*l.ErrorMessage)
 	}
 	if l.BillingTier != "" {
 		c = c.SetBillingTier(l.BillingTier)
@@ -128,9 +131,10 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 			ID: row.ID, RequestID: row.RequestID,
 			Model: row.Model, Format: domain.RequestFormat(row.Format),
 			StatusCode: row.StatusCode, ErrorType: domain.ErrorType(row.ErrorType),
+			ErrorMessage: row.ErrorMessage,
 			LatencyMS:           row.LatencyMs,
-			PromptTokens:        row.PromptTokens,
-			CompletionTokens:    row.CompletionTokens,
+			InputTokens:         row.InputTokens,
+			OutputTokens:        row.OutputTokens,
 			TotalTokens:         row.TotalTokens,
 			CacheReadTokens:     row.CacheReadTokens,
 			CacheCreationTokens: row.CacheCreationTokens,

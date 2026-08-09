@@ -37,13 +37,15 @@ func main() {
 	latency := flag.Duration("latency", 20*time.Millisecond, "per-chunk delay")
 	fail429 := flag.String("fail429", "", "comma-separated upstream keys to reject with 429")
 	fail500 := flag.String("fail500", "", "comma-separated upstream keys to reject with 500")
+	fail400 := flag.String("fail400", "", "comma-separated upstream keys to reject with 400")
 	flag.Parse()
 
 	f429 := splitKeys(*fail429)
 	f500 := splitKeys(*fail500)
+	f400 := splitKeys(*fail400)
 
 	http.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		if code := failIfInjected(w, r, f429, f500); code != 0 {
+		if code := failIfInjected(w, r, f429, f500, f400); code != 0 {
 			return
 		}
 		var body map[string]any
@@ -82,7 +84,7 @@ func main() {
 	// openai responses 格式（Responses API）：非流式 JSON + 流式 SSE
 	// （response.output_text.delta → response.completed → [DONE]，多格式压测用）。
 	http.HandleFunc("/v1/responses", func(w http.ResponseWriter, r *http.Request) {
-		if code := failIfInjected(w, r, f429, f500); code != 0 {
+		if code := failIfInjected(w, r, f429, f500, f400); code != 0 {
 			return
 		}
 		var body map[string]any
@@ -126,7 +128,7 @@ func main() {
 	// anthropic 官方格式流（event: 行必须带，见文件头注释）。SDK 在
 	// message_stop 后结束迭代，故 message_stop 必须是最后一个事件。
 	http.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
-		if code := failIfInjected(w, r, f429, f500); code != 0 {
+		if code := failIfInjected(w, r, f429, f500, f400); code != 0 {
 			return
 		}
 		var body map[string]any
@@ -183,8 +185,8 @@ func main() {
 		writeAnthropic("message_stop", map[string]any{"type": "message_stop"})
 	})
 
-	log.Printf("fake upstream on %s (chunks=%d latency=%s fail429=%v fail500=%v)",
-		*addr, *chunks, *latency, f429, f500)
+	log.Printf("fake upstream on %s (chunks=%d latency=%s fail429=%v fail500=%v fail400=%v)",
+		*addr, *chunks, *latency, f429, f500, f400)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
 
@@ -198,8 +200,8 @@ func splitKeys(s string) map[string]bool {
 	return out
 }
 
-// failIfInjected 命中注入 key 则直接写 429/500 并返回状态码（0 = 未命中）。
-func failIfInjected(w http.ResponseWriter, r *http.Request, f429, f500 map[string]bool) int {
+// failIfInjected 命中注入 key 则直接写 400/429/500 并返回状态码（0 = 未命中）。
+func failIfInjected(w http.ResponseWriter, r *http.Request, f429, f500, f400 map[string]bool) int {
 	key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	key = strings.TrimSpace(key)
 	switch {
@@ -213,6 +215,11 @@ func failIfInjected(w http.ResponseWriter, r *http.Request, f429, f500 map[strin
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":{"message":"injected 500","type":"server_error"}}`))
 		return http.StatusInternalServerError
+	case f400[key]:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"injected 400","type":"invalid_request_error"}}`))
+		return http.StatusBadRequest
 	}
 	return 0
 }

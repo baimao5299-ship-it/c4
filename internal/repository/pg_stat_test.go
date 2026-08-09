@@ -26,7 +26,7 @@ func TestPGStatUpsertConflictAccumulates(t *testing.T) {
 		return &domain.StatBucket{
 			BucketTime: bucket, GroupID: 7, AccountID: 0, TemplateID: 0, UserID: 42,
 			Model: "gpt-4o", IsError: false,
-			RequestCount: req, ErrorCount: 0, PromptTokens: 0, CompletionTokens: 0,
+			RequestCount: req, ErrorCount: 0, InputTokens: 0, OutputTokens: 0,
 			TotalTokens: tok, CacheReadTokens: 0, CacheCreationTokens: 0, Cost: 0, TotalLatencyMS: 0,
 		}
 	}

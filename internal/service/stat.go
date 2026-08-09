@@ -34,8 +34,8 @@ func (s *Service) QueryStats(ctx context.Context, q repository.StatQuery, granul
 		}
 		m.RequestCount += b.RequestCount
 		m.ErrorCount += b.ErrorCount
-		m.PromptTokens += b.PromptTokens
-		m.CompletionTokens += b.CompletionTokens
+		m.InputTokens += b.InputTokens
+		m.OutputTokens += b.OutputTokens
 		m.TotalTokens += b.TotalTokens
 		m.CacheReadTokens += b.CacheReadTokens
 		m.CacheCreationTokens += b.CacheCreationTokens

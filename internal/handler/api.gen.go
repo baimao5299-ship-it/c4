@@ -660,15 +660,15 @@ type StatBucket struct {
 	BucketTime          *time.Time `json:"BucketTime,omitempty"`
 	CacheCreationTokens *int64     `json:"CacheCreationTokens,omitempty"`
 	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
-	CompletionTokens    *int64     `json:"CompletionTokens,omitempty"`
 
 	// Cost 计费成本（毫分，1 USD = 100
 	Cost           *int64  `json:"Cost,omitempty"`
 	ErrorCount     *int64  `json:"ErrorCount,omitempty"`
 	GroupID        *int64  `json:"GroupID,omitempty"`
+	InputTokens    *int64  `json:"InputTokens,omitempty"`
 	IsError        *bool   `json:"IsError,omitempty"`
 	Model          *string `json:"Model,omitempty"`
-	PromptTokens   *int64  `json:"PromptTokens,omitempty"`
+	OutputTokens   *int64  `json:"OutputTokens,omitempty"`
 	RequestCount   *int64  `json:"RequestCount,omitempty"`
 	TemplateID     *int64  `json:"TemplateID,omitempty"`
 	TotalLatencyMS *int64  `json:"TotalLatencyMS,omitempty"`
@@ -741,29 +741,29 @@ type UsageLog struct {
 	BillingTier         *string `json:"BillingTier,omitempty"`
 	CacheCreationTokens *int64  `json:"CacheCreationTokens,omitempty"`
 	CacheReadTokens     *int64  `json:"CacheReadTokens,omitempty"`
-	CompletionTokens    *int64  `json:"CompletionTokens,omitempty"`
 
 	// Cost 计费成本（毫分，1 USD = 100
-	Cost      *int64         `json:"Cost,omitempty"`
-	CreatedAt *time.Time     `json:"CreatedAt,omitempty"`
-	ErrorType *ErrorType     `json:"ErrorType,omitempty"`
-	Format    *RequestFormat `json:"Format,omitempty"`
-	GroupID   *int64         `json:"GroupID,omitempty"`
-	ID        *int64         `json:"ID,omitempty"`
+	Cost        *int64         `json:"Cost,omitempty"`
+	CreatedAt   *time.Time     `json:"CreatedAt,omitempty"`
+	ErrorType   *ErrorType     `json:"ErrorType,omitempty"`
+	Format      *RequestFormat `json:"Format,omitempty"`
+	GroupID     *int64         `json:"GroupID,omitempty"`
+	ID          *int64         `json:"ID,omitempty"`
+	InputTokens *int64         `json:"InputTokens,omitempty"`
 
 	// KeyID 鉴权归属 key；0 = 无
-	KeyID       *int64  `json:"KeyID,omitempty"`
-	LatencyMS   *int64  `json:"LatencyMS,omitempty"`
-	MappedModel *string `json:"MappedModel"`
-	Model       *string `json:"Model,omitempty"`
+	KeyID        *int64  `json:"KeyID,omitempty"`
+	LatencyMS    *int64  `json:"LatencyMS,omitempty"`
+	MappedModel  *string `json:"MappedModel"`
+	Model        *string `json:"Model,omitempty"`
+	OutputTokens *int64  `json:"OutputTokens,omitempty"`
 
 	// Overdraft 本次扣费透支（余额不足扣为负余额）
-	Overdraft    *bool   `json:"Overdraft,omitempty"`
-	PromptTokens *int64  `json:"PromptTokens,omitempty"`
-	RequestID    *string `json:"RequestID,omitempty"`
-	StatusCode   *int    `json:"StatusCode,omitempty"`
-	TemplateID   *int64  `json:"TemplateID,omitempty"`
-	TotalTokens  *int64  `json:"TotalTokens,omitempty"`
+	Overdraft   *bool   `json:"Overdraft,omitempty"`
+	RequestID   *string `json:"RequestID,omitempty"`
+	StatusCode  *int    `json:"StatusCode,omitempty"`
+	TemplateID  *int64  `json:"TemplateID,omitempty"`
+	TotalTokens *int64  `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`

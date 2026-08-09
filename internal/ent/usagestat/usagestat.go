@@ -31,10 +31,10 @@ const (
 	FieldRequestCount = "request_count"
 	// FieldErrorCount holds the string denoting the error_count field in the database.
 	FieldErrorCount = "error_count"
-	// FieldPromptTokens holds the string denoting the prompt_tokens field in the database.
-	FieldPromptTokens = "prompt_tokens"
-	// FieldCompletionTokens holds the string denoting the completion_tokens field in the database.
-	FieldCompletionTokens = "completion_tokens"
+	// FieldInputTokens holds the string denoting the input_tokens field in the database.
+	FieldInputTokens = "input_tokens"
+	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
+	FieldOutputTokens = "output_tokens"
 	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
 	FieldTotalTokens = "total_tokens"
 	// FieldCacheReadTokens holds the string denoting the cache_read_tokens field in the database.
@@ -63,8 +63,8 @@ var Columns = []string{
 	FieldIsError,
 	FieldRequestCount,
 	FieldErrorCount,
-	FieldPromptTokens,
-	FieldCompletionTokens,
+	FieldInputTokens,
+	FieldOutputTokens,
 	FieldTotalTokens,
 	FieldCacheReadTokens,
 	FieldCacheCreationTokens,
@@ -100,10 +100,10 @@ var (
 	DefaultRequestCount int64
 	// DefaultErrorCount holds the default value on creation for the "error_count" field.
 	DefaultErrorCount int64
-	// DefaultPromptTokens holds the default value on creation for the "prompt_tokens" field.
-	DefaultPromptTokens int64
-	// DefaultCompletionTokens holds the default value on creation for the "completion_tokens" field.
-	DefaultCompletionTokens int64
+	// DefaultInputTokens holds the default value on creation for the "input_tokens" field.
+	DefaultInputTokens int64
+	// DefaultOutputTokens holds the default value on creation for the "output_tokens" field.
+	DefaultOutputTokens int64
 	// DefaultTotalTokens holds the default value on creation for the "total_tokens" field.
 	DefaultTotalTokens int64
 	// DefaultCacheReadTokens holds the default value on creation for the "cache_read_tokens" field.
@@ -173,14 +173,14 @@ func ByErrorCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldErrorCount, opts...).ToFunc()
 }
 
-// ByPromptTokens orders the results by the prompt_tokens field.
-func ByPromptTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPromptTokens, opts...).ToFunc()
+// ByInputTokens orders the results by the input_tokens field.
+func ByInputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInputTokens, opts...).ToFunc()
 }
 
-// ByCompletionTokens orders the results by the completion_tokens field.
-func ByCompletionTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCompletionTokens, opts...).ToFunc()
+// ByOutputTokens orders the results by the output_tokens field.
+func ByOutputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputTokens, opts...).ToFunc()
 }
 
 // ByTotalTokens orders the results by the total_tokens field.

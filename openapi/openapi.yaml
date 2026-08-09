@@ -510,7 +510,7 @@ paths:
       summary: 兑换码列表（增强分页范式 page/page_size；type/status 筛选；sort 白名单）
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
-        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: type, in: query, schema: { type: string, enum: [balance, concurrency, temp_balance] } }
         - { name: status, in: query, schema: { type: string, enum: [active, disabled] } }
         - { name: sort, in: query, schema: { type: string } }
@@ -586,7 +586,7 @@ paths:
       summary: 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
-        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
         - { name: model, in: query, schema: { type: string, description: 模型名模糊搜索（大小写不敏感） } }
         - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
@@ -875,7 +875,7 @@ paths:
       summary: 我的兑换记录（use 快照 + 码的 type/remark 联查；强制 user_id = 当前用户，防越权）
       parameters:
         - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
-        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: sort, in: query, schema: { type: string } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
@@ -1681,8 +1681,8 @@ components:
         StatusCode: { type: integer }
         ErrorType: { $ref: '#/components/schemas/ErrorType' }
         LatencyMS: { type: integer, format: int64 }
-        PromptTokens: { type: integer, format: int64 }
-        CompletionTokens: { type: integer, format: int64 }
+        InputTokens: { type: integer, format: int64 }
+        OutputTokens: { type: integer, format: int64 }
         TotalTokens: { type: integer, format: int64 }
         CacheReadTokens: { type: integer, format: int64 }
         CacheCreationTokens: { type: integer, format: int64 }
@@ -1711,8 +1711,8 @@ components:
         IsError: { type: boolean }
         RequestCount: { type: integer, format: int64 }
         ErrorCount: { type: integer, format: int64 }
-        PromptTokens: { type: integer, format: int64 }
-        CompletionTokens: { type: integer, format: int64 }
+        InputTokens: { type: integer, format: int64 }
+        OutputTokens: { type: integer, format: int64 }
         TotalTokens: { type: integer, format: int64 }
         CacheReadTokens: { type: integer, format: int64 }
         CacheCreationTokens: { type: integer, format: int64 }

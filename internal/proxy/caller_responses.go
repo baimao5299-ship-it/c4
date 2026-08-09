@@ -33,11 +33,11 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		// 客户端请求体已带 stream:true（fake 上游按 body["stream"] 分支），无需注入。
 		streamBody, err := setModel(body, sel.Model)
 		if err != nil {
-			return 0, nil, false, nil
+			return 0, nil, false, err
 		}
 		resp, err := p.clients.ResponseStreamRaw(ctx, tpl, cred, streamBody)
 		if err != nil {
-			return statusOf(err), upstreamBody(err), false, nil
+			return statusOf(err), upstreamBody(err), false, err
 		}
 		if resp.StatusCode != http.StatusOK {
 			rb := readUpstreamBody(resp)
@@ -47,13 +47,13 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var pt, ct, tt, cr, cc int64
+		var it, ot, tt, cr, cc int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
 				// 用量只在 response.completed 事件携带（响应对象的 usage 字段；
 				// 评审 M2：流式前缀 response.usage.*）。
 				if bytes.Equal(ev.Event, []byte("response.completed")) {
-					pt, ct, tt, cr, cc = responsesCompletedUsage(ev.Data)
+					it, ot, tt, cr, cc = responsesCompletedUsage(ev.Data)
 				}
 			},
 		})
@@ -67,15 +67,15 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort，
 				// token 取断前已收到的 usage 帧（无则 0）。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -92,22 +92,22 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	params.Model = responses.ResponsesModel(sel.Model)
 	resp, err := p.clients.Response(ctx, tpl, cred, params)
 	if err != nil {
-		return statusOf(err), upstreamBody(err), false, nil
+		return statusOf(err), upstreamBody(err), false, err
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
-		return 0, nil, false, nil
+		return 0, nil, false, err
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-	var pt, ct, tt, cr, cc int64
+	var it, ot, tt, cr, cc int64
 	if resp.JSON.Usage.Valid() {
 		// 非流式：cr 直读 SDK 结构体、cc 走 RawJSON() gjson 聚合
 		// （Responses 无 cache_creation 对象，恒 0 预期——M4）。
-		pt, ct, tt, cr, cc = responsesUsageFromResponse(resp.Usage)
+		it, ot, tt, cr, cc = responsesUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }
