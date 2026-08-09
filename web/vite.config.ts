@@ -10,6 +10,7 @@ export default defineConfig({
     host: '127.0.0.1',
     proxy: {
       '/admin': { target: 'http://127.0.0.1:18080', changeOrigin: true },
+      '/user': { target: 'http://127.0.0.1:18080', changeOrigin: true },
     },
   },
   build: { outDir: 'dist', emptyOutDir: true },

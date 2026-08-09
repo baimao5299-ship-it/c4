@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Users, FolderOpen, FileText, BarChart3, ScrollText, LogOut } from 'lucide-react'
+import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { auth } from '@/lib/auth'
 import { setLang, type AppLang } from '@/lib/i18n'
@@ -12,10 +12,14 @@ const nav = [
   { to: '/dashboard', key: 'nav.overview', icon: LayoutDashboard },
   { to: '/templates', key: 'nav.templates', icon: Boxes },
   { to: '/accounts', key: 'nav.accounts', icon: Users },
+  { to: '/users', key: 'nav.users', icon: UserCog },
   { to: '/groups', key: 'nav.groups', icon: FolderOpen },
   { to: '/logs', key: 'nav.logs', icon: FileText },
   { to: '/stats', key: 'nav.stats', icon: BarChart3 },
   { to: '/rules', key: 'nav.rules', icon: ScrollText },
+  { to: '/redemption-codes', key: 'nav.redemptions', icon: Ticket },
+  { to: '/pricing', key: 'nav.pricing', icon: Coins },
+  { to: '/settings', key: 'nav.settings', icon: Settings },
 ]
 
 const LANGS: { code: AppLang; label: string }[] = [

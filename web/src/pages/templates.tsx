@@ -47,8 +47,6 @@ const CREDENTIAL_TYPE_LABELS: Record<string, string> = {
 }
 const CREDENTIAL_TYPES = Object.keys(CREDENTIAL_TYPE_LABELS)
 
-const LIMIT = 20
-
 // —— 多格式表单状态（supported_formats/format_models；default_format/model_formats 已废弃） ——
 interface FormatRow {
   format: RequestFormat
@@ -334,6 +332,7 @@ export default function Templates() {
 
   // —— 列表状态：分页/筛选/排序 ——
   const [offset, setOffset] = useState(0)
+  const [limit, setLimit] = useState(20)
   const [name, setName] = useState('')
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
@@ -347,8 +346,8 @@ export default function Templates() {
   }, [name])
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['templates', { limit: LIMIT, offset, name: debouncedName, sort: activeSort ?? 'id', order }],
-    queryFn: () => api.listTemplates({ limit: LIMIT, offset, name: debouncedName || undefined, sort: activeSort ?? 'id', order }),
+    queryKey: ['templates', { limit, offset, name: debouncedName, sort: activeSort ?? 'id', order }],
+    queryFn: () => api.listTemplates({ limit, offset, name: debouncedName || undefined, sort: activeSort ?? 'id', order }),
   })
   const rows = data?.rows ?? []
 
@@ -375,6 +374,8 @@ export default function Templates() {
     }
   }
   const onOffsetChange = (o: number) => { setOffset(o); setSelected([]) }
+  // 每页条数变化 → 重置 offset 并清空选择。
+  const onLimitChange = (l: number) => { setLimit(l); setOffset(0); setSelected([]) }
 
   // —— 创建/编辑对话框 ——
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -428,7 +429,7 @@ export default function Templates() {
       qc.invalidateQueries({ queryKey: ['templates'] })
       setDeleting(null)
       // 删除的是当前页最后一行时回退一页
-      if (rows.length === 1 && offset > 0) setOffset(offset - LIMIT)
+      if (rows.length === 1 && offset > 0) setOffset(offset - limit)
     },
   })
   const batchDelete = useMutation({
@@ -438,7 +439,7 @@ export default function Templates() {
       setSelected([])
       // 当前页被删空时回到最后有效页
       const after = (data?.total ?? 0) - ids.length
-      if (offset > 0 && offset >= after) setOffset(Math.max(0, after - (after % LIMIT)))
+      if (offset > 0 && offset >= after) setOffset(Math.max(0, after - (after % limit)))
     },
   })
   const batchUpdate = useMutation({
@@ -626,7 +627,7 @@ export default function Templates() {
               </TableBody>
             </Table>
           </div>
-          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={onOffsetChange} />
+          <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onOffsetChange={onOffsetChange} onLimitChange={onLimitChange} />
         </>
       )}
 

@@ -11,10 +11,12 @@ import { Input } from '@/components/ui/input'
 export function ListToolbar({
   name,
   onNameChange,
+  placeholder,
   children,
 }: {
   name: string
   onNameChange: (name: string) => void
+  placeholder?: string // 默认 list.search（"搜索名称"）；按资源覆盖（如邮箱搜索）
   children?: ReactNode
 }) {
   const { t } = useTranslation()
@@ -24,7 +26,7 @@ export function ListToolbar({
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="h-9 pl-8"
-          placeholder={t('list.search')}
+          placeholder={placeholder ?? t('list.search')}
           value={name}
           onChange={e => onNameChange(e.target.value)}
         />

@@ -32,7 +32,6 @@ type Group = components['schemas']['Group']
 // 批量更新表单里 status/template_id 的「不修改」哨兵值。
 type BatchStatus = 'all' | AccountStatus
 
-const LIMIT = 20
 const STATUSES: AccountStatus[] = ['active', 'unhealthy', '429', 'disabled']
 
 interface FormState {
@@ -150,17 +149,18 @@ export default function Accounts() {
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
+  const [limit, setLimit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<AccountStatus[]>([])
   const [templateId, setTemplateId] = useState('all') // 'all' = 全部模板
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
       'accounts',
-      { limit: LIMIT, offset, name, sort: activeSort ?? 'id', order, status: statusFilter.join(','), template_id: templateId === 'all' ? undefined : Number(templateId) },
+      { limit, offset, name, sort: activeSort ?? 'id', order, status: statusFilter.join(','), template_id: templateId === 'all' ? undefined : Number(templateId) },
     ],
     queryFn: () =>
       api.listAccounts({
-        limit: LIMIT,
+        limit,
         offset,
         name: name || undefined,
         sort: activeSort ?? 'id',
@@ -176,7 +176,7 @@ export default function Accounts() {
   const groups = groupsQ.data?.rows ?? []
   const rows = data?.rows ?? []
 
-  // —— 行勾选（跨页保留，筛选/翻页后清空）——
+  // 行勾选（跨页保留，筛选/翻页后清空）——
   const [selected, setSelected] = useState<number[]>([])
   const pageIds = rows.map(r => r.ID!)
   const allChecked = rows.length > 0 && pageIds.every(id => selected.includes(id))
@@ -185,11 +185,25 @@ export default function Accounts() {
   const toggleAll = (c: boolean) =>
     setSelected(s => (c ? Array.from(new Set([...s, ...pageIds])) : s.filter(x => !pageIds.includes(x))))
 
+  // rows 变化清理已不存在的勾选（M2，templates 同款思路）：refetchInterval/操作
+  // 刷新后把已删除的行移出 selected。账号页跨页勾选是既有语义（翻页不清空），
+  // 故仅同视图（offset 未变）时清理到当前页可见 ID，翻页时跳过。
+  const pageOffsetRef = useRef(offset)
+  useEffect(() => {
+    const pageChanged = pageOffsetRef.current !== offset
+    pageOffsetRef.current = offset
+    if (pageChanged) return
+    const ids = new Set(rows.map(r => r.ID!))
+    setSelected(s => s.filter(id => ids.has(id)))
+  }, [rows, offset])
+
   // 筛选/翻页变化 → 回第一页 + 清勾选。
   const resetPage = () => {
     setOffset(0)
     setSelected([])
   }
+  // 每页条数变化 → 重置 offset 并清勾选。
+  const changeLimit = (l: number) => { setLimit(l); setOffset(0); setSelected([]) }
   const changeName = (v: string) => { setName(v); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
@@ -220,9 +234,12 @@ export default function Accounts() {
   // —— 批量删除/更新 ——
   const batchDelete = useMutation({
     mutationFn: (ids: number[]) => api.deleteAccountsBatch(ids),
-    onSuccess: () => {
+    onSuccess: (_res, ids) => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
       setSelected([])
+      // 当前页被删空时回到最后有效页（templates 同款守卫，不再一律回第 1 页）
+      const after = (data?.total ?? 0) - ids.length
+      if (offset > 0 && offset >= after) setOffset(Math.max(0, after - (after % limit)))
     },
   })
   const batchUpdate = useMutation({
@@ -314,6 +331,8 @@ export default function Accounts() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
       setDeleting(null)
+      // 删除的是当前页最后一行时回退一页（templates 同款「最后有效页」守卫）
+      if (rows.length === 1 && offset > 0) setOffset(offset - limit)
     },
   })
 
@@ -487,7 +506,7 @@ export default function Accounts() {
               </TableBody>
             </Table>
           </div>
-          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
+          <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
         </>
       )}
 

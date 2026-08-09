@@ -6,18 +6,43 @@ import { auth } from '@/lib/auth'
 import { Toaster } from '@/components/ui/toast'
 import Login from '@/pages/login'
 import Layout from '@/components/layout'
+import UserLogin from '@/pages/user/login'
+import UserRegister from '@/pages/user/register'
+import UserOverview from '@/pages/user/overview'
+import UserKeys from '@/pages/user/keys'
+import UserLogs from '@/pages/user/logs'
+import UserStats from '@/pages/user/stats'
+import UserRedemptions from '@/pages/user/redemptions'
+import UserLayout from '@/components/user-layout'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
 import Accounts from '@/pages/accounts'
+import Users from '@/pages/users'
 import Groups from '@/pages/groups'
 import Logs from '@/pages/logs'
 import Stats from '@/pages/stats'
 import Rules from '@/pages/rules'
+import RedemptionCodes from '@/pages/redemption-codes'
+import PricingPage from '@/pages/pricing'
+import SettingsPage from '@/pages/settings'
 
 export const api = new ApiClient(auth.getToken)
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/user/login', element: <UserLogin /> },
+  { path: '/user/register', element: <UserRegister /> },
+  {
+    path: '/user',
+    element: <UserLayout />,
+    children: [
+      { index: true, element: <UserOverview /> },
+      { path: 'keys', element: <UserKeys /> },
+      { path: 'logs', element: <UserLogs /> },
+      { path: 'stats', element: <UserStats /> },
+      { path: 'redemptions', element: <UserRedemptions /> },
+    ],
+  },
   {
     path: '/',
     element: <Layout />,
@@ -26,10 +51,14 @@ const router = createBrowserRouter([
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'templates', element: <Templates /> },
       { path: 'accounts', element: <Accounts /> },
+      { path: 'users', element: <Users /> },
       { path: 'groups', element: <Groups /> },
       { path: 'logs', element: <Logs /> },
       { path: 'stats', element: <Stats /> },
       { path: 'rules', element: <Rules /> },
+      { path: 'redemption-codes', element: <RedemptionCodes /> },
+      { path: 'pricing', element: <PricingPage /> },
+      { path: 'settings', element: <SettingsPage /> },
     ],
   },
 ])

@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
-import { api } from '@/App'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { DateRangePicker } from '@/components/date-range-picker'
@@ -12,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDateTime, toRFC3339 } from '@/components/fmt'
+import { userApi } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 
 type StatBucket = components['schemas']['StatBucket']
@@ -69,10 +69,11 @@ function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[]
   return [...map.values()].sort((a, b) => a.time.localeCompare(b.time))
 }
 
-export default function Stats() {
+export default function UserStats() {
   const { t } = useTranslation()
   const [range, setRange] = useState(defaultRange)
-  const [granularity, setGranularity] = useState<Granularity>('hour')
+  // 用户端默认按日聚合（与管理端默认 hour 区分）。
+  const [granularity, setGranularity] = useState<Granularity>('day')
   const [metric, setMetric] = useState<Metric>('requests')
 
   const params = useMemo(
@@ -80,8 +81,8 @@ export default function Stats() {
     [range, granularity]
   )
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['stats', params],
-    queryFn: () => api.getStats(params),
+    queryKey: ['user', 'stats', params],
+    queryFn: () => userApi.getUserStats(params),
   })
   const rows = useMemo(() => mergeBuckets(data ?? [], granularity), [data, granularity])
 
@@ -90,8 +91,8 @@ export default function Stats() {
 
   // 主题色走 --chart-* 变量（ChartStyle 注入 --color-requests / --color-tokens）。
   const chartConfig = {
-    requests: { label: t('stats.metricRequests'), color: 'var(--chart-1)' },
-    tokens: { label: t('stats.metricTokens'), color: 'var(--chart-2)' },
+    requests: { label: t('user.stats.metricRequests'), color: 'var(--chart-1)' },
+    tokens: { label: t('user.stats.metricTokens'), color: 'var(--chart-2)' },
   } satisfies ChartConfig
 
   // 图表只消费 label + 指标值两列，dataKey 与 chartConfig 键对齐（官方示例写法）。
@@ -103,38 +104,34 @@ export default function Stats() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold">{t('stats.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('stats.subtitle')}</p>
+        <h1 className="text-lg font-semibold">{t('user.stats.title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('user.stats.subtitle')}</p>
       </div>
 
-      {/* 控制：时间范围 + 粒度 + 指标 */}
+      {/* 控制：时间范围 + 粒度 + 指标（管理端修复版同款：
+          flex-nowrap + 子项 shrink-0 + overflow-x-auto：窄窗口横向滚动而非换行；
+          items-start 顶对齐（结构性防下沉）：打开日历后左列高度变化不影响右列位置。 */}
       <Card className="p-4">
-        {/* 控制：时间范围 + 粒度 + 指标。
-            flex-nowrap + 子项 shrink-0 + overflow-x-auto：窄窗口横向滚动而非换行（用户反馈 2）。
-            items-start 顶对齐（结构性防下沉，用户反馈 1 两次）：items-end 底对齐下，左列
-            （日期区）打开日历后高度变化 → 右列随底部整体下沉——这是唯一垂直下沉路径，与
-            换行无关；顶对齐后各列高度互不影响，右列位置固定。Label 顶部对齐视觉也更自然。
-            日期区 w-[14rem] 保持。 */}
         <div className="flex flex-nowrap items-start gap-4 overflow-x-auto">
           <div className="w-[14rem] shrink-0 space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={range} onChange={setRange} />
           </div>
           <div className="shrink-0 space-y-1.5">
-            <Label>{t('stats.granularity')}</Label>
+            <Label>{t('user.stats.granularity')}</Label>
             <Tabs value={granularity} onValueChange={v => v && setGranularity(v as Granularity)}>
               <TabsList>
-                <TabsTrigger value="hour">{t('stats.granularityHour')}</TabsTrigger>
-                <TabsTrigger value="day">{t('stats.granularityDay')}</TabsTrigger>
+                <TabsTrigger value="hour">{t('user.stats.granularityHour')}</TabsTrigger>
+                <TabsTrigger value="day">{t('user.stats.granularityDay')}</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
           <div className="shrink-0 space-y-1.5">
-            <Label>{t('stats.metric')}</Label>
+            <Label>{t('user.stats.metric')}</Label>
             <Tabs value={metric} onValueChange={v => v && setMetric(v as Metric)}>
               <TabsList>
-                <TabsTrigger value="requests">{t('stats.metricRequests')}</TabsTrigger>
-                <TabsTrigger value="tokens">{t('stats.metricTokens')}</TabsTrigger>
+                <TabsTrigger value="requests">{t('user.stats.metricRequests')}</TabsTrigger>
+                <TabsTrigger value="tokens">{t('user.stats.metricTokens')}</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -144,8 +141,8 @@ export default function Stats() {
       {/* 图表 */}
       <Card>
         <CardHeader>
-          <CardTitle>{metric === 'requests' ? t('stats.chartRequestsTitle') : t('stats.chartTokensTitle')}</CardTitle>
-          <CardDescription>{t('stats.chartDesc')}</CardDescription>
+          <CardTitle>{metric === 'requests' ? t('user.stats.chartRequestsTitle') : t('user.stats.chartTokensTitle')}</CardTitle>
+          <CardDescription>{t('user.stats.chartDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           {isError ? (
@@ -155,8 +152,8 @@ export default function Stats() {
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <BarChart3 className="size-10" />
-              <p className="font-medium">{t('stats.emptyTitle')}</p>
-              <p className="text-sm">{t('stats.emptyDesc')}</p>
+              <p className="font-medium">{t('user.stats.emptyTitle')}</p>
+              <p className="text-sm">{t('user.stats.emptyDesc')}</p>
             </div>
           ) : (
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
@@ -196,13 +193,13 @@ export default function Stats() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('stats.table.time')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.requests')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.errors')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.promptTokens')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.completionTokens')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.totalTokens')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.avgLatency')}</TableHead>
+                <TableHead>{t('user.stats.table.time')}</TableHead>
+                <TableHead className="text-right">{t('user.stats.table.requests')}</TableHead>
+                <TableHead className="text-right">{t('user.stats.table.errors')}</TableHead>
+                <TableHead className="text-right">{t('user.stats.table.promptTokens')}</TableHead>
+                <TableHead className="text-right">{t('user.stats.table.completionTokens')}</TableHead>
+                <TableHead className="text-right">{t('user.stats.table.totalTokens')}</TableHead>
+                <TableHead className="text-right">{t('user.stats.table.avgLatency')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -217,7 +214,7 @@ export default function Stats() {
                 : rows.length === 0
                   ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
+                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{t('user.stats.emptyTitle')}</TableCell>
                     </TableRow>
                   )
                   : rows.map(r => (

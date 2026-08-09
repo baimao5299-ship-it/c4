@@ -1,0 +1,250 @@
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { FileText, RotateCcw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { DateRangePicker } from '@/components/date-range-picker'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Pagination } from '@/components/pagination'
+import { formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
+import { userApi } from '@/lib/api/client'
+import { cn } from '@/lib/utils'
+import type { components } from '@/lib/api/schema'
+
+type ErrorType = components['schemas']['ErrorType']
+
+const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort', 'billing']
+
+// 与管理端 logs.tsx 同款色板：none 绿 / 4xx 黄 / 5xx、network、abort 红 / 429 橙 / auth、no_account 灰 / billing 紫。
+const ERROR_META: Record<ErrorType, string> = {
+  none: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400',
+  '4xx': 'bg-yellow-500/10 text-yellow-600 dark:bg-yellow-400/10 dark:text-yellow-400',
+  '5xx': 'bg-red-500/10 text-red-600 dark:bg-red-400/10 dark:text-red-400',
+  network: 'bg-red-500/10 text-red-600 dark:bg-red-400/10 dark:text-red-400',
+  abort: 'bg-red-500/10 text-red-600 dark:bg-red-400/10 dark:text-red-400',
+  '429': 'bg-orange-500/10 text-orange-600 dark:bg-orange-400/10 dark:text-orange-400',
+  auth: 'bg-muted text-muted-foreground',
+  no_account: 'bg-muted text-muted-foreground',
+  billing: 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400',
+}
+
+function ErrorTypeBadge({ type }: { type?: ErrorType }) {
+  const { t } = useTranslation()
+  if (!type) return <span className="text-xs text-muted-foreground">—</span>
+  return <Badge className={ERROR_META[type]}>{t(`errorType.${type}`)}</Badge>
+}
+
+// 表头样式（与管理端 logs.tsx 一致）：uppercase 小字 + sticky（位于纵向滚动容器内）。
+function Th({ className, ...props }: React.ComponentProps<typeof TableHead>) {
+  return (
+    <TableHead
+      className={cn(
+        'sticky top-0 z-10 bg-background text-xs uppercase tracking-wider text-muted-foreground',
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+// 延迟健康色（管理端同款）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红——色点与数字同色。
+function latencyColor(ms: number): { dot: string; text: string } {
+  if (ms < 1000) return { dot: 'bg-emerald-500', text: 'text-emerald-500' }
+  if (ms < 5000) return { dot: 'bg-amber-500', text: 'text-amber-500' }
+  if (ms < 15000) return { dot: 'bg-orange-500', text: 'text-orange-500' }
+  return { dot: 'bg-red-500', text: 'text-red-500' }
+}
+
+// base-ui Select 不接受空串值，用哨兵表示「全部」。
+const ERROR_ALL = '__all__'
+
+interface LogFilters {
+  group_id: string
+  account_id: string
+  model: string
+  status_code: string
+  error_type: string
+  from: string
+  to: string
+}
+
+const emptyFilters = (): LogFilters => ({
+  group_id: '', account_id: '', model: '', status_code: '', error_type: '', from: '', to: '',
+})
+
+export default function UserLogs() {
+  const { t } = useTranslation()
+  const [filters, setFilters] = useState<LogFilters>(emptyFilters())
+  const [limit, setLimit] = useState(20)
+  const [offset, setOffset] = useState(0)
+
+  // 过滤条件 / 每页条数变化 → 回到第一页（同一事件内同步重置，避免双请求）。
+  const set = (patch: Partial<LogFilters>) => {
+    setFilters(f => ({ ...f, ...patch }))
+    setOffset(0)
+  }
+  const changeLimit = (v: number) => {
+    setLimit(v)
+    setOffset(0)
+  }
+
+  // 参数对象随 filter/limit/offset 派生 → queryKey 变化即触发新查询。
+  // 服务端强制 user_id=当前用户，客户端不传。
+  const params = useMemo(
+    () => ({
+      group_id: filters.group_id ? Number(filters.group_id) : undefined,
+      account_id: filters.account_id ? Number(filters.account_id) : undefined,
+      model: filters.model || undefined,
+      status_code: filters.status_code ? Number(filters.status_code) : undefined,
+      error_type: filters.error_type || undefined,
+      from: toRFC3339(filters.from),
+      to: toRFC3339(filters.to),
+      limit,
+      offset,
+    }),
+    [filters, limit, offset]
+  )
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['user', 'logs', params],
+    queryFn: () => userApi.getUserLogs(params),
+  })
+
+  const total = data?.total ?? 0
+  const rows = data?.rows ?? []
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-lg font-semibold">{t('user.logs.title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('user.logs.subtitle')}</p>
+      </div>
+
+      {/* 过滤栏：分组/账号/模型/状态码/错误类型 + 时间范围（参数与管理端同构） */}
+      <Card className="p-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <div className="space-y-1.5">
+            <Label htmlFor="user-log-group">{t('user.logs.filter.groupId')}</Label>
+            <Input id="user-log-group" type="number" min={0} placeholder="1" value={filters.group_id} onChange={e => set({ group_id: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="user-log-account">{t('user.logs.filter.accountId')}</Label>
+            <Input id="user-log-account" type="number" min={0} placeholder="1" value={filters.account_id} onChange={e => set({ account_id: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="user-log-model">{t('user.logs.filter.model')}</Label>
+            <Input id="user-log-model" placeholder="gpt-4o" value={filters.model} onChange={e => set({ model: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="user-log-status">{t('user.logs.filter.statusCode')}</Label>
+            <Input id="user-log-status" type="number" min={0} placeholder="200" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('user.logs.filter.errorType')}</Label>
+            <Select
+              items={Object.fromEntries([[ERROR_ALL, t('user.logs.filter.all')], ...ERROR_TYPES.map(et => [et, t(`errorType.${et}`)])])}
+              value={filters.error_type || ERROR_ALL}
+              onValueChange={v => set({ error_type: v === ERROR_ALL ? '' : v })}
+            >
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ERROR_ALL} label={t('user.logs.filter.all')}>{t('user.logs.filter.all')}</SelectItem>
+                {ERROR_TYPES.map(et => <SelectItem key={et} value={et} label={t(`errorType.${et}`)}>{t(`errorType.${et}`)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t('dateRange.label')}</Label>
+            <DateRangePicker value={{ from: filters.from, to: filters.to }} onChange={v => set(v)} />
+          </div>
+          <div className="flex items-end">
+            <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setOffset(0) }}>
+              <RotateCcw /> {t('user.logs.filter.reset')}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {isError ? (
+        <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
+      ) : isLoading ? (
+        <Card>
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
+          </div>
+        </Card>
+      ) : rows.length === 0 ? (
+        <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+          <FileText className="size-10" />
+          <p className="font-medium">{t('user.logs.emptyTitle')}</p>
+          <p className="text-sm">{t('user.logs.emptyDesc')}</p>
+        </Card>
+      ) : (
+        <>
+        <Card className="overflow-hidden">
+          <Table containerClassName="max-h-[calc(100vh-16rem)] overflow-y-auto">
+            <TableHeader>
+              <TableRow>
+                <Th>{t('user.logs.table.createdAt')}</Th>
+                <Th>{t('user.logs.table.model')}</Th>
+                <Th className="text-right">{t('user.logs.table.statusCode')}</Th>
+                <Th>{t('user.logs.table.errorType')}</Th>
+                <Th className="text-right">{t('user.logs.table.inputTokens')}</Th>
+                <Th className="text-right">{t('user.logs.table.outputTokens')}</Th>
+                <Th className="text-right">{t('user.logs.table.latency')}</Th>
+                <Th className="text-right">{t('user.logs.table.cost')}</Th>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(l => (
+                <TableRow key={l.ID}>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
+                  {/* 模型链式（管理端同款）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳） */}
+                  <TableCell>
+                    <div className="space-y-0.5 text-xs">
+                      <div className="max-w-40 truncate font-medium" title={l.Model}>{l.Model ?? '—'}</div>
+                      {l.MappedModel && (
+                        <div className="max-w-40 truncate pl-3 text-muted-foreground" title={l.MappedModel}>↳{l.MappedModel}</div>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>
+                  <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
+                  {/* token 数字直显（千分位，无缩写）：0/空显示 — */}
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {l.InputTokens ? l.InputTokens.toLocaleString() : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {l.OutputTokens ? l.OutputTokens.toLocaleString() : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红），时长 ms */}
+                  <TableCell className="text-right tabular-nums">
+                    {l.LatencyMS != null ? (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
+                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  {/* 计费列：Cost 毫分 → USD（0/空显示 —） */}
+                  <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+        {/* 分页条：复用共享 Pagination（offset/limit），文案走 list.* 既有键 */}
+        <Pagination total={total} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
+        </>
+      )}
+    </div>
+  )
+}
