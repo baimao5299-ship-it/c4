@@ -35,6 +35,7 @@ type Config struct {
 type relay struct {
 	ctx context.Context
 	bw  *bufio.Writer
+	br  *bufio.Reader
 	fl  http.Flusher
 	cfg Config
 
@@ -42,10 +43,27 @@ type relay struct {
 	pending  int        // 累计写入字节；阈值/timer/结束残余 flush 后归零（首事件 latency flush 不归零，其字节继续计入阈值）
 	lastTick time.Time
 
-	timer     *time.Timer
+	timer      *time.Timer
 	timerArmed bool // 按需武装：仅当存在待 flush 数据时 timer 才在跑（瞬时短流零 timer 开销）
-	stopFlush chan struct{} // 关闭后 timer goroutine 退出
-	timerDone chan struct{}
+	stopFlush  chan struct{} // 关闭后 timer goroutine 退出
+	timerDone  chan struct{}
+}
+
+// relayBufio 池化的 bufio 读写器（每流各 8KB；GC 削减 P6：免每流 2×8KB 新建
+// + 直接压 sizeclass；流结束 Reset(nil) 解除对 dst/src 的引用后归还——timer
+// goroutine 在 stopFlushTimer 汇合后才归还，无并发复用）。
+type relayBufio struct {
+	bw *bufio.Writer
+	br *bufio.Reader
+}
+
+var relayBufioPool = sync.Pool{
+	New: func() any {
+		return &relayBufio{
+			bw: bufio.NewWriterSize(nil, 8192),
+			br: bufio.NewReaderSize(nil, 8192),
+		}
+	},
 }
 
 // Relay 把 src 的 SSE 流原样转发到 dst。流结束 = EOF / 读错误 / ctx 取消。
@@ -56,16 +74,20 @@ func Relay(ctx context.Context, dst http.ResponseWriter, src io.Reader, cfg Conf
 	if cfg.FlushInterval <= 0 {
 		cfg.FlushInterval = time.Millisecond
 	}
+	rb := relayBufioPool.Get().(*relayBufio)
+	rb.bw.Reset(dst)
+	rb.br.Reset(&ctxReader{ctx: ctx, r: src})
 	r := &relay{
 		ctx: ctx, cfg: cfg,
-		bw:        bufio.NewWriterSize(dst, 8192),
+		bw:        rb.bw,
+		br:        rb.br,
 		stopFlush: make(chan struct{}),
 		timerDone: make(chan struct{}),
 	}
 	r.fl, _ = dst.(http.Flusher)
 	r.startFlushTimer()
 
-	err := r.run(&ctxReader{ctx: ctx, r: src})
+	err := r.run()
 	r.stopFlushTimer()
 	// 读循环退出后（timer 已停、goroutine 已退出）再 flush 残余并归还 writer；
 	// 仅实际仍有缓冲字节时才 flush（首事件已 flush 后无残余，不产生多余 Flush）
@@ -74,6 +96,10 @@ func Relay(ctx context.Context, dst http.ResponseWriter, src io.Reader, cfg Conf
 		_ = r.flushLocked()
 	}
 	r.mu.Unlock()
+	// 归还池（先解除对 dst/src 的引用，防池内残留大对象引用链）
+	rb.bw.Reset(nil)
+	rb.br.Reset(nil)
+	relayBufioPool.Put(rb)
 	return err
 }
 
@@ -92,8 +118,8 @@ func (c *ctxReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-func (r *relay) run(src io.Reader) error {
-	br := bufio.NewReaderSize(src, 8192)
+func (r *relay) run() error {
+	br := r.br
 	var (
 		frame bytes.Buffer // 当前帧原始字节
 		data  []byte       // 当前帧 data payload（合并）

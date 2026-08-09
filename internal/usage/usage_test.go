@@ -699,7 +699,12 @@ func TestStatsFlushParallelWorkers(t *testing.T) {
 // TestShardForDeterministic swap/分片一致性：同 key 恒同 worker（FNV 哈希
 // 确定性）——跨 flush 分片稳定，同桶永不跨 worker 拆分。
 func TestShardForDeterministic(t *testing.T) {
-	keys := []string{"a", "b", "c", "1|2|3|4|5|m|false", "1700000000|0|0|0|0||true"}
+	keys := []statBucketKey{
+		{hourUnix: 1, groupID: 2, accountID: 3, templateID: 4, userID: 5, model: "m", isErr: false},
+		{hourUnix: 1700000000, model: "", isErr: true},
+		{hourUnix: 1700000000, model: "gpt-4o", isErr: true},
+		{hourUnix: 1700000000, groupID: 7, accountID: 8, templateID: 9, userID: 10, model: "claude-3-5-sonnet-20241022", isErr: false},
+	}
 	for _, workers := range []int{1, 2, 3, 4, 8} {
 		for _, k := range keys {
 			first := shardFor(k, workers)

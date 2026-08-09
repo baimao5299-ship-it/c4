@@ -12,6 +12,7 @@ package aiclient
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,6 +38,20 @@ type Factory struct {
 	cfg Config
 	mu  sync.Mutex
 	byT map[int64]*TemplateClients
+	// 流式原始请求的预解析完整 URL 懒缓存（GC 削减 P2：rawPost 每请求免
+	// url.Parse+JoinPath）。键含 baseURL（评审 C1）：绕过管理 API 的直接 DB
+	// 改 base_url 后，周期同步刷新 Selection.BaseURL 即命中新键收敛到新上游——
+	// 旧键残留由 InvalidateAll（管理 API 变更）整体清空，直接 DB 变更的旧键
+	// 至多每格式一条、体积可忽略。管理 API 变更链路（invalidate 成对失效）
+	// 不受影响。
+	urls map[urlKey]*url.URL
+}
+
+// urlKey 完整 URL 缓存键：模板 ID + base_url 快照 + 格式路径。
+type urlKey struct {
+	templateID int64
+	baseURL    string
+	path       string
 }
 
 type TemplateClients struct {
@@ -46,13 +61,14 @@ type TemplateClients struct {
 }
 
 func NewFactory(hc *http.Client, cfg Config) *Factory {
-	return &Factory{hc: hc, cfg: cfg, byT: make(map[int64]*TemplateClients)}
+	return &Factory{hc: hc, cfg: cfg, byT: make(map[int64]*TemplateClients), urls: make(map[urlKey]*url.URL)}
 }
 
-// InvalidateAll 模板变更后丢弃所有客户端（base_url 变化生效）。
+// InvalidateAll 模板变更后丢弃所有客户端与 URL 缓存（base_url 变化生效）。
 func (f *Factory) InvalidateAll() {
 	f.mu.Lock()
 	f.byT = make(map[int64]*TemplateClients)
+	f.urls = make(map[urlKey]*url.URL)
 	f.mu.Unlock()
 }
 
@@ -85,21 +101,21 @@ func (f *Factory) AnthMessage(ctx context.Context, tpl *domain.Template, key str
 // SDK 的请求层在 internal/requestconfig（不可 import），故基于共享 http.Client
 // 构造原始请求：注入鉴权头、使用 SDK 客户端同款连接池与超时。
 // 返回完整 *http.Response，status 检查与 body 关闭由调用方负责。
+// 签名收 (templateID, baseURL) 而非 *domain.Template（GC 削减 P6：调用方免
+// tplOf 每请求模板对象分配；URL 在 Factory.urls 懒缓存，键含 base_url 快照）。
 
-func (f *Factory) ChatCompletionStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
-	return f.rawPost(ctx, tpl, "chat/completions", "Bearer "+key, body)
+func (f *Factory) ChatCompletionStreamRaw(ctx context.Context, templateID int64, baseURL, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, templateID, baseURL, "chat/completions", "Bearer "+key, body)
 }
 
-func (f *Factory) ResponseStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
-	return f.rawPost(ctx, tpl, "responses", "Bearer "+key, body)
+func (f *Factory) ResponseStreamRaw(ctx context.Context, templateID int64, baseURL, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, templateID, baseURL, "responses", "Bearer "+key, body)
 }
 
-func (f *Factory) AnthMessageStreamRaw(ctx context.Context, tpl *domain.Template, key string, body []byte) (*http.Response, error) {
-	return f.rawPost(ctx, tpl, "v1/messages", key, body)
+func (f *Factory) AnthMessageStreamRaw(ctx context.Context, templateID int64, baseURL, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, templateID, baseURL, "v1/messages", key, body)
 }
 
-// rawPost 构造并发出原始 POST；authHeader 为 Authorization 值（anthropic 用
-// x-api-key，传 key 本身）。
 // openaiBaseURL 规范化 openai 系 SDK 的 BaseURL：openai-go 约定 BaseURL 含 /v1
 // （内部拼接 "chat/completions"）。模板 base_url 约定为**裸根**（不含 /v1——
 // /v1 是协议细节，由本层按格式追加，见模板校验），故 openai 系在此补 /v1。
@@ -107,8 +123,27 @@ func openaiBaseURL(base string) string {
 	return strings.TrimSuffix(base, "/") + "/v1"
 }
 
-func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth string, body []byte) (*http.Response, error) {
-	base := tpl.BaseURL
+// fullURLOf 取模板的完整请求 URL（懒缓存：键 = 模板 ID + base_url 快照 + 格式
+// 路径，首访解析后复用——同一快照收敛后复用缓存，快照变化（DB 直改 base_url
+// 周期同步）即新键解析新地址，逐请求等价于旧实现的按快照解析）。失败
+// （base 非法）返回错误。
+func (f *Factory) fullURLOf(templateID int64, baseURL, path string) (*url.URL, error) {
+	k := urlKey{templateID: templateID, baseURL: baseURL, path: path}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u := f.urls[k]
+	if u == nil {
+		var err error
+		u, err = parseFullURL(baseURL, path)
+		if err != nil {
+			return nil, err
+		}
+		f.urls[k] = u
+	}
+	return u, nil
+}
+
+func parseFullURL(base, path string) (*url.URL, error) {
 	if path != "v1/messages" {
 		base = openaiBaseURL(base) // openai 系：裸根 + /v1
 	}
@@ -116,13 +151,34 @@ func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth 
 	if err != nil {
 		return nil, err
 	}
-	// 统一 JoinPath：openai → /v1/chat/completions；anthropic → /v1/messages
-	// （anthropic SDK 自带 v1 前缀，base 裸根直拼）。不做 Parse 尾段替换——
-	// 那是对 base 约定含 /v1 时代的 hack，约定根除后不再需要。
+	// 统一 JoinPath：openai → /v1/chat/completions；anthropic → /v1/messages。
+	// 不做 Parse 尾段替换——那是对 base 约定含 /v1 时代的 hack，约定根除后不再需要。
 	full := u.JoinPath(path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, full.String(), bytes.NewReader(body))
+	// JoinPath 对空路径 base（anthropic 裸根）产出无前导斜杠的 Path
+	// （"v1/messages"）——RequestURI 直接拼进请求行会变非法请求行。旧实现经
+	// NewRequestWithContext 重解析字符串天然补回前导斜杠；此处显式归一。
+	if full.Path != "" && full.Path[0] != '/' {
+		full.Path = "/" + full.Path
+	}
+	return full, nil
+}
+
+// rawPost 构造并发出原始 POST（GC 削减 P2：URL 预解析缓存 + 手工构造
+// *http.Request，免 NewRequestWithContext 的内部分配；GetBody 保留重定向
+// 语义，WithContext 保留 ctx 取消语义）。auth 为 Authorization 值
+// （anthropic 用 x-api-key，传 key 本身）。
+func (f *Factory) rawPost(ctx context.Context, templateID int64, baseURL, path, auth string, body []byte) (*http.Response, error) {
+	full, err := f.fullURLOf(templateID, baseURL, path)
 	if err != nil {
 		return nil, err
+	}
+	req := &http.Request{
+		Method:        http.MethodPost,
+		URL:           full,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(bytes.NewReader(body)),
+		ContentLength: int64(len(body)),
+		GetBody:       func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil },
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if path == "v1/messages" {
@@ -130,6 +186,7 @@ func (f *Factory) rawPost(ctx context.Context, tpl *domain.Template, path, auth 
 	} else {
 		req.Header.Set("Authorization", auth)
 	}
+	req = req.WithContext(ctx)
 	return f.hc.Do(req)
 }
 

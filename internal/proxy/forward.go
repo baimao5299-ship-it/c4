@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -126,11 +127,9 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：
 // Model = 客户端请求模型（reqModel），MappedModel = 映射后实际模型
-// （usedModel 与请求模型不同才写入，否则空 = 未映射）。
-func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, u *usageTuple, start time.Time) *domain.UsageLog {
-	if u == nil {
-		u = &usageTuple{}
-	}
+// （usedModel 与请求模型不同才写入，否则空 = 未映射）。u 传值（GC 削减 P6：
+// 指针逃逸 1 alloc；零值 = 无用量）。
+func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, u usageTuple, start time.Time) *domain.UsageLog {
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
@@ -154,7 +153,7 @@ func mappedFor(req, used string) string {
 // record 记录一条用量日志（无并发槽的失败路径；有槽路径走 finish）。
 // ctx 提供鉴权 KeyMeta（user_id/key_id 归属；401 等鉴权失败路径无 KeyMeta）。
 // 计费路由与 finish 同一 shouldBill 判定（评审 C-4）。
-func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
+func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time) {
 	p.recordLog(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
 }
 
@@ -172,23 +171,29 @@ func (p *Proxy) recordLog(l *domain.UsageLog) {
 	}
 }
 
-// ctxKeyMeta 是鉴权 KeyMeta 的 context 键（handleFormat 写入；日志归属读取）。
-type ctxKeyMeta struct{}
+// ctxKeyReqMeta 是请求元数据的 context 键（handleFormat 写入；日志归属读取）。
+// 单键单值（GC 削减 P6：原 meta/tier 两次 WithValue+WithContext 合并为一次）：
+// 携带鉴权 KeyMeta 与归一化 service_tier；hasTier 保持非计费路径 BillingTier
+// 空语义（计费全关不写入 hasTier → 日志 BillingTier 恒空）。
+type ctxKeyReqMeta struct{}
 
-// ctxKeyTier 是归一化 service_tier 的 context 键（handleFormat 计费启用时
-// 写入；日志 BillingTier 归属读取；计费全关不写入）。
-type ctxKeyTier struct{}
+type reqMeta struct {
+	meta    domain.KeyMeta
+	tier    billing.Tier
+	hasTier bool
+}
 
-// logWithCtx 从 ctx 读鉴权 KeyMeta 填日志归属（user_id/key_id；context 传递
+// logWithCtx 从 ctx 读请求元数据填日志归属（user_id/key_id；context 传递
 // ——不改变 Call/buildLog 签名；无 KeyMeta 的路径保持 0）+ service_tier 归一化
-// 值填 BillingTier（计费启用路径；无 tier 的路径保持空）。
+// 值填 BillingTier（计费启用路径；无 tier 的路径保持空）。rm 为指针（handleFormat
+// 原地补 tier，单次 context 写入；全程请求 goroutine 内同步访问）。
 func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
-	if meta, ok := ctx.Value(ctxKeyMeta{}).(domain.KeyMeta); ok {
-		l.UserID = meta.UserID
-		l.KeyID = meta.KeyID
-	}
-	if tier, ok := ctx.Value(ctxKeyTier{}).(billing.Tier); ok {
-		l.BillingTier = tier.String()
+	if rm, ok := ctx.Value(ctxKeyReqMeta{}).(*reqMeta); ok {
+		l.UserID = rm.meta.UserID
+		l.KeyID = rm.meta.KeyID
+		if rm.hasTier {
+			l.BillingTier = rm.tier.String()
+		}
 	}
 	return l
 }
@@ -215,7 +220,41 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// encodedError 预编码错误响应（静态错误体 init 时编码一次，热路径零反射）。
+type encodedError struct {
+	status int
+	body   []byte
+}
+
+// errBodies 静态本地拒绝错误的预编码响应体（与 writeJSON 逐字节同构：
+// json.NewEncoder(map) + 尾随换行）。动态 body 的 4xx 透传与 handleSelectError
+// 的临时 formatError 仍走 writeJSON 反射路径（错误路径，非热路径）。
+var errBodies = func() map[*formatError]encodedError {
+	enc := func(e *formatError) encodedError {
+		var buf bytes.Buffer
+		_ = json.NewEncoder(&buf).Encode(map[string]any{"error": map[string]any{"message": e.msg, "type": "gateway_error"}})
+		return encodedError{status: e.status, body: buf.Bytes()}
+	}
+	return map[*formatError]encodedError{
+		errInvalidKey:          enc(errInvalidKey),
+		errTooMany:             enc(errTooMany),
+		errConcurrency:         enc(errConcurrency),
+		errQuotaExhausted:      enc(errQuotaExhausted),
+		errRateLimit:           enc(errRateLimit),
+		errBody:                enc(errBody),
+		errNoPrice:             enc(errNoPrice),
+		errInsufficientBalance: enc(errInsufficientBalance),
+		errServiceTierRejected: enc(errServiceTierRejected),
+	}
+}()
+
 func writeErr(w http.ResponseWriter, e *formatError) {
+	if pe, ok := errBodies[e]; ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(pe.status)
+		_, _ = w.Write(pe.body)
+		return
+	}
 	writeJSON(w, e.status, map[string]any{"error": map[string]any{"message": e.msg, "type": "gateway_error"}})
 }
 
@@ -231,7 +270,7 @@ type usageTuple struct {
 // nil → tokens 全 0 → 中止路径消费不扣费；buildLog 填 l.Cost 由 finish 的
 // applyBilling 承担）。groupID 由各 caller 作用域传入（评审 M-1：此前硬编码
 // 0 → 中止路径组倍率查找恒 miss → 组倍率 ≠10000 时计费与正常路径不一致）。
-func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, u *usageTuple, err error) {
+func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, u usageTuple, err error) {
 	if p.log != nil {
 		p.log.Warn("upstream stream aborted", logx.String("request_id", reqID), logx.Error(err))
 	}
@@ -323,26 +362,40 @@ func readUpstreamBody(resp *http.Response) []byte {
 	return b
 }
 
-// setStreamFlag 把原始请求体里的 "stream" 字段设为给定值（流式注入用）。
-// 用 map 重写避免对任意 JSON 结构做字符串手术；失败返回 nil。
-func setStreamFlag(body []byte, v bool) ([]byte, error) {
-	var m map[string]any
-	if err := json.Unmarshal(body, &m); err != nil {
-		return nil, err
-	}
-	m["stream"] = v
-	return json.Marshal(m)
-}
-
 // setModel 把原始请求体里的 "model" 字段改写为调度器选定的上游模型名
 // （ModelMapping 已应用，见 scheduler.Select 的 Selection.Model）。原始转发
 // 必须沿用 SDK 路径 params.Model = sel.Model 的改写语义，否则映射配置在
 // 流式请求上失效（Task 3 迁移发现）。
+// 短路守卫（GC 削减 P1）：model 已是目标值（gjson 字符串读取）→ 返回原切片
+// 零分配。守卫只对字符串匹配生效；null/数字/缺失/需改写走原 map 往返
+// （等价性核对见分析报告：sel.Model 非空时 null/数字恒走改写，行为不变）。
 func setModel(body []byte, model string) ([]byte, error) {
+	if gjson.GetBytes(body, "model").String() == model {
+		return body, nil
+	}
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, err
 	}
+	m["model"] = model
+	return json.Marshal(m)
+}
+
+// setStreamAndModel 单次往返同时改写 stream 与 model（GC 削减 P1b）：两字段
+// 各自短路守卫，无需改写的字段保持原字节；任一篇需改写才做一次
+// unmarshal/marshal。与现状两次往返的最终字节逐位相同（encoding/json 对 map
+// 键排序，单次与两次往返输出一致）。
+func setStreamAndModel(body []byte, stream bool, model string) ([]byte, error) {
+	sc := gjson.GetBytes(body, "stream")
+	streamOK := (stream && sc.Type == gjson.True) || (!stream && sc.Type == gjson.False)
+	if streamOK && gjson.GetBytes(body, "model").String() == model {
+		return body, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["stream"] = stream
 	m["model"] = model
 	return json.Marshal(m)
 }

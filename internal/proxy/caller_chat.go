@@ -21,7 +21,6 @@ type chatCaller struct{ p *Proxy }
 
 func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
-	tpl := tplOf(sel)
 
 	if stream {
 		// 客户端请求模型：流式无完整 params 解析（评审 I-2），gjson 顶层
@@ -31,17 +30,15 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		defer cancel()
 		// SDK NewStreaming 会在请求层注入 "stream": true；原始请求必须显式注入，
 		// 否则上游按非流式响应，relay 收不到 SSE。注入后仍需发送原始 body。
-		streamBody, err := setStreamFlag(body, true)
+		// 模型改写：调度器选号已应用 ModelMapping（sel.Model 为上游模型名），
+		// 与 SDK 路径 params.Model = sel.Model 等价，映射配置在流式下不失效。
+		// GC 削减 P1/P1b：短路守卫（stream 已是 true 且 model 已匹配 → 原切片
+		// 零分配）或单次 map 往返同时改两字段（与旧两次往返字节逐位相同）。
+		streamBody, err := setStreamAndModel(body, true, sel.Model)
 		if err != nil {
 			return 0, nil, false, err
 		}
-		// 模型改写：调度器选号已应用 ModelMapping（sel.Model 为上游模型名），
-		// 与 SDK 路径 params.Model = sel.Model 等价，映射配置在流式下不失效。
-		streamBody, err = setModel(streamBody, sel.Model)
-		if err != nil {
-			return 0, nil, false, nil
-		}
-		resp, err := p.clients.ChatCompletionStreamRaw(ctx, tpl, cred, streamBody)
+		resp, err := p.clients.ChatCompletionStreamRaw(ctx, sel.TemplateID, sel.BaseURL, cred, streamBody)
 		if err != nil {
 			return statusOf(err), upstreamBody(err), false, err
 		}
@@ -74,15 +71,15 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 			if r.Context().Err() != nil {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -98,6 +95,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
 	reqModel := params.Model
 	params.Model = sel.Model
+	tpl := tplOf(sel) // 非流式 SDK 路径（GC 削减 P6：流式原始请求路径已免模板对象分配）
 	resp, err := p.clients.ChatCompletion(ctx, tpl, cred, params)
 	if err != nil {
 		return statusOf(err), upstreamBody(err), false, err
@@ -116,6 +114,6 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		it, ot, tt, cr, cc = chatUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }
