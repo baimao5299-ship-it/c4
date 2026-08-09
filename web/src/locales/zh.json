@@ -361,7 +361,7 @@
     "next": "下个月"
   },
   "datePicker": {
-    "placeholder": "选择日期时间",
+    "selectDate": "选择日期",
     "clear": "清除",
     "hour": "时",
     "minute": "分"

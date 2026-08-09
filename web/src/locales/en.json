@@ -361,7 +361,7 @@
     "next": "Go to the next month"
   },
   "datePicker": {
-    "placeholder": "Pick date & time",
+    "selectDate": "Select date",
     "clear": "Clear",
     "hour": "Hour",
     "minute": "Min"
