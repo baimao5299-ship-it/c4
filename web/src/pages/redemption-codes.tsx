@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DateTimePicker } from '@/components/ui/date-picker'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,7 +52,7 @@ function CodeStatusBadge({ status }: { status: RedemptionStatus }) {
 }
 
 // 生成表单态。value 最小单位：balance/temp_balance 为毫分，concurrency 为并发数；
-// 日期字段为 datetime-local 串，提交时 toRFC3339 转 RFC3339。
+// 日期字段为 DateTimePicker 值（'YYYY-MM-DDTHH:mm'，与 datetime-local 同格式），提交时 toRFC3339 转 RFC3339。
 interface GenForm {
   type: RedemptionType
   value: string
@@ -431,7 +432,7 @@ export default function RedemptionCodes() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="rc-expires">{t('redemptions.expiresAtLabel')}</Label>
-                    <Input id="rc-expires" type="datetime-local" value={genForm.expires_at} onChange={e => updateGenForm({ expires_at: e.target.value })} />
+                    <DateTimePicker id="rc-expires" value={genForm.expires_at} onChange={v => updateGenForm({ expires_at: v })} />
                     <p className="text-xs text-muted-foreground">{t('redemptions.expiresAtHint')}</p>
                   </div>
                   <div className="space-y-1.5">
@@ -439,7 +440,7 @@ export default function RedemptionCodes() {
                       {t('redemptions.resourceExpiresAtLabel')}
                       {genForm.type === 'temp_balance' && <span className="ml-1 text-destructive">*</span>}
                     </Label>
-                    <Input id="rc-resource" type="datetime-local" value={genForm.resource_expires_at} onChange={e => updateGenForm({ resource_expires_at: e.target.value })} />
+                    <DateTimePicker id="rc-resource" value={genForm.resource_expires_at} onChange={v => updateGenForm({ resource_expires_at: v })} />
                     {genForm.type === 'temp_balance' && (
                       <p className="text-xs text-destructive">{t('redemptions.resourceExpiresAtRequired')}</p>
                     )}

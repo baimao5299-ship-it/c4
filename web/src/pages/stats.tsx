@@ -110,10 +110,12 @@ export default function Stats() {
       {/* 控制：时间范围 + 粒度 + 指标 */}
       <Card className="p-4">
         {/* 控制：时间范围 + 粒度 + 指标。
-            flex-nowrap + 子项 shrink-0 + overflow-x-auto：打开日历弹层超出视口 →
-            main 滚动条出现 → 可用宽度变窄时，不用 flex-wrap 换行下沉，改为窄窗口
-            横向滚动（用户反馈 2）。日期区 w-[14rem] 保持。 */}
-        <div className="flex flex-nowrap items-end gap-4 overflow-x-auto">
+            flex-nowrap + 子项 shrink-0 + overflow-x-auto：窄窗口横向滚动而非换行（用户反馈 2）。
+            items-start 顶对齐（结构性防下沉，用户反馈 1 两次）：items-end 底对齐下，左列
+            （日期区）打开日历后高度变化 → 右列随底部整体下沉——这是唯一垂直下沉路径，与
+            换行无关；顶对齐后各列高度互不影响，右列位置固定。Label 顶部对齐视觉也更自然。
+            日期区 w-[14rem] 保持。 */}
+        <div className="flex flex-nowrap items-start gap-4 overflow-x-auto">
           <div className="w-[14rem] shrink-0 space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={range} onChange={setRange} />
