@@ -28,7 +28,7 @@ export default function UserRegister() {
   const nav = useNavigate()
 
   const submit = async () => {
-    if (!email.trim() || !password) { setErr(t('user.auth.errorGeneric')); return }
+    if (!email.trim() || !password || !confirm) { setErr(t('user.register.required')); return }
     if (password !== confirm) { setErr(t('user.register.passwordMismatch')); return }
     setErr('')
     setLoading(true)

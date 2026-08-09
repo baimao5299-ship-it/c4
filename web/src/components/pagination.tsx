@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { pageNumbers } from '@/lib/page-numbers'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -12,23 +13,7 @@ const PAGE_SIZES = [10, 20, 50, 100, 1000]
 // 独立于表格卡片的分页层：左侧页码信息 + 每页条数下拉，
 // 右侧页码按钮组（md 及以上可见）+ 「跳至第 N 页」（sm 及以上可见）+ outline 翻页按钮（带方向图标与 disabled 态）。
 
-// 页码按钮组计算（标准滑动窗口）：totalPages ≤ 7 全显；否则首尾页 + 当前页前后各 2 页，
-// 缺口以 'ellipsis' 占位（渲染为「…」）。current 靠近首尾时窗口自然收敛。
-function pageNumbers(current: number, totalPages: number): (number | 'ellipsis')[] {
-  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
-  const pages = new Set<number>([1, totalPages])
-  for (let p = current - 2; p <= current + 2; p++) {
-    if (p >= 1 && p <= totalPages) pages.add(p)
-  }
-  const out: (number | 'ellipsis')[] = []
-  let prev = 0
-  for (const p of [...pages].sort((a, b) => a - b)) {
-    if (p - prev > 1) out.push('ellipsis')
-    out.push(p)
-    prev = p
-  }
-  return out
-}
+// 页码按钮组计算见 lib/page-numbers.ts（与 PagePagination 共用）。
 
 export function Pagination({
   total,

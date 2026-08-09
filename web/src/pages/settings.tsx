@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Settings as SettingsIcon } from 'lucide-react'
@@ -51,7 +51,14 @@ function SettingRow({ setting }: { setting: Setting }) {
   // 仅保存成功后回写服务端值——编辑期间不被其他行的保存刷新覆盖。
   const toInput = (v: string) => (isUsd ? String(Number(v) / MILLI_PER_USD) : v)
   const [draft, setDraft] = useState(() => toInput(current))
-  const [dirty, setDirty] = useState(false)
+  // 提交值快照（评审 I1）：原 dirty 布尔在 blur 必发生于输入后导致恒 true，onSuccess/
+  // onError 的回写/回滚分支永不执行。改为提交瞬间快照 + draftRef 镜像最新草稿
+  // （onSuccess 闭包捕获的是提交时渲染值）——「已继续编辑」= 当前草稿 ≠ 快照。
+  // 另：isPending 期间的新提交入队，成功后接力提交，不再被短路静默丢弃。
+  const pendingRef = useRef<string | null>(null)
+  const queuedRef = useRef<string | null>(null)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
   const [err, setErr] = useState<string | null>(null)
 
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
@@ -60,22 +67,29 @@ function SettingRow({ setting }: { setting: Setting }) {
     onSuccess: all => {
       // PUT 返回更新后的全部设置 → 直接回写查询缓存（免二次 GET）。
       qc.setQueryData(['settings'], all)
-      // 竞态：请求在途期间用户可能已继续输入（dirty=true）——此时回写服务端值会
-      // 静默覆盖新草稿。仅未继续编辑时回写；已继续编辑则保留草稿、保持 dirty，
-      // 由下次失焦/回车提交（在途重复提交由 doSave 的 isPending 短路拦截）。
-      if (!dirty) {
+      // 未继续编辑（草稿 == 快照）→ 回写服务端值；已继续编辑 → 保留草稿由接力提交覆盖。
+      if (draftRef.current === pendingRef.current) {
         setDraft(toInput(all.find(s => s.Key === key)?.Value ?? current))
-        setDirty(false)
+      }
+      pendingRef.current = null
+      // 在途期间入队的新值接力提交（原 isPending 短路会静默丢弃第二次编辑）。
+      if (queuedRef.current !== null) {
+        const v = queuedRef.current
+        queuedRef.current = null
+        pendingRef.current = v
+        save.mutate(v)
       }
       setErr(null)
       toast.add({ title: t('settings.saved'), type: 'success' })
     },
     onError: (e: Error) => {
-      // 与 onSuccess 同规则：在途期间已继续编辑则保留草稿，否则回滚到服务端值。
-      if (!dirty) {
+      // 与 onSuccess 同规则：未继续编辑则回滚到服务端值；已继续编辑保留草稿
+      // （排队值丢弃，错误就地展示，由用户重新提交）。
+      if (draftRef.current === pendingRef.current) {
         setDraft(toInput(current)) // 回滚到服务端值
-        setDirty(false)
       }
+      pendingRef.current = null
+      queuedRef.current = null
       const m = errMsg(e)
       if (m) setErr(m) // 服务端校验错误就地展示
     },
@@ -91,8 +105,15 @@ function SettingRow({ setting }: { setting: Setting }) {
     if (!isPlainInt(draft)) { setErr(t('settings.invalidNumber')); return null }
     return draft
   }
-  // isPending 短路：Enter 保存后在途 blur 会再触发一次同值 PUT（Minor-2），忽略之。
-  const doSave = (v: string | null) => { if (v != null && !save.isPending && v !== current) save.mutate(v) }
+  // isPending 期间的新提交入队（在途编辑不丢，成功后接力提交）；同值跳过；
+  // 其余快照提交值并发送（Enter 后同值 blur 触发会被 v === current 拦截）。
+  const doSave = (v: string | null) => {
+    if (v == null) return
+    if (save.isPending) { queuedRef.current = v; return }
+    if (v === current) return
+    pendingRef.current = v
+    save.mutate(v)
+  }
 
   const onEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return
@@ -137,8 +158,8 @@ function SettingRow({ setting }: { setting: Setting }) {
         step={isUsd ? 0.00001 : 1}
         className="w-48 bg-background text-right tabular-nums"
         value={draft}
-        onChange={e => { setDraft(e.target.value); setDirty(true); setErr(null) }}
-        onBlur={() => { if (dirty) doSave(submitValue()) }}
+        onChange={e => { setDraft(e.target.value); setErr(null) }}
+        onBlur={() => { if (draft !== current) doSave(submitValue()) }}
         onKeyDown={onEnter}
       />
     ) : (
@@ -146,7 +167,7 @@ function SettingRow({ setting }: { setting: Setting }) {
         type="text"
         className="w-96 max-w-full bg-background"
         value={draft}
-        onChange={e => { setDraft(e.target.value); setDirty(true); setErr(null) }}
+        onChange={e => { setDraft(e.target.value); setErr(null) }}
         onKeyDown={onEnter}
       />
     )

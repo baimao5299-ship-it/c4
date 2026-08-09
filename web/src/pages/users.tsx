@@ -236,7 +236,9 @@ export default function Users() {
                     <TableCell className="max-w-52 truncate" title={u.Email}>{u.Email}</TableCell>
                     <TableCell><RoleBadge role={u.Role} /></TableCell>
                     <TableCell><StatusBadge status={u.Status} /></TableCell>
-                    <TableCell className="text-right tabular-nums">{u.MaxConcurrency ?? 0}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {u.MaxConcurrency == null ? '—' : u.MaxConcurrency === 0 ? t('user.overview.unlimited') : u.MaxConcurrency}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{formatBalance(u.Balance)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(u.CreatedAt)}</TableCell>
                     <TableCell className="text-right">

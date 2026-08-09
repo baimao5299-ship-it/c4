@@ -75,6 +75,8 @@ export default function UserRedemptions() {
       setCode('')
       // 刷新记录 + 保持当前页（queryKey 前缀失效，当前页数据重新拉取）
       qc.invalidateQueries({ queryKey: ['user', 'redemptions'] })
+      // 余额/并发上限可能变化 → 刷新总览数据（overview 余额卡）
+      qc.invalidateQueries({ queryKey: ['user', 'me'] })
       toast.add({ title: t('user.redemptions.successTitle'), description: appliedText(res.applied, t), type: 'success' })
     },
     onError: (e: unknown) => {

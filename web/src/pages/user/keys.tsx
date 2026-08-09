@@ -248,7 +248,9 @@ export default function UserKeys() {
                     <TableCell><code className="font-mono text-sm">{k.KeyPrefix ?? '—'}</code></TableCell>
                     <TableCell><StatusBadge status={k.Status} /></TableCell>
                     <TableCell className="tabular-nums">{k.GroupID ?? '—'}</TableCell>
-                    <TableCell className="text-right tabular-nums">{k.MaxConcurrency ?? 0}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {k.MaxConcurrency == null ? '—' : k.MaxConcurrency === 0 ? t('user.overview.unlimited') : k.MaxConcurrency}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {k.Quota ? `${k.QuotaUsed ?? 0} / ${k.Quota}` : t('user.keys.unlimited')}
                     </TableCell>

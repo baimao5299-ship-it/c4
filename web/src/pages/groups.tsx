@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X } from 'lucide-react'
@@ -71,12 +71,6 @@ export default function Groups() {
   })
   const rows = data?.rows ?? []
 
-  // 末页死胡同守卫：非首页的当前页数据被清空（如批量删除把当前页删空）时回退到第 1 页，
-  // 避免空态页无返回入口。页 1 本身为空（列表真正为空）时无需回退，不会成环。
-  useEffect(() => {
-    if (!isLoading && !isError && rows.length === 0 && offset > 0) setOffset(0)
-  }, [isLoading, isError, rows.length, offset])
-
   // —— 行勾选（跨页保留，筛选/翻页后清空）——
   const [selected, setSelected] = useState<number[]>([])
   const pageIds = rows.map(r => r.ID!)
@@ -115,9 +109,12 @@ export default function Groups() {
   // —— 批量删除/重命名 ——
   const batchDelete = useMutation({
     mutationFn: (ids: number[]) => api.deleteGroupsBatch(ids),
-    onSuccess: () => {
+    onSuccess: (_res, ids) => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setSelected([])
+      // 当前页被删空时回到最后有效页（templates 同款守卫，不再一律回第 1 页）
+      const after = (data?.total ?? 0) - ids.length
+      if (offset > 0 && offset >= after) setOffset(Math.max(0, after - (after % limit)))
     },
   })
   const batchRename = useMutation({
@@ -263,6 +260,8 @@ export default function Groups() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setDeleting(null)
+      // 删除的是当前页最后一行时回退一页（templates 同款「最后有效页」守卫）
+      if (rows.length === 1 && offset > 0) setOffset(offset - limit)
     },
   })
 
