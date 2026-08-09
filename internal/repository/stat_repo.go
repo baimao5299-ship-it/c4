@@ -39,6 +39,13 @@ var statUpsertCols = []string{
 	"cache_read_tokens", "cache_creation_tokens", "cost", "total_latency_ms", "updated_at",
 }
 
+// statUpsertMeasureCols DO UPDATE SET 的冲突累加列（测量列；维度列只作
+// ON CONFLICT 目标，不做加法——见 Upsert 注释）。
+var statUpsertMeasureCols = []string{
+	"request_count", "error_count", "prompt_tokens", "completion_tokens", "total_tokens",
+	"cache_read_tokens", "cache_creation_tokens", "cost", "total_latency_ms",
+}
+
 // Upsert 批量 upsert + 冲突累加（规格 §10.5：聚合不可失真）——单条 SQL 替代
 // 逐 bucket 轮询（#15 验收：45k/s 下桶基数≈每请求、10k 桶逐 key Upsert 是
 // 统计面慢 flush 3-5min 周期根因之一）。Cost 毫分（Phase 5 计费预聚合：
@@ -84,12 +91,13 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 		b.WriteByte(')')
 	}
 	b.WriteString(` ON CONFLICT ("bucket_time", "group_id", "account_id", "template_id", "user_id", "model", "is_error") DO UPDATE SET `)
-	// 冲突累加：除 updated_at 外逐列加 EXCLUDED 行值（增量语义，聚合并行/重试安全）
-	for j, col := range statUpsertCols {
-		if j == 0 || col == "updated_at" {
-			continue
-		}
-		if j > 1 {
+	// 冲突累加：**只对测量列**做加法（增量语义，聚合并行/重试安全）——维度列
+	// （bucket_time/group_id/account_id/template_id/user_id/model/is_error）只
+	// 在 ON CONFLICT 目标里，不进 SET：varchar 相加 42883（model 维度列——
+	// 压测实证统计批量 upsert 零落库根因）、bigint 维度列相加会翻倍（ID 值
+	// 失真）。
+	for i, col := range statUpsertMeasureCols {
+		if i > 0 {
 			b.WriteString(", ")
 		}
 		b.WriteString(`"`)
