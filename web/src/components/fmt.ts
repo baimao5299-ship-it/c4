@@ -46,8 +46,8 @@ export function formatCost(c?: number | null): string {
   return usdText(c) ?? '—'
 }
 
-// 每百万 token 价格：毫分 → USD/M，如 $3.0000/M；空值或 0 显示 —。
+// 每百万 token 价格：USD/1M tokens 正常值直接展示（API 边界已换算，内部存储毫分），
+// 如 3.5 → $3.5000/M；空值显示 —（0 = 免费价，照常展示 $0.0000/M）。
 export function formatPricePerMillion(c?: number | null): string {
-  const s = usdText(c)
-  return s == null ? '—' : `${s}/M`
+  return c == null ? '—' : `$${c.toFixed(4)}/M`
 }

@@ -10,7 +10,6 @@ import { Pagination } from '@/components/pagination'
 import { SortableHeader, type SortOrder } from '@/components/sortable-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,7 +20,6 @@ import { StatusBadge } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/components/fmt'
-import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
 type User = components['schemas']['User']
@@ -32,13 +30,6 @@ type UserStatus = components['schemas']['UserStatus']
 
 const ROLES: UserRole[] = ['platform_admin', 'user']
 const STATUSES: UserStatus[] = ['active', 'disabled']
-
-// 价格倍率（万分数）→ 展示：null = 未设置（—）；0 = 免费；其余 ×N（10000 → ×1.0）。
-const formatMultiplier = (m: number | null | undefined, t: TFunction): string => {
-  if (m == null) return '—'
-  if (m === 0) return t('users.free')
-  return `×${(m / 10000).toFixed(1)}`
-}
 
 // 余额（USD 浮点，已由 API 边界换算）→ $N.NN；空 → —。
 const formatBalance = (b?: number): string => (b == null ? '—' : `$${b.toFixed(2)}`)
@@ -56,8 +47,7 @@ function RoleBadge({ role }: { role?: UserRole }) {
   )
 }
 
-// 创建/编辑共用一个表单态：email/password 仅创建时使用（email 不可变），
-// clearMultiplier 仅编辑时使用（勾选 → 显式发送 null 清除倍率）。
+// 创建/编辑共用一个表单态：email/password 仅创建时使用（email 不可变）。
 interface UserForm {
   email: string
   password: string
@@ -65,8 +55,6 @@ interface UserForm {
   status: UserStatus
   max_concurrency: string
   balance: string
-  multiplier: string
-  clearMultiplier: boolean
 }
 
 const emptyForm = (): UserForm => ({
@@ -76,8 +64,6 @@ const emptyForm = (): UserForm => ({
   status: 'active',
   max_concurrency: '',
   balance: '',
-  multiplier: '',
-  clearMultiplier: false,
 })
 
 function toForm(u: User): UserForm {
@@ -88,8 +74,6 @@ function toForm(u: User): UserForm {
     status: u.Status ?? 'active',
     max_concurrency: u.MaxConcurrency == null ? '' : String(u.MaxConcurrency),
     balance: u.Balance == null ? '' : String(u.Balance),
-    multiplier: u.PriceMultiplier == null ? '' : String(u.PriceMultiplier),
-    clearMultiplier: false,
   }
 }
 
@@ -103,13 +87,11 @@ function toCreateBody(f: UserForm): UserCreate {
   }
   if (f.max_concurrency !== '') body.max_concurrency = Number(f.max_concurrency)
   if (f.balance !== '') body.balance = Number(f.balance)
-  if (f.multiplier !== '') body.price_multiplier = Number(f.multiplier)
   return body
 }
 
 // 更新体（UserUpdate 全可选）：role/status 为 Select 必有值，总是发送
-// （读改写幂等）；数值字段空 = 不发送；倍率：勾选清除 → null，有值 → 数字，
-// 都无 → 缺省（后端视为未提供，保持不变）。
+// （读改写幂等）；数值字段空 = 不发送（后端视为未提供，保持不变）。
 function toUpdateBody(f: UserForm): UserUpdate {
   const body: UserUpdate = {
     role: f.role,
@@ -117,8 +99,6 @@ function toUpdateBody(f: UserForm): UserUpdate {
   }
   if (f.max_concurrency !== '') body.max_concurrency = Number(f.max_concurrency)
   if (f.balance !== '') body.balance = Number(f.balance)
-  if (f.clearMultiplier) body.price_multiplier = null
-  else if (f.multiplier !== '') body.price_multiplier = Number(f.multiplier)
   return body
 }
 
@@ -127,7 +107,7 @@ export default function Users() {
   const qc = useQueryClient()
 
   // —— 列表：筛选/分页状态归 queryKey（排序白名单：id/email/role/status/
-  // max_concurrency/created_at/updated_at——balance/price_multiplier 不可排）——
+  // max_concurrency/created_at/updated_at——balance 不可排）——
   const [email, setEmail] = useState('')
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
@@ -245,7 +225,6 @@ export default function Users() {
                   <SortableHeader field="status" label={t('users.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="max_concurrency" label={t('users.table.maxConcurrency')} active={activeSort === 'max_concurrency'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
                   <TableHead className="text-right">{t('users.table.balance')}</TableHead>
-                  <TableHead className="text-right">{t('users.table.priceMultiplier')}</TableHead>
                   <SortableHeader field="created_at" label={t('users.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
                   <TableHead className="text-right">{t('users.table.actions')}</TableHead>
                 </TableRow>
@@ -259,7 +238,6 @@ export default function Users() {
                     <TableCell><StatusBadge status={u.Status} /></TableCell>
                     <TableCell className="text-right tabular-nums">{u.MaxConcurrency ?? 0}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatBalance(u.Balance)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMultiplier(u.PriceMultiplier, t)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(u.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -346,29 +324,6 @@ export default function Users() {
                 <Label htmlFor="usr-balance">{t('users.balanceLabel')}</Label>
                 <Input id="usr-balance" type="number" min={0} step={0.01} value={form.balance} onChange={e => setForm(f => ({ ...f, balance: e.target.value }))} />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="usr-mult">{t('users.multiplierLabel')}</Label>
-              <div className="flex items-center gap-3">
-                <Input
-                  id="usr-mult"
-                  type="number"
-                  min={0}
-                  max={100000}
-                  value={form.multiplier}
-                  placeholder="10000"
-                  className="flex-1"
-                  onChange={e => setForm(f => ({ ...f, multiplier: e.target.value }))}
-                  disabled={form.clearMultiplier}
-                />
-                {editing && (
-                  <label className="flex shrink-0 cursor-pointer items-center gap-2">
-                    <Checkbox checked={form.clearMultiplier} onCheckedChange={c => setForm(f => ({ ...f, clearMultiplier: c === true }))} />
-                    <span className="text-sm">{t('users.clearMultiplier')}</span>
-                  </label>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">{t('users.multiplierHint')}</p>
             </div>
             {save.isError && errMsg(save.error) && (
               <p className="text-sm text-destructive">{errMsg(save.error)}</p>

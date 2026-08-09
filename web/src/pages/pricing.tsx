@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Coins, Filter, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
@@ -29,7 +30,7 @@ type PricingSource = components['schemas']['PricingSource']
 
 const SOURCES: PricingSource[] = ['litellm', 'manual']
 
-// 可选价格字段（全部毫分/1M tokens；表单留空 = 提交时省略 → 落库 NULL）。
+// 可选价格字段（USD/1M tokens 正常值，API 边界换算；表单留空 = 提交时省略 → 落库 NULL）。
 // 类型唯一来源 schema.d.ts：PricingUpsert 键名为小写下划线（与 Go 响应大写字段区分）。
 type OptKey = Exclude<keyof PricingUpsert, 'prompt_price_per_million' | 'completion_price_per_million'>
 const OPT_KEYS: OptKey[] = [
@@ -124,9 +125,29 @@ const ABOVE_FLEX_FIELDS: OptField[] = [
   { key: 'above_flex_cache_creation_price_per_million', tKey: 'cacheWriteLabel' },
 ]
 
-// 快速倍率（万分数）→ 展示：20000 = ×2.0；null = 无倍率。
+// 快速倍率（正常值，API 边界已换算）→ 展示：2.0 = ×2.0，0.5 = ×0.5；null = 无倍率。
 const formatFastMultiplier = (m: number | null | undefined): string =>
-  m == null ? '—' : `×${(m / 10000).toFixed(1)}`
+  m == null ? '—' : `×${m.toFixed(1)}`
+
+// 档位列（三挡并列）：P = 优先档输入价（OpenAI 专属）、F = 弹性档输入价（OpenAI 专属）、
+// Fast = 快速倍率（Anthropic 专属）。单元格紧凑展示（截断），完整信息放 title。
+function TierCell({ p }: { p: Pricing }) {
+  const { t } = useTranslation()
+  const pp = formatPricePerMillion(p.PriorityPromptPricePerMillion)
+  const fp = formatPricePerMillion(p.FlexPromptPricePerMillion)
+  const fm = formatFastMultiplier(p.FastMultiplier)
+  const text = `P ${pp} / F ${fp} / Fast ${fm}`
+  return (
+    <TableCell className="text-right">
+      <span
+        className="block max-w-52 truncate whitespace-nowrap text-xs tabular-nums"
+        title={t('pricing.tierCellTitle', { p: pp, f: fp, fast: fm })}
+      >
+        {text}
+      </span>
+    </TableCell>
+  )
+}
 
 // 来源徽章：自动同步灰点 / 手动蓝点（手动价由用户维护）。
 function SourceBadge({ source }: { source: PricingSource }) {
@@ -137,6 +158,15 @@ function SourceBadge({ source }: { source: PricingSource }) {
       <span className={cn('size-1.5 shrink-0 rounded-full', manual ? 'bg-blue-500' : 'bg-muted-foreground/60')} />
       {t(`pricing.source.${source}`)}
     </Badge>
+  )
+}
+
+// 挡位归属标注：priority/flex = OpenAI 专属，fast = Anthropic 专属，基础/above = 通用。
+function OwnershipBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="ml-2 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+      {children}
+    </span>
   )
 }
 
@@ -179,8 +209,8 @@ function toBody(f: PriceForm): PricingUpsert {
   return body
 }
 
-// 非负整数校验（价格字段通用；'' = 未填不校验）。
-const isNonNegInt = (v: string) => v === '' || (Number.isInteger(Number(v)) && Number(v) >= 0)
+// 非负数校验（价格字段通用，USD/1M 支持小数；'' = 未填不校验）。
+const isNonNegNum = (v: string) => v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0)
 
 export default function PricingPage() {
   const { t } = useTranslation()
@@ -283,12 +313,13 @@ export default function PricingPage() {
   const submit = () => {
     const fm = form
     const fast = fm.opt.fast_multiplier
+    const fastNum = fast === '' ? null : Number(fast)
     const valid =
       (editing || fm.model.trim() !== '') &&
-      isNonNegInt(fm.prompt) && Number(fm.prompt) >= 0 && fm.prompt !== '' &&
-      isNonNegInt(fm.completion) && fm.completion !== '' &&
-      (fast === '' || (Number.isInteger(Number(fast)) && Number(fast) >= 1 && Number(fast) <= 100000)) &&
-      OPT_KEYS.every(k => k === 'fast_multiplier' || isNonNegInt(fm.opt[k]))
+      isNonNegNum(fm.prompt) && Number(fm.prompt) >= 0 && fm.prompt !== '' &&
+      isNonNegNum(fm.completion) && fm.completion !== '' &&
+      (fastNum === null || (Number.isFinite(fastNum) && fastNum > 0 && fastNum <= 10)) &&
+      OPT_KEYS.every(k => k === 'fast_multiplier' || isNonNegNum(fm.opt[k]))
     if (!valid) {
       setFormErr(t('pricing.formInvalid'))
       return
@@ -371,7 +402,7 @@ export default function PricingPage() {
                   <TableHead className="text-right">{t('pricing.table.completion')}</TableHead>
                   <TableHead className="text-right">{t('pricing.table.cacheRead')}</TableHead>
                   <TableHead className="text-right">{t('pricing.table.cacheWrite')}</TableHead>
-                  <TableHead className="text-right">{t('pricing.table.fastMultiplier')}</TableHead>
+                  <TableHead className="text-right" title={t('pricing.table.tierTitle')}>{t('pricing.table.tier')}</TableHead>
                   <TableHead className="text-right">{t('pricing.table.aboveThreshold')}</TableHead>
                   <TableHead>{t('pricing.table.source')}</TableHead>
                   <TableHead>{t('pricing.table.provider')}</TableHead>
@@ -387,7 +418,7 @@ export default function PricingPage() {
                     <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.CompletionPricePerMillion)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.CacheReadPricePerMillion)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.CacheCreationPricePerMillion)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatFastMultiplier(p.FastMultiplier)}</TableCell>
+                    <TierCell p={p} />
                     <TableCell className="text-right tabular-nums">{p.AboveThreshold == null ? '—' : t('pricing.table.aboveThresholdValue', { value: p.AboveThreshold })}</TableCell>
                     <TableCell><SourceBadge source={p.Source} /></TableCell>
                     <TableCell className="max-w-32 truncate" title={p.Provider ?? undefined}>{p.Provider || '—'}</TableCell>
@@ -429,11 +460,13 @@ export default function PricingPage() {
               <TabsTrigger value="cache" className="flex-1">{t('pricing.tabCache')}</TabsTrigger>
               <TabsTrigger value="tier" className="flex-1">{t('pricing.tabTier')}</TabsTrigger>
               <TabsTrigger value="segment" className="flex-1">{t('pricing.tabSegment')}</TabsTrigger>
-              <TabsTrigger value="multiplier" className="flex-1">{t('pricing.tabMultiplier')}</TabsTrigger>
             </TabsList>
 
-            {/* 基础：model/输入/输出必填 */}
+            {/* 基础（通用） */}
             <TabsContent value="base" className="space-y-3 pt-3">
+              <p className="flex items-center text-xs text-muted-foreground">
+                {t('pricing.baseOwnership')}<OwnershipBadge>{t('pricing.ownership.generic')}</OwnershipBadge>
+              </p>
               <div className="space-y-1.5">
                 <Label htmlFor="pf-model">{t('pricing.modelLabel')} <span className="text-destructive">*</span></Label>
                 <Input
@@ -472,11 +505,13 @@ export default function PricingPage() {
               </div>
             </TabsContent>
 
-            {/* 档位：优先档 + 弹性档 */}
+            {/* 档位：优先档 + 弹性档 + 快速档（三挡并列，各带归属标注） */}
             <TabsContent value="tier" className="space-y-4 pt-3">
               <p className="text-xs text-muted-foreground">{t('pricing.tierHint')}</p>
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t('pricing.priorityGroup')}</p>
+                <p className="flex items-center text-sm font-medium">
+                  {t('pricing.priorityGroup')}<OwnershipBadge>{t('pricing.ownership.openai')}</OwnershipBadge>
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {PRIORITY_FIELDS.map(f => (
                     <div key={f.key} className="space-y-1.5">
@@ -487,7 +522,9 @@ export default function PricingPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t('pricing.flexGroup')}</p>
+                <p className="flex items-center text-sm font-medium">
+                  {t('pricing.flexGroup')}<OwnershipBadge>{t('pricing.ownership.openai')}</OwnershipBadge>
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {FLEX_FIELDS.map(f => (
                     <div key={f.key} className="space-y-1.5">
@@ -495,6 +532,16 @@ export default function PricingPage() {
                       <Input id={`pf-${f.key}`} type="number" min={0} value={form.opt[f.key]} onChange={e => setOpt(f.key, e.target.value)} />
                     </div>
                   ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="flex items-center text-sm font-medium">
+                  {t('pricing.fastGroup')}<OwnershipBadge>{t('pricing.ownership.anthropic')}</OwnershipBadge>
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pf-fast_multiplier">{t('pricing.fastMultiplierLabel')}</Label>
+                  <Input id="pf-fast_multiplier" type="number" min={0} max={10} step={0.1} value={form.opt.fast_multiplier} onChange={e => setOpt('fast_multiplier', e.target.value)} />
+                  <p className="text-xs text-muted-foreground">{t('pricing.fastMultiplierHint')}</p>
                 </div>
               </div>
             </TabsContent>
@@ -507,7 +554,9 @@ export default function PricingPage() {
                 <p className="text-xs text-muted-foreground">{t('pricing.segmentThresholdHint')}</p>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t('pricing.segmentBaseGroup')}</p>
+                <p className="flex items-center text-sm font-medium">
+                  {t('pricing.segmentBaseGroup')}<OwnershipBadge>{t('pricing.ownership.generic')}</OwnershipBadge>
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {ABOVE_FIELDS.map(f => (
                     <div key={f.key} className="space-y-1.5">
@@ -518,7 +567,9 @@ export default function PricingPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t('pricing.segmentPriorityGroup')}</p>
+                <p className="flex items-center text-sm font-medium">
+                  {t('pricing.segmentPriorityGroup')}<OwnershipBadge>{t('pricing.ownership.openai')}</OwnershipBadge>
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {ABOVE_PRIORITY_FIELDS.map(f => (
                     <div key={f.key} className="space-y-1.5">
@@ -529,7 +580,9 @@ export default function PricingPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t('pricing.segmentFlexGroup')}</p>
+                <p className="flex items-center text-sm font-medium">
+                  {t('pricing.segmentFlexGroup')}<OwnershipBadge>{t('pricing.ownership.openai')}</OwnershipBadge>
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   {ABOVE_FLEX_FIELDS.map(f => (
                     <div key={f.key} className="space-y-1.5">
@@ -540,15 +593,6 @@ export default function PricingPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">{t('pricing.segmentHint')}</p>
-            </TabsContent>
-
-            {/* 倍率 */}
-            <TabsContent value="multiplier" className="space-y-3 pt-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="pf-fast_multiplier">{t('pricing.fastMultiplierLabel')}</Label>
-                <Input id="pf-fast_multiplier" type="number" min={1} max={100000} value={form.opt.fast_multiplier} onChange={e => setOpt('fast_multiplier', e.target.value)} />
-                <p className="text-xs text-muted-foreground">{t('pricing.fastMultiplierHint')}</p>
-              </div>
             </TabsContent>
           </Tabs>
           {formErr && <p className="text-sm text-destructive">{formErr}</p>}

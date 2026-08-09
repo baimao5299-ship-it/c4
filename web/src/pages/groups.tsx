@@ -28,9 +28,13 @@ import type { components } from '@/lib/api/schema'
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
 
-// 价格倍率（万分数）→ 展示：0 = 免费；其余 ×N（10000 → ×1.0）。
-const formatMultiplier = (m: number | undefined, t: TFunction): string =>
-  (m ?? 0) === 0 ? t('groups.free') : `×${((m ?? 0) / 10000).toFixed(1)}`
+// 价格倍率（正常值，API 边界已换算）→ 展示：null = 未设置（—）；0 = 免费；
+// 其余 ×N（1 = ×1.0，1.5 = ×1.5）。
+const formatMultiplier = (m: number | null | undefined, t: TFunction): string => {
+  if (m == null) return '—'
+  if (m === 0) return t('groups.free')
+  return `×${m.toFixed(1)}`
+}
 
 // 可见性徽章：public 绿点 / private 灰点（与 StatusBadge 同风格）。
 function VisibilityBadge({ visibility }: { visibility?: GroupVisibility }) {
@@ -167,10 +171,10 @@ export default function Groups() {
       const m = editMultiplier.trim()
       if (m !== '') {
         const v = Number(m)
-        if (!Number.isInteger(v) || v < 0 || v > 100000) {
+        if (!Number.isFinite(v) || v < 0 || v > 10) {
           throw new Error(t('groups.multiplierInvalid'))
         }
-        body.price_multiplier = v // 显式 0 = 免费组；输入为空则省略键（后端保持原值）
+        body.price_multiplier = v // 正常值直接提交：0 = 免费组，1 = ×1，上限 10；输入为空则省略键（后端保持原值）
       }
       return api.updateGroup(editTarget!.ID!, body)
     },
@@ -358,8 +362,8 @@ export default function Groups() {
                 id="grp-edit-multiplier"
                 type="number"
                 min={0}
-                max={100000}
-                step={1}
+                max={10}
+                step={0.1}
                 value={editMultiplier}
                 onChange={e => setEditMultiplier(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && editName.trim() && !rename.isPending) rename.mutate() }}
