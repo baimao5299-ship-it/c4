@@ -33,6 +33,10 @@ usage = {
   # DROP TABLE O(1) 清理（默认 30 天 = 30 个日分区）；<= 0 = 不删除。
   log_retention_days = 30,
   stats_flush_interval = "10s",
+  # flush_workers：明细/统计/额度 flush 并行 worker 数（默认 4；建议上限 ~7——
+  # 每 worker 一笔批量 SQL，受 DB 连接池余量 db.max_conns 约束；同 key 恒同
+  # worker，分片确定性）。
+  flush_workers = 4,
 }
 # 计费（Phase 5）：默认关 opt-in。启用前需先同步价格（POST /admin/pricing/sync），
 # 空价格表 = 全模型 402。启用后：请求前余额预检（快照缺失或 ≤0 → 402）、
