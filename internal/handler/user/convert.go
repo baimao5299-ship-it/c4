@@ -5,7 +5,8 @@ import (
 )
 
 // toAPIUser 用户领域对象 → 契约类型（口令散列永不下发；Balance 毫分 → USD
-// 展示换算——1 USD = 100,000 毫分，与 /admin 用户端点同语义）。
+// 展示换算——1 USD = 100,000 毫分，与 /admin 用户端点同语义；价格倍率按组
+// 挂载，User 无倍率字段）。
 func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
@@ -16,20 +17,20 @@ func toAPIUser(u *domain.User) User {
 		Status:          &st,
 		MaxConcurrency:  &u.MaxConcurrency,
 		Balance:         ptr(float64(u.Balance) / 1e5),
-		PriceMultiplier: u.PriceMultiplier,
 		CreatedAt:       &u.CreatedAt,
 		UpdatedAt:       &u.UpdatedAt,
 	}
 }
 
-// toAPIGroup 组领域对象 → 契约类型（/user/groups 只读列表）。
+// toAPIGroup 组领域对象 → 契约类型（/user/groups 只读列表；PriceMultiplier
+// 万分数 → 正常值 float64，API 边界换算）。
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
 	return Group{
 		ID:              &g.ID,
 		Name:            &g.Name,
 		Visibility:      &v,
-		PriceMultiplier: &g.PriceMultiplier,
+		PriceMultiplier: ptr(float64(g.PriceMultiplier) / 10000.0),
 		CreatedAt:       &g.CreatedAt,
 		UpdatedAt:       &g.UpdatedAt,
 	}

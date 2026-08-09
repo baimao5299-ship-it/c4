@@ -65,6 +65,11 @@ func UserID(v int64) predicate.GroupAssignment {
 	return predicate.GroupAssignment(sql.FieldEQ(FieldUserID, v))
 }
 
+// PriceMultiplier applies equality check predicate on the "price_multiplier" field. It's identical to PriceMultiplierEQ.
+func PriceMultiplier(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldEQ(FieldPriceMultiplier, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.GroupAssignment {
 	return predicate.GroupAssignment(sql.FieldEQ(FieldCreatedAt, v))
@@ -108,6 +113,56 @@ func UserIDIn(vs ...int64) predicate.GroupAssignment {
 // UserIDNotIn applies the NotIn predicate on the "user_id" field.
 func UserIDNotIn(vs ...int64) predicate.GroupAssignment {
 	return predicate.GroupAssignment(sql.FieldNotIn(FieldUserID, vs...))
+}
+
+// PriceMultiplierEQ applies the EQ predicate on the "price_multiplier" field.
+func PriceMultiplierEQ(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldEQ(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierNEQ applies the NEQ predicate on the "price_multiplier" field.
+func PriceMultiplierNEQ(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldNEQ(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierIn applies the In predicate on the "price_multiplier" field.
+func PriceMultiplierIn(vs ...int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldIn(FieldPriceMultiplier, vs...))
+}
+
+// PriceMultiplierNotIn applies the NotIn predicate on the "price_multiplier" field.
+func PriceMultiplierNotIn(vs ...int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldNotIn(FieldPriceMultiplier, vs...))
+}
+
+// PriceMultiplierGT applies the GT predicate on the "price_multiplier" field.
+func PriceMultiplierGT(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldGT(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierGTE applies the GTE predicate on the "price_multiplier" field.
+func PriceMultiplierGTE(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldGTE(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierLT applies the LT predicate on the "price_multiplier" field.
+func PriceMultiplierLT(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldLT(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierLTE applies the LTE predicate on the "price_multiplier" field.
+func PriceMultiplierLTE(v int) predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldLTE(FieldPriceMultiplier, v))
+}
+
+// PriceMultiplierIsNil applies the IsNil predicate on the "price_multiplier" field.
+func PriceMultiplierIsNil() predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldIsNull(FieldPriceMultiplier))
+}
+
+// PriceMultiplierNotNil applies the NotNil predicate on the "price_multiplier" field.
+func PriceMultiplierNotNil() predicate.GroupAssignment {
+	return predicate.GroupAssignment(sql.FieldNotNull(FieldPriceMultiplier))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

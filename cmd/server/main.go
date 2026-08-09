@@ -118,7 +118,8 @@ func main() {
 	//   无人调用，模板 base_url 更新后流量仍打旧上游直至重启）
 	// - 账号 → sched 组级定向 InvalidateGroup（full ⊇ 组级 ⊇ 无）；upstream_key
 	//   变更 → clients 失效
-	// - 组倍率 → 余额倍率快照定向刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）
+	// - 组倍率 / 用户-组专属倍率（group_assignment，T3.5 按组）→ 余额倍率
+	//   快照定向刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）
 	// - key/pricing → 现状（auth 增量 Upsert/Delete / 内部 reloadPricing，不进
 	//   invalidate）
 	// 去抖窗口 200ms：管理面变更生效延迟 ≤ 窗口 + 一次重载时长；后沿语义
@@ -137,8 +138,8 @@ func main() {
 	// receiver panic（2026-08-10 管理端建用户实证：Debouncer.loop panic）。
 	var invBalances invalidate.BalancesReloader
 	if cfg.Billing.Enabled {
-		// loader = Repository 门面（BalanceLoader：余额+用户倍率 → Users，
-		// 组倍率 → Groups，T3.5）。
+		// loader = Repository 门面（BalanceLoader：余额 → Users，组倍率 +
+		// assignment 专属倍率 → Groups，T3.5 修正按组）。
 		billBalances = billing.NewBalances(repos, log)
 		invBalances = billBalances
 		_ = billBalances.Reload(context.Background()) // 启动同步，fail-safe（失败保留空快照 → 预检全 402 拒绝，安全侧）

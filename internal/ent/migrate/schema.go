@@ -55,6 +55,7 @@ var (
 	// GroupAssignmentsColumns holds the columns for the "group_assignments" table.
 	GroupAssignmentsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "price_multiplier", Type: field.TypeInt, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "group_id", Type: field.TypeInt64},
 		{Name: "user_id", Type: field.TypeInt64},
@@ -67,13 +68,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "group_assignments_groups_assignments",
-				Columns:    []*schema.Column{GroupAssignmentsColumns[2]},
+				Columns:    []*schema.Column{GroupAssignmentsColumns[3]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "group_assignments_users_group_assignments",
-				Columns:    []*schema.Column{GroupAssignmentsColumns[3]},
+				Columns:    []*schema.Column{GroupAssignmentsColumns[4]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -82,7 +83,7 @@ var (
 			{
 				Name:    "groupassignment_group_id_user_id",
 				Unique:  true,
-				Columns: []*schema.Column{GroupAssignmentsColumns[2], GroupAssignmentsColumns[3]},
+				Columns: []*schema.Column{GroupAssignmentsColumns[3], GroupAssignmentsColumns[4]},
 			},
 		},
 	}
@@ -400,7 +401,6 @@ var (
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "disabled"}, Default: "active"},
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "balance", Type: field.TypeInt64, Default: 0},
-		{Name: "price_multiplier", Type: field.TypeInt, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}

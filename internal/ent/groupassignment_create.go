@@ -36,6 +36,20 @@ func (_c *GroupAssignmentCreate) SetUserID(v int64) *GroupAssignmentCreate {
 	return _c
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (_c *GroupAssignmentCreate) SetPriceMultiplier(v int) *GroupAssignmentCreate {
+	_c.mutation.SetPriceMultiplier(v)
+	return _c
+}
+
+// SetNillablePriceMultiplier sets the "price_multiplier" field if the given value is not nil.
+func (_c *GroupAssignmentCreate) SetNillablePriceMultiplier(v *int) *GroupAssignmentCreate {
+	if v != nil {
+		_c.SetPriceMultiplier(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *GroupAssignmentCreate) SetCreatedAt(v time.Time) *GroupAssignmentCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -157,6 +171,10 @@ func (_c *GroupAssignmentCreate) createSpec() (*GroupAssignment, *sqlgraph.Creat
 		_node.ID = id
 		_spec.ID.Value = id
 	}
+	if value, ok := _c.mutation.PriceMultiplier(); ok {
+		_spec.SetField(groupassignment.FieldPriceMultiplier, field.TypeInt, value)
+		_node.PriceMultiplier = &value
+	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(groupassignment.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -271,6 +289,30 @@ func (u *GroupAssignmentUpsert) UpdateUserID() *GroupAssignmentUpsert {
 	return u
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *GroupAssignmentUpsert) SetPriceMultiplier(v int) *GroupAssignmentUpsert {
+	u.Set(groupassignment.FieldPriceMultiplier, v)
+	return u
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *GroupAssignmentUpsert) UpdatePriceMultiplier() *GroupAssignmentUpsert {
+	u.SetExcluded(groupassignment.FieldPriceMultiplier)
+	return u
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *GroupAssignmentUpsert) AddPriceMultiplier(v int) *GroupAssignmentUpsert {
+	u.Add(groupassignment.FieldPriceMultiplier, v)
+	return u
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (u *GroupAssignmentUpsert) ClearPriceMultiplier() *GroupAssignmentUpsert {
+	u.SetNull(groupassignment.FieldPriceMultiplier)
+	return u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (u *GroupAssignmentUpsert) SetCreatedAt(v time.Time) *GroupAssignmentUpsert {
 	u.Set(groupassignment.FieldCreatedAt, v)
@@ -356,6 +398,34 @@ func (u *GroupAssignmentUpsertOne) SetUserID(v int64) *GroupAssignmentUpsertOne 
 func (u *GroupAssignmentUpsertOne) UpdateUserID() *GroupAssignmentUpsertOne {
 	return u.Update(func(s *GroupAssignmentUpsert) {
 		s.UpdateUserID()
+	})
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *GroupAssignmentUpsertOne) SetPriceMultiplier(v int) *GroupAssignmentUpsertOne {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.SetPriceMultiplier(v)
+	})
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *GroupAssignmentUpsertOne) AddPriceMultiplier(v int) *GroupAssignmentUpsertOne {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.AddPriceMultiplier(v)
+	})
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *GroupAssignmentUpsertOne) UpdatePriceMultiplier() *GroupAssignmentUpsertOne {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.UpdatePriceMultiplier()
+	})
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (u *GroupAssignmentUpsertOne) ClearPriceMultiplier() *GroupAssignmentUpsertOne {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.ClearPriceMultiplier()
 	})
 }
 
@@ -612,6 +682,34 @@ func (u *GroupAssignmentUpsertBulk) SetUserID(v int64) *GroupAssignmentUpsertBul
 func (u *GroupAssignmentUpsertBulk) UpdateUserID() *GroupAssignmentUpsertBulk {
 	return u.Update(func(s *GroupAssignmentUpsert) {
 		s.UpdateUserID()
+	})
+}
+
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (u *GroupAssignmentUpsertBulk) SetPriceMultiplier(v int) *GroupAssignmentUpsertBulk {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.SetPriceMultiplier(v)
+	})
+}
+
+// AddPriceMultiplier adds v to the "price_multiplier" field.
+func (u *GroupAssignmentUpsertBulk) AddPriceMultiplier(v int) *GroupAssignmentUpsertBulk {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.AddPriceMultiplier(v)
+	})
+}
+
+// UpdatePriceMultiplier sets the "price_multiplier" field to the value that was provided on create.
+func (u *GroupAssignmentUpsertBulk) UpdatePriceMultiplier() *GroupAssignmentUpsertBulk {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.UpdatePriceMultiplier()
+	})
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (u *GroupAssignmentUpsertBulk) ClearPriceMultiplier() *GroupAssignmentUpsertBulk {
+	return u.Update(func(s *GroupAssignmentUpsert) {
+		s.ClearPriceMultiplier()
 	})
 }
 

@@ -11,7 +11,8 @@
 //   - 模板（base_url/models/映射）→ sched 全量 + clients 失效（base_url
 //     变更需按新地址重建 SDK 客户端）
 //   - 账号 → sched 组级定向 InvalidateGroup（包含关系：full ⊇ 组级 ⊇ 无）
-//   - 组倍率 → 余额倍率快照定向刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）
+//   - 组倍率 / 用户-组专属倍率 → 余额倍率快照定向刷新（EffectiveMultiplier
+//     陈旧 ≤10s 不可接受）
 //   - key/pricing → 现状（auth 增量 / 内部 reloadPricing，不进 invalidate）
 //
 // 读端永不阻塞：重载在单 goroutine 串行执行；各实体快照原子替换由实体自身
@@ -38,7 +39,8 @@ const (
 	KindTemplates
 	// KindClients aiclient 工厂失效（模板 base_url / 账号 upstream_key 变更）。
 	KindClients
-	// KindMultipliers 组倍率（price_multiplier）变更：余额倍率快照定向刷新。
+	// KindMultipliers 组倍率 / 用户-组专属倍率（price_multiplier）变更：余额
+	// 倍率快照定向刷新。
 	KindMultipliers
 )
 
@@ -157,9 +159,10 @@ func (d *Debouncer) Users() { d.mark(KindUsers, nil) }
 // 重启）。
 func (d *Debouncer) Templates() { d.mark(KindTemplates|KindClients, nil) }
 
-// Multipliers 组倍率（price_multiplier）变更（含组创建/删除——新组倍率须
-// 即刻进快照，防 ×1 计费窗口）：余额倍率快照定向刷新（小表单查，非全量
-// Reload——EffectiveMultiplier 陈旧 ≤10s 不可接受）。
+// Multipliers 组倍率 / 用户-组专属倍率（price_multiplier）变更（含组创建/
+// 删除与 group_assignment CRUD——新倍率须即刻进快照，防 ×1 计费窗口）：余额
+// 倍率快照定向刷新（组 + assignment 两路小表单查，非全量 Reload——
+// EffectiveMultiplier 陈旧 ≤10s 不可接受）。
 func (d *Debouncer) Multipliers() { d.mark(KindMultipliers, nil) }
 
 // Accounts 账号变更（创建/更新/删除/批量）：sched 组级定向重载受影响组

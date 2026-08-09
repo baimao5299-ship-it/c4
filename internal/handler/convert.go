@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"math"
+	"strconv"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/service"
@@ -81,17 +84,83 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 	}
 }
 
-// toAPIGroup 分组领域对象 → 契约类型。
+// toAPIGroup 分组领域对象 → 契约类型（PriceMultiplier 万分数 → 正常值
+// float64，与 balance 毫分↔USD 同构的 API 边界换算）。
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
 	return Group{
 		ID:              &g.ID,
 		Name:            &g.Name,
 		Visibility:      &v,
-		PriceMultiplier: &g.PriceMultiplier,
+		PriceMultiplier: ptr(multToNormal(g.PriceMultiplier)),
 		CreatedAt:       &g.CreatedAt,
 		UpdatedAt:       &g.UpdatedAt,
 	}
+}
+
+// multToNormal 万分数 → 正常值（API 展示换算：15000 → 1.5；1 USD = 100,000
+// 毫分同构——内部存储恒万分数，仅 API 边界换算）。
+func multToNormal(v int) float64 { return float64(v) / 10000.0 }
+
+// normalToMult 正常值 → 万分数（API 输入换算：1.5 → 15000；math.Round 消除
+// 浮点取整误差）。
+func normalToMult(v float64) int { return int(math.Round(v * 10000)) }
+
+// apiMultiplierToMillis 生成类型倍率（正常值 *float64，nil = 未指定）→ 万分数
+// *int；越界（<0 或 >10）→ 错误（400 文案）。
+func apiMultiplierToMillis(v *float64) (*int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	if *v < 0 || *v > 10 {
+		return nil, errors.New("price_multiplier must be in [0, 10]")
+	}
+	m := normalToMult(*v)
+	return &m, nil
+}
+
+// apiMultiplierMap 生成类型 multipliers（map[string]*float64，key = user_id
+// 字符串）→ 万分数 map[int64]*int（nil 值 = 清除为未设置）；key 非法/越界 →
+// 错误。
+func apiMultiplierMap(in map[string]*float64) (map[int64]*int, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[int64]*int, len(in))
+	for k, v := range in {
+		uid, err := strconv.ParseInt(k, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("multipliers: invalid user_id %q", k)
+		}
+		if v == nil {
+			out[uid] = nil // null = 清除为未设置
+			continue
+		}
+		if *v < 0 || *v > 10 {
+			return nil, fmt.Errorf("multipliers: price_multiplier must be in [0, 10] for user %d", uid)
+		}
+		m := normalToMult(*v)
+		out[uid] = &m
+	}
+	return out, nil
+}
+
+// toAPIMultipliers 万分数 map[int64]*int → 契约类型 map[string]*float64（正常
+// 值；nil = 未设置 → null）。nil 输入 → nil（omitempty 缺省不输出）。
+func toAPIMultipliers(m map[int64]*int) *map[string]*float64 {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]*float64, len(m))
+	for uid, v := range m {
+		if v == nil {
+			out[strconv.FormatInt(uid, 10)] = nil
+			continue
+		}
+		f := multToNormal(*v)
+		out[strconv.FormatInt(uid, 10)] = &f
+	}
+	return &out
 }
 
 // millisToUSD 毫分 → USD float64（1 USD = 100,000 毫分；handler 边界展示换算，
@@ -102,8 +171,46 @@ func millisToUSD(millis int64) float64 { return float64(millis) / 1e5 }
 // 换算，内部存储恒毫分）。
 func usdToMillis(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
 
+// millisToUSDPtr *int64（毫分）→ *float64（USD）；nil 透传（价格矩阵可选列）。
+func millisToUSDPtr(v *int64) *float64 {
+	if v == nil {
+		return nil
+	}
+	f := millisToUSD(*v)
+	return &f
+}
+
+// usdToMillisPtr *float64（USD）→ *int64（毫分）；nil 透传（缺省 = 清空该价）。
+func usdToMillisPtr(v *float64) *int64 {
+	if v == nil {
+		return nil
+	}
+	i := usdToMillis(*v)
+	return &i
+}
+
+// multI64ToNormalPtr *int64（万分数）→ *float64（正常值）；nil 透传（pricing
+// 矩阵 FastMultiplier 列，int64 存储）。
+func multI64ToNormalPtr(v *int64) *float64 {
+	if v == nil {
+		return nil
+	}
+	f := float64(*v) / 10000.0
+	return &f
+}
+
+// normalToMultI64Ptr *float64（正常值）→ *int64（万分数）；nil 透传。
+func normalToMultI64Ptr(v *float64) *int64 {
+	if v == nil {
+		return nil
+	}
+	i := int64(math.Round(*v * 10000))
+	return &i
+}
+
 // toAPIUser 用户领域对象 → 契约类型（PasswordHash 永不下发；Balance 毫分 →
-// USD 展示换算）。
+// USD 展示换算；价格倍率按组（T3.5 修正）挂在 group_assignment 上，User 无
+// 倍率字段）。
 func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
@@ -114,7 +221,6 @@ func toAPIUser(u *domain.User) User {
 		Status:          &st,
 		MaxConcurrency:  &u.MaxConcurrency,
 		Balance:         ptr(millisToUSD(u.Balance)),
-		PriceMultiplier: u.PriceMultiplier,
 		CreatedAt:       &u.CreatedAt,
 		UpdatedAt:       &u.UpdatedAt,
 	}

@@ -84,6 +84,9 @@ type KeyStore interface {
 type GroupAssignmentStore interface {
 	GrantGroup(ctx context.Context, groupID, userID int64) error
 	RevokeGroup(ctx context.Context, groupID, userID int64) error
+	// SetAssignmentMultiplier 设置/清除该用户在该组的专属价格倍率（T3.5 修正：
+	// 按组；m = nil → 清除为未设置 → 回退组倍率；0 = 免费）。
+	SetAssignmentMultiplier(ctx context.Context, groupID, userID int64, m *int) error
 	ListAssignmentsByUser(ctx context.Context, userID int64) ([]*domain.GroupAssignment, error)
 	ListAssignmentsByGroup(ctx context.Context, groupID int64) ([]*domain.GroupAssignment, error)
 	ListGroupsForUser(ctx context.Context, userID int64) ([]*domain.Group, error)
@@ -175,9 +178,9 @@ type Invalidator interface {
 	// Accounts 账号变更（创建/更新/删除/批量）：sched 组级定向重载受影响组
 	// （gids）；keyChanged（upstream_key 变更）→ clients 失效。
 	Accounts(gids []int64, keyChanged bool)
-	// Multipliers 组倍率（price_multiplier）变更（含组创建/删除——新组倍率
-	// 须即刻进快照）：余额倍率快照定向刷新（EffectiveMultiplier 陈旧 ≤10s
-	// 不可接受）。
+	// Multipliers 组倍率 / 用户-组专属倍率（price_multiplier）变更（含组创建/
+	// 删除与 group_assignment CRUD——新倍率须即刻进快照）：余额倍率快照定向
+	// 刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）。
 	Multipliers()
 }
 

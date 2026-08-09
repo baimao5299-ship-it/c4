@@ -2040,18 +2040,20 @@ func (m *GroupMutation) ResetEdge(name string) error {
 // GroupAssignmentMutation represents an operation that mutates the GroupAssignment nodes in the graph.
 type GroupAssignmentMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int64
-	created_at    *time.Time
-	clearedFields map[string]struct{}
-	group         *int64
-	clearedgroup  bool
-	user          *int64
-	cleareduser   bool
-	done          bool
-	oldValue      func(context.Context) (*GroupAssignment, error)
-	predicates    []predicate.GroupAssignment
+	op                  Op
+	typ                 string
+	id                  *int64
+	price_multiplier    *int
+	addprice_multiplier *int
+	created_at          *time.Time
+	clearedFields       map[string]struct{}
+	group               *int64
+	clearedgroup        bool
+	user                *int64
+	cleareduser         bool
+	done                bool
+	oldValue            func(context.Context) (*GroupAssignment, error)
+	predicates          []predicate.GroupAssignment
 }
 
 var _ ent.Mutation = (*GroupAssignmentMutation)(nil)
@@ -2230,6 +2232,76 @@ func (m *GroupAssignmentMutation) ResetUserID() {
 	m.user = nil
 }
 
+// SetPriceMultiplier sets the "price_multiplier" field.
+func (m *GroupAssignmentMutation) SetPriceMultiplier(i int) {
+	m.price_multiplier = &i
+	m.addprice_multiplier = nil
+}
+
+// PriceMultiplier returns the value of the "price_multiplier" field in the mutation.
+func (m *GroupAssignmentMutation) PriceMultiplier() (r int, exists bool) {
+	v := m.price_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriceMultiplier returns the old "price_multiplier" field's value of the GroupAssignment entity.
+// If the GroupAssignment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupAssignmentMutation) OldPriceMultiplier(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriceMultiplier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriceMultiplier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriceMultiplier: %w", err)
+	}
+	return oldValue.PriceMultiplier, nil
+}
+
+// AddPriceMultiplier adds i to the "price_multiplier" field.
+func (m *GroupAssignmentMutation) AddPriceMultiplier(i int) {
+	if m.addprice_multiplier != nil {
+		*m.addprice_multiplier += i
+	} else {
+		m.addprice_multiplier = &i
+	}
+}
+
+// AddedPriceMultiplier returns the value that was added to the "price_multiplier" field in this mutation.
+func (m *GroupAssignmentMutation) AddedPriceMultiplier() (r int, exists bool) {
+	v := m.addprice_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPriceMultiplier clears the value of the "price_multiplier" field.
+func (m *GroupAssignmentMutation) ClearPriceMultiplier() {
+	m.price_multiplier = nil
+	m.addprice_multiplier = nil
+	m.clearedFields[groupassignment.FieldPriceMultiplier] = struct{}{}
+}
+
+// PriceMultiplierCleared returns if the "price_multiplier" field was cleared in this mutation.
+func (m *GroupAssignmentMutation) PriceMultiplierCleared() bool {
+	_, ok := m.clearedFields[groupassignment.FieldPriceMultiplier]
+	return ok
+}
+
+// ResetPriceMultiplier resets all changes to the "price_multiplier" field.
+func (m *GroupAssignmentMutation) ResetPriceMultiplier() {
+	m.price_multiplier = nil
+	m.addprice_multiplier = nil
+	delete(m.clearedFields, groupassignment.FieldPriceMultiplier)
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *GroupAssignmentMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -2354,12 +2426,15 @@ func (m *GroupAssignmentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupAssignmentMutation) Fields() []string {
-	fields := make([]string, 0, 3)
+	fields := make([]string, 0, 4)
 	if m.group != nil {
 		fields = append(fields, groupassignment.FieldGroupID)
 	}
 	if m.user != nil {
 		fields = append(fields, groupassignment.FieldUserID)
+	}
+	if m.price_multiplier != nil {
+		fields = append(fields, groupassignment.FieldPriceMultiplier)
 	}
 	if m.created_at != nil {
 		fields = append(fields, groupassignment.FieldCreatedAt)
@@ -2376,6 +2451,8 @@ func (m *GroupAssignmentMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case groupassignment.FieldUserID:
 		return m.UserID()
+	case groupassignment.FieldPriceMultiplier:
+		return m.PriceMultiplier()
 	case groupassignment.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -2391,6 +2468,8 @@ func (m *GroupAssignmentMutation) OldField(ctx context.Context, name string) (en
 		return m.OldGroupID(ctx)
 	case groupassignment.FieldUserID:
 		return m.OldUserID(ctx)
+	case groupassignment.FieldPriceMultiplier:
+		return m.OldPriceMultiplier(ctx)
 	case groupassignment.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -2416,6 +2495,13 @@ func (m *GroupAssignmentMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUserID(v)
 		return nil
+	case groupassignment.FieldPriceMultiplier:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriceMultiplier(v)
+		return nil
 	case groupassignment.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -2431,6 +2517,9 @@ func (m *GroupAssignmentMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *GroupAssignmentMutation) AddedFields() []string {
 	var fields []string
+	if m.addprice_multiplier != nil {
+		fields = append(fields, groupassignment.FieldPriceMultiplier)
+	}
 	return fields
 }
 
@@ -2439,6 +2528,8 @@ func (m *GroupAssignmentMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *GroupAssignmentMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case groupassignment.FieldPriceMultiplier:
+		return m.AddedPriceMultiplier()
 	}
 	return nil, false
 }
@@ -2448,6 +2539,13 @@ func (m *GroupAssignmentMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *GroupAssignmentMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case groupassignment.FieldPriceMultiplier:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriceMultiplier(v)
+		return nil
 	}
 	return fmt.Errorf("unknown GroupAssignment numeric field %s", name)
 }
@@ -2455,7 +2553,11 @@ func (m *GroupAssignmentMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *GroupAssignmentMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(groupassignment.FieldPriceMultiplier) {
+		fields = append(fields, groupassignment.FieldPriceMultiplier)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -2468,6 +2570,11 @@ func (m *GroupAssignmentMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *GroupAssignmentMutation) ClearField(name string) error {
+	switch name {
+	case groupassignment.FieldPriceMultiplier:
+		m.ClearPriceMultiplier()
+		return nil
+	}
 	return fmt.Errorf("unknown GroupAssignment nullable field %s", name)
 }
 
@@ -2480,6 +2587,9 @@ func (m *GroupAssignmentMutation) ResetField(name string) error {
 		return nil
 	case groupassignment.FieldUserID:
 		m.ResetUserID()
+		return nil
+	case groupassignment.FieldPriceMultiplier:
+		m.ResetPriceMultiplier()
 		return nil
 	case groupassignment.FieldCreatedAt:
 		m.ResetCreatedAt()
@@ -15834,8 +15944,6 @@ type UserMutation struct {
 	addmax_concurrency       *int
 	balance                  *int64
 	addbalance               *int64
-	price_multiplier         *int
-	addprice_multiplier      *int
 	created_at               *time.Time
 	updated_at               *time.Time
 	clearedFields            map[string]struct{}
@@ -16213,76 +16321,6 @@ func (m *UserMutation) ResetBalance() {
 	m.addbalance = nil
 }
 
-// SetPriceMultiplier sets the "price_multiplier" field.
-func (m *UserMutation) SetPriceMultiplier(i int) {
-	m.price_multiplier = &i
-	m.addprice_multiplier = nil
-}
-
-// PriceMultiplier returns the value of the "price_multiplier" field in the mutation.
-func (m *UserMutation) PriceMultiplier() (r int, exists bool) {
-	v := m.price_multiplier
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPriceMultiplier returns the old "price_multiplier" field's value of the User entity.
-// If the User object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UserMutation) OldPriceMultiplier(ctx context.Context) (v *int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPriceMultiplier is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPriceMultiplier requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPriceMultiplier: %w", err)
-	}
-	return oldValue.PriceMultiplier, nil
-}
-
-// AddPriceMultiplier adds i to the "price_multiplier" field.
-func (m *UserMutation) AddPriceMultiplier(i int) {
-	if m.addprice_multiplier != nil {
-		*m.addprice_multiplier += i
-	} else {
-		m.addprice_multiplier = &i
-	}
-}
-
-// AddedPriceMultiplier returns the value that was added to the "price_multiplier" field in this mutation.
-func (m *UserMutation) AddedPriceMultiplier() (r int, exists bool) {
-	v := m.addprice_multiplier
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ClearPriceMultiplier clears the value of the "price_multiplier" field.
-func (m *UserMutation) ClearPriceMultiplier() {
-	m.price_multiplier = nil
-	m.addprice_multiplier = nil
-	m.clearedFields[user.FieldPriceMultiplier] = struct{}{}
-}
-
-// PriceMultiplierCleared returns if the "price_multiplier" field was cleared in this mutation.
-func (m *UserMutation) PriceMultiplierCleared() bool {
-	_, ok := m.clearedFields[user.FieldPriceMultiplier]
-	return ok
-}
-
-// ResetPriceMultiplier resets all changes to the "price_multiplier" field.
-func (m *UserMutation) ResetPriceMultiplier() {
-	m.price_multiplier = nil
-	m.addprice_multiplier = nil
-	delete(m.clearedFields, user.FieldPriceMultiplier)
-}
-
 // SetCreatedAt sets the "created_at" field.
 func (m *UserMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -16551,7 +16589,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 8)
 	if m.email != nil {
 		fields = append(fields, user.FieldEmail)
 	}
@@ -16569,9 +16607,6 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.balance != nil {
 		fields = append(fields, user.FieldBalance)
-	}
-	if m.price_multiplier != nil {
-		fields = append(fields, user.FieldPriceMultiplier)
 	}
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
@@ -16599,8 +16634,6 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.MaxConcurrency()
 	case user.FieldBalance:
 		return m.Balance()
-	case user.FieldPriceMultiplier:
-		return m.PriceMultiplier()
 	case user.FieldCreatedAt:
 		return m.CreatedAt()
 	case user.FieldUpdatedAt:
@@ -16626,8 +16659,6 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldMaxConcurrency(ctx)
 	case user.FieldBalance:
 		return m.OldBalance(ctx)
-	case user.FieldPriceMultiplier:
-		return m.OldPriceMultiplier(ctx)
 	case user.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case user.FieldUpdatedAt:
@@ -16683,13 +16714,6 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBalance(v)
 		return nil
-	case user.FieldPriceMultiplier:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPriceMultiplier(v)
-		return nil
 	case user.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -16718,9 +16742,6 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addbalance != nil {
 		fields = append(fields, user.FieldBalance)
 	}
-	if m.addprice_multiplier != nil {
-		fields = append(fields, user.FieldPriceMultiplier)
-	}
 	return fields
 }
 
@@ -16733,8 +16754,6 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedMaxConcurrency()
 	case user.FieldBalance:
 		return m.AddedBalance()
-	case user.FieldPriceMultiplier:
-		return m.AddedPriceMultiplier()
 	}
 	return nil, false
 }
@@ -16758,13 +16777,6 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddBalance(v)
 		return nil
-	case user.FieldPriceMultiplier:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddPriceMultiplier(v)
-		return nil
 	}
 	return fmt.Errorf("unknown User numeric field %s", name)
 }
@@ -16772,11 +16784,7 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *UserMutation) ClearedFields() []string {
-	var fields []string
-	if m.FieldCleared(user.FieldPriceMultiplier) {
-		fields = append(fields, user.FieldPriceMultiplier)
-	}
-	return fields
+	return nil
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -16789,11 +16797,6 @@ func (m *UserMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *UserMutation) ClearField(name string) error {
-	switch name {
-	case user.FieldPriceMultiplier:
-		m.ClearPriceMultiplier()
-		return nil
-	}
 	return fmt.Errorf("unknown User nullable field %s", name)
 }
 
@@ -16818,9 +16821,6 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldBalance:
 		m.ResetBalance()
-		return nil
-	case user.FieldPriceMultiplier:
-		m.ResetPriceMultiplier()
 		return nil
 	case user.FieldCreatedAt:
 		m.ResetCreatedAt()

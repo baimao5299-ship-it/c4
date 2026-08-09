@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
@@ -29,6 +30,28 @@ func (r *GroupAssignmentRepo) Revoke(ctx context.Context, groupID, userID int64)
 		Where(groupassignment.GroupIDEQ(groupID), groupassignment.UserIDEQ(userID)).
 		Exec(ctx)
 	return err
+}
+
+// SetMultiplier 设置/清除该用户在该组的专属价格倍率（T3.5 修正：按组——用户
+// 在不同组可有不同倍率）：m = nil → 清除为未设置（ClearPriceMultiplier，回退
+// 组倍率）；非 nil → 写万分数（0 = 免费）。授予行必须已存在（service 先 Grant
+// 再 SetMultiplier）；缺失 → ErrNotFound。
+func (r *GroupAssignmentRepo) SetMultiplier(ctx context.Context, groupID, userID int64, m *int) error {
+	q := r.client.GroupAssignment.Update().
+		Where(groupassignment.GroupIDEQ(groupID), groupassignment.UserIDEQ(userID))
+	if m == nil {
+		q = q.ClearPriceMultiplier()
+	} else {
+		q = q.SetPriceMultiplier(*m)
+	}
+	n, err := q.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: group_id=%d user_id=%d", ErrNotFound, groupID, userID)
+	}
+	return nil
 }
 
 func (r *GroupAssignmentRepo) ListByUser(ctx context.Context, userID int64) ([]*domain.GroupAssignment, error) {

@@ -10,9 +10,9 @@
 //
 // 覆盖：manual 设价（含 priority/fast/above 矩阵）→ usagelog cost 断言 +
 // 余额毫分扣减 + FEFO 临时额度优先扣；余额不足/未设价 402；tier strip/reject
-// 策略；组/用户价格倍率（含 0 = 免费不扣费）；sync 后 litellm 行矩阵填充且
-// manual 不被覆盖；usagelog 按日分区写入；SIGTERM 优雅停机（流式中断 → 日志
-// cost 不丢，扣费完整 flush）。
+// 策略；组价格倍率 + 用户-组专属倍率（按组挂载，含 0 = 免费不扣费）；sync 后
+// litellm 行矩阵填充且 manual 不被覆盖；usagelog 按日分区写入；SIGTERM 优雅
+// 停机（流式中断 → 日志 cost 不丢，扣费完整 flush）。
 package e2e
 
 import (
@@ -340,7 +340,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		"models": []string{"e2e-model", "e2e-matrix-model", "e2e-mult-model", "e2e-litellm-model", "e2e-manual-model", "e2e-noprice-model"},
 	})
 	g1 := env.create("/groups", map[string]any{"name": "e2e-grp"})
-	g2 := env.create("/groups", map[string]any{"name": "e2e-grp2", "price_multiplier": 20000})
+	g2 := env.create("/groups", map[string]any{"name": "e2e-grp2", "price_multiplier": 2.0})
 	g3 := env.create("/groups", map[string]any{"name": "e2e-grp3"})
 	env.create("/accounts", map[string]any{
 		"name": "e2e-acc", "template_id": tplID, "upstream_key": "up-key-1",
@@ -348,11 +348,11 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	})
 
 	// --- 3. manual 设价（e2e-model 基础 + fast；e2e-matrix-model 全矩阵；
-	// e2e-mult-model 基础）---
-	// 毫分/1M：prompt 10,000,000（$100）、completion 20,000,000（$200）。
+	// e2e-mult-model 基础；API 输入 USD/1M 正常值，存储毫分）---
+	// USD/1M：prompt 100.0（$100）、completion 200.0（$200）。
 	putPrice(t, env, "e2e-model", map[string]any{
-		"prompt_price_per_million": 10000000, "completion_price_per_million": 20000000,
-		"fast_multiplier": 20000,
+		"prompt_price_per_million": 100.0, "completion_price_per_million": 200.0,
+		"fast_multiplier": 2.0,
 	})
 	// 矩阵：priority/flex 替换档 + above_threshold 5 + above 三组 + fast ×2。
 	// auto:   pt10→(5×10+5×5)=75   ct20→(5×20+15×10)=250  → 325
@@ -361,17 +361,17 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// fast:    325 × 2 = 650
 	// anthropic 中止（仅 pt=10）：(5×10+5×5)=75
 	putPrice(t, env, "e2e-matrix-model", map[string]any{
-		"prompt_price_per_million": 10000000, "completion_price_per_million": 20000000,
-		"priority_prompt_price_per_million": 15000000, "priority_completion_price_per_million": 25000000,
-		"flex_prompt_price_per_million": 12000000, "flex_completion_price_per_million": 18000000,
+		"prompt_price_per_million": 100.0, "completion_price_per_million": 200.0,
+		"priority_prompt_price_per_million": 150.0, "priority_completion_price_per_million": 250.0,
+		"flex_prompt_price_per_million": 120.0, "flex_completion_price_per_million": 180.0,
 		"above_threshold": 5,
-		"above_prompt_price_per_million": 5000000, "above_completion_price_per_million": 10000000,
-		"above_priority_prompt_price_per_million": 7000000, "above_priority_completion_price_per_million": 12000000,
-		"above_flex_prompt_price_per_million": 4000000, "above_flex_completion_price_per_million": 8000000,
-		"fast_multiplier": 20000,
+		"above_prompt_price_per_million": 50.0, "above_completion_price_per_million": 100.0,
+		"above_priority_prompt_price_per_million": 70.0, "above_priority_completion_price_per_million": 120.0,
+		"above_flex_prompt_price_per_million": 40.0, "above_flex_completion_price_per_million": 80.0,
+		"fast_multiplier": 2.0,
 	})
 	putPrice(t, env, "e2e-mult-model", map[string]any{
-		"prompt_price_per_million": 10000000, "completion_price_per_million": 20000000,
+		"prompt_price_per_million": 100.0, "completion_price_per_million": 200.0,
 	})
 
 	// --- 4. 用户/密钥 ---
@@ -524,9 +524,9 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	})
 	require.Equal(t, 200, c, "restore passthrough: %s", rb9)
 
-	// ============ 场景 5：价格倍率（组倍率 / 用户覆盖 / 0 免费） ============
-	t.Log("场景 5：组倍率 ×2 → 扣费 ×2；用户专属倍率覆盖组；0 = 免费不扣费")
-	u4 := createUser(t, env, "mult@example.com", 10.0) // grp2 倍率 20000
+	// ============ 场景 5：价格倍率（组倍率 / 用户-组专属倍率覆盖 / 0 免费） ============
+	t.Log("场景 5：组倍率 ×2 → 扣费 ×2；用户-组专属倍率覆盖组（按组挂载）；0 = 免费不扣费")
+	u4 := createUser(t, env, "mult@example.com", 10.0) // grp2 倍率 2.0
 	_, u4Key := userKey(t, env, u4, g2)
 	// O2 去抖：u4 须在余额快照中（下方首个请求的计费预检依赖）。
 	waitSnapshot()
@@ -538,23 +538,26 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		require.Equal(t, 200, c, "chat: %s", rb)
 		sleepFlush()
 	}
-	// 组倍率 20000 → 500×2 = 1000
+	// 组倍率 2.0 → 500×2 = 1000
 	chat(u4Key, "e2e-mult-model")
 	r = env.lastLogFor("e2e-mult-model")
 	require.Equal(t, int64(1000), r.Cost, "组倍率 ×2")
 	require.Equal(t, int64(1000000-1000), env.balance(u4))
 
-	// 用户覆盖组：倍率 5000 → 500×0.5 = 250
-	c, rb10 := env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10), map[string]any{"price_multiplier": 5000})
-	require.Equal(t, 200, c, "set user mult: %s", rb10)
+	// 用户-组专属倍率覆盖组（T3.5 修正：按组挂载，经 assignments 的 multipliers）：
+	// 0.5 → 500×0.5 = 250
+	c, rb10 := env.admin(http.MethodPut, "/groups/"+strconv.FormatInt(g2, 10)+"/assignments",
+		map[string]any{"user_ids": []int64{u4}, "multipliers": map[string]any{strconv.FormatInt(u4, 10): 0.5}})
+	require.Equal(t, 200, c, "set assignment mult: %s", rb10)
 	waitSnapshot() // O2 去抖：新倍率须已进快照（请求按快照计费）
 	chat(u4Key, "e2e-mult-model")
 	r = env.lastLogFor("e2e-mult-model")
-	require.Equal(t, int64(250), r.Cost, "用户专属倍率覆盖组倍率")
+	require.Equal(t, int64(250), r.Cost, "用户-组专属倍率覆盖组倍率")
 	require.Equal(t, int64(1000000-1000-250), env.balance(u4))
 
-	// 用户倍率 0 = 免费：cost 0 不扣费
-	c, _ = env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10), map[string]any{"price_multiplier": 0})
+	// 专属倍率 0 = 免费：cost 0 不扣费
+	c, _ = env.admin(http.MethodPut, "/groups/"+strconv.FormatInt(g2, 10)+"/assignments",
+		map[string]any{"user_ids": []int64{u4}, "multipliers": map[string]any{strconv.FormatInt(u4, 10): 0.0}})
 	require.Equal(t, 200, c, "set free mult")
 	waitSnapshot() // O2 去抖：新倍率须已进快照
 	chat(u4Key, "e2e-mult-model")
@@ -565,7 +568,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// 组倍率 0 = 免费 + 余额 0 预检放行（免费用户不 402）
 	u5 := createUser(t, env, "free@example.com", 0.0) // 余额 0
 	_, u5Key := userKey(t, env, u5, g3)
-	c, rb11 := env.admin(http.MethodPut, "/groups/"+strconv.FormatInt(g3, 10), map[string]any{"name": "e2e-grp3", "price_multiplier": 0})
+	c, rb11 := env.admin(http.MethodPut, "/groups/"+strconv.FormatInt(g3, 10), map[string]any{"name": "e2e-grp3", "price_multiplier": 0.0})
 	require.Equal(t, 200, c, "set group free: %s", rb11)
 	waitSnapshot() // O2 去抖：u5 入余额快照 + g3 倍率 0 进倍率快照（同窗口合并一次重载）
 	chat(u5Key, "e2e-mult-model")
@@ -584,18 +587,18 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, 200, c, "pricing list: %s", rb14)
 	row := jsonGet(t, rb14, "rows", 0, "").(map[string]any)
 	for field, want := range map[string]any{
-		"PromptPricePerMillion":        float64(250000),
-		"CompletionPricePerMillion":    float64(1000000),
-		"CacheReadPricePerMillion":     float64(25000),
-		"CacheCreationPricePerMillion": float64(125000),
-		"PriorityPromptPricePerMillion":        float64(500000),
-		"PriorityCacheCreationPricePerMillion": float64(250000),
-		"FlexCompletionPricePerMillion":        float64(800000),
+		"PromptPricePerMillion":        float64(2.5),
+		"CompletionPricePerMillion":    float64(10.0),
+		"CacheReadPricePerMillion":     float64(0.25),
+		"CacheCreationPricePerMillion": float64(1.25),
+		"PriorityPromptPricePerMillion":        float64(5.0),
+		"PriorityCacheCreationPricePerMillion": float64(2.5),
+		"FlexCompletionPricePerMillion":        float64(8.0),
 		"AboveThreshold":                       float64(256000),
-		"AbovePromptPricePerMillion":           float64(150000),
-		"AbovePriorityCompletionPricePerMillion": float64(1500000),
-		"AboveFlexCacheReadPricePerMillion":      float64(12000),
-		"FastMultiplier":                         float64(60000),
+		"AbovePromptPricePerMillion":           float64(1.5),
+		"AbovePriorityCompletionPricePerMillion": float64(15.0),
+		"AboveFlexCacheReadPricePerMillion":      float64(0.12),
+		"FastMultiplier":                         float64(6.0),
 	} {
 		got, ok := row[field]
 		require.True(t, ok, "litellm 行含 %s", field)
@@ -605,7 +608,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 
 	// manual 接管后 sync 不覆盖
 	putPrice(t, env, "e2e-manual-model", map[string]any{
-		"prompt_price_per_million": 123456, "completion_price_per_million": 654321,
+		"prompt_price_per_million": 1.23456, "completion_price_per_million": 6.54321,
 	})
 	c, rb15 := env.admin(http.MethodPost, "/pricing/sync", nil)
 	require.Equal(t, 200, c, "sync2: %s", rb15)
@@ -614,7 +617,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, 200, c, "pricing manual: %s", rb16)
 	row = jsonGet(t, rb16, "rows", 0, "").(map[string]any)
 	require.Equal(t, "manual", row["Source"], "manual 行不被 sync 覆盖")
-	require.Equal(t, float64(123456), row["PromptPricePerMillion"], "manual 价保持")
+	require.Equal(t, float64(1.23456), row["PromptPricePerMillion"], "manual 价保持（USD/1M 回显）")
 
 	// ============ 场景 7：usagelog 按日分区 ============
 	t.Log("场景 7：usagelog 当日分区存在且行落入正确分区")

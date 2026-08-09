@@ -9,10 +9,12 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
+	"go-proxy-mini/internal/ent/groupassignment"
 )
 
 // GroupRepo 同时承担调度器 Loader 的账号状态回写（UpdateAccountStatus 委托 AccountRepo，
@@ -30,14 +32,13 @@ type GroupRepo struct {
 const accountGroupsMembershipSQL = `SELECT account_id, group_id FROM account_groups`
 
 func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
-	// price_multiplier 0 = 未指定 → 不设置该列（DB 默认 10000 = ×1）。0 是合法
-	// 倍率（免费组），显式设置经 UpdateGroup（或后续管理面契约）写入。
+	// price_multiplier 恒写入（service 层把缺省归一为 10000 = ×1——T3.5 修正：
+	// API 边界 nullable float64 可表达显式 0 = 免费组，repo 不再把 0 当"未指定"
+	// 跳过落列）。DB 默认 10000 为兜底。
 	q := r.client.Group.Create().
 		SetName(g.Name).
-		SetVisibility(group.Visibility(g.Visibility))
-	if g.PriceMultiplier != 0 {
-		q = q.SetPriceMultiplier(g.PriceMultiplier)
-	}
+		SetVisibility(group.Visibility(g.Visibility)).
+		SetPriceMultiplier(g.PriceMultiplier)
 	row, err := q.Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
@@ -188,6 +189,28 @@ func (r *GroupRepo) LoadGroupMultipliers(ctx context.Context) (map[int64]int, er
 	out := make(map[int64]int, len(rows))
 	for _, row := range rows {
 		out[row.ID] = row.PriceMultiplier
+	}
+	return out, nil
+}
+
+// LoadAssignmentMultipliers 全量用户-组专属倍率快照（(user_id, group_id) →
+// 万分数；仅 group_assignments.price_multiplier 非 NULL 行——缺失 = 未设置 →
+// 用组倍率；billing.Balances.Reload/ReloadMultipliers 调用，T3.5 修正：用户
+// 专属倍率按组挂载）。
+func (r *GroupRepo) LoadAssignmentMultipliers(ctx context.Context) (map[billing.AssignmentKey]int, error) {
+	rows, err := r.client.GroupAssignment.Query().
+		Where(groupassignment.PriceMultiplierNotNil()).
+		Select(groupassignment.FieldUserID, groupassignment.FieldGroupID, groupassignment.FieldPriceMultiplier).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[billing.AssignmentKey]int, len(rows))
+	for _, row := range rows {
+		if row.PriceMultiplier == nil {
+			continue // 非 NULL 谓词兜底（Select 子集查询仍可能带 nil？不——谓词已过滤，防御）
+		}
+		out[billing.AssignmentKey{UserID: row.UserID, GroupID: row.GroupID}] = *row.PriceMultiplier
 	}
 	return out, nil
 }

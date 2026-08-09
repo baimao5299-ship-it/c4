@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"math"
 	"net/http"
 
 	"go-proxy-mini/internal/domain"
@@ -9,8 +10,9 @@ import (
 )
 
 // PostGroups 创建分组（平台容量池；key 为独立表，用户面 /user/keys 创建，
-// ServerInterface）。price_multiplier 缺省/null = 未指定（repo 落库组默认
-// 10000 = ×1）；显式提供（含 0 = 免费）经 PUT 写入。
+// ServerInterface）。price_multiplier（正常值 0~10，API 边界换算万分数）：
+// 缺省/null = 不设置（×1）；显式 0 = 免费组（恒写入——T3.5 修正：API 可表达
+// 显式 0，repo 不再把 0 当未指定）。
 func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	var in GroupCreate
 	if err := decode(r, &in); err != nil {
@@ -21,7 +23,12 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	if in.Visibility != nil {
 		visibility = domain.GroupVisibility(*in.Visibility)
 	}
-	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility, deref(in.PriceMultiplier))
+	mult, err := apiMultiplierToMillis(in.PriceMultiplier) // nil = 未指定；0~10 → 万分数
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility, mult)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -60,8 +67,8 @@ func (h *AdminAPI) GetGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 	writeJSON(w, http.StatusOK, toAPIGroup(g))
 }
 
-// PutGroupsId 全量更新分组（ServerInterface）。price_multiplier 提供（含 0 =
-// 免费）即写入；缺省 = 保持原值。
+// PutGroupsId 全量更新分组（ServerInterface）。price_multiplier（正常值
+// 0~10）提供（含 0 = 免费）即写入；缺省 = 保持原值。
 func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
 	var in GroupCreate
 	if err := decode(r, &in); err != nil {
@@ -78,11 +85,11 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 		g.Visibility = domain.GroupVisibility(*in.Visibility)
 	}
 	if in.PriceMultiplier != nil {
-		if *in.PriceMultiplier < 0 || *in.PriceMultiplier > 100000 {
-			writeErr(w, http.StatusBadRequest, "price_multiplier must be in [0, 100000]")
+		if *in.PriceMultiplier < 0 || *in.PriceMultiplier > 10 {
+			writeErr(w, http.StatusBadRequest, "price_multiplier must be in [0, 10]")
 			return
 		}
-		g.PriceMultiplier = *in.PriceMultiplier
+		g.PriceMultiplier = int(math.Round(*in.PriceMultiplier * 10000))
 	}
 	updated, err := h.svc.UpdateGroup(r.Context(), g)
 	if err != nil {
@@ -93,19 +100,33 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 }
 
 // PutGroupsIdAssignments 设置组的授予用户（platform_admin 专属；替换语义：
-// 未列出即撤销，空数组 = 清空；ServerInterface）。
+// 未列出即撤销，空数组 = 清空；ServerInterface）。multipliers 可选：user_id →
+// 该用户在该组的专属价格倍率（正常值 0~10；null = 清除为未设置 → 回退组
+// 倍率；T3.5 修正：用户专属倍率按组挂载）。
 func (h *AdminAPI) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
 	var in GroupAssignmentsBody
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	applied, err := h.svc.SetGroupAssignments(r.Context(), id, in.UserIds)
+	var mults map[int64]*int
+	if in.Multipliers != nil {
+		m, err := apiMultiplierMap(*in.Multipliers) // map[string]*float64 → map[int64]*int（万分数）
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		mults = m
+	}
+	applied, postMults, err := h.svc.SetGroupAssignments(r.Context(), id, in.UserIds, mults)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, GroupAssignmentsResponse{UserIds: applied})
+	writeJSON(w, http.StatusOK, GroupAssignmentsResponse{
+		UserIds:     applied,
+		Multipliers: toAPIMultipliers(postMults),
+	})
 }
 
 // DeleteGroupsId 删除分组（ServerInterface）。
