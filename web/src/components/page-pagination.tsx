@@ -10,8 +10,8 @@ const PAGE_SIZES = [10, 20, 50, 100, 1000]
 
 // 增强分页范式（page/page_size，1-based）分页条：与 Pagination（offset/limit）
 // 并存，供以 page/page_size 为查询参数的列表页使用（redemption-codes / pricing）。
-// 视觉与 Pagination 一致：左侧页码信息 + 每页条数下拉 + 「跳至第 N 页」（sm 及以上可见），
-// 右侧页码按钮组（md 及以上可见）+ outline 翻页按钮。
+// 视觉与 Pagination 一致：左侧页码信息 + 每页条数下拉，
+// 右侧页码按钮组（md 及以上可见）+ 「跳至第 N 页」（sm 及以上可见）+ outline 翻页按钮。
 
 // 页码按钮组计算（标准滑动窗口）：totalPages ≤ 7 全显；否则首尾页 + 当前页前后各 2 页，
 // 缺口以 'ellipsis' 占位（渲染为「…」）。current 靠近首尾时窗口自然收敛。
@@ -80,28 +80,6 @@ export function PagePagination({
             ))}
           </SelectContent>
         </Select>
-        <div className="hidden items-center gap-1.5 sm:flex">
-          <span className="text-xs">{t('list.jumpTo')}</span>
-          <Input
-            type="number"
-            min={1}
-            max={totalPages}
-            value={jumpTo}
-            onChange={e => setJumpTo(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                jump()
-              }
-            }}
-            aria-label={t('list.jumpToLabel')}
-            className="h-7 w-14 px-1.5 text-xs tabular-nums"
-          />
-          <span className="text-xs">{t('list.jumpPage')}</span>
-          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={jump}>
-            {t('list.jump')}
-          </Button>
-        </div>
       </div>
       <div className="flex items-center gap-2">
         <div className="hidden items-center gap-1 md:flex">
@@ -128,6 +106,28 @@ export function PagePagination({
               </Button>
             )
           )}
+        </div>
+        <div className="hidden items-center gap-1.5 sm:flex">
+          <span className="text-xs">{t('list.jumpTo')}</span>
+          <Input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={jumpTo}
+            onChange={e => setJumpTo(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                jump()
+              }
+            }}
+            aria-label={t('list.jumpToLabel')}
+            className="h-7 w-14 px-1.5 text-xs tabular-nums"
+          />
+          <span className="text-xs">{t('list.jumpPage')}</span>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={jump}>
+            {t('list.jump')}
+          </Button>
         </div>
         <Button
           variant="outline"

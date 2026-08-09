@@ -326,8 +326,8 @@ export default function RedemptionCodes() {
                   <SortableHeader field="used_count" label={t('redemptions.table.maxUses')} active={activeSort === 'used_count'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="status" label={t('redemptions.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
                   <TableHead>{t('redemptions.table.expiresAt')}</TableHead>
-                  <TableHead className="text-right">{t('redemptions.table.actions')}</TableHead>
                   <TableHead>{t('redemptions.table.remark')}</TableHead>
+                  <TableHead className="text-right">{t('redemptions.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -357,6 +357,7 @@ export default function RedemptionCodes() {
                         </div>
                       )}
                     </TableCell>
+                    <TableCell className="max-w-40 truncate" title={c.Remark ?? undefined}>{c.Remark || '—'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon-sm" title={t('redemptions.uses')} onClick={() => setUsesFor(c)}>
@@ -374,7 +375,6 @@ export default function RedemptionCodes() {
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-40 truncate" title={c.Remark ?? undefined}>{c.Remark || '—'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
