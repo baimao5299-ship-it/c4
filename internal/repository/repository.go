@@ -39,8 +39,16 @@ type Repository struct {
 	driver dialect.Driver
 }
 
-// New 用既有 driver 构建仓库（PG 生产：entsql.OpenDB(dialect.Postgres, db)；测试：pgxmock 适配器）。
+// New 用既有 driver 构建仓库（PG 生产：entsql.OpenDB(dialect.Postgres, db)；测试：
+// pgxmock 适配器）。不注入 pgx 连接池——Stats.Upsert 的 COPY 批量写路径需要
+// NewWithPG；未注入池时 Upsert 返回显式错误（不静默降级回 raw SQL）。
 func New(drv dialect.Driver, migrate bool) (*Repository, error) {
+	return NewWithPG(drv, migrate, nil)
+}
+
+// NewWithPG 同 New，附加 pgx 连接池（Stats.Upsert COPY 两阶段专用：生产
+// main.go 传 OpenPG 池；池与 ent driver 同 DSN 共享连接上限 max_conns）。
+func NewWithPG(drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repository, error) {
 	client := ent.NewClient(ent.Driver(drv))
 	if migrate {
 		// usagelog 经 usageLogMigrateHook 从迁移列表过滤——分区表 DDL 由
@@ -50,12 +58,13 @@ func New(drv dialect.Driver, migrate bool) (*Repository, error) {
 			return nil, err
 		}
 	}
-	return newRepository(client, drv), nil
+	return newRepository(client, drv, pool), nil
 }
 
-// newRepository 用给定 client/driver 构建全量仓库（New 与 WithTx 复用同一构造函数；
-// WithTx 注入 tx client + 事务驱动，fn 内所有方法调用都走 tx —— 评审 I-1）。
-func newRepository(client *ent.Client, drv dialect.Driver) *Repository {
+// newRepository 用给定 client/driver 构建全量仓库（New/NewWithPG/WithTx 复用
+// 同一构造函数；WithTx 注入 tx client + 事务驱动，fn 内所有方法调用都走 tx ——
+// 评审 I-1）。pool 只进 Stats（Upsert COPY 自 Acquire 独立连接，不进事务）。
+func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
 	accounts := &AccountRepo{client: client}
 	return &Repository{
 		Templates:   &TemplateRepo{client: client},
@@ -66,7 +75,7 @@ func newRepository(client *ent.Client, drv dialect.Driver) *Repository {
 		Assignments: &GroupAssignmentRepo{client: client},
 		Settings:    &SettingRepo{client: client},
 		Logs:        &LogRepo{client: client},
-		Stats:       &StatRepo{client: client, driver: drv},
+		Stats:       &StatRepo{client: client, pool: pool},
 		Rules:       &RuleRepo{client: client},
 		Redemptions: &RedemptionRepo{client: client, driver: drv},
 		Pricing:     &PricingRepo{client: client, driver: drv},
@@ -126,7 +135,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(TxStore) error) error {
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit 成功后 Rollback 返回 ErrTxDone，忽略
 	drv := &txDriver{tx: tx, drv: r.driver}
-	tr := newRepository(ent.NewClient(ent.Driver(drv)), drv)
+	tr := newRepository(ent.NewClient(ent.Driver(drv)), drv, nil) // 事务内不挂 pgx 池：Upsert COPY 自 Acquire 独立连接，不进 tx 面
 	if err := fn(tr); err != nil {
 		return err
 	}

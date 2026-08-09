@@ -56,3 +56,66 @@ func TestPGStatUpsertConflictAccumulates(t *testing.T) {
 	require.Equal(t, int64(0), got.TemplateID, "维度列不翻倍")
 	require.True(t, got.UpdatedAt.After(first.UpdatedAt), "updated_at 随冲突更新")
 }
+
+// TestPGStatUpsertCopyBulk COPY 两阶段批量路径（#17）：一事务内 COPY 多桶 →
+// 单条 INSERT..SELECT..ON CONFLICT 合并。第二批含与存量冲突的行（DO UPDATE
+// 累加）与新 key 行（INSERT）——同一条合并 SQL 双臂同走；维度列不翻倍。
+// 注：同批次内不允许重复 key（PG 21000 "cannot affect row a second time"，
+// 旧 raw VALUES 路径同错）——生产 flushStats 按 bucket key 去重分片，块内恒
+// 无重复 key。
+func TestPGStatUpsertCopyBulk(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Hour)
+	mk := func(group, req, tok int64) *domain.StatBucket {
+		return &domain.StatBucket{
+			BucketTime: base, GroupID: group, AccountID: 0, TemplateID: 0, UserID: 42,
+			Model: "gpt-4o", IsError: false,
+			RequestCount: req, ErrorCount: 0, InputTokens: 0, OutputTokens: 0,
+			TotalTokens: tok, CacheReadTokens: 0, CacheCreationTokens: 0, Cost: 0, TotalLatencyMS: 0,
+		}
+	}
+	// 第一批：100 个不同 group 桶（全 INSERT）
+	buckets := make([]*domain.StatBucket, 0, 100)
+	for g := int64(1); g <= 100; g++ {
+		buckets = append(buckets, mk(g, 1, 10*g))
+	}
+	require.NoError(t, repos.Stats.Upsert(ctx, buckets))
+
+	// 第二批：group 1..50 与存量冲突（测量列累加）+ group 101..150 新 key（INSERT）
+	buckets2 := make([]*domain.StatBucket, 0, 100)
+	for g := int64(1); g <= 50; g++ {
+		buckets2 = append(buckets2, mk(g, 2, 20))
+	}
+	for g := int64(101); g <= 150; g++ {
+		buckets2 = append(buckets2, mk(g, 1, 7))
+	}
+	require.NoError(t, repos.Stats.Upsert(ctx, buckets2))
+
+	total, err := repos.Client.UsageStat.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 150, total, "100 + 50 冲突累加 + 50 新 key = 150 行，不重复计")
+
+	g1, err := repos.Client.UsageStat.Query().
+		Where(usagestat.BucketTimeEQ(base), usagestat.GroupIDEQ(1), usagestat.UserIDEQ(42), usagestat.ModelEQ("gpt-4o")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), g1.RequestCount, "冲突累加（1+2）")
+	require.Equal(t, int64(30), g1.TotalTokens, "冲突累加（10+20）")
+	require.Equal(t, int64(1), g1.GroupID, "维度列不翻倍")
+	require.Equal(t, "gpt-4o", g1.Model, "维度列不翻倍")
+
+	g50, err := repos.Client.UsageStat.Query().
+		Where(usagestat.BucketTimeEQ(base), usagestat.GroupIDEQ(50), usagestat.UserIDEQ(42), usagestat.ModelEQ("gpt-4o")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), g50.RequestCount, "冲突累加（1+2）")
+	require.Equal(t, int64(520), g50.TotalTokens, "冲突累加（500+20）")
+
+	g101, err := repos.Client.UsageStat.Query().
+		Where(usagestat.BucketTimeEQ(base), usagestat.GroupIDEQ(101), usagestat.UserIDEQ(42), usagestat.ModelEQ("gpt-4o")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), g101.RequestCount, "新 key 原样落库")
+	require.Equal(t, int64(7), g101.TotalTokens)
+}

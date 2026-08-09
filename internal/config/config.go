@@ -102,7 +102,7 @@ func defaults() *Config {
 	return &Config{
 		Server:    ServerConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 1 << 20},
 		Log:       LogConfig{Level: "warn", Output: "stdout"},
-		DB:        DBConfig{MaxConns: 10},
+		DB:        DBConfig{MaxConns: 20}, // #17：10→20（billing 4 worker + stats 4 worker + 余量；统计 COPY 批量写已改毫秒级短事务）
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, Cooldown429: 30 * time.Second, BackoffBase: 5 * time.Second, BackoffMax: 5 * time.Minute, SyncInterval: 30 * time.Second},
