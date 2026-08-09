@@ -141,6 +141,7 @@ func main() {
 		billFlusher = billing.NewFlusher(billing.FlushConfig{
 			FlushInterval:          cfg.Billing.FlushInterval,
 			BalanceRefreshInterval: cfg.Billing.BalanceRefreshInterval,
+			Workers:                cfg.Billing.FlushWorkers,
 		}, repos, rec, billBalances, log)
 		billHooks = &proxy.BillingHooks{
 			Prices:     svc,

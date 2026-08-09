@@ -65,7 +65,8 @@ func TestBalancesReloadGroupFailSafe(t *testing.T) {
 	require.Equal(t, 15000, b.EffectiveMultiplier(2, 1), "组倍率保留旧值")
 }
 
-// TestBalancesSet 扣费后定向刷新：目标用户更新，其余用户与新增用户不受影响。
+// TestBalancesSet O1 O(1) 语义：Set 命中已存在条目原地 Store（零拷贝）；目标
+// 用户即时可见，其余用户不受影响。
 func TestBalancesSet(t *testing.T) {
 	b := NewBalances(fakeBalLoader{m: map[int64]int64{1: 100, 2: 200}}, nil)
 	require.NoError(t, b.Reload(context.Background()))
@@ -76,10 +77,37 @@ func TestBalancesSet(t *testing.T) {
 	bal, ok = b.BalanceOf(2)
 	require.True(t, ok)
 	require.Equal(t, int64(200), bal, "其余用户不受影响")
-	b.Set(9, 1) // 新用户（快照缺失）补入
+}
+
+// TestBalancesSetMissingIgnored O1 语义：Set 缺失条目忽略（仅限已存在用户的
+// 余额变更——PUT/Redeem/flush 回写的用户预检时已在快照内恒命中）；新用户
+// 经全量 Reload 进快照，不走 Set。
+func TestBalancesSetMissingIgnored(t *testing.T) {
+	b := NewBalances(fakeBalLoader{m: map[int64]int64{1: 100}}, nil)
+	require.NoError(t, b.Reload(context.Background()))
+	b.Set(9, 1) // 快照缺失用户 → 忽略（此前补入行为取消）
+	_, ok := b.BalanceOf(9)
+	require.False(t, ok, "Set 缺失条目忽略（用户创建走 Reload）")
+}
+
+// TestBalancesSetAfterReload 用户创建路径（评审 M-2）：fake store 插入新用户
+// → 全量 Reload → 新用户即刻可读（预检 402 窗口关闭）；Set 其扣费回写命中。
+func TestBalancesSetAfterReload(t *testing.T) {
+	b := NewBalances(fakeBalLoader{m: map[int64]int64{1: 100}}, nil)
+	require.NoError(t, b.Reload(context.Background()))
+	_, ok := b.BalanceOf(9)
+	require.False(t, ok, "创建前缺失 → 402 窗口（显式暴露，不用 sleep 掩盖）")
+
+	b.loader = fakeBalLoader{m: map[int64]int64{1: 100, 9: 50000}} // 用户 9 创建入库
+	require.NoError(t, b.Reload(context.Background()))
+	bal, ok := b.BalanceOf(9)
+	require.True(t, ok)
+	require.Equal(t, int64(50000), bal, "Reload 后新用户即刻可读")
+
+	b.Set(9, 49900) // 扣费回写命中（条目已存在）
 	bal, ok = b.BalanceOf(9)
 	require.True(t, ok)
-	require.Equal(t, int64(1), bal)
+	require.Equal(t, int64(49900), bal, "Reload 后 Set 定向刷新生效")
 }
 
 // TestBalancesBalanceOfMissing 缺失 → (0, false)（预检 402 语义：无快照 =

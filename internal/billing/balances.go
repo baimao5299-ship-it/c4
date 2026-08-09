@@ -20,18 +20,20 @@ type BalanceLoader interface {
 }
 
 // multipliers 倍率快照（T3.5 价格倍率；并行快照与余额分离——Set 定向刷新只
-// 拷贝余额 map，不牵动倍率）。
+// 动余额条目，不牵动倍率）。
 type multipliers struct {
 	users  map[int64]int // 仅设置了 price_multiplier 的用户（存在 = 已设置）
 	groups map[int64]int // 全部组（NOT NULL 默认 10000）
 }
 
 // Balances 余额只读快照（毫分；对齐 pricing 快照模式）：atomic.Pointer 换整表，
-// 热路径零锁零分配。预检读滞后 ≤ BalanceRefreshInterval（多实例条件扣 DB 兜底）。
+// 热路径零锁零分配。O1 优化：条目为 *atomic.Int64——Set 命中已存在条目原地
+// Store（O(1) 零拷贝，不再整表拷贝换指针）。预检读滞后 ≤ BalanceRefreshInterval
+// （多实例条件扣 DB 兜底）。
 type Balances struct {
 	loader BalanceLoader
 	log    *logx.Logger
-	snap   atomic.Pointer[map[int64]int64]
+	snap   atomic.Pointer[map[int64]*atomic.Int64]
 	mult   atomic.Pointer[multipliers]
 }
 
@@ -39,7 +41,7 @@ type Balances struct {
 // 倍率空表 → EffectiveMultiplier 默认 10000 ×1）。
 func NewBalances(loader BalanceLoader, log *logx.Logger) *Balances {
 	b := &Balances{loader: loader, log: log}
-	m := make(map[int64]int64)
+	m := make(map[int64]*atomic.Int64)
 	b.snap.Store(&m)
 	return b
 }
@@ -48,6 +50,11 @@ func NewBalances(loader BalanceLoader, log *logx.Logger) *Balances {
 // 倍率/Redeem 后 invalidate 调用）。失败 fail-safe：Warn + 保留旧快照（不替换，
 // 预检继续用旧值，条件扣 DB 兜底）。余额与倍率两路都成功才整体换新——任一路
 // 失败两路都保留旧值（快照内自洽）。
+//
+// O1：全新条目整体原子换（O(n) 只在 Reload——管理面变更频率，非热路径）。
+// Set×Reload 换指针竞态 = 良性丢更新：Set 持旧快照条目 Store 而 Reload 已换新
+// 指针 → 该次更新不进新快照（DB 值权威，下次 Reload 收敛；快照读本就滞后 ≤
+// BalanceRefreshInterval，不为此时序加锁误导）。
 func (b *Balances) Reload(ctx context.Context) error {
 	m, um, err := b.loader.LoadBalances(ctx)
 	if err != nil {
@@ -63,30 +70,35 @@ func (b *Balances) Reload(ctx context.Context) error {
 		}
 		return err
 	}
-	b.snap.Store(&m)
+	snap := make(map[int64]*atomic.Int64, len(m))
+	for uid, bal := range m {
+		v := &atomic.Int64{}
+		v.Store(bal)
+		snap[uid] = v
+	}
+	b.snap.Store(&snap)
 	b.mult.Store(&multipliers{users: um, groups: gm})
 	return nil
 }
 
-// Set 扣费后定向刷新单用户余额（DeductAndLog 成功后调用）：复制 map 换新快照
-// （O(用户数) 拷贝——扣费频率 = flush 节奏，非热路径；新用户（快照缺失）经此
-// 补入）。
+// Set 扣费后定向刷新单用户余额（DeductAndLog 成功后调用）：已存在条目原地
+// Store（O(1) 零拷贝——扣费频率 = flush 节奏）。缺失条目忽略：仅限已存在用户
+// 的余额变更（PUT/Redeem/flush 回写，预检时已在快照内恒命中）；新用户创建
+// 走全量 Reload 进快照（见 O2 接线矩阵）。
 func (b *Balances) Set(uid, bal int64) {
-	old := b.snap.Load()
-	m := make(map[int64]int64, len(*old)+1)
-	for k, v := range *old {
-		m[k] = v
+	if m := b.snap.Load(); m != nil {
+		if e := (*m)[uid]; e != nil {
+			e.Store(bal)
+		}
 	}
-	m[uid] = bal
-	b.snap.Store(&m)
 }
 
 // BalanceOf 快照读余额（毫分）：命中返回 (bal, true)（含 0）；缺失 → (0, false)
 // （用户无快照 = 预检 402 拒绝，不按 0 放行）。
 func (b *Balances) BalanceOf(uid int64) (int64, bool) {
 	if m := b.snap.Load(); m != nil {
-		if v, ok := (*m)[uid]; ok {
-			return v, true
+		if e := (*m)[uid]; e != nil {
+			return e.Load(), true
 		}
 	}
 	return 0, false
