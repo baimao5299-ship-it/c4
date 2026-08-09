@@ -510,7 +510,7 @@
     "usesDesc": "All redemption records for this code (audit)",
     "usesEmpty": "No redemption records",
     "generateTitle": "Generate codes",
-    "generateDesc": "Type and value are required; temp_balance requires a resource expiry",
+    "generateDesc": "Type and value are required; temp balance codes must specify a resource expiry",
     "typeLabel": "Type",
     "valueLabel": "Value",
     "valueHintBalance": "Milli-cents (1 USD = 100,000 milli-cents)",
@@ -520,13 +520,13 @@
     "expiresAtLabel": "Code expires at",
     "expiresAtHint": "Leave empty = never expires",
     "resourceExpiresAtLabel": "Resource expires at",
-    "resourceExpiresAtRequired": "Required for temp_balance",
+    "resourceExpiresAtRequired": "Required for temp balance codes",
     "maxUsesLabel": "Max uses",
     "maxUsesHint": "1 = single-use code; >1 = multi-user code",
     "countLabel": "Count",
     "countHint": "1-1000",
     "generatedTitle": "Generated {{count}} codes",
     "generatedDesc": "Copy and distribute; codes remain visible in the list",
-    "formInvalid": "Form invalid: value must be > 0, temp_balance requires a resource expiry, count must be 1-1000, max uses ≥ 1"
+    "formInvalid": "Please check the form: type and value (positive integer) are required, temp balance codes require a resource expiry, count must be 1-1000, max uses ≥ 1"
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Ban, Check, Copy, Filter, History, Plus, Ticket, X } from 'lucide-react'
@@ -101,6 +101,12 @@ export default function RedemptionCodes() {
   })
   const rows = data?.rows ?? []
 
+  // 末页死胡同守卫：非首页的当前页数据被清空（如批量失效把末页清空）时回退到第 1 页，
+  // 避免空态页无返回入口。页 1 本身为空（列表真正为空）时无需回退，不会成环。
+  useEffect(() => {
+    if (!isLoading && !isError && rows.length === 0 && page > 1) setPage(1)
+  }, [isLoading, isError, rows.length, page])
+
   // —— 行勾选（跨页保留，筛选/翻页重置后清空） ——
   const [selected, setSelected] = useState<number[]>([])
   const pageIds = rows.map(r => r.ID)
@@ -136,7 +142,10 @@ export default function RedemptionCodes() {
   const [deactivating, setDeactivating] = useState<RedemptionCode | null>(null)
   const deactivate = useMutation({
     mutationFn: (id: number) => api.deactivateRedemptionCode(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['redemption-codes'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['redemption-codes'] })
+      setDeactivating(null)
+    },
   })
   const batchDeactivate = useMutation({
     mutationFn: (ids: number[]) => api.deactivateRedemptionCodesBatch(ids),
@@ -172,12 +181,17 @@ export default function RedemptionCodes() {
       setTimeout(() => setCopiedId(null), 2000)
     }
   }
+  const updateGenForm = (patch: Partial<GenForm>) => {
+    setGenForm(f => ({ ...f, ...patch }))
+    setGenErr(null)
+  }
   const submitGenerate = () => {
     const value = Number(genForm.value)
     const count = genForm.count === '' ? 1 : Number(genForm.count)
     const maxUses = genForm.max_uses === '' ? 1 : Number(genForm.max_uses)
     if (
       !(value > 0) ||
+      !Number.isInteger(value) || // 毫分/并发数均为整数
       !Number.isInteger(count) || count < 1 || count > 1000 ||
       !Number.isInteger(maxUses) || maxUses < 1 ||
       (genForm.type === 'temp_balance' && !genForm.resource_expires_at)
@@ -392,7 +406,7 @@ export default function RedemptionCodes() {
                     <Select
                       items={typeItems}
                       value={genForm.type}
-                      onValueChange={v => setGenForm(f => ({ ...f, type: v as RedemptionType, ...(v !== 'temp_balance' ? { resource_expires_at: '' } : {}) }))}
+                      onValueChange={v => updateGenForm({ type: v as RedemptionType, ...(v !== 'temp_balance' ? { resource_expires_at: '' } : {}) })}
                     >
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -402,7 +416,7 @@ export default function RedemptionCodes() {
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="rc-value">{t('redemptions.valueLabel')}</Label>
-                    <Input id="rc-value" type="number" min={1} value={genForm.value} onChange={e => setGenForm(f => ({ ...f, value: e.target.value }))} />
+                    <Input id="rc-value" type="number" min={1} value={genForm.value} onChange={e => updateGenForm({ value: e.target.value })} />
                   </div>
                 </div>
                 <p className="-mt-2 text-xs text-muted-foreground">
@@ -410,12 +424,12 @@ export default function RedemptionCodes() {
                 </p>
                 <div className="space-y-1.5">
                   <Label htmlFor="rc-remark">{t('redemptions.remarkLabel')}</Label>
-                  <Input id="rc-remark" value={genForm.remark} placeholder={t('redemptions.remarkPlaceholder')} onChange={e => setGenForm(f => ({ ...f, remark: e.target.value }))} />
+                  <Input id="rc-remark" value={genForm.remark} placeholder={t('redemptions.remarkPlaceholder')} onChange={e => updateGenForm({ remark: e.target.value })} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="rc-expires">{t('redemptions.expiresAtLabel')}</Label>
-                    <Input id="rc-expires" type="datetime-local" value={genForm.expires_at} onChange={e => setGenForm(f => ({ ...f, expires_at: e.target.value }))} />
+                    <Input id="rc-expires" type="datetime-local" value={genForm.expires_at} onChange={e => updateGenForm({ expires_at: e.target.value })} />
                     <p className="text-xs text-muted-foreground">{t('redemptions.expiresAtHint')}</p>
                   </div>
                   <div className="space-y-1.5">
@@ -423,7 +437,7 @@ export default function RedemptionCodes() {
                       {t('redemptions.resourceExpiresAtLabel')}
                       {genForm.type === 'temp_balance' && <span className="ml-1 text-destructive">*</span>}
                     </Label>
-                    <Input id="rc-resource" type="datetime-local" value={genForm.resource_expires_at} onChange={e => setGenForm(f => ({ ...f, resource_expires_at: e.target.value }))} />
+                    <Input id="rc-resource" type="datetime-local" value={genForm.resource_expires_at} onChange={e => updateGenForm({ resource_expires_at: e.target.value })} />
                     {genForm.type === 'temp_balance' && (
                       <p className="text-xs text-destructive">{t('redemptions.resourceExpiresAtRequired')}</p>
                     )}
@@ -432,12 +446,12 @@ export default function RedemptionCodes() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="rc-max">{t('redemptions.maxUsesLabel')}</Label>
-                    <Input id="rc-max" type="number" min={1} value={genForm.max_uses} onChange={e => setGenForm(f => ({ ...f, max_uses: e.target.value }))} />
+                    <Input id="rc-max" type="number" min={1} value={genForm.max_uses} onChange={e => updateGenForm({ max_uses: e.target.value })} />
                     <p className="text-xs text-muted-foreground">{t('redemptions.maxUsesHint')}</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="rc-count">{t('redemptions.countLabel')}</Label>
-                    <Input id="rc-count" type="number" min={1} max={1000} value={genForm.count} onChange={e => setGenForm(f => ({ ...f, count: e.target.value }))} />
+                    <Input id="rc-count" type="number" min={1} max={1000} value={genForm.count} onChange={e => updateGenForm({ count: e.target.value })} />
                     <p className="text-xs text-muted-foreground">{t('redemptions.countHint')}</p>
                   </div>
                 </div>

@@ -50,7 +50,7 @@ export function BatchBar({
       .then((result) => {
         if (result === 'cancelled') return
         toast.add({
-          title: successTitle ?? t('batch.deleted', { count }),
+          title: successTitle ?? t(action === 'delete' ? 'batch.deleted' : 'batch.updated', { count }),
           type: 'success',
         })
       })
