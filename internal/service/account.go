@@ -5,6 +5,7 @@ import (
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
+	"go-proxy-mini/pkg/logx"
 )
 
 func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
@@ -29,7 +30,8 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 			return nil, err
 		}
 	}
-	s.invalidate()
+	// O2 组级定向：新账号进其分组快照（无分组账号不入任何快照 → 空集 no-op）。
+	s.inv.Accounts(groupsOf(a), false)
 	return created, nil
 }
 
@@ -57,6 +59,14 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 			return nil, err // 组缺 id → 404
 		}
 	}
+	// O2 组级定向：变更前取旧组（账号移组 A→B 时 A、B 两组快照都要重载——
+	// 旧组移除账号、新组加入账号）+ 旧 upstream_key 比较（变更 → clients
+	// 失效）。查询失败 → 空集 + Warn（调度器 ≤30s 同步兜底）。
+	oldGroups, gErr := s.store.GetAccountGroups(ctx, a.ID)
+	keyChanged := false
+	if cur, err := s.store.GetAccount(ctx, a.ID); err == nil {
+		keyChanged = cur.UpstreamKey != a.UpstreamKey
+	}
 	updated, err := s.store.UpdateAccount(ctx, a)
 	if err != nil {
 		return nil, err
@@ -67,7 +77,14 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 			return nil, err
 		}
 	}
-	s.invalidate()
+	gids := oldGroups
+	if a.GroupIDs != nil {
+		gids = append(gids, (*a.GroupIDs)...)
+	}
+	if gErr != nil && s.log != nil {
+		s.log.Warn("account groups query failed", logx.Int64("account_id", a.ID), logx.Error(gErr))
+	}
+	s.inv.Accounts(gids, keyChanged)
 	return updated, nil
 }
 
@@ -90,10 +107,15 @@ func (s *Service) checkGroupsExist(ctx context.Context, ids []int64) error {
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
+	// O2：删除前查旧组（删除后快照须移除该账号）。
+	gids, err := s.store.GetAccountGroups(ctx, id)
+	if err != nil && s.log != nil {
+		s.log.Warn("account groups query failed", logx.Int64("account_id", id), logx.Error(err))
+	}
 	if err := mapRepoErr(s.store.DeleteAccount(ctx, id)); err != nil {
 		return err // 404 缺 id（与批量语义对齐）
 	}
-	s.invalidate()
+	s.inv.Accounts(gids, false)
 	return nil
 }
 
@@ -101,10 +123,22 @@ func (s *Service) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
 	if err := validateIDs(ids); err != nil {
 		return err
 	}
+	// O2：删除前逐个查旧组（组级定向并集）。
+	var gids []int64
+	for _, id := range ids {
+		gs, err := s.store.GetAccountGroups(ctx, id)
+		if err != nil {
+			if s.log != nil {
+				s.log.Warn("account groups query failed", logx.Int64("account_id", id), logx.Error(err))
+			}
+			continue
+		}
+		gids = append(gids, gs...)
+	}
 	if err := mapRepoErr(s.store.DeleteAccountsBatch(ctx, ids)); err != nil {
 		return err
 	}
-	s.invalidate()
+	s.inv.Accounts(gids, false)
 	return nil
 }
 
@@ -115,11 +149,39 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	if err := validateAccountPatch(p); err != nil {
 		return err
 	}
+	// O2：变更前逐个查旧组 + 替换目标组并集（upstream_key 批量变更 →
+	// clients 失效）。
+	var gids []int64
+	for _, id := range ids {
+		gs, err := s.store.GetAccountGroups(ctx, id)
+		if err != nil {
+			if s.log != nil {
+				s.log.Warn("account groups query failed", logx.Int64("account_id", id), logx.Error(err))
+			}
+			continue
+		}
+		gids = append(gids, gs...)
+	}
+	if p.GroupIDs != nil {
+		gids = append(gids, (*p.GroupIDs)...)
+	}
 	if err := mapRepoErr(s.store.UpdateAccountsBatch(ctx, ids, p)); err != nil {
 		return err
 	}
-	s.invalidate()
+	// 评审 I-3：nil = 未提供；空串 = 清除 upstream_key（同为变更语义）。
+	// 批量路径不做逐账号旧值比较（需 N 次 GetAccount），只要提供了
+	// UpstreamKey 就保守标记 clients 失效——clients 失效成本远低于旧 key
+	// 滞留风险（宁可多失效一次）。
+	s.inv.Accounts(gids, p.UpstreamKey != nil)
 	return nil
+}
+
+// groupsOf 账号分组 id 列表（nil = 无分组）。
+func groupsOf(a *domain.Account) []int64 {
+	if a.GroupIDs == nil {
+		return nil
+	}
+	return *a.GroupIDs
 }
 
 // AccountView 是账号的管理端视图（含调度器运行时信息）。

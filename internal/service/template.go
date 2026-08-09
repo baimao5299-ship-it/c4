@@ -16,7 +16,7 @@ func (s *Service) CreateTemplate(ctx context.Context, t *domain.Template) (*doma
 	if err != nil {
 		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
 	}
-	s.invalidate()
+	s.inv.Templates()
 	if s.log != nil {
 		s.log.Info("template created", logx.Int64("id", created.ID), logx.String("name", created.Name))
 	}
@@ -46,7 +46,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, t *domain.Template) (*doma
 	if err != nil {
 		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）
 	}
-	s.invalidate()
+	s.inv.Templates()
 	return updated, nil
 }
 
@@ -54,7 +54,7 @@ func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
 	if err := mapRepoErr(s.store.DeleteTemplate(ctx, id)); err != nil {
 		return err // 404 缺 id（与批量语义对齐）
 	}
-	s.invalidate()
+	s.inv.Templates()
 	return nil
 }
 
@@ -65,7 +65,7 @@ func (s *Service) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
 	if err := mapRepoErr(s.store.DeleteTemplatesBatch(ctx, ids)); err != nil {
 		return err
 	}
-	s.invalidate()
+	s.inv.Templates()
 	return nil
 }
 
@@ -79,6 +79,6 @@ func (s *Service) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repos
 	if err := mapRepoErr(s.store.UpdateTemplatesBatch(ctx, ids, p)); err != nil {
 		return err
 	}
-	s.invalidate()
+	s.inv.Templates()
 	return nil
 }

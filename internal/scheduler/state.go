@@ -20,9 +20,10 @@ type accState struct {
 }
 
 type accountSnapshot struct {
-	gid         int64 // 所属组（权重动作重建路由用）
-	acc         domain.Account
-	tpl         *domain.Template
+	gid      int64 // 所属组（权重动作重建路由用；多组账号 = 首个出现组）
+	acc      domain.Account
+	tpl      *domain.Template
+	groupIDs []int64 // 账号所属全部分组（多组账号共享实例的跨组引用集；组级重载时其它组引用替换依据）
 	concurrency atomic.Int64
 	errRate     atomic.Uint64 // 定点
 	state       atomic.Pointer[accState]

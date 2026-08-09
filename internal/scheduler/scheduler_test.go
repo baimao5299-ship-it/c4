@@ -853,3 +853,137 @@ func TestReloadPreservesInFlightConcurrency(t *testing.T) {
 	require.Equal(t, int64(1), ri2.Concurrency, "继承后新请求占槽计数为 1")
 	s.Release(s3.AccountID)
 }
+
+// TestMultiGroupSharedInstance 回归（O2 实证修复）：多组账号必须共享同一
+// accountSnapshot 实例——Select（经组路由）与 Release（经 byID）命中同一计数器，
+// 否则并发计数分裂漂移 → 槽位假满 "no available account"（e2e 场景 4 实证；
+// 去抖消除"每变更全量重载"后暴露；旧实现每次全量 reload 重置组实例计数掩盖）。
+// 断言：两组的路由引用同一实例；真实槽位满（共享 max=2，跨组两请求后第三个
+// 请求必须 ErrNoAvailable）；Release 经 byID 正确归零。
+func TestMultiGroupSharedInstance(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	a := acc(1, tplx, 2)
+	m := newMemLoader(map[int64][]*domain.Account{10: {a}, 11: {a}})
+	s := newSched(t, m)
+
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	groups := s.store.groups.Load().(map[int64]*groupSnapshot)
+	require.Same(t, byID[1], groups[10].accounts[0], "组 10 路由与 byID 共享实例")
+	require.Same(t, byID[1], groups[11].accounts[0], "组 11 路由与 byID 共享实例")
+	require.ElementsMatch(t, []int64{10, 11}, byID[1].groupIDs, "跨组引用集登记完整")
+
+	// 跨组占满共享槽位：组 10 选 1、组 11 选 1 → 计数 2 == max 2
+	sel1, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	sel2, err := s.Select(11, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel1.AccountID)
+	require.Equal(t, int64(1), sel2.AccountID)
+	ri, _ := s.Runtime(1)
+	require.Equal(t, int64(2), ri.Concurrency, "共享实例：跨组计数合并，不得分裂")
+
+	// 第三个请求必须假满（旧实现：组路由实例计数未满 → 放行 → 漂移）
+	_, err = s.Select(10, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrNoAvailable, "共享实例：真实槽位满")
+
+	// Release 经 byID 归零（旧实现：byID 与组路由实例不一致 → 计数只减不回）
+	s.Release(sel1.AccountID)
+	s.Release(sel2.AccountID)
+	ri, _ = s.Runtime(1)
+	require.Equal(t, int64(0), ri.Concurrency, "释放后计数归零")
+
+	// 归零后可继续选（旧实现：另一组路由上的残留计数导致假满）
+	sel3, err := s.Select(11, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel3.AccountID)
+	s.Release(sel3.AccountID)
+}
+
+// TestInvalidateGroupMultiGroupShared 组级重载的共享实例纪律：重载组的新实例
+// 必须同时替换 byID 与其账号的其它组引用——组 11 的 Select/Release 命中新实例
+// （新并发上限生效），旧实现只换 byID/本组路由 → 其它组路由滞留旧实例 → 计数分裂。
+func TestInvalidateGroupMultiGroupShared(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{
+		10: {acc(1, tplx, 2)},
+		11: {acc(1, tplx, 2)},
+	})
+	s := newSched(t, m)
+
+	// 账号 1 并发上限 2→1 的组级重载（组 10）
+	m.mu.Lock()
+	m.byGroup[10] = []*domain.Account{acc(1, tplx, 1)}
+	m.mu.Unlock()
+	s.InvalidateGroup(10)
+
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	groups := s.store.groups.Load().(map[int64]*groupSnapshot)
+	require.Same(t, byID[1], groups[10].accounts[0], "重载组路由 → 新实例")
+	require.Same(t, byID[1], groups[11].accounts[0], "其它组引用 → 新实例（共享纪律）")
+
+	// 经组 11 的路由选中新实例：新上限 1 → 第二个请求假满；Release 经 byID 归零
+	sel1, err := s.Select(11, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel1.AccountID)
+	ri, _ := s.Runtime(1)
+	require.Equal(t, int64(1), ri.Concurrency, "经其它组路由命中新实例（新上限 1）")
+	_, err = s.Select(11, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrNoAvailable, "新实例真实槽位满")
+	s.Release(sel1.AccountID)
+	ri, _ = s.Runtime(1)
+	require.Equal(t, int64(0), ri.Concurrency, "Release 经 byID 命中新实例")
+
+	// 重载组本身同样生效
+	sel2, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel2.AccountID)
+	s.Release(sel2.AccountID)
+}
+
+// TestInvalidateGroupMultiGroupRemove 从组移除的多组账号：仍属其它组 → byID 保留
+// 实例并摘除本组引用（其它组 Select/Release 继续命中同一实例）；不再属于任何组
+// → 从 byID 删除（Runtime 不可见、Release no-op）。
+func TestInvalidateGroupMultiGroupRemove(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{
+		10: {acc(1, tplx, 2)},
+		11: {acc(1, tplx, 2)},
+	})
+	s := newSched(t, m)
+
+	// 从组 10 移除（仍属组 11）
+	m.mu.Lock()
+	m.byGroup[10] = []*domain.Account{}
+	m.mu.Unlock()
+	s.InvalidateGroup(10)
+
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	groups := s.store.groups.Load().(map[int64]*groupSnapshot)
+	_, ok := byID[1]
+	require.True(t, ok, "仍属其它组 → byID 保留")
+	require.Equal(t, []int64{11}, byID[1].groupIDs, "本组引用已摘除")
+	require.Empty(t, groups[10].accounts, "组 10 已空")
+	require.Len(t, groups[11].accounts, 1, "组 11 引用保留")
+	require.Same(t, byID[1], groups[11].accounts[0], "组 11 路由仍指向共享实例")
+
+	// 组 10 路由已失效（空桶），组 11 正常服务
+	_, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.Error(t, err, "空组不可选号")
+	sel, err := s.Select(11, domain.FormatOpenAIChat, "m")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel.AccountID)
+	s.Release(sel.AccountID)
+	ri, _ := s.Runtime(1)
+	require.Equal(t, int64(0), ri.Concurrency, "Release 经 byID 命中保留实例")
+
+	// 从组 11 也移除 → 不再属于任何组 → byID 删除
+	m.mu.Lock()
+	m.byGroup[11] = []*domain.Account{}
+	m.mu.Unlock()
+	s.InvalidateGroup(11)
+	_, ok = s.store.byID.Load().(map[int64]*accountSnapshot)[1]
+	require.False(t, ok, "不再属于任何组 → 从 byID 删除")
+	_, ok = s.Runtime(1)
+	require.False(t, ok)
+	s.Release(1) // no-op 安全
+}

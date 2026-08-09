@@ -10,7 +10,8 @@ import (
 
 // CreateGroup 创建分组（平台容量池）。priceMultiplier 万分数：0 = 未指定
 // （repo 落库组默认 10000 = ×1）；1~100000 显式写入（免费组 0 经 UpdateGroup
-// 设置）；超界 → 400。
+// 设置）；超界 → 400。创建后 Multipliers()：新组倍率须即刻进余额倍率快照
+// （缺失 = ×1 计费窗口，评审 M-1 组倍率矩阵——组创建即倍率设定）。
 func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier int) (*domain.Group, error) {
 	if name == "" {
 		return nil, ErrInvalidInput
@@ -26,7 +27,7 @@ func (s *Service) CreateGroup(ctx context.Context, name string, visibility domai
 	if err != nil {
 		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
 	}
-	s.invalidate()
+	s.inv.Multipliers()
 	if s.log != nil {
 		s.log.Info("group created", logx.Int64("id", created.ID), logx.String("name", name))
 	}
@@ -59,7 +60,9 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	if err != nil {
 		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）
 	}
-	s.invalidate()
+	// O2 组倍率矩阵：倍率变更 → 余额倍率快照定向刷新（名字/可见性变更不触发
+	// 任何快照，此处保守一并标记——去抖窗口内一次小表单查，可忽略）。
+	s.inv.Multipliers()
 	return updated, nil
 }
 
@@ -82,7 +85,10 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	if err := s.store.DeleteGroup(ctx, id); err != nil {
 		return mapRepoErr(err) // 竞态窗口缺 id → 404（前置 Get 已拦截常见路径）
 	}
-	s.invalidate()
+	// O2：组删除后倍率快照清理（陈旧条目无害；保守标记——组变更统一走倍率
+	// 定向刷新）。组内账号由 FK 约束保证为空（ent 默认无级联，删除含账号的
+	// 组 → 仓库错误）→ 调度器快照不受组删除影响。
+	s.inv.Multipliers()
 	return nil
 }
 
@@ -107,10 +113,12 @@ func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	if err := mapRepoErr(s.store.DeleteGroupsBatch(ctx, ids)); err != nil {
 		return err // 事务回滚；key 已删但 DB 未删——与单删同性质（失败自愈：DB 仍在则 key 下次重载恢复）
 	}
-	s.invalidate()
+	s.inv.Multipliers()
 	return nil
 }
 
+// UpdateGroupsBatch 批量更新组（仅 name/visibility——GroupPatch 无倍率字段，
+// 不触发任何快照重载；倍率批量变更走单组 UpdateGroup）。
 func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error {
 	if err := validateIDs(ids); err != nil {
 		return err
@@ -121,9 +129,5 @@ func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposito
 	if p.Visibility != nil && !p.Visibility.Valid() {
 		return ErrInvalidInput
 	}
-	if err := mapRepoErr(s.store.UpdateGroupsBatch(ctx, ids, p)); err != nil {
-		return err
-	}
-	s.invalidate()
-	return nil
+	return mapRepoErr(s.store.UpdateGroupsBatch(ctx, ids, p))
 }

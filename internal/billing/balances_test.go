@@ -110,6 +110,28 @@ func TestBalancesSetAfterReload(t *testing.T) {
 	require.Equal(t, int64(49900), bal, "Reload 后 Set 定向刷新生效")
 }
 
+// TestReloadMultipliers O2 组倍率定向刷新：只换组倍率（小表单查），用户专属
+// 倍率沿用当前快照（用户倍率只随全量 Reload 更新，两个变更源互不覆盖）；
+// 失败 fail-safe 保留旧倍率快照。
+func TestReloadMultipliers(t *testing.T) {
+	b := NewBalances(fakeBalLoader{
+		m: map[int64]int64{1: 100}, um: map[int64]int{1: 20000}, gm: map[int64]int{1: 15000},
+	}, nil)
+	require.NoError(t, b.Reload(context.Background()))
+
+	// 组倍率变更（g2 从 10000 → 30000）
+	b.loader = fakeBalLoader{m: map[int64]int64{1: 100}, um: map[int64]int{1: 20000}, gm: map[int64]int{1: 15000, 2: 30000}}
+	require.NoError(t, b.ReloadMultipliers(context.Background()))
+	require.Equal(t, 30000, b.EffectiveMultiplier(9, 2), "新组倍率即刻生效")
+	require.Equal(t, 20000, b.EffectiveMultiplier(1, 1), "用户专属倍率沿用当前快照（未被定向刷新覆盖）")
+	require.Equal(t, 15000, b.EffectiveMultiplier(9, 1), "既有组倍率不变")
+
+	// 失败 fail-safe：保留旧倍率快照
+	b.loader = fakeBalLoader{failAt: 2}
+	require.Error(t, b.ReloadMultipliers(context.Background()))
+	require.Equal(t, 30000, b.EffectiveMultiplier(9, 2), "失败保留旧倍率快照")
+}
+
 // TestBalancesBalanceOfMissing 缺失 → (0, false)（预检 402 语义：无快照 =
 // 拒绝，不按 0 放行）。
 func TestBalancesBalanceOfMissing(t *testing.T) {

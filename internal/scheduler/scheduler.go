@@ -210,19 +210,31 @@ func (s *Scheduler) reload(ctx context.Context) error {
 	return nil
 }
 
+// buildSnapshots 构建全量快照：**每账号一个共享实例**——多组账号在多个组
+// 快照中引用同一实例（O2 评审实证修复：此前每 (组, 账号) 一个实例，组路由
+// Select 与 byID Release 命中不同计数器 → 并发计数分裂漂移 → 槽位假满
+// "no available account"，e2e 场景 4 实证；去抖消除"每变更全量重载"后暴露）。
+// 组级重载（InvalidateGroup）依赖 groupIDs 跨组引用替换，纪律同此。
 func buildSnapshots(m map[int64][]*domain.Account, defaultMax int) (map[int64]*groupSnapshot, map[int64]*accountSnapshot) {
 	groups := make(map[int64]*groupSnapshot, len(m))
 	byID := make(map[int64]*accountSnapshot)
 	for gid, accs := range m {
 		gs := &groupSnapshot{}
 		for _, a := range accs {
-			as := &accountSnapshot{gid: gid, acc: *a, tpl: a.Template}
-			as.state.Store(&accState{status: a.Status, cooldownUntil: a.CooldownUntil})
-			if a.MaxConcurrency <= 0 {
-				as.acc.MaxConcurrency = defaultMax
+			as, ok := byID[a.ID]
+			if !ok {
+				as = &accountSnapshot{gid: gid, acc: *a, tpl: a.Template, groupIDs: []int64{gid}}
+				as.state.Store(&accState{status: a.Status, cooldownUntil: a.CooldownUntil})
+				if a.MaxConcurrency <= 0 {
+					as.acc.MaxConcurrency = defaultMax
+				}
+				byID[a.ID] = as
+			} else {
+				// 多组账号：复用已建实例并登记本组（共享实例的 gid = 首个组；
+				// 数据同源——同一 DB 行的多组引用）。
+				as.groupIDs = append(as.groupIDs, gid)
 			}
 			gs.accounts = append(gs.accounts, as)
-			byID[a.ID] = as
 		}
 		gs.routes = buildRoutes(gs.accounts)
 		groups[gid] = gs
@@ -300,6 +312,12 @@ func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 	return routes
 }
 
+// InvalidateGroup 组级定向重载（O2 接线矩阵：账号变更 → 受影响组）。与全量
+// reload 同一"每账号共享实例"纪律：重载组的新实例同时替换 byID 与其账号的
+// 其它组引用——Select（经组路由）与 Release（经 byID）必须命中同一计数器，
+// 否则多组账号并发计数分裂漂移 → 槽位假满（O2 实证修复）。账号从组移除且
+// 不再属于任何组 → 从 byID 移除；仍属其它组 → 保留实例并摘除本组引用。
+// groupIDs 仅经 reloadMu 读写（buildSnapshots/本方法），无并发读者。
 func (s *Scheduler) InvalidateGroup(groupID int64) {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
@@ -311,40 +329,99 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 		return
 	}
 	m, byID := s.store.groups.Load().(map[int64]*groupSnapshot), s.store.byID.Load().(map[int64]*accountSnapshot)
-	newM := make(map[int64]*groupSnapshot, len(m)+1)
-	for k, v := range m {
-		newM[k] = v
-	}
 	gs, _ := buildSnapshots(map[int64][]*domain.Account{groupID: accs}, s.cfg.DefaultMaxConcurrency)
 	newAccs := gs[groupID].accounts
 	// 直接复用 buildSnapshots 产出的快照：accounts 与 routes 一并生效，
 	// 避免组级重载后 routes 为 nil（Select 预生成路径断裂）。
+	newM := make(map[int64]*groupSnapshot, len(m))
+	for k, v := range m {
+		newM[k] = v
+	}
 	newM[groupID] = gs[groupID]
-	// byID 必须与 groups 同步重建（评审发现：只换 groups 会导致并发计数/结果回写
-	// 落到旧快照——Select 计数在新快照、Release/MarkResult 查 byID 命中旧快照，
-	// 计数只增不减直至全量 reload；新账号的回写被静默丢弃）。
 	newByID := make(map[int64]*accountSnapshot, len(byID)+len(newAccs))
 	for k, v := range byID {
 		newByID[k] = v
 	}
+	// 从组移除的账号（旧组有、新组无）：仍属其它组 → 保留实例并摘本组引用；
+	// 已不属于任何组 → 从 byID 删除（其它组引用随实例保留/删除，路由无需重建）。
+	// 评审 M-2：先建 新组账号ID 索引再单遍扫描——嵌套循环对 50k 大组批量删
+	// 25k 是 ≈1.25e9 次比较 ≈1s 停顿（去抖单 goroutine 内拉大所有失效延迟/
+	// 新用户 402 窗口），索引后 O(旧组大小)。
 	if old, ok := m[groupID]; ok {
+		newIDs := make(map[int64]struct{}, len(newAccs))
+		for _, ns := range newAccs {
+			newIDs[ns.acc.ID] = struct{}{}
+		}
 		for _, os := range old.accounts {
-			stillIn := false
-			for _, ns := range newAccs {
-				if ns.acc.ID == os.acc.ID {
-					stillIn = true
-					break
-				}
+			if _, stillIn := newIDs[os.acc.ID]; stillIn {
+				continue
 			}
-			if !stillIn {
+			os.groupIDs = removeGid(os.groupIDs, groupID)
+			if len(os.groupIDs) == 0 {
 				delete(newByID, os.acc.ID)
 			}
 		}
 	}
+	// 新实例替换 byID + 其它组引用（多组账号：旧实例在其它组路由中的位置换成
+	// 新实例并重建该组路由——共享实例纪律；单组账号 otherGids 为空，零开销）。
+	// 评审 M-2：其它组引用替换同禁嵌套扫描——每其它组先建 账号ID→位置 索引
+	// （O(该组大小)），替换 O(1)，总量 O(受影响组账号和)。
+	type ogRef struct {
+		gs  *groupSnapshot
+		idx map[int64]int
+	}
+	otherRefs := make(map[int64]*ogRef)
 	for _, ns := range newAccs {
+		var otherGids []int64
+		if oa, ok := byID[ns.acc.ID]; ok {
+			// 在途并发继承（与 reload 同纪律）：重建把计数归零，保留账号的在途
+			// 请求 Release 命中新实例 → 继承旧计数避免拉成负数。
+			ns.concurrency.Store(oa.concurrency.Load())
+			for _, g := range oa.groupIDs {
+				if g != groupID {
+					otherGids = append(otherGids, g)
+				}
+			}
+		}
+		ns.groupIDs = append([]int64{groupID}, otherGids...)
 		newByID[ns.acc.ID] = ns
+		for _, og := range otherGids {
+			if _, ok := otherRefs[og]; ok {
+				continue
+			}
+			ogp, ok := newM[og]
+			if !ok {
+				continue
+			}
+			ref := &ogRef{gs: ogp, idx: make(map[int64]int, len(ogp.accounts))}
+			for i, oas := range ogp.accounts {
+				ref.idx[oas.acc.ID] = i
+			}
+			otherRefs[og] = ref
+		}
+	}
+	for og, ref := range otherRefs {
+		repl := make([]*accountSnapshot, len(ref.gs.accounts))
+		copy(repl, ref.gs.accounts)
+		for _, ns := range newAccs {
+			if i, ok := ref.idx[ns.acc.ID]; ok {
+				repl[i] = ns
+			}
+		}
+		newM[og] = &groupSnapshot{accounts: repl, routes: buildRoutes(repl)}
 	}
 	s.store.store(newM, newByID)
+}
+
+// removeGid 摘除 groupIDs 中的指定组（实例共享纪律：组级重载的从组移除路径）。
+func removeGid(gids []int64, gid int64) []int64 {
+	out := gids[:0]
+	for _, g := range gids {
+		if g != gid {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func (s *Scheduler) InvalidateAll() {
@@ -490,6 +567,9 @@ func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *ti
 		a.acc.Weight = *weight
 		// weightedSeq 是预生成缓存：权重变更必须重建该组路由序列，
 		// 否则选号仍按旧权重（I1）。
+		// 评审 I-2：多组账号共享实例只重建首个组（a.gid）的路由——其它组的
+		// 路由保留旧权重序列，经 ≤30s 全量同步 / 账号变更组级重载自愈，
+		// 非回归（预生成序列的固有折衷：热路径零计算，代价是弱一致性窗口）。
 		s.rebuildGroup(a.gid)
 	}
 	s.enqueueWrite(aid, next, weight)

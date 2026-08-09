@@ -66,7 +66,7 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 			}
 		}
 	}
-	s.invalidate()
+	s.inv.Users()
 	if s.log != nil {
 		s.log.Info("user registered", logx.Int64("id", created.ID), logx.String("email", email))
 	}
@@ -140,7 +140,7 @@ func (s *Service) CreateUser(ctx context.Context, email, password string, role d
 	if err != nil {
 		return nil, err
 	}
-	s.invalidate()
+	s.inv.Users()
 	if s.log != nil {
 		s.log.Info("user created by admin", logx.Int64("id", created.ID), logx.String("email", email), logx.String("role", string(role)))
 	}
@@ -172,7 +172,7 @@ func (s *Service) UpdateUser(ctx context.Context, u *domain.User) (*domain.User,
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	s.invalidate()
+	s.inv.Users()
 	return updated, nil
 }
 

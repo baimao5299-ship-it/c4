@@ -13,7 +13,7 @@ import (
 )
 
 func TestCreateTemplateValidates(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	cases := []struct {
 		name string
 		tpl  *domain.Template
@@ -58,7 +58,7 @@ func TestCreateTemplateValidates(t *testing.T) {
 // （repo 全字段 Set 写空串的防线）：缺省 → api_key；显式 api_key → 成功；
 // 未注册类型（号池生态未实现）→ 400；Update 同路径兜底。
 func TestTemplateCredentialTypeDefaultAndValid(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 
 	created, err := svc.CreateTemplate(context.Background(), &domain.Template{
 		Name: "t-default", BaseURL: "https://u",
@@ -94,7 +94,7 @@ func TestTemplateCredentialTypeDefaultAndValid(t *testing.T) {
 // 缺省 public）；key 为独立表（用户面 /user/keys 创建）。
 func TestCreateGroupFlow(t *testing.T) {
 	fs := newFakeStore()
-	svc := &Service{store: fs, invalidate: func() {}, log: nil}
+	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
 	g, err := svc.CreateGroup(context.Background(), "g1", domain.GroupVisibilityPublic, 0)
 	require.NoError(t, err)
 	require.Equal(t, domain.GroupVisibilityPublic, g.Visibility, "visibility 落库")
@@ -112,7 +112,7 @@ func TestQueryStatsGranularity(t *testing.T) {
 		{BucketTime: mustTime("2026-08-01T10:00:00Z"), GroupID: 1, Model: "m", RequestCount: 10, TotalTokens: 100},
 		{BucketTime: mustTime("2026-08-01T11:00:00Z"), GroupID: 1, Model: "m", RequestCount: 5, TotalTokens: 50},
 	}
-	svc := &Service{store: fs}
+	svc := &Service{store: fs, inv: &invRecorder{}}
 	rows, err := svc.QueryStats(context.Background(), repository.StatQuery{}, "day")
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
@@ -124,7 +124,7 @@ func TestQueryStatsGranularity(t *testing.T) {
 // （handler 依赖此 400；fake store 不校验，故校验必须在 service 层前置）。
 func TestListQueryValidation(t *testing.T) {
 	fs := newFakeStore()
-	svc := &Service{store: fs, invalidate: func() {}}
+	svc := &Service{store: fs, inv: &invRecorder{}}
 
 	_, _, err := svc.ListTemplates(context.Background(), repository.ListQuery{Order: "sideways"})
 	require.ErrorIs(t, err, ErrInvalidInput, "非法 order")
@@ -176,28 +176,28 @@ func seedAccount(t *testing.T, svc *Service, tplID int64, name string) *domain.A
 
 func TestBatchDeleteTemplates(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	t1 := seedTemplate(t, svc, "a")
 	t2 := seedTemplate(t, svc, "b")
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.DeleteTemplatesBatch(ctx, []int64{t1.ID, t2.ID}))
-	require.Greater(t, invalidated, before, "批量删除成功后必须 invalidate")
+	require.Greater(t, rec.total(), before, "批量删除成功后必须 invalidate")
 	_, err := svc.GetTemplate(ctx, t1.ID)
 	require.ErrorIs(t, err, ErrNotFound, "批量删除后模板必须消失")
 }
 
 func TestBatchUpdateTemplates(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	t1 := seedTemplate(t, svc, "a")
 	name := "renamed"
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.UpdateTemplatesBatch(ctx, []int64{t1.ID}, repository.TemplatePatch{Name: &name}))
-	require.Greater(t, invalidated, before, "批量更新成功后必须 invalidate")
+	require.Greater(t, rec.total(), before, "批量更新成功后必须 invalidate")
 	got, err := svc.GetTemplate(ctx, t1.ID)
 	require.NoError(t, err)
 	require.Equal(t, "renamed", got.Name)
@@ -205,15 +205,15 @@ func TestBatchUpdateTemplates(t *testing.T) {
 
 func TestBatchDeleteAccounts(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	tpl := seedTemplate(t, svc, "t")
 	a1 := seedAccount(t, svc, tpl.ID, "a1")
 	a2 := seedAccount(t, svc, tpl.ID, "a2")
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.DeleteAccountsBatch(ctx, []int64{a1.ID, a2.ID}))
-	require.Greater(t, invalidated, before, "批量删除成功后必须 invalidate")
+	require.Greater(t, rec.total(), before, "批量删除成功后必须 invalidate")
 	_, err := svc.GetAccount(ctx, a1.ID)
 	require.ErrorIs(t, err, ErrNotFound, "批量删除后账号必须消失")
 }
@@ -222,8 +222,8 @@ func TestBatchDeleteAccounts(t *testing.T) {
 // 组缺失 404 / GetAccountGroups 缺账号 404。
 func TestCreateAccountGroups(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	tpl := seedTemplate(t, svc, "t")
 	g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 0)
@@ -232,23 +232,23 @@ func TestCreateAccountGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	// 创建带分组
-	before := invalidated
+	before := rec.total()
 	acc, err := svc.CreateAccount(ctx, &domain.Account{
 		Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: &[]int64{g1.ID, g2.ID},
 	})
 	require.NoError(t, err)
-	require.Greater(t, invalidated, before, "创建带分组必须 invalidate")
+	require.Greater(t, rec.total(), before, "创建带分组必须 invalidate")
 	got, err := svc.GetAccountGroups(ctx, acc.ID)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []int64{g1.ID, g2.ID}, got)
 
 	// 更新替换：只剩 g2
-	before = invalidated
+	before = rec.total()
 	_, err = svc.UpdateAccount(ctx, &domain.Account{
 		ID: acc.ID, Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-a1", GroupIDs: &[]int64{g2.ID},
 	})
 	require.NoError(t, err)
-	require.Greater(t, invalidated, before, "更新分组必须 invalidate")
+	require.Greater(t, rec.total(), before, "更新分组必须 invalidate")
 	got, err = svc.GetAccountGroups(ctx, acc.ID)
 	require.NoError(t, err)
 	require.Equal(t, []int64{g2.ID}, got)
@@ -294,8 +294,8 @@ func TestCreateAccountGroups(t *testing.T) {
 // （M3）+ 校验（长度/去重/元素 <= 0 → ErrInvalidInput，nil/空数组合法）。
 func TestBatchUpdateAccountsGroupIDs(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	tpl := seedTemplate(t, svc, "t")
 	g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 0)
@@ -304,10 +304,10 @@ func TestBatchUpdateAccountsGroupIDs(t *testing.T) {
 	a2 := seedAccount(t, svc, tpl.ID, "a2")
 
 	// 批量替换：两个账号都进 g1
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID, a2.ID},
 		repository.AccountPatch{GroupIDs: &[]int64{g1.ID}}))
-	require.Greater(t, invalidated, before)
+	require.Greater(t, rec.total(), before)
 	for _, id := range []int64{a1.ID, a2.ID} {
 		got, err := svc.GetAccountGroups(ctx, id)
 		require.NoError(t, err)
@@ -333,14 +333,14 @@ func TestBatchUpdateAccountsGroupIDs(t *testing.T) {
 	require.Contains(t, err.Error(), "999")
 
 	// 校验失败 → ErrInvalidInput（store 不被调用）
-	before = invalidated
+	before = rec.total()
 	dup := []int64{g1.ID, g1.ID}
 	require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &dup}), ErrInvalidInput, "重复 group_ids")
 	neg := []int64{-1}
 	require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &neg}), ErrInvalidInput, "元素 <= 0")
 	over := make([]int64, 101)
 	require.ErrorIs(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{GroupIDs: &over}), ErrInvalidInput, "超长")
-	require.Equal(t, before, invalidated, "校验失败不 invalidate")
+	require.Equal(t, before, rec.total(), "校验失败不 invalidate")
 	// nil 合法（不变）
 	require.NoError(t, svc.UpdateAccountsBatch(ctx, []int64{a1.ID}, repository.AccountPatch{Name: ptr("renamed")}))
 	require.Nil(t, fs.lastPatch.GroupIDs, "nil = 未提供")
@@ -350,15 +350,15 @@ func ptr(s string) *string { return &s }
 
 func TestBatchUpdateAccounts(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	tpl := seedTemplate(t, svc, "t")
 	a := seedAccount(t, svc, tpl.ID, "a1")
 	st := domain.StatusDisabled
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.UpdateAccountsBatch(ctx, []int64{a.ID}, repository.AccountPatch{Status: &st}))
-	require.Greater(t, invalidated, before, "批量更新成功后必须 invalidate")
+	require.Greater(t, rec.total(), before, "批量更新成功后必须 invalidate")
 	got, err := svc.GetAccount(ctx, a.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusDisabled, got.Status)
@@ -383,16 +383,16 @@ func (k *fakeKeyRegistrar) Delete(hash string) { k.deleted = append(k.deleted, h
 func TestBatchDeleteGroupsKeyCleanup(t *testing.T) {
 	fs := newFakeStore()
 	keys := &fakeKeyRegistrar{}
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, keys: keys, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, keys: keys, log: nil}
 	ctx := context.Background()
 	g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 0)
 	require.NoError(t, err)
 	g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, 0)
 	require.NoError(t, err)
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.DeleteGroupsBatch(ctx, []int64{g1.ID, g2.ID}))
-	require.Greater(t, invalidated, before, "批量删除成功后必须 invalidate")
+	require.Greater(t, rec.total(), before, "批量删除成功后必须 invalidate")
 	// Phase 3a：组删除前置清理组内 key（无 key 时无 hash 可清理）
 	require.Empty(t, keys.deleted, "无 key 的组删除不触发 Auth 增量清理")
 	_, err = svc.GetGroup(ctx, g1.ID)
@@ -401,15 +401,16 @@ func TestBatchDeleteGroupsKeyCleanup(t *testing.T) {
 
 func TestBatchUpdateGroups(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 	g, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 0)
 	require.NoError(t, err)
 	name := "renamed"
-	before := invalidated
+	before := rec.total()
 	require.NoError(t, svc.UpdateGroupsBatch(ctx, []int64{g.ID}, repository.GroupPatch{Name: &name}))
-	require.Greater(t, invalidated, before, "批量更新成功后必须 invalidate")
+	// O2 矩阵：GroupPatch 无 price_multiplier 字段 → 组名/可见性不触发任何快照重载。
+	require.Equal(t, before, rec.total(), "批量组更新（仅 name）不 invalidate（倍率未变）")
 	got, err := svc.GetGroup(ctx, g.ID)
 	require.NoError(t, err)
 	require.Equal(t, "renamed", got.Name)
@@ -417,7 +418,7 @@ func TestBatchUpdateGroups(t *testing.T) {
 
 // TestBatchDeleteInvalidIDs 空/超长/重复 ids → ErrInvalidInput（三资源同型）。
 func TestBatchDeleteInvalidIDs(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 	cases := map[string][]int64{
 		"nil ids":           nil,
@@ -437,7 +438,7 @@ func TestBatchDeleteInvalidIDs(t *testing.T) {
 
 // TestBatchUpdatePatchValidation patch 校验失败 → ErrInvalidInput（校验在 store 调用前）。
 func TestBatchUpdatePatchValidation(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 	empty := ""
 	badURL := "not-a-url"
@@ -482,7 +483,7 @@ func TestBatchUpdatePatchValidation(t *testing.T) {
 
 // TestBatchNotFoundMapping 缺失 id → repo.ErrNotFound → service.ErrNotFound（含缺失 id 详情）。
 func TestBatchNotFoundMapping(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	ctx := context.Background()
 
 	err := svc.DeleteTemplatesBatch(ctx, []int64{999})
@@ -509,8 +510,8 @@ func TestBatchNotFoundMapping(t *testing.T) {
 // 与批量 404 一致），且失败不 invalidate。
 func TestSingleDeleteNotFoundMapping(t *testing.T) {
 	fs := newFakeStore()
-	invalidated := 0
-	svc := &Service{store: fs, invalidate: func() { invalidated++ }, log: nil}
+	rec := &invRecorder{}
+	svc := &Service{store: fs, inv: rec, log: nil}
 	ctx := context.Background()
 
 	err := svc.DeleteTemplate(ctx, 999)
@@ -525,13 +526,13 @@ func TestSingleDeleteNotFoundMapping(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound, "groups 单删缺 id → 404（GetGroup 前置拦截）")
 	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")
 
-	require.Zero(t, invalidated, "缺 id 失败不得 invalidate")
+	require.Zero(t, rec.total(), "缺 id 失败不得 invalidate")
 }
 
 // TestCreateAccountMissingTemplate CreateAccount 前置 GetTemplate 缺 id →
 // service.ErrNotFound（消息含缺失 id；此前裸透传 repository 错误 → 生产 500）。
 func TestCreateAccountMissingTemplate(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	_, err := svc.CreateAccount(context.Background(), &domain.Account{
 		Name: "a", UpstreamKey: "k", TemplateID: 999, MaxConcurrency: 4,
 	})
@@ -541,7 +542,7 @@ func TestCreateAccountMissingTemplate(t *testing.T) {
 
 // TestDeleteGroupMissing 组删除前置 GetGroup 缺 id → service.ErrNotFound。
 func TestDeleteGroupMissing(t *testing.T) {
-	svc := &Service{store: newFakeStore(), invalidate: func() {}, log: nil}
+	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}
 	err := svc.DeleteGroup(context.Background(), 999)
 	require.ErrorIs(t, err, ErrNotFound, "分组缺 id → 404")
 	require.Contains(t, err.Error(), "999", "404 消息含缺失 id")

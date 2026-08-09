@@ -33,8 +33,7 @@ func (f *fakeKeys) Delete(hash string) { f.deleted = append(f.deleted, hash) }
 func newTestHandler(t *testing.T) *AdminAPI {
 	t.Helper()
 	store := newFakeStore()
-	invalidate := func() {}
-	svc := service.New(store, fakeSched{}, invalidate, nil, &fakeKeys{}, nil)
+	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, &fakeKeys{}, nil)
 	return New(svc)
 }
 
