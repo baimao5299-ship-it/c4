@@ -44,7 +44,8 @@
     "network": "Network error",
     "auth": "Auth failure",
     "no_account": "No account",
-    "abort": "Aborted"
+    "abort": "Aborted",
+    "billing": "Billing error"
   },
   "login": {
     "emptyToken": "Please enter the admin token",
@@ -220,6 +221,11 @@
       "format": "Format",
       "statusCode": "Status code",
       "errorType": "Error type",
+      "cost": "Cost",
+      "billingTier": "Billing tier",
+      "billing": "Billing",
+      "aboveHit": "Over limit",
+      "overdraft": "Overdraft",
       "latency": "Latency",
       "tokens": "Tokens"
     },

@@ -13,16 +13,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { formatDateTime, toRFC3339 } from '@/components/fmt'
+import { formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 
 type ErrorType = components['schemas']['ErrorType']
 type RequestFormat = components['schemas']['RequestFormat']
 
-const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort']
+const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort', 'billing']
 
-// brief Step 1 色板：none 绿 / 4xx 黄 / 5xx、network、abort 红 / 429 橙 / auth、no_account 灰。
+// brief Step 1 色板：none 绿 / 4xx 黄 / 5xx、network、abort 红 / 429 橙 / auth、no_account 灰 / billing 紫。
 const ERROR_META: Record<ErrorType, string> = {
   none: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-400',
   '4xx': 'bg-yellow-500/10 text-yellow-600 dark:bg-yellow-400/10 dark:text-yellow-400',
@@ -32,6 +32,7 @@ const ERROR_META: Record<ErrorType, string> = {
   '429': 'bg-orange-500/10 text-orange-600 dark:bg-orange-400/10 dark:text-orange-400',
   auth: 'bg-muted text-muted-foreground',
   no_account: 'bg-muted text-muted-foreground',
+  billing: 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400',
 }
 
 function ErrorTypeBadge({ type }: { type?: ErrorType }) {
@@ -214,6 +215,9 @@ export default function Logs() {
                 <Th>{t('logs.table.format')}</Th>
                 <Th className="text-right">{t('logs.table.statusCode')}</Th>
                 <Th>{t('logs.table.errorType')}</Th>
+                <Th className="text-right">{t('logs.table.cost')}</Th>
+                <Th>{t('logs.table.billingTier')}</Th>
+                <Th>{t('logs.table.billing')}</Th>
                 <Th className="text-right">{t('logs.table.latency')}</Th>
                 <Th className="text-right">{t('logs.table.tokens')}</Th>
               </TableRow>
@@ -241,6 +245,22 @@ export default function Logs() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>
                   <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
+                  {/* 计费列：Cost 毫分 → USD（0/空显示 —），BillingTier 空显示 — */}
+                  <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>
+                  <TableCell>
+                    {l.BillingTier ? <Badge variant="outline">{l.BillingTier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  {/* 计费徽章合并列：AboveHit「超档」/ Overdraft「透支」（两者都无时显示 —） */}
+                  <TableCell>
+                    {l.AboveHit || l.Overdraft ? (
+                      <span className="inline-flex gap-1">
+                        {l.AboveHit && <Badge className="bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">{t('logs.table.aboveHit')}</Badge>}
+                        {l.Overdraft && <Badge className="bg-rose-500/10 text-rose-600 dark:bg-rose-400/10 dark:text-rose-400">{t('logs.table.overdraft')}</Badge>}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
                   <TableCell className="text-right tabular-nums">
                     {l.LatencyMS != null ? (
