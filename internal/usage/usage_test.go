@@ -3,6 +3,8 @@ package usage
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/pkg/logx"
 )
 
 type memLogStore struct {
@@ -161,12 +164,12 @@ func TestFlushStatsRefeedsCacheTokens(t *testing.T) {
 
 	// 第一次 flush 失败 → 计数回灌
 	ss.fail = true
-	r.flushStats()
+	r.flushStats(context.Background())
 	require.Empty(t, ss.buckets)
 
 	// 第二次成功 flush → 回灌的 cache 计数不丢
 	ss.fail = false
-	r.flushStats()
+	r.flushStats(context.Background())
 	require.Len(t, ss.buckets, 1)
 	require.Equal(t, int64(10), ss.buckets[0].CacheReadTokens, "回灌后 cache read 不丢")
 	require.Equal(t, int64(5), ss.buckets[0].CacheCreationTokens, "回灌后 cache creation 不丢")
@@ -183,7 +186,7 @@ func TestAggregateSkipsLogChannel(t *testing.T) {
 	now := time.Now().Truncate(time.Hour)
 	r.Aggregate(&domain.UsageLog{RequestID: "a", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, Cost: 123, CreatedAt: now})
 	require.Zero(t, r.Pending(), "Aggregate 不得入明细 channel")
-	r.flushStats()
+	r.flushStats(context.Background())
 	require.Len(t, ss.buckets, 1)
 	require.Equal(t, int64(1), ss.buckets[0].RequestCount)
 	require.Equal(t, int64(10), ss.buckets[0].TotalTokens)
@@ -223,4 +226,106 @@ func TestRecordBackpressureWhenFull(t *testing.T) {
 	case <-time.After(time.Second):
 		require.Fail(t, "Record still blocked after a slot was freed")
 	}
+}
+
+// fakeQuotaWriter 记录 AddQuotaUsed 调用；cancel 非 nil 时首调触发（模拟预算
+// 在第一个 key 写完后到期）——确定性截断，无时间依赖。
+type fakeQuotaWriter struct {
+	mu     sync.Mutex
+	calls  []int64 // 回写过的 key
+	n      int
+	cancel context.CancelFunc
+}
+
+func (q *fakeQuotaWriter) AddQuotaUsed(ctx context.Context, deltas map[int64]int64) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.n++
+	if q.n == 1 && q.cancel != nil {
+		q.cancel() // 后续迭代查 ctx.Err() → 截断
+	}
+	for k, d := range deltas {
+		q.calls = append(q.calls, k*1000+d)
+	}
+	return nil
+}
+
+// usageTestLogger warn 级文件 logger（Warn 断言用）。
+func usageTestLogger(t *testing.T) (*logx.Logger, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "usage-test-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	out := filepath.Join(dir, "out.json")
+	logger, err := logx.New("warn", out)
+	require.NoError(t, err)
+	return logger, out
+}
+
+// TestFlushStatsTruncatesOnBudget O2 停机修复：flushStats 受 ctx 预算约束。
+// 预算到期（首 key 写完后取消）→ 逐 key 检查截断退出 + Warn（含已刷/剩余
+// key 数）+ 统计桶一并截断 Warn；正常（无 deadline）→ 全量回写 + Upsert，
+// 无 Warn。
+func TestFlushStatsTruncatesOnBudget(t *testing.T) {
+	newRec := func(q *fakeQuotaWriter, log *logx.Logger) *Recorder {
+		r := New(UsageConfig{BatchSize: 100}, &memLogStore{}, &memStatStore{}, log)
+		if q != nil {
+			r.SetQuotaWriter(q)
+		}
+		return r
+	}
+	now := time.Now().Truncate(time.Hour)
+	rec := func(r *Recorder, keyID int64) {
+		r.Aggregate(&domain.UsageLog{RequestID: "x", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 1, KeyID: keyID, CreatedAt: now})
+	}
+
+	t.Run("truncates on budget expiry", func(t *testing.T) {
+		logger, out := usageTestLogger(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		q := &fakeQuotaWriter{cancel: cancel}
+		r := newRec(q, logger)
+		for i := int64(1); i <= 3; i++ {
+			rec(r, i) // 3 个额度 key + 1 个统计桶
+		}
+		r.flushStats(ctx)
+
+		q.mu.Lock()
+		written := len(q.calls)
+		q.mu.Unlock()
+		require.Equal(t, 1, written, "首 key 写完后预算到期，其余截断")
+		require.Len(t, r.quotaUsed, 0, "截断丢弃剩余额度增量（不落库不回灌）")
+		require.NoError(t, logger.Sync())
+		b, err := os.ReadFile(out)
+		require.NoError(t, err)
+		require.Contains(t, string(b), "usage quota flush truncated on shutdown budget")
+		require.Contains(t, string(b), `"quota_flushed_keys":1`)
+		require.Contains(t, string(b), `"quota_remaining_keys":2`)
+		require.Contains(t, string(b), "usage stats flush truncated on shutdown budget")
+		require.Contains(t, string(b), `"stats_remaining_buckets":1`)
+	})
+
+	t.Run("flushes fully without deadline", func(t *testing.T) {
+		logger, out := usageTestLogger(t)
+		q := &fakeQuotaWriter{}
+		r := newRec(q, logger)
+		ss := &memStatStore{}
+		r.stats = ss
+		for i := int64(1); i <= 3; i++ {
+			rec(r, i)
+		}
+		r.flushStats(context.Background())
+
+		q.mu.Lock()
+		written := len(q.calls)
+		q.mu.Unlock()
+		require.Equal(t, 3, written, "无 deadline 全量回写")
+		ss.mu.Lock()
+		buckets := len(ss.buckets)
+		ss.mu.Unlock()
+		require.Equal(t, 1, buckets, "统计桶正常 Upsert")
+		require.NoError(t, logger.Sync())
+		b, err := os.ReadFile(out)
+		require.NoError(t, err)
+		require.NotContains(t, string(b), "truncated on shutdown budget", "正常路径无截断 Warn")
+	})
 }
