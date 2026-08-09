@@ -27,7 +27,6 @@ type Pricing = components['schemas']['Pricing']
 type PricingUpsert = components['schemas']['PricingUpsert']
 type PricingSource = components['schemas']['PricingSource']
 
-const PAGE_SIZE = 20
 const SOURCES: PricingSource[] = ['litellm', 'manual']
 
 // 可选价格字段（全部毫分/1M tokens；表单留空 = 提交时省略 → 落库 NULL）。
@@ -189,6 +188,7 @@ export default function PricingPage() {
 
   // —— 列表：page/page_size 1-based 分页（PagePagination 范式）+ source 筛选 + model 模糊搜索 ——
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [model, setModel] = useState('')
   const [sourceFilter, setSourceFilter] = useState<'all' | PricingSource>('all')
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 默认 model asc
@@ -197,11 +197,11 @@ export default function PricingPage() {
   const ord = activeSort ? order : 'asc'
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['pricing', { page, page_size: PAGE_SIZE, source: sourceFilter, model, sort, order: ord }],
+    queryKey: ['pricing', { page, page_size: pageSize, source: sourceFilter, model, sort, order: ord }],
     queryFn: () =>
       api.listPricing({
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         source: sourceFilter === 'all' ? undefined : sourceFilter,
         model: model || undefined,
         sort,
@@ -216,6 +216,8 @@ export default function PricingPage() {
   }, [isLoading, isError, rows.length, page])
 
   const resetPage = () => setPage(1)
+  // 每页条数变化 → 重置页码。
+  const changePageSize = (s: number) => { setPageSize(s); resetPage() }
   const changeModel = (v: string) => { setModel(v); resetPage() }
   const changeSource = (v: string) => { setSourceFilter(v as 'all' | PricingSource); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 model asc）。
@@ -410,7 +412,7 @@ export default function PricingPage() {
               </TableBody>
             </Table>
           </div>
-          <PagePagination total={data?.total ?? 0} pageSize={PAGE_SIZE} page={page} onPageChange={setPage} />
+          <PagePagination total={data?.total ?? 0} pageSize={pageSize} page={page} onPageChange={setPage} onPageSizeChange={changePageSize} />
         </>
       )}
 

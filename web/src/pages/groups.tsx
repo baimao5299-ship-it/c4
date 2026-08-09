@@ -28,8 +28,6 @@ import type { components } from '@/lib/api/schema'
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
 
-const LIMIT = 20
-
 // 价格倍率（万分数）→ 展示：0 = 免费；其余 ×N（10000 → ×1.0）。
 const formatMultiplier = (m: number | undefined, t: TFunction): string =>
   (m ?? 0) === 0 ? t('groups.free') : `×${((m ?? 0) / 10000).toFixed(1)}`
@@ -55,10 +53,11 @@ export default function Groups() {
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
+  const [limit, setLimit] = useState(20)
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['groups', { limit: LIMIT, offset, name, sort: activeSort ?? 'id', order }],
-    queryFn: () => api.listGroups({ limit: LIMIT, offset, name: name || undefined, sort: activeSort ?? 'id', order }),
+    queryKey: ['groups', { limit, offset, name, sort: activeSort ?? 'id', order }],
+    queryFn: () => api.listGroups({ limit, offset, name: name || undefined, sort: activeSort ?? 'id', order }),
   })
   const rows = data?.rows ?? []
 
@@ -75,6 +74,8 @@ export default function Groups() {
     setOffset(0)
     setSelected([])
   }
+  // 每页条数变化 → 重置 offset 并清勾选。
+  const changeLimit = (l: number) => { setLimit(l); resetPage() }
   const changeName = (v: string) => { setName(v); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
@@ -277,7 +278,7 @@ export default function Groups() {
               </TableBody>
             </Table>
           </div>
-          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
+          <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
         </>
       )}
 

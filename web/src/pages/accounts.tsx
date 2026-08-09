@@ -32,7 +32,6 @@ type Group = components['schemas']['Group']
 // 批量更新表单里 status/template_id 的「不修改」哨兵值。
 type BatchStatus = 'all' | AccountStatus
 
-const LIMIT = 20
 const STATUSES: AccountStatus[] = ['active', 'unhealthy', '429', 'disabled']
 
 interface FormState {
@@ -150,17 +149,18 @@ export default function Accounts() {
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
+  const [limit, setLimit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<AccountStatus[]>([])
   const [templateId, setTemplateId] = useState('all') // 'all' = 全部模板
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
       'accounts',
-      { limit: LIMIT, offset, name, sort: activeSort ?? 'id', order, status: statusFilter.join(','), template_id: templateId === 'all' ? undefined : Number(templateId) },
+      { limit, offset, name, sort: activeSort ?? 'id', order, status: statusFilter.join(','), template_id: templateId === 'all' ? undefined : Number(templateId) },
     ],
     queryFn: () =>
       api.listAccounts({
-        limit: LIMIT,
+        limit,
         offset,
         name: name || undefined,
         sort: activeSort ?? 'id',
@@ -190,6 +190,8 @@ export default function Accounts() {
     setOffset(0)
     setSelected([])
   }
+  // 每页条数变化 → 重置 offset 并清勾选。
+  const changeLimit = (l: number) => { setLimit(l); setOffset(0); setSelected([]) }
   const changeName = (v: string) => { setName(v); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
@@ -487,7 +489,7 @@ export default function Accounts() {
               </TableBody>
             </Table>
           </div>
-          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
+          <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
         </>
       )}
 

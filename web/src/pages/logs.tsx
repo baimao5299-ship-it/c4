@@ -75,7 +75,7 @@ function compactTokens(n: number, locale: string): string {
   return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 }
 
-const LIMITS = [10, 20, 50]
+const LIMITS = [10, 20, 50, 100, 1000]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
 
@@ -325,9 +325,12 @@ export default function Logs() {
               value={String(limit)}
               onValueChange={changeLimit}
             >
-              <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="sm" aria-label={`${t('list.pageSize')}: ${limit}`}>
+                <span className="text-xs">{t('list.pageSize')}</span>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {LIMITS.map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+                {LIMITS.map(n => <SelectItem key={n} value={String(n)} label={String(n)}>{n}</SelectItem>)}
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>

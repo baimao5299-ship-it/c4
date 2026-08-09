@@ -30,7 +30,6 @@ type UserUpdate = components['schemas']['UserUpdate']
 type UserRole = components['schemas']['UserRole']
 type UserStatus = components['schemas']['UserStatus']
 
-const LIMIT = 20
 const ROLES: UserRole[] = ['platform_admin', 'user']
 const STATUSES: UserStatus[] = ['active', 'disabled']
 
@@ -133,14 +132,17 @@ export default function Users() {
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
+  const [limit, setLimit] = useState(20)
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['users', { limit: LIMIT, offset, email, sort: activeSort ?? 'id', order }],
-    queryFn: () => api.listUsers({ limit: LIMIT, offset, email: email || undefined, sort: activeSort ?? 'id', order }),
+    queryKey: ['users', { limit, offset, email, sort: activeSort ?? 'id', order }],
+    queryFn: () => api.listUsers({ limit, offset, email: email || undefined, sort: activeSort ?? 'id', order }),
   })
   const rows = data?.rows ?? []
 
   const resetPage = () => setOffset(0)
+  // 每页条数变化 → 重置 offset。
+  const changeLimit = (l: number) => { setLimit(l); resetPage() }
   const changeEmail = (v: string) => { setEmail(v); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）
   const onColumnToggle = (col: string) => {
@@ -278,7 +280,7 @@ export default function Users() {
               </TableBody>
             </Table>
           </div>
-          <Pagination total={data?.total ?? 0} limit={LIMIT} offset={offset} onOffsetChange={setOffset} />
+          <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
         </>
       )}
 

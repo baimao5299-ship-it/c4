@@ -28,7 +28,6 @@ type RedemptionType = components['schemas']['RedemptionType']
 type RedemptionStatus = components['schemas']['RedemptionStatus']
 type GenerateRequest = components['schemas']['GenerateRequest']
 
-const PAGE_SIZE = 20
 const TYPES: RedemptionType[] = ['balance', 'concurrency', 'temp_balance']
 const STATUSES: RedemptionStatus[] = ['active', 'disabled']
 
@@ -79,6 +78,7 @@ export default function RedemptionCodes() {
 
   // —— 列表：增强分页范式（page/page_size，1-based）+ type/status 筛选 ——
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 默认 id desc
   const [order, setOrder] = useState<SortOrder>('desc')
   const [typeFilter, setTypeFilter] = useState<'all' | RedemptionType>('all')
@@ -87,12 +87,12 @@ export default function RedemptionCodes() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [
       'redemption-codes',
-      { page, page_size: PAGE_SIZE, type: typeFilter, status: statusFilter, sort: activeSort ?? 'id', order },
+      { page, page_size: pageSize, type: typeFilter, status: statusFilter, sort: activeSort ?? 'id', order },
     ],
     queryFn: () =>
       api.listRedemptionCodes({
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         type: typeFilter === 'all' ? undefined : typeFilter,
         status: statusFilter === 'all' ? undefined : statusFilter,
         sort: activeSort ?? 'id',
@@ -120,6 +120,8 @@ export default function RedemptionCodes() {
     setPage(1)
     setSelected([])
   }
+  // 每页条数变化 → 重置页码并清勾选。
+  const changePageSize = (s: number) => { setPageSize(s); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 id desc）。
   const onColumnToggle = (col: string) => {
     resetPage()
@@ -367,7 +369,7 @@ export default function RedemptionCodes() {
               </TableBody>
             </Table>
           </div>
-          <PagePagination total={data?.total ?? 0} pageSize={PAGE_SIZE} page={page} onPageChange={setPage} />
+          <PagePagination total={data?.total ?? 0} pageSize={pageSize} page={page} onPageChange={setPage} onPageSizeChange={changePageSize} />
         </>
       )}
 
