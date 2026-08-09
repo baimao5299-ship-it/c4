@@ -59,7 +59,7 @@ func newRepository(client *ent.Client, drv dialect.Driver) *Repository {
 	return &Repository{
 		Templates:   &TemplateRepo{client: client},
 		Accounts:    accounts,
-		Groups:      &GroupRepo{client: client, accounts: accounts},
+		Groups:      &GroupRepo{client: client, accounts: accounts, driver: drv},
 		Users:       &UserRepo{client: client, driver: drv},
 		Keys:        &KeyRepo{client: client, driver: drv},
 		Assignments: &GroupAssignmentRepo{client: client},

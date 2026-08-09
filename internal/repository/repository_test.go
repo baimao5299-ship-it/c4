@@ -309,22 +309,20 @@ func TestAccountAndGroup(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
-	// LoadGroupsAccounts -> groups + accounts(join account_groups) + templates
-	tr.pool.ExpectQuery(q(`FROM "groups"`)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "visibility", "price_multiplier", "created_at", "updated_at"}).
-			AddRow(int64(3), "g1", "public", int64(10000),
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
-	tr.pool.ExpectQuery(q(`JOIN "account_groups"`)).
-		WithArgs(int64(3)).
-		// 注意：M2M 边加载把 join 列（group_id）放在 SELECT 的第一列。
-		WillReturnRows(pgxmock.NewRows([]string{"group_id", "id", "name", "template_id", "upstream_key", "status",
-			"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
-			"created_at", "updated_at"}).
-			AddRow(int64(3), int64(2), "acc1", int64(1), "sk-x", "active", time.Time{}, int64(80), int64(4), "", time.Time{},
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	// LoadGroupsAccounts -> accounts 全表 + templates(eager) + groups id 全表
+	// + account_groups 全表成员关系（#18：零 IN 参数全扫描，替代 ent
+	// eager-load 的 `WHERE group_id IN (全部组 id)`——组数 >65,535 超 PG
+	// 参数上限）
+	tr.pool.ExpectQuery(q(`FROM "accounts"`)).
+		WillReturnRows(accountRow("active"))
 	tr.pool.ExpectQuery(q(`FROM "templates"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(templateRow())
+	tr.pool.ExpectQuery(q(`FROM "groups"`)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
+	tr.pool.ExpectQuery(q(`SELECT account_id, group_id FROM account_groups`)).
+		WillReturnRows(pgxmock.NewRows([]string{"account_id", "group_id"}).
+			AddRow(int64(2), int64(3)))
 
 	// UpdateStatus -> Tx: UPDATE + re-SELECT + Commit
 	tr.pool.ExpectBegin()
