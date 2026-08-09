@@ -314,8 +314,8 @@ func TestProxyBillingStreamAbortCostsTokens(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
-	require.Equal(t, int64(5), store.logs[0].PromptTokens, "中止前已累积的 usage 帧不丢")
-	require.Equal(t, int64(7), store.logs[0].CompletionTokens)
+	require.Equal(t, int64(5), store.logs[0].InputTokens, "中止前已累积的 usage 帧不丢")
+	require.Equal(t, int64(7), store.logs[0].OutputTokens)
 	require.Equal(t, int64(190), store.logs[0].Cost, "5×1e7+7×2e7 → 190 毫分（计费不丢）")
 }
 

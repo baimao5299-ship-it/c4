@@ -12103,12 +12103,13 @@ type UsageLogMutation struct {
 	status_code              *int
 	addstatus_code           *int
 	error_type               *string
+	error_message            *string
 	latency_ms               *int64
 	addlatency_ms            *int64
-	prompt_tokens            *int64
-	addprompt_tokens         *int64
-	completion_tokens        *int64
-	addcompletion_tokens     *int64
+	input_tokens             *int64
+	addinput_tokens          *int64
+	output_tokens            *int64
+	addoutput_tokens         *int64
 	total_tokens             *int64
 	addtotal_tokens          *int64
 	cache_read_tokens        *int64
@@ -12830,6 +12831,55 @@ func (m *UsageLogMutation) ResetErrorType() {
 	m.error_type = nil
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (m *UsageLogMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *UsageLogMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *UsageLogMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[usagelog.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *UsageLogMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *UsageLogMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, usagelog.FieldErrorMessage)
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (m *UsageLogMutation) SetLatencyMs(i int64) {
 	m.latency_ms = &i
@@ -12886,116 +12936,116 @@ func (m *UsageLogMutation) ResetLatencyMs() {
 	m.addlatency_ms = nil
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (m *UsageLogMutation) SetPromptTokens(i int64) {
-	m.prompt_tokens = &i
-	m.addprompt_tokens = nil
+// SetInputTokens sets the "input_tokens" field.
+func (m *UsageLogMutation) SetInputTokens(i int64) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
 }
 
-// PromptTokens returns the value of the "prompt_tokens" field in the mutation.
-func (m *UsageLogMutation) PromptTokens() (r int64, exists bool) {
-	v := m.prompt_tokens
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *UsageLogMutation) InputTokens() (r int64, exists bool) {
+	v := m.input_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldPromptTokens returns the old "prompt_tokens" field's value of the UsageLog entity.
+// OldInputTokens returns the old "input_tokens" field's value of the UsageLog entity.
 // If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldPromptTokens(ctx context.Context) (v int64, err error) {
+func (m *UsageLogMutation) OldInputTokens(ctx context.Context) (v int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPromptTokens is only allowed on UpdateOne operations")
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPromptTokens requires an ID field in the mutation")
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPromptTokens: %w", err)
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
 	}
-	return oldValue.PromptTokens, nil
+	return oldValue.InputTokens, nil
 }
 
-// AddPromptTokens adds i to the "prompt_tokens" field.
-func (m *UsageLogMutation) AddPromptTokens(i int64) {
-	if m.addprompt_tokens != nil {
-		*m.addprompt_tokens += i
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *UsageLogMutation) AddInputTokens(i int64) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
 	} else {
-		m.addprompt_tokens = &i
+		m.addinput_tokens = &i
 	}
 }
 
-// AddedPromptTokens returns the value that was added to the "prompt_tokens" field in this mutation.
-func (m *UsageLogMutation) AddedPromptTokens() (r int64, exists bool) {
-	v := m.addprompt_tokens
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *UsageLogMutation) AddedInputTokens() (r int64, exists bool) {
+	v := m.addinput_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetPromptTokens resets all changes to the "prompt_tokens" field.
-func (m *UsageLogMutation) ResetPromptTokens() {
-	m.prompt_tokens = nil
-	m.addprompt_tokens = nil
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *UsageLogMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (m *UsageLogMutation) SetCompletionTokens(i int64) {
-	m.completion_tokens = &i
-	m.addcompletion_tokens = nil
+// SetOutputTokens sets the "output_tokens" field.
+func (m *UsageLogMutation) SetOutputTokens(i int64) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
 }
 
-// CompletionTokens returns the value of the "completion_tokens" field in the mutation.
-func (m *UsageLogMutation) CompletionTokens() (r int64, exists bool) {
-	v := m.completion_tokens
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *UsageLogMutation) OutputTokens() (r int64, exists bool) {
+	v := m.output_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldCompletionTokens returns the old "completion_tokens" field's value of the UsageLog entity.
+// OldOutputTokens returns the old "output_tokens" field's value of the UsageLog entity.
 // If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldCompletionTokens(ctx context.Context) (v int64, err error) {
+func (m *UsageLogMutation) OldOutputTokens(ctx context.Context) (v int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCompletionTokens is only allowed on UpdateOne operations")
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCompletionTokens requires an ID field in the mutation")
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCompletionTokens: %w", err)
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
 	}
-	return oldValue.CompletionTokens, nil
+	return oldValue.OutputTokens, nil
 }
 
-// AddCompletionTokens adds i to the "completion_tokens" field.
-func (m *UsageLogMutation) AddCompletionTokens(i int64) {
-	if m.addcompletion_tokens != nil {
-		*m.addcompletion_tokens += i
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *UsageLogMutation) AddOutputTokens(i int64) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
 	} else {
-		m.addcompletion_tokens = &i
+		m.addoutput_tokens = &i
 	}
 }
 
-// AddedCompletionTokens returns the value that was added to the "completion_tokens" field in this mutation.
-func (m *UsageLogMutation) AddedCompletionTokens() (r int64, exists bool) {
-	v := m.addcompletion_tokens
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *UsageLogMutation) AddedOutputTokens() (r int64, exists bool) {
+	v := m.addoutput_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetCompletionTokens resets all changes to the "completion_tokens" field.
-func (m *UsageLogMutation) ResetCompletionTokens() {
-	m.completion_tokens = nil
-	m.addcompletion_tokens = nil
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *UsageLogMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
 }
 
 // SetTotalTokens sets the "total_tokens" field.
@@ -13413,7 +13463,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
 	}
@@ -13447,14 +13497,17 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.error_type != nil {
 		fields = append(fields, usagelog.FieldErrorType)
 	}
+	if m.error_message != nil {
+		fields = append(fields, usagelog.FieldErrorMessage)
+	}
 	if m.latency_ms != nil {
 		fields = append(fields, usagelog.FieldLatencyMs)
 	}
-	if m.prompt_tokens != nil {
-		fields = append(fields, usagelog.FieldPromptTokens)
+	if m.input_tokens != nil {
+		fields = append(fields, usagelog.FieldInputTokens)
 	}
-	if m.completion_tokens != nil {
-		fields = append(fields, usagelog.FieldCompletionTokens)
+	if m.output_tokens != nil {
+		fields = append(fields, usagelog.FieldOutputTokens)
 	}
 	if m.total_tokens != nil {
 		fields = append(fields, usagelog.FieldTotalTokens)
@@ -13510,12 +13563,14 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.StatusCode()
 	case usagelog.FieldErrorType:
 		return m.ErrorType()
+	case usagelog.FieldErrorMessage:
+		return m.ErrorMessage()
 	case usagelog.FieldLatencyMs:
 		return m.LatencyMs()
-	case usagelog.FieldPromptTokens:
-		return m.PromptTokens()
-	case usagelog.FieldCompletionTokens:
-		return m.CompletionTokens()
+	case usagelog.FieldInputTokens:
+		return m.InputTokens()
+	case usagelog.FieldOutputTokens:
+		return m.OutputTokens()
 	case usagelog.FieldTotalTokens:
 		return m.TotalTokens()
 	case usagelog.FieldCacheReadTokens:
@@ -13563,12 +13618,14 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldStatusCode(ctx)
 	case usagelog.FieldErrorType:
 		return m.OldErrorType(ctx)
+	case usagelog.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
 	case usagelog.FieldLatencyMs:
 		return m.OldLatencyMs(ctx)
-	case usagelog.FieldPromptTokens:
-		return m.OldPromptTokens(ctx)
-	case usagelog.FieldCompletionTokens:
-		return m.OldCompletionTokens(ctx)
+	case usagelog.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case usagelog.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
 	case usagelog.FieldTotalTokens:
 		return m.OldTotalTokens(ctx)
 	case usagelog.FieldCacheReadTokens:
@@ -13671,6 +13728,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetErrorType(v)
 		return nil
+	case usagelog.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
 	case usagelog.FieldLatencyMs:
 		v, ok := value.(int64)
 		if !ok {
@@ -13678,19 +13742,19 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetLatencyMs(v)
 		return nil
-	case usagelog.FieldPromptTokens:
+	case usagelog.FieldInputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetPromptTokens(v)
+		m.SetInputTokens(v)
 		return nil
-	case usagelog.FieldCompletionTokens:
+	case usagelog.FieldOutputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetCompletionTokens(v)
+		m.SetOutputTokens(v)
 		return nil
 	case usagelog.FieldTotalTokens:
 		v, ok := value.(int64)
@@ -13777,11 +13841,11 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addlatency_ms != nil {
 		fields = append(fields, usagelog.FieldLatencyMs)
 	}
-	if m.addprompt_tokens != nil {
-		fields = append(fields, usagelog.FieldPromptTokens)
+	if m.addinput_tokens != nil {
+		fields = append(fields, usagelog.FieldInputTokens)
 	}
-	if m.addcompletion_tokens != nil {
-		fields = append(fields, usagelog.FieldCompletionTokens)
+	if m.addoutput_tokens != nil {
+		fields = append(fields, usagelog.FieldOutputTokens)
 	}
 	if m.addtotal_tokens != nil {
 		fields = append(fields, usagelog.FieldTotalTokens)
@@ -13817,10 +13881,10 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedStatusCode()
 	case usagelog.FieldLatencyMs:
 		return m.AddedLatencyMs()
-	case usagelog.FieldPromptTokens:
-		return m.AddedPromptTokens()
-	case usagelog.FieldCompletionTokens:
-		return m.AddedCompletionTokens()
+	case usagelog.FieldInputTokens:
+		return m.AddedInputTokens()
+	case usagelog.FieldOutputTokens:
+		return m.AddedOutputTokens()
 	case usagelog.FieldTotalTokens:
 		return m.AddedTotalTokens()
 	case usagelog.FieldCacheReadTokens:
@@ -13887,19 +13951,19 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddLatencyMs(v)
 		return nil
-	case usagelog.FieldPromptTokens:
+	case usagelog.FieldInputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddPromptTokens(v)
+		m.AddInputTokens(v)
 		return nil
-	case usagelog.FieldCompletionTokens:
+	case usagelog.FieldOutputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddCompletionTokens(v)
+		m.AddOutputTokens(v)
 		return nil
 	case usagelog.FieldTotalTokens:
 		v, ok := value.(int64)
@@ -13955,6 +14019,9 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldMappedModel) {
 		fields = append(fields, usagelog.FieldMappedModel)
 	}
+	if m.FieldCleared(usagelog.FieldErrorMessage) {
+		fields = append(fields, usagelog.FieldErrorMessage)
+	}
 	if m.FieldCleared(usagelog.FieldBillingTier) {
 		fields = append(fields, usagelog.FieldBillingTier)
 	}
@@ -13989,6 +14056,9 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldMappedModel:
 		m.ClearMappedModel()
+		return nil
+	case usagelog.FieldErrorMessage:
+		m.ClearErrorMessage()
 		return nil
 	case usagelog.FieldBillingTier:
 		m.ClearBillingTier()
@@ -14034,14 +14104,17 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldErrorType:
 		m.ResetErrorType()
 		return nil
+	case usagelog.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
 	case usagelog.FieldLatencyMs:
 		m.ResetLatencyMs()
 		return nil
-	case usagelog.FieldPromptTokens:
-		m.ResetPromptTokens()
+	case usagelog.FieldInputTokens:
+		m.ResetInputTokens()
 		return nil
-	case usagelog.FieldCompletionTokens:
-		m.ResetCompletionTokens()
+	case usagelog.FieldOutputTokens:
+		m.ResetOutputTokens()
 		return nil
 	case usagelog.FieldTotalTokens:
 		m.ResetTotalTokens()
@@ -14140,10 +14213,10 @@ type UsageStatMutation struct {
 	addrequest_count         *int64
 	error_count              *int64
 	adderror_count           *int64
-	prompt_tokens            *int64
-	addprompt_tokens         *int64
-	completion_tokens        *int64
-	addcompletion_tokens     *int64
+	input_tokens             *int64
+	addinput_tokens          *int64
+	output_tokens            *int64
+	addoutput_tokens         *int64
 	total_tokens             *int64
 	addtotal_tokens          *int64
 	cache_read_tokens        *int64
@@ -14709,116 +14782,116 @@ func (m *UsageStatMutation) ResetErrorCount() {
 	m.adderror_count = nil
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (m *UsageStatMutation) SetPromptTokens(i int64) {
-	m.prompt_tokens = &i
-	m.addprompt_tokens = nil
+// SetInputTokens sets the "input_tokens" field.
+func (m *UsageStatMutation) SetInputTokens(i int64) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
 }
 
-// PromptTokens returns the value of the "prompt_tokens" field in the mutation.
-func (m *UsageStatMutation) PromptTokens() (r int64, exists bool) {
-	v := m.prompt_tokens
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *UsageStatMutation) InputTokens() (r int64, exists bool) {
+	v := m.input_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldPromptTokens returns the old "prompt_tokens" field's value of the UsageStat entity.
+// OldInputTokens returns the old "input_tokens" field's value of the UsageStat entity.
 // If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageStatMutation) OldPromptTokens(ctx context.Context) (v int64, err error) {
+func (m *UsageStatMutation) OldInputTokens(ctx context.Context) (v int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPromptTokens is only allowed on UpdateOne operations")
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPromptTokens requires an ID field in the mutation")
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPromptTokens: %w", err)
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
 	}
-	return oldValue.PromptTokens, nil
+	return oldValue.InputTokens, nil
 }
 
-// AddPromptTokens adds i to the "prompt_tokens" field.
-func (m *UsageStatMutation) AddPromptTokens(i int64) {
-	if m.addprompt_tokens != nil {
-		*m.addprompt_tokens += i
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *UsageStatMutation) AddInputTokens(i int64) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
 	} else {
-		m.addprompt_tokens = &i
+		m.addinput_tokens = &i
 	}
 }
 
-// AddedPromptTokens returns the value that was added to the "prompt_tokens" field in this mutation.
-func (m *UsageStatMutation) AddedPromptTokens() (r int64, exists bool) {
-	v := m.addprompt_tokens
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *UsageStatMutation) AddedInputTokens() (r int64, exists bool) {
+	v := m.addinput_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetPromptTokens resets all changes to the "prompt_tokens" field.
-func (m *UsageStatMutation) ResetPromptTokens() {
-	m.prompt_tokens = nil
-	m.addprompt_tokens = nil
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *UsageStatMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (m *UsageStatMutation) SetCompletionTokens(i int64) {
-	m.completion_tokens = &i
-	m.addcompletion_tokens = nil
+// SetOutputTokens sets the "output_tokens" field.
+func (m *UsageStatMutation) SetOutputTokens(i int64) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
 }
 
-// CompletionTokens returns the value of the "completion_tokens" field in the mutation.
-func (m *UsageStatMutation) CompletionTokens() (r int64, exists bool) {
-	v := m.completion_tokens
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *UsageStatMutation) OutputTokens() (r int64, exists bool) {
+	v := m.output_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldCompletionTokens returns the old "completion_tokens" field's value of the UsageStat entity.
+// OldOutputTokens returns the old "output_tokens" field's value of the UsageStat entity.
 // If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageStatMutation) OldCompletionTokens(ctx context.Context) (v int64, err error) {
+func (m *UsageStatMutation) OldOutputTokens(ctx context.Context) (v int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCompletionTokens is only allowed on UpdateOne operations")
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCompletionTokens requires an ID field in the mutation")
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCompletionTokens: %w", err)
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
 	}
-	return oldValue.CompletionTokens, nil
+	return oldValue.OutputTokens, nil
 }
 
-// AddCompletionTokens adds i to the "completion_tokens" field.
-func (m *UsageStatMutation) AddCompletionTokens(i int64) {
-	if m.addcompletion_tokens != nil {
-		*m.addcompletion_tokens += i
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *UsageStatMutation) AddOutputTokens(i int64) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
 	} else {
-		m.addcompletion_tokens = &i
+		m.addoutput_tokens = &i
 	}
 }
 
-// AddedCompletionTokens returns the value that was added to the "completion_tokens" field in this mutation.
-func (m *UsageStatMutation) AddedCompletionTokens() (r int64, exists bool) {
-	v := m.addcompletion_tokens
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *UsageStatMutation) AddedOutputTokens() (r int64, exists bool) {
+	v := m.addoutput_tokens
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetCompletionTokens resets all changes to the "completion_tokens" field.
-func (m *UsageStatMutation) ResetCompletionTokens() {
-	m.completion_tokens = nil
-	m.addcompletion_tokens = nil
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *UsageStatMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
 }
 
 // SetTotalTokens sets the "total_tokens" field.
@@ -15199,11 +15272,11 @@ func (m *UsageStatMutation) Fields() []string {
 	if m.error_count != nil {
 		fields = append(fields, usagestat.FieldErrorCount)
 	}
-	if m.prompt_tokens != nil {
-		fields = append(fields, usagestat.FieldPromptTokens)
+	if m.input_tokens != nil {
+		fields = append(fields, usagestat.FieldInputTokens)
 	}
-	if m.completion_tokens != nil {
-		fields = append(fields, usagestat.FieldCompletionTokens)
+	if m.output_tokens != nil {
+		fields = append(fields, usagestat.FieldOutputTokens)
 	}
 	if m.total_tokens != nil {
 		fields = append(fields, usagestat.FieldTotalTokens)
@@ -15249,10 +15322,10 @@ func (m *UsageStatMutation) Field(name string) (ent.Value, bool) {
 		return m.RequestCount()
 	case usagestat.FieldErrorCount:
 		return m.ErrorCount()
-	case usagestat.FieldPromptTokens:
-		return m.PromptTokens()
-	case usagestat.FieldCompletionTokens:
-		return m.CompletionTokens()
+	case usagestat.FieldInputTokens:
+		return m.InputTokens()
+	case usagestat.FieldOutputTokens:
+		return m.OutputTokens()
 	case usagestat.FieldTotalTokens:
 		return m.TotalTokens()
 	case usagestat.FieldCacheReadTokens:
@@ -15292,10 +15365,10 @@ func (m *UsageStatMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldRequestCount(ctx)
 	case usagestat.FieldErrorCount:
 		return m.OldErrorCount(ctx)
-	case usagestat.FieldPromptTokens:
-		return m.OldPromptTokens(ctx)
-	case usagestat.FieldCompletionTokens:
-		return m.OldCompletionTokens(ctx)
+	case usagestat.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case usagestat.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
 	case usagestat.FieldTotalTokens:
 		return m.OldTotalTokens(ctx)
 	case usagestat.FieldCacheReadTokens:
@@ -15380,19 +15453,19 @@ func (m *UsageStatMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetErrorCount(v)
 		return nil
-	case usagestat.FieldPromptTokens:
+	case usagestat.FieldInputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetPromptTokens(v)
+		m.SetInputTokens(v)
 		return nil
-	case usagestat.FieldCompletionTokens:
+	case usagestat.FieldOutputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetCompletionTokens(v)
+		m.SetOutputTokens(v)
 		return nil
 	case usagestat.FieldTotalTokens:
 		v, ok := value.(int64)
@@ -15462,11 +15535,11 @@ func (m *UsageStatMutation) AddedFields() []string {
 	if m.adderror_count != nil {
 		fields = append(fields, usagestat.FieldErrorCount)
 	}
-	if m.addprompt_tokens != nil {
-		fields = append(fields, usagestat.FieldPromptTokens)
+	if m.addinput_tokens != nil {
+		fields = append(fields, usagestat.FieldInputTokens)
 	}
-	if m.addcompletion_tokens != nil {
-		fields = append(fields, usagestat.FieldCompletionTokens)
+	if m.addoutput_tokens != nil {
+		fields = append(fields, usagestat.FieldOutputTokens)
 	}
 	if m.addtotal_tokens != nil {
 		fields = append(fields, usagestat.FieldTotalTokens)
@@ -15503,10 +15576,10 @@ func (m *UsageStatMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRequestCount()
 	case usagestat.FieldErrorCount:
 		return m.AddedErrorCount()
-	case usagestat.FieldPromptTokens:
-		return m.AddedPromptTokens()
-	case usagestat.FieldCompletionTokens:
-		return m.AddedCompletionTokens()
+	case usagestat.FieldInputTokens:
+		return m.AddedInputTokens()
+	case usagestat.FieldOutputTokens:
+		return m.AddedOutputTokens()
 	case usagestat.FieldTotalTokens:
 		return m.AddedTotalTokens()
 	case usagestat.FieldCacheReadTokens:
@@ -15568,19 +15641,19 @@ func (m *UsageStatMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddErrorCount(v)
 		return nil
-	case usagestat.FieldPromptTokens:
+	case usagestat.FieldInputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddPromptTokens(v)
+		m.AddInputTokens(v)
 		return nil
-	case usagestat.FieldCompletionTokens:
+	case usagestat.FieldOutputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddCompletionTokens(v)
+		m.AddOutputTokens(v)
 		return nil
 	case usagestat.FieldTotalTokens:
 		v, ok := value.(int64)
@@ -15671,11 +15744,11 @@ func (m *UsageStatMutation) ResetField(name string) error {
 	case usagestat.FieldErrorCount:
 		m.ResetErrorCount()
 		return nil
-	case usagestat.FieldPromptTokens:
-		m.ResetPromptTokens()
+	case usagestat.FieldInputTokens:
+		m.ResetInputTokens()
 		return nil
-	case usagestat.FieldCompletionTokens:
-		m.ResetCompletionTokens()
+	case usagestat.FieldOutputTokens:
+		m.ResetOutputTokens()
 		return nil
 	case usagestat.FieldTotalTokens:
 		m.ResetTotalTokens()

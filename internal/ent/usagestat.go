@@ -35,10 +35,10 @@ type UsageStat struct {
 	RequestCount int64 `json:"request_count,omitempty"`
 	// ErrorCount holds the value of the "error_count" field.
 	ErrorCount int64 `json:"error_count,omitempty"`
-	// PromptTokens holds the value of the "prompt_tokens" field.
-	PromptTokens int64 `json:"prompt_tokens,omitempty"`
-	// CompletionTokens holds the value of the "completion_tokens" field.
-	CompletionTokens int64 `json:"completion_tokens,omitempty"`
+	// InputTokens holds the value of the "input_tokens" field.
+	InputTokens int64 `json:"input_tokens,omitempty"`
+	// OutputTokens holds the value of the "output_tokens" field.
+	OutputTokens int64 `json:"output_tokens,omitempty"`
 	// TotalTokens holds the value of the "total_tokens" field.
 	TotalTokens int64 `json:"total_tokens,omitempty"`
 	// CacheReadTokens holds the value of the "cache_read_tokens" field.
@@ -61,7 +61,7 @@ func (*UsageStat) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagestat.FieldIsError:
 			values[i] = new(sql.NullBool)
-		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldPromptTokens, usagestat.FieldCompletionTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldCost, usagestat.FieldTotalLatencyMs:
+		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldInputTokens, usagestat.FieldOutputTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldCost, usagestat.FieldTotalLatencyMs:
 			values[i] = new(sql.NullInt64)
 		case usagestat.FieldModel:
 			values[i] = new(sql.NullString)
@@ -142,17 +142,17 @@ func (_m *UsageStat) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ErrorCount = value.Int64
 			}
-		case usagestat.FieldPromptTokens:
+		case usagestat.FieldInputTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field prompt_tokens", values[i])
+				return fmt.Errorf("unexpected type %T for field input_tokens", values[i])
 			} else if value.Valid {
-				_m.PromptTokens = value.Int64
+				_m.InputTokens = value.Int64
 			}
-		case usagestat.FieldCompletionTokens:
+		case usagestat.FieldOutputTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field completion_tokens", values[i])
+				return fmt.Errorf("unexpected type %T for field output_tokens", values[i])
 			} else if value.Valid {
-				_m.CompletionTokens = value.Int64
+				_m.OutputTokens = value.Int64
 			}
 		case usagestat.FieldTotalTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -253,11 +253,11 @@ func (_m *UsageStat) String() string {
 	builder.WriteString("error_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ErrorCount))
 	builder.WriteString(", ")
-	builder.WriteString("prompt_tokens=")
-	builder.WriteString(fmt.Sprintf("%v", _m.PromptTokens))
+	builder.WriteString("input_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", _m.InputTokens))
 	builder.WriteString(", ")
-	builder.WriteString("completion_tokens=")
-	builder.WriteString(fmt.Sprintf("%v", _m.CompletionTokens))
+	builder.WriteString("output_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", _m.OutputTokens))
 	builder.WriteString(", ")
 	builder.WriteString("total_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TotalTokens))

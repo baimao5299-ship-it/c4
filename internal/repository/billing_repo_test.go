@@ -18,7 +18,7 @@ func logFor(userID int64, requestID string) *domain.UsageLog {
 	return &domain.UsageLog{
 		RequestID: requestID, UserID: userID, Model: "gpt-4o",
 		Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
-		LatencyMS: 10, PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8,
+		LatencyMS: 10, InputTokens: 3, OutputTokens: 5, TotalTokens: 8,
 		Cost: 130, BillingTier: "auto",
 		CreatedAt: time.Now(),
 	}

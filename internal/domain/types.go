@@ -128,6 +128,24 @@ const (
 	ErrBilling   ErrorType = "billing" // 计费拒绝（缺价/余额不足 402）
 )
 
+// ErrMsgMaxLen 错误文本域内截断上限（usagelog.error_message varchar(500)
+// 与 accounts.last_error 共用；部署故障修复：错误文本留痕但列长度有界）。
+const ErrMsgMaxLen = 500
+
+// TruncateErrMsg 把错误文本截断到 ErrMsgMaxLen 字符（按 rune 截断，不拆断
+// 多字节 UTF-8）。仅错误分支调用（成功路径不经过），热路径零成本——短文本
+// （≤500 字符，含全部 ASCII 错误文案）直接返回不分配。
+func TruncateErrMsg(s string) string {
+	if len(s) <= ErrMsgMaxLen {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= ErrMsgMaxLen {
+		return s
+	}
+	return string(r[:ErrMsgMaxLen])
+}
+
 type Template struct {
 	ID               int64
 	Name             string
@@ -277,6 +295,8 @@ type KeyMeta struct {
 // 计费列（Phase 5）：Cost 毫分（1 USD = 100,000 毫分）；BillingTier 请求
 // service_tier 归一化值（priority/flex/fast/auto，空 = 未计费路径）；AboveHit
 // 任一分量超 above 阈值命中分段；Overdraft 本次扣费透支（负余额）。
+// ErrorMessage 错误文本（部署故障修复）：连接级 err.Error() / 4xx+ 上游 body，
+// 域内截断 500 字符（TruncateErrMsg）；nil = 无错误文本（成功路径恒空）。
 type UsageLog struct {
 	ID               int64
 	RequestID        string
@@ -290,9 +310,10 @@ type UsageLog struct {
 	Format           RequestFormat
 	StatusCode       int
 	ErrorType        ErrorType
+	ErrorMessage     *string // nil = 无错误文本（NULL 落库）
 	LatencyMS           int64
-	PromptTokens        int64
-	CompletionTokens    int64
+	InputTokens         int64
+	OutputTokens        int64
 	TotalTokens         int64
 	CacheReadTokens     int64 // 缓存读取 token（跨协议归一化，sub2api 计费语义）
 	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
@@ -313,8 +334,8 @@ type StatBucket struct {
 	IsError          bool
 	RequestCount     int64
 	ErrorCount       int64
-	PromptTokens        int64
-	CompletionTokens    int64
+	InputTokens         int64
+	OutputTokens        int64
 	TotalTokens         int64
 	CacheReadTokens     int64 // 缓存读取 token
 	CacheCreationTokens int64 // 缓存写入 token

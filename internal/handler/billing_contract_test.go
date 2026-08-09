@@ -262,7 +262,7 @@ func TestLogsStatsBillingFields(t *testing.T) {
 		{
 			ID: 1, UserID: userID, RequestID: "r-bill", Model: "gpt-4o",
 			Format: domain.FormatOpenAIChat, StatusCode: 200,
-			PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30,
+			InputTokens: 10, OutputTokens: 20, TotalTokens: 30,
 			Cost: 500, BillingTier: "fast", AboveHit: true, Overdraft: false,
 		},
 	}

@@ -123,8 +123,8 @@ func (r *Recorder) aggregate(l *domain.UsageLog) {
 	if isErr {
 		c.bucket.ErrorCount++
 	}
-	c.bucket.PromptTokens += l.PromptTokens
-	c.bucket.CompletionTokens += l.CompletionTokens
+	c.bucket.InputTokens += l.InputTokens
+	c.bucket.OutputTokens += l.OutputTokens
 	c.bucket.TotalTokens += l.TotalTokens
 	c.bucket.CacheReadTokens += l.CacheReadTokens
 	c.bucket.CacheCreationTokens += l.CacheCreationTokens
@@ -252,8 +252,8 @@ func (r *Recorder) flushStats(ctx context.Context) {
 			if c, ok := r.counters[key]; ok {
 				c.bucket.RequestCount += b.RequestCount
 				c.bucket.ErrorCount += b.ErrorCount
-				c.bucket.PromptTokens += b.PromptTokens
-				c.bucket.CompletionTokens += b.CompletionTokens
+				c.bucket.InputTokens += b.InputTokens
+				c.bucket.OutputTokens += b.OutputTokens
 				c.bucket.TotalTokens += b.TotalTokens
 				c.bucket.CacheReadTokens += b.CacheReadTokens
 				c.bucket.CacheCreationTokens += b.CacheCreationTokens

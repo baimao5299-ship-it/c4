@@ -96,6 +96,7 @@ type applied struct {
 	status   *domain.AccountStatus
 	cooldown *time.Time
 	weight   *int
+	errMsg   string
 }
 
 type recorder struct {
@@ -103,10 +104,10 @@ type recorder struct {
 	applied []applied
 }
 
-func (r *recorder) fn(aid int64, st *domain.AccountStatus, cd *time.Time, w *int) {
+func (r *recorder) fn(aid int64, st *domain.AccountStatus, cd *time.Time, w *int, errMsg string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.applied = append(r.applied, applied{aid: aid, status: st, cooldown: cd, weight: w})
+	r.applied = append(r.applied, applied{aid: aid, status: st, cooldown: cd, weight: w, errMsg: errMsg})
 }
 
 func (r *recorder) get() []applied {

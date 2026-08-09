@@ -260,6 +260,26 @@ func (_u *UsageLogUpdate) SetNillableErrorType(v *string) *UsageLogUpdate {
 	return _u
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (_u *UsageLogUpdate) SetErrorMessage(v string) *UsageLogUpdate {
+	_u.mutation.SetErrorMessage(v)
+	return _u
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableErrorMessage(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetErrorMessage(*v)
+	}
+	return _u
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (_u *UsageLogUpdate) ClearErrorMessage() *UsageLogUpdate {
+	_u.mutation.ClearErrorMessage()
+	return _u
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (_u *UsageLogUpdate) SetLatencyMs(v int64) *UsageLogUpdate {
 	_u.mutation.ResetLatencyMs()
@@ -281,45 +301,45 @@ func (_u *UsageLogUpdate) AddLatencyMs(v int64) *UsageLogUpdate {
 	return _u
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (_u *UsageLogUpdate) SetPromptTokens(v int64) *UsageLogUpdate {
-	_u.mutation.ResetPromptTokens()
-	_u.mutation.SetPromptTokens(v)
+// SetInputTokens sets the "input_tokens" field.
+func (_u *UsageLogUpdate) SetInputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetInputTokens()
+	_u.mutation.SetInputTokens(v)
 	return _u
 }
 
-// SetNillablePromptTokens sets the "prompt_tokens" field if the given value is not nil.
-func (_u *UsageLogUpdate) SetNillablePromptTokens(v *int64) *UsageLogUpdate {
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableInputTokens(v *int64) *UsageLogUpdate {
 	if v != nil {
-		_u.SetPromptTokens(*v)
+		_u.SetInputTokens(*v)
 	}
 	return _u
 }
 
-// AddPromptTokens adds value to the "prompt_tokens" field.
-func (_u *UsageLogUpdate) AddPromptTokens(v int64) *UsageLogUpdate {
-	_u.mutation.AddPromptTokens(v)
+// AddInputTokens adds value to the "input_tokens" field.
+func (_u *UsageLogUpdate) AddInputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddInputTokens(v)
 	return _u
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (_u *UsageLogUpdate) SetCompletionTokens(v int64) *UsageLogUpdate {
-	_u.mutation.ResetCompletionTokens()
-	_u.mutation.SetCompletionTokens(v)
+// SetOutputTokens sets the "output_tokens" field.
+func (_u *UsageLogUpdate) SetOutputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetOutputTokens()
+	_u.mutation.SetOutputTokens(v)
 	return _u
 }
 
-// SetNillableCompletionTokens sets the "completion_tokens" field if the given value is not nil.
-func (_u *UsageLogUpdate) SetNillableCompletionTokens(v *int64) *UsageLogUpdate {
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableOutputTokens(v *int64) *UsageLogUpdate {
 	if v != nil {
-		_u.SetCompletionTokens(*v)
+		_u.SetOutputTokens(*v)
 	}
 	return _u
 }
 
-// AddCompletionTokens adds value to the "completion_tokens" field.
-func (_u *UsageLogUpdate) AddCompletionTokens(v int64) *UsageLogUpdate {
-	_u.mutation.AddCompletionTokens(v)
+// AddOutputTokens adds value to the "output_tokens" field.
+func (_u *UsageLogUpdate) AddOutputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddOutputTokens(v)
 	return _u
 }
 
@@ -592,23 +612,29 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.ErrorType(); ok {
 		_spec.SetField(usagelog.FieldErrorType, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.ErrorMessage(); ok {
+		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
+	}
+	if _u.mutation.ErrorMessageCleared() {
+		_spec.ClearField(usagelog.FieldErrorMessage, field.TypeString)
+	}
 	if value, ok := _u.mutation.LatencyMs(); ok {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedLatencyMs(); ok {
 		_spec.AddField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.PromptTokens(); ok {
-		_spec.SetField(usagelog.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.InputTokens(); ok {
+		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedPromptTokens(); ok {
-		_spec.AddField(usagelog.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedInputTokens(); ok {
+		_spec.AddField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.CompletionTokens(); ok {
-		_spec.SetField(usagelog.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.OutputTokens(); ok {
+		_spec.SetField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedCompletionTokens(); ok {
-		_spec.AddField(usagelog.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalTokens(); ok {
 		_spec.SetField(usagelog.FieldTotalTokens, field.TypeInt64, value)
@@ -901,6 +927,26 @@ func (_u *UsageLogUpdateOne) SetNillableErrorType(v *string) *UsageLogUpdateOne 
 	return _u
 }
 
+// SetErrorMessage sets the "error_message" field.
+func (_u *UsageLogUpdateOne) SetErrorMessage(v string) *UsageLogUpdateOne {
+	_u.mutation.SetErrorMessage(v)
+	return _u
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableErrorMessage(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetErrorMessage(*v)
+	}
+	return _u
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (_u *UsageLogUpdateOne) ClearErrorMessage() *UsageLogUpdateOne {
+	_u.mutation.ClearErrorMessage()
+	return _u
+}
+
 // SetLatencyMs sets the "latency_ms" field.
 func (_u *UsageLogUpdateOne) SetLatencyMs(v int64) *UsageLogUpdateOne {
 	_u.mutation.ResetLatencyMs()
@@ -922,45 +968,45 @@ func (_u *UsageLogUpdateOne) AddLatencyMs(v int64) *UsageLogUpdateOne {
 	return _u
 }
 
-// SetPromptTokens sets the "prompt_tokens" field.
-func (_u *UsageLogUpdateOne) SetPromptTokens(v int64) *UsageLogUpdateOne {
-	_u.mutation.ResetPromptTokens()
-	_u.mutation.SetPromptTokens(v)
+// SetInputTokens sets the "input_tokens" field.
+func (_u *UsageLogUpdateOne) SetInputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetInputTokens()
+	_u.mutation.SetInputTokens(v)
 	return _u
 }
 
-// SetNillablePromptTokens sets the "prompt_tokens" field if the given value is not nil.
-func (_u *UsageLogUpdateOne) SetNillablePromptTokens(v *int64) *UsageLogUpdateOne {
+// SetNillableInputTokens sets the "input_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableInputTokens(v *int64) *UsageLogUpdateOne {
 	if v != nil {
-		_u.SetPromptTokens(*v)
+		_u.SetInputTokens(*v)
 	}
 	return _u
 }
 
-// AddPromptTokens adds value to the "prompt_tokens" field.
-func (_u *UsageLogUpdateOne) AddPromptTokens(v int64) *UsageLogUpdateOne {
-	_u.mutation.AddPromptTokens(v)
+// AddInputTokens adds value to the "input_tokens" field.
+func (_u *UsageLogUpdateOne) AddInputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddInputTokens(v)
 	return _u
 }
 
-// SetCompletionTokens sets the "completion_tokens" field.
-func (_u *UsageLogUpdateOne) SetCompletionTokens(v int64) *UsageLogUpdateOne {
-	_u.mutation.ResetCompletionTokens()
-	_u.mutation.SetCompletionTokens(v)
+// SetOutputTokens sets the "output_tokens" field.
+func (_u *UsageLogUpdateOne) SetOutputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetOutputTokens()
+	_u.mutation.SetOutputTokens(v)
 	return _u
 }
 
-// SetNillableCompletionTokens sets the "completion_tokens" field if the given value is not nil.
-func (_u *UsageLogUpdateOne) SetNillableCompletionTokens(v *int64) *UsageLogUpdateOne {
+// SetNillableOutputTokens sets the "output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableOutputTokens(v *int64) *UsageLogUpdateOne {
 	if v != nil {
-		_u.SetCompletionTokens(*v)
+		_u.SetOutputTokens(*v)
 	}
 	return _u
 }
 
-// AddCompletionTokens adds value to the "completion_tokens" field.
-func (_u *UsageLogUpdateOne) AddCompletionTokens(v int64) *UsageLogUpdateOne {
-	_u.mutation.AddCompletionTokens(v)
+// AddOutputTokens adds value to the "output_tokens" field.
+func (_u *UsageLogUpdateOne) AddOutputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddOutputTokens(v)
 	return _u
 }
 
@@ -1263,23 +1309,29 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if value, ok := _u.mutation.ErrorType(); ok {
 		_spec.SetField(usagelog.FieldErrorType, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.ErrorMessage(); ok {
+		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
+	}
+	if _u.mutation.ErrorMessageCleared() {
+		_spec.ClearField(usagelog.FieldErrorMessage, field.TypeString)
+	}
 	if value, ok := _u.mutation.LatencyMs(); ok {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedLatencyMs(); ok {
 		_spec.AddField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.PromptTokens(); ok {
-		_spec.SetField(usagelog.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.InputTokens(); ok {
+		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedPromptTokens(); ok {
-		_spec.AddField(usagelog.FieldPromptTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedInputTokens(); ok {
+		_spec.AddField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.CompletionTokens(); ok {
-		_spec.SetField(usagelog.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.OutputTokens(); ok {
+		_spec.SetField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedCompletionTokens(); ok {
-		_spec.AddField(usagelog.FieldCompletionTokens, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.TotalTokens(); ok {
 		_spec.SetField(usagelog.FieldTotalTokens, field.TypeInt64, value)

@@ -522,14 +522,14 @@ func TestLogsAndStats(t *testing.T) {
 	tr := newRepos(t)
 
 	// InsertBatch -> 批量 INSERT ... RETURNING id（sqlgraph 批量创建列按名字母序：
-	// above_hit, account_id, cache_creation_tokens, ..., completion_tokens, cost, ...,
-	// overdraft, prompt_tokens, ...；billing_tier 未设置不落列保持 NULL）
+	// above_hit, account_id, cache_creation_tokens, cache_read_tokens, cost, ...,
+	// input_tokens, ..., output_tokens, overdraft, ...；billing_tier 未设置不落列保持 NULL）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_logs"`)).
-		WithArgs(false, int64(2), int64(2), int64(4), int64(0), int64(0), pgxmock.AnyArg(), "none",
-			usagelog.Format("openai-chat"), int64(1), int64(10), "m", false, int64(0), "r1",
+		WithArgs(false, int64(2), int64(2), int64(4), int64(0), pgxmock.AnyArg(), "none",
+			usagelog.Format("openai-chat"), int64(1), int64(0), int64(10), "m", int64(0), false, "r1",
 			int(200), int64(3), int64(100),
-			false, int64(2), int64(3), int64(5), int64(0), int64(0), pgxmock.AnyArg(), "5xx",
-			usagelog.Format("openai-chat"), int64(1), int64(20), "m", false, int64(0), "r2",
+			false, int64(2), int64(3), int64(5), int64(0), pgxmock.AnyArg(), "5xx",
+			usagelog.Format("openai-chat"), int64(1), int64(0), int64(20), "m", int64(0), false, "r2",
 			int(500), int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
@@ -542,7 +542,7 @@ func TestLogsAndStats(t *testing.T) {
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
 			"model", "mapped_model", "format", "status_code", "error_type", "latency_ms",
-			"prompt_tokens", "completion_tokens", "total_tokens", "cache_read_tokens",
+			"input_tokens", "output_tokens", "total_tokens", "cache_read_tokens",
 			"cache_creation_tokens", "cost", "billing_tier", "above_hit", "overdraft", "created_at"}).
 			AddRow(int64(1), "r1", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				int(200), "none", int64(10), int64(0), int64(0), int64(100), int64(4), int64(2),
@@ -571,8 +571,8 @@ func TestLogsAndStats(t *testing.T) {
 	tr.pool.ExpectQuery(q(`FROM "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "bucket_time", "group_id", "account_id", "template_id",
-			"model", "is_error", "request_count", "error_count", "prompt_tokens",
-			"completion_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
+			"model", "is_error", "request_count", "error_count", "input_tokens",
+			"output_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
 			"cost", "total_latency_ms", "updated_at"}).
 			AddRow(int64(1), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(1), int64(0), int64(0),
 				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(0), int64(30),

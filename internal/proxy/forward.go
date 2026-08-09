@@ -117,7 +117,7 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		l.BillingTier = "no_price"
 		return
 	}
-	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.PromptTokens, l.CompletionTokens, l.CacheReadTokens, l.CacheCreationTokens)
+	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
 	// 价格倍率（T3.5，用户拍板）：整单 × 有效倍率（万分数；用户覆盖组——
 	// 用户已设置 → 用户值，否则组倍率，均缺 ×1）。m==10000 恒等短路零开销；
 	// m==0 免费（cost 0，仍记日志不扣费）。倍率不改变 aboveHit 语义。
@@ -135,7 +135,7 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
 		LatencyMS:    time.Since(start).Milliseconds(),
-		PromptTokens: u.pt, CompletionTokens: u.ct, TotalTokens: u.tt,
+		InputTokens: u.it, OutputTokens: u.ot, TotalTokens: u.tt,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
 		CreatedAt: time.Now(),
 	}
@@ -155,10 +155,16 @@ func mappedFor(req, used string) string {
 // ctx 提供鉴权 KeyMeta（user_id/key_id 归属；401 等鉴权失败路径无 KeyMeta）。
 // 计费路由与 finish 同一 shouldBill 判定（评审 C-4）。
 func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u *usageTuple, start time.Time) {
+	p.recordLog(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
+}
+
+// recordLog 用量日志落库路由（record 与 failover 耗尽路径共用）：billed →
+// Flusher，其余 → rec——每日志恰好一个写者。调用方须已填 ErrorMessage
+// （错误文本落盘；成功路径 nil 恒空，SQL 不写该列）。
+func (p *Proxy) recordLog(l *domain.UsageLog) {
 	if !p.cfg.UsageCapture {
 		return
 	}
-	l := logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start))
 	if p.shouldBill(l) {
 		p.bill.Flusher.Record(l)
 	} else {
@@ -216,7 +222,7 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 // --- 辅助 ---
 
 type usageTuple struct {
-	pt, ct, tt int64
+	it, ot, tt int64
 	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
 }
 
@@ -243,6 +249,13 @@ func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {
 		writeErr(w, &formatError{status: http.StatusNotFound, msg: "group not found"})
 	}
 }
+
+// statusClientClosedRequest 客户端在首字节前断开（nginx "client closed request"
+// 约定；499 非标准码）：SDK 请求阶段（上游响应前）断连的 usage 记录状态码。
+// 客户端已断——不写 HTTP 响应，只进日志（error_type=abort；tokens 必然 0 →
+// cost=0 不计费）。分类正确性修复（#20 E 项）：不得按连接级网络错误处理
+// （不 failover、不 MarkResult、不冷却）。
+const statusClientClosedRequest = 499
 
 func statusFor(err error) int {
 	switch {

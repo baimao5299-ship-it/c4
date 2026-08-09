@@ -234,7 +234,7 @@ func TestBillingE2E(t *testing.T) {
 	upBin := build("./tools/fakeupstream", "fakeupstream.exe")
 	srvBin := build("./cmd/server", "server.exe")
 
-	up := exec.Command(upBin, "-addr", upAddr, "-chunks", "10", "-latency", "5ms")
+	up := exec.Command(upBin, "-addr", upAddr, "-chunks", "10", "-latency", "5ms", "-fail400", "fail400-key")
 	up.Stdout, up.Stderr = os.Stdout, os.Stderr
 	require.NoError(t, up.Start())
 	t.Cleanup(func() { _ = up.Process.Kill() })
@@ -649,6 +649,38 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	r = env.lastLogFor("e2e-model")
 	require.Equal(t, int64(500), r.Cost, "新用户计费正常（快照内余额扣减）")
 	require.Equal(t, int64(1000000-500), env.balance(uNew), "新用户余额扣减")
+
+	// ============ 场景 8.5：上游 4xx 错误文本落盘（部署故障修复） ============
+	// 独立模板/账号/组：上游 key = fail400-key → fakeupstream 注入 400（透传，
+	// 不转移）；usage_logs.error_message 必须落上游错误 body（根因锁定靠文本）。
+	t.Log("场景 8.5：上游 4xx → usagelog error_message 落盘")
+	tpl400 := env.create("/templates", map[string]any{
+		"name": "e2e-tpl-400", "base_url": "http://" + upAddr,
+		"supported_formats": []string{"openai-chat"},
+		"models":            []string{"e2e-model"},
+	})
+	g400 := env.create("/groups", map[string]any{"name": "e2e-grp-400"})
+	env.create("/accounts", map[string]any{
+		"name": "e2e-acc-400", "template_id": tpl400, "upstream_key": "fail400-key",
+		"group_ids": []int64{g400},
+	})
+	u400 := createUser(t, env, "e2e-400@example.com", 10.0)
+	_, u400Key := userKey(t, env, u400, g400)
+	waitSnapshot() // O2 去抖：u400 须在余额快照中（计费预检依赖）
+	c, rb400 := env.aiReq(http.MethodPost, "/v1/chat/completions", u400Key, map[string]any{
+		"model": "e2e-model", "stream": false,
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	require.Equal(t, 400, c, "4xx 透传: %s", rb400)
+	require.Contains(t, rb400, "injected 400", "4xx 必须透传上游原始 body")
+	sleepFlush() // 计费路径 4xx 日志经 flusher 落库（cost 0）
+	var errMsg string
+	err = env.pg.QueryRow(context.Background(), `
+		SELECT COALESCE(error_message,'') FROM usage_logs
+		WHERE model='e2e-model' ORDER BY id DESC LIMIT 1`).Scan(&errMsg)
+	require.NoError(t, err)
+	require.Contains(t, errMsg, "injected 400", "4xx 错误文本必须落盘 error_message")
+	require.LessOrEqual(t, len(errMsg), 500, "error_message 域内截断 500")
 
 	// ============ 场景 9：SIGTERM 优雅停机（流式中断 → 日志 cost 不丢） ============
 	t.Log("场景 9：优雅停机——流式中断计费完整 flush")

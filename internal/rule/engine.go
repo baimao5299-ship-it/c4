@@ -66,8 +66,10 @@ type Event struct {
 }
 
 // ApplyFunc 动作应用回调（由 scheduler 注册）：st 为 nil = 不改状态（只改权重）；
-// cooldownUntil 为 nil = 不设冷却；weight 为 nil = 不改权重。
-type ApplyFunc func(aid int64, st *domain.AccountStatus, cooldownUntil *time.Time, weight *int)
+// cooldownUntil 为 nil = 不设冷却；weight 为 nil = 不改权重。errMsg 为事件
+// 错误文本（error_message_contains 已匹配；供 last_error 落库——部署故障
+// 修复：scheduler 侧截断 500 后回写）。
+type ApplyFunc func(aid int64, st *domain.AccountStatus, cooldownUntil *time.Time, weight *int, errMsg string)
 
 // Config 引擎配置。
 type Config struct {
@@ -229,7 +231,7 @@ func (e *RuleEngine) HandleEvent(ctx context.Context, ev Event) {
 		fn := e.apply
 		e.applyMu.RUnlock()
 		if fn != nil {
-			fn(ev.AccountID, st, cd, w)
+			fn(ev.AccountID, st, cd, w, ev.ErrorMessage)
 		}
 		return
 	}

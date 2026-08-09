@@ -264,8 +264,8 @@ func TestProxyResponsesStreaming(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1, "must capture exactly one usage log")
 	lg := store.logs[0]
-	require.Equal(t, int64(3), lg.PromptTokens, "input_tokens from response.completed.response.usage")
-	require.Equal(t, int64(5), lg.CompletionTokens, "output_tokens from response.completed.response.usage")
+	require.Equal(t, int64(3), lg.InputTokens, "input_tokens from response.completed.response.usage")
+	require.Equal(t, int64(5), lg.OutputTokens, "output_tokens from response.completed.response.usage")
 	require.Equal(t, int64(8), lg.TotalTokens, "total_tokens from response.completed.response.usage")
 	require.Equal(t, "gpt-4o", lg.Model, "成功流式：Model = 客户端请求模型")
 	require.Equal(t, "", lg.MappedModel, "无映射 → MappedModel 空")
@@ -531,8 +531,8 @@ func TestProxyAnthropicStreaming(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1, "must capture exactly one usage log")
 	lg := store.logs[0]
-	require.Equal(t, int64(10), lg.PromptTokens, "input_tokens from message_start.message.usage")
-	require.Equal(t, int64(20), lg.CompletionTokens, "output_tokens from message_delta.usage")
+	require.Equal(t, int64(10), lg.InputTokens, "input_tokens from message_start.message.usage")
+	require.Equal(t, int64(20), lg.OutputTokens, "output_tokens from message_delta.usage")
 	require.Equal(t, int64(30), lg.TotalTokens, "total = input + output")
 	require.Equal(t, "gpt-4o", lg.Model, "成功流式：Model = 客户端请求模型")
 	require.Equal(t, "", lg.MappedModel, "无映射 → MappedModel 空")

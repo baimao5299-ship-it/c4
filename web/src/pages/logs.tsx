@@ -254,16 +254,16 @@ export default function Logs() {
                   </TableCell>
                   {/* token 合并列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + tooltip 明细 */}
                   <TableCell className="text-right font-medium tabular-nums">
-                    {l.PromptTokens || l.CompletionTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
+                    {l.InputTokens || l.OutputTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
                       <Tooltip>
                         <TooltipTrigger render={<span className="block cursor-help" />}>
                           <div className="space-y-0.5 text-xs">
                             <div className="inline-flex items-center gap-2">
                               <span className="inline-flex items-center gap-0.5 text-emerald-500">
-                                <ArrowDown className="size-3" />{(l.PromptTokens ?? 0).toLocaleString()}
+                                <ArrowDown className="size-3" />{(l.InputTokens ?? 0).toLocaleString()}
                               </span>
                               <span className="inline-flex items-center gap-0.5 text-purple-500">
-                                <ArrowUp className="size-3" />{(l.CompletionTokens ?? 0).toLocaleString()}
+                                <ArrowUp className="size-3" />{(l.OutputTokens ?? 0).toLocaleString()}
                               </span>
                             </div>
                             {l.CacheReadTokens || l.CacheCreationTokens ? (

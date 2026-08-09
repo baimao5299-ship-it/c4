@@ -34,8 +34,8 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 			SetIsError(b.IsError).
 			SetRequestCount(b.RequestCount).
 			SetErrorCount(b.ErrorCount).
-			SetPromptTokens(b.PromptTokens).
-			SetCompletionTokens(b.CompletionTokens).
+			SetInputTokens(b.InputTokens).
+			SetOutputTokens(b.OutputTokens).
 			SetTotalTokens(b.TotalTokens).
 			SetCacheReadTokens(b.CacheReadTokens).
 			SetCacheCreationTokens(b.CacheCreationTokens).
@@ -45,8 +45,8 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 			Update(func(u *ent.UsageStatUpsert) {
 				u.AddRequestCount(b.RequestCount)
 				u.AddErrorCount(b.ErrorCount)
-				u.AddPromptTokens(b.PromptTokens)
-				u.AddCompletionTokens(b.CompletionTokens)
+				u.AddInputTokens(b.InputTokens)
+				u.AddOutputTokens(b.OutputTokens)
 				u.AddTotalTokens(b.TotalTokens)
 				u.AddCacheReadTokens(b.CacheReadTokens)
 				u.AddCacheCreationTokens(b.CacheCreationTokens)
@@ -90,7 +90,7 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 			BucketTime: row.BucketTime, GroupID: row.GroupID, AccountID: row.AccountID,
 			TemplateID: row.TemplateID, UserID: row.UserID, Model: row.Model, IsError: row.IsError,
 			RequestCount: row.RequestCount, ErrorCount: row.ErrorCount,
-			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
+			InputTokens: row.InputTokens, OutputTokens: row.OutputTokens,
 			TotalTokens: row.TotalTokens, TotalLatencyMS: row.TotalLatencyMs,
 			CacheReadTokens: row.CacheReadTokens, CacheCreationTokens: row.CacheCreationTokens,
 			Cost: row.Cost,
