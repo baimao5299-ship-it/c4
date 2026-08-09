@@ -104,19 +104,24 @@ func ErrorType(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldErrorType, v))
 }
 
+// ErrorMessage applies equality check predicate on the "error_message" field. It's identical to ErrorMessageEQ.
+func ErrorMessage(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldErrorMessage, v))
+}
+
 // LatencyMs applies equality check predicate on the "latency_ms" field. It's identical to LatencyMsEQ.
 func LatencyMs(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldLatencyMs, v))
 }
 
-// PromptTokens applies equality check predicate on the "prompt_tokens" field. It's identical to PromptTokensEQ.
-func PromptTokens(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPromptTokens, v))
+// InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
+func InputTokens(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
 }
 
-// CompletionTokens applies equality check predicate on the "completion_tokens" field. It's identical to CompletionTokensEQ.
-func CompletionTokens(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldCompletionTokens, v))
+// OutputTokens applies equality check predicate on the "output_tokens" field. It's identical to OutputTokensEQ.
+func OutputTokens(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOutputTokens, v))
 }
 
 // TotalTokens applies equality check predicate on the "total_tokens" field. It's identical to TotalTokensEQ.
@@ -739,6 +744,81 @@ func ErrorTypeContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldErrorType, v))
 }
 
+// ErrorMessageEQ applies the EQ predicate on the "error_message" field.
+func ErrorMessageEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldErrorMessage, v))
+}
+
+// ErrorMessageNEQ applies the NEQ predicate on the "error_message" field.
+func ErrorMessageNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldErrorMessage, v))
+}
+
+// ErrorMessageIn applies the In predicate on the "error_message" field.
+func ErrorMessageIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldErrorMessage, vs...))
+}
+
+// ErrorMessageNotIn applies the NotIn predicate on the "error_message" field.
+func ErrorMessageNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldErrorMessage, vs...))
+}
+
+// ErrorMessageGT applies the GT predicate on the "error_message" field.
+func ErrorMessageGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldErrorMessage, v))
+}
+
+// ErrorMessageGTE applies the GTE predicate on the "error_message" field.
+func ErrorMessageGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldErrorMessage, v))
+}
+
+// ErrorMessageLT applies the LT predicate on the "error_message" field.
+func ErrorMessageLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldErrorMessage, v))
+}
+
+// ErrorMessageLTE applies the LTE predicate on the "error_message" field.
+func ErrorMessageLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldErrorMessage, v))
+}
+
+// ErrorMessageContains applies the Contains predicate on the "error_message" field.
+func ErrorMessageContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldErrorMessage, v))
+}
+
+// ErrorMessageHasPrefix applies the HasPrefix predicate on the "error_message" field.
+func ErrorMessageHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldErrorMessage, v))
+}
+
+// ErrorMessageHasSuffix applies the HasSuffix predicate on the "error_message" field.
+func ErrorMessageHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldErrorMessage, v))
+}
+
+// ErrorMessageIsNil applies the IsNil predicate on the "error_message" field.
+func ErrorMessageIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldErrorMessage))
+}
+
+// ErrorMessageNotNil applies the NotNil predicate on the "error_message" field.
+func ErrorMessageNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldErrorMessage))
+}
+
+// ErrorMessageEqualFold applies the EqualFold predicate on the "error_message" field.
+func ErrorMessageEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldErrorMessage, v))
+}
+
+// ErrorMessageContainsFold applies the ContainsFold predicate on the "error_message" field.
+func ErrorMessageContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldErrorMessage, v))
+}
+
 // LatencyMsEQ applies the EQ predicate on the "latency_ms" field.
 func LatencyMsEQ(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldLatencyMs, v))
@@ -779,84 +859,84 @@ func LatencyMsLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldLatencyMs, v))
 }
 
-// PromptTokensEQ applies the EQ predicate on the "prompt_tokens" field.
-func PromptTokensEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPromptTokens, v))
+// InputTokensEQ applies the EQ predicate on the "input_tokens" field.
+func InputTokensEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
 }
 
-// PromptTokensNEQ applies the NEQ predicate on the "prompt_tokens" field.
-func PromptTokensNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldPromptTokens, v))
+// InputTokensNEQ applies the NEQ predicate on the "input_tokens" field.
+func InputTokensNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldInputTokens, v))
 }
 
-// PromptTokensIn applies the In predicate on the "prompt_tokens" field.
-func PromptTokensIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldPromptTokens, vs...))
+// InputTokensIn applies the In predicate on the "input_tokens" field.
+func InputTokensIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldInputTokens, vs...))
 }
 
-// PromptTokensNotIn applies the NotIn predicate on the "prompt_tokens" field.
-func PromptTokensNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldPromptTokens, vs...))
+// InputTokensNotIn applies the NotIn predicate on the "input_tokens" field.
+func InputTokensNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldInputTokens, vs...))
 }
 
-// PromptTokensGT applies the GT predicate on the "prompt_tokens" field.
-func PromptTokensGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldPromptTokens, v))
+// InputTokensGT applies the GT predicate on the "input_tokens" field.
+func InputTokensGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldInputTokens, v))
 }
 
-// PromptTokensGTE applies the GTE predicate on the "prompt_tokens" field.
-func PromptTokensGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldPromptTokens, v))
+// InputTokensGTE applies the GTE predicate on the "input_tokens" field.
+func InputTokensGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldInputTokens, v))
 }
 
-// PromptTokensLT applies the LT predicate on the "prompt_tokens" field.
-func PromptTokensLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldPromptTokens, v))
+// InputTokensLT applies the LT predicate on the "input_tokens" field.
+func InputTokensLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldInputTokens, v))
 }
 
-// PromptTokensLTE applies the LTE predicate on the "prompt_tokens" field.
-func PromptTokensLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldPromptTokens, v))
+// InputTokensLTE applies the LTE predicate on the "input_tokens" field.
+func InputTokensLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldInputTokens, v))
 }
 
-// CompletionTokensEQ applies the EQ predicate on the "completion_tokens" field.
-func CompletionTokensEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldCompletionTokens, v))
+// OutputTokensEQ applies the EQ predicate on the "output_tokens" field.
+func OutputTokensEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldOutputTokens, v))
 }
 
-// CompletionTokensNEQ applies the NEQ predicate on the "completion_tokens" field.
-func CompletionTokensNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldCompletionTokens, v))
+// OutputTokensNEQ applies the NEQ predicate on the "output_tokens" field.
+func OutputTokensNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldOutputTokens, v))
 }
 
-// CompletionTokensIn applies the In predicate on the "completion_tokens" field.
-func CompletionTokensIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldCompletionTokens, vs...))
+// OutputTokensIn applies the In predicate on the "output_tokens" field.
+func OutputTokensIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldOutputTokens, vs...))
 }
 
-// CompletionTokensNotIn applies the NotIn predicate on the "completion_tokens" field.
-func CompletionTokensNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldCompletionTokens, vs...))
+// OutputTokensNotIn applies the NotIn predicate on the "output_tokens" field.
+func OutputTokensNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldOutputTokens, vs...))
 }
 
-// CompletionTokensGT applies the GT predicate on the "completion_tokens" field.
-func CompletionTokensGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldCompletionTokens, v))
+// OutputTokensGT applies the GT predicate on the "output_tokens" field.
+func OutputTokensGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldOutputTokens, v))
 }
 
-// CompletionTokensGTE applies the GTE predicate on the "completion_tokens" field.
-func CompletionTokensGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldCompletionTokens, v))
+// OutputTokensGTE applies the GTE predicate on the "output_tokens" field.
+func OutputTokensGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldOutputTokens, v))
 }
 
-// CompletionTokensLT applies the LT predicate on the "completion_tokens" field.
-func CompletionTokensLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldCompletionTokens, v))
+// OutputTokensLT applies the LT predicate on the "output_tokens" field.
+func OutputTokensLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldOutputTokens, v))
 }
 
-// CompletionTokensLTE applies the LTE predicate on the "completion_tokens" field.
-func CompletionTokensLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldCompletionTokens, v))
+// OutputTokensLTE applies the LTE predicate on the "output_tokens" field.
+func OutputTokensLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldOutputTokens, v))
 }
 
 // TotalTokensEQ applies the EQ predicate on the "total_tokens" field.

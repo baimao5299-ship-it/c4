@@ -1,0 +1,258 @@
+package proxy
+
+// 错误文本落盘（部署故障修复 #20）：连接级失败 / 4xx / 5xx 的 usage log
+// ErrorMessage 语义 + 连接级 Warn（err 全文）。成功路径 ErrorMessage 恒空
+// （热路径零新增分配）。
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"go-proxy-mini/internal/credential"
+	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/rule"
+	"go-proxy-mini/internal/scheduler"
+	"go-proxy-mini/internal/usage"
+	"go-proxy-mini/pkg/aiclient"
+	"go-proxy-mini/pkg/cryptox"
+	"go-proxy-mini/pkg/logx"
+)
+
+// newTestProxyWarn 同 newTestProxyTimeoutLogs，但注入 zap 日志（Warn 断言用）。
+func newTestProxyWarn(t *testing.T, upstream string, accountID int64, logs usage.LogInserter, logOut string) *Proxy {
+	t.Helper()
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: upstream,
+		CredentialType: credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+	}
+	accs := map[int64][]*domain.Account{10: {{
+		ID: accountID, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "sk-upstream",
+		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+	}}}
+	cfg := Config{
+		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamStreamTimeout: 30 * time.Second,
+		GroupKeyRPM:           0, UsageCapture: true,
+	}
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	sched := scheduler.New(scheduler.Config{
+		DefaultMaxConcurrency: 4, SyncInterval: time.Hour,
+	}, noopLoader{accs: accs}, re, nil)
+	require.NoError(t, sched.InvalidateAllSync())
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
+	}, logs, noopStatStore{}, nil)
+	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
+	}}, noopUserLoader{}, nil)
+	hc := &http.Client{Transport: http.DefaultTransport}
+	clients := aiclient.NewFactory(hc, aiclient.Config{
+		UpstreamTimeout:       5 * time.Second,
+		UpstreamStreamTimeout: 30 * time.Second,
+	})
+	logger, err := logx.New("warn", logOut)
+	require.NoError(t, err)
+	return New(cfg, sched, credential.New(), rec, clients, auth, logger, nil)
+}
+
+// 连接级失败（fake 上游断连）：耗尽路径 usage log ErrorMessage = err.Error()
+// （域内截断 500），Warn 含 err 全文（request_id/account/model）。
+func TestProxyConnErrorLogsErrorMessage(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	url := up.URL
+	up.Close() // 断连：拨号必失败 → code 0（连接级）
+	store := &captureLogStore{}
+	// 日志文件：zap 持有句柄（Windows 上删除会失败），RemoveAll 忽略错误
+	// （与 flusher_test/usage_test 同模式）
+	dir, err := os.MkdirTemp("", "gpm-errlog-*")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	logOut := filepath.Join(dir, "warn.log")
+	p := newTestProxyWarn(t, url, 1, store, logOut)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 502, rec.Code, "body=%s", rec.Body.String())
+
+	// 耗尽记录：ErrorType=network + ErrorMessage=err.Error()（≤500）
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "耗尽路径必须记一条用量")
+	l := store.logs[0]
+	require.Equal(t, domain.ErrNetwork, l.ErrorType)
+	require.NotNil(t, l.ErrorMessage, "连接级失败必须落 ErrorMessage")
+	require.Contains(t, *l.ErrorMessage, "dial", "ErrorMessage = err.Error() 文本")
+	require.LessOrEqual(t, len(*l.ErrorMessage), domain.ErrMsgMaxLen, "域内截断 500")
+
+	// Warn 含 err 全文（request_id/account/model 字段 + 未截断的完整错误）
+	data, err := os.ReadFile(logOut)
+	require.NoError(t, err)
+	logs := string(data)
+	require.Contains(t, logs, "upstream connection failure")
+	require.Contains(t, logs, "request_id")
+	require.Contains(t, logs, "account_id")
+	require.Contains(t, logs, "model")
+	require.Contains(t, logs, url, "Warn 必须含 err 全文（含请求 URL）")
+}
+
+// 4xx 透传：usage log ErrorMessage = 上游 body 原文（域内截断 500）。
+func TestProxy4xxLogsErrorMessage(t *testing.T) {
+	up := fakeOpenAI(t, "400")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 400, rec.Code, "body=%s", rec.Body.String())
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "4xx 透传必须记录用量")
+	l := store.logs[0]
+	require.Equal(t, domain.Err4xx, l.ErrorType)
+	require.NotNil(t, l.ErrorMessage, "4xx 必须落 ErrorMessage")
+	require.Contains(t, *l.ErrorMessage, "bad request", "ErrorMessage = 上游 body")
+	require.LessOrEqual(t, len(*l.ErrorMessage), domain.ErrMsgMaxLen)
+}
+
+// 4xx 长 body：ErrorMessage 截断到 500 字符（不拆断、不越界）。
+func TestProxy4xxLogsErrorMessageTruncated(t *testing.T) {
+	long := strings.Repeat("x", 600)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":{"message":"` + long + `"}}`))
+	}))
+	defer srv.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, srv.URL, 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 400, rec.Code, "body=%s", rec.Body.String())
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	l := store.logs[0]
+	require.NotNil(t, l.ErrorMessage)
+	// 原始上游 body = `{"error":{"message":"` + 600×x + `"}}`；openai-go SDK
+	// 的 RawJSON 为解析后的错误对象 `{"message":"` + 600×x + `"}`（623→621
+	// 字符）→ 截断 500 = 12 字符前缀 + 488×x
+	require.Len(t, *l.ErrorMessage, domain.ErrMsgMaxLen, "长 body 截断 500 字符")
+	require.Equal(t, strings.Repeat("x", 488), strings.TrimPrefix(*l.ErrorMessage, `{"message":"`))
+}
+
+// 5xx 耗尽：ErrorMessage = 上游 body 的 message（既有 upstreamErrMsg 语义）。
+func TestProxy5xxLogsErrorMessage(t *testing.T) {
+	up := fakeOpenAI(t, "500")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 502, rec.Code, "body=%s", rec.Body.String())
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	l := store.logs[0]
+	require.Equal(t, domain.Err5xx, l.ErrorType)
+	require.NotNil(t, l.ErrorMessage, "5xx 耗尽必须落 ErrorMessage")
+	require.Equal(t, "boom", *l.ErrorMessage, "5xx ErrorMessage = 上游 body message")
+}
+
+// 成功路径（200）：ErrorMessage 恒空（热路径零新增分配）。
+func TestProxySuccessLogsNoErrorMessage(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Nil(t, store.logs[0].ErrorMessage, "成功路径 ErrorMessage 恒空")
+	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType)
+}
+
+// 分类正确性（#20 E 项，用户实证）：客户端在上游首字节前断开（模型思考期
+// 取消）→ r.Context() 已取消、SDK 返回 context.Canceled（statusOf=0）——
+// 不得按连接级网络错误处理：不 failover、不 MarkResult/冷却；记 499
+// （nginx client closed request 约定）+ ErrAbort + error_message，立即返回。
+func TestProxyClientDisconnectBeforeFirstByte(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 模拟上游思考期：首字节前长时间不响应；客户端断开时服务器 ctx 也取消
+		select {
+		case <-time.After(time.Second):
+			w.WriteHeader(200)
+		case <-r.Context().Done():
+		}
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`)).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	// 请求发出后 100ms 取消（SDK 请求阶段、首字节前）——模型思考期取消语义
+	time.AfterFunc(100*time.Millisecond, cancel)
+	p.HandleChat(rec, req)
+
+	p.sched.FlushRules() // 若误 MarkResult 则冷却已生效——断言前排空队列
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status, "客户端断连不得冷却账号")
+	require.Nil(t, ri.CooldownUntil, "客户端断连不得设冷却")
+	require.Zero(t, ri.Concurrency, "断连路径必须释放并发槽")
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "断连必须记一条用量")
+	l := store.logs[0]
+	require.Equal(t, statusClientClosedRequest, l.StatusCode, "首字节前断连记 499")
+	require.Equal(t, domain.ErrAbort, l.ErrorType, "首字节前断连记 abort 而非 network")
+	require.NotNil(t, l.ErrorMessage)
+	require.Contains(t, *l.ErrorMessage, "client closed request", "断连错误文本落盘")
+}

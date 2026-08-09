@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func (m *memLoader) LoadGroupAccounts(ctx context.Context, id int64) ([]*domain.
 func (m *memLoader) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldown *time.Time, lastErr *string, weight *int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.writes = append(m.writes, statusWrite{id: id, status: status, cooldown: cooldown, weight: weight})
+	m.writes = append(m.writes, statusWrite{id: id, status: status, cooldown: cooldown, lastErr: lastErr, weight: weight})
 	return nil
 }
 
@@ -986,4 +987,53 @@ func TestInvalidateGroupMultiGroupRemove(t *testing.T) {
 	_, ok = s.Runtime(1)
 	require.False(t, ok)
 	s.Release(1) // no-op 安全
+}
+
+// TestMarkResultLastErrorWriteback 部署故障修复：事件错误文本经 apply 落
+// last_error（有文本用文本、截断 500；无文本回退既有硬编码文案）；成功恢复
+// 清空 last_error。
+func TestMarkResultLastErrorWriteback(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go s.writebackLoop(ctx)
+
+	// 错误事件带文本：last_error = errMsg（域内截断 500）
+	s.MarkResult(1, ResultError, nil, 0, strings.Repeat("dial", 200)) // 800 字符 → 截 500
+	s.FlushRules()
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if len(m.writes) == 0 || m.writes[0].lastErr == nil {
+			return false
+		}
+		return len(*m.writes[0].lastErr) == domain.ErrMsgMaxLen
+	}, time.Second, 10*time.Millisecond, "last_error 携带截断后的事件错误文本")
+
+	// 无文本错误事件：回退硬编码文案（旧语义不变）
+	m.mu.Lock()
+	m.writes = nil
+	m.mu.Unlock()
+	s.MarkResult(1, ResultError, nil, 0, "")
+	s.FlushRules()
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.writes) == 1 && m.writes[0].lastErr != nil && *m.writes[0].lastErr == "upstream error"
+	}, time.Second, 10*time.Millisecond, "无文本 → 回退 upstream error")
+
+	// 成功恢复：last_error 清空（nil）
+	m.mu.Lock()
+	m.writes = nil
+	m.mu.Unlock()
+	s.MarkResult(1, ResultOK, nil, 200, "")
+	s.FlushRules()
+	require.Eventually(t, func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return len(m.writes) == 1 && m.writes[0].lastErr == nil
+	}, time.Second, 10*time.Millisecond, "恢复为 active → last_error 清空")
+	require.NoError(t, s.Close(context.Background()))
 }

@@ -36,12 +36,14 @@ const (
 	FieldStatusCode = "status_code"
 	// FieldErrorType holds the string denoting the error_type field in the database.
 	FieldErrorType = "error_type"
+	// FieldErrorMessage holds the string denoting the error_message field in the database.
+	FieldErrorMessage = "error_message"
 	// FieldLatencyMs holds the string denoting the latency_ms field in the database.
 	FieldLatencyMs = "latency_ms"
-	// FieldPromptTokens holds the string denoting the prompt_tokens field in the database.
-	FieldPromptTokens = "prompt_tokens"
-	// FieldCompletionTokens holds the string denoting the completion_tokens field in the database.
-	FieldCompletionTokens = "completion_tokens"
+	// FieldInputTokens holds the string denoting the input_tokens field in the database.
+	FieldInputTokens = "input_tokens"
+	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
+	FieldOutputTokens = "output_tokens"
 	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
 	FieldTotalTokens = "total_tokens"
 	// FieldCacheReadTokens holds the string denoting the cache_read_tokens field in the database.
@@ -76,9 +78,10 @@ var Columns = []string{
 	FieldFormat,
 	FieldStatusCode,
 	FieldErrorType,
+	FieldErrorMessage,
 	FieldLatencyMs,
-	FieldPromptTokens,
-	FieldCompletionTokens,
+	FieldInputTokens,
+	FieldOutputTokens,
 	FieldTotalTokens,
 	FieldCacheReadTokens,
 	FieldCacheCreationTokens,
@@ -108,10 +111,10 @@ var (
 	DefaultErrorType string
 	// DefaultLatencyMs holds the default value on creation for the "latency_ms" field.
 	DefaultLatencyMs int64
-	// DefaultPromptTokens holds the default value on creation for the "prompt_tokens" field.
-	DefaultPromptTokens int64
-	// DefaultCompletionTokens holds the default value on creation for the "completion_tokens" field.
-	DefaultCompletionTokens int64
+	// DefaultInputTokens holds the default value on creation for the "input_tokens" field.
+	DefaultInputTokens int64
+	// DefaultOutputTokens holds the default value on creation for the "output_tokens" field.
+	DefaultOutputTokens int64
 	// DefaultTotalTokens holds the default value on creation for the "total_tokens" field.
 	DefaultTotalTokens int64
 	// DefaultCacheReadTokens holds the default value on creation for the "cache_read_tokens" field.
@@ -215,19 +218,24 @@ func ByErrorType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldErrorType, opts...).ToFunc()
 }
 
+// ByErrorMessage orders the results by the error_message field.
+func ByErrorMessage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldErrorMessage, opts...).ToFunc()
+}
+
 // ByLatencyMs orders the results by the latency_ms field.
 func ByLatencyMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLatencyMs, opts...).ToFunc()
 }
 
-// ByPromptTokens orders the results by the prompt_tokens field.
-func ByPromptTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPromptTokens, opts...).ToFunc()
+// ByInputTokens orders the results by the input_tokens field.
+func ByInputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInputTokens, opts...).ToFunc()
 }
 
-// ByCompletionTokens orders the results by the completion_tokens field.
-func ByCompletionTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCompletionTokens, opts...).ToFunc()
+// ByOutputTokens orders the results by the output_tokens field.
+func ByOutputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOutputTokens, opts...).ToFunc()
 }
 
 // ByTotalTokens orders the results by the total_tokens field.

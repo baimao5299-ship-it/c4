@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -38,4 +40,19 @@ func TestRequestFormatValid(t *testing.T) {
 		require.True(t, f.Valid(), "format %s should be valid", f)
 	}
 	require.False(t, RequestFormat("gemini").Valid())
+}
+
+func TestTruncateErrMsg(t *testing.T) {
+	// 短文本原样返回（零分配路径；全部 ASCII 错误文案 < 500 字符）
+	require.Equal(t, "", TruncateErrMsg(""))
+	require.Equal(t, "boom", TruncateErrMsg("boom"))
+	require.Equal(t, strings.Repeat("a", ErrMsgMaxLen), TruncateErrMsg(strings.Repeat("a", ErrMsgMaxLen)))
+	// 超限按 500 字符截断
+	require.Equal(t, strings.Repeat("a", ErrMsgMaxLen), TruncateErrMsg(strings.Repeat("a", 600)))
+	// 多字节 UTF-8 不拆断：600 个「界」= 1800 字节 → 截 500 字符（1500 字节）
+	got := TruncateErrMsg(strings.Repeat("界", 600))
+	require.Equal(t, 500, utf8.RuneCountInString(got))
+	require.True(t, utf8.ValidString(got), "截断不得产生非法 UTF-8")
+	// 字节超限但字符数未超限 → 原样返回
+	require.Equal(t, strings.Repeat("界", 300), TruncateErrMsg(strings.Repeat("界", 300)))
 }

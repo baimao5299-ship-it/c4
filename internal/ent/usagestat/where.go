@@ -99,14 +99,14 @@ func ErrorCount(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldEQ(FieldErrorCount, v))
 }
 
-// PromptTokens applies equality check predicate on the "prompt_tokens" field. It's identical to PromptTokensEQ.
-func PromptTokens(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldEQ(FieldPromptTokens, v))
+// InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
+func InputTokens(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldInputTokens, v))
 }
 
-// CompletionTokens applies equality check predicate on the "completion_tokens" field. It's identical to CompletionTokensEQ.
-func CompletionTokens(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldEQ(FieldCompletionTokens, v))
+// OutputTokens applies equality check predicate on the "output_tokens" field. It's identical to OutputTokensEQ.
+func OutputTokens(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldOutputTokens, v))
 }
 
 // TotalTokens applies equality check predicate on the "total_tokens" field. It's identical to TotalTokensEQ.
@@ -494,84 +494,84 @@ func ErrorCountLTE(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldLTE(FieldErrorCount, v))
 }
 
-// PromptTokensEQ applies the EQ predicate on the "prompt_tokens" field.
-func PromptTokensEQ(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldEQ(FieldPromptTokens, v))
+// InputTokensEQ applies the EQ predicate on the "input_tokens" field.
+func InputTokensEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldInputTokens, v))
 }
 
-// PromptTokensNEQ applies the NEQ predicate on the "prompt_tokens" field.
-func PromptTokensNEQ(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldNEQ(FieldPromptTokens, v))
+// InputTokensNEQ applies the NEQ predicate on the "input_tokens" field.
+func InputTokensNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldInputTokens, v))
 }
 
-// PromptTokensIn applies the In predicate on the "prompt_tokens" field.
-func PromptTokensIn(vs ...int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldIn(FieldPromptTokens, vs...))
+// InputTokensIn applies the In predicate on the "input_tokens" field.
+func InputTokensIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldInputTokens, vs...))
 }
 
-// PromptTokensNotIn applies the NotIn predicate on the "prompt_tokens" field.
-func PromptTokensNotIn(vs ...int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldNotIn(FieldPromptTokens, vs...))
+// InputTokensNotIn applies the NotIn predicate on the "input_tokens" field.
+func InputTokensNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldInputTokens, vs...))
 }
 
-// PromptTokensGT applies the GT predicate on the "prompt_tokens" field.
-func PromptTokensGT(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldGT(FieldPromptTokens, v))
+// InputTokensGT applies the GT predicate on the "input_tokens" field.
+func InputTokensGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldInputTokens, v))
 }
 
-// PromptTokensGTE applies the GTE predicate on the "prompt_tokens" field.
-func PromptTokensGTE(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldGTE(FieldPromptTokens, v))
+// InputTokensGTE applies the GTE predicate on the "input_tokens" field.
+func InputTokensGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldInputTokens, v))
 }
 
-// PromptTokensLT applies the LT predicate on the "prompt_tokens" field.
-func PromptTokensLT(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldLT(FieldPromptTokens, v))
+// InputTokensLT applies the LT predicate on the "input_tokens" field.
+func InputTokensLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldInputTokens, v))
 }
 
-// PromptTokensLTE applies the LTE predicate on the "prompt_tokens" field.
-func PromptTokensLTE(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldLTE(FieldPromptTokens, v))
+// InputTokensLTE applies the LTE predicate on the "input_tokens" field.
+func InputTokensLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldInputTokens, v))
 }
 
-// CompletionTokensEQ applies the EQ predicate on the "completion_tokens" field.
-func CompletionTokensEQ(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldEQ(FieldCompletionTokens, v))
+// OutputTokensEQ applies the EQ predicate on the "output_tokens" field.
+func OutputTokensEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldOutputTokens, v))
 }
 
-// CompletionTokensNEQ applies the NEQ predicate on the "completion_tokens" field.
-func CompletionTokensNEQ(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldNEQ(FieldCompletionTokens, v))
+// OutputTokensNEQ applies the NEQ predicate on the "output_tokens" field.
+func OutputTokensNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldOutputTokens, v))
 }
 
-// CompletionTokensIn applies the In predicate on the "completion_tokens" field.
-func CompletionTokensIn(vs ...int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldIn(FieldCompletionTokens, vs...))
+// OutputTokensIn applies the In predicate on the "output_tokens" field.
+func OutputTokensIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldOutputTokens, vs...))
 }
 
-// CompletionTokensNotIn applies the NotIn predicate on the "completion_tokens" field.
-func CompletionTokensNotIn(vs ...int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldNotIn(FieldCompletionTokens, vs...))
+// OutputTokensNotIn applies the NotIn predicate on the "output_tokens" field.
+func OutputTokensNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldOutputTokens, vs...))
 }
 
-// CompletionTokensGT applies the GT predicate on the "completion_tokens" field.
-func CompletionTokensGT(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldGT(FieldCompletionTokens, v))
+// OutputTokensGT applies the GT predicate on the "output_tokens" field.
+func OutputTokensGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldOutputTokens, v))
 }
 
-// CompletionTokensGTE applies the GTE predicate on the "completion_tokens" field.
-func CompletionTokensGTE(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldGTE(FieldCompletionTokens, v))
+// OutputTokensGTE applies the GTE predicate on the "output_tokens" field.
+func OutputTokensGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldOutputTokens, v))
 }
 
-// CompletionTokensLT applies the LT predicate on the "completion_tokens" field.
-func CompletionTokensLT(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldLT(FieldCompletionTokens, v))
+// OutputTokensLT applies the LT predicate on the "output_tokens" field.
+func OutputTokensLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldOutputTokens, v))
 }
 
-// CompletionTokensLTE applies the LTE predicate on the "completion_tokens" field.
-func CompletionTokensLTE(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldLTE(FieldCompletionTokens, v))
+// OutputTokensLTE applies the LTE predicate on the "output_tokens" field.
+func OutputTokensLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldOutputTokens, v))
 }
 
 // TotalTokensEQ applies the EQ predicate on the "total_tokens" field.

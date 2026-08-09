@@ -1681,8 +1681,8 @@ components:
         StatusCode: { type: integer }
         ErrorType: { $ref: '#/components/schemas/ErrorType' }
         LatencyMS: { type: integer, format: int64 }
-        PromptTokens: { type: integer, format: int64 }
-        CompletionTokens: { type: integer, format: int64 }
+        InputTokens: { type: integer, format: int64 }
+        OutputTokens: { type: integer, format: int64 }
         TotalTokens: { type: integer, format: int64 }
         CacheReadTokens: { type: integer, format: int64 }
         CacheCreationTokens: { type: integer, format: int64 }
@@ -1711,8 +1711,8 @@ components:
         IsError: { type: boolean }
         RequestCount: { type: integer, format: int64 }
         ErrorCount: { type: integer, format: int64 }
-        PromptTokens: { type: integer, format: int64 }
-        CompletionTokens: { type: integer, format: int64 }
+        InputTokens: { type: integer, format: int64 }
+        OutputTokens: { type: integer, format: int64 }
         TotalTokens: { type: integer, format: int64 }
         CacheReadTokens: { type: integer, format: int64 }
         CacheCreationTokens: { type: integer, format: int64 }

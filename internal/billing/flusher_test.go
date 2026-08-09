@@ -380,7 +380,7 @@ func TestFlusherBilledAggregatesStats(t *testing.T) {
 
 	f.Record(&domain.UsageLog{
 		UserID: 1, GroupID: 10, Model: "gpt-4o",
-		PromptTokens: 3, CompletionTokens: 5, Cost: 130,
+		InputTokens: 3, OutputTokens: 5, Cost: 130,
 		CreatedAt: time.Now(),
 	})
 	require.NoError(t, f.Close(context.Background()))
@@ -392,8 +392,8 @@ func TestFlusherBilledAggregatesStats(t *testing.T) {
 	b := stats.buckets[0]
 	require.Equal(t, int64(1), b.RequestCount)
 	require.Equal(t, int64(130), b.Cost)
-	require.Equal(t, int64(3), b.PromptTokens)
-	require.Equal(t, int64(5), b.CompletionTokens)
+	require.Equal(t, int64(3), b.InputTokens)
+	require.Equal(t, int64(5), b.OutputTokens)
 	require.Equal(t, "gpt-4o", b.Model)
 	require.Equal(t, int64(1), b.UserID)
 }

@@ -32,11 +32,11 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		// 客户端请求体已带 stream:true（fake 上游按 body["stream"] 分支），无需注入。
 		streamBody, err := setModel(body, sel.Model)
 		if err != nil {
-			return 0, nil, false, nil
+			return 0, nil, false, err
 		}
 		resp, err := p.clients.AnthMessageStreamRaw(ctx, tpl, cred, streamBody)
 		if err != nil {
-			return statusOf(err), upstreamBody(err), false, nil
+			return statusOf(err), upstreamBody(err), false, err
 		}
 		if resp.StatusCode != http.StatusOK {
 			rb := readUpstreamBody(resp)
@@ -46,7 +46,7 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var pt, ct, tt, cr, cc int64
+		var it, ot, tt, cr, cc int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
 				// 真实 API 的流式用量分两处携带：input/cache 在 message_start 事件的
@@ -55,9 +55,9 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// （message_delta.usage 不含 input_tokens）。
 				switch string(ev.Event) {
 				case "message_start":
-					pt, cr, cc = anthropicStartUsage(ev.Data)
+					it, cr, cc = anthropicStartUsage(ev.Data)
 				case "message_delta":
-					ct = anthropicDeltaOutput(ev.Data)
+					ot = anthropicDeltaOutput(ev.Data)
 				}
 			},
 		})
@@ -70,16 +70,16 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			if r.Context().Err() != nil {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: pt + ct, cr: cr, cc: cc}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, &usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{pt: pt, ct: ct, tt: pt + ct, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
-		tt = pt + ct
+		tt = it + ot
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -96,21 +96,21 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	params.Model = sel.Model // Model = string 别名
 	resp, err := p.clients.AnthMessage(ctx, tpl, cred, params)
 	if err != nil {
-		return statusOf(err), upstreamBody(err), false, nil
+		return statusOf(err), upstreamBody(err), false, err
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
-		return 0, nil, false, nil
+		return 0, nil, false, err
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-	var pt, ct, tt, cr, cc int64
+	var it, ot, tt, cr, cc int64
 	if resp.JSON.Usage.Valid() {
 		// 非流式：SDK v1.56.0 Usage 结构体直读。
-		pt, ct, tt, cr, cc = anthropicUsageFromResponse(resp.Usage)
+		it, ot, tt, cr, cc = anthropicUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }

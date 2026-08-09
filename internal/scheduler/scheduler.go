@@ -518,6 +518,15 @@ func groupIDPtr(gid int64) *int64 {
 
 func strPtr(s string) *string { return &s }
 
+// errMsgOr 错误文本回退：errMsg 非空（且截断后非空）用它，否则用默认文案
+// （旧语义：429/error 状态机的硬编码 last_error；无文本事件保持原样）。
+func errMsgOr(def, errMsg string) string {
+	if t := domain.TruncateErrMsg(errMsg); t != "" {
+		return t
+	}
+	return def
+}
+
 // FlushRules 同步处理规则引擎队列中的全部事件（仅测试与优雅关闭用）：
 // MarkResult 为异步投递，需要立即断言快照的测试先排空队列。
 func (s *Scheduler) FlushRules() {
@@ -527,7 +536,9 @@ func (s *Scheduler) FlushRules() {
 // apply 是规则引擎的动作应用回调（New 时注册）：更新快照状态/冷却/权重、
 // EWMA（仅状态类动作）、权重变更时重建组路由（weightedSeq 预生成缓存）、
 // 异步 DB 回写。st 为 nil = 只改权重/冷却，不动状态与 EWMA。
-func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *time.Time, weight *int) {
+// errMsg 为事件错误文本（部署故障修复）：429/unhealthy 落 last_error 用——
+// 有文本用文本（域内截断 500），无文本回退既有硬编码文案（旧语义不变）。
+func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *time.Time, weight *int, errMsg string) {
 	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
 	a, ok := byID[aid]
 	if !ok {
@@ -540,10 +551,10 @@ func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *ti
 		switch *st {
 		case domain.Status429:
 			next.errCount++
-			next.lastError = strPtr("upstream 429 rate limited")
+			next.lastError = strPtr(errMsgOr("upstream 429 rate limited", errMsg))
 		case domain.StatusUnhealthy:
 			next.errCount++
-			next.lastError = strPtr("upstream error")
+			next.lastError = strPtr(errMsgOr("upstream error", errMsg))
 		case domain.StatusActive:
 			next.errCount = 0
 			next.lastError = nil

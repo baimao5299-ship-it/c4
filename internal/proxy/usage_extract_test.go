@@ -124,7 +124,7 @@ func TestResponsesUsageFromResponse(t *testing.T) {
 
 func TestBuildLogWiresCacheTokens(t *testing.T) {
 	l := (&Proxy{}).buildLog("req1", 1, 2, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone,
-		&usageTuple{pt: 10, ct: 20, tt: 30, cr: 4, cc: 6}, time.Now())
+		&usageTuple{it: 10, ot: 20, tt: 30, cr: 4, cc: 6}, time.Now())
 	require.Equal(t, int64(4), l.CacheReadTokens)
 	require.Equal(t, int64(6), l.CacheCreationTokens)
 

@@ -25,9 +25,12 @@ func (UsageLog) Fields() []ent.Field {
 			Values("openai-chat", "openai-responses", "anthropic"),
 		field.Int("status_code").Default(0),
 		field.String("error_type").Default("none"),
+		// 错误文本（部署故障修复）：连接级 err.Error() / 4xx+ 上游 body，域内
+		// 截断 500 字符（domain.TruncateErrMsg）；NULL = 成功路径无错误文本。
+		field.String("error_message").Optional().Nillable(),
 		field.Int64("latency_ms").Default(0),
-		field.Int64("prompt_tokens").Default(0),
-		field.Int64("completion_tokens").Default(0),
+		field.Int64("input_tokens").Default(0),
+		field.Int64("output_tokens").Default(0),
 		field.Int64("total_tokens").Default(0),
 		field.Int64("cache_read_tokens").Default(0),
 		field.Int64("cache_creation_tokens").Default(0),

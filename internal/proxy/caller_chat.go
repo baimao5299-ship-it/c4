@@ -33,7 +33,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		// 否则上游按非流式响应，relay 收不到 SSE。注入后仍需发送原始 body。
 		streamBody, err := setStreamFlag(body, true)
 		if err != nil {
-			return 0, nil, false, nil
+			return 0, nil, false, err
 		}
 		// 模型改写：调度器选号已应用 ModelMapping（sel.Model 为上游模型名），
 		// 与 SDK 路径 params.Model = sel.Model 等价，映射配置在流式下不失效。
@@ -43,7 +43,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		}
 		resp, err := p.clients.ChatCompletionStreamRaw(ctx, tpl, cred, streamBody)
 		if err != nil {
-			return statusOf(err), upstreamBody(err), false, nil
+			return statusOf(err), upstreamBody(err), false, err
 		}
 		if resp.StatusCode != http.StatusOK {
 			rb := readUpstreamBody(resp)
@@ -54,14 +54,14 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var pt, ct, tt, cr, cc int64
+		var it, ot, tt, cr, cc int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
 				// "usage": null 的帧（存在但为 null）不得清零元组：Exists() 对
 				// null 为真。gjson 无 IsNull()，用 Type == gjson.JSON 判定非空
 				// 对象/数组（缺失与显式 null 的 Type 均为 Null）。
 				if len(ev.Event) == 0 && gjson.GetBytes(ev.Data, "usage").Type == gjson.JSON {
-					pt, ct, tt, cr, cc = chatStreamUsage(ev.Data)
+					it, ot, tt, cr, cc = chatStreamUsage(ev.Data)
 				}
 			},
 		})
@@ -74,15 +74,15 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 			if r.Context().Err() != nil {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -100,22 +100,22 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 	params.Model = sel.Model
 	resp, err := p.clients.ChatCompletion(ctx, tpl, cred, params)
 	if err != nil {
-		return statusOf(err), upstreamBody(err), false, nil
+		return statusOf(err), upstreamBody(err), false, err
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
-		return 0, nil, false, nil
+		return 0, nil, false, err
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-	var pt, ct, tt, cr, cc int64
+	var it, ot, tt, cr, cc int64
 	if resp.JSON.Usage.Valid() {
 		// 非流式：cr 直读 SDK 结构体、cc 走 RawJSON() 原始字节 gjson 聚合
 		// （评审 I-1 方案——结构体 marshal 自证不可用）。
-		pt, ct, tt, cr, cc = chatUsageFromResponse(resp.Usage)
+		it, ot, tt, cr, cc = chatUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{pt: pt, ct: ct, tt: tt, cr: cr, cc: cc}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }

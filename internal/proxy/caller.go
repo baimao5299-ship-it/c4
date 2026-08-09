@@ -12,6 +12,7 @@ import (
 	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
+	"go-proxy-mini/pkg/logx"
 )
 
 // UpstreamCaller 一格式一实现：完成单次上游调用（含流式写出、客户端断开判定
@@ -28,6 +29,13 @@ import (
 //     code >= 500 或 code == 0（连接级/凭据错）→ MarkResult(ResultError) + Release + 转移
 //     code 4xx（err == nil）→ 骨架 finish(buildLog(Err4xx)) + 透传 respBody
 //     （空 → 网关文案 "upstream rejected request"）
+//   - err 非 nil 仅在错误路径返回（分类由 code 承载）；骨架用它提取错误文本
+//     （部署故障修复）：code==0 → err.Error() 落 ErrorMessage/last_error +
+//     Warn（err 全文），4xx → respBody 原文落 ErrorMessage。成功路径 err 恒
+//     nil（零新增分配）。
+//   - 例外（首字节前客户端断连，分类正确性）：code==0 且 r.Context().Err()!=nil
+//     （客户端已断开）→ 记 499+ErrAbort 立即返回——不 failover、不 MarkResult、
+//     不冷却（否则连接级误分类把无辜账号冷却 + failover 空转）。
 type UpstreamCaller interface {
 	Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64,
 		start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (code int, respBody []byte, handled bool, err error)
@@ -143,8 +151,9 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	caller := p.callers[format]
 
 	var (
-		lastCode int
-		lastSel  = sel // 最后一次实际尝试的 Selection；中途 Select 失败返回 nil 时不得解引用 sel
+		lastCode   int
+		lastErrMsg string // 最后一次实际尝试的错误文本（耗尽路径 ErrorMessage 用）
+		lastSel    = sel  // 最后一次实际尝试的 Selection；中途 Select 失败返回 nil 时不得解引用 sel
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
@@ -165,26 +174,69 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			code     int
 			respBody []byte
 			handled  bool
+			callErr  error
 		)
 		if err != nil {
 			code = 0 // 凭据错误按网络错误处理（等价现状 try* 内 false,0,nil → 耗尽 ErrNetwork）
+			callErr = err
 		} else {
-			// err 返回值为接口契约保留（评审 I-1 语义表），实际分类已由
-			// code 承载（0=连接级/凭据错、4xx、429、5xx），骨架无需 err。
-			code, respBody, handled, _ = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, peek.Stream)
+			// err 保留（部署故障修复：错误文本落盘）：code 承载分类（0=连接级/
+			// 凭据错、4xx、429、5xx），callErr 提供 err.Error() 文本——仅错误
+			// 分支消费（成功路径零新增分配）。
+			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, peek.Stream)
 		}
 		if handled {
 			return // caller 已处理完毕（成功/客户端断开/流中止已记录；本地拒绝已写出无记录）
 		}
 		lastCode = code
 		if code == http.StatusTooManyRequests {
-			p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil, code, upstreamErrMsg(respBody))
+			// 429：上游 body message（既有语义；域内截断 500）
+			lastErrMsg = domain.TruncateErrMsg(upstreamErrMsg(respBody))
+			p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil, code, lastErrMsg)
 		} else if code >= 500 || code == 0 {
-			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, code, upstreamErrMsg(respBody))
+			// 首字节前客户端断连（分类正确性，用户实证：模型思考期取消常见）：
+			// r.Context() 已取消 → SDK 返回 context.Canceled（statusOf=0）。这是
+			// 客户端行为，非上游错误——不 failover、不 MarkResult/冷却（否则
+			// 无辜账号冷却 + failover 空转 + error_type 误记 network）；记
+			// 499（nginx "client closed request" 约定）+ ErrAbort，立即返回。
+			// tokens 必然 0 → cost=0 不计费；客户端已断，不写 HTTP 响应。
+			// 流式路径的流中止/首字节后断连由 caller 内部分类（handled=true），
+			// 到不了这里——本分支只覆盖 SDK 请求阶段（首字节前）的断连。
+			if code == 0 && r.Context().Err() != nil {
+				l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, statusClientClosedRequest, domain.ErrAbort, nil, start))
+				msg := "client closed request before upstream response"
+				l.ErrorMessage = &msg
+				p.finish(sel.AccountID, l)
+				return
+			}
+			// 5xx：上游 body message（既有语义）。连接级/凭据错（code==0）：
+			// err.Error() 全文填 last_error 与耗尽记录（域内截断 500），并附加
+			// Warn（request_id/account/model/err 全文——Warn 不截断）——根因
+			// 锁定靠错误文本，两类留痕互补：Warn 全量、落盘 500 字符。
+			lastErrMsg = upstreamErrMsg(respBody)
+			if code == 0 && callErr != nil {
+				lastErrMsg = domain.TruncateErrMsg(callErr.Error())
+				if p.log != nil {
+					p.log.Warn("upstream connection failure",
+						logx.String("request_id", reqID),
+						logx.Int64("account_id", sel.AccountID),
+						logx.String("model", sel.Model),
+						logx.Error(callErr))
+				}
+			} else if lastErrMsg != "" {
+				lastErrMsg = domain.TruncateErrMsg(lastErrMsg)
+			}
+			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, code, lastErrMsg)
 		} else {
 			// 4xx 确定性错误：透传上游状态码与原始 body，不转移（规格 §5.3）；
 			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
-			p.finish(sel.AccountID, logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, nil, start)))
+			// 错误文本：上游 body 原文截断 500 落 ErrorMessage（仅错误分支构造，
+			// 成功路径 ErrorMessage 恒空、零分配）。
+			l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, nil, start))
+			if em := domain.TruncateErrMsg(string(respBody)); em != "" {
+				l.ErrorMessage = &em
+			}
+			p.finish(sel.AccountID, l)
 			if len(respBody) > 0 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(code)
@@ -209,6 +261,8 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		}
 	}
 	// 耗尽：请求已完成（上游消费了请求），以最后一次尝试的结果记一条用量。
+	// 错误文本：最后一次尝试的 errMsg（连接级 err.Error() / 429/5xx 上游
+	// message，域内截断 500）填 ErrorMessage；成功路径恒空。
 	et := domain.Err5xx
 	switch {
 	case lastCode == http.StatusTooManyRequests:
@@ -216,7 +270,11 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	case lastCode == 0:
 		et = domain.ErrNetwork
 	}
-	p.record(r.Context(), reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, 0, nil, start)
+	l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, nil, start))
+	if lastErrMsg != "" {
+		l.ErrorMessage = &lastErrMsg
+	}
+	p.recordLog(l)
 	if lastCode == http.StatusTooManyRequests {
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, errTooMany)
