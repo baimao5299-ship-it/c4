@@ -23,9 +23,9 @@ type BillingHooks struct {
 	Prices   PriceLookup
 	Balances *billing.Balances // 余额只读快照（预检 + 扣费后定向刷新）
 	Flusher  *billing.Flusher  // 批量扣费落库（billed 路由终点）
-	// TierPolicy 读取 service_tier 转发策略（nil = 恒透传）：priority/flex
-	// 分别按 settings service_tier_policy_priority / service_tier_policy_flex
-	// 快照取值（装配方注入闭包，零 DB）。
+	// TierPolicy 读取 service_tier 转发策略（nil = 恒透传）：priority/flex/fast
+	// 分别按 settings service_tier_policy_priority / service_tier_policy_flex /
+	// service_tier_policy_fast 快照取值（装配方注入闭包，零 DB）。
 	TierPolicy func(tier billing.Tier) billing.TierPolicyMode
 }
 

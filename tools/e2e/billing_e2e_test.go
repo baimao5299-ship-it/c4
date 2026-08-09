@@ -490,7 +490,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, 200, code3, "logs: %s", resp3)
 	require.Contains(t, resp3, `"billing"`, "402 日志 error_type=billing")
 
-	// ============ 场景 4：tier strip/reject 策略（settings 双 key） ============
+	// ============ 场景 4：tier strip/reject 策略（settings 三 key） ============
 	t.Log("场景 4：service_tier_policy_priority strip/reject")
 	// reject → 400 拒绝（不转发）
 	c, rb5 := env.admin(http.MethodPut, "/settings", map[string]any{
@@ -523,6 +523,40 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		"key": "service_tier_policy_priority", "value": "passthrough",
 	})
 	require.Equal(t, 200, c, "restore passthrough: %s", rb9)
+
+	// ============ 场景 4b：fast 档同策略（M-1 回归：caller 门控含 TierFast） ============
+	t.Log("场景 4b：service_tier_policy_fast strip/reject")
+	// reject → 400 拒绝（不转发）
+	c, rba := env.admin(http.MethodPut, "/settings", map[string]any{
+		"key": "service_tier_policy_fast", "value": "reject",
+	})
+	require.Equal(t, 200, c, "set fast reject: %s", rba)
+	c, rbb := env.aiReq(http.MethodPost, "/v1/chat/completions", u1Key, map[string]any{
+		"model": "e2e-matrix-model", "stream": true, "service_tier": "fast",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	require.Equal(t, 400, c, "fast reject must 400: %s", rbb)
+	// strip → 200 转发（转发体剥 service_tier；计费照常按 fast 档 ×2）
+	c, rbc := env.admin(http.MethodPut, "/settings", map[string]any{
+		"key": "service_tier_policy_fast", "value": "strip",
+	})
+	require.Equal(t, 200, c, "set fast strip: %s", rbc)
+	c, rbd := env.aiReq(http.MethodPost, "/v1/chat/completions", u1Key, map[string]any{
+		"model": "e2e-matrix-model", "stream": true, "service_tier": "fast",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	})
+	require.Equal(t, 200, c, "fast strip must forward: %s", rbd)
+	sleepFlush()
+	r = env.lastLogFor("e2e-matrix-model")
+	require.Equal(t, "fast", r.Tier, "strip 照常计费 fast 档")
+	require.Equal(t, int64(650), r.Cost, "fast ×2：325×2 = 650")
+	bal -= 650
+	require.Equal(t, bal, env.balance(u1))
+	// 恢复 passthrough
+	c, rbe := env.admin(http.MethodPut, "/settings", map[string]any{
+		"key": "service_tier_policy_fast", "value": "passthrough",
+	})
+	require.Equal(t, 200, c, "restore fast passthrough: %s", rbe)
 
 	// ============ 场景 5：价格倍率（组倍率 / 用户-组专属倍率覆盖 / 0 免费） ============
 	t.Log("场景 5：组倍率 ×2 → 扣费 ×2；用户-组专属倍率覆盖组（按组挂载）；0 = 免费不扣费")

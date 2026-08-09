@@ -913,8 +913,9 @@
 | `price_sync_cron` | `0 3 * * *` | 拉取 cron 表达式；变更下次循环生效 |
 | `service_tier_policy_priority` | `passthrough` | 请求 `service_tier=priority` 的**转发策略**：`passthrough`（原样转发，默认）/ `strip`（转发体删除该字段）/ `reject`（400 拒绝，不转发） |
 | `service_tier_policy_flex` | `passthrough` | 同上，作用于 `service_tier=flex` 请求 |
+| `service_tier_policy_fast` | `passthrough` | 同上，作用于 `service_tier=fast` 请求（Anthropic Fast Mode） |
 
-> 策略仅影响**转发体**；计费读取不受影响（剥离/拒绝路径照常按 priority/flex 档计价）。`auto`/空/未知 tier 恒透传。非法值（非三值）→ `400`。
+> 策略仅影响**转发体**；计费读取不受影响（剥离/拒绝路径照常按 priority/flex/fast 档计价）。`auto`/空/未知 tier 恒透传。非法值（非三值）→ `400`。
 
 ---
 

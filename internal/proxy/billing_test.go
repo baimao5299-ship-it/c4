@@ -254,6 +254,122 @@ func TestProxyBillingTierPolicyReject(t *testing.T) {
 	require.Equal(t, "priority", store.logs[0].BillingTier, "reject 日志保留归一化 tier")
 }
 
+// TestProxyBillingTierFastPolicyStrip fast 档 strip 策略（M-1 回归：此前 caller
+// 门控不含 TierFast → fast 恒透传，策略零效果）：转发体删 service_tier；剥离
+// 路径计费照常（tier 已提取 → fast 档 ×2.0 → 260）。
+func TestProxyBillingTierFastPolicyStrip(t *testing.T) {
+	gotTier := make(chan bool, 1)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		_, hasTier := body["service_tier"]
+		gotTier <- hasTier
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`+"\n\n")
+		fl.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyBillingLogs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		func(billing.Tier) billing.TierPolicyMode { return billing.TierPolicyStrip }, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","service_tier":"fast","stream":true,"messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.False(t, <-gotTier, "fast strip 策略：上游不得收到 service_tier 字段")
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, "fast", store.logs[0].BillingTier, "剥离路径计费照常（tier 已提取）")
+	require.Equal(t, int64(260), store.logs[0].Cost, "剥离路径按 fast 档计费：130×2.0 = 260")
+}
+
+// TestProxyBillingTierFastPolicyReject fast 档 reject 策略：直接 400 + 记
+// ErrBilling，不转发上游；日志保留归一化 tier=fast。
+func TestProxyBillingTierFastPolicyReject(t *testing.T) {
+	var hits atomic.Int64
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(500)
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyBillingLogs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		func(billing.Tier) billing.TierPolicyMode { return billing.TierPolicyReject }, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","service_tier":"fast","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", rec.Body.String())
+	require.Zero(t, hits.Load(), "fast reject 不得转发上游")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "reject 路径并发槽必须释放（acquire defer）")
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
+	require.Equal(t, http.StatusBadRequest, store.logs[0].StatusCode)
+	require.Equal(t, "fast", store.logs[0].BillingTier, "reject 日志保留归一化 tier")
+}
+
+// TestProxyBillingTierFastPolicyPassthrough fast 档 passthrough（默认）：原样
+// 转发（service_tier 保留在转发体）；计费照常 fast 档。
+func TestProxyBillingTierFastPolicyPassthrough(t *testing.T) {
+	gotTier := make(chan bool, 1)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		_, hasTier := body["service_tier"]
+		gotTier <- hasTier
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`+"\n\n")
+		fl.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyBillingLogs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		func(billing.Tier) billing.TierPolicyMode { return billing.TierPolicyPassthrough }, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","service_tier":"fast","stream":true,"messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.True(t, <-gotTier, "passthrough 策略：service_tier 原样保留在转发体")
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, "fast", store.logs[0].BillingTier)
+	require.Equal(t, int64(260), store.logs[0].Cost, "passthrough 按 fast 档计费：130×2.0 = 260")
+}
+
 // TestProxyBillingNoPriceDefenseAtFinish 运行时防御：预检通过后快照被删（竞态）→
 // applyBilling Warn + BillingTier="no_price" + cost 0（不按 0 计价也不炸）。
 func TestProxyBillingNoPriceDefenseAtFinish(t *testing.T) {

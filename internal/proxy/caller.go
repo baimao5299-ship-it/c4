@@ -125,7 +125,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	if p.bill != nil {
 		tier := billing.NormalizeTier(peek.ServiceTier)
 		r = r.WithContext(context.WithValue(r.Context(), ctxKeyTier{}, tier))
-		if (tier == billing.TierPriority || tier == billing.TierFlex) && p.bill.TierPolicy != nil {
+		if (tier == billing.TierPriority || tier == billing.TierFlex || tier == billing.TierFast) && p.bill.TierPolicy != nil {
 			switch p.bill.TierPolicy(tier) {
 			case billing.TierPolicyStrip:
 				if body, err = stripServiceTier(body); err != nil {

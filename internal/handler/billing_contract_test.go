@@ -327,12 +327,12 @@ func TestGroupAssignmentMultipliers(t *testing.T) {
 	require.Equal(t, 400, rec.Code, "unknown uid in multipliers: %s", rec.Body.String())
 }
 
-// TestServiceTierPolicySettings service_tier_policy_priority/flex 两个 key：
+// TestServiceTierPolicySettings service_tier_policy_priority/flex/fast 三个 key：
 // 默认 passthrough；三值可设；非法 → 400。
 func TestServiceTierPolicySettings(t *testing.T) {
 	_, _, do := newListTestRouter(t)
 
-	// GET 默认值包含两个 policy key
+	// GET 默认值包含三个 policy key
 	rec := do(http.MethodGet, "/admin/settings", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	var settings []Setting
@@ -343,16 +343,21 @@ func TestServiceTierPolicySettings(t *testing.T) {
 	}
 	require.Equal(t, "passthrough", seen["service_tier_policy_priority"], "priority 默认 passthrough")
 	require.Equal(t, "passthrough", seen["service_tier_policy_flex"], "flex 默认 passthrough")
+	require.Equal(t, "passthrough", seen["service_tier_policy_fast"], "fast 默认 passthrough")
 
 	// 三值均可设
 	for _, v := range []string{"passthrough", "strip", "reject"} {
 		rec := do(http.MethodPut, "/admin/settings", `{"key":"service_tier_policy_priority","value":"`+v+`"}`)
 		require.Equal(t, 200, rec.Code, "set %s: %s", v, rec.Body.String())
+		rec = do(http.MethodPut, "/admin/settings", `{"key":"service_tier_policy_fast","value":"`+v+`"}`)
+		require.Equal(t, 200, rec.Code, "set fast %s: %s", v, rec.Body.String())
 	}
 
 	// 非法值 → 400
 	rec = do(http.MethodPut, "/admin/settings", `{"key":"service_tier_policy_flex","value":"bogus"}`)
 	require.Equal(t, 400, rec.Code, "invalid policy value: %s", rec.Body.String())
+	rec = do(http.MethodPut, "/admin/settings", `{"key":"service_tier_policy_fast","value":"bogus"}`)
+	require.Equal(t, 400, rec.Code, "invalid fast policy value: %s", rec.Body.String())
 }
 
 // TestLogsStatsBillingFields usagelog cost/billing_tier/above_hit/overdraft 与

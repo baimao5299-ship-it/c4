@@ -82,13 +82,17 @@ func (s *Service) GetPrice(model string) (*domain.Pricing, error) {
 }
 
 // ServiceTierPolicy 读取 service_tier 转发策略（settings 快照，零 DB；
-// BillingHooks.TierPolicy 实现，main 装配）：priority/flex 分别按
-// service_tier_policy_priority / service_tier_policy_flex 取值；缺失/未知值 →
-// passthrough 默认（auto/空恒透传在 proxy 侧短路，不查策略）。
+// BillingHooks.TierPolicy 实现，main 装配）：priority/flex/fast 分别按
+// service_tier_policy_priority / service_tier_policy_flex /
+// service_tier_policy_fast 取值；缺失/未知值 → passthrough 默认（auto/空恒
+// 透传在 proxy 侧短路，不查策略）。
 func (s *Service) ServiceTierPolicy(tier billing.Tier) billing.TierPolicyMode {
 	key := "service_tier_policy_priority"
 	if tier == billing.TierFlex {
 		key = "service_tier_policy_flex"
+	}
+	if tier == billing.TierFast {
+		key = "service_tier_policy_fast"
 	}
 	switch s.settingValue(key) {
 	case "strip":
