@@ -15,6 +15,7 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, "warn", c.Log.Level)
 	require.Equal(t, int64(50000), c.Proxy.MaxInflight)
 	require.Equal(t, 500, c.Usage.BatchSize)
+	require.Equal(t, 4, c.Usage.FlushWorkers, "usage flush 并行 worker 默认 4（O1 管道化）")
 	require.Equal(t, "tok", c.Admin.Token)
 	require.Equal(t, 30*time.Second, c.Scheduler.SyncInterval)
 	require.False(t, c.Billing.Enabled, "计费默认关（opt-in，评审 C-1）")
