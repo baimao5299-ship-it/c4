@@ -238,6 +238,9 @@ func (r *RedemptionRepo) IncrementUsed(ctx context.Context, codeID int64) (bool,
 // （WHERE status <> 'disabled'，不重复计受影响数）；返回受影响行数（新失效数）。
 // 缺失 id 由 service 层先查（404 含缺失 id），repo 不报错（评审 M-2：先查后失效
 // 窗口竞态可接受——失效不新增行，检查到的 id 不会消失）。空 ids → (0, nil)。
+// IN 按 inChunkSize 分片：ids 超 65,535 时单条 UPDATE 超 PG 参数上限（service
+// 层已限 ≤100，repo 层自保护）。每块独立 UPDATE，受影响行数累加（块间 id
+// 不重叠——分片只按位置切，输入已由 service 去重）。
 func (r *RedemptionRepo) DeactivateCodes(ctx context.Context, ids []int64) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
@@ -247,20 +250,26 @@ func (r *RedemptionRepo) DeactivateCodes(ctx context.Context, ids []int64) (int6
 		return 0, err
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit 成功后 Rollback 返回 ErrTxDone，忽略
-	n, err := tx.RedemptionCode.Update().
-		Where(
-			redemptioncode.IDIn(ids...),
-			redemptioncode.StatusNEQ(redemptioncode.StatusDisabled),
-		).
-		SetStatus(redemptioncode.StatusDisabled).
-		Save(ctx)
-	if err != nil {
-		return 0, err
+	chunks := chunkIDs(ids, inChunkSize)
+	var total int64
+	for i, chunk := range chunks {
+		n, err := tx.RedemptionCode.Update().
+			Where(
+				redemptioncode.IDIn(chunk...),
+				redemptioncode.StatusNEQ(redemptioncode.StatusDisabled),
+			).
+			SetStatus(redemptioncode.StatusDisabled).
+			Save(ctx)
+		if err != nil {
+			// 块上下文：任一块失败整体回滚（评审 I-2）
+			return 0, fmt.Errorf("deactivate codes (chunk %d/%d, %d ids): %w", i+1, len(chunks), len(chunk), err)
+		}
+		total += int64(n)
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return int64(n), nil
+	return total, nil
 }
 
 func toDomainRedemptionCode(c *ent.RedemptionCode) *domain.RedemptionCode {

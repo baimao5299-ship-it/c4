@@ -50,13 +50,18 @@ func NewAuth(loader KeyLoader, users UserStatusLoader, log *logx.Logger) *Auth {
 
 // Reload 全量刷新鉴权快照（启动/定时/用户变更 invalidate）：
 // keys 元数据 + 用户状态 + 门禁计数器（在途值跨 reload 继承）。
+// 失败必打 Warn（含调用方是否忽略错误——NewAuth 启动 `_ = Reload`、invalidate
+// 回调等吞错路径）：加载失败若被忽略，快照保持旧值/空表 → 鉴权全部 401 或
+// 用旧 key 放行，静默恶化（IN 超限事故的"运行中静默失败"形态即此类）。
 func (a *Auth) Reload(ctx context.Context) error {
 	m, err := a.loader.LoadKeys(ctx)
 	if err != nil {
+		a.logWarn("auth snapshot reload failed (load keys)", err)
 		return err
 	}
 	u, err := a.users.LoadUsers(ctx)
 	if err != nil {
+		a.logWarn("auth snapshot reload failed (load users)", err)
 		return err
 	}
 	a.mu.Lock()
@@ -68,6 +73,12 @@ func (a *Auth) Reload(ctx context.Context) error {
 	a.gate.reload(m)
 	a.mu.Unlock()
 	return nil
+}
+
+func (a *Auth) logWarn(msg string, err error) {
+	if a.log != nil {
+		a.log.Warn(msg, logx.Error(err))
+	}
 }
 
 // Upsert 增量刷新单个 key（key 创建/轮换/更新后调用；门禁计数器同步）。

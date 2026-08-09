@@ -309,22 +309,20 @@ func TestAccountAndGroup(t *testing.T) {
 		WithArgs(int64(2)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
-	// LoadGroupsAccounts -> groups + accounts(join account_groups) + templates
-	tr.pool.ExpectQuery(q(`FROM "groups"`)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "visibility", "price_multiplier", "created_at", "updated_at"}).
-			AddRow(int64(3), "g1", "public", int64(10000),
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
-	tr.pool.ExpectQuery(q(`JOIN "account_groups"`)).
-		WithArgs(int64(3)).
-		// 注意：M2M 边加载把 join 列（group_id）放在 SELECT 的第一列。
-		WillReturnRows(pgxmock.NewRows([]string{"group_id", "id", "name", "template_id", "upstream_key", "status",
-			"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
-			"created_at", "updated_at"}).
-			AddRow(int64(3), int64(2), "acc1", int64(1), "sk-x", "active", time.Time{}, int64(80), int64(4), "", time.Time{},
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	// LoadGroupsAccounts -> accounts 全表 + templates(eager) + groups id 全表
+	// + account_groups 全表成员关系（#18：零 IN 参数全扫描，替代 ent
+	// eager-load 的 `WHERE group_id IN (全部组 id)`——组数 >65,535 超 PG
+	// 参数上限）
+	tr.pool.ExpectQuery(q(`FROM "accounts"`)).
+		WillReturnRows(accountRow("active"))
 	tr.pool.ExpectQuery(q(`FROM "templates"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(templateRow())
+	tr.pool.ExpectQuery(q(`FROM "groups"`)).
+		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
+	tr.pool.ExpectQuery(q(`SELECT account_id, group_id FROM account_groups`)).
+		WillReturnRows(pgxmock.NewRows([]string{"account_id", "group_id"}).
+			AddRow(int64(2), int64(3)))
 
 	// UpdateStatus -> Tx: UPDATE + re-SELECT + Commit
 	tr.pool.ExpectBegin()
@@ -553,19 +551,20 @@ func TestLogsAndStats(t *testing.T) {
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
-	// Stats Upsert x2 -> INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING id
-	//（单条创建按生成 createSpec 字段序；DO UPDATE 的 COALESCE 增量以 $18..
-	// 追加为独立参数，与 Upsert 内 AddXxx 注册序一致，含 cost）
-	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
+	// Stats Upsert x2 -> 单条批量 INSERT ... ON CONFLICT ... DO UPDATE（raw SQL
+	// 批量 upsert，O1 批量化：#15 验收 10k 桶逐 key 轮询 → 单语句/块，冲突累加
+	// EXCLUDED 行值）。列序 = schema 序（bucket_time, group_id, account_id,
+	// template_id, user_id, model, is_error, request_count, error_count,
+	// prompt_tokens, completion_tokens, total_tokens, cache_read_tokens,
+	// cache_creation_tokens, cost, total_latency_ms, updated_at）。
+	tr.pool.ExpectExec(q(`INSERT INTO "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(0), int64(30), pgxmock.AnyArg(),
-			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(0), int64(30)).
-		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
-	tr.pool.ExpectQuery(q(`INSERT INTO "usage_stats"`)).
+			int64(2), int64(1), int64(0), int64(0), int64(100), int64(4), int64(2), int64(0), int64(30), pgxmock.AnyArg()).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	tr.pool.ExpectExec(q(`INSERT INTO "usage_stats"`)).
 		WithArgs(pgxmock.AnyArg(), int64(1), int64(0), int64(0), int64(0), "m", false,
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(0), int64(40), pgxmock.AnyArg(),
-			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(0), int64(40)).
-		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(2)))
+			int64(3), int64(1), int64(0), int64(0), int64(200), int64(6), int64(3), int64(0), int64(40), pgxmock.AnyArg()).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
 	// Stats Scan（测试未过滤 group_id，仅 bucket_time 范围两个参数）
 	tr.pool.ExpectQuery(q(`FROM "usage_stats"`)).

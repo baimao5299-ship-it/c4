@@ -55,7 +55,7 @@ func (r *TemplateRepo) DeleteTemplatesBatch(ctx context.Context, ids []int64) er
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit 成功后 Rollback 返回 ErrTxDone，忽略
-	if err := checkTemplateExist(ctx, tx.Template.Query(), ids); err != nil {
+	if err := checkTemplateExist(ctx, tx.Template.Query, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -72,7 +72,7 @@ func (r *AccountRepo) DeleteAccountsBatch(ctx context.Context, ids []int64) erro
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck
-	if err := checkAccountExist(ctx, tx.Account.Query(), ids); err != nil {
+	if err := checkAccountExist(ctx, tx.Account.Query, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -89,7 +89,7 @@ func (r *GroupRepo) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck
-	if err := checkGroupExist(ctx, tx.Group.Query(), ids); err != nil {
+	if err := checkGroupExist(ctx, tx.Group.Query, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -108,7 +108,7 @@ func (r *TemplateRepo) UpdateTemplatesBatch(ctx context.Context, ids []int64, p 
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck
-	if err := checkTemplateExist(ctx, tx.Template.Query(), ids); err != nil {
+	if err := checkTemplateExist(ctx, tx.Template.Query, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -147,12 +147,12 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck
-	if err := checkAccountExist(ctx, tx.Account.Query(), ids); err != nil {
+	if err := checkAccountExist(ctx, tx.Account.Query, ids); err != nil {
 		return err
 	}
 	// 组存在性校验：循环外一次完成（空数组跳过查询——[] = 清空，无依赖组）。
 	if p.GroupIDs != nil && len(*p.GroupIDs) > 0 {
-		if err := checkGroupExist(ctx, tx.Group.Query(), *p.GroupIDs); err != nil {
+		if err := checkGroupExist(ctx, tx.Group.Query, *p.GroupIDs); err != nil {
 			return err
 		}
 	}
@@ -194,7 +194,7 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck
-	if err := checkGroupExist(ctx, tx.Group.Query(), ids); err != nil {
+	if err := checkGroupExist(ctx, tx.Group.Query, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -229,27 +229,40 @@ func errMissingID(err error, id int64) error {
 
 // checkTemplateExist 查询实际存在的 ids 与输入比对，拼出第一个缺失 id。
 // （ent v0.14 生成的查询无 Ints/Ints64，用等价的 IDs —— 内部即
-// q.Select(FieldID).Scan(&ids)。）
-func checkTemplateExist(ctx context.Context, q *ent.TemplateQuery, ids []int64) error {
-	existing, err := q.Where(template.IDIn(ids...)).IDs(ctx)
-	if err != nil {
-		return err
-	}
-	return diffMissing(existing, ids)
+// q.Select(FieldID).Scan(&ids)。）IN 按 inChunkSize 分片：ids 超 65,535 时
+// 单条 `WHERE id IN (...)` 超 PG 参数上限（service 层已限 ≤100，repo 层
+// 自保护不依赖调用方约束）。
+func checkTemplateExist(ctx context.Context, q func() *ent.TemplateQuery, ids []int64) error {
+	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
+		return q().Where(template.IDIn(chunk...)).IDs(ctx)
+	})
 }
 
-func checkAccountExist(ctx context.Context, q *ent.AccountQuery, ids []int64) error {
-	existing, err := q.Where(account.IDIn(ids...)).IDs(ctx)
-	if err != nil {
-		return err
-	}
-	return diffMissing(existing, ids)
+func checkAccountExist(ctx context.Context, q func() *ent.AccountQuery, ids []int64) error {
+	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
+		return q().Where(account.IDIn(chunk...)).IDs(ctx)
+	})
 }
 
-func checkGroupExist(ctx context.Context, q *ent.GroupQuery, ids []int64) error {
-	existing, err := q.Where(group.IDIn(ids...)).IDs(ctx)
-	if err != nil {
-		return err
+func checkGroupExist(ctx context.Context, q func() *ent.GroupQuery, ids []int64) error {
+	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
+		return q().Where(group.IDIn(chunk...)).IDs(ctx)
+	})
+}
+
+// checkIDsExist 通用存在性检查：按块逐块查询（每块新建查询——ent Where 原地
+// 追加谓词，复用同一查询会跨块累加 IN）后合并 existing，再 diffMissing。
+// 合并只做集合并集（diffMissing 不依赖顺序）；空 ids → 零块 → diffMissing
+// 空集直接返回 nil。错误带 (chunk i/n, N ids) 上下文（评审 I-2）。
+func checkIDsExist(ids []int64, each func(chunk []int64) ([]int64, error)) error {
+	chunks := chunkIDs(ids, inChunkSize)
+	var existing []int64
+	for i, chunk := range chunks {
+		got, err := each(chunk)
+		if err != nil {
+			return fmt.Errorf("exists check (chunk %d/%d, %d ids): %w", i+1, len(chunks), len(chunk), err)
+		}
+		existing = append(existing, got...)
 	}
 	return diffMissing(existing, ids)
 }

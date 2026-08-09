@@ -2,8 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 
+	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"go-proxy-mini/internal/domain"
@@ -12,7 +16,12 @@ import (
 )
 
 // KeyRepo 客户端 API key（独立表）持久化。
-type KeyRepo struct{ client *ent.Client }
+type KeyRepo struct {
+	client *ent.Client
+	// driver 为 raw SQL（AddQuotaUsed 单语句 CASE 批量更新）用：与 txDriver
+	// 组合保证 raw SQL 与 ent 构建器同事务连接（WithTx 同构，评审 I-1）。
+	driver dialect.Driver
+}
 
 func (r *KeyRepo) CreateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
 	row, err := r.client.Key.Create().
@@ -141,45 +150,82 @@ func (r *KeyRepo) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]strin
 
 // LoadKeys 构建 Auth 鉴权快照：key_hash → KeyMeta（含归属用户状态/并发/
 // 额度）。热路径数据源（reload 时一次查询；请求路径零 DB）。
+//
+// 崩溃修复：旧实现 `WithUser()` eager-load 的 m2o 邻接跳生成
+// `SELECT * FROM users WHERE id IN (全部 key 的归属用户 id)`——key 数
+// >65,535（用户数也随之超限）即超 PG 参数上限 65535。改为分片：先全表扫
+// key id（零参数），按 ≤inChunkSize 切块逐块 `Where(key.IDIn(块))` 加载
+// （单块 key ≤8192，其 m2o 邻接 IN ≤8192 个用户 id——每 key 恰一个归属
+// 用户，邻接恒被块大小约束）。
 func (r *KeyRepo) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, error) {
-	rows, err := r.client.Key.Query().WithUser().All(ctx)
+	keyIDs, err := r.client.Key.Query().Order(ent.Asc(key.FieldID)).IDs(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load keys (scan ids): %w", err)
 	}
-	out := make(map[string]domain.KeyMeta, len(rows))
-	for _, row := range rows {
-		meta := domain.KeyMeta{
-			KeyID:      row.ID,
-			UserID:     row.UserID,
-			GroupID:    row.GroupID,
-			KeyStatus:  domain.KeyStatus(row.Status),
-			KeyMaxConc: row.MaxConcurrency,
-			HasQuota:   row.Quota > 0,
-			Quota:      row.Quota,
-			QuotaUsed:  row.QuotaUsed,
+	out := make(map[string]domain.KeyMeta, len(keyIDs))
+	chunks := chunkIDs(keyIDs, inChunkSize)
+	for i, chunk := range chunks {
+		rows, err := r.client.Key.Query().
+			Where(key.IDIn(chunk...)).
+			WithUser().
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load keys (chunk %d/%d, %d ids): %w", i+1, len(chunks), len(chunk), err)
 		}
-		if row.Edges.User != nil {
-			meta.UserStatus = domain.UserStatus(row.Edges.User.Status)
-			meta.UserMaxConc = row.Edges.User.MaxConcurrency
+		for _, row := range rows {
+			meta := domain.KeyMeta{
+				KeyID:      row.ID,
+				UserID:     row.UserID,
+				GroupID:    row.GroupID,
+				KeyStatus:  domain.KeyStatus(row.Status),
+				KeyMaxConc: row.MaxConcurrency,
+				HasQuota:   row.Quota > 0,
+				Quota:      row.Quota,
+				QuotaUsed:  row.QuotaUsed,
+			}
+			if row.Edges.User != nil {
+				meta.UserStatus = domain.UserStatus(row.Edges.User.Status)
+				meta.UserMaxConc = row.Edges.User.MaxConcurrency
+			}
+			out[row.KeyHash] = meta
 		}
-		out[row.KeyHash] = meta
 	}
 	return out, nil
 }
 
 // AddQuotaUsed 批量回写 key 额度消耗（增量；Recorder 节奏，内存权威，
-// DB 滞后 ≤ flush 间隔）。key 已删（NotFound）跳过——回写无意义。
+// DB 滞后 ≤ flush 间隔）。单条 SQL CASE 批量更新替代逐 key UpdateOneID 轮询
+//（#15 验收：10k 逐 key 额度写回是统计面慢 flush 3-5min 周期根因之一）。
+// key 已删（不在 IN 列表）静默跳过——回写无意义（与旧逐 key
+// ent.IsNotFound 跳过语义一致）。调用方（usage.Recorder.flushStats）按
+// quotaBatchSize 分块并以块为失败回灌原子单位——本方法单语句全成或全败。
 func (r *KeyRepo) AddQuotaUsed(ctx context.Context, deltas map[int64]int64) error {
-	for keyID, d := range deltas {
-		if d == 0 {
-			continue
-		}
-		if _, err := r.client.Key.UpdateOneID(keyID).AddQuotaUsed(d).Save(ctx); err != nil {
-			if ent.IsNotFound(err) {
-				continue
-			}
-			return err
-		}
+	if len(deltas) == 0 {
+		return nil
 	}
-	return nil
+	var b strings.Builder
+	b.WriteString(`UPDATE "keys" SET "quota_used" = "quota_used" + CASE "id" `)
+	args := make([]any, 0, len(deltas)*2)
+	ids := make([]string, 0, len(deltas))
+	for id, d := range deltas {
+		if d == 0 {
+			continue // 零增量无回写价值
+		}
+		idx := len(args) + 1
+		b.WriteString("WHEN $")
+		b.WriteString(strconv.Itoa(idx))
+		b.WriteString(" THEN $")
+		b.WriteString(strconv.Itoa(idx + 1))
+		b.WriteByte(' ')
+		args = append(args, id, d)
+		ids = append(ids, strconv.FormatInt(id, 10))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	b.WriteString(`ELSE "quota_used" END, "updated_at" = now() WHERE "id" IN (`)
+	b.WriteString(strings.Join(ids, ", "))
+	b.WriteByte(')')
+	var res sql.Result
+	return r.driver.Exec(ctx, b.String(), args, &res)
 }

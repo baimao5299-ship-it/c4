@@ -88,6 +88,7 @@ func main() {
 		BatchSize:          cfg.Usage.BatchSize,
 		FlushInterval:      cfg.Usage.FlushInterval,
 		StatsFlushInterval: cfg.Usage.StatsFlushInterval,
+		Workers:            cfg.Usage.FlushWorkers,
 	}, repos.Logs, repos.Stats, log)
 	// retention worker：usagelog 按日分区保留（T4.5，替代已删的 Recorder
 	// janitorLoop——逐行 DELETE → DROP PARTITION O(1)）；保留天数同源

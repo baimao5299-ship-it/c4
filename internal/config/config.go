@@ -85,6 +85,7 @@ type UsageConfig struct {
 	FlushInterval      time.Duration `koanf:"flush_interval"`
 	LogRetentionDays   int           `koanf:"log_retention_days"`
 	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"`
+	FlushWorkers       int           `koanf:"flush_workers"` // flush 并行 worker 数（O1 管道化分片并行；明细/统计/额度共用）
 }
 
 // BillingConfig 计费（Phase 5 T3）：Enabled 默认关（评审 C-1 opt-in——启用前
@@ -105,7 +106,7 @@ func defaults() *Config {
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, Cooldown429: 30 * time.Second, BackoffBase: 5 * time.Second, BackoffMax: 5 * time.Minute, SyncInterval: 30 * time.Second},
-		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second},
+		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 4},
 		Billing:   BillingConfig{Enabled: false, FlushInterval: 1 * time.Second, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 4},
 	}
 }

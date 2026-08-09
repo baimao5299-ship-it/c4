@@ -84,7 +84,7 @@ func (r *RuleRepo) DeleteRulesBatch(ctx context.Context, ids []int64) error {
 		return err
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit 成功后 Rollback 返回 ErrTxDone，忽略
-	if err := checkRuleExist(ctx, tx.Rule.Query(), ids); err != nil {
+	if err := checkRuleExist(ctx, tx.Rule.Query, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -96,12 +96,11 @@ func (r *RuleRepo) DeleteRulesBatch(ctx context.Context, ids []int64) error {
 }
 
 // checkRuleExist 事务内存在性检查：ids 必须全部存在，否则 ErrNotFound（含第一个缺失 id）。
-func checkRuleExist(ctx context.Context, q *ent.RuleQuery, ids []int64) error {
-	existing, err := q.Where(rule.IDIn(ids...)).IDs(ctx)
-	if err != nil {
-		return err
-	}
-	return diffMissing(existing, ids)
+// IN 按 inChunkSize 分片（与 batch 三检查同构，repo 层不依赖 service 的 ≤100 约束）。
+func checkRuleExist(ctx context.Context, q func() *ent.RuleQuery, ids []int64) error {
+	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
+		return q().Where(rule.IDIn(chunk...)).IDs(ctx)
+	})
 }
 
 func (r *RuleRepo) CountRules(ctx context.Context) (int64, error) {

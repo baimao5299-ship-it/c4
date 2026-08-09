@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/ent"
+	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/group"
 )
 
@@ -17,7 +20,14 @@ import (
 type GroupRepo struct {
 	client   *ent.Client
 	accounts *AccountRepo
+	// driver 为成员关系全表扫描用（LoadGroupsAccounts；与 user_repo 同构——
+	// 普通 client 与 tx client 均可用）。
+	driver dialect.Driver
 }
+
+// accountGroupsMembershipSQL 全量成员关系（account_id, group_id）扫描。
+// 零 IN 参数——见 LoadGroupsAccounts 注释（ent m2m 跳查询的 IN 上限问题）。
+const accountGroupsMembershipSQL = `SELECT account_id, group_id FROM account_groups`
 
 func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	// price_multiplier 0 = 未指定 → 不设置该列（DB 默认 10000 = ×1）。0 是合法
@@ -100,20 +110,69 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 	return nil
 }
 
+// LoadGroupsAccounts 全量组→账号快照（调度器启动/定时/全量失效的数据源）。
+//
+// 崩溃修复（O3 实证：847k 组 → 启动 fatal / 运行中静默空结果）：ent
+// WithAccounts eager-load 对 m2m 边生成两跳参数化 IN——
+//  1. `SELECT account_id, group_id FROM account_groups WHERE group_id IN (全部组 id)`
+//  2. `SELECT * FROM accounts WHERE id IN (跳1的账号 id)`
+//
+// 跳1 参数数 = 组实体数，超过 PG 上限 65535（错误 54001 "too many parameters"）
+// 即崩溃；且 ent 邻接跳恒为参数化 IN（无法经分片控制），故本方法弃用 eager-load，
+// 改为**全表扫描 + 内存 join**（任务决策：语义允许时改 JOIN）：
+//  1. `Account.Query().WithTemplate().All`——账号全表扫描；模板 IN 参数数受
+//     模板表实体数约束（管理面小表，O3 压测仅 6 个），非账号规模驱动。
+//  2. `Group.Query().IDs`——组 id 全表扫描（零参数；为无账号组保留空条目——
+//     与旧 eager-load 语义一致，调度器 Select 区分"组不存在"与"组无账号"）。
+//  3. `SELECT account_id, group_id FROM account_groups`——成员关系全表扫描，
+//     零参数。
+//
+// 三条语句参数数都与实体数量无关，任何规模（组/账号 >65,535）都不会触顶。
+// 结果语义与旧 eager-load 一致：所有组都在 map 中（无账号组为空切片），
+// 账号只出现在其所属组且带模板。（唯一窗口差异：组 id 扫描后被并发删除的
+// 组不会出现在结果中——见下方白名单守卫；旧 eager-load 同窗口行为。）
 func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
-	groups, err := r.client.Group.Query().
-		WithAccounts(func(q *ent.AccountQuery) { q.WithTemplate() }).
-		All(ctx)
+	accs, err := r.client.Account.Query().WithTemplate().All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load groups-accounts (accounts scan): %w", err)
 	}
-	out := make(map[int64][]*domain.Account, len(groups))
-	for _, g := range groups {
-		var accs []*domain.Account
-		for _, a := range g.Edges.Accounts {
-			accs = append(accs, toDomainAccount(a))
+	byID := make(map[int64]*domain.Account, len(accs))
+	for _, a := range accs {
+		byID[a.ID] = toDomainAccount(a)
+	}
+	gids, err := r.client.Group.Query().IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load groups-accounts (groups scan): %w", err)
+	}
+	out := make(map[int64][]*domain.Account, len(gids))
+	for _, gid := range gids {
+		out[gid] = nil // 无账号组保留空条目（与旧 eager-load 同语义）
+	}
+	rows := &entsql.Rows{}
+	if err := r.driver.Query(ctx, accountGroupsMembershipSQL, []any{}, rows); err != nil {
+		return nil, fmt.Errorf("load groups-accounts (membership scan): %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var accountID, groupID int64
+		if err := rows.Scan(&accountID, &groupID); err != nil {
+			return nil, fmt.Errorf("load groups-accounts (membership scan): %w", err)
 		}
-		out[g.ID] = accs
+		a, ok := byID[accountID]
+		if !ok {
+			continue // 成员关系引用已删账号：忽略（与 eager-load 同语义）
+		}
+		if _, ok := out[groupID]; !ok {
+			// 白名单守卫：组 id 扫描后被并发删除的组不留幽灵条目——
+			// 否则 buildSnapshots 会把幽灵组建成真实组，且其账号的共享
+			// 实例可能以幽灵组为 gid（与 eager-load 同语义：邻接查询按
+			// 已取组 id 过滤，未知父组被 ent 丢弃）。
+			continue
+		}
+		out[groupID] = append(out[groupID], a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("load groups-accounts (membership scan): %w", err)
 	}
 	return out, nil
 }
@@ -133,14 +192,21 @@ func (r *GroupRepo) LoadGroupMultipliers(ctx context.Context) (map[int64]int, er
 	return out, nil
 }
 
+// LoadGroupAccounts 单组账号（组级定向重载数据源）。崩溃修复：旧实现
+// `QueryAccounts()` 的 m2m 邻接跳生成 `WHERE id IN (该组全部账号 id)`——
+// 单组账号数 >65,535 即超 PG 参数上限。改用 EXISTS 谓词
+// `HasGroupsWith(group.IDEQ(groupID))`：ent 生成
+// `WHERE accounts.id IN (SELECT ag.account_id FROM account_groups ag JOIN
+// groups g ON ag.group_id = g.id WHERE g.id = $1)`——外层 IN 是子查询
+// （非参数列表），语句参数数恒为 1（+ 模板 IN，受模板表实体数约束）。
+// 返回无序（调用方构建快照/路由，不依赖顺序）。
 func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*domain.Account, error) {
-	accs, err := r.client.Group.Query().
-		Where(group.IDEQ(groupID)).
-		QueryAccounts().
+	accs, err := r.client.Account.Query().
+		Where(account.HasGroupsWith(group.IDEQ(groupID))).
 		WithTemplate().
 		All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load group accounts (group %d): %w", groupID, err)
 	}
 	out := make([]*domain.Account, 0, len(accs))
 	for _, a := range accs {
