@@ -155,11 +155,24 @@ export default function Groups() {
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
   const [editVisibility, setEditVisibility] = useState<GroupVisibility>('public')
+  // 倍率用字符串态：空 = 不修改（PUT 省略键，后端保持原值）
+  const [editMultiplier, setEditMultiplier] = useState('')
   // —— 删除 ——
   const [deleting, setDeleting] = useState<Group | null>(null)
 
   const rename = useMutation({
-    mutationFn: () => api.updateGroup(editTarget!.ID!, { name: editName.trim(), visibility: editVisibility }),
+    mutationFn: () => {
+      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility }
+      const m = editMultiplier.trim()
+      if (m !== '') {
+        const v = Number(m)
+        if (!Number.isInteger(v) || v < 0 || v > 100000) {
+          throw new Error(t('groups.multiplierInvalid'))
+        }
+        body.price_multiplier = v // 显式 0 = 免费组；输入为空则省略键（后端保持原值）
+      }
+      return api.updateGroup(editTarget!.ID!, body)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setEditTarget(null)
@@ -255,7 +268,7 @@ export default function Groups() {
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public') }}><Pencil /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public'); setEditMultiplier(g.PriceMultiplier != null ? String(g.PriceMultiplier) : '') }}><Pencil /></Button>
                         <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
                       </div>
                     </TableCell>
@@ -288,7 +301,11 @@ export default function Groups() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="grp-visibility">{t('groups.visibilityLabel')}</Label>
-              <Select value={createVisibility} onValueChange={v => setCreateVisibility(v as GroupVisibility)}>
+              <Select
+                items={Object.fromEntries([['public', t('groups.visibilityPublic')], ['private', t('groups.visibilityPrivate')]])}
+                value={createVisibility}
+                onValueChange={v => setCreateVisibility(v as GroupVisibility)}
+              >
                 <SelectTrigger id="grp-visibility" className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
@@ -322,13 +339,31 @@ export default function Groups() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="grp-edit-visibility">{t('groups.visibilityLabel')}</Label>
-              <Select value={editVisibility} onValueChange={v => setEditVisibility(v as GroupVisibility)}>
+              <Select
+                items={Object.fromEntries([['public', t('groups.visibilityPublic')], ['private', t('groups.visibilityPrivate')]])}
+                value={editVisibility}
+                onValueChange={v => setEditVisibility(v as GroupVisibility)}
+              >
                 <SelectTrigger id="grp-edit-visibility" className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
                   <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-edit-multiplier">{t('groups.multiplierLabel')}</Label>
+              <Input
+                id="grp-edit-multiplier"
+                type="number"
+                min={0}
+                max={100000}
+                step={1}
+                value={editMultiplier}
+                onChange={e => setEditMultiplier(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && editName.trim() && !rename.isPending) rename.mutate() }}
+              />
+              <p className="text-xs text-muted-foreground">{t('groups.multiplierHint')}</p>
             </div>
             {rename.isError && errMsg(rename.error) && (
               <p className="text-sm text-destructive">{errMsg(rename.error)}</p>
