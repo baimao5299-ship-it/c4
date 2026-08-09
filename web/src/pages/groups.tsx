@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, FolderOpen, RefreshCw, Filter } from 'lucide-react'
+import { Plus, Pencil, Trash2, FolderOpen, Filter } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
@@ -15,15 +15,36 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { KeyBox } from '@/components/key-box'
-import { formatDateTime, truncate } from '@/components/fmt'
+import { Badge } from '@/components/ui/badge'
+import { toast } from '@/components/ui/toast'
+import { formatDateTime } from '@/components/fmt'
+import { cn } from '@/lib/utils'
+import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
 type Group = components['schemas']['Group']
+type GroupVisibility = components['schemas']['GroupVisibility']
 
 const LIMIT = 20
+
+// 价格倍率（万分数）→ 展示：0 = 免费；其余 ×N（10000 → ×1.0）。
+const formatMultiplier = (m: number | undefined, t: TFunction): string =>
+  (m ?? 0) === 0 ? t('groups.free') : `×${((m ?? 0) / 10000).toFixed(1)}`
+
+// 可见性徽章：public 绿点 / private 灰点（与 StatusBadge 同风格）。
+function VisibilityBadge({ visibility }: { visibility?: GroupVisibility }) {
+  const { t } = useTranslation()
+  const isPublic = visibility === 'public'
+  return (
+    <Badge variant="secondary" className={cn('gap-1.5', isPublic ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
+      <span className={cn('size-1.5 shrink-0 rounded-full', isPublic ? 'bg-emerald-500' : 'bg-muted-foreground/60')} />
+      {t(isPublic ? 'groups.visibilityPublic' : 'groups.visibilityPrivate')}
+    </Badge>
+  )
+}
 
 export default function Groups() {
   const { t } = useTranslation()
@@ -113,39 +134,35 @@ export default function Groups() {
     batchRename.mutate({ ids: selected, name: batchRenameValue.trim() })
   }
 
-  // —— 创建（form → 明文 key 展示）——
+  // —— 创建（表单：name + visibility；POST 不设倍率）——
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
-  const [createdKey, setCreatedKey] = useState<{ name: string; key: string } | null>(null)
-  // —— 编辑（重命名）——
+  const [createVisibility, setCreateVisibility] = useState<GroupVisibility>('public')
+  const openCreate = () => {
+    setCreateName('')
+    setCreateVisibility('public')
+    setCreateOpen(true)
+  }
+  const create = useMutation({
+    mutationFn: (n: string) => api.createGroup({ name: n, visibility: createVisibility }),
+    onSuccess: (_g, name) => {
+      qc.invalidateQueries({ queryKey: ['groups'] })
+      setCreateOpen(false)
+      toast.add({ title: t('groups.createdSuccess'), description: name, type: 'success' })
+    },
+  })
+  // —— 编辑（name + visibility；PUT 缺省字段保持原值，此处总是显式提交）——
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
-  // —— 轮换 key（确认 → 明文 key 展示）——
-  const [rotateTarget, setRotateTarget] = useState<Group | null>(null)
-  const [rotateResult, setRotateResult] = useState<{ name: string; key: string } | null>(null)
+  const [editVisibility, setEditVisibility] = useState<GroupVisibility>('public')
   // —— 删除 ——
   const [deleting, setDeleting] = useState<Group | null>(null)
 
-  const create = useMutation({
-    mutationFn: (n: string) => api.createGroup({ name: n }),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['groups'] })
-      setCreatedKey({ name: res.group.Name ?? '', key: res.key })
-    },
-  })
   const rename = useMutation({
-    mutationFn: () => api.updateGroup(editTarget!.ID!, { name: editName.trim() }),
+    mutationFn: () => api.updateGroup(editTarget!.ID!, { name: editName.trim(), visibility: editVisibility }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setEditTarget(null)
-    },
-  })
-  const rotate = useMutation({
-    mutationFn: (id: number) => api.rotateGroupKey(id),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['groups'] })
-      setRotateResult({ name: rotateTarget?.Name ?? '', key: res.key })
-      setRotateTarget(null)
     },
   })
   const remove = useMutation({
@@ -165,7 +182,7 @@ export default function Groups() {
           <h1 className="text-lg font-semibold">{t('groups.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('groups.subtitle')}</p>
         </div>
-        <Button onClick={() => { setCreateName(''); setCreatedKey(null); setCreateOpen(true) }}><Plus /> {t('groups.new')}</Button>
+        <Button onClick={openCreate}><Plus /> {t('groups.new')}</Button>
       </div>
 
       <ListToolbar
@@ -200,7 +217,7 @@ export default function Groups() {
             {hasFilters ? (
               <Button className="mt-2" variant="outline" onClick={clearFilters}><Filter /> {t('list.reset')}</Button>
             ) : (
-              <Button className="mt-2" onClick={() => { setCreateName(''); setCreatedKey(null); setCreateOpen(true) }}><Plus /> {t('groups.new')}</Button>
+              <Button className="mt-2" onClick={openCreate}><Plus /> {t('groups.new')}</Button>
             )}
           </Card>
         </motion.div>
@@ -219,8 +236,8 @@ export default function Groups() {
                   </TableHead>
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
-                  <TableHead>KeyPrefix</TableHead>
-                  <TableHead>KeyHash</TableHead>
+                  <TableHead>{t('groups.table.visibility')}</TableHead>
+                  <TableHead>{t('groups.table.priceMultiplier')}</TableHead>
                   <SortableHeader field="created_at" label={t('groups.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
                   <TableHead className="text-right">{t('groups.table.actions')}</TableHead>
                 </TableRow>
@@ -233,15 +250,12 @@ export default function Groups() {
                     </TableCell>
                     <TableCell className="tabular-nums">{g.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
-                    <TableCell className="font-mono text-xs">{g.KeyPrefix ?? '—'}</TableCell>
-                    <TableCell className="max-w-32 truncate font-mono text-xs text-muted-foreground" title={g.KeyHash}>
-                      {truncate(g.KeyHash, 24)}
-                    </TableCell>
+                    <TableCell><VisibilityBadge visibility={g.Visibility} /></TableCell>
+                    <TableCell className="tabular-nums">{formatMultiplier(g.PriceMultiplier, t)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? '') }}><Pencil /></Button>
-                        <Button variant="ghost" size="icon-sm" title={t('groups.rotate')} onClick={() => setRotateTarget(g)}><RefreshCw /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public') }}><Pencil /></Button>
                         <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
                       </div>
                     </TableCell>
@@ -254,57 +268,48 @@ export default function Groups() {
         </>
       )}
 
-      {/* —— 创建分组：表单 → 明文 key 展示 —— */}
-      <Dialog open={createOpen} onOpenChange={o => { setCreateOpen(o); if (!o) setCreatedKey(null) }}>
-        <DialogContent className="sm:max-w-md">
-          {createdKey ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>{t('groups.createdTitle')}</DialogTitle>
-                <DialogDescription>{t('groups.createdDesc')}</DialogDescription>
-              </DialogHeader>
-              <KeyBox
-                title={createdKey.name ? t('groups.accessKeyTitle', { name: createdKey.name }) : t('groups.accessKeyFallback')}
-                value={createdKey.key}
-                hint={t('groups.keyHint')}
+      {/* —— 创建分组：表单（name + visibility）；创建成功仅提示，不再返回 key 明文 —— */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('groups.newTitle')}</DialogTitle>
+            <DialogDescription>{t('groups.newDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-name">{t('groups.nameLabel')}</Label>
+              <Input
+                id="grp-name"
+                value={createName}
+                placeholder={t('groups.namePlaceholder')}
+                onChange={e => setCreateName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && !create.isPending) create.mutate(createName.trim()) }}
               />
-              <DialogFooter>
-                <Button onClick={() => { setCreateOpen(false); setCreatedKey(null) }}>{t('common.done')}</Button>
-              </DialogFooter>
-            </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle>{t('groups.newTitle')}</DialogTitle>
-                <DialogDescription>{t('groups.newDesc')}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="grp-name">{t('groups.nameLabel')}</Label>
-                  <Input
-                    id="grp-name"
-                    value={createName}
-                    placeholder={t('groups.namePlaceholder')}
-                    onChange={e => setCreateName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && !create.isPending) create.mutate(createName.trim()) }}
-                  />
-                </div>
-                {create.isError && errMsg(create.error) && (
-                  <p className="text-sm text-destructive">{errMsg(create.error)}</p>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={create.isPending}>{t('common.cancel')}</Button>
-                <Button onClick={() => create.mutate(createName.trim())} disabled={create.isPending || !createName.trim()}>
-                  {create.isPending ? t('common.creating') : t('common.create')}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-visibility">{t('groups.visibilityLabel')}</Label>
+              <Select value={createVisibility} onValueChange={v => setCreateVisibility(v as GroupVisibility)}>
+                <SelectTrigger id="grp-visibility" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
+                  <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {create.isError && errMsg(create.error) && (
+              <p className="text-sm text-destructive">{errMsg(create.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={create.isPending}>{t('common.cancel')}</Button>
+            <Button onClick={() => create.mutate(createName.trim())} disabled={create.isPending || !createName.trim()}>
+              {create.isPending ? t('common.creating') : t('common.create')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* —— 编辑（重命名） —— */}
+      {/* —— 编辑（name + visibility） —— */}
       <Dialog open={!!editTarget} onOpenChange={o => { if (!o && !rename.isPending) setEditTarget(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -315,6 +320,16 @@ export default function Groups() {
               <Label htmlFor="grp-edit-name">{t('groups.nameLabel')}</Label>
               <Input id="grp-edit-name" value={editName} onChange={e => setEditName(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-edit-visibility">{t('groups.visibilityLabel')}</Label>
+              <Select value={editVisibility} onValueChange={v => setEditVisibility(v as GroupVisibility)}>
+                <SelectTrigger id="grp-edit-visibility" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
+                  <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             {rename.isError && errMsg(rename.error) && (
               <p className="text-sm text-destructive">{errMsg(rename.error)}</p>
             )}
@@ -324,45 +339,6 @@ export default function Groups() {
             <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim()}>
               {rename.isPending ? t('common.saving') : t('common.save')}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* —— 轮换 key 确认 —— */}
-      <Dialog open={!!rotateTarget} onOpenChange={o => { if (!o && !rotate.isPending) setRotateTarget(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('groups.rotateTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('groups.rotateDesc', { name: rotateTarget?.Name })}
-            </DialogDescription>
-          </DialogHeader>
-          {rotate.isError && errMsg(rotate.error) && (
-            <p className="text-sm text-destructive">{errMsg(rotate.error)}</p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRotateTarget(null)} disabled={rotate.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => rotateTarget && rotate.mutate(rotateTarget.ID!)} disabled={rotate.isPending}>
-              {rotate.isPending ? t('groups.rotating') : t('groups.confirmRotate')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* —— 轮换结果：明文 key —— */}
-      <Dialog open={!!rotateResult} onOpenChange={o => { if (!o) setRotateResult(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('groups.rotatedTitle')}</DialogTitle>
-            <DialogDescription>{t('groups.rotatedDesc')}</DialogDescription>
-          </DialogHeader>
-          <KeyBox
-            title={rotateResult?.name ? t('groups.newKeyTitle', { name: rotateResult.name }) : t('groups.newKeyFallback')}
-            value={rotateResult?.key ?? ''}
-            hint={t('groups.oldKeyHint')}
-          />
-          <DialogFooter>
-            <Button onClick={() => setRotateResult(null)}>{t('common.done')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
