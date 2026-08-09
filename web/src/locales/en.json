@@ -298,6 +298,7 @@
     "search": "Search name",
     "prev": "Prev",
     "next": "Next",
+    "pageSize": "Per page",
     "pageInfo": "Page {{page}} / {{totalPages}} · {{total}} entries",
     "selected": "{{count}} selected",
     "batchDelete": "Batch delete",
