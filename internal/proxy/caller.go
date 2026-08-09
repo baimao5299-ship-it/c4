@@ -2,18 +2,30 @@ package proxy
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
 
 	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/pkg/logx"
 )
+
+// newReqID 生成 32 位 hex 请求 ID（仅日志关联键，DB 无格式约束；math/rand/v2
+// 免 crypto/rand syscall——非安全用途，GC 削减 P6）。
+func newReqID() string {
+	var b [16]byte
+	binary.LittleEndian.PutUint64(b[0:8], rand.Uint64())
+	binary.LittleEndian.PutUint64(b[8:16], rand.Uint64())
+	return hex.EncodeToString(b[:])
+}
 
 // UpstreamCaller 一格式一实现：完成单次上游调用（含流式写出、客户端断开判定
 // 与 usage 记录）。记录职责全在 caller（finish/buildLog/recordStreamAbort/
@@ -50,22 +62,26 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	p.inflight.Add(1) // 优雅停机等在途归零（main waitForInflight 轮询 Inflight()）
 	defer p.inflight.Add(-1)
 	start := time.Now()
-	reqID := uuid.NewString()
+	reqID := newReqID()
 	meta, ok := p.auth.Authenticate(r)
 	if !ok {
 		writeErr(w, errInvalidKey)
-		p.record(r.Context(), reqID, 0, 0, "", "", format, 401, domain.ErrAuth, 0, nil, start)
+		p.record(r.Context(), reqID, 0, 0, "", "", format, 401, domain.ErrAuth, 0, usageTuple{}, start)
 		return
 	}
 	groupID := meta.GroupID
-	// 鉴权元数据入 context（user_id/key_id 日志归属；不改变 Call/buildLog 签名）
-	r = r.WithContext(context.WithValue(r.Context(), ctxKeyMeta{}, meta))
+	// 请求元数据入 context（user_id/key_id 日志归属；不改变 Call/buildLog 签名）。
+	// 单键单值 + 指针原地补 tier（GC 削减 P6：计费路径免第二次 WithValue+
+	// WithContext；rm 指针只在请求 goroutine 内被读取/改写，logWithCtx 全程同
+	// goroutine 同步访问——无跨 goroutine 竞态）。
+	rm := &reqMeta{meta: meta}
+	r = r.WithContext(context.WithValue(r.Context(), ctxKeyReqMeta{}, rm))
 
 	// quota 检查在并发 acquire 之前（评审提醒①：纯读失败无计数副作用；
 	// 未设置额度 key 短路零成本）
 	if p.auth.QuotaExhausted(meta) {
 		writeErr(w, errQuotaExhausted)
-		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, nil, start)
+		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
 		return
 	}
 	// 余额预检（Phase 5 计费；评审 I-1 无槽位问题）：快照读零 DB（滞后 ≤
@@ -79,7 +95,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
 		if (!ok || bal <= 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
 			writeErr(w, errInsufficientBalance)
-			p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, nil, start)
+			p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
 			return
 		}
 	}
@@ -88,7 +104,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	acquired, ok := p.auth.Acquire(meta)
 	if !ok {
 		writeErr(w, errConcurrency)
-		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, nil, start)
+		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
 		return
 	}
 	defer p.auth.Release(meta, acquired)
@@ -104,27 +120,41 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	}
 	// SDK v1.x 参数里没有 Stream 字段（流式由 NewStreaming 在请求选项层注入
 	// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
-	// model 一并在此提取（评审 I-2：不解析完整 params）：string 类型字段让
-	// 非字符串 model 在解码时报错 → 400；显式 null 与缺失等同（encoding/json
-	// 的 null → 零值语义）。service_tier（Phase 5 计费）同一次 unmarshal 提取，
-	// 零额外分配。与 gjson 顶层提取语义等价，但零额外分配（热路径
-	// alloc/op 硬标准：与现状 peek 单次 unmarshal 相同）。
-	var peek struct {
-		Stream      bool   `json:"stream"`
-		Model       string `json:"model"`
-		ServiceTier string `json:"service_tier"`
-	}
-	if err := json.Unmarshal(body, &peek); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+	// model 一并在此提取（评审 I-2：不解析完整 params）；service_tier（Phase 5
+	// 计费）同次提取。GC 削减 P3：json.Valid 单遍校验（零分配）保留 400 语义 +
+	// gjson 顶层提取（Type 校验等价原 Unmarshal 的类型拒绝：stream 非 bool、
+	// model/service_tier 非 string → 400；显式 null 与缺失等同零值语义，与
+	// encoding/json 一致）。400 响应消息文案随校验方式变化（无测试断言原文；
+	// 错误码/无记录/Select 前无并发槽语义逐字不变）。
+	if !json.Valid(body) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: invalid JSON"}})
 		return
 	}
-	reqModel := peek.Model
+	streamVal := gjson.GetBytes(body, "stream")
+	if streamVal.Type != gjson.True && streamVal.Type != gjson.False && streamVal.Type != gjson.Null {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: stream must be a boolean"}})
+		return
+	}
+	modelVal := gjson.GetBytes(body, "model")
+	if modelVal.Type != gjson.String && modelVal.Type != gjson.Null {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: model must be a string"}})
+		return
+	}
+	tierVal := gjson.GetBytes(body, "service_tier")
+	if tierVal.Type != gjson.String && tierVal.Type != gjson.Null {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: service_tier must be a string"}})
+		return
+	}
+	reqModel := modelVal.String()
+	stream := streamVal.Type == gjson.True
 	// service_tier 归一化 + 转发策略（计费启用才处理；auto/空/未知恒透传）：
 	// strip → 转发体删该字段；reject → 直接 400（记 ErrBilling，不转发）。
-	// 归一化 tier 先入 ctx（ctxKeyTier），剥离/拒绝路径计费读取照常。
+	// 归一化 tier 补入已入 ctx 的 reqMeta（GC 削减 P6：免第二次 WithValue+
+	// WithContext；非计费路径 hasTier=false → BillingTier 恒空）。
 	if p.bill != nil {
-		tier := billing.NormalizeTier(peek.ServiceTier)
-		r = r.WithContext(context.WithValue(r.Context(), ctxKeyTier{}, tier))
+		tier := billing.NormalizeTier(tierVal.String())
+		rm.tier = tier
+		rm.hasTier = true
 		if (tier == billing.TierPriority || tier == billing.TierFlex || tier == billing.TierFast) && p.bill.TierPolicy != nil {
 			switch p.bill.TierPolicy(tier) {
 			case billing.TierPolicyStrip:
@@ -134,7 +164,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 				}
 			case billing.TierPolicyReject:
 				writeErr(w, errServiceTierRejected)
-				p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, nil, start)
+				p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start)
 				return
 			}
 		}
@@ -143,7 +173,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	sel, err := p.sched.Select(groupID, format, reqModel)
 	if err != nil {
 		p.handleSelectError(w, err)
-		p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, nil, start)
+		p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
 		return
 	}
 
@@ -162,7 +192,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		if p.bill != nil && p.bill.Prices != nil {
 			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
 				p.sched.Release(sel.AccountID)
-				p.record(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, nil, start)
+				p.record(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
 				writeErr(w, errNoPrice)
 				return
 			}
@@ -183,7 +213,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			// err 保留（部署故障修复：错误文本落盘）：code 承载分类（0=连接级/
 			// 凭据错、4xx、429、5xx），callErr 提供 err.Error() 文本——仅错误
 			// 分支消费（成功路径零新增分配）。
-			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, peek.Stream)
+			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, stream)
 		}
 		if handled {
 			return // caller 已处理完毕（成功/客户端断开/流中止已记录；本地拒绝已写出无记录）
@@ -203,7 +233,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			// 流式路径的流中止/首字节后断连由 caller 内部分类（handled=true），
 			// 到不了这里——本分支只覆盖 SDK 请求阶段（首字节前）的断连。
 			if code == 0 && r.Context().Err() != nil {
-				l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, statusClientClosedRequest, domain.ErrAbort, nil, start))
+				l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, statusClientClosedRequest, domain.ErrAbort, usageTuple{}, start))
 				msg := "client closed request before upstream response"
 				l.ErrorMessage = &msg
 				p.finish(sel.AccountID, l)
@@ -232,7 +262,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			// body 不可得（连接级错误不会有 4xx 码）才回退网关文案。
 			// 错误文本：上游 body 原文截断 500 落 ErrorMessage（仅错误分支构造，
 			// 成功路径 ErrorMessage 恒空、零分配）。
-			l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, nil, start))
+			l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, usageTuple{}, start))
 			if em := domain.TruncateErrMsg(string(respBody)); em != "" {
 				l.ErrorMessage = &em
 			}
@@ -270,7 +300,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	case lastCode == 0:
 		et = domain.ErrNetwork
 	}
-	l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, nil, start))
+	l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, usageTuple{}, start))
 	if lastErrMsg != "" {
 		l.ErrorMessage = &lastErrMsg
 	}

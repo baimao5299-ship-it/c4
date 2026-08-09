@@ -20,7 +20,6 @@ type anthropicCaller struct{ p *Proxy }
 
 func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
-	tpl := tplOf(sel)
 
 	if stream {
 		// 客户端请求模型：流式无完整 params 解析（评审 I-2），gjson 顶层
@@ -30,11 +29,12 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		defer cancel()
 		// 模型改写：与 SDK 路径 params.Model = sel.Model 等价（ModelMapping 语义）。
 		// 客户端请求体已带 stream:true（fake 上游按 body["stream"] 分支），无需注入。
+		// GC 削减 P1：model 已匹配 → 短路返回原切片零分配。
 		streamBody, err := setModel(body, sel.Model)
 		if err != nil {
 			return 0, nil, false, err
 		}
-		resp, err := p.clients.AnthMessageStreamRaw(ctx, tpl, cred, streamBody)
+		resp, err := p.clients.AnthMessageStreamRaw(ctx, sel.TemplateID, sel.BaseURL, cred, streamBody)
 		if err != nil {
 			return statusOf(err), upstreamBody(err), false, err
 		}
@@ -70,16 +70,16 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			if r.Context().Err() != nil {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, &usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, &usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		tt = it + ot
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -94,6 +94,7 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
 	reqModel := params.Model
 	params.Model = sel.Model // Model = string 别名
+	tpl := tplOf(sel)        // 非流式 SDK 路径（GC 削减 P6：流式原始请求路径已免模板对象分配）
 	resp, err := p.clients.AnthMessage(ctx, tpl, cred, params)
 	if err != nil {
 		return statusOf(err), upstreamBody(err), false, err
@@ -111,6 +112,6 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		it, ot, tt, cr, cc = anthropicUsageFromResponse(resp.Usage)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, &usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }

@@ -10,7 +10,6 @@ package usage
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,7 +61,7 @@ type Recorder struct {
 	workers   int
 	mu        sync.Mutex // 保护 pending/counters/quotaUsed（Record 聚合与 flush 换批/回灌并发）
 	pending   []*domain.UsageLog
-	counters  map[string]*statCounters
+	counters  map[statBucketKey]*statCounters
 	quotaUsed map[int64]int64 // key_id → 待回写 token 增量
 	pendingN  atomic.Int64    // pending 明细条数（水线观测 + Close Warn 单位；换批/回灌同步增减）
 	warned    atomic.Bool     // 水线越过告警边沿（回落复位，避免重复刷屏）
@@ -81,6 +80,19 @@ type statCounters struct {
 	bucket domain.StatBucket
 }
 
+// statBucketKey 统计桶唯一键（可比较 struct，GC 削减 P4：替代 fmt.Sprintf 键
+// ——聚合/回灌零分配，且缩短 Recorder/Flusher 的 mu 临界区；与聚合/回灌同一
+// 类型保证合并到原桶）。
+type statBucketKey struct {
+	hourUnix   int64
+	groupID    int64
+	accountID  int64
+	templateID int64
+	userID     int64
+	model      string
+	isErr      bool
+}
+
 func New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger) *Recorder {
 	workers := cfg.Workers
 	if workers <= 0 {
@@ -95,7 +107,7 @@ func New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger
 		stats:     stats,
 		log:       log,
 		workers:   workers,
-		counters:  make(map[string]*statCounters),
+		counters:  make(map[statBucketKey]*statCounters),
 		quotaUsed: make(map[int64]int64),
 		loopDone:  make(chan struct{}),
 	}
@@ -187,22 +199,60 @@ func (r *Recorder) aggregate(l *domain.UsageLog) {
 	c.bucket.TotalLatencyMS += l.LatencyMS
 }
 
-// statBucketKey 统计桶的唯一键（与 aggregate/refill 同一格式，保证回灌合并到
-// 原桶）。
-func statBucketKey(b *domain.StatBucket) string {
+// bucketKeyOf 从统计桶构造唯一键（与 aggregate/refill 同一类型，保证回灌合并
+// 到原桶）。
+func bucketKeyOf(b *domain.StatBucket) statBucketKey {
 	return statBucketKeyOf(b.BucketTime.Unix(), b.GroupID, b.AccountID, b.TemplateID, b.UserID, b.Model, b.IsError)
 }
 
-func statBucketKeyOf(hourUnix, groupID, accountID, templateID, userID int64, model string, isErr bool) string {
-	return fmt.Sprintf("%d|%d|%d|%d|%d|%s|%v", hourUnix, groupID, accountID, templateID, userID, model, isErr)
+func statBucketKeyOf(hourUnix, groupID, accountID, templateID, userID int64, model string, isErr bool) statBucketKey {
+	return statBucketKey{
+		hourUnix: hourUnix, groupID: groupID, accountID: accountID,
+		templateID: templateID, userID: userID, model: model, isErr: isErr,
+	}
 }
 
 // shardFor 分片索引：同 key 恒同 worker（FNV-1a 哈希取模；确定性，测试断言
-// swap/分片一致性用）。
-func shardFor(key string, workers int) int {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return int(h.Sum32() % uint32(workers))
+// swap/分片一致性用）。零分配（内联 FNV-1a；flush 期调用，性能非关键）。
+func shardFor(key statBucketKey, workers int) int {
+	const (
+		offset32 = uint32(2166136261)
+		prime32  = uint32(16777619)
+	)
+	h := offset32
+	var b [8]byte
+	step := func(v int64) {
+		putUint64LE(b[:], uint64(v))
+		for _, c := range b {
+			h ^= uint32(c)
+			h *= prime32
+		}
+	}
+	step(key.hourUnix)
+	step(key.groupID)
+	step(key.accountID)
+	step(key.templateID)
+	step(key.userID)
+	for i := 0; i < len(key.model); i++ {
+		h ^= uint32(key.model[i])
+		h *= prime32
+	}
+	if key.isErr {
+		h ^= 1
+		h *= prime32
+	}
+	return int(h % uint32(workers))
+}
+
+func putUint64LE(b []byte, v uint64) {
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v >> 16)
+	b[3] = byte(v >> 24)
+	b[4] = byte(v >> 32)
+	b[5] = byte(v >> 40)
+	b[6] = byte(v >> 48)
+	b[7] = byte(v >> 56)
 }
 
 func (r *Recorder) logWriterLoop(ctx context.Context) {
@@ -340,7 +390,7 @@ func (r *Recorder) flushStats(ctx context.Context) {
 		b := c.bucket
 		buckets = append(buckets, &b)
 	}
-	r.counters = make(map[string]*statCounters)
+	r.counters = make(map[statBucketKey]*statCounters)
 	quota := r.quotaUsed
 	r.quotaUsed = make(map[int64]int64)
 	qw := r.quota
@@ -400,7 +450,7 @@ func (r *Recorder) flushStats(ctx context.Context) {
 		shards[i] = make([]*domain.StatBucket, 0, len(buckets)/r.workers+1)
 	}
 	for _, b := range buckets {
-		k := statBucketKey(b)
+		k := bucketKeyOf(b)
 		shards[shardFor(k, r.workers)] = append(shards[shardFor(k, r.workers)], b)
 	}
 
@@ -444,7 +494,7 @@ func (r *Recorder) refillBuckets(buckets []*domain.StatBucket) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, b := range buckets {
-		key := statBucketKey(b)
+		key := bucketKeyOf(b)
 		if c, ok := r.counters[key]; ok {
 			c.bucket.RequestCount += b.RequestCount
 			c.bucket.ErrorCount += b.ErrorCount

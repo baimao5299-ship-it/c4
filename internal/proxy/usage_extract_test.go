@@ -124,12 +124,12 @@ func TestResponsesUsageFromResponse(t *testing.T) {
 
 func TestBuildLogWiresCacheTokens(t *testing.T) {
 	l := (&Proxy{}).buildLog("req1", 1, 2, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone,
-		&usageTuple{it: 10, ot: 20, tt: 30, cr: 4, cc: 6}, time.Now())
+		usageTuple{it: 10, ot: 20, tt: 30, cr: 4, cc: 6}, time.Now())
 	require.Equal(t, int64(4), l.CacheReadTokens)
 	require.Equal(t, int64(6), l.CacheCreationTokens)
 
-	nilU := (&Proxy{}).buildLog("req2", 1, 2, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
-	require.Zero(t, nilU.CacheReadTokens, "nil 元组 → 0（不 panic）")
+	nilU := (&Proxy{}).buildLog("req2", 1, 2, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{}, time.Now())
+	require.Zero(t, nilU.CacheReadTokens, "零值元组 → 0（不 panic）")
 	require.Zero(t, nilU.CacheCreationTokens)
 }
 
@@ -145,11 +145,11 @@ func TestMappedFor(t *testing.T) {
 // —— buildLog 模型语义（评审 I-1）：Model=客户端请求模型、MappedModel=映射后模型 ——
 
 func TestBuildLogModelSemantics(t *testing.T) {
-	mapped := (&Proxy{}).buildLog("r1", 1, 2, "gpt-4o", "gpt-4o-upstream", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
+	mapped := (&Proxy{}).buildLog("r1", 1, 2, "gpt-4o", "gpt-4o-upstream", domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{}, time.Now())
 	require.Equal(t, "gpt-4o", mapped.Model, "Model = 客户端请求模型")
 	require.Equal(t, "gpt-4o-upstream", mapped.MappedModel, "MappedModel = 映射后实际模型")
 
-	plain := (&Proxy{}).buildLog("r2", 1, 2, "gpt-4o", "gpt-4o", domain.FormatOpenAIChat, 200, domain.ErrNone, nil, time.Now())
+	plain := (&Proxy{}).buildLog("r2", 1, 2, "gpt-4o", "gpt-4o", domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{}, time.Now())
 	require.Equal(t, "gpt-4o", plain.Model)
 	require.Equal(t, "", plain.MappedModel, "无映射 → MappedModel 空")
 }
