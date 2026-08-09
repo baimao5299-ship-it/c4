@@ -8,8 +8,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 // 每页条数选项（数字字面量，无需翻译键）。
 const PAGE_SIZES = [10, 20, 50, 100, 1000]
 
-// 列表页分页条：offset/limit 受控，上一页/下一页 + 页码信息 + 每页条数下拉 + 页码跳转。
-// 独立于表格卡片的分页层：左侧页码信息 + 每页条数下拉 + 「跳至第 N 页」（sm 及以上可见），右侧 outline 分页按钮（带方向图标与 disabled 态）。
+// 列表页分页条：offset/limit 受控，上一页/下一页 + 页码按钮组 + 页码信息 + 每页条数下拉 + 页码跳转。
+// 独立于表格卡片的分页层：左侧页码信息 + 每页条数下拉 + 「跳至第 N 页」（sm 及以上可见），
+// 右侧页码按钮组（md 及以上可见）+ outline 翻页按钮（带方向图标与 disabled 态）。
+
+// 页码按钮组计算（标准滑动窗口）：totalPages ≤ 7 全显；否则首尾页 + 当前页前后各 2 页，
+// 缺口以 'ellipsis' 占位（渲染为「…」）。current 靠近首尾时窗口自然收敛。
+function pageNumbers(current: number, totalPages: number): (number | 'ellipsis')[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
+  const pages = new Set<number>([1, totalPages])
+  for (let p = current - 2; p <= current + 2; p++) {
+    if (p >= 1 && p <= totalPages) pages.add(p)
+  }
+  const out: (number | 'ellipsis')[] = []
+  let prev = 0
+  for (const p of [...pages].sort((a, b) => a - b)) {
+    if (p - prev > 1) out.push('ellipsis')
+    out.push(p)
+    prev = p
+  }
+  return out
+}
+
 export function Pagination({
   total,
   limit,
@@ -84,6 +104,31 @@ export function Pagination({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <div className="hidden items-center gap-1 md:flex">
+          {pageNumbers(page, totalPages).map((p, i) =>
+            p === 'ellipsis' ? (
+              <span
+                key={`ellipsis-${i}`}
+                aria-hidden="true"
+                className="px-0.5 text-xs text-muted-foreground"
+              >
+                …
+              </span>
+            ) : (
+              <Button
+                key={p}
+                variant={p === page ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 min-w-7 px-2 text-xs tabular-nums"
+                aria-current={p === page ? 'page' : undefined}
+                aria-label={`${t('list.jumpTo')} ${p}${t('list.jumpPage')}`}
+                onClick={() => onOffsetChange((p - 1) * limit)}
+              >
+                {p}
+              </Button>
+            )
+          )}
+        </div>
         <Button
           variant="outline"
           size="sm"
