@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion } from 'framer-motion'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
@@ -59,14 +60,22 @@ function SettingRow({ setting }: { setting: Setting }) {
     onSuccess: all => {
       // PUT 返回更新后的全部设置 → 直接回写查询缓存（免二次 GET）。
       qc.setQueryData(['settings'], all)
-      setDraft(toInput(all.find(s => s.Key === key)?.Value ?? current))
-      setDirty(false)
+      // 竞态：请求在途期间用户可能已继续输入（dirty=true）——此时回写服务端值会
+      // 静默覆盖新草稿。仅未继续编辑时回写；已继续编辑则保留草稿、保持 dirty，
+      // 由下次失焦/回车提交（在途重复提交由 doSave 的 isPending 短路拦截）。
+      if (!dirty) {
+        setDraft(toInput(all.find(s => s.Key === key)?.Value ?? current))
+        setDirty(false)
+      }
       setErr(null)
       toast.add({ title: t('settings.saved'), type: 'success' })
     },
     onError: (e: Error) => {
-      setDraft(toInput(current)) // 回滚到服务端值
-      setDirty(false)
+      // 与 onSuccess 同规则：在途期间已继续编辑则保留草稿，否则回滚到服务端值。
+      if (!dirty) {
+        setDraft(toInput(current)) // 回滚到服务端值
+        setDirty(false)
+      }
       const m = errMsg(e)
       if (m) setErr(m) // 服务端校验错误就地展示
     },
@@ -82,7 +91,8 @@ function SettingRow({ setting }: { setting: Setting }) {
     if (!isPlainInt(draft)) { setErr(t('settings.invalidNumber')); return null }
     return draft
   }
-  const doSave = (v: string | null) => { if (v != null && v !== current) save.mutate(v) }
+  // isPending 短路：Enter 保存后在途 blur 会再触发一次同值 PUT（Minor-2），忽略之。
+  const doSave = (v: string | null) => { if (v != null && !save.isPending && v !== current) save.mutate(v) }
 
   const onEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return
@@ -98,6 +108,7 @@ function SettingRow({ setting }: { setting: Setting }) {
         checked={draft === 'true'}
         disabled={save.isPending}
         onCheckedChange={c => { setDraft(String(c)); doSave(String(c)) }}
+        aria-label={t(`settings.labels.${key}`)}
       />
     ) : isTier ? (
       <Select
@@ -110,7 +121,7 @@ function SettingRow({ setting }: { setting: Setting }) {
         onValueChange={v => { setDraft(v); doSave(v) }}
         disabled={save.isPending}
       >
-        <SelectTrigger className="w-44" aria-label={t(`settings.labels.${key}`)}>
+        <SelectTrigger className="w-44 bg-background" aria-label={t(`settings.labels.${key}`)}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -124,7 +135,7 @@ function SettingRow({ setting }: { setting: Setting }) {
         type="number"
         min={0}
         step={isUsd ? 0.00001 : 1}
-        className="w-48 text-right tabular-nums"
+        className="w-48 bg-background text-right tabular-nums"
         value={draft}
         onChange={e => { setDraft(e.target.value); setDirty(true); setErr(null) }}
         onBlur={() => { if (dirty) doSave(submitValue()) }}
@@ -133,7 +144,7 @@ function SettingRow({ setting }: { setting: Setting }) {
     ) : (
       <Input
         type="text"
-        className="w-96 max-w-full"
+        className="w-96 max-w-full bg-background"
         value={draft}
         onChange={e => { setDraft(e.target.value); setDirty(true); setErr(null) }}
         onKeyDown={onEnter}
@@ -172,7 +183,13 @@ export default function SettingsPage() {
   const byKey = new Map((data ?? []).map(s => [s.Key ?? '', s]))
 
   return (
-    <div className="space-y-4">
+    // 页面级进入动画（与 users/pricing 等页一致，一次挂载仅播放一次）。
+    <motion.div
+      className="space-y-4"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
       <div>
         <h1 className="text-lg font-semibold">{t('settings.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('settings.subtitle')}</p>
@@ -181,7 +198,7 @@ export default function SettingsPage() {
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
         <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12" />)}
         </div>
       ) : data?.length === 0 ? (
         <Card className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
@@ -206,6 +223,6 @@ export default function SettingsPage() {
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

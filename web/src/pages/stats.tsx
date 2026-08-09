@@ -109,12 +109,16 @@ export default function Stats() {
 
       {/* 控制：时间范围 + 粒度 + 指标 */}
       <Card className="p-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="w-[14rem] space-y-1.5">
+        {/* 控制：时间范围 + 粒度 + 指标。
+            flex-nowrap + 子项 shrink-0 + overflow-x-auto：打开日历弹层超出视口 →
+            main 滚动条出现 → 可用宽度变窄时，不用 flex-wrap 换行下沉，改为窄窗口
+            横向滚动（用户反馈 2）。日期区 w-[14rem] 保持。 */}
+        <div className="flex flex-nowrap items-end gap-4 overflow-x-auto">
+          <div className="w-[14rem] shrink-0 space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={range} onChange={setRange} />
           </div>
-          <div className="space-y-1.5">
+          <div className="shrink-0 space-y-1.5">
             <Label>{t('stats.granularity')}</Label>
             <Tabs value={granularity} onValueChange={v => v && setGranularity(v as Granularity)}>
               <TabsList>
@@ -123,7 +127,7 @@ export default function Stats() {
               </TabsList>
             </Tabs>
           </div>
-          <div className="space-y-1.5">
+          <div className="shrink-0 space-y-1.5">
             <Label>{t('stats.metric')}</Label>
             <Tabs value={metric} onValueChange={v => v && setMetric(v as Metric)}>
               <TabsList>
