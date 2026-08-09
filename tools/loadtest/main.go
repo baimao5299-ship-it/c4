@@ -312,6 +312,13 @@ func doRequest(client *http.Client, m *metrics, rng *rand.Rand, count bool) {
 			m.total.Add(1)
 			m.addErr(fmt.Sprintf("status:%d", resp.StatusCode))
 		}
+		// 排空非 200 响应体再 Close：不读完 body 就 Close 会让传输层判定
+		// body 不完整、keep-alive 连接不可回池 → 429 风暴下每响应重拨
+		// （压测实测：客户端 syscall 87.4% 打满 14 核 + 本地端口耗尽
+		// cannot assign requested address，规则引擎冷却后 429 自放大级联）。
+		// 同 fill 路径惯例（doFillRequest 无条件 io.Copy(io.Discard) 后再
+		// Close）；排空失败读错误忽略，非 200 已计错误明细，不影响分类。
+		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 		return
 	}
@@ -530,7 +537,7 @@ func doFillRequest(client *http.Client, m *metrics, rng *rand.Rand, count bool) 
 		time.Sleep(time.Duration(100+rng.IntN(200)) * time.Millisecond)
 		return
 	}
-	_, _ = io.Copy(io.Discard, resp.Body) // 响应体排空，连接回池复用
+	_, _ = io.Copy(io.Discard, resp.Body) // 响应体排空，连接回池复用（O3 复核：此路径与 keys 登录子请求均已排空，唯一缺口在 doRequest 非 200 分支，已修）
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		if count {
