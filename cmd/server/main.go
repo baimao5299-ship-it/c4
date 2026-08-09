@@ -132,10 +132,16 @@ func main() {
 	var billFlusher *billing.Flusher
 	var billHooks *proxy.BillingHooks
 	var billBalances *billing.Balances
+	// invBalances 接口声明而非具体类型：billing 关闭时保持 nil 接口（非 typed
+	// nil）。若用 *billing.Balances 声明，关闭时接口 = (*Balances)(nil)，类型部分
+	// 非 nil → invalidate.reloadAll 的 `!= nil` 检查判 TRUE → Reload 调用 nil
+	// receiver panic（2026-08-10 管理端建用户实证：Debouncer.loop panic）。
+	var invBalances invalidate.BalancesReloader
 	if cfg.Billing.Enabled {
 		// loader = Repository 门面（BalanceLoader：余额 → Users，组倍率 +
 		// assignment 专属倍率 → Groups，T3.5 修正按组）。
 		billBalances = billing.NewBalances(repos, log)
+		invBalances = billBalances
 		_ = billBalances.Reload(context.Background()) // 启动同步，fail-safe（失败保留空快照 → 预检全 402 拒绝，安全侧）
 	}
 	inv := invalidate.New(invalidate.Config{
@@ -143,7 +149,7 @@ func main() {
 		Sched:    sched,
 		Clients:  clients,
 		Auth:     auth,
-		Balances: billBalances, // billing.enabled=false → nil（flush 跳过余额路径）
+		Balances: invBalances, // billing.enabled=false → nil 接口（flush 跳过余额路径）
 		Log:      log,
 	})
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
