@@ -317,7 +317,7 @@ export default function Users() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{t('users.roleLabel')}</Label>
-                <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v as UserRole }))}>
+                <Select value={form.role} items={Object.fromEntries(ROLES.map(r => [r, t(`users.role.${r}`)]))} onValueChange={v => setForm(f => ({ ...f, role: v as UserRole }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {ROLES.map(r => <SelectItem key={r} value={r} label={t(`users.role.${r}`)}>{t(`users.role.${r}`)}</SelectItem>)}
@@ -326,7 +326,7 @@ export default function Users() {
               </div>
               <div className="space-y-1.5">
                 <Label>{t('users.statusLabel')}</Label>
-                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as UserStatus }))}>
+                <Select value={form.status} items={Object.fromEntries(STATUSES.map(s => [s, t(`status.${s}`)]))} onValueChange={v => setForm(f => ({ ...f, status: v as UserStatus }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {STATUSES.map(s => <SelectItem key={s} value={s} label={t(`status.${s}`)}>{t(`status.${s}`)}</SelectItem>)}
