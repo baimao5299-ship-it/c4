@@ -73,6 +73,7 @@ const RESP_TO_KEY: { r: keyof Pricing; k: OptKey }[] = [
   { r: 'FlexCacheReadPricePerMillion', k: 'flex_cache_read_price_per_million' },
   { r: 'FlexCacheCreationPricePerMillion', k: 'flex_cache_creation_price_per_million' },
   { r: 'AboveThreshold', k: 'above_threshold' },
+  { r: 'FastMultiplier', k: 'fast_multiplier' },
   { r: 'AbovePromptPricePerMillion', k: 'above_prompt_price_per_million' },
   { r: 'AboveCompletionPricePerMillion', k: 'above_completion_price_per_million' },
   { r: 'AboveCacheReadPricePerMillion', k: 'above_cache_read_price_per_million' },
@@ -159,8 +160,6 @@ function toForm(p: Pricing): PriceForm {
   f.model = p.Model
   f.prompt = String(p.PromptPricePerMillion)
   f.completion = String(p.CompletionPricePerMillion)
-  f.opt.above_threshold = p.AboveThreshold == null ? '' : String(p.AboveThreshold)
-  f.opt.fast_multiplier = p.FastMultiplier == null ? '' : String(p.FastMultiplier)
   for (const { r, k } of RESP_TO_KEY) {
     const v = p[r]
     f.opt[k] = v == null ? '' : String(v)
@@ -387,7 +386,7 @@ export default function PricingPage() {
                     <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.CacheReadPricePerMillion)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.CacheCreationPricePerMillion)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatFastMultiplier(p.FastMultiplier)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{p.AboveThreshold ?? '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{p.AboveThreshold == null ? '—' : t('pricing.table.aboveThresholdValue', { value: p.AboveThreshold })}</TableCell>
                     <TableCell><SourceBadge source={p.Source} /></TableCell>
                     <TableCell className="max-w-32 truncate" title={p.Provider ?? undefined}>{p.Provider || '—'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(p.UpdatedAt)}</TableCell>
