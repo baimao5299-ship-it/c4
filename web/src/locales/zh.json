@@ -25,7 +25,8 @@
     "stats": "统计",
     "rules": "规则",
     "redemptions": "兑换码",
-    "pricing": "模型价格"
+    "pricing": "模型价格",
+    "settings": "系统设置"
   },
   "theme": {
     "toggle": "切换主题",
@@ -593,5 +594,47 @@
     "deleteConfirm": "确认删除",
     "saved": "价格已保存",
     "deleted": "价格已删除"
+  },
+  "settings": {
+    "title": "系统设置",
+    "subtitle": "全局默认值即时生效；金额按 USD 输入（1 USD = 100,000 毫分）",
+    "emptyTitle": "暂无设置项",
+    "groups": {
+      "signup": "注册",
+      "defaults": "新用户默认资源",
+      "pricingSync": "价格同步",
+      "tierPolicy": "服务档位策略"
+    },
+    "labels": {
+      "signup_enabled": "开放注册",
+      "default_user_max_concurrency": "默认最大并发",
+      "default_user_balance": "默认账户余额",
+      "default_user_temp_balance": "默认临时余额",
+      "default_user_temp_balance_ttl_days": "临时余额有效期",
+      "price_source_url": "价格同步来源",
+      "price_sync_cron": "价格同步计划",
+      "service_tier_policy_priority": "优先档字段策略",
+      "service_tier_policy_flex": "弹性档字段策略"
+    },
+    "descs": {
+      "signup_enabled": "关闭后公开注册通道不再受理新用户",
+      "default_user_max_concurrency": "新用户默认并发上限；0 = 不限",
+      "default_user_balance": "新用户初始账户余额；按 USD 输入，提交时自动换算为毫分",
+      "default_user_temp_balance": "新用户初始临时余额；0 = 不赠送",
+      "default_user_temp_balance_ttl_days": "临时余额的有效天数",
+      "price_source_url": "litellm 官方价格表地址（JSON）",
+      "price_sync_cron": "价格同步的定时计划（cron 表达式）",
+      "service_tier_policy_priority": "优先档字段在转发请求时的处理方式",
+      "service_tier_policy_flex": "弹性档字段在转发请求时的处理方式"
+    },
+    "policies": {
+      "passthrough": "透传",
+      "strip": "移除",
+      "reject": "拒绝"
+    },
+    "usdHint": "1 USD = 100,000 毫分",
+    "invalidUsd": "请输入有效的非负金额",
+    "invalidNumber": "请输入非负整数",
+    "saved": "设置已保存"
   }
 }

@@ -16,6 +16,7 @@ import Stats from '@/pages/stats'
 import Rules from '@/pages/rules'
 import RedemptionCodes from '@/pages/redemption-codes'
 import PricingPage from '@/pages/pricing'
+import SettingsPage from '@/pages/settings'
 
 export const api = new ApiClient(auth.getToken)
 
@@ -36,6 +37,7 @@ const router = createBrowserRouter([
       { path: 'rules', element: <Rules /> },
       { path: 'redemption-codes', element: <RedemptionCodes /> },
       { path: 'pricing', element: <PricingPage /> },
+      { path: 'settings', element: <SettingsPage /> },
     ],
   },
 ])
