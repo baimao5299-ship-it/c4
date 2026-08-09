@@ -6,6 +6,9 @@ import { auth } from '@/lib/auth'
 import { Toaster } from '@/components/ui/toast'
 import Login from '@/pages/login'
 import Layout from '@/components/layout'
+import UserLogin from '@/pages/user/login'
+import UserRegister from '@/pages/user/register'
+import UserLayout from '@/components/user-layout'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
 import Accounts from '@/pages/accounts'
@@ -22,6 +25,16 @@ export const api = new ApiClient(auth.getToken)
 
 const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/user/login', element: <UserLogin /> },
+  { path: '/user/register', element: <UserRegister /> },
+  {
+    path: '/user',
+    element: <UserLayout />,
+    children: [
+      // 总览页由后续任务替换；keys/logs/stats/redemptions 路由待对应页面落地后补注册
+      { index: true, element: <Navigate to="/user/keys" replace /> },
+    ],
+  },
   {
     path: '/',
     element: <Layout />,

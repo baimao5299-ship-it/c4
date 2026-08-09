@@ -661,5 +661,37 @@
     "invalidUsd": "Enter a valid non-negative amount",
     "invalidNumber": "Enter a non-negative integer",
     "saved": "Setting saved"
+  },
+  "user": {
+    "auth": {
+      "title": "User sign in",
+      "subtitle": "Sign in to manage your API keys and usage",
+      "email": "Email",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
+      "loginButton": "Sign in",
+      "registerButton": "Sign up",
+      "registerLink": "No account? Sign up",
+      "loginLink": "Already have an account? Sign in",
+      "errorGeneric": "Sign-in failed. Check your email and password and try again"
+    },
+    "register": {
+      "title": "Create account",
+      "subtitle": "Create an account to issue API keys",
+      "signupDisabled": "Registration is closed. Contact the administrator.",
+      "passwordMismatch": "The passwords do not match"
+    },
+    "nav": {
+      "overview": "Overview",
+      "keys": "Keys",
+      "logs": "Logs",
+      "stats": "Stats",
+      "redemptions": "Redeem",
+      "logout": "Log out"
+    },
+    "common": {
+      "loading": "Loading…",
+      "error": "Failed to load"
+    }
   }
 }
