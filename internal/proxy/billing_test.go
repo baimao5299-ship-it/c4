@@ -18,7 +18,11 @@ import (
 	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/rule"
+	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/usage"
+	"go-proxy-mini/pkg/aiclient"
+	"go-proxy-mini/pkg/cryptox"
 )
 
 // proxyPricing 测试价格行：gpt-4o 基础价 $100/$200 每 1M（1e7/2e7 毫分），
@@ -392,19 +396,23 @@ func TestProxyBillingDisabledPassthrough(t *testing.T) {
 // T3：余额预检 402 + shouldBill 路由切换
 // ---------------------------------------------------------------------------
 
-// fakeBalanceLoader 余额 + 倍率快照测试 loader（um/gm 缺省 = 空倍率表）。
+// fakeBalanceLoader 余额 + 倍率快照测试 loader（am/gm 缺省 = 空倍率表）。
 type fakeBalanceLoader struct {
-	m  map[int64]int64 // 余额
-	um map[int64]int   // 用户倍率（仅已设置行）
-	gm map[int64]int   // 组倍率
+	m  map[int64]int64               // 余额
+	am map[billing.AssignmentKey]int // 用户-组专属倍率（仅已设置行）
+	gm map[int64]int                 // 组倍率
 }
 
-func (f fakeBalanceLoader) LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error) {
-	return f.m, f.um, nil
+func (f fakeBalanceLoader) LoadBalances(ctx context.Context) (map[int64]int64, error) {
+	return f.m, nil
 }
 
 func (f fakeBalanceLoader) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
 	return f.gm, nil
+}
+
+func (f fakeBalanceLoader) LoadAssignmentMultipliers(ctx context.Context) (map[billing.AssignmentKey]int, error) {
+	return f.am, nil
 }
 
 // fakeDeductWriter 记录 DeductAndLog 调用（T3 billed 路由断言）。
@@ -540,7 +548,7 @@ func TestProxyBillingRoutesToFlusher(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T3.5：价格倍率（applyMultiplier 纯函数 + 用户/组倍率应用 + 免费放行）
+// T3.5：价格倍率（applyMultiplier 纯函数 + 按组倍率应用 + 免费放行）
 // ---------------------------------------------------------------------------
 
 // TestApplyMultiplier 倍率纯函数表驱动：×2 上浮 / ×0.5 折扣 round（奇数 cost
@@ -568,9 +576,10 @@ func TestApplyMultiplier(t *testing.T) {
 	}
 }
 
-// TestProxyBillingMultiplierUser 用户专属倍率（T3.5 用户覆盖组）：×2 → 扣费
-// cost 翻倍（130×2 = 260），billed 路由 + 快照刷新照常。
-func TestProxyBillingMultiplierUser(t *testing.T) {
+// TestProxyBillingMultiplierAssignment 用户-组专属倍率（T3.5 修正：按组挂载，
+// 用户覆盖组）：(1,10) ×2 → 扣费 cost 翻倍（130×2 = 260），billed 路由 +
+// 快照刷新照常。
+func TestProxyBillingMultiplierAssignment(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
@@ -580,9 +589,10 @@ func TestProxyBillingMultiplierUser(t *testing.T) {
 	}, store, noopStatStore{}, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
-		m: map[int64]int64{1: 50000}, um: map[int64]int{1: 20000},
+		m:  map[int64]int64{1: 50000},
+		am: map[billing.AssignmentKey]int{{UserID: 1, GroupID: 10}: 20000},
 	}, nil)
-	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 50000 + 用户倍率 ×2）")
+	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 50000 + 用户-组倍率 ×2）")
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
@@ -598,8 +608,106 @@ func TestProxyBillingMultiplierUser(t *testing.T) {
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
 	require.Len(t, writer.calls, 1)
-	require.Equal(t, int64(260), writer.calls[0].cost, "用户倍率 ×2：130×2 = 260 毫分")
+	require.Equal(t, int64(260), writer.calls[0].cost, "用户-组专属倍率 ×2：130×2 = 260 毫分")
 	require.Equal(t, int64(260), writer.calls[0].logs[0].Cost)
+}
+
+// newTestProxyBillingKeys 构造注入完整计费钩子 + 自定义 key→(user,group) 映射
+// 的测试代理（多组场景：同用户不同组不同倍率；accs 必须含所有组的账号）。
+func newTestProxyBillingKeys(t *testing.T, keys map[string]domain.KeyMeta, accs map[int64][]*domain.Account, bal *billing.Balances, f *billing.Flusher, logs usage.LogInserter) *Proxy {
+	t.Helper()
+	cfg := Config{
+		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamStreamTimeout: 30 * time.Second,
+		GroupKeyRPM:           0, UsageCapture: true,
+	}
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	sched := scheduler.New(scheduler.Config{
+		DefaultMaxConcurrency: 4, SyncInterval: time.Hour,
+	}, noopLoader{accs: accs}, re, nil)
+	require.NoError(t, sched.InvalidateAllSync())
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
+	}, logs, noopStatStore{}, nil)
+	auth := NewAuth(noopKeyLoader{keys: keys}, noopUserLoader{}, nil)
+	hc := &http.Client{Transport: http.DefaultTransport}
+	clients := aiclient.NewFactory(hc, aiclient.Config{
+		UpstreamTimeout:       5 * time.Second,
+		UpstreamStreamTimeout: 30 * time.Second,
+	})
+	p := New(cfg, sched, credential.New(), rec, clients, auth, nil, &BillingHooks{
+		Prices:   &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
+		Balances: bal, Flusher: f,
+	})
+	p.cfg.BillingCapture = true
+	return p
+}
+
+// TestProxyBillingMultiplierPerGroup 同用户不同组不同倍率（T3.5 修正核心：
+// 专属倍率按组挂载——assignment (1,10)=×2 与 (1,11)=×0.5 互不覆盖）。每组
+// 独立 proxy+flusher（flusher 按用户聚合扣费，同用户两请求须分 flusher 落库
+// 才能分开断言；倍率快照同一份，含两组 assignment）。
+func TestProxyBillingMultiplierPerGroup(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	bal := billing.NewBalances(fakeBalanceLoader{
+		m: map[int64]int64{1: 50000},
+		am: map[billing.AssignmentKey]int{
+			{UserID: 1, GroupID: 10}: 20000, // gk-1 → 组 10：×2
+			{UserID: 1, GroupID: 11}: 5000,  // gk-2 → 组 11：×0.5
+		},
+	}, nil)
+	require.NoError(t, bal.Reload(context.Background()))
+	acc := &domain.Account{ID: 1, TemplateID: 1, Template: &domain.Template{
+		ID: 1, Name: "t", BaseURL: up.URL,
+		CredentialType: credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+	}, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
+
+	// 组 10：gk-1 → assignment ×2 → 130×2 = 260
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
+	}, store, noopStatStore{}, nil)
+	w1 := &fakeDeductWriter{}
+	f1 := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, w1, rec, bal, nil)
+	p1 := newTestProxyBillingKeys(t, map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
+	}, map[int64][]*domain.Account{10: {acc}}, bal, f1, store)
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	r.Header.Set("Authorization", "Bearer gk-1")
+	rr := httptest.NewRecorder()
+	p1.HandleChat(rr, r)
+	require.Equal(t, 200, rr.Code, "body=%s", rr.Body.String())
+	require.NoError(t, f1.Close(context.Background()))
+	w1.mu.Lock()
+	require.Len(t, w1.calls, 1)
+	require.Equal(t, int64(260), w1.calls[0].cost, "组 10 专属倍率 ×2：130×2 = 260")
+	w1.mu.Unlock()
+
+	// 组 11：gk-2 → assignment ×0.5 → 130×0.5 = 65（同用户不同组互不覆盖）
+	w2 := &fakeDeductWriter{}
+	f2 := billing.NewFlusher(billing.FlushConfig{
+		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+	}, w2, rec, bal, nil)
+	p2 := newTestProxyBillingKeys(t, map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-2"): activeKey(2, 1, 11),
+	}, map[int64][]*domain.Account{11: {acc}}, bal, f2, store)
+	r2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	r2.Header.Set("Authorization", "Bearer gk-2")
+	rr2 := httptest.NewRecorder()
+	p2.HandleChat(rr2, r2)
+	require.Equal(t, 200, rr2.Code, "body=%s", rr2.Body.String())
+	require.NoError(t, f2.Close(context.Background()))
+	w2.mu.Lock()
+	defer w2.mu.Unlock()
+	require.Len(t, w2.calls, 1)
+	require.Equal(t, int64(65), w2.calls[0].cost, "组 11 专属倍率 ×0.5：130×0.5 = 65（同用户不同组）")
 }
 
 // TestProxyBillingMultiplierGroup 组倍率（用户未设置 → 用组倍率）：×1.5 →
@@ -647,7 +755,8 @@ func TestProxyBillingFreeUserPasses(t *testing.T) {
 	}, store, noopStatStore{}, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
-		m: map[int64]int64{1: 0}, um: map[int64]int{1: 0}, // 余额 0 + 用户倍率 0（免费）
+		m:  map[int64]int64{1: 0},
+		am: map[billing.AssignmentKey]int{{UserID: 1, GroupID: 10}: 0}, // 余额 0 + 专属倍率 0（免费）
 	}, nil)
 	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 0 + 免费倍率）")
 	f := billing.NewFlusher(billing.FlushConfig{

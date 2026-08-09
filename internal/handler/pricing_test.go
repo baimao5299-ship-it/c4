@@ -141,21 +141,21 @@ func TestPutPricing(t *testing.T) {
 	}}}
 	h, do := newPricingRouter(t, f)
 
-	// 新模型设价成功
+	// 新模型设价成功（API 输入 USD/1M 正常值 → 存储毫分 → 回显 USD）
 	rec := do(http.MethodPut, "/admin/pricing/claude-3-5-sonnet",
-		`{"prompt_price_per_million":300000,"completion_price_per_million":1500000}`)
+		`{"prompt_price_per_million":3.0,"completion_price_per_million":15.0}`)
 	require.Equal(t, 200, rec.Code, "put: %s", rec.Body.String())
 	var p Pricing
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, "claude-3-5-sonnet", p.Model)
-	require.Equal(t, int64(300000), p.PromptPricePerMillion)
-	require.Equal(t, int64(1500000), p.CompletionPricePerMillion)
+	require.Equal(t, 3.0, p.PromptPricePerMillion)
+	require.Equal(t, 15.0, p.CompletionPricePerMillion)
 	require.Equal(t, PricingSource("manual"), p.Source)
 
 	// 接管 litellm 行：先同步入库再手动设价
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
-	rec = do(http.MethodPut, "/admin/pricing/gpt-4o", `{"prompt_price_per_million":999,"completion_price_per_million":888}`)
+	rec = do(http.MethodPut, "/admin/pricing/gpt-4o", `{"prompt_price_per_million":0.00999,"completion_price_per_million":0.00888}`)
 	require.Equal(t, 200, rec.Code, "takeover: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, PricingSource("manual"), p.Source, "手动设价接管 litellm 行")
@@ -166,34 +166,34 @@ func TestPutPricing(t *testing.T) {
 
 	// 带 cache 价设价：响应与列表 roundtrip
 	rec = do(http.MethodPut, "/admin/pricing/m-cache",
-		`{"prompt_price_per_million":10,"completion_price_per_million":20,"cache_read_price_per_million":30,"cache_creation_price_per_million":40}`)
+		`{"prompt_price_per_million":0.0001,"completion_price_per_million":0.0002,"cache_read_price_per_million":0.0003,"cache_creation_price_per_million":0.0004}`)
 	require.Equal(t, 200, rec.Code, "put with cache: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
-	require.Equal(t, int64(30), *p.CacheReadPricePerMillion, "响应含 cache_read")
-	require.Equal(t, int64(40), *p.CacheCreationPricePerMillion, "响应含 cache_creation")
+	require.Equal(t, 0.0003, *p.CacheReadPricePerMillion, "响应含 cache_read")
+	require.Equal(t, 0.0004, *p.CacheCreationPricePerMillion, "响应含 cache_creation")
 	rec = do(http.MethodGet, "/admin/pricing?model=m-cache", "")
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
 	require.Len(t, list.Rows, 1)
-	require.Equal(t, int64(30), *list.Rows[0].CacheReadPricePerMillion, "列表 roundtrip cache_read")
-	require.Equal(t, int64(40), *list.Rows[0].CacheCreationPricePerMillion)
+	require.Equal(t, 0.0003, *list.Rows[0].CacheReadPricePerMillion, "列表 roundtrip cache_read")
+	require.Equal(t, 0.0004, *list.Rows[0].CacheCreationPricePerMillion)
 
 	// 缺省 cache 字段 → nil（不设缓存价）
-	rec = do(http.MethodPut, "/admin/pricing/m-nocache", `{"prompt_price_per_million":1,"completion_price_per_million":2}`)
+	rec = do(http.MethodPut, "/admin/pricing/m-nocache", `{"prompt_price_per_million":0.00001,"completion_price_per_million":0.00002}`)
 	require.Equal(t, 200, rec.Code, "put without cache: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Nil(t, p.CacheReadPricePerMillion, "缺省 → nil")
 	require.Nil(t, p.CacheCreationPricePerMillion)
 
 	// 负数 400（含 cache 价负数）
-	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{"prompt_price_per_million":-1,"completion_price_per_million":10}`)
+	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{"prompt_price_per_million":-0.01,"completion_price_per_million":0.0001}`)
 	require.Equal(t, 400, rec.Code, "negative: %s", rec.Body.String())
-	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{"prompt_price_per_million":10,"completion_price_per_million":-1}`)
+	rec = do(http.MethodPut, "/admin/pricing/m-neg", `{"prompt_price_per_million":0.0001,"completion_price_per_million":-0.01}`)
 	require.Equal(t, 400, rec.Code, "negative completion: %s", rec.Body.String())
 	rec = do(http.MethodPut, "/admin/pricing/m-neg",
-		`{"prompt_price_per_million":10,"completion_price_per_million":10,"cache_read_price_per_million":-1}`)
+		`{"prompt_price_per_million":0.0001,"completion_price_per_million":0.0001,"cache_read_price_per_million":-0.01}`)
 	require.Equal(t, 400, rec.Code, "negative cache_read: %s", rec.Body.String())
 	rec = do(http.MethodPut, "/admin/pricing/m-neg",
-		`{"prompt_price_per_million":10,"completion_price_per_million":10,"cache_creation_price_per_million":-1}`)
+		`{"prompt_price_per_million":0.0001,"completion_price_per_million":0.0001,"cache_creation_price_per_million":-0.01}`)
 	require.Equal(t, 400, rec.Code, "negative cache_creation: %s", rec.Body.String())
 
 	// 非法 JSON 400
@@ -288,7 +288,7 @@ func TestPricingSync(t *testing.T) {
 		var list PricingListResponse
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
 		require.Len(t, list.Rows, 1)
-		require.Equal(t, int64(100), list.Rows[0].PromptPricePerMillion, "manual 价不被拉取覆盖")
+		require.Equal(t, 0.001, list.Rows[0].PromptPricePerMillion, "manual 价不被拉取覆盖")
 		require.Equal(t, PricingSource("manual"), list.Rows[0].Source)
 	})
 }

@@ -80,7 +80,7 @@ func TestInvalidatorMatrix(t *testing.T) {
 		rec := &invRecorder{}
 		svc := &Service{store: fs, inv: rec, log: nil}
 		u, err := svc.CreateUser(ctx, "u1@example.com", "pw12345678", domain.RoleUser,
-			domain.UserStatusActive, 8, 1000, nil)
+			domain.UserStatusActive, 8, 1000)
 		require.NoError(t, err)
 		require.Equal(t, 1, rec.countKind("users"), "创建用户 → Users()")
 		_, err = svc.UpdateUser(ctx, &domain.User{ID: u.ID, Email: u.Email,
@@ -113,9 +113,9 @@ func TestInvalidatorMatrix(t *testing.T) {
 			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 		})
 		require.NoError(t, err)
-		g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 0)
+		g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, nil)
 		require.NoError(t, err)
-		g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, 0)
+		g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, nil)
 		require.NoError(t, err)
 
 		// 创建带组：gids = 新建分组；keyChanged=false（新 key 无既有客户端）
@@ -159,9 +159,9 @@ func TestInvalidatorMatrix(t *testing.T) {
 			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 		})
 		require.NoError(t, err)
-		g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, 0)
+		g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, nil)
 		require.NoError(t, err)
-		g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, 0)
+		g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, nil)
 		require.NoError(t, err)
 		a1, err := svc.CreateAccount(ctx, &domain.Account{
 			Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-1", GroupIDs: &[]int64{g1.ID},
@@ -193,7 +193,7 @@ func TestInvalidatorMatrix(t *testing.T) {
 		fs := newFakeStore()
 		rec := &invRecorder{}
 		svc := &Service{store: fs, inv: rec, log: nil}
-		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, 0)
+		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil)
 		require.NoError(t, err)
 		require.Equal(t, 1, rec.countKind("multipliers"), "创建组（倍率设定）→ Multipliers()")
 		_, err = svc.UpdateGroup(ctx, &domain.Group{ID: g.ID, Name: "g", PriceMultiplier: 20000})
@@ -205,11 +205,33 @@ func TestInvalidatorMatrix(t *testing.T) {
 		require.Zero(t, rec.countKind("accounts"))
 	})
 
+	t.Run("组授予 + 用户-组专属倍率 → Multipliers()（T3.5 按组）", func(t *testing.T) {
+		fs := newFakeStore()
+		rec := &invRecorder{}
+		svc := &Service{store: fs, inv: rec, log: nil}
+		u, err := svc.CreateUser(ctx, "am@example.com", "pw12345678", domain.RoleUser,
+			domain.UserStatusActive, 8, 1000)
+		require.NoError(t, err)
+		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil)
+		require.NoError(t, err)
+		before := rec.countKind("multipliers")
+		// 授予 + 设专属倍率（万分数 5000 = ×0.5）→ Multipliers()
+		applied, _, err := svc.SetGroupAssignments(ctx, g.ID, []int64{u.ID}, map[int64]*int{u.ID: intPtr(5000)})
+		require.NoError(t, err)
+		require.Equal(t, []int64{u.ID}, applied)
+		require.Equal(t, before+1, rec.countKind("multipliers"), "group_assignment CRUD → Multipliers()")
+		// 清除专属倍率（nil）→ Multipliers()
+		_, _, err = svc.SetGroupAssignments(ctx, g.ID, []int64{u.ID}, map[int64]*int{u.ID: nil})
+		require.NoError(t, err)
+		require.Equal(t, before+2, rec.countKind("multipliers"), "清除专属倍率 → Multipliers()")
+		require.Equal(t, 1, rec.countKind("users"), "assignment 倍率变更不得触发用户全量 Reload（仅创建用户一次）")
+	})
+
 	t.Run("批量组更新（仅 name/visibility）→ 不触发任何失效", func(t *testing.T) {
 		fs := newFakeStore()
 		rec := &invRecorder{}
 		svc := &Service{store: fs, inv: rec, log: nil}
-		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, 0)
+		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil)
 		require.NoError(t, err)
 		before := rec.total()
 		name := "renamed"

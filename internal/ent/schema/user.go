@@ -23,9 +23,6 @@ func (User) Fields() []ent.Field {
 		field.Enum("status").Values("active", "disabled").Default("active"),
 		field.Int("max_concurrency").Default(0), // 0 = 不限
 		field.Int64("balance").Default(0),       // 最小单位；Phase 5 扣费
-		// 万分数（T3.5 价格倍率）；nil = 未设置 → 用组倍率（区分"设了 ×1"与
-		// "未设置"的关键——用户覆盖组语义）。
-		field.Int("price_multiplier").Optional().Nillable(),
 		field.Time("created_at").Default(time.Now),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}

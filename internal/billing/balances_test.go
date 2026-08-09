@@ -10,17 +10,17 @@ import (
 
 // fakeBalLoader 余额 + 倍率快照测试 loader（failLoad 注入失败——fail-safe 断言）。
 type fakeBalLoader struct {
-	m      map[int64]int64 // 余额
-	um     map[int64]int   // 用户倍率（仅已设置行）
-	gm     map[int64]int   // 组倍率
-	failAt int             // 1 = LoadBalances 失败；2 = LoadGroupMultipliers 失败
+	m  map[int64]int64              // 余额
+	am map[AssignmentKey]int        // 用户-组专属倍率（仅已设置行）
+	gm map[int64]int                // 组倍率
+	failAt int                      // 1 = LoadBalances 失败；2 = LoadGroupMultipliers 失败；3 = LoadAssignmentMultipliers 失败
 }
 
-func (f fakeBalLoader) LoadBalances(ctx context.Context) (map[int64]int64, map[int64]int, error) {
+func (f fakeBalLoader) LoadBalances(ctx context.Context) (map[int64]int64, error) {
 	if f.failAt == 1 {
-		return nil, nil, errors.New("db down")
+		return nil, errors.New("db down")
 	}
-	return f.m, f.um, nil
+	return f.m, nil
 }
 
 func (f fakeBalLoader) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
@@ -28,6 +28,13 @@ func (f fakeBalLoader) LoadGroupMultipliers(ctx context.Context) (map[int64]int,
 		return nil, errors.New("db down")
 	}
 	return f.gm, nil
+}
+
+func (f fakeBalLoader) LoadAssignmentMultipliers(ctx context.Context) (map[AssignmentKey]int, error) {
+	if f.failAt == 3 {
+		return nil, errors.New("db down")
+	}
+	return f.am, nil
 }
 
 // TestBalancesReloadFailSafe Reload 失败 fail-safe：Warn（log 注入）+ 保留旧
@@ -53,16 +60,31 @@ func TestBalancesReloadFailSafe(t *testing.T) {
 //（快照内自洽：不出现新余额 + 旧倍率错配）。
 func TestBalancesReloadGroupFailSafe(t *testing.T) {
 	b := NewBalances(fakeBalLoader{
-		m: map[int64]int64{1: 100}, um: map[int64]int{1: 20000}, gm: map[int64]int{1: 15000},
+		m: map[int64]int64{1: 100}, am: map[AssignmentKey]int{{1, 1}: 20000}, gm: map[int64]int{1: 15000},
 	}, nil)
 	require.NoError(t, b.Reload(context.Background()))
 	// 余额加载成功、组倍率失败 → 整体不替换
-	b.loader = fakeBalLoader{m: map[int64]int64{1: 999}, um: map[int64]int{1: 20000}, failAt: 2}
+	b.loader = fakeBalLoader{m: map[int64]int64{1: 999}, failAt: 2}
 	require.Error(t, b.Reload(context.Background()))
 	bal, ok := b.BalanceOf(1)
 	require.True(t, ok)
 	require.Equal(t, int64(100), bal, "组倍率失败 → 余额也保留旧值")
 	require.Equal(t, 15000, b.EffectiveMultiplier(2, 1), "组倍率保留旧值")
+}
+
+// TestBalancesReloadAssignmentFailSafe assignment 倍率加载失败 → 三路都保留
+// 旧值（快照内自洽）。
+func TestBalancesReloadAssignmentFailSafe(t *testing.T) {
+	b := NewBalances(fakeBalLoader{
+		m: map[int64]int64{1: 100}, am: map[AssignmentKey]int{{1, 1}: 20000}, gm: map[int64]int{1: 15000},
+	}, nil)
+	require.NoError(t, b.Reload(context.Background()))
+	b.loader = fakeBalLoader{m: map[int64]int64{1: 999}, failAt: 3}
+	require.Error(t, b.Reload(context.Background()))
+	require.Equal(t, 20000, b.EffectiveMultiplier(1, 1), "assignment 倍率失败 → 保留旧值")
+	bal, ok := b.BalanceOf(1)
+	require.True(t, ok)
+	require.Equal(t, int64(100), bal, "assignment 倍率失败 → 余额也保留旧值")
 }
 
 // TestBalancesSet O1 O(1) 语义：Set 命中已存在条目原地 Store（零拷贝）；目标
@@ -110,26 +132,33 @@ func TestBalancesSetAfterReload(t *testing.T) {
 	require.Equal(t, int64(49900), bal, "Reload 后 Set 定向刷新生效")
 }
 
-// TestReloadMultipliers O2 组倍率定向刷新：只换组倍率（小表单查），用户专属
-// 倍率沿用当前快照（用户倍率只随全量 Reload 更新，两个变更源互不覆盖）；
-// 失败 fail-safe 保留旧倍率快照。
+// TestReloadMultipliers O2 组 + assignment 倍率定向刷新：两路都换（小表单查，
+// 非全量 Reload——assignment 倍率变更走此路，不依赖全量 Reload）；失败
+// fail-safe 保留旧倍率快照。
 func TestReloadMultipliers(t *testing.T) {
 	b := NewBalances(fakeBalLoader{
-		m: map[int64]int64{1: 100}, um: map[int64]int{1: 20000}, gm: map[int64]int{1: 15000},
+		m: map[int64]int64{1: 100}, am: map[AssignmentKey]int{{1, 1}: 20000}, gm: map[int64]int{1: 15000},
 	}, nil)
 	require.NoError(t, b.Reload(context.Background()))
 
-	// 组倍率变更（g2 从 10000 → 30000）
-	b.loader = fakeBalLoader{m: map[int64]int64{1: 100}, um: map[int64]int{1: 20000}, gm: map[int64]int{1: 15000, 2: 30000}}
+	// 组倍率变更（g2 从 10000 → 30000）+ assignment 倍率变更（(1,1) 20000 → 0）
+	b.loader = fakeBalLoader{
+		m: map[int64]int64{1: 100},
+		am: map[AssignmentKey]int{{1, 1}: 0, {9, 3}: 5000},
+		gm: map[int64]int{1: 15000, 2: 30000},
+	}
 	require.NoError(t, b.ReloadMultipliers(context.Background()))
 	require.Equal(t, 30000, b.EffectiveMultiplier(9, 2), "新组倍率即刻生效")
-	require.Equal(t, 20000, b.EffectiveMultiplier(1, 1), "用户专属倍率沿用当前快照（未被定向刷新覆盖）")
+	require.Equal(t, 0, b.EffectiveMultiplier(1, 1), "assignment 倍率变更即刻生效（0 免费）")
+	require.Equal(t, 5000, b.EffectiveMultiplier(9, 3), "新 assignment 倍率即刻生效")
 	require.Equal(t, 15000, b.EffectiveMultiplier(9, 1), "既有组倍率不变")
+	require.Equal(t, 10000, b.EffectiveMultiplier(8, 9), "无 assignment 无组 → ×1")
 
 	// 失败 fail-safe：保留旧倍率快照
-	b.loader = fakeBalLoader{failAt: 2}
+	b.loader = fakeBalLoader{failAt: 3}
 	require.Error(t, b.ReloadMultipliers(context.Background()))
-	require.Equal(t, 30000, b.EffectiveMultiplier(9, 2), "失败保留旧倍率快照")
+	require.Equal(t, 0, b.EffectiveMultiplier(1, 1), "assignment 失败保留旧倍率快照")
+	require.Equal(t, 30000, b.EffectiveMultiplier(9, 2), "组倍率也保留旧值（两路原子换）")
 }
 
 // TestBalancesBalanceOfMissing 缺失 → (0, false)（预检 402 语义：无快照 =
@@ -144,27 +173,28 @@ func TestBalancesBalanceOfMissing(t *testing.T) {
 	require.Zero(t, bal)
 }
 
-// TestEffectiveMultiplier 有效倍率表驱动（T3.5 用户覆盖组语义）：用户已设置
-// （含 0 免费）→ 覆盖组倍率；仅组 → 组倍率；均缺 → 10000。
+// TestEffectiveMultiplier 有效倍率表驱动（T3.5 修正：按组查序 assignment 专属
+// → 组倍率 → 10000）：assignment 覆盖组（含 0 免费/×10 上限）；仅组；均缺。
 func TestEffectiveMultiplier(t *testing.T) {
 	cases := []struct {
 		name        string
-		users       map[int64]int
+		assignments map[AssignmentKey]int
 		groups      map[int64]int
 		userID, gid int64
 		want        int
 	}{
-		{"用户覆盖组", map[int64]int{1: 20000}, map[int64]int{1: 15000}, 1, 1, 20000},
-		{"用户免费覆盖组", map[int64]int{1: 0}, map[int64]int{1: 15000}, 1, 1, 0},
+		{"assignment 覆盖组", map[AssignmentKey]int{{1, 1}: 20000}, map[int64]int{1: 15000}, 1, 1, 20000},
+		{"assignment 免费覆盖组", map[AssignmentKey]int{{1, 1}: 0}, map[int64]int{1: 15000}, 1, 1, 0},
+		{"assignment ×10 上限", map[AssignmentKey]int{{1, 1}: 100000}, nil, 1, 1, 100000},
+		{"同用户不同组不同倍率", map[AssignmentKey]int{{1, 1}: 20000, {1, 2}: 5000}, map[int64]int{1: 15000}, 1, 2, 5000},
 		{"仅组倍率", nil, map[int64]int{1: 15000}, 1, 1, 15000},
+		{"组免费（用户未设置）", nil, map[int64]int{2: 0}, 1, 2, 0},
 		{"均缺默认×1", nil, nil, 1, 1, 10000},
-		{"用户×10 上限", map[int64]int{1: 100000}, nil, 1, 1, 100000},
 		{"无组无用户", nil, nil, 99, 0, 10000},
-		{"用户未设置用组", nil, map[int64]int{2: 0}, 1, 2, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			b := NewBalances(fakeBalLoader{m: map[int64]int64{}, um: c.users, gm: c.groups}, nil)
+			b := NewBalances(fakeBalLoader{m: map[int64]int64{}, am: c.assignments, gm: c.groups}, nil)
 			require.NoError(t, b.Reload(context.Background()))
 			require.Equal(t, c.want, b.EffectiveMultiplier(c.userID, c.gid))
 		})

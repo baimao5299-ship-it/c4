@@ -64,7 +64,7 @@ func init() {
 	groupassignmentFields := schema.GroupAssignment{}.Fields()
 	_ = groupassignmentFields
 	// groupassignmentDescCreatedAt is the schema descriptor for created_at field.
-	groupassignmentDescCreatedAt := groupassignmentFields[3].Descriptor()
+	groupassignmentDescCreatedAt := groupassignmentFields[4].Descriptor()
 	// groupassignment.DefaultCreatedAt holds the default value on creation for the created_at field.
 	groupassignment.DefaultCreatedAt = groupassignmentDescCreatedAt.Default.(func() time.Time)
 	keyFields := schema.Key{}.Fields()
@@ -316,11 +316,11 @@ func init() {
 	// user.DefaultBalance holds the default value on creation for the balance field.
 	user.DefaultBalance = userDescBalance.Default.(int64)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[8].Descriptor()
+	userDescCreatedAt := userFields[7].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[9].Descriptor()
+	userDescUpdatedAt := userFields[8].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
