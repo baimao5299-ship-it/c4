@@ -26,8 +26,10 @@ type FlushConfig struct {
 }
 
 // pendingWaterline pending 日志条数水线：超过 → Warn（可观测，非反压——Record
-// 永不阻塞，pending 内存即唯一积压面）。
-const pendingWaterline = 1_000_000
+// 永不阻塞，pending 内存即唯一积压面）。按聚合日志条数计（评审 C-1：429 风暴
+// 24.5k 日志/s 才是无界增长场景；按去重用户数计 ≤1M 用户不可达恒不告警）。
+// var（非 const）：测试注入小阈值，默认 1M 不变，后续可配置化。
+var pendingWaterline int64 = 1_000_000
 
 // flusherPending 单用户聚合条目（userID → cost 总额 + 明细日志，同事务落库）。
 type flusherPending struct {
@@ -99,7 +101,7 @@ func (f *Flusher) loop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			f.flush() // 退出前最后一次落库（Close 还会兜底全量 flush，幂等）
+			f.flushCtx(ctx) // 退出前最后一次落库尝试（ctx 已取消时即截断放弃——排空由 Close 以 shutdown 预算约束执行）
 			return
 		case <-flushT.C:
 			f.flush()
@@ -126,16 +128,18 @@ func (f *Flusher) Record(l *domain.UsageLog) {
 	f.mu.Unlock()
 	if n > pendingWaterline && f.warned.CompareAndSwap(false, true) {
 		if f.log != nil {
-			f.log.Warn("billing pending exceeds waterline", logx.Int64("pending_logs", n), logx.Int("waterline", pendingWaterline))
+			f.log.Warn("billing pending exceeds waterline", logx.Int64("pending_logs", n), logx.Int64("waterline", pendingWaterline))
 		}
 	}
 }
 
 // Close 幂等排空（优雅停机核心）：等聚合 goroutine 退出（其 ctx.Done 路径已
-// flush 一次）→ 全量 flush（flushMu 串行：与在途 ticker flush 互斥，先等其
-// worker 批完成——无并发换批、无在途批次残留）→ 失败回灌后继续重试直至清空
-// 或 ctx 预算耗尽（超时 Warn——极限情况丢 ≤1 flush 窗口，可接受）。未 Start
-// 也安全（跳过等待；pending 残留同样排空）。
+// flush 一次）→ 受 shutdown ctx 预算约束的排空循环（flushMu 串行：与在途
+// ticker flush 互斥，先等其 worker 批完成——无并发换批、无在途批次残留）。
+// 正常情形完整排空语义不变（无 deadline ctx = 全部落库）；ctx 到期 → Warn
+// （含已排空/剩余条数）+ 截断退出，不阻塞停机（O1 复测：44k/s 压测后 1.7M
+// pending 无预算排空需数分钟）。未 Start 也安全（跳过等待；pending 残留同样
+// 排空）。
 func (f *Flusher) Close(ctx context.Context) error {
 	f.closeOnce.Do(func() {
 		if f.started.Load() {
@@ -147,16 +151,16 @@ func (f *Flusher) Close(ctx context.Context) error {
 				}
 			}
 		}
+		var flushed int64
 		for f.pendingCount() > 0 {
-			f.flush()
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil { // 预算到期：截断退出（剩余条目由 flushCtx 截断回灌，丢 ≤1 flush 窗口；remaining_logs 用 pendingN 日志条数与 flushed_logs 单位一致——pendingCount 为去重用户数会低估，评审 I-1）
 				if f.log != nil {
-					f.log.Warn("billing flusher close: pending billing not fully flushed")
+					f.log.Warn("billing flusher close: shutdown budget exceeded, truncated drain",
+						logx.Int64("flushed_logs", flushed), logx.Int64("remaining_logs", f.pendingN.Load()))
 				}
 				return
-			default:
 			}
+			flushed += f.flushCtx(ctx)
 		}
 	})
 	return nil
@@ -168,21 +172,26 @@ func (f *Flusher) pendingCount() int {
 	return len(f.pending)
 }
 
-// flush 全量落库（单入口：ticker/ctx.Done/Close 三处触发共用，flushMu 串行——
-// 杜绝并发换批；DB 写锁外）：锁内 swap 整个 pending → 批按 userID 分片（同
-// user 恒同桶 → 实例内串行）→ N worker 并发逐 user DeductAndLog 单事务；
-// 成功 → bal.Set 定向刷新余额快照（O(1) 原地 Store）；失败 → Warn + cost+logs
-// 一起回灌当前 pending（评审 C-2：只回 cost 丢日志——明细与扣费必须同批重试，
-// 否则重试后扣费无明细）。返回前等待本批全部 worker 完成（Close 由此无在途
-// 批次）。
-func (f *Flusher) flush() {
+// flush 全量落库（ticker 路径，无预算约束）。
+func (f *Flusher) flush() { f.flushCtx(context.Background()) }
+
+// flushCtx 受 ctx 约束的全量落库（单入口：ticker/ctx.Done/Close 三处触发共用，
+// flushMu 串行——杜绝并发换批；DB 写锁外）：锁内 swap 整个 pending → 批按
+// userID 分片（同 user 恒同桶 → 实例内串行）→ N worker 并发逐 user
+// DeductAndLog 单事务；成功 → bal.Set 定向刷新余额快照（O(1) 原地 Store）；
+// 失败 → Warn + cost+logs 一起回灌当前 pending（评审 C-2：只回 cost 丢日志——
+// 明细与扣费必须同批重试，否则重试后扣费无明细）。返回前等待本批全部 worker
+// 完成（Close 由此无在途批次）。O1 收尾：逐 user 处理前检查 ctx，预算到期即
+// 截断——未处理条目原样回灌（不丢、由 Close 决定放弃），在途事务经 ctx 取消
+// 快速失败；返回本批成功落库日志条数（Close 汇总作 Warn 诊断）。
+func (f *Flusher) flushCtx(ctx context.Context) int64 {
 	f.flushMu.Lock()
 	defer f.flushMu.Unlock()
 
 	f.mu.Lock()
 	if len(f.pending) == 0 {
 		f.mu.Unlock()
-		return
+		return 0
 	}
 	pend := f.pending
 	f.pending = make(map[int64]*flusherPending)
@@ -207,6 +216,7 @@ func (f *Flusher) flush() {
 	}
 
 	var wg sync.WaitGroup
+	var drained atomic.Int64
 	for _, shard := range shards {
 		if len(shard) == 0 {
 			continue
@@ -215,7 +225,11 @@ func (f *Flusher) flush() {
 		go func(s map[int64]*flusherPending) {
 			defer wg.Done()
 			for uid, e := range s {
-				_, bal, err := f.writer.DeductAndLog(context.Background(), uid, e.cost, e.logs)
+				if ctx.Err() != nil { // 预算到期：截断，未处理回灌（Close 据此 Warn 后放弃）
+					f.refill(uid, e)
+					continue
+				}
+				_, bal, err := f.writer.DeductAndLog(ctx, uid, e.cost, e.logs)
 				if err != nil {
 					if f.log != nil {
 						f.log.Warn("billing deduct failed", logx.Int64("user_id", uid), logx.Int64("cost", e.cost), logx.Error(err))
@@ -224,10 +238,12 @@ func (f *Flusher) flush() {
 					continue
 				}
 				f.bal.Set(uid, bal)
+				drained.Add(int64(len(e.logs)))
 			}
 		}(shard)
 	}
 	wg.Wait()
+	return drained.Load()
 }
 
 // refill 失败回灌：该 user 的 cost+logs 合并回当前 pending（锁内 append——flush

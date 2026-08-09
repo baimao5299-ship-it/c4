@@ -907,14 +907,15 @@ Phase 5 计费链路：请求前**预检**（价格快照缺价 / 余额快照 �
 ### 启用顺序（config.toml）
 
 ```toml
-billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "10s" }
+billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "10s", flush_workers = 4 }
 ```
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
 | `billing.enabled` | `false` | **默认关闭（opt-in）**。启用前必须先同步价格（`POST /admin/pricing/sync` 或等待定时拉取）——空价格表 = 全模型 402（契约语义：缺价不按 0 计价） |
-| `billing.flush_interval` | `1s` | 扣费批量落库周期（内存聚合满或周期到 → 逐 user 小事务条件扣费） |
+| `billing.flush_interval` | `1s` | 扣费批量落库周期（内存聚合满或周期到 → 逐 user 小事务条件扣费；停机排空受 shutdown 预算约束，超时 Warn 截断、不阻塞退出） |
 | `billing.balance_refresh_interval` | `10s` | 余额快照全量刷新周期（预检读快照；扣费后定向即时刷新该 user） |
+| `billing.flush_workers` | `4` | 并行落库 worker 数（O1 管道化分片并行，同用户实例内恒串行）。建议上限 ~7：每 worker 一笔 `DeductAndLog` 事务，须 ≤ DB 连接池余量（`db.max_conns` 扣除其他连接占用） |
 
 关联配置：`proxy.usage_capture`（日志开关；billing 路由判定包含它）、`usage.log_retention_days`（usage_logs 分区保留天数，见「日志与统计」）。
 

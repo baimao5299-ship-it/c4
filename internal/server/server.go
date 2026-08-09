@@ -119,10 +119,11 @@ func NewServer(opts Options) *Server {
 	// 因此这里在 Mount("/", AIHandler) 之后设置 NotFound，AI 路由的未匹配
 	// 路径会进入同一 fallback；/admin/* 经 Handle 注册不受影响。
 	if opts.WebFS != nil {
-		r.Handle("/assets/*", http.FileServerFS(opts.WebFS))
+		web := webFSNoDirs{fs: opts.WebFS} // 目录请求 → 404（不渲染 HTML 目录列表）
+		r.Handle("/assets/*", http.FileServerFS(web))
 		// favicon 位于 dist 根（index.html 引用 /favicon.svg），不走 SPA fallback，
 		// 否则会返回 index.html（content-type text/html，浏览器拒绝渲染）。
-		r.Handle("/favicon.svg", http.FileServerFS(opts.WebFS))
+		r.Handle("/favicon.svg", http.FileServerFS(web))
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			index, err := fs.ReadFile(opts.WebFS, "index.html")
 			if err != nil {
@@ -153,3 +154,25 @@ func NewServer(opts Options) *Server {
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// webFSNoDirs 包装 fs.FS：目录请求返回 fs.ErrNotExist（404）。/assets/* 若裸用
+// http.FileServerFS，目录会被渲染成 HTML 目录列表（go:embed all:dist 全部内容
+// 可枚举，静态资源被遍历暴露）。文件请求不受影响（Open 后 Stat 判定 IsDir）。
+type webFSNoDirs struct{ fs fs.FS }
+
+func (w webFSNoDirs) Open(name string) (fs.File, error) {
+	f, err := w.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	if st.IsDir() {
+		f.Close()
+		return nil, fs.ErrNotExist
+	}
+	return f, nil
+}
