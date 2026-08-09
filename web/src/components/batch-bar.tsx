@@ -14,6 +14,7 @@ import { toast } from '@/components/ui/toast'
 
 // 列表页批量操作条：已选计数 + 批量删除（带确认弹窗）+ 可选批量更新 + 清除选择。
 // onDelete/onUpdate 可为异步；resolve 后就地显示短暂成功反馈（batch.deleted / batch.updated），reject 时就地显示错误（2s 自动消失）。
+// confirmTitle/confirmDesc/successTitle 用于覆盖「删除」语义（如批量失效场景），缺省保持默认文案。
 export function BatchBar({
   selected,
   onClear,
@@ -21,6 +22,9 @@ export function BatchBar({
   onUpdate,
   deleteLabel,
   updateLabel,
+  confirmTitle,
+  confirmDesc,
+  successTitle,
 }: {
   selected: number[]
   onClear: () => void
@@ -28,6 +32,9 @@ export function BatchBar({
   onUpdate?: () => void | Promise<void | 'cancelled' | 'submitted'>
   deleteLabel?: string
   updateLabel?: string
+  confirmTitle?: string
+  confirmDesc?: string
+  successTitle?: string
 }) {
   const { t } = useTranslation()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -43,7 +50,7 @@ export function BatchBar({
       .then((result) => {
         if (result === 'cancelled') return
         toast.add({
-          title: t(action === 'delete' ? 'batch.deleted' : 'batch.updated', { count }),
+          title: successTitle ?? t('batch.deleted', { count }),
           type: 'success',
         })
       })
@@ -90,8 +97,8 @@ export function BatchBar({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{t('common.confirmDelete')}</DialogTitle>
-            <DialogDescription>{t('batch.confirmDelete', { count })}</DialogDescription>
+            <DialogTitle>{confirmTitle ?? t('common.confirmDelete')}</DialogTitle>
+            <DialogDescription>{confirmDesc ?? t('batch.confirmDelete', { count })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)}>

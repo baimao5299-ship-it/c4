@@ -23,7 +23,8 @@
     "groups": "分组",
     "logs": "日志",
     "stats": "统计",
-    "rules": "规则"
+    "rules": "规则",
+    "redemptions": "兑换码"
   },
   "theme": {
     "toggle": "切换主题",
@@ -463,5 +464,69 @@
     },
     "deleteTitle": "删除规则",
     "deleteDesc": "确定删除规则「{{name}}」？立即生效。"
+  },
+  "redemptions": {
+    "title": "兑换码",
+    "subtitle": "生成/失效兑换码；余额面值按 USD 展示（1 USD = 100,000 毫分）",
+    "new": "生成兑换码",
+    "all": "全部",
+    "emptyTitle": "暂无兑换码",
+    "emptyDesc": "生成兑换码后可发放给用户",
+    "filterEmpty": "没有符合条件的兑换码",
+    "filterType": "类型筛选",
+    "filterStatus": "状态筛选",
+    "type": {
+      "balance": "余额",
+      "concurrency": "并发",
+      "temp_balance": "临时余额"
+    },
+    "status": {
+      "active": "可用",
+      "disabled": "已失效"
+    },
+    "table": {
+      "code": "兑换码",
+      "type": "类型",
+      "value": "面值",
+      "remark": "备注",
+      "maxUses": "已用/上限",
+      "status": "状态",
+      "expiresAt": "过期时间",
+      "resourceExpiresAt": "资源到期",
+      "userId": "用户 ID",
+      "createdAt": "兑换时间",
+      "actions": "操作"
+    },
+    "deactivate": "失效",
+    "deactivateTitle": "失效兑换码",
+    "deactivateDesc": "确认失效兑换码「{{code}}」？失效后不可再兑换，已兑换记录仍保留。",
+    "deactivateConfirm": "确认失效",
+    "batchDeactivate": "批量失效",
+    "batchDeactivateConfirmTitle": "批量失效",
+    "batchDeactivateConfirm": "确认失效选中的 {{count}} 个兑换码？",
+    "batchDeactivated": "已失效 {{count}} 个兑换码",
+    "uses": "使用明细",
+    "usesTitle": "使用明细 #{{code}}",
+    "usesDesc": "该码的全部兑换记录（审计）",
+    "usesEmpty": "暂无兑换记录",
+    "generateTitle": "生成兑换码",
+    "generateDesc": "type 与面值必填；temp_balance 必须指定资源到期时间",
+    "typeLabel": "类型",
+    "valueLabel": "面值",
+    "valueHintBalance": "毫分（1 USD = 100,000 毫分）",
+    "valueHintConcurrency": "并发数（正整数）",
+    "remarkLabel": "备注",
+    "remarkPlaceholder": "可选，如：618 活动",
+    "expiresAtLabel": "码过期时间",
+    "expiresAtHint": "留空 = 永不过期",
+    "resourceExpiresAtLabel": "资源到期时间",
+    "resourceExpiresAtRequired": "temp_balance 类型必填",
+    "maxUsesLabel": "可兑换次数",
+    "maxUsesHint": "1 = 单次码；>1 = 多人码",
+    "countLabel": "生成个数",
+    "countHint": "1-1000",
+    "generatedTitle": "已生成 {{count}} 个兑换码",
+    "generatedDesc": "请复制分发；列表页始终可查看码明文",
+    "formInvalid": "表单校验失败：面值需大于 0、temp_balance 必填资源到期时间、生成个数 1-1000、可兑换次数 ≥ 1"
   }
 }

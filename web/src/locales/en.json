@@ -23,7 +23,8 @@
     "groups": "Groups",
     "logs": "Logs",
     "stats": "Stats",
-    "rules": "Rules"
+    "rules": "Rules",
+    "redemptions": "Redemption codes"
   },
   "theme": {
     "toggle": "Toggle theme",
@@ -463,5 +464,69 @@
     },
     "deleteTitle": "Delete rule",
     "deleteDesc": "Delete rule \"{{name}}\"? It takes effect immediately."
+  },
+  "redemptions": {
+    "title": "Redemption codes",
+    "subtitle": "Generate & deactivate redemption codes; balance values shown in USD (1 USD = 100,000 milli-cents)",
+    "new": "Generate codes",
+    "all": "All",
+    "emptyTitle": "No redemption codes yet",
+    "emptyDesc": "Generate codes and hand them out to users",
+    "filterEmpty": "No codes match the filters",
+    "filterType": "Filter type",
+    "filterStatus": "Filter status",
+    "type": {
+      "balance": "Balance",
+      "concurrency": "Concurrency",
+      "temp_balance": "Temp balance"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Deactivated"
+    },
+    "table": {
+      "code": "Code",
+      "type": "Type",
+      "value": "Value",
+      "remark": "Remark",
+      "maxUses": "Used/limit",
+      "status": "Status",
+      "expiresAt": "Expires at",
+      "resourceExpiresAt": "Resource expires",
+      "userId": "User ID",
+      "createdAt": "Redeemed at",
+      "actions": "Actions"
+    },
+    "deactivate": "Deactivate",
+    "deactivateTitle": "Deactivate code",
+    "deactivateDesc": "Deactivate code \"{{code}}\"? It can no longer be redeemed; usage history is kept.",
+    "deactivateConfirm": "Deactivate",
+    "batchDeactivate": "Batch deactivate",
+    "batchDeactivateConfirmTitle": "Batch deactivate",
+    "batchDeactivateConfirm": "Deactivate the {{count}} selected codes?",
+    "batchDeactivated": "Deactivated {{count}} codes",
+    "uses": "Usage details",
+    "usesTitle": "Usage #{{code}}",
+    "usesDesc": "All redemption records for this code (audit)",
+    "usesEmpty": "No redemption records",
+    "generateTitle": "Generate codes",
+    "generateDesc": "Type and value are required; temp_balance requires a resource expiry",
+    "typeLabel": "Type",
+    "valueLabel": "Value",
+    "valueHintBalance": "Milli-cents (1 USD = 100,000 milli-cents)",
+    "valueHintConcurrency": "Concurrency (positive integer)",
+    "remarkLabel": "Remark",
+    "remarkPlaceholder": "Optional, e.g. summer promo",
+    "expiresAtLabel": "Code expires at",
+    "expiresAtHint": "Leave empty = never expires",
+    "resourceExpiresAtLabel": "Resource expires at",
+    "resourceExpiresAtRequired": "Required for temp_balance",
+    "maxUsesLabel": "Max uses",
+    "maxUsesHint": "1 = single-use code; >1 = multi-user code",
+    "countLabel": "Count",
+    "countHint": "1-1000",
+    "generatedTitle": "Generated {{count}} codes",
+    "generatedDesc": "Copy and distribute; codes remain visible in the list",
+    "formInvalid": "Form invalid: value must be > 0, temp_balance requires a resource expiry, count must be 1-1000, max uses ≥ 1"
   }
 }
