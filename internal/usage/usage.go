@@ -169,15 +169,27 @@ func (r *Recorder) statsFlushLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			r.flushStats()
+			// 最终 flush 由 Close 以 shutdown 预算 ctx 执行（O2 停机修复）：
+			// 本 loop ctx 在 SIGTERM 即已取消，传它会恒截断丢全部统计（每
+			// 次优雅停机都丢最后窗口，比不复用更糟）；Close 持预算 ctx 才能
+			// "正常完整刷 / 到期截断"两全。跳过也消除与 Close 并发抢换批的
+			// 竞态（谁先 swap 谁独占数据，后者见空）。
 			return
 		case <-t.C:
-			r.flushStats()
+			r.flushStats(context.Background())
 		}
 	}
 }
 
-func (r *Recorder) flushStats() {
+// flushStats 换批 + 落库（统计桶 Upsert + 额度增量回写），受 ctx 预算约束
+// （O2 停机修复——O1 复测：Close 用 Background 逐 key AddQuotaUsed 独占
+// 3.8 分钟吃掉停机预算尾部，main 卡死）：逐 key/逐批前查 ctx.Err()，到期 →
+// Warn（含已刷/剩余 key 数）+ 截断退出。截断丢的是统计面 stat 聚合/配额
+// 刷新（内存权威、DB 滞后 ≤ flush 间隔的崩溃等价语义），**非计费扣费**——
+// cost 经 billing Flusher 落库，与本统计面同窗口、互不影响（billing_e2e 场景
+// 9 优雅停机断流式 cost 不丢验证不受影响）。正常（无 deadline ctx）完整刷
+// 语义不变；失败回灌语义不变（下次 flush 重试）。
+func (r *Recorder) flushStats(ctx context.Context) {
 	r.mu.Lock()
 	buckets := make([]*domain.StatBucket, 0, len(r.counters))
 	for _, c := range r.counters {
@@ -189,23 +201,47 @@ func (r *Recorder) flushStats() {
 	r.quotaUsed = make(map[int64]int64)
 	qw := r.quota
 	r.mu.Unlock()
-	// 额度回写（增量；失败回灌，下次 flush 重试——与 stats 同语义）
+	// 额度回写（增量；失败单 key 回灌，下次 flush 重试——与 stats 同语义）。
+	// 逐 key 单调用：repo 内部本就每 key 一轮询（ent UpdateOneID.Save），与
+	// 整 map 一次调用轮询数相同，无正常路径回归；逐 key 才有 per-key 截断点
+	// 与已刷/剩余计数。
 	if qw != nil && len(quota) > 0 {
-		if err := qw.AddQuotaUsed(context.Background(), quota); err != nil {
-			if r.log != nil {
-				r.log.Warn("usage quota writeback failed", logx.Error(err))
+		var flushedKeys, remainingKeys int
+		for k, v := range quota {
+			if v == 0 {
+				continue // 与 repo 语义一致：零增量无回写价值
 			}
-			r.mu.Lock()
-			for k, v := range quota {
+			if ctx.Err() != nil { // 预算到期：截断（丢弃，不落库不回灌）
+				remainingKeys++
+				continue
+			}
+			if err := qw.AddQuotaUsed(ctx, map[int64]int64{k: v}); err != nil {
+				if r.log != nil {
+					r.log.Warn("usage quota writeback failed", logx.Error(err))
+				}
+				r.mu.Lock()
 				r.quotaUsed[k] += v
+				r.mu.Unlock()
+				continue
 			}
-			r.mu.Unlock()
+			flushedKeys++
+		}
+		if remainingKeys > 0 && r.log != nil {
+			r.log.Warn("usage quota flush truncated on shutdown budget",
+				logx.Int("quota_flushed_keys", flushedKeys), logx.Int("quota_remaining_keys", remainingKeys))
 		}
 	}
 	if len(buckets) == 0 {
 		return
 	}
-	if err := r.stats.Upsert(context.Background(), buckets); err != nil {
+	if ctx.Err() != nil { // 预算到期：截断（统计面聚合，崩溃等价语义）
+		if r.log != nil {
+			r.log.Warn("usage stats flush truncated on shutdown budget",
+				logx.Int("stats_flushed_buckets", 0), logx.Int("stats_remaining_buckets", len(buckets)))
+		}
+		return
+	}
+	if err := r.stats.Upsert(ctx, buckets); err != nil {
 		if r.log != nil {
 			r.log.Warn("usage stats upsert failed", logx.Error(err))
 		}
@@ -232,6 +268,7 @@ func (r *Recorder) flushStats() {
 }
 
 // Close 排空剩余明细（限时，超时丢弃并 Warn）；幂等，满足 worker.Worker 契约。
+// 统计面由 flushStats 以本 ctx 预算收尾（到期截断 + Warn，见 flushStats 注释）。
 func (r *Recorder) Close(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -254,6 +291,6 @@ func (r *Recorder) Close(ctx context.Context) error {
 			r.log.Warn("usage close timeout, dropping remaining logs")
 		}
 	}
-	r.flushStats()
+	r.flushStats(ctx)
 	return nil
 }

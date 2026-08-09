@@ -124,14 +124,20 @@ func (w *barrierWriter) DeductAndLog(ctx context.Context, userID, cost int64, lo
 }
 
 // ctxWriter DeductAndLog 尊重 ctx（模拟可取消的慢 DB）：latency 内 ctx 到期 →
-// 返回 ctx.Err（在途事务取消语义），否则记录调用。
+// 返回 ctx.Err（在途事务取消语义），否则记录调用。started 非 nil 时首调进入
+// 即关闭（测试等待在途批次开始；Once 防并发/重复 close）。
 type ctxWriter struct {
-	mu      sync.Mutex
-	latency time.Duration
-	calls   []deductCall
+	mu        sync.Mutex
+	latency   time.Duration
+	startOnce sync.Once
+	started   chan struct{}
+	calls     []deductCall
 }
 
 func (w *ctxWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+	if w.started != nil { // started 仅构造期赋值、只读——nil 检查无竞态
+		w.startOnce.Do(func() { close(w.started) })
+	}
 	select {
 	case <-ctx.Done():
 		return false, 0, ctx.Err()
@@ -428,6 +434,94 @@ func TestFlusherCloseTruncatesOnBudget(t *testing.T) {
 	require.Contains(t, string(b), "shutdown budget exceeded, truncated drain")
 	require.Contains(t, string(b), `"flushed_logs":0`)
 	require.Contains(t, string(b), `"remaining_logs":2`)
+}
+
+// TestFlusherCloseWaitsInflight O2 停机修复核心（复测根因 1）：ticker 批次已
+// 在途（baseCtx、pending 已 swap、flushMu 被占）时 Close 必须先等其结束——
+// 否则 drain 循环见 pendingCount()==0 静默提前返回，在途批次无界运行：
+// - 预算内完成：Close 实际等待（不提前返回），完整排空，无截断 Warn；
+// - 预算到期：Cancel baseCtx → 在途 DeductAndLog 快速失败（未落库、回灌不
+//   丢）→ 截断 Warn（flushed/remaining 条数）+ 快速退出（不等其自然完成）。
+func TestFlusherCloseWaitsInflight(t *testing.T) {
+	t.Run("waits within budget", func(t *testing.T) {
+		writer := &ctxWriter{latency: 500 * time.Millisecond, started: make(chan struct{})}
+		f := newTestFlusher(writer)
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 100})
+		f.Record(&domain.UsageLog{UserID: 2, Cost: 100})
+		flushDone := make(chan struct{})
+		go func() {
+			defer close(flushDone)
+			f.flush() // ticker 路径批次（baseCtx）在途
+		}()
+		<-writer.started
+
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
+		defer cancel()
+		start := time.Now()
+		closeDone := make(chan struct{})
+		var closeErr error
+		go func() {
+			closeErr = f.Close(ctx)
+			close(closeDone)
+		}()
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Close 未在预算内返回（在途批次未被等待）")
+		}
+		require.NoError(t, closeErr)
+		elapsed := time.Since(start)
+		require.GreaterOrEqual(t, elapsed, 400*time.Millisecond, "Close 必须等待在途批次完成（不得静默提前返回）")
+		require.Less(t, elapsed, 1500*time.Millisecond, "在途批次自然完成后即返回（不得等满预算）")
+		writer.mu.Lock()
+		require.Len(t, writer.calls, 2, "在途批次完整落库（无截断）")
+		writer.mu.Unlock()
+		require.Equal(t, 0, f.pendingCount(), "完整排空")
+		<-flushDone
+	})
+
+	t.Run("cancels on budget expiry", func(t *testing.T) {
+		writer := &ctxWriter{latency: 500 * time.Millisecond, started: make(chan struct{})}
+		f := newTestFlusher(writer)
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 100})
+		f.Record(&domain.UsageLog{UserID: 2, Cost: 100})
+		logger, out := newTestLogger(t)
+		f.log = logger
+		flushDone := make(chan struct{})
+		go func() {
+			defer close(flushDone)
+			f.flush()
+		}()
+		<-writer.started
+
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(120*time.Millisecond))
+		defer cancel()
+		start := time.Now()
+		closeDone := make(chan struct{})
+		var closeErr error
+		go func() {
+			closeErr = f.Close(ctx)
+			close(closeDone)
+		}()
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Close 未在预算内返回（在途批次取消未生效）")
+		}
+		require.NoError(t, closeErr)
+		require.Less(t, time.Since(start), 500*time.Millisecond, "在途批次必须被取消快速失败（不得等其自然完成）")
+		writer.mu.Lock()
+		require.Empty(t, writer.calls, "在途 DeductAndLog 被取消——不得落库成功")
+		writer.mu.Unlock()
+		require.Equal(t, 2, f.pendingCount(), "取消后回灌不丢")
+		require.NoError(t, logger.Sync())
+		b, err := os.ReadFile(out)
+		require.NoError(t, err)
+		require.Contains(t, string(b), "shutdown budget exceeded, truncated drain")
+		require.Contains(t, string(b), `"flushed_logs":0`)
+		require.Contains(t, string(b), `"remaining_logs":2`)
+		<-flushDone
+	})
 }
 
 // TestFlusherWaterlineWarns 水线按聚合日志条数计（评审 C-1）：pending 日志条数

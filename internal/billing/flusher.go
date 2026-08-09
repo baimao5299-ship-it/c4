@@ -46,9 +46,14 @@ type flusherPending struct {
 // swap 整个 pending（换新 map，flush 期间新日志进新 map 零阻塞）→ 批按
 // userID 分片（同 user 恒同桶 → 实例内串行；FEFO 行锁跨实例安全不变）→
 // N worker 并发逐 user DeductAndLog 单事务 → 成功定向刷新余额快照（O(1)）。
-// Close 幂等：排空 + 最后全量 flush + 等全部在途 worker 批（flushMu 串行 +
-// 批内 wg）——优雅停机核心：在途请求已由 waitForInflight 收敛，pending 即
-// 全部计费，不丢。
+// Close 幂等：等聚合 goroutine 退出 + 受 shutdown ctx 预算约束的排空循环，
+// 其中"等在途批次"以 flushMu 获取表达（flushCtx 串行——在途批次持有
+// flushMu 期间 Close 等待；SIGTERM 时 ticker 批次可能已在途，若无此等待
+// drain 循环见 pendingCount()==0 会静默提前返回、"无在途批次残留"不变量被
+// 破坏）——优雅停机核心：在途请求已由 waitForInflight 收敛，pending 即全部
+// 计费，不丢。ticker 批次用 baseCtx（可取消）：Close 预算到期 → Cancel →
+// 在途 DeductAndLog 快速失败（回灌不丢），不无界阻塞停机（O1 复测：在途
+// 批次 Background ctx 令停机拖至分钟级）。
 type Flusher struct {
 	cfg      FlushConfig
 	stats    *usage.Recorder
@@ -60,10 +65,15 @@ type Flusher struct {
 	pending  map[int64]*flusherPending
 	pendingN atomic.Int64 // pending 日志条数（水线观测；换批/回灌同步增减）
 	warned   atomic.Bool  // 水线越过告警边沿（回落复位，避免重复刷屏）
-	flushMu  sync.Mutex   // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥
+	flushMu  sync.Mutex   // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥；在途批次即其持有者
 	started  atomic.Bool
 	loopDone chan struct{}
 	closeOnce sync.Once
+	// O2 停机：ticker 路径批次的可取消父 ctx（常时 = Background 语义；Close
+	// 预算到期 Cancel → 在途批次快速失败）。baseCtx 仅经 baseCancel 修改
+	// （Close 内单写者），loop/Close 并发读安全。
+	baseCtx    context.Context
+	baseCancel context.CancelFunc
 }
 
 func NewFlusher(cfg FlushConfig, writer DeductWriter, stats *usage.Recorder, bal *Balances, log *logx.Logger) *Flusher {
@@ -71,12 +81,14 @@ func NewFlusher(cfg FlushConfig, writer DeductWriter, stats *usage.Recorder, bal
 	if workers <= 0 {
 		workers = 1
 	}
-	return &Flusher{
+	f := &Flusher{
 		cfg: cfg, stats: stats, writer: writer, bal: bal, log: log,
 		workers:  workers,
 		pending:  make(map[int64]*flusherPending),
 		loopDone: make(chan struct{}),
 	}
+	f.baseCtx, f.baseCancel = context.WithCancel(context.Background())
+	return f
 }
 
 // Name worker.Worker 契约（wm 按注册反向排空：flusher 最后注册最先排空）。
@@ -133,16 +145,24 @@ func (f *Flusher) Record(l *domain.UsageLog) {
 	}
 }
 
-// Close 幂等排空（优雅停机核心）：等聚合 goroutine 退出（其 ctx.Done 路径已
-// flush 一次）→ 受 shutdown ctx 预算约束的排空循环（flushMu 串行：与在途
-// ticker flush 互斥，先等其 worker 批完成——无并发换批、无在途批次残留）。
-// 正常情形完整排空语义不变（无 deadline ctx = 全部落库）；ctx 到期 → Warn
-// （含已排空/剩余条数）+ 截断退出，不阻塞停机（O1 复测：44k/s 压测后 1.7M
-// pending 无预算排空需数分钟）。未 Start 也安全（跳过等待；pending 残留同样
-// 排空）。
+// Close 幂等排空（优雅停机核心）：等聚合 goroutine 退出（受预算约束）→ 以
+// flushMu 获取等待在途批次（SIGTERM 时 ticker 批次可能已在途占住 flushMu 且
+// pending 已 swap；Close 必须先等其结束，否则 drain 循环见 pendingCount()==0
+// 会静默提前返回，在途批次带着计费日志无界运行——O1 复测根因 1）→ 受
+// shutdown ctx 预算约束的排空循环（此时无在途批次、flushMu 无竞争）。正常
+// 情形完整排空语义不变（无 deadline ctx = 全部落库）；ctx 到期 → Cancel
+// baseCtx（在途批次 DeductAndLog 快速失败回灌，不丢）+ Warn（含已排空/剩余
+// 条数）+ 截断退出，不阻塞停机（O1 复测：44k/s 压测后 1.7M pending 无预算
+// 排空需数分钟）。未 Start 也安全（跳过聚合等待；在途 flush 与 pending 残留
+// 同样等待/排空）。
 func (f *Flusher) Close(ctx context.Context) error {
 	f.closeOnce.Do(func() {
+		defer f.baseCancel() // flusher 关闭后 baseCtx 不得再有存活批次
 		if f.started.Load() {
+			// 等聚合 goroutine 退出（受预算约束）。SIGTERM 时 loop 可能阻塞在
+			// ticker flush（baseCtx 批次在途）——loopDone 待其批次结束 + 末次
+			// flush 后才关闭；预算到期 → Warn + 继续（在途批次由下面 flushMu
+			// 等待强制取消）。
 			select {
 			case <-f.loopDone:
 			case <-ctx.Done():
@@ -150,6 +170,22 @@ func (f *Flusher) Close(ctx context.Context) error {
 					f.log.Warn("billing flusher close: aggregator did not exit in time")
 				}
 			}
+		}
+		// 等在途批次（有界）：flushCtx 由 flushMu 串行——"是否有批次在途"即
+		// "flushMu 是否被占"；尝试获取 flushMu：拿到即无在途批次（其退出前
+		// 必释放），预算内等其自然完成（完整排空语义不变）；到期 → Cancel
+		// baseCtx 强制在途 DeductAndLog 快速失败（回灌不丢），等批次收尾后
+		// 走截断路径。未 Start 时无竞争立即拿到（此前测试直接调 flush 的
+		// 在途批次同样被等待）。
+		acquired := make(chan struct{})
+		go func() { f.flushMu.Lock(); close(acquired) }()
+		select {
+		case <-acquired:
+			f.flushMu.Unlock()
+		case <-ctx.Done():
+			f.baseCancel()
+			<-acquired // 取消后在途批次快速收尾（DeductAndLog 尊重 ctx）
+			f.flushMu.Unlock()
 		}
 		var flushed int64
 		for f.pendingCount() > 0 {
@@ -172,8 +208,9 @@ func (f *Flusher) pendingCount() int {
 	return len(f.pending)
 }
 
-// flush 全量落库（ticker 路径，无预算约束）。
-func (f *Flusher) flush() { f.flushCtx(context.Background()) }
+// flush 全量落库（ticker 路径，无预算约束——常时与 Background 等价；Close
+// 预算到期时 Cancel baseCtx，在途批次快速失败）。
+func (f *Flusher) flush() { f.flushCtx(f.baseCtx) }
 
 // flushCtx 受 ctx 约束的全量落库（单入口：ticker/ctx.Done/Close 三处触发共用，
 // flushMu 串行——杜绝并发换批；DB 写锁外）：锁内 swap 整个 pending → 批按
@@ -181,9 +218,10 @@ func (f *Flusher) flush() { f.flushCtx(context.Background()) }
 // DeductAndLog 单事务；成功 → bal.Set 定向刷新余额快照（O(1) 原地 Store）；
 // 失败 → Warn + cost+logs 一起回灌当前 pending（评审 C-2：只回 cost 丢日志——
 // 明细与扣费必须同批重试，否则重试后扣费无明细）。返回前等待本批全部 worker
-// 完成（Close 由此无在途批次）。O1 收尾：逐 user 处理前检查 ctx，预算到期即
-// 截断——未处理条目原样回灌（不丢、由 Close 决定放弃），在途事务经 ctx 取消
-// 快速失败；返回本批成功落库日志条数（Close 汇总作 Warn 诊断）。
+// 完成（Close 由此以 flushMu 获取等待无在途批次）。O1 收尾：逐 user 处理前
+// 检查 ctx，预算到期即截断——未处理条目原样回灌（不丢、由 Close 决定放弃），
+// 在途事务经 ctx 取消快速失败；返回本批成功落库日志条数（Close 汇总作 Warn
+// 诊断）。
 func (f *Flusher) flushCtx(ctx context.Context) int64 {
 	f.flushMu.Lock()
 	defer f.flushMu.Unlock()
