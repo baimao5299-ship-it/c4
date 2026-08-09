@@ -122,7 +122,7 @@ export function Pagination({
                 className="h-7 min-w-7 px-2 text-xs tabular-nums"
                 aria-current={p === page ? 'page' : undefined}
                 aria-label={`${t('list.jumpTo')} ${p}${t('list.jumpPage')}`}
-                onClick={() => onOffsetChange((p - 1) * limit)}
+                onClick={() => { setJumpTo(''); onOffsetChange((p - 1) * limit) }}
               >
                 {p}
               </Button>

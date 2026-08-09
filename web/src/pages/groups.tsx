@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, FolderOpen, Filter } from 'lucide-react'
+import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
@@ -27,6 +27,12 @@ import type { components } from '@/lib/api/schema'
 
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
+type GroupAssignmentsBody = components['schemas']['GroupAssignmentsBody']
+type GroupAssignmentsResponse = components['schemas']['GroupAssignmentsResponse']
+
+// 授予弹窗行内专属倍率态：mult = 输入框文本（'' = 未填）；cleared = 用户显式点过
+// 「清除为未设置」（提交 null）；勾选留空且未清除 = 省略键（沿用当前值）。
+interface AssignRowMult { mult: string; cleared: boolean }
 
 // 价格倍率（正常值，API 边界已换算）→ 展示：null = 未设置（—）；0 = 免费；
 // 其余 ×N（1 = ×1.0，1.5 = ×1.5）。
@@ -138,6 +144,62 @@ export default function Groups() {
     }
     batchRename.mutate({ ids: selected, name: batchRenameValue.trim() })
   }
+
+  // —— 授予用户（替换语义：勾选 = 授予，未勾选 = 撤销；无 GET 回显，重开默认空）——
+  const [assignTarget, setAssignTarget] = useState<Group | null>(null)
+  const [assignChecked, setAssignChecked] = useState<number[]>([])
+  const [assignMult, setAssignMult] = useState<Record<number, AssignRowMult>>({})
+  const [assignQuery, setAssignQuery] = useState('')
+  const [assignOffset, setAssignOffset] = useState(0)
+  const [assignLimit, setAssignLimit] = useState(20)
+  // 上次提交成功的响应本地保留（弹窗内提示「已保存的授予」；契约无 GET 端点）。
+  const [assignSaved, setAssignSaved] = useState<GroupAssignmentsResponse | null>(null)
+
+  const openAssign = (g: Group) => {
+    setAssignTarget(g)
+    setAssignChecked([])
+    setAssignMult({})
+    setAssignQuery('')
+    setAssignOffset(0)
+  }
+  const toggleAssignUser = (id: number, on: boolean) =>
+    setAssignChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
+  const assignUsers = useQuery({
+    queryKey: ['users', 'assign', { limit: assignLimit, offset: assignOffset, email: assignQuery }],
+    queryFn: () => api.listUsers({ limit: assignLimit, offset: assignOffset, email: assignQuery || undefined }),
+    enabled: !!assignTarget,
+  })
+  const assignRows = assignUsers.data?.rows ?? []
+  const assignTotal = assignUsers.data?.total ?? 0
+
+  // multipliers 三态：勾选且填值 → 数字；勾选留空（未清除）→ 省略键（沿用当前值）；
+  // 勾选且显式清除 → null（回退组倍率）。
+  const assign = useMutation({
+    mutationFn: () => {
+      const body: GroupAssignmentsBody = { user_ids: assignChecked }
+      const muls: Record<string, number | null> = {}
+      for (const uid of assignChecked) {
+        const row = assignMult[uid]
+        const v = row?.mult.trim()
+        if (v !== undefined && v !== '') {
+          const n = Number(v)
+          if (!Number.isFinite(n) || n < 0 || n > 10) throw new Error(t('groups.multiplierInvalid'))
+          muls[String(uid)] = n
+        } else if (row?.cleared) {
+          muls[String(uid)] = null
+        }
+      }
+      if (Object.keys(muls).length > 0) body.multipliers = muls
+      return api.setGroupAssignments(assignTarget!.ID!, body)
+    },
+    onSuccess: (resp) => {
+      setAssignSaved(resp)
+      setAssignTarget(null)
+      toast.add({ title: t('groups.assignSuccess'), description: t('groups.assignSuccessDesc', { count: resp.user_ids.length }), type: 'success' })
+    },
+  })
+  const setRowMult = (uid: number, mult: string) => setAssignMult(m => ({ ...m, [uid]: { mult, cleared: false } }))
+  const clearRowMult = (uid: number) => setAssignMult(m => ({ ...m, [uid]: { mult: '', cleared: true } }))
 
   // —— 创建（表单：name + visibility；POST 不设倍率）——
   const [createOpen, setCreateOpen] = useState(false)
@@ -273,6 +335,7 @@ export default function Groups() {
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon-sm" title={t('groups.assignButton')} onClick={() => openAssign(g)}><UserPlus /></Button>
                         <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public'); setEditMultiplier(g.PriceMultiplier != null ? String(g.PriceMultiplier) : '') }}><Pencil /></Button>
                         <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
                       </div>
@@ -431,6 +494,88 @@ export default function Groups() {
             <Button variant="outline" onClick={() => closeBatchRename()} disabled={batchRename.isPending}>{t('common.cancel')}</Button>
             <Button onClick={submitBatchRename} disabled={batchRename.isPending || !batchRenameValue.trim()}>
               {batchRename.isPending ? t('common.saving') : t('list.batchUpdate')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 授予用户：替换语义（勾选 = 授予，未勾选 = 撤销）+ 专属倍率三态 —— */}
+      <Dialog open={!!assignTarget} onOpenChange={o => { if (!o && !assign.isPending) setAssignTarget(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('groups.assignTitle', { name: assignTarget?.Name })}</DialogTitle>
+            <DialogDescription>{t('groups.assignDesc')}</DialogDescription>
+            <p className="text-xs text-muted-foreground">{t('groups.assignMultiplierHint')}</p>
+            <p className="text-xs text-amber-600 dark:text-amber-400">{t('groups.assignEchoNote')}</p>
+            {assignSaved && assignSaved.user_ids.length > 0 && (
+              <p className="text-xs text-muted-foreground">{t('groups.assignSavedNote', { count: assignSaved.user_ids.length })}</p>
+            )}
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={assignQuery}
+              placeholder={t('groups.assignSearchPlaceholder')}
+              onChange={e => { setAssignQuery(e.target.value); setAssignOffset(0) }}
+            />
+            {assignUsers.isLoading ? (
+              <div className="space-y-1.5">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
+              </div>
+            ) : assignUsers.isError ? (
+              <p className="text-sm text-destructive">{t('common.loadFailed', { message: (assignUsers.error as Error).message })}</p>
+            ) : assignRows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">{t('groups.assignEmpty')}</p>
+            ) : (
+              <>
+                <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                  {assignRows.map(u => {
+                    const checked = assignChecked.includes(u.ID!)
+                    const row = assignMult[u.ID!]
+                    return (
+                      <div key={u.ID} className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
+                        <Checkbox checked={checked} onCheckedChange={c => toggleAssignUser(u.ID!, c === true)} />
+                        <span className="min-w-0 flex-1 truncate text-sm" title={u.Email}>{u.Email}</span>
+                        {checked && (
+                          <>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={10}
+                              step={0.1}
+                              value={row?.mult ?? ''}
+                              placeholder={t('groups.assignMultiplierPlaceholder')}
+                              onChange={e => setRowMult(u.ID!, e.target.value)}
+                              className="h-7 w-24 text-xs"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              title={t('groups.assignMultiplierClear')}
+                              disabled={!row?.mult}
+                              onClick={() => clearRowMult(u.ID!)}
+                            >
+                              <X />
+                            </Button>
+                            {row?.cleared && (
+                              <span className="w-24 text-xs text-muted-foreground">{t('groups.assignMultiplierUnset')}</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <Pagination total={assignTotal} limit={assignLimit} offset={assignOffset} onOffsetChange={setAssignOffset} onLimitChange={l => { setAssignLimit(l); setAssignOffset(0) }} />
+              </>
+            )}
+            {assign.isError && errMsg(assign.error) && (
+              <p className="text-sm text-destructive">{errMsg(assign.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignTarget(null)} disabled={assign.isPending}>{t('common.cancel')}</Button>
+            <Button onClick={() => assign.mutate()} disabled={assign.isPending}>
+              {assign.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
