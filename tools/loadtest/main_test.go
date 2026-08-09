@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -242,4 +244,87 @@ func TestFillRequestNon200CountsError(t *testing.T) {
 	m.mu.Lock()
 	require.Equal(t, int64(1), m.errDetail["status:409"])
 	m.mu.Unlock()
+}
+
+// ---- doRequest 非 200：响应体排空（连接回池复用）行为固定 ----
+
+// connCountingServer 统计 TCP 层新连接数（StateNew ≈ Accept）的 httptest
+// server：断言连接复用行为的直接观测面。
+func connCountingServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	var conns atomic.Int64
+	srv := httptest.NewUnstartedServer(h)
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv, &conns
+}
+
+// useAddr 临时改 -addr 并重建请求模板（模板按 flags 在 main 启动时构建一次，
+// 测试改全局 flag 后必须重建）；cleanup 恢复并重建。
+func useAddr(t *testing.T, u string) {
+	t.Helper()
+	prev := *addr
+	*addr = u
+	buildReqTemplate()
+	t.Cleanup(func() { *addr = prev; buildReqTemplate() })
+}
+
+func TestDoRequestNon200CountsError(t *testing.T) {
+	srv, _ := connCountingServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = fmt.Fprintln(w, `{"error":"rate limited"}`)
+	})
+	useAddr(t, srv.URL)
+	m := &metrics{errDetail: make(map[string]int64)}
+	doRequest(&http.Client{Timeout: 5 * time.Second}, m, rand.New(rand.NewPCG(1, 1)), true)
+	require.Equal(t, int64(1), m.total.Load())
+	require.Equal(t, int64(1), m.errs.Load())
+	m.mu.Lock()
+	require.Equal(t, int64(1), m.errDetail["status:429"])
+	m.mu.Unlock()
+}
+
+func TestDoRequestNon200DrainsBodyForReuse(t *testing.T) {
+	for _, testMode := range []string{"stream", "chat"} {
+		t.Run(testMode, func(t *testing.T) {
+			prevMode := *mode
+			*mode = testMode
+			t.Cleanup(func() { *mode = prevMode; buildReqTemplate() })
+
+			const n = 160
+			srv, conns := connCountingServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write(bytes.Repeat([]byte("rate limited\n"), 128)) // ~2KB body，确认有可排空内容
+			})
+			useAddr(t, srv.URL)
+			m := &metrics{errDetail: make(map[string]int64)}
+			client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+				MaxIdleConns:        n,
+				MaxIdleConnsPerHost: n,
+				IdleConnTimeout:     90 * time.Second,
+			}}
+			// 单 worker 顺序发 160 个 429：排空 body → 首请求拨号后连接回池，
+			// 后续请求复用，连接数期望 = 1。transport 在空闲池为空时会并行起
+			// 拨号与 readLoop 异步回池竞速（getConn：queueForIdleConn 未命中
+			// 即 queueForDial，Go transport.go），单 worker 下该竞态最坏仅
+			// +1 条连接（此后池恒温不再拨号，上界绝对）——并发多 worker 时
+			// 窗口被交错放大，精确断言会 flake（评审 1M），故用顺序形态。
+			// 不排空则每请求重拨 160 条 = 压测实证的 429 拨号风暴。
+			rng := rand.New(rand.NewPCG(1, 1))
+			for i := 0; i < n; i++ {
+				doRequest(client, m, rng, true)
+			}
+			require.LessOrEqual(t, conns.Load(), int64(2))
+			require.Equal(t, int64(n), m.total.Load())
+			require.Equal(t, int64(n), m.errs.Load())
+			m.mu.Lock()
+			require.Equal(t, int64(n), m.errDetail["status:429"])
+			m.mu.Unlock()
+		})
+	}
 }
