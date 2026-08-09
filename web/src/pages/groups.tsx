@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X } from 'lucide-react'
@@ -70,6 +70,12 @@ export default function Groups() {
     queryFn: () => api.listGroups({ limit, offset, name: name || undefined, sort: activeSort ?? 'id', order }),
   })
   const rows = data?.rows ?? []
+
+  // 末页死胡同守卫：非首页的当前页数据被清空（如批量删除把当前页删空）时回退到第 1 页，
+  // 避免空态页无返回入口。页 1 本身为空（列表真正为空）时无需回退，不会成环。
+  useEffect(() => {
+    if (!isLoading && !isError && rows.length === 0 && offset > 0) setOffset(0)
+  }, [isLoading, isError, rows.length, offset])
 
   // —— 行勾选（跨页保留，筛选/翻页后清空）——
   const [selected, setSelected] = useState<number[]>([])
