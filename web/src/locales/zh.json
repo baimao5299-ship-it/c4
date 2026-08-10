@@ -299,7 +299,13 @@
     "assignPrivateHint": "授予后该用户可访问此组",
     "assignBatchPlaceholder": "批量设置倍率（0-10）",
     "assignBatchApply": "应用",
-    "assignBatchClear": "批量清除"
+    "assignBatchClear": "批量清除",
+    "assignPublicTitle": "专属倍率管理 · {{name}}",
+    "assignPublicDesc": "公开组所有用户默认可用，无需授予访问；在此管理个别用户的专属价格倍率。",
+    "assignConfiguredCount": "已配置 {{count}} 个用户的专属倍率",
+    "assignPublicSearchHint": "暂无已配置用户，通过搜索添加",
+    "assignPublicSuccess": "倍率配置已保存",
+    "assignConfiguredClearedDesc": "已清除全部用户的专属倍率配置"
   },
   "logs": {
     "title": "日志",

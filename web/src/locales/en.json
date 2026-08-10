@@ -299,7 +299,13 @@
     "assignPrivateHint": "Granted users get access to this group",
     "assignBatchPlaceholder": "Set multiplier for all (0-10)",
     "assignBatchApply": "Apply",
-    "assignBatchClear": "Clear all"
+    "assignBatchClear": "Clear all",
+    "assignPublicTitle": "Per-user multipliers · {{name}}",
+    "assignPublicDesc": "All users can access this public group by default; manage per-user price multipliers here.",
+    "assignConfiguredCount": "{{count}} users with per-user multipliers",
+    "assignPublicSearchHint": "No configured users yet — search to add",
+    "assignPublicSuccess": "Multiplier settings saved",
+    "assignConfiguredClearedDesc": "All per-user multipliers cleared"
   },
   "logs": {
     "title": "Logs",
