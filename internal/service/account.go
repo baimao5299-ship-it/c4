@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/logx"
 )
@@ -32,6 +33,7 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 	}
 	// O2 组级定向：新账号进其分组快照（无分组账号不入任何快照 → 空集 no-op）。
 	s.inv.Accounts(groupsOf(a), false)
+	s.publish(ctx, notify.Change{Groups: groupsOf(a)})
 	return created, nil
 }
 
@@ -85,6 +87,7 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 		s.log.Warn("account groups query failed", logx.Int64("account_id", a.ID), logx.Error(gErr))
 	}
 	s.inv.Accounts(gids, keyChanged)
+	s.publish(ctx, notify.Change{Groups: gids, Clients: keyChanged}) // upstream_key 变更 → clients 失效
 	return updated, nil
 }
 
@@ -116,6 +119,7 @@ func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
 		return err // 404 缺 id（与批量语义对齐）
 	}
 	s.inv.Accounts(gids, false)
+	s.publish(ctx, notify.Change{Groups: gids})
 	return nil
 }
 
@@ -139,6 +143,7 @@ func (s *Service) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
 		return err
 	}
 	s.inv.Accounts(gids, false)
+	s.publish(ctx, notify.Change{Groups: gids})
 	return nil
 }
 
@@ -173,6 +178,7 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	// UpstreamKey 就保守标记 clients 失效——clients 失效成本远低于旧 key
 	// 滞留风险（宁可多失效一次）。
 	s.inv.Accounts(gids, p.UpstreamKey != nil)
+	s.publish(ctx, notify.Change{Groups: gids, Clients: p.UpstreamKey != nil})
 	return nil
 }
 

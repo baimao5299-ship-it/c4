@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/logx"
 )
@@ -17,6 +18,7 @@ func (s *Service) CreateTemplate(ctx context.Context, t *domain.Template) (*doma
 		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
 	}
 	s.inv.Templates()
+	s.publish(ctx, notify.Change{Templates: true})
 	if s.log != nil {
 		s.log.Info("template created", logx.Int64("id", created.ID), logx.String("name", created.Name))
 	}
@@ -47,6 +49,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, t *domain.Template) (*doma
 		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）
 	}
 	s.inv.Templates()
+	s.publish(ctx, notify.Change{Templates: true})
 	return updated, nil
 }
 
@@ -55,6 +58,7 @@ func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
 		return err // 404 缺 id（与批量语义对齐）
 	}
 	s.inv.Templates()
+	s.publish(ctx, notify.Change{Templates: true})
 	return nil
 }
 
@@ -66,6 +70,7 @@ func (s *Service) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
 		return err
 	}
 	s.inv.Templates()
+	s.publish(ctx, notify.Change{Templates: true})
 	return nil
 }
 
@@ -80,5 +85,6 @@ func (s *Service) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repos
 		return err
 	}
 	s.inv.Templates()
+	s.publish(ctx, notify.Change{Templates: true})
 	return nil
 }

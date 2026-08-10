@@ -13,6 +13,7 @@ import (
 
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/scheduler"
@@ -198,6 +199,13 @@ type RuleReloader interface {
 	Reload(ctx context.Context) error
 }
 
+// Publisher 多实例 NOTIFY 发布面（#14 T2）：实现 = *notify.Publisher（Publish
+// 在 DB 写成功后调用，与 inv.* 调用点并排）；接口化供测试注入 fake（与
+// Invalidator 同模式）。nil = 单实例/未装配（T2 过渡），publish no-op。
+type Publisher interface {
+	Publish(ctx context.Context, ch notify.Change) error
+}
+
 // RuntimeProvider 由 scheduler 实现，供账号运行时视图。
 type RuntimeProvider interface {
 	Runtime(accountID int64) (scheduler.RuntimeInfo, bool)
@@ -213,6 +221,7 @@ type Service struct {
 	store      Store
 	sched      RuntimeProvider
 	inv        Invalidator // 管理面变更去抖失效（O2 接线矩阵；nil = 不失效）
+	pub        Publisher   // 多实例 NOTIFY 发布器（#14 T2；nil = 单实例/未装配，publish no-op）
 	ruleReload RuleReloader
 	keys       KeyRegistrar
 	// settings 设置全量内存快照（默认值 + DB 覆盖）：公开读路径（注册等）
@@ -229,11 +238,33 @@ type Service struct {
 	log          *logx.Logger
 }
 
-func New(store Store, sched RuntimeProvider, invalidate Invalidator, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
-	s := &Service{store: store, sched: sched, inv: invalidate, ruleReload: ruleReload, keys: keys, log: log}
+func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publisher, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
+	s := &Service{store: store, sched: sched, inv: invalidate, pub: pub, ruleReload: ruleReload, keys: keys, log: log}
 	s.reloadSettings(context.Background())
 	s.reloadPricing(context.Background())
 	return s
+}
+
+// publish 发布一条 NOTIFY 变更（#14 T2）：与现有 inv.* 调用点并排，DB 写成功
+// 后调用。失败忽略——NOTIFY 是事件提示，丢一条由 60s 周期兜底收敛（Publisher
+// 内部已 Warn），不回滚业务。pub 为 nil（T2 过渡：main 未装配）→ no-op；
+// T3 main 装配后必非 nil。
+// 空 Change（评审 I-1）：全字段为空（Users/Templates/Clients/Multipliers/
+// Keys/Settings/Rules 全 false 且 Groups 空）→ 判空跳过不 Publish（no-op）。
+// CreateAccount 无 GroupIDs / UpdateAccount 无变更的空载荷在此统一覆盖（与
+// O2 inv.Accounts 空集 no-op 同语义）。
+// 发布脱离请求 ctx（评审 I-2）：请求 ctx 取消（客户端断开）不吞 NOTIFY——
+// context.WithoutCancel 剥离取消/超时信号仅继承值；NOTIFY 是连接写无悬挂
+// 风险，发布必须到最后一个字节。
+func (s *Service) publish(ctx context.Context, ch notify.Change) {
+	if s.pub == nil {
+		return
+	}
+	if !ch.Users && !ch.Templates && !ch.Clients && !ch.Multipliers &&
+		!ch.Keys && !ch.Settings && !ch.Rules && len(ch.Groups) == 0 {
+		return // 空 Change：无任何变更语义（评审 I-1）
+	}
+	_ = s.pub.Publish(context.WithoutCancel(ctx), ch)
 }
 
 // validateBaseURL 校验 base_url：可解析、有 scheme/host，且为裸根（不含尾

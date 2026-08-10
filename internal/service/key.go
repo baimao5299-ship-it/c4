@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/cryptox"
 	"go-proxy-mini/pkg/logx"
@@ -38,6 +39,9 @@ func (s *Service) CreateKey(ctx context.Context, userID int64, name string, grou
 	if err := s.upsertKeyMeta(ctx, created); err != nil {
 		return nil, "", err
 	}
+	// key 创建是 #14 多实例缺口（不进 invalidate）：其余实例鉴权快照需全量
+	// Reload 覆盖（v1 不做增量定向）。
+	s.publish(ctx, notify.Change{Keys: true})
 	if s.log != nil {
 		s.log.Info("key created", logx.Int64("id", created.ID), logx.Int64("user_id", userID), logx.String("name", name))
 	}
@@ -117,6 +121,7 @@ func (s *Service) UpdateKey(ctx context.Context, userID, keyID int64, name *stri
 	if err := s.upsertKeyMeta(ctx, updated); err != nil {
 		return nil, err
 	}
+	s.publish(ctx, notify.Change{Keys: true}) // 改额度/状态 → 全实例 auth 快照全量 Reload
 	return updated, nil
 }
 
@@ -138,6 +143,7 @@ func (s *Service) RotateKey(ctx context.Context, userID, keyID int64) (string, *
 	if err := s.upsertKeyMeta(ctx, updated); err != nil {
 		return "", nil, err
 	}
+	s.publish(ctx, notify.Change{Keys: true}) // 轮换 = 旧 hash 失效 + 新 hash 注册 → 全量覆盖
 	if s.log != nil {
 		s.log.Info("key rotated", logx.Int64("id", keyID), logx.Int64("user_id", userID))
 	}
@@ -157,6 +163,7 @@ func (s *Service) DeleteKey(ctx context.Context, userID, keyID int64) error {
 	if s.keys != nil {
 		s.keys.Delete(cur.KeyHash)
 	}
+	s.publish(ctx, notify.Change{Keys: true}) // 删除 → 全实例 auth 快照全量 Reload（旧 hash 立即失效）
 	return nil
 }
 

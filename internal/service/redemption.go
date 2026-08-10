@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/logx"
 )
@@ -279,5 +280,6 @@ func (s *Service) Redeem(ctx context.Context, code string, userID int64) (*domai
 		return nil, err
 	}
 	s.inv.Users() // 余额/并发已变更 → Auth + 余额快照刷新（O2 矩阵：用户面变更，去抖窗口内全量）
+	s.publish(ctx, notify.Change{Users: true})
 	return apply, nil
 }

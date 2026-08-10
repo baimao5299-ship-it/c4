@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/rule"
 	"go-proxy-mini/pkg/logx"
@@ -70,6 +71,7 @@ func (s *Service) CreateRule(ctx context.Context, in RuleInput) (*domain.Rule, e
 		return nil, mapRuleRepoErr(err)
 	}
 	s.reloadRules(ctx)
+	s.publish(ctx, notify.Change{Rules: true})
 	if s.log != nil {
 		s.log.Info("rule created", logx.Int64("id", id), logx.String("name", in.Name))
 	}
@@ -119,6 +121,7 @@ func (s *Service) UpdateRule(ctx context.Context, id int64, p RulePatch) (*domai
 		return nil, mapRuleRepoErr(err)
 	}
 	s.reloadRules(ctx)
+	s.publish(ctx, notify.Change{Rules: true})
 	return s.getRule(ctx, id)
 }
 
@@ -128,6 +131,7 @@ func (s *Service) DeleteRule(ctx context.Context, id int64) error {
 		return err
 	}
 	s.reloadRules(ctx)
+	s.publish(ctx, notify.Change{Rules: true})
 	return nil
 }
 
@@ -141,6 +145,7 @@ func (s *Service) DeleteRulesBatch(ctx context.Context, ids []int64) error {
 		return err
 	}
 	s.reloadRules(ctx)
+	s.publish(ctx, notify.Change{Rules: true})
 	return nil
 }
 

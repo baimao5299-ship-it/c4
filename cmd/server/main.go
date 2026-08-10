@@ -154,7 +154,9 @@ func main() {
 	})
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
-	svc := service.New(repos, sched, inv, ruleEngine, auth, log)
+	// pub 暂为 nil（#14 T2：service 发布点已就绪，notify.Publisher 装配在 T3
+	// ——main 装配 listener + Dispatcher 时一并注入）。
+	svc := service.New(repos, sched, inv, nil, ruleEngine, auth, log)
 	if cfg.Billing.Enabled {
 		billFlusher = billing.NewFlusher(billing.FlushConfig{
 			FlushInterval:          cfg.Billing.FlushInterval,

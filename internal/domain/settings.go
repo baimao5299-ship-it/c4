@@ -20,6 +20,11 @@ var DefaultSettings = []Setting{
 	{Key: "service_tier_policy_priority", Type: SettingTypeString, Value: "passthrough"},
 	{Key: "service_tier_policy_flex", Type: SettingTypeString, Value: "passthrough"},
 	{Key: "service_tier_policy_fast", Type: SettingTypeString, Value: "passthrough"},
+	// 集群实例数 N（#14 多实例预算分摊，设计文档 §3.1）：存 DB settings——
+	// 所有实例必须读到同一 N（config 文件各实例可漂移，DB 是唯一共识源）；
+	// N 变更走 settings NOTIFY 天然传播。service.ClusterInstances 读取，
+	// 缺失/非法回退 1（单实例语义）。
+	{Key: "cluster.instances", Type: SettingTypeNumber, Value: "1"},
 }
 
 // DefaultSetting 返回内置 key 的默认设置；未知 key 返回 nil。

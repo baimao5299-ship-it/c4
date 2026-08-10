@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/logx"
 )
@@ -32,6 +33,7 @@ func (s *Service) CreateGroup(ctx context.Context, name string, visibility domai
 		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
 	}
 	s.inv.Multipliers()
+	s.publish(ctx, notify.Change{Multipliers: true})
 	if s.log != nil {
 		s.log.Info("group created", logx.Int64("id", created.ID), logx.String("name", name))
 	}
@@ -67,6 +69,7 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	// O2 组倍率矩阵：倍率变更 → 余额倍率快照定向刷新（名字/可见性变更不触发
 	// 任何快照，此处保守一并标记——去抖窗口内一次小表单查，可忽略）。
 	s.inv.Multipliers()
+	s.publish(ctx, notify.Change{Multipliers: true})
 	return updated, nil
 }
 
@@ -92,7 +95,10 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	// O2：组删除后倍率快照清理（陈旧条目无害；保守标记——组变更统一走倍率
 	// 定向刷新）。组内账号由 FK 约束保证为空（ent 默认无级联，删除含账号的
 	// 组 → 仓库错误）→ 调度器快照不受组删除影响。
+	// Keys：组删除经 Auth.Delete 移除组内全部 key——其余实例快照需全量覆盖
+	// （key CRUD 缺口同语义），与 Multipliers 合并同一条 NOTIFY。
 	s.inv.Multipliers()
+	s.publish(ctx, notify.Change{Multipliers: true, Keys: true})
 	return nil
 }
 
@@ -118,6 +124,7 @@ func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 		return err // 事务回滚；key 已删但 DB 未删——与单删同性质（失败自愈：DB 仍在则 key 下次重载恢复）
 	}
 	s.inv.Multipliers()
+	s.publish(ctx, notify.Change{Multipliers: true, Keys: true}) // 组删除同删组内 key（Auth.Delete）→ keys 覆盖
 	return nil
 }
 
