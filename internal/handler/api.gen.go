@@ -800,6 +800,23 @@ type UserCreate struct {
 	Status         *UserStatus `json:"status,omitempty"`
 }
 
+// UserGroupsBody defines model for UserGroupsBody.
+type UserGroupsBody struct {
+	// GroupIds 替换语义：完整授予组列表（未列出即撤销；空数组 = 清空）
+	GroupIds []int64 `json:"group_ids"`
+
+	// Multipliers 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值
+	Multipliers *map[string]*float64 `json:"multipliers,omitempty"`
+}
+
+// UserGroupsResponse defines model for UserGroupsResponse.
+type UserGroupsResponse struct {
+	GroupIds []int64 `json:"group_ids"`
+
+	// Multipliers 该用户当前各授予组的专属价格倍率（正常值；null/缺省 = 未设置 → 用组倍率）
+	Multipliers *map[string]*float64 `json:"multipliers,omitempty"`
+}
+
 // UserListResponse defines model for UserListResponse.
 type UserListResponse struct {
 	Rows  []User `json:"rows"`
@@ -1011,6 +1028,9 @@ type PostUsersJSONRequestBody = UserCreate
 // PutUsersIdJSONRequestBody defines body for PutUsersId for application/json ContentType.
 type PutUsersIdJSONRequestBody = UserUpdate
 
+// PutUsersIdGroupsJSONRequestBody defines body for PutUsersIdGroups for application/json ContentType.
+type PutUsersIdGroupsJSONRequestBody = UserGroupsBody
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// 账号列表（分页/筛选/排序，含运行时视图）
@@ -1058,6 +1078,9 @@ type ServerInterface interface {
 
 	// (PUT /groups/{id})
 	PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
+	// 读取组的授予用户与专属倍率（platform_admin；与 PUT 对称，供前端预填充与安全全量写回）
+	// (GET /groups/{id}/assignments)
+	GetGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64)
 	// 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
 	// (PUT /groups/{id}/assignments)
 	PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64)
@@ -1145,6 +1168,12 @@ type ServerInterface interface {
 	// 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
 	// (PUT /users/{id})
 	PutUsersId(w http.ResponseWriter, r *http.Request, id int64)
+	// 读取用户被授予的分组与各专属倍率（platform_admin；用户视角，与 /groups/{id}/assignments 对称）
+	// (GET /users/{id}/groups)
+	GetUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64)
+	// 设置用户的授予分组（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
+	// (PUT /users/{id}/groups)
+	PutUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -1232,6 +1261,12 @@ func (_ Unimplemented) GetGroupsId(w http.ResponseWriter, r *http.Request, id in
 
 // (PUT /groups/{id})
 func (_ Unimplemented) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 读取组的授予用户与专属倍率（platform_admin；与 PUT 对称，供前端预填充与安全全量写回）
+// (GET /groups/{id}/assignments)
+func (_ Unimplemented) GetGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1403,6 +1438,18 @@ func (_ Unimplemented) PostUsers(w http.ResponseWriter, r *http.Request) {
 // 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
 // (PUT /users/{id})
 func (_ Unimplemented) PutUsersId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 读取用户被授予的分组与各专属倍率（platform_admin；用户视角，与 /groups/{id}/assignments 对称）
+// (GET /users/{id}/groups)
+func (_ Unimplemented) GetUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 设置用户的授予分组（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
+// (PUT /users/{id}/groups)
+func (_ Unimplemented) PutUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1799,6 +1846,31 @@ func (siw *ServerInterfaceWrapper) PutGroupsId(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutGroupsId(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGroupsIdAssignments operation middleware
+func (siw *ServerInterfaceWrapper) GetGroupsIdAssignments(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGroupsIdAssignments(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2690,6 +2762,56 @@ func (siw *ServerInterfaceWrapper) PutUsersId(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// GetUsersIdGroups operation middleware
+func (siw *ServerInterfaceWrapper) GetUsersIdGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUsersIdGroups(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutUsersIdGroups operation middleware
+func (siw *ServerInterfaceWrapper) PutUsersIdGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutUsersIdGroups(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2849,6 +2971,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/groups/{id}", wrapper.PutGroupsId)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/groups/{id}/assignments", wrapper.GetGroupsIdAssignments)
+	})
+	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/groups/{id}/assignments", wrapper.PutGroupsIdAssignments)
 	})
 	r.Group(func(r chi.Router) {
@@ -2934,6 +3059,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/users/{id}", wrapper.PutUsersId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/users/{id}/groups", wrapper.GetUsersIdGroups)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/users/{id}/groups", wrapper.PutUsersIdGroups)
 	})
 
 	return r

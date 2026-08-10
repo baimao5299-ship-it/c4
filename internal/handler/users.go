@@ -91,3 +91,48 @@ func (h *AdminAPI) PutUsersId(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 	writeJSON(w, http.StatusOK, toAPIUser(updated))
 }
+
+// GetUsersIdGroups 读取用户被授予的组与各专属倍率（platform_admin；用户视角，
+// 与 /groups/{id}/assignments 对称；ServerInterface）。mults 只含有专属倍率的
+// 组（null/缺省 = 未设置 → 用组倍率）。
+func (h *AdminAPI) GetUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64) {
+	ids, mults, err := h.svc.GetUserGroups(r.Context(), id)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, UserGroupsResponse{
+		GroupIds:    ids,
+		Multipliers: toAPIMultipliers(mults),
+	})
+}
+
+// PutUsersIdGroups 设置用户的授予分组（platform_admin；替换语义：group_ids =
+// 完整授予组列表（未列出即撤销，空数组 = 清空）；ServerInterface）。
+// multipliers 可选：group_id → 该用户在该组的专属价格倍率（正常值 0~10；
+// null = 清除为未设置 → 回退组倍率；键必须 ∈ group_ids）。
+func (h *AdminAPI) PutUsersIdGroups(w http.ResponseWriter, r *http.Request, id int64) {
+	var in UserGroupsBody
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	var mults map[int64]*int
+	if in.Multipliers != nil {
+		m, err := apiMultiplierMap(*in.Multipliers) // map[string]*float64 → map[int64]*int（万分数）
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		mults = m
+	}
+	applied, postMults, err := h.svc.SetUserGroups(r.Context(), id, in.GroupIds, mults)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, UserGroupsResponse{
+		GroupIds:    applied,
+		Multipliers: toAPIMultipliers(postMults),
+	})
+}

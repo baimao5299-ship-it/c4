@@ -129,6 +129,21 @@ func (h *AdminAPI) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// GetGroupsIdAssignments 读取组的授予用户与专属倍率（platform_admin；与 PUT
+// 对称，供前端预填充与安全全量写回；ServerInterface）。mults 只含有专属倍率
+// 的用户（null/缺省 = 未设置 → 用组倍率）。
+func (h *AdminAPI) GetGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
+	ids, mults, err := h.svc.GetGroupAssignments(r.Context(), id)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, GroupAssignmentsResponse{
+		UserIds:     ids,
+		Multipliers: toAPIMultipliers(mults),
+	})
+}
+
 // DeleteGroupsId 删除分组（ServerInterface）。
 func (h *AdminAPI) DeleteGroupsId(w http.ResponseWriter, r *http.Request, id int64) {
 	if err := h.svc.DeleteGroup(r.Context(), id); err != nil {

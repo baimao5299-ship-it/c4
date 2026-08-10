@@ -47,39 +47,9 @@ func (s *Service) SetGroupAssignments(ctx context.Context, groupID int64, userID
 	if err != nil {
 		return nil, nil, err
 	}
-	have := make(map[int64]bool, len(cur))
-	oldMult := make(map[int64]*int, len(cur))
-	for _, a := range cur {
-		have[a.UserID] = true
-		oldMult[a.UserID] = a.PriceMultiplier
-	}
-	for uid := range want {
-		if !have[uid] {
-			if err := s.store.GrantGroup(ctx, groupID, uid); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-	for uid, m := range mults {
-		if err := s.store.SetAssignmentMultiplier(ctx, groupID, uid, m); err != nil {
-			return nil, nil, err
-		}
-	}
-	for _, a := range cur {
-		if !want[a.UserID] {
-			if err := s.store.RevokeGroup(ctx, groupID, a.UserID); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-	// post-state 倍率：user_ids 全量（未在 mults 的用户沿用旧值；新授予未设 → nil）
-	post := make(map[int64]*int, len(userIDs))
-	for _, uid := range userIDs {
-		if m, ok := mults[uid]; ok {
-			post[uid] = m
-			continue
-		}
-		post[uid] = oldMult[uid]
+	post, err := s.applyGroupAssignments(ctx, groupID, userIDs, mults, cur)
+	if err != nil {
+		return nil, nil, err
 	}
 	s.inv.Multipliers()
 	s.publish(ctx, notify.Change{Multipliers: true})
@@ -87,6 +57,51 @@ func (s *Service) SetGroupAssignments(ctx context.Context, groupID int64, userID
 		s.log.Info("group assignments set", logx.Int64("group_id", groupID), logx.Int64("count", int64(len(userIDs))))
 	}
 	return userIDs, post, nil
+}
+
+// applyGroupAssignments 组维度替换核心（SetGroupAssignments / SetUserGroups
+// 共用；调用方负责存在性/合法性校验与 Multipliers() 刷新）：cur = 组当前授予
+// 行，want = 目标授予集合（已校验去重/存在/≤100），mults = 组内专属倍率更新
+// （key ⊆ want，万分数已校验；nil = 清除为未设置）。幂等 Grant 新增 /
+// SetAssignmentMultiplier 更新 / Revoke 撤销；返回 post-state 倍率（want
+// 全量，未在 mults 的用户沿用旧值，nil = 未设置）。
+func (s *Service) applyGroupAssignments(ctx context.Context, groupID int64, want []int64, mults map[int64]*int, cur []*domain.GroupAssignment) (map[int64]*int, error) {
+	have := make(map[int64]bool, len(cur))
+	oldMult := make(map[int64]*int, len(cur))
+	for _, a := range cur {
+		have[a.UserID] = true
+		oldMult[a.UserID] = a.PriceMultiplier
+	}
+	wantSet := make(map[int64]bool, len(want))
+	for _, uid := range want {
+		wantSet[uid] = true
+		if !have[uid] {
+			if err := s.store.GrantGroup(ctx, groupID, uid); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for uid, m := range mults {
+		if err := s.store.SetAssignmentMultiplier(ctx, groupID, uid, m); err != nil {
+			return nil, err
+		}
+	}
+	for _, a := range cur {
+		if !wantSet[a.UserID] {
+			if err := s.store.RevokeGroup(ctx, groupID, a.UserID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	post := make(map[int64]*int, len(want))
+	for _, uid := range want {
+		if m, ok := mults[uid]; ok {
+			post[uid] = m
+			continue
+		}
+		post[uid] = oldMult[uid]
+	}
+	return post, nil
 }
 
 // ListGroupsForUser 用户可选组列表（public 全部 + 已授予 private；/user/groups
