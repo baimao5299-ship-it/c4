@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"entgo.io/ent/dialect"
@@ -53,41 +54,51 @@ func usageLogPartitionDate(name string) (time.Time, bool) {
 	return t, true
 }
 
-// usageLogCreateDDL 分区表 DDL（列定义与 ent schema 完全一致，仅主键与 id
-// 生成方式不同——ent migrate 主键 (id) 在分区表上不可行，见 EnsureUsageLogPartitioned
-// 注释与 usageLogMigrateHook；id 走序列 nextval，语义同 ent bigserial）。
-const usageLogCreateDDL = `CREATE TABLE usage_logs (
-	id bigint NOT NULL DEFAULT nextval('usage_logs_id_seq'::regclass),
-	request_id varchar NOT NULL,
-	group_id bigint NULL,
-	account_id bigint NULL,
-	template_id bigint NULL,
-	user_id bigint NULL,
-	key_id bigint NULL,
-	model varchar NOT NULL DEFAULT '',
-	mapped_model varchar NULL,
-	format varchar NOT NULL,
-	status_code bigint NOT NULL DEFAULT 0,
-	error_type varchar NOT NULL DEFAULT 'none',
-	error_message varchar NULL,
-	latency_ms bigint NOT NULL DEFAULT 0,
-	ttft_ms bigint NULL,
-	input_tokens bigint NOT NULL DEFAULT 0,
-	price_input_millis bigint NULL,
-	output_tokens bigint NOT NULL DEFAULT 0,
-	price_output_millis bigint NULL,
-	total_tokens bigint NOT NULL DEFAULT 0,
-	cache_read_tokens bigint NOT NULL DEFAULT 0,
-	price_cache_read_millis bigint NULL,
-	cache_creation_tokens bigint NOT NULL DEFAULT 0,
-	price_cache_creation_millis bigint NULL,
-	cost bigint NOT NULL DEFAULT 0,
-	billing_tier varchar NULL,
-	above_hit boolean NOT NULL DEFAULT false,
-	overdraft boolean NOT NULL DEFAULT false,
-	created_at timestamptz NOT NULL,
-	PRIMARY KEY (id, created_at)
-) PARTITION BY RANGE (created_at)`
+// usageLogColumnDefs 分区表列定义（单一事实源，评审 I-1 双向锚）：静态建表
+// DDL 与幂等补列 ALTER 均由本列表生成——列集合双向相等，任一侧被绕过/手改
+// 立即被 TestUsageLogAlignColumnsMatchCreateDDL 捕获（防"向静态 DDL 加列忘加
+// align"这一 P1 同型复发，含类型漂移——列定义字符串整体生成）。列定义与 ent
+// schema 完全一致，仅主键与 id 生成方式不同（见 usageLogCreateDDL 注释）。
+var usageLogColumnDefs = []string{
+	`id bigint NOT NULL DEFAULT nextval('usage_logs_id_seq'::regclass)`,
+	`request_id varchar NOT NULL`,
+	`group_id bigint NULL`,
+	`account_id bigint NULL`,
+	`template_id bigint NULL`,
+	`user_id bigint NULL`,
+	`key_id bigint NULL`,
+	`model varchar NOT NULL DEFAULT ''`,
+	`mapped_model varchar NULL`,
+	`format varchar NOT NULL`,
+	`status_code bigint NOT NULL DEFAULT 0`,
+	`error_type varchar NOT NULL DEFAULT 'none'`,
+	`error_message varchar NULL`,
+	`latency_ms bigint NOT NULL DEFAULT 0`,
+	`ttft_ms bigint NULL`,
+	`input_tokens bigint NOT NULL DEFAULT 0`,
+	`price_input_millis bigint NULL`,
+	`output_tokens bigint NOT NULL DEFAULT 0`,
+	`price_output_millis bigint NULL`,
+	`total_tokens bigint NOT NULL DEFAULT 0`,
+	`cache_read_tokens bigint NOT NULL DEFAULT 0`,
+	`price_cache_read_millis bigint NULL`,
+	`cache_creation_tokens bigint NOT NULL DEFAULT 0`,
+	`price_cache_creation_millis bigint NULL`,
+	`cost bigint NOT NULL DEFAULT 0`,
+	`billing_tier varchar NULL`,
+	`above_hit boolean NOT NULL DEFAULT false`,
+	`overdraft boolean NOT NULL DEFAULT false`,
+	`created_at timestamptz NOT NULL`,
+}
+
+// usageLogCreateDDL 分区表 DDL（由 usageLogColumnDefs 生成；列定义与 ent
+// schema 完全一致，仅主键与 id 生成方式不同——ent migrate 主键 (id) 在分区表
+// 上不可行，见 EnsureUsageLogPartitioned 注释与 usageLogMigrateHook；id 走
+// 序列 nextval，语义同 ent bigserial）。
+var usageLogCreateDDL = "CREATE TABLE usage_logs (\n\t" +
+	strings.Join(usageLogColumnDefs, ",\n\t") + ",\n\t" +
+	"PRIMARY KEY (id, created_at)\n" +
+	") PARTITION BY RANGE (created_at)"
 
 // usageLogIndexDDLs 对齐 ent schema Indexes（同名同列；分区表父表索引为
 // 分区索引，子分区自动继承）。
@@ -98,6 +109,21 @@ var usageLogIndexDDLs = []string{
 	`CREATE INDEX usagelog_user_id_created_at ON usage_logs (user_id, created_at)`,
 	`CREATE INDEX usagelog_key_id_created_at ON usage_logs (key_id, created_at)`,
 }
+
+// usageLogAlignColumnDDLs 存量分区表幂等补列 ALTER（由 usageLogColumnDefs
+// 生成——全列 ADD COLUMN IF NOT EXISTS；已存在列 no-op，缺失列补齐）。P1
+// （压测 2026-08-11 修复）：price 快照列/ttft_ms 合入后创建的旧分区表缺列——
+// ent migrate 经钩子跳过 usagelog（分区表 diff 规划期必失败）、bootstrap 幂等
+// （已分区 → 仅补分区）从不 ALTER 补列 → 新二进制连旧库 billing INSERT 即
+// 42703 列不存在、usage 计费路径全停。PG12+ 父表 ALTER 自动传播到全部分区
+// （无需逐分区 ALTER）。
+var usageLogAlignColumnDDLs = func() []string {
+	ddls := make([]string, 0, len(usageLogColumnDefs))
+	for _, col := range usageLogColumnDefs {
+		ddls = append(ddls, "ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS "+col)
+	}
+	return ddls
+}()
 
 // IsUsageLogPartitioned 查 pg_partitioned_table（pg_class.relkind='p'）判断
 // usagelog 是否已是分区表（bootstrap 幂等判定）。
@@ -164,6 +190,19 @@ func (r *PartitionRepo) execDDLTolerateDup(ctx context.Context, query string) er
 	return nil
 }
 
+// alignUsageLogColumns 幂等补列（ADD COLUMN IF NOT EXISTS）：存量分区表路径
+// 按静态 DDL 全列对齐（缺失列补齐——P1 修复；新建/已有列 no-op；父表 ALTER
+// 自动传播全部分区，PG12+）。多实例并发安全：ADD COLUMN 在父表上
+// AccessExclusive 锁串行，IF NOT EXISTS 幂等收敛。
+func (r *PartitionRepo) alignUsageLogColumns(ctx context.Context) error {
+	for _, ddl := range usageLogAlignColumnDDLs {
+		if err := r.execDDL(ctx, ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // EnsureUsageLogPartitioned bootstrap（幂等，main 装配在 ent migrate 之后调用）：
 // usagelog 已是分区表 → 仅确保 当日→明日 分区存在后返回；未分区（含 ent
 // migrate 之前按旧 schema 建的普通表）→ DROP 重建分区表 + 序列 + 索引 + 预建
@@ -201,6 +240,13 @@ func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.
 				return fmt.Errorf("create usagelog index: %w", err)
 			}
 		}
+	}
+	// P1（压测 2026-08-11）：存量分区表 schema 对齐——旧库已建分区表时 bootstrap
+	// 从不 ALTER 补列（幂等仅补分区）→ 新二进制连旧库 billing INSERT 42703
+	// 全量失败。幂等 ADD COLUMN IF NOT EXISTS 按静态 DDL 全列对齐（新建路径
+	// 全 no-op）。
+	if err := r.alignUsageLogColumns(ctx); err != nil {
+		return fmt.Errorf("align usagelog columns: %w", err)
 	}
 	return r.EnsureUsageLogPartitions(ctx, now, now.AddDate(0, 0, 1))
 }
@@ -274,7 +320,7 @@ func (r *PartitionRepo) DropUsageLogPartitionsBefore(ctx context.Context, cutoff
 // usageLogMigrateHook 让 ent migrate 跳过 usagelog 表——分区表 DDL 由
 // EnsureUsageLogPartitioned 独占管理。真实 PG 实测结论（2026-08-09，
 // ent v0.14.6 + atlas v0.36.2 + PostgreSQL 18）：atlas 能识别已存在的分区表
-//（分区键属性），与 ent schema 的普通表定义 diff 时在规划期直接报错
+// （分区键属性），与 ent schema 的普通表定义 diff 时在规划期直接报错
 // "sql/schema: partition key cannot be dropped from \"usage_logs\""——
 // 即任何"普通表 → 分区表"的 diff 都不可行，ent migrate 对分区表必然失败，
 // 且无 migrate 选项可容忍（ent 无禁用主键/分区键 diff 的选项）。故用

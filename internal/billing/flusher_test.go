@@ -263,8 +263,15 @@ func TestFlusherRecordNeverBlocks(t *testing.T) {
 	require.NoError(t, f.Close(context.Background()))
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
-	require.Len(t, writer.calls, 1, "聚合单笔事务")
-	require.Equal(t, int64(100_000), writer.calls[0].cost, "10 万条聚合 cost")
+	require.Len(t, writer.calls, 10, "10 万条按事务行数上限拆 10 笔（单事务 1 万行）")
+	var rows, cost int64
+	for _, c := range writer.calls {
+		require.Len(t, c.logs, maxUsageLogsPerTx, "单事务行数有界")
+		rows += int64(len(c.logs))
+		cost += c.cost
+	}
+	require.Equal(t, int64(100_000), rows, "全量落库（无丢失）")
+	require.Equal(t, int64(100_000), cost, "cost 跨事务总和精确（无重复扣费）")
 }
 
 // TestFlusherRecordDuringFlushNotBlocked swap 不阻塞：flush 换批后 Record 继续
@@ -539,7 +546,9 @@ func TestFlusherWaterlineWarns(t *testing.T) {
 	for i := 0; i < 110; i++ {
 		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
 	}
-	f.flush() // 回落复位（pendingN < 水线 → warned 复位）
+	for f.pendingCount() > 0 {
+		f.flush() // 逐事务推进至排空 → 回落复位（pendingN < 水线 → warned 复位）
+	}
 	for i := 0; i < 110; i++ {
 		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
 	}
@@ -550,4 +559,106 @@ func TestFlusherWaterlineWarns(t *testing.T) {
 		"超阈值 Warn，回落复位后再次超阈值再次 Warn")
 	require.Contains(t, string(b), `"waterline":100`)
 	require.NoError(t, f.Close(context.Background()))
+}
+
+// TestFlusherHugeBacklogChunkedTx P2（压测 2026-08-11 修复回归）：单用户巨批拆
+// 事务——10w+ 积压时每次 flush 触发每用户至多一事务（≤ maxUsageLogsPerTx 行，
+// 单事务时长/内存有界），超出部分 refill 续传（flushMu 在事务间自然让出，不再
+// 冻结全局记录），逐触发推进最终全量落库；cost 拆分跨事务总和精确。
+func TestFlusherHugeBacklogChunkedTx(t *testing.T) {
+	const total = 120_000
+	writer := &fakeDeductWriter{}
+	f := newTestFlusher(writer)
+	for i := 0; i < total; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 3})
+	}
+
+	// 首次 flush：至多一事务（10k 行），其余 refill 续传
+	f.flush()
+	writer.mu.Lock()
+	firstCalls := append([]deductCall(nil), writer.calls...)
+	writer.mu.Unlock()
+	require.Len(t, firstCalls, 1, "单次 flush 每用户至多一事务（不独占 flushMu）")
+	require.Len(t, firstCalls[0].logs, maxUsageLogsPerTx, "事务行数上限")
+	require.Equal(t, int64(3*maxUsageLogsPerTx), firstCalls[0].cost, "cost 按行数比例拆分")
+	require.Equal(t, 1, f.pendingCount(), "剩余回灌待续传")
+	require.Equal(t, int64(total-maxUsageLogsPerTx), f.pendingN.Load(), "pending 计数同步剩余")
+
+	// 逐触发推进（ticker 语义）至排空
+	rounds := 0
+	for f.pendingCount() > 0 {
+		require.Less(t, rounds, total/maxUsageLogsPerTx+2, "推进轮数有界")
+		f.flush()
+		rounds++
+	}
+	require.Equal(t, total/maxUsageLogsPerTx-1, rounds, "剩余 11 个事务逐触发提交")
+
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, total/maxUsageLogsPerTx, "共 %d 个事务（无单事务超限）", total/maxUsageLogsPerTx)
+	var rows, cost int64
+	for _, c := range writer.calls {
+		require.LessOrEqual(t, len(c.logs), maxUsageLogsPerTx, "单事务行数有界（巨批 CreateBulk 内存不暴涨）")
+		rows += int64(len(c.logs))
+		cost += c.cost
+	}
+	require.Equal(t, int64(total), rows, "全量落库（无丢失）")
+	require.Equal(t, int64(total*3), cost, "cost 跨事务总和精确（无重复扣费）")
+	require.Zero(t, f.pendingN.Load(), "排空后 pending 计数归零")
+}
+
+// TestFlusherHugeBacklogDoesNotStarveOthers P2：巨批用户拆事务后同批其他用户
+// 不被饿死——一次 flush 触发内巨批用户一事务 + 小用户全量并行落库（此前巨批
+// 单事务串行 8 分钟，flushMu 冻结全局记录）。
+func TestFlusherHugeBacklogDoesNotStarveOthers(t *testing.T) {
+	writer := &fakeDeductWriter{}
+	f := newTestFlusherWorkers(writer, 4)
+	for i := 0; i < 100_000; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+	f.Record(&domain.UsageLog{UserID: 2, Cost: 7})
+
+	f.flush() // 一触发：user1 一事务（10k）+ user2 全量并行
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 2, "巨批用户拆出一事务，其他用户同批处理")
+	byUID := map[int64]deductCall{}
+	for _, c := range writer.calls {
+		byUID[c.userID] = c
+	}
+	require.Len(t, byUID[2].logs, 1, "user2 不受巨批用户阻塞")
+	require.Equal(t, int64(7), byUID[2].cost)
+	require.Len(t, byUID[1].logs, maxUsageLogsPerTx, "user1 首事务行数上限")
+	require.Equal(t, 1, f.pendingCount(), "user1 剩余续传")
+}
+
+// TestFlusherHugeBacklogChunkFailureRefills P2：拆事务失败回灌语义——失败仅
+// 回灌未提交块（每事务原子，部分成功可接受），已提交块不重放（不重复扣费），
+// 续传后全量落库。
+func TestFlusherHugeBacklogChunkFailureRefills(t *testing.T) {
+	writer := &fakeDeductWriter{fails: map[int64]int{1: 1}}
+	f := newTestFlusher(writer)
+	for i := 0; i < 20_000; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+
+	f.flush() // 首个事务失败 → chunk+rest 整体回灌
+	require.Equal(t, 1, f.pendingCount())
+	require.Equal(t, int64(20_000), f.pendingN.Load(), "失败事务整体回灌（明细不丢）")
+
+	for f.pendingCount() > 0 {
+		f.flush()
+	}
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, 2, "首事务失败不计成功；重试后 2 个事务提交")
+	var rows, cost int64
+	for _, c := range writer.calls {
+		require.LessOrEqual(t, len(c.logs), maxUsageLogsPerTx)
+		rows += int64(len(c.logs))
+		cost += c.cost
+	}
+	require.Equal(t, int64(20_000), rows, "全量落库（无重复无丢失）")
+	require.Equal(t, int64(20_000), cost, "cost 精确")
+	require.Zero(t, f.pendingN.Load())
 }
