@@ -320,6 +320,11 @@ func TestAccountAndGroup(t *testing.T) {
 	tr.pool.ExpectQuery(q(`FROM "templates"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(templateRow())
+	// W4：模板侧嵌套 WithExt（template_ext 1:1）——快照合并 StripImageTools；
+	// 空结果 → Ext 边 nil → 快照 false（未配置 = 关闭）
+	tr.pool.ExpectQuery(q(`FROM "template_exts"`)).
+		WithArgs(int64(1)).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "template_id", "credential_type", "strip_image_tools"}))
 	tr.pool.ExpectQuery(q(`FROM "groups"`)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 	tr.pool.ExpectQuery(q(`SELECT account_id, group_id FROM account_groups`)).

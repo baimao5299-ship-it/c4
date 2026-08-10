@@ -65,6 +65,9 @@ type Selection struct {
 	UpstreamKey    string
 	CredentialType credential.Type
 	Model          string // 已应用模型映射
+	// StripImageTools 模板级图像 tool 剥离开关快照（pickFrom 从模板快照复制；
+	// 热路径布尔读 + 分支零开销；W4 消费）。
+	StripImageTools bool
 }
 
 type RuntimeInfo struct {
