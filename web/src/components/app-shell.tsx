@@ -10,34 +10,32 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { cn } from '@/lib/utils'
 import AppSidebar from '@/components/app-sidebar'
 
-// 管理组（/app）与用户组（/user）两组导航；分组标题与用户端一致。
-const navs = [
-  {
-    titleKey: 'user.nav.adminSection',
-    items: [
-      { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
-      { to: '/app/templates', key: 'nav.templates', icon: Boxes },
-      { to: '/app/accounts', key: 'nav.accounts', icon: Users },
-      { to: '/app/users', key: 'nav.users', icon: UserCog },
-      { to: '/app/groups', key: 'nav.groups', icon: FolderOpen },
-      { to: '/app/logs', key: 'nav.logs', icon: FileText },
-      { to: '/app/stats', key: 'nav.stats', icon: BarChart3 },
-      { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
-      { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
-      { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
-      { to: '/app/settings', key: 'nav.settings', icon: Settings },
-    ],
-  },
-  {
-    titleKey: 'user.nav.userSection',
-    items: [
-      { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
-      { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
-      { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
-      { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
-      { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
-    ],
-  },
+// /app 与 /user 共用单一 AppShell：路由切换只换 Outlet 内容，
+// 侧边栏/顶栏不重挂（消除闪烁）。导航由 me().Role 决定：
+// platform_admin 同时看到管理组（/app）与用户组（/user），普通用户仅用户组。
+
+// 用户中心菜单组
+const userNav = [
+  { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
+  { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
+  { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
+  { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
+  { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
+]
+
+// platform_admin 专属的管理端菜单组
+const adminNav = [
+  { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
+  { to: '/app/templates', key: 'nav.templates', icon: Boxes },
+  { to: '/app/accounts', key: 'nav.accounts', icon: Users },
+  { to: '/app/users', key: 'nav.users', icon: UserCog },
+  { to: '/app/groups', key: 'nav.groups', icon: FolderOpen },
+  { to: '/app/logs', key: 'nav.logs', icon: FileText },
+  { to: '/app/stats', key: 'nav.stats', icon: BarChart3 },
+  { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
+  { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
+  { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
+  { to: '/app/settings', key: 'nav.settings', icon: Settings },
 ]
 
 const LANGS: { code: AppLang; label: string }[] = [
@@ -45,16 +43,22 @@ const LANGS: { code: AppLang; label: string }[] = [
   { code: 'en', label: 'EN' },
 ]
 
-export default function Layout() {
+// me 未加载（undefined）时先按普通用户渲染用户组，避免侧边栏闪动；
+// me 返回后 platform_admin 自动补上管理组。401 由 App.tsx 全局 handleAuthError 统一处理。
+export default function AppShell() {
   const location = useLocation()
   const { i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
-  // 顶栏 email 与用户端同查询键共享缓存；401 由 App.tsx 全局 handleAuthError 统一处理
+  // 全局 qc 共享（与各页面同键缓存）；staleTime 60s 内路由切换不重复请求
   const { data: me } = useQuery({
     queryKey: ['user', 'me'],
     queryFn: () => userApi.me(),
     staleTime: 60_000,
   })
+  const isAdmin = me?.Role === 'platform_admin'
+  const navs = isAdmin
+    ? [{ titleKey: 'user.nav.adminSection', items: adminNav }, { titleKey: 'user.nav.userSection', items: userNav }]
+    : [{ titleKey: 'user.nav.userSection', items: userNav }]
   return (
     <div className="flex min-h-screen">
       <AppSidebar navs={navs} />

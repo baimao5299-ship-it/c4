@@ -1,12 +1,11 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import { Outlet, RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
 import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
 import { ThemeProvider } from '@/components/theme-provider'
 import { userAuth } from '@/lib/auth'
 import { Toaster } from '@/components/ui/toast'
 import Home from '@/pages/home'
-import Layout from '@/components/layout'
+import AppShell from '@/components/app-shell'
 import UserLogin from '@/pages/user/login'
 import UserRegister from '@/pages/user/register'
 import UserOverview from '@/pages/user/overview'
@@ -15,7 +14,6 @@ import UserLogs from '@/pages/user/logs'
 import UserStats from '@/pages/user/stats'
 import UserRedemptions from '@/pages/user/redemptions'
 import Forbidden from '@/pages/forbidden'
-import UserLayout from '@/components/user-layout'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
 import Accounts from '@/pages/accounts'
@@ -36,33 +34,39 @@ const router = createBrowserRouter([
   { path: '/', element: <Home /> },
   { path: '/user/login', element: <UserLogin /> },
   { path: '/user/register', element: <UserRegister /> },
+  // /app 与 /user 共用单一 AppShell：路由切换只换 Outlet，侧边栏/顶栏不重挂
   {
-    path: '/user',
-    element: <UserLayout />,
+    path: '/',
+    element: <AppShell />,
     children: [
-      { index: true, element: <UserOverview /> },
-      { path: 'keys', element: <UserKeys /> },
-      { path: 'logs', element: <UserLogs /> },
-      { path: 'stats', element: <UserStats /> },
-      { path: 'redemptions', element: <UserRedemptions /> },
-    ],
-  },
-  {
-    path: '/app',
-    element: <RequireAdmin><Layout /></RequireAdmin>,
-    children: [
-      { index: true, element: <Navigate to="/app/dashboard" replace /> },
-      { path: 'dashboard', element: <Dashboard /> },
-      { path: 'templates', element: <Templates /> },
-      { path: 'accounts', element: <Accounts /> },
-      { path: 'users', element: <Users /> },
-      { path: 'groups', element: <Groups /> },
-      { path: 'logs', element: <Logs /> },
-      { path: 'stats', element: <Stats /> },
-      { path: 'rules', element: <Rules /> },
-      { path: 'redemption-codes', element: <RedemptionCodes /> },
-      { path: 'pricing', element: <PricingPage /> },
-      { path: 'settings', element: <SettingsPage /> },
+      {
+        path: 'app',
+        element: <RequireAdmin />,
+        children: [
+          { index: true, element: <Navigate to="/app/dashboard" replace /> },
+          { path: 'dashboard', element: <Dashboard /> },
+          { path: 'templates', element: <Templates /> },
+          { path: 'accounts', element: <Accounts /> },
+          { path: 'users', element: <Users /> },
+          { path: 'groups', element: <Groups /> },
+          { path: 'logs', element: <Logs /> },
+          { path: 'stats', element: <Stats /> },
+          { path: 'rules', element: <Rules /> },
+          { path: 'redemption-codes', element: <RedemptionCodes /> },
+          { path: 'pricing', element: <PricingPage /> },
+          { path: 'settings', element: <SettingsPage /> },
+        ],
+      },
+      {
+        path: 'user',
+        children: [
+          { index: true, element: <UserOverview /> },
+          { path: 'keys', element: <UserKeys /> },
+          { path: 'logs', element: <UserLogs /> },
+          { path: 'stats', element: <UserStats /> },
+          { path: 'redemptions', element: <UserRedemptions /> },
+        ],
+      },
     ],
   },
 ])
@@ -70,10 +74,10 @@ const router = createBrowserRouter([
 // 管理端路由守卫：未登录一律跳登录页；已登录但角色不足渲染 403 界面。
 // 安全默认：token 存在但 role 缺失（旧会话残留、localStorage 被手动清理）一律视为无权限。
 // 后端鉴权仍在（非 platform_admin JWT → 401 → handleAuthError 清 token 跳 /user/login），此守卫只是前端第一层拦截。
-function RequireAdmin({ children }: { children: ReactNode }) {
+function RequireAdmin() {
   if (!userAuth.getToken()) return <Navigate to="/user/login" replace />
   if (userAuth.getRole() !== 'platform_admin') return <Forbidden />
-  return <>{children}</>
+  return <Outlet />
 }
 
 // 401 全局拦截（Task 2→3 handoff 硬性要求）：任何 query/mutation 收到
