@@ -19,7 +19,7 @@ const fadeUp = {
 }
 
 // 统计卡 grid 的官方 dashboard-01 处理：浅色卡片带顶部 primary 微渐变 + 细阴影，深色回退纯 card。
-const cardGrid = 'grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card'
+const cardGrid = 'grid grid-cols-1 gap-5 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card'
 
 // errTop 柱图数据行。
 type ErrRow = { name: string; err_rate: number; err_count: number }
@@ -85,14 +85,14 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('dashboard.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('dashboard.subtitle')}</p>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-28" />
           ))}
@@ -138,7 +138,7 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
             {/* err_rate Top 5 柱图（单序列，颜色走语义 primary，深浅色自适应） */}
             <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.44 }} className="xl:col-span-2">
               <Card className="h-full">
@@ -148,11 +148,11 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
                   {errData.length === 0 ? (
-                    <p className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
+                    <p className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
                       {t('dashboard.errTopEmpty')}
                     </p>
                   ) : (
-                    <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+                    <ChartContainer config={chartConfig} className="aspect-auto h-[320px] w-full">
                       <BarChart accessibilityLayer data={errData} margin={{ left: 0, right: 8 }}>
                         <defs>
                           <linearGradient id="gpm-errbar-fill" x1="0" y1="0" x2="0" y2="1">
@@ -220,7 +220,7 @@ export default function Dashboard() {
                   <CardTitle>{t('dashboard.waterTitle')}</CardTitle>
                   <CardDescription>{t('dashboard.waterDesc', { cur: totalCur, max: totalMax })}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex h-[250px] flex-col justify-center">
+                <CardContent className="flex h-[320px] flex-col justify-center">
                   <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                     <motion.div
                       className="h-full rounded-full bg-primary"

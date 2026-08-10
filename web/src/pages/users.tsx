@@ -309,10 +309,10 @@ export default function Users() {
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{t('users.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('users.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('users.subtitle')}</p>
         </div>
         <Button onClick={openCreate}><Plus /> {t('users.new')}</Button>
@@ -359,7 +359,7 @@ export default function Users() {
                   <TableHead className="text-right">{t('users.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(u => (
                   <TableRow key={u.ID}>
                     <TableCell className="tabular-nums">{u.ID}</TableCell>

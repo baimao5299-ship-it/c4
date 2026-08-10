@@ -62,10 +62,9 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen">
       <AppSidebar navs={navs} />
-      <main className="flex-1 overflow-auto p-6">
-        <header className="mb-4 flex items-center justify-between">
-          <div />
-          <div className="flex items-center gap-2">
+      <main className="flex flex-1 flex-col overflow-auto">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 lg:px-6">
+          <div className="flex flex-1 items-center justify-end gap-2 lg:gap-3">
             <span className="text-sm text-muted-foreground">{me?.Email ?? ''}</span>
             <ModeToggle />
             <div className="inline-flex items-center gap-1 rounded-md border bg-background p-0.5">
@@ -74,7 +73,7 @@ export default function AppShell() {
                   key={code}
                   size="sm"
                   variant="ghost"
-                  className={cn('h-7 min-w-9 px-2', lang === code && 'bg-secondary text-secondary-foreground')}
+                  className={cn('h-8 min-w-10 px-2', lang === code && 'bg-secondary text-secondary-foreground')}
                   onClick={() => setLang(code)}
                 >
                   {label}
@@ -83,9 +82,13 @@ export default function AppShell() {
             </div>
           </div>
         </header>
-        <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-          <Outlet />
-        </motion.div>
+        <div className="@container/main flex flex-1 flex-col gap-2 px-4 lg:px-6">
+          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+            <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+              <Outlet />
+            </motion.div>
+          </div>
+        </div>
       </main>
     </div>
   )
