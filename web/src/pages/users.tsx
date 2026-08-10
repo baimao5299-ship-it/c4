@@ -265,9 +265,15 @@ export default function Users() {
   // 勾选且显式清除 → null（回退组倍率）。未列出组沿用当前值 ✓（契约 PUT 语义）。
   const saveUserGroups = useMutation({
     mutationFn: () => {
-      const body: UserGroupsBody = { group_ids: groupsChecked.filter(id => !publicGroupIds.has(id)) }
+      // 有效组 = private 授予（勾选全量）∪ public 组中做了倍率操作的（专属倍率
+      // 也存于授予表，需进 group_ids；无倍率操作的 public 组不进——天然属于所有用户）。
+      const effectiveIds = groupsChecked.filter(id => !publicGroupIds.has(id))
       const muls: Record<string, number | null> = {}
-      for (const gid of groupsChecked) {
+      for (const pid of publicGroupIds) {
+        const row = groupsMult[pid]
+        if (row && (row.mult.trim() !== '' || row.cleared)) effectiveIds.push(pid)
+      }
+      for (const gid of effectiveIds) {
         const row = groupsMult[gid]
         const v = row?.mult.trim()
         if (v !== undefined && v !== '') {
@@ -278,6 +284,7 @@ export default function Users() {
           muls[String(gid)] = null
         }
       }
+      const body: UserGroupsBody = { group_ids: effectiveIds }
       if (Object.keys(muls).length > 0) body.multipliers = muls
       return api.setUserGroups(groupsTarget!.ID!, body)
     },
@@ -502,13 +509,13 @@ export default function Users() {
                   const row = groupsMult[g.ID!]
                   return (
                     <div key={g.ID} className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
-                      <Checkbox checked={checked || isPublic} disabled={isPublic} aria-label={g.Name} />
+                      <Checkbox checked={checked || isPublic} disabled={isPublic} onCheckedChange={c => toggleGroup(g.ID!, c === true)} aria-label={g.Name} />
                       <span className="min-w-0 flex-1 truncate text-sm" title={g.Name}>{g.Name}</span>
                       <GroupVisibilityDot visibility={g.Visibility} />
                       <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title={t('groups.table.priceMultiplier')}>
                         {formatMultiplier(g.PriceMultiplier, t)}
                       </span>
-                      {checked && !isPublic && (
+                      {(checked || isPublic) && (
                         <>
                           <Input
                             type="number"
