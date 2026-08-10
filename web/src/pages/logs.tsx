@@ -81,10 +81,10 @@ const fmtPricePerM = (millis: number): string => {
   return `$${s}/M`
 }
 
-// compact 千位缩写（官方仓库无内置函数，自己写——Intl 原生 API）：1234 → 1.2K。
-function compactTokens(n: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(n)
-}
+// 行内 token 紧凑格式：≥1000 用 K 单位（1 位小数去尾零），<1000 原始值；
+// 大卡内保持千分位原始值（toLocaleString，不改）。
+const fmtTokens = (n: number): string =>
+  n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K` : String(n)
 
 const LIMITS = [10, 20, 50, 100, 1000]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
@@ -119,7 +119,7 @@ const emptyFilters = (): LogFilters => ({
 })
 
 export default function Logs() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const [filters, setFilters] = useState<LogFilters>(emptyFilters())
   const [limit, setLimit] = useState(20)
   const [offset, setOffset] = useState(0)
@@ -360,17 +360,17 @@ export default function Logs() {
                         <span className="space-y-0.5 text-xs text-right">
                           <span className="inline-flex items-center gap-2 text-muted-foreground">
                             <span className="inline-flex items-center gap-0.5">
-                              <ArrowDown className="size-3" />{(l.InputTokens ?? 0).toLocaleString()}
+                              <ArrowDown className="size-3" />{fmtTokens(l.InputTokens ?? 0)}
                             </span>
                             <span className="inline-flex items-center gap-0.5">
-                              <ArrowUp className="size-3" />{(l.OutputTokens ?? 0).toLocaleString()}
+                              <ArrowUp className="size-3" />{fmtTokens(l.OutputTokens ?? 0)}
                             </span>
                           </span>
                           {l.CacheReadTokens || l.CacheCreationTokens ? (
                             <div className="text-right">
-                              {l.CacheReadTokens ? <span className="text-blue-500/70">{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens, i18n.language)}</span> : null}
+                              {l.CacheReadTokens ? <span className="text-blue-500/70">{t('logs.tokens.read')} {fmtTokens(l.CacheReadTokens)}</span> : null}
                               {l.CacheReadTokens && l.CacheCreationTokens ? <span className="mx-1 text-muted-foreground/40">·</span> : null}
-                              {l.CacheCreationTokens ? <span className="text-amber-500/70">{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens, i18n.language)}</span> : null}
+                              {l.CacheCreationTokens ? <span className="text-amber-500/70">{t('logs.tokens.write')} {fmtTokens(l.CacheCreationTokens)}</span> : null}
                             </div>
                           ) : null}
                         </span>
@@ -389,14 +389,14 @@ export default function Logs() {
                                 <span className="text-muted-foreground">{t('logs.tokens.input')}</span>
                                 <span className="flex items-baseline gap-2">
                                   <span className="font-medium tabular-nums">{(l.InputTokens ?? 0).toLocaleString()}</span>
-                                  {l.PriceInputMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceInputMillis)}</span>}
+                                  {l.PriceInputMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceInputMillis)}</span>}
                                 </span>
                               </div>
                               <div className="flex items-center justify-between gap-6">
                                 <span className="text-muted-foreground">{t('logs.tokens.output')}</span>
                                 <span className="flex items-baseline gap-2">
                                   <span className="font-medium tabular-nums">{(l.OutputTokens ?? 0).toLocaleString()}</span>
-                                  {l.PriceOutputMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceOutputMillis)}</span>}
+                                  {l.PriceOutputMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceOutputMillis)}</span>}
                                 </span>
                               </div>
                               {l.CacheReadTokens ? (
@@ -404,7 +404,7 @@ export default function Logs() {
                                   <span className="text-muted-foreground">{t('logs.tokens.cacheRead')}</span>
                                   <span className="flex items-baseline gap-2">
                                     <span className="font-medium tabular-nums">{l.CacheReadTokens.toLocaleString()}</span>
-                                    {l.PriceCacheReadMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceCacheReadMillis)}</span>}
+                                    {l.PriceCacheReadMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceCacheReadMillis)}</span>}
                                   </span>
                                 </div>
                               ) : null}
@@ -413,7 +413,7 @@ export default function Logs() {
                                   <span className="text-muted-foreground">{t('logs.tokens.cacheWrite')}</span>
                                   <span className="flex items-baseline gap-2">
                                     <span className="font-medium tabular-nums">{l.CacheCreationTokens.toLocaleString()}</span>
-                                    {l.PriceCacheCreationMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceCacheCreationMillis)}</span>}
+                                    {l.PriceCacheCreationMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceCacheCreationMillis)}</span>}
                                   </span>
                                 </div>
                               ) : null}
