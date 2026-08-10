@@ -75,7 +75,7 @@ func TestPublishMatrix(t *testing.T) {
 	t.Run("key CRUD 缺口 → Keys:true，一次操作一条", func(t *testing.T) {
 		svc, fs, pr := newPubSvc()
 		u := seedUser(t, fs, "k@example.com", 0, 0)
-		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil)
+		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil, domain.ProtocolConvertOff)
 		require.NoError(t, err)
 
 		// 创建（quota 门禁字段落库 + Auth 增量注册）→ Keys
@@ -173,9 +173,9 @@ func TestPublishMatrix(t *testing.T) {
 			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 		})
 		require.NoError(t, err)
-		g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, nil)
+		g1, err := svc.CreateGroup(ctx, "g1", domain.GroupVisibilityPublic, nil, domain.ProtocolConvertOff)
 		require.NoError(t, err)
-		g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, nil)
+		g2, err := svc.CreateGroup(ctx, "g2", domain.GroupVisibilityPublic, nil, domain.ProtocolConvertOff)
 		require.NoError(t, err)
 
 		acc, err := svc.CreateAccount(ctx, &domain.Account{
@@ -262,11 +262,11 @@ func TestClusterInstances(t *testing.T) {
 func TestPublishMultipliersAndGroupDelete(t *testing.T) {
 	ctx := context.Background()
 	svc, fs, pr := newPubSvc()
-	g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil)
+	g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil, domain.ProtocolConvertOff)
 	require.NoError(t, err)
 	require.True(t, pr.last().Multipliers, "创建组 → Multipliers:true")
 
-	_, err = svc.UpdateGroup(ctx, &domain.Group{ID: g.ID, Name: "g", PriceMultiplier: 20000})
+	_, err = svc.UpdateGroup(ctx, &domain.Group{ID: g.ID, Name: "g", PriceMultiplier: 20000, ProtocolConvert: domain.ProtocolConvertOff})
 	require.NoError(t, err)
 	require.True(t, pr.last().Multipliers, "更新组倍率 → Multipliers:true")
 

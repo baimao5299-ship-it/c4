@@ -11,14 +11,18 @@ import (
 
 // CreateGroup 创建分组（平台容量池）。priceMultiplier 万分数：nil = 未指定
 // （归一 10000 = ×1，恒写入——API 边界 nullable 可表达显式 0 = 免费组）；
-// 0~100000 显式写入；超界 → 400。创建后 Multipliers()：新组倍率须即刻进余额
-// 倍率快照（缺失 = ×1 计费窗口，评审 M-1 组倍率矩阵——组创建即倍率设定）。
-func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier *int) (*domain.Group, error) {
+// 0~100000 显式写入；超界 → 400。protocolConvert：非法枚举 → 400（缺省
+// ProtocolConvertOff 由调用方归一）。创建后 Multipliers()：新组倍率须即刻进
+// 余额倍率快照（缺失 = ×1 计费窗口，评审 M-1 组倍率矩阵——组创建即倍率设定）。
+func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConvert domain.ProtocolConvert) (*domain.Group, error) {
 	if name == "" {
 		return nil, ErrInvalidInput
 	}
 	if !visibility.Valid() {
 		visibility = domain.GroupVisibilityPublic
+	}
+	if !protocolConvert.Valid() {
+		return nil, ErrInvalidInput
 	}
 	mult := 10000 // 缺省 → ×1（与 DB 默认同值，恒写入）
 	if priceMultiplier != nil {
@@ -27,7 +31,7 @@ func (s *Service) CreateGroup(ctx context.Context, name string, visibility domai
 		}
 		mult = *priceMultiplier
 	}
-	g := &domain.Group{Name: name, Visibility: visibility, PriceMultiplier: mult}
+	g := &domain.Group{Name: name, Visibility: visibility, PriceMultiplier: mult, ProtocolConvert: protocolConvert}
 	created, err := s.store.CreateGroup(ctx, g)
 	if err != nil {
 		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
@@ -60,6 +64,9 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 		return nil, ErrInvalidInput
 	}
 	if g.PriceMultiplier < 0 || g.PriceMultiplier > 100000 {
+		return nil, ErrInvalidInput
+	}
+	if !g.ProtocolConvert.Valid() {
 		return nil, ErrInvalidInput
 	}
 	updated, err := s.store.UpdateGroup(ctx, g)

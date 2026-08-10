@@ -19,17 +19,41 @@ type Type string
 const (
 	// TypeAPIKey 默认类型：静态 Key（调度 Selection 携带的 UpstreamKey）。
 	TypeAPIKey Type = "api_key"
-	// 号池生态类型（后续任务实现，当前只留注释占位）：
-	// TypeCodexOAuth = "codex_oauth"
-	// TypeCodexPAT   = "codex_personal_access_token"
-	// TypeClaudeCode = "claude_code"
+	// TypeResponsesSpecial Responses 特殊需求模板（图像 tool 剥离等开关）；
+	// 只支持 resp / resp-ws 格式（service 校验），配置挂 template_ext。
+	TypeResponsesSpecial Type = "responses-special"
+	// TypeCodexOAuth Codex OAuth 账号池模板/账号；配置挂 ext 子表，鉴权
+	// 接 SDK ws（W6）。
+	TypeCodexOAuth Type = "codex-oauth"
+	// TypeCodexPAT Codex PAT 账号池模板/账号；配置挂 ext 子表，鉴权接 SDK ws（W6）。
+	TypeCodexPAT Type = "codex-pat"
 )
 
-// Valid 类型是否已注册可用的凭据类型。目前仅 api_key；未知类型（含空串）
-// → false（未来生态类型注册时扩展）。
+// Valid 类型是否已注册可用的凭据类型（模板主列 credential_type 全量：api_key
+// 四格式任意；生态三类型只支持 resp/resp-ws——service 校验）。未知类型（含
+// 空串）→ false。
 func (t Type) Valid() bool {
 	switch t {
-	case TypeAPIKey:
+	case TypeAPIKey, TypeResponsesSpecial, TypeCodexOAuth, TypeCodexPAT:
+		return true
+	}
+	return false
+}
+
+// ValidTemplateExt 模板 ext 子表可用类型（api_key 类型模板无 ext 行——主列已
+// 表达静态 Key 语义）。
+func (t Type) ValidTemplateExt() bool {
+	switch t {
+	case TypeResponsesSpecial, TypeCodexOAuth, TypeCodexPAT:
+		return true
+	}
+	return false
+}
+
+// ValidAccountExt 账号 ext 子表可用类型（账号只两种 codex 类型）。
+func (t Type) ValidAccountExt() bool {
+	switch t {
+	case TypeCodexOAuth, TypeCodexPAT:
 		return true
 	}
 	return false

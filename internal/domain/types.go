@@ -11,14 +11,15 @@ import (
 type RequestFormat string
 
 const (
-	FormatOpenAIChat      RequestFormat = "openai-chat"
-	FormatOpenAIResponses RequestFormat = "openai-responses"
-	FormatAnthropic       RequestFormat = "anthropic"
+	FormatOpenAIChat        RequestFormat = "openai-chat"
+	FormatOpenAIResponses   RequestFormat = "openai-responses"
+	FormatOpenAIResponsesWS RequestFormat = "openai-responses-ws" // Responses WS（Codex 客户端形态）
+	FormatAnthropic         RequestFormat = "anthropic"
 )
 
 func (f RequestFormat) Valid() bool {
 	switch f {
-	case FormatOpenAIChat, FormatOpenAIResponses, FormatAnthropic:
+	case FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatAnthropic:
 		return true
 	}
 	return false
@@ -212,6 +213,39 @@ type Account struct {
 	GroupIDs *[]int64
 }
 
+// TemplateExt 模板类型化扩展配置（template_ext 子表，1:1）：credential_type
+// ∈ {responses-special, codex-oauth, codex-pat} 的模板才有 ext 行（api_key 主列
+// 类型无 ext 行）。模板是共享配置面：只承载类型声明 + StripImageTools 公共
+// 能力开关（三类型通用）——凭据列组（oauth/pat）一律在账号级 account_ext
+// （账号私有）。nil = 未配置（NULL 落库）。
+type TemplateExt struct {
+	TemplateID      int64
+	CredentialType  credential.Type
+	StripImageTools *bool // 三类型公共能力开关：模板级图像 tool 剥离（W3 消费）
+}
+
+// AccountExt 账号类型化鉴权扩展（account_ext 子表，1:1）：credential_type
+// ∈ {codex-oauth, codex-pat}（账号只两种 codex 类型）。字段按作用分组：
+// 标识 → 身份（四元组连续块）→ 凭据 → 管理标识。身份四元组（对齐真实 codex
+// 客户端语义，导入时 service NewCodexIdentity() 自动生成并持久化、账号存在
+// 期间稳定）：InstallationID 必存（UUIDv4 安装级永久）；SessionID/ThreadID
+// UUIDv7 会话级（恒等 thread==session）；WindowID = {thread_id}:0（导入时生成
+// 后恒定不变——零递增零状态）。凭据列组按类型约束（service 校验）：oauth 只
+// 允许 OAuth* 列组；pat 只允许 PATKey。nil = 未配置。
+type AccountExt struct {
+	AccountID        int64
+	CredentialType   credential.Type
+	InstallationID   string     // 身份：账号级唯一（UUIDv4，必存）
+	SessionID        *string    // 身份：会话级（UUIDv7；恒等 == ThreadID）
+	ThreadID         *string    // 身份：会话级（UUIDv7）
+	WindowID         *string    // 身份：会话级派生 {thread_id}:0（恒 0 恒定；无透传解析——用户裁决）
+	OAuthToken       *string    // 凭据：oauth 访问令牌
+	OAuthRefreshToken *string   // 凭据：oauth 刷新令牌
+	OAuthExpiresAt   *time.Time // 凭据：oauth 访问令牌过期时间
+	PATKey           *string    // 凭据：pat
+	Email            *string    // 管理标识：账号登录邮箱（导入时人工/上游提供，非自动生成，可空）
+}
+
 type Group struct {
 	ID         int64
 	Name       string
@@ -221,9 +255,40 @@ type Group struct {
 	// （PUT 全量替换）。API 边界（handler/convert.go）与正常值 float64 换算
 	// （1.5 ↔ 15000）。
 	PriceMultiplier int
+	// ProtocolConvert 分组级协议转换（只补差，W5 消费）：off 不转换；其余
+	// 值 = 客户端协议 → 模板协议（补差语义，转换器在网关 internal/protoconv）。
+	// 写路径语义：Create 缺省（handler 归一为 off）恒写入；Update 恒写入
+	// （service 校验枚举；非法值 400）。
+	ProtocolConvert ProtocolConvert
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DeletedAt       *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
+}
+
+// ProtocolConvert 分组级协议转换枚举（补差语义：模板已支持客户端协议 → 直接
+// 转发零转换；转换仅在协议不匹配时发生）。
+type ProtocolConvert string
+
+const (
+	// ProtocolConvertOff 不转换（默认）。
+	ProtocolConvertOff ProtocolConvert = "off"
+	// ProtocolConvertChatToResp 客户端 chat → 模板 resp 协议。
+	ProtocolConvertChatToResp ProtocolConvert = "chat_to_resp"
+	// ProtocolConvertMessToResp 客户端 messages（anthropic）→ 模板 resp 协议。
+	ProtocolConvertMessToResp ProtocolConvert = "mess_to_resp"
+	// ProtocolConvertRespToMess 客户端 resp → 模板 messages（anthropic）协议。
+	ProtocolConvertRespToMess ProtocolConvert = "resp_to_mess"
+	// ProtocolConvertChatToMess 客户端 chat → 模板 messages（anthropic）协议。
+	ProtocolConvertChatToMess ProtocolConvert = "chat_to_mess"
+)
+
+func (p ProtocolConvert) Valid() bool {
+	switch p {
+	case ProtocolConvertOff, ProtocolConvertChatToResp, ProtocolConvertMessToResp,
+		ProtocolConvertRespToMess, ProtocolConvertChatToMess:
+		return true
+	}
+	return false
 }
 
 // User 用户（顶层实体，无租户）。标识 = 邮箱；PasswordHash 为 bcrypt

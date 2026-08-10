@@ -21,6 +21,8 @@ const (
 	FieldVisibility = "visibility"
 	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
 	FieldPriceMultiplier = "price_multiplier"
+	// FieldProtocolConvert holds the string denoting the protocol_convert field in the database.
+	FieldProtocolConvert = "protocol_convert"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
@@ -62,6 +64,7 @@ var Columns = []string{
 	FieldName,
 	FieldVisibility,
 	FieldPriceMultiplier,
+	FieldProtocolConvert,
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldCreatedAt,
@@ -86,6 +89,8 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultPriceMultiplier holds the default value on creation for the "price_multiplier" field.
 	DefaultPriceMultiplier int
+	// DefaultProtocolConvert holds the default value on creation for the "protocol_convert" field.
+	DefaultProtocolConvert string
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
@@ -141,6 +146,11 @@ func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
 // ByPriceMultiplier orders the results by the price_multiplier field.
 func ByPriceMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPriceMultiplier, opts...).ToFunc()
+}
+
+// ByProtocolConvert orders the results by the protocol_convert field.
+func ByProtocolConvert(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProtocolConvert, opts...).ToFunc()
 }
 
 // ByUpdatedAt orders the results by the updated_at field.

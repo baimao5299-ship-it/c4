@@ -48,9 +48,11 @@ type Template struct {
 type TemplateEdges struct {
 	// Accounts holds the value of the accounts edge.
 	Accounts []*Account `json:"accounts,omitempty"`
+	// Ext holds the value of the ext edge.
+	Ext []*TemplateExt `json:"ext,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // AccountsOrErr returns the Accounts value or an error if the edge
@@ -60,6 +62,15 @@ func (e TemplateEdges) AccountsOrErr() ([]*Account, error) {
 		return e.Accounts, nil
 	}
 	return nil, &NotLoadedError{edge: "accounts"}
+}
+
+// ExtOrErr returns the Ext value or an error if the edge
+// was not loaded in eager-loading.
+func (e TemplateEdges) ExtOrErr() ([]*TemplateExt, error) {
+	if e.loadedTypes[1] {
+		return e.Ext, nil
+	}
+	return nil, &NotLoadedError{edge: "ext"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -181,6 +192,11 @@ func (_m *Template) Value(name string) (ent.Value, error) {
 // QueryAccounts queries the "accounts" edge of the Template entity.
 func (_m *Template) QueryAccounts() *AccountQuery {
 	return NewTemplateClient(_m.config).QueryAccounts(_m)
+}
+
+// QueryExt queries the "ext" edge of the Template entity.
+func (_m *Template) QueryExt() *TemplateExtQuery {
+	return NewTemplateClient(_m.config).QueryExt(_m)
 }
 
 // Update returns a builder for updating this Template.

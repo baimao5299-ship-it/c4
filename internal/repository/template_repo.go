@@ -41,6 +41,21 @@ func (r *TemplateRepo) GetTemplate(ctx context.Context, id int64) (*domain.Templ
 	return toDomainTemplate(row), nil
 }
 
+// GetTemplatesByIDs 批量取模板（id IN 一次查询，替代逐 id GetTemplate 的 N+1；
+// 软删除语义同 GetTemplate——不过滤 deleted_at）。缺失的 id 不报错（返回数量
+// < 请求数），调用方按需对比；用于 UpdateTemplatesBatch 的类型-格式约束校验。
+func (r *TemplateRepo) GetTemplatesByIDs(ctx context.Context, ids []int64) ([]*domain.Template, error) {
+	rows, err := r.client.Template.Query().Where(template.IDIn(ids...)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.Template, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toDomainTemplate(row))
+	}
+	return out, nil
+}
+
 func (r *TemplateRepo) ListTemplates(ctx context.Context, q ListQuery) ([]*domain.Template, int64, error) {
 	// 软删除：列表默认过滤已删（count 同谓词——pred 复用）；GET 单个不过滤。
 	pred := r.client.Template.Query().Where(template.DeletedAtIsNil())

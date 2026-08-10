@@ -54,9 +54,11 @@ type AccountEdges struct {
 	Template *Template `json:"template,omitempty"`
 	// Groups holds the value of the groups edge.
 	Groups []*Group `json:"groups,omitempty"`
+	// Ext holds the value of the ext edge.
+	Ext []*AccountExt `json:"ext,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // TemplateOrErr returns the Template value or an error if the edge
@@ -77,6 +79,15 @@ func (e AccountEdges) GroupsOrErr() ([]*Group, error) {
 		return e.Groups, nil
 	}
 	return nil, &NotLoadedError{edge: "groups"}
+}
+
+// ExtOrErr returns the Ext value or an error if the edge
+// was not loaded in eager-loading.
+func (e AccountEdges) ExtOrErr() ([]*AccountExt, error) {
+	if e.loadedTypes[2] {
+		return e.Ext, nil
+	}
+	return nil, &NotLoadedError{edge: "ext"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -208,6 +219,11 @@ func (_m *Account) QueryTemplate() *TemplateQuery {
 // QueryGroups queries the "groups" edge of the Account entity.
 func (_m *Account) QueryGroups() *GroupQuery {
 	return NewAccountClient(_m.config).QueryGroups(_m)
+}
+
+// QueryExt queries the "ext" edge of the Account entity.
+func (_m *Account) QueryExt() *AccountExtQuery {
+	return NewAccountClient(_m.config).QueryExt(_m)
 }
 
 // Update returns a builder for updating this Account.

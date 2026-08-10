@@ -38,5 +38,7 @@ func (Account) Edges() []ent.Edge {
 			Unique().
 			Required(),
 		edge.To("groups", Group.Type),
+		// ext 账号类型化鉴权扩展（1:1；api_key 类型无 ext 行）
+		edge.To("ext", AccountExt.Type),
 	}
 }

@@ -74,6 +74,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/templates/{id}/ext": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 读取模板类型化扩展（编辑回显；仅生态三类型模板有 ext 行） */
+        get: operations["GetTemplatesIdExt"];
+        /** 幂等写入模板类型化扩展（Create/Update 合一；全列更新含 NULL 清空） */
+        put: operations["PutTemplatesIdExt"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/accounts": {
         parameters: {
             query?: never;
@@ -156,6 +176,26 @@ export interface paths {
         /** 读取账号的全部分组 id（编辑回显；不随账号列表返回） */
         get: operations["GetAccountsIdGroups"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/accounts/{id}/ext": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 读取账号类型化鉴权扩展（编辑回显；仅 codex-oauth/codex-pat 账号有 ext 行） */
+        get: operations["GetAccountsIdExt"];
+        /** 幂等写入账号类型化鉴权扩展（Create/Update 合一；全列更新含 NULL 清空） */
+        put: operations["PutAccountsIdExt"];
         post?: never;
         delete?: never;
         options?: never;
@@ -745,8 +785,8 @@ export interface components {
              * @default api_key
              * @enum {string}
              */
-            credential_type: "api_key";
-            supported_formats: ("openai-chat" | "openai-responses" | "anthropic")[];
+            credential_type: "api_key" | "responses-special" | "codex-oauth" | "codex-pat";
+            supported_formats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "anthropic")[];
             models?: string[];
             format_models?: {
                 [key: string]: string[];
@@ -760,8 +800,12 @@ export interface components {
             ID: number;
             Name: string;
             BaseURL: string;
-            CredentialType?: string;
-            SupportedFormats: ("openai-chat" | "openai-responses" | "anthropic")[];
+            /**
+             * @description 模板号池类型；生态三类型只支持 resp / resp-ws 格式
+             * @enum {string}
+             */
+            CredentialType?: "api_key" | "responses-special" | "codex-oauth" | "codex-pat";
+            SupportedFormats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "anthropic")[];
             Models?: string[];
             FormatModels?: {
                 [key: string]: string[];
@@ -822,6 +866,47 @@ export interface components {
             err_rate?: number;
             err_count?: number;
         };
+        TemplateExt: {
+            /** Format: int64 */
+            template_id?: number;
+            /**
+             * @description 类型声明；必须与父模板 credential_type 一致（不一致 → 400）
+             * @enum {string}
+             */
+            credential_type: "responses-special" | "codex-oauth" | "codex-pat";
+            /** @description 三类型公共能力开关：模板级图像 tool 剥离（NULL = 未配置 = 关闭） */
+            strip_image_tools?: boolean | null;
+        };
+        AccountExt: {
+            /** Format: int64 */
+            account_id?: number;
+            /**
+             * @description 类型-列组约束（service 校验）：oauth 只允许 oauth_* 列组；pat 只允许 pat_key
+             * @enum {string}
+             */
+            credential_type: "codex-oauth" | "codex-pat";
+            /** @description 身份：账号级唯一（UUIDv4；响应恒有——首次写入自动生成） */
+            installation_id?: string;
+            /** @description 身份：会话级（UUIDv7；恒等 == thread_id；service 自动生成/沿用） */
+            session_id?: string | null;
+            /** @description 身份：会话级（UUIDv7；恒等 == session_id） */
+            thread_id?: string | null;
+            /** @description 身份：会话级派生 {thread_id}:0（导入时生成后恒定不变——恒 0，无透传无解析；上游不校验 n） */
+            window_id?: string | null;
+            /** @description 凭据：oauth 访问令牌（oauth 行必填——最小完整性） */
+            oauth_token?: string | null;
+            /** @description 凭据：oauth 刷新令牌 */
+            oauth_refresh_token?: string | null;
+            /**
+             * Format: date-time
+             * @description 凭据：oauth 访问令牌过期时间
+             */
+            oauth_expires_at?: string | null;
+            /** @description 凭据：pat */
+            pat_key?: string | null;
+            /** @description 管理标识：codex 账号登录邮箱（导入时由人工/上游提供，非自动生成——NewCodexIdentity 只生成身份四元组；可空） */
+            email?: string | null;
+        };
         TemplateListResponse: {
             /** Format: int64 */
             total: number;
@@ -839,6 +924,12 @@ export interface components {
         };
         /** @enum {string} */
         GroupVisibility: "public" | "private";
+        /**
+         * @description 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
+         * @default off
+         * @enum {string}
+         */
+        GroupProtocolConvert: "off" | "chat_to_resp" | "mess_to_resp" | "resp_to_mess" | "chat_to_mess";
         GroupAssignmentsBody: {
             /** @description 替换语义：完整授予列表（未列出即撤销；空数组 = 清空） */
             user_ids: number[];
@@ -1011,6 +1102,7 @@ export interface components {
              * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
              */
             price_multiplier?: number | null;
+            protocol_convert?: components["schemas"]["GroupProtocolConvert"];
         };
         RuleCreate: {
             name: string;
@@ -1071,6 +1163,7 @@ export interface components {
              * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
              */
             PriceMultiplier?: number;
+            ProtocolConvert?: components["schemas"]["GroupProtocolConvert"];
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
@@ -1094,7 +1187,7 @@ export interface components {
         TemplatePatch: {
             name?: string;
             base_url?: string;
-            supported_formats?: ("openai-chat" | "openai-responses" | "anthropic")[];
+            supported_formats?: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "anthropic")[];
             models?: string[];
             format_models?: {
                 [key: string]: string[];
@@ -1794,6 +1887,56 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetTemplatesIdExt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 模板 ext 配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateExt"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutTemplatesIdExt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateExt"];
+            };
+        };
+        responses: {
+            /** @description 写入后的 ext 配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateExt"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetAccounts: {
         parameters: {
             query?: {
@@ -1989,6 +2132,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountGroupsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetAccountsIdExt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 账号 ext 配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountExt"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutAccountsIdExt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountExt"];
+            };
+        };
+        responses: {
+            /** @description 写入后的 ext 配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountExt"];
                 };
             };
             default: components["responses"]["Error"];

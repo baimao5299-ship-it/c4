@@ -38,12 +38,49 @@ var (
 			},
 		},
 	}
+	// AccountExtsColumns holds the columns for the "account_exts" table.
+	AccountExtsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "credential_type", Type: field.TypeString},
+		{Name: "installation_id", Type: field.TypeString},
+		{Name: "session_id", Type: field.TypeString, Nullable: true},
+		{Name: "thread_id", Type: field.TypeString, Nullable: true},
+		{Name: "window_id", Type: field.TypeString, Nullable: true},
+		{Name: "oauth_token", Type: field.TypeString, Nullable: true},
+		{Name: "oauth_refresh_token", Type: field.TypeString, Nullable: true},
+		{Name: "oauth_expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "pat_key", Type: field.TypeString, Nullable: true},
+		{Name: "email", Type: field.TypeString, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64},
+	}
+	// AccountExtsTable holds the schema information for the "account_exts" table.
+	AccountExtsTable = &schema.Table{
+		Name:       "account_exts",
+		Columns:    AccountExtsColumns,
+		PrimaryKey: []*schema.Column{AccountExtsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "account_exts_accounts_ext",
+				Columns:    []*schema.Column{AccountExtsColumns[11]},
+				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountext_account_id",
+				Unique:  true,
+				Columns: []*schema.Column{AccountExtsColumns[11]},
+			},
+		},
+	}
 	// GroupsColumns holds the columns for the "groups" table.
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString, Unique: true},
 		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"public", "private"}, Default: "public"},
 		{Name: "price_multiplier", Type: field.TypeInt, Default: 10000},
+		{Name: "protocol_convert", Type: field.TypeString, Default: "off"},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
@@ -298,6 +335,34 @@ var (
 		Columns:    TemplatesColumns,
 		PrimaryKey: []*schema.Column{TemplatesColumns[0]},
 	}
+	// TemplateExtsColumns holds the columns for the "template_exts" table.
+	TemplateExtsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "credential_type", Type: field.TypeString},
+		{Name: "strip_image_tools", Type: field.TypeBool, Nullable: true},
+		{Name: "template_id", Type: field.TypeInt64},
+	}
+	// TemplateExtsTable holds the schema information for the "template_exts" table.
+	TemplateExtsTable = &schema.Table{
+		Name:       "template_exts",
+		Columns:    TemplateExtsColumns,
+		PrimaryKey: []*schema.Column{TemplateExtsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "template_exts_templates_ext",
+				Columns:    []*schema.Column{TemplateExtsColumns[3]},
+				RefColumns: []*schema.Column{TemplatesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "templateext_template_id",
+				Unique:  true,
+				Columns: []*schema.Column{TemplateExtsColumns[3]},
+			},
+		},
+	}
 	// UsageLogsColumns holds the columns for the "usage_logs" table.
 	UsageLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -448,6 +513,7 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		AccountsTable,
+		AccountExtsTable,
 		GroupsTable,
 		GroupAssignmentsTable,
 		KeysTable,
@@ -458,6 +524,7 @@ var (
 		SettingsTable,
 		TempBalancesTable,
 		TemplatesTable,
+		TemplateExtsTable,
 		UsageLogsTable,
 		UsageStatsTable,
 		UsersTable,
@@ -467,12 +534,14 @@ var (
 
 func init() {
 	AccountsTable.ForeignKeys[0].RefTable = TemplatesTable
+	AccountExtsTable.ForeignKeys[0].RefTable = AccountsTable
 	GroupAssignmentsTable.ForeignKeys[0].RefTable = GroupsTable
 	GroupAssignmentsTable.ForeignKeys[1].RefTable = UsersTable
 	KeysTable.ForeignKeys[0].RefTable = GroupsTable
 	KeysTable.ForeignKeys[1].RefTable = UsersTable
 	RedemptionUsesTable.ForeignKeys[0].RefTable = RedemptionCodesTable
 	TempBalancesTable.ForeignKeys[0].RefTable = UsersTable
+	TemplateExtsTable.ForeignKeys[0].RefTable = TemplatesTable
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable
 }

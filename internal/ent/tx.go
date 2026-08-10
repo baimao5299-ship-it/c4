@@ -14,6 +14,8 @@ type Tx struct {
 	config
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountExt is the client for interacting with the AccountExt builders.
+	AccountExt *AccountExtClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
@@ -34,6 +36,8 @@ type Tx struct {
 	TempBalance *TempBalanceClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
+	// TemplateExt is the client for interacting with the TemplateExt builders.
+	TemplateExt *TemplateExtClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
 	// UsageStat is the client for interacting with the UsageStat builders.
@@ -172,6 +176,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
+	tx.AccountExt = NewAccountExtClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.GroupAssignment = NewGroupAssignmentClient(tx.config)
 	tx.Key = NewKeyClient(tx.config)
@@ -182,6 +187,7 @@ func (tx *Tx) init() {
 	tx.Setting = NewSettingClient(tx.config)
 	tx.TempBalance = NewTempBalanceClient(tx.config)
 	tx.Template = NewTemplateClient(tx.config)
+	tx.TemplateExt = NewTemplateExtClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.UsageStat = NewUsageStatClient(tx.config)
 	tx.User = NewUserClient(tx.config)

@@ -12,6 +12,7 @@ import (
 	"go-proxy-mini/internal/ent/migrate"
 
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/accountext"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
@@ -22,6 +23,7 @@ import (
 	"go-proxy-mini/internal/ent/setting"
 	"go-proxy-mini/internal/ent/tempbalance"
 	"go-proxy-mini/internal/ent/template"
+	"go-proxy-mini/internal/ent/templateext"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
 	"go-proxy-mini/internal/ent/user"
@@ -39,6 +41,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountExt is the client for interacting with the AccountExt builders.
+	AccountExt *AccountExtClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
@@ -59,6 +63,8 @@ type Client struct {
 	TempBalance *TempBalanceClient
 	// Template is the client for interacting with the Template builders.
 	Template *TemplateClient
+	// TemplateExt is the client for interacting with the TemplateExt builders.
+	TemplateExt *TemplateExtClient
 	// UsageLog is the client for interacting with the UsageLog builders.
 	UsageLog *UsageLogClient
 	// UsageStat is the client for interacting with the UsageStat builders.
@@ -77,6 +83,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Account = NewAccountClient(c.config)
+	c.AccountExt = NewAccountExtClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.GroupAssignment = NewGroupAssignmentClient(c.config)
 	c.Key = NewKeyClient(c.config)
@@ -87,6 +94,7 @@ func (c *Client) init() {
 	c.Setting = NewSettingClient(c.config)
 	c.TempBalance = NewTempBalanceClient(c.config)
 	c.Template = NewTemplateClient(c.config)
+	c.TemplateExt = NewTemplateExtClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.UsageStat = NewUsageStatClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -183,6 +191,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ctx:             ctx,
 		config:          cfg,
 		Account:         NewAccountClient(cfg),
+		AccountExt:      NewAccountExtClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
@@ -193,6 +202,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Setting:         NewSettingClient(cfg),
 		TempBalance:     NewTempBalanceClient(cfg),
 		Template:        NewTemplateClient(cfg),
+		TemplateExt:     NewTemplateExtClient(cfg),
 		UsageLog:        NewUsageLogClient(cfg),
 		UsageStat:       NewUsageStatClient(cfg),
 		User:            NewUserClient(cfg),
@@ -216,6 +226,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ctx:             ctx,
 		config:          cfg,
 		Account:         NewAccountClient(cfg),
+		AccountExt:      NewAccountExtClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
@@ -226,6 +237,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Setting:         NewSettingClient(cfg),
 		TempBalance:     NewTempBalanceClient(cfg),
 		Template:        NewTemplateClient(cfg),
+		TemplateExt:     NewTemplateExtClient(cfg),
 		UsageLog:        NewUsageLogClient(cfg),
 		UsageStat:       NewUsageStatClient(cfg),
 		User:            NewUserClient(cfg),
@@ -258,9 +270,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Account, c.Group, c.GroupAssignment, c.Key, c.Pricing, c.RedemptionCode,
-		c.RedemptionUse, c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog,
-		c.UsageStat, c.User,
+		c.Account, c.AccountExt, c.Group, c.GroupAssignment, c.Key, c.Pricing,
+		c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting, c.TempBalance,
+		c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -270,9 +282,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Account, c.Group, c.GroupAssignment, c.Key, c.Pricing, c.RedemptionCode,
-		c.RedemptionUse, c.Rule, c.Setting, c.TempBalance, c.Template, c.UsageLog,
-		c.UsageStat, c.User,
+		c.Account, c.AccountExt, c.Group, c.GroupAssignment, c.Key, c.Pricing,
+		c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting, c.TempBalance,
+		c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -283,6 +295,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *AccountMutation:
 		return c.Account.mutate(ctx, m)
+	case *AccountExtMutation:
+		return c.AccountExt.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
 	case *GroupAssignmentMutation:
@@ -303,6 +317,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.TempBalance.mutate(ctx, m)
 	case *TemplateMutation:
 		return c.Template.mutate(ctx, m)
+	case *TemplateExtMutation:
+		return c.TemplateExt.mutate(ctx, m)
 	case *UsageLogMutation:
 		return c.UsageLog.mutate(ctx, m)
 	case *UsageStatMutation:
@@ -454,6 +470,22 @@ func (c *AccountClient) QueryGroups(_m *Account) *GroupQuery {
 	return query
 }
 
+// QueryExt queries the ext edge of a Account.
+func (c *AccountClient) QueryExt(_m *Account) *AccountExtQuery {
+	query := (&AccountExtClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(accountext.Table, accountext.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, account.ExtTable, account.ExtColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *AccountClient) Hooks() []Hook {
 	return c.hooks.Account
@@ -476,6 +508,155 @@ func (c *AccountClient) mutate(ctx context.Context, m *AccountMutation) (Value, 
 		return (&AccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Account mutation op: %q", m.Op())
+	}
+}
+
+// AccountExtClient is a client for the AccountExt schema.
+type AccountExtClient struct {
+	config
+}
+
+// NewAccountExtClient returns a client for the AccountExt from the given config.
+func NewAccountExtClient(c config) *AccountExtClient {
+	return &AccountExtClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountext.Hooks(f(g(h())))`.
+func (c *AccountExtClient) Use(hooks ...Hook) {
+	c.hooks.AccountExt = append(c.hooks.AccountExt, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountext.Intercept(f(g(h())))`.
+func (c *AccountExtClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountExt = append(c.inters.AccountExt, interceptors...)
+}
+
+// Create returns a builder for creating a AccountExt entity.
+func (c *AccountExtClient) Create() *AccountExtCreate {
+	mutation := newAccountExtMutation(c.config, OpCreate)
+	return &AccountExtCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountExt entities.
+func (c *AccountExtClient) CreateBulk(builders ...*AccountExtCreate) *AccountExtCreateBulk {
+	return &AccountExtCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountExtClient) MapCreateBulk(slice any, setFunc func(*AccountExtCreate, int)) *AccountExtCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountExtCreateBulk{err: fmt.Errorf("calling to AccountExtClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountExtCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountExtCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountExt.
+func (c *AccountExtClient) Update() *AccountExtUpdate {
+	mutation := newAccountExtMutation(c.config, OpUpdate)
+	return &AccountExtUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountExtClient) UpdateOne(_m *AccountExt) *AccountExtUpdateOne {
+	mutation := newAccountExtMutation(c.config, OpUpdateOne, withAccountExt(_m))
+	return &AccountExtUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountExtClient) UpdateOneID(id int64) *AccountExtUpdateOne {
+	mutation := newAccountExtMutation(c.config, OpUpdateOne, withAccountExtID(id))
+	return &AccountExtUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountExt.
+func (c *AccountExtClient) Delete() *AccountExtDelete {
+	mutation := newAccountExtMutation(c.config, OpDelete)
+	return &AccountExtDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountExtClient) DeleteOne(_m *AccountExt) *AccountExtDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountExtClient) DeleteOneID(id int64) *AccountExtDeleteOne {
+	builder := c.Delete().Where(accountext.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountExtDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountExt.
+func (c *AccountExtClient) Query() *AccountExtQuery {
+	return &AccountExtQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountExt},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountExt entity by its id.
+func (c *AccountExtClient) Get(ctx context.Context, id int64) (*AccountExt, error) {
+	return c.Query().Where(accountext.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountExtClient) GetX(ctx context.Context, id int64) *AccountExt {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAccount queries the account edge of a AccountExt.
+func (c *AccountExtClient) QueryAccount(_m *AccountExt) *AccountQuery {
+	query := (&AccountClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accountext.Table, accountext.FieldID, id),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, accountext.AccountTable, accountext.AccountColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *AccountExtClient) Hooks() []Hook {
+	return c.hooks.AccountExt
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountExtClient) Interceptors() []Interceptor {
+	return c.inters.AccountExt
+}
+
+func (c *AccountExtClient) mutate(ctx context.Context, m *AccountExtMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountExtCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountExtUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountExtUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountExtDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountExt mutation op: %q", m.Op())
 	}
 }
 
@@ -1960,6 +2141,22 @@ func (c *TemplateClient) QueryAccounts(_m *Template) *AccountQuery {
 	return query
 }
 
+// QueryExt queries the ext edge of a Template.
+func (c *TemplateClient) QueryExt(_m *Template) *TemplateExtQuery {
+	query := (&TemplateExtClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(template.Table, template.FieldID, id),
+			sqlgraph.To(templateext.Table, templateext.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, template.ExtTable, template.ExtColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *TemplateClient) Hooks() []Hook {
 	return c.hooks.Template
@@ -1982,6 +2179,155 @@ func (c *TemplateClient) mutate(ctx context.Context, m *TemplateMutation) (Value
 		return (&TemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Template mutation op: %q", m.Op())
+	}
+}
+
+// TemplateExtClient is a client for the TemplateExt schema.
+type TemplateExtClient struct {
+	config
+}
+
+// NewTemplateExtClient returns a client for the TemplateExt from the given config.
+func NewTemplateExtClient(c config) *TemplateExtClient {
+	return &TemplateExtClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `templateext.Hooks(f(g(h())))`.
+func (c *TemplateExtClient) Use(hooks ...Hook) {
+	c.hooks.TemplateExt = append(c.hooks.TemplateExt, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `templateext.Intercept(f(g(h())))`.
+func (c *TemplateExtClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TemplateExt = append(c.inters.TemplateExt, interceptors...)
+}
+
+// Create returns a builder for creating a TemplateExt entity.
+func (c *TemplateExtClient) Create() *TemplateExtCreate {
+	mutation := newTemplateExtMutation(c.config, OpCreate)
+	return &TemplateExtCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TemplateExt entities.
+func (c *TemplateExtClient) CreateBulk(builders ...*TemplateExtCreate) *TemplateExtCreateBulk {
+	return &TemplateExtCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TemplateExtClient) MapCreateBulk(slice any, setFunc func(*TemplateExtCreate, int)) *TemplateExtCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TemplateExtCreateBulk{err: fmt.Errorf("calling to TemplateExtClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TemplateExtCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TemplateExtCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TemplateExt.
+func (c *TemplateExtClient) Update() *TemplateExtUpdate {
+	mutation := newTemplateExtMutation(c.config, OpUpdate)
+	return &TemplateExtUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TemplateExtClient) UpdateOne(_m *TemplateExt) *TemplateExtUpdateOne {
+	mutation := newTemplateExtMutation(c.config, OpUpdateOne, withTemplateExt(_m))
+	return &TemplateExtUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TemplateExtClient) UpdateOneID(id int64) *TemplateExtUpdateOne {
+	mutation := newTemplateExtMutation(c.config, OpUpdateOne, withTemplateExtID(id))
+	return &TemplateExtUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TemplateExt.
+func (c *TemplateExtClient) Delete() *TemplateExtDelete {
+	mutation := newTemplateExtMutation(c.config, OpDelete)
+	return &TemplateExtDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TemplateExtClient) DeleteOne(_m *TemplateExt) *TemplateExtDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TemplateExtClient) DeleteOneID(id int64) *TemplateExtDeleteOne {
+	builder := c.Delete().Where(templateext.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TemplateExtDeleteOne{builder}
+}
+
+// Query returns a query builder for TemplateExt.
+func (c *TemplateExtClient) Query() *TemplateExtQuery {
+	return &TemplateExtQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTemplateExt},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TemplateExt entity by its id.
+func (c *TemplateExtClient) Get(ctx context.Context, id int64) (*TemplateExt, error) {
+	return c.Query().Where(templateext.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TemplateExtClient) GetX(ctx context.Context, id int64) *TemplateExt {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTemplate queries the template edge of a TemplateExt.
+func (c *TemplateExtClient) QueryTemplate(_m *TemplateExt) *TemplateQuery {
+	query := (&TemplateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(templateext.Table, templateext.FieldID, id),
+			sqlgraph.To(template.Table, template.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, templateext.TemplateTable, templateext.TemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *TemplateExtClient) Hooks() []Hook {
+	return c.hooks.TemplateExt
+}
+
+// Interceptors returns the client interceptors.
+func (c *TemplateExtClient) Interceptors() []Interceptor {
+	return c.inters.TemplateExt
+}
+
+func (c *TemplateExtClient) mutate(ctx context.Context, m *TemplateExtMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TemplateExtCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TemplateExtUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TemplateExtUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TemplateExtDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TemplateExt mutation op: %q", m.Op())
 	}
 }
 
@@ -2435,12 +2781,13 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, Group, GroupAssignment, Key, Pricing, RedemptionCode, RedemptionUse,
-		Rule, Setting, TempBalance, Template, UsageLog, UsageStat, User []ent.Hook
+		Account, AccountExt, Group, GroupAssignment, Key, Pricing, RedemptionCode,
+		RedemptionUse, Rule, Setting, TempBalance, Template, TemplateExt, UsageLog,
+		UsageStat, User []ent.Hook
 	}
 	inters struct {
-		Account, Group, GroupAssignment, Key, Pricing, RedemptionCode, RedemptionUse,
-		Rule, Setting, TempBalance, Template, UsageLog, UsageStat,
-		User []ent.Interceptor
+		Account, AccountExt, Group, GroupAssignment, Key, Pricing, RedemptionCode,
+		RedemptionUse, Rule, Setting, TempBalance, Template, TemplateExt, UsageLog,
+		UsageStat, User []ent.Interceptor
 	}
 )

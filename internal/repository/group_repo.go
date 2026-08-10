@@ -38,7 +38,9 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	q := r.client.Group.Create().
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
-		SetPriceMultiplier(g.PriceMultiplier)
+		SetPriceMultiplier(g.PriceMultiplier).
+		// protocol_convert 恒写入（service 层把缺省归一为 "off"；DB 默认 "off" 兜底）。
+		SetProtocolConvert(string(g.ProtocolConvert))
 	row, err := q.Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
@@ -95,6 +97,7 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetPriceMultiplier(g.PriceMultiplier).
+		SetProtocolConvert(string(g.ProtocolConvert)).
 		Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {

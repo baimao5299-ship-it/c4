@@ -129,6 +129,38 @@ paths:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /templates/{id}/ext:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: GetTemplatesIdExt
+      tags: [templates]
+      summary: 读取模板类型化扩展（编辑回显；仅生态三类型模板有 ext 行）
+      responses:
+        '200':
+          description: 模板 ext 配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateExt' }
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: PutTemplatesIdExt
+      tags: [templates]
+      summary: 幂等写入模板类型化扩展（Create/Update 合一；全列更新含 NULL 清空）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateExt' }
+      responses:
+        '200':
+          description: 写入后的 ext 配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateExt' }
+        default:
+          $ref: '#/components/responses/Error'
   /accounts:
     post:
       operationId: PostAccounts
@@ -257,6 +289,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AccountGroupsResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /accounts/{id}/ext:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: GetAccountsIdExt
+      tags: [accounts]
+      summary: 读取账号类型化鉴权扩展（编辑回显；仅 codex-oauth/codex-pat 账号有 ext 行）
+      responses:
+        '200':
+          description: 账号 ext 配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountExt' }
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: PutAccountsIdExt
+      tags: [accounts]
+      summary: 幂等写入账号类型化鉴权扩展（Create/Update 合一；全列更新含 NULL 清空）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountExt' }
+      responses:
+        '200':
+          description: 写入后的 ext 配置
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountExt' }
         default:
           $ref: '#/components/responses/Error'
   /groups:
@@ -1091,12 +1155,13 @@ components:
         name: { type: string }
         base_url: { type: string }
         # credential_type 模板级：一个模板 = 一种号池；缺省 = api_key。
-        # 号池生态类型后续追加枚举（codex_oauth 等）。
-        credential_type: { type: string, enum: [api_key], default: api_key }
+        # 生态三类型（responses-special/codex-oauth/codex-pat）只支持 resp / resp-ws
+        # 格式（service 校验）；类型化配置走 /templates/{id}/ext。
+        credential_type: { type: string, enum: [api_key, responses-special, codex-oauth, codex-pat], default: api_key }
         supported_formats:
           type: array
           minItems: 1
-          items: { type: string, enum: [openai-chat, openai-responses, anthropic] }
+          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, anthropic] }
         models:
           type: array
           items: { type: string }
@@ -1115,10 +1180,10 @@ components:
         ID: { type: integer, format: int64 }
         Name: { type: string }
         BaseURL: { type: string }
-        CredentialType: { type: string }
+        CredentialType: { type: string, enum: [api_key, responses-special, codex-oauth, codex-pat], description: 模板号池类型；生态三类型只支持 resp / resp-ws 格式 }
         SupportedFormats:
           type: array
-          items: { type: string, enum: [openai-chat, openai-responses, anthropic] }
+          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, anthropic] }
         Models:
           type: array
           items: { type: string }
@@ -1172,6 +1237,37 @@ components:
             concurrency: { type: integer, format: int64 }
             err_rate: { type: number, format: double }
             err_count: { type: integer }
+    TemplateExt:
+      type: object
+      required: [credential_type]
+      properties:
+        # template_id 只读（响应）；请求体忽略——路径 {id} 为准。
+        template_id: { type: integer, format: int64 }
+        credential_type: { type: string, enum: [responses-special, codex-oauth, codex-pat], description: "类型声明；必须与父模板 credential_type 一致（不一致 → 400）" }
+        # 模板是共享配置面：唯一可配置列 strip_image_tools（三类型公共能力开关）——
+        # 凭据列组（oauth/pat）一律在账号级 account_ext（账号私有）。
+        strip_image_tools: { type: boolean, nullable: true, description: "三类型公共能力开关：模板级图像 tool 剥离（NULL = 未配置 = 关闭）" }
+    AccountExt:
+      type: object
+      required: [credential_type]
+      properties:
+        # account_id 只读（响应）；请求体忽略——路径 {id} 为准。
+        account_id: { type: integer, format: int64 }
+        credential_type: { type: string, enum: [codex-oauth, codex-pat], description: 类型-列组约束（service 校验）：oauth 只允许 oauth_* 列组；pat 只允许 pat_key }
+        # 身份四元组（真实 codex 客户端语义；首次写入缺省 → service 自动生成
+        # （UUIDv4/v7 形状）并持久化，账号存在期间稳定；显式提供 → 采用；
+        # 恒等 thread_id == session_id、window_id = {thread_id}:0）。
+        installation_id: { type: string, description: "身份：账号级唯一（UUIDv4；响应恒有——首次写入自动生成）" }
+        session_id: { type: string, nullable: true, description: "身份：会话级（UUIDv7；恒等 == thread_id；service 自动生成/沿用）" }
+        thread_id: { type: string, nullable: true, description: "身份：会话级（UUIDv7；恒等 == session_id）" }
+        window_id: { type: string, nullable: true, description: "身份：会话级派生 {thread_id}:0（导入时生成后恒定不变——恒 0，无透传无解析；上游不校验 n）" }
+        # 凭据列组（按 credential_type 约束）
+        oauth_token: { type: string, nullable: true, description: 凭据：oauth 访问令牌（oauth 行必填——最小完整性） }
+        oauth_refresh_token: { type: string, nullable: true, description: 凭据：oauth 刷新令牌 }
+        oauth_expires_at: { type: string, format: date-time, nullable: true, description: 凭据：oauth 访问令牌过期时间 }
+        pat_key: { type: string, nullable: true, description: 凭据：pat }
+        # 管理标识（非请求面）
+        email: { type: string, nullable: true, description: "管理标识：codex 账号登录邮箱（导入时由人工/上游提供，非自动生成——NewCodexIdentity 只生成身份四元组；可空）" }
     TemplateListResponse:
       type: object
       required: [total, rows]
@@ -1199,6 +1295,11 @@ components:
     GroupVisibility:
       type: string
       enum: [public, private]
+    GroupProtocolConvert:
+      type: string
+      enum: [off, chat_to_resp, mess_to_resp, resp_to_mess, chat_to_mess]
+      default: off
+      description: 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
     GroupAssignmentsBody:
       type: object
       required: [user_ids]
@@ -1389,6 +1490,7 @@ components:
         name: { type: string }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
         price_multiplier: { type: number, format: double, minimum: 0, maximum: 10, nullable: true, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0） }
+        protocol_convert: { $ref: '#/components/schemas/GroupProtocolConvert' }
     RuleCreate:
       type: object
       required: [name, priority]
@@ -1446,6 +1548,7 @@ components:
         Name: { type: string }
         Visibility: { $ref: '#/components/schemas/GroupVisibility' }
         PriceMultiplier: { type: number, format: double, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5） }
+        ProtocolConvert: { $ref: '#/components/schemas/GroupProtocolConvert' }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
         DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项） }
@@ -1484,7 +1587,7 @@ components:
         supported_formats:
           type: array
           minItems: 1
-          items: { type: string, enum: [openai-chat, openai-responses, anthropic] }
+          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, anthropic] }
         models:
           type: array
           items: { type: string }

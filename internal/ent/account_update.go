@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/accountext"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/predicate"
 	"go-proxy-mini/internal/ent/template"
@@ -248,6 +249,21 @@ func (_u *AccountUpdate) AddGroups(v ...*Group) *AccountUpdate {
 	return _u.AddGroupIDs(ids...)
 }
 
+// AddExtIDs adds the "ext" edge to the AccountExt entity by IDs.
+func (_u *AccountUpdate) AddExtIDs(ids ...int64) *AccountUpdate {
+	_u.mutation.AddExtIDs(ids...)
+	return _u
+}
+
+// AddExt adds the "ext" edges to the AccountExt entity.
+func (_u *AccountUpdate) AddExt(v ...*AccountExt) *AccountUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExtIDs(ids...)
+}
+
 // Mutation returns the AccountMutation object of the builder.
 func (_u *AccountUpdate) Mutation() *AccountMutation {
 	return _u.mutation
@@ -278,6 +294,27 @@ func (_u *AccountUpdate) RemoveGroups(v ...*Group) *AccountUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveGroupIDs(ids...)
+}
+
+// ClearExt clears all "ext" edges to the AccountExt entity.
+func (_u *AccountUpdate) ClearExt() *AccountUpdate {
+	_u.mutation.ClearExt()
+	return _u
+}
+
+// RemoveExtIDs removes the "ext" edge to AccountExt entities by IDs.
+func (_u *AccountUpdate) RemoveExtIDs(ids ...int64) *AccountUpdate {
+	_u.mutation.RemoveExtIDs(ids...)
+	return _u
+}
+
+// RemoveExt removes "ext" edges to AccountExt entities.
+func (_u *AccountUpdate) RemoveExt(v ...*AccountExt) *AccountUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExtIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -459,6 +496,51 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExtCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExtIDs(); len(nodes) > 0 && !_u.mutation.ExtCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExtIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -704,6 +786,21 @@ func (_u *AccountUpdateOne) AddGroups(v ...*Group) *AccountUpdateOne {
 	return _u.AddGroupIDs(ids...)
 }
 
+// AddExtIDs adds the "ext" edge to the AccountExt entity by IDs.
+func (_u *AccountUpdateOne) AddExtIDs(ids ...int64) *AccountUpdateOne {
+	_u.mutation.AddExtIDs(ids...)
+	return _u
+}
+
+// AddExt adds the "ext" edges to the AccountExt entity.
+func (_u *AccountUpdateOne) AddExt(v ...*AccountExt) *AccountUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExtIDs(ids...)
+}
+
 // Mutation returns the AccountMutation object of the builder.
 func (_u *AccountUpdateOne) Mutation() *AccountMutation {
 	return _u.mutation
@@ -734,6 +831,27 @@ func (_u *AccountUpdateOne) RemoveGroups(v ...*Group) *AccountUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveGroupIDs(ids...)
+}
+
+// ClearExt clears all "ext" edges to the AccountExt entity.
+func (_u *AccountUpdateOne) ClearExt() *AccountUpdateOne {
+	_u.mutation.ClearExt()
+	return _u
+}
+
+// RemoveExtIDs removes the "ext" edge to AccountExt entities by IDs.
+func (_u *AccountUpdateOne) RemoveExtIDs(ids ...int64) *AccountUpdateOne {
+	_u.mutation.RemoveExtIDs(ids...)
+	return _u
+}
+
+// RemoveExt removes "ext" edges to AccountExt entities.
+func (_u *AccountUpdateOne) RemoveExt(v ...*AccountExt) *AccountUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExtIDs(ids...)
 }
 
 // Where appends a list predicates to the AccountUpdate builder.
@@ -945,6 +1063,51 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExtCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExtIDs(); len(nodes) > 0 && !_u.mutation.ExtCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExtIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

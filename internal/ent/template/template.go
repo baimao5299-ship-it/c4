@@ -36,6 +36,8 @@ const (
 	FieldCreatedAt = "created_at"
 	// EdgeAccounts holds the string denoting the accounts edge name in mutations.
 	EdgeAccounts = "accounts"
+	// EdgeExt holds the string denoting the ext edge name in mutations.
+	EdgeExt = "ext"
 	// Table holds the table name of the template in the database.
 	Table = "templates"
 	// AccountsTable is the table that holds the accounts relation/edge.
@@ -45,6 +47,13 @@ const (
 	AccountsInverseTable = "accounts"
 	// AccountsColumn is the table column denoting the accounts relation/edge.
 	AccountsColumn = "template_id"
+	// ExtTable is the table that holds the ext relation/edge.
+	ExtTable = "template_exts"
+	// ExtInverseTable is the table name for the TemplateExt entity.
+	// It exists in this package in order to avoid circular dependency with the "templateext" package.
+	ExtInverseTable = "template_exts"
+	// ExtColumn is the table column denoting the ext relation/edge.
+	ExtColumn = "template_id"
 )
 
 // Columns holds all SQL columns for template fields.
@@ -134,10 +143,31 @@ func ByAccounts(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAccountsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByExtCount orders the results by ext count.
+func ByExtCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newExtStep(), opts...)
+	}
+}
+
+// ByExt orders the results by ext terms.
+func ByExt(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newExtStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newAccountsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, AccountsTable, AccountsColumn),
+	)
+}
+func newExtStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ExtInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ExtTable, ExtColumn),
 	)
 }
