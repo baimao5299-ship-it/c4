@@ -14,14 +14,14 @@ import (
 	userapi "go-proxy-mini/internal/handler/user"
 )
 
-// validCode 校验码格式（XXXXXX-XXXXXX，字符集 32：大写 A-Z 去 I/O + 数字 2-9 去 0/1）。
+// validCode 校验码格式（XXXX-XXXX-XXXX-XXXX，字符集 32：大写 A-Z 去 I/O + 数字 2-9 去 0/1）。
 func validCode(t *testing.T, code string) {
 	t.Helper()
 	parts := strings.Split(code, "-")
-	require.Len(t, parts, 2, "code format: %s", code)
+	require.Len(t, parts, 4, "code format: %s", code)
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	for _, p := range parts {
-		require.Len(t, p, 6, "code segment length: %s", code)
+		require.Len(t, p, 4, "code segment length: %s", code)
 		for _, ch := range p {
 			require.Contains(t, charset, string(ch), "code charset: %s", code)
 		}
@@ -281,7 +281,7 @@ func TestRedeemConflictAndInvalid(t *testing.T) {
 	require.Contains(t, errMsg(t, rec), "already redeemed")
 
 	// 不存在的码 → 400 invalid code
-	rec = doUser(http.MethodPost, "/user/redemptions", `{"code":"ABCDEF-GHJKLM"}`, token)
+	rec = doUser(http.MethodPost, "/user/redemptions", `{"code":"ABCD-EFGH-JKLM-NPQR"}`, token)
 	require.Equal(t, 400, rec.Code, "unknown code: %s", rec.Body.String())
 	require.Contains(t, errMsg(t, rec), "invalid code")
 

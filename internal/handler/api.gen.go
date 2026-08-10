@@ -545,7 +545,7 @@ type PricingUpsert struct {
 
 // RedemptionCode defines model for RedemptionCode.
 type RedemptionCode struct {
-	// Code XXXXXX-XXXXXX（生成后不可编辑，仅可失效）
+	// Code XXXX-XXXX-XXXX-XXXX（16 字符，生成后不可编辑，仅可失效）
 	Code      string    `json:"Code"`
 	CreatedAt time.Time `json:"CreatedAt"`
 

@@ -1114,7 +1114,7 @@ export interface components {
         RedemptionCode: {
             /** Format: int64 */
             ID: number;
-            /** @description XXXXXX-XXXXXX（生成后不可编辑，仅可失效） */
+            /** @description XXXX-XXXX-XXXX-XXXX（16 字符，生成后不可编辑，仅可失效） */
             Code: string;
             Type: components["schemas"]["RedemptionType"];
             /**

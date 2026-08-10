@@ -54,15 +54,15 @@ func validateGenerateRequest(req GenerateRequest) error {
 }
 
 // codeCharset 兑换码字符集（32 字符）：大写 A-Z 去 I/O + 数字 2-9 去 0/1
-// （防形似混淆）——12 字符熵 ~60bit（决策 3 数据模型）。
+// （防形似混淆）——16 字符熵 ~80bit（决策 3 数据模型；用户拍板升级：12→16 字符）。
 const codeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-// randomCode 生成单码（格式 XXXXXX-XXXXXX，crypto/rand 不可预测——码可兑换
+// randomCode 生成单码（格式 XXXX-XXXX-XXXX-XXXX，crypto/rand 不可预测——码可兑换
 // 真实资源，禁用可预测的 math/rand）。
 func randomCode() (string, error) {
-	b := make([]byte, 13)
+	b := make([]byte, 19)
 	for i := 0; i < len(b); i++ {
-		if i == 6 {
+		if i == 4 || i == 9 || i == 14 {
 			b[i] = '-'
 			continue
 		}
