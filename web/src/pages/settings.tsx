@@ -173,7 +173,7 @@ function SettingRow({ setting }: { setting: Setting }) {
     )
 
   return (
-    <div className="flex items-start justify-between gap-4 py-3">
+    <div className="flex items-start justify-between gap-5 py-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{t(`settings.labels.${key}`)}</span>
@@ -206,13 +206,13 @@ export default function SettingsPage() {
   return (
     // 页面级进入动画（与 users/pricing 等页一致，一次挂载仅播放一次）。
     <motion.div
-      className="space-y-4"
+      className="space-y-6"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
     >
       <div>
-        <h1 className="text-lg font-semibold">{t('settings.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('settings.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('settings.subtitle')}</p>
       </div>
       {isError ? (
@@ -227,7 +227,7 @@ export default function SettingsPage() {
           <p className="font-medium">{t('settings.emptyTitle')}</p>
         </Card>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {GROUPS.map(g => {
             const rows = g.keys.map(k => byKey.get(k)).filter((s): s is Setting => !!s)
             if (rows.length === 0) return null

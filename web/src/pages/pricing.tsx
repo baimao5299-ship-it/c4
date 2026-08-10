@@ -342,10 +342,10 @@ export default function PricingPage() {
   const sourceItems = Object.fromEntries([['all', t('pricing.all')], ...SOURCES.map(s => [s, t(`pricing.source.${s}`)])])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{t('pricing.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('pricing.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('pricing.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -410,7 +410,7 @@ export default function PricingPage() {
                   <TableHead className="text-right">{t('pricing.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(p => (
                   <TableRow key={p.Model}>
                     <TableCell className="max-w-48 truncate font-mono text-sm" title={p.Model}>{p.Model}</TableCell>

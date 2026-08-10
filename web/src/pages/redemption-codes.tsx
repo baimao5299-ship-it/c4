@@ -241,10 +241,10 @@ export default function RedemptionCodes() {
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{t('redemptions.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('redemptions.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('redemptions.subtitle')}</p>
         </div>
         <Button onClick={openGenerate}><Plus /> {t('redemptions.new')}</Button>
@@ -330,7 +330,7 @@ export default function RedemptionCodes() {
                   <TableHead className="text-right">{t('redemptions.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(c => (
                   <TableRow key={c.ID} data-state={selected.includes(c.ID) ? 'selected' : undefined}>
                     <TableCell>
@@ -533,7 +533,7 @@ export default function RedemptionCodes() {
                     <TableHead>{t('redemptions.table.createdAt')}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
+                <TableBody className="[&_td]:py-3">
                   {usesRows.map(u => (
                     <TableRow key={u.ID}>
                       <TableCell className="tabular-nums">{u.ID}</TableCell>
