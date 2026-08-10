@@ -35,6 +35,7 @@ export default function UserRegister() {
     try {
       const res = await userApi.register({ email: email.trim(), password })
       userAuth.setToken(res.token)
+      userAuth.setRole(res.user.Role)
       nav('/user')
     } catch (e) {
       // 403 = 注册通道关闭（signup_enabled）；其余 4xx/5xx 展示服务端 error 字段；网络异常统一兜底

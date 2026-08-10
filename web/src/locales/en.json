@@ -51,15 +51,6 @@
     "abort": "Aborted",
     "billing": "Billing error"
   },
-  "login": {
-    "subtitle": "Admin sign-in to manage accounts, groups, pricing and usage",
-    "email": "Email",
-    "password": "Password",
-    "enter": "Sign in",
-    "adminOnly": "This account is not a platform admin and cannot access the admin console",
-    "userCenterLink": "User Center",
-    "errorGeneric": "Sign-in failed, please check your email and password"
-  },
   "home": {
     "title": "Key Features",
     "subtitle": "One gateway for multiple LLM APIs — billed per model, measured per request",
@@ -79,8 +70,7 @@
       "title": "Redemption Codes",
       "desc": "Issue balance, concurrency and temp quota instantly with codes"
     },
-    "adminEntry": "Admin Console",
-    "userEntry": "User Center"
+    "loginEntry": "Sign in"
   },
   "dashboard": {
     "title": "Overview",

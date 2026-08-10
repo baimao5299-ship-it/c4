@@ -61,7 +61,7 @@ export function toQuery(p?: object): string {
   return s ? `?${s}` : ''
 }
 
-// base：管理端 '/admin' / 用户端 '/user'；token 由调用方注入（auth / userAuth）。
+// base：管理端 '/admin' / 用户端 '/user'；token 统一由 userAuth 注入（一套登录态）。
 export class ApiClient {
   private base: string
   private getToken: () => string | null

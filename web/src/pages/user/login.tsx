@@ -17,6 +17,8 @@ const LANGS: { code: AppLang; label: string }[] = [
   { code: 'en', label: 'EN' },
 ]
 
+// 唯一登录页（原管理端 /login 已并入）：POST /user/auth/login 成功后统一进 /user；
+// 角色随 token 存入同一 userAuth 槽——platform_admin 凭侧边栏管理菜单进入 /app。
 export default function UserLogin() {
   const { t, i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
@@ -33,6 +35,7 @@ export default function UserLogin() {
     try {
       const res = await userApi.login({ email: email.trim(), password })
       userAuth.setToken(res.token)
+      userAuth.setRole(res.user.Role)
       nav('/user')
     } catch (e) {
       // 服务端 error 字段直接展示；网络异常等统一兜底文案

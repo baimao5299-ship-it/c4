@@ -1,18 +1,14 @@
-const KEY = 'gpm_admin_token'
-const ROLE_KEY = 'gpm_admin_role'
-export const auth = {
-  getToken: () => localStorage.getItem(KEY),
-  setToken: (t: string) => localStorage.setItem(KEY, t),
+// 统一登录态：唯一槽位 userAuth，管理端与用户端共用。
+// 角色随 token 同槽存储：platform_admin 凭同一 JWT 可访问 /admin 与 /user 两端（后端 middleware 已支持）。
+const TOKEN_KEY = 'gpm_user_token'
+const ROLE_KEY = 'gpm_user_role'
+export const userAuth = {
+  getToken: () => localStorage.getItem(TOKEN_KEY),
+  setToken: (t: string) => localStorage.setItem(TOKEN_KEY, t),
   getRole: () => localStorage.getItem(ROLE_KEY),
   setRole: (r: string) => localStorage.setItem(ROLE_KEY, r),
   clear: () => {
-    localStorage.removeItem(KEY)
+    localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(ROLE_KEY)
   },
-}
-const USER_KEY = 'gpm_user_token'
-export const userAuth = {
-  getToken: () => localStorage.getItem(USER_KEY),
-  setToken: (t: string) => localStorage.setItem(USER_KEY, t),
-  clear: () => localStorage.removeItem(USER_KEY),
 }

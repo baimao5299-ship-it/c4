@@ -20,7 +20,7 @@ const FEATURES = [
   { key: 'feature4', icon: Ticket },
 ] as const
 
-// 首页 landing（登录前展示）：品牌 + 标语 + 功能卡片 + 双入口。
+// 首页 landing（登录前展示）：品牌 + 标语 + 功能卡片 + 单一登录入口。
 export default function Home() {
   const { t, i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
@@ -62,9 +62,8 @@ export default function Home() {
             ))}
           </div>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }} className="flex flex-wrap items-center justify-center gap-4">
-          <Button render={<Link to="/login" />}>{t('home.adminEntry')} <ArrowRight className="h-4 w-4" /></Button>
-          <Button variant="outline" render={<Link to="/user/login" />}>{t('home.userEntry')}</Button>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }} className="flex items-center justify-center">
+          <Button render={<Link to="/user/login" />}>{t('home.loginEntry')} <ArrowRight className="h-4 w-4" /></Button>
         </motion.div>
       </main>
     </div>

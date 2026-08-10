@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { auth } from '@/lib/auth'
+import { userAuth } from '@/lib/auth'
 import { setLang, type AppLang } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { ModeToggle } from '@/components/mode-toggle'
@@ -45,7 +45,7 @@ export default function Layout() {
           ))}
         </nav>
         <div className="p-3 border-t border-sidebar-border">
-          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground/60" onClick={() => { auth.clear(); navTo('/login') }}>
+          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground/60" onClick={() => { userAuth.clear(); navTo('/user/login') }}>
             <LogOut className="h-4 w-4 mr-2" /> {t('common.logout')}
           </Button>
         </div>

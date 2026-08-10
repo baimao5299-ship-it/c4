@@ -51,15 +51,6 @@
     "abort": "已中止",
     "billing": "计费失败"
   },
-  "login": {
-    "subtitle": "管理员登录，管理账号、分组、价格与用量",
-    "email": "邮箱",
-    "password": "密码",
-    "enter": "进入",
-    "adminOnly": "该账号不是平台管理员，无权限访问管理台",
-    "userCenterLink": "用户中心登录",
-    "errorGeneric": "登录失败，请检查邮箱与密码后重试"
-  },
   "home": {
     "title": "核心能力",
     "subtitle": "统一接入多家大模型 API，按模型计价、按用量统计",
@@ -79,8 +70,7 @@
       "title": "兑换码",
       "desc": "余额、并发上限与临时额度，一键生成发放"
     },
-    "adminEntry": "管理台",
-    "userEntry": "用户中心"
+    "loginEntry": "登录"
   },
   "dashboard": {
     "title": "总览",
