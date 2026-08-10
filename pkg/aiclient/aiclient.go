@@ -144,8 +144,10 @@ func (f *Factory) fullURLOf(templateID int64, baseURL, path string) (*url.URL, e
 }
 
 func parseFullURL(base, path string) (*url.URL, error) {
-	if path != "v1/messages" {
-		base = openaiBaseURL(base) // openai 系：裸根 + /v1
+	// 路径自带 v1 前缀（anthropic v1/messages、resp-ws v1/responses/ws）→ 不再补
+	// /v1；其余 openai 系路径裸根 + /v1。
+	if !strings.HasPrefix(path, "v1/") {
+		base = openaiBaseURL(base)
 	}
 	u, err := url.Parse(base)
 	if err != nil {

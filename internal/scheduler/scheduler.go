@@ -312,7 +312,7 @@ func modelSet(accs []*accountSnapshot) map[string]struct{} {
 // （model == ""）：请求模型未知时行为等价于格式桶 + tier2（Serves 恒 false）。
 func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 	routes := make(map[routeKey]*route)
-	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatAnthropic}
+	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatOpenAIResponsesWS, domain.FormatAnthropic}
 	for model := range modelSet(accs) {
 		for _, format := range formats {
 			var t1, t2 []*accountSnapshot
