@@ -61,7 +61,7 @@ export default function AppShell() {
     : [{ titleKey: 'user.nav.userSection', items: userNav }]
   return (
     <div className="flex min-h-screen">
-      <AppSidebar navs={navs} />
+      <AppSidebar navs={navs} userEmail={me?.Email} />
       <main className="flex flex-1 flex-col overflow-auto">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 lg:px-6">
           <div className="flex flex-1 items-center justify-end gap-2 lg:gap-3">
