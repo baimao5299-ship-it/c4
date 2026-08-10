@@ -9,6 +9,7 @@ package repository_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -118,4 +119,76 @@ func TestPGStatUpsertCopyBulk(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), g101.RequestCount, "新 key 原样落库")
 	require.Equal(t, int64(7), g101.TotalTokens)
+}
+
+// #37 P3：多实例并发 Upsert 同批 bucket（模拟实例 A/B 各自 counters map 随机
+// 迭代序 → 批量行序相反，锁顺序交错）——修复前 INSERT..SELECT..ON CONFLICT
+// DO UPDATE 目标行锁顺序交错 → deadlock detected（40P01，压测实证偶发；本
+// 测试 500 桶 × 4 并发已回退验证复现原报错）；修复后批内按冲突键排序（锁顺序
+// 一致化）+ 40P01 瞬时重试兜底 → 并发无失败。断言全部成功 + 测量列冲突累加
+// 精确（4 并发各计 1 → 4，维度列不翻倍）。
+func TestPGStatUpsertConcurrentNoDeadlock(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Hour)
+	mk := func(g int64) *domain.StatBucket {
+		return &domain.StatBucket{
+			BucketTime: base, GroupID: g, AccountID: 0, TemplateID: 0, UserID: 42,
+			Model: "gpt-4o", IsError: false,
+			RequestCount: 1, ErrorCount: 0, InputTokens: 0, OutputTokens: 0,
+			TotalTokens: 10, CacheReadTokens: 0, CacheCreationTokens: 0, Cost: 0, TotalLatencyMS: 0,
+		}
+	}
+	const n = 500 // 生产 flush 分块同量级（锁重叠窗口足够大，无修复必死锁）
+	buckets := make([]*domain.StatBucket, 0, n)
+	for g := int64(1); g <= n; g++ {
+		buckets = append(buckets, mk(g))
+	}
+	require.NoError(t, repos.Stats.Upsert(ctx, buckets), "预置存量行（并发 DO UPDATE 冲突路径）")
+	rev := make([]*domain.StatBucket, len(buckets)) // 实例 B：行序相反（map 随机迭代极端形态）
+	for i := range buckets {
+		rev[len(buckets)-1-i] = buckets[i]
+	}
+
+	start := make(chan struct{}) // 起跑屏障：最大化两批 merge 锁获取重叠
+	var wg sync.WaitGroup
+	errs := make([]error, 4) // 2 正序 + 2 倒序（多 worker 多实例形态）
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			b := buckets
+			if i%2 == 1 {
+				b = rev
+			}
+			errs[i] = repos.Stats.Upsert(ctx, b)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for i, e := range errs {
+		require.NoError(t, e, "并发 Upsert 同批 bucket 无 deadlock（排序 + 重试兜底）", i)
+	}
+
+	total, err := repos.Client.UsageStat.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, n, total, "500 桶不重复计（DO UPDATE 累加非新增）")
+	g1, err := repos.Client.UsageStat.Query().
+		Where(usagestat.BucketTimeEQ(base), usagestat.GroupIDEQ(1), usagestat.UserIDEQ(42), usagestat.ModelEQ("gpt-4o")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), g1.RequestCount, "预置 1 + 4 并发增量冲突累加精确")
+	require.Equal(t, int64(50), g1.TotalTokens, "10 × 5 累加精确")
+	require.Equal(t, int64(1), g1.GroupID, "维度列不翻倍")
+	g250, err := repos.Client.UsageStat.Query().
+		Where(usagestat.BucketTimeEQ(base), usagestat.GroupIDEQ(250), usagestat.UserIDEQ(42), usagestat.ModelEQ("gpt-4o")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), g250.RequestCount, "中间桶同样精确（锁顺序一致化的覆盖面）")
+	g500, err := repos.Client.UsageStat.Query().
+		Where(usagestat.BucketTimeEQ(base), usagestat.GroupIDEQ(500), usagestat.UserIDEQ(42), usagestat.ModelEQ("gpt-4o")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), g500.RequestCount, "末端桶同样精确")
 }

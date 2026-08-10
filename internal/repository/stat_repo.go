@@ -2,11 +2,14 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"go-proxy-mini/internal/domain"
@@ -120,6 +123,17 @@ var statCopyMergeSQL = func() string {
 	return b.String()
 }()
 
+// statUpsertRetries 死锁（40P01）重试次数（#37 P3）：多实例并发批量 Upsert
+// 同批 bucket（INSERT..SELECT..ON CONFLICT DO UPDATE）锁顺序交错 → PG 判定
+// deadlock detected 并终止一方（压测实证偶发）。死锁为瞬时错误（PG 惯例重试
+// 1-2 次），重试成功即无影响；重试耗尽才返回错误 → 调用方失败路径语义不变
+// （usage.Recorder.flushStats 失败 chunk 回灌合并，不丢不重）。
+const statUpsertRetries = 2
+
+// statUpsertBackoff 死锁重试短退避（规避两实例同节奏再碰撞；死锁窗口内
+// 最多追加 ~150ms 延迟）。
+var statUpsertBackoff = []time.Duration{50 * time.Millisecond, 100 * time.Millisecond}
+
 // Upsert 批量 upsert + 冲突累加（规格 §10.5：聚合不可失真）——COPY 两阶段
 //（#17：raw SQL 批量 upsert 单条 8.5k 参数大事务秒级占用 DB 连接，与 billing
 // flusher 争连接池 → 压测 -12% 吞吐回归；治本后连接占用毫秒级）：
@@ -132,6 +146,9 @@ var statCopyMergeSQL = func() string {
 // 失败语义：任一步失败 → 整体回滚 → 返回 error（chunk 原子回灌由调用方
 // usage.Recorder.flushStats 处理：失败 chunk 连同其后剩余合并回灌，不丢不重）。
 // Cost 毫分（Phase 5 计费预聚合：统计面花费不扫明细）。
+// #37 P3 死锁收敛：批内按冲突键排序（锁顺序一致化，见 sortBuckets）+ 40P01
+// 瞬时重试（statUpsertRetries，短退避）——多实例并发同批 bucket 不再
+// deadlock detected（排序消除主因，重试兜底残余交错）。
 func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) error {
 	if len(buckets) == 0 {
 		return nil
@@ -139,6 +156,28 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 	if r.pool == nil {
 		return fmt.Errorf("stat repo: pgx pool not configured (repository.NewWithPG); cannot COPY upsert %d buckets", len(buckets))
 	}
+	sortBuckets(buckets) // 锁顺序一致化（#37 P3；批内无重复 key，排序不产生冲突）
+	var err error
+	for attempt := 0; attempt <= statUpsertRetries; attempt++ {
+		if attempt > 0 {
+			select { // 短退避；ctx 取消优先（不吞停机预算）
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(statUpsertBackoff[attempt-1]):
+			}
+		}
+		err = r.upsertOnce(ctx, buckets)
+		if !isDeadlock(err) {
+			return err
+		}
+		// 40P01：死锁瞬时错误，重试；重试耗尽 → 原样返回（现状失败路径语义）
+	}
+	return err
+}
+
+// upsertOnce 单次 COPY 两阶段 upsert（Upsert 的 ①/② 主体；重试以整个
+// 单连接事务为单位重做——死锁回滚后临时表随事务消失，无残留状态）。
+func (r *StatRepo) upsertOnce(ctx context.Context, buckets []*domain.StatBucket) error {
 	now := time.Now()
 	conn, err := r.pool.Acquire(ctx)
 	if err != nil {
@@ -163,6 +202,46 @@ func (r *StatRepo) Upsert(ctx context.Context, buckets []*domain.StatBucket) err
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// sortBuckets 批内按冲突键排序（#37 P3 辅助）：INSERT..SELECT..ON CONFLICT
+// 的目标行锁获取顺序 = 临时表扫描序 = COPY 行序。多实例各自 counters map 的
+// 迭代序随机 → 并发 Upsert 同批 bucket 锁顺序交错 → deadlock detected。
+// 排序使所有实例按同一顺序取锁 → 消除该主因（残余交错由 40P01 重试兜底）。
+// 排序键 = ON CONFLICT 目标列（与 usage_stats 唯一键同构）。
+func sortBuckets(buckets []*domain.StatBucket) {
+	sort.Slice(buckets, func(i, j int) bool {
+		a, b := buckets[i], buckets[j]
+		if a.BucketTime.Before(b.BucketTime) {
+			return true
+		}
+		if b.BucketTime.Before(a.BucketTime) {
+			return false
+		}
+		if a.GroupID != b.GroupID {
+			return a.GroupID < b.GroupID
+		}
+		if a.AccountID != b.AccountID {
+			return a.AccountID < b.AccountID
+		}
+		if a.TemplateID != b.TemplateID {
+			return a.TemplateID < b.TemplateID
+		}
+		if a.UserID != b.UserID {
+			return a.UserID < b.UserID
+		}
+		if a.Model != b.Model {
+			return a.Model < b.Model
+		}
+		return !a.IsError && b.IsError
+	})
+}
+
+// isDeadlock 判断死锁错误（SQLSTATE 40P01）：多实例并发 Upsert 同批 bucket
+// 锁顺序交错（#37 P3）。pgx 原样透传 pgconn.PgError，errors.As 解包。
+func isDeadlock(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "40P01"
 }
 
 // statCopyRow 单桶 → COPY 行（列序 = statUpsertCols；bucket_time/updated_at

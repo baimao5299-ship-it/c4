@@ -220,11 +220,12 @@ func TestGateN1EquivalentToSingleInstance(t *testing.T) {
 	require.True(t, g.quotaExhausted(meta), "消耗 90 后与单实例同点 429（无复核能力）")
 }
 
-// 评审 I-1：N=1 + 真 reclaimer，DB quota_used 滞后于本地消耗（模拟
-// usage.Recorder flush 滞后）。断言：429 点从"本地 consumed ≥ quota"变为
-// "DB quota_used ≥ quota"——滞后差窗口内的超跑 = 软门禁误差（§3.2），
-// 扣费恒条件 UPDATE 精确，非错误计费；DB 追上后复核确认真尽 → 429。
-func TestGateN1ReclaimerLagOverrun(t *testing.T) {
+// #37 P1：N=1 + 真 reclaimer，DB quota_used 滞后于本地消耗（模拟 usage.Recorder
+// flush 滞后）。复核认领扣除本地未反映消耗（unreported = consumed - 上次复核
+// 基线）→ 本地消耗满 quota 即复核确认真尽 429——不再凭滞后 DB 值续额超跑
+// （修复前：每次复核重新分配 full remaining → 滞后窗口超跑；压测实证复核循环
+// 无限续额 14 倍）。收敛语义：本实例总放行 ≤ 初始份额 + 滞后差。
+func TestGateN1ReclaimerLagNoOverrun(t *testing.T) {
 	g := newConcurrencyGate(nil)
 	reader := &fakeQuotaReader{used: 0} // DB 滞后：本地已扣尚未回写
 	g.setReclaimer(reader)
@@ -236,25 +237,19 @@ func TestGateN1ReclaimerLagOverrun(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		g.deductQuota(1, 1)
 	}
-	// 本地预算耗尽 → 复核：DB 仍显示 used=0（flush 滞后）→ 剩余 100 → 续额放行
-	require.False(t, g.quotaExhausted(meta), "复核读到滞后 used=0 → 续额，非 429")
+	// 本地预算耗尽 → 复核：DB 仍显示 used=0（flush 滞后）→ unreported =
+	// consumed(100) - 基线(0) = 100 扣尽剩余 → 确认真尽 429（无滞后超跑）
+	require.True(t, g.quotaExhausted(meta), "复核扣除本地未反映消耗 → 真尽 429")
 	require.Equal(t, 1, reader.callCount())
-	require.Equal(t, int64(200), q.budget.Load(), "budget = consumed(100) + ceil(剩余 100/1)")
-
-	// 滞后窗口内继续消耗（超跑 = 滞后差，软门禁误差；扣费条件 UPDATE 兜底）
-	for i := 0; i < 99; i++ {
-		g.deductQuota(1, 1)
-		require.False(t, g.quotaExhausted(meta))
-	}
-	// DB 追上（used=250 ≥ quota）→ 下次复核确认真尽 → 429（滞后差收敛）
-	reader.set(250, nil)
-	g.deductQuota(1, 1) // consumed 200 ≥ budget 200 → 复核
-	require.True(t, g.quotaExhausted(meta), "429 点 = DB quota_used ≥ quota（非本地消耗）")
-	require.Equal(t, 2, reader.callCount())
+	require.True(t, q.exhausted.Load())
 }
 
-// 复核成功续额：预算耗尽 → DB 复核（quota_used=30，剩余 70）→ budget 按
-// consumed + ceil(70/N) 重分配继续放行；二次耗尽复核确认真尽 → 429 短路。
+// 复核成功续额（#37 P1 收敛修正）：预算耗尽 → DB 复核（quota_used=30）→
+// 认领扣除本地未反映消耗——首次复核 unreported = consumed(34) - 基线(0) = 34
+// → remaining_eff = 100-30-34 = 36 → budget = 34 + ceil(36/3) = 46（修复前：
+// 34 + ceil(70/3) = 58，复核循环续额不收敛）；二次耗尽复核（基线前移至 30）
+// → unreported = 46-30 = 16 → remaining_eff = 54 → budget = 64；DB 追上真尽
+// → 429 短路。
 func TestGateReclaimReplenishes(t *testing.T) {
 	g := newConcurrencyGate(nil)
 	reader := &fakeQuotaReader{used: 30} // DB：已用 30（含他实例），剩余 70
@@ -269,18 +264,31 @@ func TestGateReclaimReplenishes(t *testing.T) {
 	require.False(t, g.quotaExhausted(meta), "复核成功续额放行")
 	require.Equal(t, 1, reader.callCount())
 	q := g.store.Load().quotas[1]
-	require.Equal(t, int64(34+ceilDiv(70, 3)), q.budget.Load(), "budget = consumed + ceil(剩余/N)")
+	require.Equal(t, int64(34+ceilDiv(36, 3)), q.budget.Load(),
+		"budget = consumed + ceil((剩余 - 本地未反映消耗)/N)")
 	require.False(t, q.exhausted.Load())
 
-	// 续额后继续放行至二次耗尽
-	for i := 0; i < int(ceilDiv(70, 3))-1; i++ {
+	// 续额后继续放行至二次耗尽（12 笔）→ 复核（DB 仍 30）→ 续额收敛
+	for i := 0; i < int(ceilDiv(36, 3))-1; i++ {
 		g.deductQuota(1, 1)
 		require.False(t, g.quotaExhausted(meta))
 	}
-	g.deductQuota(1, 1)
-	reader.set(100, nil) // DB 复核读到真尽
-	require.True(t, g.quotaExhausted(meta), "复核确认真尽 → 429")
+	g.deductQuota(1, 1) // consumed 46 ≥ budget 46 → 二次复核
+	require.False(t, g.quotaExhausted(meta), "复核继续收敛续额（非 429）")
 	require.Equal(t, 2, reader.callCount())
+	q = g.store.Load().quotas[1]
+	require.Equal(t, int64(46+ceilDiv(54, 3)), q.budget.Load(),
+		"unreported = 46-30 = 16 → remaining_eff = 100-30-16 = 54")
+
+	// 二次续额内放行（17 笔，剩 1 笔触界）；DB 追上（真尽）→ 触界复核确认真尽
+	for i := 0; i < int(ceilDiv(54, 3))-1; i++ {
+		g.deductQuota(1, 1)
+		require.False(t, g.quotaExhausted(meta))
+	}
+	reader.set(100, nil) // DB 复核读到真尽
+	g.deductQuota(1, 1)  // consumed 64 ≥ budget 64 → 复核
+	require.True(t, g.quotaExhausted(meta), "复核确认真尽 → 429")
+	require.Equal(t, 3, reader.callCount())
 }
 
 // 复核确认真尽：exhausted 短路——后续请求 429 且不再发起复核（不双倍认领）。
@@ -328,11 +336,14 @@ func TestGateReclaimSingleFlight(t *testing.T) {
 	close(block)
 	wg.Wait()
 	require.Equal(t, 1, reader.callCount(), "同 key 并发复核单飞去重（不双倍认领）")
-	require.False(t, g.quotaExhausted(meta), "复核成功（剩余 50）→ 后续放行")
+	// #37 P1：复核认领扣除本地未反映消耗——consumed(100) - 基线(0) = 100 →
+	// remaining_eff = 100-50-100 ≤ 0 → 确认真尽（DB 滞后 50 ≠ 还有额度）
+	require.True(t, g.quotaExhausted(meta), "本地已消耗满 quota → 复核确认真尽 429")
 }
 
 // 复核失败（DB 错）策略：Warn + 本请求放行 + 预算补 1 + 退避 10s；退避期内
-// 预算耗尽按 429（不重复复核防风暴）；退避过期重试；DB 恢复后复核成功续额。
+// 预算耗尽按 429（不重复复核防风暴）；退避过期重试；DB 恢复后复核认领（#37
+// P1：本地已超 quota → 确认真尽，见尾部）。
 func TestGateReclaimDBErrorAllowAndRetry(t *testing.T) {
 	g := newConcurrencyGate(nil)
 	reader := &fakeQuotaReader{err: errors.New("db down")}
@@ -360,13 +371,44 @@ func TestGateReclaimDBErrorAllowAndRetry(t *testing.T) {
 	require.False(t, g.quotaExhausted(meta))
 	require.Equal(t, 2, reader.callCount())
 
-	// DB 恢复（剩余 50）→ 复核成功续额
+	// #37 P1：DB 恢复（读 used=50，仍滞后于本地）→ 复核认领扣除本地未反映
+	// 消耗——consumed(102) - 基线(0，复核从未成功过) = 102 → remaining_eff =
+	// 100-50-102 ≤ 0 → 确认真尽 429（本地已超 quota，不再凭滞后 DB 值续额）
 	g.deductQuota(1, 1)
 	reader.set(50, nil)
 	q.retryAt.Store(0)
-	require.False(t, g.quotaExhausted(meta), "DB 恢复后复核成功续额")
+	require.True(t, g.quotaExhausted(meta), "本地消耗已超 quota → 复核确认真尽 429")
 	require.Equal(t, 3, reader.callCount())
-	require.Equal(t, int64(102+50), q.budget.Load(), "budget = consumed + ceil(剩余/N)")
+	require.True(t, g.store.Load().quotas[1].exhausted.Load())
+}
+
+// #37 P1 核心回归（镜像压测场景）：N=2 单 key quota=20000，fake 复核读固定
+// quota_used=3000（DB 滞后——usage.Recorder 每 stats_flush_interval 批写一次，
+// 两次回写间复核读到的 DB 值恒定）。修复前：每次复核重新分配 ceil(remaining/N)
+// → 复核循环无限续额（压测实证超跑 14 倍 ≈283,740 token）。修复后：复核认领
+// 扣除本地未反映消耗（unreported = consumed - 上次复核基线）→ 多次复核后总
+// 放行收敛 ≤ quota + 滞后差（实际收敛到 quota 本身），随后确认真尽 429。
+func TestGateReclaimConvergesWithLag(t *testing.T) {
+	g := newConcurrencyGate(nil)
+	g.SetInstancesProvider(fakeInstances(2))
+	reader := &fakeQuotaReader{used: 3000} // DB 滞后固定值（一直不追上的最坏形态）
+	g.setReclaimer(reader)
+	const quota = int64(20000)
+	meta := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: quota}
+	g.reload(map[string]domain.KeyMeta{"q": meta}) // 快照 quota_used=0 → budget = ceil(20000/2) = 10000
+
+	var allowed int64
+	// 复核循环模拟：预算耗尽 → 复核（DB 恒定滞后）→ 续额 → 继续消耗，直到
+	// 复核确认真尽（收敛）；allowed 超 2 倍 quota 视为未收敛（修复前必触发）。
+	for allowed = 0; !g.quotaExhausted(meta) && allowed <= quota*2; {
+		g.deductQuota(1, 1)
+		allowed++
+	}
+	q := g.store.Load().quotas[1]
+	require.True(t, q.exhausted.Load(), "复核循环收敛：确认真尽（修复前无限续额）")
+	require.LessOrEqual(t, allowed, quota, "总放行收敛 ≤ quota（滞后差内不超配额）")
+	require.GreaterOrEqual(t, reader.callCount(), 2, "复核多次（验证循环收敛而非一次封顶）")
+	require.LessOrEqual(t, reader.callCount(), 100, "复核次数有界（收敛非震荡）")
 }
 
 // Reload 重建预算保留在途：consumed 跨 reload 继承，预算按最新快照重分配；
