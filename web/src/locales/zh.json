@@ -336,7 +336,9 @@
       "overdraft": "透支",
       "latency": "延迟",
       "tokens": "Token",
-      "title": "共 {{total}} 条记录"
+      "title": "共 {{total}} 条记录",
+      "user": "用户",
+      "key": "Key"
     },
     "tokens": {
       "read": "读",

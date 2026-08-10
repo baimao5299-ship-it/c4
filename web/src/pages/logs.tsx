@@ -83,7 +83,7 @@ const ERROR_ALL = '__all__'
 // 可隐藏列（时间/请求 ID 始终可见，参考 sub2api 使用明细的列设置模式）；
 // 隐藏选择持久化到 localStorage（logs-hidden-columns）。
 const HIDDEN_STORAGE_KEY = 'logs-hidden-columns'
-const HIDDENABLE_COLS = ['group', 'account', 'model', 'format', 'statusCode', 'errorType', 'cost', 'billingTier', 'billing', 'latency', 'tokens'] as const
+const HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'statusCode', 'errorType', 'cost', 'billingTier', 'billing', 'latency', 'tokens'] as const
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -148,34 +148,6 @@ export default function Logs() {
   const rows = data?.rows ?? []
   const pages = Math.max(1, Math.ceil(total / limit))
   const page = total === 0 ? 1 : Math.floor(offset / limit) + 1
-
-  // —— 顶部统计卡（与列表同筛选，stats 端点按日聚合求和）——
-  const statsParams = useMemo(
-    () => ({
-      from: toRFC3339(filters.from),
-      to: toRFC3339(filters.to),
-      group_id: filters.group_id ? Number(filters.group_id) : undefined,
-      account_id: filters.account_id ? Number(filters.account_id) : undefined,
-      model: filters.model || undefined,
-      granularity: 'day' as const,
-    }),
-    [filters]
-  )
-  const { data: stats } = useQuery({
-    queryKey: ['logs-stats', statsParams],
-    queryFn: () => api.getStats(statsParams),
-  })
-  const agg = useMemo(() => {
-    const a = { requests: 0, errors: 0, tokens: 0, cost: 0 }
-    for (const b of stats ?? []) {
-      a.requests += b.RequestCount ?? 0
-      a.errors += b.ErrorCount ?? 0
-      a.tokens += b.TotalTokens ?? 0
-      a.cost += b.Cost ?? 0
-    }
-    return a
-  }, [stats])
-  const rate = agg.requests > 0 ? (agg.errors / agg.requests) * 100 : null
 
   // —— 列可见性（localStorage 持久化）——
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(loadHiddenCols)
@@ -242,24 +214,6 @@ export default function Logs() {
         </div>
       </Card>
 
-      {/* 统计卡：总请求 / 失败率 / 总 Tokens / 总费用（与列表同筛选范围） */}
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
-        {[
-          { label: t('logs.stats.requests'), value: agg.requests.toLocaleString(), hint: undefined as string | undefined },
-          { label: t('logs.stats.errorRate'), value: rate == null ? '—' : `${rate.toFixed(1)}%`, hint: t('logs.stats.errorRateHint', { errors: agg.errors }) },
-          { label: t('logs.stats.tokens'), value: compactTokens(agg.tokens, i18n.language), hint: agg.tokens.toLocaleString() },
-          { label: t('logs.stats.cost'), value: formatCost(agg.cost), hint: undefined },
-        ].map((s, i) => (
-          <Card key={i} className="bg-linear-to-t from-primary/5 to-card shadow-xs dark:bg-card">
-            <div className="p-5">
-              <p className="text-sm text-muted-foreground">{s.label}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{s.value}</p>
-              {s.hint !== undefined && <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>}
-            </div>
-          </Card>
-        ))}
-      </div>
-
       {/* 列设置 + 表格 */}
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-muted-foreground">{t('logs.table.title', { total })}</h2>
@@ -302,6 +256,8 @@ export default function Logs() {
               <TableRow>
                 <Th>{t('logs.table.requestId')}</Th>
                 <Th>{t('logs.table.createdAt')}</Th>
+                {isColVisible('user') && <Th className="text-right">{t('logs.table.user')}</Th>}
+                {isColVisible('key') && <Th className="text-right">{t('logs.table.key')}</Th>}
                 {isColVisible('group') && <Th className="text-right">{t('logs.table.group')}</Th>}
                 {isColVisible('account') && <Th className="text-right">{t('logs.table.account')}</Th>}
                 {isColVisible('model') && <Th>{t('logs.table.model')}</Th>}
@@ -322,6 +278,9 @@ export default function Logs() {
                     <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
+                  {/* 鉴权归属：用户/Key（0 = 无鉴权） */}
+                  {isColVisible('user') && <TableCell className="text-right tabular-nums">{l.UserID ? `#${l.UserID}` : '—'}</TableCell>}
+                  {isColVisible('key') && <TableCell className="text-right tabular-nums">{l.KeyID ? `#${l.KeyID}` : '—'}</TableCell>}
                   {isColVisible('group') && <TableCell className="text-right tabular-nums">{l.GroupID ? `#${l.GroupID}` : '—'}</TableCell>}
                   {isColVisible('account') && <TableCell className="text-right tabular-nums">{l.AccountID ? `#${l.AccountID}` : '—'}</TableCell>}
                   {/* 模型链式（sub2api 纵向链）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳） */}

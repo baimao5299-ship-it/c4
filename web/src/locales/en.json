@@ -336,7 +336,9 @@
       "overdraft": "Overdraft",
       "latency": "Latency",
       "tokens": "Tokens",
-      "title": "{{total}} records"
+      "title": "{{total}} records",
+      "user": "User",
+      "key": "Key"
     },
     "tokens": {
       "read": "R",
