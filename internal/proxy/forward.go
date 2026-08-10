@@ -47,6 +47,10 @@ type Proxy struct {
 	bill     *BillingHooks // 计费钩子；nil = 计费全关
 	inflight atomic.Int64
 	callers  map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
+	// convCallers 协议转换路径调用器（W5）：方向 → convertedCaller（请求体已
+	// 按方向转换，响应反向转换回客户端协议）。仅协议不匹配时才使用；off 组
+	// 恒不触达（handleFormat 分支）。
+	convCallers map[domain.ProtocolConvert]UpstreamCaller
 }
 
 // New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
@@ -63,6 +67,14 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 		domain.FormatOpenAIChat:      &chatCaller{p: p},
 		domain.FormatOpenAIResponses: &responsesCaller{p: p},
 		domain.FormatAnthropic:       &anthropicCaller{p: p},
+	}
+	// 协议转换路径（W5）：每方向一 convertedCaller（构造期一次性建好；
+	// 热路径分支只读 map，off 组不触达）。
+	p.convCallers = map[domain.ProtocolConvert]UpstreamCaller{
+		domain.ProtocolConvertChatToResp: &convertedCaller{p: p, dir: domain.ProtocolConvertChatToResp},
+		domain.ProtocolConvertMessToResp: &convertedCaller{p: p, dir: domain.ProtocolConvertMessToResp},
+		domain.ProtocolConvertRespToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertRespToMess},
+		domain.ProtocolConvertChatToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertChatToMess},
 	}
 	return p
 }

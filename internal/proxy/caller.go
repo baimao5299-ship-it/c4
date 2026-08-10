@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"net/http"
@@ -14,9 +15,45 @@ import (
 
 	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/protoconv"
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/pkg/logx"
 )
+
+// forwardRoute 一次转发的路由信息（格式 + 调用器 + 请求体）：默认 = 客户端
+// 格式直连（零转换）；协议转换（W5）命中时替换为模板协议路由（格式/调用器/
+// 已转换请求体）。failover 循环按 route 重选号（模板协议），日志仍按客户端
+// 协议记录（buildLog format 参数不变）。
+type forwardRoute struct {
+	format domain.RequestFormat
+	caller UpstreamCaller
+	body   []byte
+}
+
+// convertedRoute 组协议转换配置 → （模板协议格式, 转换方向）：仅当配置方向的
+// 客户端协议与本次请求格式一致才返回转换（其余请求格式不受影响）；off → 无。
+// 只补差语义的缺口判定（客户端协议无路由）由调用方负责。
+func convertedRoute(pc domain.ProtocolConvert, client domain.RequestFormat) (domain.RequestFormat, domain.ProtocolConvert, bool) {
+	switch pc {
+	case domain.ProtocolConvertChatToResp:
+		if client == domain.FormatOpenAIChat {
+			return domain.FormatOpenAIResponses, pc, true
+		}
+	case domain.ProtocolConvertMessToResp:
+		if client == domain.FormatAnthropic {
+			return domain.FormatOpenAIResponses, pc, true
+		}
+	case domain.ProtocolConvertRespToMess:
+		if client == domain.FormatOpenAIResponses {
+			return domain.FormatAnthropic, pc, true
+		}
+	case domain.ProtocolConvertChatToMess:
+		if client == domain.FormatOpenAIChat {
+			return domain.FormatAnthropic, pc, true
+		}
+	}
+	return "", "", false
+}
 
 // newReqID 生成 32 位 hex 请求 ID（仅日志关联键，DB 无格式约束；math/rand/v2
 // 免 crypto/rand syscall——非安全用途，GC 削减 P6）。
@@ -172,7 +209,34 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		}
 	}
 
+	// 路由信息：格式 + 调用器 + 请求体。默认 = 客户端格式直连（零转换）；
+	// 协议转换（W5，只补差）命中时整体替换为模板协议路由。
+	route := forwardRoute{format: format, caller: p.callers[format], body: body}
+
 	sel, err := p.sched.Select(groupID, format, reqModel)
+	if err != nil && errors.Is(err, scheduler.ErrFormatUnavailable) {
+		// 补差语义：模板已支持客户端协议 → 直接转发零转换；组内无客户端协议
+		// 路由（缺口）且组配置了转换方向 → 客户端协议 → 转换 → 模板协议路由。
+		// off（默认）→ 上面的 errors.Is 分支零开销。ErrNoAvailable（有路由但
+		// 全忙）不转换——组有客户端协议模板，按现状 429。
+		if tgt, conv, ok := convertedRoute(meta.ProtocolConvert, format); ok {
+			if sel2, err2 := p.sched.Select(groupID, tgt, reqModel); err2 == nil {
+				cb, cerr := protoconv.ConvertRequest(body, conv)
+				if cerr != nil {
+					// 本地拒绝：目标 Select 已占并发槽，必须释放（与 caller 本地
+					// 400 的 Release-only 语义一致），否则槽位永久泄漏。
+					p.sched.Release(sel2.AccountID)
+					writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: protocol conversion failed: " + cerr.Error()}})
+					return
+				}
+				sel = sel2
+				err = nil
+				route = forwardRoute{format: tgt, caller: p.convCallers[conv], body: cb}
+			} else {
+				err = err2
+			}
+		}
+	}
 	if err != nil {
 		p.handleSelectError(w, err)
 		p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
@@ -180,7 +244,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	}
 
 	// 注册表查找在 failover 循环外（评审 I-3）：格式固定，每轮不重查。
-	caller := p.callers[format]
+	caller := route.caller
 
 	var (
 		lastCode   int
@@ -215,7 +279,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			// err 保留（部署故障修复：错误文本落盘）：code 承载分类（0=连接级/
 			// 凭据错、4xx、429、5xx），callErr 提供 err.Error() 文本——仅错误
 			// 分支消费（成功路径零新增分配）。
-			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, body, stream)
+			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, route.body, stream)
 		}
 		if handled {
 			return // caller 已处理完毕（成功/客户端断开/流中止已记录；本地拒绝已写出无记录）
@@ -287,7 +351,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			break
 		}
 		var selErr error
-		sel, selErr = p.sched.Select(groupID, format, reqModel)
+		sel, selErr = p.sched.Select(groupID, route.format, reqModel)
 		if selErr != nil {
 			break
 		}
