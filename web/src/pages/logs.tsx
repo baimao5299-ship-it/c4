@@ -81,9 +81,10 @@ const LIMITS = [10, 20, 50, 100, 1000]
 const ERROR_ALL = '__all__'
 
 // 可隐藏列（时间/请求 ID 始终可见，参考 sub2api 使用明细的列设置模式）；
+// BillingTier/AboveHit/Overdraft 已并入 Tokens 悬停窗（不再独立列）。
 // 隐藏选择持久化到 localStorage（logs-hidden-columns）。
 const HIDDEN_STORAGE_KEY = 'logs-hidden-columns'
-const HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'statusCode', 'errorType', 'cost', 'billingTier', 'billing', 'latency', 'tokens'] as const
+const HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'statusCode', 'errorType', 'cost', 'latency', 'tokens'] as const
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -142,6 +143,21 @@ export default function Logs() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['logs', params],
     queryFn: () => api.getLogs(params),
+  })
+
+  // —— 名称映射：日志行只存 ID，组/账号列显示名称（未命中回退 #id）——
+  // 全量拉取（上限 1000，超出部分仅影响展示回退数字）；5 分钟缓存避免每页刷新重查。
+  const { data: groupNameById } = useQuery({
+    queryKey: ['groups', { limit: 1000 }],
+    queryFn: () => api.listGroups({ limit: 1000 }),
+    select: data => new Map(data.rows.map(g => [g.ID, g.Name])),
+    staleTime: 5 * 60 * 1000,
+  })
+  const { data: accountNameById } = useQuery({
+    queryKey: ['accounts', { limit: 1000 }],
+    queryFn: () => api.listAccounts({ limit: 1000 }),
+    select: data => new Map(data.rows.map(a => [a.ID, a.Name])),
+    staleTime: 5 * 60 * 1000,
   })
 
   const total = data?.total ?? 0
@@ -267,8 +283,6 @@ export default function Logs() {
                 {isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
                 {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
                 {isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
-                {isColVisible('billingTier') && <Th>{t('logs.table.billingTier')}</Th>}
-                {isColVisible('billing') && <Th>{t('logs.table.billing')}</Th>}
                 {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
                 {isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
               </TableRow>
@@ -283,15 +297,24 @@ export default function Logs() {
                   {/* 鉴权归属：用户/Key（0 = 无鉴权） */}
                   {isColVisible('user') && <TableCell className="text-right tabular-nums">{l.UserID ? `#${l.UserID}` : '—'}</TableCell>}
                   {isColVisible('key') && <TableCell className="text-right tabular-nums">{l.KeyID ? `#${l.KeyID}` : '—'}</TableCell>}
-                  {isColVisible('group') && <TableCell className="text-right tabular-nums">{l.GroupID ? `#${l.GroupID}` : '—'}</TableCell>}
-                  {isColVisible('account') && <TableCell className="text-right tabular-nums">{l.AccountID ? `#${l.AccountID}` : '—'}</TableCell>}
-                  {/* 模型链式（sub2api 纵向链）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳） */}
+                  {isColVisible('group') && (
+                    <TableCell className="text-right">
+                      {l.GroupID ? <span className="tabular-nums">{groupNameById?.get(l.GroupID) ?? `#${l.GroupID}`}</span> : '—'}
+                    </TableCell>
+                  )}
+                  {isColVisible('account') && (
+                    <TableCell className="text-right">
+                      {l.AccountID ? <span className="tabular-nums">{accountNameById?.get(l.AccountID) ?? `#${l.AccountID}`}</span> : '—'}
+                    </TableCell>
+                  )}
+                  {/* 模型链式（sub2api 纵向链）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳）；
+                      break-all 换行（长模型名完整展示，不截断） */}
                   {isColVisible('model') && (
                   <TableCell>
                     <div className="space-y-0.5 text-xs">
-                      <div className="max-w-40 truncate font-medium" title={l.Model}>{l.Model ?? '—'}</div>
+                      <div className="max-w-40 break-all font-medium">{l.Model ?? '—'}</div>
                       {l.MappedModel && (
-                        <div className="max-w-40 truncate pl-3 text-muted-foreground" title={l.MappedModel}>↳{l.MappedModel}</div>
+                        <div className="max-w-40 break-all pl-3 text-muted-foreground">↳{l.MappedModel}</div>
                       )}
                     </div>
                   </TableCell>
@@ -303,26 +326,8 @@ export default function Logs() {
                   )}
                   {isColVisible('statusCode') && <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>}
                   {isColVisible('errorType') && <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>}
-                  {/* 计费列：Cost 毫分 → USD（0/空显示 —），BillingTier 空显示 — */}
+                  {/* 计费：Cost 毫分 → USD（0/空显示 —）；档位/超档/透支已并入 Tokens 悬停窗 */}
                   {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
-                  {isColVisible('billingTier') && (
-                  <TableCell>
-                    {l.BillingTier ? <Badge variant="outline">{l.BillingTier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
-                  </TableCell>
-                  )}
-                  {/* 计费徽章合并列：AboveHit「超档」/ Overdraft「透支」（两者都无时显示 —） */}
-                  {isColVisible('billing') && (
-                  <TableCell>
-                    {l.AboveHit || l.Overdraft ? (
-                      <span className="inline-flex gap-1">
-                        {l.AboveHit && <Badge className="bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">{t('logs.table.aboveHit')}</Badge>}
-                        {l.Overdraft && <Badge className="bg-rose-500/10 text-rose-600 dark:bg-rose-400/10 dark:text-rose-400">{t('logs.table.overdraft')}</Badge>}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  )}
                   {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
                   {isColVisible('latency') && (
                   <TableCell className="text-right tabular-nums">
@@ -336,38 +341,78 @@ export default function Logs() {
                     )}
                   </TableCell>
                   )}
-                  {/* token 合并列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + tooltip 明细 */}
+                  {/* token 列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + ⓘ 悬停大卡
+                      （tokens 明细 + 档位 BillingTier + 超档/透支徽章） */}
                   {isColVisible('tokens') && (
                   <TableCell className="text-right font-medium tabular-nums">
                     {l.InputTokens || l.OutputTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
-                      <Tooltip>
-                        <TooltipTrigger render={<span className="block cursor-help" />}>
-                          <div className="space-y-0.5 text-xs">
-                            <div className="inline-flex items-center gap-2">
-                              <span className="inline-flex items-center gap-0.5 text-emerald-500">
-                                <ArrowDown className="size-3" />{(l.InputTokens ?? 0).toLocaleString()}
-                              </span>
-                              <span className="inline-flex items-center gap-0.5 text-purple-500">
-                                <ArrowUp className="size-3" />{(l.OutputTokens ?? 0).toLocaleString()}
-                              </span>
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className="space-y-0.5 text-xs text-right">
+                          <span className="inline-flex items-center gap-2">
+                            <span className="inline-flex items-center gap-0.5 text-emerald-500">
+                              <ArrowDown className="size-3" />{(l.InputTokens ?? 0).toLocaleString()}
+                            </span>
+                            <span className="inline-flex items-center gap-0.5 text-purple-500">
+                              <ArrowUp className="size-3" />{(l.OutputTokens ?? 0).toLocaleString()}
+                            </span>
+                          </span>
+                          {l.CacheReadTokens || l.CacheCreationTokens ? (
+                            <div className="text-right">
+                              <span className="text-blue-500">{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens ?? 0, i18n.language)}</span>
+                              <span className="mx-1 text-muted-foreground/50">·</span>
+                              <span className="text-amber-500">{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens ?? 0, i18n.language)}</span>
                             </div>
-                            {l.CacheReadTokens || l.CacheCreationTokens ? (
-                              <div>
-                                <span className="text-blue-500">{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens ?? 0, i18n.language)}</span>
-                                <span className="mx-1 text-muted-foreground/50">·</span>
-                                <span className="text-amber-500">{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens ?? 0, i18n.language)}</span>
+                          ) : null}
+                        </span>
+                        <Tooltip>
+                          <TooltipTrigger render={<span className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full bg-muted text-muted-foreground text-[10px] leading-none" />}>
+                            i
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs border bg-popover p-0 shadow-lg">
+                            <div className="space-y-1.5 p-3 text-xs">
+                              <div className="flex items-center justify-between gap-6">
+                                <span className="text-muted-foreground">{t('logs.tokens.input')}</span>
+                                <span className="font-medium tabular-nums">{(l.InputTokens ?? 0).toLocaleString()}</span>
                               </div>
-                            ) : null}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('logs.tokens.total')} {(l.TotalTokens ?? 0).toLocaleString()}
-                          <br />
-                          {t('logs.tokens.cacheRead')} {(l.CacheReadTokens ?? 0).toLocaleString()}
-                          <br />
-                          {t('logs.tokens.cacheWrite')} {(l.CacheCreationTokens ?? 0).toLocaleString()}
-                        </TooltipContent>
-                      </Tooltip>
+                              <div className="flex items-center justify-between gap-6">
+                                <span className="text-muted-foreground">{t('logs.tokens.output')}</span>
+                                <span className="font-medium tabular-nums">{(l.OutputTokens ?? 0).toLocaleString()}</span>
+                              </div>
+                              {l.CacheReadTokens ? (
+                                <div className="flex items-center justify-between gap-6">
+                                  <span className="text-muted-foreground">{t('logs.tokens.cacheRead')}</span>
+                                  <span className="font-medium tabular-nums">{l.CacheReadTokens.toLocaleString()}</span>
+                                </div>
+                              ) : null}
+                              {l.CacheCreationTokens ? (
+                                <div className="flex items-center justify-between gap-6">
+                                  <span className="text-muted-foreground">{t('logs.tokens.cacheWrite')}</span>
+                                  <span className="font-medium tabular-nums">{l.CacheCreationTokens.toLocaleString()}</span>
+                                </div>
+                              ) : null}
+                              <div className="flex items-center justify-between gap-6 border-t pt-1.5">
+                                <span className="text-muted-foreground">{t('logs.tokens.total')}</span>
+                                <span className="font-semibold tabular-nums">{(l.TotalTokens ?? 0).toLocaleString()}</span>
+                              </div>
+                              {/* 计费信息并入：档位 + 超档/透支徽章 */}
+                              <div className="flex items-center justify-between gap-6 border-t pt-1.5">
+                                <span className="text-muted-foreground">{t('logs.table.billingTier')}</span>
+                                {l.BillingTier ? (
+                                  <Badge variant="outline">{l.BillingTier}</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </div>
+                              {(l.AboveHit || l.Overdraft) && (
+                                <div className="flex items-center justify-end gap-1">
+                                  {l.AboveHit && <Badge className="bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">{t('logs.table.aboveHit')}</Badge>}
+                                  {l.Overdraft && <Badge className="bg-rose-500/10 text-rose-600 dark:bg-rose-400/10 dark:text-rose-400">{t('logs.table.overdraft')}</Badge>}
+                                </div>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}

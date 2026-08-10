@@ -331,7 +331,6 @@
       "errorType": "错误类型",
       "cost": "费用",
       "billingTier": "计费档",
-      "billing": "计费",
       "aboveHit": "超档",
       "overdraft": "透支",
       "latency": "延迟",
@@ -343,6 +342,8 @@
     "tokens": {
       "read": "读",
       "write": "写",
+      "input": "输入",
+      "output": "输出",
       "total": "总计",
       "cacheRead": "缓存读",
       "cacheWrite": "缓存写"

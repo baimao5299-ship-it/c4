@@ -331,7 +331,6 @@
       "errorType": "Error type",
       "cost": "Cost",
       "billingTier": "Billing tier",
-      "billing": "Billing",
       "aboveHit": "Over limit",
       "overdraft": "Overdraft",
       "latency": "Latency",
@@ -343,6 +342,8 @@
     "tokens": {
       "read": "R",
       "write": "W",
+      "input": "Input",
+      "output": "Output",
       "total": "Total",
       "cacheRead": "Cache read",
       "cacheWrite": "Cache write"
