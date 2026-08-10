@@ -323,13 +323,13 @@ export default function Logs() {
                     </TableCell>
                   )}
                   {/* 模型链式（sub2api 纵向链）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳）；
-                      break-all 换行（长模型名完整展示，不截断） */}
+                      whitespace-normal 覆盖 TableCell 默认 nowrap（否则 break-all 失效长名溢出重叠） */}
                   {isColVisible('model') && (
                   <TableCell>
                     <div className="space-y-0.5 text-xs">
-                      <div className="max-w-40 break-all font-medium">{l.Model ?? '—'}</div>
+                      <div className="max-w-40 break-all whitespace-normal font-medium">{l.Model ?? '—'}</div>
                       {l.MappedModel && (
-                        <div className="max-w-40 break-all pl-3 text-muted-foreground">↳{l.MappedModel}</div>
+                        <div className="max-w-40 break-all whitespace-normal pl-3 text-muted-foreground">↳{l.MappedModel}</div>
                       )}
                     </div>
                   </TableCell>
