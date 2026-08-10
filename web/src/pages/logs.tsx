@@ -63,12 +63,12 @@ function Th({ className, ...props }: React.ComponentProps<typeof TableHead>) {
   )
 }
 
-// 延迟健康色（sub2api 配方）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红——色点与数字同色。
-function latencyColor(ms: number): { dot: string; text: string } {
-  if (ms < 1000) return { dot: 'bg-emerald-500', text: 'text-emerald-500' }
-  if (ms < 5000) return { dot: 'bg-amber-500', text: 'text-amber-500' }
-  if (ms < 15000) return { dot: 'bg-orange-500', text: 'text-orange-500' }
-  return { dot: 'bg-red-500', text: 'text-red-500' }
+// 延迟健康色（sub2api 配方，仅色点着色）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红。
+function latencyColor(ms: number): string {
+  if (ms < 1000) return 'bg-emerald-500'
+  if (ms < 5000) return 'bg-amber-500'
+  if (ms < 15000) return 'bg-orange-500'
+  return 'bg-red-500'
 }
 
 // compact 千位缩写（官方仓库无内置函数，自己写——Intl 原生 API）：1234 → 1.2K。
@@ -422,13 +422,13 @@ export default function Logs() {
                   )}
                   {/* 计费：Cost 毫分 → USD（0/空显示 —）；档位/超档/透支已并入 Tokens 悬停窗 */}
                   {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
-                  {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
+                  {/* 延迟：健康色点 + muted 数字（<1s 绿 / <5s 黄 / <15s 橙 / 红，仅色点着色） */}
                   {isColVisible('latency') && (
                   <TableCell className="text-right tabular-nums">
                     {l.LatencyMS != null ? (
                       <span className="inline-flex items-center justify-end gap-1.5">
-                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
-                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
+                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS))} />
+                        <span className="text-muted-foreground">{l.LatencyMS} ms</span>
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
