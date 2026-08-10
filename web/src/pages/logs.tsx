@@ -289,9 +289,9 @@ export default function Logs() {
                 {isColVisible('format') && <Th>{t('logs.table.format')}</Th>}
                 {isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
                 {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
+                {isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
                 {isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
                 {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
-                {isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
@@ -341,21 +341,6 @@ export default function Logs() {
                   )}
                   {isColVisible('statusCode') && <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>}
                   {isColVisible('errorType') && <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>}
-                  {/* 计费：Cost 毫分 → USD（0/空显示 —）；档位/超档/透支已并入 Tokens 悬停窗 */}
-                  {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
-                  {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
-                  {isColVisible('latency') && (
-                  <TableCell className="text-right tabular-nums">
-                    {l.LatencyMS != null ? (
-                      <span className="inline-flex items-center justify-end gap-1.5">
-                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
-                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  )}
                   {/* token 列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + ⓘ 悬停大卡
                       （tokens 明细 + 档位 BillingTier + 超档/透支徽章） */}
                   {isColVisible('tokens') && (
@@ -427,6 +412,21 @@ export default function Logs() {
                             </div>
                           </TooltipContent>
                         </Tooltip>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  )}
+                  {/* 计费：Cost 毫分 → USD（0/空显示 —）；档位/超档/透支已并入 Tokens 悬停窗 */}
+                  {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
+                  {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
+                  {isColVisible('latency') && (
+                  <TableCell className="text-right tabular-nums">
+                    {l.LatencyMS != null ? (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
+                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
