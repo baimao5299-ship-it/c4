@@ -269,7 +269,7 @@ func respToChatMessage(r map[string]any) map[string]any {
 					}
 				}
 			case "function_call":
-				id, _ := str(im, "id")
+				id := toolCallID(im) // call_id 优先（客户端回传匹配键，M-1）
 				name, _ := str(im, "name")
 				args, _ := str(im, "arguments")
 				tcs = append(tcs, map[string]any{
@@ -356,7 +356,7 @@ func (m *StreamMapper) mapRespToChat(name string, data []byte) ([]byte, bool) {
 		if !ok || item["type"] != "function_call" {
 			return nil, true
 		}
-		id, _ := str(item, "id")
+		id := toolCallID(item) // call_id 优先（客户端回传匹配键，M-1）
 		name, _ := str(item, "name")
 		index := intOr0(ev, "output_index")
 		return m.chatFrame(map[string]any{"tool_calls": []any{map[string]any{

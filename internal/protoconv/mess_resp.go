@@ -244,7 +244,7 @@ func respOutputToMessBlocks(r map[string]any) []any {
 					}
 				}
 			case "function_call":
-				id, _ := str(im, "id")
+				id := toolCallID(im) // call_id 优先（tool_result.tool_use_id 匹配键，M-1）
 				name, _ := str(im, "name")
 				blocks = append(blocks, map[string]any{
 					"type": "tool_use", "id": id, "name": name, "input": parseJSON(im["arguments"]),
@@ -360,7 +360,7 @@ func (m *StreamMapper) mapRespToMess(name string, data []byte) ([]byte, bool) {
 			return nil, true
 		}
 		index := intOr0(ev, "output_index")
-		id, _ := str(item, "id")
+		id := toolCallID(item) // call_id 优先（tool_result.tool_use_id 匹配键，M-1）
 		name, _ := str(item, "name")
 		if !m.blockStarted[index] {
 			m.blockStarted[index] = true

@@ -141,7 +141,9 @@ func respInputToMessMessages(req map[string]any) ([]any, bool) {
 			}
 			am, _ := msgs[lastAssistant].(map[string]any)
 			content, _ := arr(am, "content")
-			id, _ := str(im, "id")
+			// call_id 优先（M-1 同缺陷：后续 function_call_output.call_id →
+			// tool_result.tool_use_id 必须命中 tool_use.id，否则多轮链断裂）
+			id := toolCallID(im)
 			name, _ := str(im, "name")
 			content = append(content, map[string]any{
 				"type": "tool_use", "id": id, "name": name, "input": parseJSON(im["arguments"]),

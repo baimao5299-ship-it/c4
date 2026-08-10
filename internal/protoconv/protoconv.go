@@ -221,6 +221,19 @@ func marshalAny(v any) string {
 	return string(b)
 }
 
+// toolCallID 工具调用匹配键（M-1 修复）：Responses 规范中 function_call 项含
+// 两个 ID——id（item id，fc_ 格式）与 call_id（工具调用匹配键，call_ 格式，
+// function_call_output 必须按它回匹配）。对外暴露/内部合成的工具调用 ID 一律
+// call_id 优先、item id 兜底（缺失防御），否则客户端回传的匹配键与上游不符，
+// 多轮工具调用链断裂（上游 400 或静默断链）。
+func toolCallID(im map[string]any) string {
+	if id, ok := str(im, "call_id"); ok && id != "" {
+		return id
+	}
+	id, _ := str(im, "id")
+	return id
+}
+
 // parseJSON 解析 JSON 字符串 → any；解析失败/非字符串 → 空对象。
 func parseJSON(v any) any {
 	if s, ok := v.(string); ok && s != "" {

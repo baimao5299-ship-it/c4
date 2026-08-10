@@ -8,7 +8,7 @@ import (
 // 按 Messages API 规范：
 //   - system 消息 → 顶层 system（拼接）；user/assistant 文本 → 消息（文本块）；
 //     assistant tool_calls → tool_use 块；tool 消息 → user 消息 tool_result 块
-//   - max_tokens / max_completion_tokens → max_tokens（anthropic 必填，客户端
+//   - max_completion_tokens / max_tokens → max_tokens（anthropic 必填，客户端
 //     缺失则不补——补差值属策略决定，不由转换器发明）
 //   - stop → stop_sequences（string 归一为数组）；tools → tools
 //     （{type:"function"} 内嵌扁平化 → input_schema）；tool_choice 归一化
@@ -30,9 +30,12 @@ func chatToMessRequest(body []byte) ([]byte, error) {
 		out["messages"] = msgs
 	}
 	pass(out, req, "model", "temperature", "top_p", "stream", "metadata")
-	if v, ok := req["max_tokens"]; ok {
+	// max_completion_tokens / max_tokens → max_tokens（anthropic 必填，客户端
+	// 缺失则不补——补差值属策略决定，不由转换器发明）。两者都给时以
+	// max_completion_tokens 为准（与 chatToResp 同语义，M-2）。
+	if v, ok := req["max_completion_tokens"]; ok {
 		out["max_tokens"] = v
-	} else if v, ok := req["max_completion_tokens"]; ok {
+	} else if v, ok := req["max_tokens"]; ok {
 		out["max_tokens"] = v
 	}
 	if stop, ok := chatStop(req); ok {
