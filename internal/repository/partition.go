@@ -99,6 +99,21 @@ var usageLogIndexDDLs = []string{
 	`CREATE INDEX usagelog_key_id_created_at ON usage_logs (key_id, created_at)`,
 }
 
+// usageLogAlignColumnDDLs 存量分区表列对齐（P1，压测 2026-08-11 修复）：price
+// 快照列/ttft_ms 合入后创建的旧分区表缺这 5 列——ent migrate 经钩子跳过
+// usagelog（分区表 diff 规划期必失败）、bootstrap 幂等（已分区 → 仅补分区）
+// 从不 ALTER 补列 → 新二进制连旧库 billing INSERT 即 42703 列不存在、usage
+// 计费路径全停。列定义与 usageLogCreateDDL 完全一致（防漂移锚断言见
+// partition_internal_test.go）；PG12+ 父表 ADD COLUMN 自动传播到全部分区
+// （无需逐分区 ALTER）。
+var usageLogAlignColumnDDLs = []string{
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS ttft_ms bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS price_input_millis bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS price_output_millis bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS price_cache_read_millis bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS price_cache_creation_millis bigint NULL`,
+}
+
 // IsUsageLogPartitioned 查 pg_partitioned_table（pg_class.relkind='p'）判断
 // usagelog 是否已是分区表（bootstrap 幂等判定）。
 func (r *PartitionRepo) IsUsageLogPartitioned(ctx context.Context) (bool, error) {
@@ -164,6 +179,19 @@ func (r *PartitionRepo) execDDLTolerateDup(ctx context.Context, query string) er
 	return nil
 }
 
+// alignUsageLogColumns 幂等补列（ADD COLUMN IF NOT EXISTS）：存量分区表路径
+// 对齐静态 DDL 新增列（父表 ALTER 自动传播全部分区，PG12+）；新建路径下为
+// no-op。多实例并发安全：ADD COLUMN 在父表上 AccessExclusive 锁串行，IF NOT
+// EXISTS 幂等收敛。
+func (r *PartitionRepo) alignUsageLogColumns(ctx context.Context) error {
+	for _, ddl := range usageLogAlignColumnDDLs {
+		if err := r.execDDL(ctx, ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // EnsureUsageLogPartitioned bootstrap（幂等，main 装配在 ent migrate 之后调用）：
 // usagelog 已是分区表 → 仅确保 当日→明日 分区存在后返回；未分区（含 ent
 // migrate 之前按旧 schema 建的普通表）→ DROP 重建分区表 + 序列 + 索引 + 预建
@@ -201,6 +229,13 @@ func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.
 				return fmt.Errorf("create usagelog index: %w", err)
 			}
 		}
+	}
+	// P1（压测 2026-08-11）：存量分区表 schema 对齐——旧库已建分区表时 bootstrap
+	// 从不 ALTER 补列（幂等仅补分区）→ 新二进制连旧库 billing INSERT 42703
+	// 全量失败。幂等 ADD COLUMN IF NOT EXISTS 按静态 DDL 补 5 新列（新建路径
+	// no-op）。
+	if err := r.alignUsageLogColumns(ctx); err != nil {
+		return fmt.Errorf("align usagelog columns: %w", err)
 	}
 	return r.EnsureUsageLogPartitions(ctx, now, now.AddDate(0, 0, 1))
 }

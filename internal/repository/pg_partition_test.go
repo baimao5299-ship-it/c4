@@ -150,7 +150,10 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 		usageLogFor("today-2", today.Add(time.Hour)),
 	}))
 
-	for _, tc := range []struct{ part, reqID string; want int64 }{
+	for _, tc := range []struct {
+		part, reqID string
+		want        int64
+	}{
 		{"usage_logs_" + today.Format("20060102"), "today-", 2},
 		{"usage_logs_" + tomorrow.Format("20060102"), "tomorrow-", 1},
 	} {
@@ -187,9 +190,12 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 		usageLogFor("bound-up-excl", lastMicro),
 		usageLogFor("bound-next-day", tomorrowMidnight),
 	}))
-	for _, tc := range []struct{ part string; want int64 }{
-		{"usage_logs_" + midnight.Format("20060102"), 4},            // today-1/2 + low-incl + up-excl
-		{"usage_logs_" + tomorrowMidnight.Format("20060102"), 2},    // tomorrow-1 + next-day
+	for _, tc := range []struct {
+		part string
+		want int64
+	}{
+		{"usage_logs_" + midnight.Format("20060102"), 4},         // today-1/2 + low-incl + up-excl
+		{"usage_logs_" + tomorrowMidnight.Format("20060102"), 2}, // tomorrow-1 + next-day
 	} {
 		require.Equal(t, tc.want, pgCount(t, pool, `SELECT COUNT(*) FROM `+tc.part),
 			"日界路由：分区 %s 落库行数（下界含/上界不含）", tc.part)
@@ -351,6 +357,72 @@ func TestUsageLogPartitionConcurrentBootstrapPG(t *testing.T) {
 		require.Equal(t, int64(1), total, "收敛后插入路由正常")
 		require.Equal(t, "concurrent", rows[0].RequestID)
 	}
+}
+
+// priceLogFor 带全部 5 新列（ttft/price 快照）的计费日志（P1 schema 对齐回归
+// 断言用：这 5 列正是旧库分区表缺失导致 billing 42703 的列）。
+func priceLogFor(userID int64, requestID string) *domain.UsageLog {
+	l := usageLogFor(requestID, time.Now().UTC())
+	l.UserID = userID
+	l.Cost = 130
+	l.TTFTMS = ptr(int64(120))
+	l.PriceInputMillis = ptr(int64(250))
+	l.PriceOutputMillis = ptr(int64(750))
+	l.PriceCacheReadMillis = ptr(int64(125))
+	l.PriceCacheCreationMillis = ptr(int64(250))
+	return l
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// TestUsageLogPartitionSchemaAlignPG P1（压测 2026-08-11 修复回归）：存量分区
+// 表 schema 漂移——旧库分区表缺 price 快照/ttft 5 列（ent migrate 跳过该表、
+// bootstrap 幂等从不 ALTER 补列）→ 新二进制连旧库 billing 全量 42703。修复：
+// bootstrap 幂等补列（父表 + 全部分区），补列后 billing 含新列全量落库成功。
+func TestUsageLogPartitionSchemaAlignPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	pool := pgTestPool(t)
+	u := seedPGUser(t, repos, "align@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 1_000_000))
+
+	// 模拟旧 schema：DROP 5 新列（父表 DROP 自动传播全部分区，PG12+）
+	dropCols := []string{"ttft_ms", "price_input_millis", "price_output_millis",
+		"price_cache_read_millis", "price_cache_creation_millis"}
+	for _, col := range dropCols {
+		pgExec(t, pool, `ALTER TABLE usage_logs DROP COLUMN `+col)
+	}
+	// 旧 schema 下 billing 必失败（复现压测 42703 列不存在）
+	_, _, err := repos.DeductAndLog(ctx, u.ID, 130, []*domain.UsageLog{priceLogFor(u.ID, "drift-before")})
+	require.Error(t, err, "缺列时 billing INSERT 必失败（42703 列不存在）")
+	require.Contains(t, err.Error(), "does not exist")
+
+	// 新二进制启动：bootstrap 幂等补列（不重建、数据保留、分区结构不变）
+	require.NoError(t, repos.EnsureUsageLogPartitioned(ctx, time.Now()))
+	parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
+	require.NoError(t, err)
+	require.True(t, parted, "补列不得改变分区结构")
+	for _, col := range dropCols {
+		var n int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'usage_logs' AND column_name = $1`, col).Scan(&n))
+		require.Equal(t, 1, n, "父表补列 %s", col)
+	}
+	for _, part := range pgPartitionNames(t, pool) {
+		for _, col := range dropCols {
+			var n int
+			require.NoError(t, pool.QueryRow(ctx,
+				`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2`, part, col).Scan(&n))
+			require.Equal(t, 1, n, "分区 %s 补列 %s", part, col)
+		}
+	}
+
+	// 补列后 billing 含 5 新列全量落库成功
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 130, []*domain.UsageLog{priceLogFor(u.ID, "drift-after")})
+	require.NoError(t, err)
+	require.False(t, od)
+	require.Equal(t, int64(999_870), bal, "扣 130 毫分（日志含 5 新列落库）")
+	require.Equal(t, int64(1), countLogs(t, repos, u.ID))
 }
 
 // mustISODate 把 YYYYMMDD 转 ISO 日期（分区边界构造用）。

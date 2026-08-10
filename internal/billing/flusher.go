@@ -31,6 +31,13 @@ type FlushConfig struct {
 // var（非 const）：测试注入小阈值，默认 1M 不变，后续可配置化。
 var pendingWaterline int64 = 1_000_000
 
+// maxUsageLogsPerTx 单用户单事务日志行数上限（P2，压测 2026-08-11 修复）：
+// P1 故障期单用户积压 1M+ 行 → 单事务 2000+ 分片（500 行/批）串行插入 8 分钟
+// （xact_age 08:02 实证），flushMu 串行冻结全局 usage 记录 + 堆涨 4.6GB（巨批
+// CreateBulk 构建内存）。超限拆多事务逐事务提交——每事务 ≤ 10k 行（~20 批/
+// 事务，单事务时长/内存有界），事务内仍由 DeductAndLog 按 500 行/批分片。
+const maxUsageLogsPerTx = 10_000
+
 // flusherPending 单用户聚合条目（userID → cost 总额 + 明细日志，同事务落库）。
 type flusherPending struct {
 	cost int64
@@ -45,7 +52,9 @@ type flusherPending struct {
 // 串行（flushMu：ticker/ctx.Done/Close 三处触发共用，杜绝并发换批）：锁内
 // swap 整个 pending（换新 map，flush 期间新日志进新 map 零阻塞）→ 批按
 // userID 分片（同 user 恒同桶 → 实例内串行；FEFO 行锁跨实例安全不变）→
-// N worker 并发逐 user DeductAndLog 单事务 → 成功定向刷新余额快照（O(1)）。
+// N worker 并发逐 user DeductAndLog 单事务（P2：单用户巨批 > maxUsageLogsPerTx
+// 行拆多事务逐事务提交，超出部分 refill 续传——flushMu 持有时间有界，事务间
+// 自然让出）→ 成功定向刷新余额快照（O(1)）。
 // Close 幂等：等聚合 goroutine 退出 + 受 shutdown ctx 预算约束的排空循环，
 // 其中"等在途批次"以 flushMu 获取表达（flushCtx 串行——在途批次持有
 // flushMu 期间 Close 等待；SIGTERM 时 ticker 批次可能已在途，若无此等待
@@ -55,19 +64,19 @@ type flusherPending struct {
 // 在途 DeductAndLog 快速失败（回灌不丢），不无界阻塞停机（O1 复测：在途
 // 批次 Background ctx 令停机拖至分钟级）。
 type Flusher struct {
-	cfg      FlushConfig
-	stats    *usage.Recorder
-	writer   DeductWriter
-	bal      *Balances
-	log      *logx.Logger
-	workers  int
-	mu       sync.Mutex // 保护 pending（Record 聚合与 flush 换批/回灌并发）
-	pending  map[int64]*flusherPending
-	pendingN atomic.Int64 // pending 日志条数（水线观测；换批/回灌同步增减）
-	warned   atomic.Bool  // 水线越过告警边沿（回落复位，避免重复刷屏）
-	flushMu  sync.Mutex   // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥；在途批次即其持有者
-	started  atomic.Bool
-	loopDone chan struct{}
+	cfg       FlushConfig
+	stats     *usage.Recorder
+	writer    DeductWriter
+	bal       *Balances
+	log       *logx.Logger
+	workers   int
+	mu        sync.Mutex // 保护 pending（Record 聚合与 flush 换批/回灌并发）
+	pending   map[int64]*flusherPending
+	pendingN  atomic.Int64 // pending 日志条数（水线观测；换批/回灌同步增减）
+	warned    atomic.Bool  // 水线越过告警边沿（回落复位，避免重复刷屏）
+	flushMu   sync.Mutex   // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥；在途批次即其持有者
+	started   atomic.Bool
+	loopDone  chan struct{}
 	closeOnce sync.Once
 	// O2 停机：ticker 路径批次的可取消父 ctx（常时 = Background 语义；Close
 	// 预算到期 Cancel → 在途批次快速失败）。baseCtx 仅经 baseCancel 修改
@@ -215,13 +224,13 @@ func (f *Flusher) flush() { f.flushCtx(f.baseCtx) }
 // flushCtx 受 ctx 约束的全量落库（单入口：ticker/ctx.Done/Close 三处触发共用，
 // flushMu 串行——杜绝并发换批；DB 写锁外）：锁内 swap 整个 pending → 批按
 // userID 分片（同 user 恒同桶 → 实例内串行）→ N worker 并发逐 user
-// DeductAndLog 单事务；成功 → bal.Set 定向刷新余额快照（O(1) 原地 Store）；
-// 失败 → Warn + cost+logs 一起回灌当前 pending（评审 C-2：只回 cost 丢日志——
-// 明细与扣费必须同批重试，否则重试后扣费无明细）。返回前等待本批全部 worker
-// 完成（Close 由此以 flushMu 获取等待无在途批次）。O1 收尾：逐 user 处理前
-// 检查 ctx，预算到期即截断——未处理条目原样回灌（不丢、由 Close 决定放弃），
-// 在途事务经 ctx 取消快速失败；返回本批成功落库日志条数（Close 汇总作 Warn
-// 诊断）。
+// DeductAndLog 单事务（P2：单用户巨批拆事务，见 worker 循环）；成功 →
+// bal.Set 定向刷新余额快照（O(1) 原地 Store）；失败 → Warn + cost+logs 一起
+// 回灌当前 pending（评审 C-2：只回 cost 丢日志——明细与扣费必须同批重试，
+// 否则重试后扣费无明细）。返回前等待本批全部 worker 完成（Close 由此以
+// flushMu 获取等待无在途批次）。O1 收尾：逐 user 处理前检查 ctx，预算到期即
+// 截断——未处理条目原样回灌（不丢、由 Close 决定放弃），在途事务经 ctx 取消
+// 快速失败；返回本批成功落库日志条数（Close 汇总作 Warn 诊断）。
 func (f *Flusher) flushCtx(ctx context.Context) int64 {
 	f.flushMu.Lock()
 	defer f.flushMu.Unlock()
@@ -267,16 +276,34 @@ func (f *Flusher) flushCtx(ctx context.Context) int64 {
 					f.refill(uid, e)
 					continue
 				}
-				_, bal, err := f.writer.DeductAndLog(ctx, uid, e.cost, e.logs)
+				// P2（压测 2026-08-11）：单用户巨批拆事务——单事务 ≤
+				// maxUsageLogsPerTx 行（超出部分立即 refill，由下个 flush
+				// 触发续传）：flushCtx 持有 flushMu 时间 = 每用户至多一
+				// 事务（有界），事务间自然让出——单用户积压不再冻结全局
+				// 记录，巨批 CreateBulk 构建内存有界。每事务原子；跨事务
+				// 部分成功可接受（评审裁决：宁可少记不可死锁）——失败仅
+				// 回灌未提交块，已提交块不重放（不重复扣费）。
+				chunk := e
+				if len(e.logs) > maxUsageLogsPerTx {
+					chunk = &flusherPending{
+						cost: e.cost * maxUsageLogsPerTx / int64(len(e.logs)),
+						logs: e.logs[:maxUsageLogsPerTx],
+					}
+					f.refill(uid, &flusherPending{
+						cost: e.cost - chunk.cost,
+						logs: e.logs[maxUsageLogsPerTx:],
+					})
+				}
+				_, bal, err := f.writer.DeductAndLog(ctx, uid, chunk.cost, chunk.logs)
 				if err != nil {
 					if f.log != nil {
-						f.log.Warn("billing deduct failed", logx.Int64("user_id", uid), logx.Int64("cost", e.cost), logx.Error(err))
+						f.log.Warn("billing deduct failed", logx.Int64("user_id", uid), logx.Int64("cost", chunk.cost), logx.Error(err))
 					}
-					f.refill(uid, e)
+					f.refill(uid, chunk)
 					continue
 				}
 				f.bal.Set(uid, bal)
-				drained.Add(int64(len(e.logs)))
+				drained.Add(int64(len(chunk.logs)))
 			}
 		}(shard)
 	}
