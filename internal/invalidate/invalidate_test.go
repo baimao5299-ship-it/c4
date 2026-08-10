@@ -87,6 +87,34 @@ func (r *recBal) multCalls() int {
 	return r.mult
 }
 
+// recSettings 记录 ReloadSettings 调用（#14 T1 新增分支的 fake 目标）。
+type recSettings struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (r *recSettings) ReloadSettings(ctx context.Context) error {
+	r.mu.Lock()
+	r.n++
+	r.mu.Unlock()
+	return nil
+}
+func (r *recSettings) calls() int { r.mu.Lock(); defer r.mu.Unlock(); return r.n }
+
+// recRules 记录 ReloadRules 调用（#14 T1 新增分支的 fake 目标）。
+type recRules struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (r *recRules) ReloadRules(ctx context.Context) error {
+	r.mu.Lock()
+	r.n++
+	r.mu.Unlock()
+	return nil
+}
+func (r *recRules) calls() int { r.mu.Lock(); defer r.mu.Unlock(); return r.n }
+
 // fakeClock 可注入定时器（fake 时钟）：newTimer 每次调用记录当前 channel 并
 // 递增代数（fire 须作用于最新定时器——waitTimer 以代数同步）；fire 手动触发
 // 到期。
@@ -142,27 +170,31 @@ func (r *rig) markAndFire(k Kind, gids []int64) {
 }
 
 type rig struct {
-	t      *testing.T
-	d      *Debouncer
-	clock  *fakeClock
-	sched  *recSched
-	cl     *recClients
-	auth   *recAuth
-	bal    *recBal
-	cancel context.CancelFunc
+	t        *testing.T
+	d        *Debouncer
+	clock    *fakeClock
+	sched    *recSched
+	cl       *recClients
+	auth     *recAuth
+	bal      *recBal
+	settings *recSettings
+	rules    *recRules
+	cancel   context.CancelFunc
 }
 
 func newRig(t *testing.T, auth *recAuth) *rig {
 	t.Helper()
 	r := &rig{
-		t:     t,
-		clock: &fakeClock{},
-		sched: &recSched{},
-		cl:    &recClients{},
-		auth:  auth,
-		bal:   &recBal{},
+		t:        t,
+		clock:    &fakeClock{},
+		sched:    &recSched{},
+		cl:       &recClients{},
+		auth:     auth,
+		bal:      &recBal{},
+		settings: &recSettings{},
+		rules:    &recRules{},
 	}
-	r.d = New(Config{Window: time.Hour, Sched: r.sched, Clients: r.cl, Auth: auth, Balances: r.bal})
+	r.d = New(Config{Window: time.Hour, Sched: r.sched, Clients: r.cl, Auth: auth, Balances: r.bal, Settings: r.settings, Rules: r.rules})
 	r.d.newTimer = r.clock.newTimer
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
@@ -381,6 +413,75 @@ func TestBillingDisabled(t *testing.T) {
 	waitCalls(t, auth.calls, 1)
 	if bal.relCalls() != 0 {
 		t.Fatalf("balances nil 时不得调用 Reload")
+	}
+}
+
+// TestNewBranches #14 T1 新增三分支（keys/settings/rules）逐实体断言：
+// 各自只走自己的重载目标。
+func TestNewBranches(t *testing.T) {
+	t.Run("keys→auth 全量，不动 balances/settings/rules", func(t *testing.T) {
+		r := newRig(t, &recAuth{})
+		r.markAndFire(KindKeys, nil)
+		waitCalls(t, r.auth.calls, 1)
+		if r.bal.relCalls() != 0 || r.settings.calls() != 0 || r.rules.calls() != 0 || r.sched.fullCalls() != 0 {
+			t.Fatalf("keys 只应 auth 全量：auth=%d bal=%d settings=%d rules=%d schedFull=%d",
+				r.auth.calls(), r.bal.relCalls(), r.settings.calls(), r.rules.calls(), r.sched.fullCalls())
+		}
+	})
+	t.Run("settings→settings 重载，不动 auth/sched/rules", func(t *testing.T) {
+		r := newRig(t, &recAuth{})
+		r.markAndFire(KindSettings, nil)
+		waitCalls(t, r.settings.calls, 1)
+		if r.auth.calls() != 0 || r.sched.fullCalls() != 0 || r.rules.calls() != 0 {
+			t.Fatalf("settings 只应 settings 重载")
+		}
+	})
+	t.Run("rules→rules 重载，不动 auth/sched/settings", func(t *testing.T) {
+		r := newRig(t, &recAuth{})
+		r.markAndFire(KindRules, nil)
+		waitCalls(t, r.rules.calls, 1)
+		if r.auth.calls() != 0 || r.sched.fullCalls() != 0 || r.settings.calls() != 0 {
+			t.Fatalf("rules 只应 rules 重载")
+		}
+	})
+}
+
+// TestNewBranchesMerge 同窗口 keys+settings+rules 合并 → 各重载目标各 1 次
+// （与用户/模板等既有位的并集语义一致）。
+func TestNewBranchesMerge(t *testing.T) {
+	r := newRig(t, &recAuth{})
+	gen := r.clock.genNow() // 评审 M-1：代数读取在首次 mark 前
+	r.d.Keys()
+	r.d.Settings()
+	r.d.Rules()
+	r.d.Keys() // 重复并入
+	r.clock.waitTimer(t, gen)
+	r.clock.fire()
+	waitCalls(t, r.auth.calls, 1)
+	if r.auth.calls() != 1 || r.settings.calls() != 1 || r.rules.calls() != 1 {
+		t.Fatalf("同窗口合并各 1 次：auth=%d settings=%d rules=%d",
+			r.auth.calls(), r.settings.calls(), r.rules.calls())
+	}
+}
+
+// TestNewBranchesNilReloader settings/rules reloader 未注入（nil）→ 对应分支
+// 跳过，不 panic，其余正常（单实例现状行为不变）。
+func TestNewBranchesNilReloader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sched, cl, auth := &recSched{}, &recClients{}, &recAuth{}
+	d := New(Config{Window: time.Hour, Sched: sched, Clients: cl, Auth: auth, Log: nil}) // 无 Settings/Rules
+	clock := &fakeClock{}
+	d.newTimer = clock.newTimer
+	requireNoErr(t, d.Start(ctx))
+	gen := clock.genNow()
+	d.Settings()
+	d.Rules()
+	clock.waitTimer(t, gen)
+	clock.fire()
+	time.Sleep(50 * time.Millisecond) // reloadAll 在 loop goroutine 同步执行（无可断言计数，等一轮）
+	if auth.calls() != 0 || sched.fullCalls() != 0 {
+		t.Fatalf("settings/rules nil 时不得触发 auth/sched（auth=%d sched=%d）", auth.calls(), sched.fullCalls())
 	}
 }
 

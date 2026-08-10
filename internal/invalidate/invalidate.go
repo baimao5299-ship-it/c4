@@ -13,7 +13,13 @@
 //   - 账号 → sched 组级定向 InvalidateGroup（包含关系：full ⊇ 组级 ⊇ 无）
 //   - 组倍率 / 用户-组专属倍率 → 余额倍率快照定向刷新（EffectiveMultiplier
 //     陈旧 ≤10s 不可接受）
-//   - key/pricing → 现状（auth 增量 / 内部 reloadPricing，不进 invalidate）
+//   - key CRUD（#14 多实例 key 缺口）→ auth 快照全量 Reload（v1 不做增量
+//     定向——单实例 auth 增量 Upsert/Delete 语义不变，多实例需全量覆盖其余
+//     实例的陈旧快照）
+//   - settings 变更（UpdateSetting）→ settings 快照重载（service 实现，
+//     cfg.Settings 未注入则跳过）
+//   - 规则 CRUD → 规则表全量重载（重载清窗口计数，全实例同步执行语义）
+//   - pricing → 现状（内部 reloadPricing，不进 invalidate）
 //
 // 读端永不阻塞：重载在单 goroutine 串行执行；各实体快照原子替换由实体自身
 // 保证（scheduler snapshotStore / Balances atomic.Pointer / Auth RWMutex 换
@@ -42,6 +48,14 @@ const (
 	// KindMultipliers 组倍率 / 用户-组专属倍率（price_multiplier）变更：余额
 	// 倍率快照定向刷新。
 	KindMultipliers
+	// KindKeys key CRUD（创建/轮换/删除/改额度，#14 多实例 key 缺口）：auth
+	// 快照全量 Reload（v1 不做增量定向）。
+	KindKeys
+	// KindSettings settings 快照变更（UpdateSetting）：settings 快照全量重载。
+	KindSettings
+	// KindRules 规则表变更（规则 CRUD）：规则表全量重载（重载清窗口计数，
+	// 全实例同步执行语义）。
+	KindRules
 )
 
 // State 一次到点执行的合并脏集合（同窗口多实体变更并集）。
@@ -80,6 +94,19 @@ type BalancesReloader interface {
 	ReloadMultipliers(ctx context.Context) error
 }
 
+// SettingsReloader settings 快照全量重载（service.Service 实现，T2 提供；
+// 未注入 nil → reloadAll 跳过，单实例现状行为不变）。
+type SettingsReloader interface {
+	ReloadSettings(ctx context.Context) error
+}
+
+// RulesReloader 规则表全量重载（rule.RuleEngine 实现——现有签名
+// Reload(ctx) error，T2 需加 ReloadRules 适配；重载清窗口计数，全实例同步
+// 执行语义）。未注入 nil → reloadAll 跳过。
+type RulesReloader interface {
+	ReloadRules(ctx context.Context) error
+}
+
 // Config 装配参数（main 接线）。
 type Config struct {
 	Window   time.Duration    // 去抖窗口（0 → DefaultWindow）
@@ -87,6 +114,8 @@ type Config struct {
 	Clients  ClientsReloader  // 必填
 	Auth     AuthReloader     // 必填
 	Balances BalancesReloader // billing.enabled=false → nil
+	Settings SettingsReloader // 可选（nil → settings 分支跳过）
+	Rules    RulesReloader    // 可选（nil → rules 分支跳过）
 	Log      *logx.Logger     // 可空（nil = 不记日志）
 }
 
@@ -164,6 +193,19 @@ func (d *Debouncer) Templates() { d.mark(KindTemplates|KindClients, nil) }
 // 倍率快照定向刷新（组 + assignment 两路小表单查，非全量 Reload——
 // EffectiveMultiplier 陈旧 ≤10s 不可接受）。
 func (d *Debouncer) Multipliers() { d.mark(KindMultipliers, nil) }
+
+// Keys key CRUD（创建/轮换/删除/改额度，#14 多实例 key 缺口）：auth 快照全量
+// Reload（v1 不做增量定向——现状 auth 增量 Upsert/Delete 是单实例语义；多实例
+// 其余实例的陈旧快照需全量覆盖）。供 notify Dispatcher 远端变更转发。
+func (d *Debouncer) Keys() { d.mark(KindKeys, nil) }
+
+// Settings settings 快照变更（UpdateSetting）：settings 快照全量重载。供
+// notify Dispatcher 远端变更转发。
+func (d *Debouncer) Settings() { d.mark(KindSettings, nil) }
+
+// Rules 规则表变更（规则 CRUD）：规则表全量重载（重载清窗口计数——全实例
+// 同步执行语义，NOTIFY 广播）。供 notify Dispatcher 远端变更转发。
+func (d *Debouncer) Rules() { d.mark(KindRules, nil) }
 
 // Accounts 账号变更（创建/更新/删除/批量）：sched 组级定向重载受影响组
 // （gids；与全量位同窗口时被包含跳过）；keyChanged（upstream_key 变更）→
@@ -263,5 +305,22 @@ func (d *Debouncer) reloadAll(st *State) {
 	}
 	if st.Kinds&KindMultipliers != 0 && d.cfg.Balances != nil {
 		_ = d.cfg.Balances.ReloadMultipliers(context.Background()) // fail-safe：内部 Warn + 保留旧快照
+	}
+	if st.Kinds&KindKeys != 0 {
+		// key CRUD 缺口：auth 快照全量（与 KindUsers 的 auth 分支同一调用；不
+		// 加余额快照——key 变更不影响余额）。
+		if err := d.cfg.Auth.Reload(context.Background()); err != nil && d.cfg.Log != nil {
+			d.cfg.Log.Debug("auth reload failed", logx.Error(err))
+		}
+	}
+	if st.Kinds&KindSettings != 0 && d.cfg.Settings != nil {
+		if err := d.cfg.Settings.ReloadSettings(context.Background()); err != nil && d.cfg.Log != nil {
+			d.cfg.Log.Warn("settings reload failed", logx.Error(err))
+		}
+	}
+	if st.Kinds&KindRules != 0 && d.cfg.Rules != nil {
+		if err := d.cfg.Rules.ReloadRules(context.Background()); err != nil && d.cfg.Log != nil {
+			d.cfg.Log.Warn("rules reload failed", logx.Error(err))
+		}
 	}
 }
