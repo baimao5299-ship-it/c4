@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
@@ -27,7 +28,8 @@ type RuleRepo struct{ client *ent.Client }
 var _ RuleStore = (*RuleRepo)(nil)
 
 func (r *RuleRepo) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {
-	pred := r.client.Rule.Query()
+	// 软删除：已删规则不加载（规则引擎 Reload 消费同路径——过滤随本方法生效）。
+	pred := r.client.Rule.Query().Where(rule.DeletedAtIsNil())
 	if enabled != nil {
 		pred = pred.Where(rule.Enabled(*enabled))
 	}
@@ -70,14 +72,21 @@ func (r *RuleRepo) UpdateRule(ctx context.Context, rl domain.Rule) error {
 	return nil
 }
 
+// DeleteRule 软删除：deleted_at 置值（行保留留审计；规则引擎重载按
+// deleted_at IS NULL 过滤 → 已删规则不加载，GET 单个仍可查已删项）。bulk
+// Update（无 re-SELECT）单语句；0 行命中 = 缺 id → ErrNotFound（同 errMissingID 格式）。
 func (r *RuleRepo) DeleteRule(ctx context.Context, id int64) error {
-	if err := r.client.Rule.DeleteOneID(id).Exec(ctx); err != nil {
-		return errMissingID(err, id)
+	n, err := r.client.Rule.Update().Where(rule.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 	}
 	return nil
 }
 
-// DeleteRulesBatch 批量删除规则（事务，全成或全败；与 templates/accounts 同构）。
+// DeleteRulesBatch 批量软删除规则（事务，全成或全败；与 templates/accounts 同构）。
 func (r *RuleRepo) DeleteRulesBatch(ctx context.Context, ids []int64) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
@@ -87,9 +96,14 @@ func (r *RuleRepo) DeleteRulesBatch(ctx context.Context, ids []int64) error {
 	if err := checkRuleExist(ctx, tx.Rule.Query, ids); err != nil {
 		return err
 	}
+	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id。
 	for _, id := range ids {
-		if err := tx.Rule.DeleteOneID(id).Exec(ctx); err != nil {
-			return errMissingID(err, id)
+		n, err := tx.Rule.Update().Where(rule.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 		}
 	}
 	return tx.Commit()
@@ -115,7 +129,7 @@ func toDomainRule(row *ent.Rule) *domain.Rule {
 	return &domain.Rule{
 		ID: row.ID, Name: row.Name, Enabled: row.Enabled, Priority: row.Priority,
 		When: whenFromMap(row.When), Then: thenFromMap(row.Then),
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, DeletedAt: row.DeletedAt,
 	}
 }
 

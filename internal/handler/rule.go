@@ -28,7 +28,7 @@ func toAPIRule(r *domain.Rule) Rule {
 	return Rule{
 		ID: r.ID, Name: r.Name, Enabled: r.Enabled, Priority: r.Priority,
 		When: whenToAPI(r.When), Then: thenToAPI(r.Then),
-		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, DeletedAt: r.DeletedAt, // 软删除时间戳（只读字段）
 	}
 }
 

@@ -188,6 +188,32 @@ func (_u *AccountUpdate) ClearLastUsedAt() *AccountUpdate {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *AccountUpdate) SetUpdatedAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *AccountUpdate) SetDeletedAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableDeletedAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *AccountUpdate) ClearDeletedAt() *AccountUpdate {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *AccountUpdate) SetCreatedAt(v time.Time) *AccountUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -199,12 +225,6 @@ func (_u *AccountUpdate) SetNillableCreatedAt(v *time.Time) *AccountUpdate {
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *AccountUpdate) SetUpdatedAt(v time.Time) *AccountUpdate {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -360,11 +380,17 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.LastUsedAtCleared() {
 		_spec.ClearField(account.FieldLastUsedAt, field.TypeTime)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(account.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(account.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(account.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(account.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(account.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _u.mutation.TemplateCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -618,6 +644,32 @@ func (_u *AccountUpdateOne) ClearLastUsedAt() *AccountUpdateOne {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *AccountUpdateOne) SetUpdatedAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *AccountUpdateOne) SetDeletedAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableDeletedAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *AccountUpdateOne) ClearDeletedAt() *AccountUpdateOne {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *AccountUpdateOne) SetCreatedAt(v time.Time) *AccountUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -629,12 +681,6 @@ func (_u *AccountUpdateOne) SetNillableCreatedAt(v *time.Time) *AccountUpdateOne
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *AccountUpdateOne) SetUpdatedAt(v time.Time) *AccountUpdateOne {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -820,11 +866,17 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	if _u.mutation.LastUsedAtCleared() {
 		_spec.ClearField(account.FieldLastUsedAt, field.TypeTime)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(account.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(account.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(account.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(account.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(account.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _u.mutation.TemplateCleared() {
 		edge := &sqlgraph.EdgeSpec{

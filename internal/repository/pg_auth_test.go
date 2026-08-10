@@ -141,12 +141,16 @@ func TestPGKeyLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(20), got2.QuotaUsed, "5 增量生效；缺失 key 静默跳过")
 
-	// DeleteKey
+	// DeleteKey（软删）：GET 单个仍可查（含 deleted_at）；鉴权路径不可见
 	require.NoError(t, repos.DeleteKey(ctx, k.ID))
-	_, err = repos.GetKey(ctx, k.ID)
-	require.Error(t, err, "删除后不可见")
+	got3, err := repos.GetKey(ctx, k.ID)
+	require.NoError(t, err, "软删后 GET 单个仍可查（审计可见）")
+	require.NotNil(t, got3.DeletedAt, "软删行带 deleted_at")
+	gone, err := repos.GetKeyByHash(ctx, k.KeyHash)
+	require.NoError(t, err)
+	require.Nil(t, gone, "已软删 key 按未找到处理（鉴权拒绝路径）")
 
-	// DeleteKeysByGroup（组删除前置清理；返回被删 hash）
+	// DeleteKeysByGroup（组删除前置清理；返回本次被软删 hash——已软删的 k1 过滤）
 	_, err = repos.CreateKey(ctx, &domain.Key{
 		UserID: u.ID, GroupID: g.ID, Name: "k2",
 		KeyHash: "hash-k2", KeyPrefix: "gk-cccc", Status: domain.KeyStatusActive,
@@ -155,6 +159,10 @@ func TestPGKeyLifecycle(t *testing.T) {
 	hashes, err := repos.DeleteKeysByGroup(ctx, g.ID)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"hash-k2"}, hashes)
+	// 级联软删后：组内全部 key 已删（GET 单个可查已删项）
+	got4, err := repos.GetKey(ctx, k.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got4.DeletedAt)
 }
 
 func TestPGLoadKeysSnapshot(t *testing.T) {

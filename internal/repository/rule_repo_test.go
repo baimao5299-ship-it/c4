@@ -21,9 +21,9 @@ const (
 
 func ruleRow() *pgxmock.Rows {
 	return pgxmock.NewRows([]string{"id", "name", "enabled", "priority", "when", "then",
-		"created_at", "updated_at"}).
+		"updated_at", "deleted_at", "created_at"}).
 		AddRow(int64(1), "r1", true, int(10), []byte(ruleWhenJSON), []byte(ruleThenJSON),
-			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
 func ruleCRUDWhen() domain.RuleWhen {
@@ -48,17 +48,18 @@ func TestRuleCRUD(t *testing.T) {
 			pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)))
 
-	// List 全部（nil 过滤）-> ORDER BY priority ASC（SQL 层面断言升序）
-	tr.pool.ExpectQuery(`(?i)FROM "rules".*ORDER BY "rules"\."priority" ASC`).
+	// List 全部（nil 过滤）-> WHERE deleted_at IS NULL + ORDER BY priority ASC
+	//（软删除：已删规则不加载——SQL 层面断言过滤谓词）
+	tr.pool.ExpectQuery(`(?i)FROM "rules".*"rules"\."deleted_at" IS NULL.*ORDER BY "rules"\."priority" ASC`).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "enabled", "priority", "when", "then",
-			"created_at", "updated_at"}).
+			"updated_at", "deleted_at", "created_at"}).
 			AddRow(int64(1), "r1", true, int(10), []byte(ruleWhenJSON), []byte(ruleThenJSON),
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 			AddRow(int64(2), "r2", true, int(20), []byte(`{}`), []byte(`{}`),
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
-	// List enabled=true -> WHERE "enabled"（PG bool 列直接作条件，无参数）
-	tr.pool.ExpectQuery(`(?i)FROM "rules".*WHERE "rules"\."enabled" ORDER BY "rules"\."priority" ASC`).
+	// List enabled=true -> WHERE deleted_at IS NULL AND "enabled"（PG bool 列直接作条件，无参数）
+	tr.pool.ExpectQuery(`(?i)FROM "rules".*"rules"\."deleted_at" IS NULL.*"rules"\."enabled" ORDER BY "rules"\."priority" ASC`).
 		WillReturnRows(ruleRow())
 
 	// Update -> Tx: UPDATE（name/enabled/priority/when/then/updated_at）+ re-SELECT + Commit
@@ -72,15 +73,15 @@ func TestRuleCRUD(t *testing.T) {
 		WillReturnRows(ruleRow())
 	tr.pool.ExpectCommit()
 
-	// Delete
-	tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
-		WithArgs(int64(1)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	// Delete（软删：UPDATE deleted_at/updated_at）
+	tr.pool.ExpectExec(q(`UPDATE "rules" SET`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
 	// Delete 不存在 -> ErrNotFound（含缺失 id）
-	tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
-		WithArgs(int64(999)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	tr.pool.ExpectExec(q(`UPDATE "rules" SET`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(999)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 
 	// Count
 	tr.pool.ExpectQuery(q(`SELECT COUNT("rules"."id") FROM "rules"`)).
@@ -128,29 +129,29 @@ func TestRuleCRUD(t *testing.T) {
 	tr.expectDone(t)
 }
 
-// TestDeleteRulesBatch 批量删除规则（ent.Tx 事务，全成或全败）。
+// TestDeleteRulesBatch 批量软删除规则（ent.Tx 事务，全成或全败）。
 func TestDeleteRulesBatch(t *testing.T) {
-	// 成功：存在性通过 → 逐个 DELETE → Commit
+	// 成功：存在性通过 → 逐个软删 UPDATE → Commit
 	t.Run("all exist commit", func(t *testing.T) {
 		tr := newRepos(t)
 		tr.pool.ExpectBegin()
 		tr.pool.ExpectQuery(q(`SELECT "rules"."id" FROM "rules" WHERE`)).
 			WithArgs(int64(1), int64(2)).
 			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
-		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
-			WithArgs(int64(1)).
-			WillReturnResult(pgxmock.NewResult("DELETE", 1))
-		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
-			WithArgs(int64(2)).
-			WillReturnResult(pgxmock.NewResult("DELETE", 1))
+		tr.pool.ExpectExec(q(`UPDATE "rules" SET`)).
+			WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+		tr.pool.ExpectExec(q(`UPDATE "rules" SET`)).
+			WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(2)).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 		tr.pool.ExpectCommit()
 
 		require.NoError(t, tr.repos.Rules.DeleteRulesBatch(ctx(), []int64{1, 2}))
 		tr.expectDone(t)
 	})
 
-	// 缺失 id → ErrNotFound（含缺失 id），且无任何 DELETE 执行
-	t.Run("missing id returns ErrNotFound without DELETE", func(t *testing.T) {
+	// 缺失 id → ErrNotFound（含缺失 id），且无任何 UPDATE 执行
+	t.Run("missing id returns ErrNotFound without UPDATE", func(t *testing.T) {
 		tr := newRepos(t)
 		tr.pool.ExpectBegin()
 		// 存在性检查：SELECT id WHERE id IN (1,2,3) 只返回 2 行（id=3 缺失）
@@ -172,11 +173,11 @@ func TestDeleteRulesBatch(t *testing.T) {
 		tr.pool.ExpectQuery(q(`SELECT "rules"."id" FROM "rules" WHERE`)).
 			WithArgs(int64(1), int64(2)).
 			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
-		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
-			WithArgs(int64(1)).
-			WillReturnResult(pgxmock.NewResult("DELETE", 1))
-		tr.pool.ExpectExec(q(`DELETE FROM "rules"`)).
-			WithArgs(int64(2)).
+		tr.pool.ExpectExec(q(`UPDATE "rules" SET`)).
+			WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+		tr.pool.ExpectExec(q(`UPDATE "rules" SET`)).
+			WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(2)).
 			WillReturnError(errors.New("midway db error"))
 		tr.pool.ExpectRollback()
 

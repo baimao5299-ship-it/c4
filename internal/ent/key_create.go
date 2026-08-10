@@ -110,20 +110,6 @@ func (_c *KeyCreate) SetNillableQuotaUsed(v *int64) *KeyCreate {
 	return _c
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (_c *KeyCreate) SetCreatedAt(v time.Time) *KeyCreate {
-	_c.mutation.SetCreatedAt(v)
-	return _c
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (_c *KeyCreate) SetNillableCreatedAt(v *time.Time) *KeyCreate {
-	if v != nil {
-		_c.SetCreatedAt(*v)
-	}
-	return _c
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (_c *KeyCreate) SetUpdatedAt(v time.Time) *KeyCreate {
 	_c.mutation.SetUpdatedAt(v)
@@ -134,6 +120,34 @@ func (_c *KeyCreate) SetUpdatedAt(v time.Time) *KeyCreate {
 func (_c *KeyCreate) SetNillableUpdatedAt(v *time.Time) *KeyCreate {
 	if v != nil {
 		_c.SetUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_c *KeyCreate) SetDeletedAt(v time.Time) *KeyCreate {
+	_c.mutation.SetDeletedAt(v)
+	return _c
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_c *KeyCreate) SetNillableDeletedAt(v *time.Time) *KeyCreate {
+	if v != nil {
+		_c.SetDeletedAt(*v)
+	}
+	return _c
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (_c *KeyCreate) SetCreatedAt(v time.Time) *KeyCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *KeyCreate) SetNillableCreatedAt(v *time.Time) *KeyCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
 	}
 	return _c
 }
@@ -205,13 +219,13 @@ func (_c *KeyCreate) defaults() {
 		v := key.DefaultQuotaUsed
 		_c.mutation.SetQuotaUsed(v)
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		v := key.DefaultCreatedAt()
-		_c.mutation.SetCreatedAt(v)
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := key.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		v := key.DefaultCreatedAt()
+		_c.mutation.SetCreatedAt(v)
 	}
 }
 
@@ -249,11 +263,11 @@ func (_c *KeyCreate) check() error {
 	if _, ok := _c.mutation.QuotaUsed(); !ok {
 		return &ValidationError{Name: "quota_used", err: errors.New(`ent: missing required field "Key.quota_used"`)}
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Key.created_at"`)}
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Key.updated_at"`)}
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Key.created_at"`)}
 	}
 	if len(_c.mutation.UserIDs()) == 0 {
 		return &ValidationError{Name: "user", err: errors.New(`ent: missing required edge "Key.user"`)}
@@ -322,13 +336,17 @@ func (_c *KeyCreate) createSpec() (*Key, *sqlgraph.CreateSpec) {
 		_spec.SetField(key.FieldQuotaUsed, field.TypeInt64, value)
 		_node.QuotaUsed = value
 	}
-	if value, ok := _c.mutation.CreatedAt(); ok {
-		_spec.SetField(key.FieldCreatedAt, field.TypeTime, value)
-		_node.CreatedAt = value
-	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(key.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DeletedAt(); ok {
+		_spec.SetField(key.FieldDeletedAt, field.TypeTime, value)
+		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(key.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = value
 	}
 	if nodes := _c.mutation.UserIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -542,18 +560,6 @@ func (u *KeyUpsert) AddQuotaUsed(v int64) *KeyUpsert {
 	return u
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *KeyUpsert) SetCreatedAt(v time.Time) *KeyUpsert {
-	u.Set(key.FieldCreatedAt, v)
-	return u
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *KeyUpsert) UpdateCreatedAt() *KeyUpsert {
-	u.SetExcluded(key.FieldCreatedAt)
-	return u
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *KeyUpsert) SetUpdatedAt(v time.Time) *KeyUpsert {
 	u.Set(key.FieldUpdatedAt, v)
@@ -563,6 +569,36 @@ func (u *KeyUpsert) SetUpdatedAt(v time.Time) *KeyUpsert {
 // UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
 func (u *KeyUpsert) UpdateUpdatedAt() *KeyUpsert {
 	u.SetExcluded(key.FieldUpdatedAt)
+	return u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *KeyUpsert) SetDeletedAt(v time.Time) *KeyUpsert {
+	u.Set(key.FieldDeletedAt, v)
+	return u
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *KeyUpsert) UpdateDeletedAt() *KeyUpsert {
+	u.SetExcluded(key.FieldDeletedAt)
+	return u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *KeyUpsert) ClearDeletedAt() *KeyUpsert {
+	u.SetNull(key.FieldDeletedAt)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *KeyUpsert) SetCreatedAt(v time.Time) *KeyUpsert {
+	u.Set(key.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *KeyUpsert) UpdateCreatedAt() *KeyUpsert {
+	u.SetExcluded(key.FieldCreatedAt)
 	return u
 }
 
@@ -761,20 +797,6 @@ func (u *KeyUpsertOne) UpdateQuotaUsed() *KeyUpsertOne {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *KeyUpsertOne) SetCreatedAt(v time.Time) *KeyUpsertOne {
-	return u.Update(func(s *KeyUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *KeyUpsertOne) UpdateCreatedAt() *KeyUpsertOne {
-	return u.Update(func(s *KeyUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *KeyUpsertOne) SetUpdatedAt(v time.Time) *KeyUpsertOne {
 	return u.Update(func(s *KeyUpsert) {
@@ -786,6 +808,41 @@ func (u *KeyUpsertOne) SetUpdatedAt(v time.Time) *KeyUpsertOne {
 func (u *KeyUpsertOne) UpdateUpdatedAt() *KeyUpsertOne {
 	return u.Update(func(s *KeyUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *KeyUpsertOne) SetDeletedAt(v time.Time) *KeyUpsertOne {
+	return u.Update(func(s *KeyUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *KeyUpsertOne) UpdateDeletedAt() *KeyUpsertOne {
+	return u.Update(func(s *KeyUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *KeyUpsertOne) ClearDeletedAt() *KeyUpsertOne {
+	return u.Update(func(s *KeyUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *KeyUpsertOne) SetCreatedAt(v time.Time) *KeyUpsertOne {
+	return u.Update(func(s *KeyUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *KeyUpsertOne) UpdateCreatedAt() *KeyUpsertOne {
+	return u.Update(func(s *KeyUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 
@@ -1150,20 +1207,6 @@ func (u *KeyUpsertBulk) UpdateQuotaUsed() *KeyUpsertBulk {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *KeyUpsertBulk) SetCreatedAt(v time.Time) *KeyUpsertBulk {
-	return u.Update(func(s *KeyUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *KeyUpsertBulk) UpdateCreatedAt() *KeyUpsertBulk {
-	return u.Update(func(s *KeyUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *KeyUpsertBulk) SetUpdatedAt(v time.Time) *KeyUpsertBulk {
 	return u.Update(func(s *KeyUpsert) {
@@ -1175,6 +1218,41 @@ func (u *KeyUpsertBulk) SetUpdatedAt(v time.Time) *KeyUpsertBulk {
 func (u *KeyUpsertBulk) UpdateUpdatedAt() *KeyUpsertBulk {
 	return u.Update(func(s *KeyUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *KeyUpsertBulk) SetDeletedAt(v time.Time) *KeyUpsertBulk {
+	return u.Update(func(s *KeyUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *KeyUpsertBulk) UpdateDeletedAt() *KeyUpsertBulk {
+	return u.Update(func(s *KeyUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *KeyUpsertBulk) ClearDeletedAt() *KeyUpsertBulk {
+	return u.Update(func(s *KeyUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *KeyUpsertBulk) SetCreatedAt(v time.Time) *KeyUpsertBulk {
+	return u.Update(func(s *KeyUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *KeyUpsertBulk) UpdateCreatedAt() *KeyUpsertBulk {
+	return u.Update(func(s *KeyUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 

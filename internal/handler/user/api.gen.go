@@ -97,6 +97,9 @@ type ErrorType string
 // Group defines model for Group.
 type Group struct {
 	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
+	DeletedAt *time.Time `json:"DeletedAt"`
 	ID        *int64     `json:"ID,omitempty"`
 	Name      *string    `json:"Name,omitempty"`
 
@@ -111,7 +114,10 @@ type GroupVisibility string
 
 // Key defines model for Key.
 type Key struct {
-	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表/鉴权过滤已删；GET 单个可查已删项）
+	DeletedAt      *time.Time `json:"DeletedAt"`
 	GroupID        *int64     `json:"GroupID,omitempty"`
 	ID             *int64     `json:"ID,omitempty"`
 	KeyPrefix      *string    `json:"KeyPrefix,omitempty"`
@@ -159,7 +165,10 @@ type KeyUpdate struct {
 
 // KeyWithSecret defines model for KeyWithSecret.
 type KeyWithSecret struct {
-	CreatedAt      *time.Time `json:"CreatedAt,omitempty"`
+	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表/鉴权过滤已删；GET 单个可查已删项）
+	DeletedAt      *time.Time `json:"DeletedAt"`
 	GroupID        *int64     `json:"GroupID,omitempty"`
 	ID             *int64     `json:"ID,omitempty"`
 	KeyPrefix      *string    `json:"KeyPrefix,omitempty"`

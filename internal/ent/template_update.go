@@ -108,6 +108,32 @@ func (_u *TemplateUpdate) SetModelMapping(v map[string]string) *TemplateUpdate {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *TemplateUpdate) SetUpdatedAt(v time.Time) *TemplateUpdate {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *TemplateUpdate) SetDeletedAt(v time.Time) *TemplateUpdate {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *TemplateUpdate) SetNillableDeletedAt(v *time.Time) *TemplateUpdate {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *TemplateUpdate) ClearDeletedAt() *TemplateUpdate {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *TemplateUpdate) SetCreatedAt(v time.Time) *TemplateUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -119,12 +145,6 @@ func (_u *TemplateUpdate) SetNillableCreatedAt(v *time.Time) *TemplateUpdate {
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *TemplateUpdate) SetUpdatedAt(v time.Time) *TemplateUpdate {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -245,11 +265,17 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.ModelMapping(); ok {
 		_spec.SetField(template.FieldModelMapping, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(template.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(template.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(template.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(template.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(template.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _u.mutation.AccountsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -394,6 +420,32 @@ func (_u *TemplateUpdateOne) SetModelMapping(v map[string]string) *TemplateUpdat
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *TemplateUpdateOne) SetUpdatedAt(v time.Time) *TemplateUpdateOne {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *TemplateUpdateOne) SetDeletedAt(v time.Time) *TemplateUpdateOne {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *TemplateUpdateOne) SetNillableDeletedAt(v *time.Time) *TemplateUpdateOne {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *TemplateUpdateOne) ClearDeletedAt() *TemplateUpdateOne {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *TemplateUpdateOne) SetCreatedAt(v time.Time) *TemplateUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -405,12 +457,6 @@ func (_u *TemplateUpdateOne) SetNillableCreatedAt(v *time.Time) *TemplateUpdateO
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *TemplateUpdateOne) SetUpdatedAt(v time.Time) *TemplateUpdateOne {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -561,11 +607,17 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	if value, ok := _u.mutation.ModelMapping(); ok {
 		_spec.SetField(template.FieldModelMapping, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(template.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(template.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(template.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(template.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(template.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _u.mutation.AccountsCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -181,8 +181,11 @@ const (
 
 // Account defines model for Account.
 type Account struct {
-	CooldownUntil  *time.Time     `json:"CooldownUntil"`
-	CreatedAt      *time.Time     `json:"CreatedAt,omitempty"`
+	CooldownUntil *time.Time `json:"CooldownUntil"`
+	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项）
+	DeletedAt      *time.Time     `json:"DeletedAt"`
 	ID             *int64         `json:"ID,omitempty"`
 	LastError      *string        `json:"LastError"`
 	LastUsedAt     *time.Time     `json:"LastUsedAt"`
@@ -237,8 +240,11 @@ type AccountStatus string
 
 // AccountView defines model for AccountView.
 type AccountView struct {
-	CooldownUntil  *time.Time     `json:"CooldownUntil"`
-	CreatedAt      *time.Time     `json:"CreatedAt,omitempty"`
+	CooldownUntil *time.Time `json:"CooldownUntil"`
+	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项）
+	DeletedAt      *time.Time     `json:"DeletedAt"`
 	ID             *int64         `json:"ID,omitempty"`
 	LastError      *string        `json:"LastError"`
 	LastUsedAt     *time.Time     `json:"LastUsedAt"`
@@ -348,6 +354,9 @@ type GenerateResponse struct {
 // Group defines model for Group.
 type Group struct {
 	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
+	DeletedAt *time.Time `json:"DeletedAt"`
 	ID        *int64     `json:"ID,omitempty"`
 	Name      *string    `json:"Name,omitempty"`
 
@@ -608,7 +617,10 @@ type RequestFormat string
 
 // Rule defines model for Rule.
 type Rule struct {
-	CreatedAt time.Time              `json:"CreatedAt"`
+	CreatedAt time.Time `json:"CreatedAt"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表/规则引擎重载过滤已删；GET 单个可查已删项）
+	DeletedAt *time.Time             `json:"DeletedAt"`
 	Enabled   bool                   `json:"Enabled"`
 	ID        int64                  `json:"ID"`
 	Name      string                 `json:"Name"`
@@ -685,9 +697,12 @@ type StatBucket struct {
 
 // Template defines model for Template.
 type Template struct {
-	BaseURL          string                     `json:"BaseURL"`
-	CreatedAt        time.Time                  `json:"CreatedAt"`
-	CredentialType   *string                    `json:"CredentialType,omitempty"`
+	BaseURL        string    `json:"BaseURL"`
+	CreatedAt      time.Time `json:"CreatedAt"`
+	CredentialType *string   `json:"CredentialType,omitempty"`
+
+	// DeletedAt 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项）
+	DeletedAt        *time.Time                 `json:"DeletedAt"`
 	FormatModels     *map[string][]string       `json:"FormatModels,omitempty"`
 	ID               int64                      `json:"ID"`
 	ModelMapping     *map[string]string         `json:"ModelMapping,omitempty"`

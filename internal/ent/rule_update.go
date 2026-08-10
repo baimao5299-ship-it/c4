@@ -89,6 +89,32 @@ func (_u *RuleUpdate) SetThen(v map[string]interface{}) *RuleUpdate {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *RuleUpdate) SetUpdatedAt(v time.Time) *RuleUpdate {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *RuleUpdate) SetDeletedAt(v time.Time) *RuleUpdate {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *RuleUpdate) SetNillableDeletedAt(v *time.Time) *RuleUpdate {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *RuleUpdate) ClearDeletedAt() *RuleUpdate {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *RuleUpdate) SetCreatedAt(v time.Time) *RuleUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -100,12 +126,6 @@ func (_u *RuleUpdate) SetNillableCreatedAt(v *time.Time) *RuleUpdate {
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *RuleUpdate) SetUpdatedAt(v time.Time) *RuleUpdate {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -177,11 +197,17 @@ func (_u *RuleUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Then(); ok {
 		_spec.SetField(rule.FieldThen, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(rule.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(rule.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(rule.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(rule.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(rule.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -264,6 +290,32 @@ func (_u *RuleUpdateOne) SetThen(v map[string]interface{}) *RuleUpdateOne {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *RuleUpdateOne) SetUpdatedAt(v time.Time) *RuleUpdateOne {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *RuleUpdateOne) SetDeletedAt(v time.Time) *RuleUpdateOne {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *RuleUpdateOne) SetNillableDeletedAt(v *time.Time) *RuleUpdateOne {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *RuleUpdateOne) ClearDeletedAt() *RuleUpdateOne {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *RuleUpdateOne) SetCreatedAt(v time.Time) *RuleUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -275,12 +327,6 @@ func (_u *RuleUpdateOne) SetNillableCreatedAt(v *time.Time) *RuleUpdateOne {
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *RuleUpdateOne) SetUpdatedAt(v time.Time) *RuleUpdateOne {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -382,11 +428,17 @@ func (_u *RuleUpdateOne) sqlSave(ctx context.Context) (_node *Rule, err error) {
 	if value, ok := _u.mutation.Then(); ok {
 		_spec.SetField(rule.FieldThen, field.TypeJSON, value)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(rule.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(rule.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(rule.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(rule.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(rule.FieldCreatedAt, field.TypeTime, value)
 	}
 	_node = &Rule{config: _u.config}
 	_spec.Assign = _node.assignValues
