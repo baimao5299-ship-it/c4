@@ -126,24 +126,24 @@ func main() {
 	start := warmEnd
 	stop := start.Add(*duration)
 
-	// transport 全局共享（http.Client 每次请求新建、transport 复用）：DefaultTransport
-	// 的 MaxIdleConns/MaxIdleConnsPerHost 都是 100，50k 并发下连接池形同虚设——
-	// 流一结束连接就被关、下一请求重新拨号（每请求一次拨号，三进程 13k/s 的
-	// 连接风暴，压测工具在测自己的拨号开销而非网关）。给足池容量（= 并发数，
-	// 稳态下每 goroutine 恰好持一条 keep-alive 连接反复复用），拨号率趋近 0。
-	transport := &http.Transport{
-		MaxIdleConns:        *concurrency,
-		MaxIdleConnsPerHost: *concurrency,
-		IdleConnTimeout:     90 * time.Second,
-	}
 	// 每 worker 自建局部随机源：math/rand/v2 全局源带锁，30k 并发下
 	// pickKey/退避抢同一把锁；按 worker 索引分种子，退避不会同频共振。
+	// transport 同样 per-worker（#19）：全局共享 transport 的连接池锁
+	// （connsMu）在 50k 并发下是跨 worker 争抢点；每 worker 独立 transport
+	// 后池锁归零竞争，连接数不变（稳态每 worker 恰好一条 keep-alive）。
 	randSeed := uint64(time.Now().UnixNano())
 	var wg sync.WaitGroup
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
 		go func(rng *rand.Rand) {
 			defer wg.Done()
+			// 每 worker 独立 transport（池容量 1 即够——稳态恒 1 条连接）：
+			// 避免共享 transport 的连接池锁竞争（#19）；参数同全局版。
+			transport := &http.Transport{
+				MaxIdleConns:        1,
+				MaxIdleConnsPerHost: 1,
+				IdleConnTimeout:     90 * time.Second,
+			}
 			client := &http.Client{Timeout: 10 * time.Minute, Transport: transport}
 			// 预热：先跑不计数的流，把突发拨号造成的 RST 吸收在计时窗口外，
 			// 同时让 keep-alive 连接池就位（Windows backlog≈200，见错误退避注释）。
