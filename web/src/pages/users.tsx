@@ -516,7 +516,13 @@ export default function Users() {
                   const row = groupsMult[g.ID!]
                   return (
                     <div key={g.ID} className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
-                      <Checkbox checked={checked || isPublic} disabled={isPublic} onCheckedChange={c => toggleGroup(g.ID!, c === true)} aria-label={g.Name} />
+                      <Checkbox
+                        checked={checked || isPublic}
+                        disabled={isPublic}
+                        onCheckedChange={c => toggleGroup(g.ID!, c === true)}
+                        aria-label={g.Name}
+                        className={isPublic ? 'data-checked:border-muted-foreground/40 data-checked:bg-muted data-checked:text-muted-foreground' : undefined}
+                      />
                       <span className="min-w-0 flex-1 truncate text-sm" title={g.Name}>{g.Name}</span>
                       <GroupVisibilityDot visibility={g.Visibility} />
                       <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title={t('groups.table.priceMultiplier')}>
