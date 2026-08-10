@@ -660,7 +660,8 @@
       "price_source_url": "价格同步来源",
       "price_sync_cron": "价格同步计划",
       "service_tier_policy_priority": "优先档字段策略",
-      "service_tier_policy_flex": "弹性档字段策略"
+      "service_tier_policy_flex": "弹性档字段策略",
+      "service_tier_policy_fast": "快速挡位策略"
     },
     "descs": {
       "signup_enabled": "关闭后公开注册通道不再受理新用户",
@@ -671,7 +672,8 @@
       "price_source_url": "litellm 官方价格表地址（JSON）",
       "price_sync_cron": "价格同步的定时计划（cron 表达式）",
       "service_tier_policy_priority": "优先档字段在转发请求时的处理方式",
-      "service_tier_policy_flex": "弹性档字段在转发请求时的处理方式"
+      "service_tier_policy_flex": "弹性档字段在转发请求时的处理方式",
+      "service_tier_policy_fast": "快速挡位（fast）请求转发时字段的处理方式"
     },
     "policies": {
       "passthrough": "透传",

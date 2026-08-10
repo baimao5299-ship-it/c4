@@ -22,7 +22,7 @@ type Setting = components['schemas']['Setting']
 const MILLI_PER_USD = 100_000
 const USD_KEYS = new Set(['default_user_balance', 'default_user_temp_balance'])
 // 枚举键：值域 passthrough/strip/reject，下拉选项显示翻译（不裸露枚举名）。
-const TIER_KEYS = new Set(['service_tier_policy_priority', 'service_tier_policy_flex'])
+const TIER_KEYS = new Set(['service_tier_policy_priority', 'service_tier_policy_flex', 'service_tier_policy_fast'])
 const TIER_VALUES = ['passthrough', 'strip', 'reject'] as const
 
 // 分组卡片：注册 / 新用户默认资源 / 价格同步 / 服务档位策略（固定顺序渲染）。
@@ -30,7 +30,7 @@ const GROUPS: { id: string; keys: string[] }[] = [
   { id: 'signup', keys: ['signup_enabled'] },
   { id: 'defaults', keys: ['default_user_max_concurrency', 'default_user_balance', 'default_user_temp_balance', 'default_user_temp_balance_ttl_days'] },
   { id: 'pricingSync', keys: ['price_source_url', 'price_sync_cron'] },
-  { id: 'tierPolicy', keys: ['service_tier_policy_priority', 'service_tier_policy_flex'] },
+  { id: 'tierPolicy', keys: ['service_tier_policy_priority', 'service_tier_policy_flex', 'service_tier_policy_fast'] },
 ]
 
 // 非负整数（与服务端 strconv.ParseInt 的接受域对齐：普通 number 键直传字符串）。
