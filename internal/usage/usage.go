@@ -9,10 +9,14 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/pkg/logx"
@@ -45,6 +49,10 @@ type QuotaWriter interface {
 const (
 	statBatchSize  = 500
 	quotaBatchSize = 500
+	// maxStatsDeadlockRetries 统计 Upsert 死锁（40P01）重试上限（不含首次尝试）。
+	// 死锁瞬时（对端事务被 PG 回滚即释放锁）——重试 2 次足够消化并发窗口；仍
+	// 失败 → 回灌等下次 flush 再试（不丢），不无限重试拖长 flushMu 占锁。
+	maxStatsDeadlockRetries = 2
 )
 
 // pendingWaterline 明细 pending 条数水线：超过 → Warn（可观测，非反压——
@@ -418,6 +426,25 @@ func (r *Recorder) statsFlushLoop(ctx context.Context) {
 	}
 }
 
+// isDeadlockError 判断 PG 事务死锁（多实例并发批量 Upsert 同批 bucket 的
+// DO UPDATE 锁顺序交错 → SQLSTATE 40P01；ent Conn.Exec 原样透传 pgconn 错误，
+// 与 partition.go isDuplicateObject 同先例）。死锁是瞬时的：PG 回滚对端事务
+// 后锁即释放——适合短退避重试消化，无需走回灌。
+func isDeadlockError(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "40P01"
+}
+
+// deadlockRetryBackoff 死锁重试退避：10-50ms 区间均匀随机 jitter（math/rand/v2
+// 全局并发安全）。多实例同时死锁失败后若同步等长重试，锁顺序依旧交错、再次
+// 死锁；随机错开重试时刻，先到者持锁完成、后到者不再互斥——瞬时死锁被消化。
+func deadlockRetryBackoff() time.Duration {
+	return 10*time.Millisecond + time.Duration(rand.Int64N(int64(40*time.Millisecond)))
+}
+
 // flushStats 换批 + 落库（统计桶批量 Upsert + 额度增量批量回写），受 ctx 预算
 // 约束（O2 停机修复——O1 复测：Close 用 Background 逐 key AddQuotaUsed 独占
 // 3.8 分钟吃掉停机预算尾部，main 卡死）：
@@ -523,11 +550,27 @@ func (r *Recorder) flushStats(ctx context.Context) {
 				}
 				end := min(start+statBatchSize, len(s))
 				if err := r.stats.Upsert(ctx, s[start:end]); err != nil {
-					if r.log != nil {
-						r.log.Warn("usage stats upsert failed", logx.Error(err))
+					// 死锁专属重试（#37 P3）：多实例并发批量 Upsert 同批 bucket
+					// （DO UPDATE）锁顺序交错 → PG 事务死锁 40P01。死锁瞬时（对端
+					// 回滚即释放锁）——短退避重试消化（≤2 次），避免反复 deadlock
+					// 造成的统计延迟累积 + Warn 噪音；jitter 防两实例同步重试再
+					// 次交错死锁。ctx 预算到期不重试（停机纪律，走现状回灌）。
+					// 非 40P01 错误语义不变（直接回灌）。
+					if isDeadlockError(err) {
+						for attempt := 1; attempt <= maxStatsDeadlockRetries && ctx.Err() == nil; attempt++ {
+							time.Sleep(deadlockRetryBackoff())
+							if err = r.stats.Upsert(ctx, s[start:end]); err == nil || !isDeadlockError(err) {
+								break
+							}
+						}
 					}
-					r.refillBuckets(s[start:]) // 失败 chunk + 其后剩余回灌（不丢）
-					return
+					if err != nil {
+						if r.log != nil {
+							r.log.Warn("usage stats upsert failed", logx.Error(err))
+						}
+						r.refillBuckets(s[start:]) // 失败 chunk + 其后剩余回灌（不丢）
+						return
+					}
 				}
 				flushedB.Add(int64(end - start))
 			}

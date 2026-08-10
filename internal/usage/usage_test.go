@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
@@ -185,6 +186,105 @@ func TestFlushStatsRefeedsCacheTokens(t *testing.T) {
 	require.Equal(t, int64(5), ss.buckets[0].CacheCreationTokens, "回灌后 cache creation 不丢")
 	require.Equal(t, int64(20), ss.buckets[0].Cost, "回灌后 cost 不丢")
 	require.Equal(t, int64(2), ss.buckets[0].RequestCount)
+}
+
+// deadlockStatStore 模拟统计 Upsert 死锁/失败（#37 P3）：前 failN 次调用返回
+// 错误（errCode 为空 → 40P01 死锁；"generic" → 非死锁普通错误），其后成功；
+// cancel 非 nil 时首调触发（模拟预算在首调后到期——确定性，无时间依赖）。
+// 并发安全（flushStats 多 worker 并行调用；断言用 Workers:1 保调用序）。
+type deadlockStatStore struct {
+	mu      sync.Mutex
+	failN   int
+	errCode string
+	cancel  context.CancelFunc
+	calls   int
+	buckets []*domain.StatBucket
+}
+
+func (m *deadlockStatStore) Upsert(ctx context.Context, b []*domain.StatBucket) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls++
+	if m.calls == 1 && m.cancel != nil {
+		m.cancel() // 预算到期：后续重试查 ctx.Err() 应放弃
+	}
+	if m.failN > 0 {
+		m.failN--
+		if m.errCode == "generic" {
+			return errors.New("db down")
+		}
+		return &pgconn.PgError{Code: "40P01", Message: "deadlock detected", Severity: "ERROR"}
+	}
+	m.buckets = append(m.buckets, b...)
+	return nil
+}
+
+// TestStatsDeadlockRetriedThenSucceeded 死锁专属重试（#37 P3）：40P01 前两次
+// 失败第三次成功 → Upsert 恰好调用 3 次（首试 + 重试 2 次）、计数落库无回灌
+//（r.counters 空）——瞬时死锁被重试消化，不再走回灌延迟到下次 flush。
+func TestStatsDeadlockRetriedThenSucceeded(t *testing.T) {
+	ss := &deadlockStatStore{failN: 2}
+	r := New(UsageConfig{BatchSize: 10, Workers: 1}, &memLogStore{}, ss, nil)
+	now := time.Now().Truncate(time.Hour)
+	for i := 0; i < 2; i++ {
+		r.Aggregate(&domain.UsageLog{RequestID: "x", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CreatedAt: now})
+	}
+	r.flushStats(context.Background())
+
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	require.Equal(t, 3, ss.calls, "首试 + 死锁重试 2 次")
+	require.Len(t, ss.buckets, 1, "重试成功后计数落库")
+	require.Equal(t, int64(2), ss.buckets[0].RequestCount, "聚合值经重试完整不丢")
+	require.Empty(t, r.counters, "重试成功 → 无回灌")
+}
+
+// TestStatsDeadlockExhaustedRefills 死锁重试耗尽（#37 P3）：40P01 三次全失败
+// → 重试 2 次后仍失败 → 走现状回灌（bucket 回内存 counters，下次 flush 再试，
+// 不丢）。
+func TestStatsDeadlockExhaustedRefills(t *testing.T) {
+	ss := &deadlockStatStore{failN: 3}
+	r := New(UsageConfig{BatchSize: 10, Workers: 1}, &memLogStore{}, ss, nil)
+	now := time.Now().Truncate(time.Hour)
+	r.Aggregate(&domain.UsageLog{RequestID: "x", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CreatedAt: now})
+	r.flushStats(context.Background())
+
+	ss.mu.Lock()
+	require.Equal(t, 3, ss.calls, "首试 + 重试 2 次全部 40P01")
+	require.Empty(t, ss.buckets, "无成功落库")
+	ss.mu.Unlock()
+	require.Len(t, r.counters, 1, "重试耗尽 → 回灌（不丢，下次 flush 再试）")
+}
+
+// TestStatsDeadlockNoRetryForGenericError 非 40P01 错误语义不变（#37 P3）：
+// 普通错误（db down）不重试——Upsert 恰好调用 1 次，直接回灌。
+func TestStatsDeadlockNoRetryForGenericError(t *testing.T) {
+	ss := &deadlockStatStore{failN: 1, errCode: "generic"}
+	r := New(UsageConfig{BatchSize: 10, Workers: 1}, &memLogStore{}, ss, nil)
+	now := time.Now().Truncate(time.Hour)
+	r.Aggregate(&domain.UsageLog{RequestID: "x", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CreatedAt: now})
+	r.flushStats(context.Background())
+
+	ss.mu.Lock()
+	require.Equal(t, 1, ss.calls, "非死锁错误不重试")
+	ss.mu.Unlock()
+	require.Len(t, r.counters, 1, "直接回灌")
+}
+
+// TestStatsDeadlockNoRetryWhenCtxCancelled ctx 预算纪律（#37 P3）：首调失败
+// 后预算到期（cancel 触发）→ 不重试（停机预算不得被重试吃掉）→ 走现状回灌。
+func TestStatsDeadlockNoRetryWhenCtxCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ss := &deadlockStatStore{failN: 1, cancel: cancel}
+	r := New(UsageConfig{BatchSize: 10, Workers: 1}, &memLogStore{}, ss, nil)
+	now := time.Now().Truncate(time.Hour)
+	r.Aggregate(&domain.UsageLog{RequestID: "x", GroupID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 10, CreatedAt: now})
+	r.flushStats(ctx)
+
+	ss.mu.Lock()
+	require.Equal(t, 1, ss.calls, "预算到期不重试")
+	ss.mu.Unlock()
+	require.Len(t, r.counters, 1, "回灌不丢")
 }
 
 // TestAggregateSkipsLogChannel Aggregate 只聚合统计（含 cost 进 StatBucket），
