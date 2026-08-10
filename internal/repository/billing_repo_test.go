@@ -275,7 +275,7 @@ func TestPGDeductLargeBatchSuccess(t *testing.T) {
 }
 
 // TestPGDeductLargeBatchRollback 分片跨片回滚：毒丸行（非法 format 枚举）置于
-// 第 7 片（index 3500，前 6 片已插入）→ 任一失败整体回滚——余额/临时额度/日志
+// 第 8 片（index 3500，前 7 片已插入）→ 任一失败整体回滚——余额/临时额度/日志
 // 全部不变（分片不改变"全成或全败"事务语义）。
 func TestPGDeductLargeBatchRollback(t *testing.T) {
 	repos := newPGRepos(t)
@@ -287,7 +287,7 @@ func TestPGDeductLargeBatchRollback(t *testing.T) {
 	logs := make([]*domain.UsageLog, 0, 4000)
 	for i := 0; i < 4000; i++ {
 		l := fullLogFor(u.ID, fmt.Sprintf("bigr-%d", i))
-		if i == 3500 { // 第 7 片（3500..3999）内的毒丸行：前 6 片已插入后本片失败
+		if i == 3500 { // 第 8 片（3500..3999）内的毒丸行：前 7 片已插入后本片失败
 			l.Format = domain.RequestFormat("bogus") // 非法枚举 → 插入报错
 		}
 		logs = append(logs, l)

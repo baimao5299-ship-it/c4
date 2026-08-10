@@ -207,7 +207,7 @@ func TestGateBudgetSplitByN(t *testing.T) {
 // N=1 单实例等价回归：无复核能力时 budget = 剩余额（精确），消耗到快照剩余即
 // 429，与现状单实例语义同点拒绝。注意（评审 I-1）：此"同点"仅在无复核能力或
 // 快照值恰好等于 DB 时成立；生产 N=1（真 reclaimer）见
-// TestGateN1ReclaimerLagOverrun——429 点由 DB quota_used 决定。
+// TestGateN1ReclaimerLagNoOverrun——429 点由 DB quota_used 决定。
 func TestGateN1EquivalentToSingleInstance(t *testing.T) {
 	g := newConcurrencyGate(nil)
 	meta := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: 100, QuotaUsed: 10}
