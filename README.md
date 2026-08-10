@@ -32,3 +32,32 @@ scripts/build.sh   # pnpm 构建前端 → 产物拷入 cmd/server/dist → go b
 - `cmd/server/embed.go` 以 `//go:embed all:dist` 嵌入 `cmd/server/dist`，该目录仅
   `.gitkeep` 占位入库（未构建前端时 go build 不报错，`/` 返回 404 但不影响 API）。
 - `scripts/build.sh` 负责把 `web/dist` 同步到 `cmd/server/dist`。
+
+## 测试
+
+### 单元测试（无外部依赖）
+
+```bash
+go build ./... && go vet ./...
+go test ./...            # 跳过真实 PG 用例
+golangci-lint run ./...
+```
+
+### 真实 PostgreSQL 集成测试（internal/repository 等）
+
+PG 测试共享 `localhost:15432/gpm_test`（经 `TEST_DATABASE_URL` 注入），每个测试
+开头执行 `DROP SCHEMA public CASCADE` 重建 schema。**该库是所有 worktree / 会话
+共享的**——跨 worktree（或并行终端）同时跑 repository 测试会随机互踩：A 会话的
+测试清掉 B 会话的表，B 报"表不存在 / id 缺失 / 数值不符"等与本次改动无关的误报
+（失败测试隔离重跑全部通过即证）。约定：
+
+- **串行跑 repository 测试**：同一时刻只允许一个会话执行 PG 测试；
+- 或为并行 worktree 配置独立测试库（`TEST_DATABASE_URL` 指向独立库，如
+  `postgres://.../gpm_test_wt_i21`）。
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15432/gpm_test go test ./internal/repository/ -count=1
+```
+
+判定互踩误报：失败测试不触碰本次改动代码 + 隔离重跑通过 → 先确认当前无其他
+会话在跑 PG 测试，再重跑验证。

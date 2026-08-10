@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -260,6 +261,25 @@ func TestRecordConcurrentNeverBlocks(t *testing.T) {
 	require.Equal(t, g*per, r.Pending())
 }
 
+// TestRecordAfterCloseWarnsOnce Close 后 Record（防御性缺口，评审 I-4）：
+// closed 标记生效——Warn 恰好一次（不刷屏）、明细不丢（仍聚合入 pending）、
+// 保持非阻塞。worker 管理器顺序（先停 HTTP 再 Close）下正常停机不触发。
+func TestRecordAfterCloseWarnsOnce(t *testing.T) {
+	logger, out := usageTestLogger(t)
+	r := New(testCfg(), &memLogStore{}, &memStatStore{}, logger)
+	require.NoError(t, r.Close(context.Background()))
+
+	r.Record(&domain.UsageLog{RequestID: "late", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 1, CreatedAt: time.Now()})
+	r.Record(&domain.UsageLog{RequestID: "late2", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, TotalTokens: 1, CreatedAt: time.Now()})
+
+	require.Equal(t, 2, r.Pending(), "Close 后 Record 不丢（驻留内存由 Warn 观测）")
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Equal(t, 1, countOccurrences(b, "usage record after close"), "Warn 恰好一次")
+	require.Contains(t, string(b), `"request_id":"late"`, "Warn 含首次 Record 的 request_id")
+}
+
 // countLogStore 统计 InsertBatch 调用次数与落库条数（批量化断言）。
 type countLogStore struct {
 	mu    sync.Mutex
@@ -349,6 +369,70 @@ func TestLogRefillOnFailure(t *testing.T) {
 	require.Len(t, ls.logs, 250)
 	ls.mu.Unlock()
 	require.Zero(t, r.Pending())
+}
+
+// failAlwaysLogStore 恒失败 InsertBatch（毒丸行止损路径：模拟单行永久失败——
+// 如 created_at 无分区、约束冲突）。
+type failAlwaysLogStore struct{}
+
+func (m *failAlwaysLogStore) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
+	return errors.New("poison row")
+}
+
+// TestLogPoisonChunkDroppedAfterMaxFailures 毒丸行止损（评审 I-3）：单行永久
+// 失败时，回灌重试只进行 maxLogFlushFailures 次——连续失败 ≥N → Error 日志
+//（含首行 request_id）+ 显式丢弃该 chunk，不再无限回灌卡死该 shard（旧实现
+// 无失败计数：workers=1 时整管道吞吐归零，仅 Warn）。
+func TestLogPoisonChunkDroppedAfterMaxFailures(t *testing.T) {
+	logger, out := usageTestLogger(t)
+	r := New(UsageConfig{BatchSize: 100, Workers: 1}, &failAlwaysLogStore{}, &memStatStore{}, logger)
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		r.Record(&domain.UsageLog{RequestID: fmt.Sprintf("req-%d", i), Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
+	}
+	old := maxLogFlushFailures
+	maxLogFlushFailures = 3
+	defer func() { maxLogFlushFailures = old }()
+
+	// 前 N-1 次失败：仍回灌不丢（连续失败计数未到阈值）
+	for i := 0; i < 2; i++ {
+		require.Zero(t, r.flushLogs(context.Background()))
+		require.Equal(t, 3, r.Pending(), "失败回灌不丢")
+	}
+	// 第 N 次失败：毒丸 chunk 显式丢弃（Error + 首行 request_id），无剩余回灌
+	require.Zero(t, r.flushLogs(context.Background()))
+	require.Zero(t, r.Pending(), "毒丸 chunk 隔离丢弃，不再回灌")
+
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "usage batch insert failed, dropping poison chunk")
+	require.Contains(t, string(b), `"level":"error"`, "止损升级 Error 级")
+	require.Contains(t, string(b), `"request_id":"req-0"`, "Error 日志含首行 request_id")
+	require.Contains(t, string(b), `"dropped_logs":3`)
+}
+
+// TestLogPoisonStopLossResetsOnSuccess 毒丸止损计数复位：失败后成功推进 → 连续
+// 失败计数清零（"连续失败 N 次"语义——间隔成功不累计，DB 短时故障不误丢）。
+func TestLogPoisonStopLossResetsOnSuccess(t *testing.T) {
+	ls := &failOnceLogStore{}
+	ls.fail.Store(true)
+	r := New(UsageConfig{BatchSize: 10, Workers: 1}, ls, &memStatStore{}, nil)
+	old := maxLogFlushFailures
+	maxLogFlushFailures = 2
+	defer func() { maxLogFlushFailures = old }()
+
+	now := time.Now()
+	r.Record(&domain.UsageLog{RequestID: "a", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
+	// 失败 1 次 → 回灌；随后成功 → 计数复位；再失败 1 次 → 未到阈值 2，仍回灌
+	require.Zero(t, r.flushLogs(context.Background()))
+	require.Equal(t, 1, r.Pending())
+	require.Equal(t, int64(1), r.flushLogs(context.Background()))
+	require.Zero(t, r.Pending())
+	ls.fail.Store(true)
+	r.Record(&domain.UsageLog{RequestID: "b", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
+	require.Zero(t, r.flushLogs(context.Background()))
+	require.Equal(t, 1, r.Pending(), "复位后第 1 次失败未到阈值，回灌不丢")
 }
 
 // blockingLogStore 阻塞 InsertBatch（模拟慢 DB）：首调通知 started，release

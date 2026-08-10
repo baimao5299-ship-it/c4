@@ -38,7 +38,7 @@ type RetentionConfig struct {
 // 万一插入恰好失败 → 走 logWriterLoop 的 InsertBatch 失败路径（Warn + 丢弃，
 // 与普通批量落库失败同语义，不自愈不重试），可接受。
 //
-// 与 Recorder 解耦（不依赖 rec.logCh）：DROP 幂等，无排空需求，Close 直接
+// 与 Recorder 解耦（不依赖 Recorder 明细管道）：DROP 幂等，无排空需求，Close 直接
 // 返回 nil。
 type RetentionWorker struct {
 	cfg     RetentionConfig
