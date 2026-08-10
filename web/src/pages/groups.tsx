@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X } from 'lucide-react'
@@ -50,6 +50,51 @@ function VisibilityBadge({ visibility }: { visibility?: GroupVisibility }) {
       <span className={cn('size-1.5 shrink-0 rounded-full', isPublic ? 'bg-emerald-500' : 'bg-muted-foreground/60')} />
       {t(isPublic ? 'groups.visibilityPublic' : 'groups.visibilityPrivate')}
     </Badge>
+  )
+}
+
+// 授予弹窗用户行：勾选 + 用户标识 + 专属倍率三态输入（public 默认列表与搜索列表共用）。
+function AssignUserRow({ uid, label, checked, row, onToggle, onMult, onClear, t }: {
+  uid: number
+  label: string
+  checked: boolean
+  row: AssignRowMult | undefined
+  onToggle: (uid: number, on: boolean) => void
+  onMult: (uid: number, v: string) => void
+  onClear: (uid: number) => void
+  t: TFunction
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
+      <Checkbox checked={checked} onCheckedChange={c => onToggle(uid, c === true)} />
+      <span className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</span>
+      {checked && (
+        <>
+          <Input
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            value={row?.mult ?? ''}
+            placeholder={t('groups.assignMultiplierPlaceholder')}
+            onChange={e => onMult(uid, e.target.value)}
+            className="h-7 w-24 text-xs"
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={t('groups.assignMultiplierClear')}
+            disabled={!row?.mult && !row?.cleared}
+            onClick={() => onClear(uid)}
+          >
+            <X />
+          </Button>
+          {row?.cleared && (
+            <span className="w-24 text-xs text-muted-foreground">{t('groups.assignMultiplierUnset')}</span>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -159,13 +204,17 @@ export default function Groups() {
   const [assignPrefillFailed, setAssignPrefillFailed] = useState(false)
   // 批量倍率输入值（勾选 2+ 用户时显示批量行）
   const [assignBatchMult, setAssignBatchMult] = useState('')
+  // public 组预填充的「已配置专属倍率」用户（multipliers 非 null 键）：默认列表数据源
+  const [assignPrefillUids, setAssignPrefillUids] = useState<number[]>([])
   // 预填充请求代际：弹窗关闭/换组后丢弃过期响应，防止旧组数据串入新组
   const assignFetchId = useRef(0)
 
   const openAssign = (g: Group) => {
+    const isPublic = g.Visibility === 'public'
     setAssignTarget(g)
     setAssignChecked([])
     setAssignMult({})
+    setAssignPrefillUids([])
     setAssignQuery('')
     setAssignOffset(0)
     setAssignPrefilled(false)
@@ -173,6 +222,8 @@ export default function Groups() {
     setAssignBatchMult('')
     assign.reset() // 清掉上次提交失败的就地错误，换组重开不残留
     // 预填充：并行读当前授予 → 勾选态 = 已授予 user_ids，倍率输入框初值 = multipliers 正常值。
+    // public 分支：公开组天然所有用户可用，无「授予」概念 → 初始勾选 = multipliers 非 null
+    // 键（已配置专属倍率的用户），不用 user_ids（可能含清除残留行，不代表配置态）。
     // 读端点不可用（后端未实现 404/网络）→ 优雅降级：空预填充 + toast，弹窗正常打开。
     const gid = g.ID!
     const fetchId = ++assignFetchId.current
@@ -180,13 +231,24 @@ export default function Groups() {
       .then(resp => {
         if (assignFetchId.current !== fetchId) return
         const muls: Record<number, AssignRowMult> = {}
+        const prefilledUids: number[] = []
         for (const [uid, m] of Object.entries(resp.multipliers ?? {})) {
           const id = Number(uid)
-          // 仅回显已授予用户的数值倍率；null = 未设置 → 留空（省略键沿用当前值，语义不变）
-          if (typeof m === 'number' && resp.user_ids.includes(id)) muls[id] = { mult: String(m), cleared: false }
+          if (isPublic) {
+            // public：只取非 null 键（null = 已清除 → 不勾选不显示）
+            if (typeof m === 'number') {
+              prefilledUids.push(id)
+              muls[id] = { mult: String(m), cleared: false }
+            }
+          } else if (typeof m === 'number' && resp.user_ids.includes(id)) {
+            // private：仅回显已授予用户的数值倍率；null = 未设置 → 留空（省略键沿用当前值，语义不变）
+            muls[id] = { mult: String(m), cleared: false }
+          }
         }
-        setAssignChecked(resp.user_ids)
+        prefilledUids.sort((a, b) => a - b)
+        setAssignChecked(isPublic ? prefilledUids : resp.user_ids)
         setAssignMult(muls)
+        setAssignPrefillUids(prefilledUids)
         setAssignPrefilled(true)
       })
       .catch(() => {
@@ -197,10 +259,30 @@ export default function Groups() {
   }
   const toggleAssignUser = (id: number, on: boolean) =>
     setAssignChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
+  // public 组（公开组天然所有用户可用，弹窗 = 专属倍率管理）：
+  //   空搜索时默认列表 = 预填充已配置用户 ∪ 当前勾选（搜索新增的也保留），不拉全量用户列表；
+  //   只有搜索才显示用户列表（勾选 = 新增专属倍率配置）。
+  const assignIsPublic = assignTarget?.Visibility === 'public'
+  const assignDefaultIds = assignIsPublic
+    ? Array.from(new Set([...assignPrefillUids, ...assignChecked])).sort((a, b) => a - b)
+    : []
+  // public 默认列表的邮箱尽力解析：预填充响应只有 uid（读端点不返回邮箱），
+  // 用全量用户查询按 id 匹配（accounts 弹窗 listGroups(100) 同款先例）；未命中回退 #uid。
+  const assignPublicUsers = useQuery({
+    queryKey: ['users', 'assign-public'],
+    queryFn: () => api.listUsers({ limit: 100 }),
+    enabled: assignIsPublic,
+  })
+  const assignPublicEmail = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const u of assignPublicUsers.data?.rows ?? []) m.set(u.ID!, u.Email ?? '')
+    return m
+  }, [assignPublicUsers.data])
   const assignUsers = useQuery({
     queryKey: ['users', 'assign', { limit: assignLimit, offset: assignOffset, email: assignQuery }],
     queryFn: () => api.listUsers({ limit: assignLimit, offset: assignOffset, email: assignQuery || undefined }),
-    enabled: !!assignTarget,
+    // public 空搜索时不显示用户列表，跳过无谓的全量拉取（输入搜索词后自动启用）
+    enabled: !!assignTarget && !(assignIsPublic && assignQuery === ''),
   })
   const assignRows = assignUsers.data?.rows ?? []
   const assignTotal = assignUsers.data?.total ?? 0
@@ -227,10 +309,13 @@ export default function Groups() {
     },
     onSuccess: (resp) => {
       setAssignTarget(null)
-      // 空勾选提交 = 清空（契约语义）：toast 用清空文案，避免「已授予 0 个用户」歧义
+      // 空勾选提交 = 清空（契约语义）：toast 用清空文案，避免「已授予 0 个用户」歧义。
+      // public 组文案用「配置专属倍率」语义，private 组用「授予」语义。
       toast.add({
-        title: t('groups.assignSuccess'),
-        description: resp.user_ids.length > 0 ? t('groups.assignSuccessDesc', { count: resp.user_ids.length }) : t('groups.assignClearedDesc'),
+        title: t(assignIsPublic ? 'groups.assignPublicSuccess' : 'groups.assignSuccess'),
+        description: resp.user_ids.length > 0
+          ? t(assignIsPublic ? 'groups.assignConfiguredCount' : 'groups.assignSuccessDesc', { count: resp.user_ids.length })
+          : t(assignIsPublic ? 'groups.assignConfiguredClearedDesc' : 'groups.assignClearedDesc'),
         type: 'success',
       })
     },
@@ -560,15 +645,19 @@ export default function Groups() {
         </DialogContent>
       </Dialog>
 
-      {/* —— 授予用户：替换语义（勾选 = 授予，未勾选 = 撤销）+ 专属倍率三态 —— */}
+      {/* —— 授予用户：替换语义（勾选 = 授予，未勾选 = 撤销）+ 专属倍率三态；
+             public 组 = 专属倍率管理（默认列表只显示已配置用户，新增只能走搜索） —— */}
       <Dialog open={!!assignTarget} onOpenChange={o => { if (!o && !assign.isPending) setAssignTarget(null) }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t('groups.assignTitle', { name: assignTarget?.Name })}</DialogTitle>
-            <DialogDescription>{t('groups.assignDesc')}</DialogDescription>
+            {/* public：公开组无「授予」概念，弹窗 = 专属倍率管理；private：授予权限语义 */}
+            <DialogTitle>{t(assignIsPublic ? 'groups.assignPublicTitle' : 'groups.assignTitle', { name: assignTarget?.Name })}</DialogTitle>
+            <DialogDescription>{t(assignIsPublic ? 'groups.assignPublicDesc' : 'groups.assignDesc')}</DialogDescription>
             <p className="text-xs text-muted-foreground">{t('groups.assignMultiplierHint')}</p>
             {assignPrefilled && assignChecked.length > 0 && (
-              <p className="text-xs text-muted-foreground">{t('groups.assignCount', { count: assignChecked.length })}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(assignIsPublic ? 'groups.assignConfiguredCount' : 'groups.assignCount', { count: assignChecked.length })}
+              </p>
             )}
             {/* 私有组：勾选 = 授予访问权（user_ids 全量替换天然含授权语义） */}
             {assignTarget?.Visibility === 'private' && (
@@ -606,7 +695,29 @@ export default function Groups() {
                 </Button>
               </div>
             )}
-            {assignUsers.isLoading ? (
+            {assignIsPublic && assignQuery === '' ? (
+              /* public 默认列表：只显示已配置专属倍率的用户（预填充 ∪ 搜索新增勾选）；
+                 取消勾选 = 移除配置（行保留显示未勾选态，提交后消失）；新增只能走搜索 */
+              <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                {assignDefaultIds.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">{t('groups.assignPublicSearchHint')}</p>
+                ) : (
+                  assignDefaultIds.map(uid => (
+                    <AssignUserRow
+                      key={uid}
+                      uid={uid}
+                      label={assignPublicEmail.get(uid) ?? `#${uid}`}
+                      checked={assignChecked.includes(uid)}
+                      row={assignMult[uid]}
+                      onToggle={toggleAssignUser}
+                      onMult={setRowMult}
+                      onClear={clearRowMult}
+                      t={t}
+                    />
+                  ))
+                )}
+              </div>
+            ) : assignUsers.isLoading ? (
               <div className="space-y-1.5">
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
               </div>
@@ -617,42 +728,19 @@ export default function Groups() {
             ) : (
               <>
                 <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-                  {assignRows.map(u => {
-                    const checked = assignChecked.includes(u.ID!)
-                    const row = assignMult[u.ID!]
-                    return (
-                      <div key={u.ID} className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
-                        <Checkbox checked={checked} onCheckedChange={c => toggleAssignUser(u.ID!, c === true)} />
-                        <span className="min-w-0 flex-1 truncate text-sm" title={u.Email}>{u.Email}</span>
-                        {checked && (
-                          <>
-                            <Input
-                              type="number"
-                              min={0}
-                              max={10}
-                              step={0.1}
-                              value={row?.mult ?? ''}
-                              placeholder={t('groups.assignMultiplierPlaceholder')}
-                              onChange={e => setRowMult(u.ID!, e.target.value)}
-                              className="h-7 w-24 text-xs"
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              title={t('groups.assignMultiplierClear')}
-                              disabled={!row?.mult && !row?.cleared}
-                              onClick={() => clearRowMult(u.ID!)}
-                            >
-                              <X />
-                            </Button>
-                            {row?.cleared && (
-                              <span className="w-24 text-xs text-muted-foreground">{t('groups.assignMultiplierUnset')}</span>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {assignRows.map(u => (
+                    <AssignUserRow
+                      key={u.ID}
+                      uid={u.ID!}
+                      label={u.Email ?? ''}
+                      checked={assignChecked.includes(u.ID!)}
+                      row={assignMult[u.ID!]}
+                      onToggle={toggleAssignUser}
+                      onMult={setRowMult}
+                      onClear={clearRowMult}
+                      t={t}
+                    />
+                  ))}
                 </div>
                 <Pagination total={assignTotal} limit={assignLimit} offset={assignOffset} onOffsetChange={setAssignOffset} onLimitChange={l => { setAssignLimit(l); setAssignOffset(0) }} />
               </>
