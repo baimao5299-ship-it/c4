@@ -191,6 +191,7 @@ func (r *KeyRepo) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, erro
 		rows, err := r.client.Key.Query().
 			Where(key.IDIn(chunk...)).
 			WithUser().
+			WithGroup().
 			All(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("load keys (chunk %d/%d, %d ids): %w", i+1, len(chunks), len(chunk), err)
@@ -209,6 +210,11 @@ func (r *KeyRepo) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, erro
 			if row.Edges.User != nil {
 				meta.UserStatus = domain.UserStatus(row.Edges.User.Status)
 				meta.UserMaxConc = row.Edges.User.MaxConcurrency
+			}
+			// 组级 protocol_convert 快照（W5 热路径分支数据源；组软删窗口内
+			// 行仍在 → 值照旧，快照一致性由 Reload 收敛）。
+			if row.Edges.Group != nil {
+				meta.ProtocolConvert = domain.ProtocolConvert(row.Edges.Group.ProtocolConvert)
 			}
 			out[row.KeyHash] = meta
 		}

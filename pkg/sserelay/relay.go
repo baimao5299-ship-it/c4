@@ -22,14 +22,20 @@ type Event struct {
 	Data  []byte // 合并后的 data: payload（多行以 \n 连接）
 }
 
-// Observer 在帧原样写出后调用；不得阻塞 relay，不得修改已写出的字节。
-// 回调参数 Event 的各切片仅在回调内有效（见 Event 注释），不得跨帧保留。
+// Observer 在帧（原样或经 Mapper 变换后）写出后调用；不得阻塞 relay，不得
+// 修改已写出的字节。回调参数 Event 的各切片仅在回调内有效（见 Event 注释），
+// 不得跨帧保留。Mapper 存在时 Observer 始终见原始帧（转换不使用量提取失真）。
 type Observer func(Event)
 
 type Config struct {
 	FlushBytes    int           // 缓冲达到该值立即 flush；0 时默认 4096
 	FlushInterval time.Duration // 从 relay 启动起以固定间隔触发 timer flush（仅 pending > 0 时实际 flush）；0 时默认 1ms
 	Observer      Observer
+	// Mapper 可选的逐帧转换器（协议转换 W5）：nil = 原样转发（热路径零开销，
+	// 单帧一次 nil 判定）。非 nil 时每帧先经 Mapper 变换再写出；Observer 仍见
+	// 原始帧（用量提取不因转换失真）。drop=true → 帧丢弃不写出。映射帧字节
+	// 生命周期仅限本帧：Mapper 返回后 relay 立即写出，调用方可复用缓冲。
+	Mapper func(Event) (frame []byte, drop bool)
 }
 
 type relay struct {
@@ -126,8 +132,19 @@ func (r *relay) run() error {
 		event []byte       // 当前帧 event 字段
 	)
 	flushFrame := func() error {
-		if err := r.write(frame.Bytes()); err != nil {
-			return err
+		out := frame.Bytes()
+		if r.cfg.Mapper != nil {
+			mapped, drop := r.cfg.Mapper(Event{Raw: frame.Bytes(), Event: event, Data: data})
+			if drop {
+				out = nil
+			} else {
+				out = mapped
+			}
+		}
+		if out != nil {
+			if err := r.write(out); err != nil {
+				return err
+			}
 		}
 		if r.cfg.Observer != nil {
 			r.cfg.Observer(Event{Raw: frame.Bytes(), Event: event, Data: data})

@@ -368,6 +368,9 @@ type KeyMeta struct {
 	HasQuota       bool
 	Quota          int64
 	QuotaUsed      int64 // 快照值（reload 时从 DB 读）；在途扣减走内存计数
+	// ProtocolConvert 组级协议转换快照值（W5）：off = 不转换（热路径分支零
+	// 开销）；其余 = 客户端协议 → 模板协议（补差语义，转换器 internal/protoconv）。
+	ProtocolConvert ProtocolConvert
 }
 
 // UsageLog 用量日志：user_id/key_id 为鉴权归属（context 传递，0 = 无）。
