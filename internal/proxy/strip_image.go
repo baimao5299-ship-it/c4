@@ -29,6 +29,16 @@ import (
 // tool_choice 悬挂：对象形 tool_choice 的 type/name/namespace 指向已剥工具 →
 // 删除 tool_choice 字段。Responses API 缺省 tool_choice = "auto"，移除 = 最简
 // 正确语义（保留 "none"/"required"/"auto" 字符串形恒非悬挂）。
+//
+// 全剥语义（评审 I-1 实证）：tools 全部被剥离 → 删除 tools 字段（缺省 =
+// 无工具），不保留空数组 "tools":[]——删字段与缺省语义一致，是最稳形态
+// （避免上游对空数组的兼容性不确定性；SDK 路径对 nil 切片同样省略该键）。
+//
+// 已知边角（评审 I-2 裁决：接受不修，仅标注）：悬挂判定按标识集合匹配——
+// 若保留的非图像工具恰与已剥工具同名（如 function 工具名恰为 "image_gen"），
+// 指向它的 tool_choice 会被误判悬挂而移除。实测 codex 客户端无此形态（工具
+// 名称空间由 namespace 隔离），误判影响 = tool_choice 退回 auto（仍可调用
+// 全部保留工具），故接受。
 func stripImageTools(body []byte) []byte {
 	if !bytes.Contains(body, []byte("image")) {
 		return body // 预筛：无命中零解析零分配直转
@@ -57,11 +67,16 @@ func stripImageTools(body []byte) []byte {
 	if len(out) == len(tools) {
 		return body // 无图像工具（"image" 命中在 input/描述等位置）：零改动原样直转
 	}
-	newTools, err := json.Marshal(out)
-	if err != nil {
-		return body
+	if len(out) == 0 {
+		// 全剥：删除 tools 字段（缺省 = 无工具，最稳语义；见函数注释 I-1）
+		delete(m, "tools")
+	} else {
+		newTools, err := json.Marshal(out)
+		if err != nil {
+			return body
+		}
+		m["tools"] = newTools
 	}
-	m["tools"] = newTools
 	if tc, ok := m["tool_choice"]; ok && toolChoiceDangles(tc, stripped) {
 		delete(m, "tool_choice") // 悬挂 → 移除（缺省 = "auto"）
 	}
