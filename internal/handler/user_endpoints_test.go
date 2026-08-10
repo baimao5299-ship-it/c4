@@ -33,7 +33,7 @@ func (f fakeUserStatus) UserStatus(userID int64) (domain.UserStatus, bool) {
 func newTestUserRouter(t *testing.T) (func(method, path, body, token string) *httptest.ResponseRecorder, *fakeStore, *auth.Issuer, *service.Service) {
 	t.Helper()
 	store := newFakeStore()
-	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, &fakeKeys{}, nil)
+	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
 	iss := auth.NewIssuer("test-secret")
 	router := userapi.Router(svc, iss, fakeUserStatus{store: store})
 	do := func(method, path, body, token string) *httptest.ResponseRecorder {

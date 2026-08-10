@@ -13,6 +13,7 @@ import (
 
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/scheduler"
@@ -198,6 +199,13 @@ type RuleReloader interface {
 	Reload(ctx context.Context) error
 }
 
+// Publisher 多实例 NOTIFY 发布面（#14 T2）：实现 = *notify.Publisher（Publish
+// 在 DB 写成功后调用，与 inv.* 调用点并排）；接口化供测试注入 fake（与
+// Invalidator 同模式）。nil = 单实例/未装配（T2 过渡），publish no-op。
+type Publisher interface {
+	Publish(ctx context.Context, ch notify.Change) error
+}
+
 // RuntimeProvider 由 scheduler 实现，供账号运行时视图。
 type RuntimeProvider interface {
 	Runtime(accountID int64) (scheduler.RuntimeInfo, bool)
@@ -213,6 +221,7 @@ type Service struct {
 	store      Store
 	sched      RuntimeProvider
 	inv        Invalidator // 管理面变更去抖失效（O2 接线矩阵；nil = 不失效）
+	pub        Publisher   // 多实例 NOTIFY 发布器（#14 T2；nil = 单实例/未装配，publish no-op）
 	ruleReload RuleReloader
 	keys       KeyRegistrar
 	// settings 设置全量内存快照（默认值 + DB 覆盖）：公开读路径（注册等）
@@ -229,11 +238,22 @@ type Service struct {
 	log          *logx.Logger
 }
 
-func New(store Store, sched RuntimeProvider, invalidate Invalidator, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
-	s := &Service{store: store, sched: sched, inv: invalidate, ruleReload: ruleReload, keys: keys, log: log}
+func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publisher, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
+	s := &Service{store: store, sched: sched, inv: invalidate, pub: pub, ruleReload: ruleReload, keys: keys, log: log}
 	s.reloadSettings(context.Background())
 	s.reloadPricing(context.Background())
 	return s
+}
+
+// publish 发布一条 NOTIFY 变更（#14 T2）：与现有 inv.* 调用点并排，DB 写成功
+// 后调用。失败忽略——NOTIFY 是事件提示，丢一条由 60s 周期兜底收敛（Publisher
+// 内部已 Warn），不回滚业务。pub 为 nil（T2 过渡：main 未装配）→ no-op；
+// T3 main 装配后必非 nil。
+func (s *Service) publish(ctx context.Context, ch notify.Change) {
+	if s.pub == nil {
+		return
+	}
+	_ = s.pub.Publish(ctx, ch)
 }
 
 // validateBaseURL 校验 base_url：可解析、有 scheme/host，且为裸根（不含尾

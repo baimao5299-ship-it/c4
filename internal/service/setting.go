@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/pkg/logx"
 )
 
@@ -48,25 +49,34 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 		return nil, err
 	}
 	s.reloadSettings(ctx)
+	s.publish(ctx, notify.Change{Settings: true}) // 其余实例 settings 快照重载（#14 多实例）
 	return set, nil
 }
 
-// reloadSettings 全量重载设置快照（New 初始化 + UpdateSetting 后调用）。
-// 失败 fail-safe（评审 M-1）：仅告警，保留旧快照/空快照继续——读快照缺失
-// 按零值处理（与无配置现状行为一致），不阻断服务启动。
-func (s *Service) reloadSettings(ctx context.Context) {
+// ReloadSettings settings 快照全量重载（invalidate.SettingsReloader 接口实现，
+// T3 main 装配注入 invalidate.Config.Settings；供 NOTIFY settings 分支触发全
+// 实例重载）。与 UpdateSetting 内部路径同实现（reloadSettings 复用）；失败
+// 返回错误由调用方（去抖器 reloadAll）Warn。
+func (s *Service) ReloadSettings(ctx context.Context) error {
 	rows, err := s.store.GetAllSettings(ctx)
 	if err != nil {
-		if s.log != nil {
-			s.log.Warn("settings snapshot reload failed", logx.Error(err))
-		}
-		return
+		return err
 	}
 	m := make(map[string]*domain.Setting, len(rows))
 	for _, st := range rows {
 		m[st.Key] = st
 	}
 	s.settings.Store(&m)
+	return nil
+}
+
+// reloadSettings 全量重载设置快照（New 初始化 + UpdateSetting 后调用）。
+// 失败 fail-safe（评审 M-1）：仅告警，保留旧快照/空快照继续——读快照缺失
+// 按零值处理（与无配置现状行为一致），不阻断服务启动。
+func (s *Service) reloadSettings(ctx context.Context) {
+	if err := s.ReloadSettings(ctx); err != nil && s.log != nil {
+		s.log.Warn("settings snapshot reload failed", logx.Error(err))
+	}
 }
 
 // settingValue 快照查值：缺失（含快照未初始化）返回空串。
@@ -89,4 +99,16 @@ func (s *Service) settingInt(key string) int64 {
 		return 0
 	}
 	return v
+}
+
+// ClusterInstances 集群实例数 N（settings.cluster.instances，多实例预算分摊
+// 设计文档 §3.1）：所有实例从 DB settings 读同一 N（config 文件可漂移，DB 是
+// 唯一共识源）。快照缺失/非法 → 回退 1（单实例语义；DB 无行即注册表默认）。
+// 供 T3 gate/limiter 预算分配读取；N 变更经 settings NOTIFY 传播。
+func (s *Service) ClusterInstances() int {
+	n := s.settingInt("cluster.instances")
+	if n < 1 {
+		return 1
+	}
+	return int(n)
 }

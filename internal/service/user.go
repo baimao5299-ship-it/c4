@@ -9,6 +9,7 @@ import (
 
 	"go-proxy-mini/internal/auth"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/pkg/logx"
 )
@@ -67,6 +68,7 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 		}
 	}
 	s.inv.Users()
+	s.publish(ctx, notify.Change{Users: true})
 	if s.log != nil {
 		s.log.Info("user registered", logx.Int64("id", created.ID), logx.String("email", email))
 	}
@@ -137,6 +139,7 @@ func (s *Service) CreateUser(ctx context.Context, email, password string, role d
 		return nil, err
 	}
 	s.inv.Users()
+	s.publish(ctx, notify.Change{Users: true})
 	if s.log != nil {
 		s.log.Info("user created by admin", logx.Int64("id", created.ID), logx.String("email", email), logx.String("role", string(role)))
 	}
@@ -166,6 +169,7 @@ func (s *Service) UpdateUser(ctx context.Context, u *domain.User) (*domain.User,
 		return nil, mapRepoErr(err)
 	}
 	s.inv.Users()
+	s.publish(ctx, notify.Change{Users: true})
 	return updated, nil
 }
 
