@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { DateRangePicker } from '@/components/date-range-picker'
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -220,16 +220,18 @@ export default function Logs() {
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm"><SlidersHorizontal className="size-4" />{t('logs.columnSettings')}</Button>} />
           <DropdownMenuContent align="end" className="max-h-80 w-48 overflow-y-auto">
-            <DropdownMenuLabel>{t('logs.columnSettings')}</DropdownMenuLabel>
-            {HIDDENABLE_COLS.map(key => (
-              <DropdownMenuCheckboxItem
-                key={key}
-                checked={isColVisible(key)}
-                onCheckedChange={() => toggleCol(key)}
-              >
-                {t(`logs.table.${key}`)}
-              </DropdownMenuCheckboxItem>
-            ))}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{t('logs.columnSettings')}</DropdownMenuLabel>
+              {HIDDENABLE_COLS.map(key => (
+                <DropdownMenuCheckboxItem
+                  key={key}
+                  checked={isColVisible(key)}
+                  onCheckedChange={() => toggleCol(key)}
+                >
+                  {t(`logs.table.${key}`)}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
