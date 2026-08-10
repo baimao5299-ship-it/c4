@@ -335,7 +335,8 @@
       "aboveHit": "超档",
       "overdraft": "透支",
       "latency": "延迟",
-      "tokens": "Token"
+      "tokens": "Token",
+      "title": "共 {{total}} 条记录"
     },
     "tokens": {
       "read": "读",
@@ -351,7 +352,15 @@
       "next": "下一页"
     },
     "emptyTitle": "暂无日志",
-    "emptyDesc": "调整过滤条件后重试"
+    "emptyDesc": "调整过滤条件后重试",
+    "stats": {
+      "requests": "总请求数",
+      "errorRate": "失败率",
+      "errorRateHint": "{{errors}} 次失败",
+      "tokens": "总 Tokens",
+      "cost": "总费用"
+    },
+    "columnSettings": "列设置"
   },
   "list": {
     "search": "搜索名称",

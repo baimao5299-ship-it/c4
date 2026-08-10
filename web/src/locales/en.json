@@ -335,7 +335,8 @@
       "aboveHit": "Over limit",
       "overdraft": "Overdraft",
       "latency": "Latency",
-      "tokens": "Tokens"
+      "tokens": "Tokens",
+      "title": "{{total}} records"
     },
     "tokens": {
       "read": "R",
@@ -351,7 +352,15 @@
       "next": "Next"
     },
     "emptyTitle": "No logs",
-    "emptyDesc": "Adjust the filters and try again"
+    "emptyDesc": "Adjust the filters and try again",
+    "stats": {
+      "requests": "Total requests",
+      "errorRate": "Error rate",
+      "errorRateHint": "{{errors}} failures",
+      "tokens": "Total tokens",
+      "cost": "Total cost"
+    },
+    "columnSettings": "Columns"
   },
   "list": {
     "search": "Search name",

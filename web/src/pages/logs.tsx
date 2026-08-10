@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RotateCcw } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { DateRangePicker } from '@/components/date-range-picker'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -79,6 +80,19 @@ const LIMITS = [10, 20, 50, 100, 1000]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
 
+// 可隐藏列（时间/请求 ID 始终可见，参考 sub2api 使用明细的列设置模式）；
+// 隐藏选择持久化到 localStorage（logs-hidden-columns）。
+const HIDDEN_STORAGE_KEY = 'logs-hidden-columns'
+const HIDDENABLE_COLS = ['group', 'account', 'model', 'format', 'statusCode', 'errorType', 'cost', 'billingTier', 'billing', 'latency', 'tokens'] as const
+
+function loadHiddenCols(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_STORAGE_KEY)
+    if (raw) return new Set(JSON.parse(raw) as string[])
+  } catch { /* 损坏数据忽略 */ }
+  return new Set()
+}
+
 interface LogFilters {
   group_id: string
   account_id: string
@@ -135,6 +149,47 @@ export default function Logs() {
   const pages = Math.max(1, Math.ceil(total / limit))
   const page = total === 0 ? 1 : Math.floor(offset / limit) + 1
 
+  // —— 顶部统计卡（与列表同筛选，stats 端点按日聚合求和）——
+  const statsParams = useMemo(
+    () => ({
+      from: toRFC3339(filters.from),
+      to: toRFC3339(filters.to),
+      group_id: filters.group_id ? Number(filters.group_id) : undefined,
+      account_id: filters.account_id ? Number(filters.account_id) : undefined,
+      model: filters.model || undefined,
+      granularity: 'day' as const,
+    }),
+    [filters]
+  )
+  const { data: stats } = useQuery({
+    queryKey: ['logs-stats', statsParams],
+    queryFn: () => api.getStats(statsParams),
+  })
+  const agg = useMemo(() => {
+    const a = { requests: 0, errors: 0, tokens: 0, cost: 0 }
+    for (const b of stats ?? []) {
+      a.requests += b.RequestCount ?? 0
+      a.errors += b.ErrorCount ?? 0
+      a.tokens += b.TotalTokens ?? 0
+      a.cost += b.Cost ?? 0
+    }
+    return a
+  }, [stats])
+  const rate = agg.requests > 0 ? (agg.errors / agg.requests) * 100 : null
+
+  // —— 列可见性（localStorage 持久化）——
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(loadHiddenCols)
+  const toggleCol = (key: string) => {
+    setHiddenCols(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      try { localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify([...next])) } catch { /* 忽略 */ }
+      return next
+    })
+  }
+  const isColVisible = (key: string) => !hiddenCols.has(key)
+
   return (
     <div className="space-y-6">
       <div>
@@ -187,6 +242,44 @@ export default function Logs() {
         </div>
       </Card>
 
+      {/* 统计卡：总请求 / 失败率 / 总 Tokens / 总费用（与列表同筛选范围） */}
+      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
+        {[
+          { label: t('logs.stats.requests'), value: agg.requests.toLocaleString(), hint: undefined as string | undefined },
+          { label: t('logs.stats.errorRate'), value: rate == null ? '—' : `${rate.toFixed(1)}%`, hint: t('logs.stats.errorRateHint', { errors: agg.errors }) },
+          { label: t('logs.stats.tokens'), value: compactTokens(agg.tokens, i18n.language), hint: agg.tokens.toLocaleString() },
+          { label: t('logs.stats.cost'), value: formatCost(agg.cost), hint: undefined },
+        ].map((s, i) => (
+          <Card key={i} className="bg-linear-to-t from-primary/5 to-card shadow-xs dark:bg-card">
+            <div className="p-5">
+              <p className="text-sm text-muted-foreground">{s.label}</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{s.value}</p>
+              {s.hint !== undefined && <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* 列设置 + 表格 */}
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-medium text-muted-foreground">{t('logs.table.title', { total })}</h2>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm"><SlidersHorizontal className="size-4" />{t('logs.columnSettings')}</Button>} />
+          <DropdownMenuContent align="end" className="max-h-80 w-48 overflow-y-auto">
+            <DropdownMenuLabel>{t('logs.columnSettings')}</DropdownMenuLabel>
+            {HIDDENABLE_COLS.map(key => (
+              <DropdownMenuCheckboxItem
+                key={key}
+                checked={isColVisible(key)}
+                onCheckedChange={() => toggleCol(key)}
+              >
+                {t(`logs.table.${key}`)}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {isError ? (
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
@@ -209,17 +302,17 @@ export default function Logs() {
               <TableRow>
                 <Th>{t('logs.table.requestId')}</Th>
                 <Th>{t('logs.table.createdAt')}</Th>
-                <Th className="text-right">{t('logs.table.group')}</Th>
-                <Th className="text-right">{t('logs.table.account')}</Th>
-                <Th>{t('logs.table.model')}</Th>
-                <Th>{t('logs.table.format')}</Th>
-                <Th className="text-right">{t('logs.table.statusCode')}</Th>
-                <Th>{t('logs.table.errorType')}</Th>
-                <Th className="text-right">{t('logs.table.cost')}</Th>
-                <Th>{t('logs.table.billingTier')}</Th>
-                <Th>{t('logs.table.billing')}</Th>
-                <Th className="text-right">{t('logs.table.latency')}</Th>
-                <Th className="text-right">{t('logs.table.tokens')}</Th>
+                {isColVisible('group') && <Th className="text-right">{t('logs.table.group')}</Th>}
+                {isColVisible('account') && <Th className="text-right">{t('logs.table.account')}</Th>}
+                {isColVisible('model') && <Th>{t('logs.table.model')}</Th>}
+                {isColVisible('format') && <Th>{t('logs.table.format')}</Th>}
+                {isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
+                {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
+                {isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
+                {isColVisible('billingTier') && <Th>{t('logs.table.billingTier')}</Th>}
+                {isColVisible('billing') && <Th>{t('logs.table.billing')}</Th>}
+                {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
+                {isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
@@ -229,9 +322,10 @@ export default function Logs() {
                     <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{l.GroupID ? `#${l.GroupID}` : '—'}</TableCell>
-                  <TableCell className="text-right tabular-nums">{l.AccountID ? `#${l.AccountID}` : '—'}</TableCell>
+                  {isColVisible('group') && <TableCell className="text-right tabular-nums">{l.GroupID ? `#${l.GroupID}` : '—'}</TableCell>}
+                  {isColVisible('account') && <TableCell className="text-right tabular-nums">{l.AccountID ? `#${l.AccountID}` : '—'}</TableCell>}
                   {/* 模型链式（sub2api 纵向链）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳） */}
+                  {isColVisible('model') && (
                   <TableCell>
                     <div className="space-y-0.5 text-xs">
                       <div className="max-w-40 truncate font-medium" title={l.Model}>{l.Model ?? '—'}</div>
@@ -240,17 +334,23 @@ export default function Logs() {
                       )}
                     </div>
                   </TableCell>
+                  )}
+                  {isColVisible('format') && (
                   <TableCell>
                     {l.Format ? <Badge variant="outline">{FORMAT_LABELS[l.Format]}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>
-                  <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
+                  )}
+                  {isColVisible('statusCode') && <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>}
+                  {isColVisible('errorType') && <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>}
                   {/* 计费列：Cost 毫分 → USD（0/空显示 —），BillingTier 空显示 — */}
-                  <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>
+                  {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
+                  {isColVisible('billingTier') && (
                   <TableCell>
                     {l.BillingTier ? <Badge variant="outline">{l.BillingTier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
+                  )}
                   {/* 计费徽章合并列：AboveHit「超档」/ Overdraft「透支」（两者都无时显示 —） */}
+                  {isColVisible('billing') && (
                   <TableCell>
                     {l.AboveHit || l.Overdraft ? (
                       <span className="inline-flex gap-1">
@@ -261,7 +361,9 @@ export default function Logs() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
+                  )}
                   {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红） */}
+                  {isColVisible('latency') && (
                   <TableCell className="text-right tabular-nums">
                     {l.LatencyMS != null ? (
                       <span className="inline-flex items-center justify-end gap-1.5">
@@ -272,7 +374,9 @@ export default function Logs() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
+                  )}
                   {/* token 合并列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + tooltip 明细 */}
+                  {isColVisible('tokens') && (
                   <TableCell className="text-right font-medium tabular-nums">
                     {l.InputTokens || l.OutputTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
                       <Tooltip>
@@ -307,6 +411,7 @@ export default function Logs() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
