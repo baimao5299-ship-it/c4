@@ -4,6 +4,16 @@ import (
 	"go-proxy-mini/internal/domain"
 )
 
+// redemptionValueToAPI 毫分存储 → 契约面值（与 /admin 兑换码同规则）：
+// balance/temp_balance → USD（1 USD = 100,000 毫分）；concurrency → 并发数
+// float64 直出（非货币，仅类型转换——整数精确）。
+func redemptionValueToAPI(typ domain.RedemptionType, millis int64) float64 {
+	if typ == domain.RedemptionTypeConcurrency {
+		return float64(millis)
+	}
+	return float64(millis) / 1e5
+}
+
 // toAPIUser 用户领域对象 → 契约类型（口令散列永不下发；Balance 毫分 → USD
 // 展示换算——1 USD = 100,000 毫分，与 /admin 用户端点同语义；价格倍率按组
 // 挂载，User 无倍率字段）。

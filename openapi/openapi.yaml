@@ -1553,7 +1553,7 @@ components:
         ID: { type: integer, format: int64 }
         Code: { type: string, description: XXXXXX-XXXXXX（生成后不可编辑，仅可失效） }
         Type: { $ref: '#/components/schemas/RedemptionType' }
-        Value: { type: integer, format: int64, description: 最小单位（分/并发数） }
+        Value: { type: number, format: double, description: 面值：balance/temp_balance = USD（1 = $1）；concurrency = 并发数（整数）。存储毫分（API 边界换算） }
         Remark: { type: string, nullable: true }
         ExpiresAt: { type: string, format: date-time, nullable: true, description: 码未兑换即过期；null = 永久 }
         ResourceExpiresAt: { type: string, format: date-time, nullable: true, description: 兑换后资源到期；temp_balance 必有，其余恒 null }
@@ -1570,7 +1570,7 @@ components:
         ID: { type: integer, format: int64 }
         CodeID: { type: integer, format: int64 }
         UserID: { type: integer, format: int64 }
-        Value: { type: integer, format: int64, description: 兑换时的值快照 }
+        Value: { type: number, format: double, description: 兑换时的值快照（同面值单位语义） }
         ResourceExpiresAt: { type: string, format: date-time, nullable: true }
         CreatedAt: { type: string, format: date-time }
     RedemptionRecord:
@@ -1581,7 +1581,7 @@ components:
         CodeID: { type: integer, format: int64 }
         Code: { type: string }
         CodeType: { $ref: '#/components/schemas/RedemptionType' }
-        Value: { type: integer, format: int64 }
+        Value: { type: number, format: double, description: 兑换时的值快照（同面值单位语义） }
         Remark: { type: string, nullable: true }
         ResourceExpiresAt: { type: string, format: date-time, nullable: true }
         CreatedAt: { type: string, format: date-time }
@@ -1614,7 +1614,7 @@ components:
       required: [type, value]
       properties:
         type: { $ref: '#/components/schemas/RedemptionType' }
-        value: { type: integer, format: int64, description: 最小单位（分/并发数）；> 0 }
+        value: { type: number, format: double, description: 面值：balance/temp_balance = USD；concurrency = 并发数（整数）。> 0 }
         remark: { type: string }
         expires_at: { type: string, format: date-time, description: 码未兑换即过期；缺省 = 永久 }
         resource_expires_at: { type: string, format: date-time, description: 兑换后资源到期；temp_balance 必填（决策 4） }
@@ -1751,7 +1751,7 @@ components:
           required: [type, value]
           properties:
             type: { $ref: '#/components/schemas/RedemptionType' }
-            value: { type: integer, format: int64 }
+            value: { type: number, format: double, description: 兑换时的值快照（同面值单位语义） }
             resource_expires_at: { type: string, format: date-time, nullable: true }
     UsageLog:
       type: object

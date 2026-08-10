@@ -195,7 +195,9 @@ type RedeemResponse struct {
 	Applied struct {
 		ResourceExpiresAt *time.Time     `json:"resource_expires_at"`
 		Type              RedemptionType `json:"type"`
-		Value             int64          `json:"value"`
+
+		// Value 兑换时的值快照（同面值单位语义）
+		Value float64 `json:"value"`
 	} `json:"applied"`
 }
 
@@ -208,7 +210,9 @@ type RedemptionRecord struct {
 	ID                int64          `json:"ID"`
 	Remark            *string        `json:"Remark"`
 	ResourceExpiresAt *time.Time     `json:"ResourceExpiresAt"`
-	Value             int64          `json:"Value"`
+
+	// Value 兑换时的值快照（同面值单位语义）
+	Value float64 `json:"Value"`
 }
 
 // RedemptionRecordListResponse defines model for RedemptionRecordListResponse.

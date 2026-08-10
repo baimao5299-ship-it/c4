@@ -1118,8 +1118,8 @@ export interface components {
             Code: string;
             Type: components["schemas"]["RedemptionType"];
             /**
-             * Format: int64
-             * @description 最小单位（分/并发数）
+             * Format: double
+             * @description 面值：balance/temp_balance = USD（1 = $1）；concurrency = 并发数（整数）。存储毫分（API 边界换算）
              */
             Value: number;
             Remark?: string | null;
@@ -1156,8 +1156,8 @@ export interface components {
             /** Format: int64 */
             UserID: number;
             /**
-             * Format: int64
-             * @description 兑换时的值快照
+             * Format: double
+             * @description 兑换时的值快照（同面值单位语义）
              */
             Value: number;
             /** Format: date-time */
@@ -1172,7 +1172,10 @@ export interface components {
             CodeID: number;
             Code: string;
             CodeType: components["schemas"]["RedemptionType"];
-            /** Format: int64 */
+            /**
+             * Format: double
+             * @description 兑换时的值快照（同面值单位语义）
+             */
             Value: number;
             Remark?: string | null;
             /** Format: date-time */
@@ -1198,8 +1201,8 @@ export interface components {
         GenerateRequest: {
             type: components["schemas"]["RedemptionType"];
             /**
-             * Format: int64
-             * @description 最小单位（分/并发数）；> 0
+             * Format: double
+             * @description 面值：balance/temp_balance = USD；concurrency = 并发数（整数）。> 0
              */
             value: number;
             remark?: string;
@@ -1444,7 +1447,10 @@ export interface components {
         RedeemResponse: {
             applied: {
                 type: components["schemas"]["RedemptionType"];
-                /** Format: int64 */
+                /**
+                 * Format: double
+                 * @description 兑换时的值快照（同面值单位语义）
+                 */
                 value: number;
                 /** Format: date-time */
                 resource_expires_at?: string | null;

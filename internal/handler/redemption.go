@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"math"
 	"net/http"
 
 	"go-proxy-mini/internal/domain"
@@ -37,6 +39,41 @@ func pageToQuery(page, pageSize *int) (repository.ListQuery, error) {
 	return repository.ListQuery{Limit: size, Offset: (p - 1) * size}, nil
 }
 
+// apiRedemptionValueToMillis 契约面值 → 毫分存储（API 输入边界换算，与 balance
+// 毫分↔USD 同构）：balance/temp_balance = USD（1 USD = 100,000 毫分，
+// math.Round 消除取整误差）；concurrency = 并发数——非货币，必须整数（小数 →
+// 400，不静默取整）；≤ 0 → 400。type 非法 → (0, nil) 原样传 service 兜底
+// validateGenerateRequest（保持既有 400 文案）。
+func apiRedemptionValueToMillis(typ domain.RedemptionType, v float64) (int64, error) {
+	switch typ {
+	case domain.RedemptionTypeBalance, domain.RedemptionTypeTempBalance:
+		if v <= 0 {
+			return 0, errors.New("value must be > 0")
+		}
+		return usdToMillis(v), nil
+	case domain.RedemptionTypeConcurrency:
+		if v != math.Trunc(v) {
+			return 0, errors.New("concurrency value must be an integer")
+		}
+		if v <= 0 {
+			return 0, errors.New("concurrency value must be > 0")
+		}
+		return int64(v), nil
+	}
+	return 0, nil
+}
+
+// redemptionValueToAPI 毫分存储 → 契约面值（API 边界展示换算）：
+// balance/temp_balance → USD float64（1 USD = 100,000 毫分）；concurrency →
+// 并发数 float64 直出（非货币，仅类型转换——整数 float64 精确，JSON 序列化
+// 5.0 → "5"，无精度问题）。
+func redemptionValueToAPI(typ domain.RedemptionType, millis int64) float64 {
+	if typ == domain.RedemptionTypeConcurrency {
+		return float64(millis)
+	}
+	return millisToUSD(millis)
+}
+
 // PostRedemptionCodes 生成兑换码（1..count 个；count 默认 1，上限 1000，
 // ServerInterface）。
 func (h *AdminAPI) PostRedemptionCodes(w http.ResponseWriter, r *http.Request) {
@@ -45,9 +82,16 @@ func (h *AdminAPI) PostRedemptionCodes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
+	// 面值边界换算（balance/temp_balance USD → 毫分；concurrency 整数校验）——
+	// 存储恒毫分，service 仍收 int64。
+	value, err := apiRedemptionValueToMillis(domain.RedemptionType(in.Type), in.Value)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	codes, err := h.svc.GenerateCodes(r.Context(), service.GenerateRequest{
 		Type:              domain.RedemptionType(in.Type),
-		Value:             in.Value,
+		Value:             value,
 		Remark:            in.Remark,
 		ExpiresAt:         in.ExpiresAt,
 		ResourceExpiresAt: in.ResourceExpiresAt,
@@ -98,7 +142,13 @@ func (h *AdminAPI) GetRedemptionCodes(w http.ResponseWriter, r *http.Request, pa
 }
 
 // GetRedemptionCodesIdUses 某码的兑换记录（审计；码缺失 → 404，ServerInterface）。
+// 面值换算需码的 type（use 行不存类型——与前端 uses 弹窗同构：取码行 Type 换算）。
 func (h *AdminAPI) GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Request, id int64) {
+	code, err := h.svc.GetCode(r.Context(), id)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
 	rows, total, err := h.svc.GetCodeUses(r.Context(), id)
 	if err != nil {
 		writeServiceErr(w, err)
@@ -106,7 +156,7 @@ func (h *AdminAPI) GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Reque
 	}
 	out := make([]RedemptionUse, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toAPIRedemptionUse(u))
+		out = append(out, toAPIRedemptionUse(code.Type, u))
 	}
 	writeJSON(w, http.StatusOK, RedemptionUseListResponse{Total: total, Rows: out})
 }
@@ -142,13 +192,14 @@ func (h *AdminAPI) PostRedemptionCodesBatchDeactivate(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, BatchDeactivateResponse{Deactivated: int(n)})
 }
 
-// toAPIRedemptionCode 兑换码领域对象 → 契约类型。
+// toAPIRedemptionCode 兑换码领域对象 → 契约类型（Value 毫分 → 面值换算：按
+// type——balance/temp_balance → USD；concurrency → 并发数直出）。
 func toAPIRedemptionCode(c *domain.RedemptionCode) RedemptionCode {
 	return RedemptionCode{
 		ID:                c.ID,
 		Code:              c.Code,
 		Type:              RedemptionType(c.Type),
-		Value:             c.Value,
+		Value:             redemptionValueToAPI(c.Type, c.Value),
 		Remark:            c.Remark,
 		ExpiresAt:         c.ExpiresAt,
 		ResourceExpiresAt: c.ResourceExpiresAt,
@@ -161,13 +212,14 @@ func toAPIRedemptionCode(c *domain.RedemptionCode) RedemptionCode {
 	}
 }
 
-// toAPIRedemptionUse 兑换审计领域对象 → 契约类型。
-func toAPIRedemptionUse(u *domain.RedemptionUse) RedemptionUse {
+// toAPIRedemptionUse 兑换审计领域对象 → 契约类型（Value 换算同 toAPIRedemptionCode；
+// use 行不存码类型，由调用方传码 type——审计端点先取码）。
+func toAPIRedemptionUse(codeType domain.RedemptionType, u *domain.RedemptionUse) RedemptionUse {
 	return RedemptionUse{
 		ID:                u.ID,
 		CodeID:            u.CodeID,
 		UserID:            u.UserID,
-		Value:             u.Value,
+		Value:             redemptionValueToAPI(codeType, u.Value),
 		ResourceExpiresAt: u.ResourceExpiresAt,
 		CreatedAt:         u.CreatedAt,
 	}

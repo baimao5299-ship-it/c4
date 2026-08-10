@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -56,7 +57,7 @@ func TestGenerateRedemptionCodes(t *testing.T) {
 		seen[c.Code] = true
 		require.True(t, c.ID > 0, "id 已分配（row %d）", i)
 		require.Equal(t, RedemptionType("balance"), c.Type)
-		require.Equal(t, int64(100), c.Value)
+		require.Equal(t, 100.0, c.Value, "面值出参 USD 回显（100 USD 入参）")
 		require.NotNil(t, c.Remark)
 		require.Equal(t, "赠品", *c.Remark)
 		require.Equal(t, 3, c.MaxUses)
@@ -75,6 +76,8 @@ func TestGenerateRedemptionCodesValidation(t *testing.T) {
 		{"type 非法", `{"type":"bogus","value":100}`},
 		{"value 0", `{"type":"balance","value":0}`},
 		{"value 负数", `{"type":"balance","value":-1}`},
+		{"concurrency 小数", `{"type":"concurrency","value":5.5}`},
+		{"concurrency 0", `{"type":"concurrency","value":0}`},
 		{"temp_balance 缺 resource_expires_at", `{"type":"temp_balance","value":100}`},
 		{"count 越上界", `{"type":"balance","value":100,"count":1001}`},
 		{"count 负数", `{"type":"balance","value":100,"count":-1}`},
@@ -226,14 +229,14 @@ func TestRedeemThreeTypes(t *testing.T) {
 	token, userID := registerAndGet(t, doUser, "redeem@example.com")
 	require.True(t, userID > 0)
 
-	// balance：兑换成功回执 + 余额 += value
+	// balance：兑换成功回执 + 余额 += value（USD）
 	gen := genCodes(t, doAdmin, `{"type":"balance","value":100}`)
 	rec := doUser(http.MethodPost, "/user/redemptions", `{"code":"`+gen.Codes[0].Code+`"}`, token)
 	require.Equal(t, 200, rec.Code, "redeem balance: %s", rec.Body.String())
 	var r userapi.RedeemResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &r))
 	require.Equal(t, userapi.RedemptionType("balance"), r.Applied.Type)
-	require.Equal(t, int64(100), r.Applied.Value)
+	require.Equal(t, 100.0, r.Applied.Value, "回执面值 USD 回显")
 	require.Nil(t, r.Applied.ResourceExpiresAt, "balance 无资源到期")
 
 	// concurrency：当前 0 → 直接设 value（决策 2）
@@ -242,7 +245,7 @@ func TestRedeemThreeTypes(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "redeem concurrency: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &r))
 	require.Equal(t, userapi.RedemptionType("concurrency"), r.Applied.Type)
-	require.Equal(t, int64(5), r.Applied.Value)
+	require.Equal(t, 5.0, r.Applied.Value, "回执并发数直出")
 
 	// temp_balance：回执携带 resource_expires_at
 	gen = genCodes(t, doAdmin, `{"type":"temp_balance","value":50,"resource_expires_at":"2030-01-01T00:00:00Z"}`)
@@ -250,7 +253,7 @@ func TestRedeemThreeTypes(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "redeem temp_balance: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &r))
 	require.Equal(t, userapi.RedemptionType("temp_balance"), r.Applied.Type)
-	require.Equal(t, int64(50), r.Applied.Value)
+	require.Equal(t, 50.0, r.Applied.Value, "回执面值 USD 回显")
 	require.NotNil(t, r.Applied.ResourceExpiresAt, "temp_balance 必带资源到期")
 
 	// 兑换后快照生效（/user/auth/me 即时可见，决策 8 invalidate）
@@ -258,7 +261,7 @@ func TestRedeemThreeTypes(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "me: %s", rec.Body.String())
 	var me userapi.User
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &me))
-	require.Equal(t, 0.001, *me.Balance, "balance 码已加余额（API 展示 USD 换算：100 毫分 = $0.001）")
+	require.Equal(t, 100.0, *me.Balance, "balance 码已加余额（API 展示 USD：100 USD = $100）")
 	require.Equal(t, 5, *me.MaxConcurrency, "concurrency 码 0 特判直接设值")
 }
 
@@ -305,13 +308,13 @@ func TestRedemptionUsesAndHistory(t *testing.T) {
 	rec = doUser(http.MethodPost, "/user/redemptions", `{"code":"`+c2.Code+`"}`, token2)
 	require.Equal(t, 200, rec.Code, "user2 redeem: %s", rec.Body.String())
 
-	// 管理面审计：码 1 恰 1 条记录
+	// 管理面审计：码 1 恰 1 条记录（面值出参 USD 回显）
 	rec = doAdmin(http.MethodGet, fmt.Sprintf("/admin/redemption-codes/%d/uses", c1.ID), "", "")
 	require.Equal(t, 200, rec.Code, "admin uses: %s", rec.Body.String())
 	var uses RedemptionUseListResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &uses))
 	require.Equal(t, int64(1), uses.Total)
-	require.Equal(t, int64(100), uses.Rows[0].Value)
+	require.Equal(t, 100.0, uses.Rows[0].Value, "审计面值 USD 回显")
 
 	// 用户面我的兑换记录：仅本人 1 条，含码的 type/remark（联查视图）
 	rec = doUser(http.MethodGet, "/user/redemptions", "", token)
@@ -321,11 +324,44 @@ func TestRedemptionUsesAndHistory(t *testing.T) {
 	require.Equal(t, int64(1), mine.Total, "仅本人记录（另一用户兑换不入列表）")
 	require.Equal(t, c1.Code, mine.Rows[0].Code)
 	require.Equal(t, userapi.RedemptionType("balance"), mine.Rows[0].CodeType)
-	require.Equal(t, int64(100), mine.Rows[0].Value)
+	require.Equal(t, 100.0, mine.Rows[0].Value, "兑换记录面值 USD 回显")
 	require.NotNil(t, mine.Rows[0].Remark)
 	require.Equal(t, "r1", *mine.Rows[0].Remark)
 
 	// 增强分页参数绑定（用户面）
 	rec = doUser(http.MethodGet, "/user/redemptions?page=1&page_size=20&sort=id&order=desc", "", token)
 	require.Equal(t, 200, rec.Code, "paged: %s", rec.Body.String())
+}
+
+// TestRedemptionValueUSDConversion 面值 API 边界换算（存储毫分不变）：
+// balance/temp_balance 入参 USD → 存储毫分（1 USD = 100,000 毫分）；concurrency
+// 并发数直存直出；出参回显换算（10 USD ↔ 1,000,000 毫分 roundtrip）。
+func TestRedemptionValueUSDConversion(t *testing.T) {
+	doAdmin, _, store := newSharedRouters(t)
+
+	// balance：入参 10 USD → 存储 1,000,000 毫分；出参回显 10
+	gen := genCodes(t, doAdmin, `{"type":"balance","value":10}`)
+	require.Equal(t, 10.0, gen.Codes[0].Value, "出参 USD 回显")
+	stored, err := store.GetCode(context.Background(), gen.Codes[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000000), stored.Value, "存储恒毫分（API 边界换算）")
+
+	// temp_balance：入参 0.005 USD（= 500 毫分）→ 存储 500；出参回显 0.005
+	gen = genCodes(t, doAdmin, `{"type":"temp_balance","value":0.005,"resource_expires_at":"2030-01-01T00:00:00Z"}`)
+	require.Equal(t, 0.005, gen.Codes[0].Value, "出参 USD 回显")
+	stored, err = store.GetCode(context.Background(), gen.Codes[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(500), stored.Value, "存储恒毫分")
+
+	// concurrency：整数并发数直存直出（非货币，不换算）
+	gen = genCodes(t, doAdmin, `{"type":"concurrency","value":5}`)
+	require.Equal(t, 5.0, gen.Codes[0].Value, "出参并发数直出")
+	stored, err = store.GetCode(context.Background(), gen.Codes[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), stored.Value, "存储恒并发数")
+
+	// concurrency 小数 → 400（不静默取整）
+	rec := doAdmin(http.MethodPost, "/admin/redemption-codes", `{"type":"concurrency","value":5.5}`, "")
+	require.Equal(t, 400, rec.Code, "concurrency 小数必须 400: %s", rec.Body.String())
+	require.Contains(t, errMsg(t, rec), "integer", "400 文案说明整数要求")
 }
