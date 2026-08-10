@@ -238,6 +238,18 @@ func newTestProxyTplCapture(t *testing.T, tpl *domain.Template, accountID int64,
 // bill 为计费钩子（nil = 计费全关，默认测试路径）。
 func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, logs usage.LogInserter, bill *BillingHooks) *Proxy {
 	t.Helper()
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
+	}, logs, noopStatStore{}, nil)
+	return newTestProxyTplTimeoutRec(t, tpl, accountID, usageCapture, streamTimeout, rec, bill)
+}
+
+// newTestProxyTplTimeoutRec 同 newTestProxyTplTimeoutLogs，但注入完整 Recorder
+//（P2a 拒绝路径统计聚合断言用：调用方构造 rec——含捕获 stat store——后同一
+// 实例挂 Flusher 与 proxy.rec，聚合单面可观测）。
+func newTestProxyTplTimeoutRec(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, rec *usage.Recorder, bill *BillingHooks) *Proxy {
+	t.Helper()
 	accs := map[int64][]*domain.Account{10: {{
 		ID: accountID, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "sk-upstream",
 		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
@@ -253,10 +265,6 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 		DefaultMaxConcurrency: 4, SyncInterval: time.Hour,
 	}, noopLoader{accs: accs}, re, nil)
 	require.NoError(t, sched.InvalidateAllSync())
-	rec := usage.New(usage.UsageConfig{
-		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
-	}, logs, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
 	}}, noopUserLoader{}, nil)
@@ -768,8 +776,9 @@ func TestProxyChatNonStreamingLogsModel(t *testing.T) {
 	require.Equal(t, int64(5), store.logs[0].OutputTokens)
 }
 
-// 评审 I-1：Select 失败（组内无账号支持请求格式）→ 404，日志 Model=请求模型、
-// MappedModel 空（未实际使用任何账号模型）。
+// 评审 I-1 + P2a：Select 失败（组内无账号支持请求格式）→ 404；本地预用量
+// 拒绝不产生 usage_logs 明细（无 tokens 无 cost，P2a 源头修复——拒绝风暴
+// 不进入 pending）。
 func TestProxySelectFailLogsModel(t *testing.T) {
 	up := fakeAnthropic(t, "")
 	defer up.Close()
@@ -784,12 +793,11 @@ func TestProxySelectFailLogsModel(t *testing.T) {
 	p.HandleAnthropic(rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code, "body=%s", rec.Body.String())
+	require.Zero(t, p.rec.Pending(), "Select 失败不产生明细 pending（P2a）")
 	require.NoError(t, p.rec.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "Select 失败必须记一条用量")
-	require.Equal(t, "gpt-4o", store.logs[0].Model, "Select 失败：Model = 客户端请求模型")
-	require.Equal(t, "", store.logs[0].MappedModel, "未实际使用任何账号 → MappedModel 空")
+	require.Empty(t, store.logs, "Select 失败不产生 usage_logs 明细（P2a）")
 }
 
 // 分发实证（评审 M2）：注册自定义 provider（覆盖 api_key 类型的默认实现）→

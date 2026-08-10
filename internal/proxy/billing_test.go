@@ -80,7 +80,9 @@ func newTestProxyBillingLogs(t *testing.T, upstream string, prices *fakePriceLoo
 }
 
 // TestProxyBillingNoPrice402 缺价预检：计费启用且模型无价格 → 402 + 释放并发槽
-// + 记 ErrBilling，上游一个请求都不许收到（评审 I-1：先 Release 再记录）。
+// + 无明细（P2a 源头修复：本地预用量拒绝不产生 usage_logs/pending——无 tokens
+// 无 cost 的拒绝每请求一条明细即拒绝风暴无界积压源），上游一个请求都不许收到
+// （评审 I-1：先 Release 再记录）。
 func TestProxyBillingNoPrice402(t *testing.T) {
 	var hits atomic.Int64
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,13 +104,11 @@ func TestProxyBillingNoPrice402(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "402 路径必须释放并发槽")
+	require.Zero(t, p.rec.Pending(), "预用量拒绝不产生明细 pending")
 	require.NoError(t, p.rec.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1)
-	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
-	require.Equal(t, http.StatusPaymentRequired, store.logs[0].StatusCode)
-	require.Zero(t, store.logs[0].Cost, "缺价拒绝 cost 0")
+	require.Empty(t, store.logs, "预用量拒绝不产生 usage_logs 明细（P2a）")
 }
 
 // TestProxyBillingAppliesCost finish applyBilling：成功请求按 tokens 计算毫分
@@ -230,8 +230,8 @@ func TestProxyBillingTierPolicyStrip(t *testing.T) {
 	require.GreaterOrEqual(t, *store.logs[0].TTFTMS, int64(0), "TTFT 毫秒非负")
 }
 
-// TestProxyBillingTierPolicyReject reject 策略：直接 400 + 记 ErrBilling，
-// 不转发上游；日志保留归一化 tier。
+// TestProxyBillingTierPolicyReject reject 策略：直接 400，不转发上游；无明细
+// （P2a 源头修复：本地预用量拒绝不产生 usage_logs/pending）。
 func TestProxyBillingTierPolicyReject(t *testing.T) {
 	var hits atomic.Int64
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -253,14 +253,12 @@ func TestProxyBillingTierPolicyReject(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "reject 路径并发槽必须释放（acquire defer）")
+	require.Zero(t, p.rec.Pending(), "预用量拒绝不产生明细 pending")
 
 	require.NoError(t, p.rec.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1)
-	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
-	require.Equal(t, http.StatusBadRequest, store.logs[0].StatusCode)
-	require.Equal(t, "priority", store.logs[0].BillingTier, "reject 日志保留归一化 tier")
+	require.Empty(t, store.logs, "预用量拒绝不产生 usage_logs 明细（P2a）")
 }
 
 // TestProxyBillingTierFastPolicyStrip fast 档 strip 策略（M-1 回归：此前 caller
@@ -305,8 +303,8 @@ func TestProxyBillingTierFastPolicyStrip(t *testing.T) {
 	require.Equal(t, int64(260), store.logs[0].Cost, "剥离路径按 fast 档计费：130×2.0 = 260")
 }
 
-// TestProxyBillingTierFastPolicyReject fast 档 reject 策略：直接 400 + 记
-// ErrBilling，不转发上游；日志保留归一化 tier=fast。
+// TestProxyBillingTierFastPolicyReject fast 档 reject 策略：直接 400，不转发
+// 上游；无明细（P2a 源头修复）。
 func TestProxyBillingTierFastPolicyReject(t *testing.T) {
 	var hits atomic.Int64
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -328,14 +326,12 @@ func TestProxyBillingTierFastPolicyReject(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "reject 路径并发槽必须释放（acquire defer）")
+	require.Zero(t, p.rec.Pending(), "预用量拒绝不产生明细 pending")
 
 	require.NoError(t, p.rec.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1)
-	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
-	require.Equal(t, http.StatusBadRequest, store.logs[0].StatusCode)
-	require.Equal(t, "fast", store.logs[0].BillingTier, "reject 日志保留归一化 tier")
+	require.Empty(t, store.logs, "预用量拒绝不产生 usage_logs 明细（P2a）")
 }
 
 // TestProxyBillingTierFastPolicyPassthrough fast 档 passthrough（默认）：原样
@@ -585,6 +581,20 @@ func (f fakeBalanceLoader) LoadAssignmentMultipliers(ctx context.Context) (map[b
 	return f.am, nil
 }
 
+// captureStatUpserter 记录 Upsert 的统计桶（P2a：拒绝路径统计聚合断言用——
+// 本地预用量拒绝不产生明细但保留 usagestat 计数）。
+type captureStatUpserter struct {
+	mu      sync.Mutex
+	buckets []*domain.StatBucket
+}
+
+func (s *captureStatUpserter) Upsert(ctx context.Context, b []*domain.StatBucket) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buckets = append(s.buckets, b...)
+	return nil
+}
+
 // fakeDeductWriter 记录 DeductAndLog 调用（T3 billed 路由断言）。
 type fakeDeductWriter struct {
 	mu    sync.Mutex
@@ -604,15 +614,17 @@ func (f *fakeDeductWriter) DeductAndLog(ctx context.Context, userID, cost int64,
 }
 
 // newTestProxyBillingT3Logs 构造注入完整计费钩子（Prices+Balances+Flusher）的
-// 测试代理：BillingCapture 开（shouldBill 路由 + 余额预检生效）。
-func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceLookup, bal *billing.Balances, f *billing.Flusher, logs usage.LogInserter) *Proxy {
+// 测试代理：BillingCapture 开（shouldBill 路由 + 余额预检生效）。rec 为调用方
+// 构造的 Recorder（同一实例既挂 Flusher 又作 proxy.rec——统计聚合单面可观测，
+// P2a 拒绝路径断言用）。
+func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceLookup, bal *billing.Balances, f *billing.Flusher, rec *usage.Recorder) *Proxy {
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
 		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
-	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, logs, &BillingHooks{
+	p := newTestProxyTplTimeoutRec(t, tpl, 1, true, 30*time.Second, rec, &BillingHooks{
 		Prices: prices, Balances: bal, Flusher: f,
 	})
 	p.cfg.BillingCapture = true
@@ -620,8 +632,10 @@ func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceL
 }
 
 // TestProxyBillingInsufficientBalance402 余额预检（评审 I-1 无槽位问题）：
-// 快照 ≤0 或缺失 → 402 + 上游零命中 + ErrBilling 日志（billed 路由进 flusher，
-// 不进 Recorder 明细管道），预检在 Acquire 前不占用并发槽。
+// 快照 ≤0 或缺失 → 402 + 上游零命中，预检在 Acquire 前不占用并发槽。P2a
+// 源头修复：本地预用量拒绝不产生 usage_logs 明细/pending（balance 烧穿后的
+// 402 风暴与 429 同路径，明细即无界积压源）；统计聚合保留（usagestat 计数
+// 不丢），billed flusher 零调用。
 func TestProxyBillingInsufficientBalance402(t *testing.T) {
 	cases := []struct {
 		name string
@@ -642,16 +656,17 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 			}))
 			defer up.Close()
 			store := &captureLogStore{}
+			stats := &captureStatUpserter{}
 			rec := usage.New(usage.UsageConfig{
 				BatchSize: 100, FlushInterval: time.Hour,
 				StatsFlushInterval: time.Hour,
-			}, store, noopStatStore{}, nil)
+			}, store, stats, nil)
 			require.NoError(t, c.bal.Reload(context.Background()), "快照加载（余额 0 / 空表）")
 			writer := &fakeDeductWriter{}
 			f := billing.NewFlusher(billing.FlushConfig{
 				FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 			}, writer, rec, c.bal, nil)
-			p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, c.bal, f, store)
+			p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, c.bal, f, rec)
 
 			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 			req.Header.Set("Authorization", "Bearer gk-1")
@@ -664,15 +679,19 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 			ri, ok := p.sched.Runtime(1)
 			require.True(t, ok)
 			require.Zero(t, ri.Concurrency, "预检在 Acquire 前：不占用并发槽")
-			require.Zero(t, p.rec.Pending(), "billed 日志不进 Recorder 明细管道")
+			require.Zero(t, p.rec.Pending(), "预用量拒绝不产生明细 pending")
 
 			require.NoError(t, f.Close(context.Background()))
 			writer.mu.Lock()
-			defer writer.mu.Unlock()
-			require.Len(t, writer.calls, 1)
-			require.Equal(t, domain.ErrBilling, writer.calls[0].logs[0].ErrorType)
-			require.Equal(t, http.StatusPaymentRequired, writer.calls[0].logs[0].StatusCode)
-			require.Zero(t, writer.calls[0].logs[0].Cost, "预检拒绝 cost 0")
+			require.Empty(t, writer.calls, "预用量拒绝不进 billed flusher（无扣费无计费日志）")
+			writer.mu.Unlock()
+			require.NoError(t, rec.Close(context.Background()), "Recorder 手动 flush 统计面")
+			stats.mu.Lock()
+			defer stats.mu.Unlock()
+			require.Len(t, stats.buckets, 1, "拒绝仍聚合统计（usagestat 计数不丢）")
+			require.Equal(t, int64(1), stats.buckets[0].RequestCount)
+			require.Equal(t, int64(1), stats.buckets[0].ErrorCount, "429/402 拒绝计错误")
+			require.Zero(t, stats.buckets[0].Cost, "预检拒绝 cost 0")
 		})
 	}
 }
@@ -694,7 +713,7 @@ func TestProxyBillingRoutesToFlusher(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -766,7 +785,7 @@ func TestProxyBillingMultiplierAssignment(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -898,7 +917,7 @@ func TestProxyBillingMultiplierGroup(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -932,7 +951,7 @@ func TestProxyBillingFreeUserPasses(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -968,7 +987,7 @@ func TestProxyBillingFreeGroupPasses(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -1004,7 +1023,7 @@ func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -1039,7 +1058,7 @@ func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
-	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, store)
+	p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
 
 	req := func() int {
 		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))

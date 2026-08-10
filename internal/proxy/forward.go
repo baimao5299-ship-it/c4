@@ -186,9 +186,26 @@ func mappedFor(req, used string) string {
 
 // record 记录一条用量日志（无并发槽的失败路径；有槽路径走 finish）。
 // ctx 提供鉴权 KeyMeta（user_id/key_id 归属；401 等鉴权失败路径无 KeyMeta）。
-// 计费路由与 finish 同一 shouldBill 判定（评审 C-4）。
+// 计费路由与 finish 同一 shouldBill 判定（评审 C-4）。**本地预用量拒绝
+// （429/402 等，见 recordRejected）不在此路径**——无用量可记的拒绝不产生
+// 明细，避免拒绝风暴打爆 pending。
 func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time) {
 	p.recordLog(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
+}
+
+// recordRejected 记录一条**本地预用量拒绝**（额度耗尽/并发超限/余额 402/
+// tier reject/缺价/无账号：请求未接触上游、未消费任何 token、cost 恒 0）：
+// 只聚合统计（usagestat 请求/错误计数语义不变），**不产生 usage_logs 明细**、
+// 不进 billed/非 billed pending——拒绝风暴（P2a 压测 2026-08-11：单 key
+// 限流 161k req/s → 60s 冲至 9.8M pending 行 / RSS 7.5GB，usage_logs 表
+// 120.7M→144.5M 行膨胀）每请求一条明细即无界积压与写放大源头；拒绝无用量
+// 可记，明细纯噪声。与 rate-limit/body-too-large 无记录路径同族，本路径多
+// 保留统计计数（错误文本/状态码由 HTTP 响应与网关日志承载）。
+func (p *Proxy) recordRejected(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time) {
+	if !p.cfg.UsageCapture {
+		return
+	}
+	p.rec.Aggregate(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
 }
 
 // recordLog 用量日志落库路由（record 与 failover 耗尽路径共用）：billed →
