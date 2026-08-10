@@ -357,10 +357,10 @@ export default function Logs() {
                             </span>
                           </span>
                           {l.CacheReadTokens || l.CacheCreationTokens ? (
-                            <div className="text-right text-muted-foreground">
-                              {l.CacheReadTokens ? <span>{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens, i18n.language)}</span> : null}
+                            <div className="text-right">
+                              {l.CacheReadTokens ? <span className="text-blue-500/70">{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens, i18n.language)}</span> : null}
                               {l.CacheReadTokens && l.CacheCreationTokens ? <span className="mx-1 text-muted-foreground/40">·</span> : null}
-                              {l.CacheCreationTokens ? <span>{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens, i18n.language)}</span> : null}
+                              {l.CacheCreationTokens ? <span className="text-amber-500/70">{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens, i18n.language)}</span> : null}
                             </div>
                           ) : null}
                         </span>
