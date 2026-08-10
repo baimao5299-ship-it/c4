@@ -75,21 +75,21 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 
 	if p.auth.QuotaExhausted(meta) {
 		writeErr(w, errQuotaExhausted)
-		p.record(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
 		return
 	}
 	if p.cfg.BillingCapture && p.bill != nil {
 		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
 		if (!ok || bal <= 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
 			writeErr(w, errInsufficientBalance)
-			p.record(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
 			return
 		}
 	}
 	acquired, ok := p.auth.Acquire(meta)
 	if !ok {
 		writeErr(w, errConcurrency)
-		p.record(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
 		return
 	}
 	defer p.auth.Release(meta, acquired)
@@ -127,7 +127,7 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 	sel, err := p.sched.Select(groupID, domain.FormatOpenAIResponsesWS, reqModel)
 	if err != nil {
 		wsWriteError(client, selectErrorMessage(err))
-		p.record(r.Context(), reqID, groupID, 0, reqModel, "", domain.FormatOpenAIResponsesWS, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", domain.FormatOpenAIResponsesWS, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
 		return
 	}
 
@@ -144,7 +144,7 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 		if p.bill != nil && p.bill.Prices != nil {
 			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
 				p.sched.Release(sel.AccountID)
-				p.record(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
 				wsWriteError(client, errNoPrice.msg)
 				return
 			}

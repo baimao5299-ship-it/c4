@@ -561,11 +561,13 @@ func TestFlusherWaterlineWarns(t *testing.T) {
 	require.NoError(t, f.Close(context.Background()))
 }
 
-// TestFlusherHugeBacklogChunkedTx P2（压测 2026-08-11 修复回归）：单用户巨批拆
-// 事务——10w+ 积压时每次 flush 触发每用户至多一事务（≤ maxUsageLogsPerTx 行，
-// 单事务时长/内存有界），超出部分 refill 续传（flushMu 在事务间自然让出，不再
-// 冻结全局记录），逐触发推进最终全量落库；cost 拆分跨事务总和精确。
-func TestFlusherHugeBacklogChunkedTx(t *testing.T) {
+// TestFlusherHugeBacklogDrainsInOneFlush P2a（压测 2026-08-11 复测修复）：
+// 单用户巨批不再"每 flush 至多一块"续传（该上限把单用户 drain 钉死在
+// 10k 行/s，持续超限到达 → pending 无界增长）——续传循环单次 flush 内逐块
+// （≤ maxUsageLogsPerTx）提交至排空：10w+ 积压一次 flush 全量落库（快 writer
+// 预算不触发），单事务行数上限不变（CreateBulk 内存有界），cost 拆分跨事务
+// 总和精确。
+func TestFlusherHugeBacklogDrainsInOneFlush(t *testing.T) {
 	const total = 120_000
 	writer := &fakeDeductWriter{}
 	f := newTestFlusher(writer)
@@ -573,29 +575,10 @@ func TestFlusherHugeBacklogChunkedTx(t *testing.T) {
 		f.Record(&domain.UsageLog{UserID: 1, Cost: 3})
 	}
 
-	// 首次 flush：至多一事务（10k 行），其余 refill 续传
-	f.flush()
-	writer.mu.Lock()
-	firstCalls := append([]deductCall(nil), writer.calls...)
-	writer.mu.Unlock()
-	require.Len(t, firstCalls, 1, "单次 flush 每用户至多一事务（不独占 flushMu）")
-	require.Len(t, firstCalls[0].logs, maxUsageLogsPerTx, "事务行数上限")
-	require.Equal(t, int64(3*maxUsageLogsPerTx), firstCalls[0].cost, "cost 按行数比例拆分")
-	require.Equal(t, 1, f.pendingCount(), "剩余回灌待续传")
-	require.Equal(t, int64(total-maxUsageLogsPerTx), f.pendingN.Load(), "pending 计数同步剩余")
-
-	// 逐触发推进（ticker 语义）至排空
-	rounds := 0
-	for f.pendingCount() > 0 {
-		require.Less(t, rounds, total/maxUsageLogsPerTx+2, "推进轮数有界")
-		f.flush()
-		rounds++
-	}
-	require.Equal(t, total/maxUsageLogsPerTx-1, rounds, "剩余 11 个事务逐触发提交")
-
+	f.flush() // 一次 flush：续传循环逐块提交至排空
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
-	require.Len(t, writer.calls, total/maxUsageLogsPerTx, "共 %d 个事务（无单事务超限）", total/maxUsageLogsPerTx)
+	require.Len(t, writer.calls, total/maxUsageLogsPerTx, "单次 flush 全量落库（12 块，不再 10k/次 钉死）")
 	var rows, cost int64
 	for _, c := range writer.calls {
 		require.LessOrEqual(t, len(c.logs), maxUsageLogsPerTx, "单事务行数有界（巨批 CreateBulk 内存不暴涨）")
@@ -605,11 +588,13 @@ func TestFlusherHugeBacklogChunkedTx(t *testing.T) {
 	require.Equal(t, int64(total), rows, "全量落库（无丢失）")
 	require.Equal(t, int64(total*3), cost, "cost 跨事务总和精确（无重复扣费）")
 	require.Zero(t, f.pendingN.Load(), "排空后 pending 计数归零")
+	require.Zero(t, f.pendingCount(), "排空后 map 空（无续传残留）")
 }
 
 // TestFlusherHugeBacklogDoesNotStarveOthers P2：巨批用户拆事务后同批其他用户
-// 不被饿死——一次 flush 触发内巨批用户一事务 + 小用户全量并行落库（此前巨批
-// 单事务串行 8 分钟，flushMu 冻结全局记录）。
+// 不被饿死——一次 flush 触发内巨批用户全量续传（多事务）+ 小用户并行落库
+// （此前巨批单事务串行 8 分钟，flushMu 冻结全局记录；续传循环的逐事务提交 +
+// 分片并行保持同批不冻结）。
 func TestFlusherHugeBacklogDoesNotStarveOthers(t *testing.T) {
 	writer := &fakeDeductWriter{}
 	f := newTestFlusherWorkers(writer, 4)
@@ -618,18 +603,27 @@ func TestFlusherHugeBacklogDoesNotStarveOthers(t *testing.T) {
 	}
 	f.Record(&domain.UsageLog{UserID: 2, Cost: 7})
 
-	f.flush() // 一触发：user1 一事务（10k）+ user2 全量并行
+	f.flush() // 一触发：user1 巨批续传循环全量 + user2 同批并行
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
-	require.Len(t, writer.calls, 2, "巨批用户拆出一事务，其他用户同批处理")
-	byUID := map[int64]deductCall{}
-	for _, c := range writer.calls {
-		byUID[c.userID] = c
+	require.Len(t, writer.calls, 11, "user1 10 事务 + user2 1 事务同批处理")
+	var user1Rows int64
+	var user2 *deductCall
+	for i := range writer.calls {
+		c := writer.calls[i]
+		if c.userID == 1 {
+			user1Rows += int64(len(c.logs))
+			require.LessOrEqual(t, len(c.logs), maxUsageLogsPerTx, "user1 单事务行数上限")
+		} else {
+			user2 = &writer.calls[i]
+		}
 	}
-	require.Len(t, byUID[2].logs, 1, "user2 不受巨批用户阻塞")
-	require.Equal(t, int64(7), byUID[2].cost)
-	require.Len(t, byUID[1].logs, maxUsageLogsPerTx, "user1 首事务行数上限")
-	require.Equal(t, 1, f.pendingCount(), "user1 剩余续传")
+	require.NotNil(t, user2, "user2 必须同批处理")
+	require.Len(t, user2.logs, 1, "user2 不受巨批用户阻塞")
+	require.Equal(t, int64(7), user2.cost)
+	require.Equal(t, int64(100_000), user1Rows, "user1 全量落库（续传循环不再 10k/次 钉死）")
+	require.Zero(t, f.pendingCount(), "无续传残留")
+	require.Zero(t, f.pendingN.Load())
 }
 
 // TestFlusherHugeBacklogChunkFailureRefills P2：拆事务失败回灌语义——失败仅
@@ -661,4 +655,113 @@ func TestFlusherHugeBacklogChunkFailureRefills(t *testing.T) {
 	require.Equal(t, int64(20_000), rows, "全量落库（无重复无丢失）")
 	require.Equal(t, int64(20_000), cost, "cost 精确")
 	require.Zero(t, f.pendingN.Load())
+}
+
+// TestFlusherStormArrivalDrainedInSameFlush P2a：风暴到达有界——flush 在途时
+// 持续 Record（单 key 高压/429 风暴形态），续传循环在本轮 flush 内一并落库：
+// pending 峰值 = 单 flush 窗口到达量（不跨周期累积），flush 返回后归零。
+// 旧实现（每 flush 每用户至多一块）：在途期间到达的 30k 全部留到后续 flush
+// 逐个周期消化，pending 以 (到达-10k)/周期 无界增长。
+func TestFlusherStormArrivalDrainedInSameFlush(t *testing.T) {
+	writer := &blockingWriter{blocked: make(chan struct{}), started: make(chan struct{})}
+	blocked := writer.blocked // 首调消费后置 nil，测试须持本地引用
+	f := newTestFlusher(writer)
+	for i := 0; i < 20_000; i++ { // 初始积压（风暴开始前已存在）
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+
+	flushDone := make(chan struct{})
+	go func() {
+		defer close(flushDone)
+		f.flush() // 首批 worker 阻塞在途
+	}()
+	<-writer.started // flush 已换批、首个 DeductAndLog 在途
+
+	recDone := make(chan struct{})
+	go func() {
+		defer close(recDone)
+		for i := 0; i < 30_000; i++ { // 风暴：flush 在途期间持续到达
+			f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+		}
+	}()
+	<-recDone
+
+	close(blocked) // 放行首批
+	<-flushDone
+	writer.mu.Lock()
+	var rows int64
+	for _, c := range writer.calls {
+		rows += int64(len(c.logs))
+	}
+	writer.mu.Unlock()
+	require.Equal(t, int64(50_000), rows, "初始积压 + 风暴到达同轮 flush 全量落库")
+	require.Zero(t, f.pendingN.Load(), "风暴后 pending 归零（不跨周期累积）")
+	require.Zero(t, f.pendingCount(), "风暴后 map 空")
+}
+
+// TestFlusherBacklogDrainBudgetBoundsFlush P2a 公平性：续传循环受
+// backlogDrainBudget 约束——慢 DB 下每次 flush 至多预算内块数（flushMu 持有
+// 时间有界，其他用户 flush 周期不被长期饿死），剩余 refill 下轮续传，逐轮
+// 推进最终全量落库。
+func TestFlusherBacklogDrainBudgetBoundsFlush(t *testing.T) {
+	old := backlogDrainBudget
+	backlogDrainBudget = 10 * time.Millisecond
+	t.Cleanup(func() { backlogDrainBudget = old })
+
+	// 慢 writer：单事务 30ms > 预算 → 每轮 flush 恰好一块（预算在块间检查，
+	// 首块不受门槛约束）
+	writer := &ctxWriter{latency: 30 * time.Millisecond}
+	f := newTestFlusher(writer)
+	const total = 30_000 // 3 块
+	for i := 0; i < total; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+
+	f.flush() // 第一轮：1 块，其余 refill
+	writer.mu.Lock()
+	n := len(writer.calls)
+	writer.mu.Unlock()
+	require.Equal(t, 1, n, "预算内每轮至多一块（慢 DB 下 flushMu 持有有界）")
+	require.Equal(t, 1, f.pendingCount(), "剩余回灌下轮续传")
+	require.Equal(t, int64(total-maxUsageLogsPerTx), f.pendingN.Load(), "pending 计数同步剩余")
+
+	rounds := 0
+	for f.pendingCount() > 0 { // 逐轮推进至排空（每轮一块）
+		require.Less(t, rounds, total/maxUsageLogsPerTx+2, "推进轮数有界")
+		f.flush()
+		rounds++
+	}
+	require.Equal(t, total/maxUsageLogsPerTx-1, rounds, "剩余 2 块逐轮提交")
+	require.Zero(t, f.pendingN.Load())
+}
+
+// TestFlusherCloseDrainsHugeBacklog P2b（压测 2026-08-11 复测修复）：停机排空
+// 函数级——pending 非空时 Close 在退出前同步 flush 全量（预算内完整排空、无
+// 截断 Warn）；续传循环使单用户巨批一次 flushCtx 全量落库（不再 10k/次 钉死
+// 拉长排空时间，停机丢量规模收敛到"预算内尽量 flush"的截断路径，后者由
+// TestFlusherCloseTruncatesOnBudget 覆盖）。
+func TestFlusherCloseDrainsHugeBacklog(t *testing.T) {
+	const total = 250_000 // 25 事务
+	writer := &fakeDeductWriter{}
+	f := newTestFlusher(writer)
+	for i := 0; i < total; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 2})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, f.Close(ctx)) // 停机：退出前同步 drain pending
+
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Len(t, writer.calls, total/maxUsageLogsPerTx, "退出前全量落库（每事务行数上限不变）")
+	var rows, cost int64
+	for _, c := range writer.calls {
+		require.LessOrEqual(t, len(c.logs), maxUsageLogsPerTx)
+		rows += int64(len(c.logs))
+		cost += c.cost
+	}
+	require.Equal(t, int64(total), rows, "停机不丢（预算内完整排空）")
+	require.Equal(t, int64(total*2), cost, "cost 精确（无重复扣费）")
+	require.Zero(t, f.pendingN.Load(), "退出前 pending 清空")
 }

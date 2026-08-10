@@ -38,6 +38,18 @@ var pendingWaterline int64 = 1_000_000
 // 事务，单事务时长/内存有界），事务内仍由 DeductAndLog 按 500 行/批分片。
 const maxUsageLogsPerTx = 10_000
 
+// backlogDrainBudget 单次 flush 内积压用户续传循环的时间预算（P2a，压测
+// 2026-08-11 复测修复）：P2 拆事务的"每 flush 每用户至多一块"把单用户 drain
+// 钉死在 10k 行/s（1s flush 周期 × 10k 块），持续超限到达（429 风暴/单 key
+// 高压）时 pending 无界增长（60s 风暴 → 9.8M 行 / RSS 7.5GB）。续传循环
+// （见 flushCtx）：逐块（≤ maxUsageLogsPerTx，事务内存有界不变）提交，块间
+// 续取（含 flush 期间并发 Record/回灌），超预算 → 剩余 refill 下轮续传。
+// 效果：单用户 drain 由"一块/次 flush"提升到预算内尽可能多的块（DB 快时
+// 5-10 倍），同时 flushMu 持有时间有界（≤ 预算 + 尾事务）——其他用户 flush
+// 周期不被长期饿死（P2"多用户计费不受单用户积压影响"不变量保持）。
+// var（非 const）：测试注入小预算；默认 500ms（= 1s flush 周期的一半）。
+var backlogDrainBudget = 500 * time.Millisecond
+
 // flusherPending 单用户聚合条目（userID → cost 总额 + 明细日志，同事务落库）。
 type flusherPending struct {
 	cost int64
@@ -53,8 +65,10 @@ type flusherPending struct {
 // swap 整个 pending（换新 map，flush 期间新日志进新 map 零阻塞）→ 批按
 // userID 分片（同 user 恒同桶 → 实例内串行；FEFO 行锁跨实例安全不变）→
 // N worker 并发逐 user DeductAndLog 单事务（P2：单用户巨批 > maxUsageLogsPerTx
-// 行拆多事务逐事务提交，超出部分 refill 续传——flushMu 持有时间有界，事务间
-// 自然让出）→ 成功定向刷新余额快照（O(1)）。
+// 行拆多事务逐事务提交；P2a：积压用户续传循环——逐块提交后块间续取，至多
+// backlogDrainBudget 预算（flushMu 持有时间有界，其他用户 flush 周期不被
+// 长期饿死；单用户 drain 由 10k/次 flush 提升到 DB 实际吞吐））→ 成功定向
+// 刷新余额快照（O(1)）。
 // Close 幂等：等聚合 goroutine 退出 + 受 shutdown ctx 预算约束的排空循环，
 // 其中"等在途批次"以 flushMu 获取表达（flushCtx 串行——在途批次持有
 // flushMu 期间 Close 等待；SIGTERM 时 ticker 批次可能已在途，若无此等待
@@ -276,34 +290,46 @@ func (f *Flusher) flushCtx(ctx context.Context) int64 {
 					f.refill(uid, e)
 					continue
 				}
-				// P2（压测 2026-08-11）：单用户巨批拆事务——单事务 ≤
-				// maxUsageLogsPerTx 行（超出部分立即 refill，由下个 flush
-				// 触发续传）：flushCtx 持有 flushMu 时间 = 每用户至多一
-				// 事务（有界），事务间自然让出——单用户积压不再冻结全局
-				// 记录，巨批 CreateBulk 构建内存有界。每事务原子；跨事务
-				// 部分成功可接受（评审裁决：宁可少记不可死锁）——失败仅
-				// 回灌未提交块，已提交块不重放（不重复扣费）。
-				chunk := e
-				if len(e.logs) > maxUsageLogsPerTx {
-					chunk = &flusherPending{
-						cost: e.cost * maxUsageLogsPerTx / int64(len(e.logs)),
-						logs: e.logs[:maxUsageLogsPerTx],
+				// P2a（压测 2026-08-11 复测修复）：积压用户续传循环。P2 拆
+				// 事务的"每 flush 每用户至多一块"把单用户 drain 钉死在
+				// 10k 行/s（1s flush 周期），持续超限到达时 pending 无界
+				// 增长（9.8M 行 / 7.5GB 实证）。循环：逐块（≤
+				// maxUsageLogsPerTx，单事务时长/内存有界不变）提交，块间
+				// 续取（takePending——flush 期间并发 Record/失败回灌的条目
+				// 一并续传），超过 backlogDrainBudget 或 ctx 到期 → 剩余
+				// refill 由下轮 flush/Close 续传（flushMu 持有时间有界，
+				// 其他用户 flush 周期不被长期饿死）。失败 → 本用户本轮
+				// 停止（chunk 已回灌，下轮重试；不无界重试同一块）。每
+				// 事务原子；跨事务部分成功可接受（评审裁决：宁可少记
+				// 不可死锁）——失败仅回灌未提交块，已提交块不重放（不
+				// 重复扣费）。
+				for start := time.Now(); e != nil; e = f.takePending(uid) {
+					if ctx.Err() != nil || time.Since(start) > backlogDrainBudget {
+						f.refill(uid, e)
+						break
 					}
-					f.refill(uid, &flusherPending{
-						cost: e.cost - chunk.cost,
-						logs: e.logs[maxUsageLogsPerTx:],
-					})
-				}
-				_, bal, err := f.writer.DeductAndLog(ctx, uid, chunk.cost, chunk.logs)
-				if err != nil {
-					if f.log != nil {
-						f.log.Warn("billing deduct failed", logx.Int64("user_id", uid), logx.Int64("cost", chunk.cost), logx.Error(err))
+					chunk := e
+					if len(e.logs) > maxUsageLogsPerTx {
+						chunk = &flusherPending{
+							cost: e.cost * maxUsageLogsPerTx / int64(len(e.logs)),
+							logs: e.logs[:maxUsageLogsPerTx],
+						}
+						f.refill(uid, &flusherPending{
+							cost: e.cost - chunk.cost,
+							logs: e.logs[maxUsageLogsPerTx:],
+						})
 					}
-					f.refill(uid, chunk)
-					continue
+					_, bal, err := f.writer.DeductAndLog(ctx, uid, chunk.cost, chunk.logs)
+					if err != nil {
+						if f.log != nil {
+							f.log.Warn("billing deduct failed", logx.Int64("user_id", uid), logx.Int64("cost", chunk.cost), logx.Error(err))
+						}
+						f.refill(uid, chunk)
+						break
+					}
+					f.bal.Set(uid, bal)
+					drained.Add(int64(len(chunk.logs)))
 				}
-				f.bal.Set(uid, bal)
-				drained.Add(int64(len(chunk.logs)))
 			}
 		}(shard)
 	}
@@ -324,4 +350,20 @@ func (f *Flusher) refill(uid int64, e *flusherPending) {
 	pe.cost += e.cost
 	pe.logs = append(pe.logs, e.logs...)
 	f.pendingN.Add(int64(len(e.logs)))
+}
+
+// takePending 锁内取走某用户的当前 pending 条目（无则 nil）——P2a 续传循环
+// 用：积压用户逐块提交后立即续取（flush 期间并发 Record 入新 map / 失败回灌
+// 的条目同样被续传），单次 flush 内尽可能多落库。与 refill/Record 同锁，
+// pendingN 同步增减（条目已从 map 移除即不再计入水线观测）。
+func (f *Flusher) takePending(uid int64) *flusherPending {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, ok := f.pending[uid]
+	if !ok {
+		return nil
+	}
+	delete(f.pending, uid)
+	f.pendingN.Add(-int64(len(e.logs)))
+	return e
 }

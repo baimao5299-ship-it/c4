@@ -11,7 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/usage"
 	"go-proxy-mini/pkg/cryptox"
 )
 
@@ -90,6 +92,94 @@ func TestProxyConcurrencyLimit429(t *testing.T) {
 	p.HandleChat(rec3, chatReq("gk-1"))
 	require.Equal(t, http.StatusOK, rec3.Code, "释放后可恢复: %s", rec3.Body.String())
 	waitGateKey(t, p, 1, 0)
+}
+
+// TestProxyRejectionStormNoPending P2a 源头修复（压测 2026-08-11 复测）：本地
+// 预用量拒绝（并发超限 429 等）不产生 usage_logs 明细/pending——单 key 限流
+// 161k req/s 的拒绝风暴（实证 60s → 9.8M pending 行 / RSS 7.5GB，全部漏斗到
+// 单用户 billed flusher）不再无界积压；统计聚合保留（usagestat 计数不丢）。
+// billing on/off 双形态（on 形态修复前 429 与成功请求同走 billed flusher）。
+func TestProxyRejectionStormNoPending(t *testing.T) {
+	t.Run("billing off", func(t *testing.T) {
+		up, release := blockingUpstream(t)
+		defer up.Close()
+		store := &captureLogStore{}
+		p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+		meta := activeKey(1, 1, 10)
+		meta.KeyMaxConc = 1
+		p.auth.Upsert(cryptox.HashKey("gk-1"), meta)
+
+		rec1 := httptest.NewRecorder()
+		done := make(chan struct{})
+		go func() { p.HandleChat(rec1, chatReq("gk-1")); close(done) }()
+		waitGateKey(t, p, 1, 1) // 第一请求占住唯一并发槽
+
+		const storm = 300 // 风暴：并发超限 429
+		for i := 0; i < storm; i++ {
+			recw := httptest.NewRecorder()
+			p.HandleChat(recw, chatReq("gk-1"))
+			require.Equal(t, http.StatusTooManyRequests, recw.Code, "body=%s", recw.Body.String())
+		}
+		require.Zero(t, p.rec.Pending(), "429 风暴不产生 Recorder 明细 pending（修复前 300 条全进 pending）")
+
+		close(release)
+		<-done
+		require.NoError(t, p.rec.Close(context.Background()))
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		require.Len(t, store.logs, 1, "仅成功请求产生明细（429 拒绝零明细）")
+	})
+
+	t.Run("billing on", func(t *testing.T) {
+		up, release := blockingUpstream(t)
+		defer up.Close()
+		store := &captureLogStore{}
+		stats := &captureStatUpserter{}
+		rec := usage.New(usage.UsageConfig{
+			BatchSize: 100, FlushInterval: time.Hour,
+			StatsFlushInterval: time.Hour,
+		}, store, stats, nil)
+		bal := billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 50000}}, nil)
+		require.NoError(t, bal.Reload(context.Background()))
+		writer := &fakeDeductWriter{}
+		f := billing.NewFlusher(billing.FlushConfig{
+			FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
+		}, writer, rec, bal, nil)
+		p := newTestProxyBillingT3Logs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}}, bal, f, rec)
+		meta := activeKey(1, 1, 10)
+		meta.KeyMaxConc = 1
+		p.auth.Upsert(cryptox.HashKey("gk-1"), meta)
+
+		rec1 := httptest.NewRecorder()
+		done := make(chan struct{})
+		go func() { p.HandleChat(rec1, chatReq("gk-1")); close(done) }()
+		waitGateKey(t, p, 1, 1)
+
+		const storm = 300 // 风暴：并发超限 429（UserID>0 → 修复前全部漏斗到 billed flusher）
+		for i := 0; i < storm; i++ {
+			recw := httptest.NewRecorder()
+			p.HandleChat(recw, chatReq("gk-1"))
+			require.Equal(t, http.StatusTooManyRequests, recw.Code, "body=%s", recw.Body.String())
+		}
+		require.Zero(t, p.rec.Pending(), "429 风暴不产生 Recorder 明细 pending")
+
+		close(release)
+		<-done
+		require.NoError(t, f.Close(context.Background()))
+		writer.mu.Lock()
+		require.Len(t, writer.calls, 1, "仅成功请求进 billed flusher（429 风暴零记录——修复前 9.8M 行实证）")
+		writer.mu.Unlock()
+		require.NoError(t, rec.Close(context.Background()))
+		stats.mu.Lock()
+		defer stats.mu.Unlock()
+		var reqs, errs int64
+		for _, b := range stats.buckets {
+			reqs += b.RequestCount
+			errs += b.ErrorCount
+		}
+		require.Equal(t, int64(storm+1), reqs, "拒绝仍聚合统计（usagestat 计数不丢）")
+		require.Equal(t, int64(storm), errs, "429 拒绝计错误")
+	})
 }
 
 // 用户级并发：同一用户两个 key 共享 user 上限（跨 key 计数）。

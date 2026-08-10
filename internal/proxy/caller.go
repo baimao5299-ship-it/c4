@@ -120,7 +120,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	// 未设置额度 key 短路零成本；预算耗尽 → gate 内 DB 复核认领后再判定）
 	if p.auth.QuotaExhausted(meta) {
 		writeErr(w, errQuotaExhausted)
-		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
 		return
 	}
 	// 余额预检（Phase 5 计费；评审 I-1 无槽位问题）：快照读零 DB（滞后 ≤
@@ -134,7 +134,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
 		if (!ok || bal <= 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
 			writeErr(w, errInsufficientBalance)
-			p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
 			return
 		}
 	}
@@ -143,7 +143,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	acquired, ok := p.auth.Acquire(meta)
 	if !ok {
 		writeErr(w, errConcurrency)
-		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
 		return
 	}
 	defer p.auth.Release(meta, acquired)
@@ -203,7 +203,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 				}
 			case billing.TierPolicyReject:
 				writeErr(w, errServiceTierRejected)
-				p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start)
+				p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start)
 				return
 			}
 		}
@@ -239,7 +239,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	}
 	if err != nil {
 		p.handleSelectError(w, err)
-		p.record(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
 		return
 	}
 
@@ -258,7 +258,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		if p.bill != nil && p.bill.Prices != nil {
 			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
 				p.sched.Release(sel.AccountID)
-				p.record(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
 				writeErr(w, errNoPrice)
 				return
 			}
