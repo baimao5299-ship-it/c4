@@ -188,6 +188,11 @@ func (d *Debouncer) Users() { d.mark(KindUsers, nil) }
 // 重启）。
 func (d *Debouncer) Templates() { d.mark(KindTemplates|KindClients, nil) }
 
+// Clients 仅客户端工厂失效（aiclient.Factory.InvalidateAll）：模板/账号
+// 变更以外独立出现的 clients 失效（#14 T3a notify Dispatcher 独立映射；
+// 服务端发布点恒与 Templates 或 Groups 并排，此处是防御性兜底）。
+func (d *Debouncer) Clients() { d.mark(KindClients, nil) }
+
 // Multipliers 组倍率 / 用户-组专属倍率（price_multiplier）变更（含组创建/
 // 删除与 group_assignment CRUD——新倍率须即刻进快照，防 ×1 计费窗口）：余额
 // 倍率快照定向刷新（组 + assignment 两路小表单查，非全量 Reload——
@@ -223,6 +228,12 @@ func (d *Debouncer) Accounts(gids []int64, keyChanged bool) {
 
 // Name 满足 worker.Worker 契约。
 func (d *Debouncer) Name() string { return "invalidate" }
+
+// SetSettings 后置注入 settings 重载器（#14 T3a 装配）：main 构造顺序上
+// service 在 invalidate 之后（service.New 需要去抖器做 Invalidator，去抖器
+// 需要 svc 做 SettingsReloader——构造环），svc 构造完成后回填。必须在 Start
+// 前调用（reloadAll 读 cfg，无锁）。
+func (d *Debouncer) SetSettings(r SettingsReloader) { d.cfg.Settings = r }
 
 // Start 启动执行 goroutine（幂等：重复 Start 返回错误；worker 契约）。
 func (d *Debouncer) Start(ctx context.Context) error {

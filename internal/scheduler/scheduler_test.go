@@ -1037,3 +1037,131 @@ func TestMarkResultLastErrorWriteback(t *testing.T) {
 	}, time.Second, 10*time.Millisecond, "恢复为 active → last_error 清空")
 	require.NoError(t, s.Close(context.Background()))
 }
+
+// fakeGroupPub 记录 PublishGroups 收到的组 id（#14 T3a 发布断言目标）。
+type fakeGroupPub struct {
+	mu   sync.Mutex
+	rows [][]int64
+}
+
+func (f *fakeGroupPub) PublishGroups(ctx context.Context, gids []int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rows = append(f.rows, append([]int64(nil), gids...))
+}
+func (f *fakeGroupPub) calls() [][]int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([][]int64, len(f.rows))
+	copy(out, f.rows)
+	return out
+}
+
+// newSchedWithPub 构造带组级发布器的调度器（组发布断言测试用）。
+func newSchedWithPub(t *testing.T, m *memLoader, gp GroupChangePublisher) *Scheduler {
+	t.Helper()
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	cfg := testCfg()
+	cfg.GroupPub = gp
+	s := New(cfg, m, re, nil)
+	require.NoError(t, s.reload(context.Background()))
+	return s
+}
+
+// TestProcessWritePublishesGroupChange #14 T3a：状态回写成功后发布组级 NOTIFY
+//（受影响组，去重合并；一次回写批次一条 NOTIFY——R3，设计文档 §1.3/§5 #6）。
+func TestProcessWritePublishesGroupChange(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4), acc(2, tplx, 4)}})
+	gp := &fakeGroupPub{}
+	s := newSchedWithPub(t, m, gp)
+
+	// 同组两账号状态回写合并进同一 processWrite 批 → 单条发布，组去重
+	s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, nil)
+	s.enqueueWrite(2, accState{status: domain.Status429, errCount: 1}, nil)
+	require.NoError(t, s.Close(context.Background())) // 排空触发 processWrite
+
+	rows := gp.calls()
+	require.Len(t, rows, 1, "一次回写批次一条 NOTIFY（R3）")
+	require.ElementsMatch(t, []int64{10}, rows[0], "同组账号去重合并为单组")
+	require.Len(t, m.writes, 2, "两条状态写均落库")
+}
+
+// TestProcessWritePublishMultiGroup 多组账号（共享实例 groupIDs=[10,20]）→
+// 发布全部受影响组。
+func TestProcessWritePublishMultiGroup(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{
+		10: {acc(1, tplx, 4)},
+		20: {acc(1, tplx, 4)}, // 同一账号 ID=1 跨两组
+	})
+	gp := &fakeGroupPub{}
+	s := newSchedWithPub(t, m, gp)
+
+	s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, nil)
+	require.NoError(t, s.Close(context.Background()))
+
+	rows := gp.calls()
+	require.Len(t, rows, 1)
+	require.ElementsMatch(t, []int64{10, 20}, rows[0], "多组账号发布全部组")
+}
+
+// TestProcessWritePublishSkipsUnknown 快照外账号（已移除）：回写成功但无组可
+// 传播 → 不发布（其余实例经 ≤30s 全量同步 / 60s 兜底收敛）。
+func TestProcessWritePublishSkipsUnknown(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	gp := &fakeGroupPub{}
+	s := newSchedWithPub(t, m, gp)
+
+	s.enqueueWrite(99, accState{status: domain.Status429, errCount: 1}, nil) // 快照外
+	require.NoError(t, s.Close(context.Background()))
+	require.Empty(t, gp.calls(), "快照外账号无组可传播，不发布")
+}
+
+// TestProcessWriteNoPublisherNoop GroupPub 未装配（单实例/旧装配）→ 发布 no-op
+// 不 panic。
+func TestProcessWriteNoPublisherNoop(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})
+	s := newSched(t, m) // 默认 Config 无 GroupPub
+
+	s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, nil)
+	require.NoError(t, s.Close(context.Background()))
+	require.Len(t, m.writes, 1, "回写不受影响")
+}
+
+// TestProcessWriteConcurrentInvalidateGroupRace 评审 M-1 回归：processWrite 收集
+// groupIDs 与 InvalidateGroup 的 removeGid 就地改写并发——-race 下复现（修复前
+// 必报 DATA RACE，修复后静默）。loader 侧交替组 10 成员资格：账号仅属组 20 时
+// InvalidateGroup(10) 触发 removeGid 改写 groupIDs 切片。
+func TestProcessWriteConcurrentInvalidateGroupRace(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	a := acc(1, tplx, 4)
+	m := newMemLoader(map[int64][]*domain.Account{10: {a}, 20: {a}})
+	s := newSched(t, m)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go s.writebackLoop(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 3000; i++ {
+			// 组 10 成员资格交替移除/恢复：移除后 InvalidateGroup(10) 走 removeGid
+			// 就地改写 groupIDs；enqueue 与 removeGid 交替 → 回写循环的 groupIDs
+			// 读取与改写持续重叠（修复前 -race 必报，修复后静默）。
+			m.mu.Lock()
+			m.byGroup[10] = nil
+			m.mu.Unlock()
+			s.InvalidateGroup(10)
+			m.mu.Lock()
+			m.byGroup[10] = []*domain.Account{a}
+			m.mu.Unlock()
+			s.InvalidateGroup(10)
+			s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, nil)
+		}
+	}()
+	<-done
+}
