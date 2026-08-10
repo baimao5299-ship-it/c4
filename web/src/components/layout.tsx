@@ -1,34 +1,43 @@
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, LogOut, KeyRound } from 'lucide-react'
+import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { userAuth } from '@/lib/auth'
+import { userApi } from '@/lib/api/client'
 import { setLang, type AppLang } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { ModeToggle } from '@/components/mode-toggle'
 import { cn } from '@/lib/utils'
+import AppSidebar from '@/components/app-sidebar'
 
-const nav = [
-  { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
-  { to: '/app/templates', key: 'nav.templates', icon: Boxes },
-  { to: '/app/accounts', key: 'nav.accounts', icon: Users },
-  { to: '/app/users', key: 'nav.users', icon: UserCog },
-  { to: '/app/groups', key: 'nav.groups', icon: FolderOpen },
-  { to: '/app/logs', key: 'nav.logs', icon: FileText },
-  { to: '/app/stats', key: 'nav.stats', icon: BarChart3 },
-  { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
-  { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
-  { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
-  { to: '/app/settings', key: 'nav.settings', icon: Settings },
-]
-
-// 用户中心菜单组（图标与 user-layout.tsx 保持一致）
-const userNav = [
-  { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
-  { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
-  { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
-  { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
-  { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
+// 管理组（/app）与用户组（/user）两组导航；分组标题与用户端一致。
+const navs = [
+  {
+    titleKey: 'user.nav.adminSection',
+    items: [
+      { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
+      { to: '/app/templates', key: 'nav.templates', icon: Boxes },
+      { to: '/app/accounts', key: 'nav.accounts', icon: Users },
+      { to: '/app/users', key: 'nav.users', icon: UserCog },
+      { to: '/app/groups', key: 'nav.groups', icon: FolderOpen },
+      { to: '/app/logs', key: 'nav.logs', icon: FileText },
+      { to: '/app/stats', key: 'nav.stats', icon: BarChart3 },
+      { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
+      { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
+      { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
+      { to: '/app/settings', key: 'nav.settings', icon: Settings },
+    ],
+  },
+  {
+    titleKey: 'user.nav.userSection',
+    items: [
+      { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
+      { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
+      { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
+      { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
+      { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
+    ],
+  },
 ]
 
 const LANGS: { code: AppLang; label: string }[] = [
@@ -37,39 +46,23 @@ const LANGS: { code: AppLang; label: string }[] = [
 ]
 
 export default function Layout() {
-  const navTo = useNavigate()
   const location = useLocation()
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
+  // 顶栏 email 与用户端同查询键共享缓存；401 由 App.tsx 全局 handleAuthError 统一处理
+  const { data: me } = useQuery({
+    queryKey: ['user', 'me'],
+    queryFn: () => userApi.me(),
+    staleTime: 60_000,
+  })
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
-        <div className="p-4 font-semibold text-lg">{t('common.appTitle')}</div>
-        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
-          {nav.map(({ to, key, icon: Icon }) => (
-            <NavLink key={to} to={to}
-              className={({ isActive }) => `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
-              <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
-            </NavLink>
-          ))}
-          <p className="px-3 pt-3 pb-1 text-xs font-medium text-sidebar-foreground/40">{t('user.nav.userSection')}</p>
-          {userNav.map(({ to, key, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}
-              className={({ isActive }) => `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
-              <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="p-3 border-t border-sidebar-border">
-          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground/60" onClick={() => { userAuth.clear(); navTo('/user/login') }}>
-            <LogOut className="h-4 w-4 mr-2" /> {t('common.logout')}
-          </Button>
-        </div>
-      </aside>
+      <AppSidebar navs={navs} />
       <main className="flex-1 overflow-auto p-6">
         <header className="mb-4 flex items-center justify-between">
           <div />
           <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">{me?.Email ?? ''}</span>
             <ModeToggle />
             <div className="inline-flex items-center gap-1 rounded-md border bg-background p-0.5">
               {LANGS.map(({ code, label }) => (

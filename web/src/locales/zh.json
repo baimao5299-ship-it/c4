@@ -710,8 +710,7 @@
       "keys": "Keys",
       "logs": "日志",
       "stats": "统计",
-      "redemptions": "兑换",
-      "logout": "退出"
+      "redemptions": "兑换"
     },
     "common": {
       "loading": "加载中…",

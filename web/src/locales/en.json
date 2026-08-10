@@ -710,8 +710,7 @@
       "keys": "Keys",
       "logs": "Logs",
       "stats": "Stats",
-      "redemptions": "Redeem",
-      "logout": "Log out"
+      "redemptions": "Redeem"
     },
     "common": {
       "loading": "Loading…",

@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { QueryCache, MutationCache, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, KeyRound, FileText, BarChart3, Ticket, LogOut, Boxes, Users, UserCog, FolderOpen, ScrollText, Coins, Settings } from 'lucide-react'
+import { LayoutDashboard, KeyRound, FileText, BarChart3, Ticket, Boxes, Users, UserCog, FolderOpen, ScrollText, Coins, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ApiUnauthorized, userApi } from '@/lib/api/client'
 import { userAuth } from '@/lib/auth'
@@ -10,8 +10,10 @@ import { setLang, type AppLang } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { ModeToggle } from '@/components/mode-toggle'
 import { cn } from '@/lib/utils'
+import AppSidebar from '@/components/app-sidebar'
 
-const nav = [
+// 用户中心菜单组
+const userNav = [
   { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
   { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
   { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
@@ -68,9 +70,8 @@ export default function UserLayout() {
 }
 
 function Shell() {
-  const navTo = useNavigate()
   const location = useLocation()
-  const { t, i18n } = useTranslation()
+  const { i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
   const { data: me } = useQuery({
     queryKey: ['user', 'me'],
@@ -78,38 +79,13 @@ function Shell() {
     staleTime: 60_000,
   })
   const isAdmin = me?.Role === 'platform_admin'
-  const navLinkCls = ({ isActive }: { isActive: boolean }) =>
-    `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`
-  const sectionTitle = (key: string) => (
-    <p className="px-3 pt-3 pb-1 text-xs font-medium text-sidebar-foreground/40">{t(key)}</p>
-  )
-  const logout = () => {
-    userAuth.clear()
-    navTo('/user/login')
-  }
+  // platform_admin 同时看到管理组 + 用户组；普通用户仅用户组
+  const navs = isAdmin
+    ? [{ titleKey: 'user.nav.adminSection', items: adminNav }, { titleKey: 'user.nav.userSection', items: userNav }]
+    : [{ titleKey: 'user.nav.userSection', items: userNav }]
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
-        <div className="p-4 font-semibold text-lg">{t('common.appTitle')}</div>
-        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
-          {isAdmin && (
-            <>
-              {sectionTitle('user.nav.adminSection')}
-              {adminNav.map(({ to, key, icon: Icon }) => (
-                <NavLink key={to} to={to} className={navLinkCls}>
-                  <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
-                </NavLink>
-              ))}
-              {sectionTitle('user.nav.userSection')}
-            </>
-          )}
-          {nav.map(({ to, key, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end} className={navLinkCls}>
-              <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
+      <AppSidebar navs={navs} />
       <main className="flex-1 overflow-auto p-6">
         <header className="mb-4 flex items-center justify-between">
           <div />
@@ -129,9 +105,6 @@ function Shell() {
                 </Button>
               ))}
             </div>
-            <Button variant="ghost" size="sm" onClick={logout}>
-              <LogOut className="h-4 w-4 mr-1" /> {t('user.nav.logout')}
-            </Button>
           </div>
         </header>
         <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
