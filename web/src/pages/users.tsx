@@ -258,8 +258,15 @@ export default function Users() {
   }
   const toggleGroup = (id: number, on: boolean) =>
     setGroupsChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
-  const setGroupMult = (id: number, mult: string) => setGroupsMult(m => ({ ...m, [id]: { mult, cleared: false } }))
-  const clearGroupMult = (id: number) => setGroupsMult(m => ({ ...m, [id]: { mult: '', cleared: true } }))
+  const setGroupMult = (id: number, mult: string) => {
+    // 填值即操作该组：private 未勾选时自动授予（专属倍率必然伴随组成员身份）。
+    if (!publicGroupIds.has(id) && !groupsChecked.includes(id)) toggleGroup(id, true)
+    setGroupsMult(m => ({ ...m, [id]: { mult, cleared: false } }))
+  }
+  const clearGroupMult = (id: number) => {
+    if (!publicGroupIds.has(id) && !groupsChecked.includes(id)) toggleGroup(id, true)
+    setGroupsMult(m => ({ ...m, [id]: { mult: '', cleared: true } }))
+  }
 
   // multipliers 三态：勾选且填值 → 数字；勾选留空（未清除）→ 省略键（沿用当前值）；
   // 勾选且显式清除 → null（回退组倍率）。未列出组沿用当前值 ✓（契约 PUT 语义）。
@@ -515,31 +522,27 @@ export default function Users() {
                       <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title={t('groups.table.priceMultiplier')}>
                         {formatMultiplier(g.PriceMultiplier, t)}
                       </span>
-                      {(checked || isPublic) && (
-                        <>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={10}
-                            step={0.1}
-                            value={row?.mult ?? ''}
-                            placeholder={t('groups.assignMultiplierPlaceholder')}
-                            onChange={e => setGroupMult(g.ID!, e.target.value)}
-                            className="h-7 w-24 text-xs"
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            title={t('groups.assignMultiplierClear')}
-                            disabled={!row?.mult && !row?.cleared}
-                            onClick={() => clearGroupMult(g.ID!)}
-                          >
-                            <X />
-                          </Button>
-                          {row?.cleared && (
-                            <span className="w-24 text-xs text-muted-foreground">{t('groups.assignMultiplierUnset')}</span>
-                          )}
-                        </>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={10}
+                        step={0.1}
+                        value={row?.mult ?? ''}
+                        placeholder={t('groups.assignMultiplierPlaceholder')}
+                        onChange={e => setGroupMult(g.ID!, e.target.value)}
+                        className="h-7 w-24 text-xs"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        title={t('groups.assignMultiplierClear')}
+                        disabled={!row?.mult && !row?.cleared}
+                        onClick={() => clearGroupMult(g.ID!)}
+                      >
+                        <X />
+                      </Button>
+                      {row?.cleared && (
+                        <span className="w-24 text-xs text-muted-foreground">{t('groups.assignMultiplierUnset')}</span>
                       )}
                     </div>
                   )
