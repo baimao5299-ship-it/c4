@@ -42,7 +42,7 @@ func (h *UserAPI) PostUserRedemptions(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp RedeemResponse
 	resp.Applied.Type = RedemptionType(apply.Type)
-	resp.Applied.Value = apply.Value
+	resp.Applied.Value = redemptionValueToAPI(apply.Type, apply.Value)
 	resp.Applied.ResourceExpiresAt = apply.ResourceExpiresAt
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -69,7 +69,7 @@ func (h *UserAPI) GetUserRedemptions(w http.ResponseWriter, r *http.Request, par
 			CodeID:            rec.CodeID,
 			Code:              rec.Code,
 			CodeType:          RedemptionType(rec.CodeType),
-			Value:             rec.Value,
+			Value:             redemptionValueToAPI(rec.CodeType, rec.Value),
 			Remark:            rec.Remark,
 			ResourceExpiresAt: rec.ResourceExpiresAt,
 			CreatedAt:         rec.CreatedAt,

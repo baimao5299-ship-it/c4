@@ -336,8 +336,8 @@ type GenerateRequest struct {
 	ResourceExpiresAt *time.Time     `json:"resource_expires_at,omitempty"`
 	Type              RedemptionType `json:"type"`
 
-	// Value 最小单位（分/并发数）；> 0
-	Value int64 `json:"value"`
+	// Value 面值：balance/temp_balance = USD；concurrency = 并发数（整数）。> 0
+	Value float64 `json:"value"`
 }
 
 // GenerateResponse defines model for GenerateResponse.
@@ -569,8 +569,8 @@ type RedemptionCode struct {
 	// UsedCount 已兑换次数
 	UsedCount int `json:"UsedCount"`
 
-	// Value 最小单位（分/并发数）
-	Value int64 `json:"Value"`
+	// Value 面值：balance/temp_balance = USD（1 = $1）；concurrency = 并发数（整数）。存储毫分（API 边界换算）
+	Value float64 `json:"Value"`
 }
 
 // RedemptionCodeListResponse defines model for RedemptionCodeListResponse.
@@ -593,8 +593,8 @@ type RedemptionUse struct {
 	ResourceExpiresAt *time.Time `json:"ResourceExpiresAt"`
 	UserID            int64      `json:"UserID"`
 
-	// Value 兑换时的值快照
-	Value int64 `json:"Value"`
+	// Value 兑换时的值快照（同面值单位语义）
+	Value float64 `json:"Value"`
 }
 
 // RedemptionUseListResponse defines model for RedemptionUseListResponse.

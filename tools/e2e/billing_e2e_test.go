@@ -438,9 +438,9 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	u2Token, u2Key := userKey(t, env, u2, g1)
 	// O2 去抖：u2 须在余额快照中（下方首个请求的计费预检依赖）。
 	waitSnapshot()
-	// temp_balance 兑换码 500 毫分
+	// temp_balance 兑换码 500 毫分（API 面值 USD：0.005 = $0.005 = 500 毫分）
 	codeResp, respBody := env.admin(http.MethodPost, "/redemption-codes", map[string]any{
-		"type": "temp_balance", "value": 500, "resource_expires_at": "2030-01-01T00:00:00Z", "count": 1,
+		"type": "temp_balance", "value": 0.005, "resource_expires_at": "2030-01-01T00:00:00Z", "count": 1,
 	})
 	require.Equal(t, 200, codeResp, "gen code: %s", respBody)
 	code := jsonGet(t, respBody, "codes", 0, "Code")

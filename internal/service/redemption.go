@@ -138,8 +138,20 @@ func (s *Service) ListCodes(ctx context.Context, q repository.ListQuery, typ *do
 	return s.store.ListCodes(ctx, q, typ, status)
 }
 
+// GetCode 按 id 取兑换码（只读访问器；缺失 → 404 含详情）。admin 审计端点
+// /redemption-codes/{id}/uses 的面值换算需要码的 type（use 行不存类型），
+// handler 边界先取码再换算——存储语义不变。
+func (s *Service) GetCode(ctx context.Context, id int64) (*domain.RedemptionCode, error) {
+	c, err := s.store.GetCode(ctx, id)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	return c, nil
+}
+
 // GetCodeUses 某码的兑换记录（审计，/admin/redemption-codes/{id}/uses）：
-// 码不存在 → 404（mapRepoErr 含详情）。
+// 码不存在 → 404（mapRepoErr 含详情）。use 快照不存码类型——handler 需先
+// GetCode 取 type 做面值换算。
 func (s *Service) GetCodeUses(ctx context.Context, codeID int64) ([]*domain.RedemptionUse, int64, error) {
 	if _, err := s.store.GetCode(ctx, codeID); err != nil {
 		return nil, 0, mapRepoErr(err)
