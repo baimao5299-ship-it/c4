@@ -610,6 +610,38 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, int64(0), r.Cost, "组倍率 0 = 免费")
 	require.Equal(t, int64(0), env.balance(u5), "余额 0 免费用户不扣费不 402")
 
+	// ============ 场景 5.5：授予读取 + 用户维度分组（GET assignments / GET+PUT users/{id}/groups） ============
+	t.Log("场景 5.5：组授予读取与用户维度分组端点（与组维度 PUT 交叉验证）")
+	// 用户维度 PUT：u4 → [g2, g3]，g2 专属倍率 1.5（正常值 → 万分数 15000 存储）
+	c, rb30 := env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10)+"/groups",
+		map[string]any{"group_ids": []int64{g2, g3}, "multipliers": map[string]any{strconv.FormatInt(g2, 10): 1.5}})
+	require.Equal(t, 200, c, "put user groups: %s", rb30)
+	require.Contains(t, rb30, strconv.FormatInt(g2, 10), "响应含 g2")
+	require.Contains(t, rb30, strconv.FormatInt(g3, 10), "响应含 g3")
+	// 组维度读取交叉验证：g2 含 u4 且专属倍率 1.5 回显
+	c, rb31 := env.admin(http.MethodGet, "/groups/"+strconv.FormatInt(g2, 10)+"/assignments", nil)
+	require.Equal(t, 200, c, "get group assignments: %s", rb31)
+	require.Contains(t, rb31, strconv.FormatInt(u4, 10), "g2 授予含 u4")
+	require.Contains(t, rb31, `"`+strconv.FormatInt(u4, 10)+`":1.5`, "g2 的 u4 专属倍率 1.5")
+	// 用户维度 GET 回读
+	c, rb32 := env.admin(http.MethodGet, "/users/"+strconv.FormatInt(u4, 10)+"/groups", nil)
+	require.Equal(t, 200, c, "get user groups: %s", rb32)
+	require.Contains(t, rb32, `"`+strconv.FormatInt(g2, 10)+`":1.5`, "用户视角倍率 1.5")
+	// 替换语义：只留 g3 → g2 撤销（g2 不再含 u4）
+	c, rb33 := env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10)+"/groups",
+		map[string]any{"group_ids": []int64{g3}})
+	require.Equal(t, 200, c, "replace user groups: %s", rb33)
+	c, rb34 := env.admin(http.MethodGet, "/groups/"+strconv.FormatInt(g2, 10)+"/assignments", nil)
+	require.Equal(t, 200, c, "get g2 after replace: %s", rb34)
+	require.NotContains(t, rb34, strconv.FormatInt(u4, 10), "撤销后 g2 不含 u4")
+	// 空数组 = 清空；缺失资源 → 404
+	c, rb35 := env.admin(http.MethodPut, "/users/"+strconv.FormatInt(u4, 10)+"/groups", map[string]any{"group_ids": []int64{}})
+	require.Equal(t, 200, c, "clear user groups: %s", rb35)
+	c, rb36 := env.admin(http.MethodGet, "/users/999999/groups", nil)
+	require.Equal(t, 404, c, "missing user: %s", rb36)
+	c, rb37 := env.admin(http.MethodGet, "/groups/999999/assignments", nil)
+	require.Equal(t, 404, c, "missing group: %s", rb37)
+
 	// ============ 场景 6：sync 后 litellm 行矩阵填充 + manual 不被覆盖 ============
 	t.Log("场景 6：sync → litellm 行 22 列填充；manual 行不被覆盖")
 	c, rb12 := env.admin(http.MethodPut, "/settings", map[string]any{"key": "price_source_url", "value": pricesSrv.URL + "/prices.json"})

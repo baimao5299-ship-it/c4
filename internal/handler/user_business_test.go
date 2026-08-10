@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -347,4 +348,108 @@ func TestAdminLogsUserFilter(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, int64(1), body.Total)
 	require.Equal(t, int64(7), *body.Rows[0].UserID)
+}
+
+// TestAdminUserGroups 用户维度分组（GET/PUT /admin/users/{id}/groups）：
+// 替换语义（未列出撤销 / 空数组清空）+ 倍率换算（1.5 → 万分数 15000 存储 →
+// GET 回显 1.5；null 清除）+ 与组维度 GET /groups/{id}/assignments 交叉验证；
+// 非法/缺失 → 400/404。
+func TestAdminUserGroups(t *testing.T) {
+	doAdmin, doUser, store := newSharedRouters(t)
+
+	// 建两个 private 组 + 注册用户
+	var gids []int64
+	for _, name := range []string{"u-g1", "u-g2"} {
+		rec := doAdmin(http.MethodPost, "/admin/groups", `{"name":"`+name+`","visibility":"private"}`, "")
+		require.Equal(t, http.StatusOK, rec.Code, "create group: %s", rec.Body.String())
+		var g Group
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
+		gids = append(gids, *g.ID)
+	}
+	token, uid := registerAndGet(t, doUser, "ug@example.com")
+
+	// PUT 授予两组建 g1 专属倍率 1.5 → 响应回显；未设置的组 → null
+	body := fmt.Sprintf(`{"group_ids":[%d,%d],"multipliers":{"%d":1.5}}`, gids[0], gids[1], gids[0])
+	rec := doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", body, "")
+	require.Equal(t, http.StatusOK, rec.Code, "set groups: %s", rec.Body.String())
+	var resp UserGroupsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.ElementsMatch(t, gids, resp.GroupIds)
+	require.Equal(t, 1.5, *(*resp.Multipliers)[itoa(gids[0])], "倍率回显")
+	require.Nil(t, (*resp.Multipliers)[itoa(gids[1])], "未设置 → null")
+
+	// 存储层换算：1.5 → 万分数 15000
+	store.mu.Lock()
+	stored := store.assignMult[[2]int64{gids[0], uid}]
+	store.mu.Unlock()
+	require.NotNil(t, stored)
+	require.Equal(t, 15000, *stored, "1.5 → 15000 存储")
+
+	// GET 用户视角回读；GET 组视角交叉验证（用户维度写入 ↔ 组维度读取一致）
+	rec = doAdmin(http.MethodGet, "/admin/users/"+itoa(uid)+"/groups", "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "get user groups: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.ElementsMatch(t, gids, resp.GroupIds)
+	require.Equal(t, 1.5, *(*resp.Multipliers)[itoa(gids[0])])
+	rec = doAdmin(http.MethodGet, "/admin/groups/"+itoa(gids[0])+"/assignments", "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "get group assignments: %s", rec.Body.String())
+	var gresp GroupAssignmentsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &gresp))
+	require.Equal(t, []int64{uid}, gresp.UserIds)
+	require.Equal(t, 1.5, *(*gresp.Multipliers)[itoa(uid)], "组维度读取与用户维度写入一致")
+
+	// 用户面可见性：授予的 private 组出现在 /user/groups
+	rec = doUser(http.MethodGet, "/user/groups", "", token)
+	var groups []Group
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groups))
+	require.Len(t, groups, 2, "授予后用户面可见")
+
+	// null 清除专属倍率 → 存储层清除、响应 null
+	body = fmt.Sprintf(`{"group_ids":[%d,%d],"multipliers":{"%d":null}}`, gids[0], gids[1], gids[0])
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", body, "")
+	require.Equal(t, http.StatusOK, rec.Code, "clear mult: %s", rec.Body.String())
+	resp = UserGroupsResponse{} // 重置：json 复用非 nil map 不清空既有键
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Nil(t, (*resp.Multipliers)[itoa(gids[0])], "null = 清除为未设置")
+	store.mu.Lock()
+	cleared, ok := store.assignMult[[2]int64{gids[0], uid}]
+	store.mu.Unlock()
+	require.True(t, ok)
+	require.Nil(t, cleared, "存储层已清除")
+
+	// 替换语义：只留 g1 → g2 撤销；空数组 = 清空
+	body = fmt.Sprintf(`{"group_ids":[%d]}`, gids[0])
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", body, "")
+	require.Equal(t, http.StatusOK, rec.Code, "replace: %s", rec.Body.String())
+	resp = UserGroupsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []int64{gids[0]}, resp.GroupIds)
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", `{"group_ids":[]}`, "")
+	require.Equal(t, http.StatusOK, rec.Code, "clear all: %s", rec.Body.String())
+	resp = UserGroupsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Empty(t, resp.GroupIds)
+	require.Empty(t, *resp.Multipliers, "multipliers 为空对象 {}（无专属倍率）")
+
+	// 错误路径：用户缺失 → 404；组缺失 → 404；multipliers 键不在 group_ids → 400；
+	// 重复 group_ids → 400；倍率越界 → 400
+	rec = doAdmin(http.MethodPut, "/admin/users/99999/groups", body, "")
+	require.Equal(t, http.StatusNotFound, rec.Code, "missing user: %s", rec.Body.String())
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", `{"group_ids":[99999]}`, "")
+	require.Equal(t, http.StatusNotFound, rec.Code, "missing group: %s", rec.Body.String())
+	body = fmt.Sprintf(`{"group_ids":[%d],"multipliers":{"%d":1.0}}`, gids[0], gids[1])
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", body, "")
+	require.Equal(t, http.StatusBadRequest, rec.Code, "mult key not in group_ids: %s", rec.Body.String())
+	body = fmt.Sprintf(`{"group_ids":[%d,%d]}`, gids[0], gids[0])
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", body, "")
+	require.Equal(t, http.StatusBadRequest, rec.Code, "dup group: %s", rec.Body.String())
+	body = fmt.Sprintf(`{"group_ids":[%d],"multipliers":{"%d":10.1}}`, gids[0], gids[0])
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid)+"/groups", body, "")
+	require.Equal(t, http.StatusBadRequest, rec.Code, "mult out of range: %s", rec.Body.String())
+
+	// GET 缺失资源 → 404
+	rec = doAdmin(http.MethodGet, "/admin/users/99999/groups", "", "")
+	require.Equal(t, http.StatusNotFound, rec.Code, "get missing user: %s", rec.Body.String())
+	rec = doAdmin(http.MethodGet, "/admin/groups/99999/assignments", "", "")
+	require.Equal(t, http.StatusNotFound, rec.Code, "get missing group: %s", rec.Body.String())
 }

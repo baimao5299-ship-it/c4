@@ -119,28 +119,28 @@ func apiMultiplierToMillis(v *float64) (*int, error) {
 	return &m, nil
 }
 
-// apiMultiplierMap 生成类型 multipliers（map[string]*float64，key = user_id
-// 字符串）→ 万分数 map[int64]*int（nil 值 = 清除为未设置）；key 非法/越界 →
-// 错误。
+// apiMultiplierMap 生成类型 multipliers（map[string]*float64，key = user_id /
+// group_id 字符串）→ 万分数 map[int64]*int（nil 值 = 清除为未设置）；key 非法/
+// 越界 → 错误。
 func apiMultiplierMap(in map[string]*float64) (map[int64]*int, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
 	out := make(map[int64]*int, len(in))
 	for k, v := range in {
-		uid, err := strconv.ParseInt(k, 10, 64)
+		id, err := strconv.ParseInt(k, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("multipliers: invalid user_id %q", k)
+			return nil, fmt.Errorf("multipliers: invalid key %q", k)
 		}
 		if v == nil {
-			out[uid] = nil // null = 清除为未设置
+			out[id] = nil // null = 清除为未设置
 			continue
 		}
 		if *v < 0 || *v > 10 {
-			return nil, fmt.Errorf("multipliers: price_multiplier must be in [0, 10] for user %d", uid)
+			return nil, fmt.Errorf("multipliers: price_multiplier must be in [0, 10] for id %d", id)
 		}
 		m := normalToMult(*v)
-		out[uid] = &m
+		out[id] = &m
 	}
 	return out, nil
 }
