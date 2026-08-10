@@ -248,7 +248,8 @@ export default function Groups() {
         prefilledUids.sort((a, b) => a - b)
         setAssignChecked(isPublic ? prefilledUids : resp.user_ids)
         setAssignMult(muls)
-        setAssignPrefillUids(prefilledUids)
+        // 默认列表数据源：public = 已配置专属倍率的用户；private = 已授予权限的用户全量
+        setAssignPrefillUids(isPublic ? prefilledUids : resp.user_ids)
         setAssignPrefilled(true)
       })
       .catch(() => {
