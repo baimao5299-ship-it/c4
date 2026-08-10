@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	entgo.io/ent v0.14.6
 	github.com/adhocore/gronx v1.20.1
-	github.com/anthropics/anthropic-sdk-go v1.56.0
+	github.com/anthropics/anthropic-sdk-go v1.62.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
