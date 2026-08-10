@@ -301,6 +301,33 @@ func (_u *UsageLogUpdate) AddLatencyMs(v int64) *UsageLogUpdate {
 	return _u
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (_u *UsageLogUpdate) SetTtftMs(v int64) *UsageLogUpdate {
+	_u.mutation.ResetTtftMs()
+	_u.mutation.SetTtftMs(v)
+	return _u
+}
+
+// SetNillableTtftMs sets the "ttft_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableTtftMs(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetTtftMs(*v)
+	}
+	return _u
+}
+
+// AddTtftMs adds value to the "ttft_ms" field.
+func (_u *UsageLogUpdate) AddTtftMs(v int64) *UsageLogUpdate {
+	_u.mutation.AddTtftMs(v)
+	return _u
+}
+
+// ClearTtftMs clears the value of the "ttft_ms" field.
+func (_u *UsageLogUpdate) ClearTtftMs() *UsageLogUpdate {
+	_u.mutation.ClearTtftMs()
+	return _u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_u *UsageLogUpdate) SetInputTokens(v int64) *UsageLogUpdate {
 	_u.mutation.ResetInputTokens()
@@ -322,6 +349,33 @@ func (_u *UsageLogUpdate) AddInputTokens(v int64) *UsageLogUpdate {
 	return _u
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (_u *UsageLogUpdate) SetPriceInputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPriceInputMillis()
+	_u.mutation.SetPriceInputMillis(v)
+	return _u
+}
+
+// SetNillablePriceInputMillis sets the "price_input_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePriceInputMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPriceInputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceInputMillis adds value to the "price_input_millis" field.
+func (_u *UsageLogUpdate) AddPriceInputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPriceInputMillis(v)
+	return _u
+}
+
+// ClearPriceInputMillis clears the value of the "price_input_millis" field.
+func (_u *UsageLogUpdate) ClearPriceInputMillis() *UsageLogUpdate {
+	_u.mutation.ClearPriceInputMillis()
+	return _u
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (_u *UsageLogUpdate) SetOutputTokens(v int64) *UsageLogUpdate {
 	_u.mutation.ResetOutputTokens()
@@ -340,6 +394,33 @@ func (_u *UsageLogUpdate) SetNillableOutputTokens(v *int64) *UsageLogUpdate {
 // AddOutputTokens adds value to the "output_tokens" field.
 func (_u *UsageLogUpdate) AddOutputTokens(v int64) *UsageLogUpdate {
 	_u.mutation.AddOutputTokens(v)
+	return _u
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (_u *UsageLogUpdate) SetPriceOutputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPriceOutputMillis()
+	_u.mutation.SetPriceOutputMillis(v)
+	return _u
+}
+
+// SetNillablePriceOutputMillis sets the "price_output_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePriceOutputMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPriceOutputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceOutputMillis adds value to the "price_output_millis" field.
+func (_u *UsageLogUpdate) AddPriceOutputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPriceOutputMillis(v)
+	return _u
+}
+
+// ClearPriceOutputMillis clears the value of the "price_output_millis" field.
+func (_u *UsageLogUpdate) ClearPriceOutputMillis() *UsageLogUpdate {
+	_u.mutation.ClearPriceOutputMillis()
 	return _u
 }
 
@@ -385,6 +466,33 @@ func (_u *UsageLogUpdate) AddCacheReadTokens(v int64) *UsageLogUpdate {
 	return _u
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (_u *UsageLogUpdate) SetPriceCacheReadMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPriceCacheReadMillis()
+	_u.mutation.SetPriceCacheReadMillis(v)
+	return _u
+}
+
+// SetNillablePriceCacheReadMillis sets the "price_cache_read_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePriceCacheReadMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPriceCacheReadMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceCacheReadMillis adds value to the "price_cache_read_millis" field.
+func (_u *UsageLogUpdate) AddPriceCacheReadMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPriceCacheReadMillis(v)
+	return _u
+}
+
+// ClearPriceCacheReadMillis clears the value of the "price_cache_read_millis" field.
+func (_u *UsageLogUpdate) ClearPriceCacheReadMillis() *UsageLogUpdate {
+	_u.mutation.ClearPriceCacheReadMillis()
+	return _u
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (_u *UsageLogUpdate) SetCacheCreationTokens(v int64) *UsageLogUpdate {
 	_u.mutation.ResetCacheCreationTokens()
@@ -403,6 +511,33 @@ func (_u *UsageLogUpdate) SetNillableCacheCreationTokens(v *int64) *UsageLogUpda
 // AddCacheCreationTokens adds value to the "cache_creation_tokens" field.
 func (_u *UsageLogUpdate) AddCacheCreationTokens(v int64) *UsageLogUpdate {
 	_u.mutation.AddCacheCreationTokens(v)
+	return _u
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (_u *UsageLogUpdate) SetPriceCacheCreationMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPriceCacheCreationMillis()
+	_u.mutation.SetPriceCacheCreationMillis(v)
+	return _u
+}
+
+// SetNillablePriceCacheCreationMillis sets the "price_cache_creation_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePriceCacheCreationMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPriceCacheCreationMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceCacheCreationMillis adds value to the "price_cache_creation_millis" field.
+func (_u *UsageLogUpdate) AddPriceCacheCreationMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPriceCacheCreationMillis(v)
+	return _u
+}
+
+// ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
+func (_u *UsageLogUpdate) ClearPriceCacheCreationMillis() *UsageLogUpdate {
+	_u.mutation.ClearPriceCacheCreationMillis()
 	return _u
 }
 
@@ -624,17 +759,44 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedLatencyMs(); ok {
 		_spec.AddField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.TtftMs(); ok {
+		_spec.SetField(usagelog.FieldTtftMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftMs(); ok {
+		_spec.AddField(usagelog.FieldTtftMs, field.TypeInt64, value)
+	}
+	if _u.mutation.TtftMsCleared() {
+		_spec.ClearField(usagelog.FieldTtftMs, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedInputTokens(); ok {
 		_spec.AddField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.PriceInputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceInputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceInputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceInputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceInputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceInputMillis, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.OutputTokens(); ok {
 		_spec.SetField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedOutputTokens(); ok {
 		_spec.AddField(usagelog.FieldOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PriceOutputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceOutputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceOutputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceOutputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceOutputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceOutputMillis, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.TotalTokens(); ok {
 		_spec.SetField(usagelog.FieldTotalTokens, field.TypeInt64, value)
@@ -648,11 +810,29 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedCacheReadTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.PriceCacheReadMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceCacheReadMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceCacheReadMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.CacheCreationTokens(); ok {
 		_spec.SetField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PriceCacheCreationMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceCacheCreationMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceCacheCreationMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Cost(); ok {
 		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
@@ -968,6 +1148,33 @@ func (_u *UsageLogUpdateOne) AddLatencyMs(v int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (_u *UsageLogUpdateOne) SetTtftMs(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetTtftMs()
+	_u.mutation.SetTtftMs(v)
+	return _u
+}
+
+// SetNillableTtftMs sets the "ttft_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableTtftMs(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetTtftMs(*v)
+	}
+	return _u
+}
+
+// AddTtftMs adds value to the "ttft_ms" field.
+func (_u *UsageLogUpdateOne) AddTtftMs(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddTtftMs(v)
+	return _u
+}
+
+// ClearTtftMs clears the value of the "ttft_ms" field.
+func (_u *UsageLogUpdateOne) ClearTtftMs() *UsageLogUpdateOne {
+	_u.mutation.ClearTtftMs()
+	return _u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_u *UsageLogUpdateOne) SetInputTokens(v int64) *UsageLogUpdateOne {
 	_u.mutation.ResetInputTokens()
@@ -989,6 +1196,33 @@ func (_u *UsageLogUpdateOne) AddInputTokens(v int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (_u *UsageLogUpdateOne) SetPriceInputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPriceInputMillis()
+	_u.mutation.SetPriceInputMillis(v)
+	return _u
+}
+
+// SetNillablePriceInputMillis sets the "price_input_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePriceInputMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPriceInputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceInputMillis adds value to the "price_input_millis" field.
+func (_u *UsageLogUpdateOne) AddPriceInputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPriceInputMillis(v)
+	return _u
+}
+
+// ClearPriceInputMillis clears the value of the "price_input_millis" field.
+func (_u *UsageLogUpdateOne) ClearPriceInputMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPriceInputMillis()
+	return _u
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (_u *UsageLogUpdateOne) SetOutputTokens(v int64) *UsageLogUpdateOne {
 	_u.mutation.ResetOutputTokens()
@@ -1007,6 +1241,33 @@ func (_u *UsageLogUpdateOne) SetNillableOutputTokens(v *int64) *UsageLogUpdateOn
 // AddOutputTokens adds value to the "output_tokens" field.
 func (_u *UsageLogUpdateOne) AddOutputTokens(v int64) *UsageLogUpdateOne {
 	_u.mutation.AddOutputTokens(v)
+	return _u
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (_u *UsageLogUpdateOne) SetPriceOutputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPriceOutputMillis()
+	_u.mutation.SetPriceOutputMillis(v)
+	return _u
+}
+
+// SetNillablePriceOutputMillis sets the "price_output_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePriceOutputMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPriceOutputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceOutputMillis adds value to the "price_output_millis" field.
+func (_u *UsageLogUpdateOne) AddPriceOutputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPriceOutputMillis(v)
+	return _u
+}
+
+// ClearPriceOutputMillis clears the value of the "price_output_millis" field.
+func (_u *UsageLogUpdateOne) ClearPriceOutputMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPriceOutputMillis()
 	return _u
 }
 
@@ -1052,6 +1313,33 @@ func (_u *UsageLogUpdateOne) AddCacheReadTokens(v int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (_u *UsageLogUpdateOne) SetPriceCacheReadMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPriceCacheReadMillis()
+	_u.mutation.SetPriceCacheReadMillis(v)
+	return _u
+}
+
+// SetNillablePriceCacheReadMillis sets the "price_cache_read_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePriceCacheReadMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPriceCacheReadMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceCacheReadMillis adds value to the "price_cache_read_millis" field.
+func (_u *UsageLogUpdateOne) AddPriceCacheReadMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPriceCacheReadMillis(v)
+	return _u
+}
+
+// ClearPriceCacheReadMillis clears the value of the "price_cache_read_millis" field.
+func (_u *UsageLogUpdateOne) ClearPriceCacheReadMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPriceCacheReadMillis()
+	return _u
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (_u *UsageLogUpdateOne) SetCacheCreationTokens(v int64) *UsageLogUpdateOne {
 	_u.mutation.ResetCacheCreationTokens()
@@ -1070,6 +1358,33 @@ func (_u *UsageLogUpdateOne) SetNillableCacheCreationTokens(v *int64) *UsageLogU
 // AddCacheCreationTokens adds value to the "cache_creation_tokens" field.
 func (_u *UsageLogUpdateOne) AddCacheCreationTokens(v int64) *UsageLogUpdateOne {
 	_u.mutation.AddCacheCreationTokens(v)
+	return _u
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (_u *UsageLogUpdateOne) SetPriceCacheCreationMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPriceCacheCreationMillis()
+	_u.mutation.SetPriceCacheCreationMillis(v)
+	return _u
+}
+
+// SetNillablePriceCacheCreationMillis sets the "price_cache_creation_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePriceCacheCreationMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPriceCacheCreationMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceCacheCreationMillis adds value to the "price_cache_creation_millis" field.
+func (_u *UsageLogUpdateOne) AddPriceCacheCreationMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPriceCacheCreationMillis(v)
+	return _u
+}
+
+// ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
+func (_u *UsageLogUpdateOne) ClearPriceCacheCreationMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPriceCacheCreationMillis()
 	return _u
 }
 
@@ -1321,17 +1636,44 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if value, ok := _u.mutation.AddedLatencyMs(); ok {
 		_spec.AddField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.TtftMs(); ok {
+		_spec.SetField(usagelog.FieldTtftMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftMs(); ok {
+		_spec.AddField(usagelog.FieldTtftMs, field.TypeInt64, value)
+	}
+	if _u.mutation.TtftMsCleared() {
+		_spec.ClearField(usagelog.FieldTtftMs, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedInputTokens(); ok {
 		_spec.AddField(usagelog.FieldInputTokens, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.PriceInputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceInputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceInputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceInputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceInputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceInputMillis, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.OutputTokens(); ok {
 		_spec.SetField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedOutputTokens(); ok {
 		_spec.AddField(usagelog.FieldOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PriceOutputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceOutputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceOutputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceOutputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceOutputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceOutputMillis, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.TotalTokens(); ok {
 		_spec.SetField(usagelog.FieldTotalTokens, field.TypeInt64, value)
@@ -1345,11 +1687,29 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if value, ok := _u.mutation.AddedCacheReadTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.PriceCacheReadMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceCacheReadMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceCacheReadMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.CacheCreationTokens(); ok {
 		_spec.SetField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.AddedCacheCreationTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PriceCacheCreationMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceCacheCreationMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceCacheCreationMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Cost(); ok {
 		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)

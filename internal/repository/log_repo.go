@@ -41,6 +41,9 @@ func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) erro
 // DeductAndLog 共用——tx client 经同一 client 传入即同一事务连接）。
 // 计费列（Phase 5）：Cost 毫分（0 = 未计费/错误路径）；BillingTier 空 = 未计费
 // 路径（落库 NULL）；AboveHit/Overdraft 布尔直接落。
+// 时间/价格快照列（nil = NULL 落库，SQL 不写该列）：TTFTMS 首 token 时间毫秒
+// （非流式/失败路径 nil）；Price*Millis 每 M token 毫分单价快照（未计费路径
+// /无该分量 nil）。
 func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCreate {
 	c := client.UsageLog.Create().
 		SetRequestID(l.RequestID).
@@ -81,6 +84,21 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	}
 	if l.BillingTier != "" {
 		c = c.SetBillingTier(l.BillingTier)
+	}
+	if l.TTFTMS != nil {
+		c = c.SetTtftMs(*l.TTFTMS)
+	}
+	if l.PriceInputMillis != nil {
+		c = c.SetPriceInputMillis(*l.PriceInputMillis)
+	}
+	if l.PriceOutputMillis != nil {
+		c = c.SetPriceOutputMillis(*l.PriceOutputMillis)
+	}
+	if l.PriceCacheReadMillis != nil {
+		c = c.SetPriceCacheReadMillis(*l.PriceCacheReadMillis)
+	}
+	if l.PriceCacheCreationMillis != nil {
+		c = c.SetPriceCacheCreationMillis(*l.PriceCacheCreationMillis)
 	}
 	return c
 }
@@ -132,12 +150,17 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 			Model: row.Model, Format: domain.RequestFormat(row.Format),
 			StatusCode: row.StatusCode, ErrorType: domain.ErrorType(row.ErrorType),
 			ErrorMessage: row.ErrorMessage,
-			LatencyMS:           row.LatencyMs,
-			InputTokens:         row.InputTokens,
-			OutputTokens:        row.OutputTokens,
-			TotalTokens:         row.TotalTokens,
-			CacheReadTokens:     row.CacheReadTokens,
-			CacheCreationTokens: row.CacheCreationTokens,
+			LatencyMS:                row.LatencyMs,
+			TTFTMS:                   row.TtftMs,
+			InputTokens:              row.InputTokens,
+			PriceInputMillis:         row.PriceInputMillis,
+			OutputTokens:             row.OutputTokens,
+			PriceOutputMillis:        row.PriceOutputMillis,
+			TotalTokens:              row.TotalTokens,
+			CacheReadTokens:          row.CacheReadTokens,
+			PriceCacheReadMillis:     row.PriceCacheReadMillis,
+			CacheCreationTokens:      row.CacheCreationTokens,
+			PriceCacheCreationMillis: row.PriceCacheCreationMillis,
 			Cost:                row.Cost,
 			AboveHit:            row.AboveHit,
 			Overdraft:           row.Overdraft,

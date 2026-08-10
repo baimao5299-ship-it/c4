@@ -301,6 +301,11 @@ type KeyMeta struct {
 // 任一分量超 above 阈值命中分段；Overdraft 本次扣费透支（负余额）。
 // ErrorMessage 错误文本（部署故障修复）：连接级 err.Error() / 4xx+ 上游 body，
 // 域内截断 500 字符（TruncateErrMsg）；nil = 无错误文本（成功路径恒空）。
+// 时间/价格快照（字段序对齐 ent schema）：TTFTMS 首 token 时间毫秒（流式首
+// chunk 采集；非流式/失败/无首 token 路径 = nil）；Price*Millis 每 M token 毫分
+// 单价快照（1 USD = 100,000 毫分，pricing 同款单位；applyBilling 填充，零额外
+// 查找）——nil = 未计费路径（no_price 防御）；缓存价 nil = 该请求无缓存读或
+// 无缓存价。
 type UsageLog struct {
 	ID               int64
 	RequestID        string
@@ -316,11 +321,16 @@ type UsageLog struct {
 	ErrorType        ErrorType
 	ErrorMessage     *string // nil = 无错误文本（NULL 落库）
 	LatencyMS           int64
+	TTFTMS              *int64 // 首 token 时间毫秒；非流式/失败/无首 token 路径 = nil
 	InputTokens         int64
+	PriceInputMillis    *int64 // 输入单价快照（每 M token 毫分）
 	OutputTokens        int64
+	PriceOutputMillis   *int64 // 输出单价快照（每 M token 毫分）
 	TotalTokens         int64
 	CacheReadTokens     int64 // 缓存读取 token（跨协议归一化，sub2api 计费语义）
+	PriceCacheReadMillis *int64 // 缓存读单价快照；nil = 无缓存读或无缓存价
 	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
+	PriceCacheCreationMillis *int64 // 缓存写单价快照；nil = 无缓存写或无缓存价
 	Cost                int64 // 毫分；错误请求（402/4xx）为 0
 	BillingTier         string // priority/flex/fast/auto；空 = 未计费路径
 	AboveHit            bool

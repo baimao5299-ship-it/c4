@@ -188,6 +188,20 @@ func (_c *UsageLogCreate) SetNillableLatencyMs(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (_c *UsageLogCreate) SetTtftMs(v int64) *UsageLogCreate {
+	_c.mutation.SetTtftMs(v)
+	return _c
+}
+
+// SetNillableTtftMs sets the "ttft_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableTtftMs(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetTtftMs(*v)
+	}
+	return _c
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_c *UsageLogCreate) SetInputTokens(v int64) *UsageLogCreate {
 	_c.mutation.SetInputTokens(v)
@@ -202,6 +216,20 @@ func (_c *UsageLogCreate) SetNillableInputTokens(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (_c *UsageLogCreate) SetPriceInputMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPriceInputMillis(v)
+	return _c
+}
+
+// SetNillablePriceInputMillis sets the "price_input_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePriceInputMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPriceInputMillis(*v)
+	}
+	return _c
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (_c *UsageLogCreate) SetOutputTokens(v int64) *UsageLogCreate {
 	_c.mutation.SetOutputTokens(v)
@@ -212,6 +240,20 @@ func (_c *UsageLogCreate) SetOutputTokens(v int64) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableOutputTokens(v *int64) *UsageLogCreate {
 	if v != nil {
 		_c.SetOutputTokens(*v)
+	}
+	return _c
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (_c *UsageLogCreate) SetPriceOutputMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPriceOutputMillis(v)
+	return _c
+}
+
+// SetNillablePriceOutputMillis sets the "price_output_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePriceOutputMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPriceOutputMillis(*v)
 	}
 	return _c
 }
@@ -244,6 +286,20 @@ func (_c *UsageLogCreate) SetNillableCacheReadTokens(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (_c *UsageLogCreate) SetPriceCacheReadMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPriceCacheReadMillis(v)
+	return _c
+}
+
+// SetNillablePriceCacheReadMillis sets the "price_cache_read_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePriceCacheReadMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPriceCacheReadMillis(*v)
+	}
+	return _c
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (_c *UsageLogCreate) SetCacheCreationTokens(v int64) *UsageLogCreate {
 	_c.mutation.SetCacheCreationTokens(v)
@@ -254,6 +310,20 @@ func (_c *UsageLogCreate) SetCacheCreationTokens(v int64) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableCacheCreationTokens(v *int64) *UsageLogCreate {
 	if v != nil {
 		_c.SetCacheCreationTokens(*v)
+	}
+	return _c
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (_c *UsageLogCreate) SetPriceCacheCreationMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPriceCacheCreationMillis(v)
+	return _c
+}
+
+// SetNillablePriceCacheCreationMillis sets the "price_cache_creation_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePriceCacheCreationMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPriceCacheCreationMillis(*v)
 	}
 	return _c
 }
@@ -560,13 +630,25 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)
 		_node.LatencyMs = value
 	}
+	if value, ok := _c.mutation.TtftMs(); ok {
+		_spec.SetField(usagelog.FieldTtftMs, field.TypeInt64, value)
+		_node.TtftMs = &value
+	}
 	if value, ok := _c.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt64, value)
 		_node.InputTokens = value
 	}
+	if value, ok := _c.mutation.PriceInputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceInputMillis, field.TypeInt64, value)
+		_node.PriceInputMillis = &value
+	}
 	if value, ok := _c.mutation.OutputTokens(); ok {
 		_spec.SetField(usagelog.FieldOutputTokens, field.TypeInt64, value)
 		_node.OutputTokens = value
+	}
+	if value, ok := _c.mutation.PriceOutputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceOutputMillis, field.TypeInt64, value)
+		_node.PriceOutputMillis = &value
 	}
 	if value, ok := _c.mutation.TotalTokens(); ok {
 		_spec.SetField(usagelog.FieldTotalTokens, field.TypeInt64, value)
@@ -576,9 +658,17 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldCacheReadTokens, field.TypeInt64, value)
 		_node.CacheReadTokens = value
 	}
+	if value, ok := _c.mutation.PriceCacheReadMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceCacheReadMillis, field.TypeInt64, value)
+		_node.PriceCacheReadMillis = &value
+	}
 	if value, ok := _c.mutation.CacheCreationTokens(); ok {
 		_spec.SetField(usagelog.FieldCacheCreationTokens, field.TypeInt64, value)
 		_node.CacheCreationTokens = value
+	}
+	if value, ok := _c.mutation.PriceCacheCreationMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64, value)
+		_node.PriceCacheCreationMillis = &value
 	}
 	if value, ok := _c.mutation.Cost(); ok {
 		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
@@ -892,6 +982,30 @@ func (u *UsageLogUpsert) AddLatencyMs(v int64) *UsageLogUpsert {
 	return u
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (u *UsageLogUpsert) SetTtftMs(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldTtftMs, v)
+	return u
+}
+
+// UpdateTtftMs sets the "ttft_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateTtftMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldTtftMs)
+	return u
+}
+
+// AddTtftMs adds v to the "ttft_ms" field.
+func (u *UsageLogUpsert) AddTtftMs(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldTtftMs, v)
+	return u
+}
+
+// ClearTtftMs clears the value of the "ttft_ms" field.
+func (u *UsageLogUpsert) ClearTtftMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldTtftMs)
+	return u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsert) SetInputTokens(v int64) *UsageLogUpsert {
 	u.Set(usagelog.FieldInputTokens, v)
@@ -910,6 +1024,30 @@ func (u *UsageLogUpsert) AddInputTokens(v int64) *UsageLogUpsert {
 	return u
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (u *UsageLogUpsert) SetPriceInputMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPriceInputMillis, v)
+	return u
+}
+
+// UpdatePriceInputMillis sets the "price_input_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePriceInputMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPriceInputMillis)
+	return u
+}
+
+// AddPriceInputMillis adds v to the "price_input_millis" field.
+func (u *UsageLogUpsert) AddPriceInputMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPriceInputMillis, v)
+	return u
+}
+
+// ClearPriceInputMillis clears the value of the "price_input_millis" field.
+func (u *UsageLogUpsert) ClearPriceInputMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPriceInputMillis)
+	return u
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (u *UsageLogUpsert) SetOutputTokens(v int64) *UsageLogUpsert {
 	u.Set(usagelog.FieldOutputTokens, v)
@@ -925,6 +1063,30 @@ func (u *UsageLogUpsert) UpdateOutputTokens() *UsageLogUpsert {
 // AddOutputTokens adds v to the "output_tokens" field.
 func (u *UsageLogUpsert) AddOutputTokens(v int64) *UsageLogUpsert {
 	u.Add(usagelog.FieldOutputTokens, v)
+	return u
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (u *UsageLogUpsert) SetPriceOutputMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPriceOutputMillis, v)
+	return u
+}
+
+// UpdatePriceOutputMillis sets the "price_output_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePriceOutputMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPriceOutputMillis)
+	return u
+}
+
+// AddPriceOutputMillis adds v to the "price_output_millis" field.
+func (u *UsageLogUpsert) AddPriceOutputMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPriceOutputMillis, v)
+	return u
+}
+
+// ClearPriceOutputMillis clears the value of the "price_output_millis" field.
+func (u *UsageLogUpsert) ClearPriceOutputMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPriceOutputMillis)
 	return u
 }
 
@@ -964,6 +1126,30 @@ func (u *UsageLogUpsert) AddCacheReadTokens(v int64) *UsageLogUpsert {
 	return u
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (u *UsageLogUpsert) SetPriceCacheReadMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPriceCacheReadMillis, v)
+	return u
+}
+
+// UpdatePriceCacheReadMillis sets the "price_cache_read_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePriceCacheReadMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPriceCacheReadMillis)
+	return u
+}
+
+// AddPriceCacheReadMillis adds v to the "price_cache_read_millis" field.
+func (u *UsageLogUpsert) AddPriceCacheReadMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPriceCacheReadMillis, v)
+	return u
+}
+
+// ClearPriceCacheReadMillis clears the value of the "price_cache_read_millis" field.
+func (u *UsageLogUpsert) ClearPriceCacheReadMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPriceCacheReadMillis)
+	return u
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (u *UsageLogUpsert) SetCacheCreationTokens(v int64) *UsageLogUpsert {
 	u.Set(usagelog.FieldCacheCreationTokens, v)
@@ -979,6 +1165,30 @@ func (u *UsageLogUpsert) UpdateCacheCreationTokens() *UsageLogUpsert {
 // AddCacheCreationTokens adds v to the "cache_creation_tokens" field.
 func (u *UsageLogUpsert) AddCacheCreationTokens(v int64) *UsageLogUpsert {
 	u.Add(usagelog.FieldCacheCreationTokens, v)
+	return u
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (u *UsageLogUpsert) SetPriceCacheCreationMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPriceCacheCreationMillis, v)
+	return u
+}
+
+// UpdatePriceCacheCreationMillis sets the "price_cache_creation_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePriceCacheCreationMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPriceCacheCreationMillis)
+	return u
+}
+
+// AddPriceCacheCreationMillis adds v to the "price_cache_creation_millis" field.
+func (u *UsageLogUpsert) AddPriceCacheCreationMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPriceCacheCreationMillis, v)
+	return u
+}
+
+// ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
+func (u *UsageLogUpsert) ClearPriceCacheCreationMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPriceCacheCreationMillis)
 	return u
 }
 
@@ -1382,6 +1592,34 @@ func (u *UsageLogUpsertOne) UpdateLatencyMs() *UsageLogUpsertOne {
 	})
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (u *UsageLogUpsertOne) SetTtftMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTtftMs(v)
+	})
+}
+
+// AddTtftMs adds v to the "ttft_ms" field.
+func (u *UsageLogUpsertOne) AddTtftMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddTtftMs(v)
+	})
+}
+
+// UpdateTtftMs sets the "ttft_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateTtftMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTtftMs()
+	})
+}
+
+// ClearTtftMs clears the value of the "ttft_ms" field.
+func (u *UsageLogUpsertOne) ClearTtftMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTtftMs()
+	})
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsertOne) SetInputTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1403,6 +1641,34 @@ func (u *UsageLogUpsertOne) UpdateInputTokens() *UsageLogUpsertOne {
 	})
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (u *UsageLogUpsertOne) SetPriceInputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceInputMillis(v)
+	})
+}
+
+// AddPriceInputMillis adds v to the "price_input_millis" field.
+func (u *UsageLogUpsertOne) AddPriceInputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceInputMillis(v)
+	})
+}
+
+// UpdatePriceInputMillis sets the "price_input_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePriceInputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceInputMillis()
+	})
+}
+
+// ClearPriceInputMillis clears the value of the "price_input_millis" field.
+func (u *UsageLogUpsertOne) ClearPriceInputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceInputMillis()
+	})
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (u *UsageLogUpsertOne) SetOutputTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1421,6 +1687,34 @@ func (u *UsageLogUpsertOne) AddOutputTokens(v int64) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateOutputTokens() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateOutputTokens()
+	})
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (u *UsageLogUpsertOne) SetPriceOutputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceOutputMillis(v)
+	})
+}
+
+// AddPriceOutputMillis adds v to the "price_output_millis" field.
+func (u *UsageLogUpsertOne) AddPriceOutputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceOutputMillis(v)
+	})
+}
+
+// UpdatePriceOutputMillis sets the "price_output_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePriceOutputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceOutputMillis()
+	})
+}
+
+// ClearPriceOutputMillis clears the value of the "price_output_millis" field.
+func (u *UsageLogUpsertOne) ClearPriceOutputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceOutputMillis()
 	})
 }
 
@@ -1466,6 +1760,34 @@ func (u *UsageLogUpsertOne) UpdateCacheReadTokens() *UsageLogUpsertOne {
 	})
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (u *UsageLogUpsertOne) SetPriceCacheReadMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceCacheReadMillis(v)
+	})
+}
+
+// AddPriceCacheReadMillis adds v to the "price_cache_read_millis" field.
+func (u *UsageLogUpsertOne) AddPriceCacheReadMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceCacheReadMillis(v)
+	})
+}
+
+// UpdatePriceCacheReadMillis sets the "price_cache_read_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePriceCacheReadMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceCacheReadMillis()
+	})
+}
+
+// ClearPriceCacheReadMillis clears the value of the "price_cache_read_millis" field.
+func (u *UsageLogUpsertOne) ClearPriceCacheReadMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceCacheReadMillis()
+	})
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (u *UsageLogUpsertOne) SetCacheCreationTokens(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1484,6 +1806,34 @@ func (u *UsageLogUpsertOne) AddCacheCreationTokens(v int64) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateCacheCreationTokens() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateCacheCreationTokens()
+	})
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (u *UsageLogUpsertOne) SetPriceCacheCreationMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceCacheCreationMillis(v)
+	})
+}
+
+// AddPriceCacheCreationMillis adds v to the "price_cache_creation_millis" field.
+func (u *UsageLogUpsertOne) AddPriceCacheCreationMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceCacheCreationMillis(v)
+	})
+}
+
+// UpdatePriceCacheCreationMillis sets the "price_cache_creation_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePriceCacheCreationMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceCacheCreationMillis()
+	})
+}
+
+// ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
+func (u *UsageLogUpsertOne) ClearPriceCacheCreationMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceCacheCreationMillis()
 	})
 }
 
@@ -2065,6 +2415,34 @@ func (u *UsageLogUpsertBulk) UpdateLatencyMs() *UsageLogUpsertBulk {
 	})
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (u *UsageLogUpsertBulk) SetTtftMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTtftMs(v)
+	})
+}
+
+// AddTtftMs adds v to the "ttft_ms" field.
+func (u *UsageLogUpsertBulk) AddTtftMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddTtftMs(v)
+	})
+}
+
+// UpdateTtftMs sets the "ttft_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateTtftMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTtftMs()
+	})
+}
+
+// ClearTtftMs clears the value of the "ttft_ms" field.
+func (u *UsageLogUpsertBulk) ClearTtftMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTtftMs()
+	})
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsertBulk) SetInputTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2086,6 +2464,34 @@ func (u *UsageLogUpsertBulk) UpdateInputTokens() *UsageLogUpsertBulk {
 	})
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (u *UsageLogUpsertBulk) SetPriceInputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceInputMillis(v)
+	})
+}
+
+// AddPriceInputMillis adds v to the "price_input_millis" field.
+func (u *UsageLogUpsertBulk) AddPriceInputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceInputMillis(v)
+	})
+}
+
+// UpdatePriceInputMillis sets the "price_input_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePriceInputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceInputMillis()
+	})
+}
+
+// ClearPriceInputMillis clears the value of the "price_input_millis" field.
+func (u *UsageLogUpsertBulk) ClearPriceInputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceInputMillis()
+	})
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (u *UsageLogUpsertBulk) SetOutputTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2104,6 +2510,34 @@ func (u *UsageLogUpsertBulk) AddOutputTokens(v int64) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateOutputTokens() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateOutputTokens()
+	})
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (u *UsageLogUpsertBulk) SetPriceOutputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceOutputMillis(v)
+	})
+}
+
+// AddPriceOutputMillis adds v to the "price_output_millis" field.
+func (u *UsageLogUpsertBulk) AddPriceOutputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceOutputMillis(v)
+	})
+}
+
+// UpdatePriceOutputMillis sets the "price_output_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePriceOutputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceOutputMillis()
+	})
+}
+
+// ClearPriceOutputMillis clears the value of the "price_output_millis" field.
+func (u *UsageLogUpsertBulk) ClearPriceOutputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceOutputMillis()
 	})
 }
 
@@ -2149,6 +2583,34 @@ func (u *UsageLogUpsertBulk) UpdateCacheReadTokens() *UsageLogUpsertBulk {
 	})
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (u *UsageLogUpsertBulk) SetPriceCacheReadMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceCacheReadMillis(v)
+	})
+}
+
+// AddPriceCacheReadMillis adds v to the "price_cache_read_millis" field.
+func (u *UsageLogUpsertBulk) AddPriceCacheReadMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceCacheReadMillis(v)
+	})
+}
+
+// UpdatePriceCacheReadMillis sets the "price_cache_read_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePriceCacheReadMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceCacheReadMillis()
+	})
+}
+
+// ClearPriceCacheReadMillis clears the value of the "price_cache_read_millis" field.
+func (u *UsageLogUpsertBulk) ClearPriceCacheReadMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceCacheReadMillis()
+	})
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (u *UsageLogUpsertBulk) SetCacheCreationTokens(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2167,6 +2629,34 @@ func (u *UsageLogUpsertBulk) AddCacheCreationTokens(v int64) *UsageLogUpsertBulk
 func (u *UsageLogUpsertBulk) UpdateCacheCreationTokens() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateCacheCreationTokens()
+	})
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (u *UsageLogUpsertBulk) SetPriceCacheCreationMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceCacheCreationMillis(v)
+	})
+}
+
+// AddPriceCacheCreationMillis adds v to the "price_cache_creation_millis" field.
+func (u *UsageLogUpsertBulk) AddPriceCacheCreationMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceCacheCreationMillis(v)
+	})
+}
+
+// UpdatePriceCacheCreationMillis sets the "price_cache_creation_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePriceCacheCreationMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceCacheCreationMillis()
+	})
+}
+
+// ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
+func (u *UsageLogUpsertBulk) ClearPriceCacheCreationMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceCacheCreationMillis()
 	})
 }
 

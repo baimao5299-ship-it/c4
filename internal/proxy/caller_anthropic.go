@@ -47,8 +47,16 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
 		var it, ot, tt, cr, cc int64
+		// TTFT 采集（首 token 时间毫秒）：首个 SSE 帧（任意事件）到达时间——
+		// Observer 在帧原样写出后回调；单帧旁路零成本（time.Now 一次 + 毫秒
+		// 换算）。首帧后写入 ctx（logWithCtx 读取）；无首 token 路径不写入 → nil。
+		var ttft *int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
+				if ttft == nil {
+					ms := time.Since(start).Milliseconds()
+					ttft = &ms
+				}
 				// 真实 API 的流式用量分两处携带：input/cache 在 message_start 事件的
 				// message.usage 里（评审 M1：前缀 message.usage.*，非顶层），
 				// output_tokens 在 message_delta 事件的 usage 里
@@ -62,6 +70,9 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			},
 		})
 		resp.Body.Close()
+		if ttft != nil {
+			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
+		}
 		if err != nil {
 			// 客户端断开：释放槽位，无法转移。不能按 errors.Is(err, context.Canceled)
 			// 判断——sserelay.normalize 把任何 ctx 错误（含超时）折叠为 context.Canceled，

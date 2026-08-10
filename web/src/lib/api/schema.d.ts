@@ -1483,16 +1483,41 @@ export interface components {
             ErrorType?: components["schemas"]["ErrorType"];
             /** Format: int64 */
             LatencyMS?: number;
+            /**
+             * Format: int64
+             * @description 首 token 时间毫秒（流式首 chunk 采集）；非流式/失败/无首 token 路径 = null
+             */
+            TTFTMS?: number | null;
             /** Format: int64 */
             InputTokens?: number;
+            /**
+             * Format: int64
+             * @description 输入单价快照（每 M token 毫分，1 USD = 100
+             */
+            PriceInputMillis?: number | null;
             /** Format: int64 */
             OutputTokens?: number;
+            /**
+             * Format: int64
+             * @description 输出单价快照（每 M token 毫分）；null = 未计费路径
+             */
+            PriceOutputMillis?: number | null;
             /** Format: int64 */
             TotalTokens?: number;
             /** Format: int64 */
             CacheReadTokens?: number;
+            /**
+             * Format: int64
+             * @description 缓存读单价快照（每 M token 毫分）；null = 该请求无缓存读或无缓存价
+             */
+            PriceCacheReadMillis?: number | null;
             /** Format: int64 */
             CacheCreationTokens?: number;
+            /**
+             * Format: int64
+             * @description 缓存写单价快照（每 M token 毫分）；null = 该请求无缓存写或无缓存价
+             */
+            PriceCacheCreationMillis?: number | null;
             /**
              * Format: int64
              * @description 计费成本（毫分，1 USD = 100
