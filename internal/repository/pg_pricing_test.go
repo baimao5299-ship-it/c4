@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -211,6 +212,60 @@ func TestPricingUpsertLitellmBatchPG(t *testing.T) {
 	require.Equal(t, int64(500), got.PromptPricePerMillion)
 	_, err = repos.GetPricing(ctx, "litellm-dup-0250")
 	require.ErrorIs(t, err, repository.ErrNotFound, "批 0 整体失败无残留")
+}
+
+// TestPricingUpsertConcurrentNoDeadlockPG 并发死锁收敛（#37 P3' 同款治本，
+// 对齐 TestPGStatUpsertConcurrentNoDeadlock）：4 goroutine 并发 upsert 同一批
+// 500 model（2 正序 + 2 倒序，起跑屏障最大化锁获取重叠；无批内排序必
+// deadlock detected 40P01）→ 断言无错误、行数精确不重复、值未被写乱。
+func TestPricingUpsertConcurrentNoDeadlockPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	const n = 500 // 单批上限同量级（锁重叠窗口足够大，无修复必死锁）
+	rows := make([]*domain.Pricing, 0, n)
+	for i := 0; i < n; i++ {
+		rows = append(rows, litellmRow(fmt.Sprintf("litellm-conc-%04d", i), int64(i), int64(i*2)))
+	}
+	_, err := repos.UpsertFromLiteLLM(ctx, rows)
+	require.NoError(t, err, "预置存量行（并发 DO UPDATE 冲突路径）")
+
+	rev := make([]*domain.Pricing, len(rows)) // 实例 B：行序相反（map 随机迭代极端形态）
+	for i := range rows {
+		rev[len(rows)-1-i] = rows[i]
+	}
+
+	start := make(chan struct{}) // 起跑屏障：最大化两批锁获取重叠
+	var wg sync.WaitGroup
+	errs := make([]error, 4) // 2 正序 + 2 倒序（多 worker 多实例形态）
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			src := rows
+			if i%2 == 1 {
+				src = rev
+			}
+			b2 := make([]*domain.Pricing, len(src)) // 每 goroutine 独立副本：避免并发排序同一数组（评审 M-1）
+			copy(b2, src)
+			_, errs[i] = repos.UpsertFromLiteLLM(ctx, b2)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for i, e := range errs {
+		require.NoError(t, e, "并发 upsert 同批 model 无 deadlock（排序 + 重试兜底）", i)
+	}
+
+	total, err := repos.Client.Pricing.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, n, total, "500 行不重复计（DO UPDATE 覆盖非新增）")
+	for _, idx := range []int{0, 250, 499} { // 抽查首/中/尾行值未被并发写乱
+		got, err := repos.GetPricing(ctx, fmt.Sprintf("litellm-conc-%04d", idx))
+		require.NoError(t, err)
+		require.Equal(t, int64(idx), got.PromptPricePerMillion, "model=%q prompt 价精确", got.Model)
+		require.Equal(t, int64(idx*2), got.CompletionPricePerMillion, "model=%q completion 价精确", got.Model)
+	}
 }
 
 // TestPricingListPG 列表：全量分页 / source 筛选 / model 模糊（不区分大小写）/

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,17 @@ type PricingRepo struct {
 // 按 500/批分块执行。
 const pricingBatchSize = 500
 
+// pricingUpsertRetries 死锁（40P01）重试次数（#37 P3' 同款兜底）：双实例
+// pricing sync worker 并发批量 upsert 同批 model（锁顺序交错 → PG 判定
+// deadlock detected 并终止一方，压测启动期偶发）。死锁为瞬时错误（PG 惯例
+// 重试 1-2 次），重试成功即无影响；重试耗尽才返回错误 → 现有失败路径语义
+// 不变（batch Warn + 首个错误上抛，下轮 price_sync_cron 补拉）。
+const pricingUpsertRetries = 2
+
+// pricingUpsertBackoff 死锁重试短退避（规避两实例同节奏再碰撞；死锁窗口内
+// 最多追加 ~150ms 延迟）。
+var pricingUpsertBackoff = []time.Duration{50 * time.Millisecond, 100 * time.Millisecond}
+
 // UpsertFromLiteLLM 批量 upsert 拉取价（评审 M-2）：
 //   - 核心语义：ON CONFLICT (model) DO UPDATE ... WHERE pricing.source != 'manual'
 //     —— 永不覆盖手动价（表内一行 = 最终生效价）；litellm 源行的换算价格、
@@ -37,6 +49,9 @@ const pricingBatchSize = 500
 //     source 均更新（source 恒为 litellm）
 //   - 分批 500/批、每批独立事务：部分成功可接受——返回成功行数，失败的批记
 //     Warn 日志（返回首个失败错误，worker 侧决定重试/告警）；不影响已成功批
+//   - 死锁收敛（#37 P3'）：批内按 model 排序（锁顺序一致化）+ 40P01 瞬时
+//     重试（pricingUpsertRetries，短退避）——多实例并发同批 model 不再
+//     deadlock detected（排序消除主因，重试兜底残余交错）
 //   - 返回 n = 实际插入/更新的行数（DO UPDATE 被 WHERE 过滤掉的手动行不计入；
 //     PG 对未修改行不产生命令标签计数）
 func (r *PricingRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
@@ -51,7 +66,7 @@ func (r *PricingRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pric
 		if end > len(rows) {
 			end = len(rows)
 		}
-		n, err := r.upsertLitellmBatch(ctx, rows[start:end], now)
+		n, err := r.upsertLitellmBatchWithRetry(ctx, rows[start:end], now)
 		if err != nil {
 			log.Printf("pricing: litellm upsert batch [%d:%d) failed: %v", start, end, err)
 			if firstErr == nil {
@@ -70,7 +85,14 @@ func (r *PricingRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pric
 // 故 raw SQL 经 driver 执行。created_at/updated_at 显式传值（无默认值依赖）。
 // raw JSONB：pgx 对 []byte 参数按 bytea 编码，无法隐式转 jsonb → 转 string 传参
 // 并 SQL 侧显式 ::jsonb 强转（nil → NULL）；其余列 nil → NULL。
+// #37 P3'：批内按冲突键排序（锁顺序一致化，见本函数首行 sort）——多实例
+// pricing sync 并发批量 upsert 同批 model（INSERT..ON CONFLICT DO UPDATE
+// 逐行取锁序 = VALUES 行序）锁顺序交错 → deadlock detected。
 func (r *PricingRepo) upsertLitellmBatch(ctx context.Context, batch []*domain.Pricing, now time.Time) (int, error) {
+	// #37 P3'：同款治本，pricing 批内按 model 排序——使各实例按同一顺序取
+	// 行锁，消除死锁主因（残余交错由 upsertLitellmBatchWithRetry 的 40P01
+	// 重试兜底）。批内 model 唯一（litellm 行无重复），排序纯为锁顺序一致化。
+	sort.SliceStable(batch, func(i, j int) bool { return batch[i].Model < batch[j].Model })
 	// 36 列 = 4 基础价 + max 窗口 2 + cache 2 + 矩阵 22（Phase 5）+ 元数据 6。
 	insertCols := []string{
 		pricing.FieldModel, pricing.FieldPromptPricePerMillion, pricing.FieldCompletionPricePerMillion,
@@ -192,6 +214,30 @@ func (r *PricingRepo) upsertLitellmBatch(ctx context.Context, batch []*domain.Pr
 	}
 	n, err := res.RowsAffected()
 	return int(n), err
+}
+
+// upsertLitellmBatchWithRetry 单批 upsert + 40P01 死锁重试（#37 P3' 同款
+// 兜底）：批内排序消除主因后，残余交错由此收敛。重试以整批独立事务为单位
+// 重做（死锁回滚后无残留状态）；ctx 取消优先（不吞停机预算）。重试耗尽 →
+// 原样返回错误（现有失败路径语义不变）。
+func (r *PricingRepo) upsertLitellmBatchWithRetry(ctx context.Context, batch []*domain.Pricing, now time.Time) (int, error) {
+	var n int
+	var err error
+	for attempt := 0; attempt <= pricingUpsertRetries; attempt++ {
+		if attempt > 0 {
+			select { // 短退避；ctx 取消优先（不吞停机预算）
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(pricingUpsertBackoff[attempt-1]):
+			}
+		}
+		n, err = r.upsertLitellmBatch(ctx, batch, now)
+		if !isDeadlock(err) {
+			return n, err
+		}
+		// 40P01：死锁瞬时错误，重试；重试耗尽 → 原样返回（现有失败路径语义）
+	}
+	return n, err
 }
 
 // PricingManual 手动设价入参（管理端 PUT /admin/pricing/{model}，全量替换语义）：
