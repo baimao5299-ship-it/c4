@@ -380,7 +380,9 @@ export default function Logs() {
                           <TooltipTrigger delay={0} render={<span className="inline-flex -m-1 size-4 shrink-0 cursor-help items-center justify-center rounded-full bg-muted p-1 text-muted-foreground text-[10px] leading-none" />}>
                             i
                           </TooltipTrigger>
-                          <TooltipContent className="max-w-xs border bg-popover p-0 shadow-lg">
+                          {/* 用默认反色（bg-foreground + text-background，浅色黑底白字/深色白底黑字）；
+                              勿加 bg-popover——它会与 text-background 同色导致文字不可见 */}
+                          <TooltipContent className="max-w-xs p-0 shadow-lg">
                             <div className="space-y-1.5 p-3 text-xs">
                               {/* 单价小字尾注：$0.0025/M（每 M token；null = 未计费路径不显示） */}
                               <div className="flex items-center justify-between gap-6">
@@ -417,7 +419,10 @@ export default function Logs() {
                               ) : null}
                               <div className="flex items-center justify-between gap-6 border-t pt-1.5">
                                 <span className="text-muted-foreground">{t('logs.tokens.total')}</span>
-                                <span className="font-semibold tabular-nums">{(l.TotalTokens ?? 0).toLocaleString()}</span>
+                                {/* 动态求和（不依赖 TotalTokens 字段——某行该字段缺失/为 null 时总计仍正确） */}
+                                <span className="font-semibold tabular-nums">
+                                  {((l.InputTokens ?? 0) + (l.OutputTokens ?? 0) + (l.CacheReadTokens ?? 0) + (l.CacheCreationTokens ?? 0)).toLocaleString()}
+                                </span>
                               </div>
                               {/* 计费信息并入：档位 + 超档/透支徽章 */}
                               <div className="flex items-center justify-between gap-6 border-t pt-1.5">
