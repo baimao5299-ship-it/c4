@@ -6,6 +6,7 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -171,6 +172,12 @@ func (e *RuleEngine) Reload(ctx context.Context) error {
 // 429 → status=429 + cooldown 30s（原 cfg.Cooldown429 默认值）；
 // error → status=unhealthy + cooldown 5s（原 BackoffBase 默认值，指数退避丢弃——
 // 升级惩罚由用户规则用滑动窗口表达）；ok → status=active 无冷却。
+//
+// 多实例种子幂等（设计文档 §1.5 / R2）：两实例同时空表启动 → 双双进入本方法，
+// name/priority 唯一约束（ent schema 已有）保证只有一个实例的插入成功；失败方
+// 收到 ErrConflict——忽略继续（各实例插入同一份种子，并集收敛为完整三份，
+// Reload 随后重列规则集）。不做 SELECT 后再插的"先查后写"（查与写之间仍有
+// 竞态窗口，唯一约束兜底才是治本）。
 func (e *RuleEngine) seedRules(ctx context.Context) error {
 	n, err := e.store.CountRules(ctx)
 	if err != nil {
@@ -198,11 +205,19 @@ func (e *RuleEngine) seedRules(ctx context.Context) error {
 	}
 	for _, s := range seeds {
 		if _, err := e.store.CreateRule(ctx, s); err != nil {
+			if errors.Is(err, repository.ErrConflict) {
+				continue // 并发实例已插同名/同 priority 种子（R2）：跳过，并集收敛
+			}
 			return fmt.Errorf("create seed rule %s: %w", s.Name, err)
 		}
 	}
 	return nil
 }
+
+// ReloadRules 规则表全量重载（invalidate.RulesReloader 适配，#14 T3a 装配
+// invalidate.Config.Rules）：与 Reload 同一实现——重载清窗口计数，全实例同步
+// 执行语义（设计文档 §1.5，NOTIFY Rules:true 远端变更触发）。
+func (e *RuleEngine) ReloadRules(ctx context.Context) error { return e.Reload(ctx) }
 
 // HandleEvent 同步处理单个事件：窗口计数 → 逐规则 Match（首中）→ ApplyFunc。
 // worker 消费循环与测试共用。命中不清零窗口计数（C2）——滑动自然衰减，

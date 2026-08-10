@@ -27,6 +27,19 @@ var (
 type Config struct {
 	DefaultMaxConcurrency int
 	SyncInterval          time.Duration
+	// GroupPub 状态回写成功后的组级 NOTIFY 发布器（#14 T3a：多实例传播——
+	// 账号状态变更落库后广播受影响组，其余实例组级重载收敛分裂快照）。
+	// 实现 = 装配侧 adapter（main 把 notify.Publisher 适配为
+	// PublishGroups）；nil = 未装配（单实例/测试），no-op。
+	GroupPub GroupChangePublisher
+}
+
+// GroupChangePublisher 组级 NOTIFY 发布面（设计文档 §1.3 / 必改 6）：
+// apply 状态回写 DB 成功后发布受影响组 id——跨实例状态分裂的最大风险点
+// （实例 A 禁号回写，实例 B 快照仍 active 继续选号）。计费/扣费路径不发布
+// （scheduler 无扣费，全部是账号状态回写）。
+type GroupChangePublisher interface {
+	PublishGroups(ctx context.Context, gids []int64)
 }
 
 // Loader 是调度器的数据源（由 repository 实现）。
@@ -165,6 +178,9 @@ func (s *Scheduler) writebackLoop(ctx context.Context) {
 // 合并语义：后写覆盖先写，但 weight 例外——后写若不带 weight（statusWrite.weight=nil，
 // 纯状态动作），保留先前已入队的 weight（否则同账号 weight 写先入队、status 写后
 // 入队时合并丢 weight，DB 不持久化 → ≤30s reload 后内存回退，weight 动作被静默撤销）。
+// 全部回写成功后发布一次组级 NOTIFY（#14 T3a）：合并本批受影响组（去重，防载荷
+// 膨胀超 R9 上限）——一次回写批次一条 NOTIFY（R3）。快照外账号（已移除）跳过：
+// 无组可传播，其余实例经 ≤30s 全量同步 / 60s 兜底收敛。
 func (s *Scheduler) processWrite(w statusWrite) {
 	accs := map[int64]statusWrite{w.id: w}
 	drain := true
@@ -179,10 +195,27 @@ func (s *Scheduler) processWrite(w statusWrite) {
 			drain = false
 		}
 	}
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	gidSet := make(map[int64]struct{})
 	for _, ww := range accs {
-		if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr, ww.weight); err != nil && s.log != nil {
-			s.log.Warn("account status writeback failed", logx.Int64("account_id", ww.id), logx.Error(err))
+		if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr, ww.weight); err != nil {
+			if s.log != nil {
+				s.log.Warn("account status writeback failed", logx.Int64("account_id", ww.id), logx.Error(err))
+			}
+			continue // 回写失败：DB 状态未变，无变更可传播
 		}
+		if as, ok := byID[ww.id]; ok {
+			for _, g := range as.groupIDs {
+				gidSet[g] = struct{}{}
+			}
+		}
+	}
+	if len(gidSet) > 0 && s.cfg.GroupPub != nil {
+		gids := make([]int64, 0, len(gidSet))
+		for g := range gidSet {
+			gids = append(gids, g)
+		}
+		s.cfg.GroupPub.PublishGroups(context.Background(), gids)
 	}
 }
 

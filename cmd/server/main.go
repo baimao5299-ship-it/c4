@@ -24,6 +24,7 @@ import (
 	"go-proxy-mini/internal/handler"
 	userapi "go-proxy-mini/internal/handler/user"
 	"go-proxy-mini/internal/invalidate"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/pricing"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
@@ -78,11 +79,23 @@ func main() {
 		fatalf("usagelog partition bootstrap: %v", err)
 	}
 
+	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname
+	// （config 无实例字段，最小方案；单机多实例部署各进程 hostname 不同即可
+	// 区分，接收端凭此跳过自播）。发布在 DB 写成功后（与 inv.* 调用点并排）；
+	// 计费路径永不发布。
+	src, err := os.Hostname()
+	if err != nil {
+		fatalf("hostname: %v", err)
+	}
+	pub := notify.NewPublisher(pool, src, log)
+
 	// 规则引擎先行构造（不 Reload——New 只建结构）：scheduler 构造期注册 apply 回调。
 	ruleEngine := rule.New(rule.Config{}, repos.Rules, log)
 	sched := scheduler.New(scheduler.Config{
 		DefaultMaxConcurrency: cfg.Scheduler.DefaultMaxConcurrency,
 		SyncInterval:          cfg.Scheduler.SyncInterval,
+		// 账号状态回写成功后广播受影响组（其余实例组级重载收敛分裂快照）。
+		GroupPub: schedGroupPub{pub},
 	}, repos.Groups, ruleEngine, log)
 	rec := usage.New(usage.UsageConfig{
 		BatchSize:          cfg.Usage.BatchSize,
@@ -120,8 +133,13 @@ func main() {
 	//   变更 → clients 失效
 	// - 组倍率 / 用户-组专属倍率（group_assignment，T3.5 按组）→ 余额倍率
 	//   快照定向刷新（EffectiveMultiplier 陈旧 ≤10s 不可接受）
-	// - key/pricing → 现状（auth 增量 Upsert/Delete / 内部 reloadPricing，不进
-	//   invalidate）
+	// - key CRUD（#14 T2 扩展）→ auth 快照全量 Reload（本地仍走 auth 增量
+	//   Upsert/Delete——单实例快路径；Keys() 分支覆盖远端实例的陈旧快照）
+	// - settings 变更（UpdateSetting）→ settings 快照重载（svc 实现，SetSettings
+	//   装配，见下）
+	// - 规则 CRUD → 规则表全量重载（ruleEngine.ReloadRules，重载清窗口计数——
+	//   全实例同步执行语义）
+	// - pricing → 现状（内部 reloadPricing，不进 invalidate）
 	// 去抖窗口 200ms：管理面变更生效延迟 ≤ 窗口 + 一次重载时长；后沿语义
 	// （评审 C-6：完成后又脏立即再执行，不按固定间隔 throttle——不与长 reload
 	// 重叠）。读端永不阻塞：Mark 路径零锁零 DB，重载单 goroutine 串行（消除
@@ -150,13 +168,37 @@ func main() {
 		Clients:  clients,
 		Auth:     auth,
 		Balances: invBalances, // billing.enabled=false → nil 接口（flush 跳过余额路径）
+		Rules:    ruleEngine,  // 规则 CRUD → 全实例规则表重载（#14 T3a；ruleEngine 先于 invalidate 构造）
 		Log:      log,
 	})
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
-	// pub 暂为 nil（#14 T2：service 发布点已就绪，notify.Publisher 装配在 T3
-	// ——main 装配 listener + Dispatcher 时一并注入）。
-	svc := service.New(repos, sched, inv, nil, ruleEngine, auth, log)
+	svc := service.New(repos, sched, inv, pub, ruleEngine, auth, log)
+	// #14 T3a：NOTIFY 监听装配。变更分发器放装配侧——notify 不 import
+	// invalidate（T1 依赖环约束）。
+	disp := &dispatcher{
+		inv:      inv,
+		auth:     auth,
+		balances: invBalances,
+		sched:    sched,
+		svc:      svc,
+		rules:    ruleEngine,
+	}
+	// invalidate 的 settings 分支延迟绑定：service.New 需要去抖器做 Invalidator、
+	// 去抖器需要 svc 做 SettingsReloader（构造环）——svc 构造完成后、Start 前回填。
+	inv.SetSettings(svc)
+	// NOTIFY 监听 worker（Name="notify"）：独立 pgx 连接 LISTEN gpm_invalidate；
+	// 断线指数退避重连 + 重连即全量刷新（R8）；Src 跳过自播（省重复 reload）。
+	listener := notify.NewListener(notify.ListenerConfig{
+		DSN:        cfg.DB.DSN,
+		Src:        src,
+		Dispatcher: disp,
+		Log:        log,
+	})
+	// 60s 周期鉴权快照兜底（R1：NOTIFY 丢失/断连期间 key 与用户变更最长 60s
+	// 收敛；现状 auth 无周期 reload，是兜底缺口——auth-sync worker 补位。
+	// T3b 在其 Reload 内接入 N 与预算重分配，本 worker 侧无需再改）。
+	authSync := newAuthSync(auth, 0, log)
 	if cfg.Billing.Enabled {
 		billFlusher = billing.NewFlusher(billing.FlushConfig{
 			FlushInterval:          cfg.Billing.FlushInterval,
@@ -225,6 +267,10 @@ func main() {
 	if billFlusher != nil {
 		wm.Register(billFlusher) // 计费 flusher 最后注册 → 反向排空最先（扣费 + 计费日志全量落库）
 	}
+	// listener/auth-sync 最后注册 → 反向排空最先关：停止接收/周期刷新后再排空
+	// 业务 worker（scheduler 排空回写仍会发布 NOTIFY，自播跳过、其它实例接收，
+	// 无依赖）。
+	wm.Register(listener, authSync)
 	if err := wm.StartAll(ctx); err != nil {
 		fatalf("worker start: %v", err)
 	}

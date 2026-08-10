@@ -399,7 +399,7 @@ func TestSeedRules(t *testing.T) {
 	require.NoError(t, e.Reload(context.Background()))
 
 	// 种子 3 条：429/30s、error/unhealthy/5s、ok/active，priority 10/20/30
-	require.Equal(t, int64(3), mustCount(t, st))
+	require.Equal(t, int64(3), mustCountAny(t, st))
 	require.True(t, e.NeedsOKEvents()) // 种子含 kind=ok 恢复规则（C1）
 
 	rules, err := st.ListRules(context.Background(), nil)
@@ -418,10 +418,11 @@ func TestSeedRules(t *testing.T) {
 
 	// 非空表不重复写种子
 	require.NoError(t, e.Reload(context.Background()))
-	require.Equal(t, int64(3), mustCount(t, st))
+	require.Equal(t, int64(3), mustCountAny(t, st))
 }
 
-func mustCount(t *testing.T, st *fakeRuleStore) int64 {
+// mustCountAny 表内规则数（接受唯一约束包装 store；种子幂等测试用）。
+func mustCountAny(t *testing.T, st repository.RuleStore) int64 {
 	t.Helper()
 	n, err := st.CountRules(context.Background())
 	require.NoError(t, err)
@@ -585,4 +586,61 @@ func TestStartConsumesThenCloseDrains(t *testing.T) {
 	defer closeCancel()
 	require.NoError(t, e.Close(closeCtx))
 	require.Eventually(t, func() bool { return len(rec.get()) == 2 }, 5*time.Second, 10*time.Millisecond)
+}
+
+// uniqueRuleStore 在 fakeRuleStore 之上施加 name/priority 唯一约束（模拟真实
+// repo 的 ent 唯一索引——种子幂等测试的冲突源，设计文档 R2）。
+type uniqueRuleStore struct {
+	*fakeRuleStore
+}
+
+func (u *uniqueRuleStore) CreateRule(ctx context.Context, r domain.Rule) (int64, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, existing := range u.rules {
+		if existing.Name == r.Name || existing.Priority == r.Priority {
+			return 0, fmt.Errorf("%w: priority=%d or name=%q", repository.ErrConflict, r.Priority, r.Name)
+		}
+	}
+	r.ID = u.next
+	u.next++
+	u.rules[r.ID] = r
+	return r.ID, nil
+}
+
+// TestSeedRulesIdempotentConcurrent 多实例启动种子竞态（设计文档 R2 / 必改 10）：
+// 两引擎并发 Reload 空表 → 一方唯一约束冲突被容忍（跳过继续），双双成功，
+// 最终种子并集恰 3 条。
+func TestSeedRulesIdempotentConcurrent(t *testing.T) {
+	st := &uniqueRuleStore{newFakeRuleStore()}
+	e1 := New(Config{}, st, nil)
+	e2 := New(Config{}, st, nil)
+	var wg sync.WaitGroup
+	var err1, err2 error
+	wg.Add(2)
+	go func() { defer wg.Done(); err1 = e1.Reload(context.Background()) }()
+	go func() { defer wg.Done(); err2 = e2.Reload(context.Background()) }()
+	wg.Wait()
+	require.NoError(t, err1)
+	require.NoError(t, err2, "冲突方不得失败（唯一约束 → 跳过继续，并集收敛）")
+	require.Equal(t, int64(3), mustCountAny(t, st), "种子并集恰 3 条（不双写）")
+}
+
+// TestSeedRulesIdempotentRepeat 已种子表重复 Reload 不重写（幂等回归）。
+func TestSeedRulesIdempotentRepeat(t *testing.T) {
+	st := &uniqueRuleStore{newFakeRuleStore()}
+	e := New(Config{}, st, nil)
+	require.NoError(t, e.Reload(context.Background()))
+	require.Equal(t, int64(3), mustCountAny(t, st))
+	require.NoError(t, e.Reload(context.Background()))
+	require.Equal(t, int64(3), mustCountAny(t, st), "重复 Reload 不重写种子")
+}
+
+// TestReloadRulesAdapter ReloadRules 与 Reload 同实现（invalidate.RulesReloader
+// 适配）：空表可种子、非空表加载。
+func TestReloadRulesAdapter(t *testing.T) {
+	st := newFakeRuleStore()
+	e := New(Config{}, st, nil)
+	require.NoError(t, e.ReloadRules(context.Background()))
+	require.Equal(t, int64(3), mustCountAny(t, st), "ReloadRules 空表同样写种子")
 }
