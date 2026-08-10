@@ -85,7 +85,9 @@ export default function AppShell() {
   // 顶栏面包屑（两级）：未知路径返回 null 不渲染
   const crumb = breadcrumbFor(location.pathname)
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
+      {/* h-screen 锁定视口高度：侧边栏 nav 独立滚动（flex-1 overflow-y-auto），
+          底部用户卡固定左下角不再随页面滚动；main 自身 overflow-auto */}
       <AppSidebar navs={navs} userEmail={me?.Email} />
       <main className="flex flex-1 flex-col overflow-auto">
         <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 lg:px-6">
