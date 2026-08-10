@@ -244,10 +244,17 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 
 	// --- 双向 relay：三个方向各自 goroutine，首退者触发取消 ---
 	// 每个 goroutine 退出时把"本侧真实错误"记录到共享变量（仅当退出非取消
-	// 副作用——relayCtx 存活 = 本退出是首因；首因到达 endCh → 编排分类 →
-	// 取消对侧 → 等全部退出。分类以记录为准而非首达者：上游正常关闭与客户端
-	// 循环写失败天然并发（上游发关闭帧的同时对端写入可能失败）——正常关闭
-	// 优先于一切，避免把健康上游误判为错误。
+	// 副作用——relayCtx 存活 = 本退出是首因；首因到达 endCh → 编排等上游
+	// 读者退出 → 分类 → 取消对侧 → 等全部退出。
+	//
+	// I-1 竞态（评审裁决"修"）：上游关闭帧与客户端活跃写帧并发时，上游侧
+	// 错误槽 upErr 有两个并发写者——up-loop 的关闭帧（CloseError）与
+	// client-loop 的写失败（net.ErrClosed，库在解码关闭帧后 c.close() 所致）
+	// ——首写生效下 net.ErrClosed 可能先被记录 → 健康上游误判 ResultError
+	// 冷却。修复：关闭帧记录到独立槽 upClose（仅 up-loop 写入、无取消守卫
+	// ——真实帧永不丢），分类时正常关闭帧优先于一切；写失败只归因网络错误
+	// 槽（无关闭帧时才判错）。upLoopDone 保证 upClose 先于分类读取可见
+	// （记录 happens-before 退出 happens-before close(upLoopDone)）。
 	//
 	// 关键细节：客户端循环的阻塞 Read 用 r.Context()（非 relayCtx）——库对
 	// 取消中的阻塞 Read 会直接拆连接（客户端拿不到正常关闭帧）；客户端循环
@@ -261,6 +268,7 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 		ttft                      *int64
 		wg                        sync.WaitGroup
 		endMu                     sync.Mutex
+		upClose                   *websocket.CloseError // 上游关闭帧（分类最高权威，仅 up-loop 写入）
 		upErr, clientErr, pingErr error
 	)
 	// setErr 记录单侧退出错误（首写生效；取消副作用不记录）。dst 指针即
@@ -273,6 +281,21 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 		endMu.Lock()
 		if *dst == nil {
 			*dst = err
+		}
+		endMu.Unlock()
+	}
+	// recordClose 记录上游关闭帧（仅 CloseError）。不设 relayCtx 守卫：取消
+	// 副作用（ctx.Canceled）本就不是 CloseError，真实关闭帧永远优先于并发写
+	// 失败症状（net.ErrClosed 只进 upErr，首写覆盖不了关闭帧）。
+	recordClose := func(err error) {
+		var ce websocket.CloseError
+		if !errors.As(err, &ce) {
+			return
+		}
+		endMu.Lock()
+		if upClose == nil {
+			c := ce
+			upClose = &c
 		}
 		endMu.Unlock()
 	}
@@ -302,13 +325,23 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 		}
 	}()
 
+	upLoopDone := make(chan struct{})
 	wg.Add(1)
 	go func() { // 上游 → 客户端（热路径：预筛嗅探 response.completed 取 usage）
 		defer wg.Done()
+		defer close(upLoopDone) // 编排等本读者退出后再分类（I-1 记录可见性）
 		for {
 			typ, f, err := up.Read(relayCtx)
 			if err != nil {
-				setErr(&upErr, err)
+				// 关闭帧 → 独立槽（最高权威）；其余（EOF/网络）→ upErr。
+				// 本 goroutine 是唯一解码者：关闭帧 decode+record 与客户端
+				// 循环的写失败天然并发，槽位分离使两者各归其位、互不覆盖。
+				var ce websocket.CloseError
+				if errors.As(err, &ce) {
+					recordClose(err)
+				} else {
+					setErr(&upErr, err)
+				}
 				exit()
 				return
 			}
@@ -352,8 +385,13 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	}()
 
 	<-endCh
+	// I-1：等上游读者退出再分类——关闭帧的 decode+record 与客户端循环的
+	// 写失败记录并发，关闭帧可能晚于首退到达；upLoopDone 保证 upClose（或
+	// 上游侧真实错误）先于分类读取可见。该等待各路径都快速收敛：关闭帧
+	// 送达 / 首退已 relayCancel（阻塞 Read 立即返回）/ 连接死亡。
+	<-upLoopDone
 
-	// 分类与关闭传播（与 SSE caller 同构）：
+	// 分类与关闭传播（与 SSE caller 同构；relayClassify 纯函数可单测）：
 	//   ① 上游正常关闭（1000/1001）→ 成功 200 ErrNone + ResultOK
 	//   ② 客户端断开/关闭          → 200 ErrAbort（上游已消费请求；不 MarkResult）
 	//   ③ 上游错误关闭/网络错误/心跳失联 → recordStreamAbort + ResultError
@@ -368,30 +406,26 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	// 竞态窗口——若先发关闭帧，对侧读到后立刻断开/网关停机收尾（rec.Close），
 	// finish 的 Record 落在 Close 之后即丢（无消费者）。先入队再关，任何时序下
 	// 记录不丢（优雅停机"等在途归零"语义）。
-	switch {
-	case isNormalWSClose(upErr):
+	end, endErr := relayClassify(upClose, upErr, clientErr, pingErr)
+	switch end {
+	case relayEndUpstreamClosed:
 		_ = up.Close(websocket.StatusNormalClosure, "") // 完成关闭握手（上游已发关闭帧）
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
 		p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, http.StatusOK, domain.ErrNone, u, start)))
 		_ = client.Close(websocket.StatusNormalClosure, "")
-	case clientErr != nil:
+	case relayEndClientAbort:
 		// 客户端已死/已关闭，免握手等待
 		_ = client.CloseNow()
 		code := websocket.StatusGoingAway
-		if isNormalWSClose(clientErr) {
-			code = wsCloseStatus(clientErr)
+		if isNormalWSClose(endErr) {
+			code = wsCloseStatus(endErr)
 		}
 		p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, http.StatusOK, domain.ErrAbort, u, start)))
 		_ = up.Close(code, "") // 向上游传播客户端关闭
-	default:
-		// upErr 缺失时 pingErr 必非 nil（循环退出必有其一记录）
-		abortErr := upErr
-		if abortErr == nil {
-			abortErr = pingErr
-		}
-		p.recordStreamAbort(logCtx, reqID, groupID, start, sel, reqModel, u, abortErr)
-		p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, abortErr.Error())
-		_ = client.Close(wsCloseStatus(abortErr), "")
+	case relayEndUpstreamError:
+		p.recordStreamAbort(logCtx, reqID, groupID, start, sel, reqModel, u, endErr)
+		p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, endErr.Error())
+		_ = client.Close(wsCloseStatus(endErr), "")
 		_ = up.CloseNow() // 上游已死/失联，免握手等待
 	}
 	relayCancel()
@@ -402,8 +436,47 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 // isNormalWSClose 正常结束的关闭帧（1000 正常 / 1001 离开——上游完成流后关闭）。
 func isNormalWSClose(err error) bool {
 	var ce websocket.CloseError
-	return errors.As(err, &ce) &&
-		(ce.Code == websocket.StatusNormalClosure || ce.Code == websocket.StatusGoingAway)
+	return errors.As(err, &ce) && isNormalWSCloseCode(ce.Code)
+}
+
+// isNormalWSCloseCode 正常结束的关闭码（1000 正常 / 1001 离开）。
+func isNormalWSCloseCode(code websocket.StatusCode) bool {
+	return code == websocket.StatusNormalClosure || code == websocket.StatusGoingAway
+}
+
+// relayEnd 关闭路径分类结果（relayClassify 纯函数输出，编排据此收尾）。
+type relayEnd int
+
+const (
+	// relayEndUpstreamClosed 上游正常关闭（1000/1001）——流已完成，成功收尾。
+	relayEndUpstreamClosed relayEnd = iota
+	// relayEndClientAbort 客户端断开/关闭——上游已消费请求，记录但不计冷却。
+	relayEndClientAbort
+	// relayEndUpstreamError 上游错误关闭/网络错误/心跳失联——计冷却。
+	relayEndUpstreamError
+)
+
+// relayClassify 错误分类（I-1 修复核心）：上游关闭帧（upClose）优先于一切——
+// 客户端循环并发写失败（net.ErrClosed）只归因网络错误槽，绝不覆盖关闭帧
+// （健康上游 + 正常关闭帧 → 恒成功）；无关闭帧时：客户端断开 → abort，
+// 其余（上游错误/失联）→ 错误。返回结束类型与收尾依据错误（abort/error
+// 分支的关闭码与记录来源）。约定：至少一个槽非 nil（首退者必记录）。
+func relayClassify(upClose *websocket.CloseError, upErr, clientErr, pingErr error) (relayEnd, error) {
+	switch {
+	case upClose != nil && isNormalWSCloseCode(upClose.Code):
+		return relayEndUpstreamClosed, nil
+	case clientErr != nil:
+		return relayEndClientAbort, clientErr
+	default:
+		abortErr := upErr
+		if abortErr == nil {
+			abortErr = pingErr
+		}
+		if abortErr == nil {
+			abortErr = upClose // 上游错误关闭帧（1011 等，无网络错误记录时）
+		}
+		return relayEndUpstreamError, abortErr
+	}
 }
 
 // wsCloseStatus 从错误提取对端关闭码（非关闭帧错误 → 内部错误 1011，传播语义）。
