@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -8,6 +8,13 @@ import { setLang, type AppLang } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { ModeToggle } from '@/components/mode-toggle'
 import { cn } from '@/lib/utils'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 import AppSidebar from '@/components/app-sidebar'
 
 // /app 与 /user 共用单一 AppShell：路由切换只换 Outlet 内容，
@@ -43,11 +50,27 @@ const LANGS: { code: AppLang; label: string }[] = [
   { code: 'en', label: 'EN' },
 ]
 
+// 路径 → 面包屑两级（分组根 + 当前页）；未知路径返回 null（顶栏不渲染面包屑）。
+// 映射直接复用 adminNav/userNav（同一来源，避免漂移）：
+// /app/* → 管理台 + 对应页名；/user/* → 用户中心 + 对应页名。
+function breadcrumbFor(pathname: string): { root: string; section: string; page: string } | null {
+  if (pathname.startsWith('/app')) {
+    if (pathname === '/app') return { root: '/app', section: 'user.nav.adminSection', page: 'nav.overview' }
+    const item = adminNav.find((n) => n.to === pathname)
+    return item ? { root: '/app', section: 'user.nav.adminSection', page: item.key } : null
+  }
+  if (pathname.startsWith('/user')) {
+    const item = userNav.find((n) => n.to === pathname)
+    return item ? { root: '/user', section: 'user.nav.userSection', page: item.key } : null
+  }
+  return null
+}
+
 // me 未加载（undefined）时先按普通用户渲染用户组，避免侧边栏闪动；
 // me 返回后 platform_admin 自动补上管理组。401 由 App.tsx 全局 handleAuthError 统一处理。
 export default function AppShell() {
   const location = useLocation()
-  const { i18n } = useTranslation()
+  const { t, i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
   // 全局 qc 共享（与各页面同键缓存）；staleTime 60s 内路由切换不重复请求
   const { data: me } = useQuery({
@@ -59,12 +82,29 @@ export default function AppShell() {
   const navs = isAdmin
     ? [{ titleKey: 'user.nav.adminSection', items: adminNav }, { titleKey: 'user.nav.userSection', items: userNav }]
     : [{ titleKey: 'user.nav.userSection', items: userNav }]
+  // 顶栏面包屑（两级）：未知路径返回 null 不渲染
+  const crumb = breadcrumbFor(location.pathname)
   return (
     <div className="flex min-h-screen">
       <AppSidebar navs={navs} userEmail={me?.Email} />
       <main className="flex flex-1 flex-col overflow-auto">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 lg:px-6">
-          <div className="flex flex-1 items-center justify-end gap-2 lg:gap-3">
+        <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 lg:px-6">
+          {crumb && (
+            <Breadcrumb className="min-w-0 flex-1">
+              <BreadcrumbList>
+                <BreadcrumbItem className="hidden md:block">
+                  <Link to={crumb.root} className="text-sm transition-colors hover:text-foreground">
+                    {t(crumb.section)}
+                  </Link>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator className="hidden md:block" />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{t(crumb.page)}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          )}
+          <div className="flex shrink-0 items-center justify-end gap-2 lg:gap-3">
             <span className="text-sm text-muted-foreground">{me?.Email ?? ''}</span>
             <ModeToggle />
             <div className="inline-flex items-center gap-1 rounded-md border bg-background p-0.5">
