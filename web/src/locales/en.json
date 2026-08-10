@@ -709,6 +709,8 @@
       "required": "Email, password, and confirm password are all required"
     },
     "nav": {
+      "adminSection": "Admin Console",
+      "userSection": "User Center",
       "overview": "Overview",
       "keys": "Keys",
       "logs": "Logs",

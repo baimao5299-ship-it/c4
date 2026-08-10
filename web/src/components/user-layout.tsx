@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { QueryCache, MutationCache, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, KeyRound, FileText, BarChart3, Ticket, LogOut } from 'lucide-react'
+import { LayoutDashboard, KeyRound, FileText, BarChart3, Ticket, LogOut, Boxes, Users, UserCog, FolderOpen, ScrollText, Coins, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ApiUnauthorized, userApi } from '@/lib/api/client'
 import { userAuth } from '@/lib/auth'
@@ -17,6 +17,21 @@ const nav = [
   { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
   { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
   { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
+]
+
+// platform_admin 专属的管理端菜单组（图标与 /app 管理端 layout.tsx 保持一致）
+const adminNav = [
+  { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
+  { to: '/app/templates', key: 'nav.templates', icon: Boxes },
+  { to: '/app/accounts', key: 'nav.accounts', icon: Users },
+  { to: '/app/users', key: 'nav.users', icon: UserCog },
+  { to: '/app/groups', key: 'nav.groups', icon: FolderOpen },
+  { to: '/app/logs', key: 'nav.logs', icon: FileText },
+  { to: '/app/stats', key: 'nav.stats', icon: BarChart3 },
+  { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
+  { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
+  { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
+  { to: '/app/settings', key: 'nav.settings', icon: Settings },
 ]
 
 const LANGS: { code: AppLang; label: string }[] = [
@@ -62,6 +77,12 @@ function Shell() {
     queryFn: () => userApi.me(),
     staleTime: 60_000,
   })
+  const isAdmin = me?.Role === 'platform_admin'
+  const navLinkCls = ({ isActive }: { isActive: boolean }) =>
+    `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`
+  const sectionTitle = (key: string) => (
+    <p className="px-3 pt-3 pb-1 text-xs font-medium text-sidebar-foreground/40">{t(key)}</p>
+  )
   const logout = () => {
     userAuth.clear()
     navTo('/user/login')
@@ -70,10 +91,20 @@ function Shell() {
     <div className="flex min-h-screen">
       <aside className="w-56 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
         <div className="p-4 font-semibold text-lg">{t('common.appTitle')}</div>
-        <nav className="flex-1 space-y-1 p-2">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
+          {isAdmin && (
+            <>
+              {sectionTitle('user.nav.adminSection')}
+              {adminNav.map(({ to, key, icon: Icon }) => (
+                <NavLink key={to} to={to} className={navLinkCls}>
+                  <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
+                </NavLink>
+              ))}
+              {sectionTitle('user.nav.userSection')}
+            </>
+          )}
           {nav.map(({ to, key, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}
-              className={({ isActive }) => `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
+            <NavLink key={to} to={to} end={end} className={navLinkCls}>
               <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
             </NavLink>
           ))}

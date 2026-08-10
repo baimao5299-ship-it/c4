@@ -709,6 +709,8 @@
       "required": "邮箱、密码和确认密码均为必填"
     },
     "nav": {
+      "adminSection": "管理台",
+      "userSection": "用户中心",
       "overview": "总览",
       "keys": "Keys",
       "logs": "日志",

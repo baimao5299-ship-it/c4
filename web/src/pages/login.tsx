@@ -39,6 +39,7 @@ export default function Login() {
         return
       }
       auth.setToken(res.token)
+      auth.setRole(res.user.Role)
       nav('/app/dashboard')
     } catch (e) {
       // 服务端 error 字段直接展示；网络异常等统一兜底文案

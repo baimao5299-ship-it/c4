@@ -1,5 +1,6 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
 import { ThemeProvider } from '@/components/theme-provider'
 import { auth } from '@/lib/auth'
@@ -47,7 +48,7 @@ const router = createBrowserRouter([
   },
   {
     path: '/app',
-    element: <Layout />,
+    element: <RequireAdmin><Layout /></RequireAdmin>,
     children: [
       { index: true, element: <Navigate to="/app/dashboard" replace /> },
       { path: 'dashboard', element: <Dashboard /> },
@@ -64,6 +65,14 @@ const router = createBrowserRouter([
     ],
   },
 ])
+
+// 管理端路由守卫：本地 role 必须为 platform_admin 才放行 /app 子树。
+// 安全默认：token 存在但 role 缺失（旧会话残留、localStorage 被手动清理）一律视为无权限。
+// 后端鉴权仍在（非 platform_admin JWT → 401 → handleAuthError 清 token 跳 /login），此守卫只是前端第一层拦截。
+function RequireAdmin({ children }: { children: ReactNode }) {
+  if (auth.getRole() !== 'platform_admin') return <Navigate to="/login" replace />
+  return <>{children}</>
+}
 
 // 401 全局拦截（Task 2→3 handoff 硬性要求）：任何 query/mutation 收到
 // ApiUnauthorized（client.ts 对 401 响应的归一化）→ 清 token + 跳 /login。
