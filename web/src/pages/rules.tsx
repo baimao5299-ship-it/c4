@@ -331,10 +331,10 @@ export default function Rules() {
   const setThen = (k: keyof ThenForm, v: string) => setForm(f => ({ ...f, then: { ...f.then, [k]: v } }))
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{t('rules.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('rules.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('rules.subtitle')}</p>
         </div>
         <Button onClick={openCreate}><Plus /> {t('rules.new')}</Button>
@@ -384,7 +384,7 @@ export default function Rules() {
                 <TableHead className="w-24 text-right">{t('rules.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_td]:py-3">
               {rows.map(r => (
                 <TableRow key={r.ID} data-state={selected.includes(r.ID) ? 'selected' : undefined}>
                   <TableCell>

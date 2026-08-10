@@ -136,9 +136,9 @@ export default function Logs() {
   const page = total === 0 ? 1 : Math.floor(offset / limit) + 1
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('logs.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('logs.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('logs.subtitle')}</p>
       </div>
 
@@ -222,7 +222,7 @@ export default function Logs() {
                 <Th className="text-right">{t('logs.table.tokens')}</Th>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_td]:py-3">
               {rows.map(l => (
                 <TableRow key={l.ID}>
                   <TableCell className="max-w-36">

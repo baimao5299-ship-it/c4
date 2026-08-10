@@ -101,9 +101,9 @@ export default function Stats() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('stats.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('stats.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('stats.subtitle')}</p>
       </div>
 
@@ -115,7 +115,7 @@ export default function Stats() {
             （日期区）打开日历后高度变化 → 右列随底部整体下沉——这是唯一垂直下沉路径，与
             换行无关；顶对齐后各列高度互不影响，右列位置固定。Label 顶部对齐视觉也更自然。
             日期区 w-[14rem] 保持。 */}
-        <div className="flex flex-nowrap items-start gap-4 overflow-x-auto">
+        <div className="flex flex-nowrap items-start gap-5 overflow-x-auto">
           <div className="w-[14rem] shrink-0 space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={range} onChange={setRange} />
@@ -151,7 +151,7 @@ export default function Stats() {
           {isError ? (
             <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
           ) : isLoading ? (
-            <Skeleton className="h-[300px] w-full" />
+            <Skeleton className="h-[320px] w-full" />
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <BarChart3 className="size-10" />
@@ -159,7 +159,7 @@ export default function Stats() {
               <p className="text-sm">{t('stats.emptyDesc')}</p>
             </div>
           ) : (
-            <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <ChartContainer config={chartConfig} className="h-[320px] w-full">
               {metric === 'requests' ? (
                 <BarChart accessibilityLayer data={chartData}>
                   <CartesianGrid vertical={false} />
@@ -205,7 +205,7 @@ export default function Stats() {
                 <TableHead className="text-right">{t('stats.table.avgLatency')}</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_td]:py-3">
               {isLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
