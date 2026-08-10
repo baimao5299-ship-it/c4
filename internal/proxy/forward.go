@@ -127,6 +127,19 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		l.BillingTier = "no_price"
 		return
 	}
+	// 价格快照（每 M token 毫分，1 USD = 100,000 毫分；pricing 同款单位）：
+	// 请求时点生效基础单价直接读入日志——GetPrice 已取价，零额外查找零额外
+	// DB 读。priority/flex 档位替换价与 above 分段价/倍率不展开（快照语义 =
+	// 基础单价）。缓存价仅在有该分量（tokens > 0）且模型有价（非 nil）时
+	// 落快照；否则保持 nil（NULL，无该分量语义）。
+	l.PriceInputMillis = &pr.PromptPricePerMillion
+	l.PriceOutputMillis = &pr.CompletionPricePerMillion
+	if l.CacheReadTokens > 0 && pr.CacheReadPricePerMillion != nil {
+		l.PriceCacheReadMillis = pr.CacheReadPricePerMillion
+	}
+	if l.CacheCreationTokens > 0 && pr.CacheCreationPricePerMillion != nil {
+		l.PriceCacheCreationMillis = pr.CacheCreationPricePerMillion
+	}
 	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
 	// 价格倍率（T3.5，用户拍板）：整单 × 有效倍率（万分数；用户覆盖组——
 	// 用户已设置 → 用户值，否则组倍率，均缺 ×1）。m==10000 恒等短路零开销；
@@ -186,6 +199,11 @@ func (p *Proxy) recordLog(l *domain.UsageLog) {
 // 空语义（计费全关不写入 hasTier → 日志 BillingTier 恒空）。
 type ctxKeyReqMeta struct{}
 
+// ctxKeyTTFT 是 TTFT 采集的 context 键（caller 流式首 chunk 写入；日志读取——
+// 先例 ctxKeyReqMeta）。值 *int64（首 token 时间毫秒）；仅流式首帧到达后写入，
+// 非流式/失败/无首 token 路径无值 → 日志 TTFTMS 恒 nil（NULL 落库）。
+type ctxKeyTTFT struct{}
+
 type reqMeta struct {
 	meta    domain.KeyMeta
 	tier    billing.Tier
@@ -194,8 +212,9 @@ type reqMeta struct {
 
 // logWithCtx 从 ctx 读请求元数据填日志归属（user_id/key_id；context 传递
 // ——不改变 Call/buildLog 签名；无 KeyMeta 的路径保持 0）+ service_tier 归一化
-// 值填 BillingTier（计费启用路径；无 tier 的路径保持空）。rm 为指针（handleFormat
-// 原地补 tier，单次 context 写入；全程请求 goroutine 内同步访问）。
+// 值填 BillingTier（计费启用路径；无 tier 的路径保持空）+ TTFT（流式首 chunk
+// 采集；非流式/失败路径无值 → nil）。rm 为指针（handleFormat 原地补 tier，
+// 单次 context 写入；全程请求 goroutine 内同步访问）。
 func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 	if rm, ok := ctx.Value(ctxKeyReqMeta{}).(*reqMeta); ok {
 		l.UserID = rm.meta.UserID
@@ -203,6 +222,9 @@ func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 		if rm.hasTier {
 			l.BillingTier = rm.tier.String()
 		}
+	}
+	if ttft, ok := ctx.Value(ctxKeyTTFT{}).(*int64); ok {
+		l.TTFTMS = ttft
 	}
 	return l
 }

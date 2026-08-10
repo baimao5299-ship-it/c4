@@ -132,6 +132,13 @@ func TestProxyBillingAppliesCost(t *testing.T) {
 	require.Equal(t, "auto", store.logs[0].BillingTier, "无 service_tier → auto")
 	require.Equal(t, int64(130), store.logs[0].Cost, "3×1e7+5×2e7 → 130 毫分")
 	require.False(t, store.logs[0].AboveHit)
+	// 价格快照（每 M token 毫分）：基础单价直读 + 无缓存分量 → 缓存价 nil；
+	// 非流式无首 token → TTFT nil
+	require.Equal(t, int64(1e7), *store.logs[0].PriceInputMillis, "输入单价快照（基础价）")
+	require.Equal(t, int64(2e7), *store.logs[0].PriceOutputMillis, "输出单价快照（基础价）")
+	require.Nil(t, store.logs[0].PriceCacheReadMillis, "无缓存读 → nil")
+	require.Nil(t, store.logs[0].PriceCacheCreationMillis, "无缓存写 → nil")
+	require.Nil(t, store.logs[0].TTFTMS, "非流式 → TTFT nil")
 }
 
 // TestProxyBillingTierPriority service_tier=priority：BillingTier 归一化落日志，
@@ -219,6 +226,8 @@ func TestProxyBillingTierPolicyStrip(t *testing.T) {
 	require.Len(t, store.logs, 1)
 	require.Equal(t, "priority", store.logs[0].BillingTier, "剥离路径计费照常（tier 已提取）")
 	require.Equal(t, int64(210), store.logs[0].Cost, "剥离路径按 priority 单价计费")
+	require.NotNil(t, store.logs[0].TTFTMS, "流式首 chunk 到达 → TTFT 采集")
+	require.GreaterOrEqual(t, *store.logs[0].TTFTMS, int64(0), "TTFT 毫秒非负")
 }
 
 // TestProxyBillingTierPolicyReject reject 策略：直接 400 + 记 ErrBilling，
@@ -393,6 +402,51 @@ func TestProxyBillingNoPriceDefenseAtFinish(t *testing.T) {
 	require.Len(t, store.logs, 1)
 	require.Equal(t, "no_price", store.logs[0].BillingTier, "竞态防御：no_price 审计")
 	require.Zero(t, store.logs[0].Cost, "缺价防御 cost 0")
+	require.Nil(t, store.logs[0].PriceInputMillis, "no_price 防御：输入单价快照保持 nil（NULL 落库）")
+	require.Nil(t, store.logs[0].PriceOutputMillis, "no_price 防御：输出单价快照保持 nil")
+	require.Nil(t, store.logs[0].PriceCacheReadMillis, "no_price 防御：缓存读单价快照保持 nil")
+	require.Nil(t, store.logs[0].PriceCacheCreationMillis, "no_price 防御：缓存写单价快照保持 nil")
+}
+
+// TestProxyBillingPriceSnapshotCache 缓存价快照：请求有缓存读/写分量且模型有
+// 缓存价 → price_cache_*_millis 落快照（基础 input/output 快照照常）；无缓存
+// 分量的请求 → 缓存价保持 nil（见 TestProxyBillingAppliesCost）。
+func TestProxyBillingPriceSnapshotCache(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":4},"cache_creation":{"ephemeral_5m_input_tokens":2}}}`+"\n\n")
+		fl.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer up.Close()
+	i64 := func(v int64) *int64 { return &v }
+	pr := proxyPricing()
+	pr.CacheReadPricePerMillion = i64(5e6)     // $50 / 1M
+	pr.CacheCreationPricePerMillion = i64(1e7) // $100 / 1M
+	store := &captureLogStore{}
+	p := newTestProxyBillingLogs(t, up.URL, &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": pr}}, nil, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","stream":true,"messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, int64(4), store.logs[0].CacheReadTokens, "缓存读 token 采集")
+	require.Equal(t, int64(2), store.logs[0].CacheCreationTokens, "缓存写 token 采集")
+	require.Equal(t, int64(5e6), *store.logs[0].PriceCacheReadMillis, "缓存读单价快照")
+	require.Equal(t, int64(1e7), *store.logs[0].PriceCacheCreationMillis, "缓存写单价快照")
+	require.Equal(t, int64(1e7), *store.logs[0].PriceInputMillis, "基础输入单价快照照常")
+	require.Equal(t, int64(2e7), *store.logs[0].PriceOutputMillis, "基础输出单价快照照常")
+	require.NotNil(t, store.logs[0].TTFTMS, "流式 → TTFT 采集")
 }
 
 // TestProxyBillingStreamAbortCostsTokens recordStreamAbort 修复（评审 M-2）：

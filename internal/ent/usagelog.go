@@ -43,16 +43,26 @@ type UsageLog struct {
 	ErrorMessage *string `json:"error_message,omitempty"`
 	// LatencyMs holds the value of the "latency_ms" field.
 	LatencyMs int64 `json:"latency_ms,omitempty"`
+	// TtftMs holds the value of the "ttft_ms" field.
+	TtftMs *int64 `json:"ttft_ms,omitempty"`
 	// InputTokens holds the value of the "input_tokens" field.
 	InputTokens int64 `json:"input_tokens,omitempty"`
+	// PriceInputMillis holds the value of the "price_input_millis" field.
+	PriceInputMillis *int64 `json:"price_input_millis,omitempty"`
 	// OutputTokens holds the value of the "output_tokens" field.
 	OutputTokens int64 `json:"output_tokens,omitempty"`
+	// PriceOutputMillis holds the value of the "price_output_millis" field.
+	PriceOutputMillis *int64 `json:"price_output_millis,omitempty"`
 	// TotalTokens holds the value of the "total_tokens" field.
 	TotalTokens int64 `json:"total_tokens,omitempty"`
 	// CacheReadTokens holds the value of the "cache_read_tokens" field.
 	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
+	// PriceCacheReadMillis holds the value of the "price_cache_read_millis" field.
+	PriceCacheReadMillis *int64 `json:"price_cache_read_millis,omitempty"`
 	// CacheCreationTokens holds the value of the "cache_creation_tokens" field.
 	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
+	// PriceCacheCreationMillis holds the value of the "price_cache_creation_millis" field.
+	PriceCacheCreationMillis *int64 `json:"price_cache_creation_millis,omitempty"`
 	// Cost holds the value of the "cost" field.
 	Cost int64 `json:"cost,omitempty"`
 	// BillingTier holds the value of the "billing_tier" field.
@@ -73,7 +83,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagelog.FieldAboveHit, usagelog.FieldOverdraft:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCost:
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCost:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldErrorMessage, usagelog.FieldBillingTier:
 			values[i] = new(sql.NullString)
@@ -185,17 +195,38 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.LatencyMs = value.Int64
 			}
+		case usagelog.FieldTtftMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field ttft_ms", values[i])
+			} else if value.Valid {
+				_m.TtftMs = new(int64)
+				*_m.TtftMs = value.Int64
+			}
 		case usagelog.FieldInputTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field input_tokens", values[i])
 			} else if value.Valid {
 				_m.InputTokens = value.Int64
 			}
+		case usagelog.FieldPriceInputMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_input_millis", values[i])
+			} else if value.Valid {
+				_m.PriceInputMillis = new(int64)
+				*_m.PriceInputMillis = value.Int64
+			}
 		case usagelog.FieldOutputTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field output_tokens", values[i])
 			} else if value.Valid {
 				_m.OutputTokens = value.Int64
+			}
+		case usagelog.FieldPriceOutputMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_output_millis", values[i])
+			} else if value.Valid {
+				_m.PriceOutputMillis = new(int64)
+				*_m.PriceOutputMillis = value.Int64
 			}
 		case usagelog.FieldTotalTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -209,11 +240,25 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.CacheReadTokens = value.Int64
 			}
+		case usagelog.FieldPriceCacheReadMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_cache_read_millis", values[i])
+			} else if value.Valid {
+				_m.PriceCacheReadMillis = new(int64)
+				*_m.PriceCacheReadMillis = value.Int64
+			}
 		case usagelog.FieldCacheCreationTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field cache_creation_tokens", values[i])
 			} else if value.Valid {
 				_m.CacheCreationTokens = value.Int64
+			}
+		case usagelog.FieldPriceCacheCreationMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_cache_creation_millis", values[i])
+			} else if value.Valid {
+				_m.PriceCacheCreationMillis = new(int64)
+				*_m.PriceCacheCreationMillis = value.Int64
 			}
 		case usagelog.FieldCost:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -335,11 +380,26 @@ func (_m *UsageLog) String() string {
 	builder.WriteString("latency_ms=")
 	builder.WriteString(fmt.Sprintf("%v", _m.LatencyMs))
 	builder.WriteString(", ")
+	if v := _m.TtftMs; v != nil {
+		builder.WriteString("ttft_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("input_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.InputTokens))
 	builder.WriteString(", ")
+	if v := _m.PriceInputMillis; v != nil {
+		builder.WriteString("price_input_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("output_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.OutputTokens))
+	builder.WriteString(", ")
+	if v := _m.PriceOutputMillis; v != nil {
+		builder.WriteString("price_output_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("total_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TotalTokens))
@@ -347,8 +407,18 @@ func (_m *UsageLog) String() string {
 	builder.WriteString("cache_read_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CacheReadTokens))
 	builder.WriteString(", ")
+	if v := _m.PriceCacheReadMillis; v != nil {
+		builder.WriteString("price_cache_read_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("cache_creation_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CacheCreationTokens))
+	builder.WriteString(", ")
+	if v := _m.PriceCacheCreationMillis; v != nil {
+		builder.WriteString("price_cache_creation_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("cost=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Cost))

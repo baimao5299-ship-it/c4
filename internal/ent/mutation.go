@@ -12193,49 +12193,59 @@ func (m *TemplateMutation) ResetEdge(name string) error {
 // UsageLogMutation represents an operation that mutates the UsageLog nodes in the graph.
 type UsageLogMutation struct {
 	config
-	op                       Op
-	typ                      string
-	id                       *int64
-	request_id               *string
-	group_id                 *int64
-	addgroup_id              *int64
-	account_id               *int64
-	addaccount_id            *int64
-	template_id              *int64
-	addtemplate_id           *int64
-	user_id                  *int64
-	adduser_id               *int64
-	key_id                   *int64
-	addkey_id                *int64
-	model                    *string
-	mapped_model             *string
-	format                   *usagelog.Format
-	status_code              *int
-	addstatus_code           *int
-	error_type               *string
-	error_message            *string
-	latency_ms               *int64
-	addlatency_ms            *int64
-	input_tokens             *int64
-	addinput_tokens          *int64
-	output_tokens            *int64
-	addoutput_tokens         *int64
-	total_tokens             *int64
-	addtotal_tokens          *int64
-	cache_read_tokens        *int64
-	addcache_read_tokens     *int64
-	cache_creation_tokens    *int64
-	addcache_creation_tokens *int64
-	cost                     *int64
-	addcost                  *int64
-	billing_tier             *string
-	above_hit                *bool
-	overdraft                *bool
-	created_at               *time.Time
-	clearedFields            map[string]struct{}
-	done                     bool
-	oldValue                 func(context.Context) (*UsageLog, error)
-	predicates               []predicate.UsageLog
+	op                             Op
+	typ                            string
+	id                             *int64
+	request_id                     *string
+	group_id                       *int64
+	addgroup_id                    *int64
+	account_id                     *int64
+	addaccount_id                  *int64
+	template_id                    *int64
+	addtemplate_id                 *int64
+	user_id                        *int64
+	adduser_id                     *int64
+	key_id                         *int64
+	addkey_id                      *int64
+	model                          *string
+	mapped_model                   *string
+	format                         *usagelog.Format
+	status_code                    *int
+	addstatus_code                 *int
+	error_type                     *string
+	error_message                  *string
+	latency_ms                     *int64
+	addlatency_ms                  *int64
+	ttft_ms                        *int64
+	addttft_ms                     *int64
+	input_tokens                   *int64
+	addinput_tokens                *int64
+	price_input_millis             *int64
+	addprice_input_millis          *int64
+	output_tokens                  *int64
+	addoutput_tokens               *int64
+	price_output_millis            *int64
+	addprice_output_millis         *int64
+	total_tokens                   *int64
+	addtotal_tokens                *int64
+	cache_read_tokens              *int64
+	addcache_read_tokens           *int64
+	price_cache_read_millis        *int64
+	addprice_cache_read_millis     *int64
+	cache_creation_tokens          *int64
+	addcache_creation_tokens       *int64
+	price_cache_creation_millis    *int64
+	addprice_cache_creation_millis *int64
+	cost                           *int64
+	addcost                        *int64
+	billing_tier                   *string
+	above_hit                      *bool
+	overdraft                      *bool
+	created_at                     *time.Time
+	clearedFields                  map[string]struct{}
+	done                           bool
+	oldValue                       func(context.Context) (*UsageLog, error)
+	predicates                     []predicate.UsageLog
 }
 
 var _ ent.Mutation = (*UsageLogMutation)(nil)
@@ -13046,6 +13056,76 @@ func (m *UsageLogMutation) ResetLatencyMs() {
 	m.addlatency_ms = nil
 }
 
+// SetTtftMs sets the "ttft_ms" field.
+func (m *UsageLogMutation) SetTtftMs(i int64) {
+	m.ttft_ms = &i
+	m.addttft_ms = nil
+}
+
+// TtftMs returns the value of the "ttft_ms" field in the mutation.
+func (m *UsageLogMutation) TtftMs() (r int64, exists bool) {
+	v := m.ttft_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTtftMs returns the old "ttft_ms" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldTtftMs(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTtftMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTtftMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTtftMs: %w", err)
+	}
+	return oldValue.TtftMs, nil
+}
+
+// AddTtftMs adds i to the "ttft_ms" field.
+func (m *UsageLogMutation) AddTtftMs(i int64) {
+	if m.addttft_ms != nil {
+		*m.addttft_ms += i
+	} else {
+		m.addttft_ms = &i
+	}
+}
+
+// AddedTtftMs returns the value that was added to the "ttft_ms" field in this mutation.
+func (m *UsageLogMutation) AddedTtftMs() (r int64, exists bool) {
+	v := m.addttft_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearTtftMs clears the value of the "ttft_ms" field.
+func (m *UsageLogMutation) ClearTtftMs() {
+	m.ttft_ms = nil
+	m.addttft_ms = nil
+	m.clearedFields[usagelog.FieldTtftMs] = struct{}{}
+}
+
+// TtftMsCleared returns if the "ttft_ms" field was cleared in this mutation.
+func (m *UsageLogMutation) TtftMsCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldTtftMs]
+	return ok
+}
+
+// ResetTtftMs resets all changes to the "ttft_ms" field.
+func (m *UsageLogMutation) ResetTtftMs() {
+	m.ttft_ms = nil
+	m.addttft_ms = nil
+	delete(m.clearedFields, usagelog.FieldTtftMs)
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (m *UsageLogMutation) SetInputTokens(i int64) {
 	m.input_tokens = &i
@@ -13102,6 +13182,76 @@ func (m *UsageLogMutation) ResetInputTokens() {
 	m.addinput_tokens = nil
 }
 
+// SetPriceInputMillis sets the "price_input_millis" field.
+func (m *UsageLogMutation) SetPriceInputMillis(i int64) {
+	m.price_input_millis = &i
+	m.addprice_input_millis = nil
+}
+
+// PriceInputMillis returns the value of the "price_input_millis" field in the mutation.
+func (m *UsageLogMutation) PriceInputMillis() (r int64, exists bool) {
+	v := m.price_input_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriceInputMillis returns the old "price_input_millis" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldPriceInputMillis(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriceInputMillis is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriceInputMillis requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriceInputMillis: %w", err)
+	}
+	return oldValue.PriceInputMillis, nil
+}
+
+// AddPriceInputMillis adds i to the "price_input_millis" field.
+func (m *UsageLogMutation) AddPriceInputMillis(i int64) {
+	if m.addprice_input_millis != nil {
+		*m.addprice_input_millis += i
+	} else {
+		m.addprice_input_millis = &i
+	}
+}
+
+// AddedPriceInputMillis returns the value that was added to the "price_input_millis" field in this mutation.
+func (m *UsageLogMutation) AddedPriceInputMillis() (r int64, exists bool) {
+	v := m.addprice_input_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPriceInputMillis clears the value of the "price_input_millis" field.
+func (m *UsageLogMutation) ClearPriceInputMillis() {
+	m.price_input_millis = nil
+	m.addprice_input_millis = nil
+	m.clearedFields[usagelog.FieldPriceInputMillis] = struct{}{}
+}
+
+// PriceInputMillisCleared returns if the "price_input_millis" field was cleared in this mutation.
+func (m *UsageLogMutation) PriceInputMillisCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldPriceInputMillis]
+	return ok
+}
+
+// ResetPriceInputMillis resets all changes to the "price_input_millis" field.
+func (m *UsageLogMutation) ResetPriceInputMillis() {
+	m.price_input_millis = nil
+	m.addprice_input_millis = nil
+	delete(m.clearedFields, usagelog.FieldPriceInputMillis)
+}
+
 // SetOutputTokens sets the "output_tokens" field.
 func (m *UsageLogMutation) SetOutputTokens(i int64) {
 	m.output_tokens = &i
@@ -13156,6 +13306,76 @@ func (m *UsageLogMutation) AddedOutputTokens() (r int64, exists bool) {
 func (m *UsageLogMutation) ResetOutputTokens() {
 	m.output_tokens = nil
 	m.addoutput_tokens = nil
+}
+
+// SetPriceOutputMillis sets the "price_output_millis" field.
+func (m *UsageLogMutation) SetPriceOutputMillis(i int64) {
+	m.price_output_millis = &i
+	m.addprice_output_millis = nil
+}
+
+// PriceOutputMillis returns the value of the "price_output_millis" field in the mutation.
+func (m *UsageLogMutation) PriceOutputMillis() (r int64, exists bool) {
+	v := m.price_output_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriceOutputMillis returns the old "price_output_millis" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldPriceOutputMillis(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriceOutputMillis is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriceOutputMillis requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriceOutputMillis: %w", err)
+	}
+	return oldValue.PriceOutputMillis, nil
+}
+
+// AddPriceOutputMillis adds i to the "price_output_millis" field.
+func (m *UsageLogMutation) AddPriceOutputMillis(i int64) {
+	if m.addprice_output_millis != nil {
+		*m.addprice_output_millis += i
+	} else {
+		m.addprice_output_millis = &i
+	}
+}
+
+// AddedPriceOutputMillis returns the value that was added to the "price_output_millis" field in this mutation.
+func (m *UsageLogMutation) AddedPriceOutputMillis() (r int64, exists bool) {
+	v := m.addprice_output_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPriceOutputMillis clears the value of the "price_output_millis" field.
+func (m *UsageLogMutation) ClearPriceOutputMillis() {
+	m.price_output_millis = nil
+	m.addprice_output_millis = nil
+	m.clearedFields[usagelog.FieldPriceOutputMillis] = struct{}{}
+}
+
+// PriceOutputMillisCleared returns if the "price_output_millis" field was cleared in this mutation.
+func (m *UsageLogMutation) PriceOutputMillisCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldPriceOutputMillis]
+	return ok
+}
+
+// ResetPriceOutputMillis resets all changes to the "price_output_millis" field.
+func (m *UsageLogMutation) ResetPriceOutputMillis() {
+	m.price_output_millis = nil
+	m.addprice_output_millis = nil
+	delete(m.clearedFields, usagelog.FieldPriceOutputMillis)
 }
 
 // SetTotalTokens sets the "total_tokens" field.
@@ -13270,6 +13490,76 @@ func (m *UsageLogMutation) ResetCacheReadTokens() {
 	m.addcache_read_tokens = nil
 }
 
+// SetPriceCacheReadMillis sets the "price_cache_read_millis" field.
+func (m *UsageLogMutation) SetPriceCacheReadMillis(i int64) {
+	m.price_cache_read_millis = &i
+	m.addprice_cache_read_millis = nil
+}
+
+// PriceCacheReadMillis returns the value of the "price_cache_read_millis" field in the mutation.
+func (m *UsageLogMutation) PriceCacheReadMillis() (r int64, exists bool) {
+	v := m.price_cache_read_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriceCacheReadMillis returns the old "price_cache_read_millis" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldPriceCacheReadMillis(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriceCacheReadMillis is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriceCacheReadMillis requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriceCacheReadMillis: %w", err)
+	}
+	return oldValue.PriceCacheReadMillis, nil
+}
+
+// AddPriceCacheReadMillis adds i to the "price_cache_read_millis" field.
+func (m *UsageLogMutation) AddPriceCacheReadMillis(i int64) {
+	if m.addprice_cache_read_millis != nil {
+		*m.addprice_cache_read_millis += i
+	} else {
+		m.addprice_cache_read_millis = &i
+	}
+}
+
+// AddedPriceCacheReadMillis returns the value that was added to the "price_cache_read_millis" field in this mutation.
+func (m *UsageLogMutation) AddedPriceCacheReadMillis() (r int64, exists bool) {
+	v := m.addprice_cache_read_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPriceCacheReadMillis clears the value of the "price_cache_read_millis" field.
+func (m *UsageLogMutation) ClearPriceCacheReadMillis() {
+	m.price_cache_read_millis = nil
+	m.addprice_cache_read_millis = nil
+	m.clearedFields[usagelog.FieldPriceCacheReadMillis] = struct{}{}
+}
+
+// PriceCacheReadMillisCleared returns if the "price_cache_read_millis" field was cleared in this mutation.
+func (m *UsageLogMutation) PriceCacheReadMillisCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldPriceCacheReadMillis]
+	return ok
+}
+
+// ResetPriceCacheReadMillis resets all changes to the "price_cache_read_millis" field.
+func (m *UsageLogMutation) ResetPriceCacheReadMillis() {
+	m.price_cache_read_millis = nil
+	m.addprice_cache_read_millis = nil
+	delete(m.clearedFields, usagelog.FieldPriceCacheReadMillis)
+}
+
 // SetCacheCreationTokens sets the "cache_creation_tokens" field.
 func (m *UsageLogMutation) SetCacheCreationTokens(i int64) {
 	m.cache_creation_tokens = &i
@@ -13324,6 +13614,76 @@ func (m *UsageLogMutation) AddedCacheCreationTokens() (r int64, exists bool) {
 func (m *UsageLogMutation) ResetCacheCreationTokens() {
 	m.cache_creation_tokens = nil
 	m.addcache_creation_tokens = nil
+}
+
+// SetPriceCacheCreationMillis sets the "price_cache_creation_millis" field.
+func (m *UsageLogMutation) SetPriceCacheCreationMillis(i int64) {
+	m.price_cache_creation_millis = &i
+	m.addprice_cache_creation_millis = nil
+}
+
+// PriceCacheCreationMillis returns the value of the "price_cache_creation_millis" field in the mutation.
+func (m *UsageLogMutation) PriceCacheCreationMillis() (r int64, exists bool) {
+	v := m.price_cache_creation_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriceCacheCreationMillis returns the old "price_cache_creation_millis" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldPriceCacheCreationMillis(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriceCacheCreationMillis is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriceCacheCreationMillis requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriceCacheCreationMillis: %w", err)
+	}
+	return oldValue.PriceCacheCreationMillis, nil
+}
+
+// AddPriceCacheCreationMillis adds i to the "price_cache_creation_millis" field.
+func (m *UsageLogMutation) AddPriceCacheCreationMillis(i int64) {
+	if m.addprice_cache_creation_millis != nil {
+		*m.addprice_cache_creation_millis += i
+	} else {
+		m.addprice_cache_creation_millis = &i
+	}
+}
+
+// AddedPriceCacheCreationMillis returns the value that was added to the "price_cache_creation_millis" field in this mutation.
+func (m *UsageLogMutation) AddedPriceCacheCreationMillis() (r int64, exists bool) {
+	v := m.addprice_cache_creation_millis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
+func (m *UsageLogMutation) ClearPriceCacheCreationMillis() {
+	m.price_cache_creation_millis = nil
+	m.addprice_cache_creation_millis = nil
+	m.clearedFields[usagelog.FieldPriceCacheCreationMillis] = struct{}{}
+}
+
+// PriceCacheCreationMillisCleared returns if the "price_cache_creation_millis" field was cleared in this mutation.
+func (m *UsageLogMutation) PriceCacheCreationMillisCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldPriceCacheCreationMillis]
+	return ok
+}
+
+// ResetPriceCacheCreationMillis resets all changes to the "price_cache_creation_millis" field.
+func (m *UsageLogMutation) ResetPriceCacheCreationMillis() {
+	m.price_cache_creation_millis = nil
+	m.addprice_cache_creation_millis = nil
+	delete(m.clearedFields, usagelog.FieldPriceCacheCreationMillis)
 }
 
 // SetCost sets the "cost" field.
@@ -13573,7 +13933,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 28)
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
 	}
@@ -13613,11 +13973,20 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.latency_ms != nil {
 		fields = append(fields, usagelog.FieldLatencyMs)
 	}
+	if m.ttft_ms != nil {
+		fields = append(fields, usagelog.FieldTtftMs)
+	}
 	if m.input_tokens != nil {
 		fields = append(fields, usagelog.FieldInputTokens)
 	}
+	if m.price_input_millis != nil {
+		fields = append(fields, usagelog.FieldPriceInputMillis)
+	}
 	if m.output_tokens != nil {
 		fields = append(fields, usagelog.FieldOutputTokens)
+	}
+	if m.price_output_millis != nil {
+		fields = append(fields, usagelog.FieldPriceOutputMillis)
 	}
 	if m.total_tokens != nil {
 		fields = append(fields, usagelog.FieldTotalTokens)
@@ -13625,8 +13994,14 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.cache_read_tokens != nil {
 		fields = append(fields, usagelog.FieldCacheReadTokens)
 	}
+	if m.price_cache_read_millis != nil {
+		fields = append(fields, usagelog.FieldPriceCacheReadMillis)
+	}
 	if m.cache_creation_tokens != nil {
 		fields = append(fields, usagelog.FieldCacheCreationTokens)
+	}
+	if m.price_cache_creation_millis != nil {
+		fields = append(fields, usagelog.FieldPriceCacheCreationMillis)
 	}
 	if m.cost != nil {
 		fields = append(fields, usagelog.FieldCost)
@@ -13677,16 +14052,26 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.ErrorMessage()
 	case usagelog.FieldLatencyMs:
 		return m.LatencyMs()
+	case usagelog.FieldTtftMs:
+		return m.TtftMs()
 	case usagelog.FieldInputTokens:
 		return m.InputTokens()
+	case usagelog.FieldPriceInputMillis:
+		return m.PriceInputMillis()
 	case usagelog.FieldOutputTokens:
 		return m.OutputTokens()
+	case usagelog.FieldPriceOutputMillis:
+		return m.PriceOutputMillis()
 	case usagelog.FieldTotalTokens:
 		return m.TotalTokens()
 	case usagelog.FieldCacheReadTokens:
 		return m.CacheReadTokens()
+	case usagelog.FieldPriceCacheReadMillis:
+		return m.PriceCacheReadMillis()
 	case usagelog.FieldCacheCreationTokens:
 		return m.CacheCreationTokens()
+	case usagelog.FieldPriceCacheCreationMillis:
+		return m.PriceCacheCreationMillis()
 	case usagelog.FieldCost:
 		return m.Cost()
 	case usagelog.FieldBillingTier:
@@ -13732,16 +14117,26 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldErrorMessage(ctx)
 	case usagelog.FieldLatencyMs:
 		return m.OldLatencyMs(ctx)
+	case usagelog.FieldTtftMs:
+		return m.OldTtftMs(ctx)
 	case usagelog.FieldInputTokens:
 		return m.OldInputTokens(ctx)
+	case usagelog.FieldPriceInputMillis:
+		return m.OldPriceInputMillis(ctx)
 	case usagelog.FieldOutputTokens:
 		return m.OldOutputTokens(ctx)
+	case usagelog.FieldPriceOutputMillis:
+		return m.OldPriceOutputMillis(ctx)
 	case usagelog.FieldTotalTokens:
 		return m.OldTotalTokens(ctx)
 	case usagelog.FieldCacheReadTokens:
 		return m.OldCacheReadTokens(ctx)
+	case usagelog.FieldPriceCacheReadMillis:
+		return m.OldPriceCacheReadMillis(ctx)
 	case usagelog.FieldCacheCreationTokens:
 		return m.OldCacheCreationTokens(ctx)
+	case usagelog.FieldPriceCacheCreationMillis:
+		return m.OldPriceCacheCreationMillis(ctx)
 	case usagelog.FieldCost:
 		return m.OldCost(ctx)
 	case usagelog.FieldBillingTier:
@@ -13852,6 +14247,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetLatencyMs(v)
 		return nil
+	case usagelog.FieldTtftMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTtftMs(v)
+		return nil
 	case usagelog.FieldInputTokens:
 		v, ok := value.(int64)
 		if !ok {
@@ -13859,12 +14261,26 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetInputTokens(v)
 		return nil
+	case usagelog.FieldPriceInputMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriceInputMillis(v)
+		return nil
 	case usagelog.FieldOutputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetOutputTokens(v)
+		return nil
+	case usagelog.FieldPriceOutputMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriceOutputMillis(v)
 		return nil
 	case usagelog.FieldTotalTokens:
 		v, ok := value.(int64)
@@ -13880,12 +14296,26 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCacheReadTokens(v)
 		return nil
+	case usagelog.FieldPriceCacheReadMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriceCacheReadMillis(v)
+		return nil
 	case usagelog.FieldCacheCreationTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCacheCreationTokens(v)
+		return nil
+	case usagelog.FieldPriceCacheCreationMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriceCacheCreationMillis(v)
 		return nil
 	case usagelog.FieldCost:
 		v, ok := value.(int64)
@@ -13951,11 +14381,20 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addlatency_ms != nil {
 		fields = append(fields, usagelog.FieldLatencyMs)
 	}
+	if m.addttft_ms != nil {
+		fields = append(fields, usagelog.FieldTtftMs)
+	}
 	if m.addinput_tokens != nil {
 		fields = append(fields, usagelog.FieldInputTokens)
 	}
+	if m.addprice_input_millis != nil {
+		fields = append(fields, usagelog.FieldPriceInputMillis)
+	}
 	if m.addoutput_tokens != nil {
 		fields = append(fields, usagelog.FieldOutputTokens)
+	}
+	if m.addprice_output_millis != nil {
+		fields = append(fields, usagelog.FieldPriceOutputMillis)
 	}
 	if m.addtotal_tokens != nil {
 		fields = append(fields, usagelog.FieldTotalTokens)
@@ -13963,8 +14402,14 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addcache_read_tokens != nil {
 		fields = append(fields, usagelog.FieldCacheReadTokens)
 	}
+	if m.addprice_cache_read_millis != nil {
+		fields = append(fields, usagelog.FieldPriceCacheReadMillis)
+	}
 	if m.addcache_creation_tokens != nil {
 		fields = append(fields, usagelog.FieldCacheCreationTokens)
+	}
+	if m.addprice_cache_creation_millis != nil {
+		fields = append(fields, usagelog.FieldPriceCacheCreationMillis)
 	}
 	if m.addcost != nil {
 		fields = append(fields, usagelog.FieldCost)
@@ -13991,16 +14436,26 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedStatusCode()
 	case usagelog.FieldLatencyMs:
 		return m.AddedLatencyMs()
+	case usagelog.FieldTtftMs:
+		return m.AddedTtftMs()
 	case usagelog.FieldInputTokens:
 		return m.AddedInputTokens()
+	case usagelog.FieldPriceInputMillis:
+		return m.AddedPriceInputMillis()
 	case usagelog.FieldOutputTokens:
 		return m.AddedOutputTokens()
+	case usagelog.FieldPriceOutputMillis:
+		return m.AddedPriceOutputMillis()
 	case usagelog.FieldTotalTokens:
 		return m.AddedTotalTokens()
 	case usagelog.FieldCacheReadTokens:
 		return m.AddedCacheReadTokens()
+	case usagelog.FieldPriceCacheReadMillis:
+		return m.AddedPriceCacheReadMillis()
 	case usagelog.FieldCacheCreationTokens:
 		return m.AddedCacheCreationTokens()
+	case usagelog.FieldPriceCacheCreationMillis:
+		return m.AddedPriceCacheCreationMillis()
 	case usagelog.FieldCost:
 		return m.AddedCost()
 	}
@@ -14061,6 +14516,13 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddLatencyMs(v)
 		return nil
+	case usagelog.FieldTtftMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTtftMs(v)
+		return nil
 	case usagelog.FieldInputTokens:
 		v, ok := value.(int64)
 		if !ok {
@@ -14068,12 +14530,26 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddInputTokens(v)
 		return nil
+	case usagelog.FieldPriceInputMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriceInputMillis(v)
+		return nil
 	case usagelog.FieldOutputTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddOutputTokens(v)
+		return nil
+	case usagelog.FieldPriceOutputMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriceOutputMillis(v)
 		return nil
 	case usagelog.FieldTotalTokens:
 		v, ok := value.(int64)
@@ -14089,12 +14565,26 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddCacheReadTokens(v)
 		return nil
+	case usagelog.FieldPriceCacheReadMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriceCacheReadMillis(v)
+		return nil
 	case usagelog.FieldCacheCreationTokens:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddCacheCreationTokens(v)
+		return nil
+	case usagelog.FieldPriceCacheCreationMillis:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriceCacheCreationMillis(v)
 		return nil
 	case usagelog.FieldCost:
 		v, ok := value.(int64)
@@ -14131,6 +14621,21 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(usagelog.FieldErrorMessage) {
 		fields = append(fields, usagelog.FieldErrorMessage)
+	}
+	if m.FieldCleared(usagelog.FieldTtftMs) {
+		fields = append(fields, usagelog.FieldTtftMs)
+	}
+	if m.FieldCleared(usagelog.FieldPriceInputMillis) {
+		fields = append(fields, usagelog.FieldPriceInputMillis)
+	}
+	if m.FieldCleared(usagelog.FieldPriceOutputMillis) {
+		fields = append(fields, usagelog.FieldPriceOutputMillis)
+	}
+	if m.FieldCleared(usagelog.FieldPriceCacheReadMillis) {
+		fields = append(fields, usagelog.FieldPriceCacheReadMillis)
+	}
+	if m.FieldCleared(usagelog.FieldPriceCacheCreationMillis) {
+		fields = append(fields, usagelog.FieldPriceCacheCreationMillis)
 	}
 	if m.FieldCleared(usagelog.FieldBillingTier) {
 		fields = append(fields, usagelog.FieldBillingTier)
@@ -14169,6 +14674,21 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldErrorMessage:
 		m.ClearErrorMessage()
+		return nil
+	case usagelog.FieldTtftMs:
+		m.ClearTtftMs()
+		return nil
+	case usagelog.FieldPriceInputMillis:
+		m.ClearPriceInputMillis()
+		return nil
+	case usagelog.FieldPriceOutputMillis:
+		m.ClearPriceOutputMillis()
+		return nil
+	case usagelog.FieldPriceCacheReadMillis:
+		m.ClearPriceCacheReadMillis()
+		return nil
+	case usagelog.FieldPriceCacheCreationMillis:
+		m.ClearPriceCacheCreationMillis()
 		return nil
 	case usagelog.FieldBillingTier:
 		m.ClearBillingTier()
@@ -14220,11 +14740,20 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldLatencyMs:
 		m.ResetLatencyMs()
 		return nil
+	case usagelog.FieldTtftMs:
+		m.ResetTtftMs()
+		return nil
 	case usagelog.FieldInputTokens:
 		m.ResetInputTokens()
 		return nil
+	case usagelog.FieldPriceInputMillis:
+		m.ResetPriceInputMillis()
+		return nil
 	case usagelog.FieldOutputTokens:
 		m.ResetOutputTokens()
+		return nil
+	case usagelog.FieldPriceOutputMillis:
+		m.ResetPriceOutputMillis()
 		return nil
 	case usagelog.FieldTotalTokens:
 		m.ResetTotalTokens()
@@ -14232,8 +14761,14 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldCacheReadTokens:
 		m.ResetCacheReadTokens()
 		return nil
+	case usagelog.FieldPriceCacheReadMillis:
+		m.ResetPriceCacheReadMillis()
+		return nil
 	case usagelog.FieldCacheCreationTokens:
 		m.ResetCacheCreationTokens()
+		return nil
+	case usagelog.FieldPriceCacheCreationMillis:
+		m.ResetPriceCacheCreationMillis()
 		return nil
 	case usagelog.FieldCost:
 		m.ResetCost()

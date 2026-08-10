@@ -1769,11 +1769,16 @@ components:
         StatusCode: { type: integer }
         ErrorType: { $ref: '#/components/schemas/ErrorType' }
         LatencyMS: { type: integer, format: int64 }
+        TTFTMS: { type: integer, format: int64, nullable: true, description: 首 token 时间毫秒（流式首 chunk 采集）；非流式/失败/无首 token 路径 = null }
         InputTokens: { type: integer, format: int64 }
+        PriceInputMillis: { type: integer, format: int64, nullable: true, description: 输入单价快照（每 M token 毫分，1 USD = 100,000 毫分；pricing 同款单位）；null = 未计费路径 }
         OutputTokens: { type: integer, format: int64 }
+        PriceOutputMillis: { type: integer, format: int64, nullable: true, description: 输出单价快照（每 M token 毫分）；null = 未计费路径 }
         TotalTokens: { type: integer, format: int64 }
         CacheReadTokens: { type: integer, format: int64 }
+        PriceCacheReadMillis: { type: integer, format: int64, nullable: true, description: 缓存读单价快照（每 M token 毫分）；null = 该请求无缓存读或无缓存价 }
         CacheCreationTokens: { type: integer, format: int64 }
+        PriceCacheCreationMillis: { type: integer, format: int64, nullable: true, description: 缓存写单价快照（每 M token 毫分）；null = 该请求无缓存写或无缓存价 }
         Cost: { type: integer, format: int64, description: 计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0 }
         BillingTier: { type: string, description: 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径 }
         AboveHit: { type: boolean, description: 任一分量超 above 阈值命中分段 }

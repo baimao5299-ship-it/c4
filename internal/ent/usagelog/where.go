@@ -114,14 +114,29 @@ func LatencyMs(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldLatencyMs, v))
 }
 
+// TtftMs applies equality check predicate on the "ttft_ms" field. It's identical to TtftMsEQ.
+func TtftMs(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldTtftMs, v))
+}
+
 // InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
 func InputTokens(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
 }
 
+// PriceInputMillis applies equality check predicate on the "price_input_millis" field. It's identical to PriceInputMillisEQ.
+func PriceInputMillis(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceInputMillis, v))
+}
+
 // OutputTokens applies equality check predicate on the "output_tokens" field. It's identical to OutputTokensEQ.
 func OutputTokens(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldOutputTokens, v))
+}
+
+// PriceOutputMillis applies equality check predicate on the "price_output_millis" field. It's identical to PriceOutputMillisEQ.
+func PriceOutputMillis(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceOutputMillis, v))
 }
 
 // TotalTokens applies equality check predicate on the "total_tokens" field. It's identical to TotalTokensEQ.
@@ -134,9 +149,19 @@ func CacheReadTokens(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheReadTokens, v))
 }
 
+// PriceCacheReadMillis applies equality check predicate on the "price_cache_read_millis" field. It's identical to PriceCacheReadMillisEQ.
+func PriceCacheReadMillis(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceCacheReadMillis, v))
+}
+
 // CacheCreationTokens applies equality check predicate on the "cache_creation_tokens" field. It's identical to CacheCreationTokensEQ.
 func CacheCreationTokens(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreationTokens, v))
+}
+
+// PriceCacheCreationMillis applies equality check predicate on the "price_cache_creation_millis" field. It's identical to PriceCacheCreationMillisEQ.
+func PriceCacheCreationMillis(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceCacheCreationMillis, v))
 }
 
 // Cost applies equality check predicate on the "cost" field. It's identical to CostEQ.
@@ -859,6 +884,56 @@ func LatencyMsLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldLatencyMs, v))
 }
 
+// TtftMsEQ applies the EQ predicate on the "ttft_ms" field.
+func TtftMsEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldTtftMs, v))
+}
+
+// TtftMsNEQ applies the NEQ predicate on the "ttft_ms" field.
+func TtftMsNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldTtftMs, v))
+}
+
+// TtftMsIn applies the In predicate on the "ttft_ms" field.
+func TtftMsIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldTtftMs, vs...))
+}
+
+// TtftMsNotIn applies the NotIn predicate on the "ttft_ms" field.
+func TtftMsNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldTtftMs, vs...))
+}
+
+// TtftMsGT applies the GT predicate on the "ttft_ms" field.
+func TtftMsGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldTtftMs, v))
+}
+
+// TtftMsGTE applies the GTE predicate on the "ttft_ms" field.
+func TtftMsGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldTtftMs, v))
+}
+
+// TtftMsLT applies the LT predicate on the "ttft_ms" field.
+func TtftMsLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldTtftMs, v))
+}
+
+// TtftMsLTE applies the LTE predicate on the "ttft_ms" field.
+func TtftMsLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldTtftMs, v))
+}
+
+// TtftMsIsNil applies the IsNil predicate on the "ttft_ms" field.
+func TtftMsIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldTtftMs))
+}
+
+// TtftMsNotNil applies the NotNil predicate on the "ttft_ms" field.
+func TtftMsNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldTtftMs))
+}
+
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.
 func InputTokensEQ(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -899,6 +974,56 @@ func InputTokensLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldInputTokens, v))
 }
 
+// PriceInputMillisEQ applies the EQ predicate on the "price_input_millis" field.
+func PriceInputMillisEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceInputMillis, v))
+}
+
+// PriceInputMillisNEQ applies the NEQ predicate on the "price_input_millis" field.
+func PriceInputMillisNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldPriceInputMillis, v))
+}
+
+// PriceInputMillisIn applies the In predicate on the "price_input_millis" field.
+func PriceInputMillisIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldPriceInputMillis, vs...))
+}
+
+// PriceInputMillisNotIn applies the NotIn predicate on the "price_input_millis" field.
+func PriceInputMillisNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldPriceInputMillis, vs...))
+}
+
+// PriceInputMillisGT applies the GT predicate on the "price_input_millis" field.
+func PriceInputMillisGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldPriceInputMillis, v))
+}
+
+// PriceInputMillisGTE applies the GTE predicate on the "price_input_millis" field.
+func PriceInputMillisGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldPriceInputMillis, v))
+}
+
+// PriceInputMillisLT applies the LT predicate on the "price_input_millis" field.
+func PriceInputMillisLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldPriceInputMillis, v))
+}
+
+// PriceInputMillisLTE applies the LTE predicate on the "price_input_millis" field.
+func PriceInputMillisLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldPriceInputMillis, v))
+}
+
+// PriceInputMillisIsNil applies the IsNil predicate on the "price_input_millis" field.
+func PriceInputMillisIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldPriceInputMillis))
+}
+
+// PriceInputMillisNotNil applies the NotNil predicate on the "price_input_millis" field.
+func PriceInputMillisNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldPriceInputMillis))
+}
+
 // OutputTokensEQ applies the EQ predicate on the "output_tokens" field.
 func OutputTokensEQ(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldOutputTokens, v))
@@ -937,6 +1062,56 @@ func OutputTokensLT(v int64) predicate.UsageLog {
 // OutputTokensLTE applies the LTE predicate on the "output_tokens" field.
 func OutputTokensLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldOutputTokens, v))
+}
+
+// PriceOutputMillisEQ applies the EQ predicate on the "price_output_millis" field.
+func PriceOutputMillisEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceOutputMillis, v))
+}
+
+// PriceOutputMillisNEQ applies the NEQ predicate on the "price_output_millis" field.
+func PriceOutputMillisNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldPriceOutputMillis, v))
+}
+
+// PriceOutputMillisIn applies the In predicate on the "price_output_millis" field.
+func PriceOutputMillisIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldPriceOutputMillis, vs...))
+}
+
+// PriceOutputMillisNotIn applies the NotIn predicate on the "price_output_millis" field.
+func PriceOutputMillisNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldPriceOutputMillis, vs...))
+}
+
+// PriceOutputMillisGT applies the GT predicate on the "price_output_millis" field.
+func PriceOutputMillisGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldPriceOutputMillis, v))
+}
+
+// PriceOutputMillisGTE applies the GTE predicate on the "price_output_millis" field.
+func PriceOutputMillisGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldPriceOutputMillis, v))
+}
+
+// PriceOutputMillisLT applies the LT predicate on the "price_output_millis" field.
+func PriceOutputMillisLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldPriceOutputMillis, v))
+}
+
+// PriceOutputMillisLTE applies the LTE predicate on the "price_output_millis" field.
+func PriceOutputMillisLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldPriceOutputMillis, v))
+}
+
+// PriceOutputMillisIsNil applies the IsNil predicate on the "price_output_millis" field.
+func PriceOutputMillisIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldPriceOutputMillis))
+}
+
+// PriceOutputMillisNotNil applies the NotNil predicate on the "price_output_millis" field.
+func PriceOutputMillisNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldPriceOutputMillis))
 }
 
 // TotalTokensEQ applies the EQ predicate on the "total_tokens" field.
@@ -1019,6 +1194,56 @@ func CacheReadTokensLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldCacheReadTokens, v))
 }
 
+// PriceCacheReadMillisEQ applies the EQ predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceCacheReadMillis, v))
+}
+
+// PriceCacheReadMillisNEQ applies the NEQ predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldPriceCacheReadMillis, v))
+}
+
+// PriceCacheReadMillisIn applies the In predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldPriceCacheReadMillis, vs...))
+}
+
+// PriceCacheReadMillisNotIn applies the NotIn predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldPriceCacheReadMillis, vs...))
+}
+
+// PriceCacheReadMillisGT applies the GT predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldPriceCacheReadMillis, v))
+}
+
+// PriceCacheReadMillisGTE applies the GTE predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldPriceCacheReadMillis, v))
+}
+
+// PriceCacheReadMillisLT applies the LT predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldPriceCacheReadMillis, v))
+}
+
+// PriceCacheReadMillisLTE applies the LTE predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldPriceCacheReadMillis, v))
+}
+
+// PriceCacheReadMillisIsNil applies the IsNil predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldPriceCacheReadMillis))
+}
+
+// PriceCacheReadMillisNotNil applies the NotNil predicate on the "price_cache_read_millis" field.
+func PriceCacheReadMillisNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldPriceCacheReadMillis))
+}
+
 // CacheCreationTokensEQ applies the EQ predicate on the "cache_creation_tokens" field.
 func CacheCreationTokensEQ(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldCacheCreationTokens, v))
@@ -1057,6 +1282,56 @@ func CacheCreationTokensLT(v int64) predicate.UsageLog {
 // CacheCreationTokensLTE applies the LTE predicate on the "cache_creation_tokens" field.
 func CacheCreationTokensLTE(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldCacheCreationTokens, v))
+}
+
+// PriceCacheCreationMillisEQ applies the EQ predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPriceCacheCreationMillis, v))
+}
+
+// PriceCacheCreationMillisNEQ applies the NEQ predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldPriceCacheCreationMillis, v))
+}
+
+// PriceCacheCreationMillisIn applies the In predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldPriceCacheCreationMillis, vs...))
+}
+
+// PriceCacheCreationMillisNotIn applies the NotIn predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldPriceCacheCreationMillis, vs...))
+}
+
+// PriceCacheCreationMillisGT applies the GT predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldPriceCacheCreationMillis, v))
+}
+
+// PriceCacheCreationMillisGTE applies the GTE predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldPriceCacheCreationMillis, v))
+}
+
+// PriceCacheCreationMillisLT applies the LT predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldPriceCacheCreationMillis, v))
+}
+
+// PriceCacheCreationMillisLTE applies the LTE predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldPriceCacheCreationMillis, v))
+}
+
+// PriceCacheCreationMillisIsNil applies the IsNil predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldPriceCacheCreationMillis))
+}
+
+// PriceCacheCreationMillisNotNil applies the NotNil predicate on the "price_cache_creation_millis" field.
+func PriceCacheCreationMillisNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldPriceCacheCreationMillis))
 }
 
 // CostEQ applies the EQ predicate on the "cost" field.

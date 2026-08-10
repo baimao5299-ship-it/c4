@@ -764,11 +764,26 @@ type UsageLog struct {
 	OutputTokens *int64  `json:"OutputTokens,omitempty"`
 
 	// Overdraft 本次扣费透支（余额不足扣为负余额）
-	Overdraft   *bool   `json:"Overdraft,omitempty"`
-	RequestID   *string `json:"RequestID,omitempty"`
-	StatusCode  *int    `json:"StatusCode,omitempty"`
-	TemplateID  *int64  `json:"TemplateID,omitempty"`
-	TotalTokens *int64  `json:"TotalTokens,omitempty"`
+	Overdraft *bool `json:"Overdraft,omitempty"`
+
+	// PriceCacheCreationMillis 缓存写单价快照（每 M token 毫分）；null = 该请求无缓存写或无缓存价
+	PriceCacheCreationMillis *int64 `json:"PriceCacheCreationMillis"`
+
+	// PriceCacheReadMillis 缓存读单价快照（每 M token 毫分）；null = 该请求无缓存读或无缓存价
+	PriceCacheReadMillis *int64 `json:"PriceCacheReadMillis"`
+
+	// PriceInputMillis 输入单价快照（每 M token 毫分，1 USD = 100
+	PriceInputMillis *int64 `json:"PriceInputMillis"`
+
+	// PriceOutputMillis 输出单价快照（每 M token 毫分）；null = 未计费路径
+	PriceOutputMillis *int64  `json:"PriceOutputMillis"`
+	RequestID         *string `json:"RequestID,omitempty"`
+	StatusCode        *int    `json:"StatusCode,omitempty"`
+
+	// TTFTMS 首 token 时间毫秒（流式首 chunk 采集）；非流式/失败/无首 token 路径 = null
+	TTFTMS      *int64 `json:"TTFTMS"`
+	TemplateID  *int64 `json:"TemplateID,omitempty"`
+	TotalTokens *int64 `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`

@@ -29,11 +29,22 @@ func (UsageLog) Fields() []ent.Field {
 		// 截断 500 字符（domain.TruncateErrMsg）；NULL = 成功路径无错误文本。
 		field.String("error_message").Optional().Nillable(),
 		field.Int64("latency_ms").Default(0),
+		// TTFT（首 token 时间毫秒）：caller 流式首 chunk 采集（ctx 传递）；
+		// 非流式/失败/无首 token 路径 = NULL。
+		field.Int64("ttft_ms").Optional().Nillable(),
 		field.Int64("input_tokens").Default(0),
+		// 价格快照（每 M token 毫分，1 USD = 100,000 毫分；pricing 同款单位）：
+		// 请求时点生效基础单价，applyBilling 填充（GetPrice 已取价，零额外查找）；
+		// 各价格列紧邻其 tokens 列（单价 × tokens = cost 可读性）。null =
+		// 未计费路径（no_price 防御）；缓存价 null = 该请求无缓存读或无缓存价。
+		field.Int64("price_input_millis").Optional().Nillable(),
 		field.Int64("output_tokens").Default(0),
+		field.Int64("price_output_millis").Optional().Nillable(),
 		field.Int64("total_tokens").Default(0),
 		field.Int64("cache_read_tokens").Default(0),
+		field.Int64("price_cache_read_millis").Optional().Nillable(),
 		field.Int64("cache_creation_tokens").Default(0),
+		field.Int64("price_cache_creation_millis").Optional().Nillable(),
 		// 计费列（Phase 5）：cost 毫分（1 USD = 100,000 毫分）；billing_tier
 		// 请求 service_tier 归一化值（priority/flex/fast/auto；nil = 未计费路径）；
 		// above_hit 任一分量超 above_threshold 命中分段；overdraft 本次扣费透支

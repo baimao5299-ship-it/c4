@@ -40,16 +40,26 @@ const (
 	FieldErrorMessage = "error_message"
 	// FieldLatencyMs holds the string denoting the latency_ms field in the database.
 	FieldLatencyMs = "latency_ms"
+	// FieldTtftMs holds the string denoting the ttft_ms field in the database.
+	FieldTtftMs = "ttft_ms"
 	// FieldInputTokens holds the string denoting the input_tokens field in the database.
 	FieldInputTokens = "input_tokens"
+	// FieldPriceInputMillis holds the string denoting the price_input_millis field in the database.
+	FieldPriceInputMillis = "price_input_millis"
 	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
 	FieldOutputTokens = "output_tokens"
+	// FieldPriceOutputMillis holds the string denoting the price_output_millis field in the database.
+	FieldPriceOutputMillis = "price_output_millis"
 	// FieldTotalTokens holds the string denoting the total_tokens field in the database.
 	FieldTotalTokens = "total_tokens"
 	// FieldCacheReadTokens holds the string denoting the cache_read_tokens field in the database.
 	FieldCacheReadTokens = "cache_read_tokens"
+	// FieldPriceCacheReadMillis holds the string denoting the price_cache_read_millis field in the database.
+	FieldPriceCacheReadMillis = "price_cache_read_millis"
 	// FieldCacheCreationTokens holds the string denoting the cache_creation_tokens field in the database.
 	FieldCacheCreationTokens = "cache_creation_tokens"
+	// FieldPriceCacheCreationMillis holds the string denoting the price_cache_creation_millis field in the database.
+	FieldPriceCacheCreationMillis = "price_cache_creation_millis"
 	// FieldCost holds the string denoting the cost field in the database.
 	FieldCost = "cost"
 	// FieldBillingTier holds the string denoting the billing_tier field in the database.
@@ -80,11 +90,16 @@ var Columns = []string{
 	FieldErrorType,
 	FieldErrorMessage,
 	FieldLatencyMs,
+	FieldTtftMs,
 	FieldInputTokens,
+	FieldPriceInputMillis,
 	FieldOutputTokens,
+	FieldPriceOutputMillis,
 	FieldTotalTokens,
 	FieldCacheReadTokens,
+	FieldPriceCacheReadMillis,
 	FieldCacheCreationTokens,
+	FieldPriceCacheCreationMillis,
 	FieldCost,
 	FieldBillingTier,
 	FieldAboveHit,
@@ -228,14 +243,29 @@ func ByLatencyMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLatencyMs, opts...).ToFunc()
 }
 
+// ByTtftMs orders the results by the ttft_ms field.
+func ByTtftMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTtftMs, opts...).ToFunc()
+}
+
 // ByInputTokens orders the results by the input_tokens field.
 func ByInputTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInputTokens, opts...).ToFunc()
 }
 
+// ByPriceInputMillis orders the results by the price_input_millis field.
+func ByPriceInputMillis(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceInputMillis, opts...).ToFunc()
+}
+
 // ByOutputTokens orders the results by the output_tokens field.
 func ByOutputTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOutputTokens, opts...).ToFunc()
+}
+
+// ByPriceOutputMillis orders the results by the price_output_millis field.
+func ByPriceOutputMillis(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceOutputMillis, opts...).ToFunc()
 }
 
 // ByTotalTokens orders the results by the total_tokens field.
@@ -248,9 +278,19 @@ func ByCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheReadTokens, opts...).ToFunc()
 }
 
+// ByPriceCacheReadMillis orders the results by the price_cache_read_millis field.
+func ByPriceCacheReadMillis(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceCacheReadMillis, opts...).ToFunc()
+}
+
 // ByCacheCreationTokens orders the results by the cache_creation_tokens field.
 func ByCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheCreationTokens, opts...).ToFunc()
+}
+
+// ByPriceCacheCreationMillis orders the results by the price_cache_creation_millis field.
+func ByPriceCacheCreationMillis(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceCacheCreationMillis, opts...).ToFunc()
 }
 
 // ByCost orders the results by the cost field.
