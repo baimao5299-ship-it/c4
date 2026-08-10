@@ -42,7 +42,12 @@ func NewAuth(loader KeyLoader, users UserStatusLoader, log *logx.Logger) *Auth {
 		log:    log,
 		keys:   make(map[string]domain.KeyMeta),
 		states: make(map[int64]domain.UserStatus),
-		gate:   newConcurrencyGate(),
+		gate:   newConcurrencyGate(log),
+	}
+	// 复核 DB 读自装配：生产 loader（repository.KeyRepo）同时实现 QuotaUsedReader；
+	// 测试 fake 未实现 → 无复核能力（预算耗尽即 429，单实例现状语义）。
+	if r, ok := loader.(QuotaUsedReader); ok {
+		a.gate.setReclaimer(r)
 	}
 	_ = a.Reload(context.Background())
 	return a
@@ -135,6 +140,16 @@ func (a *Auth) Authenticate(r *http.Request) (domain.KeyMeta, bool) {
 	return meta, true
 }
 
+// SetInstancesProvider 注入集群实例数 N 提供者（#14 多实例预算分摊；svc 构造后
+// 装配——main 装配点，T3a 接线：auth.SetInstancesProvider(svc)）。N 变更
+// （settings NOTIFY）后再次调用即触发预算重算（幂等 reload，在途值继承，§3.4）。
+func (a *Auth) SetInstancesProvider(p InstancesProvider) {
+	a.gate.SetInstancesProvider(p)
+	a.mu.Lock()
+	a.gate.reload(a.keys) // 预算按新 N 即时重分配
+	a.mu.Unlock()
+}
+
 // --- 门禁（内存原子；热路径零 DB 零锁） ---
 
 // Acquire 两级并发门禁：user → key 依次 CAS 抢占；key 失败回滚 user 计数
@@ -150,8 +165,9 @@ func (a *Auth) Release(meta domain.KeyMeta, level int) {
 	a.gate.release(meta, level)
 }
 
-// QuotaExhausted 额度检查（纯读快照/内存计数，无计数副作用——评审提醒①：
-// 检查在并发 acquire 之前；未设置额度 key 短路零成本）。
+// QuotaExhausted 额度检查：本地预算快读（零锁零 DB）；预算耗尽触发 DB 复核
+// 认领（#14 §3.2——复核成功续预算继续放行，复核确认真尽才 429）。检查在并发
+// acquire 之前（评审提醒①：失败无并发槽副作用）；未设置额度 key 短路零成本。
 func (a *Auth) QuotaExhausted(meta domain.KeyMeta) bool {
 	return a.gate.quotaExhausted(meta)
 }

@@ -69,6 +69,15 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 
 func (p *Proxy) Inflight() int64 { return p.inflight.Load() }
 
+// SetInstancesProvider 注入集群实例数 N 提供者（#14 多实例预算分摊；svc 构造
+// 后调用——main 装配点，T3a 接线：px.SetInstancesProvider(svc)）。转发给
+// auth（gate 预算 ceil(剩余/N)）与 limit（RPM ceil(rpm/N)）；N 变更
+// （settings NOTIFY）后再次调用即触发预算即时重算（§3.4）。
+func (p *Proxy) SetInstancesProvider(inst InstancesProvider) {
+	p.auth.SetInstancesProvider(inst)
+	p.limit.SetInstancesProvider(inst)
+}
+
 // finish 收尾：释放并发槽 + 额度扣减（后扣模型，usage 已知）+ 计费计算 +
 // 记录用量（凡持有并发槽的路径必调）。无额度 key 无内存计数器 → 扣减
 // no-op（恒 0）。计费路由（评审 C-4 共用判定）：billed → flusher.Record

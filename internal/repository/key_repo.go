@@ -52,6 +52,17 @@ func (r *KeyRepo) GetKey(ctx context.Context, id int64) (*domain.Key, error) {
 	return toDomainKey(row), nil
 }
 
+// QuotaUsed 读单 key 当前已用额度（#14 预算复核点读：本地预算耗尽时
+// SELECT quota_used——DB 权威值，usage.Recorder 批量增量回写后滞后 ≤ flush
+// 间隔；复核成功才重新分配本地预算）。热路径不调（仅复核慢路径）。
+func (r *KeyRepo) QuotaUsed(ctx context.Context, id int64) (int64, error) {
+	v, err := r.client.Key.Query().Where(key.IDEQ(id)).Select(key.FieldQuotaUsed).Int(ctx)
+	if err != nil {
+		return 0, errMissingID(err, id)
+	}
+	return int64(v), nil
+}
+
 // GetKeyByHash 按 hash 取 key；未找到返回 (nil, nil)。
 func (r *KeyRepo) GetKeyByHash(ctx context.Context, hash string) (*domain.Key, error) {
 	row, err := r.client.Key.Query().Where(key.KeyHashEQ(hash)).Only(ctx)
