@@ -18,10 +18,10 @@ func (a schedGroupPub) PublishGroups(ctx context.Context, gids []int64) {
 }
 
 // schedFullReloader 同步全量重载（*scheduler.Scheduler 实现；FullRefresh 需要
-// 同步 + 带错误——invalidate.SchedReloader 的 InvalidateAll 是异步 fail-safe，
-// 不适用）。
+// 同步 + 带错误 + 响应 ctx 取消——invalidate.SchedReloader 的 InvalidateAll 是
+// 异步 fail-safe，不适用；评审 M-2：断线重连的全量刷新不得耗尽停机预算）。
 type schedFullReloader interface {
-	InvalidateAllSync() error
+	InvalidateAllSyncCtx(ctx context.Context) error
 }
 
 // dispatcher 实现 notify.Dispatcher（#14 T3a 装配侧）：把 NOTIFY Change 转发
@@ -101,7 +101,7 @@ func (d *dispatcher) FullRefresh(ctx context.Context) error {
 	if d.balances != nil {
 		record(d.balances.Reload(ctx))
 	}
-	record(d.sched.InvalidateAllSync())
+	record(d.sched.InvalidateAllSyncCtx(ctx))
 	record(d.svc.ReloadSettings(ctx))
 	record(d.rules.ReloadRules(ctx))
 	return firstErr

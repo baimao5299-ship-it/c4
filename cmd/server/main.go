@@ -79,14 +79,15 @@ func main() {
 		fatalf("usagelog partition bootstrap: %v", err)
 	}
 
-	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname
-	// （config 无实例字段，最小方案；单机多实例部署各进程 hostname 不同即可
-	// 区分，接收端凭此跳过自播）。发布在 DB 写成功后（与 inv.* 调用点并排）；
-	// 计费路径永不发布。
-	src, err := os.Hostname()
+	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname-pid
+	// （config 无实例字段，最小方案；评审 I-2：同主机多实例各进程 pid 不同，
+	// Src 不碰撞，接收端凭此跳过自播）。发布在 DB 写成功后（与 inv.* 调用点
+	// 并排）；计费路径永不发布。
+	host, err := os.Hostname()
 	if err != nil {
 		fatalf("hostname: %v", err)
 	}
+	src := fmt.Sprintf("%s-%d", host, os.Getpid())
 	pub := notify.NewPublisher(pool, src, log)
 
 	// 规则引擎先行构造（不 Reload——New 只建结构）：scheduler 构造期注册 apply 回调。
@@ -265,7 +266,10 @@ func main() {
 	wm := worker.New(log)
 	wm.Register(inv, sched, ruleEngine, rec, pricingSync, retention) // invalidate 去抖器执行 goroutine（单 goroutine 串行）；retention 顺序无依赖（DROP/预建均幂等）
 	if billFlusher != nil {
-		wm.Register(billFlusher) // 计费 flusher 最后注册 → 反向排空最先（扣费 + 计费日志全量落库）
+		// 计费 flusher 注册在 listener/auth-sync 之前（评审 I-1）：反向排空时它
+		// 是最后一个产生计费流量的 worker（扣费 + 计费日志全量落库）；其后注册
+		// 的 listener/auth-sync 是旁观者（不产生流量），先关无碍。
+		wm.Register(billFlusher)
 	}
 	// listener/auth-sync 最后注册 → 反向排空最先关：停止接收/周期刷新后再排空
 	// 业务 worker（scheduler 排空回写仍会发布 NOTIFY，自播跳过、其它实例接收，

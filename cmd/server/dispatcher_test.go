@@ -26,7 +26,12 @@ func (r *recSched2) InvalidateGroup(g int64) {
 	r.groups = append(r.groups, g)
 	r.mu.Unlock()
 }
-func (r *recSched2) InvalidateAllSync() error { r.mu.Lock(); r.full++; r.mu.Unlock(); return nil }
+func (r *recSched2) InvalidateAllSyncCtx(ctx context.Context) error {
+	r.mu.Lock()
+	r.full++
+	r.mu.Unlock()
+	return nil
+}
 func (r *recSched2) counts() (int, []int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -260,7 +265,7 @@ func TestDispatcherFullRefresh(t *testing.T) {
 		require.Equal(t, 1, rg.auth.calls())
 		require.Equal(t, 1, rg.bal.relCalls(), "balances Reload 一次")
 		full, _ := rg.sched.counts()
-		require.Equal(t, 1, full, "sched InvalidateAllSync 一次")
+		require.Equal(t, 1, full, "sched InvalidateAllSyncCtx 一次")
 		require.Equal(t, 1, rg.settings.calls())
 		require.Equal(t, 1, rg.rules.calls())
 	})

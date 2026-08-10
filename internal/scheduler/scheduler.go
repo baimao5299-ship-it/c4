@@ -195,8 +195,8 @@ func (s *Scheduler) processWrite(w statusWrite) {
 			drain = false
 		}
 	}
-	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
-	gidSet := make(map[int64]struct{})
+	// 先回写 DB（锁外：持 reloadMu 做 DB 往返会阻塞重载），收集回写成功的账号。
+	okIDs := make([]int64, 0, len(accs))
 	for _, ww := range accs {
 		if err := s.loader.UpdateAccountStatus(context.Background(), ww.id, ww.status, ww.cooldown, ww.lastErr, ww.weight); err != nil {
 			if s.log != nil {
@@ -204,12 +204,22 @@ func (s *Scheduler) processWrite(w statusWrite) {
 			}
 			continue // 回写失败：DB 状态未变，无变更可传播
 		}
-		if as, ok := byID[ww.id]; ok {
+		okIDs = append(okIDs, ww.id)
+	}
+	// 组 id 收集短持 reloadMu（评审 M-1）：groupIDs 的读写纪律是"仅经 reloadMu"
+	// （buildSnapshots/InvalidateGroup 的 removeGid 就地改写），裸读与之并发是
+	// 数据竞态。回写循环非热路径，与 reload 锁竞争不敏感。
+	s.reloadMu.Lock()
+	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	gidSet := make(map[int64]struct{})
+	for _, id := range okIDs {
+		if as, ok := byID[id]; ok {
 			for _, g := range as.groupIDs {
 				gidSet[g] = struct{}{}
 			}
 		}
 	}
+	s.reloadMu.Unlock()
 	if len(gidSet) > 0 && s.cfg.GroupPub != nil {
 		gids := make([]int64, 0, len(gidSet))
 		for g := range gidSet {
@@ -350,7 +360,8 @@ func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 // 其它组引用——Select（经组路由）与 Release（经 byID）必须命中同一计数器，
 // 否则多组账号并发计数分裂漂移 → 槽位假满（O2 实证修复）。账号从组移除且
 // 不再属于任何组 → 从 byID 移除；仍属其它组 → 保留实例并摘除本组引用。
-// groupIDs 仅经 reloadMu 读写（buildSnapshots/本方法），无并发读者。
+// groupIDs 仅经 reloadMu 读写（buildSnapshots/本方法/processWrite 发布收集——
+// 评审 M-1 后 processWrite 也持锁读），无锁外读者。
 func (s *Scheduler) InvalidateGroup(groupID int64) {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
@@ -468,6 +479,10 @@ func (s *Scheduler) Loader() Loader { return s.loader }
 
 // InvalidateAllSync 同步全量重载（测试与启动用）。
 func (s *Scheduler) InvalidateAllSync() error { return s.reload(context.Background()) }
+
+// InvalidateAllSyncCtx 同步全量重载（响应 ctx 取消；#14 T3a 评审 M-2：notify
+// Dispatcher.FullRefresh 用——断线重连的全量刷新不得耗尽停机预算）。
+func (s *Scheduler) InvalidateAllSyncCtx(ctx context.Context) error { return s.reload(ctx) }
 
 // Runtime 供管理端展示运行时视图。
 func (s *Scheduler) Runtime(accountID int64) (RuntimeInfo, bool) {

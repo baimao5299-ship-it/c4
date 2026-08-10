@@ -1131,3 +1131,37 @@ func TestProcessWriteNoPublisherNoop(t *testing.T) {
 	require.NoError(t, s.Close(context.Background()))
 	require.Len(t, m.writes, 1, "回写不受影响")
 }
+
+// TestProcessWriteConcurrentInvalidateGroupRace 评审 M-1 回归：processWrite 收集
+// groupIDs 与 InvalidateGroup 的 removeGid 就地改写并发——-race 下复现（修复前
+// 必报 DATA RACE，修复后静默）。loader 侧交替组 10 成员资格：账号仅属组 20 时
+// InvalidateGroup(10) 触发 removeGid 改写 groupIDs 切片。
+func TestProcessWriteConcurrentInvalidateGroupRace(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
+	a := acc(1, tplx, 4)
+	m := newMemLoader(map[int64][]*domain.Account{10: {a}, 20: {a}})
+	s := newSched(t, m)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go s.writebackLoop(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 3000; i++ {
+			// 组 10 成员资格交替移除/恢复：移除后 InvalidateGroup(10) 走 removeGid
+			// 就地改写 groupIDs；enqueue 与 removeGid 交替 → 回写循环的 groupIDs
+			// 读取与改写持续重叠（修复前 -race 必报，修复后静默）。
+			m.mu.Lock()
+			m.byGroup[10] = nil
+			m.mu.Unlock()
+			s.InvalidateGroup(10)
+			m.mu.Lock()
+			m.byGroup[10] = []*domain.Account{a}
+			m.mu.Unlock()
+			s.InvalidateGroup(10)
+			s.enqueueWrite(1, accState{status: domain.Status429, errCount: 1}, nil)
+		}
+	}()
+	<-done
+}
