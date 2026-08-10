@@ -54,10 +54,12 @@ type UpstreamCaller interface {
 }
 
 // handleFormat 通用转发骨架（从原 HandleXxx 提取，三格式共用）：鉴权 →
-// quota 检查（纯读）→ 两级并发门禁 acquire（user → key，失败回滚）→ 限流 →
+// quota 检查（本地预算快读；预算耗尽触发 DB 复核认领，见 gate.reclaim）→
+// 两级并发门禁 acquire（user → key，失败回滚）→ 限流 →
 // 读体 → stream 探测（peek unmarshal）+ model 提取（gjson，零分配）→ 选号 →
 // failover 循环（每轮 credentialFor + caller.Call + code 分支）→ 耗尽记录写出。
-// 门禁全部内存原子（零 DB 零锁）；release 与 quota 扣减在请求结束统一完成。
+// 门禁热路径全部内存原子（零 DB 零锁——复核仅预算耗尽的 key 触发，额度边缘
+// 低频慢路径）；release 与 quota 扣减在请求结束统一完成。
 func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter, r *http.Request) {
 	p.inflight.Add(1) // 优雅停机等在途归零（main waitForInflight 轮询 Inflight()）
 	defer p.inflight.Add(-1)
@@ -77,8 +79,8 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	rm := &reqMeta{meta: meta}
 	r = r.WithContext(context.WithValue(r.Context(), ctxKeyReqMeta{}, rm))
 
-	// quota 检查在并发 acquire 之前（评审提醒①：纯读失败无计数副作用；
-	// 未设置额度 key 短路零成本）
+	// quota 检查在并发 acquire 之前（评审提醒①：失败无并发槽副作用；
+	// 未设置额度 key 短路零成本；预算耗尽 → gate 内 DB 复核认领后再判定）
 	if p.auth.QuotaExhausted(meta) {
 		writeErr(w, errQuotaExhausted)
 		p.record(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)

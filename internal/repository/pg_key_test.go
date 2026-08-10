@@ -63,3 +63,33 @@ func TestPGAddQuotaUsedBatch(t *testing.T) {
 	_, err = repos.GetKey(ctx, del.ID)
 	require.Error(t, err, "已删 key 不可见（静默跳过，无错误）")
 }
+
+// TestPGKeyQuotaUsed #14 T3b 预算复核点读锚：QuotaUsed 单列读返回 DB 权威值
+//（与 GetKey 全行读同源）；AddQuotaUsed 增量后复核读到新值（复核协议依赖：
+// 复核时刻 SELECT quota_used 是"剩余额"判定依据）；缺失 key → ErrNotFound。
+func TestPGKeyQuotaUsed(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "quota-reclaim@example.com")
+	g, err := repos.Groups.CreateGroup(ctx, &domain.Group{Name: "qg2", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	k, err := repos.CreateKey(ctx, &domain.Key{
+		UserID: u.ID, GroupID: g.ID, Name: "rk",
+		KeyHash: "qh-reclaim", KeyPrefix: "sk-",
+		Status: domain.KeyStatusActive, Quota: 1000, QuotaUsed: 40,
+	})
+	require.NoError(t, err)
+
+	used, err := repos.Keys.QuotaUsed(ctx, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(40), used, "复核读到 DB 权威值")
+
+	// 增量回写后复核读到新值（usage 落库面 → 复核判定面一致）
+	require.NoError(t, repos.Keys.AddQuotaUsed(ctx, map[int64]int64{k.ID: 25}))
+	used, err = repos.Keys.QuotaUsed(ctx, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(65), used, "复核读到增量后新值")
+
+	_, err = repos.Keys.QuotaUsed(ctx, 999999)
+	require.Error(t, err, "缺失 key → 复核读失败（gate 按 DB 错策略处理）")
+}

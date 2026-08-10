@@ -1,45 +1,117 @@
 package proxy
 
 import (
+	"context"
 	"sync/atomic"
+	"time"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/pkg/logx"
 )
 
-// concurrencyGate 两级并发/额度内存门禁：user/key 在途计数 + key 额度已消耗
-// 计数。快照原子换入换出（reload 时重建），在途/已扣值跨 reload 继承
-// （复用 scheduler reload 继承教训：跨 reload 的 Release/deduct 命中新快照
-// 的继承值，计数不丢不拉负）。热路径零 DB、零锁（仅 atomic）。
+// InstancesProvider 集群实例数 N 提供者（service.Service 实现 ClusterInstances；
+// 多实例预算分摊 #14 §3.1——N 存 DB settings，所有实例同源，config 文件可漂移）。
+// nil（未装配）按 N=1（单实例语义）。N 变更经 settings NOTIFY 传播，装配侧再次
+// 调用 SetInstancesProvider 即触发预算重算（§3.4）。
+type InstancesProvider interface {
+	ClusterInstances() int
+}
+
+// QuotaUsedReader 预算复核的 DB 只读接口（repository.KeyRepo 实现）：预算耗尽
+// 时读 key 当前已用额度（DB 权威值——usage.Recorder 批量增量回写 quota_used，
+// 复核时刻分配预算用）。热路径不调（仅复核慢路径）。
+type QuotaUsedReader interface {
+	QuotaUsed(ctx context.Context, keyID int64) (int64, error)
+}
+
+// concurrencyGate 两级并发/额度内存门禁：user/key 在途计数 + key 额度本地预算
+// （#14 §3.2 多实例分摊）。快照原子换入换出（reload 时重建），在途/已扣值跨
+// reload 继承（复用 scheduler reload 继承教训：跨 reload 的 Release/deduct 命中
+// 新快照的继承值，计数不丢不拉负）。热路径零锁零 DB（仅 atomic 读）——预算
+// 耗尽才触发 DB 复核（慢路径单飞，见 reclaim）。
 //
 // 无额度 key（quota=0）不建 quota 条目——HasQuota 短路：检查与扣减均走
 // 计数器存在性，路径与现状（无门禁）成本相当（1 次快照读 + map 查）。
 type concurrencyGate struct {
 	store atomic.Pointer[gateSnapshot]
+	// reclaimer 复核 DB 读（NewAuth 从 loader 类型断言注入；nil = 无复核能力，
+	// 预算耗尽直接 429——与单实例现状语义一致，仅测试/未装配形态）。
+	reclaimer QuotaUsedReader
+	// instances N 提供者（装配期 SetInstancesProvider 注入；nil → N=1）。
+	instances atomic.Pointer[InstancesProvider]
+	log       *logx.Logger
 }
 
 type gateSnapshot struct {
 	users  map[int64]*atomic.Int64 // user_id → 在途请求数
 	keys   map[int64]*atomic.Int64 // key_id → 在途请求数
-	quotas map[int64]*atomic.Int64 // key_id → 已消耗额度（内存权威；无额度 key 无条目）
+	quotas map[int64]*keyQuota     // key_id → 额度预算状态（无额度 key 无条目）
 }
 
-func newConcurrencyGate() *concurrencyGate {
-	g := &concurrencyGate{}
+// keyQuota 单 key 额度状态（多实例本地预算模型 #14 §3.2）：
+//
+//	budget = consumed + ceil(剩余额/N)   —— 复核时刻分配（reload/upsert/耗尽复核）
+//	Allow  = consumed < budget          —— 热路径两原子读，零锁零 DB
+//	耗尽   → 触发 DB 复核认领：有剩余 → budget 按公式重分配继续放行；真尽 → 429；
+//	          DB 错 → Warn + 本请求放行 + 退避 10s（软门禁语义：放行不产生错计费，
+//	          扣费恒为条件 UPDATE 精确，见 billing flusher）
+//
+// 注意（N=1 边界，评审 I-1）：有复核能力时 429 点 = "DB quota_used ≥ quota"，
+// 而非"本地 consumed ≥ quota"——DB 滞后（usage.Recorder 回写 ≤ flush 窗口）
+// 期间允许 ≈1 flush 窗口超跑（§3.2 软门禁误差；扣费恒条件 UPDATE 精确，非错误
+// 计费）。"预算耗尽即 429"（与单实例现状同点拒绝）仅在无复核能力或快照值恰好
+// 等于 DB 时成立。
+//
+// 单飞：同 key 并发复核只允许一个进 DB，其余按旧预算判定（复核窗口 ≈ 1 次 DB
+// 往返，额度边缘的瞬时 429 可接受）。所有字段原子——复核与 reload/upsert 重建
+// 并发安全（命中旧快照的复核写旧对象，随快照换出作废，无跨快照污染）。
+type keyQuota struct {
+	consumed   atomic.Int64 // 本地已消耗 token（单调递增；跨 reload 继承，同现状）
+	budget     atomic.Int64 // 本地预算绝对上限；consumed >= budget → 触发复核
+	reclaiming atomic.Bool  // 复核单飞标志（CAS 抢占，defer 释放）
+	exhausted  atomic.Bool  // DB 复核确认真尽（此后 429 短路；reload/upsert 重建时重置）
+	retryAt    atomic.Int64 // 复核失败退避截止（unix nano；防 DB 错复核风暴）
+}
+
+func newConcurrencyGate(log *logx.Logger) *concurrencyGate {
+	g := &concurrencyGate{log: log}
 	g.store.Store(&gateSnapshot{
 		users:  make(map[int64]*atomic.Int64),
 		keys:   make(map[int64]*atomic.Int64),
-		quotas: make(map[int64]*atomic.Int64),
+		quotas: make(map[int64]*keyQuota),
 	})
 	return g
 }
 
+// setReclaimer 注入复核 DB 读（NewAuth 从 loader 类型断言；构造期调用，不可变）。
+func (g *concurrencyGate) setReclaimer(r QuotaUsedReader) { g.reclaimer = r }
+
+// SetInstancesProvider 注入集群实例数 N（装配期；nil 清空 → N=1）。N 在每次
+// 预算分配（reload/upsert/复核）现读，下次分配即生效；由 Auth.SetInstancesProvider
+// 触发 reload 完成即时重算（#14 §3.4）。
+func (g *concurrencyGate) SetInstancesProvider(p InstancesProvider) {
+	g.instances.Store(&p)
+}
+
+// instancesN 当前集群实例数（N ≥ 1；provider 缺失/非法值 → 1）。
+func (g *concurrencyGate) instancesN() int {
+	if p := g.instances.Load(); p != nil && *p != nil {
+		if n := (*p).ClusterInstances(); n > 0 {
+			return n
+		}
+	}
+	return 1
+}
+
 // reload 从鉴权快照重建计数器；在途值跨 reload 继承（旧快照与新快照共有的
 // user/key 计数平移——跨 reload 的 Release/deduct 命中新快照继承值）。
+// 额度预算按最新快照重新分配（#14 §3.3：key CRUD → NOTIFY → 全实例 Reload →
+// 预算按新 quota_used 重算）。
 func (g *concurrencyGate) reload(metas map[string]domain.KeyMeta) {
 	snap := &gateSnapshot{
 		users:  make(map[int64]*atomic.Int64, len(metas)),
 		keys:   make(map[int64]*atomic.Int64, len(metas)),
-		quotas: make(map[int64]*atomic.Int64),
+		quotas: make(map[int64]*keyQuota),
 	}
 	old := g.store.Load()
 	for _, meta := range metas {
@@ -56,12 +128,13 @@ func (g *concurrencyGate) reload(metas map[string]domain.KeyMeta) {
 		}
 		snap.keys[meta.KeyID] = kc
 		if meta.HasQuota {
-			q := &atomic.Int64{}
+			q := &keyQuota{}
 			if o, ok := old.quotas[meta.KeyID]; ok {
-				q.Store(o.Load()) // 在途额度继承（评审提醒②）
+				q.consumed.Store(o.consumed.Load()) // 在途额度继承（评审提醒②）
 			} else {
-				q.Store(meta.QuotaUsed)
+				q.consumed.Store(meta.QuotaUsed)
 			}
+			g.allocBudget(q, meta) // 预算按最新快照重分配（§3.2 复核时刻）
 			snap.quotas[meta.KeyID] = q
 		}
 	}
@@ -69,7 +142,8 @@ func (g *concurrencyGate) reload(metas map[string]domain.KeyMeta) {
 }
 
 // upsert 增量刷新单 key 计数器（创建/轮换后；已存在条目不动在途值；
-// 低频管理路径，重建快照可接受）。
+// 低频管理路径，重建快照可接受）。预算随最新 meta 重分配（额度调整即时生效）；
+// 额度取消（quota→0）→ 门禁条目移除，不再拦截。
 func (g *concurrencyGate) upsert(meta domain.KeyMeta) {
 	old := g.store.Load()
 	snap := &gateSnapshot{
@@ -84,11 +158,15 @@ func (g *concurrencyGate) upsert(meta domain.KeyMeta) {
 		snap.keys[meta.KeyID] = &atomic.Int64{}
 	}
 	if meta.HasQuota {
-		if _, ok := snap.quotas[meta.KeyID]; !ok {
-			q := &atomic.Int64{}
-			q.Store(meta.QuotaUsed)
+		q, ok := snap.quotas[meta.KeyID]
+		if !ok {
+			q = &keyQuota{}
+			q.consumed.Store(meta.QuotaUsed)
 			snap.quotas[meta.KeyID] = q
 		}
+		g.allocBudget(q, meta) // 配额调整即时生效（在途 consumed 不动）
+	} else {
+		delete(snap.quotas, meta.KeyID)
 	}
 	g.store.Store(snap)
 }
@@ -110,8 +188,8 @@ func (g *concurrencyGate) delete(keyID int64) {
 	g.store.Store(snap)
 }
 
-func cloneCounters(m map[int64]*atomic.Int64) map[int64]*atomic.Int64 {
-	out := make(map[int64]*atomic.Int64, len(m))
+func cloneCounters[T any](m map[int64]*T) map[int64]*T {
+	out := make(map[int64]*T, len(m))
 	for k, v := range m {
 		out[k] = v
 	}
@@ -165,16 +243,96 @@ func (g *concurrencyGate) release(meta domain.KeyMeta, level int) {
 	}
 }
 
-// quotaExhausted 额度检查（纯读；无额度 key 短路 false）。
+// quotaExhausted 额度检查：本地预算快读（两原子读，零锁零 DB）→ 预算耗尽时
+// 触发 DB 复核认领（#14 §3.2：不直接 429——先复核，有剩余重分配预算继续放行）。
+// 复核是慢路径（DB 读）但单飞去重 + 原子更新 budget：热路径读永不阻塞。
+// 无额度 key 短路 false。
 func (g *concurrencyGate) quotaExhausted(meta domain.KeyMeta) bool {
 	if !meta.HasQuota {
 		return false
 	}
 	snap := g.store.Load()
-	if c, ok := snap.quotas[meta.KeyID]; ok && c != nil {
-		return c.Load() >= meta.Quota
+	q, ok := snap.quotas[meta.KeyID]
+	if !ok || q == nil {
+		return meta.QuotaUsed >= meta.Quota // 无内存计数（新 key/竞态窗口）→ 快照值
 	}
-	return meta.QuotaUsed >= meta.Quota // 无内存计数（新 key/竞态窗口）→ 快照值
+	if q.exhausted.Load() {
+		return true // 复核确认真尽：429 短路（直到 reload/upsert 重建）
+	}
+	if q.consumed.Load() < q.budget.Load() {
+		return false // 热路径：本地预算充足
+	}
+	return !g.reclaim(meta, q)
+}
+
+// reclaim 预算耗尽后的 DB 复核认领（#14 §3.2 公式）：
+//
+//	remaining = quota - quota_used(DB 复核读)
+//	remaining > 0 → budget = consumed + ceil(remaining/N)，放行
+//	remaining ≤ 0 → exhausted（真尽，此后 429 短路）
+//	DB 错         → Warn + 本请求放行（预算补 1）+ 退避 10s——软门禁语义：
+//	                 放行不产生错计费（扣费恒条件 UPDATE，DB 错时同样失败）；
+//	                 退避期内预算耗尽按 429，防复核风暴
+//	无复核能力    → 429（与单实例现状语义一致）
+//
+// 单飞：CAS 抢到才进 DB；同 key 并发到达按当前 budget 判定（复核窗口 ≈ 1 次
+// DB 往返，额度边缘瞬时 429 可接受）。复核用独立超时 ctx（不用请求 ctx——
+// 请求中途断开不能悬挂 reclaiming 标志，否则该 key 永久 429 直到 reload）。
+//
+// 缺失 key（ErrNotFound，已删）与瞬时 DB 错同等对待（同上"Warn+放行"策略，
+// 评审 I-2）：删除传播存在快照残留期（≤60s，R1 兜底），其间该 key 退避涓流
+// 放行 ≤6 笔/60s，可接受；残留条目本身由 Reload 移除收敛。
+//
+// budget 更新为读-改-写（consumed.Load + Store），并发扣减可能落在两次原子
+// 操作之间 → 丢失（lost-update，评审 I-3）。方向保守：budget 偏低 → 更早触发
+// 下次复核 → 更早再认领，无超限风险。
+//
+// 返回 true = 本请求放行。
+func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
+	if !q.reclaiming.CompareAndSwap(false, true) {
+		return q.consumed.Load() < q.budget.Load() // 他人复核中：用旧预算判定
+	}
+	defer q.reclaiming.Store(false)
+	if q.retryAt.Load() > time.Now().UnixNano() {
+		return false // 复核失败退避期：保守 429（防 DB 风暴）
+	}
+	if g.reclaimer == nil {
+		q.exhausted.Store(true) // 无复核能力：耗尽即 429（仅测试/未装配形态）
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), quotaReclaimTimeout)
+	defer cancel()
+	used, err := g.reclaimer.QuotaUsed(ctx, meta.KeyID)
+	if err != nil {
+		q.retryAt.Store(time.Now().Add(quotaReclaimRetry).UnixNano())
+		if g.log != nil {
+			g.log.Warn("quota budget reclaim failed (read quota_used)", logx.Error(err),
+				logx.Int64("key_id", meta.KeyID))
+		}
+		// 软门禁：DB 错不误伤——本请求放行，预算补 1（退避期内其余到达 429）
+		q.budget.Store(q.consumed.Load() + 1)
+		return true
+	}
+	if remaining := meta.Quota - used; remaining > 0 {
+		q.budget.Store(q.consumed.Load() + ceilDiv(remaining, int64(g.instancesN())))
+		return true
+	}
+	q.exhausted.Store(true) // 额度真尽 → 429（budget 不动，exhausted 短路后续复核）
+	return false
+}
+
+// allocBudget 复核时刻预算分配（#14 §3.2 公式）：budget = consumed + ceil(remaining/N)。
+// remaining = quota - quota_used（快照值；reload/upsert 携带）。remaining ≤ 0 →
+// exhausted（真尽，429 短路直到下次重建）。consumed 恒不动（在途纪律）。
+func (g *concurrencyGate) allocBudget(q *keyQuota, meta domain.KeyMeta) {
+	remaining := meta.Quota - meta.QuotaUsed
+	if remaining <= 0 {
+		q.budget.Store(q.consumed.Load())
+		q.exhausted.Store(true)
+		return
+	}
+	q.budget.Store(q.consumed.Load() + ceilDiv(remaining, int64(g.instancesN())))
+	q.exhausted.Store(false)
 }
 
 // deductQuota 请求结束扣减（后扣模型；无额度 key 无条目 → no-op，恒 0）。
@@ -183,9 +341,18 @@ func (g *concurrencyGate) deductQuota(keyID, tokens int64) {
 		return
 	}
 	snap := g.store.Load()
-	if c, ok := snap.quotas[keyID]; ok && c != nil {
-		c.Add(tokens)
+	if q, ok := snap.quotas[keyID]; ok && q != nil {
+		q.consumed.Add(tokens)
 	}
+}
+
+// ceilDiv 向上取整除法（§3.2 ceil(remaining/N)）；b ≥ 1（N 恒 ≥ 1），
+// a+b-1 溢出仅在 a 接近 MaxInt64 时可能——额度量级远小于此。
+func ceilDiv(a, b int64) int64 {
+	if a <= 0 {
+		return 0
+	}
+	return (a + b - 1) / b
 }
 
 // casInc CAS 循环自增：超过 max 返回 false（不占用）。
@@ -200,3 +367,10 @@ func casInc(c *atomic.Int64, max int) bool {
 		}
 	}
 }
+
+// 复核超时与退避（DB 复核是慢路径：单次上限防慢 DB 拖垮请求；失败退避防
+// 复核风暴——DB 错窗口内每 key 至多一次复核）。
+const (
+	quotaReclaimTimeout = 3 * time.Second
+	quotaReclaimRetry   = 10 * time.Second
+)

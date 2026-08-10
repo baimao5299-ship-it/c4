@@ -146,7 +146,7 @@ func TestProxyQuotaExhaustedAndDeduct(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "key quota exhausted")
 	// 429 不计入扣减（检查在 acquire 前，纯读）
 	snap := p.auth.gate.store.Load()
-	require.Equal(t, int64(16), snap.quotas[1].Load())
+	require.Equal(t, int64(16), snap.quotas[1].consumed.Load())
 }
 
 // 无额度 key：无 quota 条目、零扣减（恒 0）、不误拒。
