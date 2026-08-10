@@ -341,31 +341,33 @@ export default function Logs() {
                   )}
                   {isColVisible('statusCode') && <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>}
                   {isColVisible('errorType') && <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>}
-                  {/* token 列：↓绿 ↑紫 千分位 + cache 第二行 K/M 缩写 + ⓘ 悬停大卡
+                  {/* token 列：↓输入 ↑输出（muted 单色收敛）+ cache 第二行（无值不显示）+ ⓘ 悬停大卡
                       （tokens 明细 + 档位 BillingTier + 超档/透支徽章） */}
                   {isColVisible('tokens') && (
                   <TableCell className="text-right font-medium tabular-nums">
                     {l.InputTokens || l.OutputTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
                       <span className="inline-flex items-center justify-end gap-1.5">
                         <span className="space-y-0.5 text-xs text-right">
-                          <span className="inline-flex items-center gap-2">
-                            <span className="inline-flex items-center gap-0.5 text-emerald-500">
+                          <span className="inline-flex items-center gap-2 text-muted-foreground">
+                            <span className="inline-flex items-center gap-0.5">
                               <ArrowDown className="size-3" />{(l.InputTokens ?? 0).toLocaleString()}
                             </span>
-                            <span className="inline-flex items-center gap-0.5 text-purple-500">
+                            <span className="inline-flex items-center gap-0.5">
                               <ArrowUp className="size-3" />{(l.OutputTokens ?? 0).toLocaleString()}
                             </span>
                           </span>
                           {l.CacheReadTokens || l.CacheCreationTokens ? (
-                            <div className="text-right">
-                              <span className="text-blue-500">{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens ?? 0, i18n.language)}</span>
-                              <span className="mx-1 text-muted-foreground/50">·</span>
-                              <span className="text-amber-500">{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens ?? 0, i18n.language)}</span>
+                            <div className="text-right text-muted-foreground">
+                              {l.CacheReadTokens ? <span>{t('logs.tokens.read')} {compactTokens(l.CacheReadTokens, i18n.language)}</span> : null}
+                              {l.CacheReadTokens && l.CacheCreationTokens ? <span className="mx-1 text-muted-foreground/40">·</span> : null}
+                              {l.CacheCreationTokens ? <span>{t('logs.tokens.write')} {compactTokens(l.CacheCreationTokens, i18n.language)}</span> : null}
                             </div>
                           ) : null}
                         </span>
+                        {/* delay 0 立即弹出（base-ui 默认 600ms 偏慢）；触发热区 -m-1 p-1 扩大
+                            （16px 圆点视觉不变，命中面积 36px） */}
                         <Tooltip>
-                          <TooltipTrigger render={<span className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full bg-muted text-muted-foreground text-[10px] leading-none" />}>
+                          <TooltipTrigger delay={0} render={<span className="inline-flex -m-1 size-4 shrink-0 cursor-help items-center justify-center rounded-full bg-muted p-1 text-muted-foreground text-[10px] leading-none" />}>
                             i
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs border bg-popover p-0 shadow-lg">
