@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -396,4 +397,112 @@ func TestSniffResponsesCompleted(t *testing.T) {
 	u, ok = sniffResponsesCompleted([]byte(`{"type":"response.completed","response":{"id":"r"}}`))
 	require.True(t, ok)
 	require.Equal(t, usageTuple{}, u)
+}
+
+// TestRelayClassifyCloseFramePriority I-1 分类单元测试（确定性）：上游关闭帧
+// 与客户端循环并发写失败（net.ErrClosed）的槽位组合——正常关闭帧恒优先
+// （写失败只归因网络错误，无关闭帧时才判错）；客户端断开恒 abort；错误
+// 关闭帧/失联恒 ResultError。修复前写失败与关闭帧竞争 upErr 首写，先记录
+// 即误判（健康上游被冷却）。
+func TestRelayClassifyCloseFramePriority(t *testing.T) {
+	normal := &websocket.CloseError{Code: websocket.StatusNormalClosure}
+	goingAway := &websocket.CloseError{Code: websocket.StatusGoingAway}
+	errClose := &websocket.CloseError{Code: websocket.StatusInternalError}
+	writeFail := net.ErrClosed
+	clientClose := &websocket.CloseError{Code: websocket.StatusNormalClosure}
+	timeout := errors.New("pong timeout")
+
+	tests := []struct {
+		name      string
+		upClose   *websocket.CloseError
+		upErr     error
+		clientErr error
+		pingErr   error
+		want      relayEnd
+		wantErr   error
+	}{
+		// I-1 竞态：正常关闭帧 + 并发写失败（写失败先记录）→ 关闭帧恒赢
+		{"I-1: close frame wins over concurrent write failure", normal, writeFail, nil, nil, relayEndUpstreamClosed, nil},
+		{"write failure alone is upstream error", nil, writeFail, nil, nil, relayEndUpstreamError, writeFail},
+		{"normal close alone", normal, nil, nil, nil, relayEndUpstreamClosed, nil},
+		{"going away is normal close", goingAway, nil, nil, nil, relayEndUpstreamClosed, nil},
+		{"error close frame is upstream error", errClose, nil, nil, nil, relayEndUpstreamError, errClose},
+		// 错误关闭帧 + 写失败 → 分类恒 ResultError（诊断错误取先记录的写失败）
+		{"error close frame with write failure", errClose, writeFail, nil, nil, relayEndUpstreamError, writeFail},
+		{"client abort", nil, nil, clientClose, nil, relayEndClientAbort, clientClose},
+		{"client abort with upstream write failure", nil, writeFail, clientClose, nil, relayEndClientAbort, clientClose},
+		// 客户端断开 + 上游正常关闭并发 → 关闭帧优先（上游已完成流，记录成功）
+		{"close frame wins over concurrent client abort", normal, nil, clientClose, nil, relayEndUpstreamClosed, nil},
+		{"client abort with error close frame", errClose, nil, clientClose, nil, relayEndClientAbort, clientClose},
+		{"ping timeout is upstream error", nil, nil, nil, timeout, relayEndUpstreamError, timeout},
+		{"ping fallback for write failure", nil, nil, nil, timeout, relayEndUpstreamError, timeout},
+		{"error frame fallback without network error", errClose, nil, nil, timeout, relayEndUpstreamError, timeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			end, endErr := relayClassify(tt.upClose, tt.upErr, tt.clientErr, tt.pingErr)
+			require.Equal(t, tt.want, end)
+			require.Equal(t, tt.wantErr, endErr)
+		})
+	}
+}
+
+// TestResponsesWSConcurrentWriteClose I-1 端到端竞态复现：上游关闭帧与客户端
+// 活跃写帧并发——客户端持续写帧（flood），假上游读满 1 帧后立即流式下发 +
+// 发 1000 关闭帧（不再读帧）。网关侧 up-loop 解码关闭帧的同时 client-loop
+// 的 up.Write 必然失败（net.ErrClosed）——修复后关闭帧独立槽位 + 分类优先
+// → 恒成功（200 ErrNone + 5 计数 usage）；修复前两错误竞争 upErr 首写，
+// 写失败先记录即误判 ResultError（健康上游被冷却）。
+func TestResponsesWSConcurrentWriteClose(t *testing.T) {
+	hooks := &fakeWSHooks{frameLimit: 1}
+	up := fakeResponsesWS(t, hooks)
+	defer up.Close()
+	store := &captureLogStore{}
+	p, srv := wsTestProxy(t, up.URL, domain.FormatOpenAIResponsesWS, store)
+
+	c := dialResponsesWS(t, srv)
+	defer c.CloseNow()
+	// 首帧触发上游事件流 + 关闭
+	require.NoError(t, c.Write(context.Background(), websocket.MessageText,
+		[]byte(`{"type":"response.create","model":"gpt-4o","input":"hi"}`)))
+
+	// 持续写帧：制造"客户端循环写失败"与"上游关闭帧"并发（I-1 竞态窗口）
+	floodDone := make(chan struct{})
+	go func() {
+		defer close(floodDone)
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			err := c.Write(ctx, websocket.MessageText, []byte(`{"type":"ping"}`))
+			cancel()
+			if err != nil {
+				return // 网关关闭后写失败即停
+			}
+		}
+	}()
+
+	seenCompleted := false
+	for i := 0; i < 4; i++ { // created/delta/completed/echo 完整透传
+		f := readResponsesWSFrame(t, c)
+		if strings.Contains(string(f), `"type":"response.completed"`) {
+			seenCompleted = true
+		}
+	}
+	require.True(t, seenCompleted, "response.completed 必须完整透传")
+	// 网关必须判成功（1000 关闭帧）——误判 ResultError 时客户端收到 1011
+	readResponsesWSClose(t, c, websocket.StatusNormalClosure)
+	<-floodDone
+
+	// 成功分类：ErrNone 200 + 5 计数 usage（并发写失败不得推翻关闭帧）
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	lg := store.logs[0]
+	require.Equal(t, domain.ErrNone, lg.ErrorType, "正常关闭帧优先 → 成功（不得误判冷却）")
+	require.Equal(t, http.StatusOK, lg.StatusCode)
+	require.Equal(t, int64(3), lg.InputTokens)
+	require.Equal(t, int64(5), lg.OutputTokens)
+	require.Equal(t, int64(8), lg.TotalTokens)
+	require.Equal(t, int64(1), lg.CacheReadTokens)
+	require.Equal(t, int64(3), lg.CacheCreationTokens)
 }
