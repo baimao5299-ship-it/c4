@@ -348,6 +348,10 @@
       "cacheRead": "Cache read",
       "cacheWrite": "Cache write"
     },
+    "latency": {
+      "ttft": "TTFT",
+      "total": "Total"
+    },
     "pagination": {
       "total": "{{total}} entries",
       "page": "Page {{page}} / {{pages}}",

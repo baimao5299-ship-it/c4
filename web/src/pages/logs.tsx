@@ -63,12 +63,22 @@ function Th({ className, ...props }: React.ComponentProps<typeof TableHead>) {
   )
 }
 
-// 延迟健康色（sub2api 配方，仅色点着色）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红。
+// 延迟健康色（仅色点着色，阈值应用于 TTFT）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红。
 function latencyColor(ms: number): string {
   if (ms < 1000) return 'bg-emerald-500'
   if (ms < 5000) return 'bg-amber-500'
   if (ms < 15000) return 'bg-orange-500'
   return 'bg-red-500'
+}
+
+// 时长格式化：≥1000ms 用 s（保留 1 位小数），否则 ms。
+const fmtDuration = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
+
+// 单价格式化：每 M token 毫分 → USD/M（≥0.01 四位小数，否则六位，去尾零）。
+const fmtPricePerM = (millis: number): string => {
+  const usd = millis / 100_000
+  const s = (usd >= 0.01 ? usd.toFixed(4) : usd.toFixed(6)).replace(/\.?0+$/, '')
+  return `$${s}/M`
 }
 
 // compact 千位缩写（官方仓库无内置函数，自己写——Intl 原生 API）：1234 → 1.2K。
@@ -372,24 +382,37 @@ export default function Logs() {
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs border bg-popover p-0 shadow-lg">
                             <div className="space-y-1.5 p-3 text-xs">
+                              {/* 单价小字尾注：$0.0025/M（每 M token；null = 未计费路径不显示） */}
                               <div className="flex items-center justify-between gap-6">
                                 <span className="text-muted-foreground">{t('logs.tokens.input')}</span>
-                                <span className="font-medium tabular-nums">{(l.InputTokens ?? 0).toLocaleString()}</span>
+                                <span className="flex items-baseline gap-2">
+                                  <span className="font-medium tabular-nums">{(l.InputTokens ?? 0).toLocaleString()}</span>
+                                  {l.PriceInputMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceInputMillis)}</span>}
+                                </span>
                               </div>
                               <div className="flex items-center justify-between gap-6">
                                 <span className="text-muted-foreground">{t('logs.tokens.output')}</span>
-                                <span className="font-medium tabular-nums">{(l.OutputTokens ?? 0).toLocaleString()}</span>
+                                <span className="flex items-baseline gap-2">
+                                  <span className="font-medium tabular-nums">{(l.OutputTokens ?? 0).toLocaleString()}</span>
+                                  {l.PriceOutputMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceOutputMillis)}</span>}
+                                </span>
                               </div>
                               {l.CacheReadTokens ? (
                                 <div className="flex items-center justify-between gap-6">
                                   <span className="text-muted-foreground">{t('logs.tokens.cacheRead')}</span>
-                                  <span className="font-medium tabular-nums">{l.CacheReadTokens.toLocaleString()}</span>
+                                  <span className="flex items-baseline gap-2">
+                                    <span className="font-medium tabular-nums">{l.CacheReadTokens.toLocaleString()}</span>
+                                    {l.PriceCacheReadMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceCacheReadMillis)}</span>}
+                                  </span>
                                 </div>
                               ) : null}
                               {l.CacheCreationTokens ? (
                                 <div className="flex items-center justify-between gap-6">
                                   <span className="text-muted-foreground">{t('logs.tokens.cacheWrite')}</span>
-                                  <span className="font-medium tabular-nums">{l.CacheCreationTokens.toLocaleString()}</span>
+                                  <span className="flex items-baseline gap-2">
+                                    <span className="font-medium tabular-nums">{l.CacheCreationTokens.toLocaleString()}</span>
+                                    {l.PriceCacheCreationMillis != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{fmtPricePerM(l.PriceCacheCreationMillis)}</span>}
+                                  </span>
                                 </div>
                               ) : null}
                               <div className="flex items-center justify-between gap-6 border-t pt-1.5">
@@ -422,14 +445,19 @@ export default function Logs() {
                   )}
                   {/* 计费：Cost 毫分 → USD（0/空显示 —）；档位/超档/透支已并入 Tokens 悬停窗 */}
                   {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
-                  {/* 延迟：健康色点 + muted 数字（<1s 绿 / <5s 黄 / <15s 橙 / 红，仅色点着色） */}
+                  {/* 耗时列：上行 TTFT（色点按 ttft 着色 + ≥1000ms 用 s）+ 下行总耗时；ttft 无值只显示总耗时 */}
                   {isColVisible('latency') && (
                   <TableCell className="text-right tabular-nums">
-                    {l.LatencyMS != null ? (
-                      <span className="inline-flex items-center justify-end gap-1.5">
-                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS))} />
-                        <span className="text-muted-foreground">{l.LatencyMS} ms</span>
-                      </span>
+                    {l.TTFTMS != null ? (
+                      <div className="space-y-0.5 text-right text-xs">
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <span className={cn('size-2 rounded-full', latencyColor(l.TTFTMS))} />
+                          <span className="text-muted-foreground">{t('logs.latency.ttft')} {fmtDuration(l.TTFTMS)}</span>
+                        </div>
+                        <div className="text-muted-foreground/60">{t('logs.latency.total')} {fmtDuration(l.LatencyMS)}</div>
+                      </div>
+                    ) : l.LatencyMS != null ? (
+                      <span className="text-muted-foreground">{fmtDuration(l.LatencyMS)}</span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
