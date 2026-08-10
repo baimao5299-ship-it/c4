@@ -19,7 +19,7 @@ const fadeUp = {
 }
 
 // 统计卡 grid（与 dashboard 同款）：浅色卡片顶部 primary 微渐变 + 细阴影，深色回退纯 card。
-const cardGrid = 'grid grid-cols-1 gap-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card'
+const cardGrid = 'grid grid-cols-1 gap-5 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card'
 
 export default function UserOverview() {
   const { t } = useTranslation()
@@ -58,14 +58,14 @@ export default function UserOverview() {
   const loading = meQ.isLoading || keysQ.isLoading || statsQ.isLoading
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('user.overview.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('user.overview.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('user.overview.subtitle')}</p>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
         </div>
       ) : (
@@ -85,7 +85,7 @@ export default function UserOverview() {
                 </CardAction>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <Zap className="size-4" /> {t('user.overview.maxConcurrency')}
                   </span>
@@ -93,7 +93,7 @@ export default function UserOverview() {
                     {u?.MaxConcurrency == null ? '—' : u.MaxConcurrency === 0 ? t('user.overview.unlimited') : u.MaxConcurrency}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <CalendarDays className="size-4" /> {t('user.overview.createdAt')}
                   </span>
@@ -136,7 +136,7 @@ export default function UserOverview() {
                 ) : totalReq === 0 ? (
                   <p className="text-sm text-muted-foreground">{t('user.overview.recentEmpty')}</p>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
                       <div className="text-lg font-semibold tabular-nums">{totalReq.toLocaleString()}</div>
                       <div className="text-xs text-muted-foreground">{t('user.overview.requests')}</div>

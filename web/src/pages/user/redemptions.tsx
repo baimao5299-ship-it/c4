@@ -104,9 +104,9 @@ export default function UserRedemptions() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('user.redemptions.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('user.redemptions.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('user.redemptions.subtitle')}</p>
       </div>
 
@@ -118,7 +118,7 @@ export default function UserRedemptions() {
             <CardDescription>{t('user.redemptions.codeHint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Input
                 value={code}
                 onChange={e => setCode(e.target.value)}
@@ -170,7 +170,7 @@ export default function UserRedemptions() {
                   <TableHead>{t('user.redemptions.table.createdAt')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(r => (
                   <TableRow key={r.ID}>
                     <TableCell><code className="font-mono text-sm">{r.Code}</code></TableCell>

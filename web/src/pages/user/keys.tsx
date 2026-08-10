@@ -199,10 +199,10 @@ export default function UserKeys() {
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{t('user.keys.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('user.keys.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('user.keys.subtitle')}</p>
         </div>
         <Button onClick={openCreate}><Plus /> {t('user.keys.new')}</Button>
@@ -240,7 +240,7 @@ export default function UserKeys() {
                   <TableHead className="text-right">{t('user.keys.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(k => (
                   <TableRow key={k.ID}>
                     <TableCell className="tabular-nums">{k.ID}</TableCell>

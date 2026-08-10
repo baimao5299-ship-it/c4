@@ -102,9 +102,9 @@ export default function UserStats() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('user.stats.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('user.stats.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('user.stats.subtitle')}</p>
       </div>
 
@@ -112,7 +112,7 @@ export default function UserStats() {
           flex-nowrap + 子项 shrink-0 + overflow-x-auto：窄窗口横向滚动而非换行；
           items-start 顶对齐（结构性防下沉）：打开日历后左列高度变化不影响右列位置。 */}
       <Card className="p-4">
-        <div className="flex flex-nowrap items-start gap-4 overflow-x-auto">
+        <div className="flex flex-nowrap items-start gap-5 overflow-x-auto">
           <div className="w-[14rem] shrink-0 space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={range} onChange={setRange} />
@@ -148,7 +148,7 @@ export default function UserStats() {
           {isError ? (
             <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
           ) : isLoading ? (
-            <Skeleton className="h-[300px] w-full" />
+            <Skeleton className="h-[320px] w-full" />
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <BarChart3 className="size-10" />
@@ -156,7 +156,7 @@ export default function UserStats() {
               <p className="text-sm">{t('user.stats.emptyDesc')}</p>
             </div>
           ) : (
-            <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <ChartContainer config={chartConfig} className="h-[320px] w-full">
               {metric === 'requests' ? (
                 <BarChart accessibilityLayer data={chartData}>
                   <CartesianGrid vertical={false} />
@@ -202,7 +202,7 @@ export default function UserStats() {
                 <TableHead className="text-right">{t('user.stats.table.avgLatency')}</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_td]:py-3">
               {isLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
@@ -214,7 +214,7 @@ export default function UserStats() {
                 : rows.length === 0
                   ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{t('user.stats.emptyTitle')}</TableCell>
+                      <TableCell colSpan={7} className="!py-10 text-center text-muted-foreground">{t('user.stats.emptyTitle')}</TableCell>
                     </TableRow>
                   )
                   : rows.map(r => (

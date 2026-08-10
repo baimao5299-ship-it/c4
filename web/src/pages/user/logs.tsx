@@ -120,9 +120,9 @@ export default function UserLogs() {
   const rows = data?.rows ?? []
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">{t('user.logs.title')}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('user.logs.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('user.logs.subtitle')}</p>
       </div>
 
@@ -201,7 +201,7 @@ export default function UserLogs() {
                 <Th className="text-right">{t('user.logs.table.cost')}</Th>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_td]:py-3">
               {rows.map(l => (
                 <TableRow key={l.ID}>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
