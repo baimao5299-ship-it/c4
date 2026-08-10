@@ -305,7 +305,8 @@
     "assignConfiguredCount": "{{count}} users with per-user multipliers",
     "assignPublicSearchHint": "No configured users yet — search to add",
     "assignPublicSuccess": "Multiplier settings saved",
-    "assignConfiguredClearedDesc": "All per-user multipliers cleared"
+    "assignConfiguredClearedDesc": "All per-user multipliers cleared",
+    "assignPrivateSearchHint": "No granted users yet — search to add"
   },
   "logs": {
     "title": "Logs",

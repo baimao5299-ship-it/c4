@@ -259,30 +259,28 @@ export default function Groups() {
   }
   const toggleAssignUser = (id: number, on: boolean) =>
     setAssignChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
-  // public 组（公开组天然所有用户可用，弹窗 = 专属倍率管理）：
-  //   空搜索时默认列表 = 预填充已配置用户 ∪ 当前勾选（搜索新增的也保留），不拉全量用户列表；
-  //   只有搜索才显示用户列表（勾选 = 新增专属倍率配置）。
   const assignIsPublic = assignTarget?.Visibility === 'public'
-  const assignDefaultIds = assignIsPublic
-    ? Array.from(new Set([...assignPrefillUids, ...assignChecked])).sort((a, b) => a - b)
-    : []
-  // public 默认列表的邮箱尽力解析：预填充响应只有 uid（读端点不返回邮箱），
+  // 空搜索时默认列表 = 预填充的已授予/已配置用户 ∪ 当前勾选（搜索新增的也保留）：
+  // public = 已配置专属倍率的用户；private = 已授予权限的用户。不拉全量用户列表，
+  // 只有搜索才显示用户列表（勾选 = 新增）。
+  const assignDefaultIds = Array.from(new Set([...assignPrefillUids, ...assignChecked])).sort((a, b) => a - b)
+  // 默认列表的邮箱尽力解析：预填充响应只有 uid（读端点不返回邮箱），
   // 用全量用户查询按 id 匹配（accounts 弹窗 listGroups(100) 同款先例）；未命中回退 #uid。
-  const assignPublicUsers = useQuery({
-    queryKey: ['users', 'assign-public'],
+  const assignUsersLookup = useQuery({
+    queryKey: ['users', 'assign-lookup'],
     queryFn: () => api.listUsers({ limit: 100 }),
-    enabled: assignIsPublic,
+    enabled: !!assignTarget && assignPrefillUids.length > 0,
   })
-  const assignPublicEmail = useMemo(() => {
+  const assignEmailMap = useMemo(() => {
     const m = new Map<number, string>()
-    for (const u of assignPublicUsers.data?.rows ?? []) m.set(u.ID!, u.Email ?? '')
+    for (const u of assignUsersLookup.data?.rows ?? []) m.set(u.ID!, u.Email ?? '')
     return m
-  }, [assignPublicUsers.data])
+  }, [assignUsersLookup.data])
   const assignUsers = useQuery({
     queryKey: ['users', 'assign', { limit: assignLimit, offset: assignOffset, email: assignQuery }],
     queryFn: () => api.listUsers({ limit: assignLimit, offset: assignOffset, email: assignQuery || undefined }),
-    // public 空搜索时不显示用户列表，跳过无谓的全量拉取（输入搜索词后自动启用）
-    enabled: !!assignTarget && !(assignIsPublic && assignQuery === ''),
+    // 空搜索时不显示用户列表（默认列表用预填充），跳过无谓的全量拉取（输入搜索词后自动启用）
+    enabled: !!assignTarget && assignQuery !== '',
   })
   const assignRows = assignUsers.data?.rows ?? []
   const assignTotal = assignUsers.data?.total ?? 0
@@ -695,18 +693,20 @@ export default function Groups() {
                 </Button>
               </div>
             )}
-            {assignIsPublic && assignQuery === '' ? (
-              /* public 默认列表：只显示已配置专属倍率的用户（预填充 ∪ 搜索新增勾选）；
-                 取消勾选 = 移除配置（行保留显示未勾选态，提交后消失）；新增只能走搜索 */
+            {assignQuery === '' ? (
+              /* 空搜索默认列表：只显示预填充的已授予/已配置用户（∪ 搜索新增勾选）；
+                 取消勾选 = 移除（行保留显示未勾选态，提交后消失）；新增只能走搜索 */
               <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
                 {assignDefaultIds.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">{t('groups.assignPublicSearchHint')}</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    {t(assignIsPublic ? 'groups.assignPublicSearchHint' : 'groups.assignPrivateSearchHint')}
+                  </p>
                 ) : (
                   assignDefaultIds.map(uid => (
                     <AssignUserRow
                       key={uid}
                       uid={uid}
-                      label={assignPublicEmail.get(uid) ?? `#${uid}`}
+                      label={assignEmailMap.get(uid) ?? `#${uid}`}
                       checked={assignChecked.includes(uid)}
                       row={assignMult[uid]}
                       onToggle={toggleAssignUser}

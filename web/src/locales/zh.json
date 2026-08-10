@@ -305,7 +305,8 @@
     "assignConfiguredCount": "已配置 {{count}} 个用户的专属倍率",
     "assignPublicSearchHint": "暂无已配置用户，通过搜索添加",
     "assignPublicSuccess": "倍率配置已保存",
-    "assignConfiguredClearedDesc": "已清除全部用户的专属倍率配置"
+    "assignConfiguredClearedDesc": "已清除全部用户的专属倍率配置",
+    "assignPrivateSearchHint": "暂无已授予用户，通过搜索添加"
   },
   "logs": {
     "title": "日志",
