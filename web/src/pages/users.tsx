@@ -214,6 +214,10 @@ export default function Users() {
     enabled: !!groupsTarget,
   })
   const allGroups = groupsAll.data?.rows ?? []
+  // 公开组天然属于所有用户（无授予概念）：固定勾选、不进提交 body、无专属倍率。
+  const publicGroupIds = new Set(allGroups.filter(g => g.Visibility === 'public').map(g => g.ID!))
+  // 授予计数仅统计私有组勾选（公开组不计）。
+  const grantedCount = groupsChecked.filter(id => !publicGroupIds.has(id)).length
   // 回显该用户的授予：后端读端点可能尚未实现（404）→ retry:false 快速降级，
   // 空预填充 + toast，弹窗照常可用（不崩溃）。
   const userGroupsEcho = useQuery({
@@ -261,7 +265,7 @@ export default function Users() {
   // 勾选且显式清除 → null（回退组倍率）。未列出组沿用当前值 ✓（契约 PUT 语义）。
   const saveUserGroups = useMutation({
     mutationFn: () => {
-      const body: UserGroupsBody = { group_ids: groupsChecked }
+      const body: UserGroupsBody = { group_ids: groupsChecked.filter(id => !publicGroupIds.has(id)) }
       const muls: Record<string, number | null> = {}
       for (const gid of groupsChecked) {
         const row = groupsMult[gid]
@@ -477,7 +481,7 @@ export default function Users() {
           <DialogHeader>
             <DialogTitle>{t('users.groups.title', { name: groupsTarget?.Email })}</DialogTitle>
             <DialogDescription>{t('users.groups.desc')}</DialogDescription>
-            <p className="text-sm font-medium">{t('users.groups.count', { count: groupsChecked.length })}</p>
+            <p className="text-sm font-medium">{t('users.groups.count', { count: grantedCount })}</p>
             {groupsEchoLoading && <p className="text-xs text-muted-foreground">{t('users.groups.echoLoading')}</p>}
             <p className="text-xs text-muted-foreground">{t('users.groups.multiplierHint')}</p>
           </DialogHeader>
@@ -493,17 +497,18 @@ export default function Users() {
             ) : (
               <div className={cn('max-h-72 space-y-1.5 overflow-y-auto pr-1', groupsEchoLoading && 'pointer-events-none opacity-50')}>
                 {allGroups.map(g => {
+                  const isPublic = g.Visibility === 'public'
                   const checked = groupsChecked.includes(g.ID!)
                   const row = groupsMult[g.ID!]
                   return (
                     <div key={g.ID} className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
-                      <Checkbox checked={checked} onCheckedChange={c => toggleGroup(g.ID!, c === true)} />
+                      <Checkbox checked={checked || isPublic} disabled={isPublic} aria-label={g.Name} />
                       <span className="min-w-0 flex-1 truncate text-sm" title={g.Name}>{g.Name}</span>
                       <GroupVisibilityDot visibility={g.Visibility} />
                       <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title={t('groups.table.priceMultiplier')}>
                         {formatMultiplier(g.PriceMultiplier, t)}
                       </span>
-                      {checked && (
+                      {checked && !isPublic && (
                         <>
                           <Input
                             type="number"
