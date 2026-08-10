@@ -51,6 +51,11 @@
     "abort": "Aborted",
     "billing": "Billing error"
   },
+  "error403": {
+    "title": "Access Denied",
+    "desc": "Your account does not have permission to access the admin console",
+    "backUser": "Back to User Center"
+  },
   "home": {
     "title": "Key Features",
     "subtitle": "One gateway for multiple LLM APIs — billed per model, measured per request",

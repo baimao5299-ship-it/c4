@@ -14,6 +14,7 @@ import UserKeys from '@/pages/user/keys'
 import UserLogs from '@/pages/user/logs'
 import UserStats from '@/pages/user/stats'
 import UserRedemptions from '@/pages/user/redemptions'
+import Forbidden from '@/pages/forbidden'
 import UserLayout from '@/components/user-layout'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
@@ -66,11 +67,12 @@ const router = createBrowserRouter([
   },
 ])
 
-// 管理端路由守卫：本地 role 必须为 platform_admin 才放行 /app 子树。
+// 管理端路由守卫：未登录一律跳登录页；已登录但角色不足渲染 403 界面。
 // 安全默认：token 存在但 role 缺失（旧会话残留、localStorage 被手动清理）一律视为无权限。
 // 后端鉴权仍在（非 platform_admin JWT → 401 → handleAuthError 清 token 跳 /user/login），此守卫只是前端第一层拦截。
 function RequireAdmin({ children }: { children: ReactNode }) {
-  if (userAuth.getRole() !== 'platform_admin') return <Navigate to="/user/login" replace />
+  if (!userAuth.getToken()) return <Navigate to="/user/login" replace />
+  if (userAuth.getRole() !== 'platform_admin') return <Forbidden />
   return <>{children}</>
 }
 
