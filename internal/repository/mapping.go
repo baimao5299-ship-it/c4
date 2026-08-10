@@ -83,13 +83,21 @@ func toDomainTemplate(t *ent.Template) *domain.Template {
 	for k, v := range t.FormatModels {
 		fm[domain.RequestFormat(k)] = v
 	}
-	return &domain.Template{
+	d := &domain.Template{
 		ID: t.ID, Name: t.Name, BaseURL: t.BaseURL,
 		CredentialType: credential.Type(t.CredentialType),
 		SupportedFormats: formats, Models: t.Models,
 		FormatModels: fm, ModelMapping: t.ModelMapping,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt, DeletedAt: t.DeletedAt,
 	}
+	// StripImageTools 快照合并：仅调度器快照加载（LoadGroupsAccounts /
+	// LoadGroupAccounts 的 WithTemplate 嵌套 WithExt）会 eager-load ext 边；
+	// 其余路径（管理面模板 CRUD 等）无 ext 边 → nil → false。管理面 ext 配置
+	// 经 template_ext 端点单独读写，不合并进模板对象。
+	if len(t.Edges.Ext) > 0 && t.Edges.Ext[0].StripImageTools != nil {
+		d.StripImageTools = *t.Edges.Ext[0].StripImageTools
+	}
+	return d
 }
 
 func toDomainAccount(a *ent.Account) *domain.Account {

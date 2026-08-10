@@ -22,6 +22,15 @@ type responsesCaller struct{ p *Proxy }
 func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 
+	// 图像 tool 剥离（W4；模板级开关，三类型公共能力）：关闭 = 快照布尔读 +
+	// 分支零开销；开启 = stripImageTools 内部 "image" 子串预筛，无命中零解析
+	// 直转，命中才最小解析改写。剥离在客户端入站帧转发上游前执行（网关能力，
+	// 不依赖 SDK）——未来 resp-ws 帧流（response.create 帧）复用同一纯函数
+	// （strip_image.go）。
+	if sel.StripImageTools {
+		body = stripImageTools(body)
+	}
+
 	if stream {
 		// 客户端请求模型：流式无完整 params 解析（评审 I-2），gjson 顶层
 		// 提取（1 次分配，远低于旧的完整参数解析）。ResponsesModel 即 string 别名。

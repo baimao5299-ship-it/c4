@@ -134,6 +134,8 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 // 改为**全表扫描 + 内存 join**（任务决策：语义允许时改 JOIN）：
 //  1. `Account.Query().WithTemplate().All`——账号全表扫描；模板 IN 参数数受
 //     模板表实体数约束（管理面小表，O3 压测仅 6 个），非账号规模驱动。
+//     模板侧嵌套 WithExt（template_ext 1:1 边缘表）——W4 快照合并
+//     StripImageTools 用；ext 的 IN 参数数同为模板实体数约束（同一小表界）。
 //  2. `Group.Query().IDs`——组 id 全表扫描（零参数；为无账号组保留空条目——
 //     与旧 eager-load 语义一致，调度器 Select 区分"组不存在"与"组无账号"）。
 //  3. `SELECT account_id, group_id FROM account_groups`——成员关系全表扫描，
@@ -145,7 +147,10 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 // 组不会出现在结果中——见下方白名单守卫；旧 eager-load 同窗口行为。）
 func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
 	// 软删除：已删 account/group 不进调度器快照（成员关系白名单守卫同语义）。
-	accs, err := r.client.Account.Query().Where(account.DeletedAtIsNil()).WithTemplate().All(ctx)
+	// 模板侧嵌套 WithExt：快照合并 StripImageTools（W4；ext IN 参数数受模板
+	// 表实体数约束——同一小表界，见上方注释）。
+	accs, err := r.client.Account.Query().Where(account.DeletedAtIsNil()).
+		WithTemplate(func(q *ent.TemplateQuery) { q.WithExt() }).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load groups-accounts (accounts scan): %w", err)
 	}
@@ -239,7 +244,7 @@ func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*do
 	// 软删除：已删 account 不进调度器快照（与 LoadGroupsAccounts 同语义）。
 	accs, err := r.client.Account.Query().
 		Where(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID))).
-		WithTemplate().
+		WithTemplate(func(q *ent.TemplateQuery) { q.WithExt() }). // W4：ext 边快照合并 StripImageTools
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load group accounts (group %d): %w", groupID, err)

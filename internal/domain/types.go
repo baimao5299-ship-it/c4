@@ -156,6 +156,12 @@ type Template struct {
 	Models           []string                   // 可服务模型集合
 	FormatModels     map[RequestFormat][]string // 格式 → 该格式支持的模型列表；未配置 = 全部 Models
 	ModelMapping     map[string]string
+	// StripImageTools 模板级图像 tool 剥离开关（template_ext.strip_image_tools
+	// 快照合并，W4 消费；三类型 responses-special/codex-oauth/codex-pat 公共
+	// 能力）：true = response.create 帧出口剥离图像工具（tools 数组 +
+	// tool_choice 悬挂；input 内嵌 v1 图像内容不做）。热路径快照布尔读 + 分支
+	// 零开销；false = 未配置/关闭（nil 与 false 同语义，快照收敛为 bool）。
+	StripImageTools  bool
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	DeletedAt        *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
@@ -221,7 +227,7 @@ type Account struct {
 type TemplateExt struct {
 	TemplateID      int64
 	CredentialType  credential.Type
-	StripImageTools *bool // 三类型公共能力开关：模板级图像 tool 剥离（W3 消费）
+	StripImageTools *bool // 三类型公共能力开关：模板级图像 tool 剥离（W4 消费）
 }
 
 // AccountExt 账号类型化鉴权扩展（account_ext 子表，1:1）：credential_type
