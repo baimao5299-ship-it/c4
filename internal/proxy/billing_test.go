@@ -567,7 +567,7 @@ func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceL
 
 // TestProxyBillingInsufficientBalance402 余额预检（评审 I-1 无槽位问题）：
 // 快照 ≤0 或缺失 → 402 + 上游零命中 + ErrBilling 日志（billed 路由进 flusher，
-// 不进 rec.logCh），预检在 Acquire 前不占用并发槽。
+// 不进 Recorder 明细管道），预检在 Acquire 前不占用并发槽。
 func TestProxyBillingInsufficientBalance402(t *testing.T) {
 	cases := []struct {
 		name string
@@ -610,7 +610,7 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 			ri, ok := p.sched.Runtime(1)
 			require.True(t, ok)
 			require.Zero(t, ri.Concurrency, "预检在 Acquire 前：不占用并发槽")
-			require.Zero(t, p.rec.Pending(), "billed 日志不进 rec.logCh")
+			require.Zero(t, p.rec.Pending(), "billed 日志不进 Recorder 明细管道")
 
 			require.NoError(t, f.Close(context.Background()))
 			writer.mu.Lock()
@@ -624,7 +624,7 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 }
 
 // TestProxyBillingRoutesToFlusher shouldBill 路由切换（评审 C-4）：billed 日志
-// 只进 flusher（rec.logCh 零残留——每日志恰好一个写者），扣费按聚合 cost 落库
+// 只进 flusher（Recorder 明细管道零残留——每日志恰好一个写者），扣费按聚合 cost 落库
 // + 余额快照定向刷新。
 func TestProxyBillingRoutesToFlusher(t *testing.T) {
 	up := fakeOpenAI(t, "")
@@ -647,7 +647,7 @@ func TestProxyBillingRoutesToFlusher(t *testing.T) {
 	recw := httptest.NewRecorder()
 	p.HandleChat(recw, req)
 	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String())
-	require.Zero(t, p.rec.Pending(), "billed 日志不进 rec.logCh（每日志恰好一个写者）")
+	require.Zero(t, p.rec.Pending(), "billed 日志不进 Recorder 明细管道（每日志恰好一个写者）")
 
 	require.NoError(t, f.Close(context.Background())) // 未 Start：排空 + 全量 flush
 	writer.mu.Lock()
@@ -885,7 +885,7 @@ func TestProxyBillingFreeUserPasses(t *testing.T) {
 	recw := httptest.NewRecorder()
 	p.HandleChat(recw, req)
 	require.Equal(t, 200, recw.Code, "body=%s", recw.Body.String(), "免费用户余额 0 不 402")
-	require.Zero(t, p.rec.Pending(), "billed 日志不进 rec.logCh")
+	require.Zero(t, p.rec.Pending(), "billed 日志不进 Recorder 明细管道")
 
 	require.NoError(t, f.Close(context.Background()))
 	writer.mu.Lock()

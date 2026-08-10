@@ -52,6 +52,12 @@ const (
 // var（非 const）：测试注入小阈值，默认 1M 不变，后续可配置化。
 var pendingWaterline int64 = 1_000_000
 
+// maxLogFlushFailures 毒丸行止损阈值（评审 I-3）：单 shard 连续 flush 失败
+// ≥ 此数 → 显式丢弃该失败 chunk（Error 日志 + 首行 request_id），不再无限
+// 回灌卡死该 shard（旧实现：一行永久失败则 workers=1 时整管道吞吐归零）。
+// var（非 const）：测试注入小阈值。
+var maxLogFlushFailures = 5
+
 type Recorder struct {
 	cfg       UsageConfig
 	logs      LogInserter
@@ -65,10 +71,23 @@ type Recorder struct {
 	quotaUsed map[int64]int64 // key_id → 待回写 token 增量
 	pendingN  atomic.Int64    // pending 明细条数（水线观测 + Close Warn 单位；换批/回灌同步增减）
 	warned    atomic.Bool     // 水线越过告警边沿（回落复位，避免重复刷屏）
-	flushMu   sync.Mutex      // 单 flush 入口串行：ticker/Close 两处触发互斥；在途批次即其持有者
-	startOnce atomic.Bool
-	loopDone  chan struct{} // Start 的两个 loop 全部退出后关闭
-	closeOnce sync.Once
+	// flushMu 单 flush 入口串行：日志 flush（flushLogs）与统计 flush
+	// （flushStats）共用同一互斥锁——Close 的在途屏障需要（"是否有批次在途"
+	// 即"flushMu 是否被占"），这是单一互斥锁的代价（评审 I-1 耦合）：DB 故障
+	// 恢复后日志积压巨大时，单次 flushLogs 占锁可致额度回写/统计 Upsert 整体
+	// 排队、延迟同幅放大（额度持久化滞后，**非丢数据**）。ticker/Close 两处
+	// 触发互斥；在途批次即其持有者。
+	flushMu sync.Mutex
+	// failCounts 分片级连续 flush 失败计数（毒丸行止损，I-3）：flushLogs 失败
+	// 路径自增、成功推进复位；仅 flush 失败/成功路径写（Record 热路径零触碰）。
+	// 安全：flushLogs 由 flushMu 串行，单次调用内每分片恰一个 goroutine 写
+	// 自己的槽位，wg.Wait 后才进入下一轮 flush。
+	failCounts  []int
+	startOnce   atomic.Bool
+	loopDone    chan struct{} // Start 的两个 loop 全部退出后关闭
+	closeOnce   sync.Once
+	closed      atomic.Bool // Close 完成后置位（I-4）：后续 Record 走 Warn 一次路径
+	closeWarned atomic.Bool // closed 后首次 Record 的 Warn 边沿（只告警一次，防刷屏）
 	// O2 停机：ticker 路径批次的可取消父 ctx（常时 = Background 语义；Close
 	// 预算到期 Cancel → 在途落库快速失败回灌，不丢）。baseCtx 仅经 baseCancel
 	// 修改（Close 内单写者），loop/Close 并发读安全。
@@ -102,14 +121,15 @@ func New(cfg UsageConfig, logs LogInserter, stats StatUpserter, log *logx.Logger
 		cfg.BatchSize = 1
 	}
 	r := &Recorder{
-		cfg:       cfg,
-		logs:      logs,
-		stats:     stats,
-		log:       log,
-		workers:   workers,
-		counters:  make(map[statBucketKey]*statCounters),
-		quotaUsed: make(map[int64]int64),
-		loopDone:  make(chan struct{}),
+		cfg:        cfg,
+		logs:       logs,
+		stats:      stats,
+		log:        log,
+		workers:    workers,
+		failCounts: make([]int, workers),
+		counters:   make(map[statBucketKey]*statCounters),
+		quotaUsed:  make(map[int64]int64),
+		loopDone:   make(chan struct{}),
 	}
 	r.baseCtx, r.baseCancel = context.WithCancel(context.Background())
 	return r
@@ -144,8 +164,16 @@ func (r *Recorder) Start(ctx context.Context) error {
 // append，O(1) 摊还）——**永不阻塞**（无 channel：此前有界 channel cap 16384
 // 饱和阻塞发送是 off 路径 16.4k goroutine 卡 chan send 幽灵根因；HTTP 层过载
 // 保护由 max_inflight 兜底，pending 内存由水线 Warn 观测，崩溃丢 ≤1 flush
-// 窗口语义不变）。
+// 窗口语义不变）。热路径零额外开销：closed 检查为 1 次 atomic.Load（I-4）。
 func (r *Recorder) Record(l *domain.UsageLog) {
+	if r.closed.Load() { // Close 完成后无消费者——防御性缺口（评审 I-4）：
+		// Warn 恰好一次（不刷屏）；明细仍聚合入 pending **不丢**（驻留内存由
+		// 本 Warn 观测，worker 管理器顺序保证正常停机不触发）。
+		if r.closeWarned.CompareAndSwap(false, true) && r.log != nil {
+			r.log.Warn("usage record after close: detail retained in memory (no consumer)",
+				logx.String("request_id", l.RequestID))
+		}
+	}
 	r.Aggregate(l)
 	r.mu.Lock()
 	r.pending = append(r.pending, l)
@@ -275,10 +303,16 @@ func (r *Recorder) logWriterLoop(ctx context.Context) {
 // slice，flush 期间新日志进新 pending 零阻塞）→ 按 userID 分片（同 user 恒同
 // worker）→ N worker 并发逐 chunk InsertBatch（chunk = cfg.BatchSize；ent
 // CreateBulk 参数上限 PG 65535，500 × ~20 列安全）→ 失败 chunk 连同其后剩余
-// 一并回灌 pending（不丢，下次 flush 重试；DB 故障不锤击——本 shard 停止）。
-// 预算到期：未处理部分原样回灌（由 Close 决定截断放弃）。返回本批成功落库
-// 条数（Close 汇总作 Warn 诊断）。flushMu 串行单入口（ticker/Close 两处触发
-// 共用；在途批次即其持有者——Close 以获取 flushMu 等待在途批次）。
+// 一并回灌 pending（不丢，下次 flush 重试；DB 故障不锤击——本 shard 停止；
+// 连续失败 ≥ maxLogFlushFailures 显式止损丢弃，见下）。预算到期：未处理部分
+// 原样回灌（由 Close 决定截断放弃）。返回本批成功落库条数（Close 汇总作
+// Warn 诊断）。flushMu 串行单入口（ticker/Close 两处触发共用；在途批次即其
+// 持有者——Close 以获取 flushMu 等待在途批次）。**互斥耦合（评审 I-1）**：
+// flushLogs 与 flushStats 共用 flushMu（Close 在途屏障需要）——DB 故障积压
+// 时单次 flushLogs 占锁可致额度回写/统计 Upsert 延迟同幅放大（非丢数据）。
+// 毒丸行止损（评审 I-3）：单 chunk 连续失败 ≥ maxLogFlushFailures → Error
+// 日志（含首行 request_id）+ 显式丢弃该 chunk（不再无限回灌卡死本 shard；
+// 显式止损，非静默丢）。
 func (r *Recorder) flushLogs(ctx context.Context) int64 {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
@@ -311,12 +345,12 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 
 	var wg sync.WaitGroup
 	var drained atomic.Int64
-	for _, shard := range shards {
+	for si, shard := range shards {
 		if len(shard) == 0 {
 			continue
 		}
 		wg.Add(1)
-		go func(s []*domain.UsageLog) {
+		go func(si int, s []*domain.UsageLog) {
 			defer wg.Done()
 			for start := 0; start < len(s); start += r.cfg.BatchSize {
 				if ctx.Err() != nil { // 预算到期：剩余回灌
@@ -325,15 +359,33 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 				}
 				end := min(start+r.cfg.BatchSize, len(s))
 				if err := r.logs.InsertBatch(ctx, s[start:end]); err != nil {
+					r.failCounts[si]++ // 连续失败计数（仅失败路径写；热路径零触碰）
+					if r.failCounts[si] >= maxLogFlushFailures {
+						// 毒丸行止损（评审 I-3）：连续失败 ≥N 次 → 显式丢弃该
+						// chunk（Error + 首行 request_id），隔离后不再回灌——
+						// 避免单行永久失败（created_at 无分区/约束冲突）无限
+						// 卡死本 shard（旧实现 workers=1 时整管道吞吐归零）。
+						if r.log != nil {
+							r.log.Error("usage batch insert failed, dropping poison chunk",
+								logx.Error(err), logx.String("request_id", s[start].RequestID),
+								logx.Int("dropped_logs", end-start))
+						}
+						r.failCounts[si] = 0
+						r.refillLogs(s[end:]) // 毒丸 chunk 隔离丢弃；其后剩余回灌（不丢）
+						return
+					}
 					if r.log != nil {
 						r.log.Warn("usage batch insert failed", logx.Error(err))
 					}
 					r.refillLogs(s[start:]) // 失败 chunk + 其后剩余一并回灌（不丢）
 					return
 				}
+				if r.failCounts[si] > 0 {
+					r.failCounts[si] = 0 // 成功推进复位（仅对曾失败的 shard 写）
+				}
 				drained.Add(int64(end - start))
 			}
-		}(shard)
+		}(si, shard)
 	}
 	wg.Wait()
 	return drained.Load()
@@ -451,7 +503,8 @@ func (r *Recorder) flushStats(ctx context.Context) {
 	}
 	for _, b := range buckets {
 		k := bucketKeyOf(b)
-		shards[shardFor(k, r.workers)] = append(shards[shardFor(k, r.workers)], b)
+		sh := shardFor(k, r.workers) // I-6：局部变量，避免 shardFor 双次哈希
+		shards[sh] = append(shards[sh], b)
 	}
 
 	var wg sync.WaitGroup
@@ -568,6 +621,9 @@ func (r *Recorder) Close(ctx context.Context) error {
 		// 统计面收尾：flushStats 内部受 ctx 预算约束（到期 → 截断 Warn，崩溃
 		// 等价语义；正常完整刷）。预算已到期时此处即"统计截断"告警面。
 		r.flushStats(ctx)
+		// Close 完成后置位 closed（评审 I-4）：后续 Record 走 Warn 一次路径
+		//（明细仍聚合入 pending 不丢，驻留内存由 Warn 观测）。
+		r.closed.Store(true)
 	})
 	return nil
 }
