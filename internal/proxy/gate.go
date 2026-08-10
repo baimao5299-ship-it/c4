@@ -61,10 +61,13 @@ type gateSnapshot struct {
 // stats_flush_interval 批写一次，两次回写间复核读到的 DB 值恒定——若每次复核
 // 都重新分配 ceil(remaining/N)，复核循环会无限续额（N=2 压测实证超跑 14 倍）。
 // 复核认领因此扣除本地已消耗但 DB 未反映的部分（unreported，见 reclaim）：
-// 本实例总放行 ≤ 初始份额 + 滞后差（≤1 个 flush 窗口）。429 点即"本地已消耗
-// 满 quota 或 DB quota_used ≥ quota"二者先到者——旧"允许 ≈1 flush 窗口超跑"
-// 语义（N=1 评审 I-1 注记）随本修正收紧；扣费恒条件 UPDATE 精确的软门禁兜底
-// 不变（放行不产生错计费）。
+// 本实例总放行 ≤ quota - used(DB) + 基线差（≤1 个 flush 窗口）≤ quota（评审
+// I-1：与初始份额无关）。429 点 = remainingEff ≤ 0（剩余额扣本地未反映消耗后
+// 不足）。保守窗口（评审 I-2）：本实例上次复核后 flush 而基线未前移时，
+// unreported 会重复计入 DB 已回写量 → remainingEff 先于真尽触 0 → 提前 429，
+// 欠分配非超分配，下次 reload（R1 兜底 ≤60s）前移基线自愈。旧"允许 ≈1 flush
+// 窗口超跑"语义（N=1 评审 I-1 注记）随本修正收紧；扣费恒条件 UPDATE 精确的
+// 软门禁兜底不变（放行不产生错计费）。
 //
 // 单飞：同 key 并发复核只允许一个进 DB，其余按旧预算判定（复核窗口 ≈ 1 次 DB
 // 往返，额度边缘的瞬时 429 可接受）。所有字段原子——复核与 reload/upsert 重建
@@ -340,7 +343,10 @@ func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 		// stats_flush_interval 批写一次，两次回写间 used 恒定 → 若不加扣除，
 		// 每次复核重新分配 ceil(remaining/N) → 复核循环无限续额（超跑实证）。
 		// unreported = consumed - 上次复核基线（本地已消耗但 DB 未反映的量）；
-		// remainingEff 扣掉它 → 复核循环收敛（总放行 ≤ 初始份额 + 滞后差）。
+		// remainingEff 扣掉它 → 复核循环收敛（评审 I-1）：每实例独立收敛
+		// ≤ quota - used(DB) + 基线差（与初始份额无关）；多实例 + DB 恒滞后
+		// 病理形态总量有界 ≈2Q - U（生产 flush 推进 U，总量 ≈ Q + N×flush
+		// 窗口滞后）。
 		unreported := q.consumed.Load() - q.quotaUsedAtReclaim.Load()
 		if unreported < 0 {
 			unreported = 0 // 其他实例回写使 DB 值领先于本地 → 无未反映消耗

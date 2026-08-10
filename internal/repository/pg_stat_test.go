@@ -162,7 +162,9 @@ func TestPGStatUpsertConcurrentNoDeadlock(t *testing.T) {
 			if i%2 == 1 {
 				b = rev
 			}
-			errs[i] = repos.Stats.Upsert(ctx, b)
+			b2 := make([]*domain.StatBucket, len(b)) // 每 goroutine 独立副本：避免并发排序同一数组（评审 M-1）
+			copy(b2, b)
+			errs[i] = repos.Stats.Upsert(ctx, b2)
 		}(i)
 	}
 	close(start)
