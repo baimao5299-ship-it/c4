@@ -28,7 +28,6 @@ import type { components } from '@/lib/api/schema'
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
 type GroupAssignmentsBody = components['schemas']['GroupAssignmentsBody']
-type GroupAssignmentsResponse = components['schemas']['GroupAssignmentsResponse']
 
 // 授予弹窗行内专属倍率态：mult = 输入框文本（'' = 未填）；cleared = 用户显式点过
 // 「清除为未设置」（提交 null）；勾选留空且未清除 = 省略键（沿用当前值）。
@@ -148,16 +147,20 @@ export default function Groups() {
     batchRename.mutate({ ids: selected, name: batchRenameValue.trim() })
   }
 
-  // —— 授予用户（替换语义：勾选 = 授予，未勾选 = 撤销；无 GET 回显，重开默认空）——
+  // —— 授予用户（替换语义：勾选 = 授予，未勾选 = 撤销；打开时并行预填充当前授予）——
   const [assignTarget, setAssignTarget] = useState<Group | null>(null)
   const [assignChecked, setAssignChecked] = useState<number[]>([])
   const [assignMult, setAssignMult] = useState<Record<number, AssignRowMult>>({})
   const [assignQuery, setAssignQuery] = useState('')
   const [assignOffset, setAssignOffset] = useState(0)
   const [assignLimit, setAssignLimit] = useState(20)
-  // 上次提交成功的响应按组本地保留（弹窗内提示「已保存的授予」；契约无 GET 端点）。
-  // 带 groupId：仅对同一组的重开显示，避免换组后残留上次他组的保存提示。
-  const [assignSaved, setAssignSaved] = useState<{ groupId: number; resp: GroupAssignmentsResponse } | null>(null)
+  // 预填充态：prefilled = 已成功回显当前授予；prefillFailed = 读端点不可用（空预填充 + toast，不阻塞弹窗）
+  const [assignPrefilled, setAssignPrefilled] = useState(false)
+  const [assignPrefillFailed, setAssignPrefillFailed] = useState(false)
+  // 批量倍率输入值（勾选 2+ 用户时显示批量行）
+  const [assignBatchMult, setAssignBatchMult] = useState('')
+  // 预填充请求代际：弹窗关闭/换组后丢弃过期响应，防止旧组数据串入新组
+  const assignFetchId = useRef(0)
 
   const openAssign = (g: Group) => {
     setAssignTarget(g)
@@ -165,7 +168,32 @@ export default function Groups() {
     setAssignMult({})
     setAssignQuery('')
     setAssignOffset(0)
+    setAssignPrefilled(false)
+    setAssignPrefillFailed(false)
+    setAssignBatchMult('')
     assign.reset() // 清掉上次提交失败的就地错误，换组重开不残留
+    // 预填充：并行读当前授予 → 勾选态 = 已授予 user_ids，倍率输入框初值 = multipliers 正常值。
+    // 读端点不可用（后端未实现 404/网络）→ 优雅降级：空预填充 + toast，弹窗正常打开。
+    const gid = g.ID!
+    const fetchId = ++assignFetchId.current
+    api.getGroupAssignments(gid)
+      .then(resp => {
+        if (assignFetchId.current !== fetchId) return
+        const muls: Record<number, AssignRowMult> = {}
+        for (const [uid, m] of Object.entries(resp.multipliers ?? {})) {
+          const id = Number(uid)
+          // 仅回显已授予用户的数值倍率；null = 未设置 → 留空（省略键沿用当前值，语义不变）
+          if (typeof m === 'number' && resp.user_ids.includes(id)) muls[id] = { mult: String(m), cleared: false }
+        }
+        setAssignChecked(resp.user_ids)
+        setAssignMult(muls)
+        setAssignPrefilled(true)
+      })
+      .catch(() => {
+        if (assignFetchId.current !== fetchId) return
+        setAssignPrefillFailed(true)
+        toast.add({ title: t('groups.assignPrefillFailed'), type: 'error' })
+      })
   }
   const toggleAssignUser = (id: number, on: boolean) =>
     setAssignChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
@@ -198,7 +226,6 @@ export default function Groups() {
       return api.setGroupAssignments(assignTarget!.ID!, body)
     },
     onSuccess: (resp) => {
-      setAssignSaved({ groupId: assignTarget!.ID!, resp })
       setAssignTarget(null)
       // 空勾选提交 = 清空（契约语义）：toast 用清空文案，避免「已授予 0 个用户」歧义
       toast.add({
@@ -210,6 +237,28 @@ export default function Groups() {
   })
   const setRowMult = (uid: number, mult: string) => setAssignMult(m => ({ ...m, [uid]: { mult, cleared: false } }))
   const clearRowMult = (uid: number) => setAssignMult(m => ({ ...m, [uid]: { mult: '', cleared: true } }))
+  // 批量倍率：勾选 2+ 用户时整行统一设置/清除（对所有勾选用户生效，覆盖其行内值）
+  const applyBatchMult = () => {
+    const v = assignBatchMult.trim()
+    if (v === '' || assignChecked.length < 2) return
+    const n = Number(v)
+    if (!Number.isFinite(n) || n < 0 || n > 10) {
+      toast.add({ title: t('groups.multiplierInvalid'), type: 'error' })
+      return
+    }
+    setAssignMult(m => {
+      const next = { ...m }
+      for (const uid of assignChecked) next[uid] = { mult: String(n), cleared: false }
+      return next
+    })
+  }
+  const clearBatchMult = () => {
+    setAssignMult(m => {
+      const next = { ...m }
+      for (const uid of assignChecked) next[uid] = { mult: '', cleared: true }
+      return next
+    })
+  }
 
   // —— 创建（表单：name + visibility；POST 不设倍率）——
   const [createOpen, setCreateOpen] = useState(false)
@@ -518,9 +567,16 @@ export default function Groups() {
             <DialogTitle>{t('groups.assignTitle', { name: assignTarget?.Name })}</DialogTitle>
             <DialogDescription>{t('groups.assignDesc')}</DialogDescription>
             <p className="text-xs text-muted-foreground">{t('groups.assignMultiplierHint')}</p>
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t('groups.assignEchoNote')}</p>
-            {assignSaved && assignSaved.groupId === assignTarget?.ID && assignSaved.resp.user_ids.length > 0 && (
-              <p className="text-xs text-muted-foreground">{t('groups.assignSavedNote', { count: assignSaved.resp.user_ids.length })}</p>
+            {assignPrefilled && assignChecked.length > 0 && (
+              <p className="text-xs text-muted-foreground">{t('groups.assignCount', { count: assignChecked.length })}</p>
+            )}
+            {/* 私有组：勾选 = 授予访问权（user_ids 全量替换天然含授权语义） */}
+            {assignTarget?.Visibility === 'private' && (
+              <p className="text-xs text-muted-foreground">{t('groups.assignPrivateHint')}</p>
+            )}
+            {/* 读端点不可用时才显示「无法回显」提示：正常路径已由预填充替代 */}
+            {assignPrefillFailed && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">{t('groups.assignEchoNote')}</p>
             )}
           </DialogHeader>
           <div className="space-y-3">
@@ -529,6 +585,27 @@ export default function Groups() {
               placeholder={t('groups.assignSearchPlaceholder')}
               onChange={e => { setAssignQuery(e.target.value); setAssignOffset(0) }}
             />
+            {assignChecked.length >= 2 && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={assignBatchMult}
+                  placeholder={t('groups.assignBatchPlaceholder')}
+                  onChange={e => setAssignBatchMult(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') applyBatchMult() }}
+                  className="h-7 w-40 text-xs"
+                />
+                <Button variant="outline" size="sm" onClick={applyBatchMult} disabled={!assignBatchMult.trim()}>
+                  {t('groups.assignBatchApply')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={clearBatchMult}>
+                  <X /> {t('groups.assignBatchClear')}
+                </Button>
+              </div>
+            )}
             {assignUsers.isLoading ? (
               <div className="space-y-1.5">
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
