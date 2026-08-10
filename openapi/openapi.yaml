@@ -1551,7 +1551,7 @@ components:
       required: [ID, Code, Type, Value, MaxUses, UsedCount, Status, CreatedBy, CreatedAt, UpdatedAt]
       properties:
         ID: { type: integer, format: int64 }
-        Code: { type: string, description: XXXXXX-XXXXXX（生成后不可编辑，仅可失效） }
+        Code: { type: string, description: XXXX-XXXX-XXXX-XXXX（16 字符，生成后不可编辑，仅可失效） }
         Type: { $ref: '#/components/schemas/RedemptionType' }
         Value: { type: number, format: double, description: 面值：balance/temp_balance = USD（1 = $1）；concurrency = 并发数（整数）。存储毫分（API 边界换算） }
         Remark: { type: string, nullable: true }

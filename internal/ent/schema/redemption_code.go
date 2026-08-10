@@ -17,7 +17,7 @@ type RedemptionCode struct{ ent.Schema }
 func (RedemptionCode) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("id"),
-		field.String("code").Unique(), // XXXXXX-XXXXXX，12 字符，字符集 32（熵 ~60bit）
+		field.String("code").Unique(), // XXXX-XXXX-XXXX-XXXX，16 字符，字符集 32（熵 ~80bit）
 		field.Enum("type").Values("balance", "concurrency", "temp_balance"),
 		field.Int64("value"), // 最小单位（分/并发数）
 		field.String("remark").Optional().Nillable(),
