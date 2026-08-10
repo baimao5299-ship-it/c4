@@ -230,7 +230,23 @@
     "statusLabel": "Status",
     "maxLabel": "Max concurrency",
     "maxHint": "0 = unlimited",
-    "balanceLabel": "Balance (USD)"
+    "balanceLabel": "Balance (USD)",
+    "groups": {
+      "button": "Manage groups",
+      "title": "Manage groups · {{name}}",
+      "desc": "Check = grant, unchecked = revoke (full-list replacement).",
+      "readFailed": "Failed to load group grants",
+      "echoLoading": "Loading grants…",
+      "count": "{{count}} groups granted",
+      "multiplierHint": "Per-group multiplier applies to checked groups only: 1 = ×1, 0 = free, up to 10; blank = keep current, × clear = fall back to group multiplier.",
+      "empty": "No groups yet",
+      "saved": "Grants saved",
+      "savedDesc": "{{count}} groups granted",
+      "clearedDesc": "All group grants cleared",
+      "clearAll": "Clear all",
+      "clearAllDesc": "Clear all group grants for user \"{{name}}\"?",
+      "clearAllConfirm": "Confirm clear"
+    }
   },
   "groups": {
     "title": "Groups",
@@ -277,7 +293,13 @@
     "assignEmpty": "No users match",
     "assignSuccess": "Assignments saved",
     "assignSuccessDesc": "{{count}} users granted",
-    "assignClearedDesc": "All assignments cleared"
+    "assignClearedDesc": "All assignments cleared",
+    "assignPrefillFailed": "Failed to load current grants — opened empty",
+    "assignCount": "{{count}} users granted",
+    "assignPrivateHint": "Granted users get access to this group",
+    "assignBatchPlaceholder": "Set multiplier for all (0-10)",
+    "assignBatchApply": "Apply",
+    "assignBatchClear": "Clear all"
   },
   "logs": {
     "title": "Logs",

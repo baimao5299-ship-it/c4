@@ -230,7 +230,23 @@
     "statusLabel": "状态",
     "maxLabel": "最大并发",
     "maxHint": "0 = 不限",
-    "balanceLabel": "余额 (USD)"
+    "balanceLabel": "余额 (USD)",
+    "groups": {
+      "button": "分组管理",
+      "title": "分组管理 · {{name}}",
+      "desc": "勾选 = 授予，未勾选 = 撤销（完整列表替换）。",
+      "readFailed": "读取分组授予失败",
+      "echoLoading": "正在读取该用户的授予…",
+      "count": "已授予 {{count}} 组",
+      "multiplierHint": "专属倍率仅对勾选的组生效：1 = ×1，0 = 免费，上限 10；留空 = 沿用当前，点 × 清除 = 回退组倍率。",
+      "empty": "暂无分组",
+      "saved": "授予已保存",
+      "savedDesc": "已授予 {{count}} 组",
+      "clearedDesc": "已清空该用户的全部组授予",
+      "clearAll": "清空全部",
+      "clearAllDesc": "确认清空用户「{{name}}」的全部组授予？",
+      "clearAllConfirm": "确认清空"
+    }
   },
   "groups": {
     "title": "分组",
@@ -277,7 +293,13 @@
     "assignEmpty": "没有符合条件的用户",
     "assignSuccess": "授予已保存",
     "assignSuccessDesc": "已授予 {{count}} 个用户",
-    "assignClearedDesc": "已清空该组的全部授予"
+    "assignClearedDesc": "已清空该组的全部授予",
+    "assignPrefillFailed": "读取当前授予失败，已按空状态打开",
+    "assignCount": "已授予 {{count}} 个用户",
+    "assignPrivateHint": "授予后该用户可访问此组",
+    "assignBatchPlaceholder": "批量设置倍率（0-10）",
+    "assignBatchApply": "应用",
+    "assignBatchClear": "批量清除"
   },
   "logs": {
     "title": "日志",
