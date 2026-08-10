@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, LogOut, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { userAuth } from '@/lib/auth'
 import { setLang, type AppLang } from '@/lib/i18n'
@@ -22,6 +22,15 @@ const nav = [
   { to: '/app/settings', key: 'nav.settings', icon: Settings },
 ]
 
+// 用户中心菜单组（图标与 user-layout.tsx 保持一致）
+const userNav = [
+  { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
+  { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
+  { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
+  { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
+  { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
+]
+
 const LANGS: { code: AppLang; label: string }[] = [
   { code: 'zh-CN', label: '中' },
   { code: 'en', label: 'EN' },
@@ -36,9 +45,16 @@ export default function Layout() {
     <div className="flex min-h-screen">
       <aside className="w-56 border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex flex-col">
         <div className="p-4 font-semibold text-lg">{t('common.appTitle')}</div>
-        <nav className="flex-1 space-y-1 p-2">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
           {nav.map(({ to, key, icon: Icon }) => (
             <NavLink key={to} to={to}
+              className={({ isActive }) => `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
+              <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
+            </NavLink>
+          ))}
+          <p className="px-3 pt-3 pb-1 text-xs font-medium text-sidebar-foreground/40">{t('user.nav.userSection')}</p>
+          {userNav.map(({ to, key, icon: Icon, end }) => (
+            <NavLink key={to} to={to} end={end}
               className={({ isActive }) => `group flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}>
               <Icon className="h-4 w-4 transition-transform duration-150 group-hover:scale-110" /> {t(key)}
             </NavLink>
