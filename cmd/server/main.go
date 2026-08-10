@@ -222,6 +222,10 @@ func main() {
 		UsageCapture:          cfg.Proxy.UsageCapture,
 		BillingCapture:        cfg.Billing.Enabled,
 	}, sched, credential.New(), rec, clients, auth, log, billHooks)
+	// 多实例集群 N 注入（#14 T3b）：gate 预算 ceil(剩余/N) + limit RPM ceil(rpm/N)。
+	// svc 构造后调用（svc.ClusterInstances 读 settings 快照）；settings NOTIFY
+	// 变更 N 后再次调用即触发预算即时重算（设计 §3.4）。
+	px.SetInstancesProvider(svc)
 	// litellm 价格同步 worker：启动异步拉取一次（不阻塞启动）+ price_sync_cron
 	// 定期循环；source_url/cron 每轮从 svc 的 settings 快照现读（变更下次循环
 	// 生效，无热加载通道）；同步成功后刷新 svc 价格快照（Phase 5 计费读零 DB）。
