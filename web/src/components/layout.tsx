@@ -9,17 +9,17 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { cn } from '@/lib/utils'
 
 const nav = [
-  { to: '/dashboard', key: 'nav.overview', icon: LayoutDashboard },
-  { to: '/templates', key: 'nav.templates', icon: Boxes },
-  { to: '/accounts', key: 'nav.accounts', icon: Users },
-  { to: '/users', key: 'nav.users', icon: UserCog },
-  { to: '/groups', key: 'nav.groups', icon: FolderOpen },
-  { to: '/logs', key: 'nav.logs', icon: FileText },
-  { to: '/stats', key: 'nav.stats', icon: BarChart3 },
-  { to: '/rules', key: 'nav.rules', icon: ScrollText },
-  { to: '/redemption-codes', key: 'nav.redemptions', icon: Ticket },
-  { to: '/pricing', key: 'nav.pricing', icon: Coins },
-  { to: '/settings', key: 'nav.settings', icon: Settings },
+  { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
+  { to: '/app/templates', key: 'nav.templates', icon: Boxes },
+  { to: '/app/accounts', key: 'nav.accounts', icon: Users },
+  { to: '/app/users', key: 'nav.users', icon: UserCog },
+  { to: '/app/groups', key: 'nav.groups', icon: FolderOpen },
+  { to: '/app/logs', key: 'nav.logs', icon: FileText },
+  { to: '/app/stats', key: 'nav.stats', icon: BarChart3 },
+  { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
+  { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
+  { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
+  { to: '/app/settings', key: 'nav.settings', icon: Settings },
 ]
 
 const LANGS: { code: AppLang; label: string }[] = [

@@ -52,9 +52,35 @@
     "billing": "计费失败"
   },
   "login": {
-    "emptyToken": "请输入 admin token",
-    "hint": "输入 admin token（config.toml 的 admin.token）",
-    "enter": "进入"
+    "subtitle": "管理员登录，管理账号、分组、价格与用量",
+    "email": "邮箱",
+    "password": "密码",
+    "enter": "进入",
+    "adminOnly": "该账号不是平台管理员，无权限访问管理台",
+    "userCenterLink": "用户中心登录",
+    "errorGeneric": "登录失败，请检查邮箱与密码后重试"
+  },
+  "home": {
+    "title": "核心能力",
+    "subtitle": "统一接入多家大模型 API，按模型计价、按用量统计",
+    "feature1": {
+      "title": "API 代理网关",
+      "desc": "兼容 OpenAI / Anthropic 请求格式，多厂商路由与负载均衡"
+    },
+    "feature2": {
+      "title": "多模型定价",
+      "desc": "自动同步官方价格表，按模型精细计费，支持多档位策略"
+    },
+    "feature3": {
+      "title": "用量统计",
+      "desc": "请求、Token 与延迟可视化，实时掌握网关流量"
+    },
+    "feature4": {
+      "title": "兑换码",
+      "desc": "余额、并发上限与临时额度，一键生成发放"
+    },
+    "adminEntry": "管理台",
+    "userEntry": "用户中心"
   },
   "dashboard": {
     "title": "总览",

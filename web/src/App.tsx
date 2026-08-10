@@ -4,6 +4,7 @@ import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
 import { ThemeProvider } from '@/components/theme-provider'
 import { auth } from '@/lib/auth'
 import { Toaster } from '@/components/ui/toast'
+import Home from '@/pages/home'
 import Login from '@/pages/login'
 import Layout from '@/components/layout'
 import UserLogin from '@/pages/user/login'
@@ -29,6 +30,7 @@ import SettingsPage from '@/pages/settings'
 export const api = new ApiClient(auth.getToken)
 
 const router = createBrowserRouter([
+  { path: '/', element: <Home /> },
   { path: '/login', element: <Login /> },
   { path: '/user/login', element: <UserLogin /> },
   { path: '/user/register', element: <UserRegister /> },
@@ -44,10 +46,10 @@ const router = createBrowserRouter([
     ],
   },
   {
-    path: '/',
+    path: '/app',
     element: <Layout />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <Navigate to="/app/dashboard" replace /> },
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'templates', element: <Templates /> },
       { path: 'accounts', element: <Accounts /> },

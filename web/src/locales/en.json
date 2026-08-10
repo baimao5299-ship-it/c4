@@ -52,9 +52,35 @@
     "billing": "Billing error"
   },
   "login": {
-    "emptyToken": "Please enter the admin token",
-    "hint": "Enter the admin token (admin.token from config.toml)",
-    "enter": "Sign in"
+    "subtitle": "Admin sign-in to manage accounts, groups, pricing and usage",
+    "email": "Email",
+    "password": "Password",
+    "enter": "Sign in",
+    "adminOnly": "This account is not a platform admin and cannot access the admin console",
+    "userCenterLink": "User Center",
+    "errorGeneric": "Sign-in failed, please check your email and password"
+  },
+  "home": {
+    "title": "Key Features",
+    "subtitle": "One gateway for multiple LLM APIs — billed per model, measured per request",
+    "feature1": {
+      "title": "API Proxy Gateway",
+      "desc": "OpenAI/Anthropic-compatible API with multi-provider routing and load balancing"
+    },
+    "feature2": {
+      "title": "Flexible Pricing",
+      "desc": "Auto-synced official price lists with per-model billing and tier policies"
+    },
+    "feature3": {
+      "title": "Usage Analytics",
+      "desc": "Visualize requests, tokens and latency to monitor traffic in real time"
+    },
+    "feature4": {
+      "title": "Redemption Codes",
+      "desc": "Issue balance, concurrency and temp quota instantly with codes"
+    },
+    "adminEntry": "Admin Console",
+    "userEntry": "User Center"
   },
   "dashboard": {
     "title": "Overview",
