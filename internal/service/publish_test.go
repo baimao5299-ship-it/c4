@@ -275,6 +275,11 @@ func TestPublishMultipliersAndGroupDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, pr.last().Multipliers, "assignment 专属倍率 → Multipliers:true")
 
+	// 用户维度写（评审 M-1 补齐）：SetUserGroups → Multipliers:true 同组维度
+	_, _, err = svc.SetUserGroups(ctx, u.ID, []int64{g.ID}, nil)
+	require.NoError(t, err)
+	require.True(t, pr.last().Multipliers, "用户维度分组写 → Multipliers:true")
+
 	// 组删除：倍率 + 组内 key 清理（Auth.Delete）合并同一条 NOTIFY
 	before := pr.total()
 	require.NoError(t, svc.DeleteGroup(ctx, g.ID))
