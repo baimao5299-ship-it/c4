@@ -345,10 +345,10 @@ export default function Accounts() {
   const templateName = (a: AccountView) => a.Template?.Name ?? (a.TemplateID ? `#${a.TemplateID}` : '—')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{t('accounts.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('accounts.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('accounts.subtitle')}</p>
         </div>
         <Button onClick={openCreate} disabled={templates.length === 0} title={templates.length === 0 ? t('accounts.noTemplate') : undefined}>
@@ -459,7 +459,7 @@ export default function Accounts() {
                   <TableHead className="text-right">{t('accounts.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(a => (
                   <TableRow key={a.ID} data-state={selected.includes(a.ID!) ? 'selected' : undefined}>
                     <TableCell>

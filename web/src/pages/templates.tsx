@@ -478,10 +478,10 @@ export default function Templates() {
   const someChecked = rows.some(r => selected.includes(r.ID)) && !allChecked
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{tr('templates.title')}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{tr('templates.title')}</h1>
           <p className="text-sm text-muted-foreground">{tr('templates.subtitle')}</p>
         </div>
         <Button onClick={openCreate}><Plus /> {tr('templates.new')}</Button>
@@ -550,7 +550,7 @@ export default function Templates() {
                   <TableHead className="text-right">{tr('templates.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="[&_td]:py-3">
                 {rows.map(t => {
                   const models = commaList(t.Models)
                   const formats = Object.entries(t.FormatModels ?? {})
