@@ -402,8 +402,9 @@ func TestSniffResponsesCompleted(t *testing.T) {
 // TestRelayClassifyCloseFramePriority I-1 分类单元测试（确定性）：上游关闭帧
 // 与客户端循环并发写失败（net.ErrClosed）的槽位组合——正常关闭帧恒优先
 // （写失败只归因网络错误，无关闭帧时才判错）；客户端断开恒 abort；错误
-// 关闭帧/失联恒 ResultError。修复前写失败与关闭帧竞争 upErr 首写，先记录
-// 即误判（健康上游被冷却）。
+// 关闭帧/失联恒 ResultError。错误槽兜底优先级 upErr > pingErr > upClose
+// （错误关闭帧）。修复前写失败与关闭帧竞争 upErr 首写，先记录即误判
+// （健康上游被冷却）。
 func TestRelayClassifyCloseFramePriority(t *testing.T) {
 	normal := &websocket.CloseError{Code: websocket.StatusNormalClosure}
 	goingAway := &websocket.CloseError{Code: websocket.StatusGoingAway}
@@ -421,22 +422,26 @@ func TestRelayClassifyCloseFramePriority(t *testing.T) {
 		want      relayEnd
 		wantErr   error
 	}{
-		// I-1 竞态：正常关闭帧 + 并发写失败（写失败先记录）→ 关闭帧恒赢
-		{"I-1: close frame wins over concurrent write failure", normal, writeFail, nil, nil, relayEndUpstreamClosed, nil},
-		{"write failure alone is upstream error", nil, writeFail, nil, nil, relayEndUpstreamError, writeFail},
-		{"normal close alone", normal, nil, nil, nil, relayEndUpstreamClosed, nil},
-		{"going away is normal close", goingAway, nil, nil, nil, relayEndUpstreamClosed, nil},
-		{"error close frame is upstream error", errClose, nil, nil, nil, relayEndUpstreamError, errClose},
-		// 错误关闭帧 + 写失败 → 分类恒 ResultError（诊断错误取先记录的写失败）
-		{"error close frame with write failure", errClose, writeFail, nil, nil, relayEndUpstreamError, writeFail},
-		{"client abort", nil, nil, clientClose, nil, relayEndClientAbort, clientClose},
-		{"client abort with upstream write failure", nil, writeFail, clientClose, nil, relayEndClientAbort, clientClose},
-		// 客户端断开 + 上游正常关闭并发 → 关闭帧优先（上游已完成流，记录成功）
-		{"close frame wins over concurrent client abort", normal, nil, clientClose, nil, relayEndUpstreamClosed, nil},
-		{"client abort with error close frame", errClose, nil, clientClose, nil, relayEndClientAbort, clientClose},
-		{"ping timeout is upstream error", nil, nil, nil, timeout, relayEndUpstreamError, timeout},
-		{"ping fallback for write failure", nil, nil, nil, timeout, relayEndUpstreamError, timeout},
-		{"error frame fallback without network error", errClose, nil, nil, timeout, relayEndUpstreamError, timeout},
+		// --- 单槽独占（基线） ---
+		{"正常关闭帧独占 → 成功", normal, nil, nil, nil, relayEndUpstreamClosed, nil},
+		{"1001 离开帧独占 → 成功", goingAway, nil, nil, nil, relayEndUpstreamClosed, nil},
+		{"错误关闭帧独占 → 错误", errClose, nil, nil, nil, relayEndUpstreamError, errClose},
+		{"写失败独占 → 错误（归因网络）", nil, writeFail, nil, nil, relayEndUpstreamError, writeFail},
+		{"ping 超时独占 → 错误", nil, nil, nil, timeout, relayEndUpstreamError, timeout},
+		{"客户端断开独占 → abort", nil, nil, clientClose, nil, relayEndClientAbort, clientClose},
+
+		// --- 正常关闭帧优先于一切（I-1：并发写失败不得推翻关闭帧） ---
+		{"正常关闭帧 + 并发写失败 → 成功", normal, writeFail, nil, nil, relayEndUpstreamClosed, nil},
+
+		// --- 错误槽兜底优先级 upErr > pingErr > upClose ---
+		{"写失败优先于 ping 超时 → 错误（诊断取 upErr）", nil, writeFail, nil, timeout, relayEndUpstreamError, writeFail},
+		{"ping 超时优先于错误关闭帧 → 错误（诊断取 pingErr）", errClose, nil, nil, timeout, relayEndUpstreamError, timeout},
+		{"错误关闭帧 + 写失败 → 错误（诊断取 upErr）", errClose, writeFail, nil, nil, relayEndUpstreamError, writeFail},
+
+		// --- 客户端断开分支（仅正常关闭帧可超越） ---
+		{"客户端断开 + 写失败 → abort", nil, writeFail, clientClose, nil, relayEndClientAbort, clientClose},
+		{"客户端断开 + 错误关闭帧 → abort", errClose, nil, clientClose, nil, relayEndClientAbort, clientClose},
+		{"正常关闭帧 + 并发客户端断开 → 成功（流已完成）", normal, nil, clientClose, nil, relayEndUpstreamClosed, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
