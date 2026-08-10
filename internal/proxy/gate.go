@@ -56,6 +56,12 @@ type gateSnapshot struct {
 //	          DB 错 → Warn + 本请求放行 + 退避 10s（软门禁语义：放行不产生错计费，
 //	          扣费恒为条件 UPDATE 精确，见 billing flusher）
 //
+// 注意（N=1 边界，评审 I-1）：有复核能力时 429 点 = "DB quota_used ≥ quota"，
+// 而非"本地 consumed ≥ quota"——DB 滞后（usage.Recorder 回写 ≤ flush 窗口）
+// 期间允许 ≈1 flush 窗口超跑（§3.2 软门禁误差；扣费恒条件 UPDATE 精确，非错误
+// 计费）。"预算耗尽即 429"（与单实例现状同点拒绝）仅在无复核能力或快照值恰好
+// 等于 DB 时成立。
+//
 // 单飞：同 key 并发复核只允许一个进 DB，其余按旧预算判定（复核窗口 ≈ 1 次 DB
 // 往返，额度边缘的瞬时 429 可接受）。所有字段原子——复核与 reload/upsert 重建
 // 并发安全（命中旧快照的复核写旧对象，随快照换出作废，无跨快照污染）。
@@ -272,6 +278,15 @@ func (g *concurrencyGate) quotaExhausted(meta domain.KeyMeta) bool {
 // 单飞：CAS 抢到才进 DB；同 key 并发到达按当前 budget 判定（复核窗口 ≈ 1 次
 // DB 往返，额度边缘瞬时 429 可接受）。复核用独立超时 ctx（不用请求 ctx——
 // 请求中途断开不能悬挂 reclaiming 标志，否则该 key 永久 429 直到 reload）。
+//
+// 缺失 key（ErrNotFound，已删）与瞬时 DB 错同等对待（同上"Warn+放行"策略，
+// 评审 I-2）：删除传播存在快照残留期（≤60s，R1 兜底），其间该 key 退避涓流
+// 放行 ≤6 笔/60s，可接受；残留条目本身由 Reload 移除收敛。
+//
+// budget 更新为读-改-写（consumed.Load + Store），并发扣减可能落在两次原子
+// 操作之间 → 丢失（lost-update，评审 I-3）。方向保守：budget 偏低 → 更早触发
+// 下次复核 → 更早再认领，无超限风险。
+//
 // 返回 true = 本请求放行。
 func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 	if !q.reclaiming.CompareAndSwap(false, true) {

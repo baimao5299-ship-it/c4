@@ -204,8 +204,10 @@ func TestGateBudgetSplitByN(t *testing.T) {
 	require.True(t, g.quotaExhausted(meta))
 }
 
-// N=1 单实例等价回归：budget = 剩余额（精确），消耗到快照剩余即 429，
-// 与现状单实例语义同点拒绝。
+// N=1 单实例等价回归：无复核能力时 budget = 剩余额（精确），消耗到快照剩余即
+// 429，与现状单实例语义同点拒绝。注意（评审 I-1）：此"同点"仅在无复核能力或
+// 快照值恰好等于 DB 时成立；生产 N=1（真 reclaimer）见
+// TestGateN1ReclaimerLagOverrun——429 点由 DB quota_used 决定。
 func TestGateN1EquivalentToSingleInstance(t *testing.T) {
 	g := newConcurrencyGate(nil)
 	meta := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: 100, QuotaUsed: 10}
@@ -216,6 +218,39 @@ func TestGateN1EquivalentToSingleInstance(t *testing.T) {
 		g.deductQuota(1, 1)
 	}
 	require.True(t, g.quotaExhausted(meta), "消耗 90 后与单实例同点 429（无复核能力）")
+}
+
+// 评审 I-1：N=1 + 真 reclaimer，DB quota_used 滞后于本地消耗（模拟
+// usage.Recorder flush 滞后）。断言：429 点从"本地 consumed ≥ quota"变为
+// "DB quota_used ≥ quota"——滞后差窗口内的超跑 = 软门禁误差（§3.2），
+// 扣费恒条件 UPDATE 精确，非错误计费；DB 追上后复核确认真尽 → 429。
+func TestGateN1ReclaimerLagOverrun(t *testing.T) {
+	g := newConcurrencyGate(nil)
+	reader := &fakeQuotaReader{used: 0} // DB 滞后：本地已扣尚未回写
+	g.setReclaimer(reader)
+	meta := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: 100}
+	g.reload(map[string]domain.KeyMeta{"q": meta})
+	q := g.store.Load().quotas[1]
+	require.Equal(t, int64(100), q.budget.Load(), "N=1 初始 budget = quota（快照相等）")
+
+	for i := 0; i < 100; i++ {
+		g.deductQuota(1, 1)
+	}
+	// 本地预算耗尽 → 复核：DB 仍显示 used=0（flush 滞后）→ 剩余 100 → 续额放行
+	require.False(t, g.quotaExhausted(meta), "复核读到滞后 used=0 → 续额，非 429")
+	require.Equal(t, 1, reader.callCount())
+	require.Equal(t, int64(200), q.budget.Load(), "budget = consumed(100) + ceil(剩余 100/1)")
+
+	// 滞后窗口内继续消耗（超跑 = 滞后差，软门禁误差；扣费条件 UPDATE 兜底）
+	for i := 0; i < 99; i++ {
+		g.deductQuota(1, 1)
+		require.False(t, g.quotaExhausted(meta))
+	}
+	// DB 追上（used=250 ≥ quota）→ 下次复核确认真尽 → 429（滞后差收敛）
+	reader.set(250, nil)
+	g.deductQuota(1, 1) // consumed 200 ≥ budget 200 → 复核
+	require.True(t, g.quotaExhausted(meta), "429 点 = DB quota_used ≥ quota（非本地消耗）")
+	require.Equal(t, 2, reader.callCount())
 }
 
 // 复核成功续额：预算耗尽 → DB 复核（quota_used=30，剩余 70）→ budget 按
