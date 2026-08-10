@@ -60,20 +60,6 @@ func (_c *RuleCreate) SetThen(v map[string]interface{}) *RuleCreate {
 	return _c
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (_c *RuleCreate) SetCreatedAt(v time.Time) *RuleCreate {
-	_c.mutation.SetCreatedAt(v)
-	return _c
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (_c *RuleCreate) SetNillableCreatedAt(v *time.Time) *RuleCreate {
-	if v != nil {
-		_c.SetCreatedAt(*v)
-	}
-	return _c
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (_c *RuleCreate) SetUpdatedAt(v time.Time) *RuleCreate {
 	_c.mutation.SetUpdatedAt(v)
@@ -84,6 +70,34 @@ func (_c *RuleCreate) SetUpdatedAt(v time.Time) *RuleCreate {
 func (_c *RuleCreate) SetNillableUpdatedAt(v *time.Time) *RuleCreate {
 	if v != nil {
 		_c.SetUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_c *RuleCreate) SetDeletedAt(v time.Time) *RuleCreate {
+	_c.mutation.SetDeletedAt(v)
+	return _c
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_c *RuleCreate) SetNillableDeletedAt(v *time.Time) *RuleCreate {
+	if v != nil {
+		_c.SetDeletedAt(*v)
+	}
+	return _c
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (_c *RuleCreate) SetCreatedAt(v time.Time) *RuleCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *RuleCreate) SetNillableCreatedAt(v *time.Time) *RuleCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
 	}
 	return _c
 }
@@ -133,13 +147,13 @@ func (_c *RuleCreate) defaults() {
 		v := rule.DefaultEnabled
 		_c.mutation.SetEnabled(v)
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		v := rule.DefaultCreatedAt()
-		_c.mutation.SetCreatedAt(v)
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := rule.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		v := rule.DefaultCreatedAt()
+		_c.mutation.SetCreatedAt(v)
 	}
 }
 
@@ -160,11 +174,11 @@ func (_c *RuleCreate) check() error {
 	if _, ok := _c.mutation.Then(); !ok {
 		return &ValidationError{Name: "then", err: errors.New(`ent: missing required field "Rule.then"`)}
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Rule.created_at"`)}
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Rule.updated_at"`)}
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Rule.created_at"`)}
 	}
 	return nil
 }
@@ -219,13 +233,17 @@ func (_c *RuleCreate) createSpec() (*Rule, *sqlgraph.CreateSpec) {
 		_spec.SetField(rule.FieldThen, field.TypeJSON, value)
 		_node.Then = value
 	}
-	if value, ok := _c.mutation.CreatedAt(); ok {
-		_spec.SetField(rule.FieldCreatedAt, field.TypeTime, value)
-		_node.CreatedAt = value
-	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(rule.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DeletedAt(); ok {
+		_spec.SetField(rule.FieldDeletedAt, field.TypeTime, value)
+		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(rule.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = value
 	}
 	return _node, _spec
 }
@@ -345,18 +363,6 @@ func (u *RuleUpsert) UpdateThen() *RuleUpsert {
 	return u
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *RuleUpsert) SetCreatedAt(v time.Time) *RuleUpsert {
-	u.Set(rule.FieldCreatedAt, v)
-	return u
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *RuleUpsert) UpdateCreatedAt() *RuleUpsert {
-	u.SetExcluded(rule.FieldCreatedAt)
-	return u
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *RuleUpsert) SetUpdatedAt(v time.Time) *RuleUpsert {
 	u.Set(rule.FieldUpdatedAt, v)
@@ -366,6 +372,36 @@ func (u *RuleUpsert) SetUpdatedAt(v time.Time) *RuleUpsert {
 // UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
 func (u *RuleUpsert) UpdateUpdatedAt() *RuleUpsert {
 	u.SetExcluded(rule.FieldUpdatedAt)
+	return u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *RuleUpsert) SetDeletedAt(v time.Time) *RuleUpsert {
+	u.Set(rule.FieldDeletedAt, v)
+	return u
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *RuleUpsert) UpdateDeletedAt() *RuleUpsert {
+	u.SetExcluded(rule.FieldDeletedAt)
+	return u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *RuleUpsert) ClearDeletedAt() *RuleUpsert {
+	u.SetNull(rule.FieldDeletedAt)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *RuleUpsert) SetCreatedAt(v time.Time) *RuleUpsert {
+	u.Set(rule.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *RuleUpsert) UpdateCreatedAt() *RuleUpsert {
+	u.SetExcluded(rule.FieldCreatedAt)
 	return u
 }
 
@@ -494,20 +530,6 @@ func (u *RuleUpsertOne) UpdateThen() *RuleUpsertOne {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *RuleUpsertOne) SetCreatedAt(v time.Time) *RuleUpsertOne {
-	return u.Update(func(s *RuleUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *RuleUpsertOne) UpdateCreatedAt() *RuleUpsertOne {
-	return u.Update(func(s *RuleUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *RuleUpsertOne) SetUpdatedAt(v time.Time) *RuleUpsertOne {
 	return u.Update(func(s *RuleUpsert) {
@@ -519,6 +541,41 @@ func (u *RuleUpsertOne) SetUpdatedAt(v time.Time) *RuleUpsertOne {
 func (u *RuleUpsertOne) UpdateUpdatedAt() *RuleUpsertOne {
 	return u.Update(func(s *RuleUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *RuleUpsertOne) SetDeletedAt(v time.Time) *RuleUpsertOne {
+	return u.Update(func(s *RuleUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *RuleUpsertOne) UpdateDeletedAt() *RuleUpsertOne {
+	return u.Update(func(s *RuleUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *RuleUpsertOne) ClearDeletedAt() *RuleUpsertOne {
+	return u.Update(func(s *RuleUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *RuleUpsertOne) SetCreatedAt(v time.Time) *RuleUpsertOne {
+	return u.Update(func(s *RuleUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *RuleUpsertOne) UpdateCreatedAt() *RuleUpsertOne {
+	return u.Update(func(s *RuleUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 
@@ -813,20 +870,6 @@ func (u *RuleUpsertBulk) UpdateThen() *RuleUpsertBulk {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *RuleUpsertBulk) SetCreatedAt(v time.Time) *RuleUpsertBulk {
-	return u.Update(func(s *RuleUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *RuleUpsertBulk) UpdateCreatedAt() *RuleUpsertBulk {
-	return u.Update(func(s *RuleUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *RuleUpsertBulk) SetUpdatedAt(v time.Time) *RuleUpsertBulk {
 	return u.Update(func(s *RuleUpsert) {
@@ -838,6 +881,41 @@ func (u *RuleUpsertBulk) SetUpdatedAt(v time.Time) *RuleUpsertBulk {
 func (u *RuleUpsertBulk) UpdateUpdatedAt() *RuleUpsertBulk {
 	return u.Update(func(s *RuleUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *RuleUpsertBulk) SetDeletedAt(v time.Time) *RuleUpsertBulk {
+	return u.Update(func(s *RuleUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *RuleUpsertBulk) UpdateDeletedAt() *RuleUpsertBulk {
+	return u.Update(func(s *RuleUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *RuleUpsertBulk) ClearDeletedAt() *RuleUpsertBulk {
+	return u.Update(func(s *RuleUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *RuleUpsertBulk) SetCreatedAt(v time.Time) *RuleUpsertBulk {
+	return u.Update(func(s *RuleUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *RuleUpsertBulk) UpdateCreatedAt() *RuleUpsertBulk {
+	return u.Update(func(s *RuleUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 

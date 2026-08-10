@@ -37,15 +37,15 @@ func TestPGAddQuotaUsedBatch(t *testing.T) {
 	k1 := mk("k1", 10)
 	k2 := mk("k2", 20)
 	k3 := mk("k3", 30)   // 零增量：无回写价值，跳过（不落 SQL）
-	del := mk("del", 40) // 已删 key：回写无意义，静默跳过
+	del := mk("del", 40) // 已软删 key：行保留（审计），回写仍生效；缺失 key 才跳过
 	require.NoError(t, repos.DeleteKey(ctx, del.ID))
 
 	first, err := repos.GetKey(ctx, k1.ID)
 	require.NoError(t, err)
 	time.Sleep(5 * time.Millisecond) // updated_at 更新断言的时间差
 
-	// 多 key 单条 CASE 批量：k1+5、k2+7、k3+0（跳过）、已删 del+3（跳过）
-	require.NoError(t, repos.Keys.AddQuotaUsed(ctx, map[int64]int64{k1.ID: 5, k2.ID: 7, k3.ID: 0, del.ID: 3}))
+	// 多 key 单条 CASE 批量：k1+5、k2+7、k3+0（跳过）、软删 del+3（行在 → 回写）
+	require.NoError(t, repos.Keys.AddQuotaUsed(ctx, map[int64]int64{k1.ID: 5, k2.ID: 7, k3.ID: 0, del.ID: 3, 999999: 9}))
 
 	got1, err := repos.GetKey(ctx, k1.ID)
 	require.NoError(t, err)
@@ -60,8 +60,10 @@ func TestPGAddQuotaUsedBatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(30), got3.QuotaUsed, "零增量跳过（+0 不落 SQL）")
 
-	_, err = repos.GetKey(ctx, del.ID)
-	require.Error(t, err, "已删 key 不可见（静默跳过，无错误）")
+	gotDel, err := repos.GetKey(ctx, del.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(43), gotDel.QuotaUsed, "软删 key 行保留 → 回写生效（审计保留语义）")
+	require.NotNil(t, gotDel.DeletedAt, "软删 key 带 deleted_at")
 }
 
 // TestPGKeyQuotaUsed #14 T3b 预算复核点读锚：QuotaUsed 单列读返回 DB 权威值

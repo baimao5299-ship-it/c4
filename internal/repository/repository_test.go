@@ -177,20 +177,20 @@ func (tr *testRepos) expectDone(t *testing.T) {
 
 func templateRow() *pgxmock.Rows {
 	return pgxmock.NewRows([]string{"id", "name", "base_url", "credential_type", "supported_formats", "models",
-		"format_models", "model_mapping", "created_at", "updated_at"}).
+		"format_models", "model_mapping", "updated_at", "deleted_at", "created_at"}).
 		AddRow(int64(1), "openai-main", "https://api.openai.com/v1", "api_key",
 			[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
 			[]byte(`{"openai-responses":["o3"]}`),
 			[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+			time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
 func accountRow(status string) *pgxmock.Rows {
 	return pgxmock.NewRows([]string{"id", "name", "template_id", "upstream_key", "status",
 		"cooldown_until", "weight", "max_concurrency", "last_error", "last_used_at",
-		"created_at", "updated_at"}).
+		"updated_at", "deleted_at", "created_at"}).
 		AddRow(int64(2), "acc1", int64(1), "sk-x", status, time.Time{}, int64(80), int64(4), "", time.Time{},
-			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }
 
 func TestTemplateCRUD(t *testing.T) {
@@ -224,15 +224,15 @@ func TestTemplateCRUD(t *testing.T) {
 		WillReturnRows(templateRow())
 	tr.pool.ExpectCommit()
 
-	// Delete
-	tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
-		WithArgs(int64(1)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	// Delete（软删：UPDATE deleted_at/updated_at；GET 单个不过滤仍可查）
+	tr.pool.ExpectExec(q(`UPDATE "templates" SET`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
-	// Get after delete -> not found
+	// Get after delete -> 已软删行仍返回（GET 单个不过滤——审计可见）
 	tr.pool.ExpectQuery(q(`FROM "templates" WHERE`)).
 		WithArgs(int64(1)).
-		WillReturnError(pgx.ErrNoRows)
+		WillReturnRows(templateRow())
 
 	tpl, err := tr.repos.Templates.CreateTemplate(ctx(), &domain.Template{
 		Name:             "openai-main",
@@ -256,8 +256,9 @@ func TestTemplateCRUD(t *testing.T) {
 	_, err = tr.repos.Templates.UpdateTemplate(ctx(), got)
 	require.NoError(t, err)
 	require.NoError(t, tr.repos.Templates.DeleteTemplate(ctx(), tpl.ID))
-	_, err = tr.repos.Templates.GetTemplate(ctx(), tpl.ID)
-	require.Error(t, err, "expected not found after delete")
+	got2, err := tr.repos.Templates.GetTemplate(ctx(), tpl.ID)
+	require.NoError(t, err, "软删后 GET 单个仍可查（审计可见）")
+	require.NotNil(t, got2.DeletedAt, "软删行带 deleted_at")
 	tr.expectDone(t)
 }
 
@@ -405,15 +406,15 @@ func TestGetGroupMissing(t *testing.T) {
 	tr.expectDone(t)
 }
 
-// TestDeleteXxxMissing 单资源 Delete 缺 id：DeleteOneID.Exec 对 0 行删除返回
+// TestDeleteXxxMissing 单资源 Delete 缺 id：软删 UpdateOneID.Exec 对 0 行更新返回
 // *NotFoundError（ent 生成：n==0 → NotFoundError）→ errMissingID 映射为
 // repository.ErrNotFound（消息含缺失 id，与批量/Get 路径同格式）。与
 // TestGetXxxMissing 同基座（真实 ent client + pgxmock）。
 func TestDeleteTemplateMissing(t *testing.T) {
 	tr := newRepos(t)
-	tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
-		WithArgs(int64(999)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	tr.pool.ExpectExec(q(`UPDATE "templates" SET`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(999)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 	err := tr.repos.Templates.DeleteTemplate(ctx(), 999)
 	require.ErrorIs(t, err, repository.ErrNotFound)
 	require.Contains(t, err.Error(), "id=999 missing")
@@ -422,9 +423,9 @@ func TestDeleteTemplateMissing(t *testing.T) {
 
 func TestDeleteAccountMissing(t *testing.T) {
 	tr := newRepos(t)
-	tr.pool.ExpectExec(q(`DELETE FROM "accounts"`)).
-		WithArgs(int64(999)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	tr.pool.ExpectExec(q(`UPDATE "accounts" SET`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(999)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 	err := tr.repos.Accounts.DeleteAccount(ctx(), 999)
 	require.ErrorIs(t, err, repository.ErrNotFound)
 	require.Contains(t, err.Error(), "id=999 missing")
@@ -433,9 +434,9 @@ func TestDeleteAccountMissing(t *testing.T) {
 
 func TestDeleteGroupMissing(t *testing.T) {
 	tr := newRepos(t)
-	tr.pool.ExpectExec(q(`DELETE FROM "groups"`)).
-		WithArgs(int64(999)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+	tr.pool.ExpectExec(q(`UPDATE "groups" SET`)).
+		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(999)).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 	err := tr.repos.Groups.DeleteGroup(ctx(), 999)
 	require.ErrorIs(t, err, repository.ErrNotFound)
 	require.Contains(t, err.Error(), "id=999 missing")
@@ -457,15 +458,15 @@ func TestListTemplatesQuery(t *testing.T) {
 		tr.pool.ExpectQuery(listSQL(`"id" DESC LIMIT 20`)).
 			WithArgs("%main%").
 			WillReturnRows(pgxmock.NewRows([]string{"id", "name", "base_url", "supported_formats", "models",
-				"format_models", "model_mapping", "created_at", "updated_at"}).
+				"format_models", "model_mapping", "updated_at", "deleted_at", "created_at"}).
 				AddRow(int64(1), "openai-main", "https://api.openai.com/v1",
 					[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
 					[]byte(`{"openai-responses":["o3"]}`),
 					[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+					time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 				AddRow(int64(2), "openai-alt", "https://api.openai.com/v1",
 					[]byte(`["openai-chat"]`), []byte(`["gpt-4o-mini"]`), []byte(`{}`), []byte(`{}`),
-					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 		rows, total, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{
 			Name: "main",
@@ -484,15 +485,15 @@ func TestListTemplatesQuery(t *testing.T) {
 			WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
 		tr.pool.ExpectQuery(`(?i)FROM "templates".*ORDER BY "templates"\."name" ASC LIMIT 50 OFFSET 20`).
 			WillReturnRows(pgxmock.NewRows([]string{"id", "name", "base_url", "supported_formats", "models",
-				"format_models", "model_mapping", "created_at", "updated_at"}).
+				"format_models", "model_mapping", "updated_at", "deleted_at", "created_at"}).
 				AddRow(int64(2), "openai-alt", "https://api.openai.com/v1",
 					[]byte(`["openai-chat"]`), []byte(`["gpt-4o-mini"]`), []byte(`{}`), []byte(`{}`),
-					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
+					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 				AddRow(int64(1), "openai-main", "https://api.openai.com/v1",
 					[]byte(`["openai-chat","openai-responses"]`), []byte(`["gpt-4o"]`),
 					[]byte(`{"openai-responses":["o3"]}`),
 					[]byte(`{"gpt-4o":"gpt-4o-2026-01-01"}`), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-					time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+					time.Time{}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 		rows, total, err := tr.repos.Templates.ListTemplates(ctx(), repository.ListQuery{
 			Sort: "name", Order: "asc", Offset: 20, Limit: 50,
@@ -627,8 +628,8 @@ func TestLogsAndStats(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDeleteTemplatesBatchRollback(t *testing.T) {
-	// 场景 1：存在性检查缺失 id → ErrNotFound（含缺失 id），且无任何 DELETE 执行。
-	t.Run("missing id returns ErrNotFound without DELETE", func(t *testing.T) {
+	// 场景 1：存在性检查缺失 id → ErrNotFound（含缺失 id），且无任何 UPDATE 执行。
+	t.Run("missing id returns ErrNotFound without UPDATE", func(t *testing.T) {
 		tr := newRepos(t)
 		tr.pool.ExpectBegin()
 		// 存在性检查：SELECT id WHERE id IN (1,2,3) 只返回 2 行（id=3 缺失）
@@ -643,18 +644,18 @@ func TestDeleteTemplatesBatchRollback(t *testing.T) {
 		tr.expectDone(t)
 	})
 
-	// 场景 2：存在性通过 → 逐个 DELETE → 中途 DB 错误 → 整体回滚（无 Commit）。
+	// 场景 2：存在性通过 → 逐个软删 UPDATE → 中途 DB 错误 → 整体回滚（无 Commit）。
 	t.Run("midway db error rolls back without commit", func(t *testing.T) {
 		tr := newRepos(t)
 		tr.pool.ExpectBegin()
 		tr.pool.ExpectQuery(q(`SELECT "templates"."id" FROM "templates" WHERE`)).
 			WithArgs(int64(1), int64(2)).
 			WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
-		tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
-			WithArgs(int64(1)).
-			WillReturnResult(pgxmock.NewResult("DELETE", 1))
-		tr.pool.ExpectExec(q(`DELETE FROM "templates"`)).
-			WithArgs(int64(2)).
+		tr.pool.ExpectExec(q(`UPDATE "templates" SET`)).
+			WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(1)).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+		tr.pool.ExpectExec(q(`UPDATE "templates" SET`)).
+			WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(2)).
 			WillReturnError(errors.New("midway db error"))
 		tr.pool.ExpectRollback()
 

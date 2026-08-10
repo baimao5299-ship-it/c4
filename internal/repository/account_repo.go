@@ -32,7 +32,8 @@ func (r *AccountRepo) GetAccount(ctx context.Context, id int64) (*domain.Account
 }
 
 func (r *AccountRepo) ListAccounts(ctx context.Context, q ListQuery) ([]*domain.Account, int64, error) {
-	pred := r.client.Account.Query()
+	// 软删除：列表默认过滤已删（count 同谓词——pred 复用）；GET 单个不过滤。
+	pred := r.client.Account.Query().Where(account.DeletedAtIsNil())
 	if q.Name != "" {
 		pred = pred.Where(account.NameContainsFold(q.Name))
 	}
@@ -99,9 +100,16 @@ func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account) (*do
 	return toDomainAccount(row), nil
 }
 
+// DeleteAccount 软删除：deleted_at 置值（行保留留审计；调度器快照按
+// deleted_at IS NULL 过滤，GET 单个仍可查已删项）。bulk Update（无 re-SELECT）
+// 单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
-	if err := r.client.Account.DeleteOneID(id).Exec(ctx); err != nil {
-		return errMissingID(err, id)
+	n, err := r.client.Account.Update().Where(account.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 	}
 	return nil
 }

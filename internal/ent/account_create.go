@@ -126,20 +126,6 @@ func (_c *AccountCreate) SetNillableLastUsedAt(v *time.Time) *AccountCreate {
 	return _c
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (_c *AccountCreate) SetCreatedAt(v time.Time) *AccountCreate {
-	_c.mutation.SetCreatedAt(v)
-	return _c
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (_c *AccountCreate) SetNillableCreatedAt(v *time.Time) *AccountCreate {
-	if v != nil {
-		_c.SetCreatedAt(*v)
-	}
-	return _c
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (_c *AccountCreate) SetUpdatedAt(v time.Time) *AccountCreate {
 	_c.mutation.SetUpdatedAt(v)
@@ -150,6 +136,34 @@ func (_c *AccountCreate) SetUpdatedAt(v time.Time) *AccountCreate {
 func (_c *AccountCreate) SetNillableUpdatedAt(v *time.Time) *AccountCreate {
 	if v != nil {
 		_c.SetUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_c *AccountCreate) SetDeletedAt(v time.Time) *AccountCreate {
+	_c.mutation.SetDeletedAt(v)
+	return _c
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableDeletedAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetDeletedAt(*v)
+	}
+	return _c
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (_c *AccountCreate) SetCreatedAt(v time.Time) *AccountCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableCreatedAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
 	}
 	return _c
 }
@@ -227,13 +241,13 @@ func (_c *AccountCreate) defaults() {
 		v := account.DefaultMaxConcurrency
 		_c.mutation.SetMaxConcurrency(v)
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		v := account.DefaultCreatedAt()
-		_c.mutation.SetCreatedAt(v)
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := account.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		v := account.DefaultCreatedAt()
+		_c.mutation.SetCreatedAt(v)
 	}
 }
 
@@ -262,11 +276,11 @@ func (_c *AccountCreate) check() error {
 	if _, ok := _c.mutation.MaxConcurrency(); !ok {
 		return &ValidationError{Name: "max_concurrency", err: errors.New(`ent: missing required field "Account.max_concurrency"`)}
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Account.created_at"`)}
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Account.updated_at"`)}
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Account.created_at"`)}
 	}
 	if len(_c.mutation.TemplateIDs()) == 0 {
 		return &ValidationError{Name: "template", err: errors.New(`ent: missing required edge "Account.template"`)}
@@ -336,13 +350,17 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_spec.SetField(account.FieldLastUsedAt, field.TypeTime, value)
 		_node.LastUsedAt = &value
 	}
-	if value, ok := _c.mutation.CreatedAt(); ok {
-		_spec.SetField(account.FieldCreatedAt, field.TypeTime, value)
-		_node.CreatedAt = value
-	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(account.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DeletedAt(); ok {
+		_spec.SetField(account.FieldDeletedAt, field.TypeTime, value)
+		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(account.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = value
 	}
 	if nodes := _c.mutation.TemplateIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -567,18 +585,6 @@ func (u *AccountUpsert) ClearLastUsedAt() *AccountUpsert {
 	return u
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *AccountUpsert) SetCreatedAt(v time.Time) *AccountUpsert {
-	u.Set(account.FieldCreatedAt, v)
-	return u
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *AccountUpsert) UpdateCreatedAt() *AccountUpsert {
-	u.SetExcluded(account.FieldCreatedAt)
-	return u
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *AccountUpsert) SetUpdatedAt(v time.Time) *AccountUpsert {
 	u.Set(account.FieldUpdatedAt, v)
@@ -588,6 +594,36 @@ func (u *AccountUpsert) SetUpdatedAt(v time.Time) *AccountUpsert {
 // UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
 func (u *AccountUpsert) UpdateUpdatedAt() *AccountUpsert {
 	u.SetExcluded(account.FieldUpdatedAt)
+	return u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *AccountUpsert) SetDeletedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldDeletedAt, v)
+	return u
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateDeletedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldDeletedAt)
+	return u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *AccountUpsert) ClearDeletedAt() *AccountUpsert {
+	u.SetNull(account.FieldDeletedAt)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *AccountUpsert) SetCreatedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateCreatedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldCreatedAt)
 	return u
 }
 
@@ -800,20 +836,6 @@ func (u *AccountUpsertOne) ClearLastUsedAt() *AccountUpsertOne {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *AccountUpsertOne) SetCreatedAt(v time.Time) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *AccountUpsertOne) UpdateCreatedAt() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *AccountUpsertOne) SetUpdatedAt(v time.Time) *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
@@ -825,6 +847,41 @@ func (u *AccountUpsertOne) SetUpdatedAt(v time.Time) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateUpdatedAt() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *AccountUpsertOne) SetDeletedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateDeletedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *AccountUpsertOne) ClearDeletedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *AccountUpsertOne) SetCreatedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateCreatedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 
@@ -1203,20 +1260,6 @@ func (u *AccountUpsertBulk) ClearLastUsedAt() *AccountUpsertBulk {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *AccountUpsertBulk) SetCreatedAt(v time.Time) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *AccountUpsertBulk) UpdateCreatedAt() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *AccountUpsertBulk) SetUpdatedAt(v time.Time) *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
@@ -1228,6 +1271,41 @@ func (u *AccountUpsertBulk) SetUpdatedAt(v time.Time) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateUpdatedAt() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *AccountUpsertBulk) SetDeletedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateDeletedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *AccountUpsertBulk) ClearDeletedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *AccountUpsertBulk) SetCreatedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateCreatedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 

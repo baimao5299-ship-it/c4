@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -63,9 +64,10 @@ func (r *KeyRepo) QuotaUsed(ctx context.Context, id int64) (int64, error) {
 	return int64(v), nil
 }
 
-// GetKeyByHash 按 hash 取 key；未找到返回 (nil, nil)。
+// GetKeyByHash 按 hash 取 key（鉴权路径：已软删 key 按未找到处理——
+// deleted_at IS NULL 过滤 → 返回 (nil, nil) → 鉴权拒绝）；未找到返回 (nil, nil)。
 func (r *KeyRepo) GetKeyByHash(ctx context.Context, hash string) (*domain.Key, error) {
-	row, err := r.client.Key.Query().Where(key.KeyHashEQ(hash)).Only(ctx)
+	row, err := r.client.Key.Query().Where(key.KeyHashEQ(hash), key.DeletedAtIsNil()).Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, nil
@@ -76,7 +78,8 @@ func (r *KeyRepo) GetKeyByHash(ctx context.Context, hash string) (*domain.Key, e
 }
 
 func (r *KeyRepo) ListKeysByUser(ctx context.Context, userID int64, q ListQuery) ([]*domain.Key, int64, error) {
-	pred := r.client.Key.Query().Where(key.UserIDEQ(userID))
+	// 软删除：列表默认过滤已删（count 同谓词——pred 复用）；GET 单个不过滤。
+	pred := r.client.Key.Query().Where(key.UserIDEQ(userID), key.DeletedAtIsNil())
 	if q.Name != "" {
 		pred = pred.Where(key.NameContainsFold(q.Name))
 	}
@@ -132,18 +135,26 @@ func (r *KeyRepo) RotateKey(ctx context.Context, id int64, newHash, newPrefix st
 	return toDomainKey(row), nil
 }
 
+// DeleteKey 软删除：deleted_at 置值（行保留留审计；鉴权快照按 deleted_at
+// IS NULL 过滤 → 已删 key 鉴权拒绝，GET 单个仍可查已删项）。bulk Update
+//（无 re-SELECT）单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *KeyRepo) DeleteKey(ctx context.Context, id int64) error {
-	if err := r.client.Key.DeleteOneID(id).Exec(ctx); err != nil {
-		return errMissingID(err, id)
+	n, err := r.client.Key.Update().Where(key.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 	}
 	return nil
 }
 
-// DeleteKeysByGroup 删除组的全部 key，返回被删 hash 列表（Auth 增量清理用；
-// 组删除前置清理——key.group_id 外键约束）。
+// DeleteKeysByGroup 软删除组的全部 key（组删除级联——deleted_at 置值，行保留
+// 不破坏 key.group_id 外键），返回本次被软删的 hash 列表（Auth 增量清理用；
+// 已软删 key 过滤——其 hash 此前已从 Auth 移除，重复返回无意义）。
 func (r *KeyRepo) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]string, error) {
 	rows, err := r.client.Key.Query().
-		Where(key.GroupIDEQ(groupID)).
+		Where(key.GroupIDEQ(groupID), key.DeletedAtIsNil()).
 		Select(key.FieldKeyHash).
 		All(ctx)
 	if err != nil {
@@ -153,7 +164,7 @@ func (r *KeyRepo) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]strin
 	for _, row := range rows {
 		hashes = append(hashes, row.KeyHash)
 	}
-	if _, err := r.client.Key.Delete().Where(key.GroupIDEQ(groupID)).Exec(ctx); err != nil {
+	if _, err := r.client.Key.Update().Where(key.GroupIDEQ(groupID)).SetDeletedAt(time.Now()).Save(ctx); err != nil {
 		return nil, err
 	}
 	return hashes, nil
@@ -169,7 +180,8 @@ func (r *KeyRepo) DeleteKeysByGroup(ctx context.Context, groupID int64) ([]strin
 // （单块 key ≤8192，其 m2o 邻接 IN ≤8192 个用户 id——每 key 恰一个归属
 // 用户，邻接恒被块大小约束）。
 func (r *KeyRepo) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, error) {
-	keyIDs, err := r.client.Key.Query().Order(ent.Asc(key.FieldID)).IDs(ctx)
+	// 软删除：已删 key 不进鉴权快照（id 扫描即过滤；分块查询按 id 白名单继承）。
+	keyIDs, err := r.client.Key.Query().Where(key.DeletedAtIsNil()).Order(ent.Asc(key.FieldID)).IDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load keys (scan ids): %w", err)
 	}

@@ -773,6 +773,11 @@ export interface components {
             CreatedAt: string;
             /** Format: date-time */
             UpdatedAt: string;
+            /**
+             * Format: date-time
+             * @description 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项）
+             */
+            DeletedAt?: string | null;
         };
         AccountCreate: {
             name: string;
@@ -804,6 +809,11 @@ export interface components {
             CreatedAt?: string;
             /** Format: date-time */
             UpdatedAt?: string;
+            /**
+             * Format: date-time
+             * @description 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项）
+             */
+            DeletedAt?: string | null;
         };
         AccountView: components["schemas"]["Account"] & {
             /** Format: int64 */
@@ -886,6 +896,11 @@ export interface components {
             CreatedAt?: string;
             /** Format: date-time */
             UpdatedAt?: string;
+            /**
+             * Format: date-time
+             * @description 软删除时间戳；null = 存活（列表/鉴权过滤已删；GET 单个可查已删项）
+             */
+            DeletedAt?: string | null;
         };
         KeyCreate: {
             name: string;
@@ -1035,6 +1050,11 @@ export interface components {
             CreatedAt: string;
             /** Format: date-time */
             UpdatedAt: string;
+            /**
+             * Format: date-time
+             * @description 软删除时间戳；null = 存活（列表/规则引擎重载过滤已删；GET 单个可查已删项）
+             */
+            DeletedAt?: string | null;
         };
         RuleListResponse: {
             /** Format: int64 */
@@ -1055,6 +1075,11 @@ export interface components {
             CreatedAt?: string;
             /** Format: date-time */
             UpdatedAt?: string;
+            /**
+             * Format: date-time
+             * @description 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
+             */
+            DeletedAt?: string | null;
         };
         AccountGroupsResponse: {
             group_ids: number[];

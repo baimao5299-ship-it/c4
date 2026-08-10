@@ -22,7 +22,7 @@ func toDomainKey(k *ent.Key) *domain.Key {
 		KeyHash: k.KeyHash, KeyPrefix: k.KeyPrefix,
 		Status: domain.KeyStatus(k.Status), MaxConcurrency: k.MaxConcurrency,
 		Quota: k.Quota, QuotaUsed: k.QuotaUsed,
-		CreatedAt: k.CreatedAt, UpdatedAt: k.UpdatedAt,
+		CreatedAt: k.CreatedAt, UpdatedAt: k.UpdatedAt, DeletedAt: k.DeletedAt,
 	}
 }
 
@@ -30,7 +30,7 @@ func toDomainGroup(g *ent.Group) *domain.Group {
 	return &domain.Group{
 		ID: g.ID, Name: g.Name, Visibility: domain.GroupVisibility(g.Visibility),
 		PriceMultiplier: g.PriceMultiplier,
-		CreatedAt:       g.CreatedAt, UpdatedAt: g.UpdatedAt,
+		CreatedAt:       g.CreatedAt, UpdatedAt: g.UpdatedAt, DeletedAt: g.DeletedAt,
 	}
 }
 
@@ -63,7 +63,7 @@ func toDomainTemplate(t *ent.Template) *domain.Template {
 		CredentialType: credential.Type(t.CredentialType),
 		SupportedFormats: formats, Models: t.Models,
 		FormatModels: fm, ModelMapping: t.ModelMapping,
-		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
+		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt, DeletedAt: t.DeletedAt,
 	}
 }
 
@@ -78,7 +78,7 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 		Status: domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,
 		LastError: a.LastError, LastUsedAt: a.LastUsedAt,
-		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, DeletedAt: a.DeletedAt,
 	}
 }
 

@@ -19,8 +19,9 @@ var (
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 8},
 		{Name: "last_error", Type: field.TypeString, Nullable: true},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
 		{Name: "template_id", Type: field.TypeInt64},
 	}
 	// AccountsTable holds the schema information for the "accounts" table.
@@ -31,7 +32,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "accounts_templates_accounts",
-				Columns:    []*schema.Column{AccountsColumns[11]},
+				Columns:    []*schema.Column{AccountsColumns[12]},
 				RefColumns: []*schema.Column{TemplatesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -43,8 +44,9 @@ var (
 		{Name: "name", Type: field.TypeString, Unique: true},
 		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"public", "private"}, Default: "public"},
 		{Name: "price_multiplier", Type: field.TypeInt, Default: 10000},
-		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
 	}
 	// GroupsTable holds the schema information for the "groups" table.
 	GroupsTable = &schema.Table{
@@ -97,8 +99,9 @@ var (
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 0},
 		{Name: "quota", Type: field.TypeInt64, Default: 0},
 		{Name: "quota_used", Type: field.TypeInt64, Default: 0},
-		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
 		{Name: "group_id", Type: field.TypeInt64},
 		{Name: "user_id", Type: field.TypeInt64},
 	}
@@ -110,13 +113,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "keys_groups_keys",
-				Columns:    []*schema.Column{KeysColumns[10]},
+				Columns:    []*schema.Column{KeysColumns[11]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "keys_users_keys",
-				Columns:    []*schema.Column{KeysColumns[11]},
+				Columns:    []*schema.Column{KeysColumns[12]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -228,8 +231,9 @@ var (
 		{Name: "priority", Type: field.TypeInt, Unique: true},
 		{Name: "when", Type: field.TypeJSON},
 		{Name: "then", Type: field.TypeJSON},
-		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
 	}
 	// RulesTable holds the schema information for the "rules" table.
 	RulesTable = &schema.Table{
@@ -284,8 +288,9 @@ var (
 		{Name: "models", Type: field.TypeJSON},
 		{Name: "format_models", Type: field.TypeJSON},
 		{Name: "model_mapping", Type: field.TypeJSON},
-		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
 	}
 	// TemplatesTable holds the schema information for the "templates" table.
 	TemplatesTable = &schema.Table{

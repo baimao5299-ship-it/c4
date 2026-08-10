@@ -157,6 +157,7 @@ type Template struct {
 	ModelMapping     map[string]string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	DeletedAt        *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
 }
 
 // FormatsFor 模板支持的格式列表。
@@ -204,6 +205,7 @@ type Account struct {
 	LastUsedAt     *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
 	// GroupIDs 写路径（创建/更新）专用：nil = 不设置/不变；非 nil = 替换账号
 	// 全部分组（含空数组 = 清空）。读路径忽略——编辑回显走 GetAccountGroups
 	// 独立查询（toDomainAccount 不填充该字段）。
@@ -221,6 +223,7 @@ type Group struct {
 	PriceMultiplier int
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	DeletedAt       *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
 }
 
 // User 用户（顶层实体，无租户）。标识 = 邮箱；PasswordHash 为 bcrypt
@@ -255,6 +258,7 @@ type Key struct {
 	QuotaUsed      int64 // 已消耗（后扣；无额度 key 恒 0）
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      *time.Time // 软删除时间戳；nil = 存活（鉴权/列表过滤；GET 单个可查已删）
 }
 
 // HasQuota 是否有额度上限（quota > 0）。热路径门禁/扣减短路标志。
@@ -390,4 +394,5 @@ type Rule struct {
 	Then      RuleThen
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	DeletedAt *time.Time // 软删除时间戳；nil = 存活（列表/规则引擎重载过滤）
 }

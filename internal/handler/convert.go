@@ -32,6 +32,7 @@ func toAPITemplate(t *domain.Template) Template {
 		ModelMapping:     &t.ModelMapping,
 		CreatedAt:        t.CreatedAt,
 		UpdatedAt:        t.UpdatedAt,
+		DeletedAt:        t.DeletedAt, // 软删除时间戳（只读字段，入参不接收）
 	}
 }
 
@@ -57,6 +58,7 @@ func toAPIAccount(a *domain.Account) Account {
 		LastUsedAt:     a.LastUsedAt,
 		CreatedAt:      &a.CreatedAt,
 		UpdatedAt:      &a.UpdatedAt,
+		DeletedAt:      a.DeletedAt, // 软删除时间戳（只读字段，入参不接收）
 	}
 }
 
@@ -95,6 +97,7 @@ func toAPIGroup(g *domain.Group) Group {
 		PriceMultiplier: ptr(multToNormal(g.PriceMultiplier)),
 		CreatedAt:       &g.CreatedAt,
 		UpdatedAt:       &g.UpdatedAt,
+		DeletedAt:       g.DeletedAt, // 软删除时间戳（只读字段，入参不接收）
 	}
 }
 

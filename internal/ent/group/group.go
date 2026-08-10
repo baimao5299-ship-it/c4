@@ -21,10 +21,12 @@ const (
 	FieldVisibility = "visibility"
 	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
 	FieldPriceMultiplier = "price_multiplier"
-	// FieldCreatedAt holds the string denoting the created_at field in the database.
-	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
+	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
+	FieldDeletedAt = "deleted_at"
+	// FieldCreatedAt holds the string denoting the created_at field in the database.
+	FieldCreatedAt = "created_at"
 	// EdgeAccounts holds the string denoting the accounts edge name in mutations.
 	EdgeAccounts = "accounts"
 	// EdgeKeys holds the string denoting the keys edge name in mutations.
@@ -60,8 +62,9 @@ var Columns = []string{
 	FieldName,
 	FieldVisibility,
 	FieldPriceMultiplier,
-	FieldCreatedAt,
 	FieldUpdatedAt,
+	FieldDeletedAt,
+	FieldCreatedAt,
 }
 
 var (
@@ -83,12 +86,12 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultPriceMultiplier holds the default value on creation for the "price_multiplier" field.
 	DefaultPriceMultiplier int
-	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
-	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
+	DefaultCreatedAt func() time.Time
 )
 
 // Visibility defines the type for the "visibility" enum field.
@@ -140,14 +143,19 @@ func ByPriceMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPriceMultiplier, opts...).ToFunc()
 }
 
-// ByCreatedAt orders the results by the created_at field.
-func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCreatedAt, opts...).ToFunc()
-}
-
 // ByUpdatedAt orders the results by the updated_at field.
 func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
+}
+
+// ByDeletedAt orders the results by the deleted_at field.
+func ByDeletedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDeletedAt, opts...).ToFunc()
+}
+
+// ByCreatedAt orders the results by the created_at field.
+func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreatedAt, opts...).ToFunc()
 }
 
 // ByAccountsCount orders the results by accounts count.

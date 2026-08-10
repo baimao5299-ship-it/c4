@@ -24,8 +24,9 @@ func (Key) Fields() []ent.Field {
 		field.Int("max_concurrency").Default(0), // 0 = 不限
 		field.Int64("quota").Default(0),         // 累计 token 上限；0 = 不限（HasQuota 短路）
 		field.Int64("quota_used").Default(0),    // 已消耗（后扣；无额度 key 恒 0）
-		field.Time("created_at").Default(time.Now),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
+		field.Time("deleted_at").Optional().Nillable(), // 软删除时间戳（nil = 存活）；null 语义 = 未删除
+		field.Time("created_at").Default(time.Now),
 	}
 }
 

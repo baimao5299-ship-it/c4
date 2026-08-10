@@ -177,6 +177,32 @@ func (_u *KeyUpdate) AddQuotaUsed(v int64) *KeyUpdate {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *KeyUpdate) SetUpdatedAt(v time.Time) *KeyUpdate {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *KeyUpdate) SetDeletedAt(v time.Time) *KeyUpdate {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *KeyUpdate) SetNillableDeletedAt(v *time.Time) *KeyUpdate {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *KeyUpdate) ClearDeletedAt() *KeyUpdate {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *KeyUpdate) SetCreatedAt(v time.Time) *KeyUpdate {
 	_u.mutation.SetCreatedAt(v)
@@ -188,12 +214,6 @@ func (_u *KeyUpdate) SetNillableCreatedAt(v *time.Time) *KeyUpdate {
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *KeyUpdate) SetUpdatedAt(v time.Time) *KeyUpdate {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -318,11 +338,17 @@ func (_u *KeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedQuotaUsed(); ok {
 		_spec.AddField(key.FieldQuotaUsed, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(key.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(key.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(key.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(key.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(key.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -549,6 +575,32 @@ func (_u *KeyUpdateOne) AddQuotaUsed(v int64) *KeyUpdateOne {
 	return _u
 }
 
+// SetUpdatedAt sets the "updated_at" field.
+func (_u *KeyUpdateOne) SetUpdatedAt(v time.Time) *KeyUpdateOne {
+	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_u *KeyUpdateOne) SetDeletedAt(v time.Time) *KeyUpdateOne {
+	_u.mutation.SetDeletedAt(v)
+	return _u
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_u *KeyUpdateOne) SetNillableDeletedAt(v *time.Time) *KeyUpdateOne {
+	if v != nil {
+		_u.SetDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (_u *KeyUpdateOne) ClearDeletedAt() *KeyUpdateOne {
+	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_u *KeyUpdateOne) SetCreatedAt(v time.Time) *KeyUpdateOne {
 	_u.mutation.SetCreatedAt(v)
@@ -560,12 +612,6 @@ func (_u *KeyUpdateOne) SetNillableCreatedAt(v *time.Time) *KeyUpdateOne {
 	if v != nil {
 		_u.SetCreatedAt(*v)
 	}
-	return _u
-}
-
-// SetUpdatedAt sets the "updated_at" field.
-func (_u *KeyUpdateOne) SetUpdatedAt(v time.Time) *KeyUpdateOne {
-	_u.mutation.SetUpdatedAt(v)
 	return _u
 }
 
@@ -720,11 +766,17 @@ func (_u *KeyUpdateOne) sqlSave(ctx context.Context) (_node *Key, err error) {
 	if value, ok := _u.mutation.AddedQuotaUsed(); ok {
 		_spec.AddField(key.FieldQuotaUsed, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.CreatedAt(); ok {
-		_spec.SetField(key.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(key.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DeletedAt(); ok {
+		_spec.SetField(key.FieldDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.DeletedAtCleared() {
+		_spec.ClearField(key.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.CreatedAt(); ok {
+		_spec.SetField(key.FieldCreatedAt, field.TypeTime, value)
 	}
 	if _u.mutation.UserCleared() {
 		edge := &sqlgraph.EdgeSpec{

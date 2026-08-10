@@ -24,8 +24,9 @@ func (Account) Fields() []ent.Field {
 		field.Int("max_concurrency").Default(8),
 		field.String("last_error").Optional().Nillable(),
 		field.Time("last_used_at").Optional().Nillable(),
-		field.Time("created_at").Default(time.Now),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
+		field.Time("deleted_at").Optional().Nillable(), // 软删除时间戳（nil = 存活）；null 语义 = 未删除
+		field.Time("created_at").Default(time.Now),
 	}
 }
 

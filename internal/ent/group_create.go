@@ -59,20 +59,6 @@ func (_c *GroupCreate) SetNillablePriceMultiplier(v *int) *GroupCreate {
 	return _c
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (_c *GroupCreate) SetCreatedAt(v time.Time) *GroupCreate {
-	_c.mutation.SetCreatedAt(v)
-	return _c
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (_c *GroupCreate) SetNillableCreatedAt(v *time.Time) *GroupCreate {
-	if v != nil {
-		_c.SetCreatedAt(*v)
-	}
-	return _c
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (_c *GroupCreate) SetUpdatedAt(v time.Time) *GroupCreate {
 	_c.mutation.SetUpdatedAt(v)
@@ -83,6 +69,34 @@ func (_c *GroupCreate) SetUpdatedAt(v time.Time) *GroupCreate {
 func (_c *GroupCreate) SetNillableUpdatedAt(v *time.Time) *GroupCreate {
 	if v != nil {
 		_c.SetUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_c *GroupCreate) SetDeletedAt(v time.Time) *GroupCreate {
+	_c.mutation.SetDeletedAt(v)
+	return _c
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableDeletedAt(v *time.Time) *GroupCreate {
+	if v != nil {
+		_c.SetDeletedAt(*v)
+	}
+	return _c
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (_c *GroupCreate) SetCreatedAt(v time.Time) *GroupCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableCreatedAt(v *time.Time) *GroupCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
 	}
 	return _c
 }
@@ -181,13 +195,13 @@ func (_c *GroupCreate) defaults() {
 		v := group.DefaultPriceMultiplier
 		_c.mutation.SetPriceMultiplier(v)
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		v := group.DefaultCreatedAt()
-		_c.mutation.SetCreatedAt(v)
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := group.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		v := group.DefaultCreatedAt()
+		_c.mutation.SetCreatedAt(v)
 	}
 }
 
@@ -207,11 +221,11 @@ func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.PriceMultiplier(); !ok {
 		return &ValidationError{Name: "price_multiplier", err: errors.New(`ent: missing required field "Group.price_multiplier"`)}
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Group.created_at"`)}
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Group.updated_at"`)}
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Group.created_at"`)}
 	}
 	return nil
 }
@@ -258,13 +272,17 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
 		_node.PriceMultiplier = value
 	}
-	if value, ok := _c.mutation.CreatedAt(); ok {
-		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
-		_node.CreatedAt = value
-	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(group.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DeletedAt(); ok {
+		_spec.SetField(group.FieldDeletedAt, field.TypeTime, value)
+		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(group.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = value
 	}
 	if nodes := _c.mutation.AccountsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -408,18 +426,6 @@ func (u *GroupUpsert) AddPriceMultiplier(v int) *GroupUpsert {
 	return u
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *GroupUpsert) SetCreatedAt(v time.Time) *GroupUpsert {
-	u.Set(group.FieldCreatedAt, v)
-	return u
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *GroupUpsert) UpdateCreatedAt() *GroupUpsert {
-	u.SetExcluded(group.FieldCreatedAt)
-	return u
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *GroupUpsert) SetUpdatedAt(v time.Time) *GroupUpsert {
 	u.Set(group.FieldUpdatedAt, v)
@@ -429,6 +435,36 @@ func (u *GroupUpsert) SetUpdatedAt(v time.Time) *GroupUpsert {
 // UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateUpdatedAt() *GroupUpsert {
 	u.SetExcluded(group.FieldUpdatedAt)
+	return u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *GroupUpsert) SetDeletedAt(v time.Time) *GroupUpsert {
+	u.Set(group.FieldDeletedAt, v)
+	return u
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateDeletedAt() *GroupUpsert {
+	u.SetExcluded(group.FieldDeletedAt)
+	return u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *GroupUpsert) ClearDeletedAt() *GroupUpsert {
+	u.SetNull(group.FieldDeletedAt)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *GroupUpsert) SetCreatedAt(v time.Time) *GroupUpsert {
+	u.Set(group.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateCreatedAt() *GroupUpsert {
+	u.SetExcluded(group.FieldCreatedAt)
 	return u
 }
 
@@ -529,20 +565,6 @@ func (u *GroupUpsertOne) UpdatePriceMultiplier() *GroupUpsertOne {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *GroupUpsertOne) SetCreatedAt(v time.Time) *GroupUpsertOne {
-	return u.Update(func(s *GroupUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *GroupUpsertOne) UpdateCreatedAt() *GroupUpsertOne {
-	return u.Update(func(s *GroupUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *GroupUpsertOne) SetUpdatedAt(v time.Time) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -554,6 +576,41 @@ func (u *GroupUpsertOne) SetUpdatedAt(v time.Time) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateUpdatedAt() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *GroupUpsertOne) SetDeletedAt(v time.Time) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateDeletedAt() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *GroupUpsertOne) ClearDeletedAt() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *GroupUpsertOne) SetCreatedAt(v time.Time) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateCreatedAt() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 
@@ -820,20 +877,6 @@ func (u *GroupUpsertBulk) UpdatePriceMultiplier() *GroupUpsertBulk {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *GroupUpsertBulk) SetCreatedAt(v time.Time) *GroupUpsertBulk {
-	return u.Update(func(s *GroupUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *GroupUpsertBulk) UpdateCreatedAt() *GroupUpsertBulk {
-	return u.Update(func(s *GroupUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *GroupUpsertBulk) SetUpdatedAt(v time.Time) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -845,6 +888,41 @@ func (u *GroupUpsertBulk) SetUpdatedAt(v time.Time) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateUpdatedAt() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *GroupUpsertBulk) SetDeletedAt(v time.Time) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateDeletedAt() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *GroupUpsertBulk) ClearDeletedAt() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *GroupUpsertBulk) SetCreatedAt(v time.Time) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateCreatedAt() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 

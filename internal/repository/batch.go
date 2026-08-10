@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
@@ -47,7 +48,7 @@ type GroupPatch struct {
 	Visibility *domain.GroupVisibility
 }
 
-// --- 批量删除（事务，全成或全败） ---
+// --- 批量删除（软删：deleted_at 置值；事务，全成或全败） ---
 
 func (r *TemplateRepo) DeleteTemplatesBatch(ctx context.Context, ids []int64) error {
 	tx, err := r.client.Tx(ctx)
@@ -58,9 +59,15 @@ func (r *TemplateRepo) DeleteTemplatesBatch(ctx context.Context, ids []int64) er
 	if err := checkTemplateExist(ctx, tx.Template.Query, ids); err != nil {
 		return err
 	}
+	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id
+	//（与 errMissingID 同格式，语义同 DeleteOne 时代的 NotFound 映射）。
 	for _, id := range ids {
-		if err := tx.Template.DeleteOneID(id).Exec(ctx); err != nil {
-			return errMissingID(err, id)
+		n, err := tx.Template.Update().Where(template.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 		}
 	}
 	return tx.Commit()
@@ -75,9 +82,14 @@ func (r *AccountRepo) DeleteAccountsBatch(ctx context.Context, ids []int64) erro
 	if err := checkAccountExist(ctx, tx.Account.Query, ids); err != nil {
 		return err
 	}
+	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id。
 	for _, id := range ids {
-		if err := tx.Account.DeleteOneID(id).Exec(ctx); err != nil {
-			return errMissingID(err, id)
+		n, err := tx.Account.Update().Where(account.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 		}
 	}
 	return tx.Commit()
@@ -92,9 +104,14 @@ func (r *GroupRepo) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	if err := checkGroupExist(ctx, tx.Group.Query, ids); err != nil {
 		return err
 	}
+	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id。
 	for _, id := range ids {
-		if err := tx.Group.DeleteOneID(id).Exec(ctx); err != nil {
-			return errMissingID(err, id)
+		n, err := tx.Group.Update().Where(group.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 		}
 	}
 	return tx.Commit()

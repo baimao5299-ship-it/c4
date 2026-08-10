@@ -43,6 +43,7 @@ func toAPIGroup(g *domain.Group) Group {
 		PriceMultiplier: ptr(float64(g.PriceMultiplier) / 10000.0),
 		CreatedAt:       &g.CreatedAt,
 		UpdatedAt:       &g.UpdatedAt,
+		DeletedAt:       g.DeletedAt, // 软删除时间戳（只读字段；已删组不进可选列表）
 	}
 }
 
@@ -61,6 +62,7 @@ func toAPIKey(k *domain.Key) Key {
 		QuotaUsed:      &k.QuotaUsed,
 		CreatedAt:      &k.CreatedAt,
 		UpdatedAt:      &k.UpdatedAt,
+		DeletedAt:      k.DeletedAt, // 软删除时间戳（只读字段；已删 key 不进列表，GET 单个可查）
 	}
 }
 

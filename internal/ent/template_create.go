@@ -73,20 +73,6 @@ func (_c *TemplateCreate) SetModelMapping(v map[string]string) *TemplateCreate {
 	return _c
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (_c *TemplateCreate) SetCreatedAt(v time.Time) *TemplateCreate {
-	_c.mutation.SetCreatedAt(v)
-	return _c
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (_c *TemplateCreate) SetNillableCreatedAt(v *time.Time) *TemplateCreate {
-	if v != nil {
-		_c.SetCreatedAt(*v)
-	}
-	return _c
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (_c *TemplateCreate) SetUpdatedAt(v time.Time) *TemplateCreate {
 	_c.mutation.SetUpdatedAt(v)
@@ -97,6 +83,34 @@ func (_c *TemplateCreate) SetUpdatedAt(v time.Time) *TemplateCreate {
 func (_c *TemplateCreate) SetNillableUpdatedAt(v *time.Time) *TemplateCreate {
 	if v != nil {
 		_c.SetUpdatedAt(*v)
+	}
+	return _c
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (_c *TemplateCreate) SetDeletedAt(v time.Time) *TemplateCreate {
+	_c.mutation.SetDeletedAt(v)
+	return _c
+}
+
+// SetNillableDeletedAt sets the "deleted_at" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableDeletedAt(v *time.Time) *TemplateCreate {
+	if v != nil {
+		_c.SetDeletedAt(*v)
+	}
+	return _c
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (_c *TemplateCreate) SetCreatedAt(v time.Time) *TemplateCreate {
+	_c.mutation.SetCreatedAt(v)
+	return _c
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (_c *TemplateCreate) SetNillableCreatedAt(v *time.Time) *TemplateCreate {
+	if v != nil {
+		_c.SetCreatedAt(*v)
 	}
 	return _c
 }
@@ -161,13 +175,13 @@ func (_c *TemplateCreate) defaults() {
 		v := template.DefaultCredentialType
 		_c.mutation.SetCredentialType(v)
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		v := template.DefaultCreatedAt()
-		_c.mutation.SetCreatedAt(v)
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := template.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		v := template.DefaultCreatedAt()
+		_c.mutation.SetCreatedAt(v)
 	}
 }
 
@@ -194,11 +208,11 @@ func (_c *TemplateCreate) check() error {
 	if _, ok := _c.mutation.ModelMapping(); !ok {
 		return &ValidationError{Name: "model_mapping", err: errors.New(`ent: missing required field "Template.model_mapping"`)}
 	}
-	if _, ok := _c.mutation.CreatedAt(); !ok {
-		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Template.created_at"`)}
-	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Template.updated_at"`)}
+	}
+	if _, ok := _c.mutation.CreatedAt(); !ok {
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "Template.created_at"`)}
 	}
 	return nil
 }
@@ -261,13 +275,17 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 		_spec.SetField(template.FieldModelMapping, field.TypeJSON, value)
 		_node.ModelMapping = value
 	}
-	if value, ok := _c.mutation.CreatedAt(); ok {
-		_spec.SetField(template.FieldCreatedAt, field.TypeTime, value)
-		_node.CreatedAt = value
-	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(template.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DeletedAt(); ok {
+		_spec.SetField(template.FieldDeletedAt, field.TypeTime, value)
+		_node.DeletedAt = &value
+	}
+	if value, ok := _c.mutation.CreatedAt(); ok {
+		_spec.SetField(template.FieldCreatedAt, field.TypeTime, value)
+		_node.CreatedAt = value
 	}
 	if nodes := _c.mutation.AccountsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -421,18 +439,6 @@ func (u *TemplateUpsert) UpdateModelMapping() *TemplateUpsert {
 	return u
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *TemplateUpsert) SetCreatedAt(v time.Time) *TemplateUpsert {
-	u.Set(template.FieldCreatedAt, v)
-	return u
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *TemplateUpsert) UpdateCreatedAt() *TemplateUpsert {
-	u.SetExcluded(template.FieldCreatedAt)
-	return u
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *TemplateUpsert) SetUpdatedAt(v time.Time) *TemplateUpsert {
 	u.Set(template.FieldUpdatedAt, v)
@@ -442,6 +448,36 @@ func (u *TemplateUpsert) SetUpdatedAt(v time.Time) *TemplateUpsert {
 // UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
 func (u *TemplateUpsert) UpdateUpdatedAt() *TemplateUpsert {
 	u.SetExcluded(template.FieldUpdatedAt)
+	return u
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *TemplateUpsert) SetDeletedAt(v time.Time) *TemplateUpsert {
+	u.Set(template.FieldDeletedAt, v)
+	return u
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *TemplateUpsert) UpdateDeletedAt() *TemplateUpsert {
+	u.SetExcluded(template.FieldDeletedAt)
+	return u
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *TemplateUpsert) ClearDeletedAt() *TemplateUpsert {
+	u.SetNull(template.FieldDeletedAt)
+	return u
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *TemplateUpsert) SetCreatedAt(v time.Time) *TemplateUpsert {
+	u.Set(template.FieldCreatedAt, v)
+	return u
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *TemplateUpsert) UpdateCreatedAt() *TemplateUpsert {
+	u.SetExcluded(template.FieldCreatedAt)
 	return u
 }
 
@@ -591,20 +627,6 @@ func (u *TemplateUpsertOne) UpdateModelMapping() *TemplateUpsertOne {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *TemplateUpsertOne) SetCreatedAt(v time.Time) *TemplateUpsertOne {
-	return u.Update(func(s *TemplateUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *TemplateUpsertOne) UpdateCreatedAt() *TemplateUpsertOne {
-	return u.Update(func(s *TemplateUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *TemplateUpsertOne) SetUpdatedAt(v time.Time) *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
@@ -616,6 +638,41 @@ func (u *TemplateUpsertOne) SetUpdatedAt(v time.Time) *TemplateUpsertOne {
 func (u *TemplateUpsertOne) UpdateUpdatedAt() *TemplateUpsertOne {
 	return u.Update(func(s *TemplateUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *TemplateUpsertOne) SetDeletedAt(v time.Time) *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *TemplateUpsertOne) UpdateDeletedAt() *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *TemplateUpsertOne) ClearDeletedAt() *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *TemplateUpsertOne) SetCreatedAt(v time.Time) *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *TemplateUpsertOne) UpdateCreatedAt() *TemplateUpsertOne {
+	return u.Update(func(s *TemplateUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 
@@ -931,20 +988,6 @@ func (u *TemplateUpsertBulk) UpdateModelMapping() *TemplateUpsertBulk {
 	})
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (u *TemplateUpsertBulk) SetCreatedAt(v time.Time) *TemplateUpsertBulk {
-	return u.Update(func(s *TemplateUpsert) {
-		s.SetCreatedAt(v)
-	})
-}
-
-// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
-func (u *TemplateUpsertBulk) UpdateCreatedAt() *TemplateUpsertBulk {
-	return u.Update(func(s *TemplateUpsert) {
-		s.UpdateCreatedAt()
-	})
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (u *TemplateUpsertBulk) SetUpdatedAt(v time.Time) *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
@@ -956,6 +999,41 @@ func (u *TemplateUpsertBulk) SetUpdatedAt(v time.Time) *TemplateUpsertBulk {
 func (u *TemplateUpsertBulk) UpdateUpdatedAt() *TemplateUpsertBulk {
 	return u.Update(func(s *TemplateUpsert) {
 		s.UpdateUpdatedAt()
+	})
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (u *TemplateUpsertBulk) SetDeletedAt(v time.Time) *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.SetDeletedAt(v)
+	})
+}
+
+// UpdateDeletedAt sets the "deleted_at" field to the value that was provided on create.
+func (u *TemplateUpsertBulk) UpdateDeletedAt() *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.UpdateDeletedAt()
+	})
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (u *TemplateUpsertBulk) ClearDeletedAt() *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.ClearDeletedAt()
+	})
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (u *TemplateUpsertBulk) SetCreatedAt(v time.Time) *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.SetCreatedAt(v)
+	})
+}
+
+// UpdateCreatedAt sets the "created_at" field to the value that was provided on create.
+func (u *TemplateUpsertBulk) UpdateCreatedAt() *TemplateUpsertBulk {
+	return u.Update(func(s *TemplateUpsert) {
+		s.UpdateCreatedAt()
 	})
 }
 

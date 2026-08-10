@@ -35,32 +35,32 @@ func init() {
 	accountDescMaxConcurrency := accountFields[7].Descriptor()
 	// account.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	account.DefaultMaxConcurrency = accountDescMaxConcurrency.Default.(int)
-	// accountDescCreatedAt is the schema descriptor for created_at field.
-	accountDescCreatedAt := accountFields[10].Descriptor()
-	// account.DefaultCreatedAt holds the default value on creation for the created_at field.
-	account.DefaultCreatedAt = accountDescCreatedAt.Default.(func() time.Time)
 	// accountDescUpdatedAt is the schema descriptor for updated_at field.
-	accountDescUpdatedAt := accountFields[11].Descriptor()
+	accountDescUpdatedAt := accountFields[10].Descriptor()
 	// account.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	account.DefaultUpdatedAt = accountDescUpdatedAt.Default.(func() time.Time)
 	// account.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	account.UpdateDefaultUpdatedAt = accountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// accountDescCreatedAt is the schema descriptor for created_at field.
+	accountDescCreatedAt := accountFields[12].Descriptor()
+	// account.DefaultCreatedAt holds the default value on creation for the created_at field.
+	account.DefaultCreatedAt = accountDescCreatedAt.Default.(func() time.Time)
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
 	// groupDescPriceMultiplier is the schema descriptor for price_multiplier field.
 	groupDescPriceMultiplier := groupFields[3].Descriptor()
 	// group.DefaultPriceMultiplier holds the default value on creation for the price_multiplier field.
 	group.DefaultPriceMultiplier = groupDescPriceMultiplier.Default.(int)
-	// groupDescCreatedAt is the schema descriptor for created_at field.
-	groupDescCreatedAt := groupFields[4].Descriptor()
-	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
-	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	// groupDescUpdatedAt is the schema descriptor for updated_at field.
-	groupDescUpdatedAt := groupFields[5].Descriptor()
+	groupDescUpdatedAt := groupFields[4].Descriptor()
 	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// groupDescCreatedAt is the schema descriptor for created_at field.
+	groupDescCreatedAt := groupFields[6].Descriptor()
+	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
+	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	groupassignmentFields := schema.GroupAssignment{}.Fields()
 	_ = groupassignmentFields
 	// groupassignmentDescCreatedAt is the schema descriptor for created_at field.
@@ -81,16 +81,16 @@ func init() {
 	keyDescQuotaUsed := keyFields[9].Descriptor()
 	// key.DefaultQuotaUsed holds the default value on creation for the quota_used field.
 	key.DefaultQuotaUsed = keyDescQuotaUsed.Default.(int64)
-	// keyDescCreatedAt is the schema descriptor for created_at field.
-	keyDescCreatedAt := keyFields[10].Descriptor()
-	// key.DefaultCreatedAt holds the default value on creation for the created_at field.
-	key.DefaultCreatedAt = keyDescCreatedAt.Default.(func() time.Time)
 	// keyDescUpdatedAt is the schema descriptor for updated_at field.
-	keyDescUpdatedAt := keyFields[11].Descriptor()
+	keyDescUpdatedAt := keyFields[10].Descriptor()
 	// key.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	key.DefaultUpdatedAt = keyDescUpdatedAt.Default.(func() time.Time)
 	// key.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	key.UpdateDefaultUpdatedAt = keyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// keyDescCreatedAt is the schema descriptor for created_at field.
+	keyDescCreatedAt := keyFields[12].Descriptor()
+	// key.DefaultCreatedAt holds the default value on creation for the created_at field.
+	key.DefaultCreatedAt = keyDescCreatedAt.Default.(func() time.Time)
 	pricingFields := schema.Pricing{}.Fields()
 	_ = pricingFields
 	// pricingDescCreatedAt is the schema descriptor for created_at field.
@@ -139,16 +139,16 @@ func init() {
 	ruleDescEnabled := ruleFields[2].Descriptor()
 	// rule.DefaultEnabled holds the default value on creation for the enabled field.
 	rule.DefaultEnabled = ruleDescEnabled.Default.(bool)
-	// ruleDescCreatedAt is the schema descriptor for created_at field.
-	ruleDescCreatedAt := ruleFields[6].Descriptor()
-	// rule.DefaultCreatedAt holds the default value on creation for the created_at field.
-	rule.DefaultCreatedAt = ruleDescCreatedAt.Default.(func() time.Time)
 	// ruleDescUpdatedAt is the schema descriptor for updated_at field.
-	ruleDescUpdatedAt := ruleFields[7].Descriptor()
+	ruleDescUpdatedAt := ruleFields[6].Descriptor()
 	// rule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	rule.DefaultUpdatedAt = ruleDescUpdatedAt.Default.(func() time.Time)
 	// rule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	rule.UpdateDefaultUpdatedAt = ruleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// ruleDescCreatedAt is the schema descriptor for created_at field.
+	ruleDescCreatedAt := ruleFields[8].Descriptor()
+	// rule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rule.DefaultCreatedAt = ruleDescCreatedAt.Default.(func() time.Time)
 	settingFields := schema.Setting{}.Fields()
 	_ = settingFields
 	// settingDescValue is the schema descriptor for value field.
@@ -173,16 +173,16 @@ func init() {
 	templateDescCredentialType := templateFields[3].Descriptor()
 	// template.DefaultCredentialType holds the default value on creation for the credential_type field.
 	template.DefaultCredentialType = templateDescCredentialType.Default.(string)
-	// templateDescCreatedAt is the schema descriptor for created_at field.
-	templateDescCreatedAt := templateFields[8].Descriptor()
-	// template.DefaultCreatedAt holds the default value on creation for the created_at field.
-	template.DefaultCreatedAt = templateDescCreatedAt.Default.(func() time.Time)
 	// templateDescUpdatedAt is the schema descriptor for updated_at field.
-	templateDescUpdatedAt := templateFields[9].Descriptor()
+	templateDescUpdatedAt := templateFields[8].Descriptor()
 	// template.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	template.DefaultUpdatedAt = templateDescUpdatedAt.Default.(func() time.Time)
 	// template.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	template.UpdateDefaultUpdatedAt = templateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// templateDescCreatedAt is the schema descriptor for created_at field.
+	templateDescCreatedAt := templateFields[10].Descriptor()
+	// template.DefaultCreatedAt holds the default value on creation for the created_at field.
+	template.DefaultCreatedAt = templateDescCreatedAt.Default.(func() time.Time)
 	usagelogFields := schema.UsageLog{}.Fields()
 	_ = usagelogFields
 	// usagelogDescModel is the schema descriptor for model field.

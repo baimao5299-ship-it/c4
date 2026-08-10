@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
@@ -41,7 +42,8 @@ func (r *TemplateRepo) GetTemplate(ctx context.Context, id int64) (*domain.Templ
 }
 
 func (r *TemplateRepo) ListTemplates(ctx context.Context, q ListQuery) ([]*domain.Template, int64, error) {
-	pred := r.client.Template.Query()
+	// 软删除：列表默认过滤已删（count 同谓词——pred 复用）；GET 单个不过滤。
+	pred := r.client.Template.Query().Where(template.DeletedAtIsNil())
 	if q.Name != "" {
 		pred = pred.Where(template.NameContainsFold(q.Name))
 	}
@@ -89,9 +91,16 @@ func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (
 	return toDomainTemplate(row), nil
 }
 
+// DeleteTemplate 软删除：deleted_at 置值（行保留留审计；列表/消费路径按
+// deleted_at IS NULL 过滤，GET 单个仍可查已删项）。bulk Update（无 re-SELECT）
+// 单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *TemplateRepo) DeleteTemplate(ctx context.Context, id int64) error {
-	if err := r.client.Template.DeleteOneID(id).Exec(ctx); err != nil {
-		return errMissingID(err, id)
+	n, err := r.client.Template.Update().Where(template.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 	}
 	return nil
 }

@@ -1132,6 +1132,7 @@ components:
           additionalProperties: { type: string }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
+        DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项） }
     AccountCreate:
       type: object
       required: [name, template_id, upstream_key]
@@ -1162,6 +1163,7 @@ components:
         LastUsedAt: { type: string, format: date-time, nullable: true }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
+        DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项） }
     AccountView:
       allOf:
         - $ref: '#/components/schemas/Account'
@@ -1276,6 +1278,7 @@ components:
         QuotaUsed: { type: integer, format: int64, description: 已消耗（后扣；无额度 key 恒 0） }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
+        DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表/鉴权过滤已删；GET 单个可查已删项） }
     KeyCreate:
       type: object
       required: [name, group_id]
@@ -1427,6 +1430,7 @@ components:
           additionalProperties: true
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
+        DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表/规则引擎重载过滤已删；GET 单个可查已删项） }
     RuleListResponse:
       type: object
       required: [total, rows]
@@ -1444,6 +1448,7 @@ components:
         PriceMultiplier: { type: number, format: double, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5） }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
+        DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项） }
     AccountGroupsResponse:
       type: object
       required: [group_ids]

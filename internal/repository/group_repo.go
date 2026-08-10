@@ -58,7 +58,8 @@ func (r *GroupRepo) GetGroup(ctx context.Context, id int64) (*domain.Group, erro
 }
 
 func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Group, int64, error) {
-	pred := r.client.Group.Query()
+	// 软删除：列表默认过滤已删（count 同谓词——pred 复用）；GET 单个不过滤。
+	pred := r.client.Group.Query().Where(group.DeletedAtIsNil())
 	if q.Name != "" {
 		pred = pred.Where(group.NameContainsFold(q.Name))
 	}
@@ -104,9 +105,16 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	return toDomainGroup(row), nil
 }
 
+// DeleteGroup 软删除：deleted_at 置值（行保留留审计；调度器快照按
+// deleted_at IS NULL 过滤，GET 单个仍可查已删项）。bulk Update（无 re-SELECT）
+// 单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
-	if err := r.client.Group.DeleteOneID(id).Exec(ctx); err != nil {
-		return errMissingID(err, id)
+	n, err := r.client.Group.Update().Where(group.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 	}
 	return nil
 }
@@ -133,7 +141,8 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 // 账号只出现在其所属组且带模板。（唯一窗口差异：组 id 扫描后被并发删除的
 // 组不会出现在结果中——见下方白名单守卫；旧 eager-load 同窗口行为。）
 func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
-	accs, err := r.client.Account.Query().WithTemplate().All(ctx)
+	// 软删除：已删 account/group 不进调度器快照（成员关系白名单守卫同语义）。
+	accs, err := r.client.Account.Query().Where(account.DeletedAtIsNil()).WithTemplate().All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load groups-accounts (accounts scan): %w", err)
 	}
@@ -141,7 +150,7 @@ func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 	for _, a := range accs {
 		byID[a.ID] = toDomainAccount(a)
 	}
-	gids, err := r.client.Group.Query().IDs(ctx)
+	gids, err := r.client.Group.Query().Where(group.DeletedAtIsNil()).IDs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load groups-accounts (groups scan): %w", err)
 	}
@@ -224,8 +233,9 @@ func (r *GroupRepo) LoadAssignmentMultipliers(ctx context.Context) (map[billing.
 // （非参数列表），语句参数数恒为 1（+ 模板 IN，受模板表实体数约束）。
 // 返回无序（调用方构建快照/路由，不依赖顺序）。
 func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*domain.Account, error) {
+	// 软删除：已删 account 不进调度器快照（与 LoadGroupsAccounts 同语义）。
 	accs, err := r.client.Account.Query().
-		Where(account.HasGroupsWith(group.IDEQ(groupID))).
+		Where(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID))).
 		WithTemplate().
 		All(ctx)
 	if err != nil {
