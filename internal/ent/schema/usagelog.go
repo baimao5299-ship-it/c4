@@ -22,7 +22,7 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("model").Default(""),
 		field.String("mapped_model").Optional().Nillable(),
 		field.Enum("format").
-			Values("openai-chat", "openai-responses", "anthropic"),
+			Values("openai-chat", "openai-responses", "openai-responses-ws", "anthropic"),
 		field.Int("status_code").Default(0),
 		field.String("error_type").Default("none"),
 		// 错误文本（部署故障修复）：连接级 err.Error() / 4xx+ 上游 body，域内

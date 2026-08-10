@@ -374,7 +374,7 @@ var (
 		{Name: "key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "model", Type: field.TypeString, Default: ""},
 		{Name: "mapped_model", Type: field.TypeString, Nullable: true},
-		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "anthropic"}},
+		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "anthropic"}},
 		{Name: "status_code", Type: field.TypeInt, Default: 0},
 		{Name: "error_type", Type: field.TypeString, Default: "none"},
 		{Name: "error_message", Type: field.TypeString, Nullable: true},

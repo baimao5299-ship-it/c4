@@ -167,7 +167,7 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
-		LatencyMS:    time.Since(start).Milliseconds(),
+		LatencyMS:   time.Since(start).Milliseconds(),
 		InputTokens: u.it, OutputTokens: u.ot, TotalTokens: u.tt,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
 		CreatedAt: time.Now(),
@@ -255,6 +255,8 @@ var (
 	errQuotaExhausted = &formatError{status: http.StatusTooManyRequests, msg: "key quota exhausted"}
 	errRateLimit      = &formatError{status: http.StatusTooManyRequests, msg: "group rate limited"}
 	errBody           = &formatError{status: http.StatusRequestEntityTooLarge, msg: "request body too large"}
+	// errUpgradeRequired 400：resp-ws 端点收到非升级请求（本地拒绝，无记录）。
+	errUpgradeRequired = &formatError{status: http.StatusBadRequest, msg: "websocket upgrade required"}
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -288,6 +290,7 @@ var errBodies = func() map[*formatError]encodedError {
 		errNoPrice:             enc(errNoPrice),
 		errInsufficientBalance: enc(errInsufficientBalance),
 		errServiceTierRejected: enc(errServiceTierRejected),
+		errUpgradeRequired:     enc(errUpgradeRequired),
 	}
 }()
 
@@ -322,13 +325,24 @@ func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, groupID int
 
 func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, scheduler.ErrFormatUnavailable):
-		writeErr(w, &formatError{status: http.StatusNotFound, msg: "no account supports this request format"})
 	case errors.Is(err, scheduler.ErrNoAvailable):
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, errTooMany)
 	default:
-		writeErr(w, &formatError{status: http.StatusNotFound, msg: "group not found"})
+		writeErr(w, &formatError{status: statusFor(err), msg: selectErrorMessage(err)})
+	}
+}
+
+// selectErrorMessage 选号失败的错误文案（HTTP 响应与 WS 错误帧共用；statusFor
+// 同款语义：格式不可用/组不存在 → 404，无可用 → 429）。
+func selectErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, scheduler.ErrFormatUnavailable):
+		return "no account supports this request format"
+	case errors.Is(err, scheduler.ErrNoAvailable):
+		return "no available account"
+	default:
+		return "group not found"
 	}
 }
 
