@@ -380,9 +380,9 @@ export default function Logs() {
                           <TooltipTrigger delay={0} render={<span className="inline-flex -m-1 size-4 shrink-0 cursor-help items-center justify-center rounded-full bg-muted p-1 text-muted-foreground text-[10px] leading-none" />}>
                             i
                           </TooltipTrigger>
-                          {/* 用默认反色（bg-foreground + text-background，浅色黑底白字/深色白底黑字）；
-                              勿加 bg-popover——它会与 text-background 同色导致文字不可见 */}
-                          <TooltipContent className="max-w-xs p-0 shadow-lg">
+                          {/* bg-popover 必须配 text-popover-foreground（跟随主题：浅色白底黑字/深色黑底白字）；
+                              勿用默认反色 bg-foreground/text-background（浅色黑卡深色白卡，突兀） */}
+                          <TooltipContent className="max-w-xs border bg-popover p-0 text-popover-foreground shadow-lg">
                             <div className="space-y-1.5 p-3 text-xs">
                               {/* 单价小字尾注：$0.0025/M（每 M token；null = 未计费路径不显示） */}
                               <div className="flex items-center justify-between gap-6">
