@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Ban, CircleCheck, UserCog, Filter } from 'lucide-react'
+import { Plus, Pencil, Ban, CircleCheck, UserCog, Filter, UsersRound, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
@@ -10,6 +10,7 @@ import { Pagination } from '@/components/pagination'
 import { SortableHeader, type SortOrder } from '@/components/sortable-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,8 +19,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatusBadge } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
+import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { formatDateTime } from '@/components/fmt'
+import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
 type User = components['schemas']['User']
@@ -27,6 +30,8 @@ type UserCreate = components['schemas']['UserCreate']
 type UserUpdate = components['schemas']['UserUpdate']
 type UserRole = components['schemas']['UserRole']
 type UserStatus = components['schemas']['UserStatus']
+type GroupVisibility = components['schemas']['GroupVisibility']
+type UserGroupsBody = components['schemas']['UserGroupsBody']
 
 const ROLES: UserRole[] = ['platform_admin', 'user']
 const STATUSES: UserStatus[] = ['active', 'disabled']
@@ -44,6 +49,30 @@ function RoleBadge({ role }: { role?: UserRole }) {
       <span className={cn('size-1.5 shrink-0 rounded-full', isAdmin ? 'bg-blue-500' : 'bg-muted-foreground/60')} />
       {t(isAdmin ? 'users.role.platform_admin' : 'users.role.user')}
     </Badge>
+  )
+}
+
+// 分组管理行内专属倍率态：mult = 输入框文本（'' = 未填）；cleared = 用户显式点过
+// 「清除为未设置」（提交 null）；勾选留空且未清除 = 省略键（沿用当前值）。
+interface AssignRowMult { mult: string; cleared: boolean }
+
+// 组价格倍率（正常值，API 边界已换算）→ 展示：null = 未设置（—）；0 = 免费；
+// 其余 ×N（1 = ×1.0，1.5 = ×1.5）。
+const formatMultiplier = (m: number | null | undefined, t: TFunction): string => {
+  if (m == null) return '—'
+  if (m === 0) return t('groups.free')
+  return `×${m.toFixed(1)}`
+}
+
+// 组可见性小标：public 绿点 / private 灰点（与 RoleBadge 同风格）。
+function GroupVisibilityDot({ visibility }: { visibility?: GroupVisibility }) {
+  const { t } = useTranslation()
+  const isPublic = visibility === 'public'
+  return (
+    <span className={cn('flex shrink-0 items-center gap-1 text-xs', isPublic ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>
+      <span className={cn('size-1.5 shrink-0 rounded-full', isPublic ? 'bg-emerald-500' : 'bg-muted-foreground/60')} />
+      {t(isPublic ? 'groups.visibilityPublic' : 'groups.visibilityPrivate')}
+    </span>
   )
 }
 
@@ -171,6 +200,107 @@ export default function Users() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 
+  // —— 分组管理（替换语义：勾选 = 授予，未勾选 = 撤销）——
+  const [groupsTarget, setGroupsTarget] = useState<User | null>(null)
+  const [groupsChecked, setGroupsChecked] = useState<number[]>([])
+  const [groupsMult, setGroupsMult] = useState<Record<number, AssignRowMult>>({})
+  const [groupsReadFailed, setGroupsReadFailed] = useState(false) // 每次打开只 toast 一次
+  const [clearGroupsOpen, setClearGroupsOpen] = useState(false)
+
+  // 全部组（组倍率/可见性展示；账号弹窗同款 limit:100 取全量）。
+  const groupsAll = useQuery({
+    queryKey: ['groups', 'user-groups-dialog'],
+    queryFn: () => api.listGroups({ limit: 100 }),
+    enabled: !!groupsTarget,
+  })
+  const allGroups = groupsAll.data?.rows ?? []
+  // 回显该用户的授予：后端读端点可能尚未实现（404）→ retry:false 快速降级，
+  // 空预填充 + toast，弹窗照常可用（不崩溃）。
+  const userGroupsEcho = useQuery({
+    queryKey: ['user-groups', groupsTarget?.ID],
+    queryFn: () => api.getUserGroups(groupsTarget!.ID!),
+    enabled: !!groupsTarget,
+    retry: false,
+  })
+  // 回显加载中（尚无数据）：禁行交互，防止数据到达后覆盖用户已做的勾选
+  // （accounts 弹窗同款守卫；失败即降级为可交互）。
+  const groupsEchoLoading = !!groupsTarget && userGroupsEcho.data === undefined && userGroupsEcho.isFetching
+
+  // 回显成功 → 预填充勾选态 + 专属倍率初值（null/缺省 = 未设置）。
+  useEffect(() => {
+    if (!groupsTarget || !userGroupsEcho.data) return
+    setGroupsChecked(userGroupsEcho.data.group_ids ?? [])
+    const m: Record<number, AssignRowMult> = {}
+    for (const [k, v] of Object.entries(userGroupsEcho.data.multipliers ?? {})) {
+      const id = Number(k)
+      m[id] = v == null ? { mult: '', cleared: true } : { mult: String(v), cleared: false }
+    }
+    setGroupsMult(m)
+  }, [groupsTarget, userGroupsEcho.data])
+
+  // 回显失败 → 空预填充不阻塞 + 一次性提示。
+  useEffect(() => {
+    if (groupsTarget && userGroupsEcho.isError && !groupsReadFailed) {
+      setGroupsReadFailed(true)
+      toast.add({ title: t('users.groups.readFailed'), type: 'error' })
+    }
+  }, [groupsTarget, userGroupsEcho.isError, groupsReadFailed, t])
+
+  const openGroups = (u: User) => {
+    setGroupsTarget(u)
+    setGroupsChecked([])
+    setGroupsMult({})
+    setGroupsReadFailed(false)
+  }
+  const toggleGroup = (id: number, on: boolean) =>
+    setGroupsChecked(s => (on ? (s.includes(id) ? s : [...s, id]) : s.filter(x => x !== id)))
+  const setGroupMult = (id: number, mult: string) => setGroupsMult(m => ({ ...m, [id]: { mult, cleared: false } }))
+  const clearGroupMult = (id: number) => setGroupsMult(m => ({ ...m, [id]: { mult: '', cleared: true } }))
+
+  // multipliers 三态：勾选且填值 → 数字；勾选留空（未清除）→ 省略键（沿用当前值）；
+  // 勾选且显式清除 → null（回退组倍率）。未列出组沿用当前值 ✓（契约 PUT 语义）。
+  const saveUserGroups = useMutation({
+    mutationFn: () => {
+      const body: UserGroupsBody = { group_ids: groupsChecked }
+      const muls: Record<string, number | null> = {}
+      for (const gid of groupsChecked) {
+        const row = groupsMult[gid]
+        const v = row?.mult.trim()
+        if (v !== undefined && v !== '') {
+          const n = Number(v)
+          if (!Number.isFinite(n) || n < 0 || n > 10) throw new Error(t('groups.multiplierInvalid'))
+          muls[String(gid)] = n
+        } else if (row?.cleared) {
+          muls[String(gid)] = null
+        }
+      }
+      if (Object.keys(muls).length > 0) body.multipliers = muls
+      return api.setUserGroups(groupsTarget!.ID!, body)
+    },
+    onSuccess: (resp) => {
+      qc.invalidateQueries({ queryKey: ['groups'] })
+      qc.invalidateQueries({ queryKey: ['user-groups'] })
+      // 空勾选提交 = 清空（契约语义）：toast 用清空文案，避免「已授予 0 组」歧义
+      toast.add({
+        title: t('users.groups.saved'),
+        description: resp.group_ids.length > 0 ? t('users.groups.savedDesc', { count: resp.group_ids.length }) : t('users.groups.clearedDesc'),
+        type: 'success',
+      })
+      setGroupsTarget(null)
+    },
+  })
+  // 清空全部（确认后 group_ids=[] 直接提交）。
+  const clearUserGroups = useMutation({
+    mutationFn: () => api.setUserGroups(groupsTarget!.ID!, { group_ids: [] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups'] })
+      qc.invalidateQueries({ queryKey: ['user-groups'] })
+      toast.add({ title: t('users.groups.saved'), description: t('users.groups.clearedDesc'), type: 'success' })
+      setGroupsTarget(null)
+      setClearGroupsOpen(false)
+    },
+  })
+
   const submit = () => {
     if (!form.email.trim() || (!editing && !form.password)) return
     save.mutate(form)
@@ -243,6 +373,7 @@ export default function Users() {
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(u.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon-sm" title={t('users.groups.button')} onClick={() => openGroups(u)}><UsersRound /></Button>
                         <Button
                           variant="ghost"
                           size="icon-sm"
@@ -335,6 +466,104 @@ export default function Users() {
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={save.isPending}>{t('common.cancel')}</Button>
             <Button onClick={submit} disabled={save.isPending || !form.email.trim() || (!editing && !form.password)}>
               {save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 分组管理：勾选 = 授予，未勾选 = 撤销（完整列表替换）+ 专属倍率三态 —— */}
+      <Dialog open={!!groupsTarget} onOpenChange={o => { if (!o && !saveUserGroups.isPending && !clearUserGroups.isPending) { setGroupsTarget(null); setClearGroupsOpen(false) } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('users.groups.title', { name: groupsTarget?.Email })}</DialogTitle>
+            <DialogDescription>{t('users.groups.desc')}</DialogDescription>
+            <p className="text-sm font-medium">{t('users.groups.count', { count: groupsChecked.length })}</p>
+            {groupsEchoLoading && <p className="text-xs text-muted-foreground">{t('users.groups.echoLoading')}</p>}
+            <p className="text-xs text-muted-foreground">{t('users.groups.multiplierHint')}</p>
+          </DialogHeader>
+          <div className="space-y-3">
+            {groupsAll.isLoading ? (
+              <div className="space-y-1.5">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
+              </div>
+            ) : groupsAll.isError ? (
+              <p className="text-sm text-destructive">{t('common.loadFailed', { message: (groupsAll.error as Error).message })}</p>
+            ) : allGroups.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">{t('users.groups.empty')}</p>
+            ) : (
+              <div className={cn('max-h-72 space-y-1.5 overflow-y-auto pr-1', groupsEchoLoading && 'pointer-events-none opacity-50')}>
+                {allGroups.map(g => {
+                  const checked = groupsChecked.includes(g.ID!)
+                  const row = groupsMult[g.ID!]
+                  return (
+                    <div key={g.ID} className="flex items-center gap-2.5 rounded-md border px-2 py-1.5">
+                      <Checkbox checked={checked} onCheckedChange={c => toggleGroup(g.ID!, c === true)} />
+                      <span className="min-w-0 flex-1 truncate text-sm" title={g.Name}>{g.Name}</span>
+                      <GroupVisibilityDot visibility={g.Visibility} />
+                      <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title={t('groups.table.priceMultiplier')}>
+                        {formatMultiplier(g.PriceMultiplier, t)}
+                      </span>
+                      {checked && (
+                        <>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            value={row?.mult ?? ''}
+                            placeholder={t('groups.assignMultiplierPlaceholder')}
+                            onChange={e => setGroupMult(g.ID!, e.target.value)}
+                            className="h-7 w-24 text-xs"
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title={t('groups.assignMultiplierClear')}
+                            disabled={!row?.mult && !row?.cleared}
+                            onClick={() => clearGroupMult(g.ID!)}
+                          >
+                            <X />
+                          </Button>
+                          {row?.cleared && (
+                            <span className="w-24 text-xs text-muted-foreground">{t('groups.assignMultiplierUnset')}</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {saveUserGroups.isError && errMsg(saveUserGroups.error) && (
+              <p className="text-sm text-destructive">{errMsg(saveUserGroups.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearGroupsOpen(true)} disabled={saveUserGroups.isPending || groupsEchoLoading}>
+              {t('users.groups.clearAll')}
+            </Button>
+            <Button variant="outline" onClick={() => setGroupsTarget(null)} disabled={saveUserGroups.isPending}>{t('common.cancel')}</Button>
+            <Button onClick={() => saveUserGroups.mutate()} disabled={saveUserGroups.isPending || groupsEchoLoading}>
+              {saveUserGroups.isPending ? t('common.saving') : t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 清空全部组授予（确认后直接提交 group_ids: []） —— */}
+      <Dialog open={clearGroupsOpen} onOpenChange={o => { if (!o && !clearUserGroups.isPending) setClearGroupsOpen(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('users.groups.clearAll')}</DialogTitle>
+            <DialogDescription>{t('users.groups.clearAllDesc', { name: groupsTarget?.Email })}</DialogDescription>
+          </DialogHeader>
+          {clearUserGroups.isError && errMsg(clearUserGroups.error) && (
+            <p className="text-sm text-destructive">{errMsg(clearUserGroups.error)}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearGroupsOpen(false)} disabled={clearUserGroups.isPending}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={() => clearUserGroups.mutate()} disabled={clearUserGroups.isPending}>
+              {clearUserGroups.isPending ? t('common.saving') : t('users.groups.clearAllConfirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
