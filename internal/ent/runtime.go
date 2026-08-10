@@ -51,14 +51,18 @@ func init() {
 	groupDescPriceMultiplier := groupFields[3].Descriptor()
 	// group.DefaultPriceMultiplier holds the default value on creation for the price_multiplier field.
 	group.DefaultPriceMultiplier = groupDescPriceMultiplier.Default.(int)
+	// groupDescProtocolConvert is the schema descriptor for protocol_convert field.
+	groupDescProtocolConvert := groupFields[4].Descriptor()
+	// group.DefaultProtocolConvert holds the default value on creation for the protocol_convert field.
+	group.DefaultProtocolConvert = groupDescProtocolConvert.Default.(string)
 	// groupDescUpdatedAt is the schema descriptor for updated_at field.
-	groupDescUpdatedAt := groupFields[4].Descriptor()
+	groupDescUpdatedAt := groupFields[5].Descriptor()
 	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// groupDescCreatedAt is the schema descriptor for created_at field.
-	groupDescCreatedAt := groupFields[6].Descriptor()
+	groupDescCreatedAt := groupFields[7].Descriptor()
 	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
 	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	groupassignmentFields := schema.GroupAssignment{}.Fields()

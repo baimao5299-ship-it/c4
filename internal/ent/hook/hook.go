@@ -20,6 +20,18 @@ func (f AccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountMutation", m)
 }
 
+// The AccountExtFunc type is an adapter to allow the use of ordinary
+// function as AccountExt mutator.
+type AccountExtFunc func(context.Context, *ent.AccountExtMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountExtFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountExtMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountExtMutation", m)
+}
+
 // The GroupFunc type is an adapter to allow the use of ordinary
 // function as Group mutator.
 type GroupFunc func(context.Context, *ent.GroupMutation) (ent.Value, error)
@@ -138,6 +150,18 @@ func (f TemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TemplateMutation", m)
+}
+
+// The TemplateExtFunc type is an adapter to allow the use of ordinary
+// function as TemplateExt mutator.
+type TemplateExtFunc func(context.Context, *ent.TemplateExtMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TemplateExtFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TemplateExtMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TemplateExtMutation", m)
 }
 
 // The UsageLogFunc type is an adapter to allow the use of ordinary

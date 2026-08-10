@@ -38,6 +38,9 @@ type fakeStore struct {
 	// pricings 模型价格（key = model，一行 = 最终生效价；manual > litellm 优先级
 	// 语义与真实仓库一致）。
 	pricings map[string]*domain.Pricing
+	// tplExts/accExts 模板/账号类型化扩展（key = 父 id，镜像仓库 1:1 唯一索引）。
+	tplExts map[int64]*domain.TemplateExt
+	accExts map[int64]*domain.AccountExt
 	nextID   int64
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
@@ -53,6 +56,7 @@ func newFakeStore() *fakeStore {
 		assign: make(map[int64][]int64), assignMult: make(map[[2]int64]*int),
 		codes: make(map[int64]*domain.RedemptionCode),
 		uses: make(map[int64]*domain.RedemptionUse), pricings: make(map[string]*domain.Pricing),
+		tplExts: make(map[int64]*domain.TemplateExt), accExts: make(map[int64]*domain.AccountExt),
 		nextID: 1,
 	}
 }
@@ -101,6 +105,21 @@ func (f *fakeStore) GetTemplate(ctx context.Context, id int64) (*domain.Template
 	}
 	c := *t
 	return &c, nil
+}
+
+// GetTemplatesByIDs 批量取模板（镜像真实 repo：id IN；缺失 id 不报错——
+// 数量 < 请求数由调用方对比）。
+func (f *fakeStore) GetTemplatesByIDs(ctx context.Context, ids []int64) ([]*domain.Template, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]*domain.Template, 0, len(ids))
+	for _, id := range ids {
+		if t, ok := f.tpls[id]; ok {
+			c := *t
+			out = append(out, &c)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeStore) ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error) {
@@ -252,6 +271,61 @@ func (f *fakeStore) GetAccountGroups(ctx context.Context, accountID int64) ([]in
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.accGroups[accountID]), nil
+}
+
+// --- 模板/账号类型化扩展（TemplateExtStore / AccountExtStore） ---
+
+// UpsertTemplateExt 幂等写入（镜像真实 repo 1:1 upsert 语义：已存在 → 全列
+// 替换含 NULL 清空；缺失 → 插入）。
+func (f *fakeStore) UpsertTemplateExt(ctx context.Context, e *domain.TemplateExt) (*domain.TemplateExt, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c := *e
+	f.tplExts[e.TemplateID] = &c
+	return &c, nil
+}
+
+func (f *fakeStore) GetTemplateExt(ctx context.Context, templateID int64) (*domain.TemplateExt, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, ok := f.tplExts[templateID]
+	if !ok {
+		return nil, fmt.Errorf("%w: template_id=%d missing", repository.ErrNotFound, templateID)
+	}
+	c := *e
+	return &c, nil
+}
+
+func (f *fakeStore) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*domain.AccountExt, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c := *e
+	f.accExts[e.AccountID] = &c
+	return &c, nil
+}
+
+// TryInsertAccountExt 先写者胜空插入（镜像真实 repo ON CONFLICT DO NOTHING
+// 语义：已存在 → 跳过不覆盖返回 false；缺失 → 插入返回 true）。
+func (f *fakeStore) TryInsertAccountExt(ctx context.Context, e *domain.AccountExt) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.accExts[e.AccountID]; ok {
+		return false, nil
+	}
+	c := *e
+	f.accExts[e.AccountID] = &c
+	return true, nil
+}
+
+func (f *fakeStore) GetAccountExt(ctx context.Context, accountID int64) (*domain.AccountExt, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e, ok := f.accExts[accountID]
+	if !ok {
+		return nil, fmt.Errorf("%w: account_id=%d missing", repository.ErrNotFound, accountID)
+	}
+	c := *e
+	return &c, nil
 }
 
 // QueryLogs 模拟 repo 过滤：user_id > 0 时强制过滤（/user/logs 防越权

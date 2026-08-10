@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/accountext"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
@@ -17,6 +18,7 @@ import (
 	"go-proxy-mini/internal/ent/setting"
 	"go-proxy-mini/internal/ent/tempbalance"
 	"go-proxy-mini/internal/ent/template"
+	"go-proxy-mini/internal/ent/templateext"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
 	"go-proxy-mini/internal/ent/user"
@@ -87,6 +89,7 @@ func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			account.Table:         account.ValidColumn,
+			accountext.Table:      accountext.ValidColumn,
 			group.Table:           group.ValidColumn,
 			groupassignment.Table: groupassignment.ValidColumn,
 			key.Table:             key.ValidColumn,
@@ -97,6 +100,7 @@ func checkColumn(t, c string) error {
 			setting.Table:         setting.ValidColumn,
 			tempbalance.Table:     tempbalance.ValidColumn,
 			template.Table:        template.ValidColumn,
+			templateext.Table:     templateext.ValidColumn,
 			usagelog.Table:        usagelog.ValidColumn,
 			usagestat.Table:       usagestat.ValidColumn,
 			user.Table:            user.ValidColumn,

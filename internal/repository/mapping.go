@@ -30,7 +30,32 @@ func toDomainGroup(g *ent.Group) *domain.Group {
 	return &domain.Group{
 		ID: g.ID, Name: g.Name, Visibility: domain.GroupVisibility(g.Visibility),
 		PriceMultiplier: g.PriceMultiplier,
+		ProtocolConvert: domain.ProtocolConvert(g.ProtocolConvert),
 		CreatedAt:       g.CreatedAt, UpdatedAt: g.UpdatedAt, DeletedAt: g.DeletedAt,
+	}
+}
+
+func toDomainTemplateExt(e *ent.TemplateExt) *domain.TemplateExt {
+	return &domain.TemplateExt{
+		TemplateID:      e.TemplateID,
+		CredentialType:  credential.Type(e.CredentialType),
+		StripImageTools: e.StripImageTools,
+	}
+}
+
+func toDomainAccountExt(e *ent.AccountExt) *domain.AccountExt {
+	return &domain.AccountExt{
+		AccountID:         e.AccountID,
+		CredentialType:    credential.Type(e.CredentialType),
+		InstallationID:    e.InstallationID,
+		SessionID:         e.SessionID,
+		ThreadID:          e.ThreadID,
+		WindowID:          e.WindowID,
+		OAuthToken:        e.OauthToken,
+		OAuthRefreshToken: e.OauthRefreshToken,
+		OAuthExpiresAt:    e.OauthExpiresAt,
+		PATKey:            e.PatKey,
+		Email:             e.Email,
 	}
 }
 

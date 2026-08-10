@@ -28,7 +28,11 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility, mult)
+	pc := domain.ProtocolConvertOff // 缺省 = 不转换
+	if in.ProtocolConvert != nil {
+		pc = domain.ProtocolConvert(*in.ProtocolConvert)
+	}
+	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility, mult, pc)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -90,6 +94,10 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 			return
 		}
 		g.PriceMultiplier = int(math.Round(*in.PriceMultiplier * 10000))
+	}
+	// protocol_convert 缺省 = 保持原值（读改写路径携带原值自然保留）
+	if in.ProtocolConvert != nil {
+		g.ProtocolConvert = domain.ProtocolConvert(*in.ProtocolConvert)
 	}
 	updated, err := h.svc.UpdateGroup(r.Context(), g)
 	if err != nil {

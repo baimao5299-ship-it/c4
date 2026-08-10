@@ -25,6 +25,15 @@ const (
 	None      ErrorType = "none"
 )
 
+// Defines values for GroupProtocolConvert.
+const (
+	ChatToMess GroupProtocolConvert = "chat_to_mess"
+	ChatToResp GroupProtocolConvert = "chat_to_resp"
+	MessToResp GroupProtocolConvert = "mess_to_resp"
+	Off        GroupProtocolConvert = "off"
+	RespToMess GroupProtocolConvert = "resp_to_mess"
+)
+
 // Defines values for GroupVisibility.
 const (
 	Private GroupVisibility = "private"
@@ -104,10 +113,16 @@ type Group struct {
 	Name      *string    `json:"Name,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
-	PriceMultiplier *float64         `json:"PriceMultiplier,omitempty"`
-	UpdatedAt       *time.Time       `json:"UpdatedAt,omitempty"`
-	Visibility      *GroupVisibility `json:"Visibility,omitempty"`
+	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
+
+	// ProtocolConvert 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
+	ProtocolConvert *GroupProtocolConvert `json:"ProtocolConvert,omitempty"`
+	UpdatedAt       *time.Time            `json:"UpdatedAt,omitempty"`
+	Visibility      *GroupVisibility      `json:"Visibility,omitempty"`
 }
+
+// GroupProtocolConvert 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
+type GroupProtocolConvert string
 
 // GroupVisibility defines model for GroupVisibility.
 type GroupVisibility string

@@ -80,6 +80,20 @@ func (_u *GroupUpdate) AddPriceMultiplier(v int) *GroupUpdate {
 	return _u
 }
 
+// SetProtocolConvert sets the "protocol_convert" field.
+func (_u *GroupUpdate) SetProtocolConvert(v string) *GroupUpdate {
+	_u.mutation.SetProtocolConvert(v)
+	return _u
+}
+
+// SetNillableProtocolConvert sets the "protocol_convert" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableProtocolConvert(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetProtocolConvert(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *GroupUpdate) SetUpdatedAt(v time.Time) *GroupUpdate {
 	_u.mutation.SetUpdatedAt(v)
@@ -303,6 +317,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
 		_spec.AddField(group.FieldPriceMultiplier, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.ProtocolConvert(); ok {
+		_spec.SetField(group.FieldProtocolConvert, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(group.FieldUpdatedAt, field.TypeTime, value)
 	}
@@ -516,6 +533,20 @@ func (_u *GroupUpdateOne) SetNillablePriceMultiplier(v *int) *GroupUpdateOne {
 // AddPriceMultiplier adds value to the "price_multiplier" field.
 func (_u *GroupUpdateOne) AddPriceMultiplier(v int) *GroupUpdateOne {
 	_u.mutation.AddPriceMultiplier(v)
+	return _u
+}
+
+// SetProtocolConvert sets the "protocol_convert" field.
+func (_u *GroupUpdateOne) SetProtocolConvert(v string) *GroupUpdateOne {
+	_u.mutation.SetProtocolConvert(v)
+	return _u
+}
+
+// SetNillableProtocolConvert sets the "protocol_convert" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableProtocolConvert(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetProtocolConvert(*v)
+	}
 	return _u
 }
 
@@ -771,6 +802,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AddedPriceMultiplier(); ok {
 		_spec.AddField(group.FieldPriceMultiplier, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ProtocolConvert(); ok {
+		_spec.SetField(group.FieldProtocolConvert, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(group.FieldUpdatedAt, field.TypeTime, value)

@@ -59,6 +59,20 @@ func (_c *GroupCreate) SetNillablePriceMultiplier(v *int) *GroupCreate {
 	return _c
 }
 
+// SetProtocolConvert sets the "protocol_convert" field.
+func (_c *GroupCreate) SetProtocolConvert(v string) *GroupCreate {
+	_c.mutation.SetProtocolConvert(v)
+	return _c
+}
+
+// SetNillableProtocolConvert sets the "protocol_convert" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableProtocolConvert(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetProtocolConvert(*v)
+	}
+	return _c
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_c *GroupCreate) SetUpdatedAt(v time.Time) *GroupCreate {
 	_c.mutation.SetUpdatedAt(v)
@@ -195,6 +209,10 @@ func (_c *GroupCreate) defaults() {
 		v := group.DefaultPriceMultiplier
 		_c.mutation.SetPriceMultiplier(v)
 	}
+	if _, ok := _c.mutation.ProtocolConvert(); !ok {
+		v := group.DefaultProtocolConvert
+		_c.mutation.SetProtocolConvert(v)
+	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := group.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
@@ -220,6 +238,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.PriceMultiplier(); !ok {
 		return &ValidationError{Name: "price_multiplier", err: errors.New(`ent: missing required field "Group.price_multiplier"`)}
+	}
+	if _, ok := _c.mutation.ProtocolConvert(); !ok {
+		return &ValidationError{Name: "protocol_convert", err: errors.New(`ent: missing required field "Group.protocol_convert"`)}
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Group.updated_at"`)}
@@ -271,6 +292,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PriceMultiplier(); ok {
 		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
 		_node.PriceMultiplier = value
+	}
+	if value, ok := _c.mutation.ProtocolConvert(); ok {
+		_spec.SetField(group.FieldProtocolConvert, field.TypeString, value)
+		_node.ProtocolConvert = value
 	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(group.FieldUpdatedAt, field.TypeTime, value)
@@ -426,6 +451,18 @@ func (u *GroupUpsert) AddPriceMultiplier(v int) *GroupUpsert {
 	return u
 }
 
+// SetProtocolConvert sets the "protocol_convert" field.
+func (u *GroupUpsert) SetProtocolConvert(v string) *GroupUpsert {
+	u.Set(group.FieldProtocolConvert, v)
+	return u
+}
+
+// UpdateProtocolConvert sets the "protocol_convert" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateProtocolConvert() *GroupUpsert {
+	u.SetExcluded(group.FieldProtocolConvert)
+	return u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (u *GroupUpsert) SetUpdatedAt(v time.Time) *GroupUpsert {
 	u.Set(group.FieldUpdatedAt, v)
@@ -562,6 +599,20 @@ func (u *GroupUpsertOne) AddPriceMultiplier(v int) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdatePriceMultiplier() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePriceMultiplier()
+	})
+}
+
+// SetProtocolConvert sets the "protocol_convert" field.
+func (u *GroupUpsertOne) SetProtocolConvert(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProtocolConvert(v)
+	})
+}
+
+// UpdateProtocolConvert sets the "protocol_convert" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateProtocolConvert() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProtocolConvert()
 	})
 }
 
@@ -874,6 +925,20 @@ func (u *GroupUpsertBulk) AddPriceMultiplier(v int) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdatePriceMultiplier() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePriceMultiplier()
+	})
+}
+
+// SetProtocolConvert sets the "protocol_convert" field.
+func (u *GroupUpsertBulk) SetProtocolConvert(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProtocolConvert(v)
+	})
+}
+
+// UpdateProtocolConvert sets the "protocol_convert" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateProtocolConvert() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProtocolConvert()
 	})
 }
 

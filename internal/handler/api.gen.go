@@ -12,6 +12,12 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for AccountExtCredentialType.
+const (
+	AccountExtCredentialTypeCodexOauth AccountExtCredentialType = "codex-oauth"
+	AccountExtCredentialTypeCodexPat   AccountExtCredentialType = "codex-pat"
+)
+
 // Defines values for AccountPatchStatus.
 const (
 	AccountPatchStatusActive    AccountPatchStatus = "active"
@@ -39,6 +45,15 @@ const (
 	Network   ErrorType = "network"
 	NoAccount ErrorType = "no_account"
 	None      ErrorType = "none"
+)
+
+// Defines values for GroupProtocolConvert.
+const (
+	ChatToMess GroupProtocolConvert = "chat_to_mess"
+	ChatToResp GroupProtocolConvert = "chat_to_resp"
+	MessToResp GroupProtocolConvert = "mess_to_resp"
+	Off        GroupProtocolConvert = "off"
+	RespToMess GroupProtocolConvert = "resp_to_mess"
 )
 
 // Defines values for GroupVisibility.
@@ -80,30 +95,51 @@ const (
 	Switch SettingType = "switch"
 )
 
+// Defines values for TemplateCredentialType.
+const (
+	TemplateCredentialTypeApiKey           TemplateCredentialType = "api_key"
+	TemplateCredentialTypeCodexOauth       TemplateCredentialType = "codex-oauth"
+	TemplateCredentialTypeCodexPat         TemplateCredentialType = "codex-pat"
+	TemplateCredentialTypeResponsesSpecial TemplateCredentialType = "responses-special"
+)
+
 // Defines values for TemplateSupportedFormats.
 const (
-	TemplateSupportedFormatsAnthropic       TemplateSupportedFormats = "anthropic"
-	TemplateSupportedFormatsOpenaiChat      TemplateSupportedFormats = "openai-chat"
-	TemplateSupportedFormatsOpenaiResponses TemplateSupportedFormats = "openai-responses"
+	TemplateSupportedFormatsAnthropic         TemplateSupportedFormats = "anthropic"
+	TemplateSupportedFormatsOpenaiChat        TemplateSupportedFormats = "openai-chat"
+	TemplateSupportedFormatsOpenaiResponses   TemplateSupportedFormats = "openai-responses"
+	TemplateSupportedFormatsOpenaiResponsesWs TemplateSupportedFormats = "openai-responses-ws"
 )
 
 // Defines values for TemplateCreateCredentialType.
 const (
-	ApiKey TemplateCreateCredentialType = "api_key"
+	TemplateCreateCredentialTypeApiKey           TemplateCreateCredentialType = "api_key"
+	TemplateCreateCredentialTypeCodexOauth       TemplateCreateCredentialType = "codex-oauth"
+	TemplateCreateCredentialTypeCodexPat         TemplateCreateCredentialType = "codex-pat"
+	TemplateCreateCredentialTypeResponsesSpecial TemplateCreateCredentialType = "responses-special"
 )
 
 // Defines values for TemplateCreateSupportedFormats.
 const (
-	TemplateCreateSupportedFormatsAnthropic       TemplateCreateSupportedFormats = "anthropic"
-	TemplateCreateSupportedFormatsOpenaiChat      TemplateCreateSupportedFormats = "openai-chat"
-	TemplateCreateSupportedFormatsOpenaiResponses TemplateCreateSupportedFormats = "openai-responses"
+	TemplateCreateSupportedFormatsAnthropic         TemplateCreateSupportedFormats = "anthropic"
+	TemplateCreateSupportedFormatsOpenaiChat        TemplateCreateSupportedFormats = "openai-chat"
+	TemplateCreateSupportedFormatsOpenaiResponses   TemplateCreateSupportedFormats = "openai-responses"
+	TemplateCreateSupportedFormatsOpenaiResponsesWs TemplateCreateSupportedFormats = "openai-responses-ws"
+)
+
+// Defines values for TemplateExtCredentialType.
+const (
+	TemplateExtCredentialTypeCodexOauth       TemplateExtCredentialType = "codex-oauth"
+	TemplateExtCredentialTypeCodexPat         TemplateExtCredentialType = "codex-pat"
+	TemplateExtCredentialTypeResponsesSpecial TemplateExtCredentialType = "responses-special"
 )
 
 // Defines values for TemplatePatchSupportedFormats.
 const (
-	TemplatePatchSupportedFormatsAnthropic       TemplatePatchSupportedFormats = "anthropic"
-	TemplatePatchSupportedFormatsOpenaiChat      TemplatePatchSupportedFormats = "openai-chat"
-	TemplatePatchSupportedFormatsOpenaiResponses TemplatePatchSupportedFormats = "openai-responses"
+	TemplatePatchSupportedFormatsAnthropic         TemplatePatchSupportedFormats = "anthropic"
+	TemplatePatchSupportedFormatsOpenaiChat        TemplatePatchSupportedFormats = "openai-chat"
+	TemplatePatchSupportedFormatsOpenaiResponses   TemplatePatchSupportedFormats = "openai-responses"
+	TemplatePatchSupportedFormatsOpenaiResponsesWs TemplatePatchSupportedFormats = "openai-responses-ws"
 )
 
 // Defines values for UserRole.
@@ -209,6 +245,44 @@ type AccountCreate struct {
 	UpstreamKey    string         `json:"upstream_key"`
 	Weight         *int           `json:"weight,omitempty"`
 }
+
+// AccountExt defines model for AccountExt.
+type AccountExt struct {
+	AccountId *int64 `json:"account_id,omitempty"`
+
+	// CredentialType 类型-列组约束（service 校验）：oauth 只允许 oauth_* 列组；pat 只允许 pat_key
+	CredentialType AccountExtCredentialType `json:"credential_type"`
+
+	// Email 管理标识：codex 账号登录邮箱（导入时由人工/上游提供，非自动生成——NewCodexIdentity 只生成身份四元组；可空）
+	Email *string `json:"email"`
+
+	// InstallationId 身份：账号级唯一（UUIDv4；响应恒有——首次写入自动生成）
+	InstallationId *string `json:"installation_id,omitempty"`
+
+	// OauthExpiresAt 凭据：oauth 访问令牌过期时间
+	OauthExpiresAt *time.Time `json:"oauth_expires_at"`
+
+	// OauthRefreshToken 凭据：oauth 刷新令牌
+	OauthRefreshToken *string `json:"oauth_refresh_token"`
+
+	// OauthToken 凭据：oauth 访问令牌（oauth 行必填——最小完整性）
+	OauthToken *string `json:"oauth_token"`
+
+	// PatKey 凭据：pat
+	PatKey *string `json:"pat_key"`
+
+	// SessionId 身份：会话级（UUIDv7；恒等 == thread_id；service 自动生成/沿用）
+	SessionId *string `json:"session_id"`
+
+	// ThreadId 身份：会话级（UUIDv7；恒等 == session_id）
+	ThreadId *string `json:"thread_id"`
+
+	// WindowId 身份：会话级派生 {thread_id}:0（导入时生成后恒定不变——恒 0，无透传无解析；上游不校验 n）
+	WindowId *string `json:"window_id"`
+}
+
+// AccountExtCredentialType 类型-列组约束（service 校验）：oauth 只允许 oauth_* 列组；pat 只允许 pat_key
+type AccountExtCredentialType string
 
 // AccountGroupsResponse defines model for AccountGroupsResponse.
 type AccountGroupsResponse struct {
@@ -361,9 +435,12 @@ type Group struct {
 	Name      *string    `json:"Name,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
-	PriceMultiplier *float64         `json:"PriceMultiplier,omitempty"`
-	UpdatedAt       *time.Time       `json:"UpdatedAt,omitempty"`
-	Visibility      *GroupVisibility `json:"Visibility,omitempty"`
+	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
+
+	// ProtocolConvert 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
+	ProtocolConvert *GroupProtocolConvert `json:"ProtocolConvert,omitempty"`
+	UpdatedAt       *time.Time            `json:"UpdatedAt,omitempty"`
+	Visibility      *GroupVisibility      `json:"Visibility,omitempty"`
 }
 
 // GroupAssignmentsBody defines model for GroupAssignmentsBody.
@@ -387,8 +464,11 @@ type GroupCreate struct {
 	Name string `json:"name"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
-	PriceMultiplier *float64         `json:"price_multiplier"`
-	Visibility      *GroupVisibility `json:"visibility,omitempty"`
+	PriceMultiplier *float64 `json:"price_multiplier"`
+
+	// ProtocolConvert 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
+	ProtocolConvert *GroupProtocolConvert `json:"protocol_convert,omitempty"`
+	Visibility      *GroupVisibility      `json:"visibility,omitempty"`
 }
 
 // GroupListResponse defines model for GroupListResponse.
@@ -402,6 +482,9 @@ type GroupPatch struct {
 	Name       *string          `json:"name,omitempty"`
 	Visibility *GroupVisibility `json:"visibility,omitempty"`
 }
+
+// GroupProtocolConvert 分组级协议转换（只补差，W5 网关 internal/protoconv 消费）：off = 不转换；chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages
+type GroupProtocolConvert string
 
 // GroupVisibility defines model for GroupVisibility.
 type GroupVisibility string
@@ -697,9 +780,11 @@ type StatBucket struct {
 
 // Template defines model for Template.
 type Template struct {
-	BaseURL        string    `json:"BaseURL"`
-	CreatedAt      time.Time `json:"CreatedAt"`
-	CredentialType *string   `json:"CredentialType,omitempty"`
+	BaseURL   string    `json:"BaseURL"`
+	CreatedAt time.Time `json:"CreatedAt"`
+
+	// CredentialType 模板号池类型；生态三类型只支持 resp / resp-ws 格式
+	CredentialType *TemplateCredentialType `json:"CredentialType,omitempty"`
 
 	// DeletedAt 软删除时间戳；null = 存活（列表过滤已删；GET 单个可查已删项）
 	DeletedAt        *time.Time                 `json:"DeletedAt"`
@@ -711,6 +796,9 @@ type Template struct {
 	SupportedFormats []TemplateSupportedFormats `json:"SupportedFormats"`
 	UpdatedAt        time.Time                  `json:"UpdatedAt"`
 }
+
+// TemplateCredentialType 模板号池类型；生态三类型只支持 resp / resp-ws 格式
+type TemplateCredentialType string
 
 // TemplateSupportedFormats defines model for Template.SupportedFormats.
 type TemplateSupportedFormats string
@@ -731,6 +819,19 @@ type TemplateCreateCredentialType string
 
 // TemplateCreateSupportedFormats defines model for TemplateCreate.SupportedFormats.
 type TemplateCreateSupportedFormats string
+
+// TemplateExt defines model for TemplateExt.
+type TemplateExt struct {
+	// CredentialType 类型声明；必须与父模板 credential_type 一致（不一致 → 400）
+	CredentialType TemplateExtCredentialType `json:"credential_type"`
+
+	// StripImageTools 三类型公共能力开关：模板级图像 tool 剥离（NULL = 未配置 = 关闭）
+	StripImageTools *bool  `json:"strip_image_tools"`
+	TemplateId      *int64 `json:"template_id,omitempty"`
+}
+
+// TemplateExtCredentialType 类型声明；必须与父模板 credential_type 一致（不一致 → 400）
+type TemplateExtCredentialType string
 
 // TemplateListResponse defines model for TemplateListResponse.
 type TemplateListResponse struct {
@@ -1001,6 +1102,9 @@ type PostAccountsBatchUpdateJSONRequestBody = BatchUpdateAccountsBody
 // PutAccountsIdJSONRequestBody defines body for PutAccountsId for application/json ContentType.
 type PutAccountsIdJSONRequestBody = AccountCreate
 
+// PutAccountsIdExtJSONRequestBody defines body for PutAccountsIdExt for application/json ContentType.
+type PutAccountsIdExtJSONRequestBody = AccountExt
+
 // PostGroupsJSONRequestBody defines body for PostGroups for application/json ContentType.
 type PostGroupsJSONRequestBody = GroupCreate
 
@@ -1052,6 +1156,9 @@ type PostTemplatesBatchUpdateJSONRequestBody = BatchUpdateTemplatesBody
 // PutTemplatesIdJSONRequestBody defines body for PutTemplatesId for application/json ContentType.
 type PutTemplatesIdJSONRequestBody = TemplateCreate
 
+// PutTemplatesIdExtJSONRequestBody defines body for PutTemplatesIdExt for application/json ContentType.
+type PutTemplatesIdExtJSONRequestBody = TemplateExt
+
 // PostUsersJSONRequestBody defines body for PostUsers for application/json ContentType.
 type PostUsersJSONRequestBody = UserCreate
 
@@ -1084,6 +1191,12 @@ type ServerInterface interface {
 
 	// (PUT /accounts/{id})
 	PutAccountsId(w http.ResponseWriter, r *http.Request, id int64)
+	// 读取账号类型化鉴权扩展（编辑回显；仅 codex-oauth/codex-pat 账号有 ext 行）
+	// (GET /accounts/{id}/ext)
+	GetAccountsIdExt(w http.ResponseWriter, r *http.Request, id int64)
+	// 幂等写入账号类型化鉴权扩展（Create/Update 合一；全列更新含 NULL 清空）
+	// (PUT /accounts/{id}/ext)
+	PutAccountsIdExt(w http.ResponseWriter, r *http.Request, id int64)
 	// 读取账号的全部分组 id（编辑回显；不随账号列表返回）
 	// (GET /accounts/{id}/groups)
 	GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, id int64)
@@ -1189,6 +1302,12 @@ type ServerInterface interface {
 
 	// (PUT /templates/{id})
 	PutTemplatesId(w http.ResponseWriter, r *http.Request, id int64)
+	// 读取模板类型化扩展（编辑回显；仅生态三类型模板有 ext 行）
+	// (GET /templates/{id}/ext)
+	GetTemplatesIdExt(w http.ResponseWriter, r *http.Request, id int64)
+	// 幂等写入模板类型化扩展（Create/Update 合一；全列更新含 NULL 清空）
+	// (PUT /templates/{id}/ext)
+	PutTemplatesIdExt(w http.ResponseWriter, r *http.Request, id int64)
 	// 用户列表（platform_admin 专属；分页/筛选/排序）
 	// (GET /users)
 	GetUsers(w http.ResponseWriter, r *http.Request, params GetUsersParams)
@@ -1246,6 +1365,18 @@ func (_ Unimplemented) GetAccountsId(w http.ResponseWriter, r *http.Request, id 
 
 // (PUT /accounts/{id})
 func (_ Unimplemented) PutAccountsId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 读取账号类型化鉴权扩展（编辑回显；仅 codex-oauth/codex-pat 账号有 ext 行）
+// (GET /accounts/{id}/ext)
+func (_ Unimplemented) GetAccountsIdExt(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 幂等写入账号类型化鉴权扩展（Create/Update 合一；全列更新含 NULL 清空）
+// (PUT /accounts/{id}/ext)
+func (_ Unimplemented) PutAccountsIdExt(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1450,6 +1581,18 @@ func (_ Unimplemented) GetTemplatesId(w http.ResponseWriter, r *http.Request, id
 
 // (PUT /templates/{id})
 func (_ Unimplemented) PutTemplatesId(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 读取模板类型化扩展（编辑回显；仅生态三类型模板有 ext 行）
+// (GET /templates/{id}/ext)
+func (_ Unimplemented) GetTemplatesIdExt(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 幂等写入模板类型化扩展（Create/Update 合一；全列更新含 NULL 清空）
+// (PUT /templates/{id}/ext)
+func (_ Unimplemented) PutTemplatesIdExt(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1675,6 +1818,56 @@ func (siw *ServerInterfaceWrapper) PutAccountsId(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutAccountsId(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAccountsIdExt operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountsIdExt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccountsIdExt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutAccountsIdExt operation middleware
+func (siw *ServerInterfaceWrapper) PutAccountsIdExt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutAccountsIdExt(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2694,6 +2887,56 @@ func (siw *ServerInterfaceWrapper) PutTemplatesId(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetTemplatesIdExt operation middleware
+func (siw *ServerInterfaceWrapper) GetTemplatesIdExt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTemplatesIdExt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutTemplatesIdExt operation middleware
+func (siw *ServerInterfaceWrapper) PutTemplatesIdExt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutTemplatesIdExt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUsers operation middleware
 func (siw *ServerInterfaceWrapper) GetUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -2977,6 +3220,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/accounts/{id}", wrapper.PutAccountsId)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/accounts/{id}/ext", wrapper.GetAccountsIdExt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/accounts/{id}/ext", wrapper.PutAccountsIdExt)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/accounts/{id}/groups", wrapper.GetAccountsIdGroups)
 	})
 	r.Group(func(r chi.Router) {
@@ -3080,6 +3329,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/templates/{id}", wrapper.PutTemplatesId)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/templates/{id}/ext", wrapper.GetTemplatesIdExt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/templates/{id}/ext", wrapper.PutTemplatesIdExt)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/users", wrapper.GetUsers)

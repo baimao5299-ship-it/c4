@@ -25,7 +25,7 @@ func toAPITemplate(t *domain.Template) Template {
 		ID:               t.ID,
 		Name:             t.Name,
 		BaseURL:          t.BaseURL,
-		CredentialType:   ptr(string(t.CredentialType)),
+		CredentialType:   ptr(TemplateCredentialType(t.CredentialType)),
 		SupportedFormats: formats,
 		Models:           &t.Models,
 		FormatModels:     toAPITemplateFormatModels(t.FormatModels),
@@ -90,16 +90,19 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 // float64，与 balance 毫分↔USD 同构的 API 边界换算）。
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
+	pc := GroupProtocolConvert(g.ProtocolConvert)
 	return Group{
 		ID:              &g.ID,
 		Name:            &g.Name,
 		Visibility:      &v,
 		PriceMultiplier: ptr(multToNormal(g.PriceMultiplier)),
+		ProtocolConvert: &pc,
 		CreatedAt:       &g.CreatedAt,
 		UpdatedAt:       &g.UpdatedAt,
 		DeletedAt:       g.DeletedAt, // 软删除时间戳（只读字段，入参不接收）
 	}
 }
+
 
 // multToNormal 万分数 → 正常值（API 展示换算：15000 → 1.5；1 USD = 100,000
 // 毫分同构——内部存储恒万分数，仅 API 边界换算）。

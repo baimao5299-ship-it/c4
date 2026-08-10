@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/accountext"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/template"
 	"time"
@@ -192,6 +193,21 @@ func (_c *AccountCreate) AddGroups(v ...*Group) *AccountCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddGroupIDs(ids...)
+}
+
+// AddExtIDs adds the "ext" edge to the AccountExt entity by IDs.
+func (_c *AccountCreate) AddExtIDs(ids ...int64) *AccountCreate {
+	_c.mutation.AddExtIDs(ids...)
+	return _c
+}
+
+// AddExt adds the "ext" edges to the AccountExt entity.
+func (_c *AccountCreate) AddExt(v ...*AccountExt) *AccountCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddExtIDs(ids...)
 }
 
 // Mutation returns the AccountMutation object of the builder.
@@ -388,6 +404,22 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ExtIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   account.ExtTable,
+			Columns: []string{account.ExtColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountext.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -433,6 +433,29 @@ func HasAccountsWith(preds ...predicate.Account) predicate.Template {
 	})
 }
 
+// HasExt applies the HasEdge predicate on the "ext" edge.
+func HasExt() predicate.Template {
+	return predicate.Template(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ExtTable, ExtColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasExtWith applies the HasEdge predicate on the "ext" edge with a given conditions (other predicates).
+func HasExtWith(preds ...predicate.TemplateExt) predicate.Template {
+	return predicate.Template(func(s *sql.Selector) {
+		step := newExtStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Template) predicate.Template {
 	return predicate.Template(sql.AndPredicates(predicates...))

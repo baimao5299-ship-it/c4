@@ -9,6 +9,9 @@ import (
 // Account is the predicate function for account builders.
 type Account func(*sql.Selector)
 
+// AccountExt is the predicate function for accountext builders.
+type AccountExt func(*sql.Selector)
+
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 
@@ -38,6 +41,9 @@ type TempBalance func(*sql.Selector)
 
 // Template is the predicate function for template builders.
 type Template func(*sql.Selector)
+
+// TemplateExt is the predicate function for templateext builders.
+type TemplateExt func(*sql.Selector)
 
 // UsageLog is the predicate function for usagelog builders.
 type UsageLog func(*sql.Selector)

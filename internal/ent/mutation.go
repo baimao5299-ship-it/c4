@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/accountext"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
@@ -19,6 +20,7 @@ import (
 	"go-proxy-mini/internal/ent/setting"
 	"go-proxy-mini/internal/ent/tempbalance"
 	"go-proxy-mini/internal/ent/template"
+	"go-proxy-mini/internal/ent/templateext"
 	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/ent/usagestat"
 	"go-proxy-mini/internal/ent/user"
@@ -39,6 +41,7 @@ const (
 
 	// Node types.
 	TypeAccount         = "Account"
+	TypeAccountExt      = "AccountExt"
 	TypeGroup           = "Group"
 	TypeGroupAssignment = "GroupAssignment"
 	TypeKey             = "Key"
@@ -49,6 +52,7 @@ const (
 	TypeSetting         = "Setting"
 	TypeTempBalance     = "TempBalance"
 	TypeTemplate        = "Template"
+	TypeTemplateExt     = "TemplateExt"
 	TypeUsageLog        = "UsageLog"
 	TypeUsageStat       = "UsageStat"
 	TypeUser            = "User"
@@ -79,6 +83,9 @@ type AccountMutation struct {
 	groups             map[int64]struct{}
 	removedgroups      map[int64]struct{}
 	clearedgroups      bool
+	ext                map[int64]struct{}
+	removedext         map[int64]struct{}
+	clearedext         bool
 	done               bool
 	oldValue           func(context.Context) (*Account, error)
 	predicates         []predicate.Account
@@ -793,6 +800,60 @@ func (m *AccountMutation) ResetGroups() {
 	m.removedgroups = nil
 }
 
+// AddExtIDs adds the "ext" edge to the AccountExt entity by ids.
+func (m *AccountMutation) AddExtIDs(ids ...int64) {
+	if m.ext == nil {
+		m.ext = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ext[ids[i]] = struct{}{}
+	}
+}
+
+// ClearExt clears the "ext" edge to the AccountExt entity.
+func (m *AccountMutation) ClearExt() {
+	m.clearedext = true
+}
+
+// ExtCleared reports if the "ext" edge to the AccountExt entity was cleared.
+func (m *AccountMutation) ExtCleared() bool {
+	return m.clearedext
+}
+
+// RemoveExtIDs removes the "ext" edge to the AccountExt entity by IDs.
+func (m *AccountMutation) RemoveExtIDs(ids ...int64) {
+	if m.removedext == nil {
+		m.removedext = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ext, ids[i])
+		m.removedext[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedExt returns the removed IDs of the "ext" edge to the AccountExt entity.
+func (m *AccountMutation) RemovedExtIDs() (ids []int64) {
+	for id := range m.removedext {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ExtIDs returns the "ext" edge IDs in the mutation.
+func (m *AccountMutation) ExtIDs() (ids []int64) {
+	for id := range m.ext {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetExt resets all changes to the "ext" edge.
+func (m *AccountMutation) ResetExt() {
+	m.ext = nil
+	m.clearedext = false
+	m.removedext = nil
+}
+
 // Where appends a list predicates to the AccountMutation builder.
 func (m *AccountMutation) Where(ps ...predicate.Account) {
 	m.predicates = append(m.predicates, ps...)
@@ -1167,12 +1228,15 @@ func (m *AccountMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AccountMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.template != nil {
 		edges = append(edges, account.EdgeTemplate)
 	}
 	if m.groups != nil {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.ext != nil {
+		edges = append(edges, account.EdgeExt)
 	}
 	return edges
 }
@@ -1191,15 +1255,24 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case account.EdgeExt:
+		ids := make([]ent.Value, 0, len(m.ext))
+		for id := range m.ext {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AccountMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.removedgroups != nil {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.removedext != nil {
+		edges = append(edges, account.EdgeExt)
 	}
 	return edges
 }
@@ -1214,18 +1287,27 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case account.EdgeExt:
+		ids := make([]ent.Value, 0, len(m.removedext))
+		for id := range m.removedext {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AccountMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedtemplate {
 		edges = append(edges, account.EdgeTemplate)
 	}
 	if m.clearedgroups {
 		edges = append(edges, account.EdgeGroups)
+	}
+	if m.clearedext {
+		edges = append(edges, account.EdgeExt)
 	}
 	return edges
 }
@@ -1238,6 +1320,8 @@ func (m *AccountMutation) EdgeCleared(name string) bool {
 		return m.clearedtemplate
 	case account.EdgeGroups:
 		return m.clearedgroups
+	case account.EdgeExt:
+		return m.clearedext
 	}
 	return false
 }
@@ -1263,8 +1347,1095 @@ func (m *AccountMutation) ResetEdge(name string) error {
 	case account.EdgeGroups:
 		m.ResetGroups()
 		return nil
+	case account.EdgeExt:
+		m.ResetExt()
+		return nil
 	}
 	return fmt.Errorf("unknown Account edge %s", name)
+}
+
+// AccountExtMutation represents an operation that mutates the AccountExt nodes in the graph.
+type AccountExtMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *int64
+	credential_type     *string
+	installation_id     *string
+	session_id          *string
+	thread_id           *string
+	window_id           *string
+	oauth_token         *string
+	oauth_refresh_token *string
+	oauth_expires_at    *time.Time
+	pat_key             *string
+	email               *string
+	clearedFields       map[string]struct{}
+	account             *int64
+	clearedaccount      bool
+	done                bool
+	oldValue            func(context.Context) (*AccountExt, error)
+	predicates          []predicate.AccountExt
+}
+
+var _ ent.Mutation = (*AccountExtMutation)(nil)
+
+// accountextOption allows management of the mutation configuration using functional options.
+type accountextOption func(*AccountExtMutation)
+
+// newAccountExtMutation creates new mutation for the AccountExt entity.
+func newAccountExtMutation(c config, op Op, opts ...accountextOption) *AccountExtMutation {
+	m := &AccountExtMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountExt,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountExtID sets the ID field of the mutation.
+func withAccountExtID(id int64) accountextOption {
+	return func(m *AccountExtMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountExt
+		)
+		m.oldValue = func(ctx context.Context) (*AccountExt, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountExt.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountExt sets the old AccountExt of the mutation.
+func withAccountExt(node *AccountExt) accountextOption {
+	return func(m *AccountExtMutation) {
+		m.oldValue = func(context.Context) (*AccountExt, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountExtMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountExtMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of AccountExt entities.
+func (m *AccountExtMutation) SetID(id int64) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountExtMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountExtMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountExt.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *AccountExtMutation) SetAccountID(i int64) {
+	m.account = &i
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *AccountExtMutation) AccountID() (r int64, exists bool) {
+	v := m.account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *AccountExtMutation) ResetAccountID() {
+	m.account = nil
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (m *AccountExtMutation) SetCredentialType(s string) {
+	m.credential_type = &s
+}
+
+// CredentialType returns the value of the "credential_type" field in the mutation.
+func (m *AccountExtMutation) CredentialType() (r string, exists bool) {
+	v := m.credential_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCredentialType returns the old "credential_type" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldCredentialType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCredentialType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCredentialType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCredentialType: %w", err)
+	}
+	return oldValue.CredentialType, nil
+}
+
+// ResetCredentialType resets all changes to the "credential_type" field.
+func (m *AccountExtMutation) ResetCredentialType() {
+	m.credential_type = nil
+}
+
+// SetInstallationID sets the "installation_id" field.
+func (m *AccountExtMutation) SetInstallationID(s string) {
+	m.installation_id = &s
+}
+
+// InstallationID returns the value of the "installation_id" field in the mutation.
+func (m *AccountExtMutation) InstallationID() (r string, exists bool) {
+	v := m.installation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInstallationID returns the old "installation_id" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldInstallationID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInstallationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInstallationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInstallationID: %w", err)
+	}
+	return oldValue.InstallationID, nil
+}
+
+// ResetInstallationID resets all changes to the "installation_id" field.
+func (m *AccountExtMutation) ResetInstallationID() {
+	m.installation_id = nil
+}
+
+// SetSessionID sets the "session_id" field.
+func (m *AccountExtMutation) SetSessionID(s string) {
+	m.session_id = &s
+}
+
+// SessionID returns the value of the "session_id" field in the mutation.
+func (m *AccountExtMutation) SessionID() (r string, exists bool) {
+	v := m.session_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionID returns the old "session_id" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldSessionID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionID: %w", err)
+	}
+	return oldValue.SessionID, nil
+}
+
+// ClearSessionID clears the value of the "session_id" field.
+func (m *AccountExtMutation) ClearSessionID() {
+	m.session_id = nil
+	m.clearedFields[accountext.FieldSessionID] = struct{}{}
+}
+
+// SessionIDCleared returns if the "session_id" field was cleared in this mutation.
+func (m *AccountExtMutation) SessionIDCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldSessionID]
+	return ok
+}
+
+// ResetSessionID resets all changes to the "session_id" field.
+func (m *AccountExtMutation) ResetSessionID() {
+	m.session_id = nil
+	delete(m.clearedFields, accountext.FieldSessionID)
+}
+
+// SetThreadID sets the "thread_id" field.
+func (m *AccountExtMutation) SetThreadID(s string) {
+	m.thread_id = &s
+}
+
+// ThreadID returns the value of the "thread_id" field in the mutation.
+func (m *AccountExtMutation) ThreadID() (r string, exists bool) {
+	v := m.thread_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldThreadID returns the old "thread_id" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldThreadID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldThreadID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldThreadID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldThreadID: %w", err)
+	}
+	return oldValue.ThreadID, nil
+}
+
+// ClearThreadID clears the value of the "thread_id" field.
+func (m *AccountExtMutation) ClearThreadID() {
+	m.thread_id = nil
+	m.clearedFields[accountext.FieldThreadID] = struct{}{}
+}
+
+// ThreadIDCleared returns if the "thread_id" field was cleared in this mutation.
+func (m *AccountExtMutation) ThreadIDCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldThreadID]
+	return ok
+}
+
+// ResetThreadID resets all changes to the "thread_id" field.
+func (m *AccountExtMutation) ResetThreadID() {
+	m.thread_id = nil
+	delete(m.clearedFields, accountext.FieldThreadID)
+}
+
+// SetWindowID sets the "window_id" field.
+func (m *AccountExtMutation) SetWindowID(s string) {
+	m.window_id = &s
+}
+
+// WindowID returns the value of the "window_id" field in the mutation.
+func (m *AccountExtMutation) WindowID() (r string, exists bool) {
+	v := m.window_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWindowID returns the old "window_id" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldWindowID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWindowID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWindowID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWindowID: %w", err)
+	}
+	return oldValue.WindowID, nil
+}
+
+// ClearWindowID clears the value of the "window_id" field.
+func (m *AccountExtMutation) ClearWindowID() {
+	m.window_id = nil
+	m.clearedFields[accountext.FieldWindowID] = struct{}{}
+}
+
+// WindowIDCleared returns if the "window_id" field was cleared in this mutation.
+func (m *AccountExtMutation) WindowIDCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldWindowID]
+	return ok
+}
+
+// ResetWindowID resets all changes to the "window_id" field.
+func (m *AccountExtMutation) ResetWindowID() {
+	m.window_id = nil
+	delete(m.clearedFields, accountext.FieldWindowID)
+}
+
+// SetOauthToken sets the "oauth_token" field.
+func (m *AccountExtMutation) SetOauthToken(s string) {
+	m.oauth_token = &s
+}
+
+// OauthToken returns the value of the "oauth_token" field in the mutation.
+func (m *AccountExtMutation) OauthToken() (r string, exists bool) {
+	v := m.oauth_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOauthToken returns the old "oauth_token" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldOauthToken(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOauthToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOauthToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOauthToken: %w", err)
+	}
+	return oldValue.OauthToken, nil
+}
+
+// ClearOauthToken clears the value of the "oauth_token" field.
+func (m *AccountExtMutation) ClearOauthToken() {
+	m.oauth_token = nil
+	m.clearedFields[accountext.FieldOauthToken] = struct{}{}
+}
+
+// OauthTokenCleared returns if the "oauth_token" field was cleared in this mutation.
+func (m *AccountExtMutation) OauthTokenCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldOauthToken]
+	return ok
+}
+
+// ResetOauthToken resets all changes to the "oauth_token" field.
+func (m *AccountExtMutation) ResetOauthToken() {
+	m.oauth_token = nil
+	delete(m.clearedFields, accountext.FieldOauthToken)
+}
+
+// SetOauthRefreshToken sets the "oauth_refresh_token" field.
+func (m *AccountExtMutation) SetOauthRefreshToken(s string) {
+	m.oauth_refresh_token = &s
+}
+
+// OauthRefreshToken returns the value of the "oauth_refresh_token" field in the mutation.
+func (m *AccountExtMutation) OauthRefreshToken() (r string, exists bool) {
+	v := m.oauth_refresh_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOauthRefreshToken returns the old "oauth_refresh_token" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldOauthRefreshToken(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOauthRefreshToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOauthRefreshToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOauthRefreshToken: %w", err)
+	}
+	return oldValue.OauthRefreshToken, nil
+}
+
+// ClearOauthRefreshToken clears the value of the "oauth_refresh_token" field.
+func (m *AccountExtMutation) ClearOauthRefreshToken() {
+	m.oauth_refresh_token = nil
+	m.clearedFields[accountext.FieldOauthRefreshToken] = struct{}{}
+}
+
+// OauthRefreshTokenCleared returns if the "oauth_refresh_token" field was cleared in this mutation.
+func (m *AccountExtMutation) OauthRefreshTokenCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldOauthRefreshToken]
+	return ok
+}
+
+// ResetOauthRefreshToken resets all changes to the "oauth_refresh_token" field.
+func (m *AccountExtMutation) ResetOauthRefreshToken() {
+	m.oauth_refresh_token = nil
+	delete(m.clearedFields, accountext.FieldOauthRefreshToken)
+}
+
+// SetOauthExpiresAt sets the "oauth_expires_at" field.
+func (m *AccountExtMutation) SetOauthExpiresAt(t time.Time) {
+	m.oauth_expires_at = &t
+}
+
+// OauthExpiresAt returns the value of the "oauth_expires_at" field in the mutation.
+func (m *AccountExtMutation) OauthExpiresAt() (r time.Time, exists bool) {
+	v := m.oauth_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOauthExpiresAt returns the old "oauth_expires_at" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldOauthExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOauthExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOauthExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOauthExpiresAt: %w", err)
+	}
+	return oldValue.OauthExpiresAt, nil
+}
+
+// ClearOauthExpiresAt clears the value of the "oauth_expires_at" field.
+func (m *AccountExtMutation) ClearOauthExpiresAt() {
+	m.oauth_expires_at = nil
+	m.clearedFields[accountext.FieldOauthExpiresAt] = struct{}{}
+}
+
+// OauthExpiresAtCleared returns if the "oauth_expires_at" field was cleared in this mutation.
+func (m *AccountExtMutation) OauthExpiresAtCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldOauthExpiresAt]
+	return ok
+}
+
+// ResetOauthExpiresAt resets all changes to the "oauth_expires_at" field.
+func (m *AccountExtMutation) ResetOauthExpiresAt() {
+	m.oauth_expires_at = nil
+	delete(m.clearedFields, accountext.FieldOauthExpiresAt)
+}
+
+// SetPatKey sets the "pat_key" field.
+func (m *AccountExtMutation) SetPatKey(s string) {
+	m.pat_key = &s
+}
+
+// PatKey returns the value of the "pat_key" field in the mutation.
+func (m *AccountExtMutation) PatKey() (r string, exists bool) {
+	v := m.pat_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPatKey returns the old "pat_key" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldPatKey(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPatKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPatKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPatKey: %w", err)
+	}
+	return oldValue.PatKey, nil
+}
+
+// ClearPatKey clears the value of the "pat_key" field.
+func (m *AccountExtMutation) ClearPatKey() {
+	m.pat_key = nil
+	m.clearedFields[accountext.FieldPatKey] = struct{}{}
+}
+
+// PatKeyCleared returns if the "pat_key" field was cleared in this mutation.
+func (m *AccountExtMutation) PatKeyCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldPatKey]
+	return ok
+}
+
+// ResetPatKey resets all changes to the "pat_key" field.
+func (m *AccountExtMutation) ResetPatKey() {
+	m.pat_key = nil
+	delete(m.clearedFields, accountext.FieldPatKey)
+}
+
+// SetEmail sets the "email" field.
+func (m *AccountExtMutation) SetEmail(s string) {
+	m.email = &s
+}
+
+// Email returns the value of the "email" field in the mutation.
+func (m *AccountExtMutation) Email() (r string, exists bool) {
+	v := m.email
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEmail returns the old "email" field's value of the AccountExt entity.
+// If the AccountExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountExtMutation) OldEmail(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEmail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEmail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEmail: %w", err)
+	}
+	return oldValue.Email, nil
+}
+
+// ClearEmail clears the value of the "email" field.
+func (m *AccountExtMutation) ClearEmail() {
+	m.email = nil
+	m.clearedFields[accountext.FieldEmail] = struct{}{}
+}
+
+// EmailCleared returns if the "email" field was cleared in this mutation.
+func (m *AccountExtMutation) EmailCleared() bool {
+	_, ok := m.clearedFields[accountext.FieldEmail]
+	return ok
+}
+
+// ResetEmail resets all changes to the "email" field.
+func (m *AccountExtMutation) ResetEmail() {
+	m.email = nil
+	delete(m.clearedFields, accountext.FieldEmail)
+}
+
+// ClearAccount clears the "account" edge to the Account entity.
+func (m *AccountExtMutation) ClearAccount() {
+	m.clearedaccount = true
+	m.clearedFields[accountext.FieldAccountID] = struct{}{}
+}
+
+// AccountCleared reports if the "account" edge to the Account entity was cleared.
+func (m *AccountExtMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *AccountExtMutation) AccountIDs() (ids []int64) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *AccountExtMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
+// Where appends a list predicates to the AccountExtMutation builder.
+func (m *AccountExtMutation) Where(ps ...predicate.AccountExt) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountExtMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountExtMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountExt, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountExtMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountExtMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountExt).
+func (m *AccountExtMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountExtMutation) Fields() []string {
+	fields := make([]string, 0, 11)
+	if m.account != nil {
+		fields = append(fields, accountext.FieldAccountID)
+	}
+	if m.credential_type != nil {
+		fields = append(fields, accountext.FieldCredentialType)
+	}
+	if m.installation_id != nil {
+		fields = append(fields, accountext.FieldInstallationID)
+	}
+	if m.session_id != nil {
+		fields = append(fields, accountext.FieldSessionID)
+	}
+	if m.thread_id != nil {
+		fields = append(fields, accountext.FieldThreadID)
+	}
+	if m.window_id != nil {
+		fields = append(fields, accountext.FieldWindowID)
+	}
+	if m.oauth_token != nil {
+		fields = append(fields, accountext.FieldOauthToken)
+	}
+	if m.oauth_refresh_token != nil {
+		fields = append(fields, accountext.FieldOauthRefreshToken)
+	}
+	if m.oauth_expires_at != nil {
+		fields = append(fields, accountext.FieldOauthExpiresAt)
+	}
+	if m.pat_key != nil {
+		fields = append(fields, accountext.FieldPatKey)
+	}
+	if m.email != nil {
+		fields = append(fields, accountext.FieldEmail)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountExtMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountext.FieldAccountID:
+		return m.AccountID()
+	case accountext.FieldCredentialType:
+		return m.CredentialType()
+	case accountext.FieldInstallationID:
+		return m.InstallationID()
+	case accountext.FieldSessionID:
+		return m.SessionID()
+	case accountext.FieldThreadID:
+		return m.ThreadID()
+	case accountext.FieldWindowID:
+		return m.WindowID()
+	case accountext.FieldOauthToken:
+		return m.OauthToken()
+	case accountext.FieldOauthRefreshToken:
+		return m.OauthRefreshToken()
+	case accountext.FieldOauthExpiresAt:
+		return m.OauthExpiresAt()
+	case accountext.FieldPatKey:
+		return m.PatKey()
+	case accountext.FieldEmail:
+		return m.Email()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountExtMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountext.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case accountext.FieldCredentialType:
+		return m.OldCredentialType(ctx)
+	case accountext.FieldInstallationID:
+		return m.OldInstallationID(ctx)
+	case accountext.FieldSessionID:
+		return m.OldSessionID(ctx)
+	case accountext.FieldThreadID:
+		return m.OldThreadID(ctx)
+	case accountext.FieldWindowID:
+		return m.OldWindowID(ctx)
+	case accountext.FieldOauthToken:
+		return m.OldOauthToken(ctx)
+	case accountext.FieldOauthRefreshToken:
+		return m.OldOauthRefreshToken(ctx)
+	case accountext.FieldOauthExpiresAt:
+		return m.OldOauthExpiresAt(ctx)
+	case accountext.FieldPatKey:
+		return m.OldPatKey(ctx)
+	case accountext.FieldEmail:
+		return m.OldEmail(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountExt field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountExtMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountext.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case accountext.FieldCredentialType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCredentialType(v)
+		return nil
+	case accountext.FieldInstallationID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInstallationID(v)
+		return nil
+	case accountext.FieldSessionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionID(v)
+		return nil
+	case accountext.FieldThreadID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetThreadID(v)
+		return nil
+	case accountext.FieldWindowID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWindowID(v)
+		return nil
+	case accountext.FieldOauthToken:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOauthToken(v)
+		return nil
+	case accountext.FieldOauthRefreshToken:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOauthRefreshToken(v)
+		return nil
+	case accountext.FieldOauthExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOauthExpiresAt(v)
+		return nil
+	case accountext.FieldPatKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPatKey(v)
+		return nil
+	case accountext.FieldEmail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEmail(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountExt field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountExtMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountExtMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountExtMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown AccountExt numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountExtMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountext.FieldSessionID) {
+		fields = append(fields, accountext.FieldSessionID)
+	}
+	if m.FieldCleared(accountext.FieldThreadID) {
+		fields = append(fields, accountext.FieldThreadID)
+	}
+	if m.FieldCleared(accountext.FieldWindowID) {
+		fields = append(fields, accountext.FieldWindowID)
+	}
+	if m.FieldCleared(accountext.FieldOauthToken) {
+		fields = append(fields, accountext.FieldOauthToken)
+	}
+	if m.FieldCleared(accountext.FieldOauthRefreshToken) {
+		fields = append(fields, accountext.FieldOauthRefreshToken)
+	}
+	if m.FieldCleared(accountext.FieldOauthExpiresAt) {
+		fields = append(fields, accountext.FieldOauthExpiresAt)
+	}
+	if m.FieldCleared(accountext.FieldPatKey) {
+		fields = append(fields, accountext.FieldPatKey)
+	}
+	if m.FieldCleared(accountext.FieldEmail) {
+		fields = append(fields, accountext.FieldEmail)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountExtMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountExtMutation) ClearField(name string) error {
+	switch name {
+	case accountext.FieldSessionID:
+		m.ClearSessionID()
+		return nil
+	case accountext.FieldThreadID:
+		m.ClearThreadID()
+		return nil
+	case accountext.FieldWindowID:
+		m.ClearWindowID()
+		return nil
+	case accountext.FieldOauthToken:
+		m.ClearOauthToken()
+		return nil
+	case accountext.FieldOauthRefreshToken:
+		m.ClearOauthRefreshToken()
+		return nil
+	case accountext.FieldOauthExpiresAt:
+		m.ClearOauthExpiresAt()
+		return nil
+	case accountext.FieldPatKey:
+		m.ClearPatKey()
+		return nil
+	case accountext.FieldEmail:
+		m.ClearEmail()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountExt nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountExtMutation) ResetField(name string) error {
+	switch name {
+	case accountext.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case accountext.FieldCredentialType:
+		m.ResetCredentialType()
+		return nil
+	case accountext.FieldInstallationID:
+		m.ResetInstallationID()
+		return nil
+	case accountext.FieldSessionID:
+		m.ResetSessionID()
+		return nil
+	case accountext.FieldThreadID:
+		m.ResetThreadID()
+		return nil
+	case accountext.FieldWindowID:
+		m.ResetWindowID()
+		return nil
+	case accountext.FieldOauthToken:
+		m.ResetOauthToken()
+		return nil
+	case accountext.FieldOauthRefreshToken:
+		m.ResetOauthRefreshToken()
+		return nil
+	case accountext.FieldOauthExpiresAt:
+		m.ResetOauthExpiresAt()
+		return nil
+	case accountext.FieldPatKey:
+		m.ResetPatKey()
+		return nil
+	case accountext.FieldEmail:
+		m.ResetEmail()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountExt field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountExtMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.account != nil {
+		edges = append(edges, accountext.EdgeAccount)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountExtMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accountext.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountExtMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountExtMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountExtMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedaccount {
+		edges = append(edges, accountext.EdgeAccount)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountExtMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accountext.EdgeAccount:
+		return m.clearedaccount
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountExtMutation) ClearEdge(name string) error {
+	switch name {
+	case accountext.EdgeAccount:
+		m.ClearAccount()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountExt unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountExtMutation) ResetEdge(name string) error {
+	switch name {
+	case accountext.EdgeAccount:
+		m.ResetAccount()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountExt edge %s", name)
 }
 
 // GroupMutation represents an operation that mutates the Group nodes in the graph.
@@ -1277,6 +2448,7 @@ type GroupMutation struct {
 	visibility          *group.Visibility
 	price_multiplier    *int
 	addprice_multiplier *int
+	protocol_convert    *string
 	updated_at          *time.Time
 	deleted_at          *time.Time
 	created_at          *time.Time
@@ -1525,6 +2697,42 @@ func (m *GroupMutation) AddedPriceMultiplier() (r int, exists bool) {
 func (m *GroupMutation) ResetPriceMultiplier() {
 	m.price_multiplier = nil
 	m.addprice_multiplier = nil
+}
+
+// SetProtocolConvert sets the "protocol_convert" field.
+func (m *GroupMutation) SetProtocolConvert(s string) {
+	m.protocol_convert = &s
+}
+
+// ProtocolConvert returns the value of the "protocol_convert" field in the mutation.
+func (m *GroupMutation) ProtocolConvert() (r string, exists bool) {
+	v := m.protocol_convert
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProtocolConvert returns the old "protocol_convert" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProtocolConvert(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProtocolConvert is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProtocolConvert requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProtocolConvert: %w", err)
+	}
+	return oldValue.ProtocolConvert, nil
+}
+
+// ResetProtocolConvert resets all changes to the "protocol_convert" field.
+func (m *GroupMutation) ResetProtocolConvert() {
+	m.protocol_convert = nil
 }
 
 // SetUpdatedAt sets the "updated_at" field.
@@ -1844,7 +3052,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
 	}
@@ -1853,6 +3061,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.price_multiplier != nil {
 		fields = append(fields, group.FieldPriceMultiplier)
+	}
+	if m.protocol_convert != nil {
+		fields = append(fields, group.FieldProtocolConvert)
 	}
 	if m.updated_at != nil {
 		fields = append(fields, group.FieldUpdatedAt)
@@ -1877,6 +3088,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Visibility()
 	case group.FieldPriceMultiplier:
 		return m.PriceMultiplier()
+	case group.FieldProtocolConvert:
+		return m.ProtocolConvert()
 	case group.FieldUpdatedAt:
 		return m.UpdatedAt()
 	case group.FieldDeletedAt:
@@ -1898,6 +3111,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldVisibility(ctx)
 	case group.FieldPriceMultiplier:
 		return m.OldPriceMultiplier(ctx)
+	case group.FieldProtocolConvert:
+		return m.OldProtocolConvert(ctx)
 	case group.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
 	case group.FieldDeletedAt:
@@ -1933,6 +3148,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPriceMultiplier(v)
+		return nil
+	case group.FieldProtocolConvert:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProtocolConvert(v)
 		return nil
 	case group.FieldUpdatedAt:
 		v, ok := value.(time.Time)
@@ -2036,6 +3258,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldPriceMultiplier:
 		m.ResetPriceMultiplier()
+		return nil
+	case group.FieldProtocolConvert:
+		m.ResetProtocolConvert()
 		return nil
 	case group.FieldUpdatedAt:
 		m.ResetUpdatedAt()
@@ -11624,6 +12849,9 @@ type TemplateMutation struct {
 	accounts                map[int64]struct{}
 	removedaccounts         map[int64]struct{}
 	clearedaccounts         bool
+	ext                     map[int64]struct{}
+	removedext              map[int64]struct{}
+	clearedext              bool
 	done                    bool
 	oldValue                func(context.Context) (*Template, error)
 	predicates              []predicate.Template
@@ -12190,6 +13418,60 @@ func (m *TemplateMutation) ResetAccounts() {
 	m.removedaccounts = nil
 }
 
+// AddExtIDs adds the "ext" edge to the TemplateExt entity by ids.
+func (m *TemplateMutation) AddExtIDs(ids ...int64) {
+	if m.ext == nil {
+		m.ext = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.ext[ids[i]] = struct{}{}
+	}
+}
+
+// ClearExt clears the "ext" edge to the TemplateExt entity.
+func (m *TemplateMutation) ClearExt() {
+	m.clearedext = true
+}
+
+// ExtCleared reports if the "ext" edge to the TemplateExt entity was cleared.
+func (m *TemplateMutation) ExtCleared() bool {
+	return m.clearedext
+}
+
+// RemoveExtIDs removes the "ext" edge to the TemplateExt entity by IDs.
+func (m *TemplateMutation) RemoveExtIDs(ids ...int64) {
+	if m.removedext == nil {
+		m.removedext = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.ext, ids[i])
+		m.removedext[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedExt returns the removed IDs of the "ext" edge to the TemplateExt entity.
+func (m *TemplateMutation) RemovedExtIDs() (ids []int64) {
+	for id := range m.removedext {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ExtIDs returns the "ext" edge IDs in the mutation.
+func (m *TemplateMutation) ExtIDs() (ids []int64) {
+	for id := range m.ext {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetExt resets all changes to the "ext" edge.
+func (m *TemplateMutation) ResetExt() {
+	m.ext = nil
+	m.clearedext = false
+	m.removedext = nil
+}
+
 // Where appends a list predicates to the TemplateMutation builder.
 func (m *TemplateMutation) Where(ps ...predicate.Template) {
 	m.predicates = append(m.predicates, ps...)
@@ -12485,9 +13767,12 @@ func (m *TemplateMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *TemplateMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.accounts != nil {
 		edges = append(edges, template.EdgeAccounts)
+	}
+	if m.ext != nil {
+		edges = append(edges, template.EdgeExt)
 	}
 	return edges
 }
@@ -12502,15 +13787,24 @@ func (m *TemplateMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case template.EdgeExt:
+		ids := make([]ent.Value, 0, len(m.ext))
+		for id := range m.ext {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *TemplateMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.removedaccounts != nil {
 		edges = append(edges, template.EdgeAccounts)
+	}
+	if m.removedext != nil {
+		edges = append(edges, template.EdgeExt)
 	}
 	return edges
 }
@@ -12525,15 +13819,24 @@ func (m *TemplateMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case template.EdgeExt:
+		ids := make([]ent.Value, 0, len(m.removedext))
+		for id := range m.removedext {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *TemplateMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.clearedaccounts {
 		edges = append(edges, template.EdgeAccounts)
+	}
+	if m.clearedext {
+		edges = append(edges, template.EdgeExt)
 	}
 	return edges
 }
@@ -12544,6 +13847,8 @@ func (m *TemplateMutation) EdgeCleared(name string) bool {
 	switch name {
 	case template.EdgeAccounts:
 		return m.clearedaccounts
+	case template.EdgeExt:
+		return m.clearedext
 	}
 	return false
 }
@@ -12563,8 +13868,530 @@ func (m *TemplateMutation) ResetEdge(name string) error {
 	case template.EdgeAccounts:
 		m.ResetAccounts()
 		return nil
+	case template.EdgeExt:
+		m.ResetExt()
+		return nil
 	}
 	return fmt.Errorf("unknown Template edge %s", name)
+}
+
+// TemplateExtMutation represents an operation that mutates the TemplateExt nodes in the graph.
+type TemplateExtMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int64
+	credential_type   *string
+	strip_image_tools *bool
+	clearedFields     map[string]struct{}
+	template          *int64
+	clearedtemplate   bool
+	done              bool
+	oldValue          func(context.Context) (*TemplateExt, error)
+	predicates        []predicate.TemplateExt
+}
+
+var _ ent.Mutation = (*TemplateExtMutation)(nil)
+
+// templateextOption allows management of the mutation configuration using functional options.
+type templateextOption func(*TemplateExtMutation)
+
+// newTemplateExtMutation creates new mutation for the TemplateExt entity.
+func newTemplateExtMutation(c config, op Op, opts ...templateextOption) *TemplateExtMutation {
+	m := &TemplateExtMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTemplateExt,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTemplateExtID sets the ID field of the mutation.
+func withTemplateExtID(id int64) templateextOption {
+	return func(m *TemplateExtMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *TemplateExt
+		)
+		m.oldValue = func(ctx context.Context) (*TemplateExt, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().TemplateExt.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTemplateExt sets the old TemplateExt of the mutation.
+func withTemplateExt(node *TemplateExt) templateextOption {
+	return func(m *TemplateExtMutation) {
+		m.oldValue = func(context.Context) (*TemplateExt, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TemplateExtMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TemplateExtMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of TemplateExt entities.
+func (m *TemplateExtMutation) SetID(id int64) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TemplateExtMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TemplateExtMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().TemplateExt.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTemplateID sets the "template_id" field.
+func (m *TemplateExtMutation) SetTemplateID(i int64) {
+	m.template = &i
+}
+
+// TemplateID returns the value of the "template_id" field in the mutation.
+func (m *TemplateExtMutation) TemplateID() (r int64, exists bool) {
+	v := m.template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTemplateID returns the old "template_id" field's value of the TemplateExt entity.
+// If the TemplateExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateExtMutation) OldTemplateID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTemplateID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTemplateID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTemplateID: %w", err)
+	}
+	return oldValue.TemplateID, nil
+}
+
+// ResetTemplateID resets all changes to the "template_id" field.
+func (m *TemplateExtMutation) ResetTemplateID() {
+	m.template = nil
+}
+
+// SetCredentialType sets the "credential_type" field.
+func (m *TemplateExtMutation) SetCredentialType(s string) {
+	m.credential_type = &s
+}
+
+// CredentialType returns the value of the "credential_type" field in the mutation.
+func (m *TemplateExtMutation) CredentialType() (r string, exists bool) {
+	v := m.credential_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCredentialType returns the old "credential_type" field's value of the TemplateExt entity.
+// If the TemplateExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateExtMutation) OldCredentialType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCredentialType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCredentialType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCredentialType: %w", err)
+	}
+	return oldValue.CredentialType, nil
+}
+
+// ResetCredentialType resets all changes to the "credential_type" field.
+func (m *TemplateExtMutation) ResetCredentialType() {
+	m.credential_type = nil
+}
+
+// SetStripImageTools sets the "strip_image_tools" field.
+func (m *TemplateExtMutation) SetStripImageTools(b bool) {
+	m.strip_image_tools = &b
+}
+
+// StripImageTools returns the value of the "strip_image_tools" field in the mutation.
+func (m *TemplateExtMutation) StripImageTools() (r bool, exists bool) {
+	v := m.strip_image_tools
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStripImageTools returns the old "strip_image_tools" field's value of the TemplateExt entity.
+// If the TemplateExt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateExtMutation) OldStripImageTools(ctx context.Context) (v *bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStripImageTools is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStripImageTools requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStripImageTools: %w", err)
+	}
+	return oldValue.StripImageTools, nil
+}
+
+// ClearStripImageTools clears the value of the "strip_image_tools" field.
+func (m *TemplateExtMutation) ClearStripImageTools() {
+	m.strip_image_tools = nil
+	m.clearedFields[templateext.FieldStripImageTools] = struct{}{}
+}
+
+// StripImageToolsCleared returns if the "strip_image_tools" field was cleared in this mutation.
+func (m *TemplateExtMutation) StripImageToolsCleared() bool {
+	_, ok := m.clearedFields[templateext.FieldStripImageTools]
+	return ok
+}
+
+// ResetStripImageTools resets all changes to the "strip_image_tools" field.
+func (m *TemplateExtMutation) ResetStripImageTools() {
+	m.strip_image_tools = nil
+	delete(m.clearedFields, templateext.FieldStripImageTools)
+}
+
+// ClearTemplate clears the "template" edge to the Template entity.
+func (m *TemplateExtMutation) ClearTemplate() {
+	m.clearedtemplate = true
+	m.clearedFields[templateext.FieldTemplateID] = struct{}{}
+}
+
+// TemplateCleared reports if the "template" edge to the Template entity was cleared.
+func (m *TemplateExtMutation) TemplateCleared() bool {
+	return m.clearedtemplate
+}
+
+// TemplateIDs returns the "template" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TemplateID instead. It exists only for internal usage by the builders.
+func (m *TemplateExtMutation) TemplateIDs() (ids []int64) {
+	if id := m.template; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTemplate resets all changes to the "template" edge.
+func (m *TemplateExtMutation) ResetTemplate() {
+	m.template = nil
+	m.clearedtemplate = false
+}
+
+// Where appends a list predicates to the TemplateExtMutation builder.
+func (m *TemplateExtMutation) Where(ps ...predicate.TemplateExt) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TemplateExtMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TemplateExtMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.TemplateExt, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TemplateExtMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TemplateExtMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (TemplateExt).
+func (m *TemplateExtMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TemplateExtMutation) Fields() []string {
+	fields := make([]string, 0, 3)
+	if m.template != nil {
+		fields = append(fields, templateext.FieldTemplateID)
+	}
+	if m.credential_type != nil {
+		fields = append(fields, templateext.FieldCredentialType)
+	}
+	if m.strip_image_tools != nil {
+		fields = append(fields, templateext.FieldStripImageTools)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TemplateExtMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case templateext.FieldTemplateID:
+		return m.TemplateID()
+	case templateext.FieldCredentialType:
+		return m.CredentialType()
+	case templateext.FieldStripImageTools:
+		return m.StripImageTools()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TemplateExtMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case templateext.FieldTemplateID:
+		return m.OldTemplateID(ctx)
+	case templateext.FieldCredentialType:
+		return m.OldCredentialType(ctx)
+	case templateext.FieldStripImageTools:
+		return m.OldStripImageTools(ctx)
+	}
+	return nil, fmt.Errorf("unknown TemplateExt field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TemplateExtMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case templateext.FieldTemplateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTemplateID(v)
+		return nil
+	case templateext.FieldCredentialType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCredentialType(v)
+		return nil
+	case templateext.FieldStripImageTools:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStripImageTools(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TemplateExt field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TemplateExtMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TemplateExtMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TemplateExtMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown TemplateExt numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TemplateExtMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(templateext.FieldStripImageTools) {
+		fields = append(fields, templateext.FieldStripImageTools)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TemplateExtMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TemplateExtMutation) ClearField(name string) error {
+	switch name {
+	case templateext.FieldStripImageTools:
+		m.ClearStripImageTools()
+		return nil
+	}
+	return fmt.Errorf("unknown TemplateExt nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TemplateExtMutation) ResetField(name string) error {
+	switch name {
+	case templateext.FieldTemplateID:
+		m.ResetTemplateID()
+		return nil
+	case templateext.FieldCredentialType:
+		m.ResetCredentialType()
+		return nil
+	case templateext.FieldStripImageTools:
+		m.ResetStripImageTools()
+		return nil
+	}
+	return fmt.Errorf("unknown TemplateExt field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TemplateExtMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.template != nil {
+		edges = append(edges, templateext.EdgeTemplate)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TemplateExtMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case templateext.EdgeTemplate:
+		if id := m.template; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TemplateExtMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TemplateExtMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TemplateExtMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedtemplate {
+		edges = append(edges, templateext.EdgeTemplate)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TemplateExtMutation) EdgeCleared(name string) bool {
+	switch name {
+	case templateext.EdgeTemplate:
+		return m.clearedtemplate
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TemplateExtMutation) ClearEdge(name string) error {
+	switch name {
+	case templateext.EdgeTemplate:
+		m.ClearTemplate()
+		return nil
+	}
+	return fmt.Errorf("unknown TemplateExt unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TemplateExtMutation) ResetEdge(name string) error {
+	switch name {
+	case templateext.EdgeTemplate:
+		m.ResetTemplate()
+		return nil
+	}
+	return fmt.Errorf("unknown TemplateExt edge %s", name)
 }
 
 // UsageLogMutation represents an operation that mutates the UsageLog nodes in the graph.

@@ -7,6 +7,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/accountext"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/predicate"
 	"go-proxy-mini/internal/ent/template"
@@ -27,6 +28,7 @@ type AccountQuery struct {
 	predicates   []predicate.Account
 	withTemplate *TemplateQuery
 	withGroups   *GroupQuery
+	withExt      *AccountExtQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -100,6 +102,28 @@ func (_q *AccountQuery) QueryGroups() *GroupQuery {
 			sqlgraph.From(account.Table, account.FieldID, selector),
 			sqlgraph.To(group.Table, group.FieldID),
 			sqlgraph.Edge(sqlgraph.M2M, false, account.GroupsTable, account.GroupsPrimaryKey...),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryExt chains the current query on the "ext" edge.
+func (_q *AccountQuery) QueryExt() *AccountExtQuery {
+	query := (&AccountExtClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, selector),
+			sqlgraph.To(accountext.Table, accountext.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, account.ExtTable, account.ExtColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -301,6 +325,7 @@ func (_q *AccountQuery) Clone() *AccountQuery {
 		predicates:   append([]predicate.Account{}, _q.predicates...),
 		withTemplate: _q.withTemplate.Clone(),
 		withGroups:   _q.withGroups.Clone(),
+		withExt:      _q.withExt.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -326,6 +351,17 @@ func (_q *AccountQuery) WithGroups(opts ...func(*GroupQuery)) *AccountQuery {
 		opt(query)
 	}
 	_q.withGroups = query
+	return _q
+}
+
+// WithExt tells the query-builder to eager-load the nodes that are connected to
+// the "ext" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AccountQuery) WithExt(opts ...func(*AccountExtQuery)) *AccountQuery {
+	query := (&AccountExtClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withExt = query
 	return _q
 }
 
@@ -407,9 +443,10 @@ func (_q *AccountQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Acco
 	var (
 		nodes       = []*Account{}
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			_q.withTemplate != nil,
 			_q.withGroups != nil,
+			_q.withExt != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -440,6 +477,13 @@ func (_q *AccountQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Acco
 		if err := _q.loadGroups(ctx, query, nodes,
 			func(n *Account) { n.Edges.Groups = []*Group{} },
 			func(n *Account, e *Group) { n.Edges.Groups = append(n.Edges.Groups, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withExt; query != nil {
+		if err := _q.loadExt(ctx, query, nodes,
+			func(n *Account) { n.Edges.Ext = []*AccountExt{} },
+			func(n *Account, e *AccountExt) { n.Edges.Ext = append(n.Edges.Ext, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -533,6 +577,36 @@ func (_q *AccountQuery) loadGroups(ctx context.Context, query *GroupQuery, nodes
 		for kn := range nodes {
 			assign(kn, n)
 		}
+	}
+	return nil
+}
+func (_q *AccountQuery) loadExt(ctx context.Context, query *AccountExtQuery, nodes []*Account, init func(*Account), assign func(*Account, *AccountExt)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Account)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(accountext.FieldAccountID)
+	}
+	query.Where(predicate.AccountExt(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(account.ExtColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.AccountID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "account_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

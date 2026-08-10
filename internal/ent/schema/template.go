@@ -30,5 +30,7 @@ func (Template) Fields() []ent.Field {
 func (Template) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("accounts", Account.Type),
+		// ext 模板类型化扩展配置（1:1；api_key 类型无 ext 行）
+		edge.To("ext", TemplateExt.Type),
 	}
 }

@@ -72,7 +72,7 @@ func TestAdminFlow(t *testing.T) {
 	require.False(t, tpl.FormatSupports(domain.FormatOpenAIResponses, "gpt-4o"), "responses 仅列表内模型")
 	require.Equal(t, credential.TypeAPIKey, tpl.CredentialType, "缺省 credential_type → 响应含默认 api_key")
 
-	// 非法 credential_type（号池生态类型未实现）→ 400
+	// 非法 credential_type（未知值；合法值 codex-oauth/codex-pat 用连字符）→ 400
 	recBad := do(http.MethodPost, "/admin/templates", `{
 		"name":"bad","base_url":"https://u","supported_formats":["openai-chat"],
 		"credential_type":"codex_oauth"}`)

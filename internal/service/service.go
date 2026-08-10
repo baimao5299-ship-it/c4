@@ -39,6 +39,8 @@ type Store interface {
 	StatStore
 	RedemptionStore
 	PricingStore
+	TemplateExtStore
+	AccountExtStore
 	// WithTx 在单事务内执行 fn（评审 I-1）：真实仓库为 tx 版 Repository（全部走
 	// tx 连接）；fake 为事务语义模拟（fn 内变更先入暂存、成功提交/失败丢弃——
 	// 回滚断言的前提）。
@@ -96,6 +98,9 @@ type GroupAssignmentStore interface {
 type TemplateStore interface {
 	CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error)
 	GetTemplate(ctx context.Context, id int64) (*domain.Template, error)
+	// GetTemplatesByIDs 批量取模板（id IN 一次查询——UpdateTemplatesBatch 类型-
+	// 格式约束校验用，避免逐 id N+1）；缺失 id 不报错（数量 < 请求数）。
+	GetTemplatesByIDs(ctx context.Context, ids []int64) ([]*domain.Template, error)
 	ListTemplates(ctx context.Context, q repository.ListQuery) ([]*domain.Template, int64, error)
 	UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error)
 	DeleteTemplate(ctx context.Context, id int64) error
@@ -126,6 +131,22 @@ type GroupStore interface {
 	DeleteGroup(ctx context.Context, id int64) error
 	DeleteGroupsBatch(ctx context.Context, ids []int64) error
 	UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error
+}
+
+// TemplateExtStore 模板类型化扩展持久化（template_ext 1:1；W1 数据层 CRUD，
+// 消费接线留给 W3/W4/W6）。
+type TemplateExtStore interface {
+	UpsertTemplateExt(ctx context.Context, e *domain.TemplateExt) (*domain.TemplateExt, error)
+	GetTemplateExt(ctx context.Context, templateID int64) (*domain.TemplateExt, error)
+}
+
+// AccountExtStore 账号类型化鉴权扩展持久化（account_ext 1:1；W1 数据层 CRUD，
+// 消费接线留给 W6）。TryInsertAccountExt：首写原子性（ON CONFLICT DO NOTHING
+// 先写者胜）——并发双导入同一账号不覆盖不报错。
+type AccountExtStore interface {
+	UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*domain.AccountExt, error)
+	TryInsertAccountExt(ctx context.Context, e *domain.AccountExt) (bool, error)
+	GetAccountExt(ctx context.Context, accountID int64) (*domain.AccountExt, error)
 }
 
 // RedemptionStore 兑换码 + 兑换审计持久化（Phase 5 计费前基础设施）。
@@ -305,6 +326,15 @@ func validateTemplate(t *domain.Template) error {
 			return ErrInvalidInput
 		}
 		seen[f] = true
+	}
+	// 类型-格式约束（W1）：responses-special/codex-oauth/codex-pat 类型模板
+	// 只支持 resp / resp-ws 格式（resp-ws 可选）；api_key 类型四格式任意。
+	if t.CredentialType != credential.TypeAPIKey {
+		for _, f := range t.SupportedFormats {
+			if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS {
+				return ErrInvalidInput
+			}
+		}
 	}
 	for f, models := range t.FormatModels {
 		if !seen[f] || len(models) == 0 {

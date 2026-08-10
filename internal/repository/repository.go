@@ -32,6 +32,8 @@ type Repository struct {
 	Pricing     *PricingRepo
 	Billing     *BillingRepo // 扣费落库（Phase 5 T3）
 	Partitions  *PartitionRepo // usagelog 按日分区 bootstrap/retention（Phase 5 T4.5）
+	TemplateExts *TemplateExtRepo // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
+	AccountExts  *AccountExtRepo  // 账号类型化鉴权扩展（account_ext 1:1；W1 数据层，消费接线 W6）
 	Client      *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
@@ -81,6 +83,8 @@ func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *
 		Pricing:     &PricingRepo{client: client, driver: drv},
 		Billing:     &BillingRepo{client: client, driver: drv},
 		Partitions:  &PartitionRepo{driver: drv},
+		TemplateExts: &TemplateExtRepo{client: client},
+		AccountExts:  &AccountExtRepo{client: client},
 		Client:      client,
 		driver:      drv,
 	}
@@ -166,6 +170,10 @@ func (r *Repository) GetTemplate(ctx context.Context, id int64) (*domain.Templat
 	return r.Templates.GetTemplate(ctx, id)
 }
 
+func (r *Repository) GetTemplatesByIDs(ctx context.Context, ids []int64) ([]*domain.Template, error) {
+	return r.Templates.GetTemplatesByIDs(ctx, ids)
+}
+
 func (r *Repository) ListTemplates(ctx context.Context, q ListQuery) ([]*domain.Template, int64, error) {
 	return r.Templates.ListTemplates(ctx, q)
 }
@@ -248,6 +256,28 @@ func (r *Repository) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 
 func (r *Repository) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupPatch) error {
 	return r.Groups.UpdateGroupsBatch(ctx, ids, p)
+}
+
+// --- 模板/账号类型化扩展（W1 数据层；消费接线 W3/W4/W6） ---
+
+func (r *Repository) UpsertTemplateExt(ctx context.Context, e *domain.TemplateExt) (*domain.TemplateExt, error) {
+	return r.TemplateExts.UpsertTemplateExt(ctx, e)
+}
+
+func (r *Repository) GetTemplateExt(ctx context.Context, templateID int64) (*domain.TemplateExt, error) {
+	return r.TemplateExts.GetTemplateExt(ctx, templateID)
+}
+
+func (r *Repository) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*domain.AccountExt, error) {
+	return r.AccountExts.UpsertAccountExt(ctx, e)
+}
+
+func (r *Repository) TryInsertAccountExt(ctx context.Context, e *domain.AccountExt) (bool, error) {
+	return r.AccountExts.TryInsertAccountExt(ctx, e)
+}
+
+func (r *Repository) GetAccountExt(ctx context.Context, accountID int64) (*domain.AccountExt, error) {
+	return r.AccountExts.GetAccountExt(ctx, accountID)
 }
 
 // --- 用户（Phase 3a） ---

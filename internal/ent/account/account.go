@@ -43,6 +43,8 @@ const (
 	EdgeTemplate = "template"
 	// EdgeGroups holds the string denoting the groups edge name in mutations.
 	EdgeGroups = "groups"
+	// EdgeExt holds the string denoting the ext edge name in mutations.
+	EdgeExt = "ext"
 	// Table holds the table name of the account in the database.
 	Table = "accounts"
 	// TemplateTable is the table that holds the template relation/edge.
@@ -57,6 +59,13 @@ const (
 	// GroupsInverseTable is the table name for the Group entity.
 	// It exists in this package in order to avoid circular dependency with the "group" package.
 	GroupsInverseTable = "groups"
+	// ExtTable is the table that holds the ext relation/edge.
+	ExtTable = "account_exts"
+	// ExtInverseTable is the table name for the AccountExt entity.
+	// It exists in this package in order to avoid circular dependency with the "accountext" package.
+	ExtInverseTable = "account_exts"
+	// ExtColumn is the table column denoting the ext relation/edge.
+	ExtColumn = "account_id"
 )
 
 // Columns holds all SQL columns for account fields.
@@ -221,6 +230,20 @@ func ByGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByExtCount orders the results by ext count.
+func ByExtCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newExtStep(), opts...)
+	}
+}
+
+// ByExt orders the results by ext terms.
+func ByExt(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newExtStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newTemplateStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -233,5 +256,12 @@ func newGroupsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2M, false, GroupsTable, GroupsPrimaryKey...),
+	)
+}
+func newExtStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ExtInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ExtTable, ExtColumn),
 	)
 }
