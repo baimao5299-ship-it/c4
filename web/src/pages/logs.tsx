@@ -159,6 +159,13 @@ export default function Logs() {
     select: data => new Map(data.rows.map(a => [a.ID, a.Name])),
     staleTime: 5 * 60 * 1000,
   })
+  // 用户列：id → 邮箱（sub2api 使用明细同款，邮箱太长截断 + title 悬停全文）
+  const { data: userEmailById } = useQuery({
+    queryKey: ['users', { limit: 1000 }],
+    queryFn: () => api.listUsers({ limit: 1000 }),
+    select: data => new Map(data.rows.map(u => [u.ID, u.Email ?? ''])),
+    staleTime: 5 * 60 * 1000,
+  })
 
   const total = data?.total ?? 0
   const rows = data?.rows ?? []
@@ -294,8 +301,16 @@ export default function Logs() {
                     <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
-                  {/* 鉴权归属：用户/Key（0 = 无鉴权） */}
-                  {isColVisible('user') && <TableCell className="text-right tabular-nums">{l.UserID ? `#${l.UserID}` : '—'}</TableCell>}
+                  {/* 鉴权归属：用户(邮箱)/Key；组/账号显示名称，未命中回退 #id（0 = 无鉴权） */}
+                  {isColVisible('user') && (
+                    <TableCell className="text-right">
+                      {l.UserID ? (
+                        <span className="inline-block max-w-40 truncate align-middle tabular-nums" title={userEmailById?.get(l.UserID)}>
+                          {userEmailById?.get(l.UserID) ?? `#${l.UserID}`}
+                        </span>
+                      ) : '—'}
+                    </TableCell>
+                  )}
                   {isColVisible('key') && <TableCell className="text-right tabular-nums">{l.KeyID ? `#${l.KeyID}` : '—'}</TableCell>}
                   {isColVisible('group') && (
                     <TableCell className="text-right">
