@@ -65,8 +65,10 @@ func NewStreamMapper(dir domain.ProtocolConvert) *StreamMapper {
 }
 
 // StreamMapper 按方向把模板协议的 SSE 事件映射为客户端协议帧（[]byte 即完整
-// 帧字节，含 event/data 行与结尾空行）。映射帧为每次调用新分配，调用方可立即
-// 写出后丢弃。
+// 帧字节，含 event/data 行与结尾空行）。映射帧复用 mapper 内缓冲（buf/dbuf），
+// 生命周期仅限本次 Map 调用——调用方（sserelay Mapper 契约）立即写出后丢弃，
+// 下一帧复用同一缓冲，逐帧零分配。chat→resp 方向为字节级组装，其余方向仍
+// 为 map 组装（EncodeFrame）。
 type StreamMapper struct {
 	dir domain.ProtocolConvert
 
@@ -78,6 +80,11 @@ type StreamMapper struct {
 	it, ot  int64 // 用量（input/output tokens）
 	cached  int64 // cache_read / cached_tokens
 	reason  string
+
+	// 字节级帧组装复用缓冲（chat→resp 流式路径）：buf = 输出帧；dbuf =
+	// delta/usage 预组装。帧返回后下一帧覆盖，调用方不得跨帧保留。
+	buf  []byte
+	dbuf []byte
 
 	// mess→resp（RespToMess）方向：块级累积状态。
 	blockStarted map[int64]bool
