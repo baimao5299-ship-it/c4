@@ -78,13 +78,14 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 					ttft = &ms
 				}
 				// 用量提取走原始帧（与模板 caller 逐字同构；映射只影响写出字节）。
+				// EventName：缺 event: 名帧按 data.type 推断（非规范上游，P3）。
 				switch target {
 				case domain.FormatOpenAIResponses:
-					if bytes.Equal(ev.Event, []byte("response.completed")) {
+					if bytes.Equal(ev.EventName(), []byte("response.completed")) {
 						it, ot, tt, cr, cc = responsesCompletedUsage(ev.Data)
 					}
 				case domain.FormatAnthropic:
-					switch string(ev.Event) {
+					switch string(ev.EventName()) {
 					case "message_start":
 						it, cr, cc = anthropicStartUsage(ev.Data)
 					case "message_delta":

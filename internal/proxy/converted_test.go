@@ -27,10 +27,11 @@ import (
 // capturedUpstream 记录最近一次请求的路径与体（上游协议断言），并按路径/stream
 // 返回对应协议的非流式 JSON 或 SSE 流。
 type capturedUpstream struct {
-	mu     sync.Mutex
-	path   string
-	body   map[string]any
-	stream bool
+	mu       sync.Mutex
+	path     string
+	body     map[string]any
+	stream   bool
+	dataOnly bool // /v1/responses 流式不产 event: 行（P3：非规范上游形态，同 fakeupstream）
 }
 
 func (c *capturedUpstream) last(t *testing.T) (string, map[string]any, bool) {
@@ -58,6 +59,16 @@ func (c *capturedUpstream) srv(t *testing.T) *httptest.Server {
 		case "/v1/responses":
 			if stream {
 				w.Header().Set("Content-Type", "text/event-stream")
+				c.mu.Lock()
+				only := c.dataOnly
+				c.mu.Unlock()
+				if only {
+					// P3 形态：只发 data: 行（缺 event: 名），帧自带 type 字段
+					fmt.Fprint(w, `data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hi"}`+"\n\n")
+					fmt.Fprint(w, `data: {"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`+"\n\n")
+					fmt.Fprint(w, "data: [DONE]\n\n")
+					return
+				}
 				fmt.Fprint(w, `event: response.created`+"\n"+`data: {"type":"response.created","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"in_progress","model":"gpt-4o","output":[],"usage":null}}`+"\n\n")
 				fmt.Fprint(w, `event: response.output_text.delta`+"\n"+`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hi"}`+"\n\n")
 				fmt.Fprint(w, `event: response.completed`+"\n"+`data: {"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`+"\n\n")
@@ -289,6 +300,30 @@ func TestConvertedChatToMess(t *testing.T) {
 	require.Contains(t, got, `"finish_reason":"stop"`)
 	require.Contains(t, got, `"usage":{"completion_tokens":20,"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":3},"total_tokens":30}`, "input 来自 message_start + output 来自 message_delta")
 	require.Contains(t, got, "data: [DONE]")
+}
+
+// TestConvertedChatToRespStreamingDataOnly P3：上游 resp 流缺 event: 名（只发
+// data: 行，同仓库 fakeupstream /v1/responses）→ 转换路径不得整帧丢弃——
+// 客户端仍收到 chat chunk 流（修复前 200 + 空流，Content-Length 0）。
+func TestConvertedChatToRespStreamingDataOnly(t *testing.T) {
+	up := &capturedUpstream{dataOnly: true}
+	srv := up.srv(t)
+	defer srv.Close()
+	p := newConvertedTestProxy(t, srv.URL, []domain.RequestFormat{domain.FormatOpenAIResponses}, domain.ProtocolConvertChatToResp)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, 200, rec.Code)
+	got := rec.Body.String()
+	require.NotEmpty(t, got, "缺名帧不得静默全丢（P3）")
+	require.Contains(t, got, `"delta":{"content":"hi"}`, "缺名 delta 帧按 data.type 推断 → content chunk")
+	require.Contains(t, got, `"usage":{"completion_tokens":5,"prompt_tokens":3,"total_tokens":8}`, "缺名 completed 帧推断 → 收尾 chunk 内联用量")
+	require.Contains(t, got, "data: [DONE]", "completed 推断 → [DONE] 收尾")
+	require.NotContains(t, got, "response.completed", "上游事件不外泄")
 }
 
 // TestConvertedDirectForwardZeroConversion 补差语义：组内模板已支持客户端协议

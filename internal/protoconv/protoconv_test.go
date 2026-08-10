@@ -491,10 +491,69 @@ func TestMapMessToChatStream(t *testing.T) {
 	require.NotContains(t, out, `"message_stop"`, "message_stop 丢弃（收尾已在 message_delta）")
 }
 
-func TestMapDataOnlyFramesDropped(t *testing.T) {
+// --- P3：缺 event: 名（data-only）帧不丢 ---
+
+// TestMapDataOnlyFramesInferred 缺名帧带 type 字段 → 按 data.type 推断事件名，
+// 与具名帧同分派（fakeupstream /v1/responses 形态：只发 data: 行，无 event: 行）。
+func TestMapDataOnlyFramesInferred(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertChatToResp,
+		"", `{"type":"response.created","response":{"id":"rsp_1","object":"response","status":"in_progress","model":"m","output":[]}}`,
+		"", `{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hi"}`,
+		"", `{"type":"response.completed","response":{"id":"rsp_1","object":"response","status":"completed","model":"m","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`,
+	)
+	require.Contains(t, out, `"delta":{"content":"","role":"assistant"}`, "created 推断 → 角色前导 chunk")
+	require.Contains(t, out, `"delta":{"content":"hi"}`, "文本 delta 推断 → content chunk")
+	require.Contains(t, out, `"usage":{"completion_tokens":5,"prompt_tokens":3,"total_tokens":8}`, "completed 推断 → 收尾 chunk 内联用量")
+	require.Contains(t, out, "data: [DONE]", "completed 推断 → [DONE] 收尾")
+}
+
+// TestMapDataOnlyFramesInferredMessToResp 缺名帧推断对 anthropic 模板方向同样生效
+// （anthropic 帧的 type 字段亦与事件名同值）。
+func TestMapDataOnlyFramesInferredMessToResp(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertRespToMess,
+		"", `{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}`,
+		"", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`,
+		"", `{"type":"message_stop"}`,
+	)
+	require.Contains(t, out, `event: response.created`, "message_start 推断 → response.created")
+	require.Contains(t, out, `"delta":"hi"`, "text_delta 推断 → output_text.delta")
+	require.Contains(t, out, `event: response.completed`, "message_stop 推断 → response.completed")
+}
+
+// TestMapDataOnlyFramesPassthrough 缺名帧无法推断（非 JSON / 无 type 字段）
+// → 原样透传 data 帧保留字节（不静默丢弃，P3）。
+func TestMapDataOnlyFramesPassthrough(t *testing.T) {
 	m := NewStreamMapper(domain.ProtocolConvertChatToResp)
-	_, drop := m.Map("", []byte("[DONE]"))
-	require.True(t, drop, "data-only 帧一律丢弃（终止帧由映射器自产）")
+
+	frame, drop := m.Map("", []byte("[DONE]"))
+	require.False(t, drop, "无法推断的缺名帧不得丢弃")
+	require.Equal(t, "data: [DONE]\n\n", string(frame), "data 帧原样透传")
+
+	frame, drop = m.Map("", []byte(`{"unknown":1}`))
+	require.False(t, drop, "JSON 但无 type 字段 → 透传")
+	require.Equal(t, "data: {\"unknown\":1}\n\n", string(frame))
+
+	// 多行 payload 逐行重建 data: 前缀（SSE 规范连续 data: 行以 \n 连接）
+	frame, drop = m.Map("", []byte("a\nb"))
+	require.False(t, drop)
+	require.Equal(t, "data: a\ndata: b\n\n", string(frame))
+
+	// 空帧（连续空行）：无字节可透传，保持丢弃
+	_, drop = m.Map("", nil)
+	require.True(t, drop)
+}
+
+// TestMapNamedFramesBehaviorUnchanged 具名帧行为不变：已知事件正常映射，
+// 具名但未映射事件（in_progress 等）仍按映射表丢弃。
+func TestMapNamedFramesBehaviorUnchanged(t *testing.T) {
+	m := NewStreamMapper(domain.ProtocolConvertChatToResp)
+
+	_, drop := m.Map("response.in_progress", []byte(`{"type":"response.in_progress"}`))
+	require.True(t, drop, "具名但未映射事件仍丢弃（行为不变）")
+
+	frame, drop := m.Map("response.output_text.delta", []byte(`{"type":"response.output_text.delta","delta":"x"}`))
+	require.False(t, drop)
+	require.Contains(t, string(frame), `"delta":{"content":"x"}`, "具名事件映射不变")
 }
 
 // --- M-1：工具调用匹配键（call_id 优先）多轮链路 ---

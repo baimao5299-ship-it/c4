@@ -271,6 +271,52 @@ func TestProxyResponsesStreaming(t *testing.T) {
 	require.Equal(t, "", lg.MappedModel, "无映射 → MappedModel 空")
 }
 
+// TestProxyResponsesStreamingDataOnly P3：上游 resp 流缺 event: 名（只发
+// data: 行，同仓库 fakeupstream /v1/responses）→ 直接 resp 路径不得丢帧、
+// 用量提取不得静默缺失——字节原样透传 + Observer 按 data.type 推断
+// response.completed 提取 usage。
+func TestProxyResponsesStreamingDataOnly(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		fmt.Fprint(w, `data: {"type":"response.output_text.delta","delta":"hi"}`+"\n\n")
+		fl.Flush()
+		fmt.Fprint(w, `data: {"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`+"\n\n")
+		fl.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyFormatLogs(t, up.URL, domain.FormatOpenAIResponses, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(
+		`{"model":"gpt-4o","input":"hi","stream":true}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleResponses(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	body := rec.Body.String()
+	require.NotEmpty(t, body, "缺名帧不得静默全丢（P3）")
+	require.Contains(t, body, `"type":"response.output_text.delta"`, "字节原样透传")
+	require.Contains(t, body, `"type":"response.completed"`)
+	require.Contains(t, body, "data: [DONE]")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
+
+	// 用量断言：缺名 completed 帧按 data.type 推断 → usage 不静默缺失
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	lg := store.logs[0]
+	require.Equal(t, int64(3), lg.InputTokens, "input_tokens from data-only response.completed")
+	require.Equal(t, int64(5), lg.OutputTokens)
+	require.Equal(t, int64(8), lg.TotalTokens)
+}
+
 func TestProxyAnthropicNonStreaming(t *testing.T) {
 	up := fakeAnthropic(t, "")
 	defer up.Close()
