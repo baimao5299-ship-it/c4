@@ -9,6 +9,7 @@
 package protoconv
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -89,11 +90,21 @@ type StreamMapper struct {
 }
 
 // Map 把一个模板协议 SSE 事件映射为客户端协议帧；drop=true 丢弃该帧。
-// name 为空（data-only 帧）在模板协议（resp/messages）无标准用途，一律丢弃
-// ——chat 的 [DONE] 等终止帧由映射器自行产出，不依赖透传。
+// 缺 event: 名（data-only）帧不丢（P3）：data 为 JSON 对象且含字符串 type
+// 字段时按该值推断事件名（resp/messages 帧 type 与事件名同值约定，非规范
+// 上游如仓库 fakeupstream /v1/responses 缺 event: 行），推断出 → 与具名帧
+// 同分派；无法推断（非 JSON / 无 type 字段）→ 原样透传 data 帧保留字节。
+// 空帧（无字节可透传）→ 丢弃。chat 的 [DONE] 等终止帧由映射器自行产出，
+// 透传仅兜底非规范上游。
 func (m *StreamMapper) Map(name string, data []byte) ([]byte, bool) {
 	if name == "" {
-		return nil, true
+		name = inferEventName(data)
+		if name == "" {
+			if len(data) == 0 {
+				return nil, true
+			}
+			return encodeDataFrame(data), false
+		}
 	}
 	switch m.dir {
 	case domain.ProtocolConvertChatToResp:
@@ -129,6 +140,40 @@ func EncodeFrame(name string, data any) []byte {
 	}
 	out = append(out, "data: "...)
 	out = append(out, payload...)
+	out = append(out, '\n', '\n')
+	return out
+}
+
+// inferEventName 缺 event: 名帧的事件名推断：data 为 JSON 对象且含非空
+// 字符串 type 字段时返回该值（resp/messages 流的帧 type 与事件名同值）；
+// 否则返回空（调用方按透传处理）。
+func inferEventName(data []byte) string {
+	var t struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(data, &t) != nil {
+		return ""
+	}
+	return t.Type
+}
+
+// encodeDataFrame 把 data 载荷编码为 data-only SSE 帧（缺名帧透传用）。
+// 多行 payload 逐行重建 data: 前缀——SSE 规范连续 data: 行以 \n 连接，
+// 单行内嵌换行会变成无冒号行被客户端忽略（语义丢失）。
+func encodeDataFrame(data []byte) []byte {
+	out := make([]byte, 0, len(data)+len(data)/2+8)
+	for start := 0; start < len(data); {
+		out = append(out, "data: "...)
+		i := bytes.IndexByte(data[start:], '\n')
+		if i < 0 {
+			out = append(out, data[start:]...)
+			break
+		}
+		out = append(out, data[start:start+i]...)
+		out = append(out, '\n')
+		start += i + 1
+	}
+	// 帧尾：末行换行 + 空行（帧终止）
 	out = append(out, '\n', '\n')
 	return out
 }

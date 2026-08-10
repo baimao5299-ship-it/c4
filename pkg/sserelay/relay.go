@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"sync"
@@ -20,6 +21,24 @@ type Event struct {
 	Raw   []byte // 完整原始帧（含结尾空行）
 	Event []byte // event: 字段值；data-only 帧为空
 	Data  []byte // 合并后的 data: payload（多行以 \n 连接）
+}
+
+// EventName 返回帧的有效事件名：event: 字段值优先；缺名（data-only）帧从
+// data 的 JSON "type" 字段推断——resp/messages 流帧的 type 与事件名同值
+// （非规范上游缺 event: 行时可用，P3）。仍无 → 空。仅缺名帧触发 JSON
+// 扫描，具名帧零开销（Observer 每帧调用）。返回切片生命周期同 Event
+// （具名帧 = 复用缓冲仅回调内有效；推断值 = 本次分配）。
+func (e Event) EventName() []byte {
+	if len(e.Event) > 0 {
+		return e.Event
+	}
+	var t struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(e.Data, &t) != nil || t.Type == "" {
+		return nil
+	}
+	return []byte(t.Type)
 }
 
 // Observer 在帧（原样或经 Mapper 变换后）写出后调用；不得阻塞 relay，不得

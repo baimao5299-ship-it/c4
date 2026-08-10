@@ -93,6 +93,23 @@ func TestRelayMultiLineDataMergedInObserver(t *testing.T) {
 	require.Equal(t, "a\nb", string(got[0].Data)) // SSE 规范：多行 data 以 \n 连接
 }
 
+func TestEventNamePrefersEventField(t *testing.T) {
+	e := Event{Event: []byte("response.completed"), Data: []byte(`{"type":"ignored"}`)}
+	require.Equal(t, "response.completed", string(e.EventName()), "event: 字段优先，不依赖 data")
+}
+
+func TestEventNameInfersFromDataType(t *testing.T) {
+	// 缺 event: 名的 data-only 帧（非规范上游，P3）：data JSON 的 type 与事件名同值
+	e := Event{Data: []byte(`{"type":"response.output_text.delta","delta":"x"}`)}
+	require.Equal(t, "response.output_text.delta", string(e.EventName()))
+}
+
+func TestEventNameEmptyWhenUninferrable(t *testing.T) {
+	require.Empty(t, Event{Data: []byte("[DONE]")}.EventName(), "非 JSON 载荷")
+	require.Empty(t, Event{Data: []byte(`{"no_type":1}`)}.EventName(), "JSON 但无 type 字段")
+	require.Empty(t, Event{Data: nil}.EventName(), "空载荷")
+}
+
 func TestRelayFirstEventFlushesImmediately(t *testing.T) {
 	fr := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
 	require.NoError(t, relayStream(fr, "data: {\"a\":1}\n\n", Config{FlushBytes: 4096, FlushInterval: time.Hour}))

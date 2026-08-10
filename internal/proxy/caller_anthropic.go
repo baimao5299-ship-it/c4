@@ -60,8 +60,9 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// 真实 API 的流式用量分两处携带：input/cache 在 message_start 事件的
 				// message.usage 里（评审 M1：前缀 message.usage.*，非顶层），
 				// output_tokens 在 message_delta 事件的 usage 里
-				// （message_delta.usage 不含 input_tokens）。
-				switch string(ev.Event) {
+				// （message_delta.usage 不含 input_tokens）。EventName：缺 event:
+				// 名帧按 data.type 推断（非规范上游，P3）。
+				switch string(ev.EventName()) {
 				case "message_start":
 					it, cr, cc = anthropicStartUsage(ev.Data)
 				case "message_delta":
