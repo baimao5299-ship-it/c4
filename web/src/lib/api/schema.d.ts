@@ -270,6 +270,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 读取用户被授予的分组与各专属倍率（platform_admin；用户视角，与 /groups/{id}/assignments 对称） */
+        get: operations["GetUsersIdGroups"];
+        /** 设置用户的授予分组（platform_admin；替换语义：未列出即撤销，空数组 = 清空） */
+        put: operations["PutUsersIdGroups"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups/{id}/assignments": {
         parameters: {
             query?: never;
@@ -279,7 +299,8 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /** 读取组的授予用户与专属倍率（platform_admin；与 PUT 对称，供前端预填充与安全全量写回） */
+        get: operations["GetGroupsIdAssignments"];
         /** 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空） */
         put: operations["PutGroupsIdAssignments"];
         post?: never;
@@ -819,6 +840,21 @@ export interface components {
         GroupAssignmentsResponse: {
             user_ids: number[];
             /** @description 该组当前各用户的专属价格倍率（正常值；null/缺省 = 未设置 → 用组倍率） */
+            multipliers?: {
+                [key: string]: number | null;
+            };
+        };
+        UserGroupsBody: {
+            /** @description 替换语义：完整授予组列表（未列出即撤销；空数组 = 清空） */
+            group_ids: number[];
+            /** @description 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值 */
+            multipliers?: {
+                [key: string]: number | null;
+            };
+        };
+        UserGroupsResponse: {
+            group_ids: number[];
+            /** @description 该用户当前各授予组的专属价格倍率（正常值；null/缺省 = 未设置 → 用组倍率） */
             multipliers?: {
                 [key: string]: number | null;
             };
@@ -2151,6 +2187,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["User"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUsersIdGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 该用户被授予的组 id 列表与各专属倍率 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserGroupsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutUsersIdGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserGroupsBody"];
+            };
+        };
+        responses: {
+            /** @description 已生效的授予组 id 列表与专属倍率 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserGroupsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetGroupsIdAssignments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 该组当前的授予 user_id 列表与专属倍率 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupAssignmentsResponse"];
                 };
             };
             default: components["responses"]["Error"];

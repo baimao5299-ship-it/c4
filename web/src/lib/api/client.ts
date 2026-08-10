@@ -134,6 +134,9 @@ export class ApiClient {
   createUser = (b: components['schemas']['UserCreate']) => this.request<components['schemas']['User']>('/users', { method: 'POST', body: JSON.stringify(b) })
   updateUser = (id: number, b: components['schemas']['UserUpdate']) => this.request<components['schemas']['User']>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(b) })
   setGroupAssignments = (id: number, b: components['schemas']['GroupAssignmentsBody']) => this.request<components['schemas']['GroupAssignmentsResponse']>(`/groups/${id}/assignments`, { method: 'PUT', body: JSON.stringify(b) })
+  getGroupAssignments = (id: number) => this.request<components['schemas']['GroupAssignmentsResponse']>(`/groups/${id}/assignments`)
+  getUserGroups = (id: number) => this.request<components['schemas']['UserGroupsResponse']>(`/users/${id}/groups`)
+  setUserGroups = (id: number, b: components['schemas']['UserGroupsBody']) => this.request<components['schemas']['UserGroupsResponse']>(`/users/${id}/groups`, { method: 'PUT', body: JSON.stringify(b) })
   // —— 设置 ——
   getSettings = () => this.request<components['schemas']['Setting'][]>('/settings')
   updateSetting = (b: components['schemas']['SettingUpdate']) => this.request<components['schemas']['Setting'][]>('/settings', { method: 'PUT', body: JSON.stringify(b) })
