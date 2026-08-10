@@ -24,6 +24,23 @@ func logFor(userID int64, requestID string) *domain.UsageLog {
 	}
 }
 
+// fullLogFor 填满全部可选列的计费日志（#37 P2 回归锚）：23 列 × 4000 行 =
+// 92,000 参数，单批 CreateBulk 必超 PG 65535 上限（logFor 仅 ~13 列 × 4000 =
+// 52,000 不触发；压测实证生产批次 19 列 × ~3448 行即超限报错）。
+func fullLogFor(userID int64, requestID string) *domain.UsageLog {
+	l := logFor(userID, requestID)
+	l.GroupID = 1
+	l.AccountID = 2
+	l.TemplateID = 3
+	l.KeyID = 4
+	l.MappedModel = "gpt-4o-mapped"
+	l.CacheReadTokens = 1
+	l.CacheCreationTokens = 2
+	msg := "err:" + requestID
+	l.ErrorMessage = &msg
+	return l
+}
+
 // seedTempBalance 直插临时额度行（返回行 id，断言扣减用）。
 func seedTempBalance(t *testing.T, repos *repository.Repository, userID, amount int64, expiresAt *time.Time) int64 {
 	t.Helper()
@@ -232,4 +249,73 @@ func TestPGDeductUserMissing(t *testing.T) {
 	require.False(t, od)
 	require.Zero(t, bal, "balanceAfter 0")
 	require.Equal(t, int64(1), countLogs(t, repos, 999999), "日志照常插入")
+}
+
+// --- #37 P2：CreateBulk 参数上限分片（PG 65535 参数） ---
+
+// TestPGDeductLargeBatchSuccess 单 user 4000 行全列日志（23 列 × 4000 =
+// 92,000 参数）扣费成功：修复前单批 CreateBulk 超 PG 65535 参数上限 →
+// "extended protocol limited to 65535 parameters" → 扣费停滞 pending 积压
+// （压测实证）；分片 500 行/批同事务逐片插入后全量成功，扣费精确。
+func TestPGDeductLargeBatchSuccess(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "big@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 1_000_000))
+
+	logs := make([]*domain.UsageLog, 0, 4000)
+	for i := 0; i < 4000; i++ {
+		logs = append(logs, fullLogFor(u.ID, fmt.Sprintf("big-%d", i)))
+	}
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 520_000, logs)
+	require.NoError(t, err)
+	require.False(t, od)
+	require.Equal(t, int64(480_000), bal, "扣减 520,000（4000 × 130 毫分）")
+	require.Equal(t, int64(4000), countLogs(t, repos, u.ID), "4000 行日志全量落库")
+}
+
+// TestPGDeductLargeBatchRollback 分片跨片回滚：毒丸行（非法 format 枚举）置于
+// 第 7 片（index 3500，前 6 片已插入）→ 任一失败整体回滚——余额/临时额度/日志
+// 全部不变（分片不改变"全成或全败"事务语义）。
+func TestPGDeductLargeBatchRollback(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "bigroll@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 50000))
+	tp := seedTempBalance(t, repos, u.ID, 30000, nil)
+
+	logs := make([]*domain.UsageLog, 0, 4000)
+	for i := 0; i < 4000; i++ {
+		l := fullLogFor(u.ID, fmt.Sprintf("bigr-%d", i))
+		if i == 3500 { // 第 7 片（3500..3999）内的毒丸行：前 6 片已插入后本片失败
+			l.Format = domain.RequestFormat("bogus") // 非法枚举 → 插入报错
+		}
+		logs = append(logs, l)
+	}
+	_, _, err := repos.DeductAndLog(ctx, u.ID, 40000, logs)
+	require.Error(t, err, "任一片失败必须整体回滚")
+	got, err := repos.GetUser(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(50000), got.Balance, "余额回滚")
+	require.Equal(t, int64(30000), tempBalanceAmount(t, repos, tp), "临时额度回滚")
+	require.Zero(t, countLogs(t, repos, u.ID), "日志全量回滚（0 行）")
+}
+
+// TestPGDeductLargeBatchZeroCost cost=0 大批量只插日志（4000 行）：不扣款、
+// 不透支、balanceAfter 原值——只插日志路径同样分片。
+func TestPGDeductLargeBatchZeroCost(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "bigzero@example.com")
+	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 50000))
+
+	logs := make([]*domain.UsageLog, 0, 4000)
+	for i := 0; i < 4000; i++ {
+		logs = append(logs, fullLogFor(u.ID, fmt.Sprintf("bigz-%d", i)))
+	}
+	od, bal, err := repos.DeductAndLog(ctx, u.ID, 0, logs)
+	require.NoError(t, err)
+	require.False(t, od)
+	require.Equal(t, int64(50000), bal, "cost=0 不扣款")
+	require.Equal(t, int64(4000), countLogs(t, repos, u.ID), "4000 行日志全量落库")
 }
