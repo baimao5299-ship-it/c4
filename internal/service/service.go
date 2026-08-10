@@ -249,11 +249,22 @@ func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publish
 // 后调用。失败忽略——NOTIFY 是事件提示，丢一条由 60s 周期兜底收敛（Publisher
 // 内部已 Warn），不回滚业务。pub 为 nil（T2 过渡：main 未装配）→ no-op；
 // T3 main 装配后必非 nil。
+// 空 Change（评审 I-1）：全字段为空（Users/Templates/Clients/Multipliers/
+// Keys/Settings/Rules 全 false 且 Groups 空）→ 判空跳过不 Publish（no-op）。
+// CreateAccount 无 GroupIDs / UpdateAccount 无变更的空载荷在此统一覆盖（与
+// O2 inv.Accounts 空集 no-op 同语义）。
+// 发布脱离请求 ctx（评审 I-2）：请求 ctx 取消（客户端断开）不吞 NOTIFY——
+// context.WithoutCancel 剥离取消/超时信号仅继承值；NOTIFY 是连接写无悬挂
+// 风险，发布必须到最后一个字节。
 func (s *Service) publish(ctx context.Context, ch notify.Change) {
 	if s.pub == nil {
 		return
 	}
-	_ = s.pub.Publish(ctx, ch)
+	if !ch.Users && !ch.Templates && !ch.Clients && !ch.Multipliers &&
+		!ch.Keys && !ch.Settings && !ch.Rules && len(ch.Groups) == 0 {
+		return // 空 Change：无任何变更语义（评审 I-1）
+	}
+	_ = s.pub.Publish(context.WithoutCancel(ctx), ch)
 }
 
 // validateBaseURL 校验 base_url：可解析、有 scheme/host，且为裸根（不含尾

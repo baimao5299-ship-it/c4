@@ -14,13 +14,15 @@ import (
 // pubRecorder 记录 Publish 收到的 Change 的测试假件（#14 T2 发布点断言：
 // 各变更路径发布对应 Change，一次操作一条 NOTIFY）。
 type pubRecorder struct {
-	mu    sync.Mutex
-	calls []notify.Change
+	mu        sync.Mutex
+	calls     []notify.Change
+	cancelled bool // 最近一次 Publish 收到的 ctx 已取消（评审 I-2 断言）
 }
 
 func (r *pubRecorder) Publish(ctx context.Context, ch notify.Change) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.cancelled = ctx.Err() != nil
 	r.calls = append(r.calls, ch)
 	return nil
 }
@@ -280,4 +282,72 @@ func TestPublishMultipliersAndGroupDelete(t *testing.T) {
 	require.True(t, got.Multipliers, "组删除 → Multipliers:true")
 	require.True(t, got.Keys, "组删除经 Auth.Delete 移除组内 key → Keys:true 同一条")
 	require.Equal(t, before+1, pr.total(), "一次操作一条 NOTIFY（合并单条）")
+}
+
+// TestPublishEmptyChangeSkipped 评审 I-1：空 Change（全字段 false + Groups 空）
+// → publish 判空跳过，Publisher 收到 0 条。CreateAccount 无 GroupIDs 的空载荷
+// 即被覆盖（与 O2 inv.Accounts 空集 no-op 同语义）。
+func TestPublishEmptyChangeSkipped(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("空 Change 直接调用不发布", func(t *testing.T) {
+		svc, _, pr := newPubSvc()
+		svc.publish(ctx, notify.Change{})
+		require.Zero(t, pr.total(), "空 Change → 0 条 NOTIFY")
+	})
+
+	t.Run("CreateAccount 无 GroupIDs → 空载荷不发布", func(t *testing.T) {
+		svc, _, pr := newPubSvc()
+		tpl, err := svc.CreateTemplate(ctx, &domain.Template{
+			Name: "t", BaseURL: "https://t.example.com",
+			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+		})
+		require.NoError(t, err)
+		before := pr.total() // 上一步创建模板已发布 1 条（Templates:true）
+		_, err = svc.CreateAccount(ctx, &domain.Account{
+			Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-1", // 无 GroupIDs
+		})
+		require.NoError(t, err)
+		require.Equal(t, before, pr.total(), "无分组账号 → 空 Change 跳过，不发布")
+	})
+
+	t.Run("UpdateAccount 无变更 → 空载荷不发布", func(t *testing.T) {
+		svc, _, pr := newPubSvc()
+		tpl, err := svc.CreateTemplate(ctx, &domain.Template{
+			Name: "t", BaseURL: "https://t.example.com",
+			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+		})
+		require.NoError(t, err)
+		// 无分组账号（创建时无 GroupIDs → 发布跳过，计数不变）
+		before := pr.total() // 上一步模板创建已发布 1 条（Templates:true）
+		acc, err := svc.CreateAccount(ctx, &domain.Account{
+			Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-1",
+		})
+		require.NoError(t, err)
+		require.Equal(t, before, pr.total(), "无分组账号创建 → 空 Change 跳过")
+
+		// GroupIDs nil = 不变（账号无组 → oldGroups 空），UpstreamKey 相同
+		// → keyChanged false → gids 空 → 空 Change 跳过
+		before = pr.total()
+		_, err = svc.UpdateAccount(ctx, &domain.Account{
+			ID: acc.ID, Name: "a1", TemplateID: tpl.ID, UpstreamKey: "sk-1",
+		})
+		require.NoError(t, err)
+		require.Equal(t, before, pr.total(), "无变更更新 → 空 Change 跳过，不发布")
+	})
+}
+
+// TestPublishDetachedFromRequestCtx 评审 I-2：请求 ctx 已取消时发布仍发出——
+// publish 用 context.WithoutCancel 剥离取消信号（客户端断开不吞 NOTIFY），
+// Publisher 收到的 ctx 未取消（Err()==nil）。
+func TestPublishDetachedFromRequestCtx(t *testing.T) {
+	svc, _, pr := newPubSvc()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // 模拟请求 ctx 已取消
+
+	svc.publish(ctx, notify.Change{Users: true})
+	require.Equal(t, 1, pr.total(), "取消 ctx 下发布不丢弃")
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	require.False(t, pr.cancelled, "Publisher 收到脱离请求 ctx（WithoutCancel）：未取消")
 }
