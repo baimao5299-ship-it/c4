@@ -62,22 +62,27 @@ func TestDeductBenchComposition(t *testing.T) {
 	_, err = statPool.Exec(ctx, `SELECT pg_stat_statements_reset()`)
 	require.NoError(t, err)
 
-	// 主场景：10k 行/事务（maxUsageLogsPerTx 满档，7 轮取中位数）。
-	durations := benchDeductRounds(t, repos, 0, deductBenchLogsPerTx, deductBenchRounds)
-	printBenchReport(t, "10k 行/事务", durations)
+	// 主场景（热点修复 A 扩双路径对比）：10k 行/事务（maxUsageLogsPerTx 满档，
+	// ≥5 轮取中位数）——COPY 路径（pool）vs ent CreateBulk 路径（no-pool），
+	// 同 schema 同环境交错测量。
+	durationsCopy := benchDeductRounds(t, "copy", repos, 0, deductBenchLogsPerTx, deductBenchRounds)
+	printBenchReport(t, "COPY 路径: 10k 行/事务", durationsCopy)
+	reposEnt := newPGReposNoPool(t)
+	durationsEnt := benchDeductRounds(t, "ent", reposEnt, 0, deductBenchLogsPerTx, deductBenchRounds)
+	printBenchReport(t, "ent CreateBulk 路径: 10k 行/事务", durationsEnt)
 
 	// maxUsageLogsPerTx 档位对比（同 2000 行/批）：2k/5k 档单事务固定开销
 	// （BEGIN+FEFO+扣费+回读+COMMIT 5 往返）摊薄行数少 → 每行往返成本更高
 	// 的验证数据。
-	durations2k := benchDeductRounds(t, repos, 0, 2_000, 5)
-	printBenchReport(t, "2k 行/事务（档位对比）", durations2k)
-	durations5k := benchDeductRounds(t, repos, 0, 5_000, 5)
-	printBenchReport(t, "5k 行/事务（档位对比）", durations5k)
+	durations2k := benchDeductRounds(t, "copy2k", repos, 0, 2_000, 5)
+	printBenchReport(t, "COPY 路径: 2k 行/事务（档位对比）", durations2k)
+	durations5k := benchDeductRounds(t, "copy5k", repos, 0, 5_000, 5)
+	printBenchReport(t, "COPY 路径: 5k 行/事务（档位对比）", durations5k)
 
 	// 临时额度形态（FEFO SELECT 返回 3 行 → 每行 1 次条件 UPDATE 往返）——
 	// 测量"有临时额度时 FEFO 环节的往返成本"。
-	durationsTB := benchDeductRounds(t, repos, 3, deductBenchLogsPerTx, 3)
-	printBenchReport(t, "10k 行/事务 + temp balances (FEFO 3 行)", durationsTB)
+	durationsTB := benchDeductRounds(t, "copytb", repos, 3, deductBenchLogsPerTx, 3)
+	printBenchReport(t, "COPY 路径: 10k 行/事务 + temp balances (FEFO 3 行)", durationsTB)
 
 	// 客户端构建器构造（无 DB 往返）：单事务 10k 行 builder 链的纯客户端耗时
 	// 分解——墙钟 ~240ms − 服务器侧 ~66ms 的差值归属（构建 vs 网络往返）。
@@ -92,21 +97,22 @@ func TestDeductBenchComposition(t *testing.T) {
 	printStatBreakdown(t, statPool, ctx)
 }
 
-// benchDeductRounds 跑 n 轮 DeductAndLog（每轮独立用户；tempRows 为预插的
-// 临时额度行数；perTx 为每事务日志行数），返回逐轮耗时。
-func benchDeductRounds(t *testing.T, repos *repository.Repository, tempRows, perTx, n int) []time.Duration {
+// benchDeductRounds 跑 n 轮 DeductAndLog（每轮独立用户；tag 保证同 schema 上
+// 多路径测量用户不撞（users_email_key）；tempRows 为预插的临时额度行数；perTx
+// 为每事务日志行数），返回逐轮耗时。
+func benchDeductRounds(t *testing.T, tag string, repos *repository.Repository, tempRows, perTx, n int) []time.Duration {
 	t.Helper()
 	ctx := context.Background()
 	durations := make([]time.Duration, 0, n)
 	for i := 0; i < n; i++ {
-		u := seedPGUser(t, repos, fmt.Sprintf("bench-%d-%d-%d@example.com", tempRows, perTx, i))
+		u := seedPGUser(t, repos, fmt.Sprintf("bench-%s-%d-%d-%d@example.com", tag, tempRows, perTx, i))
 		require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 1_000_000_000))
 		for k := 0; k < tempRows; k++ {
 			seedTempBalance(t, repos, u.ID, 100_000, nil)
 		}
 		logs := make([]*domain.UsageLog, 0, perTx)
 		for j := 0; j < perTx; j++ {
-			logs = append(logs, benchLogFor(u.ID, fmt.Sprintf("bench-%d-%d-%d-%d", tempRows, perTx, i, j)))
+			logs = append(logs, benchLogFor(u.ID, fmt.Sprintf("bench-%s-%d-%d-%d-%d", tag, tempRows, perTx, i, j)))
 		}
 		start := time.Now()
 		od, bal, err := repos.DeductAndLog(ctx, u.ID, int64(perTx)*130, logs)

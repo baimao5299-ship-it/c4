@@ -52,6 +52,22 @@ func newPGRepos(t *testing.T) *repository.Repository {
 	return repos
 }
 
+// newPGReposNoPool 同一 schema 上的无池仓库（热点修复 A 扩：DeductAndLog 双
+// 路径 A/B 与等价性测试用）——pool == nil → ent CreateBulk 回落路径；与
+// newPGRepos（pool → pgx COPY 路径）共享同一测试 schema（必须先于本函数调用
+// newPGRepos 完成建表）。
+func newPGReposNoPool(t *testing.T) *repository.Repository {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping real-PostgreSQL test")
+	}
+	db := pgTestDB(t) // 独立池 → *sql.DB（ent driver 用）
+	repos, err := repository.New(entsql.OpenDB(dialect.Postgres, db), false)
+	require.NoError(t, err)
+	return repos
+}
+
 // seedPGTemplate 建模板（accounts.template_id 有外键，必先建）。
 func seedPGTemplate(t *testing.T, repos *repository.Repository) *domain.Template {
 	t.Helper()
