@@ -459,6 +459,35 @@ func TestGetLogsFilters(t *testing.T) {
 	require.Equal(t, "o3", *ebody.Rows[0].Model)
 }
 
+// TestGetUsageLogsLimitClip limit>200 裁剪真实断言（评审 L1）：上节 4 行种子
+// 无法区分"裁剪到 200"与"忽略 limit"——201 行种子断言恰 200 行 + next_cursor
+// 非空（裁剪后仍有下一页）。
+func TestGetUsageLogsLimitClip(t *testing.T) {
+	doAdmin, _, store := newSharedRouters(t)
+
+	base := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	store.mu.Lock()
+	store.logs = make([]*domain.UsageLog, 0, 201)
+	for i := 0; i < 201; i++ {
+		store.logs = append(store.logs, &domain.UsageLog{
+			ID: int64(i + 1), UserID: 7, Model: "gpt-4o", Format: domain.FormatOpenAIChat,
+			StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: base.Add(time.Duration(i) * time.Minute),
+		})
+	}
+	store.mu.Unlock()
+	win := "from=2026-08-10T10:00:00Z&to=2026-08-10T16:00:00Z" // 覆盖全部 201 行（12:00 起 +200min = 15:20）
+
+	rec := doAdmin(http.MethodGet, "/admin/usage_logs?limit=500&"+win, "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "limit clip: %s", rec.Body.String())
+	var body LogsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Rows, 200, "limit=500 裁剪到 200（201 行种子区分裁剪与忽略）")
+	require.Equal(t, int64(201), *body.Rows[0].ID, "首页首行 = 最新 id")
+	require.Equal(t, int64(2), *body.Rows[199].ID, "第 200 条 = id 2（降序 201..2）")
+	require.NotNil(t, body.NextCursor, "裁剪后仍剩 1 行 → next_cursor 非空")
+	require.Equal(t, int64(2), *body.NextCursor, "next_cursor = 本页最后一条 id")
+}
+
 // newListTestRouter 列表参数测试的接线：chi + admin token 中间件 + 挂载契约路由。
 func newListTestRouter(t *testing.T) (*AdminAPI, http.Handler, func(method, path, body string) *httptest.ResponseRecorder) {
 	t.Helper()

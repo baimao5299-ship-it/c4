@@ -215,14 +215,17 @@ func TestUserUsageLogsOwnOnly(t *testing.T) {
 		require.Equal(t, userA, *r.UserID, "日志必须归属当前用户")
 	}
 
-	// 跨页 id 注入尝试：cursor 指向他人行 id（2）→ 仍仅本人行（id<2 且
-	// user_id=userA → 行 1），越权钳制在 user_id 过滤不在 cursor 值。
-	rec = doUser(http.MethodGet, "/user/usage_logs?limit=1&cursor=2&"+win, "", tokenA)
+	// 跨页 id 注入尝试（评审 L4）：cursor=3 的谓词窗 id<3 含他人行 2——若
+	// user_id 过滤缺失本页会出现 B 行（行 2 先于行 1），越权钳制在 user_id
+	// 过滤不在 cursor 值（cursor=2 会把 B 行自身排除，断言无法区分）。
+	rec = doUser(http.MethodGet, "/user/usage_logs?limit=1&cursor=3&"+win, "", tokenA)
 	require.Equal(t, http.StatusOK, rec.Code, "cursor injection: %s", rec.Body.String())
 	body = userapi.LogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Len(t, body.Rows, 1, "注入他人 id 游标仅本人行: %s", rec.Body.String())
-	require.Equal(t, int64(1), *body.Rows[0].ID, "cursor=2（他人行）→ 本人行 id=1")
+	require.Equal(t, int64(1), *body.Rows[0].ID, "cursor=3（谓词窗含 B 行 2）→ 本人行 id=1")
+	require.Equal(t, userA, *body.Rows[0].UserID, "行归属恒为当前用户")
+	require.Nil(t, body.NextCursor, "仅 1 行 → 无下一页")
 }
 
 // TestUserErrLogsOwnOnly /user/err_logs 强制 user_id = 当前用户（与
@@ -261,13 +264,16 @@ func TestUserErrLogsOwnOnly(t *testing.T) {
 		require.NotNil(t, r.StatusCode, "err_logs 完整错误面含 status_code")
 	}
 
-	// 跨页 id 注入尝试：cursor 指向他人行 id（2）→ 仍仅本人行（id 1）。
-	rec = doUser(http.MethodGet, "/user/err_logs?limit=1&cursor=2&"+win, "", tokenA)
+	// 跨页 id 注入尝试（评审 L4）：cursor=3 的谓词窗 id<3 含他人行 2——若
+	// user_id 过滤缺失本页会出现 B 行（行 2 先于行 1）。
+	rec = doUser(http.MethodGet, "/user/err_logs?limit=1&cursor=3&"+win, "", tokenA)
 	require.Equal(t, http.StatusOK, rec.Code, "cursor injection: %s", rec.Body.String())
 	body = userapi.ErrLogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Len(t, body.Rows, 1, "注入他人 id 游标仅本人行: %s", rec.Body.String())
-	require.Equal(t, int64(1), *body.Rows[0].ID, "cursor=2（他人行）→ 本人行 id=1")
+	require.Equal(t, int64(1), *body.Rows[0].ID, "cursor=3（谓词窗含 B 行 2）→ 本人行 id=1")
+	require.Equal(t, userA, *body.Rows[0].UserID, "行归属恒为当前用户")
+	require.Nil(t, body.NextCursor, "仅 1 行 → 无下一页")
 }
 
 // TestAdminUsers 管理面用户 CRUD：创建（email 唯一/格式/密码长度）→
