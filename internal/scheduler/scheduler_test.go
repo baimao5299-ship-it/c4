@@ -279,6 +279,18 @@ func TestSelectUnknownGroup(t *testing.T) {
 	require.ErrorIs(t, err, ErrGroupNotFound)
 }
 
+// TestSelectNilStoreNoPanic 快照未加载（首刷失败 / DB 故障启动——注册表
+// ReloadAll 失败仅 Warn，评审 R3 M-1）时 Select 优雅失败而非断言 panic：
+// 旧启动序在此失败 fatalf（进程退出，无流量），Warn-and-serve 语义下客户端
+// 应见 404（group not found）而非断连。构造后不 reload（store 恒 nil）——
+// 首次调用即命中断言 ok 分支。
+func TestSelectNilStoreNoPanic(t *testing.T) {
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	s := New(testCfg(), newMemLoader(nil), re, nil) // 不 reload：模拟首刷失败
+	_, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrGroupNotFound)
+}
+
 func TestInvalidateGroupReloads(t *testing.T) {
 	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4)}})

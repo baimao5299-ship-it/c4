@@ -32,10 +32,32 @@ func (s *Service) ReloadPricing() {
 	s.reloadPricing(context.Background())
 }
 
-// reloadPricing 从 DB 全量加载价格快照（New 初始化 + ReloadPricing 调用）。
+// ReloadPricingCtx 全量重载价格快照并返回错误（snapshot.Registry 适配：错误
+// 进注册表 Status 可观测；启动就绪统一首刷入口）。失败保留旧快照（fail-safe，
+// 与 ReloadPricing 同语义——错误仅上报，不替换快照）。
+func (s *Service) ReloadPricingCtx(ctx context.Context) error {
+	m, err := s.loadPricing(ctx)
+	if err != nil {
+		return err
+	}
+	s.pricing.Store(&m)
+	return nil
+}
+
+// reloadPricing 从 DB 全量加载价格快照（管理端改价/sync 路径调用）。
 // 失败 fail-safe（评审 M-1 同款）：仅 Warn + 保留旧快照/空快照，不阻断服务
 // 启动——读快照缺失按 ErrNotFound（Phase 5 计费拒绝计费而非按 0 计价）。
 func (s *Service) reloadPricing(ctx context.Context) {
+	m, err := s.loadPricing(ctx)
+	if err != nil {
+		return // loadPricing 已 Warn
+	}
+	s.pricing.Store(&m)
+}
+
+// loadPricing 从 DB 分页加载价格快照；错误原样返回（Warn 在此统一——调用方
+// 决定 fail-safe 或上报语义，不重复告警）。
+func (s *Service) loadPricing(ctx context.Context) (map[string]*domain.Pricing, error) {
 	var all []*domain.Pricing
 	for offset := 0; ; offset += pricingReloadPage {
 		rows, _, err := s.store.ListPricing(ctx, repository.ListQuery{
@@ -45,15 +67,14 @@ func (s *Service) reloadPricing(ctx context.Context) {
 			if s.log != nil {
 				s.log.Warn("pricing snapshot reload failed", logx.Error(err))
 			}
-			return
+			return nil, err
 		}
 		all = append(all, rows...)
 		if len(rows) < pricingReloadPage {
 			break
 		}
 	}
-	m := buildPricingSnapshot(all)
-	s.pricing.Store(&m)
+	return buildPricingSnapshot(all), nil
 }
 
 // buildPricingSnapshot 快照构建：model → 价格行。同一 model 出现多行（防御——

@@ -827,6 +827,7 @@ func newTestProxyBillingKeys(t *testing.T, keys map[string]domain.KeyMeta, accs 
 		StatsFlushInterval: time.Hour,
 	}, logs, noopStatStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: keys}, noopUserLoader{}, nil)
+	require.NoError(t, auth.Reload(context.Background())) // 构造不再自载——测试显式首刷（快照注册表单一入口）
 	hc := &http.Client{Transport: http.DefaultTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout:       5 * time.Second,

@@ -32,6 +32,7 @@ import (
 	"go-proxy-mini/internal/scheduler"
 	"go-proxy-mini/internal/server"
 	"go-proxy-mini/internal/service"
+	"go-proxy-mini/internal/snapshot"
 	"go-proxy-mini/internal/usage"
 	"go-proxy-mini/internal/worker"
 	"go-proxy-mini/pkg/aiclient"
@@ -180,7 +181,8 @@ func main() {
 		// assignment 专属倍率 → Groups，T3.5 修正按组）。
 		billBalances = billing.NewBalances(repos, log)
 		invBalances = billBalances
-		_ = billBalances.Reload(context.Background()) // 启动同步，fail-safe（失败保留空快照 → 预检全 402 拒绝，安全侧）
+		// 首载不在此（fail-safe 语义由注册表 ReloadAll 承担：错误独立 Warn 保留
+		// 空快照 → 预检全 402 拒绝，安全侧）——单一启动入口，消灭双重加载。
 	}
 	inv := invalidate.New(invalidate.Config{
 		Window:   invalidate.DefaultWindow, // 200ms（生效延迟语义见 invalidate 包注释）
@@ -194,16 +196,41 @@ func main() {
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
 	svc := service.New(repos, sched, inv, pub, ruleEngine, auth, log)
+	// 快照注册表装配（统一生命周期）：五路快照（auth/scheduler/rules/pricing/
+	// balances——billing 关闭不注册）登记 scope 与 Reload。注册只登记元数据
+	// （零 DB），首刷统一在构造链完成后执行（见下 ReloadAll——单一启动入口，
+	// 各模块构造内不自行 reload）。scope 分发 = settings 变更 → ScopeSettings
+	// 声明方（auth gate N 预算，#36）；其余变更类型仍走去抖器，注册表不重复
+	// 接管（周期 ticker 亦各模块自管，边界见 internal/snapshot 包注释）。
+	snapReg := snapshot.New()
+	for _, s := range []snapshot.Snapshot{
+		authSnapshot{auth},
+		schedSnapshot{sched},
+		ruleSnapshot{ruleEngine},
+		pricingSnapshot{svc},
+	} {
+		if err := snapReg.Register(s); err != nil {
+			fatalf("snapshot register: %v", err)
+		}
+	}
+	if billBalances != nil { // 与 invBalances 同纪律：billing 关闭不注册
+		if err := snapReg.Register(balanceSnapshot{billBalances}); err != nil {
+			fatalf("snapshot register: %v", err)
+		}
+	}
 	// #14 T3a：NOTIFY 监听装配。变更分发器放装配侧——notify 不 import
 	// invalidate（T1 依赖环约束）。
 	disp := &dispatcher{
-		inv:      inv,
-		auth:     auth,
-		balances: invBalances,
-		sched:    sched,
-		svc:      svc,
-		rules:    ruleEngine,
+		inv:       inv,
+		svc:       svc,
+		snapshots: snapReg,
+		log:       log,
 	}
+	// #36 本地实例即时重算：settings 变更直连本地分发器（与远端 NOTIFY 同路径
+	// Apply——自播 NOTIFY 被 Src 跳过，本地实例预算重算不能依赖 NOTIFY 回环）。
+	// 装配序：dispatcher 需要 svc（SettingsReloader）、svc 需要 dispatcher（本地
+	// 分发）——构造环，svc 构造完成后回填（与 inv.SetSettings 同模式）。
+	svc.SetLocalDispatcher(disp)
 	// invalidate 的 settings 分支延迟绑定：service.New 需要去抖器做 Invalidator、
 	// 去抖器需要 svc 做 SettingsReloader（构造环）——svc 构造完成后、Start 前回填。
 	inv.SetSettings(svc)
@@ -280,9 +307,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 规则表是状态管理唯一路径：启动前显式 Reload（空表写种子），失败即 fatalf。
-	if err := ruleEngine.Reload(ctx); err != nil {
-		fatalf("rule engine reload: %v", err)
+	// 统一启动就绪（快照注册表）：构造链完成后全量首刷（并行；各快照错误独立
+	// Warn 不阻塞启动——DB 故障时快照保持空/旧值，模块周期 ticker / listener
+	// FullRefresh 兜底收敛）。取代此前分散的 ruleEngine.Reload fatalf +
+	// sched.InvalidateAllSync fatalf + auth/billBalances 构造时加载：scheduler
+	// 首刷在此完成（Select 在 nil 快照上 panic 的窗口随单一入口消灭），规则
+	// 空表种子亦在此写入（失败降级 Warn——注册表 Status 可观测）。
+	for name, err := range snapReg.ReloadAll(ctx) {
+		log.Warn("snapshot initial reload failed", logx.String("snapshot", name), logx.Error(err))
 	}
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
@@ -301,10 +333,8 @@ func main() {
 	if err := wm.StartAll(ctx); err != nil {
 		fatalf("worker start: %v", err)
 	}
-	// 调度器初始加载必须先于服务流量（Select 在 nil 快照上 panic，Task 4 评审结论）。
-	if err := sched.InvalidateAllSync(); err != nil {
-		fatalf("scheduler initial load: %v", err)
-	}
+	// 调度器初始加载已由上方注册表 ReloadAll 完成（先于 StartAll 与流量）——
+	// 此处不再单独 InvalidateAllSync（单一启动入口）。
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Addr,

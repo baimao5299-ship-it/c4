@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"go-proxy-mini/internal/invalidate"
 	"go-proxy-mini/internal/notify"
+	"go-proxy-mini/internal/snapshot"
 )
 
 // --- 测试重载目标（参照 internal/invalidate/invalidate_test.go 的 rec* 系列） ---
@@ -96,18 +98,41 @@ func (r *recRules2) ReloadRules(ctx context.Context) error {
 }
 func (r *recRules2) calls() int { r.mu.Lock(); defer r.mu.Unlock(); return r.n }
 
+// recSnap 注册表 fake 快照（NOTIFY scope 分发与 FullRefresh 断言用）。
+type recSnap struct {
+	name   string
+	scopes []string
+	mu     sync.Mutex
+	n      int
+}
+
+func (r *recSnap) Name() string     { return r.name }
+func (r *recSnap) Scopes() []string { return r.scopes }
+func (r *recSnap) Reload(ctx context.Context) error {
+	r.mu.Lock()
+	r.n++
+	r.mu.Unlock()
+	return nil
+}
+func (r *recSnap) calls() int { r.mu.Lock(); defer r.mu.Unlock(); return r.n }
+
 // newTestDispatcher 构造真实 Debouncer（1ms 窗口，测试快刷）+ 记录 fake 的
-// dispatcher 与各目标句柄。
+// dispatcher 与各目标句柄；注册表含四路 fake 快照（auth 声明 ScopeSettings，
+// 其余无 scope——与生产装配同形态）。
 type testDispRig struct {
-	d        *dispatcher
-	inv      *invalidate.Debouncer
-	sched    *recSched2
-	clients  *recClients2
-	auth     *recAuth2
-	bal      *recBal2
-	settings *recSettings2
-	rules    *recRules2
-	cancel   context.CancelFunc
+	d         *dispatcher
+	inv       *invalidate.Debouncer
+	sched     *recSched2
+	clients   *recClients2
+	auth      *recAuth2
+	bal       *recBal2
+	settings  *recSettings2
+	rules     *recRules2
+	snapAuth  *recSnap
+	snapSched *recSnap
+	snapRules *recSnap
+	snapBal   *recSnap
+	cancel    context.CancelFunc
 }
 
 func newTestDispatcher(t *testing.T) *testDispRig {
@@ -127,11 +152,25 @@ func newTestDispatcher(t *testing.T) *testDispRig {
 		Rules:    rules,
 	})
 	inv.SetSettings(settings)
-	d := &dispatcher{inv: inv, auth: auth, balances: bal, sched: sched, svc: settings, rules: rules}
+
+	snapAuth := &recSnap{name: "auth", scopes: []string{snapshot.ScopeSettings}}
+	snapSched := &recSnap{name: "scheduler"}
+	snapRules := &recSnap{name: "rules"}
+	snapBal := &recSnap{name: "balances"}
+	reg := snapshot.New()
+	for _, s := range []snapshot.Snapshot{snapAuth, snapSched, snapRules, snapBal} {
+		require.NoError(t, reg.Register(s))
+	}
+	d := &dispatcher{inv: inv, svc: settings, snapshots: reg}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	require.NoError(t, inv.Start(ctx))
-	return &testDispRig{d: d, inv: inv, sched: sched, clients: clients, auth: auth, bal: bal, settings: settings, rules: rules, cancel: cancel}
+	return &testDispRig{
+		d: d, inv: inv, sched: sched, clients: clients, auth: auth, bal: bal,
+		settings: settings, rules: rules,
+		snapAuth: snapAuth, snapSched: snapSched, snapRules: snapRules, snapBal: snapBal,
+		cancel: cancel,
+	}
 }
 
 // waitFlush 等去抖窗口 flush 完成：轮询直到谓词满足或超时。
@@ -207,8 +246,15 @@ func TestDispatcherApplyMapping(t *testing.T) {
 	t.Run("Settings", func(t *testing.T) {
 		rg := newTestDispatcher(t)
 		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Settings: true}))
-		waitFlush(t, func() bool { return rg.settings.calls() > 0 })
-		require.Equal(t, 1, rg.settings.calls(), "settings → settings 快照重载")
+		// #36 时序（R2 M-1）：settings 快照同步刷新（Apply 内，非去抖 flush——
+		// scope 重载必须读到新 N）。
+		require.Equal(t, 1, rg.settings.calls(), "settings → settings 快照同步重载")
+		// 注册表按 ScopeSettings 精确重载（auth 即时生效，不等待去抖窗口）。
+		require.Eventually(t, func() bool { return rg.snapAuth.calls() > 0 }, time.Second, time.Millisecond)
+		require.Equal(t, 1, rg.snapAuth.calls(), "settings → 声明 settings scope 的 auth 快照重载")
+		// 同步重载已覆盖去抖 Mark：无 200ms 后的重复 ReloadSettings。
+		time.Sleep(5 * time.Millisecond)
+		require.Equal(t, 1, rg.settings.calls(), "settings 同步重载后无去抖重复重载")
 	})
 
 	t.Run("Rules", func(t *testing.T) {
@@ -242,7 +288,27 @@ func TestDispatcherApplyMapping(t *testing.T) {
 		require.Equal(t, 0, rg.bal.multCalls())
 		require.Equal(t, 0, rg.settings.calls())
 		require.Equal(t, 0, rg.rules.calls())
+		require.Equal(t, 0, rg.snapAuth.calls(), "空变更不触发注册表 scope 重载")
 	})
+}
+
+// TestDispatcherSettingsScopePrecision settings 变更按 scope 精确分发：只重载
+// 声明 ScopeSettings 的快照（auth），未声明的（scheduler/rules/balances）不动
+// （脏标记语义——变更只对应其快照集合）。
+func TestDispatcherSettingsScopePrecision(t *testing.T) {
+	rg := newTestDispatcher(t)
+	require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Settings: true}))
+	require.Eventually(t, func() bool { return rg.snapAuth.calls() > 0 }, time.Second, time.Millisecond)
+	require.Equal(t, 1, rg.snapAuth.calls())
+	require.Equal(t, 0, rg.snapSched.calls(), "settings 变更不重载未声明 settings scope 的 scheduler")
+	require.Equal(t, 0, rg.snapRules.calls())
+	require.Equal(t, 0, rg.snapBal.calls())
+	// 其它变更类型不走注册表（去抖器路径已断言于映射表测试）：确认无注册表
+	// 误触发——users 变更后 auth 快照仍只有 settings 那一次。
+	require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Users: true}))
+	waitFlush(t, func() bool { return rg.auth.calls() > 0 })
+	require.Equal(t, 1, rg.snapAuth.calls(), "users 变更不触发注册表（去抖器矩阵覆盖）")
+	require.Equal(t, 0, rg.snapSched.calls())
 }
 
 // TestDispatcherApplyMergesSingleFlush 本地+远端同窗口合并：一条 NOTIFY 与
@@ -255,34 +321,117 @@ func TestDispatcherApplyMergesSingleFlush(t *testing.T) {
 	require.Equal(t, 1, rg.auth.calls(), "远端 + 本地同窗口合并为一次 reload")
 }
 
+// settingsNStub settings 快照桩（N 时序断言）：ReloadSettings 从 dbN 现读——
+// 模拟 DB 权威值（远端实例 UpdateSetting 已落库，本实例经 NOTIFY 触发重载）；
+// 快照值 snapN 供 auth 桩在 reload 时刻读取（模拟 ClusterInstances 现读
+// settings 快照）。
+type settingsNStub struct {
+	dbN   atomic.Int64 // 模拟 DB 当前值（外部变更写入）
+	snapN atomic.Int64 // 快照值（ReloadSettings 后 = dbN）
+}
+
+func (s *settingsNStub) ReloadSettings(ctx context.Context) error {
+	s.snapN.Store(s.dbN.Load())
+	return nil
+}
+func (s *settingsNStub) N() int { return int(s.snapN.Load()) }
+
+// recSnapN auth 快照桩：Reload 时刻记录 settings 桩快照 N——模拟 gate.reload →
+// allocBudget 现读 ClusterInstances()（同一 settings 快照源；auth.Reload 内
+// LoadKeys/LoadUsers 之后即 gate.reload，期间快照不被改动，观测等价）。
+type recSnapN struct {
+	recSnap
+	s     *settingsNStub
+	mu    sync.Mutex
+	lastN int
+}
+
+func (r *recSnapN) Reload(ctx context.Context) error {
+	err := r.recSnap.Reload(ctx)
+	r.mu.Lock()
+	r.lastN = r.s.N()
+	r.mu.Unlock()
+	return err
+}
+func (r *recSnapN) observedN() int { r.mu.Lock(); defer r.mu.Unlock(); return r.lastN }
+
+// TestDispatcherSettingsTiming settings 变更时序（R2 M-1 #36 即时重算）：
+// settings 旧 N → 远端变更落库（dbN 新 N）→ Apply(Change{Settings:true}) →
+// auth.Reload 必须读到新 N。顺序保证：settings 快照先同步刷新、scope 精确重载
+// 后执行——修复前 d.inv.Settings() 仅 Mark（去抖 200ms 后才 flush
+// ReloadSettings），reloadScopes 同步 auth.Reload 读到旧 N = 白重算（新 N 落地
+// 后再无 gate.reload 触发）。本测试修复前红：auth 快照仅 reload 一次且读到旧 N
+// （observedN 恒 1）。inv 不 Start（settings 分支 sync 后不依赖去抖器；不 Start
+// 使修复前形态确定性红——flush 永不执行，快照保持旧 N）。
+func TestDispatcherSettingsTiming(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	st := &settingsNStub{}
+	st.dbN.Store(1) // 旧 N
+	snapAuth := &recSnapN{s: st}
+	snapAuth.name = "auth"
+	snapAuth.scopes = []string{snapshot.ScopeSettings}
+
+	inv := invalidate.New(invalidate.Config{
+		Window: time.Millisecond, Sched: &recSched2{}, Clients: &recClients2{},
+		Auth: &recAuth2{}, Balances: &recBal2{}, Rules: &recRules2{},
+	})
+	inv.SetSettings(st)
+	reg := snapshot.New()
+	require.NoError(t, reg.Register(snapAuth))
+	d := &dispatcher{inv: inv, svc: st, snapshots: reg}
+
+	// 模拟远端实例 UpdateSetting 落库（本实例 settings 快照仍是旧 N）。
+	st.dbN.Store(2)
+	require.NoError(t, d.Apply(ctx, notify.Change{Settings: true}))
+
+	// settings 快照同步刷新（Apply 内，非去抖 flush）→ auth reload 读到新 N。
+	require.Equal(t, 2, st.N(), "Apply 后 settings 快照已是新 N（同步重载）")
+	require.Eventually(t, func() bool { return snapAuth.calls() > 0 }, time.Second, time.Millisecond)
+	require.Equal(t, 2, snapAuth.observedN(), "auth.Reload 时 gate 预算读到的 N = 新 N（快照先刷新、scope 后重载）")
+}
+
 // TestDispatcherFullRefresh FullRefresh 覆盖全部五路重载（设计文档 §2.3）：
-// auth + 余额 + sched 全量 + settings + 规则；billing 关闭（balances nil）→
-// 跳过余额路径。
+// 注册表 ReloadAll（auth + sched + rules + balances）+ settings 快照；billing
+// 关闭（balances 未注册）→ 跳过余额路径。
 func TestDispatcherFullRefresh(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		rg := newTestDispatcher(t)
 		require.NoError(t, rg.d.FullRefresh(context.Background()))
-		require.Equal(t, 1, rg.auth.calls())
-		require.Equal(t, 1, rg.bal.relCalls(), "balances Reload 一次")
-		full, _ := rg.sched.counts()
-		require.Equal(t, 1, full, "sched InvalidateAllSyncCtx 一次")
-		require.Equal(t, 1, rg.settings.calls())
-		require.Equal(t, 1, rg.rules.calls())
+		require.Equal(t, 1, rg.snapAuth.calls())
+		require.Equal(t, 1, rg.snapSched.calls(), "sched 全量一次（注册表 ReloadAll）")
+		require.Equal(t, 1, rg.snapRules.calls())
+		require.Equal(t, 1, rg.snapBal.calls(), "balances Reload 一次")
+		require.Equal(t, 1, rg.settings.calls(), "settings 快照重载一次")
+		require.Equal(t, 0, rg.sched.full+len(rg.sched.groups), "FullRefresh 不再直调去抖器 sched（注册表路径）")
 	})
 
 	t.Run("billingDisabled", func(t *testing.T) {
-		auth := &recAuth2{}
 		sched := &recSched2{}
 		settings := &recSettings2{}
-		rules := &recRules2{}
-		inv := invalidate.New(invalidate.Config{Window: time.Millisecond, Sched: sched, Clients: &recClients2{}, Auth: auth, Rules: rules})
+		inv := invalidate.New(invalidate.Config{Window: time.Millisecond, Sched: sched, Clients: &recClients2{}, Auth: &recAuth2{}, Rules: &recRules2{}})
 		inv.SetSettings(settings)
-		d := &dispatcher{inv: inv, auth: auth, balances: nil, sched: sched, svc: settings, rules: rules}
+		snapAuth := &recSnap{name: "auth", scopes: []string{snapshot.ScopeSettings}}
+		snapSched := &recSnap{name: "scheduler"}
+		reg := snapshot.New()
+		for _, s := range []snapshot.Snapshot{snapAuth, snapSched} {
+			require.NoError(t, reg.Register(s))
+		}
+		d := &dispatcher{inv: inv, svc: settings, snapshots: reg}
 		require.NoError(t, d.FullRefresh(context.Background()))
-		require.Equal(t, 1, auth.calls())
+		require.Equal(t, 1, snapAuth.calls())
+		require.Equal(t, 1, snapSched.calls())
 		require.Equal(t, 1, settings.calls())
-		require.Equal(t, 1, rules.calls())
-		full, _ := sched.counts()
-		require.Equal(t, 1, full)
+	})
+
+	t.Run("snapshotsUnconfigured", func(t *testing.T) {
+		// 注册表未装配（nil）：FullRefresh 仍重载 settings（防御性兜底）。
+		settings := &recSettings2{}
+		inv := invalidate.New(invalidate.Config{Window: time.Millisecond, Sched: &recSched2{}, Clients: &recClients2{}, Auth: &recAuth2{}})
+		inv.SetSettings(settings)
+		d := &dispatcher{inv: inv, svc: settings}
+		require.NoError(t, d.FullRefresh(context.Background()))
+		require.Equal(t, 1, settings.calls())
 	})
 }

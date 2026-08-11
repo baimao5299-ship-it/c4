@@ -25,7 +25,8 @@ var serviceTierPolicyKeys = map[string]bool{
 // UpdateSetting 类型化校验后更新（/admin/settings PUT）：
 // key ∈ 内置注册表（未知 key → 400）；switch 必须 true/false；number 必须
 // 数字；service_tier_policy_* 必须 passthrough/strip/reject。更新成功后同步
-// 内存快照——注册等读路径即时生效。
+// 内存快照——注册等读路径即时生效；本地直连分发器按 scope 精确重载（#36
+// auth gate 预算按新 N 即时重算）+ NOTIFY 广播其余实例。
 func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain.Setting, error) {
 	def := domain.DefaultSetting(key)
 	if def == nil {
@@ -49,6 +50,16 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 		return nil, err
 	}
 	s.reloadSettings(ctx)
+	// #36 本地实例即时重算（R2 M-1）：自播 NOTIFY 被 Listener Src 跳过，本地
+	// settings 变更必须直连分发器——与远端 NOTIFY 同路径（Apply：同步
+	// ReloadSettings + 注册表 ScopeSettings 精确重载 auth，gate 预算按新 N
+	// 重算）。本地快照已由上方 reloadSettings 刷新，Apply 内 ReloadSettings
+	// 是幂等重复（settings 低频路径，可接受；单一分发入口防本地/远端行为
+	// 漂移）。请求 ctx 取消不吞本地重载（评审 I-2 同纪律——DB 写已提交，
+	// 收敛必须完成）。nil = 未装配 no-op。
+	if s.local != nil {
+		_ = s.local.Apply(context.WithoutCancel(ctx), notify.Change{Settings: true})
+	}
 	s.publish(ctx, notify.Change{Settings: true}) // 其余实例 settings 快照重载（#14 多实例）
 	return set, nil
 }
