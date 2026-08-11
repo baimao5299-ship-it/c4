@@ -51,7 +51,11 @@ const (
 	// KindKeys key CRUD（创建/轮换/删除/改额度，#14 多实例 key 缺口）：auth
 	// 快照全量 Reload（v1 不做增量定向）。
 	KindKeys
-	// KindSettings settings 快照变更（UpdateSetting）：settings 快照全量重载。
+	// KindSettings settings 快照变更：settings 快照全量重载。生产侧死分支
+	// （仅测试引用）：dispatcher 的 settings 分支已改同步 ReloadSettings + 注册
+	// 表 scope 精确重载（#36 时序），UpdateSetting 从未经去抖器 Mark（本地直连
+	// Apply + NOTIFY 广播）。保留防御性——reloadAll 分支仍接线，未来若恢复
+	// Mark 路径可复用。
 	KindSettings
 	// KindRules 规则表变更（规则 CRUD）：规则表全量重载（重载清窗口计数，
 	// 全实例同步执行语义）。
@@ -204,8 +208,9 @@ func (d *Debouncer) Multipliers() { d.mark(KindMultipliers, nil) }
 // 其余实例的陈旧快照需全量覆盖）。供 notify Dispatcher 远端变更转发。
 func (d *Debouncer) Keys() { d.mark(KindKeys, nil) }
 
-// Settings settings 快照变更（UpdateSetting）：settings 快照全量重载。供
-// notify Dispatcher 远端变更转发。
+// Settings settings 快照变更（UpdateSetting）：settings 快照全量重载。
+// 生产侧死分支（仅测试引用）：dispatcher 已改同步直连路径、UpdateSetting 从
+// 未 Mark——详见 KindSettings 常量注释。
 func (d *Debouncer) Settings() { d.mark(KindSettings, nil) }
 
 // Rules 规则表变更（规则 CRUD）：规则表全量重载（重载清窗口计数——全实例

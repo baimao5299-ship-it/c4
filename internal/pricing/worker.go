@@ -57,8 +57,11 @@ type SyncWorker struct {
 	now       func() time.Time
 	wait      func(ctx context.Context, d time.Duration) error
 	startOnce atomic.Bool
-	// lastSync 最近一次实际同步尝试完成时刻（UnixMilli；观测面 /ops/workers——
-	// Sync 低频路径原子写，零热路径成本）。
+	// running/lastSync 观测面（/ops/workers；低频路径原子写，零热路径成本）：
+	// running 循环存活（Start 置位、cronLoop 退出复位——authSync/notify 同款，
+	// 停机会观测 false）；startOnce 只是幂等守卫（"已 Start 过"，退出不复位），
+	// 不作存活语义。lastSync 最近一次 fetch 尝试时刻（fetch 成败都记）。
+	running  atomic.Bool
 	lastSync atomic.Int64
 }
 
@@ -83,6 +86,7 @@ func (w *SyncWorker) Start(ctx context.Context) error {
 	if !w.startOnce.CompareAndSwap(false, true) {
 		return fmt.Errorf("pricing: sync worker already started")
 	}
+	w.running.Store(true) // 观测面：循环存活（cronLoop 退出复位）
 	go w.syncOnce(ctx)
 	go w.cronLoop(ctx)
 	return nil
@@ -138,6 +142,7 @@ func (w *SyncWorker) syncOnce(ctx context.Context) {
 // 读，无热加载通道）→ gronx 算下次触发 → timer 到点同步。ctx 取消退出；cron
 // 非法 → Warn + 1h 后重新解析（settings 修正后自动恢复）。
 func (w *SyncWorker) cronLoop(ctx context.Context) {
+	defer w.running.Store(false) // 观测面：循环退出复位（worker 停止即观测 false）
 	for {
 		d, err := w.nextDelay()
 		if err != nil {

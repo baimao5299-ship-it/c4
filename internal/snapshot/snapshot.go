@@ -62,7 +62,10 @@ type Registry struct {
 	byName  map[string]Snapshot // 名称 → 快照
 	byScope map[string][]string // scope → 快照名（注册顺序；去重）
 	status  map[string]*Status  // 名称 → 状态
-	execMu  sync.Mutex          // 触发执行互斥：ReloadAll/Reload 串行
+	// execMu 触发执行互斥：ReloadAll/Reload 串行。非重入——快照 Reload 内再触
+	// 注册表（ReloadAll/Reload）即死锁（sync.Mutex 不可重入），快照必须自持
+	// 状态，不得在 Reload 中回调注册表触发。
+	execMu sync.Mutex
 }
 
 // New 构造空注册表。
@@ -92,13 +95,24 @@ func (r *Registry) Register(s Snapshot) error {
 	scopes := slices.Clone(s.Scopes())
 	r.byName[name] = s
 	r.order = append(r.order, name)
+	// scope 去重（byScope 注释承诺"去重"）：同一快照声明重复 scope 只入索引
+	// 一次。Status.Scopes 同源去重（Status 展示即索引语义）。
+	uniq := make([]string, 0, len(scopes))
+	seen := make(map[string]struct{}, len(scopes))
 	for _, sc := range scopes {
 		if sc == "" {
 			continue
 		}
+		if _, dup := seen[sc]; dup {
+			continue
+		}
+		seen[sc] = struct{}{}
+		uniq = append(uniq, sc)
+	}
+	for _, sc := range uniq {
 		r.byScope[sc] = append(r.byScope[sc], name)
 	}
-	r.status[name] = &Status{Name: name, Scopes: scopes}
+	r.status[name] = &Status{Name: name, Scopes: uniq}
 	return nil
 }
 
@@ -182,14 +196,17 @@ func (r *Registry) record(name string, err error) {
 	r.mu.Unlock()
 }
 
-// Status 全部快照状态快照（注册顺序；值拷贝，调用方安全持有）。
+// Status 全部快照状态快照（注册顺序；值拷贝，调用方安全持有——Scopes 切片
+// 深拷贝（slices.Clone），防调用方改写共享底层数组污染注册表状态）。
 func (r *Registry) Status() []Status {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]Status, 0, len(r.order))
 	for _, n := range r.order {
 		if st, ok := r.status[n]; ok {
-			out = append(out, *st)
+			cp := *st
+			cp.Scopes = slices.Clone(st.Scopes)
+			out = append(out, cp)
 		}
 	}
 	return out

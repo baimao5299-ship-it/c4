@@ -5,14 +5,14 @@ package pricing
 
 // SyncWorkerStats 价格同步 worker 状态（存活/状态最小集）。
 type SyncWorkerStats struct {
-	Running        bool  `json:"running"`           // Start 后循环存活
-	LastSyncUnixMs int64 `json:"last_sync_unix_ms"` // 最近一次同步尝试完成时刻（0 = 尚未同步）
+	Running        bool  `json:"running"`           // 循环存活（Start 置位、cronLoop 退出复位——与 authSync/notify 一致）
+	LastSyncUnixMs int64 `json:"last_sync_unix_ms"` // 最近一次 fetch 尝试时刻（fetch 失败也算尝试；0 = 尚未尝试）
 }
 
 // Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
 func (w *SyncWorker) Stats() any {
 	return SyncWorkerStats{
-		Running:        w.startOnce.Load(),
+		Running:        w.running.Load(),
 		LastSyncUnixMs: w.lastSync.Load(),
 	}
 }

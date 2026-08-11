@@ -28,3 +28,18 @@ func TestSyncWorkerStats(t *testing.T) {
 	require.Error(t, w2.Sync(context.Background()))
 	require.Greater(t, w2.Stats().(SyncWorkerStats).LastSyncUnixMs, int64(0), "失败尝试也记录最近同步时刻")
 }
+
+// TestSyncWorkerStatsRunningReset Running 语义：Start 置位、循环退出复位
+// （与 authSync/notify 一致——startOnce 是幂等守卫，非存活语义）。
+func TestSyncWorkerStatsRunningReset(t *testing.T) {
+	w := newTestWorker(&fakeFetcher{result: &FetchResult{}}, &fakeUpserter{}, &fakeSettings{url: "http://upstream/pricing"})
+	w.wait = waitBlock // cronLoop 保持存活直至 ctx 取消
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.NoError(t, w.Start(ctx))
+	require.Eventually(t, func() bool { return w.Stats().(SyncWorkerStats).Running },
+		time.Second, time.Millisecond, "Start 后循环存活")
+	cancel()
+	require.Eventually(t, func() bool { return !w.Stats().(SyncWorkerStats).Running },
+		time.Second, time.Millisecond, "循环退出后复位")
+}

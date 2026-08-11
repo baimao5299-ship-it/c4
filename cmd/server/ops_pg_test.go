@@ -207,7 +207,7 @@ func TestOpsWorkersPG(t *testing.T) {
 		got[w.Name] = w.Stats.(map[string]any)
 	}
 	require.Equal(t, float64(5), got["usage"]["pending_logs"], "usage pending 与真实一致")
-	require.Equal(t, float64(1), got["usage"]["stat_buckets"])
+	require.Equal(t, float64(1), got["usage"]["stat_buckets_created"], "统计桶累计创建数（只增不减）")
 	require.Equal(t, float64(2), got["errlog"]["inserted"], "errlog 落盘计数与真实一致")
 	require.NotZero(t, got["retention"]["last_patrol_unix_ms"], "retention 巡检时刻已记")
 	require.Equal(t, float64(1), got["retention"]["last_dropped_log_partitions"], "DROP 分区数")
