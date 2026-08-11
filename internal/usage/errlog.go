@@ -253,12 +253,16 @@ func (w *ErrLogWorker) Close(ctx context.Context) error {
 			if len(batch) == 0 {
 				break
 			}
-			if ctx.Err() != nil { // 预算到期：截断退出（剩余丢弃计数；与 flusher
-				// 截断 Warn 同族——错误审计明细非计费，截断可接受）
+			if ctx.Err() != nil { // 预算到期：截断退出（剩余丢弃计数——R2-C1：截断面
+				// = 本批 + 两队列剩余积压，全部并入 dropped 对账指标，不低估；与
+				// flusher 截断 Warn 同族——错误审计明细非计费，截断可接受）
+				remaining := len(batch) + len(w.exemptQ) + len(w.rejectQ)
 				w.dropBatch(batch)
+				w.droppedExempt.Add(int64(len(w.exemptQ))) // 双轨行剩余（豁免队列）
+				w.droppedReject.Add(int64(len(w.rejectQ))) // 拒绝行剩余（普通队列）
 				if w.log != nil {
 					w.log.Warn("errlog close: shutdown budget exceeded, truncated drain",
-						logx.Int64("flushed_logs", flushed), logx.Int64("remaining_logs", int64(len(batch))))
+						logx.Int64("flushed_logs", flushed), logx.Int64("remaining_logs", int64(remaining)))
 				}
 				return
 			}

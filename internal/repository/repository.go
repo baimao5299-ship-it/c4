@@ -18,24 +18,24 @@ import (
 // Repository 聚合各实体仓库（绑定单一 client + driver；WithTx 复用同一构造函数
 // newRepository 构造 tx 版实例）。
 type Repository struct {
-	Templates   *TemplateRepo
-	Accounts    *AccountRepo
-	Groups      *GroupRepo
-	Users       *UserRepo
-	Keys        *KeyRepo
-	Assignments *GroupAssignmentRepo
-	Settings    *SettingRepo
-	Usages      *UsageRepo  // usage_logs 明细（消费面改名：log → usage 语义）
-	ErrLogs     *ErrLogRepo // err_logs 错误审计明细（分表设计）
-	Stats       *StatRepo
-	Rules       RuleStore
-	Redemptions *RedemptionRepo
-	Pricing     *PricingRepo
-	Billing     *BillingRepo // 扣费落库（Phase 5 T3）
-	Partitions  *PartitionRepo // 分区表 bootstrap/retention（usage_logs + err_logs + usage_stats，Phase 5 T4.5 + 用户裁决 2026-08-11）
+	Templates    *TemplateRepo
+	Accounts     *AccountRepo
+	Groups       *GroupRepo
+	Users        *UserRepo
+	Keys         *KeyRepo
+	Assignments  *GroupAssignmentRepo
+	Settings     *SettingRepo
+	Usages       *UsageRepo  // usage_logs 明细（消费面改名：log → usage 语义）
+	ErrLogs      *ErrLogRepo // err_logs 错误审计明细（分表设计）
+	Stats        *StatRepo
+	Rules        RuleStore
+	Redemptions  *RedemptionRepo
+	Pricing      *PricingRepo
+	Billing      *BillingRepo     // 扣费落库（Phase 5 T3）
+	Partitions   *PartitionRepo   // 分区表 bootstrap/retention（usage_logs + err_logs + usage_stats，Phase 5 T4.5 + 用户裁决 2026-08-11）
 	TemplateExts *TemplateExtRepo // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
 	AccountExts  *AccountExtRepo  // 账号类型化鉴权扩展（account_ext 1:1；W1 数据层，消费接线 W6）
-	Client      *ent.Client
+	Client       *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
 	// WithTx 内为事务驱动（txDriver），保证 raw SQL 与 ent 构建器同连接。
@@ -71,25 +71,25 @@ func NewWithPG(drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repositor
 func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
 	accounts := &AccountRepo{client: client}
 	return &Repository{
-		Templates:   &TemplateRepo{client: client},
-		Accounts:    accounts,
-		Groups:      &GroupRepo{client: client, accounts: accounts, driver: drv},
-		Users:       &UserRepo{client: client, driver: drv},
-		Keys:        &KeyRepo{client: client, driver: drv},
-		Assignments: &GroupAssignmentRepo{client: client},
-		Settings:    &SettingRepo{client: client},
-		Usages:      &UsageRepo{client: client},
-		ErrLogs:     &ErrLogRepo{client: client},
-		Stats:       &StatRepo{client: client, pool: pool},
-		Rules:       &RuleRepo{client: client},
-		Redemptions: &RedemptionRepo{client: client, driver: drv},
-		Pricing:     &PricingRepo{client: client, driver: drv},
-		Billing:     &BillingRepo{client: client, driver: drv},
-		Partitions:  &PartitionRepo{driver: drv},
+		Templates:    &TemplateRepo{client: client},
+		Accounts:     accounts,
+		Groups:       &GroupRepo{client: client, accounts: accounts, driver: drv},
+		Users:        &UserRepo{client: client, driver: drv},
+		Keys:         &KeyRepo{client: client, driver: drv},
+		Assignments:  &GroupAssignmentRepo{client: client},
+		Settings:     &SettingRepo{client: client},
+		Usages:       &UsageRepo{client: client},
+		ErrLogs:      &ErrLogRepo{client: client},
+		Stats:        &StatRepo{client: client, pool: pool},
+		Rules:        &RuleRepo{client: client},
+		Redemptions:  &RedemptionRepo{client: client, driver: drv},
+		Pricing:      &PricingRepo{client: client, driver: drv},
+		Billing:      &BillingRepo{client: client, driver: drv},
+		Partitions:   &PartitionRepo{driver: drv},
 		TemplateExts: &TemplateExtRepo{client: client},
 		AccountExts:  &AccountExtRepo{client: client},
-		Client:      client,
-		driver:      drv,
+		Client:       client,
+		driver:       drv,
 	}
 }
 
@@ -560,7 +560,7 @@ func (r *Repository) EnsureUsageStatsPartitions(ctx context.Context, now, until 
 }
 
 // DropUsageStatsPartitionsBefore usage_stats DROP 分区下界 < cutoff 的分区
-//（O(1)；用户裁决 2026-08-11：PG DELETE 不释放空间，180 天保留清理必须分区
+// （O(1)；用户裁决 2026-08-11：PG DELETE 不释放空间，180 天保留清理必须分区
 // DROP——retention worker 按 StatsRetentionDays 调）。
 func (r *Repository) DropUsageStatsPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
 	return r.Partitions.DropUsageStatsPartitionsBefore(ctx, cutoff)

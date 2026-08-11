@@ -28,7 +28,7 @@ func errLogFor(reqID string, at time.Time) *domain.UsageLog {
 }
 
 // TestErrLogMessageRoundtripPG err_logs error_message 有值/NULL roundtrip
-//（QueryErrLogs 读回）+ 审计字段投影。
+// （QueryErrLogs 读回）+ 审计字段投影。
 func TestErrLogMessageRoundtripPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()

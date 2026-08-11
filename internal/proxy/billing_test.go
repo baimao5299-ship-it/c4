@@ -858,7 +858,7 @@ func TestProxyBillingMultiplierPerGroup(t *testing.T) {
 	require.NoError(t, bal.Reload(context.Background()))
 	acc := &domain.Account{ID: 1, TemplateID: 1, Template: &domain.Template{
 		ID: 1, Name: "t", BaseURL: up.URL,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 
@@ -1051,7 +1051,7 @@ func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
 // TestProxyBillingNewUserImmediatelyUsable 评审 M-2 回归：新建用户（store 插入）
 // → 全量 Reload → 立即请求 → 200（不得 402）。O1 前 Set 兜底补入新用户掩盖了
 // 该窗口；O1 后 Set 仅限已存在条目（缺失忽略）——新用户必须经 Reload 进快照
-//（创建路径不走 Set）。窗口显式暴露：创建前快照缺失 → 402（不用 sleep 掩盖）。
+// （创建路径不走 Set）。窗口显式暴露：创建前快照缺失 → 402（不用 sleep 掩盖）。
 func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()

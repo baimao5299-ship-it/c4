@@ -180,7 +180,7 @@ type billLogRow struct {
 
 // lastLogFor 按 model 取最新日志行（计费列断言）。usage_logs 瘦身（分表设计）：
 // status_code/error_message 已移除（错误审计归 err_logs），error_type 保留
-//（值域收敛 none/abort）。
+// （值域收敛 none/abort）。
 func (e *e2eEnv) lastLogFor(model string) billLogRow {
 	e.t.Helper()
 	var r billLogRow
@@ -338,7 +338,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	tplID := env.create("/templates", map[string]any{
 		"name": "e2e-tpl", "base_url": "http://" + upAddr,
 		"supported_formats": []string{"openai-chat", "openai-responses", "anthropic"},
-		"models": []string{"e2e-model", "e2e-matrix-model", "e2e-mult-model", "e2e-litellm-model", "e2e-manual-model", "e2e-noprice-model"},
+		"models":            []string{"e2e-model", "e2e-matrix-model", "e2e-mult-model", "e2e-litellm-model", "e2e-manual-model", "e2e-noprice-model"},
 	})
 	g1 := env.create("/groups", map[string]any{"name": "e2e-grp"})
 	g2 := env.create("/groups", map[string]any{"name": "e2e-grp2", "price_multiplier": 2.0})
@@ -365,7 +365,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		"prompt_price_per_million": 100.0, "completion_price_per_million": 200.0,
 		"priority_prompt_price_per_million": 150.0, "priority_completion_price_per_million": 250.0,
 		"flex_prompt_price_per_million": 120.0, "flex_completion_price_per_million": 180.0,
-		"above_threshold": 5,
+		"above_threshold":                5,
 		"above_prompt_price_per_million": 50.0, "above_completion_price_per_million": 100.0,
 		"above_priority_prompt_price_per_million": 70.0, "above_priority_completion_price_per_million": 120.0,
 		"above_flex_prompt_price_per_million": 40.0, "above_flex_completion_price_per_million": 80.0,
@@ -485,11 +485,22 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	})
 	require.Equal(t, 402, c, "no price must 402: %s", rb4)
-	// 402 也记账（error_type=billing，cost 0）
-	sleepFlush() // 等待 flusher 落库
-	code3, resp3 := env.admin(http.MethodGet, "/usage_logs?model=e2e-noprice-model", nil)
-	require.Equal(t, 200, code3, "logs: %s", resp3)
-	require.Contains(t, resp3, `"billing"`, "402 日志 error_type=billing")
+	// 402 拒绝行（分表裁决 R3-M1）：错误审计面归 err_logs——error_type=billing
+	// 全值 + status_code；usage_logs 零行（放行路径语义：失败行不入 usage_logs）。
+	sleepFlush() // 等待 errlog worker 落库（独立 500ms 批间隔）
+	code3, resp3 := env.admin(http.MethodGet, "/err_logs?model=e2e-noprice-model", nil)
+	require.Equal(t, 200, code3, "err logs: %s", resp3)
+	require.Contains(t, resp3, `"billing"`, "402 拒绝行 err_logs error_type=billing")
+	// R4-M3：HTTP 面 ↔ DB 面交叉验证（同一条拒绝行经 errlog worker 落库 → HTTP 查询可见）
+	var dbEType string
+	err = env.pg.QueryRow(context.Background(), `
+		SELECT error_type FROM err_logs
+		WHERE model='e2e-noprice-model' ORDER BY id DESC LIMIT 1`).Scan(&dbEType)
+	require.NoError(t, err)
+	require.Equal(t, "billing", dbEType, "err_logs DB 面与 HTTP 面一致")
+	code3u, resp3u := env.admin(http.MethodGet, "/usage_logs?model=e2e-noprice-model", nil)
+	require.Equal(t, 200, code3u, "usage logs: %s", resp3u)
+	require.Contains(t, resp3u, `"total":0`, "402 失败行不入 usage_logs（放行路径语义）")
 
 	// ============ 场景 4：tier strip/reject 策略（settings 三 key） ============
 	t.Log("场景 4：service_tier_policy_priority strip/reject")
@@ -654,15 +665,15 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, 200, c, "pricing list: %s", rb14)
 	row := jsonGet(t, rb14, "rows", 0, "").(map[string]any)
 	for field, want := range map[string]any{
-		"PromptPricePerMillion":        float64(2.5),
-		"CompletionPricePerMillion":    float64(10.0),
-		"CacheReadPricePerMillion":     float64(0.25),
-		"CacheCreationPricePerMillion": float64(1.25),
-		"PriorityPromptPricePerMillion":        float64(5.0),
-		"PriorityCacheCreationPricePerMillion": float64(2.5),
-		"FlexCompletionPricePerMillion":        float64(8.0),
-		"AboveThreshold":                       float64(256000),
-		"AbovePromptPricePerMillion":           float64(1.5),
+		"PromptPricePerMillion":                  float64(2.5),
+		"CompletionPricePerMillion":              float64(10.0),
+		"CacheReadPricePerMillion":               float64(0.25),
+		"CacheCreationPricePerMillion":           float64(1.25),
+		"PriorityPromptPricePerMillion":          float64(5.0),
+		"PriorityCacheCreationPricePerMillion":   float64(2.5),
+		"FlexCompletionPricePerMillion":          float64(8.0),
+		"AboveThreshold":                         float64(256000),
+		"AbovePromptPricePerMillion":             float64(1.5),
 		"AbovePriorityCompletionPricePerMillion": float64(15.0),
 		"AboveFlexCacheReadPricePerMillion":      float64(0.12),
 		"FastMultiplier":                         float64(6.0),
@@ -703,7 +714,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	// 即刻进入余额快照（防 ≤10s BalanceRefreshInterval 402 窗口）。
 	t.Log("场景 8：建用户 → 立即请求（<0.5s）→ 200（去抖窗口内余额快照收敛）")
 	uNew := createUser(t, env, "fresh-e2e@example.com", 10.0) // 1,000,000 毫分
-	waitSnapshot() // 去抖窗口（200ms）+ 重载；随后请求须落在重载之后
+	waitSnapshot()                                            // 去抖窗口（200ms）+ 重载；随后请求须落在重载之后
 	_, uNewKey := userKey(t, env, uNew, g1)
 	// 评审 I-1：t0 从 userKey 返回后起算（用户已就绪、密钥已取）——createUser/
 	// login 的 API 往返不计入 <0.5s 预算，只测"用户就绪后首次请求"的去抖收敛链。
@@ -792,6 +803,25 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, "auto", r.Tier)
 	require.True(t, r.AboveHit)
 	require.Equal(t, balBefore-75, env.balance(u1), "优雅停机排空扣费完整")
+
+	// R3-I1：abort 双轨关联——同一 request_id 在 usage_logs（计费明细）与
+	// err_logs（错误审计）各一行（豁免队列恒落盘，停机排空后可见）
+	var rid string
+	err = env.pg.QueryRow(context.Background(), `
+		SELECT request_id FROM usage_logs
+		WHERE model='e2e-matrix-model' ORDER BY id DESC LIMIT 1`).Scan(&rid)
+	require.NoError(t, err)
+	require.NotEmpty(t, rid, "usage_logs 停机排空行必须有 request_id")
+	var dbN int
+	err = env.pg.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM err_logs WHERE request_id=$1`, rid).Scan(&dbN)
+	require.NoError(t, err)
+	require.Equal(t, 1, dbN, "abort 双轨：同一 request_id 在 err_logs 一行")
+	var dbSC int
+	err = env.pg.QueryRow(context.Background(), `
+		SELECT status_code FROM err_logs WHERE request_id=$1`, rid).Scan(&dbSC)
+	require.NoError(t, err)
+	require.Greater(t, dbSC, 0, "err_logs 双轨行含 status_code 全值（错误审计面）")
 }
 
 // ---- helpers ----

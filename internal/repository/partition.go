@@ -477,7 +477,7 @@ func (r *PartitionRepo) DropErrLogPartitionsBefore(ctx context.Context, cutoff t
 }
 
 // DropUsageStatsPartitionsBefore usage_stats DROP 分区下界早于 cutoff 的分区
-//（用户裁决 2026-08-11：PG DELETE 不释放空间，180 天保留清理必须分区 DROP
+// （用户裁决 2026-08-11：PG DELETE 不释放空间，180 天保留清理必须分区 DROP
 // O(1)——替代逐行 DELETE 方案；cutoff 由 usage.StatsRetentionDays 推导）。
 func (r *PartitionRepo) DropUsageStatsPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
 	return r.DropTablePartitionsBefore(ctx, "usage_stats", cutoff)

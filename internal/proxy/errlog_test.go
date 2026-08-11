@@ -33,7 +33,7 @@ func newTestProxyWarn(t *testing.T, upstream string, accountID int64, logs usage
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{
@@ -226,7 +226,7 @@ func TestProxySuccessLogsNoErrorMessage(t *testing.T) {
 
 // 用户裁决修正（2026-08-11）：usage_logs 成员资格 = 放行路径语义（error_type
 // ∈ {none, abort}），与 cost 无关——0 token 成功行（空响应）仍入 usage_logs
-//（cost>0 判定会漏掉此类行）。
+// （cost>0 判定会漏掉此类行）。
 func TestProxyEmptyResponseSuccessStillLogsUsage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

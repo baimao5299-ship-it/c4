@@ -36,15 +36,15 @@ type Config struct {
 }
 
 type Proxy struct {
-	cfg      Config
-	sched    *scheduler.Scheduler
-	creds    *credential.Registry
-	rec      *usage.Recorder
-	clients  *aiclient.Factory
-	auth     *Auth
-	limit    *fixedWindowLimiter
-	log      *logx.Logger
-	bill     *BillingHooks // 计费钩子；nil = 计费全关
+	cfg     Config
+	sched   *scheduler.Scheduler
+	creds   *credential.Registry
+	rec     *usage.Recorder
+	clients *aiclient.Factory
+	auth    *Auth
+	limit   *fixedWindowLimiter
+	log     *logx.Logger
+	bill    *BillingHooks // 计费钩子；nil = 计费全关
 	// errlog 错误明细落盘 worker（分表设计；nil = 未装配——拒绝/异常路径只聚
 	// 合统计不落 err_logs 明细，测试/未装配形态）。与计费 flusher 完全解耦。
 	errlog   *usage.ErrLogWorker
@@ -242,7 +242,7 @@ func (p *Proxy) recordLog(l *domain.UsageLog) {
 //     （上游透传/耗尽失败行）**不写 usage_logs**（失败明细归 err_logs，P2a
 //     拒绝风暴教训同族）
 //   - err_logs = 全部错误明细（error_type != none）：4xx/5xx（上游透传/耗尽）
-//     + abort 双轨（豁免队列恒落盘——架构审查 B2）；拒绝行走 recordRejected
+//   - abort 双轨（豁免队列恒落盘——架构审查 B2）；拒绝行走 recordRejected
 //     的采样队列，不经本路由
 //   - usagestat = 聚合统计：计数全保留（is_error/error_count）——放行路径行由
 //     Flusher.Record/rec.Record 内部聚合，失败行由 rec.Aggregate 聚合（每日志

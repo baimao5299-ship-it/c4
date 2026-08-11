@@ -146,7 +146,6 @@ func wsTestProxy(t *testing.T, upstream string, format domain.RequestFormat, log
 	return p, srv
 }
 
-
 // 端到端主流程：WS 握手（beta 头 + 账号鉴权 + 客户端头透传）、双向事件帧 1:1
 // 透传（回声字节一致）、response.completed usage 嗅探计费（5 计数）。
 func TestResponsesWSHandshakeAndBidirectionalPassthrough(t *testing.T) {

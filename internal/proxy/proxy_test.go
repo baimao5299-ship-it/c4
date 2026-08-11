@@ -210,7 +210,7 @@ func newTestProxyCapture(t *testing.T, upstream string, accountID int64, usageCa
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	return newTestProxyTplCapture(t, tpl, accountID, usageCapture)
@@ -221,7 +221,7 @@ func newTestProxyTimeoutLogs(t *testing.T, upstream string, accountID int64, log
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	return newTestProxyTplTimeoutLogs(t, tpl, accountID, true, 30*time.Second, logs, nil)
@@ -262,7 +262,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 }
 
 // newTestProxyTplTimeoutRec 同 newTestProxyTplTimeoutLogs，但注入完整 Recorder
-//（P2a 拒绝路径统计聚合断言用：调用方构造 rec——含捕获 stat store——后同一
+// （P2a 拒绝路径统计聚合断言用：调用方构造 rec——含捕获 stat store——后同一
 // 实例挂 Flusher 与 proxy.rec，聚合单面可观测）。errWriter 为 errlog worker
 // 写者（captureLogStore 时与 logs 同一 store；nil = no-op——错误明细不捕获）。
 func newTestProxyTplTimeoutRec(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, rec *usage.Recorder, bill *BillingHooks, errWriter usage.ErrLogInserter) *Proxy {
@@ -378,7 +378,7 @@ func TestProxyStreamingChatAppliesModelMapping(t *testing.T) {
 	defer srv.Close()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: srv.URL,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: map[string]string{"gpt-4o": "gpt-4o-upstream"},
 	}
@@ -479,7 +479,7 @@ func TestProxyFailoverOn429(t *testing.T) {
 	store := &captureLogStore{}
 	tpl1 := &domain.Template{
 		ID: 1, Name: "t", BaseURL: up.URL,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 		ModelMapping: mapping,
 	}
@@ -569,7 +569,7 @@ func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 	loader := p.sched.Loader().(noopLoader)
 	for i := int64(2); i <= 3; i++ {
 		tpl := &domain.Template{ID: i, Name: fmt.Sprintf("t%d", i), BaseURL: up.URL,
-			CredentialType: credential.TypeAPIKey,
+			CredentialType:   credential.TypeAPIKey,
 			SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"}}
 		loader.accs[10] = append(loader.accs[10], &domain.Account{
 			ID: i, TemplateID: i, Template: tpl, UpstreamKey: "sk-upstream",
@@ -658,7 +658,7 @@ func TestProxyStreamTimeoutMarksUnhealthy(t *testing.T) {
 	store := &captureLogStore{}
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: up.URL,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	// 小超时保证断言在测试生命周期内触发（父 ctx 不取消，仅子 ctx 超时）

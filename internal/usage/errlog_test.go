@@ -193,6 +193,26 @@ func TestErrLogWorkerCloseTruncatesOnBudget(t *testing.T) {
 	require.Contains(t, string(b), "shutdown budget exceeded, truncated drain")
 }
 
+// TestErrLogWorkerCloseTruncationCountsQueueBacklog R2-C1 精确回归：预算已到期
+// 时 Close 立即截断——截断面 = 本批（BatchSize 100，双轨优先：50 双轨 + 50 拒绝）
+// + 两队列剩余积压（拒绝 200），全部并入 dropped 对账指标，不低估。
+func TestErrLogWorkerCloseTruncationCountsQueueBacklog(t *testing.T) {
+	w := NewErrLogWorker(ErrLogConfig{QueueSize: 4096, BatchSize: 100, FlushInterval: time.Hour},
+		&captureErrLogInserter{}, nil)
+	for i := 0; i < 250; i++ {
+		w.EnqueueRejected(rejectLog(i))
+	}
+	for i := 0; i < 50; i++ {
+		w.EnqueueError(errorLog(i))
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	require.NoError(t, w.Close(ctx))
+	require.Zero(t, w.Inserted(), "预算已到期：无任何落库")
+	require.Equal(t, int64(100), w.DroppedExempt(), "本批 100（50 双轨 + 50 拒绝）按 dropBatch 既有语义计入双轨丢弃")
+	require.Equal(t, int64(200), w.DroppedReject(), "R2-C1：拒绝队列剩余积压并入丢弃计数（对账不低估）")
+}
+
 // TestErrLogWorkerInsertFailureDrops InsertBatch 失败 → 整批丢弃止损 + 计数
 // （审计明细非计费：不无限回灌卡死）。
 func TestErrLogWorkerInsertFailureDrops(t *testing.T) {

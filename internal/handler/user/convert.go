@@ -21,14 +21,14 @@ func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
 	return User{
-		ID:              &u.ID,
-		Email:           &u.Email,
-		Role:            &r,
-		Status:          &st,
-		MaxConcurrency:  &u.MaxConcurrency,
-		Balance:         ptr(float64(u.Balance) / 1e5),
-		CreatedAt:       &u.CreatedAt,
-		UpdatedAt:       &u.UpdatedAt,
+		ID:             &u.ID,
+		Email:          &u.Email,
+		Role:           &r,
+		Status:         &st,
+		MaxConcurrency: &u.MaxConcurrency,
+		Balance:        ptr(float64(u.Balance) / 1e5),
+		CreatedAt:      &u.CreatedAt,
+		UpdatedAt:      &u.UpdatedAt,
 	}
 }
 
@@ -72,17 +72,17 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 	f := RequestFormat(l.Format)
 	et := ErrorType(l.ErrorType)
 	return UsageLog{
-		ID:               &l.ID,
-		RequestID:        &l.RequestID,
-		GroupID:          &l.GroupID,
-		AccountID:        &l.AccountID,
-		TemplateID:       &l.TemplateID,
-		UserID:           &l.UserID,
-		KeyID:            &l.KeyID,
-		Model:            &l.Model,
-		MappedModel:      &l.MappedModel,
-		Format:           &f,
-		ErrorType:        &et,
+		ID:                       &l.ID,
+		RequestID:                &l.RequestID,
+		GroupID:                  &l.GroupID,
+		AccountID:                &l.AccountID,
+		TemplateID:               &l.TemplateID,
+		UserID:                   &l.UserID,
+		KeyID:                    &l.KeyID,
+		Model:                    &l.Model,
+		MappedModel:              &l.MappedModel,
+		Format:                   &f,
+		ErrorType:                &et,
 		LatencyMS:                &l.LatencyMS,
 		TTFTMS:                   l.TTFTMS,
 		InputTokens:              &l.InputTokens,
@@ -94,11 +94,11 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		PriceCacheReadMillis:     l.PriceCacheReadMillis,
 		CacheCreationTokens:      &l.CacheCreationTokens,
 		PriceCacheCreationMillis: l.PriceCacheCreationMillis,
-		Cost:                &l.Cost,
-		BillingTier:         &l.BillingTier,
-		AboveHit:            &l.AboveHit,
-		Overdraft:           &l.Overdraft,
-		CreatedAt:           &l.CreatedAt,
+		Cost:                     &l.Cost,
+		BillingTier:              &l.BillingTier,
+		AboveHit:                 &l.AboveHit,
+		Overdraft:                &l.Overdraft,
+		CreatedAt:                &l.CreatedAt,
 	}
 }
 
@@ -132,15 +132,15 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 // toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats）。
 func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	return StatBucket{
-		BucketTime:       &b.BucketTime,
-		GroupID:          &b.GroupID,
-		AccountID:        &b.AccountID,
-		TemplateID:       &b.TemplateID,
-		UserID:           &b.UserID,
-		Model:            &b.Model,
-		IsError:          &b.IsError,
-		RequestCount:     &b.RequestCount,
-		ErrorCount:       &b.ErrorCount,
+		BucketTime:          &b.BucketTime,
+		GroupID:             &b.GroupID,
+		AccountID:           &b.AccountID,
+		TemplateID:          &b.TemplateID,
+		UserID:              &b.UserID,
+		Model:               &b.Model,
+		IsError:             &b.IsError,
+		RequestCount:        &b.RequestCount,
+		ErrorCount:          &b.ErrorCount,
 		InputTokens:         &b.InputTokens,
 		OutputTokens:        &b.OutputTokens,
 		TotalTokens:         &b.TotalTokens,

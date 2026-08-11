@@ -182,7 +182,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{format}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{

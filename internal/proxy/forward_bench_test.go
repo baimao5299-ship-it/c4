@@ -65,7 +65,7 @@ func benchUpstream() *httptest.Server {
 func benchProxy(upstream string) *Proxy {
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{
