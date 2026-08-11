@@ -51,8 +51,45 @@ func TestRegistryRegisterAndFor(t *testing.T) {
 	require.Equal(t, "sk-custom", got, "覆盖后凭据值来自新 provider，而非输入 APIKey")
 }
 
-// For 未知类型 → apiKeyProvider fallback（不可达路径的兜底）；其 Credential
-// 对不匹配类型必须报错（不得静默返回任何值）。
+// TestNewRegistersResponsesSpecial New 必须默认注册 responses-special provider
+// （P4：修复前未注册 → For 兜底 apiKeyProvider → Credential 类型不匹配报错 →
+// 真实流量 502 unsupported credential type）。
+func TestNewRegistersResponsesSpecial(t *testing.T) {
+	r := New()
+	p := r.For(TypeResponsesSpecial)
+	require.NotNil(t, p, "New 必须默认注册 responses-special")
+	require.Equal(t, TypeResponsesSpecial, p.Type())
+	// 经注册表取凭据（与 credentialFor 同路径）：匹配类型直读静态 Key
+	got, err := r.For(TypeResponsesSpecial).Credential(context.Background(),
+		CredentialInput{AccountID: 1, Type: TypeResponsesSpecial, APIKey: "sk-x"})
+	require.NoError(t, err)
+	require.Equal(t, "sk-x", got)
+}
+
+func TestResponsesSpecialProviderReturnsAPIKey(t *testing.T) {
+	p := responsesSpecialProvider{}
+	got, err := p.Credential(context.Background(), CredentialInput{
+		AccountID: 1, Type: TypeResponsesSpecial, APIKey: "sk-x",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sk-x", got)
+	// 空 Key 也原样返回（同 api_key——非空校验在别处）
+	got, err = p.Credential(context.Background(), CredentialInput{AccountID: 1, Type: TypeResponsesSpecial})
+	require.NoError(t, err)
+	require.Equal(t, "", got)
+}
+
+func TestResponsesSpecialProviderTypeMismatchErrors(t *testing.T) {
+	p := responsesSpecialProvider{}
+	for _, typ := range []Type{TypeAPIKey, TypeCodexOAuth, Type("bogus")} {
+		_, err := p.Credential(context.Background(), CredentialInput{AccountID: 1, Type: typ, APIKey: "sk-x"})
+		require.ErrorIs(t, err, ErrUnsupported, "type %q 必须防御报错", typ)
+		require.Contains(t, err.Error(), string(typ))
+	}
+}
+
+// For 未知类型 → apiKeyProvider 兜底（Valid 通过但未注册的类型也走此路径）；
+// 其 Credential 对不匹配类型必须报错（不得静默返回任何值）——兜底语义不回归。
 func TestRegistryForUnknownType(t *testing.T) {
 	r := New()
 	p := r.For(Type("bogus"))

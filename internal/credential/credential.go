@@ -1,6 +1,6 @@
 // Package credential 是账号凭据抽象层：类型注册表 + Provider 分发，为后续
 // 多种号池类型（codex oauth、codex personal_access_token、claude code 等）
-// 打地基。本轮只实现接口 + api_key 默认实现 + 接线（行为零变化）。
+// 打地基。本轮实现接口 + api_key/responses-special 两 provider + 接线。
 //
 // 正交原则：Provider 只返回凭据值（key/token），不感知请求格式——鉴权头名由
 // 格式侧决定（openai → Authorization: Bearer、anthropic → x-api-key，
@@ -80,7 +80,8 @@ var ErrUnsupported = errors.New("credential: unsupported credential type")
 
 // apiKeyProvider 默认实现：直接返回 CredentialInput.APIKey（空 Key 也原样
 // 返回——行为与现状一致，Key 非空校验在别处）。类型不匹配 → 错误（防御性：
-// For 的 fallback 路径正常情况下不可达）。
+// For 的兜底路径也会命中——未注册的 Valid 类型（responses-special 注册前）落回
+// 本 provider，必须显式报错而非吐值，杜绝号池类型凭据错配）。
 type apiKeyProvider struct{}
 
 func (apiKeyProvider) Type() Type { return TypeAPIKey }
@@ -92,22 +93,38 @@ func (apiKeyProvider) Credential(_ context.Context, in CredentialInput) (string,
 	return in.APIKey, nil
 }
 
+// responsesSpecialProvider 与 apiKeyProvider 同构：Responses 特殊需求模板的
+// 静态 Key 直读（key 来源同为账号 upstream_key，仅类型标记不同——注册表按
+// 类型分发）。类型不匹配 → 错误（同 api_key 防御语义）。
+type responsesSpecialProvider struct{}
+
+func (responsesSpecialProvider) Type() Type { return TypeResponsesSpecial }
+
+func (responsesSpecialProvider) Credential(_ context.Context, in CredentialInput) (string, error) {
+	if in.Type != TypeResponsesSpecial {
+		return "", fmt.Errorf("%w: %q", ErrUnsupported, in.Type)
+	}
+	return in.APIKey, nil
+}
+
 // Registry 类型 → Provider 分发表。
 type Registry struct{ m map[Type]Provider }
 
-// New 构造注册表并默认注册 api_key provider。
+// New 构造注册表并默认注册 api_key + responses-special 两 provider。
 func New() *Registry {
 	r := &Registry{m: make(map[Type]Provider)}
 	r.Register(apiKeyProvider{})
+	r.Register(responsesSpecialProvider{})
 	return r
 }
 
 // Register 注册/覆盖指定类型的 provider。
 func (r *Registry) Register(p Provider) { r.m[p.Type()] = p }
 
-// For 取类型的 provider；未注册 → apiKeyProvider（正常情况下不可达：
-// 调用方先做 Type.Valid() 校验，未注册类型在 Valid 即被拒绝——评审 M1：
-// 不得静默 fallback）。
+// For 取类型的 provider；未注册 → apiKeyProvider 兜底。兜底是安全网而非
+// 静默 fallback：Valid() 通过但未注册的类型（如 responses-special 注册前）
+// 也会走到这里——兜底 provider 的 Credential 对不匹配类型返回 ErrUnsupported，
+// 显式报错不吐值（评审 M1）。
 func (r *Registry) For(t Type) Provider {
 	if p, ok := r.m[t]; ok {
 		return p
