@@ -33,10 +33,11 @@ usage = {
   # DROP TABLE O(1) 清理（默认 30 天 = 30 个日分区）；<= 0 = 不删除。
   log_retention_days = 30,
   stats_flush_interval = "10s",
-  # flush_workers：明细/统计/额度 flush 并行 worker 数（默认 4；建议上限 ~7——
-  # 每 worker 一笔批量 SQL，受 DB 连接池余量 db.max_conns 约束；同 key 恒同
-  # worker，分片确定性）。
-  flush_workers = 4,
+  # flush_workers：明细/统计/额度 flush 并行 worker 数（默认 8——多角度压测
+  # C 项实证 2026-08-12：多用户水线告警清零、pending 斜率降 25-40%、QPS/CPU
+  # 零回退；每 worker 一笔批量 SQL，受 DB 连接池余量 db.max_conns 约束；
+  # 同 key 恒同 worker，分片确定性）。
+  flush_workers = 8,
   # err_logs 错误审计明细（分表设计）：有界队列 + 背压采样丢弃——拒绝风暴不
   # 阻塞热路径/不爆内存/不淹没 DB（DB 写速率上界 = errlog_batch_size /
   # errlog_flush_interval）。双轨行（abort 等已计费错误）豁免采样恒落盘。
@@ -53,6 +54,7 @@ usage = {
 # 临时额度 FEFO 优先扣、条件扣费允许透支、优雅停机排空不丢计费。
 # flush_interval：扣费批量落库周期（pending 聚合满或周期到 → 逐 user 小事务
 # 条件扣费；停机排空受 shutdown 预算约束，超时 Warn 截断不阻塞退出）。
-# flush_workers：并行落库 worker 数（默认 4；建议上限 ~7——每 worker 一笔
+# flush_workers：并行落库 worker 数（默认 8——多角度压测 C 项实证 2026-08-12：
+# 多用户水线告警清零、pending 斜率降 25-40%、QPS/CPU 零回退；每 worker 一笔
 # DeductAndLog 事务，受 DB 连接池余量 db.max_conns 约束，同用户实例内恒串行）。
-billing = { enabled = false, flush_interval = "1s", balance_refresh_interval = "10s", flush_workers = 4 }
+billing = { enabled = false, flush_interval = "1s", balance_refresh_interval = "10s", flush_workers = 8 }
