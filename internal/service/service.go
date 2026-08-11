@@ -246,6 +246,14 @@ type Service struct {
 	pub        Publisher   // 多实例 NOTIFY 发布器（#14 T2；nil = 单实例/未装配，publish no-op）
 	ruleReload RuleReloader
 	keys       KeyRegistrar
+	// local 本地变更分发器（#36 即时重算）：实现 = cmd/server dispatcher
+	//（notify.Dispatcher 接口——notify 不 import service，接口定义在 notify
+	// 包、装配侧实现，与 Invalidator/Publisher 同依赖方向）。settings 变更
+	// 本地直连 Apply（与远端 NOTIFY 同路径：同步 ReloadSettings + 注册表
+	// scope 精确重载 auth，gate 预算按新 N 重算）——自播 NOTIFY 被 Listener
+	// Src 跳过，本地实例不能依赖 NOTIFY 回环。nil = 未装配（单实例/测试）
+	// no-op。
+	local notify.Dispatcher
 	// settings 设置全量内存快照（默认值 + DB 覆盖）：公开读路径（注册等）
 	// 零 DB 直读；仅管理面 UpdateSetting 后重载（低频，无锁）。
 	settings atomic.Pointer[map[string]*domain.Setting]
@@ -268,6 +276,13 @@ func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publish
 	s.reloadSettings(context.Background())
 	return s
 }
+
+// SetLocalDispatcher 注入本地变更分发器（#36 本地实例即时重算）：main 装配序
+// 上 dispatcher 需要 svc（SettingsReloader）、svc 需要 dispatcher（本地分发）
+// ——构造环，svc 构造完成后回填（与 invalidate.Debouncer.SetSettings 同模式）。
+// 未注入 = 单实例/测试：settings 变更不做本地 scope 分发（预算重算由 60s
+// auth-sync / 下次变更兜底收敛，单实例无多实例分摊语义）。
+func (s *Service) SetLocalDispatcher(d notify.Dispatcher) { s.local = d }
 
 // publish 发布一条 NOTIFY 变更（#14 T2）：与现有 inv.* 调用点并排，DB 写成功
 // 后调用。失败忽略——NOTIFY 是事件提示，丢一条由 60s 周期兜底收敛（Publisher

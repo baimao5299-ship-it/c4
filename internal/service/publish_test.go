@@ -58,6 +58,26 @@ func (r *pubRecorder) countKeys() int {
 	return n
 }
 
+// recLocalDispatcher 本地分发器假件（#36 本地即时重算断言）：记录 Apply 收到
+// 的 Change（实现 notify.Dispatcher——与生产 dispatcher 同接口）。
+type recLocalDispatcher struct {
+	mu      sync.Mutex
+	applied []notify.Change
+}
+
+func (r *recLocalDispatcher) Apply(ctx context.Context, ch notify.Change) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.applied = append(r.applied, ch)
+	return nil
+}
+func (r *recLocalDispatcher) FullRefresh(ctx context.Context) error { return nil }
+func (r *recLocalDispatcher) changes() []notify.Change {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]notify.Change(nil), r.applied...)
+}
+
 // newPubSvc 构造带 pubRecorder 的 Service（settings 快照加载默认值——
 // RegisterUser 读 signup_enabled）。
 func newPubSvc() (*Service, *fakeStore, *pubRecorder) {
@@ -256,6 +276,34 @@ func TestClusterInstances(t *testing.T) {
 	_, err = svc.UpdateSetting(ctx, "cluster.instances", "abc")
 	require.Error(t, err, "非数字被 UpdateSetting 类型化校验拒绝")
 	require.Equal(t, 1, svc.ClusterInstances(), "非法值回退 1")
+}
+
+// TestUpdateSettingLocalScopeReload #36 本地实例即时重算（R2 M-1）：UpdateSetting
+// 除广播 NOTIFY（其余实例）外，还须直连本地分发器（自播 NOTIFY 被 Listener
+// Src 跳过，本地实例预算重算不能依赖 NOTIFY 回环）。修复前本测试红——本地
+// 无任何 auth.Reload 触发，N 变更后 gate 预算不重算。
+func TestUpdateSettingLocalScopeReload(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	ld := &recLocalDispatcher{}
+	svc := &Service{store: fs, local: ld, log: nil}
+	svc.reloadSettings(ctx)
+	require.Equal(t, 1, svc.ClusterInstances(), "无 DB 行 → 默认 1")
+
+	_, err := svc.UpdateSetting(ctx, "cluster.instances", "3")
+	require.NoError(t, err)
+	require.Equal(t, 3, svc.ClusterInstances(), "本地快照即时生效（既有行为）")
+	got := ld.changes()
+	require.Len(t, got, 1, "本地分发收到一次 settings 变更")
+	require.True(t, got[0].Settings, "本地分发载荷 Settings:true")
+
+	// 非 settings 变更不触发本地分发（本地直连仅限 settings scope 分发）。
+	svc2 := &Service{store: fs, local: ld, inv: NopInvalidator{}, log: nil}
+	svc2.reloadSettings(ctx)
+	u := seedUser(t, fs, "ld@example.com", 0, 0)
+	_, err = svc2.CreateUser(ctx, u.Email+"2", "pw12345678", domain.RoleUser, domain.UserStatusActive, 8, 1000)
+	require.NoError(t, err)
+	require.Len(t, ld.changes(), 1, "用户创建不触发本地 settings 分发")
 }
 
 // 组/assignment 倍率断言补充（避免上文中途废弃的深拷贝占位）。

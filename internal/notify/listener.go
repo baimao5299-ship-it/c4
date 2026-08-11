@@ -20,8 +20,9 @@ import (
 type Dispatcher interface {
 	// Apply 处理一条 NOTIFY 变更：转发给 invalidate.Debouncer 的 Mark 方法
 	//（本地/远端合并同窗口，天然去重）——users/templates/multipliers/groups
-	// 转现有 Mark（Templates 含 clients 失效）；keys/settings/rules 三类转
-	// 新增的 Keys/Settings/Rules 分支（reloadAll 扩展）。
+	// 转现有 Mark（Templates 含 clients 失效）；keys/rules 转 Keys/Rules 分支
+	// （reloadAll 扩展）；settings 由装配侧同步 ReloadSettings + 注册表 scope
+	// 分发（#36 时序——scope 重载必须读到新 N，实现见 cmd/server dispatcher）。
 	Apply(ctx context.Context, ch Change) error
 	// FullRefresh 断线重连/启动时的全量本地刷新：Auth Reload + Balances
 	// Reload + sched InvalidateAll + settings + rules 重载（覆盖断连期间

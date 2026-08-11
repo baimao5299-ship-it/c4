@@ -226,6 +226,11 @@ func main() {
 		snapshots: snapReg,
 		log:       log,
 	}
+	// #36 本地实例即时重算：settings 变更直连本地分发器（与远端 NOTIFY 同路径
+	// Apply——自播 NOTIFY 被 Src 跳过，本地实例预算重算不能依赖 NOTIFY 回环）。
+	// 装配序：dispatcher 需要 svc（SettingsReloader）、svc 需要 dispatcher（本地
+	// 分发）——构造环，svc 构造完成后回填（与 inv.SetSettings 同模式）。
+	svc.SetLocalDispatcher(disp)
 	// invalidate 的 settings 分支延迟绑定：service.New 需要去抖器做 Invalidator、
 	// 去抖器需要 svc 做 SettingsReloader（构造环）——svc 构造完成后、Start 前回填。
 	inv.SetSettings(svc)

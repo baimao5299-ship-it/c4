@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,13 +246,15 @@ func TestDispatcherApplyMapping(t *testing.T) {
 	t.Run("Settings", func(t *testing.T) {
 		rg := newTestDispatcher(t)
 		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Settings: true}))
-		// 既有：settings 快照重载（去抖器）
-		waitFlush(t, func() bool { return rg.settings.calls() > 0 })
-		require.Equal(t, 1, rg.settings.calls(), "settings → settings 快照重载")
-		// #36：settings 变更 → 注册表按 ScopeSettings 精确重载（auth 即时生效，
-		// 不等待去抖窗口）。
+		// #36 时序（R2 M-1）：settings 快照同步刷新（Apply 内，非去抖 flush——
+		// scope 重载必须读到新 N）。
+		require.Equal(t, 1, rg.settings.calls(), "settings → settings 快照同步重载")
+		// 注册表按 ScopeSettings 精确重载（auth 即时生效，不等待去抖窗口）。
 		require.Eventually(t, func() bool { return rg.snapAuth.calls() > 0 }, time.Second, time.Millisecond)
 		require.Equal(t, 1, rg.snapAuth.calls(), "settings → 声明 settings scope 的 auth 快照重载")
+		// 同步重载已覆盖去抖 Mark：无 200ms 后的重复 ReloadSettings。
+		time.Sleep(5 * time.Millisecond)
+		require.Equal(t, 1, rg.settings.calls(), "settings 同步重载后无去抖重复重载")
 	})
 
 	t.Run("Rules", func(t *testing.T) {
@@ -316,6 +319,77 @@ func TestDispatcherApplyMergesSingleFlush(t *testing.T) {
 	rg.inv.Users() // 模拟本地 admin 变更（同一去抖器）
 	waitFlush(t, func() bool { return rg.auth.calls() > 0 })
 	require.Equal(t, 1, rg.auth.calls(), "远端 + 本地同窗口合并为一次 reload")
+}
+
+// settingsNStub settings 快照桩（N 时序断言）：ReloadSettings 从 dbN 现读——
+// 模拟 DB 权威值（远端实例 UpdateSetting 已落库，本实例经 NOTIFY 触发重载）；
+// 快照值 snapN 供 auth 桩在 reload 时刻读取（模拟 ClusterInstances 现读
+// settings 快照）。
+type settingsNStub struct {
+	dbN   atomic.Int64 // 模拟 DB 当前值（外部变更写入）
+	snapN atomic.Int64 // 快照值（ReloadSettings 后 = dbN）
+}
+
+func (s *settingsNStub) ReloadSettings(ctx context.Context) error {
+	s.snapN.Store(s.dbN.Load())
+	return nil
+}
+func (s *settingsNStub) N() int { return int(s.snapN.Load()) }
+
+// recSnapN auth 快照桩：Reload 时刻记录 settings 桩快照 N——模拟 gate.reload →
+// allocBudget 现读 ClusterInstances()（同一 settings 快照源；auth.Reload 内
+// LoadKeys/LoadUsers 之后即 gate.reload，期间快照不被改动，观测等价）。
+type recSnapN struct {
+	recSnap
+	s     *settingsNStub
+	mu    sync.Mutex
+	lastN int
+}
+
+func (r *recSnapN) Reload(ctx context.Context) error {
+	err := r.recSnap.Reload(ctx)
+	r.mu.Lock()
+	r.lastN = r.s.N()
+	r.mu.Unlock()
+	return err
+}
+func (r *recSnapN) observedN() int { r.mu.Lock(); defer r.mu.Unlock(); return r.lastN }
+
+// TestDispatcherSettingsTiming settings 变更时序（R2 M-1 #36 即时重算）：
+// settings 旧 N → 远端变更落库（dbN 新 N）→ Apply(Change{Settings:true}) →
+// auth.Reload 必须读到新 N。顺序保证：settings 快照先同步刷新、scope 精确重载
+// 后执行——修复前 d.inv.Settings() 仅 Mark（去抖 200ms 后才 flush
+// ReloadSettings），reloadScopes 同步 auth.Reload 读到旧 N = 白重算（新 N 落地
+// 后再无 gate.reload 触发）。本测试修复前红：auth 快照仅 reload 一次且读到旧 N
+// （observedN 恒 1）。inv 不 Start（settings 分支 sync 后不依赖去抖器；不 Start
+// 使修复前形态确定性红——flush 永不执行，快照保持旧 N）。
+func TestDispatcherSettingsTiming(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	st := &settingsNStub{}
+	st.dbN.Store(1) // 旧 N
+	snapAuth := &recSnapN{s: st}
+	snapAuth.name = "auth"
+	snapAuth.scopes = []string{snapshot.ScopeSettings}
+
+	inv := invalidate.New(invalidate.Config{
+		Window: time.Millisecond, Sched: &recSched2{}, Clients: &recClients2{},
+		Auth: &recAuth2{}, Balances: &recBal2{}, Rules: &recRules2{},
+	})
+	inv.SetSettings(st)
+	reg := snapshot.New()
+	require.NoError(t, reg.Register(snapAuth))
+	d := &dispatcher{inv: inv, svc: st, snapshots: reg}
+
+	// 模拟远端实例 UpdateSetting 落库（本实例 settings 快照仍是旧 N）。
+	st.dbN.Store(2)
+	require.NoError(t, d.Apply(ctx, notify.Change{Settings: true}))
+
+	// settings 快照同步刷新（Apply 内，非去抖 flush）→ auth reload 读到新 N。
+	require.Equal(t, 2, st.N(), "Apply 后 settings 快照已是新 N（同步重载）")
+	require.Eventually(t, func() bool { return snapAuth.calls() > 0 }, time.Second, time.Millisecond)
+	require.Equal(t, 2, snapAuth.observedN(), "auth.Reload 时 gate 预算读到的 N = 新 N（快照先刷新、scope 后重载）")
 }
 
 // TestDispatcherFullRefresh FullRefresh 覆盖全部五路重载（设计文档 §2.3）：

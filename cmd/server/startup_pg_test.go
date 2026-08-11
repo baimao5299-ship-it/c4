@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"go-proxy-mini/internal/billing"
 	"go-proxy-mini/internal/credential"
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/invalidate"
+	"go-proxy-mini/internal/notify"
 	"go-proxy-mini/internal/proxy"
 	"go-proxy-mini/internal/repository"
 	"go-proxy-mini/internal/rule"
@@ -162,4 +165,104 @@ func TestStartupReloadAllPG(t *testing.T) {
 		require.False(t, s.LastReload.IsZero(), "%s 已首刷", s.Name)
 		require.NoError(t, s.LastError, "%s 首刷无错误", s.Name)
 	}
+}
+
+// observingKeyRepo 包装 key loader：在加载时刻记录 settings 快照 N——观测
+// gate.reload → allocBudget 现读 ClusterInstances() 读到的 N（auth.Reload 内
+// LoadKeys/LoadUsers 之后即 gate.reload，期间 settings 快照不被改动，观测等价）。
+// svc 构造后回填（构造环：svc 需要 auth、auth 需要 loader、loader 需要 svc 观测）。
+type observingKeyRepo struct {
+	*repository.KeyRepo
+	svc  *service.Service
+	seen *atomic.Int64
+}
+
+func (r *observingKeyRepo) LoadKeys(ctx context.Context) (map[string]domain.KeyMeta, error) {
+	r.seen.Store(int64(r.svc.ClusterInstances()))
+	return r.KeyRepo.LoadKeys(ctx)
+}
+
+// nopClients invalidate 装配用 aiclient 工厂桩（settings 时序测试不触发 clients
+// 分支，仅满足 Config 必填）。
+type nopClients struct{}
+
+func (nopClients) InvalidateAll() {}
+
+// TestSettingsTimingPG #36 即时重算时序（R2 M-1，真实 PG 全链路）：settings
+// 旧 N → 变更新 N → auth.Reload（注册表 scope 分发）必须读到新 N——顺序保证
+// budget 按新 N 重算，而非"重算了个寂寞"。分两段：
+//
+//   - 远端路径：其他实例落库 N=2 → 本实例 Apply(Change{Settings:true}) →
+//     settings 快照先同步刷新、auth 后重载。修复前本段红：Apply 仅 Mark 去抖
+//     （200ms 后 flush 才 ReloadSettings），reloadScopes 同步 auth.Reload 读到
+//     旧 N=1，新 N 落地后再无 gate.reload 触发（observedN 恒 1）。
+//   - 本地路径（#36 本地缺口）：UpdateSetting("cluster.instances","2") → 本地
+//     直连分发器触发 auth.Reload（自播 NOTIFY 被 Listener Src 跳过，本地实例
+//     不能依赖 NOTIFY 回环）。
+//
+// inv 不 Start（settings 分支 sync 后不依赖去抖器；不 Start 使修复前形态确定性
+// 红——flush 永不执行，快照保持旧 N）。
+func TestSettingsTimingPG(t *testing.T) {
+	repos := newSnapshotPGRepos(t)
+	ctx := context.Background()
+
+	// --- 种子：用户 + 组 + key（gate 预算所需）+ settings 旧 N=1 ---
+	u, err := repos.CreateUser(ctx, &domain.User{
+		Email: "timing@example.com", PasswordHash: "bcrypt-hash",
+		Role: domain.RoleUser, Status: domain.UserStatusActive, MaxConcurrency: 8,
+	})
+	require.NoError(t, err)
+	g, err := repos.Groups.CreateGroup(ctx, &domain.Group{
+		Name: "g-timing", Visibility: domain.GroupVisibilityPublic, PriceMultiplier: 10000,
+	})
+	require.NoError(t, err)
+	_, err = repos.CreateKey(ctx, &domain.Key{
+		UserID: u.ID, GroupID: g.ID, Name: "k-timing",
+		KeyHash: cryptox.HashKey("gk-timing-1"), KeyPrefix: "gk-timing",
+		Status: domain.KeyStatusActive, MaxConcurrency: 8, Quota: 1_000_000,
+	})
+	require.NoError(t, err)
+	_, err = repos.SetSetting(ctx, "cluster.instances", domain.SettingTypeNumber, "1")
+	require.NoError(t, err)
+
+	// --- 构造链（与 main 装配序一致：模块构造零 reload——单一入口） ---
+	ruleEngine := rule.New(rule.Config{}, repos.Rules, nil)
+	sched := scheduler.New(scheduler.Config{
+		DefaultMaxConcurrency: 4, SyncInterval: time.Hour,
+	}, repos.Groups, ruleEngine, nil)
+	var seenN atomic.Int64
+	obs := &observingKeyRepo{KeyRepo: repos.Keys, seen: &seenN}
+	auth := proxy.NewAuth(obs, repos.Users, nil)
+	svc := service.New(repos, sched, service.NopInvalidator{}, nil, ruleEngine, auth, nil)
+	obs.svc = svc // 回填（首次 LoadKeys 在注册表 ReloadAll 时）
+	auth.SetInstancesProvider(svc)
+
+	reg := snapshot.New()
+	require.NoError(t, reg.Register(authSnapshot{auth}))
+	inv := invalidate.New(invalidate.Config{
+		Window: time.Millisecond, Sched: sched, Clients: nopClients{},
+		Auth: auth, Rules: ruleEngine,
+	})
+	disp := &dispatcher{inv: inv, svc: svc, snapshots: reg, log: nil}
+
+	// 启动首刷：auth reload 一次，观测到旧 N=1（基线）。
+	require.Empty(t, reg.ReloadAll(ctx), "auth 快照首刷成功")
+	require.Eventually(t, func() bool { return seenN.Load() == 1 }, time.Second, 5*time.Millisecond)
+
+	// --- 远端路径：其他实例落库 N=2（本实例不经 UpdateSetting）---
+	_, err = repos.SetSetting(ctx, "cluster.instances", domain.SettingTypeNumber, "2")
+	require.NoError(t, err)
+	require.NoError(t, disp.Apply(ctx, notify.Change{Settings: true}))
+	require.Eventually(t, func() bool { return seenN.Load() == 2 }, 2*time.Second, 5*time.Millisecond,
+		"远端 settings 变更：快照先同步刷新、auth.Reload 读到新 N（预算按新 N 重算）")
+
+	// --- 本地路径（#36 本地缺口）：UpdateSetting 直连本地分发器（自播 NOTIFY
+	// 被 Listener Src 跳过，本地不能依赖回环）——本地实例亦即时重算预算。
+	// 修复前本段红：UpdateSetting 后 auth.Reload 从不触发，seenN 恒 2（上次
+	// 远端 reload 的观测值）。---
+	svc.SetLocalDispatcher(disp)
+	_, err = svc.UpdateSetting(ctx, "cluster.instances", "3")
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return seenN.Load() == 3 }, 2*time.Second, 5*time.Millisecond,
+		"本地 UpdateSetting：直连分发器 → auth.Reload 读到新 N=3（本地实例预算即时重算）")
 }
