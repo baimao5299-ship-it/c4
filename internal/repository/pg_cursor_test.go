@@ -148,13 +148,101 @@ func TestPGCursorProbeLimitPlusOne(t *testing.T) {
 	require.Equal(t, page1[0].ID, pageNeg[0].ID, "cursor ≤0 无 id 谓词 = 首页")
 }
 
-// planNode EXPLAIN JSON 树节点（本测试只需 Node Type / 表名 / 谓词）。
+// errPageWalk err_logs keyset 翻页走查（与 pageWalk 同构——cursor = 本页最后一
+// 条 id，rows 恰为 limit+1 说明还有下一页）；返回全部行（不含探测行）。
+// 评审 L3：QueryErrLogs cursor 分支真实 PG 专项——此前仅 usage 侧有专项走查。
+func errPageWalk(t *testing.T, repos *repository.Repository, q repository.ErrLogQuery) []*domain.UsageLog {
+	t.Helper()
+	var got []*domain.UsageLog
+	for {
+		rows, err := repos.QueryErrLogs(context.Background(), q)
+		require.NoError(t, err)
+		if len(rows) == 0 {
+			break
+		}
+		hasMore := len(rows) > q.Limit
+		if hasMore {
+			rows = rows[:q.Limit]
+		}
+		got = append(got, rows...)
+		if !hasMore {
+			break
+		}
+		q.Cursor = rows[len(rows)-1].ID
+	}
+	return got
+}
+
+// TestPGCursorErrLogsCrossPartition err_logs 跨分区游标翻页专项（评审 L3）：
+// 与 usage 侧同语义——跨两个日分区翻页无重复、无遗漏、严格 id 降序、与全量
+// 集合一致；status_code 过滤与游标组合只翻出命中行。
+func TestPGCursorErrLogsCrossPartition(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
+	tomorrow := today.AddDate(0, 0, 1)
+
+	for i := 0; i < 7; i++ {
+		l := errLogFor(fmt.Sprintf("ce-%d", i), today.Add(time.Duration(i)*time.Minute))
+		if i%2 == 0 {
+			l.StatusCode = 429
+			l.ErrorType = domain.Err429
+		} else {
+			l.StatusCode = 402
+			l.ErrorType = domain.ErrBilling
+		}
+		require.NoError(t, repos.InsertErrLogBatch(ctx, []*domain.UsageLog{l}))
+	}
+	for i := 0; i < 5; i++ {
+		l := errLogFor(fmt.Sprintf("ce-t-%d", i), tomorrow.Add(time.Duration(i)*time.Minute))
+		if i%2 == 0 {
+			l.StatusCode = 429
+			l.ErrorType = domain.Err429
+		} else {
+			l.StatusCode = 402
+			l.ErrorType = domain.ErrBilling
+		}
+		require.NoError(t, repos.InsertErrLogBatch(ctx, []*domain.UsageLog{l}))
+	}
+
+	from := today.Add(-time.Hour)
+	to := tomorrow.Add(24 * time.Hour)
+	// 全量翻页：12 行无重复/无遗漏 + 严格降序
+	got := errPageWalk(t, repos, repository.ErrLogQuery{From: &from, To: &to, Limit: 3})
+	require.Len(t, got, 12, "err_logs 12 行全部翻出（无遗漏）")
+	seen := map[int64]bool{}
+	for i, r := range got {
+		require.False(t, seen[r.ID], "无重复 id=%d", r.ID)
+		seen[r.ID] = true
+		if i > 0 {
+			require.Less(t, got[i].ID, got[i-1].ID, "严格 id 降序（跨分区有序）")
+		}
+	}
+	all, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{From: &from, To: &to, Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, all, 12)
+	for _, r := range all {
+		require.True(t, seen[r.ID], "翻页结果覆盖全量 id=%d", r.ID)
+	}
+
+	// status_code=429 过滤 + 游标组合：4 今日 + 3 明日 = 7 行，仅命中行
+	got429 := errPageWalk(t, repos, repository.ErrLogQuery{From: &from, To: &to, StatusCode: 429, Limit: 2})
+	require.Len(t, got429, 7, "429 过滤翻页 = 7 行")
+	for _, r := range got429 {
+		require.Equal(t, 429, r.StatusCode, "翻页行 status_code 恒 429")
+	}
+}
+
+// planNode EXPLAIN JSON 树节点（本测试只需 Node Type / 表名 / 索引 / 谓词）。
 type planNode struct {
-	NodeType     string      `json:"Node Type"`
-	RelationName string      `json:"Relation Name"`
-	IndexCond    string      `json:"Index Cond"`
-	Filter       string      `json:"Filter"`
-	Plans        []*planNode `json:"Plans"`
+	NodeType      string      `json:"Node Type"`
+	RelationName  string      `json:"Relation Name"`
+	IndexName     string      `json:"Index Name"`
+	ScanDirection string      `json:"Scan Direction"`
+	IndexCond     string      `json:"Index Cond"`
+	Filter        string      `json:"Filter"`
+	Plans         []*planNode `json:"Plans"`
 }
 
 // walkPlan 递归收集节点（断言 Seq Scan 缺席 + 谓词存在性）。
@@ -173,15 +261,27 @@ func walkPlan(n *planNode, visit func(*planNode)) {
 // （Index Cond 或 Filter，随 planner 访问路径选择；主键 id 天然有序零排序）。
 // usage_logs/err_logs 双表。单分区命中时 planner 折叠 Append 为直接 Index
 // Scan——按"Relation Name = 命中日分区"断言裁剪，不绑定 Append 形态。
+// 种子（评审 M2）：1 行表无统计信息时 planner 可能选 Seq Scan——计划形态断言
+// 是 flake。每表 5000 行（当日分区内时间散布）+ ANALYZE 后计划锁定
+// （LIMIT 21 + ORDER BY id DESC → 索引提前终止路径恒优于 Seq Scan+Sort）。
 func TestPGCursorExplainBoundedCost(t *testing.T) {
-	repos := newPGRepos(t)
+	_ = newPGRepos(t) // 建 schema + 分区 bootstrap（种子经 pool 直插，无需 repo）
 	ctx := context.Background()
 	pool := pgTestPool(t)
 
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
-	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("ex-u", today)}))
-	require.NoError(t, repos.InsertErrLogBatch(ctx, []*domain.UsageLog{errLogFor("ex-e", today)}))
+	for _, tc := range []struct{ table, reqPrefix string }{
+		{"usage_logs", "ex-u-"},
+		{"err_logs", "ex-e-"},
+	} {
+		// 5000 行 × 500ms 间隔 = 41.7min，全部落在当日分区且 < 窗下界 1h 内
+		pgExec(t, pool, fmt.Sprintf(
+			`INSERT INTO %s (request_id, format, created_at)
+			 SELECT '%s' || g, 'openai-chat', $1::timestamptz - g * interval '500 milliseconds'
+			 FROM generate_series(1, 5000) g`, tc.table, tc.reqPrefix), today)
+		pgExec(t, pool, `ANALYZE `+tc.table)
+	}
 	from := today.Add(-time.Hour).Format(time.RFC3339)
 	to := today.Add(2 * time.Hour).Format(time.RFC3339)
 

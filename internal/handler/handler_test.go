@@ -269,6 +269,32 @@ func TestGetUsageLogsRequiresFromTo(t *testing.T) {
 	}
 }
 
+// TestGetErrLogsRequiresFromTo 无 from/to → 生成层 400（/err_logs 与
+// /usage_logs 同契约；评审 L2：err_logs 侧缺该断言——usage 侧见
+// TestGetUsageLogsRequiresFromTo）。
+func TestGetErrLogsRequiresFromTo(t *testing.T) {
+	h := newTestHandler(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+
+	for _, path := range []string{"/admin/err_logs", "/admin/err_logs?from=2026-08-10T00:00:00Z", "/admin/err_logs?to=2026-08-10T23:59:59Z"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer admin-tok")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, 400, rec.Code, "path %s: %s", path, rec.Body.String())
+	}
+}
+
 // TestGetErrLogs /err_logs 正常路径 + 响应字段：错误审计面（status_code/
 // error_type/error_message/billing_tier 全值）。
 func TestGetErrLogs(t *testing.T) {

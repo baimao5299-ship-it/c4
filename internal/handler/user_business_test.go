@@ -246,7 +246,12 @@ func TestUserErrLogsOwnOnly(t *testing.T) {
 	store.mu.Unlock()
 	win := "from=" + base.Add(-time.Hour).Format(time.RFC3339) + "&to=" + base.Add(time.Hour).Format(time.RFC3339)
 
-	rec := doUser(http.MethodGet, "/user/err_logs?"+win, "", tokenA)
+	// 无 from/to → 生成层 400（user 侧 err_logs 契约同 usage_logs；评审 L2：
+	// 此前 err_logs 双侧缺该断言，usage 侧见本文件 TestUserUsageLogsOwnOnly）
+	rec := doUser(http.MethodGet, "/user/err_logs", "", tokenA)
+	require.Equal(t, http.StatusBadRequest, rec.Code, "missing from/to: %s", rec.Body.String())
+
+	rec = doUser(http.MethodGet, "/user/err_logs?"+win, "", tokenA)
 	require.Equal(t, http.StatusOK, rec.Code, "user err logs: %s", rec.Body.String())
 	var body userapi.ErrLogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
