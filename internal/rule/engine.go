@@ -80,6 +80,12 @@ type Config struct {
 // defaultWindowSeconds 未配 window_seconds 的规则默认统计窗口。
 const defaultWindowSeconds = 60
 
+// ruleDropWarnThreshold 事件丢弃累计告警阈值（热点修复 B，对齐 errlog 模式）：
+// 丢弃计数 ≥ 阈值后 Warn 恰好一次（有界队列风暴丢弃的可观测面；队列排空后
+// 边沿回落——每风暴一次，不刷屏）。默认 10_000（对齐 errlog 默认且风暴实测
+// 12,355 恰可触发一次）。var（非 const）：测试注入小阈值。
+var ruleDropWarnThreshold int64 = 10_000
+
 // RuleEngine 规则引擎：加载 enabled 规则（priority 升序）、逐规则首中匹配、
 // 窗口计数维护与 worker 消费循环（Name/Start/Close 见 worker.go）。
 type RuleEngine struct {
@@ -89,6 +95,9 @@ type RuleEngine struct {
 
 	ch      chan Event
 	dropped atomic.Uint64
+	// warnDropped 丢弃告警边沿（热点修复 B）：≥ 阈值告警恰好一次；队列排空
+	// 后回落（resetDropWarnIfDrained）——每风暴一次，不刷屏。
+	warnDropped atomic.Bool
 
 	apply   ApplyFunc
 	applyMu sync.RWMutex

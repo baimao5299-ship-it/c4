@@ -3,7 +3,10 @@ package rule
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/repository"
+	"go-proxy-mini/pkg/logx"
 )
 
 // —— 内存 fake RuleStore（值语义副本，参照 internal/service/fakestore_test.go 风格） ——
@@ -643,4 +647,53 @@ func TestReloadRulesAdapter(t *testing.T) {
 	e := New(Config{}, st, nil)
 	require.NoError(t, e.ReloadRules(context.Background()))
 	require.Equal(t, int64(3), mustCountAny(t, st), "ReloadRules 空表同样写种子")
+}
+
+// —— 热点修复 B：Enqueue 丢弃阈值告警（errlog 模式对齐） ——
+
+// TestEnqueueDropWarnEdge（errlog_test TestErrLogWorkerDropWarnEdge 同款结构）：
+// 丢弃累计 ≥ 阈值 → Warn 恰好一次（带累计数）；队列排空（Flush）边沿回落 →
+// 再次风暴再次 Warn（每风暴一次，不刷屏——风暴期 12k 条刷屏不复现）。
+func TestEnqueueDropWarnEdge(t *testing.T) {
+	old := ruleDropWarnThreshold
+	ruleDropWarnThreshold = 50
+	t.Cleanup(func() { ruleDropWarnThreshold = old })
+
+	e := New(Config{EventQueueSize: 8}, newFakeRuleStore(), nil)
+	logger, out := newTestRuleLogger(t)
+	e.log = logger
+
+	// 第一轮风暴（无消费方，队列满 → 92 丢弃 ≥ 50 阈值）→ 恰好一次 Warn
+	for i := 0; i < 100; i++ {
+		e.Enqueue(evAt(KindError, 0))
+	}
+	require.Equal(t, uint64(92), e.dropped.Load(), "丢弃计数 = 到达 - 队列容量")
+	e.Flush(context.Background()) // 排空队列 → 告警边沿回落
+	// 第二轮风暴 → 再次 Warn
+	for i := 0; i < 100; i++ {
+		e.Enqueue(evAt(KindError, 0))
+	}
+	require.Equal(t, uint64(184), e.dropped.Load(), "丢弃计数跨风暴累计（只回落边沿，不清计数）")
+	e.Flush(context.Background())
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(b), "rule-engine event queue full, dropping events"),
+		"每风暴一次 Warn（边沿回落）")
+	require.Contains(t, string(b), `"dropped":50`, "首风暴在阈值跨越点（50）恰好告警一次")
+	require.Contains(t, string(b), `"dropped":93`, "次风暴边沿回落后在首个丢弃点（92+1）再告警")
+	require.Contains(t, string(b), `"threshold":50`, "Warn 带阈值")
+}
+
+// newTestRuleLogger warn 级文件 logger（Warn 断言用；errlog_test 同款，
+// Windows 句柄 best-effort）。
+func newTestRuleLogger(t *testing.T) (*logx.Logger, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "rule-test-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	out := filepath.Join(dir, "out.json")
+	logger, err := logx.New("warn", out)
+	require.NoError(t, err)
+	return logger, out
 }
