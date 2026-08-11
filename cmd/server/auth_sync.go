@@ -24,6 +24,10 @@ type authSync struct {
 	interval  time.Duration
 	log       *logx.Logger
 	startOnce atomic.Bool
+	// running/lastReload 观测面（/ops/workers）：循环存活 + 最近一次 Reload
+	// 完成时刻（60s 周期 worker 原子写，零热路径成本）。
+	running    atomic.Bool
+	lastReload atomic.Int64
 }
 
 // newAuthSync 构造周期 worker；interval <= 0 → authSyncInterval（60s）。
@@ -43,6 +47,8 @@ func (w *authSync) Start(ctx context.Context) error {
 		return fmt.Errorf("auth-sync: already started")
 	}
 	go func() {
+		w.running.Store(true) // 观测面：循环存活（退出即复位）
+		defer w.running.Store(false)
 		t := time.NewTicker(w.interval)
 		defer t.Stop()
 		for {
@@ -53,6 +59,7 @@ func (w *authSync) Start(ctx context.Context) error {
 				if err := w.auth.Reload(ctx); err != nil && w.log != nil {
 					w.log.Warn("auth periodic reload failed", logx.Error(err))
 				}
+				w.lastReload.Store(time.Now().UnixMilli()) // 观测面：Reload 完成时刻（成败都记）
 			}
 		}
 	}()

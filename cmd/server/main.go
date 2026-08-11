@@ -290,6 +290,19 @@ func main() {
 	iss := jwtauth.NewIssuer(cfg.Auth.JWTSecret)
 	userHandler := userapi.Router(svc, iss, auth)
 
+	// /ops/workers 可观测面（spec 2026-08-11）：独立 Stats 契约不改
+	// worker.Worker——装配侧类型断言聚合（各模块已持具体引用，断言实现
+	// server.StatsProvider 的入列；快照注册表状态单独经 Status 直出）。
+	var opsWorkers []server.StatsProvider
+	for _, w := range []worker.Worker{inv, sched, ruleEngine, rec, errlogW, pricingSync, retention, listener, authSync} {
+		if s, ok := w.(server.StatsProvider); ok {
+			opsWorkers = append(opsWorkers, s)
+		}
+	}
+	if billFlusher != nil {
+		opsWorkers = append(opsWorkers, billFlusher)
+	}
+
 	srv := server.NewServer(server.Options{
 		AdminToken:        cfg.Admin.Token,
 		JWTIssuer:         iss,
@@ -302,6 +315,8 @@ func main() {
 		AIHandler:         aiRouter,
 		WebFS:             webUI(),
 		Logger:            log,
+		OpsWorkers:        opsWorkers,
+		OpsSnapshots:      func() []server.SnapshotState { return snapshotStates(snapReg.Status()) },
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

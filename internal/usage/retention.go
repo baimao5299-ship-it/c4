@@ -55,6 +55,13 @@ type RetentionWorker struct {
 	parts   PartitionManager
 	log     *logx.Logger
 	started atomic.Bool
+	// 观测面（/ops/workers；runOnce 收尾原子写，零新增 DB）：lastPatrol 最近
+	// 一次巡检完成时刻（UnixMilli；0 = 尚未巡检）；lastDrop* 最近一轮各表
+	// DROP 分区数（缓存 runOnce 现有返回值——DROP 的 n 即真实 DB 答案）。
+	lastPatrol      atomic.Int64
+	lastDropLogs    atomic.Int64
+	lastDropErrLogs atomic.Int64
+	lastDropStats   atomic.Int64
 }
 
 func NewRetention(cfg RetentionConfig, parts PartitionManager, log *logx.Logger) *RetentionWorker {
@@ -97,6 +104,8 @@ func (w *RetentionWorker) loop(ctx context.Context) {
 func (w *RetentionWorker) runOnce() {
 	now := time.Now()
 	ctx := context.Background()
+	// 各表 DROP 计数收尾原子写（观测面缓存 runOnce 现有返回值；失败不覆盖——
+	// 保留上一轮值，LastPatrol 仍推进标记"巡检发生过"）。
 	if w.cfg.LogRetentionDays > 0 {
 		cutoff := now.AddDate(0, 0, -w.cfg.LogRetentionDays)
 		n, err := w.parts.DropUsageLogPartitionsBefore(ctx, cutoff)
@@ -104,8 +113,11 @@ func (w *RetentionWorker) runOnce() {
 			if w.log != nil {
 				w.log.Warn("retention drop usage_logs partitions failed", logx.Error(err))
 			}
-		} else if n > 0 && w.log != nil {
-			w.log.Info("retention dropped usage_logs partitions", logx.Int("count", n))
+		} else {
+			w.lastDropLogs.Store(int64(n))
+			if n > 0 && w.log != nil {
+				w.log.Info("retention dropped usage_logs partitions", logx.Int("count", n))
+			}
 		}
 	}
 	if w.cfg.ErrLogRetentionDays > 0 {
@@ -115,8 +127,11 @@ func (w *RetentionWorker) runOnce() {
 			if w.log != nil {
 				w.log.Warn("retention drop err_logs partitions failed", logx.Error(err))
 			}
-		} else if n > 0 && w.log != nil {
-			w.log.Info("retention dropped err_logs partitions", logx.Int("count", n))
+		} else {
+			w.lastDropErrLogs.Store(int64(n))
+			if n > 0 && w.log != nil {
+				w.log.Info("retention dropped err_logs partitions", logx.Int("count", n))
+			}
 		}
 	}
 	if w.cfg.StatsRetentionDays > 0 {
@@ -126,8 +141,11 @@ func (w *RetentionWorker) runOnce() {
 			if w.log != nil {
 				w.log.Warn("retention drop usage_stats partitions failed", logx.Error(err))
 			}
-		} else if n > 0 && w.log != nil {
-			w.log.Info("retention dropped usage_stats partitions", logx.Int("count", n))
+		} else {
+			w.lastDropStats.Store(int64(n))
+			if n > 0 && w.log != nil {
+				w.log.Info("retention dropped usage_stats partitions", logx.Int("count", n))
+			}
 		}
 	}
 	if err := w.parts.EnsureUsageLogPartitions(ctx, now, now.AddDate(0, 0, 1)); err != nil {
@@ -145,6 +163,7 @@ func (w *RetentionWorker) runOnce() {
 			w.log.Warn("retention pre-create usage_stats partitions failed", logx.Error(err))
 		}
 	}
+	w.lastPatrol.Store(now.UnixMilli())
 }
 
 // Close 幂等（worker.Worker 契约）：DROP/预建均幂等，无排空需求。

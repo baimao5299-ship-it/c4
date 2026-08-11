@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -99,6 +100,9 @@ type Listener struct {
 	mu     sync.Mutex // 保护 cancel/done（Start 与 Close 并发安全）
 	cancel context.CancelFunc
 	done   chan struct{}
+	// running 监听循环存活标志（观测面 /ops/workers：Start 置位、run 退出复位，
+	// Stats 原子读零锁——不碰 mu）。
+	running atomic.Bool
 }
 
 // NewListener 构造监听器。
@@ -151,6 +155,8 @@ func (l *Listener) Start(ctx context.Context) error {
 	l.mu.Unlock()
 	started = true
 	go func() {
+		l.running.Store(true) // 观测面：循环存活（退出即复位）
+		defer l.running.Store(false)
 		l.run(cctx)
 		close(l.done)
 	}()

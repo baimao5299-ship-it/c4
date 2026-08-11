@@ -70,6 +70,7 @@ type Recorder struct {
 	counters  map[statBucketKey]*statCounters
 	quotaUsed map[int64]int64 // key_id → 待回写 token 增量
 	pendingN  atomic.Int64    // pending 明细条数（水线观测 + Close Warn 单位；换批/回灌同步增减）
+	bucketN   atomic.Int64    // 统计桶数（观测面——len(counters) 需 r.mu 非原子；仅新桶创建分支自增，aggregate 冷路径）
 	warned    atomic.Bool     // 水线越过告警边沿（回落复位，避免重复刷屏）
 	// flushMu 单 flush 入口串行：日志 flush（flushLogs）与统计 flush
 	// （flushStats）共用同一互斥锁——Close 的在途屏障需要（"是否有批次在途"
@@ -209,6 +210,7 @@ func (r *Recorder) aggregate(l *domain.UsageLog) {
 			TemplateID: l.TemplateID, UserID: l.UserID, Model: l.Model, IsError: isErr,
 		}}
 		r.counters[key] = c
+		r.bucketN.Add(1) // 观测面（仅新桶创建分支；aggregate 冷路径，不碰既有热路径）
 	}
 	// quota_used 增量聚合（key 级；Recorder 节奏批量回写，内存权威在 proxy gate）
 	if l.KeyID > 0 {
@@ -428,6 +430,7 @@ func (r *Recorder) statsFlushLoop(ctx context.Context) {
 //   - 统计桶：按 bucket key 哈希分片（同桶恒同 worker）→ N worker 并发逐
 //     chunk（statBatchSize）单条批量 Upsert（合并同桶冲突累加）；失败 chunk
 //     回灌合并（不丢）；到期截断 + Warn。
+//
 // 截断丢的是统计面 stat 聚合/配额刷新（内存权威、DB 滞后 ≤ flush 间隔的崩溃
 // 等价语义），**非计费扣费**——cost 经 billing Flusher 落库，与本统计面同窗口、
 // 互不影响（billing_e2e 场景 9 优雅停机断流式 cost 不丢验证不受影响）。正常
