@@ -800,13 +800,17 @@ func TestConvertRequestChatToRespArrayContent(t *testing.T) {
 	require.Equal(t, "{\"temp\": 20}", fco["output"], "tool 数组 content 文本")
 }
 
-// TestConvertRequestChatToRespEscapedKey（评审 I-1 回归）：\uXXXX 转义键仍命中。
-func TestConvertRequestChatToRespEscapedKey(t *testing.T) {
-	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`), domain.ProtocolConvertChatToResp)
+// TestConvertRequestChatToRespArrayContentEmptyFirst（评审 I-2 回归）：text 块
+// 数组首部件为空字符串 → 前导 \n 分隔符仍保留（joinStrings("\n") 语义；
+// 旧实现按 joined 长度判空丢分隔符）。
+func TestConvertRequestChatToRespArrayContentEmptyFirst(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"system","content":[{"type":"text","text":""},{"type":"text","text":"rule"}]}]}`), domain.ProtocolConvertChatToResp)
 	require.NoError(t, err)
 	m := obj(t, out)
 	input := arrOf(t, m, "input")
-	require.Len(t, input, 1, "转义键 messages 仍命中")
+	require.Len(t, input, 1)
+	dc := arrOf(t, input[0].(map[string]any), "content")[0].(map[string]any)
+	require.Equal(t, "\nrule", dc["text"], "空首部件后仍保留 \n 分隔符")
 }
 
 // TestConvertRequestChatToRespNullBody（评审 I-2 对齐）：null 体 → 空对象输出
@@ -837,4 +841,37 @@ func TestConvertRequestChatToRespToolCallDoubleID(t *testing.T) {
 	fc := input[1].(map[string]any)
 	require.Equal(t, "call_id_1", fc["id"], "请求方向取 id")
 	require.Equal(t, "call_id_1", fc["call_id"])
+}
+
+// TestConvertRequestChatToRespEscapedKey（评审 I-1 重做回归）：真实 \uXXXX
+// 转义键（raw 恒比字面量长，长度前置检查会短路转义分支——此处用真实转义
+// 字符构造，非明文假用例）。
+func TestConvertRequestChatToRespEscapedKey(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{"model":"m","\u006d\u0065ssages":[{"role":"user","content":"hi"}]}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	input := arrOf(t, m, "input")
+	require.Len(t, input, 1, "转义键 messages 仍命中")
+	require.Equal(t, "user", input[0].(map[string]any)["role"])
+}
+
+// TestConvertRequestChatToRespEscapedValue（评审 I-1 重做回归）：role 值含真实
+// \uXXXX 转义 → 仍按 system 处理（产生 developer 消息项）。
+func TestConvertRequestChatToRespEscapedValue(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"syst\u0065m","content":"rules"}]}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	input := arrOf(t, m, "input")
+	require.Len(t, input, 1, "转义 role 值仍按 system 处理")
+	require.Equal(t, "developer", input[0].(map[string]any)["role"])
+}
+
+// TestMapRespToChatEscapedType（评审 I-1 重做回归，流式方向）：item.type 值含
+// 真实转义 → output_item.added 仍按 function_call 产生 tool_calls 前导 chunk。
+func TestMapRespToChatEscapedType(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertChatToResp,
+		"response.created", `{"type":"response.created","response":{"id":"rsp_1","object":"response","status":"in_progress","model":"m","output":[]}}`,
+		"response.output_item.added", `{"type":"response.output_item.added","output_index":1,"item":{"id":"fc_1","type":"function_c\u0061ll","call_id":"call_1","name":"get_weather","arguments":"","status":"in_progress"}}`,
+	)
+	require.Contains(t, out, `"tool_calls":[{"function":{"arguments":"","name":"get_weather"},"id":"call_1","index":1,"type":"function"}]`, "转义 type 值仍按 function_call 处理")
 }

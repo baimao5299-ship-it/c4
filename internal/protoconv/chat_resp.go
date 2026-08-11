@@ -252,7 +252,9 @@ func contentTextRaw(content gjson.Result) (string, bool, bool) {
 			}
 			if rawStrEq(p.Get("type").Raw, "text") {
 				if t := p.Get("text"); t.Type == gjson.String {
-					if len(joined) > 0 {
+					// 分隔符按部件计数而非 joined 长度（评审 I-2：空字符串
+					// 首部件剥引号后 0 字节，按长度判空会丢前导 \n）
+					if hasText {
 						joined = append(joined, '\\', 'n')
 					}
 					joined = append(joined, t.Raw[1:len(t.Raw)-1]...)
@@ -657,6 +659,9 @@ func (m *StreamMapper) mapRespToChat(name string, data []byte) ([]byte, bool) {
 			} else if hasRespFunctionCall(resp.Get("output")) {
 				finish = []byte(`"tool_calls"`)
 			}
+			// resp 无 usage（或非对象）→ 收尾 chunk 省略 "usage" 字段而非
+			// 写 "usage":null——与 map 版一致（usage 提取失败 → nil → 省略；
+			// 评审 I-3 接受并注释）
 			if u := resp.Get("usage"); u.IsObject() {
 				usage = m.appendUsageToBuf(u)
 			}

@@ -13,46 +13,55 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// gjsonKeyEq 判定 gjson ForEach 键原始字节是否为指定名字（逐字节比较零分配；
-// 调用点传字符串字面量）。键含 \uXXXX 转义（如 "messages"，合法 JSON 且
-// 解码键 = "messages"）→ 走 k.Str 解码比较（评审 I-1；极低概率路径，一次
-// 分配可接受）。
+// gjsonKeyEq 判定 gjson ForEach 键原始字节是否为指定名字（调用点传字符串
+// 字面量）。无转义 → 长度校验 + 逐字节比较（零分配）。含 \uXXXX 等转义
+// （合法 JSON，解码键 = 名字；转义形式恒比字面量长，长度前置检查会短路
+// 转义场景——转义检测必须在长度判定之前，评审 I-1 重做）→ 解码后比较
+// （极低概率路径，一次分配可接受）。
 func gjsonKeyEq(k gjson.Result, name string) bool {
 	r := k.Raw
-	if len(r) != len(name)+2 || r[0] != '"' || r[len(r)-1] != '"' {
+	if len(r) < 2 || r[0] != '"' || r[len(r)-1] != '"' {
 		return false
 	}
-	for i := 1; i < len(r)-1; i++ {
-		c := r[i]
-		if c == '\\' {
-			return k.Str == name
+	if len(r) == len(name)+2 {
+		// 无转义（含转义的 raw 恒更长）→ 逐字节比较
+		for i := 1; i < len(r)-1; i++ {
+			if r[i] != name[i-1] {
+				return false
+			}
 		}
-		if c != name[i-1] {
-			return false
+		return true
+	}
+	// 长度不等：含转义 → 解码后比较（gjson.Parse 还原 \uXXXX 等）
+	for i := 1; i < len(r)-1; i++ {
+		if r[i] == '\\' {
+			return gjson.Parse(r).Str == name
 		}
 	}
-	return true
+	return false
 }
 
-// rawStrEq 判定字符串值原始文本是否等于字面量（"system" 等；逐字节比较
-// 零分配）。非字符串值 → false。值含 \uXXXX 转义 → 解码后比较（评审 I-1）。
+// rawStrEq 判定字符串值原始文本是否等于字面量（"system" 等）。无转义 →
+// 长度校验 + 逐字节比较（零分配）；含转义（恒更长，检测先于长度判定）→
+// 解码后比较（评审 I-1 重做）。非字符串值 → false。
 func rawStrEq(v string, lit string) bool {
 	if len(v) < 2 || v[0] != '"' || v[len(v)-1] != '"' {
 		return false
 	}
-	if len(v) != len(lit)+2 {
-		return false
+	if len(v) == len(lit)+2 {
+		for i := 1; i < len(v)-1; i++ {
+			if v[i] != lit[i-1] {
+				return false
+			}
+		}
+		return true
 	}
 	for i := 1; i < len(v)-1; i++ {
-		c := v[i]
-		if c == '\\' {
+		if v[i] == '\\' {
 			return gjson.Parse(v).Str == lit
 		}
-		if c != lit[i-1] {
-			return false
-		}
 	}
-	return true
+	return false
 }
 
 // gjsonNumInt gjson 数字 → int64（截断，与 map 版 intOr0 的 float64→int64 同
