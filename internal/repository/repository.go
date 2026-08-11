@@ -417,7 +417,7 @@ func (r *Repository) CountRules(ctx context.Context) (int64, error) {
 	return r.Rules.CountRules(ctx)
 }
 
-func (r *Repository) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, int64, error) {
+func (r *Repository) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, error) {
 	return r.Usages.QueryUsages(ctx, q)
 }
 
@@ -427,7 +427,7 @@ func (r *Repository) InsertErrLogBatch(ctx context.Context, logs []*domain.Usage
 }
 
 // QueryErrLogs err_logs 错误明细分页查询（/err_logs API）。
-func (r *Repository) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain.UsageLog, int64, error) {
+func (r *Repository) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain.UsageLog, error) {
 	return r.ErrLogs.QueryErrLogs(ctx, q)
 }
 

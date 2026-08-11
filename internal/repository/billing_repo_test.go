@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go-proxy-mini/internal/domain"
+	"go-proxy-mini/internal/ent/usagelog"
 	"go-proxy-mini/internal/repository"
 )
 
@@ -59,12 +60,13 @@ func tempBalanceAmount(t *testing.T, repos *repository.Repository, id int64) int
 	return row.Amount
 }
 
-// countLogs 统计用户日志数。
+// countLogs 统计用户日志数（契约去 Total 后查询面不再返回 count——
+// 测试直接走 ent 客户端计数，不引入生产 Count 路径）。
 func countLogs(t *testing.T, repos *repository.Repository, userID int64) int64 {
 	t.Helper()
-	_, n, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: userID, Limit: 1000})
+	n, err := repos.Client.UsageLog.Query().Where(usagelog.UserIDEQ(userID)).Count(context.Background())
 	require.NoError(t, err)
-	return n
+	return int64(n)
 }
 
 // TestPGDeductFEFOOrder FEFO 扣临时额度：最早到期先扣、永久最后、已过期不参与；
@@ -154,7 +156,7 @@ func TestPGDeductOverdraft(t *testing.T) {
 	require.True(t, od, "允许透支")
 	require.Equal(t, int64(-30000), bal, "透支后负余额")
 	require.Equal(t, int64(1), countLogs(t, repos, u.ID))
-	rows, _, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: u.ID, Limit: 10})
+	rows, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: u.ID, Limit: 10})
 	require.NoError(t, err)
 	require.True(t, rows[0].Overdraft, "日志 Overdraft 标记")
 }
@@ -234,7 +236,7 @@ func TestPGDeductZeroCostOnlyLogs(t *testing.T) {
 	require.Equal(t, int64(50000), bal, "balanceAfter = 当前余额原值")
 	require.Equal(t, int64(30000), tempBalanceAmount(t, repos, tp), "临时额度不动")
 	require.Equal(t, int64(2), countLogs(t, repos, u.ID))
-	rows, _, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: u.ID, Limit: 10})
+	rows, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: u.ID, Limit: 10})
 	require.NoError(t, err)
 	require.False(t, rows[0].Overdraft, "cost=0 恒不透支")
 }

@@ -330,27 +330,25 @@ func (f *fakeStore) GetAccountExt(ctx context.Context, accountID int64) (*domain
 }
 
 // QueryUsages 模拟 repo 过滤（R4-M2 防假绿：完整过滤面与真实 repo
-// QueryUsages 逐项一致——归属四元组/model/error_type/时间范围 + ID 降序 +
-// Offset/Limit 分页，total = 分页前全量匹配数；user_id > 0 强制过滤——
-// /user/usage_logs 防越权测试依赖此语义）。
-func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, int64, error) {
-	rows, total := f.queryLogs(logFilter{
+// QueryUsages 逐项一致——归属四元组/model/error_type/时间范围 + cursor 游标
+// （id < cursor）+ ID 降序 + limit+1 探测；user_id > 0 强制过滤——
+// /user/usage_logs 防越权测试依赖此语义）。去 Total（契约已移除）。
+func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, error) {
+	return f.queryLogs(logFilter{
 		groupID: q.GroupID, accountID: q.AccountID, userID: q.UserID, keyID: q.KeyID,
 		model: q.Model, errorType: q.ErrorType,
-		from: q.From, to: q.To, offset: q.Offset, limit: q.Limit,
-	})
-	return rows, int64(total), nil
+		from: q.From, to: q.To, cursor: q.Cursor, limit: q.Limit,
+	}), nil
 }
 
 // QueryErrLogs 模拟 repo 过滤（/err_logs：usage_logs 过滤面 + status_code 专属
 // 列；user_id > 0 强制过滤——/user/err_logs 防越权测试依赖此语义）。
-func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, int64, error) {
-	rows, total := f.queryLogs(logFilter{
+func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, error) {
+	return f.queryLogs(logFilter{
 		groupID: q.GroupID, accountID: q.AccountID, userID: q.UserID, keyID: q.KeyID,
 		model: q.Model, errorType: q.ErrorType, statusCode: q.StatusCode,
-		from: q.From, to: q.To, offset: q.Offset, limit: q.Limit,
-	})
-	return rows, int64(total), nil
+		from: q.From, to: q.To, cursor: q.Cursor, limit: q.Limit,
+	}), nil
 }
 
 // logFilter 日志查询过滤面（fake 内部表示——镜像真实 repo UsageQuery/
@@ -360,17 +358,21 @@ type logFilter struct {
 	model, errorType                  string
 	statusCode                        int
 	from, to                          *time.Time
-	offset, limit                     int
+	cursor                            int64
+	limit                             int
 }
 
-// queryLogs 过滤 + ID 降序 + Offset/Limit 分页（返回页行 + 分页前全量匹配数——
-// total 与真实 repo pred.Count 同语义；Limit ≤ 0 缺省 20，与真实 repo 一致）。
+// queryLogs 过滤 + cursor 游标（id < cursor）+ ID 降序 + limit+1 探测
+// （与真实 repo QueryUsages/QueryErrLogs keyset 语义一致；Limit ≤ 0 缺省 20）。
 // 返回副本防别名污染。
-func (f *fakeStore) queryLogs(q logFilter) ([]*domain.UsageLog, int) {
+func (f *fakeStore) queryLogs(q logFilter) []*domain.UsageLog {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var matched []*domain.UsageLog
 	for _, l := range f.logs {
+		if q.cursor > 0 && l.ID >= q.cursor {
+			continue
+		}
 		if q.groupID > 0 && l.GroupID != q.groupID {
 			continue
 		}
@@ -401,20 +403,15 @@ func (f *fakeStore) queryLogs(q logFilter) ([]*domain.UsageLog, int) {
 		c := *l
 		matched = append(matched, &c)
 	}
-	total := len(matched)
 	if q.limit <= 0 {
 		q.limit = 20
 	}
 	// ID 降序（与真实 repo Order(ent.Desc(FieldID)) 一致）
 	slices.SortFunc(matched, func(a, b *domain.UsageLog) int { return cmp.Compare(b.ID, a.ID) })
-	end := q.offset + q.limit
-	if q.offset > len(matched) {
-		q.offset = len(matched)
+	if len(matched) > q.limit+1 {
+		matched = matched[:q.limit+1]
 	}
-	if end > len(matched) {
-		end = len(matched)
-	}
-	return matched[q.offset:end], total
+	return matched
 }
 
 // --- 批量操作（模拟 repo 语义：事务内存在性检查，缺失 id 返回

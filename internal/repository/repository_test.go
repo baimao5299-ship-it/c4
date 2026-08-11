@@ -543,12 +543,10 @@ func TestLogsAndStats(t *testing.T) {
 			"r2", int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
-	// Log Query -> Count + SELECT（TTFT 列按 schema 序在 latency_ms 后；价格四列
-	// 各紧邻其 tokens 列；计费四列 cost/billing_tier/above_hit/overdraft 在
+	// Log Query -> SELECT（keyset 游标：去 Count，LIMIT limit+1 探测——契约
+	// 2026-08-11；TTFT 列按 schema 序在 latency_ms 后；价格四列各紧邻其
+	// tokens 列；计费四列 cost/billing_tier/above_hit/overdraft 在
 	// price_cache_creation_millis 与 created_at 之间）
-	tr.pool.ExpectQuery(q(`SELECT COUNT(`)).
-		WithArgs(int64(1)).
-		WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(2)))
 	tr.pool.ExpectQuery(q(`FROM "usage_logs"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
@@ -586,9 +584,8 @@ func TestLogsAndStats(t *testing.T) {
 		{RequestID: "r2", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 20, TotalTokens: 0, CacheReadTokens: 5, CacheCreationTokens: 3},
 	}
 	require.NoError(t, tr.repos.Usages.InsertBatch(ctx(), logs))
-	rows, total, err := tr.repos.Usages.QueryUsages(ctx(), repository.UsageQuery{GroupID: 1, Limit: 10})
+	rows, err := tr.repos.Usages.QueryUsages(ctx(), repository.UsageQuery{GroupID: 1, Limit: 10})
 	require.NoError(t, err)
-	require.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)
 	require.Equal(t, int64(4), rows[0].CacheReadTokens, "cache read round-trip")
 	require.Equal(t, int64(2), rows[0].CacheCreationTokens, "cache creation round-trip")

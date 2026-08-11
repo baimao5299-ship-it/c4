@@ -218,7 +218,8 @@ func TestParamBindErrorIsErrorResponse(t *testing.T) {
 	}
 }
 
-// TestGetUsageLogs 正常路径：limit/offset 缺省取契约默认值，返回 rows + total。
+// TestGetUsageLogs 正常路径：from/to 必填（生成层），返回 rows + next_cursor
+// （空库 → next_cursor 缺省 null）。
 func TestGetUsageLogs(t *testing.T) {
 	h := newTestHandler(t)
 	r := chi.NewRouter()
@@ -233,15 +234,39 @@ func TestGetUsageLogs(t *testing.T) {
 	})
 	r.Mount("/", h.Router())
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/usage_logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage_logs?from=2026-08-10T00:00:00Z&to=2026-08-10T23:59:59Z", nil)
 	req.Header.Set("Authorization", "Bearer admin-tok")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code, "logs: %s", rec.Body.String())
 	var body LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Zero(t, body.Total)
+	require.Nil(t, body.NextCursor, "空库无下一页")
 	require.Empty(t, body.Rows)
+}
+
+// TestGetUsageLogsRequiresFromTo 无 from/to → 生成层 400（契约必填）。
+func TestGetUsageLogsRequiresFromTo(t *testing.T) {
+	h := newTestHandler(t)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+
+	for _, path := range []string{"/admin/usage_logs", "/admin/usage_logs?from=2026-08-10T00:00:00Z", "/admin/usage_logs?to=2026-08-10T23:59:59Z"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer admin-tok")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, 400, rec.Code, "path %s: %s", path, rec.Body.String())
+	}
 }
 
 // TestGetErrLogs /err_logs 正常路径 + 响应字段：错误审计面（status_code/
@@ -262,15 +287,15 @@ func TestGetErrLogs(t *testing.T) {
 	})
 	r.Mount("/", h.Router())
 
-	// 空库 → 空响应
-	req := httptest.NewRequest(http.MethodGet, "/admin/err_logs", nil)
+	// 空库 → 空响应（from/to 必填；next_cursor 缺省 null）
+	req := httptest.NewRequest(http.MethodGet, "/admin/err_logs?from=2026-08-10T00:00:00Z&to=2026-08-10T23:59:59Z", nil)
 	req.Header.Set("Authorization", "Bearer admin-tok")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code, "err logs: %s", rec.Body.String())
 	var body ErrLogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Zero(t, body.Total)
+	require.Nil(t, body.NextCursor, "空库无下一页")
 	require.Empty(t, body.Rows)
 
 	// 有行 → 审计字段投影
@@ -279,7 +304,8 @@ func TestGetErrLogs(t *testing.T) {
 	msg := "key quota exhausted"
 	fs.logs = []*domain.UsageLog{
 		{ID: 7, RequestID: "r-e1", UserID: 3, Model: "gpt-4o", Format: domain.FormatOpenAIChat,
-			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg, LatencyMS: 9, BillingTier: "auto"},
+			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg, LatencyMS: 9, BillingTier: "auto",
+			CreatedAt: time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)},
 	}
 	fs.mu.Unlock()
 	rec = httptest.NewRecorder()
@@ -287,7 +313,6 @@ func TestGetErrLogs(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "err logs: %s", rec.Body.String())
 	body = ErrLogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(1), body.Total)
 	require.Len(t, body.Rows, 1)
 	e := body.Rows[0]
 	require.Equal(t, int64(7), *e.ID)
@@ -300,8 +325,9 @@ func TestGetErrLogs(t *testing.T) {
 
 // TestGetLogsFilters（R4-M2/I1 评审项）日志查询过滤面真实断言——防假绿：
 // 此前 fake store 仅按 user_id 过滤，model/error_type/status_code/时间/分页
-// 参数恒不生效（零断言）。本测试逐参数断言 + total = 分页前全量匹配 +
-// ID 降序 + Offset 分页（与真实 repo QueryUsages/QueryErrLogs 语义逐项对齐）。
+// 参数恒不生效（零断言）。本测试逐参数断言 + ID 降序 + keyset 游标分页
+// （cursor = 上页最后一条 id，next_cursor 由 limit+1 探测组装——与真实 repo
+// QueryUsages/QueryErrLogs 语义逐项对齐）。
 func TestGetLogsFilters(t *testing.T) {
 	doAdmin, _, store := newSharedRouters(t)
 
@@ -318,23 +344,24 @@ func TestGetLogsFilters(t *testing.T) {
 			StatusCode: 429, ErrorType: domain.Err429, CreatedAt: base.Add(time.Hour)},
 	}
 	store.mu.Unlock()
+	win := "from=2026-08-10T09:00:00Z&to=2026-08-10T15:00:00Z"
 
 	// --- /admin/usage_logs：model 过滤（精确匹配，与真实 repo ModelEQ 一致） ---
-	rec := doAdmin(http.MethodGet, "/admin/usage_logs?model=gpt-4o", "", "")
+	rec := doAdmin(http.MethodGet, "/admin/usage_logs?model=gpt-4o&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "model filter: %s", rec.Body.String())
 	var body LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(2), body.Total)
+	require.Len(t, body.Rows, 2)
 	for _, r := range body.Rows {
 		require.Equal(t, "gpt-4o", *r.Model)
 	}
 
 	// error_type 过滤
-	rec = doAdmin(http.MethodGet, "/admin/usage_logs?error_type=429", "", "")
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?error_type=429&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "error_type filter: %s", rec.Body.String())
 	body = LogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(2), body.Total)
+	require.Len(t, body.Rows, 2)
 	for _, r := range body.Rows {
 		require.Equal(t, ErrorType("429"), *r.ErrorType)
 	}
@@ -345,46 +372,61 @@ func TestGetLogsFilters(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "time range: %s", rec.Body.String())
 	body = LogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(2), body.Total, "时间范围 [10:30, 12:00] → 行 2/3")
-	require.Len(t, body.Rows, 2)
+	require.Len(t, body.Rows, 2, "时间范围 [10:30, 12:00] → 行 2/3")
 	require.Equal(t, int64(3), *body.Rows[0].ID, "ID 降序不受时间过滤影响")
 	require.Equal(t, int64(2), *body.Rows[1].ID)
 
-	// Offset/Limit 分页：ID 降序全量 [4,3,2,1] → offset=1 limit=2 → [3,2]；
-	// total 为分页前全量匹配数（4）
-	rec = doAdmin(http.MethodGet, "/admin/usage_logs?limit=2&offset=1", "", "")
+	// keyset 游标分页：ID 降序全量 [4,3,2,1] → 首页 limit=2 → [4,3] +
+	// next_cursor=3；cursor=3 → 次页 [2,1] + next_cursor 缺省（探测 ≤ limit 行）
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?limit=2&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "paging: %s", rec.Body.String())
 	body = LogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(4), body.Total, "total = 分页前全量匹配")
 	require.Len(t, body.Rows, 2)
-	require.Equal(t, int64(3), *body.Rows[0].ID, "ID 降序：offset=1 页首为 id=3")
-	require.Equal(t, int64(2), *body.Rows[1].ID)
+	require.Equal(t, int64(4), *body.Rows[0].ID, "ID 降序：首页页首为 id=4")
+	require.Equal(t, int64(3), *body.Rows[1].ID)
+	require.NotNil(t, body.NextCursor, "探测行存在 → next_cursor = 本页最后一条 id")
+	require.Equal(t, int64(3), *body.NextCursor)
 
-	// 无匹配 → 空页 + total 0
-	rec = doAdmin(http.MethodGet, "/admin/usage_logs?model=no-such-model", "", "")
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?limit=2&cursor=3&"+win, "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "paging: %s", rec.Body.String())
+	body = LogsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Rows, 2)
+	require.Equal(t, int64(2), *body.Rows[0].ID, "cursor=3 页首为 id=2（id < 3）")
+	require.Equal(t, int64(1), *body.Rows[1].ID)
+	require.Nil(t, body.NextCursor, "末页 ≤ limit 行 → next_cursor 缺省")
+
+	// 无匹配 → 空页 + next_cursor 缺省
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?model=no-such-model&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	body = LogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Zero(t, body.Total)
 	require.Empty(t, body.Rows)
+	require.Nil(t, body.NextCursor)
+
+	// limit > 200 裁剪到 200（不 400）
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?limit=500&"+win, "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "limit clip: %s", rec.Body.String())
+	body = LogsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Rows, 4, "裁剪后仍返回全部 4 行")
 
 	// --- /admin/err_logs：status_code 专属过滤（usage_logs 无此列） ---
-	rec = doAdmin(http.MethodGet, "/admin/err_logs?status_code=429", "", "")
+	rec = doAdmin(http.MethodGet, "/admin/err_logs?status_code=429&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "status filter: %s", rec.Body.String())
 	var ebody ErrLogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ebody))
-	require.Equal(t, int64(2), ebody.Total)
+	require.Len(t, ebody.Rows, 2)
 	for _, r := range ebody.Rows {
 		require.Equal(t, 429, *r.StatusCode)
 	}
 
 	// err_logs error_type 过滤 + 响应含 status_code 全值
-	rec = doAdmin(http.MethodGet, "/admin/err_logs?error_type=billing", "", "")
+	rec = doAdmin(http.MethodGet, "/admin/err_logs?error_type=billing&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "err type filter: %s", rec.Body.String())
 	ebody = ErrLogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ebody))
-	require.Equal(t, int64(1), ebody.Total)
 	require.Len(t, ebody.Rows, 1)
 	require.Equal(t, 402, *ebody.Rows[0].StatusCode)
 	require.Equal(t, ErrorType("billing"), *ebody.Rows[0].ErrorType)

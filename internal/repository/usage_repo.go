@@ -22,7 +22,7 @@ type UsageQuery struct {
 	ErrorType string // usage_logs = 纯计费明细（仅 cost>0）→ 值域收敛 none/abort（err_logs 分表后）
 	From      *time.Time
 	To        *time.Time
-	Offset    int
+	Cursor    int64 // keyset 游标（上页最后一条 id；<=0 = 首页无 id 谓词）
 	Limit     int
 }
 
@@ -104,7 +104,12 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	return c
 }
 
-func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, int64, error) {
+// QueryUsages usage_logs keyset 游标分页查询（用户裁决：无 from/to 的全分区
+// OFFSET 扫描是压测中危——游标分页 + from/to 必填 + 零新索引，id 主键天然有序）。
+// 游标语义：WHERE id < cursor AND created_at BETWEEN from/to [AND 既有过滤]，
+// ORDER BY id DESC LIMIT limit+1——多取 1 行探测是否有下一页（调用方按
+// len(rows) > limit 组装 next_cursor）；去 Count（Total 已从契约移除）。
+func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, error) {
 	pred := r.client.UsageLog.Query()
 	if q.GroupID > 0 {
 		pred = pred.Where(usagelog.GroupIDEQ(q.GroupID))
@@ -130,16 +135,15 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 	if q.To != nil {
 		pred = pred.Where(usagelog.CreatedAtLTE(*q.To))
 	}
-	total, err := pred.Count(ctx)
-	if err != nil {
-		return nil, 0, err
+	if q.Cursor > 0 {
+		pred = pred.Where(usagelog.IDLT(q.Cursor))
 	}
 	if q.Limit <= 0 {
 		q.Limit = 20
 	}
-	rows, err := pred.Order(ent.Desc(usagelog.FieldID)).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	rows, err := pred.Order(ent.Desc(usagelog.FieldID)).Limit(q.Limit + 1).All(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	out := make([]*domain.UsageLog, 0, len(rows))
 	for _, row := range rows {
@@ -188,5 +192,5 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 		}
 		out = append(out, l)
 	}
-	return out, int64(total), nil
+	return out, nil
 }

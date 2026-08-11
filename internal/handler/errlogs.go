@@ -8,14 +8,21 @@ import (
 )
 
 // GetErrLogs 错误明细分页查询（/err_logs：完整错误面——本地拒绝 + 半异常双轨，
-// status_code/error_type 全值）。过滤面与 /usage_logs 同构 + status_code。
+// status_code/error_type 全值）。过滤面与 /usage_logs 同构 + status_code；
+// keyset 游标分页与 /usage_logs 同语义（from/to 必填、cursor 透传、next_cursor 组装）。
 func (h *AdminAPI) GetErrLogs(w http.ResponseWriter, r *http.Request, params GetErrLogsParams) {
-	lq := repository.ErrLogQuery{Limit: 20, Offset: 0}
+	lq := repository.ErrLogQuery{Limit: 20, From: &params.From, To: &params.To}
 	if params.Limit != nil {
 		lq.Limit = *params.Limit
 	}
-	if params.Offset != nil {
-		lq.Offset = *params.Offset
+	if lq.Limit <= 0 {
+		lq.Limit = 20
+	}
+	if lq.Limit > 200 {
+		lq.Limit = 200
+	}
+	if params.Cursor != nil {
+		lq.Cursor = *params.Cursor
 	}
 	if params.GroupId != nil {
 		lq.GroupID = *params.GroupId
@@ -35,13 +42,7 @@ func (h *AdminAPI) GetErrLogs(w http.ResponseWriter, r *http.Request, params Get
 	if params.ErrorType != nil {
 		lq.ErrorType = *params.ErrorType
 	}
-	if params.From != nil {
-		lq.From = params.From
-	}
-	if params.To != nil {
-		lq.To = params.To
-	}
-	rows, total, err := h.svc.QueryErrLogs(r.Context(), lq)
+	rows, err := h.svc.QueryErrLogs(r.Context(), lq)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -55,5 +56,11 @@ func (h *AdminAPI) GetErrLogs(w http.ResponseWriter, r *http.Request, params Get
 		}
 		out = append(out, toAPIErrLog(l))
 	}
-	writeJSON(w, http.StatusOK, ErrLogsResponse{Total: total, Rows: out})
+	// limit+1 探测（与 GetUsageLogs 同语义）：next_cursor = 本页最后一条 id。
+	var next *int64
+	if len(out) > lq.Limit {
+		next = out[lq.Limit-1].ID
+		out = out[:lq.Limit]
+	}
+	writeJSON(w, http.StatusOK, ErrLogsResponse{Rows: out, NextCursor: next})
 }

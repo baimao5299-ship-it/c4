@@ -10,29 +10,30 @@ import (
 )
 
 // QueryUsages usage_logs 计费明细分页查询（/usage_logs API；错误行含
-// abort/failover 半异常标记——error_type 过滤保留）。
-func (s *Service) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]any, int64, error) {
-	rows, total, err := s.store.QueryUsages(ctx, q)
+// abort/failover 半异常标记——error_type 过滤保留）。keyset 游标分页：
+// 返回行可能含 limit+1 探测行，next_cursor 组装在 handler。
+func (s *Service) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]any, error) {
+	rows, err := s.store.QueryUsages(ctx, q)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	out := make([]any, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, r)
 	}
-	return out, total, nil
+	return out, nil
 }
 
 // QueryErrLogs err_logs 错误明细分页查询（/err_logs API：完整错误面——拒绝 +
-// 异常双轨，status_code/error_type 全值）。
-func (s *Service) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]any, int64, error) {
-	rows, total, err := s.store.QueryErrLogs(ctx, q)
+// 异常双轨，status_code/error_type 全值）。keyset 游标分页同 QueryUsages。
+func (s *Service) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]any, error) {
+	rows, err := s.store.QueryErrLogs(ctx, q)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	out := make([]any, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, r)
 	}
-	return out, total, nil
+	return out, nil
 }

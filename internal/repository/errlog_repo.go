@@ -27,7 +27,7 @@ type ErrLogQuery struct {
 	ErrorType  string
 	From       *time.Time
 	To         *time.Time
-	Offset     int
+	Cursor     int64 // keyset 游标（上页最后一条 id；<=0 = 首页无 id 谓词）
 	Limit      int
 }
 
@@ -84,7 +84,9 @@ func buildErrLogCreate(client *ent.Client, l *domain.UsageLog) *ent.ErrLogCreate
 	return c
 }
 
-func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain.UsageLog, int64, error) {
+// QueryErrLogs err_logs keyset 游标分页查询（与 QueryUsages 同构：id 主键
+// 游标 + from/to 必填 + LIMIT limit+1 探测下一页；去 Count——Total 已从契约移除）。
+func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain.UsageLog, error) {
 	pred := r.client.ErrLog.Query()
 	if q.GroupID > 0 {
 		pred = pred.Where(errlog.GroupIDEQ(q.GroupID))
@@ -113,16 +115,15 @@ func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain
 	if q.To != nil {
 		pred = pred.Where(errlog.CreatedAtLTE(*q.To))
 	}
-	total, err := pred.Count(ctx)
-	if err != nil {
-		return nil, 0, err
+	if q.Cursor > 0 {
+		pred = pred.Where(errlog.IDLT(q.Cursor))
 	}
 	if q.Limit <= 0 {
 		q.Limit = 20
 	}
-	rows, err := pred.Order(ent.Desc(errlog.FieldID)).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	rows, err := pred.Order(ent.Desc(errlog.FieldID)).Limit(q.Limit + 1).All(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	out := make([]*domain.UsageLog, 0, len(rows))
 	for _, row := range rows {
@@ -154,5 +155,5 @@ func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain
 		}
 		out = append(out, l)
 	}
-	return out, int64(total), nil
+	return out, nil
 }

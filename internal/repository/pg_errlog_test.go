@@ -60,9 +60,9 @@ func TestErrLogMessageRoundtripPG(t *testing.T) {
 	l2 := errLogFor("err-msg-2", time.Now().UTC())
 	require.NoError(t, repos.InsertErrLogBatch(ctx, []*domain.UsageLog{l1, l2}))
 
-	rows, total, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
+	rows, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(2), total)
+	require.Len(t, rows, 2)
 	got := map[string]*domain.UsageLog{}
 	for _, r := range rows {
 		got[r.RequestID] = r
@@ -114,9 +114,9 @@ func TestUsageLogSlimColumnsPG(t *testing.T) {
 	l.StatusCode = 502
 	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{l}))
 
-	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
 	require.Zero(t, rows[0].StatusCode, "usage_logs 查询无 status_code（恒 0）")
 	require.Nil(t, rows[0].ErrorMessage, "usage_logs 查询无 error_message（恒 nil）")
 	require.Equal(t, domain.ErrNone, rows[0].ErrorType, "error_type 保留")

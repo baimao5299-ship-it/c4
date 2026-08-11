@@ -109,9 +109,9 @@ func TestUsageLogPartitionBootstrapPG(t *testing.T) {
 	parted, err = repos.Partitions.IsUsageLogPartitioned(ctx)
 	require.NoError(t, err)
 	require.True(t, parted)
-	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total, "二次 bootstrap 不重建（数据保留）")
+	require.Len(t, rows, 1, "二次 bootstrap 不重建（数据保留）")
 	require.Equal(t, "idem", rows[0].RequestID)
 
 	// 预建分区：当日 + 明日；索引与 ent schema 同名同列（5 个非唯一 + 主键）
@@ -162,15 +162,14 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 	}
 
 	// ent 查询跨分区（无 created_at 过滤扫全部分区；带范围过滤命中 1~2 分区）
-	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(3), total)
 	require.Len(t, rows, 3)
 	from := today.Add(-time.Hour)
 	to := tomorrow.Add(24 * time.Hour)
-	rows, total, err = repos.QueryUsages(ctx, repository.UsageQuery{From: &from, To: &to, Limit: 100})
+	rows, err = repos.QueryUsages(ctx, repository.UsageQuery{From: &from, To: &to, Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(3), total, "时间范围过滤跨分区查询")
+	require.Len(t, rows, 3, "时间范围过滤跨分区查询")
 	got := map[string]bool{}
 	for _, r := range rows {
 		got[r.RequestID] = true
@@ -231,9 +230,9 @@ func TestUsageLogPartitionRetentionPG(t *testing.T) {
 
 	from := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	to := time.Now().UTC().Add(24 * time.Hour)
-	_, total, err := repos.QueryUsages(ctx, repository.UsageQuery{From: &from, To: &to, Limit: 100})
+	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{From: &from, To: &to, Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(2), total, "28 日数据随分区 DROP 消失（29 + 当日保留）")
+	require.Len(t, rows, 2, "28 日数据随分区 DROP 消失（29 + 当日保留）")
 
 	// DROP 幂等：再跑一次 0 个可删
 	n, err = repos.DropUsageLogPartitionsBefore(ctx, time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC))
@@ -261,9 +260,9 @@ func TestEntMigrateSecondRunPG(t *testing.T) {
 	require.NoError(t, err, "二次启动 ent migrate 必须容忍分区表（钩子过滤 usagelog）")
 	require.NoError(t, repos2.EnsureUsageLogPartitioned(ctx, time.Now()))
 	require.NoError(t, repos2.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("second-boot", time.Now().UTC())}))
-	rows, total, err := repos2.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err := repos2.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
 	require.Equal(t, "second-boot", rows[0].RequestID)
 
 	// 对照：无钩子 migrate 对分区表必然失败（实测：atlas 规划期拒绝分区键 diff）
@@ -299,15 +298,15 @@ func TestUsageLogPartitionUpgradePG(t *testing.T) {
 	parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
 	require.NoError(t, err)
 	require.True(t, parted, "普通表被重建为分区表")
-	_, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Zero(t, total, "该删删：存量普通表明细丢弃")
+	require.Empty(t, rows, "该删删：存量普通表明细丢弃")
 
 	// 重建后插入路由正常（序列续用不冲突）
 	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("post-upgrade", time.Now().UTC())}))
-	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
 	require.Equal(t, "post-upgrade", rows[0].RequestID)
 }
 
@@ -352,9 +351,9 @@ func TestUsageLogPartitionConcurrentBootstrapPG(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, parted, "并发 bootstrap 收敛为分区表")
 		require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("concurrent", time.Now().UTC())}))
-		rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+		rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 		require.NoError(t, err)
-		require.Equal(t, int64(1), total, "收敛后插入路由正常")
+		require.Len(t, rows, 1, "收敛后插入路由正常")
 		require.Equal(t, "concurrent", rows[0].RequestID)
 	}
 }

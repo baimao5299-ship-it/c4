@@ -53,9 +53,8 @@ func TestUsageLogSnapshotColumnsRoundtripPG(t *testing.T) {
 	l1.PriceCacheCreationMillis = int64Ptr(5678)
 	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{l1}))
 
-	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
 	require.Len(t, rows, 1)
 	got := rows[0]
 	require.NotNil(t, got.TTFTMS, "ttft_ms 有值必须读回")
@@ -82,7 +81,7 @@ func TestUsageLogSnapshotColumnsRoundtripPG(t *testing.T) {
 	l2 := usageLogFor("snap-2", time.Now().UTC())
 	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{l2}))
 
-	rows, _, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
 	for _, r := range rows {

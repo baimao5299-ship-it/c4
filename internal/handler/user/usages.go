@@ -9,13 +9,21 @@ import (
 
 // GetUserUsageLogs 我的用量明细（/user/usage_logs；强制 user_id = 当前用户——
 // 越权过滤在 service/repo 层，请求侧不可指定他人，ServerInterface）。
+// keyset 游标分页：cursor 透传仅作本人行内 id 下界（跨页注入他人 id 仍被
+// user_id 过滤钳制），next_cursor 组装与 admin 侧同构。
 func (h *UserAPI) GetUserUsageLogs(w http.ResponseWriter, r *http.Request, params GetUserUsageLogsParams) {
-	lq := repository.UsageQuery{Limit: 20, Offset: 0, UserID: currentUserID(r)}
+	lq := repository.UsageQuery{Limit: 20, From: &params.From, To: &params.To, UserID: currentUserID(r)}
 	if params.Limit != nil {
 		lq.Limit = *params.Limit
 	}
-	if params.Offset != nil {
-		lq.Offset = *params.Offset
+	if lq.Limit <= 0 {
+		lq.Limit = 20
+	}
+	if lq.Limit > 200 {
+		lq.Limit = 200
+	}
+	if params.Cursor != nil {
+		lq.Cursor = *params.Cursor
 	}
 	if params.GroupId != nil {
 		lq.GroupID = *params.GroupId
@@ -29,13 +37,7 @@ func (h *UserAPI) GetUserUsageLogs(w http.ResponseWriter, r *http.Request, param
 	if params.ErrorType != nil {
 		lq.ErrorType = *params.ErrorType
 	}
-	if params.From != nil {
-		lq.From = params.From
-	}
-	if params.To != nil {
-		lq.To = params.To
-	}
-	rows, total, err := h.svc.QueryUsages(r.Context(), lq)
+	rows, err := h.svc.QueryUsages(r.Context(), lq)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -49,5 +51,11 @@ func (h *UserAPI) GetUserUsageLogs(w http.ResponseWriter, r *http.Request, param
 		}
 		out = append(out, toAPIUsageLog(l))
 	}
-	writeJSON(w, http.StatusOK, LogsResponse{Total: total, Rows: out})
+	// limit+1 探测（与 admin 侧同语义）：next_cursor = 本页最后一条 id。
+	var next *int64
+	if len(out) > lq.Limit {
+		next = out[lq.Limit-1].ID
+		out = out[:lq.Limit]
+	}
+	writeJSON(w, http.StatusOK, LogsResponse{Rows: out, NextCursor: next})
 }

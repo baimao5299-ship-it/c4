@@ -60,9 +60,9 @@ func TestErrLogPartitionBootstrapPG(t *testing.T) {
 	parted, err = repos.Partitions.IsErrLogPartitioned(ctx)
 	require.NoError(t, err)
 	require.True(t, parted)
-	rows, total, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
+	rows, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total, "二次 bootstrap 不重建（数据保留）")
+	require.Len(t, rows, 1, "二次 bootstrap 不重建（数据保留）")
 	require.Equal(t, "err-idem", rows[0].RequestID)
 
 	// 预建分区：当日 + 明日；索引齐（3 个非唯一 + 主键）
@@ -103,15 +103,14 @@ func TestErrLogPartitionRoutingPG(t *testing.T) {
 		require.Equal(t, tc.want, got, "分区 %s 落库行数", tc.part)
 	}
 
-	rows, total, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
+	rows, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(3), total)
 	require.Len(t, rows, 3)
 	from := today.Add(-time.Hour)
 	to := tomorrow.Add(24 * time.Hour)
-	rows, total, err = repos.QueryErrLogs(ctx, repository.ErrLogQuery{From: &from, To: &to, Limit: 100})
+	rows, err = repos.QueryErrLogs(ctx, repository.ErrLogQuery{From: &from, To: &to, Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(3), total, "时间范围过滤跨分区查询")
+	require.Len(t, rows, 3, "时间范围过滤跨分区查询")
 }
 
 // TestErrLogPartitionRetentionPG 独立保留期 DROP 边界：err_logs cutoff 与
@@ -144,10 +143,10 @@ func TestErrLogPartitionRetentionPG(t *testing.T) {
 	require.Equal(t, int64(1), pgCount(t, pool, `SELECT COUNT(*) FROM usage_logs_`+old.Format("20060102")), "usage_logs 同日期数据未受影响")
 
 	// 两表数据互不可见（分表）
-	rows, _, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
+	rows, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Empty(t, rows, "err_logs 查询只见 err_logs 数据（e-old 已 DROP）")
-	rows, _, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
+	rows, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, "u-old", rows[0].RequestID)
@@ -178,7 +177,7 @@ func TestErrLogPartitionConcurrentBootstrapPG(t *testing.T) {
 	// 二次（串行）幂等：数据保留
 	require.NoError(t, repos.InsertErrLogBatch(ctx, []*domain.UsageLog{errLogFor("concurrent-ok", time.Now().UTC())}))
 	require.NoError(t, repos.EnsureErrLogPartitioned(ctx, time.Now()))
-	_, total, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
+	rows, err := repos.QueryErrLogs(ctx, repository.ErrLogQuery{Limit: 100})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
 }
