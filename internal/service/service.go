@@ -262,8 +262,10 @@ type Service struct {
 
 func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publisher, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
 	s := &Service{store: store, sched: sched, inv: invalidate, pub: pub, ruleReload: ruleReload, keys: keys, log: log}
+	// settings 快照构造时首载（注册表不覆盖 settings——NOTIFY 处理路径
+	// ReloadSettings 保持既有行为）；pricing 快照首载统一由快照注册表
+	// ReloadAll 承担（单一启动入口，消灭"构造即载 + 注册表再刷"双重加载）。
 	s.reloadSettings(context.Background())
-	s.reloadPricing(context.Background())
 	return s
 }
 

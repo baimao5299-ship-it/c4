@@ -13,10 +13,14 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
-// newPricingSvc 构造 Service（New 全路径：settings + pricing 快照初始化）。
+// newPricingSvc 构造 Service + 显式首刷价格快照（快照注册表单一入口语义——
+// New 不再自载 pricing，首刷由注册表 ReloadAll 承担；测试等价调用
+// ReloadPricingCtx 断言成功）。
 func newPricingSvc(t *testing.T, fs *fakeStore) *Service {
 	t.Helper()
-	return New(fs, nil, NopInvalidator{}, nil, nil, nil, nil)
+	svc := New(fs, nil, NopInvalidator{}, nil, nil, nil, nil)
+	require.NoError(t, svc.ReloadPricingCtx(context.Background()))
+	return svc
 }
 
 // fakePriceFetcher 测试用拉取器（记录收到的 URL + 返回注入结果/错误）。
@@ -267,14 +271,15 @@ func TestPricingSnapshotPaging(t *testing.T) {
 	}
 }
 
-// TestPricingSnapshotFailSafe ListPricing 失败 → Warn + 空快照（不阻断启动），
-// GetPrice → ErrNotFound（而非 panic）。
+// TestPricingSnapshotFailSafe ListPricing 失败 → 错误上报（ReloadPricingCtx
+// 返回）+ 空快照（不阻断启动），GetPrice → ErrNotFound（而非 panic）。
 func TestPricingSnapshotFailSafe(t *testing.T) {
 	fs := newFakeStore()
 	_, err := fs.UpsertFromLiteLLM(context.Background(), []*domain.Pricing{litellmRow("m", 1, 2)})
 	require.NoError(t, err)
 	fs.pricingListErr = errors.New("db down")
-	svc := newPricingSvc(t, fs)
+	svc := New(fs, nil, NopInvalidator{}, nil, nil, nil, nil)
+	require.Error(t, svc.ReloadPricingCtx(context.Background()), "加载失败错误上报（注册表 Status 可观测）")
 	_, err = svc.GetPrice("m")
 	require.ErrorIs(t, err, ErrNotFound, "加载失败 → 空快照，读路径 ErrNotFound 而非 panic")
 }

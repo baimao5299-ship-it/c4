@@ -35,6 +35,9 @@ type Auth struct {
 	gate   *concurrencyGate
 }
 
+// NewAuth 构造鉴权快照（空表——首载统一由快照注册表 ReloadAll 承担，单一启动
+// 入口，消灭"构造即载 + 注册表再刷"双重加载冗余；构造到首刷之间无请求流量，
+// 见 main 装配序）。
 func NewAuth(loader KeyLoader, users UserStatusLoader, log *logx.Logger) *Auth {
 	a := &Auth{
 		loader: loader,
@@ -49,15 +52,14 @@ func NewAuth(loader KeyLoader, users UserStatusLoader, log *logx.Logger) *Auth {
 	if r, ok := loader.(QuotaUsedReader); ok {
 		a.gate.setReclaimer(r)
 	}
-	_ = a.Reload(context.Background())
 	return a
 }
 
-// Reload 全量刷新鉴权快照（启动/定时/用户变更 invalidate）：
+// Reload 全量刷新鉴权快照（注册表首刷/周期 auth-sync/用户变更 invalidate）：
 // keys 元数据 + 用户状态 + 门禁计数器（在途值跨 reload 继承）。
-// 失败必打 Warn（含调用方是否忽略错误——NewAuth 启动 `_ = Reload`、invalidate
-// 回调等吞错路径）：加载失败若被忽略，快照保持旧值/空表 → 鉴权全部 401 或
-// 用旧 key 放行，静默恶化（IN 超限事故的"运行中静默失败"形态即此类）。
+// 失败必打 Warn（含调用方是否忽略错误——invalidate 回调等吞错路径）：加载
+// 失败若被忽略，快照保持旧值/空表 → 鉴权全部 401 或用旧 key 放行，静默恶化
+// （IN 超限事故的"运行中静默失败"形态即此类）。
 func (a *Auth) Reload(ctx context.Context) error {
 	m, err := a.loader.LoadKeys(ctx)
 	if err != nil {

@@ -465,6 +465,7 @@ func TestAuthSetInstancesRebuildsBudget(t *testing.T) {
 	a := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		"h": {KeyID: 1, HasQuota: true, Quota: 100, QuotaUsed: 20},
 	}}, noopUserLoader{}, nil)
+	require.NoError(t, a.Reload(context.Background())) // 构造不再自载——测试显式首刷（快照注册表单一入口）
 	q := a.gate.store.Load().quotas[1]
 	require.Equal(t, int64(20+ceilDiv(80, 1)), q.budget.Load(), "N=1 初始：budget = 20 + ceil(80/1)")
 	a.SetInstancesProvider(fakeInstances(4))
