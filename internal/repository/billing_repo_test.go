@@ -24,9 +24,10 @@ func logFor(userID int64, requestID string) *domain.UsageLog {
 	}
 }
 
-// fullLogFor 填满全部可选列的计费日志（#37 P2 回归锚）：23 列 × 4000 行 =
-// 92,000 参数，单批 CreateBulk 必超 PG 65535 上限（logFor 仅 ~13 列 × 4000 =
-// 52,000 不触发；压测实证生产批次 19 列 × ~3448 行即超限报错）。
+// fullLogFor 填满全部可选列的计费日志（#37 P2 回归锚）：21 列 × 4000 行 =
+// 84,000 参数，单批 CreateBulk 必超 PG 65535 上限（logFor 仅 16 列 × 4000 =
+// 64,000 不触发；26 列可写列最坏界 65535/26 ≈ 2520 行即超限——压测实证生产
+// 批次 19 列 × ~3448 行即超限报错）。
 func fullLogFor(userID int64, requestID string) *domain.UsageLog {
 	l := logFor(userID, requestID)
 	l.GroupID = 1
@@ -253,10 +254,10 @@ func TestPGDeductUserMissing(t *testing.T) {
 
 // --- #37 P2：CreateBulk 参数上限分片（PG 65535 参数） ---
 
-// TestPGDeductLargeBatchSuccess 单 user 4000 行全列日志（23 列 × 4000 =
-// 92,000 参数）扣费成功：修复前单批 CreateBulk 超 PG 65535 参数上限 →
+// TestPGDeductLargeBatchSuccess 单 user 4000 行全列日志（21 列 × 4000 =
+// 84,000 参数）扣费成功：修复前单批 CreateBulk 超 PG 65535 参数上限 →
 // "extended protocol limited to 65535 parameters" → 扣费停滞 pending 积压
-// （压测实证）；分片 500 行/批同事务逐片插入后全量成功，扣费精确。
+// （压测实证）；分片 2000 行/批同事务逐片插入后全量成功，扣费精确。
 func TestPGDeductLargeBatchSuccess(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()

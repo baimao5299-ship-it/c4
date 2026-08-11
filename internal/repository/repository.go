@@ -67,7 +67,9 @@ func NewWithPG(drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repositor
 
 // newRepository 用给定 client/driver 构建全量仓库（New/NewWithPG/WithTx 复用
 // 同一构造函数；WithTx 注入 tx client + 事务驱动，fn 内所有方法调用都走 tx ——
-// 评审 I-1）。pool 只进 Stats（Upsert COPY 自 Acquire 独立连接，不进事务）。
+// 评审 I-1）。pool 进 Stats（Upsert COPY 自 Acquire 独立连接，不进事务）与
+// Billing（热点修复 A 扩：DeductAndLog pgx 直连 + COPY 路径；WithTx 传 nil →
+// 事务内回落 ent 路径，见 billing_repo.go）。
 func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
 	accounts := &AccountRepo{client: client}
 	return &Repository{
@@ -84,7 +86,7 @@ func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *
 		Rules:        &RuleRepo{client: client},
 		Redemptions:  &RedemptionRepo{client: client, driver: drv},
 		Pricing:      &PricingRepo{client: client, driver: drv},
-		Billing:      &BillingRepo{client: client, driver: drv},
+		Billing:      &BillingRepo{client: client, driver: drv, pool: pool},
 		Partitions:   &PartitionRepo{driver: drv},
 		TemplateExts: &TemplateExtRepo{client: client},
 		AccountExts:  &AccountExtRepo{client: client},

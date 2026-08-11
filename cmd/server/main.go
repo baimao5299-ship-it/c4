@@ -68,7 +68,7 @@ func main() {
 	// ent v0.14.6 的 entsql.OpenDB 只接受 *sql.DB：pgxpool 经 pgx/stdlib 桥接（用户决策 2026-08-05）
 	db := stdlib.OpenDBFromPool(pool)
 	drv := entsql.OpenDB(dialect.Postgres, db)
-	repos, err := repository.NewWithPG(drv, true, pool) // pool 供 Stats.Upsert COPY 两阶段批量写（#17）
+	repos, err := repository.NewWithPG(drv, true, pool) // pool 供 Stats.Upsert COPY 两阶段批量写（#17）与 Billing.DeductAndLog COPY 路径（热点修复 A 扩）
 	if err != nil {
 		fatalf("migrate: %v", err)
 	}

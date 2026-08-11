@@ -24,6 +24,9 @@ func (e *RuleEngine) Start(ctx context.Context) error {
 }
 
 // loop 消费循环：ctx 取消退出；scheduler 投递不依赖启动态（事件先入队）。
+// 复位点（热点修复 B）：HandleEvent 处理完毕后检查队列排空 → 丢弃告警边沿
+// 回落（rule engine 无周期 flush，复位只能挂在消费循环——见
+// resetDropWarnIfDrained）。
 func (e *RuleEngine) loop(ctx context.Context) {
 	t := time.NewTicker(cleanupInterval)
 	defer t.Stop()
@@ -33,6 +36,7 @@ func (e *RuleEngine) loop(ctx context.Context) {
 			return
 		case ev := <-e.ch:
 			e.HandleEvent(ctx, ev)
+			e.resetDropWarnIfDrained()
 		case <-t.C:
 			e.wm.cleanup(e.timeNow())
 		}
@@ -48,9 +52,21 @@ func (e *RuleEngine) Flush(ctx context.Context) {
 			return
 		case ev := <-e.ch:
 			e.HandleEvent(ctx, ev)
+			e.resetDropWarnIfDrained()
 		default:
 			return
 		}
+	}
+}
+
+// resetDropWarnIfDrained 丢弃告警边沿回落（热点修复 B，errlog 同构）：队列
+// 已排空且告警已置位 → 复位。连续风暴期队列恒满不回落（与 errlog 风暴恒满
+// 同构），风暴平息排空后下次风暴再告警——每风暴恰好一次。复位点 pin 在消费
+// 循环 HandleEvent 之后（rule engine 无周期 flush，loop/Flush/Close 三个消费
+// 路径共用同一落点语义；原子 Load/Store，与 Enqueue 无锁竞争）。
+func (e *RuleEngine) resetDropWarnIfDrained() {
+	if e.warnDropped.Load() && len(e.ch) == 0 {
+		e.warnDropped.Store(false)
 	}
 }
 
@@ -63,6 +79,7 @@ func (e *RuleEngine) Close(ctx context.Context) error {
 			select {
 			case ev := <-e.ch:
 				e.HandleEvent(ctx, ev)
+				e.resetDropWarnIfDrained()
 			default:
 				close(done)
 				return
@@ -79,17 +96,23 @@ func (e *RuleEngine) Close(ctx context.Context) error {
 	return nil
 }
 
-// Enqueue 投递事件：有界 channel，满则丢弃（dropped 原子计数 + 告警日志）。
+// Enqueue 投递事件：有界 channel，满则丢弃（dropped 原子计数）。热点修复 B：
+// 逐条 Warn → 阈值告警（errlog 同构）——丢弃累计 ≥ ruleDropWarnThreshold 且
+// 边沿未告警 → Warn 恰好一次（带累计数），不再刷屏。热路径纪律：丢弃路径
+// 仅两个原子操作（Add + CompareAndSwap），零分配；日志只在阈值跨越时产生。
 func (e *RuleEngine) Enqueue(ev Event) {
 	select {
 	case e.ch <- ev:
 	default:
-		e.dropped.Add(1)
-		if e.log != nil {
-			e.log.Warn("rule-engine event queue full, dropping event",
-				logx.Int64("account_id", ev.AccountID),
-				logx.String("kind", ev.Kind.String()),
-			)
+		n := e.dropped.Add(1)
+		if n >= uint64(ruleDropWarnThreshold) && e.warnDropped.CompareAndSwap(false, true) {
+			if e.log != nil {
+				e.log.Warn("rule-engine event queue full, dropping events",
+					logx.Int64("dropped", int64(n)),
+					logx.Int64("threshold", ruleDropWarnThreshold),
+					logx.Int("queue_cap", cap(e.ch)),
+				)
+			}
 		}
 	}
 }
