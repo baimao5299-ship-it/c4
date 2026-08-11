@@ -14,14 +14,20 @@ import (
 )
 
 // gjsonKeyEq 判定 gjson ForEach 键原始字节是否为指定名字（逐字节比较零分配；
-// 调用点传字符串字面量）。
+// 调用点传字符串字面量）。键含 \uXXXX 转义（如 "messages"，合法 JSON 且
+// 解码键 = "messages"）→ 走 k.Str 解码比较（评审 I-1；极低概率路径，一次
+// 分配可接受）。
 func gjsonKeyEq(k gjson.Result, name string) bool {
 	r := k.Raw
 	if len(r) != len(name)+2 || r[0] != '"' || r[len(r)-1] != '"' {
 		return false
 	}
 	for i := 1; i < len(r)-1; i++ {
-		if r[i] != name[i-1] {
+		c := r[i]
+		if c == '\\' {
+			return k.Str == name
+		}
+		if c != name[i-1] {
 			return false
 		}
 	}
@@ -29,7 +35,7 @@ func gjsonKeyEq(k gjson.Result, name string) bool {
 }
 
 // rawStrEq 判定字符串值原始文本是否等于字面量（"system" 等；逐字节比较
-// 零分配）。非字符串值 → false。
+// 零分配）。非字符串值 → false。值含 \uXXXX 转义 → 解码后比较（评审 I-1）。
 func rawStrEq(v string, lit string) bool {
 	if len(v) < 2 || v[0] != '"' || v[len(v)-1] != '"' {
 		return false
@@ -38,7 +44,11 @@ func rawStrEq(v string, lit string) bool {
 		return false
 	}
 	for i := 1; i < len(v)-1; i++ {
-		if v[i] != lit[i-1] {
+		c := v[i]
+		if c == '\\' {
+			return gjson.Parse(v).Str == lit
+		}
+		if c != lit[i-1] {
 			return false
 		}
 	}
@@ -47,12 +57,18 @@ func rawStrEq(v string, lit string) bool {
 
 // gjsonNumInt gjson 数字 → int64（截断，与 map 版 intOr0 的 float64→int64 同
 // 语义）。非 Number 类型 → 0——需类型守卫：gjson 的 Int() 会解析字符串数字，
-// 与 str() 的类型拒绝语义不符。
+// 与 str() 的类型拒绝语义不符。超出 float64/int64 范围（如 1e400）→ 0
+// （评审 I-2：map 版对越界数字解码报错、字节级无错误通道，钳 0 避免
+// int64(+Inf) 垃圾值；不可达真实流量）。
 func gjsonNumInt(v gjson.Result) int64 {
-	if v.Type == gjson.Number {
-		return v.Int()
+	if v.Type != gjson.Number {
+		return 0
 	}
-	return 0
+	f := v.Float()
+	if f > 9223372036854775807.0 || f < -9223372036854775808.0 {
+		return 0
+	}
+	return v.Int()
 }
 
 // emptyStr 空 JSON 字符串字面量（strOrEmpty 的缺省值，包级常量零分配）。

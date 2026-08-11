@@ -50,17 +50,23 @@ func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 }
 
 // NewStreamMapper 构造有状态的流式响应事件映射器（每 SSE 流一个实例；
-// 跨事件状态：id/model、用量累积、mess→resp 的块级输出累积）。
+// 跨事件状态：id/model、用量累积、mess→resp 的块级输出累积）。块级累积
+// map（blockStarted 等）懒初始化（ensureBlocks，评审 I-4）——chat→resp 等
+// 方向从不使用，免每流 6 个 map 分配。
 func NewStreamMapper(dir domain.ProtocolConvert) *StreamMapper {
-	return &StreamMapper{
-		dir:          dir,
-		blockStarted: make(map[int64]bool),
-		blockStopped: make(map[int64]bool),
-		textByIndex:  make(map[int64]string),
-		argsByIndex:  make(map[int64]string),
-		fcNames:      make(map[int64]string),
-		fcIDs:        make(map[int64]string),
-		blockOrder:   nil,
+	return &StreamMapper{dir: dir}
+}
+
+// ensureBlocks 懒初始化 mess→resp / resp→mess 方向的内容块累积状态
+// （首个块级事件到达时分配）。
+func (m *StreamMapper) ensureBlocks() {
+	if m.blockStarted == nil {
+		m.blockStarted = make(map[int64]bool)
+		m.blockStopped = make(map[int64]bool)
+		m.textByIndex = make(map[int64]string)
+		m.argsByIndex = make(map[int64]string)
+		m.fcNames = make(map[int64]string)
+		m.fcIDs = make(map[int64]string)
 	}
 }
 
