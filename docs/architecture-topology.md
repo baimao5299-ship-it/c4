@@ -30,7 +30,7 @@ flowchart LR
         WH2["worker 群"]
     end
 
-    PG[("PostgreSQL 18<br/>17 ent 表 + 3 分区表<br/>gpm_invalidate NOTIFY")]
+    PG[("PostgreSQL 18<br/>17 ent 表（含 3 分区表）<br/>gpm_invalidate NOTIFY")]
     UP1["上游 openai（REST + SSE）"]
     UP2["上游 anthropic（REST + SSE）"]
     UP3["上游 responses / resp-ws（WS）"]
@@ -106,7 +106,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     A["Authenticate<br/>internal/proxy/auth.go:120"] --> B["QuotaExhausted<br/>本地预算快读 internal/proxy/gate.go:263"]
-    B --> C["余额预检<br/>BalanceOf 快照 internal/proxy/forward.go:135-142"]
+    B --> C["余额预检<br/>BalanceOf 快照 internal/proxy/caller.go:128-142"]
     C --> D["Acquire 两级并发门禁<br/>internal/proxy/gate.go:215"]
     D --> E["固定窗口限流 Allow<br/>internal/proxy/limit.go:35"]
     E --> F["读体 + json.Valid +<br/>gjson 提 stream/model/tier<br/>internal/proxy/caller.go:160-215"]
@@ -119,7 +119,7 @@ flowchart LR
 - **鉴权**（`internal/proxy/auth.go:120-141`）：`Authorization: Bearer` 或 `x-api-key`（Anthropic 口径）→ `cryptox.HashKey` → 快照查（零 DB）；key 或归属用户禁用 → 401 即时失效。
 - **认证双路径**（`internal/server/server.go:66-104`）：/admin 组 = 静态 admin token `Bearer <AdminToken>` **OR** platform_admin JWT（`JWTIssuer.Verify` + `claims.Role==platform_admin` + 快照用户状态 active 校验；JWT 路径注入 `adminUserIDKey`）；/user 组 = 内部公开分流（`internal/handler/user/router.go:22-40`：register/login 公开，其余 RequireJWT）；AI 组 = key 鉴权（无 JWT）。
 - **配额**：`QuotaExhausted`（`internal/proxy/gate.go:263-279`）本地预算两原子读；耗尽才触发 DB 复核认领（`internal/proxy/gate.go:316-364`，慢路径单飞 + 10s 失败退避）；复核公式 `budget = consumed + ceil(remaining_eff/N)`（#37 P1 收敛修正，防复核无限续额）。
-- **余额预检**（`internal/proxy/forward.go:135-142`）：快照读零 DB（滞后 ≤ balance_refresh_interval）；快照缺失/≤0 且非免费组 → 402；免费组（EffectiveMultiplier==0）放行。
+- **余额预检**（`internal/proxy/caller.go:128-142`）：快照读零 DB（滞后 ≤ balance_refresh_interval）；快照缺失/≤0 且非免费组 → 402；免费组（EffectiveMultiplier==0）放行。
 - **并发门禁**：user → key 两级 CAS（`internal/proxy/gate.go:215-240`），key 失败回滚 user 计数；跨 reload 在途值继承。
 - **限流**：`internal/proxy/limit.go:35-49` 固定窗口 `ceil(group_key_rpm/N)`；`cooldown_429/backoff_*` 已废弃（`config.example.toml:23-24` 注释）——429 冷却与错误退避由规则引擎（种子 + `/admin/rules` 自定义）接管。
 - **选号**：`internal/scheduler/selection.go:13-41` tier1（模型偏好 Serves）→ tier2 → 默认桶；预生成加权轮询序列（零热路径计算）；协议转换只补差（`internal/proxy/caller.go:36-56`，off 零开销）。
@@ -260,7 +260,7 @@ flowchart LR
 - **并发扣费**（`internal/repository/billing_repo.go:69-139`）：`DeductAndLog` 单事务——① FEFO 临时额度按 expires_at 升序逐行条件更新（`amount >= take` 行级防并发透支，NULL 最后即 NULLS LAST）；② 余额条件更新（`balance >= remain`），0 行 → 无条件扣允许透支，再 0 行 = 用户不存在跳过扣减仍插日志；③ 事务内回读 balanceAfter。行锁仲裁跨实例天然串行（`docs/superpowers/plans/2026-08-10-multi-instance-design.md` §1 表）。
 - **同 user 恒同桶串行分片**（`internal/billing/flusher.go:269-277`）：按 userID 取模分片 → 实例内同 user 串行；跨实例靠 DB 行锁。
 - **NOTIFY 跨实例**（§9 全链）：实例 ID = hostname-pid（`cmd/server/main.go:94-99`），同主机多实例 pid 不同不碰撞；Src 自播跳过。
-- **额度预算分摊**（`internal/proxy/gate.go:51-87`）：`budget = consumed + ceil(remaining_eff/N)`，N 存 DB settings `cluster.instances`（`internal/domain/settings.go:33-38`，config 文件可漂移故 DB 是唯一共识源）；N 变更走 settings NOTIFY → 装配侧重调 `SetInstancesProvider` 即时重算（`cmd/server/main.go:247`）；组 RPM 同款 `ceil(rpm/N)`（`internal/proxy/limit.go:9-12`）。
+- **额度预算分摊**（`internal/proxy/gate.go:51-87`）：`budget = consumed + ceil(remaining_eff/N)`，N 存 DB settings `cluster.instances`（`internal/domain/settings.go:25-27`，config 文件可漂移故 DB 是唯一共识源）；N 变更走 settings NOTIFY → 装配侧重调 `SetInstancesProvider` 即时重算（`cmd/server/main.go:247`）；组 RPM 同款 `ceil(rpm/N)`（`internal/proxy/limit.go:9-12`）。
 - **分区 DROP 幂等**（`internal/repository/partition.go:292-303,329-364,391-421`）：IF NOT EXISTS / IF EXISTS + 42P07/23505 容忍——多实例并发 bootstrap/预建/清理收敛；retention DROP 需 ACCESS EXCLUSIVE 锁与在途插入串行（`internal/usage/retention.go:45-49` 评审 I-3 注记）。
 - **已知接受的竞态**（`docs/superpowers/plans/2026-08-10-multi-instance-design.md` §R2）：NOTIFY 重复投递 → mark 幂等合并；`UpdateAccountStatus` 并发 → last-writer-wins；stats Upsert 同桶累加精确；规则种子双写 → 唯一约束幂等；pricing sync 每实例独立 cron 重复 fetch（v1 接受）。
 
