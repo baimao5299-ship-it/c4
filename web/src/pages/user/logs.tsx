@@ -68,14 +68,13 @@ interface LogFilters {
   group_id: string
   account_id: string
   model: string
-  status_code: string
   error_type: string
   from: string
   to: string
 }
 
 const emptyFilters = (): LogFilters => ({
-  group_id: '', account_id: '', model: '', status_code: '', error_type: '', from: '', to: '',
+  group_id: '', account_id: '', model: '', error_type: '', from: '', to: '',
 })
 
 export default function UserLogs() {
@@ -101,7 +100,6 @@ export default function UserLogs() {
       group_id: filters.group_id ? Number(filters.group_id) : undefined,
       account_id: filters.account_id ? Number(filters.account_id) : undefined,
       model: filters.model || undefined,
-      status_code: filters.status_code ? Number(filters.status_code) : undefined,
       error_type: filters.error_type || undefined,
       from: toRFC3339(filters.from),
       to: toRFC3339(filters.to),
@@ -126,7 +124,7 @@ export default function UserLogs() {
         <p className="text-sm text-muted-foreground">{t('user.logs.subtitle')}</p>
       </div>
 
-      {/* 过滤栏：分组/账号/模型/状态码/错误类型 + 时间范围（参数与管理端同构） */}
+      {/* 过滤栏：分组/账号/模型/错误类型 + 时间范围（参数与管理端同构） */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <div className="space-y-1.5">
@@ -140,10 +138,6 @@ export default function UserLogs() {
           <div className="space-y-1.5">
             <Label htmlFor="user-log-model">{t('user.logs.filter.model')}</Label>
             <Input id="user-log-model" placeholder="gpt-4o" value={filters.model} onChange={e => set({ model: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="user-log-status">{t('user.logs.filter.statusCode')}</Label>
-            <Input id="user-log-status" type="number" min={0} placeholder="200" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
           </div>
           <div className="space-y-1.5">
             <Label>{t('user.logs.filter.errorType')}</Label>
@@ -193,7 +187,6 @@ export default function UserLogs() {
               <TableRow>
                 <Th>{t('user.logs.table.createdAt')}</Th>
                 <Th>{t('user.logs.table.model')}</Th>
-                <Th className="text-right">{t('user.logs.table.statusCode')}</Th>
                 <Th>{t('user.logs.table.errorType')}</Th>
                 <Th className="text-right">{t('user.logs.table.inputTokens')}</Th>
                 <Th className="text-right">{t('user.logs.table.outputTokens')}</Th>
@@ -214,7 +207,6 @@ export default function UserLogs() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>
                   <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
                   {/* token 数字直显（千分位，无缩写）：0/空显示 — */}
                   <TableCell className="text-right font-medium tabular-nums">

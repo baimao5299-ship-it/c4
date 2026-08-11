@@ -315,7 +315,6 @@
       "groupId": "Group ID",
       "accountId": "Account ID",
       "model": "Model",
-      "statusCode": "Status code",
       "errorType": "Error type",
       "all": "All",
       "reset": "Reset"
@@ -327,7 +326,6 @@
       "account": "Account",
       "model": "Model",
       "format": "Format",
-      "statusCode": "Status code",
       "errorType": "Error type",
       "cost": "Cost",
       "billingTier": "Billing tier",
@@ -816,7 +814,6 @@
         "groupId": "Group ID",
         "accountId": "Account ID",
         "model": "Model",
-        "statusCode": "Status code",
         "errorType": "Error type",
         "all": "All",
         "reset": "Reset"
@@ -824,7 +821,6 @@
       "table": {
         "createdAt": "Time",
         "model": "Model",
-        "statusCode": "Status code",
         "errorType": "Error type",
         "inputTokens": "Input tokens",
         "outputTokens": "Output tokens",

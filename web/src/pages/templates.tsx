@@ -32,14 +32,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 type Template = components['schemas']['Template']
 type TemplateCreate = components['schemas']['TemplateCreate']
 type TemplatePatch = components['schemas']['TemplatePatch']
-type RequestFormat = components['schemas']['RequestFormat']
+// 模板格式联合 = API SupportedFormats 元素类型（W1 扩展后为 4 值含 openai-responses-ws；
+// 不用 RequestFormat 别名——usage 侧枚举保持 3 值，模板格式与其已分化）。
+type TemplateFormat = components['schemas']['Template']['SupportedFormats'][number]
 
-const FORMAT_LABELS: Record<RequestFormat, string> = {
+const FORMAT_LABELS: Record<TemplateFormat, string> = {
   'openai-chat': 'OpenAI Chat',
   'openai-responses': 'OpenAI Responses',
+  'openai-responses-ws': 'OpenAI Responses (WS)',
   anthropic: 'Anthropic',
 }
-const FORMATS = Object.keys(FORMAT_LABELS) as RequestFormat[]
+const FORMATS = Object.keys(FORMAT_LABELS) as TemplateFormat[]
 
 // 凭据类型（模板级：一个模板 = 一种号池，账号继承；号池生态类型后续追加）
 const CREDENTIAL_TYPE_LABELS: Record<string, string> = {
@@ -49,7 +52,7 @@ const CREDENTIAL_TYPES = Object.keys(CREDENTIAL_TYPE_LABELS)
 
 // —— 多格式表单状态（supported_formats/format_models；default_format/model_formats 已废弃） ——
 interface FormatRow {
-  format: RequestFormat
+  format: TemplateFormat
   modelsText: string
 }
 interface MappingRow {
@@ -60,7 +63,7 @@ interface FormState {
   name: string
   base_url: string
   credential_type: string // '' = 未指定（创建时后端兜底 api_key）
-  supported_formats: RequestFormat[]
+  supported_formats: TemplateFormat[]
   modelsText: string
   format_models: FormatRow[]
   model_mapping: MappingRow[]
@@ -84,7 +87,7 @@ function toForm(t: Template): FormState {
     supported_formats: [...(t.SupportedFormats ?? [])],
     modelsText: (t.Models ?? []).join(', '),
     format_models: Object.entries(t.FormatModels ?? {}).map(([format, models]) => ({
-      format: format as RequestFormat,
+      format: format as TemplateFormat,
       modelsText: (models ?? []).join(', '),
     })),
     model_mapping: Object.entries(t.ModelMapping ?? {}).map(([key, value]) => ({ key, value })),
@@ -138,7 +141,7 @@ function toPatch(f: FormState): TemplatePatch {
 }
 
 function FormatBadge({ format }: { format?: string }) {
-  return <Badge variant="outline">{format ? (FORMAT_LABELS[format as RequestFormat] ?? format) : '—'}</Badge>
+  return <Badge variant="outline">{format ? (FORMAT_LABELS[format as TemplateFormat] ?? format) : '—'}</Badge>
 }
 
 // —— 表单区（创建/编辑与批量更新共用；batch 模式下所有字段可选） ——
@@ -155,7 +158,7 @@ function FormFields({
 }) {
   const { t } = useTranslation()
 
-  const toggleFormat = (f: RequestFormat) => {
+  const toggleFormat = (f: TemplateFormat) => {
     setForm(prev => {
       const on = prev.supported_formats.includes(f)
       const supported_formats = on ? prev.supported_formats.filter(x => x !== f) : [...prev.supported_formats, f]
@@ -267,7 +270,7 @@ function FormFields({
               <Select
                 items={formatOptions}
                 value={row.format}
-                onValueChange={v => setFormatRow(i, { format: v as RequestFormat })}
+                onValueChange={v => setFormatRow(i, { format: v as TemplateFormat })}
               >
                 <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -580,7 +583,7 @@ export default function Templates() {
                         {formats.length === 0 ? '—' : (
                           <div className="flex max-w-56 flex-wrap gap-1">
                             {formats.slice(0, 3).map(([f, ms]) => {
-                              const label = FORMAT_LABELS[f as RequestFormat] ?? f
+                              const label = FORMAT_LABELS[f as TemplateFormat] ?? f
                               const list = (ms ?? []).join(', ')
                               return (
                                 <Badge key={f} variant="outline" className="font-mono text-xs" title={`${label}: ${list}`}>

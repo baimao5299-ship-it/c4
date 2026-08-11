@@ -2,9 +2,12 @@
 # volume 全部使用目录挂载（bind mount），数据与配置落盘在宿主，便于备份与升级。
 #
 # 用法：
-#   cp deploy/config.toml.example deploy/config.toml   # 或直接用示例
-#   ADMIN_TOKEN=$(openssl rand -hex 16) docker compose -f deploy/compose.yml up -d --build
-#   # 或写入 .env（compose 自动读取同目录 .env）：ADMIN_TOKEN=xxx, PORT=18080
+#   cp .env.example .env（并填写 ADMIN_TOKEN / AUTH_JWT_SECRET 等，见文件内注释）
+#   docker compose --env-file .env -f deploy/compose.yml up -d --build
+#   # 或临时注入：ADMIN_TOKEN=$(openssl rand -hex 16) AUTH_JWT_SECRET=$(openssl rand -hex 32) \
+#   #   docker compose -f deploy/compose.yml up -d --build
+#   # 注意：compose v2.24+ 用 -f 时项目目录为 deploy/（.env 在根目录），须显式
+#   #   --env-file .env 才能读到根目录 .env（自动读取仅限 deploy/ 下的 .env）。
 
 services:
   db:
@@ -33,11 +36,20 @@ services:
       db:
         condition: service_healthy
     environment:
-      # 敏感项走环境变量（config.Load 支持 GPM_ADMIN_TOKEN / GPM_DB_DSN 覆盖）
+      # 敏感项走环境变量（config.Load 支持 GPM_ADMIN_TOKEN / GPM_DB_DSN / GPM_AUTH_JWT_SECRET 覆盖）
       GPM_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (openssl rand -hex 16)}
+      GPM_AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET in .env (openssl rand -hex 32)}
       GPM_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:-gpm}@db:5432/go_proxy_mini?sslmode=disable
     ports:
       - "${PORT:-18080}:18080"
     volumes:
       # 目录挂载：配置只读注入（改配置重启即生效，不用重建镜像）
       - ./config.toml:/app/config.toml:ro
+    healthcheck:
+      # /healthz 为无鉴权存活端点（internal/server/server.go）；基镜像 alpine:3.20
+      # 自带 busybox wget（无 curl），非 root 用户可执行。
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:18080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
