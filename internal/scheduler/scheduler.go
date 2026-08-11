@@ -487,9 +487,14 @@ func (s *Scheduler) InvalidateAllSync() error { return s.reload(context.Backgrou
 // Dispatcher.FullRefresh 用——断线重连的全量刷新不得耗尽停机预算）。
 func (s *Scheduler) InvalidateAllSyncCtx(ctx context.Context) error { return s.reload(ctx) }
 
-// Runtime 供管理端展示运行时视图。
+// Runtime 供管理端展示运行时视图。快照未加载（启动中/首刷失败）→ 返回
+// false（同 Select 模式——裸断言在此 panic，Warn-and-serve 语义下管理端应见
+// 未就绪而非进程崩溃）。
 func (s *Scheduler) Runtime(accountID int64) (RuntimeInfo, bool) {
-	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
+	if !ok {
+		return RuntimeInfo{}, false
+	}
 	a, ok := byID[accountID]
 	if !ok {
 		return RuntimeInfo{}, false
@@ -503,9 +508,14 @@ func (s *Scheduler) Runtime(accountID int64) (RuntimeInfo, bool) {
 	}, true
 }
 
-// Release 释放并发槽（请求结束必须调用，含流式断开）。
+// Release 释放并发槽（请求结束必须调用，含流式断开）。断言 ok 防御性守卫
+// （快照未加载时请求路径不可达——Release 恒在 Select 成功之后，而 Select 在
+// 快照未加载时已返回错误；守卫防未来调用序变化时 panic）。
 func (s *Scheduler) Release(accountID int64) {
-	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
+	if !ok {
+		return
+	}
 	if a, ok := byID[accountID]; ok {
 		a.concurrency.Add(-1)
 	}
@@ -514,7 +524,12 @@ func (s *Scheduler) Release(accountID int64) {
 // MarkResult 请求结果回流：禁用守卫（同步短路）+ 条件投递（C1）→ 规则引擎异步处理。
 // 快照/EWMA/组路由/DB 回写全部由规则命中后的 apply 回调完成（本方法不再触碰状态）。
 func (s *Scheduler) MarkResult(accountID int64, kind ResultKind, resetAt *time.Time, httpStatus int, errMsg string) {
-	byID := s.store.byID.Load().(map[int64]*accountSnapshot)
+	// 断言 ok 防御性守卫（同 Release：MarkResult 恒在 Select 成功之后，快照未
+	// 加载时请求路径不可达；防未来调用序变化时 panic）。
+	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
+	if !ok {
+		return
+	}
 	a, ok := byID[accountID]
 	if !ok {
 		return

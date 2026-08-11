@@ -56,8 +56,9 @@ type RetentionWorker struct {
 	log     *logx.Logger
 	started atomic.Bool
 	// 观测面（/ops/workers；runOnce 收尾原子写，零新增 DB）：lastPatrol 最近
-	// 一次巡检完成时刻（UnixMilli；0 = 尚未巡检）；lastDrop* 最近一轮各表
-	// DROP 分区数（缓存 runOnce 现有返回值——DROP 的 n 即真实 DB 答案）。
+	// 一次巡检完成时刻（UnixMilli；0 = 尚未巡检）；lastDrop* 最近成功轮各表
+	// DROP 分区数（失败轮保留上轮值——缓存 runOnce 现有返回值，DROP 的 n 即
+	// 真实 DB 答案）。
 	lastPatrol      atomic.Int64
 	lastDropLogs    atomic.Int64
 	lastDropErrLogs atomic.Int64

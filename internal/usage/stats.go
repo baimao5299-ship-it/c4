@@ -6,10 +6,10 @@ package usage
 
 // RecorderStats usage 明细/统计聚合 worker 状态。
 type RecorderStats struct {
-	PendingLogs      int64 `json:"pending_logs"`      // 尚未落库的明细条数
-	StatBuckets      int64 `json:"stat_buckets"`      // 内存统计桶数（原子计数，非 len 锁读）
-	PendingWaterline int64 `json:"pending_waterline"` // 水线（包级 var 直读）
-	Warned           bool  `json:"warned"`            // 水线告警边沿是否置位
+	PendingLogs      int64 `json:"pending_logs"`         // 尚未落库的明细条数
+	StatBuckets      int64 `json:"stat_buckets_created"` // 统计桶累计创建数（只增不减——flush 换批不复位；字段名标注累计语义）
+	PendingWaterline int64 `json:"pending_waterline"`    // 水线（包级 var 直读）
+	Warned           bool  `json:"warned"`               // 水线告警边沿是否置位
 }
 
 // Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
@@ -51,9 +51,9 @@ func (w *ErrLogWorker) Stats() any {
 // RetentionWorkerStats 分区保留 worker 状态（runOnce 收尾原子写，零新增 DB）。
 type RetentionWorkerStats struct {
 	LastPatrolUnixMs            int64 `json:"last_patrol_unix_ms"`            // 最近一次巡检完成时刻（0 = 尚未巡检）
-	LastDroppedLogPartitions    int64 `json:"last_dropped_log_partitions"`    // 最近一轮 usage_logs DROP 分区数
-	LastDroppedErrLogPartitions int64 `json:"last_dropped_errlog_partitions"` // 最近一轮 err_logs DROP 分区数
-	LastDroppedStatsPartitions  int64 `json:"last_dropped_stats_partitions"`  // 最近一轮 usage_stats DROP 分区数
+	LastDroppedLogPartitions    int64 `json:"last_dropped_log_partitions"`    // 最近成功轮 usage_logs DROP 分区数（失败轮保留上轮值）
+	LastDroppedErrLogPartitions int64 `json:"last_dropped_errlog_partitions"` // 最近成功轮 err_logs DROP 分区数（失败轮保留上轮值）
+	LastDroppedStatsPartitions  int64 `json:"last_dropped_stats_partitions"`  // 最近成功轮 usage_stats DROP 分区数（失败轮保留上轮值）
 	LogRetentionDays            int   `json:"log_retention_days"`
 	ErrLogRetentionDays         int   `json:"errlog_retention_days"`
 	StatsRetentionDays          int   `json:"stats_retention_days"`

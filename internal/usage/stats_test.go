@@ -35,7 +35,7 @@ func TestRecorderStats(t *testing.T) {
 
 	st := r.Stats().(RecorderStats) // typed struct 断言
 	require.Equal(t, int64(5), st.PendingLogs, "pending 与 Record 累计一致")
-	require.Equal(t, int64(2), st.StatBuckets, "同桶合并后桶数 = 2")
+	require.Equal(t, int64(2), st.StatBuckets, "同桶合并后累计创建桶数 = 2")
 	require.Equal(t, pendingWaterline, st.PendingWaterline, "水线包级 var 直读")
 	require.False(t, st.Warned)
 	require.Equal(t, 5, r.Pending(), "既有 accessor 同步一致")
@@ -45,7 +45,7 @@ func TestRecorderStats(t *testing.T) {
 		Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: base})
 	st = r.Stats().(RecorderStats)
 	require.Equal(t, int64(5), st.PendingLogs, "Aggregate 不进 pending")
-	require.Equal(t, int64(3), st.StatBuckets)
+	require.Equal(t, int64(3), st.StatBuckets, "Aggregate 新桶也计入累计")
 }
 
 // --- ErrLogWorker ---

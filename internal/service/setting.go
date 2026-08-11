@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/internal/notify"
@@ -55,10 +56,13 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 	// ReloadSettings + 注册表 ScopeSettings 精确重载 auth，gate 预算按新 N
 	// 重算）。本地快照已由上方 reloadSettings 刷新，Apply 内 ReloadSettings
 	// 是幂等重复（settings 低频路径，可接受；单一分发入口防本地/远端行为
-	// 漂移）。请求 ctx 取消不吞本地重载（评审 I-2 同纪律——DB 写已提交，
-	// 收敛必须完成）。nil = 未装配 no-op。
+	// 漂移）。30s 超时包裹本地直连链（合后清单：裸 WithoutCancel 无界——DB
+	// 悬挂时 admin PUT 永久挂起、处理 goroutine 堆积；超时/请求取消中止本地
+	// 收敛，由 NOTIFY/60s 周期兜底刷新补齐）。nil = 未装配 no-op。
 	if s.local != nil {
-		_ = s.local.Apply(context.WithoutCancel(ctx), notify.Change{Settings: true})
+		relCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		_ = s.local.Apply(relCtx, notify.Change{Settings: true})
 	}
 	s.publish(ctx, notify.Change{Settings: true}) // 其余实例 settings 快照重载（#14 多实例）
 	return set, nil

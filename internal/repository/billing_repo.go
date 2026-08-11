@@ -427,7 +427,8 @@ func usageLogRowValues(l *domain.UsageLog) []any {
 // 失败 → 外层事务回滚（COPY 中途失败同样整体回滚——语义与 CreateBulk 分片
 // 一致）。格式枚举校验前置：分区表 format 列为 varchar（无 DB 层 enum 约束），
 // ent 路径由 CreateBulk 客户端 FormatValidator 拒绝非法值——COPY 路径必须
-// 等价复刻（同错误文本；错误发生在任何插入前，整体回滚观察面一致）。
+// 等价复刻（错误文本不同：ent 包装为 ValidationError（含字段前缀），COPY
+// 返回裸错误；可观察行为一致——均在任何插入前拒绝、均致事务回滚）。
 func (x *pgxDeductTx) InsertLogs(ctx context.Context, logs []*domain.UsageLog, overdrafted bool) error {
 	if len(logs) == 0 {
 		return nil
