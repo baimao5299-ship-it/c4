@@ -50,23 +50,31 @@ func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 }
 
 // NewStreamMapper 构造有状态的流式响应事件映射器（每 SSE 流一个实例；
-// 跨事件状态：id/model、用量累积、mess→resp 的块级输出累积）。
+// 跨事件状态：id/model、用量累积、mess→resp 的块级输出累积）。块级累积
+// map（blockStarted 等）懒初始化（ensureBlocks，评审 I-4）——chat→resp 等
+// 方向从不使用，免每流 6 个 map 分配。
 func NewStreamMapper(dir domain.ProtocolConvert) *StreamMapper {
-	return &StreamMapper{
-		dir:          dir,
-		blockStarted: make(map[int64]bool),
-		blockStopped: make(map[int64]bool),
-		textByIndex:  make(map[int64]string),
-		argsByIndex:  make(map[int64]string),
-		fcNames:      make(map[int64]string),
-		fcIDs:        make(map[int64]string),
-		blockOrder:   nil,
+	return &StreamMapper{dir: dir}
+}
+
+// ensureBlocks 懒初始化 mess→resp / resp→mess 方向的内容块累积状态
+// （首个块级事件到达时分配）。
+func (m *StreamMapper) ensureBlocks() {
+	if m.blockStarted == nil {
+		m.blockStarted = make(map[int64]bool)
+		m.blockStopped = make(map[int64]bool)
+		m.textByIndex = make(map[int64]string)
+		m.argsByIndex = make(map[int64]string)
+		m.fcNames = make(map[int64]string)
+		m.fcIDs = make(map[int64]string)
 	}
 }
 
 // StreamMapper 按方向把模板协议的 SSE 事件映射为客户端协议帧（[]byte 即完整
-// 帧字节，含 event/data 行与结尾空行）。映射帧为每次调用新分配，调用方可立即
-// 写出后丢弃。
+// 帧字节，含 event/data 行与结尾空行）。映射帧复用 mapper 内缓冲（buf/dbuf），
+// 生命周期仅限本次 Map 调用——调用方（sserelay Mapper 契约）立即写出后丢弃，
+// 下一帧复用同一缓冲，逐帧零分配。chat→resp 方向为字节级组装，其余方向仍
+// 为 map 组装（EncodeFrame）。
 type StreamMapper struct {
 	dir domain.ProtocolConvert
 
@@ -78,6 +86,11 @@ type StreamMapper struct {
 	it, ot  int64 // 用量（input/output tokens）
 	cached  int64 // cache_read / cached_tokens
 	reason  string
+
+	// 字节级帧组装复用缓冲（chat→resp 流式路径）：buf = 输出帧；dbuf =
+	// delta/usage 预组装。帧返回后下一帧覆盖，调用方不得跨帧保留。
+	buf  []byte
+	dbuf []byte
 
 	// mess→resp（RespToMess）方向：块级累积状态。
 	blockStarted map[int64]bool

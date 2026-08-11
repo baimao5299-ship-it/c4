@@ -1,6 +1,7 @@
 package protoconv
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -379,7 +380,9 @@ func TestConvertResponseMessToChat(t *testing.T) {
 
 // --- 流式事件映射 ---
 
-// mapAll 依次映射一组事件（name/data 交替对），返回全部产出帧的文本拼接。
+// mapAll 依次映射一组事件（name/data 交替对），逐帧做完整 SSE 帧校验
+// （评审 M-1 后升级：帧尾空行、行 field: 前缀、data 载荷 JSON 合法或
+// [DONE]——钉住帧格式，防子串断言漏网），返回全部产出帧的文本拼接。
 func mapAll(t *testing.T, dir domain.ProtocolConvert, events ...string) string {
 	t.Helper()
 	m := NewStreamMapper(dir)
@@ -390,9 +393,45 @@ func mapAll(t *testing.T, dir domain.ProtocolConvert, events ...string) string {
 			out = append(out, "[drop]")
 			continue
 		}
+		validateFrames(t, frame)
 		out = append(out, string(frame))
 	}
 	return strings.Join(out, "|")
+}
+
+// validateFrames 校验映射产出字节为完整合法 SSE 帧序列：以空行终止；每行
+// `data: `/`event: ` 前缀；data 载荷为合法 JSON（[DONE] 终止帧例外）。
+// 一次 Map 可能返回多帧（如 completed → chunk + [DONE]），按空行拆分逐帧校验。
+func validateFrames(t *testing.T, frame []byte) {
+	t.Helper()
+	if len(frame) < 2 || frame[len(frame)-1] != '\n' || frame[len(frame)-2] != '\n' {
+		t.Fatalf("帧必须以空行终止: %q", frame)
+	}
+	for _, f := range bytes.Split(frame, []byte("\n\n")) {
+		if len(f) == 0 {
+			continue
+		}
+		lines := strings.Split(string(f), "\n")
+		var data []string
+		for _, ln := range lines {
+			if ln == "" {
+				continue
+			}
+			if !strings.HasPrefix(ln, "data: ") && !strings.HasPrefix(ln, "event: ") {
+				t.Fatalf("帧行缺少 field: 前缀: %q", f)
+			}
+			if strings.HasPrefix(ln, "data: ") {
+				data = append(data, ln[len("data: "):])
+			}
+		}
+		payload := strings.Join(data, "\n")
+		if payload == "[DONE]" {
+			continue
+		}
+		if !json.Valid([]byte(payload)) {
+			t.Fatalf("帧 data 载荷非法 JSON: %q", f)
+		}
+	}
 }
 
 func TestMapRespToChatStream(t *testing.T) {
@@ -686,4 +725,153 @@ func TestEncodeFrame(t *testing.T) {
 	require.Equal(t, "event: ev\ndata: {\"a\":1}\n\n", string(f))
 	f = EncodeFrame("", "x")
 	require.Equal(t, "data: \"x\"\n\n", string(f))
+}
+
+// --- 评审回归（2026-08-11 protoconv-opt-review）：完整帧/纯工具/多部件/数组 content ---
+
+// TestMapRespToChatCompleteFrames（评审 M-1 回归）：完整帧字节断言——每帧带
+// `data: ` 前缀与空行终止；completed 的 [DONE] 独立成帧（不粘连）。
+func TestMapRespToChatCompleteFrames(t *testing.T) {
+	m := NewStreamMapper(domain.ProtocolConvertChatToResp)
+
+	frame, drop := m.Map("response.created", []byte(`{"type":"response.created","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"in_progress","model":"gpt-4o","output":[],"usage":null}}`))
+	require.False(t, drop)
+	require.Equal(t, "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"created\":1750000000,\"id\":\"rsp_1\",\"model\":\"gpt-4o\",\"object\":\"chat.completion.chunk\"}\n\n", string(frame), "chunk 帧 = data: 前缀 + 载荷 + 空行终止")
+
+	frame, drop = m.Map("response.output_text.delta", []byte(`{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hel"}`))
+	require.False(t, drop)
+	require.Equal(t, "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"},\"finish_reason\":null,\"index\":0}],\"created\":1750000000,\"id\":\"rsp_1\",\"model\":\"gpt-4o\",\"object\":\"chat.completion.chunk\"}\n\n", string(frame))
+
+	frame, drop = m.Map("response.completed", []byte(`{"type":"response.completed","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"completed","model":"gpt-4o","output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"","status":"completed"}],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`))
+	require.False(t, drop)
+	require.Equal(t, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\",\"index\":0}],\"created\":1750000000,\"id\":\"rsp_1\",\"model\":\"gpt-4o\",\"object\":\"chat.completion.chunk\",\"usage\":{\"completion_tokens\":5,\"prompt_tokens\":3,\"total_tokens\":8}}\n\ndata: [DONE]\n\n", string(frame), "completed = chunk 帧 + [DONE] 独立帧（不粘连）")
+
+	// failed → data-only 错误帧（新 mapper：completed 后 done 守卫已激活）
+	m2 := NewStreamMapper(domain.ProtocolConvertChatToResp)
+	frame, drop = m2.Map("response.failed", []byte(`{"type":"response.failed","response":{"id":"rsp_1","object":"response","status":"failed","error":{"code":"server_error","message":"boom"}}}`))
+	require.False(t, drop)
+	require.Equal(t, "data: {\"error\":{\"message\":\"boom\"}}\n\n", string(frame))
+}
+
+// TestConvertResponseRespToChatPureTool（评审 M-2 回归）：纯工具响应（无文本
+// 部件）→ content 恒为合法空字符串。
+func TestConvertResponseRespToChatPureTool(t *testing.T) {
+	out, err := ConvertResponse([]byte(`{"id":"rsp_1","object":"response","status":"completed","model":"m","output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{}","status":"completed"}]}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out) // 完整 JSON 合法
+	msg := arrOf(t, m, "choices")[0].(map[string]any)["message"].(map[string]any)
+	require.Equal(t, "", msg["content"], "无文本部件 → content 空字符串")
+	tcs := arrOf(t, msg, "tool_calls")
+	require.Len(t, tcs, 1)
+	require.Equal(t, "call_1", tcs[0].(map[string]any)["id"], "tool_call id = call_id（M-1）")
+}
+
+// TestConvertResponseRespToChatMultiPartText（评审 M-2 回归）：多部件文本 →
+// 拼接单字符串（含转义引号与 \uXXXX 多字节部件边界）。
+func TestConvertResponseRespToChatMultiPartText(t *testing.T) {
+	out, err := ConvertResponse([]byte(`{"id":"rsp_1","object":"response","status":"completed","model":"m","output":[{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hel"},{"type":"output_text","text":"lo \"world\" 世界"}]}],"usage":{"input_tokens":1,"output_tokens":2}}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	msg := arrOf(t, m, "choices")[0].(map[string]any)["message"].(map[string]any)
+	require.Equal(t, "hello \"world\" 世界", msg["content"], "多部件文本拼接")
+}
+
+// TestConvertRequestChatToRespArrayContent（评审 M-3 回归）：system/tool 数组
+// content → 文本 \n 拼接且整体合法 JSON（含转义部件）。
+func TestConvertRequestChatToRespArrayContent(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-4o",
+		"messages": [
+			{"role": "system", "content": [{"type": "text", "text": "rule A"}, {"type": "text", "text": "rule \"B\""}]},
+			{"role": "user", "content": "hi"},
+			{"role": "tool", "tool_call_id": "call_1", "content": [{"type": "text", "text": "{\"temp\": 20}"}]}
+		]
+	}`)
+	out, err := ConvertRequest(body, domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	input := arrOf(t, m, "input")
+	require.Len(t, input, 3)
+	dev := input[0].(map[string]any)
+	require.Equal(t, "developer", dev["role"])
+	dc := arrOf(t, dev, "content")[0].(map[string]any)
+	require.Equal(t, "rule A\nrule \"B\"", dc["text"], "数组 content 文本以 \n 拼接")
+	fco := input[2].(map[string]any)
+	require.Equal(t, "{\"temp\": 20}", fco["output"], "tool 数组 content 文本")
+}
+
+// TestConvertRequestChatToRespArrayContentEmptyFirst（评审 I-2 回归）：text 块
+// 数组首部件为空字符串 → 前导 \n 分隔符仍保留（joinStrings("\n") 语义；
+// 旧实现按 joined 长度判空丢分隔符）。
+func TestConvertRequestChatToRespArrayContentEmptyFirst(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"system","content":[{"type":"text","text":""},{"type":"text","text":"rule"}]}]}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	input := arrOf(t, m, "input")
+	require.Len(t, input, 1)
+	dc := arrOf(t, input[0].(map[string]any), "content")[0].(map[string]any)
+	require.Equal(t, "\nrule", dc["text"], "空首部件后仍保留 \n 分隔符")
+}
+
+// TestConvertRequestChatToRespNullBody（评审 I-2 对齐）：null 体 → 空对象输出
+// （与 map 版 decodeObj(null) → nil map → {} 一致）。
+func TestConvertRequestChatToRespNullBody(t *testing.T) {
+	out, err := ConvertRequest([]byte("null"), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	require.Equal(t, "{}", string(out), "null 体 → 空对象")
+}
+
+// TestConvertResponseNullBody（评审 I-2 对齐）：null 体 → 零值字段合法输出。
+func TestConvertResponseNullBody(t *testing.T) {
+	out, err := ConvertResponse([]byte("null"), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	require.Equal(t, "", m["id"], "null 体 → 零值字段")
+	require.Equal(t, float64(0), m["created"])
+}
+
+// TestConvertRequestChatToRespToolCallDoubleID（评审 I-3 对齐）：请求方向
+// tool_call 同时含 id+call_id → 取 id（与 map 版一致；call_id 优先仅响应方向）。
+func TestConvertRequestChatToRespToolCallDoubleID(t *testing.T) {
+	body := []byte(`{"model":"m","messages":[{"role":"assistant","content":"ok","tool_calls":[{"id":"call_id_1","call_id":"call_9","type":"function","function":{"name":"f","arguments":"{}"}}]}]}`)
+	out, err := ConvertRequest(body, domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	input := arrOf(t, obj(t, out), "input")
+	require.Len(t, input, 2)
+	fc := input[1].(map[string]any)
+	require.Equal(t, "call_id_1", fc["id"], "请求方向取 id")
+	require.Equal(t, "call_id_1", fc["call_id"])
+}
+
+// TestConvertRequestChatToRespEscapedKey（评审 I-1 重做回归）：真实 \uXXXX
+// 转义键（raw 恒比字面量长，长度前置检查会短路转义分支——此处用真实转义
+// 字符构造，非明文假用例）。
+func TestConvertRequestChatToRespEscapedKey(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{"model":"m","\u006d\u0065ssages":[{"role":"user","content":"hi"}]}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	input := arrOf(t, m, "input")
+	require.Len(t, input, 1, "转义键 messages 仍命中")
+	require.Equal(t, "user", input[0].(map[string]any)["role"])
+}
+
+// TestConvertRequestChatToRespEscapedValue（评审 I-1 重做回归）：role 值含真实
+// \uXXXX 转义 → 仍按 system 处理（产生 developer 消息项）。
+func TestConvertRequestChatToRespEscapedValue(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"syst\u0065m","content":"rules"}]}`), domain.ProtocolConvertChatToResp)
+	require.NoError(t, err)
+	m := obj(t, out)
+	input := arrOf(t, m, "input")
+	require.Len(t, input, 1, "转义 role 值仍按 system 处理")
+	require.Equal(t, "developer", input[0].(map[string]any)["role"])
+}
+
+// TestMapRespToChatEscapedType（评审 I-1 重做回归，流式方向）：item.type 值含
+// 真实转义 → output_item.added 仍按 function_call 产生 tool_calls 前导 chunk。
+func TestMapRespToChatEscapedType(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertChatToResp,
+		"response.created", `{"type":"response.created","response":{"id":"rsp_1","object":"response","status":"in_progress","model":"m","output":[]}}`,
+		"response.output_item.added", `{"type":"response.output_item.added","output_index":1,"item":{"id":"fc_1","type":"function_c\u0061ll","call_id":"call_1","name":"get_weather","arguments":"","status":"in_progress"}}`,
+	)
+	require.Contains(t, out, `"tool_calls":[{"function":{"arguments":"","name":"get_weather"},"id":"call_1","index":1,"type":"function"}]`, "转义 type 值仍按 function_call 处理")
 }

@@ -310,6 +310,7 @@ func respUsageToMess(r map[string]any) map[string]any {
 //	response.failed                  → error 事件（anthropic 错误帧形态）
 //	其余 → 丢弃
 func (m *StreamMapper) mapRespToMess(name string, data []byte) ([]byte, bool) {
+	m.ensureBlocks() // 块级累积 map 懒初始化（评审 I-4）
 	ev, err := decodeObj(data)
 	if err != nil {
 		return nil, true
