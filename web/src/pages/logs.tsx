@@ -200,7 +200,7 @@ export default function Logs() {
         <p className="text-sm text-muted-foreground">{t('logs.subtitle')}</p>
       </div>
 
-      {/* 过滤栏：分组/账号/模型/状态码/错误类型 + 时间范围 */}
+      {/* 过滤栏：分组/账号/模型/错误类型 + 时间范围 */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <div className="space-y-1.5">
