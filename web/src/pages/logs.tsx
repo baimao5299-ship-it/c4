@@ -94,7 +94,7 @@ const ERROR_ALL = '__all__'
 // BillingTier/AboveHit/Overdraft 已并入 Tokens 悬停窗（不再独立列）。
 // 隐藏选择持久化到 localStorage（logs-hidden-columns）。
 const HIDDEN_STORAGE_KEY = 'logs-hidden-columns'
-const HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'statusCode', 'errorType', 'cost', 'latency', 'tokens'] as const
+const HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'errorType', 'cost', 'latency', 'tokens'] as const
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -108,14 +108,13 @@ interface LogFilters {
   group_id: string
   account_id: string
   model: string
-  status_code: string
   error_type: string
   from: string
   to: string
 }
 
 const emptyFilters = (): LogFilters => ({
-  group_id: '', account_id: '', model: '', status_code: '', error_type: '', from: '', to: '',
+  group_id: '', account_id: '', model: '', error_type: '', from: '', to: '',
 })
 
 export default function Logs() {
@@ -140,7 +139,6 @@ export default function Logs() {
       group_id: filters.group_id ? Number(filters.group_id) : undefined,
       account_id: filters.account_id ? Number(filters.account_id) : undefined,
       model: filters.model || undefined,
-      status_code: filters.status_code ? Number(filters.status_code) : undefined,
       error_type: filters.error_type || undefined,
       from: toRFC3339(filters.from),
       to: toRFC3339(filters.to),
@@ -218,10 +216,6 @@ export default function Logs() {
             <Input id="log-model" placeholder="gpt-4o" value={filters.model} onChange={e => set({ model: e.target.value })} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="log-status">{t('logs.filter.statusCode')}</Label>
-            <Input id="log-status" type="number" min={0} placeholder="200" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
             <Label>{t('logs.filter.errorType')}</Label>
             <Select
               items={Object.fromEntries([[ERROR_ALL, t('logs.filter.all')], ...ERROR_TYPES.map(et => [et, t(`errorType.${et}`)])])}
@@ -297,7 +291,6 @@ export default function Logs() {
                 {isColVisible('account') && <Th className="text-right">{t('logs.table.account')}</Th>}
                 {isColVisible('model') && <Th>{t('logs.table.model')}</Th>}
                 {isColVisible('format') && <Th>{t('logs.table.format')}</Th>}
-                {isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
                 {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
                 {isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
                 {isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
@@ -349,7 +342,6 @@ export default function Logs() {
                     {l.Format ? <Badge variant="outline">{FORMAT_LABELS[l.Format]}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
                   )}
-                  {isColVisible('statusCode') && <TableCell className="text-right tabular-nums">{l.StatusCode ?? '—'}</TableCell>}
                   {isColVisible('errorType') && <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>}
                   {/* token 列：↓输入 ↑输出（muted 单色收敛）+ cache 第二行（无值不显示）+ ⓘ 悬停大卡
                       （tokens 明细 + 档位 BillingTier + 超档/透支徽章） */}
