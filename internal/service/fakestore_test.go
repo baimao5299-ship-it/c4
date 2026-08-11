@@ -429,17 +429,15 @@ func (f *fakeStore) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposi
 }
 
 // QueryUsages 模拟 repo 过滤：user_id > 0 时强制过滤（/user/usage_logs 防越权
-// 测试依赖此语义）；返回副本防别名污染。
-func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, int64, error) {
-	rows := f.queryLogs(q.UserID)
-	return rows, int64(len(rows)), nil
+// 测试依赖此语义）；返回副本防别名污染。去 Total（契约已移除）。
+func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, error) {
+	return f.queryLogs(q.UserID), nil
 }
 
 // QueryErrLogs 模拟 repo 过滤（/err_logs：user_id > 0 强制过滤——/user/err_logs
 // 防越权测试依赖此语义）。
-func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, int64, error) {
-	rows := f.queryLogs(q.UserID)
-	return rows, int64(len(rows)), nil
+func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, error) {
+	return f.queryLogs(q.UserID), nil
 }
 
 func (f *fakeStore) queryLogs(userID int64) []*domain.UsageLog {

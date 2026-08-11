@@ -423,8 +423,9 @@ type ErrLog struct {
 
 // ErrLogsResponse defines model for ErrLogsResponse.
 type ErrLogsResponse struct {
-	Rows  []ErrLog `json:"rows"`
-	Total int64    `json:"total"`
+	// NextCursor 下一页游标（本页最后一条 id）；null = 无更多行
+	NextCursor *int64   `json:"next_cursor"`
+	Rows       []ErrLog `json:"rows"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -526,8 +527,9 @@ type GroupVisibility string
 
 // LogsResponse defines model for LogsResponse.
 type LogsResponse struct {
-	Rows  []UsageLog `json:"rows"`
-	Total int64      `json:"total"`
+	// NextCursor 下一页游标（本页最后一条 id）；null = 无更多行
+	NextCursor *int64     `json:"next_cursor"`
+	Rows       []UsageLog `json:"rows"`
 }
 
 // Pricing defines model for Pricing.
@@ -1022,16 +1024,16 @@ type GetAccountsParamsOrder string
 
 // GetErrLogsParams defines parameters for GetErrLogs.
 type GetErrLogsParams struct {
-	Limit      *int       `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset     *int       `form:"offset,omitempty" json:"offset,omitempty"`
-	GroupId    *int64     `form:"group_id,omitempty" json:"group_id,omitempty"`
-	AccountId  *int64     `form:"account_id,omitempty" json:"account_id,omitempty"`
-	UserId     *int64     `form:"user_id,omitempty" json:"user_id,omitempty"`
-	Model      *string    `form:"model,omitempty" json:"model,omitempty"`
-	StatusCode *int       `form:"status_code,omitempty" json:"status_code,omitempty"`
-	ErrorType  *string    `form:"error_type,omitempty" json:"error_type,omitempty"`
-	From       *time.Time `form:"from,omitempty" json:"from,omitempty"`
-	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
+	Limit      *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor     *int64    `form:"cursor,omitempty" json:"cursor,omitempty"`
+	GroupId    *int64    `form:"group_id,omitempty" json:"group_id,omitempty"`
+	AccountId  *int64    `form:"account_id,omitempty" json:"account_id,omitempty"`
+	UserId     *int64    `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Model      *string   `form:"model,omitempty" json:"model,omitempty"`
+	StatusCode *int      `form:"status_code,omitempty" json:"status_code,omitempty"`
+	ErrorType  *string   `form:"error_type,omitempty" json:"error_type,omitempty"`
+	From       time.Time `form:"from" json:"from"`
+	To         time.Time `form:"to" json:"to"`
 }
 
 // GetGroupsParams defines parameters for GetGroups.
@@ -1114,15 +1116,15 @@ type GetTemplatesParamsOrder string
 
 // GetUsageLogsParams defines parameters for GetUsageLogs.
 type GetUsageLogsParams struct {
-	Limit     *int       `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset    *int       `form:"offset,omitempty" json:"offset,omitempty"`
-	GroupId   *int64     `form:"group_id,omitempty" json:"group_id,omitempty"`
-	AccountId *int64     `form:"account_id,omitempty" json:"account_id,omitempty"`
-	UserId    *int64     `form:"user_id,omitempty" json:"user_id,omitempty"`
-	Model     *string    `form:"model,omitempty" json:"model,omitempty"`
-	ErrorType *string    `form:"error_type,omitempty" json:"error_type,omitempty"`
-	From      *time.Time `form:"from,omitempty" json:"from,omitempty"`
-	To        *time.Time `form:"to,omitempty" json:"to,omitempty"`
+	Limit     *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor    *int64    `form:"cursor,omitempty" json:"cursor,omitempty"`
+	GroupId   *int64    `form:"group_id,omitempty" json:"group_id,omitempty"`
+	AccountId *int64    `form:"account_id,omitempty" json:"account_id,omitempty"`
+	UserId    *int64    `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Model     *string   `form:"model,omitempty" json:"model,omitempty"`
+	ErrorType *string   `form:"error_type,omitempty" json:"error_type,omitempty"`
+	From      time.Time `form:"from" json:"from"`
+	To        time.Time `form:"to" json:"to"`
 }
 
 // GetUsersParams defines parameters for GetUsers.
@@ -1974,11 +1976,11 @@ func (siw *ServerInterfaceWrapper) GetErrLogs(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// ------------- Optional query parameter "offset" -------------
+	// ------------- Optional query parameter "cursor" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
 		return
 	}
 
@@ -2030,17 +2032,31 @@ func (siw *ServerInterfaceWrapper) GetErrLogs(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// ------------- Optional query parameter "from" -------------
+	// ------------- Required query parameter "from" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if paramValue := r.URL.Query().Get("from"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "from", r.URL.Query(), &params.From)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
 		return
 	}
 
-	// ------------- Optional query parameter "to" -------------
+	// ------------- Required query parameter "to" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if paramValue := r.URL.Query().Get("to"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "to", r.URL.Query(), &params.To)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
 		return
@@ -3009,11 +3025,11 @@ func (siw *ServerInterfaceWrapper) GetUsageLogs(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// ------------- Optional query parameter "offset" -------------
+	// ------------- Optional query parameter "cursor" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
 		return
 	}
 
@@ -3057,17 +3073,31 @@ func (siw *ServerInterfaceWrapper) GetUsageLogs(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// ------------- Optional query parameter "from" -------------
+	// ------------- Required query parameter "from" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if paramValue := r.URL.Query().Get("from"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "from", r.URL.Query(), &params.From)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
 		return
 	}
 
-	// ------------- Optional query parameter "to" -------------
+	// ------------- Required query parameter "to" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if paramValue := r.URL.Query().Get("to"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "to", r.URL.Query(), &params.To)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
 		return

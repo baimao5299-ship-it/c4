@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
@@ -191,22 +192,40 @@ func TestUserUsageLogsOwnOnly(t *testing.T) {
 	_, userB := registerAndGet(t, doUser, "b@example.com")
 
 	// 直接向 store 灌入两个用户的日志
+	base := time.Now().UTC().Truncate(time.Second)
 	store.mu.Lock()
 	store.logs = []*domain.UsageLog{
-		{ID: 1, UserID: userA, RequestID: "r-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat},
-		{ID: 2, UserID: userB, RequestID: "r-b1", Model: "gpt-4o", Format: domain.FormatOpenAIChat},
-		{ID: 3, UserID: userA, RequestID: "r-a2", Model: "o3", Format: domain.FormatOpenAIResponses},
+		{ID: 1, UserID: userA, RequestID: "r-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat, CreatedAt: base},
+		{ID: 2, UserID: userB, RequestID: "r-b1", Model: "gpt-4o", Format: domain.FormatOpenAIChat, CreatedAt: base},
+		{ID: 3, UserID: userA, RequestID: "r-a2", Model: "o3", Format: domain.FormatOpenAIResponses, CreatedAt: base},
 	}
 	store.mu.Unlock()
+	win := "from=" + base.Add(-time.Hour).Format(time.RFC3339) + "&to=" + base.Add(time.Hour).Format(time.RFC3339)
 
+	// 无 from/to → 生成层 400（user 侧契约与 admin 同）
 	rec := doUser(http.MethodGet, "/user/usage_logs", "", tokenA)
+	require.Equal(t, http.StatusBadRequest, rec.Code, "missing from/to: %s", rec.Body.String())
+
+	rec = doUser(http.MethodGet, "/user/usage_logs?"+win, "", tokenA)
 	require.Equal(t, http.StatusOK, rec.Code, "user logs: %s", rec.Body.String())
 	var body userapi.LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(2), body.Total, "只看到自己的日志: %s", rec.Body.String())
+	require.Len(t, body.Rows, 2, "只看到自己的日志: %s", rec.Body.String())
 	for _, r := range body.Rows {
 		require.Equal(t, userA, *r.UserID, "日志必须归属当前用户")
 	}
+
+	// 跨页 id 注入尝试（评审 L4）：cursor=3 的谓词窗 id<3 含他人行 2——若
+	// user_id 过滤缺失本页会出现 B 行（行 2 先于行 1），越权钳制在 user_id
+	// 过滤不在 cursor 值（cursor=2 会把 B 行自身排除，断言无法区分）。
+	rec = doUser(http.MethodGet, "/user/usage_logs?limit=1&cursor=3&"+win, "", tokenA)
+	require.Equal(t, http.StatusOK, rec.Code, "cursor injection: %s", rec.Body.String())
+	body = userapi.LogsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Rows, 1, "注入他人 id 游标仅本人行: %s", rec.Body.String())
+	require.Equal(t, int64(1), *body.Rows[0].ID, "cursor=3（谓词窗含 B 行 2）→ 本人行 id=1")
+	require.Equal(t, userA, *body.Rows[0].UserID, "行归属恒为当前用户")
+	require.Nil(t, body.NextCursor, "仅 1 行 → 无下一页")
 }
 
 // TestUserErrLogsOwnOnly /user/err_logs 强制 user_id = 当前用户（与
@@ -216,27 +235,45 @@ func TestUserErrLogsOwnOnly(t *testing.T) {
 	tokenA, userA := registerAndGet(t, doUser, "a@example.com")
 	_, userB := registerAndGet(t, doUser, "b@example.com")
 
+	base := time.Now().UTC().Truncate(time.Second)
 	store.mu.Lock()
 	msg := "no available account"
 	store.logs = []*domain.UsageLog{
 		{ID: 1, UserID: userA, RequestID: "e-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
-			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg},
+			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg, CreatedAt: base},
 		{ID: 2, UserID: userB, RequestID: "e-b1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
-			StatusCode: 402, ErrorType: domain.ErrBilling},
+			StatusCode: 402, ErrorType: domain.ErrBilling, CreatedAt: base},
 		{ID: 3, UserID: userA, RequestID: "e-a2", Model: "o3", Format: domain.FormatOpenAIResponses,
-			StatusCode: 401, ErrorType: domain.ErrAuth},
+			StatusCode: 401, ErrorType: domain.ErrAuth, CreatedAt: base},
 	}
 	store.mu.Unlock()
+	win := "from=" + base.Add(-time.Hour).Format(time.RFC3339) + "&to=" + base.Add(time.Hour).Format(time.RFC3339)
 
+	// 无 from/to → 生成层 400（user 侧 err_logs 契约同 usage_logs；评审 L2：
+	// 此前 err_logs 双侧缺该断言，usage 侧见本文件 TestUserUsageLogsOwnOnly）
 	rec := doUser(http.MethodGet, "/user/err_logs", "", tokenA)
+	require.Equal(t, http.StatusBadRequest, rec.Code, "missing from/to: %s", rec.Body.String())
+
+	rec = doUser(http.MethodGet, "/user/err_logs?"+win, "", tokenA)
 	require.Equal(t, http.StatusOK, rec.Code, "user err logs: %s", rec.Body.String())
 	var body userapi.ErrLogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(2), body.Total, "只看到自己的错误明细: %s", rec.Body.String())
+	require.Len(t, body.Rows, 2, "只看到自己的错误明细: %s", rec.Body.String())
 	for _, r := range body.Rows {
 		require.Equal(t, userA, *r.UserID, "错误明细必须归属当前用户")
 		require.NotNil(t, r.StatusCode, "err_logs 完整错误面含 status_code")
 	}
+
+	// 跨页 id 注入尝试（评审 L4）：cursor=3 的谓词窗 id<3 含他人行 2——若
+	// user_id 过滤缺失本页会出现 B 行（行 2 先于行 1）。
+	rec = doUser(http.MethodGet, "/user/err_logs?limit=1&cursor=3&"+win, "", tokenA)
+	require.Equal(t, http.StatusOK, rec.Code, "cursor injection: %s", rec.Body.String())
+	body = userapi.ErrLogsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Rows, 1, "注入他人 id 游标仅本人行: %s", rec.Body.String())
+	require.Equal(t, int64(1), *body.Rows[0].ID, "cursor=3（谓词窗含 B 行 2）→ 本人行 id=1")
+	require.Equal(t, userA, *body.Rows[0].UserID, "行归属恒为当前用户")
+	require.Nil(t, body.NextCursor, "仅 1 行 → 无下一页")
 }
 
 // TestAdminUsers 管理面用户 CRUD：创建（email 唯一/格式/密码长度）→
@@ -358,25 +395,27 @@ func TestAdminGroupAssignments(t *testing.T) {
 func TestAdminLogsUserFilter(t *testing.T) {
 	doAdmin, _, store := newSharedRouters(t)
 
+	base := time.Now().UTC().Truncate(time.Second)
 	store.mu.Lock()
 	store.logs = []*domain.UsageLog{
-		{ID: 1, UserID: 7, RequestID: "r7", Model: "gpt-4o", Format: domain.FormatOpenAIChat},
-		{ID: 2, UserID: 8, RequestID: "r8", Model: "o3", Format: domain.FormatOpenAIResponses},
+		{ID: 1, UserID: 7, RequestID: "r7", Model: "gpt-4o", Format: domain.FormatOpenAIChat, CreatedAt: base},
+		{ID: 2, UserID: 8, RequestID: "r8", Model: "o3", Format: domain.FormatOpenAIResponses, CreatedAt: base},
 	}
 	store.mu.Unlock()
+	win := "from=" + base.Add(-time.Hour).Format(time.RFC3339) + "&to=" + base.Add(time.Hour).Format(time.RFC3339)
 
 	// 不传 user_id → 全部
-	rec := doAdmin(http.MethodGet, "/admin/usage_logs", "", "")
+	rec := doAdmin(http.MethodGet, "/admin/usage_logs?"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	var body LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(2), body.Total)
+	require.Len(t, body.Rows, 2)
 
 	// user_id=7 → 1 条
-	rec = doAdmin(http.MethodGet, "/admin/usage_logs?user_id=7", "", "")
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?user_id=7&"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "user filter: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(1), body.Total)
+	require.Len(t, body.Rows, 1)
 	require.Equal(t, int64(7), *body.Rows[0].UserID)
 }
 

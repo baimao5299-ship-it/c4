@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -366,6 +367,7 @@ func TestLogsStatsBillingFields(t *testing.T) {
 	doAdmin, doUser, store := newSharedRouters(t)
 	token, userID := registerAndGet(t, doUser, "lb@example.com")
 
+	base := time.Now().UTC().Truncate(time.Second)
 	store.mu.Lock()
 	store.logs = []*domain.UsageLog{
 		{
@@ -373,15 +375,17 @@ func TestLogsStatsBillingFields(t *testing.T) {
 			Format: domain.FormatOpenAIChat, StatusCode: 200,
 			InputTokens: 10, OutputTokens: 20, TotalTokens: 30,
 			Cost: 500, BillingTier: "fast", AboveHit: true, Overdraft: false,
+			CreatedAt: base,
 		},
 	}
 	store.stats = []*domain.StatBucket{
 		{UserID: userID, Model: "gpt-4o", RequestCount: 1, Cost: 500, TotalTokens: 30},
 	}
 	store.mu.Unlock()
+	win := "from=" + base.Add(-time.Hour).Format(time.RFC3339) + "&to=" + base.Add(time.Hour).Format(time.RFC3339)
 
 	// 管理面 /admin/usage_logs
-	rec := doAdmin(http.MethodGet, "/admin/usage_logs", "", "")
+	rec := doAdmin(http.MethodGet, "/admin/usage_logs?"+win, "", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	var logs LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &logs))
@@ -393,7 +397,7 @@ func TestLogsStatsBillingFields(t *testing.T) {
 	require.False(t, *r.Overdraft)
 
 	// 用户面 /user/usage_logs 同字段
-	rec = doUser(http.MethodGet, "/user/usage_logs", "", token)
+	rec = doUser(http.MethodGet, "/user/usage_logs?"+win, "", token)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var ul userapi.LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ul))

@@ -454,17 +454,17 @@
 
 ### 查询用量日志
 
-`GET /admin/usage_logs?limit=20&offset=0&group_id=1&account_id=2&model=gpt-4o&error_type=none&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
+`GET /admin/usage_logs?limit=20&cursor=1234&group_id=1&account_id=2&model=gpt-4o&error_type=none&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
 
 | 查询参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `limit` | int | 20 | 每页行数 |
-| `offset` | int | 0 | 分页偏移 |
+| `limit` | int | 20 | 每页行数（上限 200，超限裁剪到 200） |
+| `cursor` | int | — | keyset 游标（上一页 `next_cursor` = 上页最后一条 id；缺失或 ≤0 = 首页） |
 | `group_id` | int | — | 按分组过滤 |
 | `account_id` | int | — | 按账号过滤 |
 | `model` | string | — | 按模型名过滤 |
 | `error_type` | string | — | 按错误类型过滤（值域收敛 `none` / `abort`——usage_logs 仅放行路径行） |
-| `from` / `to` | RFC3339 | — | 时间范围过滤 |
+| `from` / `to` | RFC3339 | 必填 | 时间范围过滤（缺失 → 400；防无范围全分区扫描） |
 
 > **分表设计**（用户裁决）：`usage_logs` 只承载**放行路径明细**——成功（`error_type=none`，含免费分组/0 token 成功行，cost 不限）+ abort 半异常计费行；4xx/5xx/拒绝等失败行**不入 usage_logs**（错误审计面见 `/err_logs`，下节）。
 
@@ -472,7 +472,6 @@
 
 ```json
 {
-  "total": 1234,
   "rows": [
     {
       "ID": 1,
@@ -494,9 +493,12 @@
       "Overdraft": false,
       "CreatedAt": "2026-08-06T10:00:00Z"
     }
-  ]
+  ],
+  "next_cursor": 1234
 }
 ```
+
+> **游标分页语义**：行按 id 严格降序（id 全局单调，跨分区天然有序）；`next_cursor` = 本页最后一条 id，非 null 表示还有下一页（服务端 limit+1 探测多取 1 行）；下一页请求把 `next_cursor` 原样作为 `cursor` 参数（`WHERE id < cursor`），翻至 `next_cursor` 为 null（末页）。`total` 已从契约移除（游标语义下无全量计数）。
 
 **计费字段**（Phase 5）：
 
@@ -509,20 +511,21 @@
 
 ### 查询错误日志
 
-`GET /admin/err_logs?limit=20&offset=0&group_id=1&account_id=2&model=gpt-4o&status_code=429&error_type=billing&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
+`GET /admin/err_logs?limit=20&cursor=1234&group_id=1&account_id=2&model=gpt-4o&status_code=429&error_type=billing&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
 
 | 查询参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `limit` / `offset` | int | 20 / 0 | 分页 |
+| `limit` | int | 20 | 每页行数（上限 200，超限裁剪到 200） |
+| `cursor` | int | — | keyset 游标（上一页 `next_cursor` = 上页最后一条 id；缺失或 ≤0 = 首页） |
 | `group_id` / `account_id` / `user_id` | int | — | 按归属过滤（`user_id`：admin 看全部） |
 | `model` | string | — | 按模型名过滤 |
 | `status_code` | int | — | 按状态码过滤（401/429/402/4xx/5xx…全值） |
 | `error_type` | string | — | 按错误类型过滤（`auth`/`429`/`billing`/`4xx`/`5xx`/`network`/`abort`…） |
-| `from` / `to` | RFC3339 | — | 时间范围过滤 |
+| `from` / `to` | RFC3339 | 必填 | 时间范围过滤（缺失 → 400；防无范围全分区扫描） |
 
 > **错误明细面**：`err_logs` 承载**全部错误行**——本地拒绝（401 鉴权失败/429 限流/402 余额/tier 拒绝/缺价/no_account）+ 上游失败（4xx 透传/5xx 耗尽/network）+ abort 双轨行（与 usage_logs 关联，`request_id` 关联）。错误文本落 `error_message`（域内截断 500）。
 
-响应 `200` 行结构与上节同构，但含完整错误面字段：`StatusCode`、`ErrorType`、`ErrorMessage`、`BillingTier`（tier 拒绝审计）。
+响应 `200` 行结构与上节同构（`rows` + `next_cursor`，游标语义相同——`next_cursor` 非 null 表示还有下一页），但含完整错误面字段：`StatusCode`、`ErrorType`、`ErrorMessage`、`BillingTier`（tier 拒绝审计）。
 
 > **存储（三表分区 + 独立保留期）**：`usage_logs` / `err_logs` / `usage_stats` 均为 PostgreSQL **按日分区表**（`PARTITION BY RANGE`，分区名 `{表名}_YYYYMMDD`；usage_logs/err_logs 分区键 `created_at`，usage_stats 分区键 `bucket_time`——小时桶聚合 24 桶/日分区）。保留期独立：`usage.log_retention_days`（默认 30 天）/ `usage.errlog_retention_days`（默认 7 天短保留——错误审计）/ `usage.stats_retention_days`（默认 180 天——聚合统计长保留）；retention worker 每小时 `DROP` 过期分区（O(1)，PG DELETE 不释放空间——清理必须分区 DROP）并预建未来分区。跨分区查询按时间范围走分区剪枝。
 

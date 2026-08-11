@@ -39,14 +39,13 @@ func TestGetUsageLogsCacheTokens(t *testing.T) {
 	})
 	r.Mount("/", h.Router())
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/usage_logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage_logs?from=2026-08-07T00:00:00Z&to=2026-08-07T23:59:59Z", nil)
 	req.Header.Set("Authorization", "Bearer admin-tok")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code, "logs: %s", rec.Body.String())
 	var body LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Equal(t, int64(1), body.Total)
 	require.Len(t, body.Rows, 1)
 	require.NotNil(t, body.Rows[0].CacheReadTokens, "响应含 CacheReadTokens")
 	require.NotNil(t, body.Rows[0].CacheCreationTokens)

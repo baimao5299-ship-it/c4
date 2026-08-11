@@ -8,16 +8,23 @@ import (
 )
 
 // GetUsageLogs 用量明细分页查询（/usage_logs；消费面改名裁决：/logs → /usage_logs
-// 与表名一致）。limit/offset 缺省 20/0（契约 default），其余过滤参数仅非 nil 时
-// 生效。error_type 过滤保留——usage_logs 只剩 abort/failover 半异常标记（错误
-// 审计面在 /err_logs）。
+// 与表名一致）。keyset 游标分页（用户裁决：from/to 生成层必填 400，cursor
+// 缺失/≤0 = 首页；limit 上限 200 超限裁剪——游标语义下 Total 已从契约移除）。
+// error_type 过滤保留——usage_logs 只剩 abort/failover 半异常标记（错误审计
+// 面在 /err_logs）。
 func (h *AdminAPI) GetUsageLogs(w http.ResponseWriter, r *http.Request, params GetUsageLogsParams) {
-	lq := repository.UsageQuery{Limit: 20, Offset: 0}
+	lq := repository.UsageQuery{Limit: 20, From: &params.From, To: &params.To}
 	if params.Limit != nil {
 		lq.Limit = *params.Limit
 	}
-	if params.Offset != nil {
-		lq.Offset = *params.Offset
+	if lq.Limit <= 0 {
+		lq.Limit = 20
+	}
+	if lq.Limit > 200 {
+		lq.Limit = 200
+	}
+	if params.Cursor != nil {
+		lq.Cursor = *params.Cursor
 	}
 	if params.GroupId != nil {
 		lq.GroupID = *params.GroupId
@@ -34,13 +41,7 @@ func (h *AdminAPI) GetUsageLogs(w http.ResponseWriter, r *http.Request, params G
 	if params.ErrorType != nil {
 		lq.ErrorType = *params.ErrorType
 	}
-	if params.From != nil {
-		lq.From = params.From
-	}
-	if params.To != nil {
-		lq.To = params.To
-	}
-	rows, total, err := h.svc.QueryUsages(r.Context(), lq)
+	rows, err := h.svc.QueryUsages(r.Context(), lq)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -54,5 +55,12 @@ func (h *AdminAPI) GetUsageLogs(w http.ResponseWriter, r *http.Request, params G
 		}
 		out = append(out, toAPIUsageLog(l))
 	}
-	writeJSON(w, http.StatusOK, LogsResponse{Total: total, Rows: out})
+	// limit+1 探测（repo 多取 1 行）：行数 > limit = 还有下一页，
+	// next_cursor = 本页最后一条 id（下一页以其为游标，WHERE id < cursor）。
+	var next *int64
+	if len(out) > lq.Limit {
+		next = out[lq.Limit-1].ID
+		out = out[:lq.Limit]
+	}
+	writeJSON(w, http.StatusOK, LogsResponse{Rows: out, NextCursor: next})
 }

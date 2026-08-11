@@ -183,7 +183,7 @@ func runDeductScenario(t *testing.T, name, tag string, repos *repository.Reposit
 		st.temp = append(st.temp, r.Amount)
 	}
 	sort.Slice(st.temp, func(i, j int) bool { return st.temp[i] < st.temp[j] })
-	out, _, err := repos.Usages.QueryUsages(ctx, repository.UsageQuery{UserID: uid, Limit: 10000})
+	out, err := repos.Usages.QueryUsages(ctx, repository.UsageQuery{UserID: uid, Limit: 10000})
 	require.NoError(t, err)
 	sort.Slice(out, func(i, j int) bool { return out[i].RequestID < out[j].RequestID })
 	for _, l := range out {
