@@ -61,7 +61,7 @@ func tempBalanceAmount(t *testing.T, repos *repository.Repository, id int64) int
 // countLogs 统计用户日志数。
 func countLogs(t *testing.T, repos *repository.Repository, userID int64) int64 {
 	t.Helper()
-	_, n, err := repos.Logs.QueryLogs(context.Background(), repository.LogQuery{UserID: userID, Limit: 1000})
+	_, n, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: userID, Limit: 1000})
 	require.NoError(t, err)
 	return n
 }
@@ -153,7 +153,7 @@ func TestPGDeductOverdraft(t *testing.T) {
 	require.True(t, od, "允许透支")
 	require.Equal(t, int64(-30000), bal, "透支后负余额")
 	require.Equal(t, int64(1), countLogs(t, repos, u.ID))
-	rows, _, err := repos.Logs.QueryLogs(context.Background(), repository.LogQuery{UserID: u.ID, Limit: 10})
+	rows, _, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: u.ID, Limit: 10})
 	require.NoError(t, err)
 	require.True(t, rows[0].Overdraft, "日志 Overdraft 标记")
 }
@@ -233,7 +233,7 @@ func TestPGDeductZeroCostOnlyLogs(t *testing.T) {
 	require.Equal(t, int64(50000), bal, "balanceAfter = 当前余额原值")
 	require.Equal(t, int64(30000), tempBalanceAmount(t, repos, tp), "临时额度不动")
 	require.Equal(t, int64(2), countLogs(t, repos, u.ID))
-	rows, _, err := repos.Logs.QueryLogs(context.Background(), repository.LogQuery{UserID: u.ID, Limit: 10})
+	rows, _, err := repos.Usages.QueryUsages(context.Background(), repository.UsageQuery{UserID: u.ID, Limit: 10})
 	require.NoError(t, err)
 	require.False(t, rows[0].Overdraft, "cost=0 恒不透支")
 }

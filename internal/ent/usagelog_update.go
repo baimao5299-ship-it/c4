@@ -225,27 +225,6 @@ func (_u *UsageLogUpdate) SetNillableFormat(v *usagelog.Format) *UsageLogUpdate 
 	return _u
 }
 
-// SetStatusCode sets the "status_code" field.
-func (_u *UsageLogUpdate) SetStatusCode(v int) *UsageLogUpdate {
-	_u.mutation.ResetStatusCode()
-	_u.mutation.SetStatusCode(v)
-	return _u
-}
-
-// SetNillableStatusCode sets the "status_code" field if the given value is not nil.
-func (_u *UsageLogUpdate) SetNillableStatusCode(v *int) *UsageLogUpdate {
-	if v != nil {
-		_u.SetStatusCode(*v)
-	}
-	return _u
-}
-
-// AddStatusCode adds value to the "status_code" field.
-func (_u *UsageLogUpdate) AddStatusCode(v int) *UsageLogUpdate {
-	_u.mutation.AddStatusCode(v)
-	return _u
-}
-
 // SetErrorType sets the "error_type" field.
 func (_u *UsageLogUpdate) SetErrorType(v string) *UsageLogUpdate {
 	_u.mutation.SetErrorType(v)
@@ -257,26 +236,6 @@ func (_u *UsageLogUpdate) SetNillableErrorType(v *string) *UsageLogUpdate {
 	if v != nil {
 		_u.SetErrorType(*v)
 	}
-	return _u
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (_u *UsageLogUpdate) SetErrorMessage(v string) *UsageLogUpdate {
-	_u.mutation.SetErrorMessage(v)
-	return _u
-}
-
-// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
-func (_u *UsageLogUpdate) SetNillableErrorMessage(v *string) *UsageLogUpdate {
-	if v != nil {
-		_u.SetErrorMessage(*v)
-	}
-	return _u
-}
-
-// ClearErrorMessage clears the value of the "error_message" field.
-func (_u *UsageLogUpdate) ClearErrorMessage() *UsageLogUpdate {
-	_u.mutation.ClearErrorMessage()
 	return _u
 }
 
@@ -738,20 +697,8 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Format(); ok {
 		_spec.SetField(usagelog.FieldFormat, field.TypeEnum, value)
 	}
-	if value, ok := _u.mutation.StatusCode(); ok {
-		_spec.SetField(usagelog.FieldStatusCode, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedStatusCode(); ok {
-		_spec.AddField(usagelog.FieldStatusCode, field.TypeInt, value)
-	}
 	if value, ok := _u.mutation.ErrorType(); ok {
 		_spec.SetField(usagelog.FieldErrorType, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.ErrorMessage(); ok {
-		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
-	}
-	if _u.mutation.ErrorMessageCleared() {
-		_spec.ClearField(usagelog.FieldErrorMessage, field.TypeString)
 	}
 	if value, ok := _u.mutation.LatencyMs(); ok {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)
@@ -1072,27 +1019,6 @@ func (_u *UsageLogUpdateOne) SetNillableFormat(v *usagelog.Format) *UsageLogUpda
 	return _u
 }
 
-// SetStatusCode sets the "status_code" field.
-func (_u *UsageLogUpdateOne) SetStatusCode(v int) *UsageLogUpdateOne {
-	_u.mutation.ResetStatusCode()
-	_u.mutation.SetStatusCode(v)
-	return _u
-}
-
-// SetNillableStatusCode sets the "status_code" field if the given value is not nil.
-func (_u *UsageLogUpdateOne) SetNillableStatusCode(v *int) *UsageLogUpdateOne {
-	if v != nil {
-		_u.SetStatusCode(*v)
-	}
-	return _u
-}
-
-// AddStatusCode adds value to the "status_code" field.
-func (_u *UsageLogUpdateOne) AddStatusCode(v int) *UsageLogUpdateOne {
-	_u.mutation.AddStatusCode(v)
-	return _u
-}
-
 // SetErrorType sets the "error_type" field.
 func (_u *UsageLogUpdateOne) SetErrorType(v string) *UsageLogUpdateOne {
 	_u.mutation.SetErrorType(v)
@@ -1104,26 +1030,6 @@ func (_u *UsageLogUpdateOne) SetNillableErrorType(v *string) *UsageLogUpdateOne 
 	if v != nil {
 		_u.SetErrorType(*v)
 	}
-	return _u
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (_u *UsageLogUpdateOne) SetErrorMessage(v string) *UsageLogUpdateOne {
-	_u.mutation.SetErrorMessage(v)
-	return _u
-}
-
-// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
-func (_u *UsageLogUpdateOne) SetNillableErrorMessage(v *string) *UsageLogUpdateOne {
-	if v != nil {
-		_u.SetErrorMessage(*v)
-	}
-	return _u
-}
-
-// ClearErrorMessage clears the value of the "error_message" field.
-func (_u *UsageLogUpdateOne) ClearErrorMessage() *UsageLogUpdateOne {
-	_u.mutation.ClearErrorMessage()
 	return _u
 }
 
@@ -1615,20 +1521,8 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if value, ok := _u.mutation.Format(); ok {
 		_spec.SetField(usagelog.FieldFormat, field.TypeEnum, value)
 	}
-	if value, ok := _u.mutation.StatusCode(); ok {
-		_spec.SetField(usagelog.FieldStatusCode, field.TypeInt, value)
-	}
-	if value, ok := _u.mutation.AddedStatusCode(); ok {
-		_spec.AddField(usagelog.FieldStatusCode, field.TypeInt, value)
-	}
 	if value, ok := _u.mutation.ErrorType(); ok {
 		_spec.SetField(usagelog.FieldErrorType, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.ErrorMessage(); ok {
-		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
-	}
-	if _u.mutation.ErrorMessageCleared() {
-		_spec.ClearField(usagelog.FieldErrorMessage, field.TypeString)
 	}
 	if value, ok := _u.mutation.LatencyMs(); ok {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)

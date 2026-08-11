@@ -392,6 +392,41 @@ type DeletedResponse struct {
 	Deleted bool `json:"deleted"`
 }
 
+// ErrLog 错误明细审计（err_logs 瘦表：拒绝 + 异常双轨；无 token/价格列）
+type ErrLog struct {
+	AccountID *int64 `json:"AccountID,omitempty"`
+
+	// BillingTier 计费档位（service_tier 归一化：priority/flex/fast/auto）；null = 未计费路径
+	BillingTier *string    `json:"BillingTier"`
+	CreatedAt   *time.Time `json:"CreatedAt,omitempty"`
+
+	// ErrorMessage 错误文本（拒绝文案/上游 body，域内截断 500 字符）；null = 无错误文本
+	ErrorMessage *string        `json:"ErrorMessage"`
+	ErrorType    *ErrorType     `json:"ErrorType,omitempty"`
+	Format       *RequestFormat `json:"Format,omitempty"`
+	GroupID      *int64         `json:"GroupID,omitempty"`
+	ID           *int64         `json:"ID,omitempty"`
+
+	// KeyID 鉴权归属 key；0 = 无
+	KeyID     *int64  `json:"KeyID,omitempty"`
+	LatencyMS *int64  `json:"LatencyMS,omitempty"`
+	Model     *string `json:"Model,omitempty"`
+	RequestID *string `json:"RequestID,omitempty"`
+
+	// StatusCode 错误状态码（完整错误面；0 = 连接级）
+	StatusCode *int   `json:"StatusCode,omitempty"`
+	TemplateID *int64 `json:"TemplateID,omitempty"`
+
+	// UserID 鉴权归属用户；0 = 无
+	UserID *int64 `json:"UserID,omitempty"`
+}
+
+// ErrLogsResponse defines model for ErrLogsResponse.
+type ErrLogsResponse struct {
+	Rows  []ErrLog `json:"rows"`
+	Total int64    `json:"total"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -894,7 +929,6 @@ type UsageLog struct {
 	// PriceOutputMillis 输出单价快照（每 M token 毫分）；null = 未计费路径
 	PriceOutputMillis *int64  `json:"PriceOutputMillis"`
 	RequestID         *string `json:"RequestID,omitempty"`
-	StatusCode        *int    `json:"StatusCode,omitempty"`
 
 	// TTFTMS 首 token 时间毫秒（流式首 chunk 采集）；非流式/失败/无首 token 路径 = null
 	TTFTMS      *int64 `json:"TTFTMS"`
@@ -986,20 +1020,8 @@ type GetAccountsParams struct {
 // GetAccountsParamsOrder defines parameters for GetAccounts.
 type GetAccountsParamsOrder string
 
-// GetGroupsParams defines parameters for GetGroups.
-type GetGroupsParams struct {
-	Limit  *int                  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *int                  `form:"offset,omitempty" json:"offset,omitempty"`
-	Name   *string               `form:"name,omitempty" json:"name,omitempty"`
-	Sort   *string               `form:"sort,omitempty" json:"sort,omitempty"`
-	Order  *GetGroupsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
-}
-
-// GetGroupsParamsOrder defines parameters for GetGroups.
-type GetGroupsParamsOrder string
-
-// GetLogsParams defines parameters for GetLogs.
-type GetLogsParams struct {
+// GetErrLogsParams defines parameters for GetErrLogs.
+type GetErrLogsParams struct {
 	Limit      *int       `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset     *int       `form:"offset,omitempty" json:"offset,omitempty"`
 	GroupId    *int64     `form:"group_id,omitempty" json:"group_id,omitempty"`
@@ -1011,6 +1033,18 @@ type GetLogsParams struct {
 	From       *time.Time `form:"from,omitempty" json:"from,omitempty"`
 	To         *time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
+
+// GetGroupsParams defines parameters for GetGroups.
+type GetGroupsParams struct {
+	Limit  *int                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                  `form:"offset,omitempty" json:"offset,omitempty"`
+	Name   *string               `form:"name,omitempty" json:"name,omitempty"`
+	Sort   *string               `form:"sort,omitempty" json:"sort,omitempty"`
+	Order  *GetGroupsParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetGroupsParamsOrder defines parameters for GetGroups.
+type GetGroupsParamsOrder string
 
 // GetPricingParams defines parameters for GetPricing.
 type GetPricingParams struct {
@@ -1077,6 +1111,19 @@ type GetTemplatesParams struct {
 
 // GetTemplatesParamsOrder defines parameters for GetTemplates.
 type GetTemplatesParamsOrder string
+
+// GetUsageLogsParams defines parameters for GetUsageLogs.
+type GetUsageLogsParams struct {
+	Limit     *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset    *int       `form:"offset,omitempty" json:"offset,omitempty"`
+	GroupId   *int64     `form:"group_id,omitempty" json:"group_id,omitempty"`
+	AccountId *int64     `form:"account_id,omitempty" json:"account_id,omitempty"`
+	UserId    *int64     `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Model     *string    `form:"model,omitempty" json:"model,omitempty"`
+	ErrorType *string    `form:"error_type,omitempty" json:"error_type,omitempty"`
+	From      *time.Time `form:"from,omitempty" json:"from,omitempty"`
+	To        *time.Time `form:"to,omitempty" json:"to,omitempty"`
+}
 
 // GetUsersParams defines parameters for GetUsers.
 type GetUsersParams struct {
@@ -1200,6 +1247,9 @@ type ServerInterface interface {
 	// 读取账号的全部分组 id（编辑回显；不随账号列表返回）
 	// (GET /accounts/{id}/groups)
 	GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, id int64)
+	// 错误明细分页查询（err_logs 完整错误面：本地拒绝 + 半异常双轨；status_code/error_type 全值）
+	// (GET /err_logs)
+	GetErrLogs(w http.ResponseWriter, r *http.Request, params GetErrLogsParams)
 	// 分组列表（分页/筛选/排序）
 	// (GET /groups)
 	GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams)
@@ -1227,9 +1277,6 @@ type ServerInterface interface {
 	// 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
 	// (PUT /groups/{id}/assignments)
 	PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64)
-	// 用量日志分页查询
-	// (GET /logs)
-	GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams)
 	// 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
 	// (GET /pricing)
 	GetPricing(w http.ResponseWriter, r *http.Request, params GetPricingParams)
@@ -1308,6 +1355,9 @@ type ServerInterface interface {
 	// 幂等写入模板类型化扩展（Create/Update 合一；全列更新含 NULL 清空）
 	// (PUT /templates/{id}/ext)
 	PutTemplatesIdExt(w http.ResponseWriter, r *http.Request, id int64)
+	// 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs）
+	// (GET /usage_logs)
+	GetUsageLogs(w http.ResponseWriter, r *http.Request, params GetUsageLogsParams)
 	// 用户列表（platform_admin 专属；分页/筛选/排序）
 	// (GET /users)
 	GetUsers(w http.ResponseWriter, r *http.Request, params GetUsersParams)
@@ -1386,6 +1436,12 @@ func (_ Unimplemented) GetAccountsIdGroups(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 错误明细分页查询（err_logs 完整错误面：本地拒绝 + 半异常双轨；status_code/error_type 全值）
+// (GET /err_logs)
+func (_ Unimplemented) GetErrLogs(w http.ResponseWriter, r *http.Request, params GetErrLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // 分组列表（分页/筛选/排序）
 // (GET /groups)
 func (_ Unimplemented) GetGroups(w http.ResponseWriter, r *http.Request, params GetGroupsParams) {
@@ -1434,12 +1490,6 @@ func (_ Unimplemented) GetGroupsIdAssignments(w http.ResponseWriter, r *http.Req
 // 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
 // (PUT /groups/{id}/assignments)
 func (_ Unimplemented) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// 用量日志分页查询
-// (GET /logs)
-func (_ Unimplemented) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1593,6 +1643,12 @@ func (_ Unimplemented) GetTemplatesIdExt(w http.ResponseWriter, r *http.Request,
 // 幂等写入模板类型化扩展（Create/Update 合一；全列更新含 NULL 清空）
 // (PUT /templates/{id}/ext)
 func (_ Unimplemented) PutTemplatesIdExt(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs）
+// (GET /usage_logs)
+func (_ Unimplemented) GetUsageLogs(w http.ResponseWriter, r *http.Request, params GetUsageLogsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1902,6 +1958,105 @@ func (siw *ServerInterfaceWrapper) GetAccountsIdGroups(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetErrLogs operation middleware
+func (siw *ServerInterfaceWrapper) GetErrLogs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetErrLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "account_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "status_code" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "status_code", r.URL.Query(), &params.StatusCode)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_code", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "error_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "error_type", r.URL.Query(), &params.ErrorType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error_type", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetErrLogs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetGroups operation middleware
 func (siw *ServerInterfaceWrapper) GetGroups(w http.ResponseWriter, r *http.Request) {
 
@@ -2119,105 +2274,6 @@ func (siw *ServerInterfaceWrapper) PutGroupsIdAssignments(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutGroupsIdAssignments(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetLogs operation middleware
-func (siw *ServerInterfaceWrapper) GetLogs(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetLogsParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "group_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "account_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "user_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "model" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "status_code" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "status_code", r.URL.Query(), &params.StatusCode)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_code", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "error_type" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "error_type", r.URL.Query(), &params.ErrorType)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error_type", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "from" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "to" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLogs(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2937,6 +2993,97 @@ func (siw *ServerInterfaceWrapper) PutTemplatesIdExt(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetUsageLogs operation middleware
+func (siw *ServerInterfaceWrapper) GetUsageLogs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUsageLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "account_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "error_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "error_type", r.URL.Query(), &params.ErrorType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error_type", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUsageLogs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUsers operation middleware
 func (siw *ServerInterfaceWrapper) GetUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -3229,6 +3376,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/accounts/{id}/groups", wrapper.GetAccountsIdGroups)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/err_logs", wrapper.GetErrLogs)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/groups", wrapper.GetGroups)
 	})
 	r.Group(func(r chi.Router) {
@@ -3254,9 +3404,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/groups/{id}/assignments", wrapper.PutGroupsIdAssignments)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/logs", wrapper.GetLogs)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/pricing", wrapper.GetPricing)
@@ -3335,6 +3482,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/templates/{id}/ext", wrapper.PutTemplatesIdExt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/usage_logs", wrapper.GetUsageLogs)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/users", wrapper.GetUsers)

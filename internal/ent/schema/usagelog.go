@@ -23,11 +23,14 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("mapped_model").Optional().Nillable(),
 		field.Enum("format").
 			Values("openai-chat", "openai-responses", "openai-responses-ws", "anthropic"),
-		field.Int("status_code").Default(0),
+		// 用户裁决（err_logs 分表设计 + 升级原则）：usage_logs 瘦身去 2 留 1——
+		// status_code（成功行恒 200 无信息量）与 error_message（纯排障文本列）
+		// 移入 err_logs 独立审计表；error_type 保留（半异常计费行标记；分表后
+		// usage_logs = 纯计费明细（仅 cost>0），值域收敛为 none/abort 两值——
+		// 4xx/5xx/network 等 cost=0 错误行不写 usage_logs（不计费不入明细）。
+		// 错误审计字段（status_code/error_message 等）由 err_logs 承载（见
+		// errlog.go）。
 		field.String("error_type").Default("none"),
-		// 错误文本（部署故障修复）：连接级 err.Error() / 4xx+ 上游 body，域内
-		// 截断 500 字符（domain.TruncateErrMsg）；NULL = 成功路径无错误文本。
-		field.String("error_message").Optional().Nillable(),
 		field.Int64("latency_ms").Default(0),
 		// TTFT（首 token 时间毫秒）：caller 流式首 chunk 采集（ctx 传递）；
 		// 非流式/失败/无首 token 路径 = NULL。

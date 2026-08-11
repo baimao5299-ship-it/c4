@@ -178,14 +178,16 @@ type billLogRow struct {
 	ErrorType  string
 }
 
-// lastLogFor 按 model 取最新日志行（计费列断言）。
+// lastLogFor 按 model 取最新日志行（计费列断言）。usage_logs 瘦身（分表设计）：
+// status_code/error_message 已移除（错误审计归 err_logs），error_type 保留
+//（值域收敛 none/abort）。
 func (e *e2eEnv) lastLogFor(model string) billLogRow {
 	e.t.Helper()
 	var r billLogRow
 	err := e.pg.QueryRow(context.Background(), `
-		SELECT cost, COALESCE(billing_tier,''), above_hit, overdraft, status_code, COALESCE(error_type,'')
+		SELECT cost, COALESCE(billing_tier,''), above_hit, overdraft, COALESCE(error_type,'')
 		FROM usage_logs WHERE model=$1 ORDER BY id DESC LIMIT 1`, model).
-		Scan(&r.Cost, &r.Tier, &r.AboveHit, &r.Overdraft, &r.StatusCode, &r.ErrorType)
+		Scan(&r.Cost, &r.Tier, &r.AboveHit, &r.Overdraft, &r.ErrorType)
 	require.NoError(e.t, err)
 	return r
 }
@@ -311,7 +313,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		if data, err := os.ReadFile(filepath.Join(env.tmp, "server.log")); err == nil {
 			t.Logf("--- server.log (test failed) ---\n%s", data)
 		}
-		rows, err := env.pg.Query(ctx, `SELECT id, user_id, model, cost, status_code, COALESCE(error_type,''), created_at FROM usage_logs ORDER BY id DESC LIMIT 20`)
+		rows, err := env.pg.Query(ctx, `SELECT id, user_id, model, cost, COALESCE(error_type,''), created_at FROM usage_logs ORDER BY id DESC LIMIT 20`)
 		if err != nil {
 			t.Logf("usage_logs 状态转储失败: %v", err)
 			return
@@ -321,14 +323,13 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 		for rows.Next() {
 			var id, uid, cost int64
 			var model, etype string
-			var status int
 			var created time.Time
-			if err := rows.Scan(&id, &uid, &model, &cost, &status, &etype, &created); err != nil {
+			if err := rows.Scan(&id, &uid, &model, &cost, &etype, &created); err != nil {
 				t.Logf("usage_logs 扫描失败: %v", err)
 				break
 			}
-			fmt.Fprintf(&sb, "id=%d user=%d model=%s cost=%d status=%d err=%s created=%s\n",
-				id, uid, model, cost, status, etype, created.Format(time.RFC3339Nano))
+			fmt.Fprintf(&sb, "id=%d user=%d model=%s cost=%d err=%s created=%s\n",
+				id, uid, model, cost, etype, created.Format(time.RFC3339Nano))
 		}
 		t.Logf("--- usage_logs latest 20 (test failed) ---\n%s", sb.String())
 	})
@@ -486,7 +487,7 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	require.Equal(t, 402, c, "no price must 402: %s", rb4)
 	// 402 也记账（error_type=billing，cost 0）
 	sleepFlush() // 等待 flusher 落库
-	code3, resp3 := env.admin(http.MethodGet, "/logs?model=e2e-noprice-model", nil)
+	code3, resp3 := env.admin(http.MethodGet, "/usage_logs?model=e2e-noprice-model", nil)
 	require.Equal(t, 200, code3, "logs: %s", resp3)
 	require.Contains(t, resp3, `"billing"`, "402 日志 error_type=billing")
 
@@ -721,8 +722,9 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 
 	// ============ 场景 8.5：上游 4xx 错误文本落盘（部署故障修复） ============
 	// 独立模板/账号/组：上游 key = fail400-key → fakeupstream 注入 400（透传，
-	// 不转移）；usage_logs.error_message 必须落上游错误 body（根因锁定靠文本）。
-	t.Log("场景 8.5：上游 4xx → usagelog error_message 落盘")
+	// 不转移）。分表设计（用户裁决）：4xx 失败行不入 usage_logs——err_logs
+	// error_message 必须落上游错误 body（根因锁定靠文本）。
+	t.Log("场景 8.5：上游 4xx → err_logs error_message 落盘")
 	tpl400 := env.create("/templates", map[string]any{
 		"name": "e2e-tpl-400", "base_url": "http://" + upAddr,
 		"supported_formats": []string{"openai-chat"},
@@ -742,14 +744,20 @@ billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval =
 	})
 	require.Equal(t, 400, c, "4xx 透传: %s", rb400)
 	require.Contains(t, rb400, "injected 400", "4xx 必须透传上游原始 body")
-	sleepFlush() // 计费路径 4xx 日志经 flusher 落库（cost 0）
+	sleepFlush() // errlog worker 周期落盘（err_logs 独立管道，500ms 批间隔）
 	var errMsg string
 	err = env.pg.QueryRow(context.Background(), `
-		SELECT COALESCE(error_message,'') FROM usage_logs
+		SELECT COALESCE(error_message,'') FROM err_logs
 		WHERE model='e2e-model' ORDER BY id DESC LIMIT 1`).Scan(&errMsg)
 	require.NoError(t, err)
-	require.Contains(t, errMsg, "injected 400", "4xx 错误文本必须落盘 error_message")
+	require.Contains(t, errMsg, "injected 400", "4xx 错误文本必须落盘 err_logs.error_message")
 	require.LessOrEqual(t, len(errMsg), 500, "error_message 域内截断 500")
+	// 分表验证：4xx 失败行不入 usage_logs（仅成功/abort 放行路径行）
+	var nRows int
+	err = env.pg.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM usage_logs WHERE model='e2e-model' AND error_type <> 'none'`).Scan(&nRows)
+	require.NoError(t, err)
+	require.Zero(t, nRows, "4xx 失败行不入 usage_logs（error_type 值域收敛 none/abort——错误审计归 err_logs）")
 
 	// ============ 场景 9：SIGTERM 优雅停机（流式中断 → 日志 cost 不丢） ============
 	t.Log("场景 9：优雅停机——流式中断计费完整 flush")

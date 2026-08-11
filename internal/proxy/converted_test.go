@@ -158,7 +158,7 @@ func newConvertedTestProxy(t *testing.T, upstream string, tplFormats []domain.Re
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil, nil)
 }
 
 // TestConvertedChatToRespStreaming 客户端 chat 流式 → 上游 resp 流 →

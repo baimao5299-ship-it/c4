@@ -328,20 +328,32 @@ func (f *fakeStore) GetAccountExt(ctx context.Context, accountID int64) (*domain
 	return &c, nil
 }
 
-// QueryLogs 模拟 repo 过滤：user_id > 0 时强制过滤（/user/logs 防越权
+// QueryUsages 模拟 repo 过滤：user_id > 0 时强制过滤（/user/usage_logs 防越权
 // 测试依赖此语义）；返回副本防别名污染。
-func (f *fakeStore) QueryLogs(ctx context.Context, q repository.LogQuery) ([]*domain.UsageLog, int64, error) {
+func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, int64, error) {
+	rows := f.queryLogs(q.UserID)
+	return rows, int64(len(rows)), nil
+}
+
+// QueryErrLogs 模拟 repo 过滤（/err_logs：user_id > 0 强制过滤——/user/err_logs
+// 防越权测试依赖此语义）。
+func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, int64, error) {
+	rows := f.queryLogs(q.UserID)
+	return rows, int64(len(rows)), nil
+}
+
+func (f *fakeStore) queryLogs(userID int64) []*domain.UsageLog {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []*domain.UsageLog
 	for _, l := range f.logs {
-		if q.UserID > 0 && l.UserID != q.UserID {
+		if userID > 0 && l.UserID != userID {
 			continue
 		}
 		c := *l
 		out = append(out, &c)
 	}
-	return out, int64(len(out)), nil
+	return out
 }
 
 // --- 批量操作（模拟 repo 语义：事务内存在性检查，缺失 id 返回

@@ -4,6 +4,7 @@ package ent
 
 import (
 	"go-proxy-mini/internal/ent/account"
+	"go-proxy-mini/internal/ent/errlog"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
@@ -45,6 +46,28 @@ func init() {
 	accountDescCreatedAt := accountFields[12].Descriptor()
 	// account.DefaultCreatedAt holds the default value on creation for the created_at field.
 	account.DefaultCreatedAt = accountDescCreatedAt.Default.(func() time.Time)
+	errlogFields := schema.ErrLog{}.Fields()
+	_ = errlogFields
+	// errlogDescModel is the schema descriptor for model field.
+	errlogDescModel := errlogFields[7].Descriptor()
+	// errlog.DefaultModel holds the default value on creation for the model field.
+	errlog.DefaultModel = errlogDescModel.Default.(string)
+	// errlogDescStatusCode is the schema descriptor for status_code field.
+	errlogDescStatusCode := errlogFields[9].Descriptor()
+	// errlog.DefaultStatusCode holds the default value on creation for the status_code field.
+	errlog.DefaultStatusCode = errlogDescStatusCode.Default.(int)
+	// errlogDescErrorType is the schema descriptor for error_type field.
+	errlogDescErrorType := errlogFields[10].Descriptor()
+	// errlog.DefaultErrorType holds the default value on creation for the error_type field.
+	errlog.DefaultErrorType = errlogDescErrorType.Default.(string)
+	// errlogDescLatencyMs is the schema descriptor for latency_ms field.
+	errlogDescLatencyMs := errlogFields[12].Descriptor()
+	// errlog.DefaultLatencyMs holds the default value on creation for the latency_ms field.
+	errlog.DefaultLatencyMs = errlogDescLatencyMs.Default.(int64)
+	// errlogDescCreatedAt is the schema descriptor for created_at field.
+	errlogDescCreatedAt := errlogFields[14].Descriptor()
+	// errlog.DefaultCreatedAt holds the default value on creation for the created_at field.
+	errlog.DefaultCreatedAt = errlogDescCreatedAt.Default.(func() time.Time)
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
 	// groupDescPriceMultiplier is the schema descriptor for price_multiplier field.
@@ -193,52 +216,48 @@ func init() {
 	usagelogDescModel := usagelogFields[7].Descriptor()
 	// usagelog.DefaultModel holds the default value on creation for the model field.
 	usagelog.DefaultModel = usagelogDescModel.Default.(string)
-	// usagelogDescStatusCode is the schema descriptor for status_code field.
-	usagelogDescStatusCode := usagelogFields[10].Descriptor()
-	// usagelog.DefaultStatusCode holds the default value on creation for the status_code field.
-	usagelog.DefaultStatusCode = usagelogDescStatusCode.Default.(int)
 	// usagelogDescErrorType is the schema descriptor for error_type field.
-	usagelogDescErrorType := usagelogFields[11].Descriptor()
+	usagelogDescErrorType := usagelogFields[10].Descriptor()
 	// usagelog.DefaultErrorType holds the default value on creation for the error_type field.
 	usagelog.DefaultErrorType = usagelogDescErrorType.Default.(string)
 	// usagelogDescLatencyMs is the schema descriptor for latency_ms field.
-	usagelogDescLatencyMs := usagelogFields[13].Descriptor()
+	usagelogDescLatencyMs := usagelogFields[11].Descriptor()
 	// usagelog.DefaultLatencyMs holds the default value on creation for the latency_ms field.
 	usagelog.DefaultLatencyMs = usagelogDescLatencyMs.Default.(int64)
 	// usagelogDescInputTokens is the schema descriptor for input_tokens field.
-	usagelogDescInputTokens := usagelogFields[15].Descriptor()
+	usagelogDescInputTokens := usagelogFields[13].Descriptor()
 	// usagelog.DefaultInputTokens holds the default value on creation for the input_tokens field.
 	usagelog.DefaultInputTokens = usagelogDescInputTokens.Default.(int64)
 	// usagelogDescOutputTokens is the schema descriptor for output_tokens field.
-	usagelogDescOutputTokens := usagelogFields[17].Descriptor()
+	usagelogDescOutputTokens := usagelogFields[15].Descriptor()
 	// usagelog.DefaultOutputTokens holds the default value on creation for the output_tokens field.
 	usagelog.DefaultOutputTokens = usagelogDescOutputTokens.Default.(int64)
 	// usagelogDescTotalTokens is the schema descriptor for total_tokens field.
-	usagelogDescTotalTokens := usagelogFields[19].Descriptor()
+	usagelogDescTotalTokens := usagelogFields[17].Descriptor()
 	// usagelog.DefaultTotalTokens holds the default value on creation for the total_tokens field.
 	usagelog.DefaultTotalTokens = usagelogDescTotalTokens.Default.(int64)
 	// usagelogDescCacheReadTokens is the schema descriptor for cache_read_tokens field.
-	usagelogDescCacheReadTokens := usagelogFields[20].Descriptor()
+	usagelogDescCacheReadTokens := usagelogFields[18].Descriptor()
 	// usagelog.DefaultCacheReadTokens holds the default value on creation for the cache_read_tokens field.
 	usagelog.DefaultCacheReadTokens = usagelogDescCacheReadTokens.Default.(int64)
 	// usagelogDescCacheCreationTokens is the schema descriptor for cache_creation_tokens field.
-	usagelogDescCacheCreationTokens := usagelogFields[22].Descriptor()
+	usagelogDescCacheCreationTokens := usagelogFields[20].Descriptor()
 	// usagelog.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	usagelog.DefaultCacheCreationTokens = usagelogDescCacheCreationTokens.Default.(int64)
 	// usagelogDescCost is the schema descriptor for cost field.
-	usagelogDescCost := usagelogFields[24].Descriptor()
+	usagelogDescCost := usagelogFields[22].Descriptor()
 	// usagelog.DefaultCost holds the default value on creation for the cost field.
 	usagelog.DefaultCost = usagelogDescCost.Default.(int64)
 	// usagelogDescAboveHit is the schema descriptor for above_hit field.
-	usagelogDescAboveHit := usagelogFields[26].Descriptor()
+	usagelogDescAboveHit := usagelogFields[24].Descriptor()
 	// usagelog.DefaultAboveHit holds the default value on creation for the above_hit field.
 	usagelog.DefaultAboveHit = usagelogDescAboveHit.Default.(bool)
 	// usagelogDescOverdraft is the schema descriptor for overdraft field.
-	usagelogDescOverdraft := usagelogFields[27].Descriptor()
+	usagelogDescOverdraft := usagelogFields[25].Descriptor()
 	// usagelog.DefaultOverdraft holds the default value on creation for the overdraft field.
 	usagelog.DefaultOverdraft = usagelogDescOverdraft.Default.(bool)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[28].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[26].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	usagestatFields := schema.UsageStat{}.Fields()

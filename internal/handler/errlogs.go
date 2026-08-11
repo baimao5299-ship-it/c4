@@ -7,10 +7,10 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
-// GetLogs 用量日志分页查询（ServerInterface）。limit/offset 缺省 20/0
-// （契约 default），其余过滤参数仅非 nil 时生效。
-func (h *AdminAPI) GetLogs(w http.ResponseWriter, r *http.Request, params GetLogsParams) {
-	lq := repository.LogQuery{Limit: 20, Offset: 0}
+// GetErrLogs 错误明细分页查询（/err_logs：完整错误面——本地拒绝 + 半异常双轨，
+// status_code/error_type 全值）。过滤面与 /usage_logs 同构 + status_code。
+func (h *AdminAPI) GetErrLogs(w http.ResponseWriter, r *http.Request, params GetErrLogsParams) {
+	lq := repository.ErrLogQuery{Limit: 20, Offset: 0}
 	if params.Limit != nil {
 		lq.Limit = *params.Limit
 	}
@@ -41,19 +41,19 @@ func (h *AdminAPI) GetLogs(w http.ResponseWriter, r *http.Request, params GetLog
 	if params.To != nil {
 		lq.To = params.To
 	}
-	rows, total, err := h.svc.QueryLogs(r.Context(), lq)
+	rows, total, err := h.svc.QueryErrLogs(r.Context(), lq)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	out := make([]UsageLog, 0, len(rows))
-	for _, item := range rows { // service.QueryLogs 返回 []any（元素为 *domain.UsageLog）
+	out := make([]ErrLog, 0, len(rows))
+	for _, item := range rows { // service.QueryErrLogs 返回 []any（元素为 *domain.UsageLog）
 		l, ok := item.(*domain.UsageLog)
 		if !ok { // 类型不符是内部错误：不能静默丢数据，返回 500
-			writeErr(w, http.StatusInternalServerError, "internal error: unexpected log row type")
+			writeErr(w, http.StatusInternalServerError, "internal error: unexpected err log row type")
 			return
 		}
-		out = append(out, toAPIUsageLog(l))
+		out = append(out, toAPIErrLog(l))
 	}
-	writeJSON(w, http.StatusOK, LogsResponse{Total: total, Rows: out})
+	writeJSON(w, http.StatusOK, ErrLogsResponse{Total: total, Rows: out})
 }

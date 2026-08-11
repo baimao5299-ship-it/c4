@@ -232,7 +232,8 @@ func toAPIUser(u *domain.User) User {
 	}
 }
 
-// toAPIUsageLog 用量日志领域对象 → 契约类型。
+// toAPIUsageLog 用量日志领域对象 → 契约类型（err_logs 分表后 usage_logs 无
+// status_code/error_message——响应不含该两字段）。
 func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 	f := RequestFormat(l.Format)
 	et := ErrorType(l.ErrorType)
@@ -247,7 +248,6 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		Model:            &l.Model,
 		MappedModel:      &l.MappedModel,
 		Format:           &f,
-		StatusCode:       &l.StatusCode,
 		ErrorType:        &et,
 		LatencyMS:                &l.LatencyMS,
 		TTFTMS:                   l.TTFTMS,
@@ -266,6 +266,34 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		Overdraft:           &l.Overdraft,
 		CreatedAt:           &l.CreatedAt,
 	}
+}
+
+// toAPIErrLog 错误明细领域对象（*domain.UsageLog 瞬态审计字段投影）→ /err_logs
+// 契约类型（瘦表字段：审计归属 + 错误面字段，无 token/价格列）。BillingTier 空
+// = 未计费路径 → null（与 err_logs NULL 语义一致）。
+func toAPIErrLog(l *domain.UsageLog) ErrLog {
+	f := RequestFormat(l.Format)
+	et := ErrorType(l.ErrorType)
+	e := ErrLog{
+		ID:           &l.ID,
+		RequestID:    &l.RequestID,
+		GroupID:      &l.GroupID,
+		AccountID:    &l.AccountID,
+		TemplateID:   &l.TemplateID,
+		UserID:       &l.UserID,
+		KeyID:        &l.KeyID,
+		Model:        &l.Model,
+		Format:       &f,
+		StatusCode:   &l.StatusCode,
+		ErrorType:    &et,
+		ErrorMessage: l.ErrorMessage,
+		LatencyMS:    &l.LatencyMS,
+		CreatedAt:    &l.CreatedAt,
+	}
+	if l.BillingTier != "" {
+		e.BillingTier = &l.BillingTier
+	}
+	return e
 }
 
 // toAPIStatBucket 统计桶领域对象 → 契约类型。

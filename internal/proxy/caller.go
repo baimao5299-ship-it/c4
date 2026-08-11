@@ -105,7 +105,9 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	meta, ok := p.auth.Authenticate(r)
 	if !ok {
 		writeErr(w, errInvalidKey)
-		p.record(r.Context(), reqID, 0, 0, "", "", format, 401, domain.ErrAuth, 0, usageTuple{}, start)
+		// 评审 I-1：401 鉴权失败转 recordRejected（无效 key 洪水残留向量——
+		// 401 也进 err_logs 错误审计，不再走 usage_logs 明细路径）。
+		p.recordRejected(r.Context(), reqID, 0, 0, "", "", format, http.StatusUnauthorized, domain.ErrAuth, 0, usageTuple{}, start, errInvalidKey.msg)
 		return
 	}
 	groupID := meta.GroupID
@@ -120,7 +122,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	// 未设置额度 key 短路零成本；预算耗尽 → gate 内 DB 复核认领后再判定）
 	if p.auth.QuotaExhausted(meta) {
 		writeErr(w, errQuotaExhausted)
-		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start, errQuotaExhausted.msg)
 		return
 	}
 	// 余额预检（Phase 5 计费；评审 I-1 无槽位问题）：快照读零 DB（滞后 ≤
@@ -134,7 +136,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
 		if (!ok || bal <= 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
 			writeErr(w, errInsufficientBalance)
-			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errInsufficientBalance.msg)
 			return
 		}
 	}
@@ -143,13 +145,16 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	acquired, ok := p.auth.Acquire(meta)
 	if !ok {
 		writeErr(w, errConcurrency)
-		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start, errConcurrency.msg)
 		return
 	}
 	defer p.auth.Release(meta, acquired)
 
 	if !p.limit.Allow(groupID, time.Now()) {
 		writeErr(w, errRateLimit)
+		// 架构审查 S5（用户裁决）：组限流 429 也进 err_logs（排障限流需要；
+		// 与 401 同属拒绝路径——普通队列风暴采样丢弃兜底）。
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start, errRateLimit.msg)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, p.cfg.MaxBodySize))
@@ -203,7 +208,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 				}
 			case billing.TierPolicyReject:
 				writeErr(w, errServiceTierRejected)
-				p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start)
+				p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start, errServiceTierRejected.msg)
 				return
 			}
 		}
@@ -239,7 +244,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	}
 	if err != nil {
 		p.handleSelectError(w, err)
-		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start, selectErrorMessage(err))
 		return
 	}
 
@@ -258,7 +263,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		if p.bill != nil && p.bill.Prices != nil {
 			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
 				p.sched.Release(sel.AccountID)
-				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
 				writeErr(w, errNoPrice)
 				return
 			}

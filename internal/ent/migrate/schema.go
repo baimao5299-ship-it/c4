@@ -74,6 +74,47 @@ var (
 			},
 		},
 	}
+	// ErrLogsColumns holds the columns for the "err_logs" table.
+	ErrLogsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "request_id", Type: field.TypeString},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "account_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "template_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "model", Type: field.TypeString, Default: ""},
+		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "anthropic"}},
+		{Name: "status_code", Type: field.TypeInt, Default: 0},
+		{Name: "error_type", Type: field.TypeString, Default: "none"},
+		{Name: "error_message", Type: field.TypeString, Nullable: true},
+		{Name: "latency_ms", Type: field.TypeInt64, Default: 0},
+		{Name: "billing_tier", Type: field.TypeString, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// ErrLogsTable holds the schema information for the "err_logs" table.
+	ErrLogsTable = &schema.Table{
+		Name:       "err_logs",
+		Columns:    ErrLogsColumns,
+		PrimaryKey: []*schema.Column{ErrLogsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "errlog_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ErrLogsColumns[14]},
+			},
+			{
+				Name:    "errlog_group_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ErrLogsColumns[2], ErrLogsColumns[14]},
+			},
+			{
+				Name:    "errlog_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ErrLogsColumns[5], ErrLogsColumns[14]},
+			},
+		},
+	}
 	// GroupsColumns holds the columns for the "groups" table.
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -375,9 +416,7 @@ var (
 		{Name: "model", Type: field.TypeString, Default: ""},
 		{Name: "mapped_model", Type: field.TypeString, Nullable: true},
 		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "anthropic"}},
-		{Name: "status_code", Type: field.TypeInt, Default: 0},
 		{Name: "error_type", Type: field.TypeString, Default: "none"},
-		{Name: "error_message", Type: field.TypeString, Nullable: true},
 		{Name: "latency_ms", Type: field.TypeInt64, Default: 0},
 		{Name: "ttft_ms", Type: field.TypeInt64, Nullable: true},
 		{Name: "input_tokens", Type: field.TypeInt64, Default: 0},
@@ -404,27 +443,27 @@ var (
 			{
 				Name:    "usagelog_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[28]},
+				Columns: []*schema.Column{UsageLogsColumns[26]},
 			},
 			{
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[28]},
+				Columns: []*schema.Column{UsageLogsColumns[2], UsageLogsColumns[26]},
 			},
 			{
 				Name:    "usagelog_account_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[3], UsageLogsColumns[28]},
+				Columns: []*schema.Column{UsageLogsColumns[3], UsageLogsColumns[26]},
 			},
 			{
 				Name:    "usagelog_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[5], UsageLogsColumns[28]},
+				Columns: []*schema.Column{UsageLogsColumns[5], UsageLogsColumns[26]},
 			},
 			{
 				Name:    "usagelog_key_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[6], UsageLogsColumns[28]},
+				Columns: []*schema.Column{UsageLogsColumns[6], UsageLogsColumns[26]},
 			},
 		},
 	}
@@ -514,6 +553,7 @@ var (
 	Tables = []*schema.Table{
 		AccountsTable,
 		AccountExtsTable,
+		ErrLogsTable,
 		GroupsTable,
 		GroupAssignmentsTable,
 		KeysTable,

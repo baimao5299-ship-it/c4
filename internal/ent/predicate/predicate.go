@@ -12,6 +12,9 @@ type Account func(*sql.Selector)
 // AccountExt is the predicate function for accountext builders.
 type AccountExt func(*sql.Selector)
 
+// ErrLog is the predicate function for errlog builders.
+type ErrLog func(*sql.Selector)
+
 // Group is the predicate function for group builders.
 type Group func(*sql.Selector)
 

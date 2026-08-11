@@ -71,12 +71,20 @@ func main() {
 	if err != nil {
 		fatalf("migrate: %v", err)
 	}
-	// usagelog 分区 bootstrap（Phase 5 T4.5）：ent migrate 已跳过该表
-	// （usageLogMigrateHook——atlas 对分区表 diff 规划期必失败，实测结论见
-	// internal/repository/partition.go），此处独占建分区表 + 预建当日/明日
-	// 分区 + 索引；幂等（已分区 → 仅补齐分区），失败即 fatal（明细表不可缺）。
+	// usage_logs/err_logs/usage_stats 分区 bootstrap（Phase 5 T4.5 + 分表设计 +
+	// 用户裁决 2026-08-11 三表统一分区机制）：ent migrate 已跳过三表
+	// （migrateHookExcludesPartitioned——atlas 对分区表 diff 规划期必失败，实测
+	// 结论见 internal/repository/partition.go），此处独占建分区表 + 预建当日/明日
+	// 分区 + 索引；幂等（已分区 → 仅补齐分区），失败即 fatal（明细/审计/统计表
+	// 不可缺）。
 	if err := repos.EnsureUsageLogPartitioned(context.Background(), time.Now()); err != nil {
 		fatalf("usagelog partition bootstrap: %v", err)
+	}
+	if err := repos.EnsureErrLogPartitioned(context.Background(), time.Now()); err != nil {
+		fatalf("err_logs partition bootstrap: %v", err)
+	}
+	if err := repos.EnsureUsageStatsPartitioned(context.Background(), time.Now()); err != nil {
+		fatalf("usage_stats partition bootstrap: %v", err)
 	}
 
 	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname-pid
@@ -103,12 +111,23 @@ func main() {
 		FlushInterval:      cfg.Usage.FlushInterval,
 		StatsFlushInterval: cfg.Usage.StatsFlushInterval,
 		Workers:            cfg.Usage.FlushWorkers,
-	}, repos.Logs, repos.Stats, log)
-	// retention worker：usagelog 按日分区保留（T4.5，替代已删的 Recorder
-	// janitorLoop——逐行 DELETE → DROP PARTITION O(1)）；保留天数同源
-	// config usage.log_retention_days（语义 = 分区保留天数）。
+	}, repos.Usages, repos.Stats, log)
+	// errlog worker（分表设计）：错误明细落盘通道——与计费 flusher 完全解耦
+	// （独立有界队列 + 背压采样丢弃 + 独立排空）；落盘 err_logs（瘦表审计）。
+	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{
+		QueueSize:     cfg.Usage.ErrLogQueueSize,
+		BatchSize:     cfg.Usage.ErrLogBatchSize,
+		FlushInterval: cfg.Usage.ErrLogFlushInterval,
+	}, repos.ErrLogs, log)
+	// retention worker：三表按日分区保留（T4.5 + 分表设计 + usage_stats 分区化，
+	// 清理统一 DROP PARTITION O(1)——PG DELETE 不释放空间，用户裁决）；保留天数
+	// 同源 config（usage_logs = usage.log_retention_days；err_logs =
+	// usage.errlog_retention_days 默认 7 天短保留——错误审计；usage_stats =
+	// usage.stats_retention_days 默认 180 天——聚合统计长保留）。
 	retention := usage.NewRetention(usage.RetentionConfig{
-		LogRetentionDays: cfg.Usage.LogRetentionDays,
+		LogRetentionDays:    cfg.Usage.LogRetentionDays,
+		ErrLogRetentionDays: cfg.Usage.ErrLogRetentionDays,
+		StatsRetentionDays:  cfg.Usage.StatsRetentionDays,
 	}, repos, log)
 
 	auth := proxy.NewAuth(repos.Keys, repos.Users, log)
@@ -221,7 +240,7 @@ func main() {
 		GroupKeyRPM:           cfg.Limit.GroupKeyRPM,
 		UsageCapture:          cfg.Proxy.UsageCapture,
 		BillingCapture:        cfg.Billing.Enabled,
-	}, sched, credential.New(), rec, clients, auth, log, billHooks)
+	}, sched, credential.New(), rec, clients, auth, log, billHooks, errlogW)
 	// 多实例集群 N 注入（#14 T3b）：gate 预算 ceil(剩余/N) + limit RPM ceil(rpm/N)。
 	// svc 构造后调用（svc.ClusterInstances 读 settings 快照）；settings NOTIFY
 	// 变更 N 后再次调用即触发预算即时重算（设计 §3.4）。
@@ -268,7 +287,7 @@ func main() {
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
-	wm.Register(inv, sched, ruleEngine, rec, pricingSync, retention) // invalidate 去抖器执行 goroutine（单 goroutine 串行）；retention 顺序无依赖（DROP/预建均幂等）
+	wm.Register(inv, sched, ruleEngine, rec, errlogW, pricingSync, retention) // invalidate 去抖器执行 goroutine（单 goroutine 串行）；errlog 错误明细排空在 rec 之后注册 → 反向排空先于 rec；retention 顺序无依赖（DROP/预建均幂等）
 	if billFlusher != nil {
 		// 计费 flusher 注册在 listener/auth-sync 之前（评审 I-1）：反向排空时它
 		// 是最后一个产生计费流量的 worker（扣费 + 计费日志全量落库）；其后注册

@@ -336,7 +336,7 @@ func TestPGUsageLogUserKeyRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	u := seedPGUser(t, repos, "log@example.com")
-	err := repos.Logs.InsertBatch(ctx, []*domain.UsageLog{
+	err := repos.Usages.InsertBatch(ctx, []*domain.UsageLog{
 		{RequestID: "r-user", GroupID: 1, AccountID: 2, UserID: u.ID, KeyID: 7,
 			Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
 			LatencyMS: 1, TotalTokens: 100, CreatedAt: time.Now()},
@@ -347,19 +347,19 @@ func TestPGUsageLogUserKeyRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// user_id 过滤（/user/logs 语义：只看到自己的）
-	rows, total, err := repos.Logs.QueryLogs(ctx, repository.LogQuery{UserID: u.ID, Limit: 10})
+	rows, total, err := repos.Usages.QueryUsages(ctx, repository.UsageQuery{UserID: u.ID, Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Equal(t, int64(7), rows[0].KeyID, "key_id 回读")
 
 	// key_id 过滤
-	rows2, total2, err := repos.Logs.QueryLogs(ctx, repository.LogQuery{KeyID: 7, Limit: 10})
+	rows2, total2, err := repos.Usages.QueryUsages(ctx, repository.UsageQuery{KeyID: 7, Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total2)
 	require.Equal(t, u.ID, rows2[0].UserID)
 
 	// 无 user 的日志 user_id 为 NULL → 0
-	rows3, _, err := repos.Logs.QueryLogs(ctx, repository.LogQuery{Limit: 10})
+	rows3, _, err := repos.Usages.QueryUsages(ctx, repository.UsageQuery{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, rows3, 2)
 	for _, l := range rows3 {

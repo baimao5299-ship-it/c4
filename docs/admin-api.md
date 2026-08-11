@@ -454,7 +454,7 @@
 
 ### 查询用量日志
 
-`GET /admin/logs?limit=20&offset=0&group_id=1&account_id=2&model=gpt-4o&status_code=200&error_type=none&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
+`GET /admin/usage_logs?limit=20&offset=0&group_id=1&account_id=2&model=gpt-4o&error_type=none&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
 
 | 查询参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -463,9 +463,10 @@
 | `group_id` | int | — | 按分组过滤 |
 | `account_id` | int | — | 按账号过滤 |
 | `model` | string | — | 按模型名过滤 |
-| `status_code` | int | — | 按最终状态码过滤 |
-| `error_type` | string | — | 按错误类型过滤（枚举见上） |
+| `error_type` | string | — | 按错误类型过滤（值域收敛 `none` / `abort`——usage_logs 仅放行路径行） |
 | `from` / `to` | RFC3339 | — | 时间范围过滤 |
+
+> **分表设计**（用户裁决）：`usage_logs` 只承载**放行路径明细**——成功（`error_type=none`，含免费分组/0 token 成功行，cost 不限）+ abort 半异常计费行；4xx/5xx/拒绝等失败行**不入 usage_logs**（错误审计面见 `/err_logs`，下节）。
 
 响应 `200`：
 
@@ -482,7 +483,6 @@
       "Model": "gpt-4o",
       "MappedModel": "gpt-4o-2024-11-20",
       "Format": "openai-chat",
-      "StatusCode": 200,
       "ErrorType": "none",
       "LatencyMS": 125,
       "InputTokens": 10,
@@ -502,12 +502,29 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `Cost` | int64 | 计费成本（**毫分**，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0 |
+| `Cost` | int64 | 计费成本（**毫分**，1 USD = 100,000 毫分）；放行路径行可为 0（免费分组/0 token） |
 | `BillingTier` | string | 请求 `service_tier` 归一化值：`priority` / `flex` / `fast` / `auto`（未知/空值归一 auto）；空 = 未计费路径（billing 关闭或未鉴权） |
 | `AboveHit` | bool | 任一分量超 `above_threshold` 命中分段计价 |
 | `Overdraft` | bool | 本次扣费透支（余额不足扣为负余额；`[billing]` 开启且允许透支时可能为 true） |
 
-> **明细存储**：`usage_logs` 为 PostgreSQL **按日分区表**（`PARTITION BY RANGE(created_at)`，分区名 `usage_logs_YYYYMMDD`）。保留期由配置 `usage.log_retention_days` 决定（管理员设置 = 分区保留天数，默认 30 天）；retention worker 每小时 `DROP` 过期分区（O(1)）并预建未来分区。跨分区查询按时间范围走分区剪枝。
+### 查询错误日志
+
+`GET /admin/err_logs?limit=20&offset=0&group_id=1&account_id=2&model=gpt-4o&status_code=429&error_type=billing&from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `limit` / `offset` | int | 20 / 0 | 分页 |
+| `group_id` / `account_id` / `user_id` | int | — | 按归属过滤（`user_id`：admin 看全部） |
+| `model` | string | — | 按模型名过滤 |
+| `status_code` | int | — | 按状态码过滤（401/429/402/4xx/5xx…全值） |
+| `error_type` | string | — | 按错误类型过滤（`auth`/`429`/`billing`/`4xx`/`5xx`/`network`/`abort`…） |
+| `from` / `to` | RFC3339 | — | 时间范围过滤 |
+
+> **错误明细面**：`err_logs` 承载**全部错误行**——本地拒绝（401 鉴权失败/429 限流/402 余额/tier 拒绝/缺价/no_account）+ 上游失败（4xx 透传/5xx 耗尽/network）+ abort 双轨行（与 usage_logs 关联，`request_id` 关联）。错误文本落 `error_message`（域内截断 500）。
+
+响应 `200` 行结构与上节同构，但含完整错误面字段：`StatusCode`、`ErrorType`、`ErrorMessage`、`BillingTier`（tier 拒绝审计）。
+
+> **存储（三表分区 + 独立保留期）**：`usage_logs` / `err_logs` / `usage_stats` 均为 PostgreSQL **按日分区表**（`PARTITION BY RANGE`，分区名 `{表名}_YYYYMMDD`；usage_logs/err_logs 分区键 `created_at`，usage_stats 分区键 `bucket_time`——小时桶聚合 24 桶/日分区）。保留期独立：`usage.log_retention_days`（默认 30 天）/ `usage.errlog_retention_days`（默认 7 天短保留——错误审计）/ `usage.stats_retention_days`（默认 180 天——聚合统计长保留）；retention worker 每小时 `DROP` 过期分区（O(1)，PG DELETE 不释放空间——清理必须分区 DROP）并预建未来分区。跨分区查询按时间范围走分区剪枝。
 
 ### 查询用量统计
 
@@ -936,7 +953,7 @@ billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "1
 | `billing.balance_refresh_interval` | `10s` | 余额快照全量刷新周期（预检读快照；扣费后定向即时刷新该 user） |
 | `billing.flush_workers` | `4` | 并行落库 worker 数（O1 管道化分片并行，同用户实例内恒串行）。建议上限 ~7：每 worker 一笔 `DeductAndLog` 事务，须 ≤ DB 连接池余量（`db.max_conns` 扣除其他连接占用） |
 
-关联配置：`proxy.usage_capture`（日志开关；billing 路由判定包含它）、`usage.log_retention_days`（usage_logs 分区保留天数，见「日志与统计」）。
+关联配置：`proxy.usage_capture`（日志开关；billing 路由判定包含它）、`usage.log_retention_days` / `usage.errlog_retention_days` / `usage.stats_retention_days`（三表分区保留天数，见「日志与统计」）。
 
 ### 402 语义（计费拒绝）
 

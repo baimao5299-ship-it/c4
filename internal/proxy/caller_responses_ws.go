@@ -65,7 +65,9 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 	meta, ok := p.auth.Authenticate(r)
 	if !ok {
 		writeErr(w, errInvalidKey)
-		p.record(r.Context(), reqID, 0, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusUnauthorized, domain.ErrAuth, 0, usageTuple{}, start)
+		// 评审 I-1：401 鉴权失败转 recordRejected（同 handleFormat——401 也进
+		// err_logs 错误审计，不再走 usage_logs 明细路径）。
+		p.recordRejected(r.Context(), reqID, 0, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusUnauthorized, domain.ErrAuth, 0, usageTuple{}, start, errInvalidKey.msg)
 		return
 	}
 	groupID := meta.GroupID
@@ -75,26 +77,28 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 
 	if p.auth.QuotaExhausted(meta) {
 		writeErr(w, errQuotaExhausted)
-		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start, errQuotaExhausted.msg)
 		return
 	}
 	if p.cfg.BillingCapture && p.bill != nil {
 		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
 		if (!ok || bal <= 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
 			writeErr(w, errInsufficientBalance)
-			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errInsufficientBalance.msg)
 			return
 		}
 	}
 	acquired, ok := p.auth.Acquire(meta)
 	if !ok {
 		writeErr(w, errConcurrency)
-		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start, errConcurrency.msg)
 		return
 	}
 	defer p.auth.Release(meta, acquired)
 	if !p.limit.Allow(groupID, time.Now()) {
 		writeErr(w, errRateLimit)
+		// 架构审查 S5（用户裁决）：组限流 429 也进 err_logs（同 handleFormat）。
+		p.recordRejected(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, http.StatusTooManyRequests, domain.Err429, 0, usageTuple{}, start, errRateLimit.msg)
 		return
 	}
 	if !isWebSocketUpgrade(r) {
@@ -127,7 +131,7 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 	sel, err := p.sched.Select(groupID, domain.FormatOpenAIResponsesWS, reqModel)
 	if err != nil {
 		wsWriteError(client, selectErrorMessage(err))
-		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", domain.FormatOpenAIResponsesWS, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start)
+		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", domain.FormatOpenAIResponsesWS, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start, selectErrorMessage(err))
 		return
 	}
 
@@ -144,7 +148,7 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 		if p.bill != nil && p.bill.Prices != nil {
 			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
 				p.sched.Release(sel.AccountID)
-				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start)
+				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
 				wsWriteError(client, errNoPrice.msg)
 				return
 			}

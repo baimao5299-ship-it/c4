@@ -13,6 +13,7 @@ import (
 
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/accountext"
+	"go-proxy-mini/internal/ent/errlog"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
@@ -43,6 +44,8 @@ type Client struct {
 	Account *AccountClient
 	// AccountExt is the client for interacting with the AccountExt builders.
 	AccountExt *AccountExtClient
+	// ErrLog is the client for interacting with the ErrLog builders.
+	ErrLog *ErrLogClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
@@ -84,6 +87,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Account = NewAccountClient(c.config)
 	c.AccountExt = NewAccountExtClient(c.config)
+	c.ErrLog = NewErrLogClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.GroupAssignment = NewGroupAssignmentClient(c.config)
 	c.Key = NewKeyClient(c.config)
@@ -192,6 +196,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:          cfg,
 		Account:         NewAccountClient(cfg),
 		AccountExt:      NewAccountExtClient(cfg),
+		ErrLog:          NewErrLogClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
@@ -227,6 +232,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:          cfg,
 		Account:         NewAccountClient(cfg),
 		AccountExt:      NewAccountExtClient(cfg),
+		ErrLog:          NewErrLogClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
 		Key:             NewKeyClient(cfg),
@@ -270,7 +276,7 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Account, c.AccountExt, c.Group, c.GroupAssignment, c.Key, c.Pricing,
+		c.Account, c.AccountExt, c.ErrLog, c.Group, c.GroupAssignment, c.Key, c.Pricing,
 		c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting, c.TempBalance,
 		c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
 	} {
@@ -282,7 +288,7 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Account, c.AccountExt, c.Group, c.GroupAssignment, c.Key, c.Pricing,
+		c.Account, c.AccountExt, c.ErrLog, c.Group, c.GroupAssignment, c.Key, c.Pricing,
 		c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting, c.TempBalance,
 		c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
 	} {
@@ -297,6 +303,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Account.mutate(ctx, m)
 	case *AccountExtMutation:
 		return c.AccountExt.mutate(ctx, m)
+	case *ErrLogMutation:
+		return c.ErrLog.mutate(ctx, m)
 	case *GroupMutation:
 		return c.Group.mutate(ctx, m)
 	case *GroupAssignmentMutation:
@@ -657,6 +665,139 @@ func (c *AccountExtClient) mutate(ctx context.Context, m *AccountExtMutation) (V
 		return (&AccountExtDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AccountExt mutation op: %q", m.Op())
+	}
+}
+
+// ErrLogClient is a client for the ErrLog schema.
+type ErrLogClient struct {
+	config
+}
+
+// NewErrLogClient returns a client for the ErrLog from the given config.
+func NewErrLogClient(c config) *ErrLogClient {
+	return &ErrLogClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `errlog.Hooks(f(g(h())))`.
+func (c *ErrLogClient) Use(hooks ...Hook) {
+	c.hooks.ErrLog = append(c.hooks.ErrLog, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `errlog.Intercept(f(g(h())))`.
+func (c *ErrLogClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ErrLog = append(c.inters.ErrLog, interceptors...)
+}
+
+// Create returns a builder for creating a ErrLog entity.
+func (c *ErrLogClient) Create() *ErrLogCreate {
+	mutation := newErrLogMutation(c.config, OpCreate)
+	return &ErrLogCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ErrLog entities.
+func (c *ErrLogClient) CreateBulk(builders ...*ErrLogCreate) *ErrLogCreateBulk {
+	return &ErrLogCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ErrLogClient) MapCreateBulk(slice any, setFunc func(*ErrLogCreate, int)) *ErrLogCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ErrLogCreateBulk{err: fmt.Errorf("calling to ErrLogClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ErrLogCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ErrLogCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ErrLog.
+func (c *ErrLogClient) Update() *ErrLogUpdate {
+	mutation := newErrLogMutation(c.config, OpUpdate)
+	return &ErrLogUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ErrLogClient) UpdateOne(_m *ErrLog) *ErrLogUpdateOne {
+	mutation := newErrLogMutation(c.config, OpUpdateOne, withErrLog(_m))
+	return &ErrLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ErrLogClient) UpdateOneID(id int64) *ErrLogUpdateOne {
+	mutation := newErrLogMutation(c.config, OpUpdateOne, withErrLogID(id))
+	return &ErrLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ErrLog.
+func (c *ErrLogClient) Delete() *ErrLogDelete {
+	mutation := newErrLogMutation(c.config, OpDelete)
+	return &ErrLogDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ErrLogClient) DeleteOne(_m *ErrLog) *ErrLogDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ErrLogClient) DeleteOneID(id int64) *ErrLogDeleteOne {
+	builder := c.Delete().Where(errlog.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ErrLogDeleteOne{builder}
+}
+
+// Query returns a query builder for ErrLog.
+func (c *ErrLogClient) Query() *ErrLogQuery {
+	return &ErrLogQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeErrLog},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ErrLog entity by its id.
+func (c *ErrLogClient) Get(ctx context.Context, id int64) (*ErrLog, error) {
+	return c.Query().Where(errlog.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ErrLogClient) GetX(ctx context.Context, id int64) *ErrLog {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ErrLogClient) Hooks() []Hook {
+	return c.hooks.ErrLog
+}
+
+// Interceptors returns the client interceptors.
+func (c *ErrLogClient) Interceptors() []Interceptor {
+	return c.inters.ErrLog
+}
+
+func (c *ErrLogClient) mutate(ctx context.Context, m *ErrLogMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ErrLogCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ErrLogUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ErrLogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ErrLogDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ErrLog mutation op: %q", m.Op())
 	}
 }
 
@@ -2781,13 +2922,13 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, AccountExt, Group, GroupAssignment, Key, Pricing, RedemptionCode,
-		RedemptionUse, Rule, Setting, TempBalance, Template, TemplateExt, UsageLog,
-		UsageStat, User []ent.Hook
+		Account, AccountExt, ErrLog, Group, GroupAssignment, Key, Pricing,
+		RedemptionCode, RedemptionUse, Rule, Setting, TempBalance, Template,
+		TemplateExt, UsageLog, UsageStat, User []ent.Hook
 	}
 	inters struct {
-		Account, AccountExt, Group, GroupAssignment, Key, Pricing, RedemptionCode,
-		RedemptionUse, Rule, Setting, TempBalance, Template, TemplateExt, UsageLog,
-		UsageStat, User []ent.Interceptor
+		Account, AccountExt, ErrLog, Group, GroupAssignment, Key, Pricing,
+		RedemptionCode, RedemptionUse, Rule, Setting, TempBalance, Template,
+		TemplateExt, UsageLog, UsageStat, User []ent.Interceptor
 	}
 )

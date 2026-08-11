@@ -380,8 +380,8 @@ func TestLogsStatsBillingFields(t *testing.T) {
 	}
 	store.mu.Unlock()
 
-	// 管理面 /admin/logs
-	rec := doAdmin(http.MethodGet, "/admin/logs", "", "")
+	// 管理面 /admin/usage_logs
+	rec := doAdmin(http.MethodGet, "/admin/usage_logs", "", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	var logs LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &logs))
@@ -392,8 +392,8 @@ func TestLogsStatsBillingFields(t *testing.T) {
 	require.True(t, *r.AboveHit)
 	require.False(t, *r.Overdraft)
 
-	// 用户面 /user/logs 同字段
-	rec = doUser(http.MethodGet, "/user/logs", "", token)
+	// 用户面 /user/usage_logs 同字段
+	rec = doUser(http.MethodGet, "/user/usage_logs", "", token)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var ul userapi.LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ul))

@@ -47,3 +47,35 @@ func TestUsageLogAlignColumnsMatchCreateDDL(t *testing.T) {
 	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
 	require.Contains(t, source, "price_input_millis", "对齐锚必须覆盖 P1 缺列")
 }
+
+// TestErrLogAlignColumnsMatchCreateDDL err_logs 对齐锚（架构审查 S2——P1 同型
+// 复发防线：errLogColumnDefs 是第二列事实源，建表 DDL 与幂等补列 ALTER 双向
+// 相等；防"向静态 DDL 加列忘加 align"）。
+func TestErrLogAlignColumnsMatchCreateDDL(t *testing.T) {
+	source := ddlColumnNames(strings.Join(errLogColumnDefs, "\n"))
+	create := ddlColumnNames(errLogCreateDDL)
+	align := ddlColumnNames(errLogAlignColumnDDLs...)
+	require.NotEmpty(t, source, "事实源列集合非空")
+	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
+	require.Equal(t, source, align, "补列 ALTER 与事实源列集合一致")
+	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
+	require.Contains(t, source, "error_message", "对齐锚必须覆盖 err_logs 错误审计列")
+	require.Contains(t, source, "billing_tier", "对齐锚必须覆盖 I-3 tier 审计列")
+	require.NotContains(t, source, "cost", "err_logs 瘦表无计费列")
+	require.NotContains(t, source, "input_tokens", "err_logs 瘦表无 token 列")
+}
+
+// TestUsageStatsAlignColumnsMatchCreateDDL usage_stats 对齐锚（用户裁决
+// 2026-08-11 三表统一分区机制——usageStatsColumnDefs 第三列事实源，建表 DDL
+// 与幂等补列 ALTER 双向相等；防 P1 同型复发）。
+func TestUsageStatsAlignColumnsMatchCreateDDL(t *testing.T) {
+	source := ddlColumnNames(strings.Join(usageStatsColumnDefs, "\n"))
+	create := ddlColumnNames(usageStatsCreateDDL)
+	align := ddlColumnNames(usageStatsAlignColumnDDLs...)
+	require.NotEmpty(t, source, "事实源列集合非空")
+	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
+	require.Equal(t, source, align, "补列 ALTER 与事实源列集合一致")
+	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
+	require.Contains(t, source, "bucket_time", "对齐锚必须覆盖分区键 bucket_time")
+	require.Contains(t, source, "cost", "对齐锚必须覆盖计费预聚合列")
+}

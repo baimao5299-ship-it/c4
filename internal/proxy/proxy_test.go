@@ -233,6 +233,22 @@ func newTestProxyTplCapture(t *testing.T, tpl *domain.Template, accountID int64,
 	return newTestProxyTplTimeoutLogs(t, tpl, accountID, usageCapture, 30*time.Second, noopLogStore{}, nil)
 }
 
+// noopErrLogStore 空 errlog 写者（无错误明细断言需求的测试代理用）。
+type noopErrLogStore struct{}
+
+func (noopErrLogStore) InsertBatch(ctx context.Context, l []*domain.UsageLog) error { return nil }
+
+// errLogStoreFrom 从 LogInserter 提取 errlog 写者（分表设计后错误明细断言与
+// usage_logs 明细断言共用同一 captureLogStore——该类型同时实现 LogInserter 与
+// ErrLogInserter；其他写者 → no-op）。错误路径行（4xx/5xx/network/abort）经
+// 测试代理内 errlog worker 落同一 store。
+func errLogStoreFrom(logs usage.LogInserter) usage.ErrLogInserter {
+	if cs, ok := logs.(*captureLogStore); ok {
+		return cs
+	}
+	return noopErrLogStore{}
+}
+
 // newTestProxyTplTimeoutLogs 用自定义模板、流式超时与日志存储构造测试代理
 // （流式超时回归、用量值断言场景用；默认 30s 超时走 newTestProxyTplCapture）。
 // bill 为计费钩子（nil = 计费全关，默认测试路径）。
@@ -242,13 +258,14 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
 	}, logs, noopStatStore{}, nil)
-	return newTestProxyTplTimeoutRec(t, tpl, accountID, usageCapture, streamTimeout, rec, bill)
+	return newTestProxyTplTimeoutRec(t, tpl, accountID, usageCapture, streamTimeout, rec, bill, errLogStoreFrom(logs))
 }
 
 // newTestProxyTplTimeoutRec 同 newTestProxyTplTimeoutLogs，但注入完整 Recorder
 //（P2a 拒绝路径统计聚合断言用：调用方构造 rec——含捕获 stat store——后同一
-// 实例挂 Flusher 与 proxy.rec，聚合单面可观测）。
-func newTestProxyTplTimeoutRec(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, rec *usage.Recorder, bill *BillingHooks) *Proxy {
+// 实例挂 Flusher 与 proxy.rec，聚合单面可观测）。errWriter 为 errlog worker
+// 写者（captureLogStore 时与 logs 同一 store；nil = no-op——错误明细不捕获）。
+func newTestProxyTplTimeoutRec(t *testing.T, tpl *domain.Template, accountID int64, usageCapture bool, streamTimeout time.Duration, rec *usage.Recorder, bill *BillingHooks, errWriter usage.ErrLogInserter) *Proxy {
 	t.Helper()
 	accs := map[int64][]*domain.Account{10: {{
 		ID: accountID, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "sk-upstream",
@@ -273,7 +290,13 @@ func newTestProxyTplTimeoutRec(t *testing.T, tpl *domain.Template, accountID int
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: streamTimeout,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil, bill)
+	// errlog worker（分表设计）：错误明细落盘通道——与 usage_logs 共用捕获
+	// store；FlushInterval 小时级（不自动落盘，测试经 p.errlog.Close 显式排空）。
+	if errWriter == nil {
+		errWriter = noopErrLogStore{}
+	}
+	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{QueueSize: 4096, FlushInterval: time.Hour}, errWriter, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, bill, errlogW)
 }
 
 func TestProxyStreamingChat(t *testing.T) {
@@ -414,13 +437,16 @@ func TestProxyAuthRejected(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.HandleChat(rec, req)
 	require.Equal(t, 401, rec.Code)
-	// 401：无请求模型可记，Model/MappedModel 均空
+	// 401 鉴权失败（无请求模型可记，Model/MappedModel 均空）：recordRejected →
+	// err_logs 拒绝行（不入 usage_logs 明细——P2a 拒绝风暴不产生 pending）
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "401 必须记一条用量")
+	require.Len(t, store.logs, 1, "401 必须记一条 err_logs")
 	require.Equal(t, "", store.logs[0].Model, "401 无请求模型")
 	require.Equal(t, "", store.logs[0].MappedModel, "401 MappedModel 空")
+	require.Equal(t, domain.ErrAuth, store.logs[0].ErrorType, "401 记 ErrAuth")
 }
 
 // 同 key 双头兼容：Anthropic 官方 SDK / Claude Code 用 x-api-key 头（而非
@@ -484,15 +510,18 @@ func TestProxyFailoverOn429(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.Status429, ri.Status)
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
-	// 耗尽路径（请求已完成）：以最后一次尝试的结果记一条用量
-	require.Equal(t, 1, p.rec.Pending(), "failover 耗尽必须记一条用量")
+	// 耗尽路径（请求已完成）：429 失败行（Err429）不入 usage_logs——err_logs
+	// 承载（分表：失败明细归 err_logs；pending 恒 0）
+	require.Zero(t, p.rec.Pending(), "failover 耗尽失败行不产生明细 pending")
 	// 评审 I-1：耗尽路径 Model=请求模型、MappedModel=最后一次实际尝试的映射模型
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Len(t, store.logs, 1, "must capture exactly one err_logs row")
 	require.Equal(t, "gpt-4o", store.logs[0].Model, "耗尽路径：Model = 客户端请求模型")
 	require.Equal(t, "gpt-4o-upstream", store.logs[0].MappedModel, "耗尽路径：MappedModel = 最后一次实际尝试的映射模型")
+	require.Equal(t, domain.Err429, store.logs[0].ErrorType)
 }
 
 // 5xx：触发 failover 与 MarkResult(ResultError)；全部尝试失败最终回 502（非 429 不设 Retry-After）。
@@ -523,8 +552,9 @@ func TestProxyFailoverOn5xx(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, domain.StatusUnhealthy, ri.Status)
 	require.Zero(t, ri.Concurrency, "failover 后并发槽必须全部释放")
-	// 耗尽路径（请求已完成）：以最后一次尝试的结果记一条用量
-	require.Equal(t, 1, p.rec.Pending(), "failover 耗尽必须记一条用量")
+	// 耗尽路径（请求已完成）：5xx 失败行（Err5xx）不入 usage_logs——err_logs
+	// 承载（分表：失败明细归 err_logs；pending 恒 0）
+	require.Zero(t, p.rec.Pending(), "failover 耗尽失败行不产生明细 pending")
 }
 
 // 回归（评审 Critical）：failover 耗尽时尾部 Select 为"不存在的下一次尝试"预取
@@ -559,7 +589,7 @@ func TestProxyFailoverExhaustedNoLeak(t *testing.T) {
 		require.True(t, ok)
 		require.Zero(t, ri.Concurrency, "account %d 并发槽必须全部释放", id)
 	}
-	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
+	require.Zero(t, p.rec.Pending(), "耗尽路径失败行不产生明细 pending（err_logs 承载）")
 }
 
 // 4xx：确定性错误，透传上游状态码与原始 body、不转移（规格 §5.3），账号不进入冷却。
@@ -583,15 +613,18 @@ func TestProxyPassthrough4xx(t *testing.T) {
 	require.Equal(t, domain.StatusActive, ri.Status)
 	require.Nil(t, ri.CooldownUntil)
 	require.Zero(t, ri.Concurrency, "4xx 透传也必须释放并发槽")
-	// 请求已完成（上游消费了请求）：必须记录用量
-	require.Equal(t, 1, p.rec.Pending(), "4xx 透传必须记录用量")
+	// 请求已完成（上游消费了请求）：4xx 失败行不入 usage_logs——err_logs 承载
+	//（分表：失败明细归 err_logs；pending 恒 0）
+	require.Zero(t, p.rec.Pending(), "4xx 透传不产生明细 pending")
 	// 评审 I-1：4xx 透传 Model=客户端请求模型（无映射 → MappedModel 空）
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "must capture exactly one usage log")
+	require.Len(t, store.logs, 1, "must capture exactly one err_logs row")
 	require.Equal(t, "gpt-4o", store.logs[0].Model, "4xx：Model = 客户端请求模型")
 	require.Equal(t, "", store.logs[0].MappedModel, "无映射 → MappedModel 空")
+	require.Equal(t, domain.Err4xx, store.logs[0].ErrorType)
 }
 
 // 流式中止：上游在流中途发非法事件（解码失败）→ ResultError + 释放并发槽 + ErrAbort 记录。
@@ -676,7 +709,7 @@ func TestProxyChatStreamingPassthrough4xx(t *testing.T) {
 	require.Equal(t, domain.StatusActive, ri.Status)
 	require.Nil(t, ri.CooldownUntil)
 	require.Zero(t, ri.Concurrency, "4xx 透传也必须释放并发槽")
-	require.Equal(t, 1, p.rec.Pending(), "4xx 透传必须记录用量")
+	require.Zero(t, p.rec.Pending(), "4xx 透传不产生明细 pending（err_logs 承载）")
 }
 
 // failingResponseWriter 模拟客户端断开：所有写出都失败。
@@ -749,7 +782,7 @@ func TestProxyChatFailoverSingleAccountNoPanic(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "并发槽必须释放")
-	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
+	require.Zero(t, p.rec.Pending(), "耗尽路径失败行不产生明细 pending（err_logs 承载）")
 }
 
 // 评审 I-1：成功非流式路径日志 Model=客户端请求模型（无映射 → MappedModel 空）。
@@ -859,5 +892,5 @@ func TestProxyCredentialUnknownTypeRejectsNoUpstreamCall(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "凭据错误路径也必须释放并发槽")
-	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记一条用量")
+	require.Zero(t, p.rec.Pending(), "网络失败行不产生明细 pending（err_logs 承载）")
 }

@@ -203,8 +203,8 @@ func TestParamBindErrorIsErrorResponse(t *testing.T) {
 		name, path string
 	}{
 		{"path param non-int", "/admin/templates/abc"},
-		{"query limit non-int", "/admin/logs?limit=abc"},
-		{"query date invalid", "/admin/logs?from=2026-13-01"},
+		{"query limit non-int", "/admin/usage_logs?limit=abc"},
+		{"query date invalid", "/admin/usage_logs?from=2026-13-01"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := do(tc.path)
@@ -217,8 +217,8 @@ func TestParamBindErrorIsErrorResponse(t *testing.T) {
 	}
 }
 
-// GetLogs 正常路径：limit/offset 缺省取契约默认值，返回 rows + total。
-func TestGetLogs(t *testing.T) {
+// TestGetUsageLogs 正常路径：limit/offset 缺省取契约默认值，返回 rows + total。
+func TestGetUsageLogs(t *testing.T) {
 	h := newTestHandler(t)
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler { // admin token 中间件
@@ -232,7 +232,7 @@ func TestGetLogs(t *testing.T) {
 	})
 	r.Mount("/", h.Router())
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage_logs", nil)
 	req.Header.Set("Authorization", "Bearer admin-tok")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -241,6 +241,60 @@ func TestGetLogs(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Zero(t, body.Total)
 	require.Empty(t, body.Rows)
+}
+
+// TestGetErrLogs /err_logs 正常路径 + 响应字段：错误审计面（status_code/
+// error_type/error_message/billing_tier 全值）。
+func TestGetErrLogs(t *testing.T) {
+	store := newFakeStore()
+	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
+	h := New(svc)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("Authorization") != "Bearer admin-tok" {
+				writeErr(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.Mount("/", h.Router())
+
+	// 空库 → 空响应
+	req := httptest.NewRequest(http.MethodGet, "/admin/err_logs", nil)
+	req.Header.Set("Authorization", "Bearer admin-tok")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, "err logs: %s", rec.Body.String())
+	var body ErrLogsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Zero(t, body.Total)
+	require.Empty(t, body.Rows)
+
+	// 有行 → 审计字段投影
+	fs := store
+	fs.mu.Lock()
+	msg := "key quota exhausted"
+	fs.logs = []*domain.UsageLog{
+		{ID: 7, RequestID: "r-e1", UserID: 3, Model: "gpt-4o", Format: domain.FormatOpenAIChat,
+			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg, LatencyMS: 9, BillingTier: "auto"},
+	}
+	fs.mu.Unlock()
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, 200, rec.Code, "err logs: %s", rec.Body.String())
+	body = ErrLogsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, int64(1), body.Total)
+	require.Len(t, body.Rows, 1)
+	e := body.Rows[0]
+	require.Equal(t, int64(7), *e.ID)
+	require.Equal(t, "r-e1", *e.RequestID)
+	require.Equal(t, 429, *e.StatusCode, "err_logs 完整错误面 status_code")
+	require.Equal(t, ErrorType("429"), *e.ErrorType)
+	require.Equal(t, msg, *e.ErrorMessage)
+	require.Equal(t, "auto", *e.BillingTier)
 }
 
 // newListTestRouter 列表参数测试的接线：chi + admin token 中间件 + 挂载契约路由。

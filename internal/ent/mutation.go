@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go-proxy-mini/internal/ent/account"
 	"go-proxy-mini/internal/ent/accountext"
+	"go-proxy-mini/internal/ent/errlog"
 	"go-proxy-mini/internal/ent/group"
 	"go-proxy-mini/internal/ent/groupassignment"
 	"go-proxy-mini/internal/ent/key"
@@ -42,6 +43,7 @@ const (
 	// Node types.
 	TypeAccount         = "Account"
 	TypeAccountExt      = "AccountExt"
+	TypeErrLog          = "ErrLog"
 	TypeGroup           = "Group"
 	TypeGroupAssignment = "GroupAssignment"
 	TypeKey             = "Key"
@@ -2436,6 +2438,1415 @@ func (m *AccountExtMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown AccountExt edge %s", name)
+}
+
+// ErrLogMutation represents an operation that mutates the ErrLog nodes in the graph.
+type ErrLogMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int64
+	request_id     *string
+	group_id       *int64
+	addgroup_id    *int64
+	account_id     *int64
+	addaccount_id  *int64
+	template_id    *int64
+	addtemplate_id *int64
+	user_id        *int64
+	adduser_id     *int64
+	key_id         *int64
+	addkey_id      *int64
+	model          *string
+	format         *errlog.Format
+	status_code    *int
+	addstatus_code *int
+	error_type     *string
+	error_message  *string
+	latency_ms     *int64
+	addlatency_ms  *int64
+	billing_tier   *string
+	created_at     *time.Time
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*ErrLog, error)
+	predicates     []predicate.ErrLog
+}
+
+var _ ent.Mutation = (*ErrLogMutation)(nil)
+
+// errlogOption allows management of the mutation configuration using functional options.
+type errlogOption func(*ErrLogMutation)
+
+// newErrLogMutation creates new mutation for the ErrLog entity.
+func newErrLogMutation(c config, op Op, opts ...errlogOption) *ErrLogMutation {
+	m := &ErrLogMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeErrLog,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withErrLogID sets the ID field of the mutation.
+func withErrLogID(id int64) errlogOption {
+	return func(m *ErrLogMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ErrLog
+		)
+		m.oldValue = func(ctx context.Context) (*ErrLog, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ErrLog.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withErrLog sets the old ErrLog of the mutation.
+func withErrLog(node *ErrLog) errlogOption {
+	return func(m *ErrLogMutation) {
+		m.oldValue = func(context.Context) (*ErrLog, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ErrLogMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ErrLogMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ErrLog entities.
+func (m *ErrLogMutation) SetID(id int64) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ErrLogMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ErrLogMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ErrLog.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *ErrLogMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *ErrLogMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *ErrLogMutation) ResetRequestID() {
+	m.request_id = nil
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *ErrLogMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *ErrLogMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *ErrLogMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *ErrLogMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *ErrLogMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[errlog.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *ErrLogMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *ErrLogMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, errlog.FieldGroupID)
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *ErrLogMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *ErrLogMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldAccountID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *ErrLogMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *ErrLogMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearAccountID clears the value of the "account_id" field.
+func (m *ErrLogMutation) ClearAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+	m.clearedFields[errlog.FieldAccountID] = struct{}{}
+}
+
+// AccountIDCleared returns if the "account_id" field was cleared in this mutation.
+func (m *ErrLogMutation) AccountIDCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldAccountID]
+	return ok
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *ErrLogMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+	delete(m.clearedFields, errlog.FieldAccountID)
+}
+
+// SetTemplateID sets the "template_id" field.
+func (m *ErrLogMutation) SetTemplateID(i int64) {
+	m.template_id = &i
+	m.addtemplate_id = nil
+}
+
+// TemplateID returns the value of the "template_id" field in the mutation.
+func (m *ErrLogMutation) TemplateID() (r int64, exists bool) {
+	v := m.template_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTemplateID returns the old "template_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldTemplateID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTemplateID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTemplateID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTemplateID: %w", err)
+	}
+	return oldValue.TemplateID, nil
+}
+
+// AddTemplateID adds i to the "template_id" field.
+func (m *ErrLogMutation) AddTemplateID(i int64) {
+	if m.addtemplate_id != nil {
+		*m.addtemplate_id += i
+	} else {
+		m.addtemplate_id = &i
+	}
+}
+
+// AddedTemplateID returns the value that was added to the "template_id" field in this mutation.
+func (m *ErrLogMutation) AddedTemplateID() (r int64, exists bool) {
+	v := m.addtemplate_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearTemplateID clears the value of the "template_id" field.
+func (m *ErrLogMutation) ClearTemplateID() {
+	m.template_id = nil
+	m.addtemplate_id = nil
+	m.clearedFields[errlog.FieldTemplateID] = struct{}{}
+}
+
+// TemplateIDCleared returns if the "template_id" field was cleared in this mutation.
+func (m *ErrLogMutation) TemplateIDCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldTemplateID]
+	return ok
+}
+
+// ResetTemplateID resets all changes to the "template_id" field.
+func (m *ErrLogMutation) ResetTemplateID() {
+	m.template_id = nil
+	m.addtemplate_id = nil
+	delete(m.clearedFields, errlog.FieldTemplateID)
+}
+
+// SetUserID sets the "user_id" field.
+func (m *ErrLogMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *ErrLogMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *ErrLogMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *ErrLogMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUserID clears the value of the "user_id" field.
+func (m *ErrLogMutation) ClearUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+	m.clearedFields[errlog.FieldUserID] = struct{}{}
+}
+
+// UserIDCleared returns if the "user_id" field was cleared in this mutation.
+func (m *ErrLogMutation) UserIDCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldUserID]
+	return ok
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *ErrLogMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+	delete(m.clearedFields, errlog.FieldUserID)
+}
+
+// SetKeyID sets the "key_id" field.
+func (m *ErrLogMutation) SetKeyID(i int64) {
+	m.key_id = &i
+	m.addkey_id = nil
+}
+
+// KeyID returns the value of the "key_id" field in the mutation.
+func (m *ErrLogMutation) KeyID() (r int64, exists bool) {
+	v := m.key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeyID returns the old "key_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeyID: %w", err)
+	}
+	return oldValue.KeyID, nil
+}
+
+// AddKeyID adds i to the "key_id" field.
+func (m *ErrLogMutation) AddKeyID(i int64) {
+	if m.addkey_id != nil {
+		*m.addkey_id += i
+	} else {
+		m.addkey_id = &i
+	}
+}
+
+// AddedKeyID returns the value that was added to the "key_id" field in this mutation.
+func (m *ErrLogMutation) AddedKeyID() (r int64, exists bool) {
+	v := m.addkey_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearKeyID clears the value of the "key_id" field.
+func (m *ErrLogMutation) ClearKeyID() {
+	m.key_id = nil
+	m.addkey_id = nil
+	m.clearedFields[errlog.FieldKeyID] = struct{}{}
+}
+
+// KeyIDCleared returns if the "key_id" field was cleared in this mutation.
+func (m *ErrLogMutation) KeyIDCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldKeyID]
+	return ok
+}
+
+// ResetKeyID resets all changes to the "key_id" field.
+func (m *ErrLogMutation) ResetKeyID() {
+	m.key_id = nil
+	m.addkey_id = nil
+	delete(m.clearedFields, errlog.FieldKeyID)
+}
+
+// SetModel sets the "model" field.
+func (m *ErrLogMutation) SetModel(s string) {
+	m.model = &s
+}
+
+// Model returns the value of the "model" field in the mutation.
+func (m *ErrLogMutation) Model() (r string, exists bool) {
+	v := m.model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModel returns the old "model" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModel: %w", err)
+	}
+	return oldValue.Model, nil
+}
+
+// ResetModel resets all changes to the "model" field.
+func (m *ErrLogMutation) ResetModel() {
+	m.model = nil
+}
+
+// SetFormat sets the "format" field.
+func (m *ErrLogMutation) SetFormat(e errlog.Format) {
+	m.format = &e
+}
+
+// Format returns the value of the "format" field in the mutation.
+func (m *ErrLogMutation) Format() (r errlog.Format, exists bool) {
+	v := m.format
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFormat returns the old "format" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldFormat(ctx context.Context) (v errlog.Format, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFormat is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFormat requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFormat: %w", err)
+	}
+	return oldValue.Format, nil
+}
+
+// ResetFormat resets all changes to the "format" field.
+func (m *ErrLogMutation) ResetFormat() {
+	m.format = nil
+}
+
+// SetStatusCode sets the "status_code" field.
+func (m *ErrLogMutation) SetStatusCode(i int) {
+	m.status_code = &i
+	m.addstatus_code = nil
+}
+
+// StatusCode returns the value of the "status_code" field in the mutation.
+func (m *ErrLogMutation) StatusCode() (r int, exists bool) {
+	v := m.status_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatusCode returns the old "status_code" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldStatusCode(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatusCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatusCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatusCode: %w", err)
+	}
+	return oldValue.StatusCode, nil
+}
+
+// AddStatusCode adds i to the "status_code" field.
+func (m *ErrLogMutation) AddStatusCode(i int) {
+	if m.addstatus_code != nil {
+		*m.addstatus_code += i
+	} else {
+		m.addstatus_code = &i
+	}
+}
+
+// AddedStatusCode returns the value that was added to the "status_code" field in this mutation.
+func (m *ErrLogMutation) AddedStatusCode() (r int, exists bool) {
+	v := m.addstatus_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetStatusCode resets all changes to the "status_code" field.
+func (m *ErrLogMutation) ResetStatusCode() {
+	m.status_code = nil
+	m.addstatus_code = nil
+}
+
+// SetErrorType sets the "error_type" field.
+func (m *ErrLogMutation) SetErrorType(s string) {
+	m.error_type = &s
+}
+
+// ErrorType returns the value of the "error_type" field in the mutation.
+func (m *ErrLogMutation) ErrorType() (r string, exists bool) {
+	v := m.error_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorType returns the old "error_type" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldErrorType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorType: %w", err)
+	}
+	return oldValue.ErrorType, nil
+}
+
+// ResetErrorType resets all changes to the "error_type" field.
+func (m *ErrLogMutation) ResetErrorType() {
+	m.error_type = nil
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *ErrLogMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *ErrLogMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *ErrLogMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[errlog.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *ErrLogMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *ErrLogMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, errlog.FieldErrorMessage)
+}
+
+// SetLatencyMs sets the "latency_ms" field.
+func (m *ErrLogMutation) SetLatencyMs(i int64) {
+	m.latency_ms = &i
+	m.addlatency_ms = nil
+}
+
+// LatencyMs returns the value of the "latency_ms" field in the mutation.
+func (m *ErrLogMutation) LatencyMs() (r int64, exists bool) {
+	v := m.latency_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLatencyMs returns the old "latency_ms" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldLatencyMs(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLatencyMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLatencyMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLatencyMs: %w", err)
+	}
+	return oldValue.LatencyMs, nil
+}
+
+// AddLatencyMs adds i to the "latency_ms" field.
+func (m *ErrLogMutation) AddLatencyMs(i int64) {
+	if m.addlatency_ms != nil {
+		*m.addlatency_ms += i
+	} else {
+		m.addlatency_ms = &i
+	}
+}
+
+// AddedLatencyMs returns the value that was added to the "latency_ms" field in this mutation.
+func (m *ErrLogMutation) AddedLatencyMs() (r int64, exists bool) {
+	v := m.addlatency_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLatencyMs resets all changes to the "latency_ms" field.
+func (m *ErrLogMutation) ResetLatencyMs() {
+	m.latency_ms = nil
+	m.addlatency_ms = nil
+}
+
+// SetBillingTier sets the "billing_tier" field.
+func (m *ErrLogMutation) SetBillingTier(s string) {
+	m.billing_tier = &s
+}
+
+// BillingTier returns the value of the "billing_tier" field in the mutation.
+func (m *ErrLogMutation) BillingTier() (r string, exists bool) {
+	v := m.billing_tier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingTier returns the old "billing_tier" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldBillingTier(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingTier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingTier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingTier: %w", err)
+	}
+	return oldValue.BillingTier, nil
+}
+
+// ClearBillingTier clears the value of the "billing_tier" field.
+func (m *ErrLogMutation) ClearBillingTier() {
+	m.billing_tier = nil
+	m.clearedFields[errlog.FieldBillingTier] = struct{}{}
+}
+
+// BillingTierCleared returns if the "billing_tier" field was cleared in this mutation.
+func (m *ErrLogMutation) BillingTierCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldBillingTier]
+	return ok
+}
+
+// ResetBillingTier resets all changes to the "billing_tier" field.
+func (m *ErrLogMutation) ResetBillingTier() {
+	m.billing_tier = nil
+	delete(m.clearedFields, errlog.FieldBillingTier)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ErrLogMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ErrLogMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ErrLogMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the ErrLogMutation builder.
+func (m *ErrLogMutation) Where(ps ...predicate.ErrLog) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ErrLogMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ErrLogMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ErrLog, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ErrLogMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ErrLogMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ErrLog).
+func (m *ErrLogMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ErrLogMutation) Fields() []string {
+	fields := make([]string, 0, 14)
+	if m.request_id != nil {
+		fields = append(fields, errlog.FieldRequestID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, errlog.FieldGroupID)
+	}
+	if m.account_id != nil {
+		fields = append(fields, errlog.FieldAccountID)
+	}
+	if m.template_id != nil {
+		fields = append(fields, errlog.FieldTemplateID)
+	}
+	if m.user_id != nil {
+		fields = append(fields, errlog.FieldUserID)
+	}
+	if m.key_id != nil {
+		fields = append(fields, errlog.FieldKeyID)
+	}
+	if m.model != nil {
+		fields = append(fields, errlog.FieldModel)
+	}
+	if m.format != nil {
+		fields = append(fields, errlog.FieldFormat)
+	}
+	if m.status_code != nil {
+		fields = append(fields, errlog.FieldStatusCode)
+	}
+	if m.error_type != nil {
+		fields = append(fields, errlog.FieldErrorType)
+	}
+	if m.error_message != nil {
+		fields = append(fields, errlog.FieldErrorMessage)
+	}
+	if m.latency_ms != nil {
+		fields = append(fields, errlog.FieldLatencyMs)
+	}
+	if m.billing_tier != nil {
+		fields = append(fields, errlog.FieldBillingTier)
+	}
+	if m.created_at != nil {
+		fields = append(fields, errlog.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ErrLogMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case errlog.FieldRequestID:
+		return m.RequestID()
+	case errlog.FieldGroupID:
+		return m.GroupID()
+	case errlog.FieldAccountID:
+		return m.AccountID()
+	case errlog.FieldTemplateID:
+		return m.TemplateID()
+	case errlog.FieldUserID:
+		return m.UserID()
+	case errlog.FieldKeyID:
+		return m.KeyID()
+	case errlog.FieldModel:
+		return m.Model()
+	case errlog.FieldFormat:
+		return m.Format()
+	case errlog.FieldStatusCode:
+		return m.StatusCode()
+	case errlog.FieldErrorType:
+		return m.ErrorType()
+	case errlog.FieldErrorMessage:
+		return m.ErrorMessage()
+	case errlog.FieldLatencyMs:
+		return m.LatencyMs()
+	case errlog.FieldBillingTier:
+		return m.BillingTier()
+	case errlog.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ErrLogMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case errlog.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case errlog.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case errlog.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case errlog.FieldTemplateID:
+		return m.OldTemplateID(ctx)
+	case errlog.FieldUserID:
+		return m.OldUserID(ctx)
+	case errlog.FieldKeyID:
+		return m.OldKeyID(ctx)
+	case errlog.FieldModel:
+		return m.OldModel(ctx)
+	case errlog.FieldFormat:
+		return m.OldFormat(ctx)
+	case errlog.FieldStatusCode:
+		return m.OldStatusCode(ctx)
+	case errlog.FieldErrorType:
+		return m.OldErrorType(ctx)
+	case errlog.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case errlog.FieldLatencyMs:
+		return m.OldLatencyMs(ctx)
+	case errlog.FieldBillingTier:
+		return m.OldBillingTier(ctx)
+	case errlog.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ErrLog field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ErrLogMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case errlog.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case errlog.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case errlog.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case errlog.FieldTemplateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTemplateID(v)
+		return nil
+	case errlog.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case errlog.FieldKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeyID(v)
+		return nil
+	case errlog.FieldModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModel(v)
+		return nil
+	case errlog.FieldFormat:
+		v, ok := value.(errlog.Format)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFormat(v)
+		return nil
+	case errlog.FieldStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatusCode(v)
+		return nil
+	case errlog.FieldErrorType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorType(v)
+		return nil
+	case errlog.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case errlog.FieldLatencyMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLatencyMs(v)
+		return nil
+	case errlog.FieldBillingTier:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingTier(v)
+		return nil
+	case errlog.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ErrLog field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ErrLogMutation) AddedFields() []string {
+	var fields []string
+	if m.addgroup_id != nil {
+		fields = append(fields, errlog.FieldGroupID)
+	}
+	if m.addaccount_id != nil {
+		fields = append(fields, errlog.FieldAccountID)
+	}
+	if m.addtemplate_id != nil {
+		fields = append(fields, errlog.FieldTemplateID)
+	}
+	if m.adduser_id != nil {
+		fields = append(fields, errlog.FieldUserID)
+	}
+	if m.addkey_id != nil {
+		fields = append(fields, errlog.FieldKeyID)
+	}
+	if m.addstatus_code != nil {
+		fields = append(fields, errlog.FieldStatusCode)
+	}
+	if m.addlatency_ms != nil {
+		fields = append(fields, errlog.FieldLatencyMs)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ErrLogMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case errlog.FieldGroupID:
+		return m.AddedGroupID()
+	case errlog.FieldAccountID:
+		return m.AddedAccountID()
+	case errlog.FieldTemplateID:
+		return m.AddedTemplateID()
+	case errlog.FieldUserID:
+		return m.AddedUserID()
+	case errlog.FieldKeyID:
+		return m.AddedKeyID()
+	case errlog.FieldStatusCode:
+		return m.AddedStatusCode()
+	case errlog.FieldLatencyMs:
+		return m.AddedLatencyMs()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ErrLogMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case errlog.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	case errlog.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case errlog.FieldTemplateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTemplateID(v)
+		return nil
+	case errlog.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case errlog.FieldKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddKeyID(v)
+		return nil
+	case errlog.FieldStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddStatusCode(v)
+		return nil
+	case errlog.FieldLatencyMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLatencyMs(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ErrLog numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ErrLogMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(errlog.FieldGroupID) {
+		fields = append(fields, errlog.FieldGroupID)
+	}
+	if m.FieldCleared(errlog.FieldAccountID) {
+		fields = append(fields, errlog.FieldAccountID)
+	}
+	if m.FieldCleared(errlog.FieldTemplateID) {
+		fields = append(fields, errlog.FieldTemplateID)
+	}
+	if m.FieldCleared(errlog.FieldUserID) {
+		fields = append(fields, errlog.FieldUserID)
+	}
+	if m.FieldCleared(errlog.FieldKeyID) {
+		fields = append(fields, errlog.FieldKeyID)
+	}
+	if m.FieldCleared(errlog.FieldErrorMessage) {
+		fields = append(fields, errlog.FieldErrorMessage)
+	}
+	if m.FieldCleared(errlog.FieldBillingTier) {
+		fields = append(fields, errlog.FieldBillingTier)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ErrLogMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ErrLogMutation) ClearField(name string) error {
+	switch name {
+	case errlog.FieldGroupID:
+		m.ClearGroupID()
+		return nil
+	case errlog.FieldAccountID:
+		m.ClearAccountID()
+		return nil
+	case errlog.FieldTemplateID:
+		m.ClearTemplateID()
+		return nil
+	case errlog.FieldUserID:
+		m.ClearUserID()
+		return nil
+	case errlog.FieldKeyID:
+		m.ClearKeyID()
+		return nil
+	case errlog.FieldErrorMessage:
+		m.ClearErrorMessage()
+		return nil
+	case errlog.FieldBillingTier:
+		m.ClearBillingTier()
+		return nil
+	}
+	return fmt.Errorf("unknown ErrLog nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ErrLogMutation) ResetField(name string) error {
+	switch name {
+	case errlog.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case errlog.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case errlog.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case errlog.FieldTemplateID:
+		m.ResetTemplateID()
+		return nil
+	case errlog.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case errlog.FieldKeyID:
+		m.ResetKeyID()
+		return nil
+	case errlog.FieldModel:
+		m.ResetModel()
+		return nil
+	case errlog.FieldFormat:
+		m.ResetFormat()
+		return nil
+	case errlog.FieldStatusCode:
+		m.ResetStatusCode()
+		return nil
+	case errlog.FieldErrorType:
+		m.ResetErrorType()
+		return nil
+	case errlog.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case errlog.FieldLatencyMs:
+		m.ResetLatencyMs()
+		return nil
+	case errlog.FieldBillingTier:
+		m.ResetBillingTier()
+		return nil
+	case errlog.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ErrLog field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ErrLogMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ErrLogMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ErrLogMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ErrLogMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ErrLogMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ErrLogMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ErrLogMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ErrLog unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ErrLogMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ErrLog edge %s", name)
 }
 
 // GroupMutation represents an operation that mutates the Group nodes in the graph.
@@ -14414,10 +15825,7 @@ type UsageLogMutation struct {
 	model                          *string
 	mapped_model                   *string
 	format                         *usagelog.Format
-	status_code                    *int
-	addstatus_code                 *int
 	error_type                     *string
-	error_message                  *string
 	latency_ms                     *int64
 	addlatency_ms                  *int64
 	ttft_ms                        *int64
@@ -15063,62 +16471,6 @@ func (m *UsageLogMutation) ResetFormat() {
 	m.format = nil
 }
 
-// SetStatusCode sets the "status_code" field.
-func (m *UsageLogMutation) SetStatusCode(i int) {
-	m.status_code = &i
-	m.addstatus_code = nil
-}
-
-// StatusCode returns the value of the "status_code" field in the mutation.
-func (m *UsageLogMutation) StatusCode() (r int, exists bool) {
-	v := m.status_code
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldStatusCode returns the old "status_code" field's value of the UsageLog entity.
-// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldStatusCode(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldStatusCode is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldStatusCode requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldStatusCode: %w", err)
-	}
-	return oldValue.StatusCode, nil
-}
-
-// AddStatusCode adds i to the "status_code" field.
-func (m *UsageLogMutation) AddStatusCode(i int) {
-	if m.addstatus_code != nil {
-		*m.addstatus_code += i
-	} else {
-		m.addstatus_code = &i
-	}
-}
-
-// AddedStatusCode returns the value that was added to the "status_code" field in this mutation.
-func (m *UsageLogMutation) AddedStatusCode() (r int, exists bool) {
-	v := m.addstatus_code
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetStatusCode resets all changes to the "status_code" field.
-func (m *UsageLogMutation) ResetStatusCode() {
-	m.status_code = nil
-	m.addstatus_code = nil
-}
-
 // SetErrorType sets the "error_type" field.
 func (m *UsageLogMutation) SetErrorType(s string) {
 	m.error_type = &s
@@ -15153,55 +16505,6 @@ func (m *UsageLogMutation) OldErrorType(ctx context.Context) (v string, err erro
 // ResetErrorType resets all changes to the "error_type" field.
 func (m *UsageLogMutation) ResetErrorType() {
 	m.error_type = nil
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (m *UsageLogMutation) SetErrorMessage(s string) {
-	m.error_message = &s
-}
-
-// ErrorMessage returns the value of the "error_message" field in the mutation.
-func (m *UsageLogMutation) ErrorMessage() (r string, exists bool) {
-	v := m.error_message
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldErrorMessage returns the old "error_message" field's value of the UsageLog entity.
-// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
-	}
-	return oldValue.ErrorMessage, nil
-}
-
-// ClearErrorMessage clears the value of the "error_message" field.
-func (m *UsageLogMutation) ClearErrorMessage() {
-	m.error_message = nil
-	m.clearedFields[usagelog.FieldErrorMessage] = struct{}{}
-}
-
-// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
-func (m *UsageLogMutation) ErrorMessageCleared() bool {
-	_, ok := m.clearedFields[usagelog.FieldErrorMessage]
-	return ok
-}
-
-// ResetErrorMessage resets all changes to the "error_message" field.
-func (m *UsageLogMutation) ResetErrorMessage() {
-	m.error_message = nil
-	delete(m.clearedFields, usagelog.FieldErrorMessage)
 }
 
 // SetLatencyMs sets the "latency_ms" field.
@@ -16137,7 +17440,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 28)
+	fields := make([]string, 0, 26)
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
 	}
@@ -16165,14 +17468,8 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.format != nil {
 		fields = append(fields, usagelog.FieldFormat)
 	}
-	if m.status_code != nil {
-		fields = append(fields, usagelog.FieldStatusCode)
-	}
 	if m.error_type != nil {
 		fields = append(fields, usagelog.FieldErrorType)
-	}
-	if m.error_message != nil {
-		fields = append(fields, usagelog.FieldErrorMessage)
 	}
 	if m.latency_ms != nil {
 		fields = append(fields, usagelog.FieldLatencyMs)
@@ -16248,12 +17545,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.MappedModel()
 	case usagelog.FieldFormat:
 		return m.Format()
-	case usagelog.FieldStatusCode:
-		return m.StatusCode()
 	case usagelog.FieldErrorType:
 		return m.ErrorType()
-	case usagelog.FieldErrorMessage:
-		return m.ErrorMessage()
 	case usagelog.FieldLatencyMs:
 		return m.LatencyMs()
 	case usagelog.FieldTtftMs:
@@ -16313,12 +17606,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldMappedModel(ctx)
 	case usagelog.FieldFormat:
 		return m.OldFormat(ctx)
-	case usagelog.FieldStatusCode:
-		return m.OldStatusCode(ctx)
 	case usagelog.FieldErrorType:
 		return m.OldErrorType(ctx)
-	case usagelog.FieldErrorMessage:
-		return m.OldErrorMessage(ctx)
 	case usagelog.FieldLatencyMs:
 		return m.OldLatencyMs(ctx)
 	case usagelog.FieldTtftMs:
@@ -16423,26 +17712,12 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetFormat(v)
 		return nil
-	case usagelog.FieldStatusCode:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetStatusCode(v)
-		return nil
 	case usagelog.FieldErrorType:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetErrorType(v)
-		return nil
-	case usagelog.FieldErrorMessage:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetErrorMessage(v)
 		return nil
 	case usagelog.FieldLatencyMs:
 		v, ok := value.(int64)
@@ -16579,9 +17854,6 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addkey_id != nil {
 		fields = append(fields, usagelog.FieldKeyID)
 	}
-	if m.addstatus_code != nil {
-		fields = append(fields, usagelog.FieldStatusCode)
-	}
 	if m.addlatency_ms != nil {
 		fields = append(fields, usagelog.FieldLatencyMs)
 	}
@@ -16636,8 +17908,6 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUserID()
 	case usagelog.FieldKeyID:
 		return m.AddedKeyID()
-	case usagelog.FieldStatusCode:
-		return m.AddedStatusCode()
 	case usagelog.FieldLatencyMs:
 		return m.AddedLatencyMs()
 	case usagelog.FieldTtftMs:
@@ -16705,13 +17975,6 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddKeyID(v)
-		return nil
-	case usagelog.FieldStatusCode:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddStatusCode(v)
 		return nil
 	case usagelog.FieldLatencyMs:
 		v, ok := value.(int64)
@@ -16823,9 +18086,6 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldMappedModel) {
 		fields = append(fields, usagelog.FieldMappedModel)
 	}
-	if m.FieldCleared(usagelog.FieldErrorMessage) {
-		fields = append(fields, usagelog.FieldErrorMessage)
-	}
 	if m.FieldCleared(usagelog.FieldTtftMs) {
 		fields = append(fields, usagelog.FieldTtftMs)
 	}
@@ -16875,9 +18135,6 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldMappedModel:
 		m.ClearMappedModel()
-		return nil
-	case usagelog.FieldErrorMessage:
-		m.ClearErrorMessage()
 		return nil
 	case usagelog.FieldTtftMs:
 		m.ClearTtftMs()
@@ -16932,14 +18189,8 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldFormat:
 		m.ResetFormat()
 		return nil
-	case usagelog.FieldStatusCode:
-		m.ResetStatusCode()
-		return nil
 	case usagelog.FieldErrorType:
 		m.ResetErrorType()
-		return nil
-	case usagelog.FieldErrorMessage:
-		m.ResetErrorMessage()
 		return nil
 	case usagelog.FieldLatencyMs:
 		m.ResetLatencyMs()

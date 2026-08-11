@@ -94,19 +94,9 @@ func MappedModel(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldMappedModel, v))
 }
 
-// StatusCode applies equality check predicate on the "status_code" field. It's identical to StatusCodeEQ.
-func StatusCode(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldStatusCode, v))
-}
-
 // ErrorType applies equality check predicate on the "error_type" field. It's identical to ErrorTypeEQ.
 func ErrorType(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldErrorType, v))
-}
-
-// ErrorMessage applies equality check predicate on the "error_message" field. It's identical to ErrorMessageEQ.
-func ErrorMessage(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldErrorMessage, v))
 }
 
 // LatencyMs applies equality check predicate on the "latency_ms" field. It's identical to LatencyMsEQ.
@@ -664,46 +654,6 @@ func FormatNotIn(vs ...Format) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotIn(FieldFormat, vs...))
 }
 
-// StatusCodeEQ applies the EQ predicate on the "status_code" field.
-func StatusCodeEQ(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldStatusCode, v))
-}
-
-// StatusCodeNEQ applies the NEQ predicate on the "status_code" field.
-func StatusCodeNEQ(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldStatusCode, v))
-}
-
-// StatusCodeIn applies the In predicate on the "status_code" field.
-func StatusCodeIn(vs ...int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldStatusCode, vs...))
-}
-
-// StatusCodeNotIn applies the NotIn predicate on the "status_code" field.
-func StatusCodeNotIn(vs ...int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldStatusCode, vs...))
-}
-
-// StatusCodeGT applies the GT predicate on the "status_code" field.
-func StatusCodeGT(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldStatusCode, v))
-}
-
-// StatusCodeGTE applies the GTE predicate on the "status_code" field.
-func StatusCodeGTE(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldStatusCode, v))
-}
-
-// StatusCodeLT applies the LT predicate on the "status_code" field.
-func StatusCodeLT(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldStatusCode, v))
-}
-
-// StatusCodeLTE applies the LTE predicate on the "status_code" field.
-func StatusCodeLTE(v int) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldStatusCode, v))
-}
-
 // ErrorTypeEQ applies the EQ predicate on the "error_type" field.
 func ErrorTypeEQ(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldErrorType, v))
@@ -767,81 +717,6 @@ func ErrorTypeEqualFold(v string) predicate.UsageLog {
 // ErrorTypeContainsFold applies the ContainsFold predicate on the "error_type" field.
 func ErrorTypeContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldErrorType, v))
-}
-
-// ErrorMessageEQ applies the EQ predicate on the "error_message" field.
-func ErrorMessageEQ(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldErrorMessage, v))
-}
-
-// ErrorMessageNEQ applies the NEQ predicate on the "error_message" field.
-func ErrorMessageNEQ(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldErrorMessage, v))
-}
-
-// ErrorMessageIn applies the In predicate on the "error_message" field.
-func ErrorMessageIn(vs ...string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldErrorMessage, vs...))
-}
-
-// ErrorMessageNotIn applies the NotIn predicate on the "error_message" field.
-func ErrorMessageNotIn(vs ...string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldErrorMessage, vs...))
-}
-
-// ErrorMessageGT applies the GT predicate on the "error_message" field.
-func ErrorMessageGT(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldErrorMessage, v))
-}
-
-// ErrorMessageGTE applies the GTE predicate on the "error_message" field.
-func ErrorMessageGTE(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldErrorMessage, v))
-}
-
-// ErrorMessageLT applies the LT predicate on the "error_message" field.
-func ErrorMessageLT(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldErrorMessage, v))
-}
-
-// ErrorMessageLTE applies the LTE predicate on the "error_message" field.
-func ErrorMessageLTE(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldErrorMessage, v))
-}
-
-// ErrorMessageContains applies the Contains predicate on the "error_message" field.
-func ErrorMessageContains(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldContains(FieldErrorMessage, v))
-}
-
-// ErrorMessageHasPrefix applies the HasPrefix predicate on the "error_message" field.
-func ErrorMessageHasPrefix(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldHasPrefix(FieldErrorMessage, v))
-}
-
-// ErrorMessageHasSuffix applies the HasSuffix predicate on the "error_message" field.
-func ErrorMessageHasSuffix(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldHasSuffix(FieldErrorMessage, v))
-}
-
-// ErrorMessageIsNil applies the IsNil predicate on the "error_message" field.
-func ErrorMessageIsNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIsNull(FieldErrorMessage))
-}
-
-// ErrorMessageNotNil applies the NotNil predicate on the "error_message" field.
-func ErrorMessageNotNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotNull(FieldErrorMessage))
-}
-
-// ErrorMessageEqualFold applies the EqualFold predicate on the "error_message" field.
-func ErrorMessageEqualFold(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEqualFold(FieldErrorMessage, v))
-}
-
-// ErrorMessageContainsFold applies the ContainsFold predicate on the "error_message" field.
-func ErrorMessageContainsFold(v string) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldContainsFold(FieldErrorMessage, v))
 }
 
 // LatencyMsEQ applies the EQ predicate on the "latency_ms" field.

@@ -621,15 +621,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/user/logs": {
+    "/user/usage_logs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** 我的用量日志（强制 user_id = 当前用户，防越权） */
-        get: operations["GetUserLogs"];
+        /** 我的用量明细（usage_logs 纯计费明细；强制 user_id = 当前用户，防越权；error_type 值域 none/abort） */
+        get: operations["GetUserUsageLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/err_logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的错误明细（err_logs 完整错误面：拒绝 + 异常双轨；强制 user_id = 当前用户，防越权） */
+        get: operations["GetUserErrLogs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -728,15 +745,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/logs": {
+    "/usage_logs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** 用量日志分页查询 */
-        get: operations["GetLogs"];
+        /** 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs） */
+        get: operations["GetUsageLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/err_logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 错误明细分页查询（err_logs 完整错误面：本地拒绝 + 半异常双轨；status_code/error_type 全值） */
+        get: operations["GetErrLogs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1597,7 +1631,6 @@ export interface components {
             Model?: string;
             MappedModel?: string | null;
             Format?: components["schemas"]["RequestFormat"];
-            StatusCode?: number;
             ErrorType?: components["schemas"]["ErrorType"];
             /** Format: int64 */
             LatencyMS?: number;
@@ -1654,6 +1687,46 @@ export interface components {
             /** Format: int64 */
             total: number;
             rows: components["schemas"]["UsageLog"][];
+        };
+        /** @description 错误明细审计（err_logs 瘦表：拒绝 + 异常双轨；无 token/价格列） */
+        ErrLog: {
+            /** Format: int64 */
+            ID?: number;
+            RequestID?: string;
+            /** Format: int64 */
+            GroupID?: number;
+            /** Format: int64 */
+            AccountID?: number;
+            /** Format: int64 */
+            TemplateID?: number;
+            /**
+             * Format: int64
+             * @description 鉴权归属用户；0 = 无
+             */
+            UserID?: number;
+            /**
+             * Format: int64
+             * @description 鉴权归属 key；0 = 无
+             */
+            KeyID?: number;
+            Model?: string;
+            Format?: components["schemas"]["RequestFormat"];
+            /** @description 错误状态码（完整错误面；0 = 连接级） */
+            StatusCode?: number;
+            ErrorType?: components["schemas"]["ErrorType"];
+            /** @description 错误文本（拒绝文案/上游 body，域内截断 500 字符）；null = 无错误文本 */
+            ErrorMessage?: string | null;
+            /** Format: int64 */
+            LatencyMS?: number;
+            /** @description 计费档位（service_tier 归一化：priority/flex/fast/auto）；null = 未计费路径 */
+            BillingTier?: string | null;
+            /** Format: date-time */
+            CreatedAt?: string;
+        };
+        ErrLogsResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["ErrLog"][];
         };
         StatBucket: {
             /** Format: date-time */
@@ -3054,7 +3127,37 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    GetUserLogs: {
+    GetUserUsageLogs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                group_id?: number;
+                account_id?: number;
+                model?: string;
+                error_type?: string;
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserErrLogs: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3079,7 +3182,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LogsResponse"];
+                    "application/json": components["schemas"]["ErrLogsResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -3285,7 +3388,38 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    GetLogs: {
+    GetUsageLogs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                group_id?: number;
+                account_id?: number;
+                user_id?: number;
+                model?: string;
+                error_type?: string;
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetErrLogs: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3311,7 +3445,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LogsResponse"];
+                    "application/json": components["schemas"]["ErrLogsResponse"];
                 };
             };
             default: components["responses"]["Error"];

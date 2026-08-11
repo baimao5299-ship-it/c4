@@ -914,11 +914,33 @@ paths:
               schema: { $ref: '#/components/schemas/KeyWithSecret' }
         default:
           $ref: '#/components/responses/Error'
-  /user/logs:
+  /user/usage_logs:
     get:
-      operationId: GetUserLogs
+      operationId: GetUserUsageLogs
       tags: [user]
-      summary: 我的用量日志（强制 user_id = 当前用户，防越权）
+      summary: 我的用量明细（usage_logs 纯计费明细；强制 user_id = 当前用户，防越权；error_type 值域 none/abort）
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: group_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: account_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: model, in: query, schema: { type: string } }
+        - { name: error_type, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: 分页结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LogsResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /user/err_logs:
+    get:
+      operationId: GetUserErrLogs
+      tags: [user]
+      summary: 我的错误明细（err_logs 完整错误面：拒绝 + 异常双轨；强制 user_id = 当前用户，防越权）
       parameters:
         - { name: limit, in: query, schema: { type: integer, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
@@ -934,7 +956,7 @@ paths:
           description: 分页结果
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/LogsResponse' }
+              schema: { $ref: '#/components/schemas/ErrLogsResponse' }
         default:
           $ref: '#/components/responses/Error'
   /user/stats:
@@ -1074,11 +1096,34 @@ paths:
           description: 删除成功
         default:
           $ref: '#/components/responses/Error'
-  /logs:
+  /usage_logs:
     get:
-      operationId: GetLogs
+      operationId: GetUsageLogs
       tags: [logs]
-      summary: 用量日志分页查询
+      summary: 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs）
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: group_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: account_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64, description: 按用户过滤（admin 看全部） } }
+        - { name: model, in: query, schema: { type: string } }
+        - { name: error_type, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: 分页结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LogsResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /err_logs:
+    get:
+      operationId: GetErrLogs
+      tags: [logs]
+      summary: 错误明细分页查询（err_logs 完整错误面：本地拒绝 + 半异常双轨；status_code/error_type 全值）
       parameters:
         - { name: limit, in: query, schema: { type: integer, default: 20 } }
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
@@ -1095,7 +1140,7 @@ paths:
           description: 分页结果
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/LogsResponse' }
+              schema: { $ref: '#/components/schemas/ErrLogsResponse' }
         default:
           $ref: '#/components/responses/Error'
   /stats:
@@ -1874,7 +1919,8 @@ components:
         Model: { type: string }
         MappedModel: { type: string, nullable: true }
         Format: { $ref: '#/components/schemas/RequestFormat' }
-        StatusCode: { type: integer }
+        # 用户裁决（err_logs 分表）：status_code/error_message 已移入 err_logs
+        #（usage_logs 瘦身 + 纯计费化），本响应不再含该两字段。
         ErrorType: { $ref: '#/components/schemas/ErrorType' }
         LatencyMS: { type: integer, format: int64 }
         TTFTMS: { type: integer, format: int64, nullable: true, description: 首 token 时间毫秒（流式首 chunk 采集）；非流式/失败/无首 token 路径 = null }
@@ -1900,6 +1946,33 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/UsageLog' }
+    ErrLog:
+      type: object
+      description: 错误明细审计（err_logs 瘦表：拒绝 + 异常双轨；无 token/价格列）
+      properties:
+        ID: { type: integer, format: int64 }
+        RequestID: { type: string }
+        GroupID: { type: integer, format: int64 }
+        AccountID: { type: integer, format: int64 }
+        TemplateID: { type: integer, format: int64 }
+        UserID: { type: integer, format: int64, description: 鉴权归属用户；0 = 无 }
+        KeyID: { type: integer, format: int64, description: 鉴权归属 key；0 = 无 }
+        Model: { type: string }
+        Format: { $ref: '#/components/schemas/RequestFormat' }
+        StatusCode: { type: integer, description: 错误状态码（完整错误面；0 = 连接级） }
+        ErrorType: { $ref: '#/components/schemas/ErrorType' }
+        ErrorMessage: { type: string, nullable: true, description: 错误文本（拒绝文案/上游 body，域内截断 500 字符）；null = 无错误文本 }
+        LatencyMS: { type: integer, format: int64 }
+        BillingTier: { type: string, nullable: true, description: 计费档位（service_tier 归一化：priority/flex/fast/auto）；null = 未计费路径 }
+        CreatedAt: { type: string, format: date-time }
+    ErrLogsResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/ErrLog' }
     StatBucket:
       type: object
       properties:

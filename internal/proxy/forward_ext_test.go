@@ -212,7 +212,10 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil)
+	// errlog worker（分表设计）：错误明细与 usage_logs 共用捕获 store（错误路径
+	// 断言经 p.errlog.Close 显式排空）；成功路径不投递。
+	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{QueueSize: 4096, FlushInterval: time.Hour}, errLogStoreFrom(logs), nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil, errlogW)
 }
 
 func TestProxyResponsesNonStreaming(t *testing.T) {
@@ -436,7 +439,7 @@ func TestProxyResponsesFailoverExhausted429(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "失败转移耗尽后并发槽必须释放")
-	require.Equal(t, 1, p.rec.Pending(), "耗尽路径必须记录一条用量")
+	require.Zero(t, p.rec.Pending(), "耗尽路径失败行不产生明细 pending（err_logs 承载）")
 }
 
 // responses 端点 4xx：与 chat 同构——透传上游状态码与原始 body、不转移。
@@ -457,7 +460,7 @@ func TestProxyResponsesPassthrough4xx(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
-	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+	require.Zero(t, p.rec.Pending(), "4xx 透传不产生明细 pending（err_logs 承载）")
 }
 
 // 回归（评审 Minor）：responses 流式 4xx 透传（上游非 200 在 relay 前检出）。
@@ -481,7 +484,7 @@ func TestProxyResponsesStreamingPassthrough4xx(t *testing.T) {
 	require.Equal(t, domain.StatusActive, ri.Status)
 	require.Nil(t, ri.CooldownUntil)
 	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
-	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+	require.Zero(t, p.rec.Pending(), "4xx 透传不产生明细 pending（err_logs 承载）")
 }
 
 func TestProxyAnthropicPassthrough4xx(t *testing.T) {
@@ -501,7 +504,7 @@ func TestProxyAnthropicPassthrough4xx(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
-	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+	require.Zero(t, p.rec.Pending(), "4xx 透传不产生明细 pending（err_logs 承载）")
 }
 
 // 回归（评审 Minor）：anthropic 流式 4xx 透传（上游非 200 在 relay 前检出）。
@@ -525,7 +528,7 @@ func TestProxyAnthropicStreamingPassthrough4xx(t *testing.T) {
 	require.Equal(t, domain.StatusActive, ri.Status)
 	require.Nil(t, ri.CooldownUntil)
 	require.Zero(t, ri.Concurrency, "4xx 透传后并发槽必须释放")
-	require.Equal(t, 1, p.rec.Pending(), "4xx 路径必须记录一条用量")
+	require.Zero(t, p.rec.Pending(), "4xx 透传不产生明细 pending（err_logs 承载）")
 }
 
 // 裸根约定的 anthropic 流式回归：base_url 为裸根（模板校验拒绝尾 /v1，

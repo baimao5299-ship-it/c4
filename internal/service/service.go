@@ -177,7 +177,8 @@ type PricingStore interface {
 }
 
 type LogStore interface {
-	QueryLogs(ctx context.Context, q repository.LogQuery) ([]*domain.UsageLog, int64, error)
+	QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, int64, error)
+	QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, int64, error)
 }
 
 type StatStore interface {

@@ -32,6 +32,18 @@ func (f AccountExtFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountExtMutation", m)
 }
 
+// The ErrLogFunc type is an adapter to allow the use of ordinary
+// function as ErrLog mutator.
+type ErrLogFunc func(context.Context, *ent.ErrLogMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ErrLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ErrLogMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ErrLogMutation", m)
+}
+
 // The GroupFunc type is an adapter to allow the use of ordinary
 // function as Group mutator.
 type GroupFunc func(context.Context, *ent.GroupMutation) (ent.Value, error)

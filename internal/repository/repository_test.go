@@ -531,15 +531,16 @@ func TestLogsAndStats(t *testing.T) {
 	// input_tokens, ..., output_tokens, overdraft, price_cache_creation_millis,
 	// price_cache_read_millis, price_input_millis, price_output_millis, ...,
 	// total_tokens, ttft_ms；billing_tier 未设置不落列保持 NULL；l2 新列未设置
-	// → 该行 NULL）
+	// → 该行 NULL。status_code 已从 usage_logs 移除（分表设计瘦身，错误审计列
+	// 归 err_logs）——InsertBatch 不再携带该列）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_logs"`)).
 		WithArgs(false, int64(2), int64(2), int64(4), int64(0), pgxmock.AnyArg(), "none",
 			usagelog.Format("openai-chat"), int64(1), int64(0), int64(10), "m", int64(0), false,
 			int64(5678), int64(1234), int64(1e7), int64(2e7), "r1",
-			int(200), int64(3), int64(100), int64(88),
+			int64(3), int64(100), int64(88),
 			false, int64(2), int64(3), int64(5), int64(0), pgxmock.AnyArg(), "5xx",
 			usagelog.Format("openai-chat"), int64(1), int64(0), int64(20), "m", int64(0), false,
-			"r2", int(500), int64(3), int64(0)).
+			"r2", int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
 	// Log Query -> Count + SELECT（TTFT 列按 schema 序在 latency_ms 后；价格四列
@@ -551,17 +552,17 @@ func TestLogsAndStats(t *testing.T) {
 	tr.pool.ExpectQuery(q(`FROM "usage_logs"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
-			"model", "mapped_model", "format", "status_code", "error_type", "latency_ms",
+			"model", "mapped_model", "format", "error_type", "latency_ms",
 			"ttft_ms", "input_tokens", "price_input_millis", "output_tokens", "price_output_millis",
 			"total_tokens", "cache_read_tokens", "price_cache_read_millis", "cache_creation_tokens",
 			"price_cache_creation_millis", "cost", "billing_tier", "above_hit", "overdraft", "created_at"}).
 			AddRow(int64(1), "r1", int64(1), int64(2), int64(3), "m", "", "openai-chat",
-				int(200), "none", int64(10), int64(88), int64(0), int64(1e7), int64(0), int64(2e7),
+				"none", int64(10), int64(88), int64(0), int64(1e7), int64(0), int64(2e7),
 				int64(100), int64(4), int64(1234), int64(2), int64(5678),
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 			AddRow(int64(2), "r2", int64(1), int64(2), int64(3), "m", "", "openai-chat",
-				int(500), "5xx", int64(20), sql.NullInt64{}, int64(0), sql.NullInt64{}, int64(0), sql.NullInt64{},
+				"5xx", int64(20), sql.NullInt64{}, int64(0), sql.NullInt64{}, int64(0), sql.NullInt64{},
 				int64(0), int64(5), sql.NullInt64{}, int64(3), sql.NullInt64{},
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
@@ -584,8 +585,8 @@ func TestLogsAndStats(t *testing.T) {
 			PriceCacheCreationMillis: int64Ptr(5678)},
 		{RequestID: "r2", GroupID: 1, AccountID: 2, TemplateID: 3, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 500, ErrorType: domain.Err5xx, LatencyMS: 20, TotalTokens: 0, CacheReadTokens: 5, CacheCreationTokens: 3},
 	}
-	require.NoError(t, tr.repos.Logs.InsertBatch(ctx(), logs))
-	rows, total, err := tr.repos.Logs.QueryLogs(ctx(), repository.LogQuery{GroupID: 1, Limit: 10})
+	require.NoError(t, tr.repos.Usages.InsertBatch(ctx(), logs))
+	rows, total, err := tr.repos.Usages.QueryUsages(ctx(), repository.UsageQuery{GroupID: 1, Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)

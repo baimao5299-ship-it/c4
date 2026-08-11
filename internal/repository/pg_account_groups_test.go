@@ -42,9 +42,13 @@ func newPGRepos(t *testing.T) *repository.Repository {
 	require.NoError(t, err)
 	repos, err := repository.NewWithPG(entsql.OpenDB(dialect.Postgres, db), true, pool) // pool 注入 Stats（Upsert COPY 两阶段真实路径）
 	require.NoError(t, err)
-	// T4.5：usagelog 已从 ent migrate 列表排除（usageLogMigrateHook），分区表
-	// 由 bootstrap 独占建表——所有 PG 测试共用同一分区表基座。
+	// T4.5 + 分表设计 + 用户裁决 2026-08-11：三张分区表（usage_logs/err_logs/
+	// usage_stats）已从 ent migrate 列表排除（migrateHookExcludesPartitioned），
+	// 分区表由 bootstrap 独占建表——所有 PG 测试共用同一分区表基座（含
+	// usage_stats 分区上的 Upsert 真实路径）。
 	require.NoError(t, repos.EnsureUsageLogPartitioned(ctx, time.Now()))
+	require.NoError(t, repos.EnsureErrLogPartitioned(ctx, time.Now()))
+	require.NoError(t, repos.EnsureUsageStatsPartitioned(ctx, time.Now()))
 	return repos
 }
 
