@@ -81,17 +81,20 @@ type flusherPending struct {
 // 在途 DeductAndLog 快速失败（回灌不丢），不无界阻塞停机（O1 复测：在途
 // 批次 Background ctx 令停机拖至分钟级）。
 type Flusher struct {
-	cfg       FlushConfig
-	stats     *usage.Recorder
-	writer    DeductWriter
-	bal       *Balances
-	log       *logx.Logger
-	workers   int
-	mu        sync.Mutex // 保护 pending（Record 聚合与 flush 换批/回灌并发）
-	pending   map[int64]*flusherPending
-	pendingN  atomic.Int64 // pending 日志条数（水线观测；换批/回灌同步增减）
-	warned    atomic.Bool  // 水线越过告警边沿（回落复位，避免重复刷屏）
-	flushMu   sync.Mutex   // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥；在途批次即其持有者
+	cfg      FlushConfig
+	stats    *usage.Recorder
+	writer   DeductWriter
+	bal      *Balances
+	log      *logx.Logger
+	workers  int
+	mu       sync.Mutex // 保护 pending（Record 聚合与 flush 换批/回灌并发）
+	pending  map[int64]*flusherPending
+	pendingN atomic.Int64 // pending 日志条数（水线观测；换批/回灌同步增减）
+	warned   atomic.Bool  // 水线越过告警边沿（回落复位，避免重复刷屏）
+	// lastFlush 最近一次实际 flush 周期完成时刻（UnixMilli；0 = 尚未 flush——
+	// 空 pending 的早退路径不记，观测"flusher 最近何时真正落过库"）。
+	lastFlush atomic.Int64
+	flushMu   sync.Mutex // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥；在途批次即其持有者
 	started   atomic.Bool
 	loopDone  chan struct{}
 	closeOnce sync.Once
@@ -337,6 +340,7 @@ func (f *Flusher) flushCtx(ctx context.Context) int64 {
 		}(shard)
 	}
 	wg.Wait()
+	f.lastFlush.Store(time.Now().UnixMilli())
 	return drained.Load()
 }
 

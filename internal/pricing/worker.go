@@ -57,6 +57,9 @@ type SyncWorker struct {
 	now       func() time.Time
 	wait      func(ctx context.Context, d time.Duration) error
 	startOnce atomic.Bool
+	// lastSync 最近一次实际同步尝试完成时刻（UnixMilli；观测面 /ops/workers——
+	// Sync 低频路径原子写，零热路径成本）。
+	lastSync atomic.Int64
 }
 
 // NewSyncWorker 构造同步 worker（now/wait 默认真实实现）。
@@ -99,6 +102,7 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 		return fmt.Errorf("pricing: price_source_url not set, skip sync")
 	}
 	res, err := w.fetch.Fetch(ctx, url)
+	w.lastSync.Store(time.Now().UnixMilli()) // 观测面：fetch 后即记（成败都算一次同步尝试）
 	if err != nil {
 		return err
 	}

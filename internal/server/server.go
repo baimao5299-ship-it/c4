@@ -3,7 +3,6 @@
 package server
 
 import (
-	"context"
 	"io/fs"
 	"net/http"
 	"runtime"
@@ -13,13 +12,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"go-proxy-mini/internal/auth"
-	"go-proxy-mini/internal/domain"
 	"go-proxy-mini/pkg/logx"
 )
 
 type Options struct {
 	AdminToken        string
-	JWTIssuer         *auth.Issuer         // platform_admin JWT 鉴权（/admin 扩展）
+	JWTIssuer         *auth.Issuer            // platform_admin JWT 鉴权（/admin 扩展）
 	UserStatus        auth.UserStatusProvider // 用户状态快照（JWT 鉴权路径禁用即拒）
 	MaxInflight       int64
 	ReadHeaderTimeout time.Duration
@@ -29,6 +27,10 @@ type Options struct {
 	AIHandler         http.Handler // proxy 三个端点
 	WebFS             fs.FS        // 前端构建产物（nil = 不挂静态资源）
 	Logger            *logx.Logger
+	// OpsWorkers/OpsSnapshots GET /ops/workers 装配（spec 2026-08-11）：
+	// OpsWorkers 非空才挂路由；与 /admin 同鉴权中间件（adminAuth）。
+	OpsWorkers   []StatsProvider
+	OpsSnapshots func() []SnapshotState
 }
 
 type Server struct {
@@ -64,41 +66,18 @@ func NewServer(opts Options) *Server {
 	})
 
 	r.Group(func(r chi.Router) {
-		// /admin 鉴权 = 静态 admin token OR platform_admin JWT（两个都过才拒）。
-		// JWT 路径同样做快照用户状态校验（禁用即拒；评审定夺②）。
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				authz := req.Header.Get("Authorization")
-				if authz == "Bearer "+opts.AdminToken {
-					// 静态 admin token 路径不注入 UserID（决策 5：handler 读到 0 = 系统）
-					next.ServeHTTP(w, req)
-					return
-				}
-				if opts.JWTIssuer != nil && strings.HasPrefix(authz, "Bearer ") {
-					claims, err := opts.JWTIssuer.Verify(strings.TrimPrefix(authz, "Bearer "))
-					if err == nil && claims.Role == string(domain.RolePlatformAdmin) {
-						active := false
-						if opts.UserStatus == nil {
-							active = true
-						} else if st, ok := opts.UserStatus.UserStatus(claims.UserID); ok && st == domain.UserStatusActive {
-							active = true
-						}
-						if active {
-							// JWT 路径注入 claims.UserID（兑换码 created_by 用，决策 5）
-							ctx := context.WithValue(req.Context(), adminUserIDKey{}, claims.UserID)
-							next.ServeHTTP(w, req.WithContext(ctx))
-							return
-						}
-					}
-				}
-				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
-			})
-		})
+		// /admin 与 /ops 共用管理面鉴权（adminAuth，定义见 ops.go）：
+		// 静态 admin token OR platform_admin JWT（两个都过才拒）。
+		r.Use(adminAuth(opts))
 		if opts.AdminHandler != nil {
 			// 用 Handle 而非 Mount：chi v5.3.1 对同一 pattern 重复 Mount 会 panic，
 			// 且 AI 组已挂 Mount("/", ...)。Handle 不剥离前缀，AdminHandler
 			// （HandlerWithOptions BaseURL="/admin"）按完整路径 /admin/* 匹配。
 			r.Handle("/admin/*", opts.AdminHandler)
+		}
+		if len(opts.OpsWorkers) > 0 {
+			ops := NewOpsHandler(OpsOptions{Workers: opts.OpsWorkers, Snapshots: opts.OpsSnapshots})
+			r.Get("/ops/workers", ops.ServeHTTP)
 		}
 	})
 
@@ -135,7 +114,7 @@ func NewServer(opts Options) *Server {
 		})
 		// SPA fallback：非 API/静态路径回 index.html
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/user") || strings.HasPrefix(r.URL.Path, "/v1") || r.URL.Path == "/healthz" {
+			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/user") || strings.HasPrefix(r.URL.Path, "/v1") || strings.HasPrefix(r.URL.Path, "/ops") || r.URL.Path == "/healthz" {
 				http.NotFound(w, r)
 				return
 			}

@@ -1,0 +1,14 @@
+package notify
+
+// /ops/workers 可观测面（spec 2026-08-11）：独立 Stats 契约不改 worker.Worker
+// 接口——装配侧类型断言聚合（main.go），响应 typed struct 非 map。
+
+// ListenerStats NOTIFY 监听 worker 状态（存活最小集）。
+type ListenerStats struct {
+	Running bool `json:"running"` // 监听循环存活（Start 置位、run 退出复位；原子读零锁）
+}
+
+// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+func (l *Listener) Stats() any {
+	return ListenerStats{Running: l.running.Load()}
+}
