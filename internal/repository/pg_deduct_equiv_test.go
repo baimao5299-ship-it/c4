@@ -138,8 +138,10 @@ func TestPGDeductCopyPathEquivalent(t *testing.T) {
 			require.Equal(t, stEnt, stCopy, "ent 路径与 COPY 路径终态必须逐字段一致")
 			if sc.name == "large batch 4000 rows cross chunks" {
 				// 分区路由逐路径断言：明日分区各 3 行、今日分区各 3997 行。
+				// 分区名由种子基准 base 派生（与插入行同一日期——新 time.Now() 在
+				// UTC 午夜跨日 ~1s 窗口会断言错分区，L-4 flake）。
 				pool := pgTestPool(t)
-				tomorrow := time.Now().Add(24 * time.Hour).UTC().Format("20060102")
+				tomorrow := base.Add(24 * time.Hour).UTC().Format("20060102")
 				require.Equal(t, int64(3), pgCount(t, pool,
 					"SELECT count(*) FROM usage_logs_"+tomorrow+" WHERE user_id = $1", uidCopy),
 					"COPY 路径跨日行落入明日分区")
