@@ -256,7 +256,7 @@ func TestPGDeductUserMissing(t *testing.T) {
 // TestPGDeductLargeBatchSuccess 单 user 4000 行全列日志（23 列 × 4000 =
 // 92,000 参数）扣费成功：修复前单批 CreateBulk 超 PG 65535 参数上限 →
 // "extended protocol limited to 65535 parameters" → 扣费停滞 pending 积压
-// （压测实证）；分片 500 行/批同事务逐片插入后全量成功，扣费精确。
+// （压测实证）；分片 2000 行/批同事务逐片插入后全量成功，扣费精确。
 func TestPGDeductLargeBatchSuccess(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()

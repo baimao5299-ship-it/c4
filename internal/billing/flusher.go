@@ -34,8 +34,11 @@ var pendingWaterline int64 = 1_000_000
 // maxUsageLogsPerTx 单用户单事务日志行数上限（P2，压测 2026-08-11 修复）：
 // P1 故障期单用户积压 1M+ 行 → 单事务 2000+ 分片（500 行/批）串行插入 8 分钟
 // （xact_age 08:02 实证），flushMu 串行冻结全局 usage 记录 + 堆涨 4.6GB（巨批
-// CreateBulk 构建内存）。超限拆多事务逐事务提交——每事务 ≤ 10k 行（~20 批/
-// 事务，单事务时长/内存有界），事务内仍由 DeductAndLog 按 500 行/批分片。
+// CreateBulk 构建内存）。超限拆多事务逐事务提交——每事务 ≤ 10k 行（~5 批/
+// 事务，单事务时长/内存有界），事务内仍由 DeductAndLog 按 2000 行/批分片。
+// 热点修复 A（2026-08-11，测量数据见 repository/pg_deduct_bench_test.go）：
+// 保持 10k——档位 2k/5k/10k 逐行墙钟持平（27/23/22µs·行），drain 能力
+// （预算 500ms 内可提交块数 × 块行数，线性缩放下）10k 档恒 ≥ 小档。
 const maxUsageLogsPerTx = 10_000
 
 // backlogDrainBudget 单次 flush 内积压用户续传循环的时间预算（P2a，压测

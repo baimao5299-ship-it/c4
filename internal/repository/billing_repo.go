@@ -15,9 +15,12 @@ import (
 
 // usageLogBatchSize 计费日志单批插入行数上限（#37 P2）：ent CreateBulk 参数 =
 // 列数 × 行数，超 PG 65535 参数上限即失败（"extended protocol limited to
-// 65535 parameters"，19 列 × ~3448 行——压测实证扣费停滞根因）。500 行/批
-// （19 × 500 = 9,500 参数），与 usage InsertBatch 分块同量级。
-const usageLogBatchSize = 500
+// 65535 parameters"，19 列 × ~3448 行——压测实证扣费停滞根因）。
+// 热点修复 A（2026-08-11，测量数据见 pg_deduct_bench_test.go）：500 → 2000
+// 行/批（26 列最坏界 × 2000 = 52,000 参数 < 65,535；生产 19 列 38,000）——
+// 单事务 10k 行往返 20 → 5 次（往返实测 0.3ms/次，本地净省 ~4.5ms/事务 ~2%，
+// 负载/远端 DB 上按延迟放大）；服务器侧逐行插入耗时持平（~6.6µs/行）。
+const usageLogBatchSize = 2000
 
 // BillingRepo 扣费落库：FEFO 临时额度优先 + 条件扣费（允许透支）+ 同事务批量
 // 计费日志。全毫分直接扣减（1 USD = 100,000 毫分，零换算零取整误差）。
@@ -146,12 +149,12 @@ func (r *BillingRepo) deductAndLogTx(ctx context.Context, userID, cost int64, lo
 		balanceAfter = row.Balance
 	}
 	if len(logs) > 0 {
-		// 批量插入分片（#37 P2）：ent CreateBulk 参数 = 列数 × 行数，单批超
-		// PG 65535 参数上限即失败（"extended protocol limited to 65535
-		// parameters"，19 列 × ~3448 行——压测实证：单 user 大批日志 → 扣费
-		// 停滞、pending 积压）。≤500 行/批（19 × 500 = 9,500 参数，与 usage
-		// InsertBatch 分块同量级），同事务逐片 CreateBulk，任一失败整体回滚
-		// 语义不变（chunk 原子性由外层事务保证）。
+		// 批量插入分片（#37 P2 + 热点修复 A）：ent CreateBulk 参数 = 列数 ×
+		// 行数，单批超 PG 65535 参数上限即失败（"extended protocol limited to
+		// 65535 parameters"，19 列 × ~3448 行——压测实证：单 user 大批日志 →
+		// 扣费停滞、pending 积压）。≤2000 行/批（26 列最坏界 × 2000 = 52,000
+		// 参数，安全余量 ~21%；生产 19 列 38,000），同事务逐片 CreateBulk，
+		// 任一失败整体回滚语义不变（chunk 原子性由外层事务保证）。
 		for start := 0; start < len(logs); start += usageLogBatchSize {
 			end := min(start+usageLogBatchSize, len(logs))
 			builders := make([]*ent.UsageLogCreate, 0, end-start)
