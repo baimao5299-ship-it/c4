@@ -113,7 +113,7 @@ func (c *capturedUpstream) srv(t *testing.T) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": "c_1", "object": "chat.completion", "model": body["model"],
 				"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "hi"}, "finish_reason": "stop"}},
-				"usage":    map[string]any{"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
+				"usage":   map[string]any{"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
 			})
 		default:
 			w.WriteHeader(404)
@@ -158,7 +158,7 @@ func newConvertedTestProxy(t *testing.T, upstream string, tplFormats []domain.Re
 		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil, nil)
 }
 
 // TestConvertedChatToRespStreaming 客户端 chat 流式 → 上游 resp 流 →

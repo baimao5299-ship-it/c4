@@ -18,23 +18,24 @@ import (
 // Repository 聚合各实体仓库（绑定单一 client + driver；WithTx 复用同一构造函数
 // newRepository 构造 tx 版实例）。
 type Repository struct {
-	Templates   *TemplateRepo
-	Accounts    *AccountRepo
-	Groups      *GroupRepo
-	Users       *UserRepo
-	Keys        *KeyRepo
-	Assignments *GroupAssignmentRepo
-	Settings    *SettingRepo
-	Logs        *LogRepo
-	Stats       *StatRepo
-	Rules       RuleStore
-	Redemptions *RedemptionRepo
-	Pricing     *PricingRepo
-	Billing     *BillingRepo // 扣费落库（Phase 5 T3）
-	Partitions  *PartitionRepo // usagelog 按日分区 bootstrap/retention（Phase 5 T4.5）
+	Templates    *TemplateRepo
+	Accounts     *AccountRepo
+	Groups       *GroupRepo
+	Users        *UserRepo
+	Keys         *KeyRepo
+	Assignments  *GroupAssignmentRepo
+	Settings     *SettingRepo
+	Usages       *UsageRepo  // usage_logs 明细（消费面改名：log → usage 语义）
+	ErrLogs      *ErrLogRepo // err_logs 错误审计明细（分表设计）
+	Stats        *StatRepo
+	Rules        RuleStore
+	Redemptions  *RedemptionRepo
+	Pricing      *PricingRepo
+	Billing      *BillingRepo     // 扣费落库（Phase 5 T3）
+	Partitions   *PartitionRepo   // 分区表 bootstrap/retention（usage_logs + err_logs + usage_stats，Phase 5 T4.5 + 用户裁决 2026-08-11）
 	TemplateExts *TemplateExtRepo // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
 	AccountExts  *AccountExtRepo  // 账号类型化鉴权扩展（account_ext 1:1；W1 数据层，消费接线 W6）
-	Client      *ent.Client
+	Client       *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
 	// WithTx 内为事务驱动（txDriver），保证 raw SQL 与 ent 构建器同连接。
@@ -53,10 +54,11 @@ func New(drv dialect.Driver, migrate bool) (*Repository, error) {
 func NewWithPG(drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repository, error) {
 	client := ent.NewClient(ent.Driver(drv))
 	if migrate {
-		// usagelog 经 usageLogMigrateHook 从迁移列表过滤——分区表 DDL 由
-		// Partitions.EnsureUsageLogPartitioned 独占管理（atlas 对分区表 diff
-		// 规划期必失败，真实 PG 实测结论见 partition.go）。
-		if err := client.Schema.Create(context.Background(), usageLogMigrateHook()); err != nil {
+		// usage_logs/err_logs 经 migrateHookExcludesPartitioned 从迁移列表过滤
+		// ——分区表 DDL 由 Partitions.EnsureUsageLogPartitioned/
+		// EnsureErrLogPartitioned 独占管理（atlas 对分区表 diff 规划期必失败，
+		// 真实 PG 实测结论见 partition.go）。
+		if err := client.Schema.Create(context.Background(), migrateHookExcludesPartitioned()); err != nil {
 			return nil, err
 		}
 	}
@@ -69,24 +71,25 @@ func NewWithPG(drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repositor
 func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
 	accounts := &AccountRepo{client: client}
 	return &Repository{
-		Templates:   &TemplateRepo{client: client},
-		Accounts:    accounts,
-		Groups:      &GroupRepo{client: client, accounts: accounts, driver: drv},
-		Users:       &UserRepo{client: client, driver: drv},
-		Keys:        &KeyRepo{client: client, driver: drv},
-		Assignments: &GroupAssignmentRepo{client: client},
-		Settings:    &SettingRepo{client: client},
-		Logs:        &LogRepo{client: client},
-		Stats:       &StatRepo{client: client, pool: pool},
-		Rules:       &RuleRepo{client: client},
-		Redemptions: &RedemptionRepo{client: client, driver: drv},
-		Pricing:     &PricingRepo{client: client, driver: drv},
-		Billing:     &BillingRepo{client: client, driver: drv},
-		Partitions:  &PartitionRepo{driver: drv},
+		Templates:    &TemplateRepo{client: client},
+		Accounts:     accounts,
+		Groups:       &GroupRepo{client: client, accounts: accounts, driver: drv},
+		Users:        &UserRepo{client: client, driver: drv},
+		Keys:         &KeyRepo{client: client, driver: drv},
+		Assignments:  &GroupAssignmentRepo{client: client},
+		Settings:     &SettingRepo{client: client},
+		Usages:       &UsageRepo{client: client},
+		ErrLogs:      &ErrLogRepo{client: client},
+		Stats:        &StatRepo{client: client, pool: pool},
+		Rules:        &RuleRepo{client: client},
+		Redemptions:  &RedemptionRepo{client: client, driver: drv},
+		Pricing:      &PricingRepo{client: client, driver: drv},
+		Billing:      &BillingRepo{client: client, driver: drv},
+		Partitions:   &PartitionRepo{driver: drv},
 		TemplateExts: &TemplateExtRepo{client: client},
 		AccountExts:  &AccountExtRepo{client: client},
-		Client:      client,
-		driver:      drv,
+		Client:       client,
+		driver:       drv,
 	}
 }
 
@@ -412,8 +415,18 @@ func (r *Repository) CountRules(ctx context.Context) (int64, error) {
 	return r.Rules.CountRules(ctx)
 }
 
-func (r *Repository) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
-	return r.Logs.QueryLogs(ctx, q)
+func (r *Repository) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, int64, error) {
+	return r.Usages.QueryUsages(ctx, q)
+}
+
+// InsertErrLogBatch 批量插入错误明细（err_logs；errlog worker 写路径）。
+func (r *Repository) InsertErrLogBatch(ctx context.Context, logs []*domain.UsageLog) error {
+	return r.ErrLogs.InsertBatch(ctx, logs)
+}
+
+// QueryErrLogs err_logs 错误明细分页查询（/err_logs API）。
+func (r *Repository) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain.UsageLog, int64, error) {
+	return r.ErrLogs.QueryErrLogs(ctx, q)
 }
 
 func (r *Repository) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBucket, error) {
@@ -514,6 +527,43 @@ func (r *Repository) EnsureUsageLogPartitions(ctx context.Context, now, until ti
 // 个数）。retention worker 按 LogRetentionDays 调。
 func (r *Repository) DropUsageLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
 	return r.Partitions.DropUsageLogPartitionsBefore(ctx, cutoff)
+}
+
+// EnsureErrLogPartitioned err_logs 分区 bootstrap（幂等；main 装配在 ent
+// migrate 之后调用，与 usage_logs 同路线）。
+func (r *Repository) EnsureErrLogPartitioned(ctx context.Context, now time.Time) error {
+	return r.Partitions.EnsureErrLogPartitioned(ctx, now)
+}
+
+// EnsureErrLogPartitions err_logs 预建 [trunc(now), trunc(until)] 每日分区
+// （retention worker 防日界竞态；幂等）。
+func (r *Repository) EnsureErrLogPartitions(ctx context.Context, now, until time.Time) error {
+	return r.Partitions.EnsureErrLogPartitions(ctx, now, until)
+}
+
+// DropErrLogPartitionsBefore err_logs DROP 分区下界 < cutoff 的分区（O(1)；
+// 独立保留期——retention worker 按 ErrLogRetentionDays 调）。
+func (r *Repository) DropErrLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	return r.Partitions.DropErrLogPartitionsBefore(ctx, cutoff)
+}
+
+// EnsureUsageStatsPartitioned usage_stats 分区 bootstrap（幂等；main 装配在
+// ent migrate 之后调用——migrate 经钩子跳过分区表，三表同路线）。
+func (r *Repository) EnsureUsageStatsPartitioned(ctx context.Context, now time.Time) error {
+	return r.Partitions.EnsureUsageStatsPartitioned(ctx, now)
+}
+
+// EnsureUsageStatsPartitions usage_stats 预建 [trunc(now), trunc(until)] 每日
+// 分区（retention worker 防日界竞态；分区键 bucket_time，幂等）。
+func (r *Repository) EnsureUsageStatsPartitions(ctx context.Context, now, until time.Time) error {
+	return r.Partitions.EnsureUsageStatsPartitions(ctx, now, until)
+}
+
+// DropUsageStatsPartitionsBefore usage_stats DROP 分区下界 < cutoff 的分区
+// （O(1)；用户裁决 2026-08-11：PG DELETE 不释放空间，180 天保留清理必须分区
+// DROP——retention worker 按 StatsRetentionDays 调）。
+func (r *Repository) DropUsageStatsPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	return r.Partitions.DropUsageStatsPartitionsBefore(ctx, cutoff)
 }
 
 // LoadBalances 全量余额快照（Phase 5 计费余额预检数据源）。

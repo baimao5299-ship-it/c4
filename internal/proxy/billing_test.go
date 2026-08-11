@@ -392,12 +392,16 @@ func TestProxyBillingNoPriceDefenseAtFinish(t *testing.T) {
 	p.HandleChat(rec, req)
 	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String(), "预检通过 → 正常转发")
 
+	// 分表路由（放行路径语义）：防御行 ErrorType=none（客户端拿到 200）→ 入
+	// usage_logs（cost=0 不限——err_logs 仅失败行）；errlog 不投递。
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Equal(t, "no_price", store.logs[0].BillingTier, "竞态防御：no_price 审计")
 	require.Zero(t, store.logs[0].Cost, "缺价防御 cost 0")
+	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType, "放行路径（none）入 usage_logs")
 	require.Nil(t, store.logs[0].PriceInputMillis, "no_price 防御：输入单价快照保持 nil（NULL 落库）")
 	require.Nil(t, store.logs[0].PriceOutputMillis, "no_price 防御：输出单价快照保持 nil")
 	require.Nil(t, store.logs[0].PriceCacheReadMillis, "no_price 防御：缓存读单价快照保持 nil")
@@ -537,6 +541,7 @@ func TestProxyBillingStreamAbortGroupMultiplier(t *testing.T) {
 
 // TestProxyBillingDisabledPassthrough 计费全关（bill nil）：service_tier 恒透传
 // （不 402、不 reject、不剥离），BillingTier 不落日志（空 = 未计费路径）。
+// 分表路由（放行路径语义）：成功行（none）入 usage_logs——cost=0 不限。
 func TestProxyBillingDisabledPassthrough(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
@@ -551,6 +556,7 @@ func TestProxyBillingDisabledPassthrough(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String(), "计费全关：无价格表也不 402")
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
@@ -626,7 +632,7 @@ func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceL
 	}
 	p := newTestProxyTplTimeoutRec(t, tpl, 1, true, 30*time.Second, rec, &BillingHooks{
 		Prices: prices, Balances: bal, Flusher: f,
-	})
+	}, nil)
 	p.cfg.BillingCapture = true
 	return p
 }
@@ -829,7 +835,7 @@ func newTestProxyBillingKeys(t *testing.T, keys map[string]domain.KeyMeta, accs 
 	p := New(cfg, sched, credential.New(), rec, clients, auth, nil, &BillingHooks{
 		Prices:   &fakePriceLookup{m: map[string]*domain.Pricing{"gpt-4o": proxyPricing()}},
 		Balances: bal, Flusher: f,
-	})
+	}, nil)
 	p.cfg.BillingCapture = true
 	return p
 }
@@ -852,7 +858,7 @@ func TestProxyBillingMultiplierPerGroup(t *testing.T) {
 	require.NoError(t, bal.Reload(context.Background()))
 	acc := &domain.Account{ID: 1, TemplateID: 1, Template: &domain.Template{
 		ID: 1, Name: "t", BaseURL: up.URL,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}, UpstreamKey: "sk-upstream", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4}
 
@@ -933,7 +939,8 @@ func TestProxyBillingMultiplierGroup(t *testing.T) {
 }
 
 // TestProxyBillingFreeUserPasses 免费用户放行（T3.5）：有效倍率 0 → 余额 0
-// 不 402——正常转发，cost 0（只记日志不扣费）。
+// 不 402——正常转发，cost 0（放行路径语义：billed + none → 仍走 Flusher 计费
+// 明细——usage_logs 落 cost=0 行，扣费 0；不因免费丢计费明细）。
 func TestProxyBillingFreeUserPasses(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
@@ -970,7 +977,8 @@ func TestProxyBillingFreeUserPasses(t *testing.T) {
 }
 
 // TestProxyBillingFreeGroupPasses 免费组放行（T3.5）：组倍率 0（用户未设置）
-// → 余额 0 放行；与用户免费同判定（EffectiveMultiplier 共用）。
+// → 余额 0 放行；与用户免费同判定（EffectiveMultiplier 共用）。放行路径语义：
+// billed + none（cost=0）→ 仍走 Flusher 计费明细。
 func TestProxyBillingFreeGroupPasses(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
@@ -1000,6 +1008,7 @@ func TestProxyBillingFreeGroupPasses(t *testing.T) {
 	defer writer.mu.Unlock()
 	require.Len(t, writer.calls, 1)
 	require.Zero(t, writer.calls[0].cost, "免费组：cost 0 不扣费")
+	require.Zero(t, writer.calls[0].logs[0].Cost)
 }
 
 // TestProxyBillingFreeGroupSnapshotMissing 评审 I-1：快照缺失（Reload 滞后
@@ -1042,7 +1051,7 @@ func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
 // TestProxyBillingNewUserImmediatelyUsable 评审 M-2 回归：新建用户（store 插入）
 // → 全量 Reload → 立即请求 → 200（不得 402）。O1 前 Set 兜底补入新用户掩盖了
 // 该窗口；O1 后 Set 仅限已存在条目（缺失忽略）——新用户必须经 Reload 进快照
-//（创建路径不走 Set）。窗口显式暴露：创建前快照缺失 → 402（不用 sleep 掩盖）。
+// （创建路径不走 Set）。窗口显式暴露：创建前快照缺失 → 402（不用 sleep 掩盖）。
 func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()

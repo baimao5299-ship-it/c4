@@ -14,32 +14,42 @@ import (
 
 // PartitionManager 分区管理面（repository.Repository 实现）：保留策略只需
 // DROP 过期分区 + 预建未来分区，不感知分区表内部 DDL。now/until 由调用方
-// 传入（start 边界由 now 推导，测试可注入时钟）。
+// 传入（start 边界由 now 推导，测试可注入时钟）。三表各自独立调度（保留期
+// 独立：LogRetentionDays / ErrLogRetentionDays / StatsRetentionDays）。
 type PartitionManager interface {
 	EnsureUsageLogPartitions(ctx context.Context, now, until time.Time) error
 	DropUsageLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
+	EnsureErrLogPartitions(ctx context.Context, now, until time.Time) error
+	DropErrLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
+	EnsureUsageStatsPartitions(ctx context.Context, now, until time.Time) error
+	DropUsageStatsPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
 }
 
 // RetentionConfig retention worker 配置。
 type RetentionConfig struct {
-	LogRetentionDays int           // 分区保留天数（config usage.log_retention_days；<= 0 = 不删除）
-	TickerInterval   time.Duration // 巡检周期（生产 1h；测试注入短周期；<= 0 兜底 1h）
+	LogRetentionDays    int           // usage_logs 分区保留天数（config usage.log_retention_days；<= 0 = 不删除）
+	ErrLogRetentionDays int           // err_logs 分区保留天数（config usage.errlog_retention_days，默认 7 天短保留——错误审计；<= 0 = 不删除）
+	StatsRetentionDays  int           // usage_stats 分区保留天数（config usage.stats_retention_days，默认 180 天——聚合统计长保留；<= 0 = 不删除）
+	TickerInterval      time.Duration // 巡检周期（生产 1h；测试注入短周期；<= 0 兜底 1h）
 }
 
 // RetentionWorker 按日分区保留 worker（worker.Worker 契约，Name="retention"）：
-// 每小时巡检一次——
-//   - DROP 分区下界 < now - LogRetentionDays 的分区（DROP TABLE O(1)，比
-//     逐行 DELETE 快 5~6 个量级；按分区名日期判定，无需查元数据）
+// 每小时巡检一次——三表各自独立调度（usage_logs 按 LogRetentionDays、err_logs
+// 按 ErrLogRetentionDays、usage_stats 按 StatsRetentionDays，同一循环无新增
+// goroutine）：
+//   - DROP 分区下界 < now - 保留天数的分区（DROP TABLE O(1)，比逐行 DELETE
+//     快 5~6 个量级；按分区名日期判定，无需查元数据——usage_stats 保留清理
+//     用户裁决 2026-08-11：PG DELETE 不释放空间，必须分区 DROP）
 //   - 预建 当日 + 未来 1 天 分区（PG 无自动建分区，防日界跨区插入失败）
 //
 // DROP × 在途插入竞态（评审 I-3）：DROP TABLE 需 ACCESS EXCLUSIVE 锁，与
-// 在途插入事务串行；能落进被 DROP 分区（保留期前，通常 >30 天前）的行只有
-// 回放/陈旧 created_at 的延迟日志——该分区数据本就在保留语义内（要清理）。
-// 万一插入恰好失败 → 走 logWriterLoop 的 InsertBatch 失败路径（Warn + 丢弃，
-// 与普通批量落库失败同语义，不自愈不重试），可接受。
+// 在途插入事务串行；能落进被 DROP 分区（保留期前）的行只有回放/陈旧
+// created_at 的延迟日志——该分区数据本就在保留语义内（要清理）。万一插入
+// 恰好失败 → 走落库失败路径（Warn + 丢弃，与普通批量落库失败同语义，不自愈
+// 不重试），可接受。
 //
-// 与 Recorder 解耦（不依赖 Recorder 明细管道）：DROP 幂等，无排空需求，Close 直接
-// 返回 nil。
+// 与 Recorder/ErrLogWorker 解耦（不依赖明细管道）：DROP 幂等，无排空需求，
+// Close 直接返回 nil。
 type RetentionWorker struct {
 	cfg     RetentionConfig
 	parts   PartitionManager
@@ -80,25 +90,59 @@ func (w *RetentionWorker) loop(ctx context.Context) {
 	}
 }
 
-// runOnce 单轮巡检：DROP 过期分区 + 预建未来分区；失败 Warn 不中断循环
-// （下一轮重试）。now 现取一次，cutoff/ensure 边界共用同一时钟
-// （评审 I-2：边界由调用方 now 推导，不各取各的）。
+// runOnce 单轮巡检：三表各自 DROP 过期分区（独立 cutoff）+ 预建未来分区；失败
+// Warn 不中断循环（下一轮重试）。now 现取一次，cutoff/ensure 边界共用同一时钟
+// （评审 I-2：边界由调用方 now 推导，不各取各的）。逐表错误隔离（一表失败
+// 不影响他表——C32 纪律：usage_stats 180 天 DROP 失败不连带明细表清理）。
 func (w *RetentionWorker) runOnce() {
 	now := time.Now()
+	ctx := context.Background()
 	if w.cfg.LogRetentionDays > 0 {
 		cutoff := now.AddDate(0, 0, -w.cfg.LogRetentionDays)
-		n, err := w.parts.DropUsageLogPartitionsBefore(context.Background(), cutoff)
+		n, err := w.parts.DropUsageLogPartitionsBefore(ctx, cutoff)
 		if err != nil {
 			if w.log != nil {
-				w.log.Warn("retention drop partitions failed", logx.Error(err))
+				w.log.Warn("retention drop usage_logs partitions failed", logx.Error(err))
 			}
 		} else if n > 0 && w.log != nil {
-			w.log.Info("retention dropped partitions", logx.Int("count", n))
+			w.log.Info("retention dropped usage_logs partitions", logx.Int("count", n))
 		}
 	}
-	if err := w.parts.EnsureUsageLogPartitions(context.Background(), now, now.AddDate(0, 0, 1)); err != nil {
+	if w.cfg.ErrLogRetentionDays > 0 {
+		cutoff := now.AddDate(0, 0, -w.cfg.ErrLogRetentionDays)
+		n, err := w.parts.DropErrLogPartitionsBefore(ctx, cutoff)
+		if err != nil {
+			if w.log != nil {
+				w.log.Warn("retention drop err_logs partitions failed", logx.Error(err))
+			}
+		} else if n > 0 && w.log != nil {
+			w.log.Info("retention dropped err_logs partitions", logx.Int("count", n))
+		}
+	}
+	if w.cfg.StatsRetentionDays > 0 {
+		cutoff := now.AddDate(0, 0, -w.cfg.StatsRetentionDays)
+		n, err := w.parts.DropUsageStatsPartitionsBefore(ctx, cutoff)
+		if err != nil {
+			if w.log != nil {
+				w.log.Warn("retention drop usage_stats partitions failed", logx.Error(err))
+			}
+		} else if n > 0 && w.log != nil {
+			w.log.Info("retention dropped usage_stats partitions", logx.Int("count", n))
+		}
+	}
+	if err := w.parts.EnsureUsageLogPartitions(ctx, now, now.AddDate(0, 0, 1)); err != nil {
 		if w.log != nil {
-			w.log.Warn("retention pre-create partitions failed", logx.Error(err))
+			w.log.Warn("retention pre-create usage_logs partitions failed", logx.Error(err))
+		}
+	}
+	if err := w.parts.EnsureErrLogPartitions(ctx, now, now.AddDate(0, 0, 1)); err != nil {
+		if w.log != nil {
+			w.log.Warn("retention pre-create err_logs partitions failed", logx.Error(err))
+		}
+	}
+	if err := w.parts.EnsureUsageStatsPartitions(ctx, now, now.AddDate(0, 0, 1)); err != nil {
+		if w.log != nil {
+			w.log.Warn("retention pre-create usage_stats partitions failed", logx.Error(err))
 		}
 	}
 }

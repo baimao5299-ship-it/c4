@@ -30,6 +30,9 @@ type StatQuery struct {
 // COPY 两阶段（#17 治本：消除 8.5k 参数 raw VALUES 大事务）。pool 由
 // NewWithPG 构造注入（生产 main.go 注入 OpenPG 池；与 ent driver 同 DSN 共享
 // 连接上限）。
+// usage_stats 为分区表（用户裁决 2026-08-11：PG DELETE 不释放空间，保留清理
+// 必须 DROP 分区 O(1)）——清理由 retention worker 经 PartitionRepo
+// DropUsageStatsPartitionsBefore 执行，本仓库只写不删。
 type StatRepo struct {
 	client *ent.Client
 	pool   *pgxpool.Pool

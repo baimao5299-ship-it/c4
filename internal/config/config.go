@@ -86,6 +86,16 @@ type UsageConfig struct {
 	LogRetentionDays   int           `koanf:"log_retention_days"`
 	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"`
 	FlushWorkers       int           `koanf:"flush_workers"` // flush 并行 worker 数（O1 管道化分片并行；明细/统计/额度共用）
+	// err_logs 错误审计明细（分表设计）：有界队列 + 背压采样丢弃（风暴不淹没
+	// DB 不爆内存；DB 写速率上界 = ErrLogBatchSize/ErrLogFlushInterval）。
+	ErrLogQueueSize     int           `koanf:"errlog_queue_size"`     // 队列容量（默认 4096）
+	ErrLogBatchSize     int           `koanf:"errlog_batch_size"`     // 每批落盘行数（默认 500）
+	ErrLogFlushInterval time.Duration `koanf:"errlog_flush_interval"` // 批间隔（默认 500ms）
+	ErrLogRetentionDays int           `koanf:"errlog_retention_days"` // err_logs 分区保留天数（默认 7 天短保留——错误审计；<= 0 = 不删除）
+	// StatsRetentionDays usage_stats 分区保留天数（默认 180 天——聚合统计长保留；
+	// 用户裁决 2026-08-11：usage_stats 也分区化，清理 DROP 分区 O(1)——PG DELETE
+	// 不释放空间；<= 0 = 不删除）。
+	StatsRetentionDays int `koanf:"stats_retention_days"`
 }
 
 // BillingConfig 计费（Phase 5 T3）：Enabled 默认关（评审 C-1 opt-in——启用前
@@ -106,7 +116,7 @@ func defaults() *Config {
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, Cooldown429: 30 * time.Second, BackoffBase: 5 * time.Second, BackoffMax: 5 * time.Minute, SyncInterval: 30 * time.Second},
-		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 4},
+		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 4, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
 		Billing:   BillingConfig{Enabled: false, FlushInterval: 1 * time.Second, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 4},
 	}
 }

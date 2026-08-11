@@ -132,20 +132,6 @@ func (_c *UsageLogCreate) SetFormat(v usagelog.Format) *UsageLogCreate {
 	return _c
 }
 
-// SetStatusCode sets the "status_code" field.
-func (_c *UsageLogCreate) SetStatusCode(v int) *UsageLogCreate {
-	_c.mutation.SetStatusCode(v)
-	return _c
-}
-
-// SetNillableStatusCode sets the "status_code" field if the given value is not nil.
-func (_c *UsageLogCreate) SetNillableStatusCode(v *int) *UsageLogCreate {
-	if v != nil {
-		_c.SetStatusCode(*v)
-	}
-	return _c
-}
-
 // SetErrorType sets the "error_type" field.
 func (_c *UsageLogCreate) SetErrorType(v string) *UsageLogCreate {
 	_c.mutation.SetErrorType(v)
@@ -156,20 +142,6 @@ func (_c *UsageLogCreate) SetErrorType(v string) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableErrorType(v *string) *UsageLogCreate {
 	if v != nil {
 		_c.SetErrorType(*v)
-	}
-	return _c
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (_c *UsageLogCreate) SetErrorMessage(v string) *UsageLogCreate {
-	_c.mutation.SetErrorMessage(v)
-	return _c
-}
-
-// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
-func (_c *UsageLogCreate) SetNillableErrorMessage(v *string) *UsageLogCreate {
-	if v != nil {
-		_c.SetErrorMessage(*v)
 	}
 	return _c
 }
@@ -443,10 +415,6 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultModel
 		_c.mutation.SetModel(v)
 	}
-	if _, ok := _c.mutation.StatusCode(); !ok {
-		v := usagelog.DefaultStatusCode
-		_c.mutation.SetStatusCode(v)
-	}
 	if _, ok := _c.mutation.ErrorType(); !ok {
 		v := usagelog.DefaultErrorType
 		_c.mutation.SetErrorType(v)
@@ -508,9 +476,6 @@ func (_c *UsageLogCreate) check() error {
 		if err := usagelog.FormatValidator(v); err != nil {
 			return &ValidationError{Name: "format", err: fmt.Errorf(`ent: validator failed for field "UsageLog.format": %w`, err)}
 		}
-	}
-	if _, ok := _c.mutation.StatusCode(); !ok {
-		return &ValidationError{Name: "status_code", err: errors.New(`ent: missing required field "UsageLog.status_code"`)}
 	}
 	if _, ok := _c.mutation.ErrorType(); !ok {
 		return &ValidationError{Name: "error_type", err: errors.New(`ent: missing required field "UsageLog.error_type"`)}
@@ -614,17 +579,9 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldFormat, field.TypeEnum, value)
 		_node.Format = value
 	}
-	if value, ok := _c.mutation.StatusCode(); ok {
-		_spec.SetField(usagelog.FieldStatusCode, field.TypeInt, value)
-		_node.StatusCode = value
-	}
 	if value, ok := _c.mutation.ErrorType(); ok {
 		_spec.SetField(usagelog.FieldErrorType, field.TypeString, value)
 		_node.ErrorType = value
-	}
-	if value, ok := _c.mutation.ErrorMessage(); ok {
-		_spec.SetField(usagelog.FieldErrorMessage, field.TypeString, value)
-		_node.ErrorMessage = &value
 	}
 	if value, ok := _c.mutation.LatencyMs(); ok {
 		_spec.SetField(usagelog.FieldLatencyMs, field.TypeInt64, value)
@@ -916,24 +873,6 @@ func (u *UsageLogUpsert) UpdateFormat() *UsageLogUpsert {
 	return u
 }
 
-// SetStatusCode sets the "status_code" field.
-func (u *UsageLogUpsert) SetStatusCode(v int) *UsageLogUpsert {
-	u.Set(usagelog.FieldStatusCode, v)
-	return u
-}
-
-// UpdateStatusCode sets the "status_code" field to the value that was provided on create.
-func (u *UsageLogUpsert) UpdateStatusCode() *UsageLogUpsert {
-	u.SetExcluded(usagelog.FieldStatusCode)
-	return u
-}
-
-// AddStatusCode adds v to the "status_code" field.
-func (u *UsageLogUpsert) AddStatusCode(v int) *UsageLogUpsert {
-	u.Add(usagelog.FieldStatusCode, v)
-	return u
-}
-
 // SetErrorType sets the "error_type" field.
 func (u *UsageLogUpsert) SetErrorType(v string) *UsageLogUpsert {
 	u.Set(usagelog.FieldErrorType, v)
@@ -943,24 +882,6 @@ func (u *UsageLogUpsert) SetErrorType(v string) *UsageLogUpsert {
 // UpdateErrorType sets the "error_type" field to the value that was provided on create.
 func (u *UsageLogUpsert) UpdateErrorType() *UsageLogUpsert {
 	u.SetExcluded(usagelog.FieldErrorType)
-	return u
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (u *UsageLogUpsert) SetErrorMessage(v string) *UsageLogUpsert {
-	u.Set(usagelog.FieldErrorMessage, v)
-	return u
-}
-
-// UpdateErrorMessage sets the "error_message" field to the value that was provided on create.
-func (u *UsageLogUpsert) UpdateErrorMessage() *UsageLogUpsert {
-	u.SetExcluded(usagelog.FieldErrorMessage)
-	return u
-}
-
-// ClearErrorMessage clears the value of the "error_message" field.
-func (u *UsageLogUpsert) ClearErrorMessage() *UsageLogUpsert {
-	u.SetNull(usagelog.FieldErrorMessage)
 	return u
 }
 
@@ -1515,27 +1436,6 @@ func (u *UsageLogUpsertOne) UpdateFormat() *UsageLogUpsertOne {
 	})
 }
 
-// SetStatusCode sets the "status_code" field.
-func (u *UsageLogUpsertOne) SetStatusCode(v int) *UsageLogUpsertOne {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.SetStatusCode(v)
-	})
-}
-
-// AddStatusCode adds v to the "status_code" field.
-func (u *UsageLogUpsertOne) AddStatusCode(v int) *UsageLogUpsertOne {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.AddStatusCode(v)
-	})
-}
-
-// UpdateStatusCode sets the "status_code" field to the value that was provided on create.
-func (u *UsageLogUpsertOne) UpdateStatusCode() *UsageLogUpsertOne {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateStatusCode()
-	})
-}
-
 // SetErrorType sets the "error_type" field.
 func (u *UsageLogUpsertOne) SetErrorType(v string) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1547,27 +1447,6 @@ func (u *UsageLogUpsertOne) SetErrorType(v string) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateErrorType() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateErrorType()
-	})
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (u *UsageLogUpsertOne) SetErrorMessage(v string) *UsageLogUpsertOne {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.SetErrorMessage(v)
-	})
-}
-
-// UpdateErrorMessage sets the "error_message" field to the value that was provided on create.
-func (u *UsageLogUpsertOne) UpdateErrorMessage() *UsageLogUpsertOne {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateErrorMessage()
-	})
-}
-
-// ClearErrorMessage clears the value of the "error_message" field.
-func (u *UsageLogUpsertOne) ClearErrorMessage() *UsageLogUpsertOne {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.ClearErrorMessage()
 	})
 }
 
@@ -2338,27 +2217,6 @@ func (u *UsageLogUpsertBulk) UpdateFormat() *UsageLogUpsertBulk {
 	})
 }
 
-// SetStatusCode sets the "status_code" field.
-func (u *UsageLogUpsertBulk) SetStatusCode(v int) *UsageLogUpsertBulk {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.SetStatusCode(v)
-	})
-}
-
-// AddStatusCode adds v to the "status_code" field.
-func (u *UsageLogUpsertBulk) AddStatusCode(v int) *UsageLogUpsertBulk {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.AddStatusCode(v)
-	})
-}
-
-// UpdateStatusCode sets the "status_code" field to the value that was provided on create.
-func (u *UsageLogUpsertBulk) UpdateStatusCode() *UsageLogUpsertBulk {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateStatusCode()
-	})
-}
-
 // SetErrorType sets the "error_type" field.
 func (u *UsageLogUpsertBulk) SetErrorType(v string) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2370,27 +2228,6 @@ func (u *UsageLogUpsertBulk) SetErrorType(v string) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateErrorType() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateErrorType()
-	})
-}
-
-// SetErrorMessage sets the "error_message" field.
-func (u *UsageLogUpsertBulk) SetErrorMessage(v string) *UsageLogUpsertBulk {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.SetErrorMessage(v)
-	})
-}
-
-// UpdateErrorMessage sets the "error_message" field to the value that was provided on create.
-func (u *UsageLogUpsertBulk) UpdateErrorMessage() *UsageLogUpsertBulk {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.UpdateErrorMessage()
-	})
-}
-
-// ClearErrorMessage clears the value of the "error_message" field.
-func (u *UsageLogUpsertBulk) ClearErrorMessage() *UsageLogUpsertBulk {
-	return u.Update(func(s *UsageLogUpsert) {
-		s.ClearErrorMessage()
 	})
 }
 

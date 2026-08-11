@@ -51,9 +51,9 @@ func TestUsageLogSnapshotColumnsRoundtripPG(t *testing.T) {
 	l1.PriceOutputMillis = int64Ptr(2e7) // $200 / 1M
 	l1.PriceCacheReadMillis = int64Ptr(1234)
 	l1.PriceCacheCreationMillis = int64Ptr(5678)
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{l1}))
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{l1}))
 
-	rows, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, rows, 1)
@@ -80,9 +80,9 @@ func TestUsageLogSnapshotColumnsRoundtripPG(t *testing.T) {
 
 	// NULL 语义（未计费路径/无首 token）：5 列全不设置 → 落库 NULL、读回 nil
 	l2 := usageLogFor("snap-2", time.Now().UTC())
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{l2}))
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{l2}))
 
-	rows, _, err = repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	rows, _, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
 	for _, r := range rows {

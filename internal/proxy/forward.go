@@ -36,15 +36,18 @@ type Config struct {
 }
 
 type Proxy struct {
-	cfg      Config
-	sched    *scheduler.Scheduler
-	creds    *credential.Registry
-	rec      *usage.Recorder
-	clients  *aiclient.Factory
-	auth     *Auth
-	limit    *fixedWindowLimiter
-	log      *logx.Logger
-	bill     *BillingHooks // 计费钩子；nil = 计费全关
+	cfg     Config
+	sched   *scheduler.Scheduler
+	creds   *credential.Registry
+	rec     *usage.Recorder
+	clients *aiclient.Factory
+	auth    *Auth
+	limit   *fixedWindowLimiter
+	log     *logx.Logger
+	bill    *BillingHooks // 计费钩子；nil = 计费全关
+	// errlog 错误明细落盘 worker（分表设计；nil = 未装配——拒绝/异常路径只聚
+	// 合统计不落 err_logs 明细，测试/未装配形态）。与计费 flusher 完全解耦。
+	errlog   *usage.ErrLogWorker
 	inflight atomic.Int64
 	callers  map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
 	// convCallers 协议转换路径调用器（W5）：方向 → convertedCaller（请求体已
@@ -55,11 +58,12 @@ type Proxy struct {
 
 // New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
 // 不用 Config 字段——避免 nil 运行时才炸）。bill 为计费钩子（Phase 5；
-// nil = 计费全关——现有调用点/测试兼容）。
-func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger, bill *BillingHooks) *Proxy {
+// nil = 计费全关——现有调用点/测试兼容）。errlog 为错误明细落盘 worker
+// （分表设计；nil = 未装配——拒绝/异常路径只聚统计不落 err_logs 明细）。
+func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec *usage.Recorder, clients *aiclient.Factory, auth *Auth, log *logx.Logger, bill *BillingHooks, errlog *usage.ErrLogWorker) *Proxy {
 	p := &Proxy{
 		cfg: cfg, sched: sched, creds: creds, rec: rec, clients: clients, auth: auth,
-		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log, bill: bill,
+		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log, bill: bill, errlog: errlog,
 	}
 	// 注册表：每格式一 caller，New 时一次性构造（per-request 零分配）。
 	// 新格式（Gemini/Grok/ollama 等）= 1 个 caller 文件 + 此处一行注册。
@@ -92,8 +96,7 @@ func (p *Proxy) SetInstancesProvider(inst InstancesProvider) {
 
 // finish 收尾：释放并发槽 + 额度扣减（后扣模型，usage 已知）+ 计费计算 +
 // 记录用量（凡持有并发槽的路径必调）。无额度 key 无内存计数器 → 扣减
-// no-op（恒 0）。计费路由（评审 C-4 共用判定）：billed → flusher.Record
-//（聚合 + 周期落库），其余 → rec.Record——每日志恰好一个写者。
+// no-op（恒 0）。落库路由统一走 routeLog（分表原则：不计费不入 usage_logs）。
 func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 	p.sched.Release(accountID)
 	if l != nil {
@@ -101,11 +104,7 @@ func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 		p.auth.DeductQuota(l.KeyID, l.TotalTokens)
 	}
 	if p.cfg.UsageCapture && l != nil {
-		if p.shouldBill(l) {
-			p.bill.Flusher.Record(l)
-		} else {
-			p.rec.Record(l)
-		}
+		p.routeLog(l)
 	}
 }
 
@@ -193,32 +192,81 @@ func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int
 	p.recordLog(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
 }
 
-// recordRejected 记录一条**本地预用量拒绝**（额度耗尽/并发超限/余额 402/
-// tier reject/缺价/无账号：请求未接触上游、未消费任何 token、cost 恒 0）：
-// 只聚合统计（usagestat 请求/错误计数语义不变），**不产生 usage_logs 明细**、
-// 不进 billed/非 billed pending——拒绝风暴（P2a 压测 2026-08-11：单 key
-// 限流 161k req/s → 60s 冲至 9.8M pending 行 / RSS 7.5GB，usage_logs 表
-// 120.7M→144.5M 行膨胀）每请求一条明细即无界积压与写放大源头；拒绝无用量
-// 可记，明细纯噪声。与 rate-limit/body-too-large 无记录路径同族，本路径多
-// 保留统计计数（错误文本/状态码由 HTTP 响应与网关日志承载）。
-func (p *Proxy) recordRejected(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time) {
+// recordRejected 记录一条**本地预用量拒绝**（401 鉴权失败/额度耗尽/并发超限/
+// 余额 402/tier reject/缺价/无账号：请求未接触上游、未消费任何 token、cost 恒
+// 0）。双轨（用户裁决分表设计）：①统计聚合（usagestat 请求/错误计数语义不变）
+// ②错误明细投递 errlog worker 落 err_logs——**不产生 usage_logs 明细**、不进
+// billed/非 billed pending。拒绝风暴（P2a 压测 2026-08-11：单 key 限流
+// 161k req/s → 60s 冲至 9.8M pending 行 / RSS 7.5GB，usage_logs 表 120.7M→
+// 144.5M 行膨胀）每请求一条 usage_logs 明细即无界积压与写放大源头；err_logs
+// 为独立瘦表 + 有界队列背压（队列满丢弃采样），风暴不淹没 DB 不爆内存——
+// 审计明细补回但不回到 usage_logs 主链路。msg 为拒绝文案（error_message 审计
+// 字段，域内截断 500）。
+func (p *Proxy) recordRejected(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time, msg string) {
 	if !p.cfg.UsageCapture {
 		return
 	}
-	p.rec.Aggregate(logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start)))
+	l := logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start))
+	if msg != "" {
+		m := domain.TruncateErrMsg(msg)
+		l.ErrorMessage = &m
+	}
+	p.rec.Aggregate(l)      // 统计双轨（usagestat is_error/error_count 照旧）
+	p.enqueueRejectedErr(l) // 明细双轨（err_logs 普通队列：风暴采样丢弃面）
 }
 
-// recordLog 用量日志落库路由（record 与 failover 耗尽路径共用）：billed →
-// Flusher，其余 → rec——每日志恰好一个写者。调用方须已填 ErrorMessage
-// （错误文本落盘；成功路径 nil 恒空，SQL 不写该列）。
+// enqueueRejectedErr 拒绝行投递（架构审查 B2：拒绝类行走普通队列——风暴采样
+// 丢弃；与双轨行豁免通道分离）。nil worker（未装配）→ no-op。
+func (p *Proxy) enqueueRejectedErr(l *domain.UsageLog) {
+	if p.errlog != nil {
+		p.errlog.EnqueueRejected(l)
+	}
+}
+
+// recordLog 用量落库路由入口（record 无并发槽失败路径与 failover 耗尽路径共用；
+// 有槽路径 finish 直调 routeLog）。调用方须已填 ErrorMessage（错误文本落盘；
+// 成功路径 nil 恒空）。
 func (p *Proxy) recordLog(l *domain.UsageLog) {
 	if !p.cfg.UsageCapture {
 		return
 	}
-	if p.shouldBill(l) {
-		p.bill.Flusher.Record(l)
+	p.routeLog(l)
+}
+
+// routeLog 分表统一路由（用户裁决修正 2026-08-11：usage_logs 成员资格按**放行
+// 路径语义（error_type）**判定，与 cost 无关——cost>0 判定会漏掉免费分组
+// （倍率 0 的成功行）与 0 token 成功行（空响应））：
+//   - usage_logs = 放行路径明细：error_type ∈ {none（成功，含 cost=0 免费组/
+//     空响应）, abort（半异常计费）}——billed → Flusher（统计聚合 + 扣费 +
+//     落库，每日志恰好一个写者），非 billed → rec.Record；4xx/5xx/network
+//     （上游透传/耗尽失败行）**不写 usage_logs**（失败明细归 err_logs，P2a
+//     拒绝风暴教训同族）
+//   - err_logs = 全部错误明细（error_type != none）：4xx/5xx（上游透传/耗尽）
+//   - abort 双轨（豁免队列恒落盘——架构审查 B2）；拒绝行走 recordRejected
+//     的采样队列，不经本路由
+//   - usagestat = 聚合统计：计数全保留（is_error/error_count）——放行路径行由
+//     Flusher.Record/rec.Record 内部聚合，失败行由 rec.Aggregate 聚合（每日志
+//     恰好一个统计写者，不重复计数）
+func (p *Proxy) routeLog(l *domain.UsageLog) {
+	billable := l.ErrorType == domain.ErrNone || l.ErrorType == domain.ErrAbort // 放行路径
+	if p.shouldBill(l) && billable {
+		p.bill.Flusher.Record(l) // 计费明细（聚合 + 扣费 + usage_logs）
+	} else if billable {
+		p.rec.Record(l) // 非 billed 放行行（usage_logs + 统计）
 	} else {
-		p.rec.Record(l)
+		p.rec.Aggregate(l) // 失败行：只聚合统计（不入 usage_logs）
+	}
+	if l.ErrorType != domain.ErrNone {
+		p.enqueueErrLog(l) // 全部错误明细 → err_logs（豁免通道）
+	}
+}
+
+// enqueueErrLog 错误明细投递（架构审查 B2：上游错误/双轨行走豁免队列——不参与
+// 拒绝风暴采样丢弃，恒落盘；与拒绝行采样通道分离）。nil worker（未装配）→
+// no-op。仅错误行调用（成功路径零开销）。
+func (p *Proxy) enqueueErrLog(l *domain.UsageLog) {
+	if p.errlog != nil {
+		p.errlog.EnqueueError(l)
 	}
 }
 

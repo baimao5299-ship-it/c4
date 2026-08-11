@@ -35,12 +35,8 @@ type UsageLog struct {
 	MappedModel *string `json:"mapped_model,omitempty"`
 	// Format holds the value of the "format" field.
 	Format usagelog.Format `json:"format,omitempty"`
-	// StatusCode holds the value of the "status_code" field.
-	StatusCode int `json:"status_code,omitempty"`
 	// ErrorType holds the value of the "error_type" field.
 	ErrorType string `json:"error_type,omitempty"`
-	// ErrorMessage holds the value of the "error_message" field.
-	ErrorMessage *string `json:"error_message,omitempty"`
 	// LatencyMs holds the value of the "latency_ms" field.
 	LatencyMs int64 `json:"latency_ms,omitempty"`
 	// TtftMs holds the value of the "ttft_ms" field.
@@ -83,9 +79,9 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagelog.FieldAboveHit, usagelog.FieldOverdraft:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldStatusCode, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCost:
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCost:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldErrorMessage, usagelog.FieldBillingTier:
+		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldBillingTier:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -170,24 +166,11 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Format = usagelog.Format(value.String)
 			}
-		case usagelog.FieldStatusCode:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field status_code", values[i])
-			} else if value.Valid {
-				_m.StatusCode = int(value.Int64)
-			}
 		case usagelog.FieldErrorType:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field error_type", values[i])
 			} else if value.Valid {
 				_m.ErrorType = value.String
-			}
-		case usagelog.FieldErrorMessage:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field error_message", values[i])
-			} else if value.Valid {
-				_m.ErrorMessage = new(string)
-				*_m.ErrorMessage = value.String
 			}
 		case usagelog.FieldLatencyMs:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -366,16 +349,8 @@ func (_m *UsageLog) String() string {
 	builder.WriteString("format=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Format))
 	builder.WriteString(", ")
-	builder.WriteString("status_code=")
-	builder.WriteString(fmt.Sprintf("%v", _m.StatusCode))
-	builder.WriteString(", ")
 	builder.WriteString("error_type=")
 	builder.WriteString(_m.ErrorType)
-	builder.WriteString(", ")
-	if v := _m.ErrorMessage; v != nil {
-		builder.WriteString("error_message=")
-		builder.WriteString(*v)
-	}
 	builder.WriteString(", ")
 	builder.WriteString("latency_ms=")
 	builder.WriteString(fmt.Sprintf("%v", _m.LatencyMs))

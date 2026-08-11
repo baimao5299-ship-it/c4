@@ -14,9 +14,9 @@ import (
 	"go-proxy-mini/internal/service"
 )
 
-// TestGetLogsCacheTokens /admin/logs 响应含 cache read/creation 字段
+// TestGetUsageLogsCacheTokens /admin/usage_logs 响应含 cache read/creation 字段
 // （toAPIUsageLog 手写映射接线，评审 I-3）。
-func TestGetLogsCacheTokens(t *testing.T) {
+func TestGetUsageLogsCacheTokens(t *testing.T) {
 	store := newFakeStore()
 	store.logs = []*domain.UsageLog{{
 		ID: 1, RequestID: "r1", GroupID: 1, AccountID: 2, Model: "m",
@@ -39,7 +39,7 @@ func TestGetLogsCacheTokens(t *testing.T) {
 	})
 	r.Mount("/", h.Router())
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage_logs", nil)
 	req.Header.Set("Authorization", "Bearer admin-tok")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

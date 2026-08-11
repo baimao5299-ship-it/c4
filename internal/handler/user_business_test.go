@@ -183,9 +183,9 @@ func TestUserKeysLifecycle(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
-// TestUserLogsOwnOnly /user/logs 强制 user_id = 当前用户（越权过滤在
+// TestUserUsageLogsOwnOnly /user/usage_logs 强制 user_id = 当前用户（越权过滤在
 // service/repo 层；fake store 按 user_id 过滤——测试验证隔离语义）。
-func TestUserLogsOwnOnly(t *testing.T) {
+func TestUserUsageLogsOwnOnly(t *testing.T) {
 	_, doUser, store := newSharedRouters(t)
 	tokenA, userA := registerAndGet(t, doUser, "a@example.com")
 	_, userB := registerAndGet(t, doUser, "b@example.com")
@@ -199,13 +199,43 @@ func TestUserLogsOwnOnly(t *testing.T) {
 	}
 	store.mu.Unlock()
 
-	rec := doUser(http.MethodGet, "/user/logs", "", tokenA)
+	rec := doUser(http.MethodGet, "/user/usage_logs", "", tokenA)
 	require.Equal(t, http.StatusOK, rec.Code, "user logs: %s", rec.Body.String())
 	var body userapi.LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, int64(2), body.Total, "只看到自己的日志: %s", rec.Body.String())
 	for _, r := range body.Rows {
 		require.Equal(t, userA, *r.UserID, "日志必须归属当前用户")
+	}
+}
+
+// TestUserErrLogsOwnOnly /user/err_logs 强制 user_id = 当前用户（与
+// /user/usage_logs 同构的越权隔离）。
+func TestUserErrLogsOwnOnly(t *testing.T) {
+	_, doUser, store := newSharedRouters(t)
+	tokenA, userA := registerAndGet(t, doUser, "a@example.com")
+	_, userB := registerAndGet(t, doUser, "b@example.com")
+
+	store.mu.Lock()
+	msg := "no available account"
+	store.logs = []*domain.UsageLog{
+		{ID: 1, UserID: userA, RequestID: "e-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
+			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg},
+		{ID: 2, UserID: userB, RequestID: "e-b1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
+			StatusCode: 402, ErrorType: domain.ErrBilling},
+		{ID: 3, UserID: userA, RequestID: "e-a2", Model: "o3", Format: domain.FormatOpenAIResponses,
+			StatusCode: 401, ErrorType: domain.ErrAuth},
+	}
+	store.mu.Unlock()
+
+	rec := doUser(http.MethodGet, "/user/err_logs", "", tokenA)
+	require.Equal(t, http.StatusOK, rec.Code, "user err logs: %s", rec.Body.String())
+	var body userapi.ErrLogsResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, int64(2), body.Total, "只看到自己的错误明细: %s", rec.Body.String())
+	for _, r := range body.Rows {
+		require.Equal(t, userA, *r.UserID, "错误明细必须归属当前用户")
+		require.NotNil(t, r.StatusCode, "err_logs 完整错误面含 status_code")
 	}
 }
 
@@ -323,7 +353,7 @@ func TestAdminGroupAssignments(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code, "dup user: %s", rec.Body.String())
 }
 
-// TestAdminLogsUserFilter /admin/logs user_id 参数绑定（admin 看全部——
+// TestAdminLogsUserFilter /admin/usage_logs user_id 参数绑定（admin 看全部——
 // 不传 user_id 不过滤；传了按用户过滤）。
 func TestAdminLogsUserFilter(t *testing.T) {
 	doAdmin, _, store := newSharedRouters(t)
@@ -336,14 +366,14 @@ func TestAdminLogsUserFilter(t *testing.T) {
 	store.mu.Unlock()
 
 	// 不传 user_id → 全部
-	rec := doAdmin(http.MethodGet, "/admin/logs", "", "")
+	rec := doAdmin(http.MethodGet, "/admin/usage_logs", "", "")
 	require.Equal(t, http.StatusOK, rec.Code)
 	var body LogsResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, int64(2), body.Total)
 
 	// user_id=7 → 1 条
-	rec = doAdmin(http.MethodGet, "/admin/logs?user_id=7", "", "")
+	rec = doAdmin(http.MethodGet, "/admin/usage_logs?user_id=7", "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "user filter: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, int64(1), body.Total)

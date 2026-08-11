@@ -21,14 +21,14 @@ func toAPIUser(u *domain.User) User {
 	r := UserRole(u.Role)
 	st := UserStatus(u.Status)
 	return User{
-		ID:              &u.ID,
-		Email:           &u.Email,
-		Role:            &r,
-		Status:          &st,
-		MaxConcurrency:  &u.MaxConcurrency,
-		Balance:         ptr(float64(u.Balance) / 1e5),
-		CreatedAt:       &u.CreatedAt,
-		UpdatedAt:       &u.UpdatedAt,
+		ID:             &u.ID,
+		Email:          &u.Email,
+		Role:           &r,
+		Status:         &st,
+		MaxConcurrency: &u.MaxConcurrency,
+		Balance:        ptr(float64(u.Balance) / 1e5),
+		CreatedAt:      &u.CreatedAt,
+		UpdatedAt:      &u.UpdatedAt,
 	}
 }
 
@@ -66,23 +66,23 @@ func toAPIKey(k *domain.Key) Key {
 	}
 }
 
-// toAPIUsageLog 用量日志领域对象 → 契约类型（/user/logs）。
+// toAPIUsageLog 用量日志领域对象 → 契约类型（/user/usage_logs；err_logs 分表
+// 后无 status_code/error_message 字段）。
 func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 	f := RequestFormat(l.Format)
 	et := ErrorType(l.ErrorType)
 	return UsageLog{
-		ID:               &l.ID,
-		RequestID:        &l.RequestID,
-		GroupID:          &l.GroupID,
-		AccountID:        &l.AccountID,
-		TemplateID:       &l.TemplateID,
-		UserID:           &l.UserID,
-		KeyID:            &l.KeyID,
-		Model:            &l.Model,
-		MappedModel:      &l.MappedModel,
-		Format:           &f,
-		StatusCode:       &l.StatusCode,
-		ErrorType:        &et,
+		ID:                       &l.ID,
+		RequestID:                &l.RequestID,
+		GroupID:                  &l.GroupID,
+		AccountID:                &l.AccountID,
+		TemplateID:               &l.TemplateID,
+		UserID:                   &l.UserID,
+		KeyID:                    &l.KeyID,
+		Model:                    &l.Model,
+		MappedModel:              &l.MappedModel,
+		Format:                   &f,
+		ErrorType:                &et,
 		LatencyMS:                &l.LatencyMS,
 		TTFTMS:                   l.TTFTMS,
 		InputTokens:              &l.InputTokens,
@@ -94,26 +94,53 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		PriceCacheReadMillis:     l.PriceCacheReadMillis,
 		CacheCreationTokens:      &l.CacheCreationTokens,
 		PriceCacheCreationMillis: l.PriceCacheCreationMillis,
-		Cost:                &l.Cost,
-		BillingTier:         &l.BillingTier,
-		AboveHit:            &l.AboveHit,
-		Overdraft:           &l.Overdraft,
-		CreatedAt:           &l.CreatedAt,
+		Cost:                     &l.Cost,
+		BillingTier:              &l.BillingTier,
+		AboveHit:                 &l.AboveHit,
+		Overdraft:                &l.Overdraft,
+		CreatedAt:                &l.CreatedAt,
 	}
+}
+
+// toAPIErrLog 错误明细领域对象 → 契约类型（/user/err_logs；BillingTier 空 =
+// 未计费路径 → null）。
+func toAPIErrLog(l *domain.UsageLog) ErrLog {
+	f := RequestFormat(l.Format)
+	et := ErrorType(l.ErrorType)
+	e := ErrLog{
+		ID:           &l.ID,
+		RequestID:    &l.RequestID,
+		GroupID:      &l.GroupID,
+		AccountID:    &l.AccountID,
+		TemplateID:   &l.TemplateID,
+		UserID:       &l.UserID,
+		KeyID:        &l.KeyID,
+		Model:        &l.Model,
+		Format:       &f,
+		StatusCode:   &l.StatusCode,
+		ErrorType:    &et,
+		ErrorMessage: l.ErrorMessage,
+		LatencyMS:    &l.LatencyMS,
+		CreatedAt:    &l.CreatedAt,
+	}
+	if l.BillingTier != "" {
+		e.BillingTier = &l.BillingTier
+	}
+	return e
 }
 
 // toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats）。
 func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	return StatBucket{
-		BucketTime:       &b.BucketTime,
-		GroupID:          &b.GroupID,
-		AccountID:        &b.AccountID,
-		TemplateID:       &b.TemplateID,
-		UserID:           &b.UserID,
-		Model:            &b.Model,
-		IsError:          &b.IsError,
-		RequestCount:     &b.RequestCount,
-		ErrorCount:       &b.ErrorCount,
+		BucketTime:          &b.BucketTime,
+		GroupID:             &b.GroupID,
+		AccountID:           &b.AccountID,
+		TemplateID:          &b.TemplateID,
+		UserID:              &b.UserID,
+		Model:               &b.Model,
+		IsError:             &b.IsError,
+		RequestCount:        &b.RequestCount,
+		ErrorCount:          &b.ErrorCount,
 		InputTokens:         &b.InputTokens,
 		OutputTokens:        &b.OutputTokens,
 		TotalTokens:         &b.TotalTokens,

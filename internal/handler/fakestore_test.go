@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -19,29 +20,29 @@ import (
 // （评审发现：测试必然失败或退化为恒真断言）。
 // 实现 service.Store 接口，供 handler 测试使用。
 type fakeStore struct {
-	mu        sync.Mutex
-	tpls      map[int64]*domain.Template
-	accs      map[int64]*domain.Account
-	groups    map[int64]*domain.Group
-	accGroups map[int64][]int64 // accountID → groupIDs（账号侧绑定，Set/GetAccountGroups）
-	keys      map[int64]*domain.Key
-	users     map[int64]*domain.User
-	settings  map[string]*domain.Setting
-	rules     map[int64]domain.Rule
-	logs      []*domain.UsageLog
-	stats     []*domain.StatBucket
-	assign    map[int64][]int64 // groupID → 授予 user_id 列表（group_assignments 模拟）
+	mu         sync.Mutex
+	tpls       map[int64]*domain.Template
+	accs       map[int64]*domain.Account
+	groups     map[int64]*domain.Group
+	accGroups  map[int64][]int64 // accountID → groupIDs（账号侧绑定，Set/GetAccountGroups）
+	keys       map[int64]*domain.Key
+	users      map[int64]*domain.User
+	settings   map[string]*domain.Setting
+	rules      map[int64]domain.Rule
+	logs       []*domain.UsageLog
+	stats      []*domain.StatBucket
+	assign     map[int64][]int64 // groupID → 授予 user_id 列表（group_assignments 模拟）
 	assignMult map[[2]int64]*int // (groupID, userID) → 专属价格倍率（nil = 未设置；T3.5 按组）
-	codes     map[int64]*domain.RedemptionCode
-	uses      map[int64]*domain.RedemptionUse
-	temps     []*fakeTempRow // 临时额度行（domain 无 TempBalance 类型，标量参数即全字段）
+	codes      map[int64]*domain.RedemptionCode
+	uses       map[int64]*domain.RedemptionUse
+	temps      []*fakeTempRow // 临时额度行（domain 无 TempBalance 类型，标量参数即全字段）
 	// pricings 模型价格（key = model，一行 = 最终生效价；manual > litellm 优先级
 	// 语义与真实仓库一致）。
 	pricings map[string]*domain.Pricing
 	// tplExts/accExts 模板/账号类型化扩展（key = 父 id，镜像仓库 1:1 唯一索引）。
 	tplExts map[int64]*domain.TemplateExt
 	accExts map[int64]*domain.AccountExt
-	nextID   int64
+	nextID  int64
 	// lastPatch 记录最近一次 UpdateAccountsBatch 收到的 patch（评审 M3：
 	// 断言 handler 的 group_ids nil/[] 映射是否真正传到了 repo 层）。
 	lastPatch repository.AccountPatch
@@ -55,7 +56,7 @@ func newFakeStore() *fakeStore {
 		settings: make(map[string]*domain.Setting), rules: make(map[int64]domain.Rule),
 		assign: make(map[int64][]int64), assignMult: make(map[[2]int64]*int),
 		codes: make(map[int64]*domain.RedemptionCode),
-		uses: make(map[int64]*domain.RedemptionUse), pricings: make(map[string]*domain.Pricing),
+		uses:  make(map[int64]*domain.RedemptionUse), pricings: make(map[string]*domain.Pricing),
 		tplExts: make(map[int64]*domain.TemplateExt), accExts: make(map[int64]*domain.AccountExt),
 		nextID: 1,
 	}
@@ -328,20 +329,92 @@ func (f *fakeStore) GetAccountExt(ctx context.Context, accountID int64) (*domain
 	return &c, nil
 }
 
-// QueryLogs 模拟 repo 过滤：user_id > 0 时强制过滤（/user/logs 防越权
-// 测试依赖此语义）；返回副本防别名污染。
-func (f *fakeStore) QueryLogs(ctx context.Context, q repository.LogQuery) ([]*domain.UsageLog, int64, error) {
+// QueryUsages 模拟 repo 过滤（R4-M2 防假绿：完整过滤面与真实 repo
+// QueryUsages 逐项一致——归属四元组/model/error_type/时间范围 + ID 降序 +
+// Offset/Limit 分页，total = 分页前全量匹配数；user_id > 0 强制过滤——
+// /user/usage_logs 防越权测试依赖此语义）。
+func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, int64, error) {
+	rows, total := f.queryLogs(logFilter{
+		groupID: q.GroupID, accountID: q.AccountID, userID: q.UserID, keyID: q.KeyID,
+		model: q.Model, errorType: q.ErrorType,
+		from: q.From, to: q.To, offset: q.Offset, limit: q.Limit,
+	})
+	return rows, int64(total), nil
+}
+
+// QueryErrLogs 模拟 repo 过滤（/err_logs：usage_logs 过滤面 + status_code 专属
+// 列；user_id > 0 强制过滤——/user/err_logs 防越权测试依赖此语义）。
+func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, int64, error) {
+	rows, total := f.queryLogs(logFilter{
+		groupID: q.GroupID, accountID: q.AccountID, userID: q.UserID, keyID: q.KeyID,
+		model: q.Model, errorType: q.ErrorType, statusCode: q.StatusCode,
+		from: q.From, to: q.To, offset: q.Offset, limit: q.Limit,
+	})
+	return rows, int64(total), nil
+}
+
+// logFilter 日志查询过滤面（fake 内部表示——镜像真实 repo UsageQuery/
+// ErrLogQuery 语义逐项：0/空 = 不过滤；StatusCode 仅 err_logs 有）。
+type logFilter struct {
+	groupID, accountID, userID, keyID int64
+	model, errorType                  string
+	statusCode                        int
+	from, to                          *time.Time
+	offset, limit                     int
+}
+
+// queryLogs 过滤 + ID 降序 + Offset/Limit 分页（返回页行 + 分页前全量匹配数——
+// total 与真实 repo pred.Count 同语义；Limit ≤ 0 缺省 20，与真实 repo 一致）。
+// 返回副本防别名污染。
+func (f *fakeStore) queryLogs(q logFilter) ([]*domain.UsageLog, int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var out []*domain.UsageLog
+	var matched []*domain.UsageLog
 	for _, l := range f.logs {
-		if q.UserID > 0 && l.UserID != q.UserID {
+		if q.groupID > 0 && l.GroupID != q.groupID {
+			continue
+		}
+		if q.accountID > 0 && l.AccountID != q.accountID {
+			continue
+		}
+		if q.userID > 0 && l.UserID != q.userID {
+			continue
+		}
+		if q.keyID > 0 && l.KeyID != q.keyID {
+			continue
+		}
+		if q.model != "" && l.Model != q.model {
+			continue
+		}
+		if q.errorType != "" && string(l.ErrorType) != q.errorType {
+			continue
+		}
+		if q.statusCode > 0 && l.StatusCode != q.statusCode {
+			continue
+		}
+		if q.from != nil && l.CreatedAt.Before(*q.from) {
+			continue
+		}
+		if q.to != nil && l.CreatedAt.After(*q.to) {
 			continue
 		}
 		c := *l
-		out = append(out, &c)
+		matched = append(matched, &c)
 	}
-	return out, int64(len(out)), nil
+	total := len(matched)
+	if q.limit <= 0 {
+		q.limit = 20
+	}
+	// ID 降序（与真实 repo Order(ent.Desc(FieldID)) 一致）
+	slices.SortFunc(matched, func(a, b *domain.UsageLog) int { return cmp.Compare(b.ID, a.ID) })
+	end := q.offset + q.limit
+	if q.offset > len(matched) {
+		q.offset = len(matched)
+	}
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[q.offset:end], total
 }
 
 // --- 批量操作（模拟 repo 语义：事务内存在性检查，缺失 id 返回
@@ -1246,34 +1319,34 @@ func (f *fakeStore) UpsertManual(ctx context.Context, m *repository.PricingManua
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p := &domain.Pricing{
-		Model:                        m.Model,
-		PromptPricePerMillion:        m.PromptPricePerMillion,
-		CompletionPricePerMillion:    m.CompletionPricePerMillion,
-		CacheReadPricePerMillion:     m.CacheReadPricePerMillion,
-		CacheCreationPricePerMillion: m.CacheCreationPricePerMillion,
-		PriorityPromptPricePerMillion:        m.PriorityPromptPricePerMillion,
-		PriorityCompletionPricePerMillion:    m.PriorityCompletionPricePerMillion,
-		PriorityCacheReadPricePerMillion:     m.PriorityCacheReadPricePerMillion,
-		PriorityCacheCreationPricePerMillion: m.PriorityCacheCreationPricePerMillion,
-		FlexPromptPricePerMillion:            m.FlexPromptPricePerMillion,
-		FlexCompletionPricePerMillion:        m.FlexCompletionPricePerMillion,
-		FlexCacheReadPricePerMillion:         m.FlexCacheReadPricePerMillion,
-		FlexCacheCreationPricePerMillion:     m.FlexCacheCreationPricePerMillion,
-		AboveThreshold:                       m.AboveThreshold,
-		AbovePromptPricePerMillion:           m.AbovePromptPricePerMillion,
-		AboveCompletionPricePerMillion:       m.AboveCompletionPricePerMillion,
-		AboveCacheReadPricePerMillion:        m.AboveCacheReadPricePerMillion,
-		AboveCacheCreationPricePerMillion:    m.AboveCacheCreationPricePerMillion,
-		AbovePriorityPromptPricePerMillion:   m.AbovePriorityPromptPricePerMillion,
-		AbovePriorityCompletionPricePerMillion: m.AbovePriorityCompletionPricePerMillion,
-		AbovePriorityCacheReadPricePerMillion:  m.AbovePriorityCacheReadPricePerMillion,
+		Model:                                     m.Model,
+		PromptPricePerMillion:                     m.PromptPricePerMillion,
+		CompletionPricePerMillion:                 m.CompletionPricePerMillion,
+		CacheReadPricePerMillion:                  m.CacheReadPricePerMillion,
+		CacheCreationPricePerMillion:              m.CacheCreationPricePerMillion,
+		PriorityPromptPricePerMillion:             m.PriorityPromptPricePerMillion,
+		PriorityCompletionPricePerMillion:         m.PriorityCompletionPricePerMillion,
+		PriorityCacheReadPricePerMillion:          m.PriorityCacheReadPricePerMillion,
+		PriorityCacheCreationPricePerMillion:      m.PriorityCacheCreationPricePerMillion,
+		FlexPromptPricePerMillion:                 m.FlexPromptPricePerMillion,
+		FlexCompletionPricePerMillion:             m.FlexCompletionPricePerMillion,
+		FlexCacheReadPricePerMillion:              m.FlexCacheReadPricePerMillion,
+		FlexCacheCreationPricePerMillion:          m.FlexCacheCreationPricePerMillion,
+		AboveThreshold:                            m.AboveThreshold,
+		AbovePromptPricePerMillion:                m.AbovePromptPricePerMillion,
+		AboveCompletionPricePerMillion:            m.AboveCompletionPricePerMillion,
+		AboveCacheReadPricePerMillion:             m.AboveCacheReadPricePerMillion,
+		AboveCacheCreationPricePerMillion:         m.AboveCacheCreationPricePerMillion,
+		AbovePriorityPromptPricePerMillion:        m.AbovePriorityPromptPricePerMillion,
+		AbovePriorityCompletionPricePerMillion:    m.AbovePriorityCompletionPricePerMillion,
+		AbovePriorityCacheReadPricePerMillion:     m.AbovePriorityCacheReadPricePerMillion,
 		AbovePriorityCacheCreationPricePerMillion: m.AbovePriorityCacheCreationPricePerMillion,
-		AboveFlexPromptPricePerMillion:           m.AboveFlexPromptPricePerMillion,
-		AboveFlexCompletionPricePerMillion:       m.AboveFlexCompletionPricePerMillion,
-		AboveFlexCacheReadPricePerMillion:        m.AboveFlexCacheReadPricePerMillion,
-		AboveFlexCacheCreationPricePerMillion:    m.AboveFlexCacheCreationPricePerMillion,
-		FastMultiplier:                           m.FastMultiplier,
-		Source:                       domain.PricingSourceManual,
+		AboveFlexPromptPricePerMillion:            m.AboveFlexPromptPricePerMillion,
+		AboveFlexCompletionPricePerMillion:        m.AboveFlexCompletionPricePerMillion,
+		AboveFlexCacheReadPricePerMillion:         m.AboveFlexCacheReadPricePerMillion,
+		AboveFlexCacheCreationPricePerMillion:     m.AboveFlexCacheCreationPricePerMillion,
+		FastMultiplier:                            m.FastMultiplier,
+		Source:                                    domain.PricingSourceManual,
 	}
 	f.pricings[m.Model] = p
 	c := *p

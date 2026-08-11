@@ -104,12 +104,12 @@ func TestUsageLogPartitionBootstrapPG(t *testing.T) {
 
 	// 数据保留验证幂等：插入一行 → 二次 bootstrap → 行仍在、仍分区
 	now := time.Now().UTC()
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("idem", now)}))
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("idem", now)}))
 	require.NoError(t, repos.EnsureUsageLogPartitioned(ctx, time.Now()))
 	parted, err = repos.Partitions.IsUsageLogPartitioned(ctx)
 	require.NoError(t, err)
 	require.True(t, parted)
-	rows, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total, "二次 bootstrap 不重建（数据保留）")
 	require.Equal(t, "idem", rows[0].RequestID)
@@ -144,7 +144,7 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
 	tomorrow := today.AddDate(0, 0, 1)
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{
 		usageLogFor("today-1", today),
 		usageLogFor("tomorrow-1", tomorrow),
 		usageLogFor("today-2", today.Add(time.Hour)),
@@ -162,13 +162,13 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 	}
 
 	// ent 查询跨分区（无 created_at 过滤扫全部分区；带范围过滤命中 1~2 分区）
-	rows, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, rows, 3)
 	from := today.Add(-time.Hour)
 	to := tomorrow.Add(24 * time.Hour)
-	rows, total, err = repos.QueryLogs(ctx, repository.LogQuery{From: &from, To: &to, Limit: 100})
+	rows, total, err = repos.QueryUsages(ctx, repository.UsageQuery{From: &from, To: &to, Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total, "时间范围过滤跨分区查询")
 	got := map[string]bool{}
@@ -185,7 +185,7 @@ func TestUsageLogPartitionRoutingPG(t *testing.T) {
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	lastMicro := midnight.Add(24*time.Hour - time.Microsecond)
 	tomorrowMidnight := midnight.Add(24 * time.Hour)
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{
 		usageLogFor("bound-low-incl", midnight),
 		usageLogFor("bound-up-excl", lastMicro),
 		usageLogFor("bound-next-day", tomorrowMidnight),
@@ -215,7 +215,7 @@ func TestUsageLogPartitionRetentionPG(t *testing.T) {
 			`CREATE TABLE usage_logs_%s PARTITION OF usage_logs FOR VALUES FROM ('%s 00:00:00+00') TO ('%s 00:00:00+00')`,
 			d, mustISODate(d), mustNextISODate(d)))
 	}
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{
 		usageLogFor("old-28", time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)),
 		usageLogFor("old-29", time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)),
 		usageLogFor("today", time.Now().UTC()),
@@ -231,7 +231,7 @@ func TestUsageLogPartitionRetentionPG(t *testing.T) {
 
 	from := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	to := time.Now().UTC().Add(24 * time.Hour)
-	_, total, err := repos.QueryLogs(ctx, repository.LogQuery{From: &from, To: &to, Limit: 100})
+	_, total, err := repos.QueryUsages(ctx, repository.UsageQuery{From: &from, To: &to, Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total, "28 日数据随分区 DROP 消失（29 + 当日保留）")
 
@@ -260,8 +260,8 @@ func TestEntMigrateSecondRunPG(t *testing.T) {
 	repos2, err := repository.New(entsql.OpenDB(dialect.Postgres, db), true)
 	require.NoError(t, err, "二次启动 ent migrate 必须容忍分区表（钩子过滤 usagelog）")
 	require.NoError(t, repos2.EnsureUsageLogPartitioned(ctx, time.Now()))
-	require.NoError(t, repos2.Logs.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("second-boot", time.Now().UTC())}))
-	rows, total, err := repos2.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	require.NoError(t, repos2.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("second-boot", time.Now().UTC())}))
+	rows, total, err := repos2.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Equal(t, "second-boot", rows[0].RequestID)
@@ -299,13 +299,13 @@ func TestUsageLogPartitionUpgradePG(t *testing.T) {
 	parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
 	require.NoError(t, err)
 	require.True(t, parted, "普通表被重建为分区表")
-	_, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	_, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Zero(t, total, "该删删：存量普通表明细丢弃")
 
 	// 重建后插入路由正常（序列续用不冲突）
-	require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("post-upgrade", time.Now().UTC())}))
-	rows, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("post-upgrade", time.Now().UTC())}))
+	rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Equal(t, "post-upgrade", rows[0].RequestID)
@@ -351,8 +351,8 @@ func TestUsageLogPartitionConcurrentBootstrapPG(t *testing.T) {
 		parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
 		require.NoError(t, err)
 		require.True(t, parted, "并发 bootstrap 收敛为分区表")
-		require.NoError(t, repos.Logs.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("concurrent", time.Now().UTC())}))
-		rows, total, err := repos.QueryLogs(ctx, repository.LogQuery{Limit: 100})
+		require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("concurrent", time.Now().UTC())}))
+		rows, total, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
 		require.NoError(t, err)
 		require.Equal(t, int64(1), total, "收敛后插入路由正常")
 		require.Equal(t, "concurrent", rows[0].RequestID)

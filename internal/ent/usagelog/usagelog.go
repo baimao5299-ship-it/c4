@@ -32,12 +32,8 @@ const (
 	FieldMappedModel = "mapped_model"
 	// FieldFormat holds the string denoting the format field in the database.
 	FieldFormat = "format"
-	// FieldStatusCode holds the string denoting the status_code field in the database.
-	FieldStatusCode = "status_code"
 	// FieldErrorType holds the string denoting the error_type field in the database.
 	FieldErrorType = "error_type"
-	// FieldErrorMessage holds the string denoting the error_message field in the database.
-	FieldErrorMessage = "error_message"
 	// FieldLatencyMs holds the string denoting the latency_ms field in the database.
 	FieldLatencyMs = "latency_ms"
 	// FieldTtftMs holds the string denoting the ttft_ms field in the database.
@@ -86,9 +82,7 @@ var Columns = []string{
 	FieldModel,
 	FieldMappedModel,
 	FieldFormat,
-	FieldStatusCode,
 	FieldErrorType,
-	FieldErrorMessage,
 	FieldLatencyMs,
 	FieldTtftMs,
 	FieldInputTokens,
@@ -120,8 +114,6 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultModel holds the default value on creation for the "model" field.
 	DefaultModel string
-	// DefaultStatusCode holds the default value on creation for the "status_code" field.
-	DefaultStatusCode int
 	// DefaultErrorType holds the default value on creation for the "error_type" field.
 	DefaultErrorType string
 	// DefaultLatencyMs holds the default value on creation for the "latency_ms" field.
@@ -224,19 +216,9 @@ func ByFormat(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFormat, opts...).ToFunc()
 }
 
-// ByStatusCode orders the results by the status_code field.
-func ByStatusCode(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldStatusCode, opts...).ToFunc()
-}
-
 // ByErrorType orders the results by the error_type field.
 func ByErrorType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldErrorType, opts...).ToFunc()
-}
-
-// ByErrorMessage orders the results by the error_message field.
-func ByErrorMessage(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldErrorMessage, opts...).ToFunc()
 }
 
 // ByLatencyMs orders the results by the latency_ms field.

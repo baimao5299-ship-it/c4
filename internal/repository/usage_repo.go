@@ -1,5 +1,9 @@
 package repository
 
+// usage_logs 明细查询/插入（消费面改名裁决：log_repo → usage 语义命名——/logs
+// API 改名 /usages 后内部类型随改名，UsageRepo/UsageQuery/QueryUsages；错误审计
+// 面由 errlog_repo.go（err_logs）承载）。
+
 import (
 	"context"
 	"time"
@@ -9,23 +13,22 @@ import (
 	"go-proxy-mini/internal/ent/usagelog"
 )
 
-type LogQuery struct {
-	GroupID    int64 // 0 = 不过滤
-	AccountID  int64
-	UserID     int64 // 0 = 不过滤（/user/logs 强制 = 自己）
-	KeyID      int64
-	Model      string
-	StatusCode int
-	ErrorType  string
-	From       *time.Time
-	To         *time.Time
-	Offset     int
-	Limit      int
+type UsageQuery struct {
+	GroupID   int64 // 0 = 不过滤
+	AccountID int64
+	UserID    int64 // 0 = 不过滤（/user/usages 强制 = 自己）
+	KeyID     int64
+	Model     string
+	ErrorType string // usage_logs = 纯计费明细（仅 cost>0）→ 值域收敛 none/abort（err_logs 分表后）
+	From      *time.Time
+	To        *time.Time
+	Offset    int
+	Limit     int
 }
 
-type LogRepo struct{ client *ent.Client }
+type UsageRepo struct{ client *ent.Client }
 
-func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
+func (r *UsageRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
 	if len(logs) == 0 {
 		return nil
 	}
@@ -44,12 +47,13 @@ func (r *LogRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) erro
 // 时间/价格快照列（nil = NULL 落库，SQL 不写该列）：TTFTMS 首 token 时间毫秒
 // （非流式/失败路径 nil）；Price*Millis 每 M token 毫分单价快照（未计费路径
 // /无该分量 nil）。
+// 用户裁决（err_logs 分表）：StatusCode/ErrorMessage 为域内瞬态审计字段
+// （err_logs 承载），不再写 usage_logs（该两列已从表移除——瘦身）。
 func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCreate {
 	c := client.UsageLog.Create().
 		SetRequestID(l.RequestID).
 		SetModel(l.Model).
 		SetFormat(usagelog.Format(l.Format)).
-		SetStatusCode(l.StatusCode).
 		SetErrorType(string(l.ErrorType)).
 		SetLatencyMs(l.LatencyMS).
 		SetInputTokens(l.InputTokens).
@@ -79,9 +83,6 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	if l.MappedModel != "" {
 		c = c.SetMappedModel(l.MappedModel)
 	}
-	if l.ErrorMessage != nil {
-		c = c.SetErrorMessage(*l.ErrorMessage)
-	}
 	if l.BillingTier != "" {
 		c = c.SetBillingTier(l.BillingTier)
 	}
@@ -103,7 +104,7 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	return c
 }
 
-func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog, int64, error) {
+func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, int64, error) {
 	pred := r.client.UsageLog.Query()
 	if q.GroupID > 0 {
 		pred = pred.Where(usagelog.GroupIDEQ(q.GroupID))
@@ -119,9 +120,6 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 	}
 	if q.Model != "" {
 		pred = pred.Where(usagelog.ModelEQ(q.Model))
-	}
-	if q.StatusCode > 0 {
-		pred = pred.Where(usagelog.StatusCodeEQ(q.StatusCode))
 	}
 	if q.ErrorType != "" {
 		pred = pred.Where(usagelog.ErrorTypeEQ(q.ErrorType))
@@ -148,8 +146,9 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 		l := &domain.UsageLog{
 			ID: row.ID, RequestID: row.RequestID,
 			Model: row.Model, Format: domain.RequestFormat(row.Format),
-			StatusCode: row.StatusCode, ErrorType: domain.ErrorType(row.ErrorType),
-			ErrorMessage: row.ErrorMessage,
+			// 用户裁决（err_logs 分表）：StatusCode/ErrorMessage 不再落 usage_logs
+			// ——查询结果恒零值/nil（错误审计字段由 err_logs 承载）。
+			ErrorType:                domain.ErrorType(row.ErrorType),
 			LatencyMS:                row.LatencyMs,
 			TTFTMS:                   row.TtftMs,
 			InputTokens:              row.InputTokens,
@@ -161,10 +160,10 @@ func (r *LogRepo) QueryLogs(ctx context.Context, q LogQuery) ([]*domain.UsageLog
 			PriceCacheReadMillis:     row.PriceCacheReadMillis,
 			CacheCreationTokens:      row.CacheCreationTokens,
 			PriceCacheCreationMillis: row.PriceCacheCreationMillis,
-			Cost:                row.Cost,
-			AboveHit:            row.AboveHit,
-			Overdraft:           row.Overdraft,
-			CreatedAt:           row.CreatedAt,
+			Cost:                     row.Cost,
+			AboveHit:                 row.AboveHit,
+			Overdraft:                row.Overdraft,
+			CreatedAt:                row.CreatedAt,
 		}
 		if row.GroupID != nil {
 			l.GroupID = *row.GroupID

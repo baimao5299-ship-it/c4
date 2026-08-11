@@ -1,4 +1,4 @@
-package user
+package handler
 
 import (
 	"net/http"
@@ -7,10 +7,12 @@ import (
 	"go-proxy-mini/internal/repository"
 )
 
-// GetUserLogs 我的用量日志（强制 user_id = 当前用户——越权过滤在 service/
-// repo 层，请求侧不可指定他人，ServerInterface）。limit/offset 缺省 20/0。
-func (h *UserAPI) GetUserLogs(w http.ResponseWriter, r *http.Request, params GetUserLogsParams) {
-	lq := repository.LogQuery{Limit: 20, Offset: 0, UserID: currentUserID(r)}
+// GetUsageLogs 用量明细分页查询（/usage_logs；消费面改名裁决：/logs → /usage_logs
+// 与表名一致）。limit/offset 缺省 20/0（契约 default），其余过滤参数仅非 nil 时
+// 生效。error_type 过滤保留——usage_logs 只剩 abort/failover 半异常标记（错误
+// 审计面在 /err_logs）。
+func (h *AdminAPI) GetUsageLogs(w http.ResponseWriter, r *http.Request, params GetUsageLogsParams) {
+	lq := repository.UsageQuery{Limit: 20, Offset: 0}
 	if params.Limit != nil {
 		lq.Limit = *params.Limit
 	}
@@ -23,11 +25,11 @@ func (h *UserAPI) GetUserLogs(w http.ResponseWriter, r *http.Request, params Get
 	if params.AccountId != nil {
 		lq.AccountID = *params.AccountId
 	}
+	if params.UserId != nil {
+		lq.UserID = *params.UserId
+	}
 	if params.Model != nil {
 		lq.Model = *params.Model
-	}
-	if params.StatusCode != nil {
-		lq.StatusCode = *params.StatusCode
 	}
 	if params.ErrorType != nil {
 		lq.ErrorType = *params.ErrorType
@@ -38,16 +40,16 @@ func (h *UserAPI) GetUserLogs(w http.ResponseWriter, r *http.Request, params Get
 	if params.To != nil {
 		lq.To = params.To
 	}
-	rows, total, err := h.svc.QueryLogs(r.Context(), lq)
+	rows, total, err := h.svc.QueryUsages(r.Context(), lq)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
 	out := make([]UsageLog, 0, len(rows))
-	for _, item := range rows { // service.QueryLogs 返回 []any（元素为 *domain.UsageLog）
+	for _, item := range rows { // service.QueryUsages 返回 []any（元素为 *domain.UsageLog）
 		l, ok := item.(*domain.UsageLog)
 		if !ok { // 类型不符是内部错误：不能静默丢数据，返回 500
-			writeErr(w, http.StatusInternalServerError, "internal error: unexpected log row type")
+			writeErr(w, http.StatusInternalServerError, "internal error: unexpected usage log row type")
 			return
 		}
 		out = append(out, toAPIUsageLog(l))

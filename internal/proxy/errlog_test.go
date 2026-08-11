@@ -6,10 +6,12 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +33,7 @@ func newTestProxyWarn(t *testing.T, upstream string, accountID int64, logs usage
 	t.Helper()
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{
@@ -63,7 +65,10 @@ func newTestProxyWarn(t *testing.T, upstream string, accountID int64, logs usage
 	})
 	logger, err := logx.New("warn", logOut)
 	require.NoError(t, err)
-	return New(cfg, sched, credential.New(), rec, clients, auth, logger, nil)
+	// errlog worker（分表设计）：错误明细与 usage_logs 共用捕获 store——错误
+	// 文本断言经 p.errlog.Close 显式排空后同 store 读取。
+	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{QueueSize: 4096, FlushInterval: time.Hour}, errLogStoreFrom(logs), nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, logger, nil, errlogW)
 }
 
 // 连接级失败（fake 上游断连）：耗尽路径 usage log ErrorMessage = err.Error()
@@ -88,11 +93,13 @@ func TestProxyConnErrorLogsErrorMessage(t *testing.T) {
 	p.HandleChat(rec, req)
 	require.Equal(t, 502, rec.Code, "body=%s", rec.Body.String())
 
-	// 耗尽记录：ErrorType=network + ErrorMessage=err.Error()（≤500）
+	// 耗尽记录（分表设计）：cost=0 错误行不入 usage_logs——err_logs 承载
+	//（ErrorType=network + ErrorMessage=err.Error()（≤500））
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "耗尽路径必须记一条用量")
+	require.Len(t, store.logs, 1, "耗尽路径必须记一条 err_logs")
 	l := store.logs[0]
 	require.Equal(t, domain.ErrNetwork, l.ErrorType)
 	require.NotNil(t, l.ErrorMessage, "连接级失败必须落 ErrorMessage")
@@ -125,9 +132,10 @@ func TestProxy4xxLogsErrorMessage(t *testing.T) {
 	require.Equal(t, 400, rec.Code, "body=%s", rec.Body.String())
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "4xx 透传必须记录用量")
+	require.Len(t, store.logs, 1, "4xx 透传必须记录 err_logs（cost=0 不入 usage_logs）")
 	l := store.logs[0]
 	require.Equal(t, domain.Err4xx, l.ErrorType)
 	require.NotNil(t, l.ErrorMessage, "4xx 必须落 ErrorMessage")
@@ -154,6 +162,7 @@ func TestProxy4xxLogsErrorMessageTruncated(t *testing.T) {
 	require.Equal(t, 400, rec.Code, "body=%s", rec.Body.String())
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
@@ -181,6 +190,7 @@ func TestProxy5xxLogsErrorMessage(t *testing.T) {
 	require.Equal(t, 502, rec.Code, "body=%s", rec.Body.String())
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
@@ -190,7 +200,8 @@ func TestProxy5xxLogsErrorMessage(t *testing.T) {
 	require.Equal(t, "boom", *l.ErrorMessage, "5xx ErrorMessage = 上游 body message")
 }
 
-// 成功路径（200）：ErrorMessage 恒空（热路径零新增分配）。
+// 成功路径（200）：ErrorMessage 恒空（热路径零新增分配）。分表路由（放行路径
+// 语义）：成功行（none）入 usage_logs——cost=0 不限；err_logs 无错误行。
 func TestProxySuccessLogsNoErrorMessage(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
@@ -205,11 +216,73 @@ func TestProxySuccessLogsNoErrorMessage(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Nil(t, store.logs[0].ErrorMessage, "成功路径 ErrorMessage 恒空")
 	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType)
+}
+
+// 用户裁决修正（2026-08-11）：usage_logs 成员资格 = 放行路径语义（error_type
+// ∈ {none, abort}），与 cost 无关——0 token 成功行（空响应）仍入 usage_logs
+// （cost>0 判定会漏掉此类行）。
+func TestProxyEmptyResponseSuccessStillLogsUsage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "c1", "object": "chat.completion", "model": "gpt-4o",
+			"choices": []any{}, "usage": map[string]any{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+		})
+	}))
+	defer srv.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTimeoutLogs(t, srv.URL, 1, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "0 token 成功行（cost=0）仍入 usage_logs（放行路径语义，非 cost 判定）")
+	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType)
+	require.Zero(t, store.logs[0].TotalTokens)
+}
+
+// 用户裁决修正（2026-08-11）：失败行（4xx/5xx）不入 usage_logs——分表：失败
+// 明细归 err_logs。4xx 透传与 5xx 耗尽双形态显式断言 usage_logs 零行 + err_logs
+// 一行。
+func TestProxyFailureRowsNeverInUsageLogs(t *testing.T) {
+	for _, mode := range []struct{ mode, want string }{{"400", "400"}, {"500", "502"}} {
+		t.Run(mode.mode, func(t *testing.T) {
+			up := fakeOpenAI(t, mode.mode)
+			defer up.Close()
+			store := &captureLogStore{}
+			p := newTestProxyTimeoutLogs(t, up.URL, 1, store)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+				`{"model":"gpt-4o","messages":[]}`))
+			req.Header.Set("Authorization", "Bearer gk-1")
+			rec := httptest.NewRecorder()
+			p.HandleChat(rec, req)
+			require.Equal(t, mode.want, strconv.Itoa(rec.Code), "body=%s", rec.Body.String())
+
+			require.NoError(t, p.rec.Close(context.Background()))
+			store.mu.Lock()
+			require.Empty(t, store.logs, "失败行不入 usage_logs（rec 明细零——分表）")
+			store.mu.Unlock()
+			require.NoError(t, p.errlog.Close(context.Background()))
+			store.mu.Lock()
+			defer store.mu.Unlock()
+			require.Len(t, store.logs, 1, "失败行全部进 err_logs")
+		})
+	}
 }
 
 // 分类正确性（#20 E 项，用户实证）：客户端在上游首字节前断开（模型思考期
@@ -247,12 +320,14 @@ func TestProxyClientDisconnectBeforeFirstByte(t *testing.T) {
 	require.Zero(t, ri.Concurrency, "断连路径必须释放并发槽")
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "断连必须记一条用量")
+	require.Len(t, store.logs, 2, "499 abort 双轨：usage_logs（放行路径 abort）+ err_logs（豁免队列）各一行，request_id 关联")
 	l := store.logs[0]
 	require.Equal(t, statusClientClosedRequest, l.StatusCode, "首字节前断连记 499")
 	require.Equal(t, domain.ErrAbort, l.ErrorType, "首字节前断连记 abort 而非 network")
 	require.NotNil(t, l.ErrorMessage)
 	require.Contains(t, *l.ErrorMessage, "client closed request", "断连错误文本落盘")
+	require.Equal(t, l.RequestID, store.logs[1].RequestID, "双轨行 request_id 关联")
 }

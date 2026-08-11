@@ -65,7 +65,7 @@ func benchUpstream() *httptest.Server {
 func benchProxy(upstream string) *Proxy {
 	tpl := &domain.Template{
 		ID: 1, Name: "t", BaseURL: upstream,
-		CredentialType: credential.TypeAPIKey,
+		CredentialType:   credential.TypeAPIKey,
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
 	}
 	accs := map[int64][]*domain.Account{10: {{
@@ -96,7 +96,7 @@ func benchProxy(upstream string) *Proxy {
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second,
 	})
-	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil)
+	return New(cfg, sched, credential.New(), rec, clients, auth, nil, nil, nil)
 }
 
 func benchForwardChat(b *testing.B, streaming bool) {

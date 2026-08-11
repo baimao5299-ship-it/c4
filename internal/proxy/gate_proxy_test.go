@@ -126,8 +126,14 @@ func TestProxyRejectionStormNoPending(t *testing.T) {
 		<-done
 		require.NoError(t, p.rec.Close(context.Background()))
 		store.mu.Lock()
+		require.Len(t, store.logs, 1, "仅成功请求产生 usage_logs 明细（429 拒绝零 usage_logs 明细）")
+		store.mu.Unlock()
+		// err_logs 为拒绝审计的独立落盘面（有界队列背压采样）：风暴 300 条全量
+		// 入队（容量内不丢）——与 usage_logs 零明细互斥成立（分表彻底化）
+		require.NoError(t, p.errlog.Close(context.Background()))
+		store.mu.Lock()
 		defer store.mu.Unlock()
-		require.Len(t, store.logs, 1, "仅成功请求产生明细（429 拒绝零明细）")
+		require.Len(t, store.logs, 1+storm, "429 拒绝全部进 err_logs（错误审计明细）")
 	})
 
 	t.Run("billing on", func(t *testing.T) {
@@ -306,7 +312,8 @@ func TestProxyUsageLogCarriesUserAndKey(t *testing.T) {
 	require.Equal(t, int64(1), store.logs[0].KeyID, "key_id 来自鉴权 KeyMeta")
 }
 
-// 401（鉴权失败）路径：无 KeyMeta → user_id/key_id 保持 0。
+// 401（鉴权失败）路径：无 KeyMeta → user_id/key_id 保持 0。分表：401 → err_logs
+// 拒绝行（A1 归因缺口接受：无归属，注释标注）。
 func TestProxyUsageLogAuthFailureNoOwner(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
@@ -318,12 +325,14 @@ func TestProxyUsageLogAuthFailureNoOwner(t *testing.T) {
 	p.HandleChat(rec, req)
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Zero(t, store.logs[0].UserID, "鉴权失败无归属")
 	require.Zero(t, store.logs[0].KeyID)
+	require.Equal(t, domain.ErrAuth, store.logs[0].ErrorType, "401 记 ErrAuth（err_logs 拒绝行）")
 }
 
 // reload 继承（端到端）：在途请求跨 Reload 不丢计数，释放后归零。

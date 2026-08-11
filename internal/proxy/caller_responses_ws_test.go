@@ -153,6 +153,8 @@ func TestResponsesWSHandshakeAndBidirectionalPassthrough(t *testing.T) {
 	up := fakeResponsesWS(t, hooks)
 	defer up.Close()
 	store := &captureLogStore{}
+	// 成功行（none）入 usage_logs（放行路径语义，cost=0 不限）——WS usage 嗅探
+	// 字段断言照旧
 	p, srv := wsTestProxy(t, up.URL, domain.FormatOpenAIResponsesWS, store)
 
 	c := dialResponsesWS(t, srv)
@@ -270,7 +272,8 @@ func TestResponsesWSModelMapping(t *testing.T) {
 }
 
 // 客户端提前断开：上游已消费请求（已完成 usage 帧已嗅探）→ 200 + ErrAbort
-// 记录（token 取断前已嗅探值），不 MarkResult（不冷却无辜账号）。
+// 记录（token 取断前已嗅探值），不 MarkResult（不冷却无辜账号）。分表路由：
+// abort 无计费（cost=0）→ err_logs 双轨豁免行（不入 usage_logs）。
 func TestResponsesWSClientAbortRecordsUsage(t *testing.T) {
 	up := fakeResponsesWS(t, &fakeWSHooks{frameLimit: 0}) // 不主动关闭，等网关关
 	defer up.Close()
@@ -285,22 +288,24 @@ func TestResponsesWSClientAbortRecordsUsage(t *testing.T) {
 	}
 	require.NoError(t, c.Close(websocket.StatusNormalClosure, "")) // 客户端主动结束会话
 
-	// relay 感知客户端关闭是异步的：等记录进队列
+	// relay 感知客户端关闭是异步的：等记录进双轨（rec pending / errlog 队列）
 	require.Eventually(t, func() bool {
 		store.mu.Lock()
 		defer store.mu.Unlock()
-		return len(store.logs) == 1 || p.rec.Pending() > 0
+		return len(store.logs) >= 1 || p.rec.Pending() > 0 || p.errlog.Queued() > 0
 	}, 3*time.Second, 10*time.Millisecond, "relay 必须感知客户端关闭并记录用量")
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1)
+	require.Len(t, store.logs, 2, "abort 双轨：usage_logs（放行路径 abort）+ err_logs（豁免队列）各一行，request_id 关联")
 	lg := store.logs[0]
 	require.Equal(t, domain.ErrAbort, lg.ErrorType)
 	require.Equal(t, http.StatusOK, lg.StatusCode)
 	require.Equal(t, int64(3), lg.InputTokens, "断开前已嗅探的 usage 不丢")
 	require.Equal(t, int64(5), lg.OutputTokens)
 	require.Equal(t, int64(8), lg.TotalTokens)
+	require.Equal(t, lg.RequestID, store.logs[1].RequestID, "双轨行 request_id 关联")
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "客户端断开后并发槽必须释放")

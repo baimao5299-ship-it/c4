@@ -100,17 +100,18 @@ func TestResponsesWSBillingPG(t *testing.T) {
 	}
 	readResponsesWSClose(t, c, websocket.StatusNormalClosure)
 
-	// flusher 排空（单事务 DeductAndLog 落库）后断言 usage_logs 行
+	// flusher 排空（单事务 DeductAndLog 落库）后断言 usage_logs 行。
+	// usage_logs 瘦身（分表设计）：status_code 已移除（错误审计归 err_logs）——
+	// 成功计费行 status 语义由 error_type=none 承载。
 	require.NoError(t, f.Close(context.Background()))
 	var (
 		it, ot, tt, cr, cc, cost int64
 		format, et, model        string
-		status                   int
 	)
 	err = db.QueryRowContext(ctx, `SELECT input_tokens, output_tokens, total_tokens,
-		cache_read_tokens, cache_creation_tokens, cost, format, error_type, status_code, model
+		cache_read_tokens, cache_creation_tokens, cost, format, error_type, model
 		FROM usage_logs WHERE format = 'openai-responses-ws' ORDER BY id DESC LIMIT 1`).
-		Scan(&it, &ot, &tt, &cr, &cc, &cost, &format, &et, &status, &model)
+		Scan(&it, &ot, &tt, &cr, &cc, &cost, &format, &et, &model)
 	require.NoError(t, err, "usage_logs 必须有 resp-ws 计费行")
 	require.Equal(t, int64(3), it, "input_tokens")
 	require.Equal(t, int64(5), ot, "output_tokens")
@@ -120,6 +121,5 @@ func TestResponsesWSBillingPG(t *testing.T) {
 	require.Equal(t, int64(130), cost, "3×1e7+5×2e7 每 M 毫分 = 130")
 	require.Equal(t, "openai-responses-ws", format)
 	require.Equal(t, "none", et)
-	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, "gpt-4o", model)
 }
