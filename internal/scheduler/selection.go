@@ -11,7 +11,15 @@ import (
 // + 动态状态检查（冷却/禁用/并发满，atomic 读）+ CAS 抢占。
 // 调用方完成请求后必须 Release + MarkResult。
 func (s *Scheduler) Select(groupID int64, format domain.RequestFormat, model string) (*Selection, error) {
-	groups := s.store.groups.Load().(map[int64]*groupSnapshot)
+	// 快照未加载（首刷失败 / DB 故障启动：注册表 ReloadAll 失败仅 Warn——评审
+	// R3 M-1）：断言 ok 分支优雅失败（404 group not found），不 panic——旧启动
+	// 序在此失败 fatalf（进程退出，无流量），Warn-and-serve 语义下客户端应见
+	// 4xx 而非断连。auth/余额/pricing 空快照均安全拒绝（401/402），唯 scheduler
+	// 需此守卫。热路径零成本：断言本身既有，ok 分支仅在未加载时进入。
+	groups, ok := s.store.groups.Load().(map[int64]*groupSnapshot)
+	if !ok {
+		return nil, ErrGroupNotFound
+	}
 	gs, ok := groups[groupID]
 	if !ok {
 		return nil, ErrGroupNotFound

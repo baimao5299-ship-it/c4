@@ -247,7 +247,7 @@ type Service struct {
 	ruleReload RuleReloader
 	keys       KeyRegistrar
 	// local 本地变更分发器（#36 即时重算）：实现 = cmd/server dispatcher
-	//（notify.Dispatcher 接口——notify 不 import service，接口定义在 notify
+	// （notify.Dispatcher 接口——notify 不 import service，接口定义在 notify
 	// 包、装配侧实现，与 Invalidator/Publisher 同依赖方向）。settings 变更
 	// 本地直连 Apply（与远端 NOTIFY 同路径：同步 ReloadSettings + 注册表
 	// scope 精确重载 auth，gate 预算按新 N 重算）——自播 NOTIFY 被 Listener

@@ -10,7 +10,7 @@ import (
 )
 
 // schedGroupPub 把 notify.Publisher 适配为 scheduler.GroupChangePublisher
-//（scheduler 不 import notify——发布面接口化（与 service.Publisher 同模式），
+// （scheduler 不 import notify——发布面接口化（与 service.Publisher 同模式），
 // 装配侧粘合）。账号状态回写成功后发组级 NOTIFY（Change.Groups），接收端
 // Dispatcher.Apply → Accounts(gids, false) → 组级定向重载。
 type schedGroupPub struct{ p *notify.Publisher }

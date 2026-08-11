@@ -294,7 +294,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 
 // TestDispatcherSettingsScopePrecision settings 变更按 scope 精确分发：只重载
 // 声明 ScopeSettings 的快照（auth），未声明的（scheduler/rules/balances）不动
-//（脏标记语义——变更只对应其快照集合）。
+// （脏标记语义——变更只对应其快照集合）。
 func TestDispatcherSettingsScopePrecision(t *testing.T) {
 	rg := newTestDispatcher(t)
 	require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Settings: true}))
