@@ -229,7 +229,7 @@ pkg 职责边界：
 | cmd/server.authSync | "auth-sync"（`cmd/server/auth_sync.go:38`） | ticker 60s | 周期全量 Reload auth 快照（NOTIFY 丢失兜底，`cmd/server/auth_sync.go:13-16`） | Close nil（循环随 ctx 退出，`cmd/server/auth_sync.go:64`） |
 | rule.RuleEngine | "rule-engine"（`internal/rule/worker.go:15`） | 事件队列 | 有界 channel 满则丢弃（dropped 计数 + 告警，`internal/rule/worker.go:82-83`） | Flush 同步排空（测试/优雅关闭用，`internal/rule/worker.go:42-47`） |
 
-**flush_workers 分片语义**（`config.example.toml:36-39` + `cmd/server/main.go:113`）：`flush_workers=4`（建议上限 ~7，受 db.max_conns 余量约束）——批内按 userID 取模分片（`internal/billing/flusher.go:269-277`）/按 bucket key FNV-1a 哈希分片（`internal/usage/usage.go:245-273`），**同 key 恒同桶**（分片确定性）；分片并行非常驻 goroutine（每批新建，wg.Wait 收尾），**不是**常驻 worker。
+**flush_workers 分片语义**（`config.example.toml:36-39` + `cmd/server/main.go:113`）：`flush_workers=8`（默认 8——多角度压测 C 项实证 2026-08-12：多用户水线告警清零、pending 斜率降 25-40%、QPS/CPU 零回退；受 db.max_conns 余量约束）——批内按 userID 取模分片（`internal/billing/flusher.go:269-277`）/按 bucket key FNV-1a 哈希分片（`internal/usage/usage.go:245-273`），**同 key 恒同桶**（分片确定性）；分片并行非常驻 goroutine（每批新建，wg.Wait 收尾），**不是**常驻 worker。
 
 ## 9. 事件流（main 现状链）
 
@@ -290,13 +290,13 @@ flowchart LR
 | `[log]` | logx.New | level/output |
 | `[admin]` | server 静态 token | token |
 | `[auth]` | jwtauth.Issuer | jwt_secret（`GPM_AUTH_JWT_SECRET` 亦可） |
-| `[db]` | repository.OpenPG | dsn/max_conns（20 = billing 4 + stats 4 worker + 余量） |
+| `[db]` | repository.OpenPG | dsn/max_conns（20 = billing 8 + stats 8 worker + 余量） |
 | `[proxy]` | proxy.New | max_body_size/max_inflight/upstream_timeout/upstream_stream_timeout/failover_attempts/usage_capture |
 | `[upstream]` | httpx.TransportConfig | 连接池参数（max_idle_conns 8192 / per_host 2048 / force_http2） |
 | `[limit]` | fixedWindowLimiter | group_key_rpm（0 = 关）；**cooldown_429/backoff_* 已废弃**（`config.example.toml:23-24` 注释，规则引擎接管） |
 | `[scheduler]` | scheduler.Config | default_max_concurrency/sync_interval |
-| `[usage]` | usage.Recorder + ErrLogWorker + RetentionWorker | batch_size/flush_interval/log_retention_days=30/stats_flush_interval/flush_workers=4；errlog_queue_size=4096/errlog_batch_size=500/errlog_flush_interval=500ms/errlog_retention_days=7/stats_retention_days=180 |
-| `[billing]` | billing.NewFlusher + BillingHooks | enabled（默认关 opt-in）/flush_interval=1s/balance_refresh_interval=10s/flush_workers=4 |
+| `[usage]` | usage.Recorder + ErrLogWorker + RetentionWorker | batch_size/flush_interval/log_retention_days=30/stats_flush_interval/flush_workers=8；errlog_queue_size=4096/errlog_batch_size=500/errlog_flush_interval=500ms/errlog_retention_days=7/stats_retention_days=180 |
+| `[billing]` | billing.NewFlusher + BillingHooks | enabled（默认关 opt-in）/flush_interval=1s/balance_refresh_interval=10s/flush_workers=8 |
 
 - 必填校验（`cmd/server/main.go:58-60`）：admin.token、auth.jwt_secret、db.dsn 缺失即 fatal。
 - 分区/保留/倍率等策略参数在 **DB settings 表**而非 config（`internal/domain/settings.go:10-38`）：signup 默认资源、price_source_url/price_sync_cron、service_tier_policy_*、cluster.instances。
