@@ -45,10 +45,12 @@ func proxyPricing() *domain.Pricing {
 }
 
 // fakePriceLookup 内存价格快照（proxy 计费测试用）。failFrom > 0 = 第 N 次
-// GetPrice 调用起恒失败（模拟预检后快照被删竞态）。
+// GetPrice 调用起恒失败（模拟预检后快照被删竞态）。im 为图片生成价快照
+// （Task D 响应检测计费旁路用；nil = 无图价——GetImagePrice 恒 ErrNotFound）。
 type fakePriceLookup struct {
 	mu       sync.Mutex
 	m        map[string]*domain.Pricing
+	im       map[string]*domain.ImagePrice
 	call     int
 	failFrom int
 }
@@ -64,6 +66,16 @@ func (f *fakePriceLookup) GetPrice(model string) (*domain.Pricing, error) {
 		return p, nil
 	}
 	return nil, errors.New("no price")
+}
+
+// GetImagePrice 图片生成价快照读（spec §6 检测旁路查价；缺失 → 错误）。
+func (f *fakePriceLookup) GetImagePrice(model string) (*domain.ImagePrice, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.im[model]; ok {
+		return p, nil
+	}
+	return nil, errors.New("no image price")
 }
 
 // newTestProxyBillingLogs 构造注入计费钩子的测试代理（默认 gpt-4o 模板 + 捕获

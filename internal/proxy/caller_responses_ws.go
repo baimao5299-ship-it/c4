@@ -273,6 +273,7 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	endCh := make(chan struct{}, 3)
 	var (
 		it, ot, tt, cr, cc        int64
+		img                       int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
 		ttft                      *int64
 		wg                        sync.WaitGroup
 		endMu                     sync.Mutex
@@ -357,6 +358,11 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 			// 流式中间帧零解析零拷贝直转（Read 缓冲直写，无内容复制）。
 			if u, ok := sniffResponsesCompleted(f); ok {
 				it, ot, tt, cr, cc = u.it, u.ot, u.tt, u.cr, u.cc
+				// 响应检测旁路（spec §6）：completed 帧恒在流末——最终计数由其
+				// 覆盖（最后帧语义）；门控关闭（api_key/strip 开）→ 零额外解析。
+				if respImageDetectOn(sel) {
+					img = respImageCountCompleted(f)
+				}
 			}
 			if ttft == nil {
 				ms := time.Since(start).Milliseconds()
@@ -405,7 +411,7 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	//   ③ 上游错误关闭/网络错误/心跳失联 → recordStreamAbort + ResultError
 	// 关闭传播在取消之前：client.Close 握手本身解除客户端循环的阻塞 Read
 	// （对端回关闭帧 → Read 自然返回退出），客户端拿到正常关闭帧。
-	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}
+	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}
 	logCtx := relayCtx
 	if ttft != nil {
 		logCtx = context.WithValue(relayCtx, ctxKeyTTFT{}, ttft)

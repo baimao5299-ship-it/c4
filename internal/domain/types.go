@@ -413,6 +413,11 @@ type UsageLog struct {
 	PriceCacheReadMillis *int64 // 缓存读单价快照；nil = 无缓存读或无缓存价
 	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
 	PriceCacheCreationMillis *int64 // 缓存写单价快照；nil = 无缓存写或无缓存价
+	// ImageCount resp/resp-ws 响应检测 image_count（spec §6 旁路：数
+	// image_generation_call item——type 过滤 + result 非空、id 去重/id 缺失
+	// 按序；Task D 先行填充，明细列落库接线归 Task C——C 未合入仅内存传递，
+	// image 分量已聚合进 Cost）。
+	ImageCount          int64
 	Cost                int64 // 毫分；错误请求（402/4xx）为 0
 	BillingTier         string // priority/flex/fast/auto；空 = 未计费路径
 	AboveHit            bool
