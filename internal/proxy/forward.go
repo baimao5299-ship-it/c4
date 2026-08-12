@@ -24,6 +24,7 @@ import (
 	"github.com/is7qin/c3api/internal/credential"
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/sdkbridge"
 	"github.com/is7qin/c3api/internal/usage"
 	"github.com/is7qin/c3api/pkg/aiclient"
 	"github.com/is7qin/c3api/pkg/logx"
@@ -59,10 +60,19 @@ type Proxy struct {
 	// 调用器，New 一次性构造免 per-request 分配）。
 	imageGenerations *imagesCaller
 	imageEdits       *imagesCaller
+	// codexImagesGenerations/codexImagesEdits codex 类型 images 端点调用器
+	//（T2 §2：SDK GenerateImage 非流式；同一格式两端点——按请求路径选，
+	// New 一次性构造免 per-request 分配）。
+	codexImagesGenerations *codexImagesCaller
+	codexImagesEdits       *codexImagesCaller
 	// convCallers 协议转换路径调用器（W5）：方向 → convertedCaller（请求体已
 	// 按方向转换，响应反向转换回客户端协议）。仅协议不匹配时才使用；off 组
 	// 恒不触达（handleFormat 分支）。
 	convCallers map[domain.ProtocolConvert]UpstreamCaller
+	// codex SDK 适配层（T2 §1——cred → Auth 缓存 / GenerateImage / 信封 /
+	// fatal 统一回调全在适配层；main 装配 SetCodex 注入，nil = 未装配 → codex
+	// 类型 501 显式拒绝——防 nil 误走凭据缺失 502）。
+	codex *sdkbridge.Codex
 }
 
 // New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
@@ -94,8 +104,15 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 		domain.ProtocolConvertRespToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertRespToMess},
 		domain.ProtocolConvertChatToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertChatToMess},
 	}
+	p.codexImagesGenerations = &codexImagesCaller{p: p, path: "images/generations"}
+	p.codexImagesEdits = &codexImagesCaller{p: p, path: "images/edits"}
 	return p
 }
+
+// SetCodex 注入 codex SDK 适配层（T2 §3 装配点——main 构造
+// sdkbridge.NewCodex(统一失效回调) 后注入；nil = 未装配 → codex 类型请求
+// 501 显式拒绝）。
+func (p *Proxy) SetCodex(c *sdkbridge.Codex) { p.codex = c }
 
 func (p *Proxy) Inflight() int64 { return p.inflight.Load() }
 
@@ -137,11 +154,10 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	if p.bill == nil || p.bill.Prices == nil {
 		return
 	}
-	// images 格式跳过 chat 价计费（Task B 路由面边界：ImageCost 计费集成在
-	// T2/C——images 请求按 chat 价表查价必然 miss → no_price 标记 + 每请求
-	// Warn 噪音；C 在此补 images 分支：GetImagePrice + ImageCost + image
-	// 分量落账）。
+	// images 格式走 image 价计费（spec §4.2：Cost 总量含 image 分量；images
+	// 请求只计 image 分量——文本 token 分量不做，chat 价路径对 images 恒不适用）。
 	if l.Format == domain.FormatOpenAIImages {
+		p.applyImageBilling(l)
 		return
 	}
 	model := l.MappedModel
@@ -197,6 +213,41 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	l.Cost = applyMultiplier(l.Cost, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
 }
 
+// applyImageBilling 生图计费（images 格式专用——只计 image 分量）：价格快照
+// 读（GetImagePrice，零 DB）→ ImageCost 填 l.Cost。计费模型 = MappedModel ??
+// Model（与 chat 同语义）。价格缺失（预检后快照被删竞态）→ Warn +
+// BillingTier="no_price" + cost 0（运行时防御，审计留痕不按 0 计价）。价格
+// 快照列仅在分量 >0 且模型有价（非 nil）时落（nil = 无该分量语义）；倍率
+// 同 chat 路径整单施加（fast/组倍率——ImageCost 本身不含倍率）。
+func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
+	model := l.MappedModel
+	if model == "" {
+		model = l.Model
+	}
+	if model == "" {
+		return // 未选号失败路径（无模型可计费；cost 恒 0）
+	}
+	ip, err := p.bill.Prices.GetImagePrice(model)
+	if err != nil || ip == nil {
+		if p.log != nil {
+			p.log.Warn("billing image price lookup failed", logx.String("model", model), logx.Error(err))
+		}
+		l.BillingTier = "no_price"
+		return
+	}
+	if l.ImageInputTokens > 0 && ip.InputImageTokenPricePerMillion != nil {
+		l.PriceImageInputMillis = ip.InputImageTokenPricePerMillion
+	}
+	if l.ImageOutputTokens > 0 && ip.OutputImageTokenPricePerMillion != nil {
+		l.PriceImageOutputMillis = ip.OutputImageTokenPricePerMillion
+	}
+	if l.ImageCount > 0 && ip.OutputCostPerImageMilli != nil {
+		l.PricePerImageMillis = ip.OutputCostPerImageMilli
+	}
+	l.Cost = billing.ImageCost(ip, l.ImageInputTokens, l.ImageOutputTokens, l.ImageCount)
+	l.Cost = applyMultiplier(l.Cost, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
+}
+
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：
 // Model = 客户端请求模型（reqModel），MappedModel = 映射后实际模型
 // （usedModel 与请求模型不同才写入，否则空 = 未映射）。u 传值（GC 削减 P6：
@@ -208,8 +259,11 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 		LatencyMS:   time.Since(start).Milliseconds(),
 		InputTokens: u.it, OutputTokens: u.ot, TotalTokens: u.tt,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
-		ImageCount: u.img, // resp 检测旁路计数（零值 = 未检测/无图；Task D 先行，落库列归 Task C）
-		CreatedAt:  time.Now(),
+		// 图片生成分量：img = 张数（resp 检测旁路计数 Task D 先行 / images 格式
+		// 直连与 codex 路径 data 数组长）；ii/io = image token 分量（images 格式
+		// 专用，resp 路径恒 0——V1-V3 实证无 image_tokens）。
+		ImageCount: u.img, ImageInputTokens: u.ii, ImageOutputTokens: u.io,
+		CreatedAt: time.Now(),
 	}
 }
 
@@ -414,7 +468,13 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 type usageTuple struct {
 	it, ot, tt int64
 	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
-	img        int64 // resp 检测 image_count（spec §6 旁路；零值 = 未检测/无图）
+	img        int64 // 图片张数（resp 检测旁路 spec §6 / images 格式直连与 codex 路径 data 长；零值 = 无图）
+	// 图片生成分量（images 格式）：ii/io = image token 分量
+	// （input/output_tokens_details.image_tokens）；text token 分量恒 0——
+	// images 请求只计 image 分量。tt 含 image tokens 不含张数（评审 P3-6
+	// quota 口径：张数不入 TotalTokens）。resp 检测路径 ii/io 恒 0（V1-V3
+	// 实证 responses 路径无 image_tokens）。
+	ii, io int64
 }
 
 // recordStreamAbort 上游流中止记录（客户端断开/上游停滞统一入口）：先已收

@@ -34,6 +34,7 @@ import (
 	"github.com/is7qin/c3api/internal/repository"
 	"github.com/is7qin/c3api/internal/rule"
 	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/sdkbridge"
 	"github.com/is7qin/c3api/internal/server"
 	"github.com/is7qin/c3api/internal/service"
 	"github.com/is7qin/c3api/internal/snapshot"
@@ -273,6 +274,14 @@ func main() {
 		UsageCapture:          cfg.Proxy.UsageCapture,
 		BillingCapture:        cfg.Billing.Enabled,
 	}, sched, credential.New(), rec, clients, auth, log, billHooks, errlogW)
+	// codex SDK 适配层装配（T2 §3——统一失效回调先落生图路径；T5 全量）：
+	// 适配层构造注册 WithOnAuthFatal → 统一回调 → 失效处理链（写 failed_at +
+	// 调度摘除 + 审计，T1 契约）。
+	px.SetCodex(sdkbridge.NewCodex(sdkbridge.NewFailureHandler(sdkbridge.FailureDeps{
+		Store:  repos.Accounts,
+		Failer: sched,
+		Log:    log,
+	})))
 	// 多实例集群 N 注入（#14 T3b）：gate 预算 ceil(剩余/N) + limit RPM ceil(rpm/N)。
 	// svc 构造后调用（svc.ClusterInstances 读 settings 快照）；settings NOTIFY
 	// 变更 N 后再次调用即触发预算即时重算（设计 §3.4）。

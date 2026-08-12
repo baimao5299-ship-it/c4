@@ -84,6 +84,7 @@ func (s *Scheduler) pickFrom(ws *weightedSeq, format domain.RequestFormat, model
 				BaseURL: a.tpl.BaseURL, Format: format,
 				UpstreamKey: a.acc.UpstreamKey, CredentialType: a.tpl.CredentialType, Model: mapped,
 				StripImageTools: a.tpl.StripImageTools, // W4：模板快照布尔复制（热路径零 DB）
+				Ext:             a.acc.Ext,             // T2：账号扩展快照（codex 路由派生 AccountCredential；指针复制零拷贝）
 			}, true
 		}
 	}

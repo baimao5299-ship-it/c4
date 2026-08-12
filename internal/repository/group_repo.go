@@ -17,6 +17,7 @@ import (
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
 	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
 )
@@ -144,22 +145,39 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 //     与旧 eager-load 语义一致，调度器 Select 区分"组不存在"与"组无账号"）。
 //  3. `SELECT account_id, group_id FROM account_groups`——成员关系全表扫描，
 //     零参数。
+//  4. `SELECT * FROM account_exts`——账号 ext 全表扫描 + 内存 join（T2 起
+//     codex 路由按 Account.Ext 派生 AccountCredential）。不 eager-load 的原因
+//     同成员关系：ext 的 FK 是 account_id，eager-load 生成 `WHERE account_id
+//     IN (全部账号 id)`——参数数 = 账号实体数，>65,535 触顶；全表扫描零参数，
+//     与账号全表扫描同一量级带宽。
 //
-// 三条语句参数数都与实体数量无关，任何规模（组/账号 >65,535）都不会触顶。
+// 四条语句参数数都与实体数量无关，任何规模（组/账号 >65,535）都不会触顶。
 // 结果语义与旧 eager-load 一致：所有组都在 map 中（无账号组为空切片），
 // 账号只出现在其所属组且带模板。（唯一窗口差异：组 id 扫描后被并发删除的
 // 组不会出现在结果中——见下方白名单守卫；旧 eager-load 同窗口行为。）
 func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
 	// 软删除：已删 account/group 不进调度器快照（成员关系白名单守卫同语义）。
 	// 模板侧嵌套 WithExt：快照合并 StripImageTools（W4；ext IN 参数数受模板
-	// 表实体数约束——同一小表界，见上方注释）。
+	// 表实体数约束——同一小表界，见上方注释）；账号侧 ext 不 eager-load
+	// （FK=account_id 的 IN 参数数受账号规模驱动——触顶约束，见步骤 4）。
 	accs, err := r.client.Account.Query().Where(account.DeletedAtIsNil()).
 		WithTemplate(func(q *ent.TemplateQuery) { q.WithExt() }).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load groups-accounts (accounts scan): %w", err)
 	}
+	exts, err := r.client.AccountExt.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load groups-accounts (account_ext scan): %w", err)
+	}
+	extByAccount := make(map[int64]*ent.AccountExt, len(exts))
+	for _, e := range exts {
+		extByAccount[e.AccountID] = e
+	}
 	byID := make(map[int64]*domain.Account, len(accs))
 	for _, a := range accs {
+		if e := extByAccount[a.ID]; e != nil {
+			a.Edges.Ext = []*ent.AccountExt{e}
+		}
 		byID[a.ID] = toDomainAccount(a)
 	}
 	gids, err := r.client.Group.Query().Where(group.DeletedAtIsNil()).IDs(ctx)
@@ -246,6 +264,10 @@ func (r *GroupRepo) LoadAssignmentMultipliers(ctx context.Context) (map[billing.
 // 返回无序（调用方构建快照/路由，不依赖顺序）。
 func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*domain.Account, error) {
 	// 软删除：已删 account 不进调度器快照（与 LoadGroupsAccounts 同语义）。
+	// 账号侧 ext 同触顶约束（单组账号 >65,535）：不 eager-load，经 account 边
+	// 子查询过滤——ent 对 m2o 边生成 `account_id IN (SELECT id FROM accounts
+	// WHERE ...)`（子查询非参数列表，语句参数数恒为常量——与上方 EXISTS 谓词
+	// 同界）；account_ext 表按组定向取，不做全表扫描（组级定向重载语义）。
 	accs, err := r.client.Account.Query().
 		Where(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID))).
 		WithTemplate(func(q *ent.TemplateQuery) { q.WithExt() }). // W4：ext 边快照合并 StripImageTools
@@ -253,8 +275,21 @@ func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*do
 	if err != nil {
 		return nil, fmt.Errorf("load group accounts (group %d): %w", groupID, err)
 	}
+	exts, err := r.client.AccountExt.Query().
+		Where(accountext.HasAccountWith(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID)))).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load group accounts (account_ext scan, group %d): %w", groupID, err)
+	}
+	extByAccount := make(map[int64]*ent.AccountExt, len(exts))
+	for _, e := range exts {
+		extByAccount[e.AccountID] = e
+	}
 	out := make([]*domain.Account, 0, len(accs))
 	for _, a := range accs {
+		if e := extByAccount[a.ID]; e != nil {
+			a.Edges.Ext = []*ent.AccountExt{e}
+		}
 		out = append(out, toDomainAccount(a))
 	}
 	return out, nil
