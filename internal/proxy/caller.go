@@ -295,9 +295,17 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		// codex-pat 模板选号命中 → codexImagesCaller（SDK GenerateImage 非流式；
 		// 流式 T3 未接 → caller 内 501 显式拒绝并 recordRejected 审计——评审
 		// P2-1 语义保留）。适配层未装配（SetCodex nil）→ 同样 501 显式拒绝，
-		// 不让凭据缺失路径误报 502/network。
-		if format == domain.FormatOpenAIImages && isCodexCredentialType(sel.CredentialType) {
-			caller = p.codexImagesFor(r)
+		// 不让凭据缺失路径误报 502/network。else 复位（评审 P1-1）：混合类型
+		// 组 failover 跨类型换账号（codex 失败 → api_key 尝试）时复用旧
+		// codexImagesCaller 会把健康 api_key 账号路由到 Ext=nil 空凭据路径
+		// （502 + 错误率污染 + 无谓失效上报 account 0）——每轮按当轮
+		// sel.CredentialType 双向赋值。
+		if format == domain.FormatOpenAIImages {
+			if isCodexCredentialType(sel.CredentialType) {
+				caller = p.codexImagesFor(r)
+			} else {
+				caller = route.caller // 复位直连调用器（非 codex 尝试——含 codex→api_key 跨类型换账号）
+			}
 		}
 		// 凭据每轮取（评审 I-3）：尾部 Select 后 Selection 变化，凭据随账号；
 		// 循环外取一次会把旧账号 key 发给新账号上游。codex 类型跳过单字符串

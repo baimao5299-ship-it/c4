@@ -145,8 +145,12 @@ func atUsable(cred *domain.AccountCredential) bool {
 // credSig 凭据签名（重建判定）：外部凭据变更（管理面导入/更新——token/rt/pat/
 // base URL 任一变化）→ 重建。过期时刻不参与签名（构造时的初始 at 预置决策已
 // 经生效；过期 at 由 SDK 401 自愈轮转，无需重建）。
+//
+// 分隔符用 \x00（评审 P3-3）："|" 在理论上可被 token 内容携带（碰撞误重建——
+// 仅多构造一次，无害但脏）；\x00 为 Go 字符串中不可现字符（OAuth token/PAT
+// base64url 字符集、base URL 经 url.Parse 拒绝控制字符——构造前校验）。
 func credSig(c *domain.AccountCredential) string {
-	return c.OAuthToken + "|" + c.OAuthRefreshToken + "|" + c.PATKey + "|" + c.BaseURL
+	return c.OAuthToken + "\x00" + c.OAuthRefreshToken + "\x00" + c.PATKey + "\x00" + c.BaseURL
 }
 
 // reportFatal fatal 统一上报（双源去重核心）：rotationAuth 路径同一 fatal 既
@@ -181,12 +185,9 @@ func (a *Codex) evict(accountID int64) {
 //   - 其余（网络/解析等）原样透传（code 0 连接级分类）
 func (a *Codex) translateError(e *codexEntry, err error) error {
 	if f := asFatal(err); f != nil {
-		if e.reported.CompareAndSwap(false, true) {
-			if a.failure != nil {
-				a.failure(e.accountID, f)
-			}
-			a.evict(e.accountID)
-		}
+		// 双源去重（评审 P3-2——与 reportFatal 同语义，直接复用）：
+		// CAS 在回调路径已胜出则此处跳过（单次上报）；PAT/无回调路径此处补报
+		a.reportFatal(e, f)
 		return err
 	}
 	var he *codexsdk.HTTPError

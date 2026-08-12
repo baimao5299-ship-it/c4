@@ -602,3 +602,80 @@ func TestImagesCodexParamsLocal400(t *testing.T) {
 	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
 	require.Equal(t, http.StatusBadRequest, store.logs[0].StatusCode)
 }
+
+// TestImagesCodexMixedGroupFailoverReset P1-1 回归（评审实证）：混合类型组
+// （同组 codex-oauth + api_key 模板均服务 images 格式、同模型）codex 尝试失败
+// （5xx 可重试）→ failover 换 api_key 账号——调用器必须复位到直连 caller。
+// 评审前泄漏：caller 单向赋值（codex 分支不复位），api_key 尝试被错误路由到
+// codexImagesCaller → sel.Ext=nil → CredentialFromExt 空凭据 → 502 + 健康
+// api_key 账号 MarkResult(ResultError) 错误率污染 + 无谓失效上报（account 0）。
+//
+// 确定性说明：weightedSeq 构造 shuffle 后 cursor 按序取 seq[1], seq[0],
+// seq[1], seq[0]…——两请求内无论洗牌序，codex 先序至少一次触发 failover 路径
+// （codex 在上游 500 → api_key 200），api_key 直连每请求恰一次触达（恒 2 次）；
+// 修复前任一序必有一次 502，修复后恒 200。
+func TestImagesCodexMixedGroupFailoverReset(t *testing.T) {
+	codexUp, codexCap := newCodexImageUpstream(t, codexUpStep{status: 500, body: `{"error":"boom"}`})
+	defer codexUp.Close()
+	apiUp, apiCap := fakeImagesUpstream(t, "/v1/images/generations")
+	defer apiUp.Close()
+	codexRefreshMock(t, 200, `{"access_token":"at-new","refresh_token":"rt-new"}`)
+
+	tplCodex := &domain.Template{
+		ID: 1, Name: "codex", BaseURL: codexUp.URL,
+		CredentialType:   credential.TypeCodexOAuth,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIImages},
+		Models:           []string{"gpt-image-2"},
+	}
+	tplAPI := &domain.Template{
+		ID: 2, Name: "api", BaseURL: apiUp.URL,
+		CredentialType:   credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIImages},
+		Models:           []string{"gpt-image-2"},
+	}
+	accs := map[int64][]*domain.Account{10: {
+		{
+			ID: 10, TemplateID: tplCodex.ID, Template: tplCodex, UpstreamKey: "",
+			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4, Ext: codexOAuthExt(10, "at-10", "rt-10"),
+		},
+		{
+			ID: 11, TemplateID: tplAPI.ID, Template: tplAPI, UpstreamKey: "sk-upstream",
+			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
+		},
+	}}
+	rec := usage.New(usage.UsageConfig{BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour}, &captureLogStore{}, noopStatStore{}, nil)
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	sched := scheduler.New(scheduler.Config{DefaultMaxConcurrency: 4, SyncInterval: time.Hour}, noopLoader{accs: accs}, re, nil)
+	require.NoError(t, sched.InvalidateAllSync())
+	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
+	}}, noopUserLoader{}, nil)
+	require.NoError(t, auth.Reload(context.Background()))
+	hc := &http.Client{Transport: http.DefaultTransport}
+	clients := aiclient.NewFactory(hc, aiclient.Config{UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second})
+	store := &captureLogStore{}
+	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{QueueSize: 4096, FlushInterval: time.Hour}, store, nil)
+	fs := &fakeFailureStore{}
+	failure := sdkbridge.NewFailureHandler(sdkbridge.FailureDeps{Store: fs, Failer: sched, Log: nil})
+	p := New(Config{
+		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamStreamTimeout: 30 * time.Second, GroupKeyRPM: 0, UsageCapture: true,
+	}, sched, credential.New(), rec, clients, auth, nil, nil, errlogW)
+	p.SetCodex(sdkbridge.NewCodex(failure))
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
+			`{"model":"gpt-image-2","prompt":"x"}`))
+		req.Header.Set("Authorization", "Bearer gk-1")
+		recw := httptest.NewRecorder()
+		p.HandleImagesGenerations(recw, req)
+		require.Equal(t, 200, recw.Code,
+			"请求 %d：codex 失败后 api_key 尝试必须走直连 caller（修复前泄漏 → 502）；body=%s", i, recw.Body.String())
+	}
+	require.Zero(t, recorderCalls(fs), "跨类型 failover 不得无谓失效上报（修复前泄漏路径上报 account 0）")
+	require.Equal(t, 2, apiCap.calls, "api_key 直连每请求恰一次触达（健康账号不被泄漏路径吞掉）")
+	require.Equal(t, "Bearer sk-upstream", apiCap.auth, "api_key 直连凭据照常送达")
+	require.GreaterOrEqual(t, codexCap.n(), 1, "codex 上游至少一次失败尝试（failover 路径确实被触发）")
+	require.NoError(t, p.rec.Close(context.Background()))
+}

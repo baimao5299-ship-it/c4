@@ -42,9 +42,11 @@ var errCodexImagesStreamNotIntegrated = &formatError{status: http.StatusNotImple
 // domain.ImageResponse 口径 → wire 序列化转发 + 计费提取（复用 C 的
 // image_usage 提取纯函数——data 长 = 张数 + usage image_tokens → ImageCost，
 // 与 api_key 直连同口径）。流式（GenerateImageStream）本 task 不做（T3）。
+// codexImagesCaller 无路径字段（评审 P3-1）：上游端点由 SDK 按参数派生
+// （ImageGenParams.Images 非空 → edits，否则 generations）——与
+// imagesCaller.path（直连面拼 URL）不同，codex 面端点选择归 SDK。
 type codexImagesCaller struct {
-	p    *Proxy
-	path string // 上游路径（"images/generations" | "images/edits"）
+	p *Proxy
 }
 
 func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {

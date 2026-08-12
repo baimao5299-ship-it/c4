@@ -104,8 +104,8 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 		domain.ProtocolConvertRespToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertRespToMess},
 		domain.ProtocolConvertChatToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertChatToMess},
 	}
-	p.codexImagesGenerations = &codexImagesCaller{p: p, path: "images/generations"}
-	p.codexImagesEdits = &codexImagesCaller{p: p, path: "images/edits"}
+	p.codexImagesGenerations = &codexImagesCaller{p: p}
+	p.codexImagesEdits = &codexImagesCaller{p: p}
 	return p
 }
 
