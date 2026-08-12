@@ -541,7 +541,7 @@ type GroupVisibility string
 type ImagePrice struct {
 	CreatedAt time.Time `json:"CreatedAt"`
 
-	// InputImageTokenPricePerMillion image token 输入价（USD/1M image tokens；内部存储毫分——per-token USD ×1e11 换算，1 USD = 100
+	// InputImageTokenPricePerMillion image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算，1 USD = 100,000 毫分）；null = 无该分量价
 	InputImageTokenPricePerMillion *float64 `json:"InputImageTokenPricePerMillion"`
 
 	// Model 模型名（与 pricings.model 同口径）
@@ -550,7 +550,7 @@ type ImagePrice struct {
 	// OutputCostPerImage 每张图价（USD/张；内部存储毫分——×1e5 换算，**与 token 价不同换算系**；计费不走 /1e6 除法）；null = 不启用按张分量
 	OutputCostPerImage *float64 `json:"OutputCostPerImage"`
 
-	// OutputImageTokenPricePerMillion image token 输出价（USD/1M image tokens；内部存储毫分——per-token USD ×1e11 换算）；null = 无该分量价
+	// OutputImageTokenPricePerMillion image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算）；null = 无该分量价
 	OutputImageTokenPricePerMillion *float64      `json:"OutputImageTokenPricePerMillion"`
 	Source                          PricingSource `json:"Source"`
 	UpdatedAt                       time.Time     `json:"UpdatedAt"`
@@ -564,13 +564,13 @@ type ImagePriceListResponse struct {
 
 // ImagePriceUpsert defines model for ImagePriceUpsert.
 type ImagePriceUpsert struct {
-	// InputImageTokenPricePerMillion image token 输入价（USD/1M image tokens；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+	// InputImageTokenPricePerMillion image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
 	InputImageTokenPricePerMillion *float64 `json:"input_image_token_price_per_million"`
 
 	// OutputCostPerImage 每张图价（USD/张；API 边界 ×1e5 → 毫分/张——**禁混用 ×1e11 换算**）；缺省/null = 清空该分量
 	OutputCostPerImage *float64 `json:"output_cost_per_image"`
 
-	// OutputImageTokenPricePerMillion image token 输出价（USD/1M image tokens；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+	// OutputImageTokenPricePerMillion image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
 	OutputImageTokenPricePerMillion *float64 `json:"output_image_token_price_per_million"`
 }
 

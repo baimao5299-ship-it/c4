@@ -8,7 +8,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -31,56 +30,23 @@ type PricingRepo struct {
 	driver dialect.Driver
 }
 
-// pricingBatchSize litellm 官方表 ~2k 模型，单条 INSERT 过大（评审 M-2）：
-// 按 500/批分块执行。
-const pricingBatchSize = 500
-
-// pricingUpsertRetries 死锁（40P01）重试次数（#37 P3' 同款兜底）：双实例
-// pricing sync worker 并发批量 upsert 同批 model（锁顺序交错 → PG 判定
-// deadlock detected 并终止一方，压测启动期偶发）。死锁为瞬时错误（PG 惯例
-// 重试 1-2 次），重试成功即无影响；重试耗尽才返回错误 → 现有失败路径语义
-// 不变（batch Warn + 首个错误上抛，下轮 price_sync_cron 补拉）。
-const pricingUpsertRetries = 2
-
-// pricingUpsertBackoff 死锁重试短退避（规避两实例同节奏再碰撞；死锁窗口内
-// 最多追加 ~150ms 延迟）。
-var pricingUpsertBackoff = []time.Duration{50 * time.Millisecond, 100 * time.Millisecond}
-
 // UpsertFromLiteLLM 批量 upsert 拉取价（评审 M-2）：
 //   - 核心语义：ON CONFLICT (model) DO UPDATE ... WHERE pricing.source != 'manual'
 //     —— 永不覆盖手动价（表内一行 = 最终生效价）；litellm 源行的换算价格、
 //     max_tokens、cache 价、provider/mode/supports_prompt_caching、raw 与
 //     source 均更新（source 恒为 litellm）
-//   - 分批 500/批、每批独立事务：部分成功可接受——返回成功行数，失败的批记
-//     Warn 日志（返回首个失败错误，worker 侧决定重试/告警）；不影响已成功批
-//   - 死锁收敛（#37 P3'）：批内按 model 排序（锁顺序一致化）+ 40P01 瞬时
-//     重试（pricingUpsertRetries，短退避）——多实例并发同批 model 不再
-//     deadlock detected（排序消除主因，重试兜底残余交错）
+//   - 分批/重试/部分成功语义由共享 helper 承载（litellm_upsert.go
+//     litellmUpsertBatches：500/批独立事务、失败批 Warn + 首个错误上抛、
+//     批内排序 + 40P01 死锁重试）；本表只传 SQL 组装（upsertLitellmBatch）
 //   - 返回 n = 实际插入/更新的行数（DO UPDATE 被 WHERE 过滤掉的手动行不计入；
 //     PG 对未修改行不产生命令标签计数）
 func (r *PricingRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
-	if len(rows) == 0 {
-		return 0, nil
-	}
 	now := time.Now()
-	total := 0
-	var firstErr error
-	for start := 0; start < len(rows); start += pricingBatchSize {
-		end := start + pricingBatchSize
-		if end > len(rows) {
-			end = len(rows)
-		}
-		n, err := r.upsertLitellmBatchWithRetry(ctx, rows[start:end], now)
-		if err != nil {
-			log.Printf("pricing: litellm upsert batch [%d:%d) failed: %v", start, end, err)
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		total += n
+	exec := func(ctx context.Context, start, end int) (int, error) {
+		return r.upsertLitellmBatch(ctx, rows[start:end], now)
 	}
-	return total, firstErr
+	return litellmUpsertBatches(ctx, len(rows), "pricing",
+		litellmUpsertOpts{BatchSize: litellmBatchSize, Retries: litellmUpsertRetries, Backoff: litellmUpsertBackoff}, exec)
 }
 
 // upsertLitellmBatch 单批 upsert（独立事务，单语句原子）：raw SQL 手工拼
@@ -94,8 +60,9 @@ func (r *PricingRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pric
 // 逐行取锁序 = VALUES 行序）锁顺序交错 → deadlock detected。
 func (r *PricingRepo) upsertLitellmBatch(ctx context.Context, batch []*domain.Pricing, now time.Time) (int, error) {
 	// #37 P3'：同款治本，pricing 批内按 model 排序——使各实例按同一顺序取
-	// 行锁，消除死锁主因（残余交错由 upsertLitellmBatchWithRetry 的 40P01
-	// 重试兜底）。批内 model 唯一（litellm 行无重复），排序纯为锁顺序一致化。
+	// 行锁，消除死锁主因（残余交错由共享 helper litellmExecBatchWithRetry 的
+	// 40P01 重试兜底，见 litellm_upsert.go）。批内 model 唯一（litellm 行无
+	// 重复），排序纯为锁顺序一致化。
 	sort.SliceStable(batch, func(i, j int) bool { return batch[i].Model < batch[j].Model })
 	// 36 列 = 4 基础价 + max 窗口 2 + cache 2 + 矩阵 22（Phase 5）+ 元数据 6。
 	insertCols := []string{
@@ -220,30 +187,6 @@ func (r *PricingRepo) upsertLitellmBatch(ctx context.Context, batch []*domain.Pr
 	return int(n), err
 }
 
-// upsertLitellmBatchWithRetry 单批 upsert + 40P01 死锁重试（#37 P3' 同款
-// 兜底）：批内排序消除主因后，残余交错由此收敛。重试以整批独立事务为单位
-// 重做（死锁回滚后无残留状态）；ctx 取消优先（不吞停机预算）。重试耗尽 →
-// 原样返回错误（现有失败路径语义不变）。
-func (r *PricingRepo) upsertLitellmBatchWithRetry(ctx context.Context, batch []*domain.Pricing, now time.Time) (int, error) {
-	var n int
-	var err error
-	for attempt := 0; attempt <= pricingUpsertRetries; attempt++ {
-		if attempt > 0 {
-			select { // 短退避；ctx 取消优先（不吞停机预算）
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			case <-time.After(pricingUpsertBackoff[attempt-1]):
-			}
-		}
-		n, err = r.upsertLitellmBatch(ctx, batch, now)
-		if !isDeadlock(err) {
-			return n, err
-		}
-		// 40P01：死锁瞬时错误，重试；重试耗尽 → 原样返回（现有失败路径语义）
-	}
-	return n, err
-}
-
 // PricingManual 手动设价入参（管理端 PUT /admin/pricing/{model}，全量替换语义）：
 // Prompt/CompletionPricePerMillion 必填（≥0）；其余全部可选——nil = 不设价（新行
 // NULL；接管的 litellm 行清空该矩阵价，计费回退基础价），非 nil = 显式设价（≥0，
@@ -251,33 +194,33 @@ func (r *PricingRepo) upsertLitellmBatchWithRetry(ctx context.Context, batch []*
 // FastMultiplier 为万分数（20000 = ×2.0）。manual 行恒不写 litellm 元数据
 // （provider/mode/spc/raw，仓库强制清空）。
 type PricingManual struct {
-	Model                        string
-	PromptPricePerMillion        int64
-	CompletionPricePerMillion    int64
-	CacheReadPricePerMillion     *int64
-	CacheCreationPricePerMillion *int64
-	PriorityPromptPricePerMillion        *int64 // service_tier=priority 单价替换档
-	PriorityCompletionPricePerMillion    *int64
-	PriorityCacheReadPricePerMillion     *int64
-	PriorityCacheCreationPricePerMillion *int64
-	FlexPromptPricePerMillion            *int64 // service_tier=flex 单价替换档
-	FlexCompletionPricePerMillion        *int64
-	FlexCacheReadPricePerMillion         *int64
-	FlexCacheCreationPricePerMillion     *int64
-	AboveThreshold                       *int64 // 分段阈值（tokens）；nil = 无分段
-	AbovePromptPricePerMillion           *int64 // 超阈值分段价（基础组）
-	AboveCompletionPricePerMillion       *int64
-	AboveCacheReadPricePerMillion        *int64
-	AboveCacheCreationPricePerMillion    *int64
-	AbovePriorityPromptPricePerMillion   *int64 // 超阈值分段价（priority 组）
-	AbovePriorityCompletionPricePerMillion *int64
-	AbovePriorityCacheReadPricePerMillion  *int64
+	Model                                     string
+	PromptPricePerMillion                     int64
+	CompletionPricePerMillion                 int64
+	CacheReadPricePerMillion                  *int64
+	CacheCreationPricePerMillion              *int64
+	PriorityPromptPricePerMillion             *int64 // service_tier=priority 单价替换档
+	PriorityCompletionPricePerMillion         *int64
+	PriorityCacheReadPricePerMillion          *int64
+	PriorityCacheCreationPricePerMillion      *int64
+	FlexPromptPricePerMillion                 *int64 // service_tier=flex 单价替换档
+	FlexCompletionPricePerMillion             *int64
+	FlexCacheReadPricePerMillion              *int64
+	FlexCacheCreationPricePerMillion          *int64
+	AboveThreshold                            *int64 // 分段阈值（tokens）；nil = 无分段
+	AbovePromptPricePerMillion                *int64 // 超阈值分段价（基础组）
+	AboveCompletionPricePerMillion            *int64
+	AboveCacheReadPricePerMillion             *int64
+	AboveCacheCreationPricePerMillion         *int64
+	AbovePriorityPromptPricePerMillion        *int64 // 超阈值分段价（priority 组）
+	AbovePriorityCompletionPricePerMillion    *int64
+	AbovePriorityCacheReadPricePerMillion     *int64
 	AbovePriorityCacheCreationPricePerMillion *int64
-	AboveFlexPromptPricePerMillion           *int64 // 超阈值分段价（flex 组）
-	AboveFlexCompletionPricePerMillion       *int64
-	AboveFlexCacheReadPricePerMillion        *int64
-	AboveFlexCacheCreationPricePerMillion    *int64
-	FastMultiplier                           *int64 // Anthropic Fast Mode 整单倍率（万分数）
+	AboveFlexPromptPricePerMillion            *int64 // 超阈值分段价（flex 组）
+	AboveFlexCompletionPricePerMillion        *int64
+	AboveFlexCacheReadPricePerMillion         *int64
+	AboveFlexCacheCreationPricePerMillion     *int64
+	FastMultiplier                            *int64 // Anthropic Fast Mode 整单倍率（万分数）
 }
 
 // UpsertManual 手动设价（upsert 强制 source=manual，可接管已存在的 litellm
@@ -292,7 +235,7 @@ func (r *PricingRepo) UpsertManual(ctx context.Context, m *PricingManual) (*doma
 		return nil, fmt.Errorf("pricing: model is required")
 	}
 	_, err := r.client.Pricing.Create().
-		SetModel(m.Model).		SetPromptPricePerMillion(m.PromptPricePerMillion).
+		SetModel(m.Model).SetPromptPricePerMillion(m.PromptPricePerMillion).
 		SetCompletionPricePerMillion(m.CompletionPricePerMillion).
 		SetNillableCacheReadPricePerMillion(m.CacheReadPricePerMillion).
 		SetNillableCacheCreationPricePerMillion(m.CacheCreationPricePerMillion).
@@ -451,42 +394,42 @@ func (r *PricingRepo) GetPricing(ctx context.Context, model string) (*domain.Pri
 
 func toDomainPricing(p *ent.Pricing) *domain.Pricing {
 	return &domain.Pricing{
-		ID:                           p.ID,
-		Model:                        p.Model,
-		PromptPricePerMillion:        p.PromptPricePerMillion,
-		CompletionPricePerMillion:    p.CompletionPricePerMillion,
-		MaxInputTokens:               p.MaxInputTokens,
-		MaxOutputTokens:              p.MaxOutputTokens,
-		CacheReadPricePerMillion:     p.CacheReadPricePerMillion,
-		CacheCreationPricePerMillion: p.CacheCreationPricePerMillion,
-		PriorityPromptPricePerMillion:        p.PriorityPromptPricePerMillion,
-		PriorityCompletionPricePerMillion:    p.PriorityCompletionPricePerMillion,
-		PriorityCacheReadPricePerMillion:     p.PriorityCacheReadPricePerMillion,
-		PriorityCacheCreationPricePerMillion: p.PriorityCacheCreationPricePerMillion,
-		FlexPromptPricePerMillion:            p.FlexPromptPricePerMillion,
-		FlexCompletionPricePerMillion:        p.FlexCompletionPricePerMillion,
-		FlexCacheReadPricePerMillion:         p.FlexCacheReadPricePerMillion,
-		FlexCacheCreationPricePerMillion:     p.FlexCacheCreationPricePerMillion,
-		AboveThreshold:                       p.AboveThreshold,
-		AbovePromptPricePerMillion:           p.AbovePromptPricePerMillion,
-		AboveCompletionPricePerMillion:       p.AboveCompletionPricePerMillion,
-		AboveCacheReadPricePerMillion:        p.AboveCacheReadPricePerMillion,
-		AboveCacheCreationPricePerMillion:    p.AboveCacheCreationPricePerMillion,
-		AbovePriorityPromptPricePerMillion:   p.AbovePriorityPromptPricePerMillion,
-		AbovePriorityCompletionPricePerMillion: p.AbovePriorityCompletionPricePerMillion,
-		AbovePriorityCacheReadPricePerMillion:  p.AbovePriorityCacheReadPricePerMillion,
+		ID:                                        p.ID,
+		Model:                                     p.Model,
+		PromptPricePerMillion:                     p.PromptPricePerMillion,
+		CompletionPricePerMillion:                 p.CompletionPricePerMillion,
+		MaxInputTokens:                            p.MaxInputTokens,
+		MaxOutputTokens:                           p.MaxOutputTokens,
+		CacheReadPricePerMillion:                  p.CacheReadPricePerMillion,
+		CacheCreationPricePerMillion:              p.CacheCreationPricePerMillion,
+		PriorityPromptPricePerMillion:             p.PriorityPromptPricePerMillion,
+		PriorityCompletionPricePerMillion:         p.PriorityCompletionPricePerMillion,
+		PriorityCacheReadPricePerMillion:          p.PriorityCacheReadPricePerMillion,
+		PriorityCacheCreationPricePerMillion:      p.PriorityCacheCreationPricePerMillion,
+		FlexPromptPricePerMillion:                 p.FlexPromptPricePerMillion,
+		FlexCompletionPricePerMillion:             p.FlexCompletionPricePerMillion,
+		FlexCacheReadPricePerMillion:              p.FlexCacheReadPricePerMillion,
+		FlexCacheCreationPricePerMillion:          p.FlexCacheCreationPricePerMillion,
+		AboveThreshold:                            p.AboveThreshold,
+		AbovePromptPricePerMillion:                p.AbovePromptPricePerMillion,
+		AboveCompletionPricePerMillion:            p.AboveCompletionPricePerMillion,
+		AboveCacheReadPricePerMillion:             p.AboveCacheReadPricePerMillion,
+		AboveCacheCreationPricePerMillion:         p.AboveCacheCreationPricePerMillion,
+		AbovePriorityPromptPricePerMillion:        p.AbovePriorityPromptPricePerMillion,
+		AbovePriorityCompletionPricePerMillion:    p.AbovePriorityCompletionPricePerMillion,
+		AbovePriorityCacheReadPricePerMillion:     p.AbovePriorityCacheReadPricePerMillion,
 		AbovePriorityCacheCreationPricePerMillion: p.AbovePriorityCacheCreationPricePerMillion,
-		AboveFlexPromptPricePerMillion:           p.AboveFlexPromptPricePerMillion,
-		AboveFlexCompletionPricePerMillion:       p.AboveFlexCompletionPricePerMillion,
-		AboveFlexCacheReadPricePerMillion:        p.AboveFlexCacheReadPricePerMillion,
-		AboveFlexCacheCreationPricePerMillion:    p.AboveFlexCacheCreationPricePerMillion,
-		FastMultiplier:                           p.FastMultiplier,
-		Provider:                     p.Provider,
-		Mode:                         p.Mode,
-		SupportsPromptCaching:        p.SupportsPromptCaching,
-		Raw:                          p.Raw,
-		Source:                       domain.PricingSource(p.Source),
-		CreatedAt:                    p.CreatedAt,
-		UpdatedAt:                    p.UpdatedAt,
+		AboveFlexPromptPricePerMillion:            p.AboveFlexPromptPricePerMillion,
+		AboveFlexCompletionPricePerMillion:        p.AboveFlexCompletionPricePerMillion,
+		AboveFlexCacheReadPricePerMillion:         p.AboveFlexCacheReadPricePerMillion,
+		AboveFlexCacheCreationPricePerMillion:     p.AboveFlexCacheCreationPricePerMillion,
+		FastMultiplier:                            p.FastMultiplier,
+		Provider:                                  p.Provider,
+		Mode:                                      p.Mode,
+		SupportsPromptCaching:                     p.SupportsPromptCaching,
+		Raw:                                       p.Raw,
+		Source:                                    domain.PricingSource(p.Source),
+		CreatedAt:                                 p.CreatedAt,
+		UpdatedAt:                                 p.UpdatedAt,
 	}
 }

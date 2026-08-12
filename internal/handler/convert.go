@@ -211,14 +211,17 @@ func multI64ToNormalPtr(v *int64) *float64 {
 // --- 图片价格 API 边界换算（Task A；单位规则与 pricings 不同，独立函数防误用） ---
 //
 // 1 USD = 100,000 毫分。token 价：per-token USD ×1e11 → 毫分/1M image tokens
-// （与 pricings 的 usdToMillis ×1e5 差 6 个数量级——**禁混用 usdToMillis**）；
-// per-image 价：USD/张 ×1e5 → 毫分/张（系数与 usdToMillis 相同但单位不同：
-// 毫分/张不走 /1e6 除法，独立函数自文档化）。
+// （= per-token ×1e6 tokens ×1e5 毫分；与 pricings 的 usdToMillis ×1e5 差 6
+// 个数量级——**禁混用 usdToMillis**）；per-image 价：USD/张 ×1e5 → 毫分/张
+// （系数与 usdToMillis 相同但单位不同：毫分/张不走 /1e6 除法，独立函数自文档化）。
 
-// usdPerMillionToMillis USD/1M → 毫分/1M（×1e11；math.Round 消除浮点取整误差）。
+// usdPerMillionToMillis USD per image token（litellm 原生口径；函数名中的
+// "PerMillion" 指目标存储单位毫分/1M，入参维度实为 per-token 价）→ 毫分/1M
+// image tokens（×1e11 = ×1e6 tokens ×1e5 毫分；math.Round 消除浮点取整误差）。
 func usdPerMillionToMillis(usd float64) int64 { return int64(math.Round(usd * 1e11)) }
 
-// millisPerMillionToUSD 毫分/1M → USD/1M（/1e11；API 展示换算）。
+// millisPerMillionToUSD 毫分/1M image tokens → USD per image token（/1e11；
+// API 展示换算，回显 litellm 原生口径）。
 func millisPerMillionToUSD(millis int64) float64 { return float64(millis) / 1e11 }
 
 // usdPerImageToMilli USD/张 → 毫分/张（×1e5；与 token 价的 ×1e11 不同换算系，
@@ -228,8 +231,8 @@ func usdPerImageToMilli(usd float64) int64 { return int64(math.Round(usd * 1e5))
 // milliPerImageToUSD 毫分/张 → USD/张（/1e5；API 展示换算）。
 func milliPerImageToUSD(millis int64) float64 { return float64(millis) / 1e5 }
 
-// usdPerMillionToMillisPtr *float64（USD/1M）→ *int64（毫分/1M）；nil 透传
-// （缺省 = 清空该分量）。
+// usdPerMillionToMillisPtr *float64（USD per image token，litellm 原生口径）→
+// *int64（毫分/1M）；nil 透传（缺省 = 清空该分量）。
 func usdPerMillionToMillisPtr(v *float64) *int64 {
 	if v == nil {
 		return nil
@@ -238,7 +241,8 @@ func usdPerMillionToMillisPtr(v *float64) *int64 {
 	return &i
 }
 
-// millisPerMillionToUSDPtr *int64（毫分/1M）→ *float64（USD/1M）；nil 透传。
+// millisPerMillionToUSDPtr *int64（毫分/1M）→ *float64（USD per image token，
+// litellm 原生口径）；nil 透传。
 func millisPerMillionToUSDPtr(v *int64) *float64 {
 	if v == nil {
 		return nil

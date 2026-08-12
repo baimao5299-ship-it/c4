@@ -56,6 +56,8 @@ type fakeStore struct {
 	accExts map[int64]*domain.AccountExt
 	// pricingListErr 注入 ListPricing 失败（快照 fail-safe 测试）。
 	pricingListErr error
+	// imageListErr 注入 ListImagePrice 失败（image 快照 fail-safe 测试）。
+	imageListErr error
 	// pricingUpsertErr 注入 UpsertFromLiteLLM 失败（手动 sync 失败路径测试）。
 	pricingUpsertErr error
 	nextID           int64
@@ -1458,6 +1460,9 @@ func (f *fakeStore) DeleteImageManual(ctx context.Context, model string) error {
 func (f *fakeStore) ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.imageListErr != nil {
+		return nil, 0, f.imageListErr
+	}
 	var rows []*domain.ImagePrice
 	for _, p := range f.imagePrices {
 		if source != nil && p.Source != *source {

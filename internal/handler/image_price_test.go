@@ -31,15 +31,15 @@ func imageSeedFetcher() *fakePriceFetcher {
 
 func i64p(v int64) *int64 { return &v }
 
-// TestPutImagePrice 手动设图片价格：单位换算（token 价 USD/1M ×1e11 存储、
-// per-image USD/张 ×1e5 存储、回显反向换算）+ 接管 litellm 行 + 缺省分量
-// 清空 + 校验（全 nil → 400、负数 → 400）。
+// TestPutImagePrice 手动设图片价格：单位换算（token 价 USD per image token
+// ×1e11 存储、per-image USD/张 ×1e5 存储、回显反向换算）+ 接管 litellm 行 +
+// 缺省分量清空 + 校验（全 nil → 400、负数 → 400）。
 func TestPutImagePrice(t *testing.T) {
 	f := imageSeedFetcher()
 	h, do := newPricingRouter(t, f)
 
-	// 新模型设价：token 价 8e-06/3e-05 USD/1M → 800,000/3,000,000 毫分；
-	// per-image 0.054 USD/张 → 5,400 毫分/张；回显反向换算
+	// 新模型设价：token 价 8e-06/3e-05 USD per image token → 800,000/3,000,000
+	// 毫分/1M；per-image 0.054 USD/张 → 5,400 毫分/张；回显反向换算
 	rec := do(http.MethodPut, "/admin/image-price/gpt-image-3",
 		`{"input_image_token_price_per_million":0.000008,"output_image_token_price_per_million":0.00003,"output_cost_per_image":0.054}`)
 	require.Equal(t, 200, rec.Code, "put: %s", rec.Body.String())
@@ -47,7 +47,7 @@ func TestPutImagePrice(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, "gpt-image-3", p.Model)
 	require.NotNil(t, p.InputImageTokenPricePerMillion)
-	require.Equal(t, 0.000008, *p.InputImageTokenPricePerMillion, "token 价回显 USD/1M")
+	require.Equal(t, 0.000008, *p.InputImageTokenPricePerMillion, "token 价回显 USD per image token")
 	require.NotNil(t, p.OutputImageTokenPricePerMillion)
 	require.Equal(t, 0.00003, *p.OutputImageTokenPricePerMillion)
 	require.NotNil(t, p.OutputCostPerImage)

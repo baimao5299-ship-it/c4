@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -144,6 +145,34 @@ func TestDeleteManualImagePrice(t *testing.T) {
 	require.NoError(t, svc.DeleteManualImagePrice(ctx, "manual-m"))
 	_, err = svc.GetImagePrice("manual-m")
 	require.ErrorIs(t, err, ErrNotFound, "删除后快照消失（下轮拉取补回）")
+}
+
+// TestImagePriceSnapshotFailSafe ListImagePrice 失败（imageListErr 注入）：
+// ReloadImagePricingCtx 错误上报（注册表 Status 可观测）+ reloadImagePricing
+// Warn 路径保留旧快照（读路径仍命中旧行）；无旧快照 → 空快照读 ErrNotFound
+// 而非 panic（对齐 TestPricingSnapshotFailSafe）。
+func TestImagePriceSnapshotFailSafe(t *testing.T) {
+	fs := newFakeStore()
+	_, err := fs.UpsertImageFromLiteLLM(context.Background(), []*domain.ImagePrice{
+		imageLitellmRow("gpt-image-2", int64Ptr(800000), nil, nil),
+	})
+	require.NoError(t, err)
+	svc := newImagePricingSvc(t, fs)
+
+	fs.imageListErr = errors.New("db down")
+	require.Error(t, svc.ReloadImagePricingCtx(context.Background()), "加载失败错误上报（注册表 Status 可观测）")
+
+	p, err := svc.GetImagePrice("gpt-image-2")
+	require.NoError(t, err, "加载失败保留旧快照，读路径仍命中旧行")
+	require.Equal(t, int64(800000), *p.InputImageTokenPricePerMillion)
+
+	// 无旧快照路径：reloadImagePricing（Warn 版）失败后空快照 → ErrNotFound 而非 panic
+	fs2 := newFakeStore()
+	fs2.imageListErr = errors.New("db down")
+	svc2 := New(fs2, nil, NopInvalidator{}, nil, nil, nil, nil)
+	svc2.ReloadImagePricing() // 失败仅 Warn（log nil 时跳过），不返回错误
+	_, err = svc2.GetImagePrice("any")
+	require.ErrorIs(t, err, ErrNotFound, "空快照读路径 ErrNotFound 而非 panic")
 }
 
 // TestListImagePrice 列表：source 筛选 + 非法 sort/source → ErrInvalidInput。

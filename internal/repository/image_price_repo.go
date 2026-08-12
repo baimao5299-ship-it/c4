@@ -8,7 +8,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -21,10 +20,10 @@ import (
 )
 
 // ImagePriceRepo 图片生成价格持久化（Task A 数据面；images 端点计费价格来源）。
-// 机制与 PricingRepo 完全同款：source 行级互斥优先级 manual > litellm（拉取
-// upsert 带 WHERE 条件永不覆盖手动价）、500/批独立事务、批内 model 排序 +
-// 40P01 死锁重试。行有效性（至少一个价格分量非 nil）在应用层判定——本仓库
-// 只落结构，不做业务校验（对齐 PricingRepo）。
+// 机制与 PricingRepo 同款（共享 helper，见 litellm_upsert.go）：source 行级
+// 互斥优先级 manual > litellm（拉取 upsert 带 WHERE 条件永不覆盖手动价）、
+// 500/批独立事务、批内 model 排序 + 40P01 死锁重试。行有效性（至少一个价格
+// 分量非 nil）在应用层判定——本仓库只落结构，不做业务校验（对齐 PricingRepo）。
 type ImagePriceRepo struct {
 	client *ent.Client
 	// driver 为 raw SQL（UpsertFromLiteLLM 批量 upsert）用：普通 client 与
@@ -32,14 +31,9 @@ type ImagePriceRepo struct {
 	driver dialect.Driver
 }
 
-// imagePriceBatchSize / imagePriceUpsertRetries 与 pricing 同款（litellm 官方表
-// ~2k 模型，500/批分块；死锁 40P01 瞬时重试）。退避复用 pricingUpsertBackoff。
-const (
-	imagePriceBatchSize     = 500
-	imagePriceUpsertRetries = 2
-)
-
-// UpsertFromLiteLLM 批量 upsert 拉取 image 价（评审 M-2 同款机制）：
+// UpsertFromLiteLLM 批量 upsert 拉取 image 价（评审 M-2 同款机制，评审修复后
+// 分批/重试/部分成功语义由共享 helper 承载——litellm_upsert.go
+// litellmUpsertBatches；本表只传 SQL 组装 upsertImageLitellmBatch）：
 //   - 核心语义：ON CONFLICT (model) DO UPDATE ... WHERE image_price.source
 //     != 'manual'——永不覆盖手动价；litellm 源行的换算价格、raw 与 source 均
 //     更新（source 恒为 litellm）
@@ -47,28 +41,12 @@ const (
 //     Warn 日志（返回首个失败错误，worker 侧决定重试/告警）
 //   - 死锁收敛（#37 P3' 同款）：批内按 model 排序 + 40P01 瞬时重试
 func (r *ImagePriceRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error) {
-	if len(rows) == 0 {
-		return 0, nil
-	}
 	now := time.Now()
-	total := 0
-	var firstErr error
-	for start := 0; start < len(rows); start += imagePriceBatchSize {
-		end := start + imagePriceBatchSize
-		if end > len(rows) {
-			end = len(rows)
-		}
-		n, err := r.upsertImageLitellmBatchWithRetry(ctx, rows[start:end], now)
-		if err != nil {
-			log.Printf("image_price: litellm upsert batch [%d:%d) failed: %v", start, end, err)
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		total += n
+	exec := func(ctx context.Context, start, end int) (int, error) {
+		return r.upsertImageLitellmBatch(ctx, rows[start:end], now)
 	}
-	return total, firstErr
+	return litellmUpsertBatches(ctx, len(rows), "image_price",
+		litellmUpsertOpts{BatchSize: litellmBatchSize, Retries: litellmUpsertRetries, Backoff: litellmUpsertBackoff}, exec)
 }
 
 // upsertImageLitellmBatch 单批 upsert（独立事务，单语句原子）：raw SQL 手工拼
@@ -153,27 +131,6 @@ func (r *ImagePriceRepo) upsertImageLitellmBatch(ctx context.Context, batch []*d
 	}
 	n, err := res.RowsAffected()
 	return int(n), err
-}
-
-// upsertImageLitellmBatchWithRetry 单批 upsert + 40P01 死锁重试（#37 P3' 同款
-// 兜底，复用 pricingUpsertBackoff 退避；ctx 取消优先）。
-func (r *ImagePriceRepo) upsertImageLitellmBatchWithRetry(ctx context.Context, batch []*domain.ImagePrice, now time.Time) (int, error) {
-	var n int
-	var err error
-	for attempt := 0; attempt <= imagePriceUpsertRetries; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return 0, ctx.Err()
-			case <-time.After(pricingUpsertBackoff[attempt-1]):
-			}
-		}
-		n, err = r.upsertImageLitellmBatch(ctx, batch, now)
-		if !isDeadlock(err) {
-			return n, err
-		}
-	}
-	return n, err
 }
 
 // ImagePriceManual 手动设价入参（管理端 PUT /admin/image-price/{model}，
