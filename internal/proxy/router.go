@@ -40,5 +40,13 @@ func AIRouter(p *Proxy) http.Handler {
 	r.Post("/v1/messages", func(w http.ResponseWriter, req *http.Request) {
 		p.handleFormat(domain.FormatAnthropic, w, req)
 	})
+	// 图片生成双端点（Task B §5.1）：同一格式 openai-images，上游子路径由
+	// handleFormat 内 imagesCallerFor 按路径区分（generations/edits）。
+	r.Post("/v1/images/generations", func(w http.ResponseWriter, req *http.Request) {
+		p.handleFormat(domain.FormatOpenAIImages, w, req)
+	})
+	r.Post("/v1/images/edits", func(w http.ResponseWriter, req *http.Request) {
+		p.handleFormat(domain.FormatOpenAIImages, w, req)
+	})
 	return r
 }

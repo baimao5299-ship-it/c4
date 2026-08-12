@@ -39,6 +39,7 @@
 | OpenAI Responses API — WebSocket | `WS /v1/responses` (GET with upgrade header) | OpenAI Responses WebSocket (e.g. Codex client) |
 | Anthropic Messages API | `POST /v1/messages` | Anthropic Messages (REST + SSE) |
 | OpenAI Chat Completions API | `POST /v1/chat/completions` | OpenAI Chat Completions (REST + SSE) |
+| OpenAI Images API | `POST /v1/images/generations` / `POST /v1/images/edits` | OpenAI Images (JSON + multipart, REST + SSE) |
 
 ## Quick Start
 

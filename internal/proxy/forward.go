@@ -54,6 +54,11 @@ type Proxy struct {
 	errlog   *usage.ErrLogWorker
 	inflight atomic.Int64
 	callers  map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
+	// imageGenerations/imageEdits images 端点调用器（Task B：同一格式
+	// openai-images 两个端点，上游子路径不同——handleFormat 按请求路径选
+	// 调用器，New 一次性构造免 per-request 分配）。
+	imageGenerations *imagesCaller
+	imageEdits       *imagesCaller
 	// convCallers 协议转换路径调用器（W5）：方向 → convertedCaller（请求体已
 	// 按方向转换，响应反向转换回客户端协议）。仅协议不匹配时才使用；off 组
 	// 恒不触达（handleFormat 分支）。
@@ -71,11 +76,16 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 	}
 	// 注册表：每格式一 caller，New 时一次性构造（per-request 零分配）。
 	// 新格式（Gemini/Grok/ollama 等）= 1 个 caller 文件 + 此处一行注册。
+	// images 格式两端点调用器分列（上游子路径不同），map 占位 + handleFormat
+	// 按请求路径覆盖为具体调用器。
 	p.callers = map[domain.RequestFormat]UpstreamCaller{
 		domain.FormatOpenAIChat:      &chatCaller{p: p},
 		domain.FormatOpenAIResponses: &responsesCaller{p: p},
 		domain.FormatAnthropic:       &anthropicCaller{p: p},
 	}
+	p.imageGenerations = &imagesCaller{p: p, path: "images/generations"}
+	p.imageEdits = &imagesCaller{p: p, path: "images/edits"}
+	p.callers[domain.FormatOpenAIImages] = p.imageGenerations
 	// 协议转换路径（W5）：每方向一 convertedCaller（构造期一次性建好；
 	// 热路径分支只读 map，off 组不触达）。
 	p.convCallers = map[domain.ProtocolConvert]UpstreamCaller{
@@ -125,6 +135,13 @@ func (p *Proxy) shouldBill(l *domain.UsageLog) bool {
 // 防御，审计留痕不按 0 计价；非兼容分支）。
 func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	if p.bill == nil || p.bill.Prices == nil {
+		return
+	}
+	// images 格式跳过 chat 价计费（Task B 路由面边界：ImageCost 计费集成在
+	// T2/C——images 请求按 chat 价表查价必然 miss → no_price 标记 + 每请求
+	// Warn 噪音；C 在此补 images 分支：GetImagePrice + ImageCost + image
+	// 分量落账）。
+	if l.Format == domain.FormatOpenAIImages {
 		return
 	}
 	model := l.MappedModel

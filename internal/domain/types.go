@@ -18,12 +18,16 @@ const (
 	FormatOpenAIChat        RequestFormat = "openai-chat"
 	FormatOpenAIResponses   RequestFormat = "openai-responses"
 	FormatOpenAIResponsesWS RequestFormat = "openai-responses-ws" // Responses WS（Codex 客户端形态）
-	FormatAnthropic         RequestFormat = "anthropic"
+	// FormatOpenAIImages 图片生成端点（/v1/images/generations|edits；spec §4.3
+	// 枚举扩展 exact value）。JSON + multipart 双协议；预检查 image_price 表
+	// （GetImagePrice，跳过 chat 价预检——P1-1 预检按格式切换）。
+	FormatOpenAIImages RequestFormat = "openai-images"
+	FormatAnthropic    RequestFormat = "anthropic"
 )
 
 func (f RequestFormat) Valid() bool {
 	switch f {
-	case FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatAnthropic:
+	case FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatOpenAIImages, FormatAnthropic:
 		return true
 	}
 	return false

@@ -257,10 +257,11 @@ func main() {
 			Workers:                cfg.Billing.FlushWorkers,
 		}, repos, rec, billBalances, log)
 		billHooks = &proxy.BillingHooks{
-			Prices:     svc,
-			Balances:   billBalances,
-			Flusher:    billFlusher,
-			TierPolicy: svc.ServiceTierPolicy,
+			Prices:      svc,
+			ImagePrices: svc, // Task B：images 端点预检查 image_price 快照（P1-1 预检按格式切换）
+			Balances:    billBalances,
+			Flusher:     billFlusher,
+			TierPolicy:  svc.ServiceTierPolicy,
 		}
 	}
 	px := proxy.New(proxy.Config{

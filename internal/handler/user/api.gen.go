@@ -57,6 +57,7 @@ const (
 const (
 	Anthropic       RequestFormat = "anthropic"
 	OpenaiChat      RequestFormat = "openai-chat"
+	OpenaiImages    RequestFormat = "openai-images"
 	OpenaiResponses RequestFormat = "openai-responses"
 )
 

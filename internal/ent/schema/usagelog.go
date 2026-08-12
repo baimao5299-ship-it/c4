@@ -22,7 +22,7 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("model").Default(""),
 		field.String("mapped_model").Optional().Nillable(),
 		field.Enum("format").
-			Values("openai-chat", "openai-responses", "openai-responses-ws", "anthropic"),
+			Values("openai-chat", "openai-responses", "openai-responses-ws", "openai-images", "anthropic"),
 		// 用户裁决（err_logs 分表设计 + 升级原则）：usage_logs 瘦身去 2 留 1——
 		// status_code（成功行恒 200 无信息量）与 error_message（纯排障文本列）
 		// 移入 err_logs 独立审计表；error_type 保留（半异常计费行标记；分表后
