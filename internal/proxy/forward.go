@@ -156,6 +156,24 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		l.PriceCacheCreationMillis = pr.CacheCreationPricePerMillion
 	}
 	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
+	// resp/resp-ws 响应检测 image 计费旁路（spec §6；检测挂点产出 ImageCount）：
+	// count > 0 → 按 model 查 GetImagePrice——缺价 → no_price 标记整单不计费
+	// （响应已产生无法 402，对齐上方 chat 缺价同语义：审计留痕不按 0 计价）；
+	// 有价 → ImageCost 聚合进 Cost（仅 per-image 分量——responses 路径无
+	// image_tokens，image token 恒 0）。P3-9：行存在但 per-image 价 nil → 图
+	// 分量 0（出图免费，chat 分量照常——ImageCost nil 分量回退 0 语义）。
+	if l.ImageCount > 0 {
+		ip, err := p.bill.Prices.GetImagePrice(model)
+		if err != nil || ip == nil {
+			if p.log != nil {
+				p.log.Warn("image price lookup failed", logx.String("model", model), logx.Error(err))
+			}
+			l.BillingTier = "no_price"
+			l.Cost, l.AboveHit = 0, false // no_price 整单不计费（图像未计费不按 0 计价）
+			return
+		}
+		l.Cost += billing.ImageCost(ip, 0, 0, l.ImageCount) // image token 恒 0（responses 路径无 image_tokens，V1-V3 实证）
+	}
 	// 价格倍率（T3.5，用户拍板）：整单 × 有效倍率（万分数；用户覆盖组——
 	// 用户已设置 → 用户值，否则组倍率，均缺 ×1）。m==10000 恒等短路零开销；
 	// m==0 免费（cost 0，仍记日志不扣费）。倍率不改变 aboveHit 语义。
@@ -173,7 +191,8 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 		LatencyMS:   time.Since(start).Milliseconds(),
 		InputTokens: u.it, OutputTokens: u.ot, TotalTokens: u.tt,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
-		CreatedAt: time.Now(),
+		ImageCount: u.img, // resp 检测旁路计数（零值 = 未检测/无图；Task D 先行，落库列归 Task C）
+		CreatedAt:  time.Now(),
 	}
 }
 
@@ -378,6 +397,7 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 type usageTuple struct {
 	it, ot, tt int64
 	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
+	img        int64 // resp 检测 image_count（spec §6 旁路；零值 = 未检测/无图）
 }
 
 // recordStreamAbort 上游流中止记录（客户端断开/上游停滞统一入口）：先已收

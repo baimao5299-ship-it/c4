@@ -13,9 +13,11 @@ import (
 )
 
 // PriceLookup 价格快照读取（service.Service 实现，零 DB 快照读）。任何错误
-// = 该模型无可用价格（计费方拒绝计费而非按 0 计价）。
+// = 该模型无可用价格（计费方拒绝计费而非按 0 计价）。GetImagePrice 为图片
+// 生成价快照（Task A 数据面；resp/resp-ws 检测旁路按 model 查价用）。
 type PriceLookup interface {
 	GetPrice(model string) (*domain.Pricing, error)
+	GetImagePrice(model string) (*domain.ImagePrice, error)
 }
 
 // BillingHooks 计费钩子（proxy.New 参数；nil = 计费全关：不查价、不记

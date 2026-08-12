@@ -5,10 +5,15 @@
 package proxy
 
 import (
+	"bytes"
+
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/responses"
 	"github.com/tidwall/gjson"
+
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/scheduler"
 )
 
 // 用量提取：缓存读取/写入 token 的跨协议归一化（仿 sub2api 的
@@ -86,4 +91,130 @@ func responsesUsageFromResponse(u responses.ResponseUsage) (it, ot, tt, cr, cc i
 func anthropicUsageFromResponse(u anthropic.Usage) (it, ot, tt, cr, cc int64) {
 	return u.InputTokens, u.OutputTokens, u.InputTokens + u.OutputTokens,
 		u.CacheReadInputTokens, u.CacheCreationInputTokens
+}
+
+// --- resp/resp-ws 响应侧 image 检测旁路（spec §6；检测开关判定 + 计数提取） ---
+
+// respImageDetectOn 响应侧 image 检测开关判定（spec §6 检测矩阵，用户裁决）：
+// api_key（默认）永不检测；responses-special / codex-oauth / codex-pat 按模板
+// ext strip_image_tools 联动——开（默认）= 不检测（图像工具已剥，响应不会出
+// 图——旁路多余）；关 = 检测。
+//
+// 分层标注（V1-V3 实证）：codex 类型（chatgpt.com 上游）图片生成 = 客户端
+// 本地执行（image_generation_call 由客户端本地组装、上游不产出）→ 网关 resp
+// 响应无图片 item → 检测恒 0 计数（旁路无效但无害，保留统一逻辑）；
+// responses-special（官方上游 hosted 触发）才有计数对象。故本函数对 codex
+// 类型照常返回 true——计数由上游响应内容自然归零，不在判定层特判。
+func respImageDetectOn(sel *scheduler.Selection) bool {
+	if sel.StripImageTools {
+		return false
+	}
+	switch sel.CredentialType {
+	case credential.TypeResponsesSpecial, credential.TypeCodexOAuth, credential.TypeCodexPAT:
+		return true
+	}
+	return false
+}
+
+// respImageCount 族：数 response 对象的 image_generation_call item（spec §6）。
+// 两种输入形态（输出定位路径不同）各一个入口，共享计数核心 countImageItems——
+// 调用方按形态直选（不做"先试 A 再回退 B"的双扫描）：
+//   - respImageCountCompleted：completed 帧/事件（response.output 信封——
+//     流式 Observer 与 resp-ws relay sniff 同族）
+//   - respImageCountBody：非流式响应体（output 顶层，SDK RawJSON）
+//
+// 判定规则（两形态同构）：
+//   - type == "image_generation_call" 且 result 非空——status 不参与（V1-V3
+//     实证：chatgpt.com 终态 status="generating" 非 "completed"，status 枚举
+//     不可靠；result 必填非空 = 图已生成）
+//   - 其他工具 item（function_call/web_search_call 等）的 result 字段在
+//     type 过滤后不参与
+//   - 有 id 按 id 去重 / id 缺失按出现顺序全数计入（与 SDK 同一 wire 语义）
+//
+// 热路径零分配（评审 P2-1 修复，AllocsPerRun==0 测试钉住）：复用 strip_scan
+// 同族手写字节扫描（scanKeyValue 定位 + scanTools 元素迭代 + extractKeys 键
+// 提取）——gjson GetBytes 对数组值会物化 Raw 字符串（实测 1 alloc/帧；ForEach
+// 闭包实测 0 alloc，评审归因修正），字节扫描彻底消除。id 去重走栈数组
+// [16][]byte（子切片零拷贝；官方 n 上限 10 零分配兜底；>16 唯一 id 的病态帧
+// 去重退化为全数计数——只可能虚增不虚减，防御性接受）。无 image item 的帧
+// 短路零分配。
+func respImageCountCompleted(data []byte) int64 {
+	// completed 帧形态：response.output 信封（先定位 "response" 对象，再定位
+	// 其内 "output"——嵌套同名键不误定位）
+	respStart, respEnd, ok := scanKeyValue(data, responseKeyBytes)
+	if !ok {
+		return 0
+	}
+	sub := data[respStart:respEnd]
+	outStart, outEnd, ok := scanKeyValue(sub, outputKeyBytes)
+	if !ok {
+		return 0
+	}
+	return countImageItems(sub[outStart:outEnd])
+}
+
+// respImageCountBody 非流式响应体形态（SDK RawJSON：无 response 信封，
+// output 顶层直定位）。
+func respImageCountBody(data []byte) int64 {
+	outStart, outEnd, ok := scanKeyValue(data, outputKeyBytes)
+	if !ok {
+		return 0
+	}
+	return countImageItems(data[outStart:outEnd])
+}
+
+// countImageItems 计数核心（raw = output 数组值字节；调用方完成定位——两
+// 形态仅定位路径不同，拆双入口省去 fallback 双扫描）。
+func countImageItems(raw []byte) int64 {
+	if len(raw) == 0 || raw[0] != '[' {
+		return 0 // 缺失/非数组：无 item 可数
+	}
+	var (
+		count int64
+		ids   [16][]byte
+		n     int
+	)
+	for tv := range scanTools(raw) {
+		if !bytes.Equal(tv.Type, imageGenCallBytes) {
+			continue // type 过滤：其他工具 item 的 result 不参与
+		}
+		if !imageResultNonEmpty(tv.Result) {
+			continue // result 缺失/null/空串/空数组：图未生成
+		}
+		if len(tv.ID) > 0 {
+			dup := false
+			for j := 0; j < n; j++ {
+				if bytes.Equal(ids[j], tv.ID) {
+					dup = true
+					break
+				}
+			}
+			if dup {
+				continue // 已计数（id 去重）
+			}
+			if n < len(ids) {
+				ids[n] = tv.ID
+				n++
+			}
+		} // id 缺失：按出现顺序全数计入（不走去重）
+		count++
+	}
+	return count
+}
+
+// imageResultNonEmpty result 非空判定（spec §6：result 必填非空 = 图已生成）：
+// 缺失/空串/null 字面量/空数组 → 空；非空字符串（base64）与非空数组
+// （image_url 对象形态）→ 非空。与 gjson 版（Exists && Type!=Null && 非空）
+// 语义等价；status 不参与（V1-V3 实证终态 status="generating"）。
+func imageResultNonEmpty(r []byte) bool {
+	if len(r) == 0 {
+		return false
+	}
+	if r[0] == '[' {
+		return !(len(r) == 2 && r[1] == ']') // 空数组 → 空
+	}
+	if r[0] == 'n' && bytes.Equal(r, nullBytes) {
+		return false // null 字面量 → 空
+	}
+	return true
 }
