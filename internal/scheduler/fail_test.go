@@ -172,6 +172,35 @@ func TestFailAccountMarkResultGuard(t *testing.T) {
 	require.Equal(t, domain.StatusDisabled, ri.Status, "快照保持 disabled")
 }
 
+// TestFailAccountQueuedEventsBeforeFailure 入队在先防复活（P1 评审——探针
+// 确定性复现）：规则事件在失效置位**之前**已入队（MarkResult 时账号仍 active，
+// 守卫放行；ResultError/ResultOK 各一）→ FailAccount 置 disabled → FlushRules
+// 处理入队事件 → apply 必须跳过 disabled 快照的状态覆盖——快照与 loader 落库
+// 均保持 disabled + 不可调度（修复前：apply 覆盖为 unhealthy/active，回写合并
+// 后写覆盖先写把 DB 落成 unhealthy/active，账号重新可调度）。
+func TestFailAccountQueuedEventsBeforeFailure(t *testing.T) {
+	pl := newPersistLoader(map[int64][]*domain.Account{10: {acc(1, tpl(1, domain.FormatOpenAIChat, []string{"m"}), 4)}})
+	s := newSchedLoader(t, pl)
+
+	// 入队在先：error→unhealthy+冷却 / ok→active 两条事件在失效前入队
+	s.MarkResult(1, ResultError, nil, 500, "boom")
+	s.MarkResult(1, ResultOK, nil, 200, "")
+	s.FailAccount(1, "auth permanently revoked")
+	s.FlushRules() // 消费入队事件 → apply
+	drainWrites(t, s)
+
+	ri, ok := s.Runtime(1)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "入队在先事件不得覆盖 disabled 快照")
+
+	pl.mu.Lock()
+	require.Equal(t, domain.StatusDisabled, pl.byGroup[10][0].Status, "DB 落库保持 disabled（apply 回写不得覆盖）")
+	pl.mu.Unlock()
+
+	_, err := s.Select(10, domain.FormatOpenAIChat, "m")
+	require.ErrorIs(t, err, ErrNoAvailable, "失效账号不可调度")
+}
+
 // TestFailAccountUnknownAccount 快照外/未加载账号：no-op 不 panic。
 func TestFailAccountUnknownAccount(t *testing.T) {
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tpl(1, domain.FormatOpenAIChat, []string{"m"}), 4)}})

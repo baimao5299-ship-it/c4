@@ -51,7 +51,9 @@ type AccountFailer interface {
 type FailureDeps struct {
 	Store  FailureStore
 	Failer AccountFailer
-	Log    *logx.Logger // 处理错误日志；nil = no-op
+	// Log 处理错误日志（P3-1 评审：同一失败只记一条——记在回调侧
+	// NewFailureHandler，HandleFailure 不重复记）；nil = no-op。
+	Log *logx.Logger
 }
 
 // HandleFailure 网关侧失效处理链（T1 §3——统一回调装配；T2/T4 适配层在
@@ -68,6 +70,8 @@ type FailureDeps struct {
 //
 // DB 写失败不阻断摘除（fail-closed：账号已判死，摘除优先；错误返回供日志）。
 // 返回 DB 写错误（nil = 成功）；调度摘除为 void（快照外账号 no-op）。
+// 本函数不记日志——处理错误统一由回调侧（NewFailureHandler）记一条（P3-1
+// 评审：同一失败不得双条 Warn）。
 func HandleFailure(ctx context.Context, deps FailureDeps, accountID int64, fatal error) error {
 	if fatal == nil {
 		return nil // 防御：无错误不上报
@@ -76,16 +80,13 @@ func HandleFailure(ctx context.Context, deps FailureDeps, accountID int64, fatal
 	err := deps.Store.SetAccountFailed(ctx, accountID, time.Now(), reason)
 	// 摘除恒执行：DB 故障时内存摘除先生效，恢复后 writeback 落库（fail-closed）。
 	deps.Failer.FailAccount(accountID, reason)
-	if err != nil && deps.Log != nil {
-		deps.Log.Warn("account failure field write failed", logx.Int64("account_id", accountID), logx.Error(err))
-	}
 	return err
 }
 
 // NewFailureHandler 构造统一失效回调（网关侧唯一失效处理入口）：适配层构造时
 // 注册，账号级终止经此上报；回调内同步执行失效处理链（写字段/调度摘除/审计）。
-// 回调签名不返回错误（契约固定）——处理链错误在回调内记日志（deps.Log；
-// nil 则不记）。
+// 回调签名不返回错误（契约固定）——处理链错误在回调内记**一条**日志
+// （deps.Log；nil 则不记——P3-1 评审：同一失败单条 Warn，含 account_id + 错误）。
 func NewFailureHandler(deps FailureDeps) FailureHandler {
 	return func(accountID int64, fatal error) {
 		if err := HandleFailure(context.Background(), deps, accountID, fatal); err != nil && deps.Log != nil {

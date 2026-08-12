@@ -646,6 +646,15 @@ func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *ti
 	if !ok {
 		return // 快照外账号（已移除/未知）：无状态可改，不投递回写
 	}
+	// 防复活（T1 P1 评审——探针确定性复现）：disabled 快照的事件回流不得覆盖
+	// 状态——规则事件可能在失效/禁用置位**之前**已入队（MarkResult 守卫只拦
+	// 置位后的新事件，拦不住入队在先的），apply 照常覆盖会把快照与 DB 回写
+	// 重置回 active/unhealthy，账号重新可调度。与 MarkResult 防复活守卫同哲学：
+	// disabled 后规则动作整体失效（含 cooldown/weight，且不投递回写——避免
+	// 旧状态经合并"后写覆盖先写"覆盖 DB 的 disabled）。
+	if a.statePtr().status == domain.StatusDisabled {
+		return
+	}
 	now := s.timeNow()
 	next := *a.statePtr()
 	if st != nil {
