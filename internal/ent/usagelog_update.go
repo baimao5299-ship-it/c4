@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/usagelog"
 )
 
 // UsageLogUpdate is the builder for updating UsageLog entities.
@@ -500,6 +500,150 @@ func (_u *UsageLogUpdate) ClearPriceCacheCreationMillis() *UsageLogUpdate {
 	return _u
 }
 
+// SetImageInputTokens sets the "image_input_tokens" field.
+func (_u *UsageLogUpdate) SetImageInputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetImageInputTokens()
+	_u.mutation.SetImageInputTokens(v)
+	return _u
+}
+
+// SetNillableImageInputTokens sets the "image_input_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableImageInputTokens(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetImageInputTokens(*v)
+	}
+	return _u
+}
+
+// AddImageInputTokens adds value to the "image_input_tokens" field.
+func (_u *UsageLogUpdate) AddImageInputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddImageInputTokens(v)
+	return _u
+}
+
+// SetImageOutputTokens sets the "image_output_tokens" field.
+func (_u *UsageLogUpdate) SetImageOutputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetImageOutputTokens()
+	_u.mutation.SetImageOutputTokens(v)
+	return _u
+}
+
+// SetNillableImageOutputTokens sets the "image_output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableImageOutputTokens(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetImageOutputTokens(*v)
+	}
+	return _u
+}
+
+// AddImageOutputTokens adds value to the "image_output_tokens" field.
+func (_u *UsageLogUpdate) AddImageOutputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddImageOutputTokens(v)
+	return _u
+}
+
+// SetImageCount sets the "image_count" field.
+func (_u *UsageLogUpdate) SetImageCount(v int64) *UsageLogUpdate {
+	_u.mutation.ResetImageCount()
+	_u.mutation.SetImageCount(v)
+	return _u
+}
+
+// SetNillableImageCount sets the "image_count" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableImageCount(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetImageCount(*v)
+	}
+	return _u
+}
+
+// AddImageCount adds value to the "image_count" field.
+func (_u *UsageLogUpdate) AddImageCount(v int64) *UsageLogUpdate {
+	_u.mutation.AddImageCount(v)
+	return _u
+}
+
+// SetPriceImageInputMillis sets the "price_image_input_millis" field.
+func (_u *UsageLogUpdate) SetPriceImageInputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPriceImageInputMillis()
+	_u.mutation.SetPriceImageInputMillis(v)
+	return _u
+}
+
+// SetNillablePriceImageInputMillis sets the "price_image_input_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePriceImageInputMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPriceImageInputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceImageInputMillis adds value to the "price_image_input_millis" field.
+func (_u *UsageLogUpdate) AddPriceImageInputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPriceImageInputMillis(v)
+	return _u
+}
+
+// ClearPriceImageInputMillis clears the value of the "price_image_input_millis" field.
+func (_u *UsageLogUpdate) ClearPriceImageInputMillis() *UsageLogUpdate {
+	_u.mutation.ClearPriceImageInputMillis()
+	return _u
+}
+
+// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
+func (_u *UsageLogUpdate) SetPriceImageOutputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPriceImageOutputMillis()
+	_u.mutation.SetPriceImageOutputMillis(v)
+	return _u
+}
+
+// SetNillablePriceImageOutputMillis sets the "price_image_output_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePriceImageOutputMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPriceImageOutputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceImageOutputMillis adds value to the "price_image_output_millis" field.
+func (_u *UsageLogUpdate) AddPriceImageOutputMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPriceImageOutputMillis(v)
+	return _u
+}
+
+// ClearPriceImageOutputMillis clears the value of the "price_image_output_millis" field.
+func (_u *UsageLogUpdate) ClearPriceImageOutputMillis() *UsageLogUpdate {
+	_u.mutation.ClearPriceImageOutputMillis()
+	return _u
+}
+
+// SetPricePerImageMillis sets the "price_per_image_millis" field.
+func (_u *UsageLogUpdate) SetPricePerImageMillis(v int64) *UsageLogUpdate {
+	_u.mutation.ResetPricePerImageMillis()
+	_u.mutation.SetPricePerImageMillis(v)
+	return _u
+}
+
+// SetNillablePricePerImageMillis sets the "price_per_image_millis" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillablePricePerImageMillis(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetPricePerImageMillis(*v)
+	}
+	return _u
+}
+
+// AddPricePerImageMillis adds value to the "price_per_image_millis" field.
+func (_u *UsageLogUpdate) AddPricePerImageMillis(v int64) *UsageLogUpdate {
+	_u.mutation.AddPricePerImageMillis(v)
+	return _u
+}
+
+// ClearPricePerImageMillis clears the value of the "price_per_image_millis" field.
+func (_u *UsageLogUpdate) ClearPricePerImageMillis() *UsageLogUpdate {
+	_u.mutation.ClearPricePerImageMillis()
+	return _u
+}
+
 // SetCost sets the "cost" field.
 func (_u *UsageLogUpdate) SetCost(v int64) *UsageLogUpdate {
 	_u.mutation.ResetCost()
@@ -780,6 +924,51 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.PriceCacheCreationMillisCleared() {
 		_spec.ClearField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ImageInputTokens(); ok {
+		_spec.SetField(usagelog.FieldImageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedImageInputTokens(); ok {
+		_spec.AddField(usagelog.FieldImageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.ImageOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldImageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedImageOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldImageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.ImageCount(); ok {
+		_spec.SetField(usagelog.FieldImageCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedImageCount(); ok {
+		_spec.AddField(usagelog.FieldImageCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PriceImageInputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceImageInputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceImageInputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceImageInputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceImageInputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceImageInputMillis, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriceImageOutputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceImageOutputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceImageOutputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PricePerImageMillis(); ok {
+		_spec.SetField(usagelog.FieldPricePerImageMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPricePerImageMillis(); ok {
+		_spec.AddField(usagelog.FieldPricePerImageMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PricePerImageMillisCleared() {
+		_spec.ClearField(usagelog.FieldPricePerImageMillis, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Cost(); ok {
 		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
@@ -1294,6 +1483,150 @@ func (_u *UsageLogUpdateOne) ClearPriceCacheCreationMillis() *UsageLogUpdateOne 
 	return _u
 }
 
+// SetImageInputTokens sets the "image_input_tokens" field.
+func (_u *UsageLogUpdateOne) SetImageInputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetImageInputTokens()
+	_u.mutation.SetImageInputTokens(v)
+	return _u
+}
+
+// SetNillableImageInputTokens sets the "image_input_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableImageInputTokens(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetImageInputTokens(*v)
+	}
+	return _u
+}
+
+// AddImageInputTokens adds value to the "image_input_tokens" field.
+func (_u *UsageLogUpdateOne) AddImageInputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddImageInputTokens(v)
+	return _u
+}
+
+// SetImageOutputTokens sets the "image_output_tokens" field.
+func (_u *UsageLogUpdateOne) SetImageOutputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetImageOutputTokens()
+	_u.mutation.SetImageOutputTokens(v)
+	return _u
+}
+
+// SetNillableImageOutputTokens sets the "image_output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableImageOutputTokens(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetImageOutputTokens(*v)
+	}
+	return _u
+}
+
+// AddImageOutputTokens adds value to the "image_output_tokens" field.
+func (_u *UsageLogUpdateOne) AddImageOutputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddImageOutputTokens(v)
+	return _u
+}
+
+// SetImageCount sets the "image_count" field.
+func (_u *UsageLogUpdateOne) SetImageCount(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetImageCount()
+	_u.mutation.SetImageCount(v)
+	return _u
+}
+
+// SetNillableImageCount sets the "image_count" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableImageCount(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetImageCount(*v)
+	}
+	return _u
+}
+
+// AddImageCount adds value to the "image_count" field.
+func (_u *UsageLogUpdateOne) AddImageCount(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddImageCount(v)
+	return _u
+}
+
+// SetPriceImageInputMillis sets the "price_image_input_millis" field.
+func (_u *UsageLogUpdateOne) SetPriceImageInputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPriceImageInputMillis()
+	_u.mutation.SetPriceImageInputMillis(v)
+	return _u
+}
+
+// SetNillablePriceImageInputMillis sets the "price_image_input_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePriceImageInputMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPriceImageInputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceImageInputMillis adds value to the "price_image_input_millis" field.
+func (_u *UsageLogUpdateOne) AddPriceImageInputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPriceImageInputMillis(v)
+	return _u
+}
+
+// ClearPriceImageInputMillis clears the value of the "price_image_input_millis" field.
+func (_u *UsageLogUpdateOne) ClearPriceImageInputMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPriceImageInputMillis()
+	return _u
+}
+
+// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
+func (_u *UsageLogUpdateOne) SetPriceImageOutputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPriceImageOutputMillis()
+	_u.mutation.SetPriceImageOutputMillis(v)
+	return _u
+}
+
+// SetNillablePriceImageOutputMillis sets the "price_image_output_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePriceImageOutputMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPriceImageOutputMillis(*v)
+	}
+	return _u
+}
+
+// AddPriceImageOutputMillis adds value to the "price_image_output_millis" field.
+func (_u *UsageLogUpdateOne) AddPriceImageOutputMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPriceImageOutputMillis(v)
+	return _u
+}
+
+// ClearPriceImageOutputMillis clears the value of the "price_image_output_millis" field.
+func (_u *UsageLogUpdateOne) ClearPriceImageOutputMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPriceImageOutputMillis()
+	return _u
+}
+
+// SetPricePerImageMillis sets the "price_per_image_millis" field.
+func (_u *UsageLogUpdateOne) SetPricePerImageMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetPricePerImageMillis()
+	_u.mutation.SetPricePerImageMillis(v)
+	return _u
+}
+
+// SetNillablePricePerImageMillis sets the "price_per_image_millis" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillablePricePerImageMillis(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetPricePerImageMillis(*v)
+	}
+	return _u
+}
+
+// AddPricePerImageMillis adds value to the "price_per_image_millis" field.
+func (_u *UsageLogUpdateOne) AddPricePerImageMillis(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddPricePerImageMillis(v)
+	return _u
+}
+
+// ClearPricePerImageMillis clears the value of the "price_per_image_millis" field.
+func (_u *UsageLogUpdateOne) ClearPricePerImageMillis() *UsageLogUpdateOne {
+	_u.mutation.ClearPricePerImageMillis()
+	return _u
+}
+
 // SetCost sets the "cost" field.
 func (_u *UsageLogUpdateOne) SetCost(v int64) *UsageLogUpdateOne {
 	_u.mutation.ResetCost()
@@ -1604,6 +1937,51 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.PriceCacheCreationMillisCleared() {
 		_spec.ClearField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ImageInputTokens(); ok {
+		_spec.SetField(usagelog.FieldImageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedImageInputTokens(); ok {
+		_spec.AddField(usagelog.FieldImageInputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.ImageOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldImageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedImageOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldImageOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.ImageCount(); ok {
+		_spec.SetField(usagelog.FieldImageCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedImageCount(); ok {
+		_spec.AddField(usagelog.FieldImageCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PriceImageInputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceImageInputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceImageInputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceImageInputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceImageInputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceImageInputMillis, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PriceImageOutputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPriceImageOutputMillis(); ok {
+		_spec.AddField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PriceImageOutputMillisCleared() {
+		_spec.ClearField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PricePerImageMillis(); ok {
+		_spec.SetField(usagelog.FieldPricePerImageMillis, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPricePerImageMillis(); ok {
+		_spec.AddField(usagelog.FieldPricePerImageMillis, field.TypeInt64, value)
+	}
+	if _u.mutation.PricePerImageMillisCleared() {
+		_spec.ClearField(usagelog.FieldPricePerImageMillis, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Cost(); ok {
 		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)

@@ -40,10 +40,14 @@ func TestTemplateServes(t *testing.T) {
 }
 
 func TestRequestFormatValid(t *testing.T) {
-	for _, f := range []RequestFormat{FormatOpenAIChat, FormatOpenAIResponses, FormatAnthropic} {
+	for _, f := range []RequestFormat{
+		FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatAnthropic,
+		FormatOpenAIImages, // spec §4.3：openai-images（images 端点落库 format）
+	} {
 		require.True(t, f.Valid(), "format %s should be valid", f)
 	}
 	require.False(t, RequestFormat("gemini").Valid())
+	require.False(t, RequestFormat("openai-images-extra").Valid())
 }
 
 func TestTruncateErrMsg(t *testing.T) {

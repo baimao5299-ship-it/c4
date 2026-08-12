@@ -19,11 +19,16 @@ const (
 	FormatOpenAIResponses   RequestFormat = "openai-responses"
 	FormatOpenAIResponsesWS RequestFormat = "openai-responses-ws" // Responses WS（Codex 客户端形态）
 	FormatAnthropic         RequestFormat = "anthropic"
+	// FormatOpenAIImages 图片生成（/v1/images/generations|edits，spec §4.3）：
+	// 落库 format = openai-images——usage_logs.format 无 DB enum（varchar），
+	// ent 生成 FormatValidator 客户端面校验（COPY 逐行校验前置——不扩展则图片
+	// 行 COPY 恒失败回灌）。
+	FormatOpenAIImages RequestFormat = "openai-images"
 )
 
 func (f RequestFormat) Valid() bool {
 	switch f {
-	case FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatAnthropic:
+	case FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatAnthropic, FormatOpenAIImages:
 		return true
 	}
 	return false
@@ -388,6 +393,11 @@ type KeyMeta struct {
 // 单价快照（1 USD = 100,000 毫分，pricing 同款单位；applyBilling 填充，零额外
 // 查找）——nil = 未计费路径（no_price 防御）；缓存价 nil = 该请求无缓存读或
 // 无缓存价。
+// 图片生成分量（spec §4.2）：ImageInputTokens/ImageOutputTokens/ImageCount 为
+// 图片计数（image_count 不入 TotalTokens——防图像请求白吃 token 免费额度；
+// image tokens 计入 TotalTokens 随 image token 计费口径）；PriceImage*Millis
+// = 毫分/1M image tokens 单价快照，**PricePerImageMillis = 毫分/张（例外单位，
+// 例外于上文"每 M token 毫分"口径——per-image 计费不走 /1e6 除法）**。
 type UsageLog struct {
 	ID               int64
 	RequestID        string
@@ -413,6 +423,12 @@ type UsageLog struct {
 	PriceCacheReadMillis *int64 // 缓存读单价快照；nil = 无缓存读或无缓存价
 	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
 	PriceCacheCreationMillis *int64 // 缓存写单价快照；nil = 无缓存写或无缓存价
+	ImageInputTokens          int64  // 图片生成输入 image token（usage.input_tokens_details.image_tokens；usage 缺失 = 0）
+	ImageOutputTokens         int64  // 图片生成输出 image token（usage.output_tokens_details.image_tokens；usage 缺失 = 0）
+	ImageCount                int64  // 生成图片张数（data 数组长度/completed 事件数）；不入 TotalTokens（防图像请求白吃 token 免费额度）
+	PriceImageInputMillis     *int64 // image token 输入单价快照（毫分/1M image tokens）；nil = 无该分量价
+	PriceImageOutputMillis    *int64 // image token 输出单价快照（毫分/1M image tokens）；nil = 无该分量价
+	PricePerImageMillis       *int64 // 每张价快照（**毫分/张**——例外单位，例外于上文"毫分/1M"口径；per-image 计费不走 /1e6 除法）；nil = 不启用按张分量
 	Cost                int64 // 毫分；错误请求（402/4xx）为 0
 	BillingTier         string // priority/flex/fast/auto；空 = 未计费路径
 	AboveHit            bool
