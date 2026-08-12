@@ -22,7 +22,10 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("model").Default(""),
 		field.String("mapped_model").Optional().Nillable(),
 		field.Enum("format").
-			Values("openai-chat", "openai-responses", "openai-responses-ws", "anthropic"),
+			// 图片生成（spec §4.3）：openai-images——/v1/images/generations|edits
+			// 落库 format；分区表 format 列为 varchar（无 DB enum），本枚举为
+			// 客户端面校验（ent FormatValidator / COPY 逐行 FormatValidator）。
+			Values("openai-chat", "openai-responses", "openai-responses-ws", "anthropic", "openai-images"),
 		// 用户裁决（err_logs 分表设计 + 升级原则）：usage_logs 瘦身去 2 留 1——
 		// status_code（成功行恒 200 无信息量）与 error_message（纯排障文本列）
 		// 移入 err_logs 独立审计表；error_type 保留（半异常计费行标记；分表后
@@ -48,6 +51,18 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int64("price_cache_read_millis").Optional().Nillable(),
 		field.Int64("cache_creation_tokens").Default(0),
 		field.Int64("price_cache_creation_millis").Optional().Nillable(),
+		// 图片生成分量（spec §4.2；Task B 写路径使用）：image_input/output_tokens
+		// 与 image_count 为图片计数（image_count 不入 TotalTokens——防图像请求
+		// 白吃 token 免费额度；image tokens 计入 TotalTokens 随 image token 计费
+		// 口径）；价格快照 nil = 无该分量价（同上文 nil 语义）。**price_per_image
+		// _millis 单位 = 毫分/张，例外于本表头注释的"毫分/1M"口径**——per-image
+		// 计费不走 /1e6 除法（spec §4.2 例外说明；其余 price_*_millis 仍毫分/1M）。
+		field.Int64("image_input_tokens").Default(0),
+		field.Int64("image_output_tokens").Default(0),
+		field.Int64("image_count").Default(0),
+		field.Int64("price_image_input_millis").Optional().Nillable(),
+		field.Int64("price_image_output_millis").Optional().Nillable(),
+		field.Int64("price_per_image_millis").Optional().Nillable(),
 		// 计费列（Phase 5）：cost 毫分（1 USD = 100,000 毫分）；billing_tier
 		// 请求 service_tier 归一化值（priority/flex/fast/auto；nil = 未计费路径）；
 		// above_hit 任一分量超 above_threshold 命中分段；overdraft 本次扣费透支

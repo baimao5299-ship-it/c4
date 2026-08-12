@@ -6,12 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/usagelog"
 )
 
 // UsageLogCreate is the builder for creating a UsageLog entity.
@@ -300,6 +300,90 @@ func (_c *UsageLogCreate) SetNillablePriceCacheCreationMillis(v *int64) *UsageLo
 	return _c
 }
 
+// SetImageInputTokens sets the "image_input_tokens" field.
+func (_c *UsageLogCreate) SetImageInputTokens(v int64) *UsageLogCreate {
+	_c.mutation.SetImageInputTokens(v)
+	return _c
+}
+
+// SetNillableImageInputTokens sets the "image_input_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableImageInputTokens(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetImageInputTokens(*v)
+	}
+	return _c
+}
+
+// SetImageOutputTokens sets the "image_output_tokens" field.
+func (_c *UsageLogCreate) SetImageOutputTokens(v int64) *UsageLogCreate {
+	_c.mutation.SetImageOutputTokens(v)
+	return _c
+}
+
+// SetNillableImageOutputTokens sets the "image_output_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableImageOutputTokens(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetImageOutputTokens(*v)
+	}
+	return _c
+}
+
+// SetImageCount sets the "image_count" field.
+func (_c *UsageLogCreate) SetImageCount(v int64) *UsageLogCreate {
+	_c.mutation.SetImageCount(v)
+	return _c
+}
+
+// SetNillableImageCount sets the "image_count" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableImageCount(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetImageCount(*v)
+	}
+	return _c
+}
+
+// SetPriceImageInputMillis sets the "price_image_input_millis" field.
+func (_c *UsageLogCreate) SetPriceImageInputMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPriceImageInputMillis(v)
+	return _c
+}
+
+// SetNillablePriceImageInputMillis sets the "price_image_input_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePriceImageInputMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPriceImageInputMillis(*v)
+	}
+	return _c
+}
+
+// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
+func (_c *UsageLogCreate) SetPriceImageOutputMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPriceImageOutputMillis(v)
+	return _c
+}
+
+// SetNillablePriceImageOutputMillis sets the "price_image_output_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePriceImageOutputMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPriceImageOutputMillis(*v)
+	}
+	return _c
+}
+
+// SetPricePerImageMillis sets the "price_per_image_millis" field.
+func (_c *UsageLogCreate) SetPricePerImageMillis(v int64) *UsageLogCreate {
+	_c.mutation.SetPricePerImageMillis(v)
+	return _c
+}
+
+// SetNillablePricePerImageMillis sets the "price_per_image_millis" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillablePricePerImageMillis(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetPricePerImageMillis(*v)
+	}
+	return _c
+}
+
 // SetCost sets the "cost" field.
 func (_c *UsageLogCreate) SetCost(v int64) *UsageLogCreate {
 	_c.mutation.SetCost(v)
@@ -443,6 +527,18 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultCacheCreationTokens
 		_c.mutation.SetCacheCreationTokens(v)
 	}
+	if _, ok := _c.mutation.ImageInputTokens(); !ok {
+		v := usagelog.DefaultImageInputTokens
+		_c.mutation.SetImageInputTokens(v)
+	}
+	if _, ok := _c.mutation.ImageOutputTokens(); !ok {
+		v := usagelog.DefaultImageOutputTokens
+		_c.mutation.SetImageOutputTokens(v)
+	}
+	if _, ok := _c.mutation.ImageCount(); !ok {
+		v := usagelog.DefaultImageCount
+		_c.mutation.SetImageCount(v)
+	}
 	if _, ok := _c.mutation.Cost(); !ok {
 		v := usagelog.DefaultCost
 		_c.mutation.SetCost(v)
@@ -497,6 +593,15 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.CacheCreationTokens(); !ok {
 		return &ValidationError{Name: "cache_creation_tokens", err: errors.New(`ent: missing required field "UsageLog.cache_creation_tokens"`)}
+	}
+	if _, ok := _c.mutation.ImageInputTokens(); !ok {
+		return &ValidationError{Name: "image_input_tokens", err: errors.New(`ent: missing required field "UsageLog.image_input_tokens"`)}
+	}
+	if _, ok := _c.mutation.ImageOutputTokens(); !ok {
+		return &ValidationError{Name: "image_output_tokens", err: errors.New(`ent: missing required field "UsageLog.image_output_tokens"`)}
+	}
+	if _, ok := _c.mutation.ImageCount(); !ok {
+		return &ValidationError{Name: "image_count", err: errors.New(`ent: missing required field "UsageLog.image_count"`)}
 	}
 	if _, ok := _c.mutation.Cost(); !ok {
 		return &ValidationError{Name: "cost", err: errors.New(`ent: missing required field "UsageLog.cost"`)}
@@ -626,6 +731,30 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PriceCacheCreationMillis(); ok {
 		_spec.SetField(usagelog.FieldPriceCacheCreationMillis, field.TypeInt64, value)
 		_node.PriceCacheCreationMillis = &value
+	}
+	if value, ok := _c.mutation.ImageInputTokens(); ok {
+		_spec.SetField(usagelog.FieldImageInputTokens, field.TypeInt64, value)
+		_node.ImageInputTokens = value
+	}
+	if value, ok := _c.mutation.ImageOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldImageOutputTokens, field.TypeInt64, value)
+		_node.ImageOutputTokens = value
+	}
+	if value, ok := _c.mutation.ImageCount(); ok {
+		_spec.SetField(usagelog.FieldImageCount, field.TypeInt64, value)
+		_node.ImageCount = value
+	}
+	if value, ok := _c.mutation.PriceImageInputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceImageInputMillis, field.TypeInt64, value)
+		_node.PriceImageInputMillis = &value
+	}
+	if value, ok := _c.mutation.PriceImageOutputMillis(); ok {
+		_spec.SetField(usagelog.FieldPriceImageOutputMillis, field.TypeInt64, value)
+		_node.PriceImageOutputMillis = &value
+	}
+	if value, ok := _c.mutation.PricePerImageMillis(); ok {
+		_spec.SetField(usagelog.FieldPricePerImageMillis, field.TypeInt64, value)
+		_node.PricePerImageMillis = &value
 	}
 	if value, ok := _c.mutation.Cost(); ok {
 		_spec.SetField(usagelog.FieldCost, field.TypeInt64, value)
@@ -1110,6 +1239,132 @@ func (u *UsageLogUpsert) AddPriceCacheCreationMillis(v int64) *UsageLogUpsert {
 // ClearPriceCacheCreationMillis clears the value of the "price_cache_creation_millis" field.
 func (u *UsageLogUpsert) ClearPriceCacheCreationMillis() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldPriceCacheCreationMillis)
+	return u
+}
+
+// SetImageInputTokens sets the "image_input_tokens" field.
+func (u *UsageLogUpsert) SetImageInputTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldImageInputTokens, v)
+	return u
+}
+
+// UpdateImageInputTokens sets the "image_input_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateImageInputTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldImageInputTokens)
+	return u
+}
+
+// AddImageInputTokens adds v to the "image_input_tokens" field.
+func (u *UsageLogUpsert) AddImageInputTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldImageInputTokens, v)
+	return u
+}
+
+// SetImageOutputTokens sets the "image_output_tokens" field.
+func (u *UsageLogUpsert) SetImageOutputTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldImageOutputTokens, v)
+	return u
+}
+
+// UpdateImageOutputTokens sets the "image_output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateImageOutputTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldImageOutputTokens)
+	return u
+}
+
+// AddImageOutputTokens adds v to the "image_output_tokens" field.
+func (u *UsageLogUpsert) AddImageOutputTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldImageOutputTokens, v)
+	return u
+}
+
+// SetImageCount sets the "image_count" field.
+func (u *UsageLogUpsert) SetImageCount(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldImageCount, v)
+	return u
+}
+
+// UpdateImageCount sets the "image_count" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateImageCount() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldImageCount)
+	return u
+}
+
+// AddImageCount adds v to the "image_count" field.
+func (u *UsageLogUpsert) AddImageCount(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldImageCount, v)
+	return u
+}
+
+// SetPriceImageInputMillis sets the "price_image_input_millis" field.
+func (u *UsageLogUpsert) SetPriceImageInputMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPriceImageInputMillis, v)
+	return u
+}
+
+// UpdatePriceImageInputMillis sets the "price_image_input_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePriceImageInputMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPriceImageInputMillis)
+	return u
+}
+
+// AddPriceImageInputMillis adds v to the "price_image_input_millis" field.
+func (u *UsageLogUpsert) AddPriceImageInputMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPriceImageInputMillis, v)
+	return u
+}
+
+// ClearPriceImageInputMillis clears the value of the "price_image_input_millis" field.
+func (u *UsageLogUpsert) ClearPriceImageInputMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPriceImageInputMillis)
+	return u
+}
+
+// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
+func (u *UsageLogUpsert) SetPriceImageOutputMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPriceImageOutputMillis, v)
+	return u
+}
+
+// UpdatePriceImageOutputMillis sets the "price_image_output_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePriceImageOutputMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPriceImageOutputMillis)
+	return u
+}
+
+// AddPriceImageOutputMillis adds v to the "price_image_output_millis" field.
+func (u *UsageLogUpsert) AddPriceImageOutputMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPriceImageOutputMillis, v)
+	return u
+}
+
+// ClearPriceImageOutputMillis clears the value of the "price_image_output_millis" field.
+func (u *UsageLogUpsert) ClearPriceImageOutputMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPriceImageOutputMillis)
+	return u
+}
+
+// SetPricePerImageMillis sets the "price_per_image_millis" field.
+func (u *UsageLogUpsert) SetPricePerImageMillis(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldPricePerImageMillis, v)
+	return u
+}
+
+// UpdatePricePerImageMillis sets the "price_per_image_millis" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdatePricePerImageMillis() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldPricePerImageMillis)
+	return u
+}
+
+// AddPricePerImageMillis adds v to the "price_per_image_millis" field.
+func (u *UsageLogUpsert) AddPricePerImageMillis(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldPricePerImageMillis, v)
+	return u
+}
+
+// ClearPricePerImageMillis clears the value of the "price_per_image_millis" field.
+func (u *UsageLogUpsert) ClearPricePerImageMillis() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldPricePerImageMillis)
 	return u
 }
 
@@ -1713,6 +1968,153 @@ func (u *UsageLogUpsertOne) UpdatePriceCacheCreationMillis() *UsageLogUpsertOne 
 func (u *UsageLogUpsertOne) ClearPriceCacheCreationMillis() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearPriceCacheCreationMillis()
+	})
+}
+
+// SetImageInputTokens sets the "image_input_tokens" field.
+func (u *UsageLogUpsertOne) SetImageInputTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetImageInputTokens(v)
+	})
+}
+
+// AddImageInputTokens adds v to the "image_input_tokens" field.
+func (u *UsageLogUpsertOne) AddImageInputTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddImageInputTokens(v)
+	})
+}
+
+// UpdateImageInputTokens sets the "image_input_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateImageInputTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateImageInputTokens()
+	})
+}
+
+// SetImageOutputTokens sets the "image_output_tokens" field.
+func (u *UsageLogUpsertOne) SetImageOutputTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetImageOutputTokens(v)
+	})
+}
+
+// AddImageOutputTokens adds v to the "image_output_tokens" field.
+func (u *UsageLogUpsertOne) AddImageOutputTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddImageOutputTokens(v)
+	})
+}
+
+// UpdateImageOutputTokens sets the "image_output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateImageOutputTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateImageOutputTokens()
+	})
+}
+
+// SetImageCount sets the "image_count" field.
+func (u *UsageLogUpsertOne) SetImageCount(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetImageCount(v)
+	})
+}
+
+// AddImageCount adds v to the "image_count" field.
+func (u *UsageLogUpsertOne) AddImageCount(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddImageCount(v)
+	})
+}
+
+// UpdateImageCount sets the "image_count" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateImageCount() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateImageCount()
+	})
+}
+
+// SetPriceImageInputMillis sets the "price_image_input_millis" field.
+func (u *UsageLogUpsertOne) SetPriceImageInputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceImageInputMillis(v)
+	})
+}
+
+// AddPriceImageInputMillis adds v to the "price_image_input_millis" field.
+func (u *UsageLogUpsertOne) AddPriceImageInputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceImageInputMillis(v)
+	})
+}
+
+// UpdatePriceImageInputMillis sets the "price_image_input_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePriceImageInputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceImageInputMillis()
+	})
+}
+
+// ClearPriceImageInputMillis clears the value of the "price_image_input_millis" field.
+func (u *UsageLogUpsertOne) ClearPriceImageInputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceImageInputMillis()
+	})
+}
+
+// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
+func (u *UsageLogUpsertOne) SetPriceImageOutputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceImageOutputMillis(v)
+	})
+}
+
+// AddPriceImageOutputMillis adds v to the "price_image_output_millis" field.
+func (u *UsageLogUpsertOne) AddPriceImageOutputMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceImageOutputMillis(v)
+	})
+}
+
+// UpdatePriceImageOutputMillis sets the "price_image_output_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePriceImageOutputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceImageOutputMillis()
+	})
+}
+
+// ClearPriceImageOutputMillis clears the value of the "price_image_output_millis" field.
+func (u *UsageLogUpsertOne) ClearPriceImageOutputMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceImageOutputMillis()
+	})
+}
+
+// SetPricePerImageMillis sets the "price_per_image_millis" field.
+func (u *UsageLogUpsertOne) SetPricePerImageMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPricePerImageMillis(v)
+	})
+}
+
+// AddPricePerImageMillis adds v to the "price_per_image_millis" field.
+func (u *UsageLogUpsertOne) AddPricePerImageMillis(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPricePerImageMillis(v)
+	})
+}
+
+// UpdatePricePerImageMillis sets the "price_per_image_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdatePricePerImageMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePricePerImageMillis()
+	})
+}
+
+// ClearPricePerImageMillis clears the value of the "price_per_image_millis" field.
+func (u *UsageLogUpsertOne) ClearPricePerImageMillis() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPricePerImageMillis()
 	})
 }
 
@@ -2494,6 +2896,153 @@ func (u *UsageLogUpsertBulk) UpdatePriceCacheCreationMillis() *UsageLogUpsertBul
 func (u *UsageLogUpsertBulk) ClearPriceCacheCreationMillis() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearPriceCacheCreationMillis()
+	})
+}
+
+// SetImageInputTokens sets the "image_input_tokens" field.
+func (u *UsageLogUpsertBulk) SetImageInputTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetImageInputTokens(v)
+	})
+}
+
+// AddImageInputTokens adds v to the "image_input_tokens" field.
+func (u *UsageLogUpsertBulk) AddImageInputTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddImageInputTokens(v)
+	})
+}
+
+// UpdateImageInputTokens sets the "image_input_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateImageInputTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateImageInputTokens()
+	})
+}
+
+// SetImageOutputTokens sets the "image_output_tokens" field.
+func (u *UsageLogUpsertBulk) SetImageOutputTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetImageOutputTokens(v)
+	})
+}
+
+// AddImageOutputTokens adds v to the "image_output_tokens" field.
+func (u *UsageLogUpsertBulk) AddImageOutputTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddImageOutputTokens(v)
+	})
+}
+
+// UpdateImageOutputTokens sets the "image_output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateImageOutputTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateImageOutputTokens()
+	})
+}
+
+// SetImageCount sets the "image_count" field.
+func (u *UsageLogUpsertBulk) SetImageCount(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetImageCount(v)
+	})
+}
+
+// AddImageCount adds v to the "image_count" field.
+func (u *UsageLogUpsertBulk) AddImageCount(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddImageCount(v)
+	})
+}
+
+// UpdateImageCount sets the "image_count" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateImageCount() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateImageCount()
+	})
+}
+
+// SetPriceImageInputMillis sets the "price_image_input_millis" field.
+func (u *UsageLogUpsertBulk) SetPriceImageInputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceImageInputMillis(v)
+	})
+}
+
+// AddPriceImageInputMillis adds v to the "price_image_input_millis" field.
+func (u *UsageLogUpsertBulk) AddPriceImageInputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceImageInputMillis(v)
+	})
+}
+
+// UpdatePriceImageInputMillis sets the "price_image_input_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePriceImageInputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceImageInputMillis()
+	})
+}
+
+// ClearPriceImageInputMillis clears the value of the "price_image_input_millis" field.
+func (u *UsageLogUpsertBulk) ClearPriceImageInputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceImageInputMillis()
+	})
+}
+
+// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
+func (u *UsageLogUpsertBulk) SetPriceImageOutputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPriceImageOutputMillis(v)
+	})
+}
+
+// AddPriceImageOutputMillis adds v to the "price_image_output_millis" field.
+func (u *UsageLogUpsertBulk) AddPriceImageOutputMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPriceImageOutputMillis(v)
+	})
+}
+
+// UpdatePriceImageOutputMillis sets the "price_image_output_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePriceImageOutputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePriceImageOutputMillis()
+	})
+}
+
+// ClearPriceImageOutputMillis clears the value of the "price_image_output_millis" field.
+func (u *UsageLogUpsertBulk) ClearPriceImageOutputMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPriceImageOutputMillis()
+	})
+}
+
+// SetPricePerImageMillis sets the "price_per_image_millis" field.
+func (u *UsageLogUpsertBulk) SetPricePerImageMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetPricePerImageMillis(v)
+	})
+}
+
+// AddPricePerImageMillis adds v to the "price_per_image_millis" field.
+func (u *UsageLogUpsertBulk) AddPricePerImageMillis(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddPricePerImageMillis(v)
+	})
+}
+
+// UpdatePricePerImageMillis sets the "price_per_image_millis" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdatePricePerImageMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdatePricePerImageMillis()
+	})
+}
+
+// ClearPricePerImageMillis clears the value of the "price_per_image_millis" field.
+func (u *UsageLogUpsertBulk) ClearPricePerImageMillis() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearPricePerImageMillis()
 	})
 }
 

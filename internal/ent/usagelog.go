@@ -4,12 +4,12 @@ package ent
 
 import (
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/usagelog"
 )
 
 // UsageLog is the model entity for the UsageLog schema.
@@ -59,6 +59,18 @@ type UsageLog struct {
 	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
 	// PriceCacheCreationMillis holds the value of the "price_cache_creation_millis" field.
 	PriceCacheCreationMillis *int64 `json:"price_cache_creation_millis,omitempty"`
+	// ImageInputTokens holds the value of the "image_input_tokens" field.
+	ImageInputTokens int64 `json:"image_input_tokens,omitempty"`
+	// ImageOutputTokens holds the value of the "image_output_tokens" field.
+	ImageOutputTokens int64 `json:"image_output_tokens,omitempty"`
+	// ImageCount holds the value of the "image_count" field.
+	ImageCount int64 `json:"image_count,omitempty"`
+	// PriceImageInputMillis holds the value of the "price_image_input_millis" field.
+	PriceImageInputMillis *int64 `json:"price_image_input_millis,omitempty"`
+	// PriceImageOutputMillis holds the value of the "price_image_output_millis" field.
+	PriceImageOutputMillis *int64 `json:"price_image_output_millis,omitempty"`
+	// PricePerImageMillis holds the value of the "price_per_image_millis" field.
+	PricePerImageMillis *int64 `json:"price_per_image_millis,omitempty"`
 	// Cost holds the value of the "cost" field.
 	Cost int64 `json:"cost,omitempty"`
 	// BillingTier holds the value of the "billing_tier" field.
@@ -79,7 +91,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagelog.FieldAboveHit, usagelog.FieldOverdraft:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCost:
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldImageInputTokens, usagelog.FieldImageOutputTokens, usagelog.FieldImageCount, usagelog.FieldPriceImageInputMillis, usagelog.FieldPriceImageOutputMillis, usagelog.FieldPricePerImageMillis, usagelog.FieldCost:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldBillingTier:
 			values[i] = new(sql.NullString)
@@ -243,6 +255,45 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				_m.PriceCacheCreationMillis = new(int64)
 				*_m.PriceCacheCreationMillis = value.Int64
 			}
+		case usagelog.FieldImageInputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field image_input_tokens", values[i])
+			} else if value.Valid {
+				_m.ImageInputTokens = value.Int64
+			}
+		case usagelog.FieldImageOutputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field image_output_tokens", values[i])
+			} else if value.Valid {
+				_m.ImageOutputTokens = value.Int64
+			}
+		case usagelog.FieldImageCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field image_count", values[i])
+			} else if value.Valid {
+				_m.ImageCount = value.Int64
+			}
+		case usagelog.FieldPriceImageInputMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_image_input_millis", values[i])
+			} else if value.Valid {
+				_m.PriceImageInputMillis = new(int64)
+				*_m.PriceImageInputMillis = value.Int64
+			}
+		case usagelog.FieldPriceImageOutputMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_image_output_millis", values[i])
+			} else if value.Valid {
+				_m.PriceImageOutputMillis = new(int64)
+				*_m.PriceImageOutputMillis = value.Int64
+			}
+		case usagelog.FieldPricePerImageMillis:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field price_per_image_millis", values[i])
+			} else if value.Valid {
+				_m.PricePerImageMillis = new(int64)
+				*_m.PricePerImageMillis = value.Int64
+			}
 		case usagelog.FieldCost:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field cost", values[i])
@@ -392,6 +443,30 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.PriceCacheCreationMillis; v != nil {
 		builder.WriteString("price_cache_creation_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("image_input_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ImageInputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("image_output_tokens=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ImageOutputTokens))
+	builder.WriteString(", ")
+	builder.WriteString("image_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ImageCount))
+	builder.WriteString(", ")
+	if v := _m.PriceImageInputMillis; v != nil {
+		builder.WriteString("price_image_input_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PriceImageOutputMillis; v != nil {
+		builder.WriteString("price_image_output_millis=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PricePerImageMillis; v != nil {
+		builder.WriteString("price_per_image_millis=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

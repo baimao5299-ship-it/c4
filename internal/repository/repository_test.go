@@ -532,40 +532,50 @@ func TestLogsAndStats(t *testing.T) {
 
 	// InsertBatch -> 批量 INSERT ... RETURNING id（sqlgraph 批量创建列按名字母序：
 	// above_hit, account_id, cache_creation_tokens, cache_read_tokens, cost, ...,
+	// format, group_id, image_count, image_input_tokens, image_output_tokens,
 	// input_tokens, ..., output_tokens, overdraft, price_cache_creation_millis,
 	// price_cache_read_millis, price_input_millis, price_output_millis, ...,
 	// total_tokens, ttft_ms；billing_tier 未设置不落列保持 NULL；l2 新列未设置
-	// → 该行 NULL。status_code 已从 usage_logs 移除（分表设计瘦身，错误审计列
+	// → 该行 NULL（图片价格三列 nil → 该行省略不落列；image token/count 三列
+	// 恒设 0 落列）。status_code 已从 usage_logs 移除（分表设计瘦身，错误审计列
 	// 归 err_logs）——InsertBatch 不再携带该列）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_logs"`)).
 		WithArgs(false, int64(2), int64(2), int64(4), int64(0), pgxmock.AnyArg(), "none",
-			usagelog.Format("openai-chat"), int64(1), int64(0), int64(10), "m", int64(0), false,
+			usagelog.Format("openai-chat"), int64(1), int64(0), int64(0), int64(0), int64(0),
+			int64(10), "m", int64(0), false,
 			int64(5678), int64(1234), int64(1e7), int64(2e7), "r1",
 			int64(3), int64(100), int64(88),
 			false, int64(2), int64(3), int64(5), int64(0), pgxmock.AnyArg(), "5xx",
-			usagelog.Format("openai-chat"), int64(1), int64(0), int64(20), "m", int64(0), false,
+			usagelog.Format("openai-chat"), int64(1), int64(0), int64(0), int64(0), int64(0),
+			int64(20), "m", int64(0), false,
 			"r2", int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
 	// Log Query -> SELECT（keyset 游标：去 Count，LIMIT limit+1 探测——契约
 	// 2026-08-11；TTFT 列按 schema 序在 latency_ms 后；价格四列各紧邻其
-	// tokens 列；计费四列 cost/billing_tier/above_hit/overdraft 在
-	// price_cache_creation_millis 与 created_at 之间）
+	// tokens 列；图片 6 列（image_input/output_tokens、image_count + 3 价格
+	// 快照）在 price_cache_creation_millis 与 cost 之间（schema 序）；计费四列
+	// cost/billing_tier/above_hit/overdraft 在 price_per_image_millis 与
+	// created_at 之间）
 	tr.pool.ExpectQuery(q(`FROM "usage_logs"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
 			"model", "mapped_model", "format", "error_type", "latency_ms",
 			"ttft_ms", "input_tokens", "price_input_millis", "output_tokens", "price_output_millis",
 			"total_tokens", "cache_read_tokens", "price_cache_read_millis", "cache_creation_tokens",
-			"price_cache_creation_millis", "cost", "billing_tier", "above_hit", "overdraft", "created_at"}).
+			"price_cache_creation_millis", "image_input_tokens", "image_output_tokens", "image_count",
+			"price_image_input_millis", "price_image_output_millis", "price_per_image_millis",
+			"cost", "billing_tier", "above_hit", "overdraft", "created_at"}).
 			AddRow(int64(1), "r1", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				"none", int64(10), int64(88), int64(0), int64(1e7), int64(0), int64(2e7),
 				int64(100), int64(4), int64(1234), int64(2), int64(5678),
+				int64(0), int64(0), int64(0), sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 			AddRow(int64(2), "r2", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				"5xx", int64(20), sql.NullInt64{}, int64(0), sql.NullInt64{}, int64(0), sql.NullInt64{},
 				int64(0), int64(5), sql.NullInt64{}, int64(3), sql.NullInt64{},
+				int64(0), int64(0), int64(0), sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
