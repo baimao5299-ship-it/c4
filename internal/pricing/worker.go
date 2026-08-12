@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package pricing
 
 import (
@@ -8,8 +12,8 @@ import (
 
 	"github.com/adhocore/gronx"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // defaultPriceSyncCron settings 快照缺失（启动加载失败等）时的兜底 cron。

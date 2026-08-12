@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 // 热点修复 A 扩：DeductAndLog 双路径等价性测试（约束 ① 语义等价的兜底——
@@ -14,9 +18,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent/tempbalance"
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent/tempbalance"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // deductState 单次 DeductAndLog 后的可观测终态（双路径对比面）。

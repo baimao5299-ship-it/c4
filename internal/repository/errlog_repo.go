@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 // err_logs 错误明细审计（用户裁决分表设计：独立于 usage_logs 的瘦表——拒绝/
@@ -10,9 +14,9 @@ import (
 	"context"
 	"time"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent"
-	"go-proxy-mini/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/errlog"
 )
 
 // ErrLogQuery err_logs 查询过滤面（/errlogs API 同构 /usages：分页 + error_type/

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package repository 用 ent 实现持久化，对外只暴露 domain 类型。
 package repository
 
@@ -10,9 +14,9 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent"
 )
 
 // Repository 聚合各实体仓库（绑定单一 client + driver；WithTx 复用同一构造函数

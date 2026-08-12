@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package user
 
 import (
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // redemptionValueToAPI 毫分存储 → 契约面值（与 /admin 兑换码同规则）：

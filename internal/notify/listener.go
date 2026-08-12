@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package notify
 
 import (
@@ -10,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // Dispatcher 变更分发回调（main 装配实现；避免 notify → invalidate/service
@@ -75,7 +79,7 @@ func pgxConnect(ctx context.Context, dsn string) (Conn, error) {
 type ListenerConfig struct {
 	DSN        string       // 独立监听连接 DSN（与业务池同 DSN）
 	Src        string       // 实例 ID：跳过自播 NOTIFY（空 = 不跳过）
-	Channel    string       // 空 → Channel（gpm_invalidate）
+	Channel    string       // 空 → Channel（c3api_invalidate）
 	Dispatcher Dispatcher   // 必填（nil → Start 返回错误）
 	Log        *logx.Logger // 可空（nil = 不记日志）
 	Connect    ConnectFunc  // nil → 默认 pgx 独立连接
@@ -85,7 +89,7 @@ type ListenerConfig struct {
 }
 
 // Listener NOTIFY 监听 worker（worker.Worker 契约，Name="notify"）：
-//   - 独立单连接 LISTEN gpm_invalidate（重连理由见 pgxConnect 注释）；
+//   - 独立单连接 LISTEN c3api_invalidate（重连理由见 pgxConnect 注释）；
 //   - 循环消费通知：解析 Change → 自播（Src == 本实例）跳过 → Dispatcher.Apply；
 //   - 连接断开 → 指数退避重连（1s→30s cap）；连接成功（启动首连或重连）立即
 //     执行一次 Dispatcher.FullRefresh（覆盖断连期间 NOTIFY 丢失，R8；60s 周期

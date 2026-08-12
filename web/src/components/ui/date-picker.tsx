@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 日期+时间选择器：shadcn 官方按钮式形态（参考 ui/apps/v4/examples/base/date-picker-time.tsx）。
 // Trigger 为 outline Button（宽约 212px，justify-between），空值时显示占位文案（muted），
 // 右侧 ChevronDown；Popover 内为 Calendar（mode=single + captionLayout="dropdown" 年月下拉

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package server 装配 chi 路由：/admin/*（静态 token OR platform_admin JWT）+
 // /user/*（JWT 保护，register/login 公开）+ 三个 AI 端点 + /healthz。
 package server
@@ -11,8 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"go-proxy-mini/internal/auth"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/auth"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 type Options struct {

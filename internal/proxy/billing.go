@@ -1,11 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package proxy
 
 import (
 	"encoding/json"
 	"net/http"
 
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // PriceLookup 价格快照读取（service.Service 实现，零 DB 快照读）。任何错误

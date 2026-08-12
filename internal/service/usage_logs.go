@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package service
 
 // usage_logs / err_logs 查询面（消费面改名裁决：log → usage 语义；错误审计
@@ -6,7 +10,7 @@ package service
 import (
 	"context"
 
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // QueryUsages usage_logs 计费明细分页查询（/usage_logs API；错误行含

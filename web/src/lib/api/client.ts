@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 薄 fetch 封装：token 注入、401 归一化、类型化返回（schema.d.ts 生成）。
 // 响应字段为 Go 大写风格（ID/Name/...），前端按此使用，不做 camelCase 转换。
 import type { components } from './schema.d.ts'
@@ -171,5 +175,5 @@ export class ApiUnauthorized extends Error {
   constructor() { super('unauthorized'); this.name = 'ApiUnauthorized' }
 }
 
-// 用户端实例：base '/user'，Authorization 走 userAuth（gpm_user_token）。
+// 用户端实例：base '/user'，Authorization 走 userAuth（c3api_user_token）。
 export const userApi = new ApiClient(userAuth.getToken, '/user')

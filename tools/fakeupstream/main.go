@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // fakeupstream 模拟 OpenAI chat/completions 上游：支持流式（chunks 个事件 + usage + [DONE]）。
 // 用法: go run ./tools/fakeupstream -addr :9100 -chunks 100 -latency 20ms
 //

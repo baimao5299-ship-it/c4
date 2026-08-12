@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 import (
@@ -11,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,7 +24,7 @@ import (
 // 既有 pgxmock 测试保留不动）。
 //
 // 启动方式：deploy/test-compose.yml 起 postgres:18，然后
-//   TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15432/gpm_test go test ./internal/repository/ -run PG -v
+//   TEST_DATABASE_URL=postgres://postgres:c3api@localhost:15432/c3api_test go test ./internal/repository/ -run PG -v
 //
 // 未设置 TEST_DATABASE_URL → t.Skip（不炸本地/CI 无库环境）。
 // ---------------------------------------------------------------------------

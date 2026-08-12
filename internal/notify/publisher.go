@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package notify 多实例变更广播（#14 T1 基础层）：PG LISTEN/NOTIFY 定向刷新。
 //
 // 架构（设计文档 docs/superpowers/plans/2026-08-10-multi-instance-design.md
 // §2）：管理面变更落库成功后经 Publisher 发一条 NOTIFY（单 channel
-// gpm_invalidate，紧凑 JSON 载荷与 invalidate.State 同构）；每实例一个
+// c3api_invalidate，紧凑 JSON 载荷与 invalidate.State 同构）；每实例一个
 // Listener worker（Name="notify"）LISTEN 该 channel，解析后调注入的
 // Dispatcher（main 装配，T3）转发现有 invalidate.Debouncer 的 Mark 方法——
 // 本地/远端变更共享同一去抖窗口，天然合并去重，Debouncer 本体零改动。
@@ -23,12 +27,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // Channel NOTIFY 频道名（单 channel：与去抖器合并 State 对齐——一类资源一个
 // channel 则监听器多、且与 debouncer 的合并 State 不对齐）。
-const Channel = "gpm_invalidate"
+const Channel = "c3api_invalidate"
 
 // notifySQL 发布语句：pg_notify(text, text) → void（无返回值）。
 const notifySQL = "select pg_notify('" + Channel + "', $1)"
@@ -96,7 +100,7 @@ type Execer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-// Publisher NOTIFY 发布器：marshal → SELECT pg_notify('gpm_invalidate', $1)。
+// Publisher NOTIFY 发布器：marshal → SELECT pg_notify('c3api_invalidate', $1)。
 // 独立持有 pool 引用（构造注入，走现有 repository.OpenPG 的 pgxpool），不
 // 新建连接。
 type Publisher struct {

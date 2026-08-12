@@ -4,8 +4,8 @@ package ent
 
 import (
 	"fmt"
-	"go-proxy-mini/internal/ent/template"
-	"go-proxy-mini/internal/ent/templateext"
+	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/templateext"
 	"strings"
 
 	"entgo.io/ent"

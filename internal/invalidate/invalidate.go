@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package invalidate 管理面变更的去抖定向失效（Phase 6 O2）：
 //
 // 脏标记（Mark 路径零锁零 DB——atomic CAS 合并 + 非阻塞唤醒，不阻塞任何
@@ -32,7 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // Kind 是需要"全量重载"的脏位；纯组级定向不占位（走 State.Groups）。

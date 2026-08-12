@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package domain 定义网关的核心领域类型；业务层（scheduler/proxy/service）只依赖本包。
 package domain
 
@@ -5,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"go-proxy-mini/internal/credential"
+	"github.com/is7qin/c3api/internal/credential"
 )
 
 type RequestFormat string

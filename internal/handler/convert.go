@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package handler
 
 import (
@@ -6,8 +10,8 @@ import (
 	"math"
 	"strconv"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/service"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/service"
 )
 
 // 本文件实现领域类型 → 生成的契约类型（api.gen.go）的转换。

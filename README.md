@@ -1,63 +1,118 @@
-# go-proxy-mini
+<div align="center">
 
-轻量 AI 网关管理台：OpenAPI 契约 + 管理 API + React 前端（Web UI 嵌入单二进制）。
+# ⚡ c3api
 
-## 工作流
+**A lightweight AI gateway** — one entry point for the OpenAI Responses API, the Anthropic Messages API, and the OpenAI Chat Completions API, with a built-in admin console, usage tracking, and billing.
 
-### 开发（前后端分离，HMR）
+[English](./README.md) | [中文](./README_zh.md)
+
+[![Release](https://img.shields.io/github/v/release/is7Qin/c3api?color=2563eb)](https://github.com/is7Qin/c3api/releases)
+[![Stars](https://img.shields.io/github/stars/is7Qin/c3api?color=2563eb)](https://github.com/is7Qin/c3api)
+[![License](https://img.shields.io/badge/license-AGPL--3.0--or--later%20%2B%20Commercial-2563eb)](./LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.26-2563eb)](https://go.dev/)
+
+[![OpenAI Responses API](https://img.shields.io/badge/OpenAI%20Responses%20API-✓-10a37f)](https://platform.openai.com/docs/api-reference/responses)
+[![Anthropic Messages API](https://img.shields.io/badge/Anthropic%20Messages%20API-✓-d97757)](https://docs.anthropic.com/en/api/messages)
+[![OpenAI Chat Completions API](https://img.shields.io/badge/OpenAI%20Chat%20Completions%20API-✓-10a37f)](https://platform.openai.com/docs/api-reference/chat)
+
+</div>
+
+**c3api** is a self-hosted AI gateway that fronts multiple upstream providers with one unified entry point. It speaks all three major request formats — OpenAI Responses API (including its WebSocket variant), Anthropic Messages API, and OpenAI Chat Completions API — and maps them onto your configured upstream accounts with model routing, quotas, usage accounting, and an embedded admin console.
+
+## Features
+
+| | |
+|---|---|
+| **Three formats, one gateway** | OpenAI Responses API (REST + WebSocket), Anthropic Messages API, OpenAI Chat Completions API — each with its own upstream orchestration and protocol conversion |
+| **Template & account management** | Model templates, upstream accounts, groups, credentials, and per-template format/model allowlists |
+| **Admin console** | React web UI embedded in the binary (`/admin`), plus a full OpenAPI-defined admin API |
+| **Billing & usage** | Per-user balance with pre-check deductions, FEFO temporary quotas, per-model pricing synced from litellm, daily-partitioned usage logs and statistics |
+| **Rules engine** | Customizable routing, rate limiting, and 429/error backoff rules with a built-in scheduler |
+| **Multi-instance ready** | PostgreSQL-based state, `NOTIFY`-based cross-instance invalidation, zero-config horizontal scaling |
+| **Single binary** | Go binary with embedded frontend, non-root Docker image, drop-in deployment |
+
+### Request formats
+
+| Format | Endpoint | Upstream |
+|---|---|---|
+| OpenAI Responses API | `POST /v1/responses` | OpenAI Responses (REST) |
+| OpenAI Responses API — WebSocket | `WS /v1/responses` (GET with upgrade header) | OpenAI Responses WebSocket (e.g. Codex client) |
+| Anthropic Messages API | `POST /v1/messages` | Anthropic Messages (REST + SSE) |
+| OpenAI Chat Completions API | `POST /v1/chat/completions` | OpenAI Chat Completions (REST + SSE) |
+
+## Quick Start
+
+### Option A: Docker Compose (recommended)
 
 ```bash
-# 1. 启动网关（后端，默认 :18080）
+cp .env.example .env        # fill in ADMIN_TOKEN and AUTH_JWT_SECRET
+docker compose --env-file .env -f deploy/compose.yml up -d --build
+```
+
+The gateway listens on `http://127.0.0.1:18080` — admin console at `/admin`, health check at `/healthz`.
+
+### Option B: Local development
+
+```bash
+# 1. Start the gateway (default :18080)
 go run ./cmd/server -config config.toml
 
-# 2. 启动前端 dev server（:5173，/admin 代理到 18080）
+# 2. Start the frontend dev server (:5173, proxies /admin to 18080)
 cd web && pnpm install && pnpm run dev
 ```
 
-浏览器访问 http://127.0.0.1:5173 ，admin token 即 config.toml 的 `admin.token`。
-此模式不依赖 Web UI 嵌入：后端不带 UI 也能独立跑（API 始终可用）。
+Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request format is selected by path, so a single base URL serves all three APIs.
 
-### 生产（单二进制，UI 已嵌入）
+## Architecture
 
-```bash
-scripts/build.sh   # pnpm 构建前端 → 产物拷入 cmd/server/dist → go build 单二进制
+```
+                    ┌───────────────────────────────┐
+ OpenAI SDK / curl ─▶│   c3api gateway (1 binary)    │
+ Anthropic SDK ─────▶│  ┌─────────────────────────┐  │
+ Codex client ──────▶│  │ chi router              │  │──▶ OpenAI upstream (REST + SSE)
+   Browser (SPA) ───▶│  │ /healthz /admin /user   │  │──▶ Anthropic upstream (REST + SSE)
+                    │  │ /v1/*                    │  │──▶ Responses / resp-ws upstream
+                    │  │ proxy: auth → gate →     │  │
+                    │  │         route → forward  │  │
+                    │  └──────────┬──────────────┘  │
+                    │   workers: billing / usage /  │
+                    │   errlog / scheduler / notify │
+                    └──────────────┼────────────────┘
+                                   ▼
+                         PostgreSQL 18 (state + NOTIFY)
 ```
 
-产物 `bin/server` 直接部署（`-config config.toml`），`/` 提供 UI，`/admin`、`/v1`、`/healthz`
-不受 SPA fallback 影响。
+- **Single binary**: the frontend is built and embedded via `go:embed`, so the runtime is one `server` process plus a mounted config file.
+- **Stateless gateway, stateful DB**: all shared state lives in PostgreSQL; instances coordinate through `NOTIFY` on the `c3api_invalidate` channel — scale horizontally by just adding instances.
+- **Persistent workers**: billing deduction, usage/statistics flushing, error-log auditing, partition retention, price sync, and the rule scheduler run as long-lived workers with graceful shutdown draining.
 
-### 前端产物与 go:embed
+## Configuration
 
-- 构建产物路径：`web/dist`（gitignore，不入库）。
-- `cmd/server/embed.go` 以 `//go:embed all:dist` 嵌入 `cmd/server/dist`，该目录仅
-  `.gitkeep` 占位入库（未构建前端时 go build 不报错，`/` 返回 404 但不影响 API）。
-- `scripts/build.sh` 负责把 `web/dist` 同步到 `cmd/server/dist`。
+The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_`-prefixed environment variables:
 
-## 测试
+| Variable | Description |
+|---|---|
+| `C3API_ADMIN_TOKEN` | Admin API token (required) |
+| `C3API_AUTH_JWT_SECRET` | JWT signing secret for user auth (required; stable across restarts and instances) |
+| `C3API_DB_DSN` | PostgreSQL DSN |
 
-### 单元测试（无外部依赖）
+See `config.example.toml` for the full schema (server, log, admin, auth, db, proxy, upstream, limit, scheduler, usage, billing).
 
-```bash
-go build ./... && go vet ./...
-go test ./...            # 跳过真实 PG 用例
-golangci-lint run ./...
-```
+## Deployment
 
-### 真实 PostgreSQL 集成测试（internal/repository 等）
+- `deploy/compose.yml` — production stack: one `db` (postgres:18-alpine, bind-mounted data) + one `app` container (non-root, read-only config mount, healthcheck).
+- `Dockerfile` — three-stage build (node → go → alpine), producing a single static binary with the UI embedded.
+- No external caching or message-bus service is required — PostgreSQL is the only dependency.
 
-PG 测试共享 `localhost:15432/gpm_test`（经 `TEST_DATABASE_URL` 注入），每个测试
-开头执行 `DROP SCHEMA public CASCADE` 重建 schema。**该库是所有 worktree / 会话
-共享的**——跨 worktree（或并行终端）同时跑 repository 测试会随机互踩：A 会话的
-测试清掉 B 会话的表，B 报"表不存在 / id 缺失 / 数值不符"等与本次改动无关的误报
-（失败测试隔离重跑全部通过即证）。约定：
+## License
 
-- **串行跑 repository 测试**：同一时刻只允许一个会话执行 PG 测试；
-- 或为并行 worktree 配置独立测试库（`TEST_DATABASE_URL` 指向独立库，如
-  `postgres://.../gpm_test_wt_i21`）。
+c3api is open source under the **GNU AGPL v3.0-or-later** (`LICENSE`) — free to use, modify, and deploy, **including for commercial and hosted services**, with the single obligation that modifications are contributed back under the same terms. **No purchase is required.**
 
-```bash
-TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15432/gpm_test go test ./internal/repository/ -count=1
-```
+Need **closed-source deployment** (exempt from the AGPL obligations on your deployment)? A commercial license (`LICENSE.commercial`) is available — it waives the AGPL obligations for your deployment.
 
-判定互踩误报：失败测试不触碰本次改动代码 + 隔离重跑通过 → 先确认当前无其他
-会话在跑 PG 测试，再重跑验证。
+External code contributions require a CLA (contributor license agreement) so that contributed code can be merged under this dual-license scheme — contact us via GitHub issue before contributing.
+
+## Contact
+
+- GitHub: [is7Qin/c3api](https://github.com/is7Qin/c3api)
+- Issues: open a GitHub issue for bugs, questions, or feature requests

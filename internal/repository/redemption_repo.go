@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 import (
@@ -8,10 +12,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent"
-	"go-proxy-mini/internal/ent/redemptioncode"
-	"go-proxy-mini/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/redemptioncode"
+	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 )
 
 // RedemptionRepo 兑换码 + 兑换审计持久化。

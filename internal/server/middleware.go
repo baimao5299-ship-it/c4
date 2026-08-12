@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package server
 
 import (
@@ -9,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // adminUserIDKey /admin 认证中间件写入的 platform_admin 用户 id（created_by 用，

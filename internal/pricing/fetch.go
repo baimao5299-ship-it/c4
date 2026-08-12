@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package pricing 实现 litellm 模型价格同步：官方价格表拉取（fetcher）+ 定期
 // 同步 worker（gronx cron 调度）。同步链路：fetch → UpsertFromLiteLLM（仓库
 // 500/批、manual 行级互斥）→ service 快照 Reload。失败保留旧价格，下个周期
@@ -15,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // FetchTimeout 单次拉取 HTTP 超时。

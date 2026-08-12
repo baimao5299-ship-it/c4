@@ -6,8 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go-proxy-mini/internal/ent/errlog"
-	"go-proxy-mini/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 	"time"
 
 	"entgo.io/ent/dialect/sql"

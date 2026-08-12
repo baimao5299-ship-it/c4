@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package auth
 
 import (
@@ -10,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // --- 密码哈希（bcrypt DefaultCost(10)，与 sub2api 同参数） ---

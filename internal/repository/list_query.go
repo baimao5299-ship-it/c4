@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 import (
@@ -6,15 +10,15 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 
-	"go-proxy-mini/internal/ent"
-	"go-proxy-mini/internal/ent/account"
-	"go-proxy-mini/internal/ent/group"
-	"go-proxy-mini/internal/ent/key"
-	"go-proxy-mini/internal/ent/pricing"
-	"go-proxy-mini/internal/ent/redemptioncode"
-	"go-proxy-mini/internal/ent/redemptionuse"
-	"go-proxy-mini/internal/ent/template"
-	"go-proxy-mini/internal/ent/user"
+	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/pricing"
+	"github.com/is7qin/c3api/internal/ent/redemptioncode"
+	"github.com/is7qin/c3api/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/user"
 )
 
 // ListQuery 列表查询：分页/筛选/排序。Sort 为白名单内字段名（如 "name"），

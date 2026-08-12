@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package billing
 
 import (
@@ -5,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // fixturePricing 构建对齐 litellm 官方表实测形态的价格行（fetch_test.go

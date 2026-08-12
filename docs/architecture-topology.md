@@ -1,4 +1,4 @@
-# go-proxy-mini 架构拓扑（标准文档）
+# github.com/is7qin/c3api 架构拓扑（标准文档）
 
 > 受众：vibecoding agent（改热路径/加表/加 worker/接线前必读）+ 新贡献者 onboarding。
 > 基准：main HEAD `56e2836`（err_logs 合并后）。所有代码锚点均基于该 commit 的 worktree 核实。
@@ -30,7 +30,7 @@ flowchart LR
         WH2["worker 群"]
     end
 
-    PG[("PostgreSQL 18<br/>17 ent 表（含 3 分区表）<br/>gpm_invalidate NOTIFY")]
+    PG[("PostgreSQL 18<br/>17 ent 表（含 3 分区表）<br/>c3api_invalidate NOTIFY")]
     UP1["上游 openai（REST + SSE）"]
     UP2["上游 anthropic（REST + SSE）"]
     UP3["上游 responses / resp-ws（WS）"]
@@ -57,7 +57,7 @@ flowchart LR
 
 - 单二进制部署：前端 `web/` 构建产物经 `cmd/server/embed.go:10` 的 `go:embed all:dist` 内嵌进 Go 二进制；运行时 = `server` 进程 + 挂载 config（Dockerfile 三阶段：node → go → alpine 非 root）。
 - 部署面（一句话带过）：
-  - `deploy/compose.yml`：`db`（postgres:18-alpine，目录挂载 ./data/pg）+ `app`（单容器，`GPM_ADMIN_TOKEN`/`GPM_DB_DSN` 环境变量注入，config.toml 只读挂载）。
+  - `deploy/compose.yml`：`db`（postgres:18-alpine，目录挂载 ./data/pg）+ `app`（单容器，`C3API_ADMIN_TOKEN`/`C3API_DB_DSN` 环境变量注入，config.toml 只读挂载）。
   - `Dockerfile`：多阶段构建，`CGO_ENABLED=0` 静态单二进制。
   - `scripts/build.sh`：pnpm 构建 web → 拷入 `cmd/server/dist` → `go build -o bin/server`。
   - `tools/`：`tools/loadtest`（打压测，-mode stream/fill，交错跑 + 每请求 CPU）、`tools/fakeupstream`（假上游，chunks/latency 可配）、`tools/e2e`（端到端计费测试）。
@@ -68,7 +68,7 @@ flowchart LR
 
 | 包 | 职责 | 依赖（被谁依赖） |
 |---|---|---|
-| `internal/config` | TOML 加载 + env 覆盖（`GPM_*`） | main 入口 |
+| `internal/config` | TOML 加载 + env 覆盖（`C3API_*`） | main 入口 |
 | `internal/server` | chi 路由装配：/healthz、/admin 鉴权中间件、/user 分流、AI Mount、SPA fallback | main |
 | `internal/handler`（+`/user`） | 管理面 API（openapi 生成）+ 用户面 API | 依赖 service/repository |
 | `internal/service` | 业务层：settings/pricing 快照（`internal/service/service.go:251,255`）、变更发布 `publish`（`internal/service/service.go:281`）、ClusterInstances | 依赖 repository/notify/invalidate/rule |
@@ -223,7 +223,7 @@ pkg 职责边界：
 | usage.ErrLogWorker | "errlog"（`internal/usage/errlog.go:105`） | 双队列 + ticker | 有界队列（reject 4096 / exempt 1024）+ select-default 非阻塞投递（满→丢弃计数，`internal/usage/errlog.go:152-171`）；豁免队列恒落盘；单批 500 行 / 500ms，单批超时 5s 失败即丢弃（`internal/usage/errlog.go:47-49,184-190`） | Close：置位 closed（无尾窗口静默丢）→ 等 loop → 预算内排空，超时截断并入丢弃计数（`internal/usage/errlog.go:236-287`） |
 | usage.RetentionWorker | "retention"（`internal/usage/retention.go:65`） | ticker 1h | 三表独立 cutoff 各自 DROP + 预建当日/明日；逐表错误隔离（`internal/usage/retention.go:97-148`） | 无排空需求（DROP/预建均幂等），Close 直接 nil（`internal/usage/retention.go:151`） |
 | scheduler | "scheduler"（`internal/scheduler/scheduler.go:117`） | syncLoop + writebackLoop 双 goroutine（`internal/scheduler/scheduler.go:120-127`） | sync `sync_interval` 30s；writeCh 有界 4096 满则丢弃 DB 回写（`internal/scheduler/scheduler.go:660-666`，内存状态已生效） | Close 排空 writeCh 剩余回写，预算超时 Warn 丢（`internal/scheduler/scheduler.go:131-152`） |
-| notify.Listener | "notify"（`internal/notify/listener.go:123`） | 事件驱动（阻塞 WaitForNotification） | 独立单连接 LISTEN gpm_invalidate；断线指数退避 1s→30s + 重连全量刷新 | Close 取消 + 等 goroutine（阻塞点均响应 ctx，`internal/notify/listener.go:161-175`） |
+| notify.Listener | "notify"（`internal/notify/listener.go:123`） | 事件驱动（阻塞 WaitForNotification） | 独立单连接 LISTEN c3api_invalidate；断线指数退避 1s→30s + 重连全量刷新 | Close 取消 + 等 goroutine（阻塞点均响应 ctx，`internal/notify/listener.go:161-175`） |
 | invalidate.Debouncer | "invalidate"（`internal/invalidate/invalidate.go:230`） | 事件驱动单 goroutine | 200ms 去抖窗口 + 后沿语义（执行期新变更立即再执行，`internal/invalidate/invalidate.go:277-287`）；重载串行不重叠 | Close nil（停机不补最后 flush——DB 权威，`internal/invalidate/invalidate.go:249`） |
 | pricing.SyncWorker | "pricing-sync"（`internal/pricing/worker.go:74`，构造 `internal/pricing/worker.go:63`） | 启动异步一次 + cron | `price_sync_cron`（默认 `0 3 * * *`）gronx 调度；每轮现读 settings；非法 cron 1h 重试 | 无资源需排空，Close nil（`internal/pricing/worker.go:90`） |
 | cmd/server.authSync | "auth-sync"（`cmd/server/auth_sync.go:38`） | ticker 60s | 周期全量 Reload auth 快照（NOTIFY 丢失兜底，`cmd/server/auth_sync.go:13-16`） | Close nil（循环随 ctx 退出，`cmd/server/auth_sync.go:64`） |
@@ -235,7 +235,7 @@ pkg 职责边界：
 
 ```mermaid
 flowchart LR
-    SVC["管理面落库成功<br/>service/scheduler 发布点"] -->|"SELECT pg_notify('gpm_invalidate',$1)"| PG[("PostgreSQL")]
+    SVC["管理面落库成功<br/>service/scheduler 发布点"] -->|"SELECT pg_notify('c3api_invalidate',$1)"| PG[("PostgreSQL")]
     PG -->|"NOTIFY（紧凑 JSON Change）"| L["每实例 Listener<br/>internal/notify/listener.go:222-240"]
     L -->|"Src 自播跳过"| D["装配侧 Dispatcher<br/>cmd/server/dispatcher.go:58-86"]
     D -->|"Apply → Mark 合并脏状态"| INV["invalidate.Debouncer<br/>200ms 窗口 + 后沿"]
@@ -289,7 +289,7 @@ flowchart LR
 | `[server]` | server.NewServer + http.Server | addr/read_header_timeout/max_header_bytes |
 | `[log]` | logx.New | level/output |
 | `[admin]` | server 静态 token | token |
-| `[auth]` | jwtauth.Issuer | jwt_secret（`GPM_AUTH_JWT_SECRET` 亦可） |
+| `[auth]` | jwtauth.Issuer | jwt_secret（`C3API_AUTH_JWT_SECRET` 亦可） |
 | `[db]` | repository.OpenPG | dsn/max_conns（20 = billing 8 + stats 8 worker + 余量） |
 | `[proxy]` | proxy.New | max_body_size/max_inflight/upstream_timeout/upstream_stream_timeout/failover_attempts/usage_capture |
 | `[upstream]` | httpx.TransportConfig | 连接池参数（max_idle_conns 8192 / per_host 2048 / force_http2） |
@@ -328,7 +328,7 @@ flowchart LR
   - **P3 缺名帧**：非规范上游缺 `event:` 行 → 流式转换断流；修复 = data `type` 字段推断事件名（`internal/protoconv/protoconv.go:106-121`）。
   - **P2a 拒绝风暴**：单 key 限流 161k req/s → 60s 冲至 9.8M pending 行 / RSS 7.5GB；修复 = 拒绝行不入 usage_logs 明细 + err_logs 有界队列采样（`internal/proxy/forward.go:195-204`）+ 积压续传循环 `backlogDrainBudget`（`internal/billing/flusher.go:41-51`）。
   - **P2b 停机截断**：O1 复测在途批次 Background ctx 令停机拖至分钟级；修复 = baseCtx 可取消 + Close 预算约束截断 Warn（`internal/billing/flusher.go:95-99,181-226`）。
-- 测试基座：真实 PostgreSQL（独立库命名 `gpm_test_*` 避开竞争），pgxmock 已废弃（`internal/repository/pg_*_test.go` 全量真实 PG）。
+- 测试基座：真实 PostgreSQL（独立库命名 `c3api_test_*` 避开竞争），pgxmock 已废弃（`internal/repository/pg_*_test.go` 全量真实 PG）。
 
 ## 15. 给 agent 的纪律清单
 
@@ -340,6 +340,6 @@ flowchart LR
 4. **加 worker**：实现 `worker.Worker` 契约（幂等 Start/Close、Close 未 Start 安全）→ `cmd/server/main.go` 注册（注意注册顺序决定反向排空次序：产生流量的 worker 后注册先排空，旁观者最后注册最先关）→ 有背压面时声明背压/丢弃/观测语义（水线或丢弃计数）。
 5. **接线（跨包发布/回调）**：读 §9——跨层一律接口化 + cmd/server 装配侧粘合（notify 不 import invalidate、scheduler 不 import notify 是硬约束）；NOTIFY 变更必须进 dispatcher 映射表 + 载荷守卫（>6KB 降级 full）。
 6. **计费改动**：读 §10 + ADR 2/3——扣费恒条件 UPDATE（FEFO + 行锁），预检只是软门禁；usage_logs 只收放行路径行；billing.enabled=false 时 `invBalances` 必须保持 nil 接口（防 typed-nil panic，`cmd/server/main.go:173-177`）。
-7. **测试基座**：repository/service 测试 = 真实 PostgreSQL（独立库命名 `gpm_test_<任务名>` 避开并行竞争），不用 sqlite/pgxmock；必须 `-race` + gofmt 干净。
+7. **测试基座**：repository/service 测试 = 真实 PostgreSQL（独立库命名 `c3api_test_<任务名>` 避开并行竞争），不用 sqlite/pgxmock；必须 `-race` + gofmt 干净。
 8. **流程**：SDD 三件套——spec 先行（`docs/superpowers/plans/` 当日日期命名）→ spec review 通过才派实现 → 实现 → 内容评审（验收标准核对锚点/裁决清单）→ 合并 main（--no-ff）→ 清理 worktree/分支。commit 中文一句话。
 9. **文档纪律**：本文档锚点随代码漂移——改代码位置时同步更新 file:line；合并时若 main 已前进需重核锚点（spec 事实纪律 2）。

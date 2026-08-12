@@ -5,11 +5,11 @@ package enttest
 import (
 	"context"
 
-	"go-proxy-mini/internal/ent"
+	"github.com/is7qin/c3api/internal/ent"
 	// required by schema hooks.
-	_ "go-proxy-mini/internal/ent/runtime"
+	_ "github.com/is7qin/c3api/internal/ent/runtime"
 
-	"go-proxy-mini/internal/ent/migrate"
+	"github.com/is7qin/c3api/internal/ent/migrate"
 
 	"entgo.io/ent/dialect/sql/schema"
 )

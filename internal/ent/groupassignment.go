@@ -4,9 +4,9 @@ package ent
 
 import (
 	"fmt"
-	"go-proxy-mini/internal/ent/group"
-	"go-proxy-mini/internal/ent/groupassignment"
-	"go-proxy-mini/internal/ent/user"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/user"
 	"strings"
 	"time"
 

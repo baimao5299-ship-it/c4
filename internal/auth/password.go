@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package auth 承载用户认证体系：bcrypt 密码哈希（与 sub2api 同参数）、
 // JWT 签发/验证（HS256，TTL 15min）与 RBAC 中间件（/user 组 RequireJWT +
 // 快照用户状态校验；/admin = 静态 token OR platform_admin JWT）。

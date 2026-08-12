@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package user
 
 import (
@@ -5,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"go-proxy-mini/internal/auth"
-	"go-proxy-mini/internal/service"
+	"github.com/is7qin/c3api/internal/auth"
+	"github.com/is7qin/c3api/internal/service"
 )
 
 // Router 组装 /user 组路由（挂载于 /user/*）：

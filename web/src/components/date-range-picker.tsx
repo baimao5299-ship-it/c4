@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 时间范围选择器：单入口 Popover——react-day-picker range 日历选起止日期 +
 // from/to 各一个原生 time input（官方 calendar-time 同款，指示器隐藏）。
 // 值格式与 DateTimePicker 一致：'YYYY-MM-DDTHH:mm'（本地时区），'' = 未设置。

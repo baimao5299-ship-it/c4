@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package scheduler
 
 import (
 	"time"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // Select 按预生成调度路径（格式硬过滤 + 模型偏好 + 加权轮询序列）选号，并占用并发槽。

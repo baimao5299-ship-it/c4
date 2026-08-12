@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package main
 
 import (
@@ -6,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go-proxy-mini/internal/invalidate"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/invalidate"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // authSyncInterval 鉴权快照周期兜底（设计文档 §1.6/§5 #9 / R1）：NOTIFY 丢失/

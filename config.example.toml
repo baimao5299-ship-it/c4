@@ -1,9 +1,9 @@
 server = { addr = ":8080", read_header_timeout = "10s", max_header_bytes = 1048576 }
 log = { level = "warn", output = "stdout" }
 admin = { token = "change-me" }
-# JWT 密钥（强制，缺失启动失败；GPM_AUTH_JWT_SECRET 亦可）
+# JWT 密钥（强制，缺失启动失败；C3API_AUTH_JWT_SECRET 亦可）
 auth = { jwt_secret = "change-me-too" }
-db = { dsn = "postgres://user:pass@localhost:5432/go_proxy_mini?sslmode=disable", max_conns = 20 } # #17：10→20（billing 8 + stats 8 worker + 余量；统计批量写已改 COPY 毫秒级短事务）
+db = { dsn = "postgres://user:pass@localhost:5432/c3api?sslmode=disable", max_conns = 20 } # #17：10→20（billing 8 + stats 8 worker + 余量；统计批量写已改 COPY 毫秒级短事务）
 proxy = {
   max_body_size = 4194304,
   max_inflight = 50000,

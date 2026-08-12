@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package handler
 
 import (
@@ -5,10 +9,10 @@ import (
 	"math"
 	"net/http"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/internal/server"
-	"go-proxy-mini/internal/service"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/internal/server"
+	"github.com/is7qin/c3api/internal/service"
 )
 
 // 兑换码管理面（/admin/redemption-codes）：生成/列表/审计/失效。

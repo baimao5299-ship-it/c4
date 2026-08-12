@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 import (
@@ -9,8 +13,8 @@ import (
 	"github.com/pashagolub/pgxmock/v4"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // when/then JSON 的期望字节（json.Marshal 对 map 按键排序输出，与 ent 落库一致）。

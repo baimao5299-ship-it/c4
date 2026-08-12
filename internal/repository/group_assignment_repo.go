@@ -1,13 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 import (
 	"context"
 	"fmt"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent"
-	"go-proxy-mini/internal/ent/group"
-	"go-proxy-mini/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
 )
 
 // GroupAssignmentRepo private 组授予（用户 ↔ 组多对多）。

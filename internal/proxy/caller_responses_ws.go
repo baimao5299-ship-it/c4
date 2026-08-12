@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package proxy
 
 import (
@@ -14,9 +18,9 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/pkg/aiclient"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/pkg/aiclient"
 )
 
 // --- resp-ws 通用编排（openai-responses-ws 格式） ---

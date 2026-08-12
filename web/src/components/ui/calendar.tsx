@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 "use client"
 
 // shadcn 官方 v4 base 实现整体照抄（ui/apps/v4/registry/bases/base/ui/calendar.tsx），

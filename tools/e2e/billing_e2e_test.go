@@ -1,10 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 //go:build e2e
 
 // Package e2e 计费全链路端到端测试：真实网关 + fakeupstream + 真实 PostgreSQL。
 //
 // 运行（前置：本机 PostgreSQL 容器，见 TEST_DATABASE_URL 或默认
-// postgres://postgres:gpm@localhost:15432/postgres；测试自行 DROP/CREATE
-// gpm_e2e 库）：
+// postgres://postgres:c3api@localhost:15432/postgres；测试自行 DROP/CREATE
+// c3api_e2e 库）：
 //
 //	go test -tags e2e -run TestBillingE2E ./tools/e2e -v -timeout 600s
 //
@@ -41,7 +45,7 @@ const (
 	jwtSecret  = "e2e-jwt-secret-change-me"
 	serverAddr = "127.0.0.1:18090" // 避开本机 VPN/代理已占用端口段（18080-18089 曾被占）
 	upAddr     = "127.0.0.1:19110"
-	dbName     = "gpm_e2e"
+	dbName     = "c3api_e2e"
 )
 
 // adminURL / aiURL 端点基址。
@@ -93,7 +97,7 @@ const pricesFixture = `{
 
 type e2eEnv struct {
 	t   *testing.T
-	pg  *pgxpool.Pool // gpm_e2e 库（SQL 断言）
+	pg  *pgxpool.Pool // c3api_e2e 库（SQL 断言）
 	tmp string
 }
 
@@ -196,12 +200,12 @@ func TestBillingE2E(t *testing.T) {
 	env := &e2eEnv{t: t}
 	ctx := context.Background()
 
-	// --- 0. 数据库准备：DROP + CREATE gpm_e2e ---
+	// --- 0. 数据库准备：DROP + CREATE c3api_e2e ---
 	adminDSN := os.Getenv("TEST_DATABASE_URL")
 	if adminDSN == "" {
-		adminDSN = "postgres://postgres:gpm@localhost:15432/postgres"
+		adminDSN = "postgres://postgres:c3api@localhost:15432/postgres"
 	}
-	// TEST_DATABASE_URL 指向 gpm_test 库：取其 host/port/user/password，目标库换 gpm_e2e。
+	// TEST_DATABASE_URL 指向 c3api_test 库：取其 host/port/user/password，目标库换 c3api_e2e。
 	adminPool, err := pgxpool.New(ctx, adminDSN)
 	require.NoError(t, err)
 	t.Cleanup(adminPool.Close)

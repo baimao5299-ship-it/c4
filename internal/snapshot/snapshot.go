@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package snapshot 统一网关各内存快照的生命周期：启动就绪（ReloadAll 全量首刷）
 // + NOTIFY 事件分发（按 scope 精确重载）+ 状态可观测（Status）。
 //

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 import (
@@ -9,8 +13,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // 真实 PG 基座（newPGRepos；TEST_DATABASE_URL 未设置 → Skip）：
@@ -51,7 +55,7 @@ func TestPricingPriorityPG(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("litellm sync does not overwrite manual price", func(t *testing.T) {
-		m := "gpm-pri-manual-a"
+		m := "c3api-pri-manual-a"
 		p, err := repos.UpsertManual(ctx, manualReq(m, 100, 200))
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
@@ -70,7 +74,7 @@ func TestPricingPriorityPG(t *testing.T) {
 	})
 
 	t.Run("manual upsert takes over litellm row", func(t *testing.T) {
-		m := "gpm-pri-litellm-b"
+		m := "c3api-pri-litellm-b"
 		n, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow(m, 10, 20)})
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
@@ -92,7 +96,7 @@ func TestPricingPriorityPG(t *testing.T) {
 	})
 
 	t.Run("delete manual restores litellm price on next sync", func(t *testing.T) {
-		m := "gpm-pri-restore-c"
+		m := "c3api-pri-restore-c"
 		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow(m, 10, 20)})
 		require.NoError(t, err)
 		_, err = repos.UpsertManual(ctx, manualReq(m, 500, 600))
@@ -119,24 +123,24 @@ func TestPricingDeleteManualPG(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("litellm row is not deletable", func(t *testing.T) {
-		m := "gpm-del-litellm"
+		m := "c3api-del-litellm"
 		_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow(m, 1, 2)})
 		require.NoError(t, err)
 		err = repos.DeleteManual(ctx, m)
 		require.ErrorIs(t, err, repository.ErrConflict, "litellm 行 → ErrConflict")
-		require.Contains(t, err.Error(), `model="gpm-del-litellm"`)
+		require.Contains(t, err.Error(), `model="c3api-del-litellm"`)
 		_, err = repos.GetPricing(ctx, m)
 		require.NoError(t, err, "litellm 行保留未被删除")
 	})
 
 	t.Run("missing model is not found", func(t *testing.T) {
-		err := repos.DeleteManual(ctx, "gpm-no-such-model")
+		err := repos.DeleteManual(ctx, "c3api-no-such-model")
 		require.ErrorIs(t, err, repository.ErrNotFound)
-		require.Contains(t, err.Error(), `model="gpm-no-such-model"`)
+		require.Contains(t, err.Error(), `model="c3api-no-such-model"`)
 	})
 
 	t.Run("manual row deleted", func(t *testing.T) {
-		m := "gpm-del-manual"
+		m := "c3api-del-manual"
 		_, err := repos.UpsertManual(ctx, manualReq(m, 1, 2))
 		require.NoError(t, err)
 		require.NoError(t, repos.DeleteManual(ctx, m))
@@ -334,7 +338,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("litellm row with cache/meta fields roundtrip", func(t *testing.T) {
-		m := "gpm-cache-a"
+		m := "c3api-cache-a"
 		row := litellmRow(m, 100, 200)
 		row.CacheReadPricePerMillion = int64Ptr(300)
 		row.CacheCreationPricePerMillion = int64Ptr(400)
@@ -367,10 +371,10 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 		require.Equal(t, true, raw["supports_vision"], "raw 保留未映射字段")
 
 		// 无 cache 价行 → nil
-		n, err = repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow("gpm-cache-b", 1, 2)})
+		n, err = repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow("c3api-cache-b", 1, 2)})
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
-		got, err = repos.GetPricing(ctx, "gpm-cache-b")
+		got, err = repos.GetPricing(ctx, "c3api-cache-b")
 		require.NoError(t, err)
 		require.Nil(t, got.CacheReadPricePerMillion)
 		require.Nil(t, got.CacheCreationPricePerMillion)
@@ -379,7 +383,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 	})
 
 	t.Run("re-upsert updates cache/meta/raw", func(t *testing.T) {
-		m := "gpm-cache-c"
+		m := "c3api-cache-c"
 		row := litellmRow(m, 10, 20)
 		row.CacheReadPricePerMillion = int64Ptr(111)
 		prov := "openai"
@@ -409,7 +413,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 	})
 
 	t.Run("manual with cache prices", func(t *testing.T) {
-		m := "gpm-cache-manual"
+		m := "c3api-cache-manual"
 		p, err := repos.UpsertManual(ctx, manualReq(m, 5, 6, int64Ptr(7), int64Ptr(8)))
 		require.NoError(t, err)
 		require.Equal(t, int64(7), *p.CacheReadPricePerMillion, "manual 返回行含 cache 价")
@@ -425,7 +429,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 	})
 
 	t.Run("manual without cache prices stores NULL", func(t *testing.T) {
-		m := "gpm-cache-manual-nil"
+		m := "c3api-cache-manual-nil"
 		p, err := repos.UpsertManual(ctx, manualReq(m, 5, 6))
 		require.NoError(t, err)
 		require.Nil(t, p.CacheReadPricePerMillion, "不设 cache 价 → nil")
@@ -438,7 +442,7 @@ func TestPricingCacheAndMetaFieldsPG(t *testing.T) {
 	})
 
 	t.Run("manual takeover clears litellm cache prices when unset", func(t *testing.T) {
-		m := "gpm-cache-takeover"
+		m := "c3api-cache-takeover"
 		row := litellmRow(m, 10, 20)
 		row.CacheReadPricePerMillion = int64Ptr(999)
 		row.CacheCreationPricePerMillion = int64Ptr(888)
@@ -467,7 +471,7 @@ func TestPricingMatrixFieldsPG(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("litellm row full matrix roundtrip", func(t *testing.T) {
-		m := "gpm-matrix-a"
+		m := "c3api-matrix-a"
 		row := litellmRow(m, 100, 200)
 		row.PriorityPromptPricePerMillion = int64Ptr(110)
 		row.PriorityCompletionPricePerMillion = int64Ptr(220)
@@ -512,10 +516,10 @@ func TestPricingMatrixFieldsPG(t *testing.T) {
 		require.Equal(t, domain.PricingSourceLitellm, got.Source)
 
 		// 无矩阵行 → nil
-		n, err = repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow("gpm-matrix-b", 1, 2)})
+		n, err = repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{litellmRow("c3api-matrix-b", 1, 2)})
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
-		got, err = repos.GetPricing(ctx, "gpm-matrix-b")
+		got, err = repos.GetPricing(ctx, "c3api-matrix-b")
 		require.NoError(t, err)
 		require.Nil(t, got.PriorityPromptPricePerMillion)
 		require.Nil(t, got.FastMultiplier)
@@ -523,7 +527,7 @@ func TestPricingMatrixFieldsPG(t *testing.T) {
 	})
 
 	t.Run("re-upsert overwrites matrix and clears missing cols", func(t *testing.T) {
-		m := "gpm-matrix-c"
+		m := "c3api-matrix-c"
 		row := litellmRow(m, 10, 20)
 		row.PriorityPromptPricePerMillion = int64Ptr(111)
 		row.FastMultiplier = int64Ptr(20000)
@@ -546,7 +550,7 @@ func TestPricingMatrixFieldsPG(t *testing.T) {
 	})
 
 	t.Run("manual matrix prices roundtrip", func(t *testing.T) {
-		m := "gpm-matrix-manual"
+		m := "c3api-matrix-manual"
 		req := manualReq(m, 5, 6)
 		req.PriorityPromptPricePerMillion = int64Ptr(50)
 		req.PriorityCompletionPricePerMillion = int64Ptr(60)
@@ -573,7 +577,7 @@ func TestPricingMatrixFieldsPG(t *testing.T) {
 	})
 
 	t.Run("manual takeover clears litellm matrix when unset", func(t *testing.T) {
-		m := "gpm-matrix-takeover"
+		m := "c3api-matrix-takeover"
 		row := litellmRow(m, 10, 20)
 		row.PriorityPromptPricePerMillion = int64Ptr(999)
 		row.FlexPromptPricePerMillion = int64Ptr(888)

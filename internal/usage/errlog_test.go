@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package usage
 
 // err_logs worker 单测（架构审查 C28）：有界队列满非阻塞丢弃 + 计数、B2 双队列
@@ -17,8 +21,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // captureErrLogInserter 记录 InsertBatch 批（批/字段断言）。

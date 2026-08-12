@@ -4,7 +4,7 @@ package ent
 
 import (
 	"fmt"
-	"go-proxy-mini/internal/ent/user"
+	"github.com/is7qin/c3api/internal/ent/user"
 	"strings"
 	"time"
 

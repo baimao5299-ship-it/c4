@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 用户端兑换页：顶部兑换区（redeem → 成功展示 applied 回执），
 // 下方兑换记录表（page/page_size 1-based 分页）。视觉对齐管理端 redemption-codes
 // 卡片结构 + fadeUp 动画。单位语义：applied.value / Value 为毫分（formatCost 换算 USD）；

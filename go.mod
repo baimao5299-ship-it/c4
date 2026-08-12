@@ -1,4 +1,4 @@
-module go-proxy-mini
+module github.com/is7qin/c3api
 
 go 1.26.5
 

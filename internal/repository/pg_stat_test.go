@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 // 统计批量 upsert 冲突路径真实 PG 测试（评审 I-2 升级 M，P0 修复）：DO
@@ -15,8 +19,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent/usagestat"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent/usagestat"
 )
 
 func TestPGStatUpsertConflictAccumulates(t *testing.T) {

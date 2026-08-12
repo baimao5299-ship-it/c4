@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package proxy
 
 import (
@@ -5,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // AIRouter 挂载 AI 端点（规格 §6.1/§9）：路径决定请求格式，全部走通用转发

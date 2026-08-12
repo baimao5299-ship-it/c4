@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 import (
 	"context"
 	"time"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent"
-	"go-proxy-mini/internal/ent/setting"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/setting"
 )
 
 // SettingRepo 类型化配置持久化（key 唯一；缺省值由 domain.DefaultSettings

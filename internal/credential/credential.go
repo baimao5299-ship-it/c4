@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package credential 是账号凭据抽象层：类型注册表 + Provider 分发，为后续
 // 多种号池类型（codex oauth、codex personal_access_token、claude code 等）
 // 打地基。本轮实现接口 + api_key/responses-special 两 provider + 接线。

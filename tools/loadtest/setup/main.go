@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // setup 构造多租户压测数据（Phase 3a 数据模型 + Phase 5 计费字段）：
 // 模板（三格式 × 随机模型池）→ 公开组 → 账号（分散模板/组/上游）→ 用户（可选
 // 余额/并发区间）→ 逐个登录建 key（可选多 key/并发/额度区间），key 明文写文件
@@ -5,7 +9,7 @@
 // 链路有价）；-billing-enabled 一步到位：默认余额区间 + 全部模型池定价。
 //
 //	用法: go run ./tools/loadtest/setup \
-//	  -addr http://127.0.0.1:8080 -admin-token <GPM_ADMIN_TOKEN> \
+//	  -addr http://127.0.0.1:8080 -admin-token <C3API_ADMIN_TOKEN> \
 //	  -upstream http://127.0.0.1:9100 \
 //	  -users 5000 -accounts 5000 -groups 20 -keys-out keys.txt
 //
@@ -34,7 +38,7 @@ import (
 
 var (
 	addr        = flag.String("addr", "http://127.0.0.1:8080", "gateway base url")
-	adminToken  = flag.String("admin-token", "", "GPM_ADMIN_TOKEN (admin API auth)")
+	adminToken  = flag.String("admin-token", "", "C3API_ADMIN_TOKEN (admin API auth)")
 	upstream    = flag.String("upstream", "http://127.0.0.1:9100", "fake upstream base url (bare root)")
 	upstreams   = flag.String("upstreams", "", "comma-separated upstream base urls, templates round-robin (empty = single -upstream)")
 	users       = flag.Int("users", 5000, "number of users")
@@ -92,7 +96,7 @@ type keyResp struct {
 func main() {
 	flag.Parse()
 	if *adminToken == "" {
-		fmt.Fprintln(os.Stderr, "-admin-token required (GPM_ADMIN_TOKEN)")
+		fmt.Fprintln(os.Stderr, "-admin-token required (C3API_ADMIN_TOKEN)")
 		os.Exit(2)
 	}
 	// -billing-enabled：默认余额区间 + 全部模型池定价——用户有钱 + 模型有价是

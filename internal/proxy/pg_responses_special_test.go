@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package proxy
 
 import (
@@ -15,19 +19,19 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/usage"
-	"go-proxy-mini/pkg/aiclient"
-	"go-proxy-mini/pkg/cryptox"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/usage"
+	"github.com/is7qin/c3api/pkg/aiclient"
+	"github.com/is7qin/c3api/pkg/cryptox"
 )
 
 // 真实 PG 集成（与 pg_responses_ws_test.go 同款约定）：
 //
-//	TEST_DATABASE_URL=postgres://postgres:gpm@127.0.0.1:15432/gpm_test \
+//	TEST_DATABASE_URL=postgres://postgres:c3api@127.0.0.1:15432/c3api_test \
 //	  go test ./internal/proxy/ -run TestPGResponsesSpecialCredential -v
 //
 // 未设置 TEST_DATABASE_URL → t.Skip。独立 schema（proxy_rsp_special_test）：
