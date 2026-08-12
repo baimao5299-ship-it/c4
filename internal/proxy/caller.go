@@ -291,35 +291,45 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			writeErr(w, errNoPrice)
 			return
 		}
-		// codex 分流骨架（Task B）：images 端点 codex-oauth/codex-pat 模板选号
-		// 命中 → 明确"未接入"错误（SDK GenerateImage/GenerateImageStream 调用
-		// 在 T2/T3 接入；未接入前显式 501，不让凭据缺失路径误报 502/network）。
-		// 评审 P2-1：post-Select 拒绝一律 recordRejected（与 402 缺价预检同
-		// 路径）——B 放开 codex 声明 images 格式后当下可达，501 必须留
-		// err_logs 审计（error_type=billing，拒绝类采样队列）。
-		if format == domain.FormatOpenAIImages && isCodexCredentialType(sel.CredentialType) {
-			p.sched.Release(sel.AccountID)
-			p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexImagesNotIntegrated.msg)
-			writeErr(w, errCodexImagesNotIntegrated)
-			return
+		// codex 分流落位（T2 §2，B 的 501 骨架）：images 端点 codex-oauth/
+		// codex-pat 模板选号命中 → codexImagesCaller（SDK GenerateImage 非流式；
+		// 流式 T3 未接 → caller 内 501 显式拒绝并 recordRejected 审计——评审
+		// P2-1 语义保留）。适配层未装配（SetCodex nil）→ 同样 501 显式拒绝，
+		// 不让凭据缺失路径误报 502/network。else 复位（评审 P1-1）：混合类型
+		// 组 failover 跨类型换账号（codex 失败 → api_key 尝试）时复用旧
+		// codexImagesCaller 会把健康 api_key 账号路由到 Ext=nil 空凭据路径
+		// （502 + 错误率污染 + 无谓失效上报 account 0）——每轮按当轮
+		// sel.CredentialType 双向赋值。
+		if format == domain.FormatOpenAIImages {
+			if isCodexCredentialType(sel.CredentialType) {
+				caller = p.codexImagesFor(r)
+			} else {
+				caller = route.caller // 复位直连调用器（非 codex 尝试——含 codex→api_key 跨类型换账号）
+			}
 		}
 		// 凭据每轮取（评审 I-3）：尾部 Select 后 Selection 变化，凭据随账号；
-		// 循环外取一次会把旧账号 key 发给新账号上游。
-		cred, err := p.credentialFor(r.Context(), sel)
+		// 循环外取一次会把旧账号 key 发给新账号上游。codex 类型跳过单字符串
+		// credentialFor（注册表无 codex provider——单字符串契约表达不了复合
+		// 凭据；codexImagesCaller 按 sel.Ext 派生 AccountCredential 直供适配层）。
 		var (
 			code     int
 			respBody []byte
 			handled  bool
 			callErr  error
 		)
-		if err != nil {
-			code = 0 // 凭据错误按网络错误处理（等价现状 try* 内 false,0,nil → 耗尽 ErrNetwork）
-			callErr = err
+		if isCodexCredentialType(sel.CredentialType) {
+			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, "", route.body, stream)
 		} else {
-			// err 保留（部署故障修复：错误文本落盘）：code 承载分类（0=连接级/
-			// 凭据错、4xx、429、5xx），callErr 提供 err.Error() 文本——仅错误
-			// 分支消费（成功路径零新增分配）。
-			code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, route.body, stream)
+			cred, err := p.credentialFor(r.Context(), sel)
+			if err != nil {
+				code = 0 // 凭据错误按网络错误处理（等价现状 try* 内 false,0,nil → 耗尽 ErrNetwork）
+				callErr = err
+			} else {
+				// err 保留（部署故障修复：错误文本落盘）：code 承载分类（0=连接级/
+				// 凭据错、4xx、429、5xx），callErr 提供 err.Error() 文本——仅错误
+				// 分支消费（成功路径零新增分配）。
+				code, respBody, handled, callErr = caller.Call(r.Context(), w, r, reqID, groupID, start, sel, cred, route.body, stream)
+			}
 		}
 		if handled {
 			return // caller 已处理完毕（成功/客户端断开/流中止已记录；本地拒绝已写出无记录）

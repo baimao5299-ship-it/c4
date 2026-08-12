@@ -22,18 +22,12 @@ import (
 	"github.com/is7qin/c3api/pkg/sserelay"
 )
 
-// errCodexImagesNotIntegrated 501：codex 分流骨架（Task B）——images 端点
-// codex-oauth/codex-pat 模板选号命中 → 明确"未接入"错误（SDK
-// GenerateImage/GenerateImageStream 调用在 T2/T3 接入；未接入前显式拒绝，
-// 不让凭据缺失路径误报 502/network）。
-var errCodexImagesNotIntegrated = &formatError{status: http.StatusNotImplemented, msg: "codex image generation not integrated yet (SDK wiring in T2/T3)"}
-
 // imagesCaller 是 openai-images 格式的 UpstreamCaller（Task B 直连面）：
 // 转发模板 base_url + /v1/images/<path>（generations|edits）。api_key /
 // responses-special 两类型直连（responses-special 不因 resp 检测面类型分化
 // 排除 images 直连；images 直连不经 strip_image_tools——images 请求无 tools
-// 字段可剥，直连路径与 strip 面无关，spec §6 作用域声明）。codex 类型在
-// handleFormat 预检后拦截（501，见 caller.go 分流骨架）。双协议：
+// 字段可剥，直连路径与 strip 面无关，spec §6 作用域声明）。codex 类型分流
+// 到 codexImagesCaller（T2，见 caller_images_codex.go）。双协议：
 //   - JSON：model 顶层提取 + setModel 模型映射改写（与 chat 同构）+ stream
 //     探测（SSE 透传）
 //   - multipart：body 原样透传（含图片文件字节与 boundary，Content-Type 保
@@ -177,9 +171,8 @@ func imagesMultipartModel(body []byte, contentType string) string {
 	}
 }
 
-// isCodexCredentialType codex 号池类型判定（Task B 分流骨架：images 端点
-// codex-oauth/codex-pat 模板选号命中 → 501 未接入，SDK GenerateImage 调用
-// 在 T2/T3 接入）。
+// isCodexCredentialType codex 号池类型判定（Task B 分流骨架起：images 端点
+// codex-oauth/codex-pat 模板选号命中 → codexImagesCaller（T2 落位；流式 T3））。
 func isCodexCredentialType(t credential.Type) bool {
 	return t == credential.TypeCodexOAuth || t == credential.TypeCodexPAT
 }

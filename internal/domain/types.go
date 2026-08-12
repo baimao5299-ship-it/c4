@@ -161,8 +161,8 @@ type Template struct {
 	ID               int64
 	Name             string
 	BaseURL          string
-	CredentialType   credential.Type        // 模板级：默认 api_key（DB 默认；号池生态类型后续）
-	SupportedFormats []RequestFormat        // 模板支持的格式（非空、去重）
+	CredentialType   credential.Type            // 模板级：默认 api_key（DB 默认；号池生态类型后续）
+	SupportedFormats []RequestFormat            // 模板支持的格式（非空、去重）
 	Models           []string                   // 可服务模型集合
 	FormatModels     map[RequestFormat][]string // 格式 → 该格式支持的模型列表；未配置 = 全部 Models
 	ModelMapping     map[string]string
@@ -171,10 +171,10 @@ type Template struct {
 	// 能力）：true = response.create 帧出口剥离图像工具（tools 数组 +
 	// tool_choice 悬挂；input 内嵌 v1 图像内容不做）。热路径快照布尔读 + 分支
 	// 零开销；false = 未配置/关闭（nil 与 false 同语义，快照收敛为 bool）。
-	StripImageTools  bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
+	StripImageTools bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
 }
 
 // FormatsFor 模板支持的格式列表。
@@ -235,6 +235,11 @@ type Account struct {
 	// 全部分组（含空数组 = 清空）。读路径忽略——编辑回显走 GetAccountGroups
 	// 独立查询（toDomainAccount 不填充该字段）。
 	GroupIDs *[]int64
+	// Ext 账号类型化鉴权扩展（account_ext 1:1 边；调度器快照加载
+	// LoadGroupsAccounts/LoadGroupAccounts 合并——与 Template.StripImageTools
+	// 同款快照合并先例，sdk-wiring T4 P3-4 定死路线；T2 起 codex 路由按 Ext
+	// 派生 AccountCredential）。其余路径（管理面账号 CRUD 等）无 ext 边 → nil。
+	Ext *AccountExt
 }
 
 // TemplateExt 模板类型化扩展配置（template_ext 子表，1:1）：credential_type
@@ -257,17 +262,17 @@ type TemplateExt struct {
 // 后恒定不变——零递增零状态）。凭据列组按类型约束（service 校验）：oauth 只
 // 允许 OAuth* 列组；pat 只允许 PATKey。nil = 未配置。
 type AccountExt struct {
-	AccountID        int64
-	CredentialType   credential.Type
-	InstallationID   string     // 身份：账号级唯一（UUIDv4，必存）
-	SessionID        *string    // 身份：会话级（UUIDv7；恒等 == ThreadID）
-	ThreadID         *string    // 身份：会话级（UUIDv7）
-	WindowID         *string    // 身份：会话级派生 {thread_id}:0（恒 0 恒定；无透传解析——用户裁决）
-	OAuthToken       *string    // 凭据：oauth 访问令牌
-	OAuthRefreshToken *string   // 凭据：oauth 刷新令牌
-	OAuthExpiresAt   *time.Time // 凭据：oauth 访问令牌过期时间
-	PATKey           *string    // 凭据：pat
-	Email            *string    // 管理标识：账号登录邮箱（导入时人工/上游提供，非自动生成，可空）
+	AccountID         int64
+	CredentialType    credential.Type
+	InstallationID    string     // 身份：账号级唯一（UUIDv4，必存）
+	SessionID         *string    // 身份：会话级（UUIDv7；恒等 == ThreadID）
+	ThreadID          *string    // 身份：会话级（UUIDv7）
+	WindowID          *string    // 身份：会话级派生 {thread_id}:0（恒 0 恒定；无透传解析——用户裁决）
+	OAuthToken        *string    // 凭据：oauth 访问令牌
+	OAuthRefreshToken *string    // 凭据：oauth 刷新令牌
+	OAuthExpiresAt    *time.Time // 凭据：oauth 访问令牌过期时间
+	PATKey            *string    // 凭据：pat
+	Email             *string    // 管理标识：账号登录邮箱（导入时人工/上游提供，非自动生成，可空）
 }
 
 type Group struct {
@@ -376,16 +381,16 @@ type Setting struct {
 // KeyMeta 鉴权快照条目：key + 归属用户的关键门禁字段（Auth 内存表元素，
 // repository.LoadKeys 构建；热路径零 DB 读取）。
 type KeyMeta struct {
-	KeyID          int64
-	UserID         int64
-	GroupID        int64
-	KeyStatus      KeyStatus
-	KeyMaxConc     int
-	UserStatus     UserStatus
-	UserMaxConc    int
-	HasQuota       bool
-	Quota          int64
-	QuotaUsed      int64 // 快照值（reload 时从 DB 读）；在途扣减走内存计数
+	KeyID       int64
+	UserID      int64
+	GroupID     int64
+	KeyStatus   KeyStatus
+	KeyMaxConc  int
+	UserStatus  UserStatus
+	UserMaxConc int
+	HasQuota    bool
+	Quota       int64
+	QuotaUsed   int64 // 快照值（reload 时从 DB 读）；在途扣减走内存计数
 	// ProtocolConvert 组级协议转换快照值（W5）：off = 不转换（热路径分支零
 	// 开销）；其余 = 客户端协议 → 模板协议（补差语义，转换器 internal/protoconv）。
 	ProtocolConvert ProtocolConvert
@@ -408,53 +413,53 @@ type KeyMeta struct {
 // = 毫分/1M image tokens 单价快照，**PricePerImageMillis = 毫分/张（例外单位，
 // 例外于上文"每 M token 毫分"口径——per-image 计费不走 /1e6 除法）**。
 type UsageLog struct {
-	ID               int64
-	RequestID        string
-	GroupID          int64 // 0 = 无
-	AccountID        int64 // 0 = 无
-	TemplateID       int64 // 0 = 无
-	UserID           int64 // 0 = 无（鉴权失败/无 key）
-	KeyID            int64 // 0 = 无
-	Model            string
-	MappedModel      string // 空 = 未映射
-	Format           RequestFormat
-	StatusCode       int
-	ErrorType        ErrorType
-	ErrorMessage     *string // nil = 无错误文本（NULL 落库）
-	LatencyMS           int64
-	TTFTMS              *int64 // 首 token 时间毫秒；非流式/失败/无首 token 路径 = nil
-	InputTokens         int64
-	PriceInputMillis    *int64 // 输入单价快照（每 M token 毫分）
-	OutputTokens        int64
-	PriceOutputMillis   *int64 // 输出单价快照（每 M token 毫分）
-	TotalTokens         int64
-	CacheReadTokens     int64 // 缓存读取 token（跨协议归一化，sub2api 计费语义）
-	PriceCacheReadMillis *int64 // 缓存读单价快照；nil = 无缓存读或无缓存价
-	CacheCreationTokens int64 // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
+	ID                       int64
+	RequestID                string
+	GroupID                  int64 // 0 = 无
+	AccountID                int64 // 0 = 无
+	TemplateID               int64 // 0 = 无
+	UserID                   int64 // 0 = 无（鉴权失败/无 key）
+	KeyID                    int64 // 0 = 无
+	Model                    string
+	MappedModel              string // 空 = 未映射
+	Format                   RequestFormat
+	StatusCode               int
+	ErrorType                ErrorType
+	ErrorMessage             *string // nil = 无错误文本（NULL 落库）
+	LatencyMS                int64
+	TTFTMS                   *int64 // 首 token 时间毫秒；非流式/失败/无首 token 路径 = nil
+	InputTokens              int64
+	PriceInputMillis         *int64 // 输入单价快照（每 M token 毫分）
+	OutputTokens             int64
+	PriceOutputMillis        *int64 // 输出单价快照（每 M token 毫分）
+	TotalTokens              int64
+	CacheReadTokens          int64  // 缓存读取 token（跨协议归一化，sub2api 计费语义）
+	PriceCacheReadMillis     *int64 // 缓存读单价快照；nil = 无缓存读或无缓存价
+	CacheCreationTokens      int64  // 缓存写入 token（OpenAI ephemeral 5m/1h 聚合）
 	PriceCacheCreationMillis *int64 // 缓存写单价快照；nil = 无缓存写或无缓存价
-	ImageInputTokens          int64  // 图片生成输入 image token（usage.input_tokens_details.image_tokens；usage 缺失 = 0）
-	ImageOutputTokens         int64  // 图片生成输出 image token（usage.output_tokens_details.image_tokens；usage 缺失 = 0）
-	ImageCount                int64  // 生成图片张数（data 数组长度/completed 事件数）；不入 TotalTokens（防图像请求白吃 token 免费额度）
-	PriceImageInputMillis     *int64 // image token 输入单价快照（毫分/1M image tokens）；nil = 无该分量价
-	PriceImageOutputMillis    *int64 // image token 输出单价快照（毫分/1M image tokens）；nil = 无该分量价
-	PricePerImageMillis       *int64 // 每张价快照（**毫分/张**——例外单位，例外于上文"毫分/1M"口径；per-image 计费不走 /1e6 除法）；nil = 不启用按张分量
-	Cost                int64 // 毫分；错误请求（402/4xx）为 0
-	BillingTier         string // priority/flex/fast/auto；空 = 未计费路径
-	AboveHit            bool
-	Overdraft           bool
-	CreatedAt           time.Time
+	ImageInputTokens         int64  // 图片生成输入 image token（usage.input_tokens_details.image_tokens；usage 缺失 = 0）
+	ImageOutputTokens        int64  // 图片生成输出 image token（usage.output_tokens_details.image_tokens；usage 缺失 = 0）
+	ImageCount               int64  // 生成图片张数（data 数组长度/completed 事件数）；不入 TotalTokens（防图像请求白吃 token 免费额度）
+	PriceImageInputMillis    *int64 // image token 输入单价快照（毫分/1M image tokens）；nil = 无该分量价
+	PriceImageOutputMillis   *int64 // image token 输出单价快照（毫分/1M image tokens）；nil = 无该分量价
+	PricePerImageMillis      *int64 // 每张价快照（**毫分/张**——例外单位，例外于上文"毫分/1M"口径；per-image 计费不走 /1e6 除法）；nil = 不启用按张分量
+	Cost                     int64  // 毫分；错误请求（402/4xx）为 0
+	BillingTier              string // priority/flex/fast/auto；空 = 未计费路径
+	AboveHit                 bool
+	Overdraft                bool
+	CreatedAt                time.Time
 }
 
 type StatBucket struct {
-	BucketTime       time.Time // 对齐到小时（UTC）
-	GroupID          int64     // 0 = 无
-	AccountID        int64     // 0 = 无
-	TemplateID       int64     // 0 = 无
-	UserID           int64     // 0 = 无（鉴权失败/无 key）；/user/stats 按此过滤
-	Model            string
-	IsError          bool
-	RequestCount     int64
-	ErrorCount       int64
+	BucketTime          time.Time // 对齐到小时（UTC）
+	GroupID             int64     // 0 = 无
+	AccountID           int64     // 0 = 无
+	TemplateID          int64     // 0 = 无
+	UserID              int64     // 0 = 无（鉴权失败/无 key）；/user/stats 按此过滤
+	Model               string
+	IsError             bool
+	RequestCount        int64
+	ErrorCount          int64
 	InputTokens         int64
 	OutputTokens        int64
 	TotalTokens         int64

@@ -89,7 +89,7 @@ func toDomainTemplate(t *ent.Template) *domain.Template {
 	}
 	d := &domain.Template{
 		ID: t.ID, Name: t.Name, BaseURL: t.BaseURL,
-		CredentialType: credential.Type(t.CredentialType),
+		CredentialType:   credential.Type(t.CredentialType),
 		SupportedFormats: formats, Models: t.Models,
 		FormatModels: fm, ModelMapping: t.ModelMapping,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt, DeletedAt: t.DeletedAt,
@@ -109,15 +109,23 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 	if a.Edges.Template != nil {
 		tpl = toDomainTemplate(a.Edges.Template)
 	}
-	return &domain.Account{
+	d := &domain.Account{
 		ID: a.ID, Name: a.Name, TemplateID: a.TemplateID, Template: tpl,
-		UpstreamKey: a.UpstreamKey,
-		Status: domain.AccountStatus(a.Status),
+		UpstreamKey:   a.UpstreamKey,
+		Status:        domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,
 		LastError: a.LastError, LastUsedAt: a.LastUsedAt,
-		FailedAt: a.FailedAt,
+		FailedAt:  a.FailedAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, DeletedAt: a.DeletedAt,
 	}
+	// Ext 快照合并：仅调度器快照加载（LoadGroupsAccounts / LoadGroupAccounts
+	// ——全表/子查询扫描后内存装配 Edges.Ext）会带 account_ext 边；其余路径
+	// 无 ext 边 → nil（与 Template.StripImageTools 同款合并先例，T4 P3-4 定死
+	// 路线）。
+	if len(a.Edges.Ext) > 0 {
+		d.Ext = toDomainAccountExt(a.Edges.Ext[0])
+	}
+	return d
 }
 
 // templatePredicate 供调用处过滤，避免未用 import 告警。

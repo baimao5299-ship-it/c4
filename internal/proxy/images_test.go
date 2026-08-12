@@ -288,8 +288,11 @@ func TestImagesPureImageModelNotKilledByChatPrecheck(t *testing.T) {
 	defer up.Close()
 	store := &captureLogStore{}
 	p := newTestImagesProxyWithBill(t, up.URL, &BillingHooks{
-		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}}, // chat 价表空（纯 image 价模型）
+		// chat 价表空（纯 image 价模型）+ image 价齐（T2 计费集成路径）+ 倍率
+		// 快照（applyImageBilling 走到整单倍率——五字段齐备契约）
+		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}, im: map[string]*domain.ImagePrice{"gpt-image-1": perImagePriceRow("gpt-image-1")}},
 		ImagePrices: &fakeImagePriceLookup{m: map[string]*domain.ImagePrice{"gpt-image-1": perImagePriceRow("gpt-image-1")}},
+		Balances:    billingBalances(),
 	}, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image-1","prompt":"x"}`))
@@ -300,13 +303,16 @@ func TestImagesPureImageModelNotKilledByChatPrecheck(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "纯 image 价模型不得被 chat 价预检误杀：body=%s", rec.Body.String())
 	require.Equal(t, 1, c.calls, "预检通过 → 正常转发")
 	require.NoError(t, p.rec.Close(context.Background()))
-	// 计费集成在 T2/C（本任务路由面）：images 日志跳过 chat 价计费（Cost 0、
-	// 无 no_price 标记噪音、无价格快照列）。
+	// T2 起 images 日志走 applyImageBilling（价格快照有行 → 不 no_price 标记、
+	// 不落 chat 价快照列）。直连路径 usage 提取（data 长/image tokens）在
+	// 调用器侧尚未接入（Task B 边界"直连路径零改动"——后续任务接入后同一
+	// applyImageBilling 生效），故张数/分量恒 0、Cost 0——不按 0 计价的断言面
+	// 是 no_price 标记不出现（有价行）。
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
-	require.Zero(t, store.logs[0].Cost, "Task B 不接入 ImageCost（计费在 C）")
-	require.Equal(t, "auto", store.logs[0].BillingTier, "service_tier 归一化照常（计费启用路径）")
+	require.Zero(t, store.logs[0].Cost, "直连路径未接入 usage 提取（B 边界零改动）→ Cost 0")
+	require.Equal(t, "auto", store.logs[0].BillingTier, "有价行 → service_tier 归一化照常（不 no_price）")
 	require.Nil(t, store.logs[0].PriceInputMillis, "images 日志不落 chat 价快照列（nil）")
 }
 
