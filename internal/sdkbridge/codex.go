@@ -61,6 +61,32 @@ func (a *Codex) GenerateImage(ctx context.Context, cred *domain.AccountCredentia
 	return fromSDKResponse(resp), nil
 }
 
+// GenerateImageStream 流式生图包装（T3 生产接线——合成流式：SDK 内部非流式
+// 调 + 等待期 keepalive 合成 + completed 逐张合成，网关零合成逻辑）：cred →
+// 缓存取 HTTPClient → c.GenerateImageStream(ctx, toSDKParams(p), fn)；事件翻
+// 译 codexsdk.ImageStreamEvent → domain.ImageStreamEvent（Type/B64JSON/Usage
+// 逐字段映射——usage 平铺直透，网关 completed 帧 JSON tag 直透同一口径）；
+// 错误翻译同 GenerateImage（translateError——信封/fatal 统一回调/refresh 分
+// 类复用；fn 回调错误经 translateError 原样透传——非 SDK 错误不过滤）。
+func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCredential, p *domain.ImageGenParams, fn func(domain.ImageStreamEvent) error) error {
+	e, err := a.clientFor(cred)
+	if err != nil {
+		return err
+	}
+	return e.client.GenerateImageStream(ctx, toSDKParams(p), func(ev codexsdk.ImageStreamEvent) error {
+		var usage *domain.ImageUsage
+		if ev.Usage != nil {
+			usage = &domain.ImageUsage{
+				InputTokens:       ev.Usage.InputTokens,
+				InputImageTokens:  ev.Usage.InputImageTokens,
+				OutputTokens:      ev.Usage.OutputTokens,
+				OutputImageTokens: ev.Usage.OutputImageTokens,
+			}
+		}
+		return fn(domain.ImageStreamEvent{Type: ev.Type, B64JSON: ev.B64JSON, Usage: usage})
+	})
+}
+
 // clientFor cred → Auth 账号级缓存取 HTTPClient（构造冷面——每账号首次/凭据
 // 变更后；互斥锁 + 签名比对，同账号并发请求单飞构造——对齐 SDK OAuth 单飞
 // refresh 语义）：

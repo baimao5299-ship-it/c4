@@ -227,11 +227,7 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 	if model == "" {
 		return // 未选号失败路径（无模型可计费；cost 恒 0）
 	}
-<<<<<<< HEAD
 	ip, err := p.bill.Prices.GetImagePrice(model)
-=======
-	ip, err := p.bill.ImagePrices.GetImagePrice(model)
->>>>>>> bb150f3 (feat(proxy): T3 流式生图接入——SSE 透传/keepalive/:ping/流终+abort 计费，面向 T2 接口 mock 联调)
 	if err != nil || ip == nil {
 		if p.log != nil {
 			p.log.Warn("billing image price lookup failed", logx.String("model", model), logx.Error(err))

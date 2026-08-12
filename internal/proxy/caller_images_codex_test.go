@@ -418,30 +418,53 @@ func TestImagesCodex401Rotate(t *testing.T) {
 	require.NoError(t, p.rec.Close(context.Background()))
 }
 
-// TestImagesCodexStream501 流式（stream=true）本 task 不做（T3 边界）：501
-// 显式拒绝 + err_logs 审计（P2-1 语义保留）；上游不收请求。
-func TestImagesCodexStream501(t *testing.T) {
+// TestImagesCodexStreamSSE 流式（stream=true）生产接线全链路（T3——替换 501
+// 骨架）：真实适配层 GenerateImageStream → 合成事件流（keepalive + 逐张
+// completed，usage 仅末事件）→ 网关 SSE 透传（completed 帧 wire 形态 P2-1：
+// b64_json + usage 四字段 JSON tag 直透）→ 流终计费（张数 = data 长 2、
+// image tokens 平铺、ImageCost per-image 分量、倍率整单）。
+func TestImagesCodexStreamSSE(t *testing.T) {
 	up, c := newCodexImageUpstream(t, codexUpStep{status: 200, body: codexTestImageResponse})
 	defer up.Close()
 	store := &captureLogStore{}
-	p, recorder := newTestCodexProxy(t, credential.TypeCodexOAuth, map[int64]*domain.AccountExt{10: codexOAuthExt(10, "at-10", "rt-10")}, up.URL, nil, store)
+	p, recorder := newTestCodexProxy(t, credential.TypeCodexOAuth, map[int64]*domain.AccountExt{10: codexOAuthExt(10, "at-10", "rt-10")}, up.URL, &BillingHooks{
+		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}, im: map[string]*domain.ImagePrice{"gpt-image-2": perImagePriceRow("gpt-image-2")}},
+		ImagePrices: &fakeImagePriceLookup{m: map[string]*domain.ImagePrice{"gpt-image-2": perImagePriceRow("gpt-image-2")}},
+		Balances:    billingBalances(),
+	}, store)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
-		`{"model":"gpt-image-2","prompt":"x","stream":true}`))
+		`{"model":"gpt-image-2","prompt":"a cat","stream":true}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
 	rec := httptest.NewRecorder()
 	p.HandleImagesGenerations(rec, req)
 
-	require.Equal(t, http.StatusNotImplemented, rec.Code, "流式 501（T3 边界）")
-	require.Contains(t, rec.Body.String(), "not integrated", "501 文案明确未接入")
-	require.Zero(t, c.n(), "流式未接不得触达上游")
-	require.Zero(t, recorderCalls(recorder))
-	require.NoError(t, p.errlog.Close(context.Background()))
+	require.Equal(t, http.StatusOK, rec.Code, "流式 200：body=%s", rec.Body.String())
+	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"), "SSE 内容类型")
+	require.Equal(t, "no-cache", rec.Header().Get("Cache-Control"), "三件套 2/3")
+	require.Equal(t, "no", rec.Header().Get("X-Accel-Buffering"), "三件套 3/3")
+	// wire 形态：两帧 completed——首帧 b64_json 无 usage，末帧带 usage 平铺四字段
+	// （codex-sdk ImageUsage JSON tag 直透——P3-2 等价）。
+	want := "event: image_generation.completed\ndata: {\"b64_json\":\"QUJD\"}\n\n" +
+		"event: image_generation.completed\ndata: {\"b64_json\":\"REVG\",\"usage\":{\"input_tokens\":2,\"input_image_tokens\":1,\"output_tokens\":3,\"output_image_tokens\":2}}\n\n"
+	require.Equal(t, want, rec.Body.String(), "completed 帧 wire 形态（usage 仅末事件）")
+	require.Equal(t, 1, c.n(), "流式合成 → 上游恰好一次（非流式调）")
+	require.True(t, strings.HasSuffix(c.path(0), "/images/generations"), "SDK 派生 generations 端点")
+	require.Zero(t, recorderCalls(recorder), "成功不上报失效")
+	require.NoError(t, p.rec.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Len(t, store.logs, 1, "501 拒绝记 err_logs 审计")
-	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
-	require.Equal(t, http.StatusNotImplemented, store.logs[0].StatusCode)
+	require.Len(t, store.logs, 1)
+	l := store.logs[0]
+	require.Equal(t, http.StatusOK, l.StatusCode)
+	require.Equal(t, domain.ErrNone, l.ErrorType)
+	require.Equal(t, int64(2), l.ImageCount, "流终张数 = completed 数")
+	require.Equal(t, int64(1), l.ImageInputTokens, "usage 平铺 image tokens 落账")
+	require.Equal(t, int64(2), l.ImageOutputTokens)
+	require.Equal(t, int64(3), l.TotalTokens, "tt = image tokens 之和（张数不入）")
+	require.Equal(t, int64(5400), *l.PricePerImageMillis, "per-image 快照列")
+	require.Equal(t, int64(10800), l.Cost, "2 张 × 5400 ×1 倍率")
+	require.Equal(t, "auto", l.BillingTier, "有价行 → 归一化照常")
 }
 
 // TestImagesCodexAdapterMissing501 适配层未装配（SetCodex 未调用）→ 501 显式
@@ -484,7 +507,7 @@ func TestImagesCodexAdapterMissing501(t *testing.T) {
 	p.HandleImagesGenerations(recw, req)
 
 	require.Equal(t, http.StatusNotImplemented, recw.Code, "未装配 → 501（body=%s）", recw.Body.String())
-	require.Contains(t, recw.Body.String(), "not integrated")
+	require.Contains(t, recw.Body.String(), "adapter not wired", "501 文案 = 装配缺失")
 	require.Zero(t, c.n())
 	require.NoError(t, p.rec.Close(context.Background()))
 }

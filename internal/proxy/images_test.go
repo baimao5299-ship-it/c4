@@ -392,7 +392,7 @@ func TestImagesCodexNotIntegrated501(t *testing.T) {
 	p.HandleImagesGenerations(rec, req)
 
 	require.Equal(t, http.StatusNotImplemented, rec.Code, "codex 未接入必须显式 501：body=%s", rec.Body.String())
-	require.Contains(t, rec.Body.String(), "not integrated", "501 文案明确未接入")
+	require.Contains(t, rec.Body.String(), "adapter not wired", "501 文案 = 装配缺失")
 	require.Zero(t, hits.Load(), "未接入不得转发上游")
 	require.NoError(t, p.rec.Close(context.Background()))
 	// P2-1：err_logs 审计断言（拒绝行走 errlog worker，Close 显式排空）
@@ -406,7 +406,7 @@ func TestImagesCodexNotIntegrated501(t *testing.T) {
 	require.Equal(t, domain.FormatOpenAIImages, l.Format)
 	require.Equal(t, "gpt-image-1", l.Model)
 	require.NotNil(t, l.ErrorMessage)
-	require.Contains(t, *l.ErrorMessage, "not integrated", "文案落 ErrorMessage（域内截断 500）")
+	require.Contains(t, *l.ErrorMessage, "adapter not wired", "文案落 ErrorMessage（域内截断 500）")
 }
 
 // TestImagesCodexPATNotIntegrated501 codex-pat 同 codex-oauth（分流骨架两类型

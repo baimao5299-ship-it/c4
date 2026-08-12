@@ -29,19 +29,16 @@ import (
 
 // errCodexImagesNotIntegrated 501：codex 适配层未装配（SetCodex 未调用——main
 // 装配缺失的显式拒绝，不让凭据缺失路径误报 502/network）。
-var errCodexImagesNotIntegrated = &formatError{status: http.StatusNotImplemented, msg: "codex image generation not integrated yet (SDK wiring in T2/T3)"}
-
-// errCodexImagesStreamNotIntegrated 501：codex 类型流式生图未接（T3 spec 边界
-// ——流式 GenerateImageStream 在 T3 接入；本 task 非流式 only，流式请求显式
-// 拒绝 + recordRejected 审计，与未接入前同语义）。
-var errCodexImagesStreamNotIntegrated = &formatError{status: http.StatusNotImplemented, msg: "codex image streaming not integrated yet (SDK wiring in T3)"}
+var errCodexImagesNotIntegrated = &formatError{status: http.StatusNotImplemented, msg: "codex image generation unavailable (adapter not wired)"}
 
 // codexImagesCaller 是 codex-oauth/codex-pat 类型的 images 端点调用器（T2 §2，
 // B 的 501 分流骨架落位）：网关解析请求体 → domain.ImageGenParams → 适配层
 // GenerateImage（SDK 直连 codex images 端点，非流式）→ 响应统一走
 // domain.ImageResponse 口径 → wire 序列化转发 + 计费提取（复用 C 的
 // image_usage 提取纯函数——data 长 = 张数 + usage image_tokens → ImageCost，
-// 与 api_key 直连同口径）。流式（GenerateImageStream）本 task 不做（T3）。
+// 与 api_key 直连同口径）。流式（T3）：GenerateImageStream 合成事件流 →
+// streamImageGeneration（SSE 透传/keepalive/流终+abort 计费——T3 生产接线
+// 点，同签名直赋适配层方法）。
 // codexImagesCaller 无路径字段（评审 P3-1）：上游端点由 SDK 按参数派生
 // （ImageGenParams.Images 非空 → edits，否则 generations）——与
 // imagesCaller.path（直连面拼 URL）不同，codex 面端点选择归 SDK。
@@ -57,14 +54,6 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 	contentType := r.Header.Get("Content-Type")
 	if isMultipartForm(contentType) {
 		reqModel = imagesMultipartModel(body, contentType)
-	}
-	if stream {
-		// 流式（T3 未接——spec 边界）：显式 501 + recordRejected 审计（评审
-		// P2-1 语义保留：post-Select 拒绝一律 err_logs）。
-		p.sched.Release(sel.AccountID)
-		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexImagesStreamNotIntegrated.msg)
-		writeErr(w, errCodexImagesStreamNotIntegrated)
-		return 0, nil, true, nil
 	}
 	if p.codex == nil {
 		// 适配层未装配（SetCodex 未调用）：显式 501（防 nil 误走凭据缺失 502）。
@@ -103,6 +92,12 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 		return 0, nil, true, nil
 	}
 	cred2.BaseURL = baseURL
+	if stream {
+		// 流式（T3 生产接线——同签名直赋适配层 GenerateImageStream）：参数/
+		// 凭据派生与上共用，事件流 → streamImageGeneration（SSE 透传 + 首事件
+		// 头 + keepalive ": ping" + completed 帧 + 流终/abort 计费，全在其内）。
+		return p.streamImageGeneration(ctx, w, r, reqID, groupID, start, sel, reqModel, &cred2, params, p.codex.GenerateImageStream)
+	}
 	img, err := p.codex.GenerateImage(ctx, &cred2, params)
 	if err != nil {
 		// 错误分类（骨架 statusOf/upstreamBody 零改动复用——信封协议）：

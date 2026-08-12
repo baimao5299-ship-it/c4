@@ -82,9 +82,8 @@ func newImageStreamTestProxy(t *testing.T, hooks *BillingHooks) (*Proxy, *captur
 	store := &captureLogStore{}
 	if hooks == nil {
 		hooks = &BillingHooks{
-			Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}},
-			ImagePrices: &fakeImagePriceLookup{m: imageTestPrices()},
-			Balances:    billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
+			Prices:   &fakePriceLookup{m: map[string]*domain.Pricing{}, im: imageTestPrices()},
+			Balances: billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
 		}
 	}
 	p := newTestProxyBillingLogs(t, up.URL, nil, nil, store)
@@ -359,9 +358,8 @@ func TestStreamImageBillingNoPrice(t *testing.T) {
 	t.Cleanup(up.Close)
 	store := &captureLogStore{}
 	hooks := &BillingHooks{
-		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}},
-		ImagePrices: &fakeImagePriceLookup{m: map[string]*domain.ImagePrice{}},
-		Balances:    billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
+		Prices:   &fakePriceLookup{m: map[string]*domain.Pricing{}, im: map[string]*domain.ImagePrice{}},
+		Balances: billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
 	}
 	p := newTestProxyBillingLogs(t, up.URL, nil, nil, store)
 	p.bill = hooks
@@ -388,9 +386,8 @@ func TestStreamImageGroupMultiplier(t *testing.T) {
 	}, nil)
 	require.NoError(t, bal.Reload(context.Background()))
 	hooks := &BillingHooks{
-		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}},
-		ImagePrices: &fakeImagePriceLookup{m: imageTestPrices()},
-		Balances:    bal,
+		Prices:   &fakePriceLookup{m: map[string]*domain.Pricing{}, im: imageTestPrices()},
+		Balances: bal,
 	}
 	p := newTestProxyBillingLogs(t, up.URL, nil, nil, store)
 	p.bill = hooks

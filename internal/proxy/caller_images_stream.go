@@ -15,10 +15,10 @@ import (
 	"github.com/is7qin/c3api/internal/scheduler"
 )
 
-// imageStreamGenerator 流式生图能力——T2 适配层 sdkbridge.GenerateImageStream
+// imageStreamGenerator 流式生图能力——sdkbridge.Codex.GenerateImageStream
 // 同签名（cred → Auth 缓存 / 信封包装 / fatal 统一回调全在适配层内，网关侧只
-// 消费本签名）。生产装配传 sdkbridge.GenerateImageStream（T2 合入后接线）；
-// 测试传 fake 替身（不落生产代码——T3 与 T2 并行实现期的联调面）。
+// 消费本签名）。生产接线：codexImagesCaller stream 分支同签名直赋适配层方法
+// （T3 接线提交）；单测传 fake 替身（替身不落生产代码——调用面独立验证）。
 type imageStreamGenerator func(ctx context.Context, cred *domain.AccountCredential, p *domain.ImageGenParams, fn func(domain.ImageStreamEvent) error) error
 
 // streamImageGeneration codex 类型流式生图分支（T3——caller_images 流式面）：
