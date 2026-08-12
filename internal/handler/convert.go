@@ -208,6 +208,63 @@ func multI64ToNormalPtr(v *int64) *float64 {
 	return &f
 }
 
+// --- 图片价格 API 边界换算（Task A；单位规则与 pricings 不同，独立函数防误用） ---
+//
+// 1 USD = 100,000 毫分。token 价：per-token USD ×1e11 → 毫分/1M image tokens
+// （与 pricings 的 usdToMillis ×1e5 差 6 个数量级——**禁混用 usdToMillis**）；
+// per-image 价：USD/张 ×1e5 → 毫分/张（系数与 usdToMillis 相同但单位不同：
+// 毫分/张不走 /1e6 除法，独立函数自文档化）。
+
+// usdPerMillionToMillis USD/1M → 毫分/1M（×1e11；math.Round 消除浮点取整误差）。
+func usdPerMillionToMillis(usd float64) int64 { return int64(math.Round(usd * 1e11)) }
+
+// millisPerMillionToUSD 毫分/1M → USD/1M（/1e11；API 展示换算）。
+func millisPerMillionToUSD(millis int64) float64 { return float64(millis) / 1e11 }
+
+// usdPerImageToMilli USD/张 → 毫分/张（×1e5；与 token 价的 ×1e11 不同换算系，
+// 与 usdToMillis 同系数但单位语义独立——禁混用）。
+func usdPerImageToMilli(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
+
+// milliPerImageToUSD 毫分/张 → USD/张（/1e5；API 展示换算）。
+func milliPerImageToUSD(millis int64) float64 { return float64(millis) / 1e5 }
+
+// usdPerMillionToMillisPtr *float64（USD/1M）→ *int64（毫分/1M）；nil 透传
+// （缺省 = 清空该分量）。
+func usdPerMillionToMillisPtr(v *float64) *int64 {
+	if v == nil {
+		return nil
+	}
+	i := usdPerMillionToMillis(*v)
+	return &i
+}
+
+// millisPerMillionToUSDPtr *int64（毫分/1M）→ *float64（USD/1M）；nil 透传。
+func millisPerMillionToUSDPtr(v *int64) *float64 {
+	if v == nil {
+		return nil
+	}
+	f := millisPerMillionToUSD(*v)
+	return &f
+}
+
+// usdPerImageToMilliPtr *float64（USD/张）→ *int64（毫分/张）；nil 透传。
+func usdPerImageToMilliPtr(v *float64) *int64 {
+	if v == nil {
+		return nil
+	}
+	i := usdPerImageToMilli(*v)
+	return &i
+}
+
+// milliPerImageToUSDPtr *int64（毫分/张）→ *float64（USD/张）；nil 透传。
+func milliPerImageToUSDPtr(v *int64) *float64 {
+	if v == nil {
+		return nil
+	}
+	f := milliPerImageToUSD(*v)
+	return &f
+}
+
 // normalToMultI64Ptr *float64（正常值）→ *int64（万分数）；nil 透传。
 func normalToMultI64Ptr(v *float64) *int64 {
 	if v == nil {

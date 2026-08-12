@@ -6,11 +6,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"sync"
+
+	"entgo.io/ent"
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/imageprice"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/pricing"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
@@ -23,12 +30,6 @@ import (
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
 	"github.com/is7qin/c3api/internal/ent/user"
-	"reflect"
-	"sync"
-
-	"entgo.io/ent"
-	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -94,6 +95,7 @@ func checkColumn(t, c string) error {
 			errlog.Table:          errlog.ValidColumn,
 			group.Table:           group.ValidColumn,
 			groupassignment.Table: groupassignment.ValidColumn,
+			imageprice.Table:      imageprice.ValidColumn,
 			key.Table:             key.ValidColumn,
 			pricing.Table:         pricing.ValidColumn,
 			redemptioncode.Table:  redemptioncode.ValidColumn,

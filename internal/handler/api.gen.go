@@ -166,10 +166,22 @@ const (
 	GetGroupsParamsOrderDesc GetGroupsParamsOrder = "desc"
 )
 
+// Defines values for GetImagePriceParamsSource.
+const (
+	GetImagePriceParamsSourceLitellm GetImagePriceParamsSource = "litellm"
+	GetImagePriceParamsSourceManual  GetImagePriceParamsSource = "manual"
+)
+
+// Defines values for GetImagePriceParamsOrder.
+const (
+	GetImagePriceParamsOrderAsc  GetImagePriceParamsOrder = "asc"
+	GetImagePriceParamsOrderDesc GetImagePriceParamsOrder = "desc"
+)
+
 // Defines values for GetPricingParamsSource.
 const (
-	GetPricingParamsSourceLitellm GetPricingParamsSource = "litellm"
-	GetPricingParamsSourceManual  GetPricingParamsSource = "manual"
+	Litellm GetPricingParamsSource = "litellm"
+	Manual  GetPricingParamsSource = "manual"
 )
 
 // Defines values for GetPricingParamsOrder.
@@ -211,8 +223,8 @@ const (
 
 // Defines values for GetUsersParamsOrder.
 const (
-	GetUsersParamsOrderAsc  GetUsersParamsOrder = "asc"
-	GetUsersParamsOrderDesc GetUsersParamsOrder = "desc"
+	Asc  GetUsersParamsOrder = "asc"
+	Desc GetUsersParamsOrder = "desc"
 )
 
 // Account defines model for Account.
@@ -525,6 +537,43 @@ type GroupProtocolConvert string
 // GroupVisibility defines model for GroupVisibility.
 type GroupVisibility string
 
+// ImagePrice defines model for ImagePrice.
+type ImagePrice struct {
+	CreatedAt time.Time `json:"CreatedAt"`
+
+	// InputImageTokenPricePerMillion image token 输入价（USD/1M image tokens；内部存储毫分——per-token USD ×1e11 换算，1 USD = 100
+	InputImageTokenPricePerMillion *float64 `json:"InputImageTokenPricePerMillion"`
+
+	// Model 模型名（与 pricings.model 同口径）
+	Model string `json:"Model"`
+
+	// OutputCostPerImage 每张图价（USD/张；内部存储毫分——×1e5 换算，**与 token 价不同换算系**；计费不走 /1e6 除法）；null = 不启用按张分量
+	OutputCostPerImage *float64 `json:"OutputCostPerImage"`
+
+	// OutputImageTokenPricePerMillion image token 输出价（USD/1M image tokens；内部存储毫分——per-token USD ×1e11 换算）；null = 无该分量价
+	OutputImageTokenPricePerMillion *float64      `json:"OutputImageTokenPricePerMillion"`
+	Source                          PricingSource `json:"Source"`
+	UpdatedAt                       time.Time     `json:"UpdatedAt"`
+}
+
+// ImagePriceListResponse defines model for ImagePriceListResponse.
+type ImagePriceListResponse struct {
+	Rows  []ImagePrice `json:"rows"`
+	Total int64        `json:"total"`
+}
+
+// ImagePriceUpsert defines model for ImagePriceUpsert.
+type ImagePriceUpsert struct {
+	// InputImageTokenPricePerMillion image token 输入价（USD/1M image tokens；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+	InputImageTokenPricePerMillion *float64 `json:"input_image_token_price_per_million"`
+
+	// OutputCostPerImage 每张图价（USD/张；API 边界 ×1e5 → 毫分/张——**禁混用 ×1e11 换算**）；缺省/null = 清空该分量
+	OutputCostPerImage *float64 `json:"output_cost_per_image"`
+
+	// OutputImageTokenPricePerMillion image token 输出价（USD/1M image tokens；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+	OutputImageTokenPricePerMillion *float64 `json:"output_image_token_price_per_million"`
+}
+
 // LogsResponse defines model for LogsResponse.
 type LogsResponse struct {
 	// NextCursor 下一页游标（本页最后一条 id）；null = 无更多行
@@ -612,13 +661,19 @@ type PricingSource string
 
 // PricingSyncResponse defines model for PricingSyncResponse.
 type PricingSyncResponse struct {
+	// ImageRows 拉取到的有效 image 价行数（Task A 双线）
+	ImageRows *int `json:"image_rows,omitempty"`
+
+	// ImageUpdated image 价 upsert 落库数（manual 行不计）
+	ImageUpdated *int `json:"image_updated,omitempty"`
+
 	// Rows 拉取到的有效模型行数
 	Rows int `json:"rows"`
 
-	// Skipped 解析时跳过的非法行数
+	// Skipped 解析时跳过的非法条目数（文本价与 image 价均无效，计一次）
 	Skipped int `json:"skipped"`
 
-	// Updated upsert 落库数（manual 行不计）
+	// Updated 文本价 upsert 落库数（manual 行不计）
 	Updated int `json:"updated"`
 }
 
@@ -1048,6 +1103,22 @@ type GetGroupsParams struct {
 // GetGroupsParamsOrder defines parameters for GetGroups.
 type GetGroupsParamsOrder string
 
+// GetImagePriceParams defines parameters for GetImagePrice.
+type GetImagePriceParams struct {
+	Page     *int                       `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                       `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Source   *GetImagePriceParamsSource `form:"source,omitempty" json:"source,omitempty"`
+	Model    *string                    `form:"model,omitempty" json:"model,omitempty"`
+	Sort     *string                    `form:"sort,omitempty" json:"sort,omitempty"`
+	Order    *GetImagePriceParamsOrder  `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetImagePriceParamsSource defines parameters for GetImagePrice.
+type GetImagePriceParamsSource string
+
+// GetImagePriceParamsOrder defines parameters for GetImagePrice.
+type GetImagePriceParamsOrder string
+
 // GetPricingParams defines parameters for GetPricing.
 type GetPricingParams struct {
 	Page     *int                    `form:"page,omitempty" json:"page,omitempty"`
@@ -1169,6 +1240,9 @@ type PutGroupsIdJSONRequestBody = GroupCreate
 // PutGroupsIdAssignmentsJSONRequestBody defines body for PutGroupsIdAssignments for application/json ContentType.
 type PutGroupsIdAssignmentsJSONRequestBody = GroupAssignmentsBody
 
+// PutImagePriceModelJSONRequestBody defines body for PutImagePriceModel for application/json ContentType.
+type PutImagePriceModelJSONRequestBody = ImagePriceUpsert
+
 // PutPricingModelJSONRequestBody defines body for PutPricingModel for application/json ContentType.
 type PutPricingModelJSONRequestBody = PricingUpsert
 
@@ -1279,6 +1353,15 @@ type ServerInterface interface {
 	// 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
 	// (PUT /groups/{id}/assignments)
 	PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64)
+	// 图片生成价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+	// (GET /image-price)
+	GetImagePrice(w http.ResponseWriter, r *http.Request, params GetImagePriceParams)
+	// 删除手动图片价格（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+	// (DELETE /image-price/{model})
+	DeleteImagePriceModel(w http.ResponseWriter, r *http.Request, model string)
+	// 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行）
+	// (PUT /image-price/{model})
+	PutImagePriceModel(w http.ResponseWriter, r *http.Request, model string)
 	// 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
 	// (GET /pricing)
 	GetPricing(w http.ResponseWriter, r *http.Request, params GetPricingParams)
@@ -1492,6 +1575,24 @@ func (_ Unimplemented) GetGroupsIdAssignments(w http.ResponseWriter, r *http.Req
 // 设置组的授予用户（platform_admin；替换语义：未列出即撤销，空数组 = 清空）
 // (PUT /groups/{id}/assignments)
 func (_ Unimplemented) PutGroupsIdAssignments(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 图片生成价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+// (GET /image-price)
+func (_ Unimplemented) GetImagePrice(w http.ResponseWriter, r *http.Request, params GetImagePriceParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 删除手动图片价格（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+// (DELETE /image-price/{model})
+func (_ Unimplemented) DeleteImagePriceModel(w http.ResponseWriter, r *http.Request, model string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行）
+// (PUT /image-price/{model})
+func (_ Unimplemented) PutImagePriceModel(w http.ResponseWriter, r *http.Request, model string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2290,6 +2391,123 @@ func (siw *ServerInterfaceWrapper) PutGroupsIdAssignments(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutGroupsIdAssignments(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetImagePrice operation middleware
+func (siw *ServerInterfaceWrapper) GetImagePrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetImagePriceParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "source" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "source", r.URL.Query(), &params.Source)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetImagePrice(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteImagePriceModel operation middleware
+func (siw *ServerInterfaceWrapper) DeleteImagePriceModel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "model" -------------
+	var model string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "model", chi.URLParam(r, "model"), &model, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteImagePriceModel(w, r, model)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutImagePriceModel operation middleware
+func (siw *ServerInterfaceWrapper) PutImagePriceModel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "model" -------------
+	var model string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "model", chi.URLParam(r, "model"), &model, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutImagePriceModel(w, r, model)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3434,6 +3652,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/groups/{id}/assignments", wrapper.PutGroupsIdAssignments)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/image-price", wrapper.GetImagePrice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/image-price/{model}", wrapper.DeleteImagePriceModel)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/image-price/{model}", wrapper.PutImagePriceModel)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/pricing", wrapper.GetPricing)

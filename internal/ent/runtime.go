@@ -3,10 +3,13 @@
 package ent
 
 import (
+	"time"
+
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/imageprice"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/pricing"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
@@ -19,7 +22,6 @@ import (
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
 	"github.com/is7qin/c3api/internal/ent/user"
-	"time"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -94,6 +96,18 @@ func init() {
 	groupassignmentDescCreatedAt := groupassignmentFields[4].Descriptor()
 	// groupassignment.DefaultCreatedAt holds the default value on creation for the created_at field.
 	groupassignment.DefaultCreatedAt = groupassignmentDescCreatedAt.Default.(func() time.Time)
+	imagepriceFields := schema.ImagePrice{}.Fields()
+	_ = imagepriceFields
+	// imagepriceDescCreatedAt is the schema descriptor for created_at field.
+	imagepriceDescCreatedAt := imagepriceFields[7].Descriptor()
+	// imageprice.DefaultCreatedAt holds the default value on creation for the created_at field.
+	imageprice.DefaultCreatedAt = imagepriceDescCreatedAt.Default.(func() time.Time)
+	// imagepriceDescUpdatedAt is the schema descriptor for updated_at field.
+	imagepriceDescUpdatedAt := imagepriceFields[8].Descriptor()
+	// imageprice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	imageprice.DefaultUpdatedAt = imagepriceDescUpdatedAt.Default.(func() time.Time)
+	// imageprice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	imageprice.UpdateDefaultUpdatedAt = imagepriceDescUpdatedAt.UpdateDefault.(func() time.Time)
 	keyFields := schema.Key{}.Fields()
 	_ = keyFields
 	// keyDescMaxConcurrency is the schema descriptor for max_concurrency field.

@@ -11,11 +11,16 @@ import (
 
 	"github.com/is7qin/c3api/internal/ent/migrate"
 
+	"entgo.io/ent"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/imageprice"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/pricing"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
@@ -28,11 +33,6 @@ import (
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
 	"github.com/is7qin/c3api/internal/ent/user"
-
-	"entgo.io/ent"
-	"entgo.io/ent/dialect"
-	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 // Client is the client that holds all ent builders.
@@ -50,6 +50,8 @@ type Client struct {
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
 	GroupAssignment *GroupAssignmentClient
+	// ImagePrice is the client for interacting with the ImagePrice builders.
+	ImagePrice *ImagePriceClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
 	// Pricing is the client for interacting with the Pricing builders.
@@ -90,6 +92,7 @@ func (c *Client) init() {
 	c.ErrLog = NewErrLogClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.GroupAssignment = NewGroupAssignmentClient(c.config)
+	c.ImagePrice = NewImagePriceClient(c.config)
 	c.Key = NewKeyClient(c.config)
 	c.Pricing = NewPricingClient(c.config)
 	c.RedemptionCode = NewRedemptionCodeClient(c.config)
@@ -199,6 +202,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ErrLog:          NewErrLogClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
+		ImagePrice:      NewImagePriceClient(cfg),
 		Key:             NewKeyClient(cfg),
 		Pricing:         NewPricingClient(cfg),
 		RedemptionCode:  NewRedemptionCodeClient(cfg),
@@ -235,6 +239,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ErrLog:          NewErrLogClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
+		ImagePrice:      NewImagePriceClient(cfg),
 		Key:             NewKeyClient(cfg),
 		Pricing:         NewPricingClient(cfg),
 		RedemptionCode:  NewRedemptionCodeClient(cfg),
@@ -276,9 +281,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Account, c.AccountExt, c.ErrLog, c.Group, c.GroupAssignment, c.Key, c.Pricing,
-		c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting, c.TempBalance,
-		c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
+		c.Account, c.AccountExt, c.ErrLog, c.Group, c.GroupAssignment, c.ImagePrice,
+		c.Key, c.Pricing, c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting,
+		c.TempBalance, c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -288,9 +293,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Account, c.AccountExt, c.ErrLog, c.Group, c.GroupAssignment, c.Key, c.Pricing,
-		c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting, c.TempBalance,
-		c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
+		c.Account, c.AccountExt, c.ErrLog, c.Group, c.GroupAssignment, c.ImagePrice,
+		c.Key, c.Pricing, c.RedemptionCode, c.RedemptionUse, c.Rule, c.Setting,
+		c.TempBalance, c.Template, c.TemplateExt, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -309,6 +314,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Group.mutate(ctx, m)
 	case *GroupAssignmentMutation:
 		return c.GroupAssignment.mutate(ctx, m)
+	case *ImagePriceMutation:
+		return c.ImagePrice.mutate(ctx, m)
 	case *KeyMutation:
 		return c.Key.mutate(ctx, m)
 	case *PricingMutation:
@@ -1144,6 +1151,139 @@ func (c *GroupAssignmentClient) mutate(ctx context.Context, m *GroupAssignmentMu
 		return (&GroupAssignmentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown GroupAssignment mutation op: %q", m.Op())
+	}
+}
+
+// ImagePriceClient is a client for the ImagePrice schema.
+type ImagePriceClient struct {
+	config
+}
+
+// NewImagePriceClient returns a client for the ImagePrice from the given config.
+func NewImagePriceClient(c config) *ImagePriceClient {
+	return &ImagePriceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `imageprice.Hooks(f(g(h())))`.
+func (c *ImagePriceClient) Use(hooks ...Hook) {
+	c.hooks.ImagePrice = append(c.hooks.ImagePrice, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `imageprice.Intercept(f(g(h())))`.
+func (c *ImagePriceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ImagePrice = append(c.inters.ImagePrice, interceptors...)
+}
+
+// Create returns a builder for creating a ImagePrice entity.
+func (c *ImagePriceClient) Create() *ImagePriceCreate {
+	mutation := newImagePriceMutation(c.config, OpCreate)
+	return &ImagePriceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ImagePrice entities.
+func (c *ImagePriceClient) CreateBulk(builders ...*ImagePriceCreate) *ImagePriceCreateBulk {
+	return &ImagePriceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ImagePriceClient) MapCreateBulk(slice any, setFunc func(*ImagePriceCreate, int)) *ImagePriceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ImagePriceCreateBulk{err: fmt.Errorf("calling to ImagePriceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ImagePriceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ImagePriceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ImagePrice.
+func (c *ImagePriceClient) Update() *ImagePriceUpdate {
+	mutation := newImagePriceMutation(c.config, OpUpdate)
+	return &ImagePriceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ImagePriceClient) UpdateOne(_m *ImagePrice) *ImagePriceUpdateOne {
+	mutation := newImagePriceMutation(c.config, OpUpdateOne, withImagePrice(_m))
+	return &ImagePriceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ImagePriceClient) UpdateOneID(id int64) *ImagePriceUpdateOne {
+	mutation := newImagePriceMutation(c.config, OpUpdateOne, withImagePriceID(id))
+	return &ImagePriceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ImagePrice.
+func (c *ImagePriceClient) Delete() *ImagePriceDelete {
+	mutation := newImagePriceMutation(c.config, OpDelete)
+	return &ImagePriceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ImagePriceClient) DeleteOne(_m *ImagePrice) *ImagePriceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ImagePriceClient) DeleteOneID(id int64) *ImagePriceDeleteOne {
+	builder := c.Delete().Where(imageprice.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ImagePriceDeleteOne{builder}
+}
+
+// Query returns a query builder for ImagePrice.
+func (c *ImagePriceClient) Query() *ImagePriceQuery {
+	return &ImagePriceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeImagePrice},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ImagePrice entity by its id.
+func (c *ImagePriceClient) Get(ctx context.Context, id int64) (*ImagePrice, error) {
+	return c.Query().Where(imageprice.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ImagePriceClient) GetX(ctx context.Context, id int64) *ImagePrice {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ImagePriceClient) Hooks() []Hook {
+	return c.hooks.ImagePrice
+}
+
+// Interceptors returns the client interceptors.
+func (c *ImagePriceClient) Interceptors() []Interceptor {
+	return c.inters.ImagePrice
+}
+
+func (c *ImagePriceClient) mutate(ctx context.Context, m *ImagePriceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ImagePriceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ImagePriceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ImagePriceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ImagePriceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ImagePrice mutation op: %q", m.Op())
 	}
 }
 
@@ -2922,12 +3062,12 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, AccountExt, ErrLog, Group, GroupAssignment, Key, Pricing,
+		Account, AccountExt, ErrLog, Group, GroupAssignment, ImagePrice, Key, Pricing,
 		RedemptionCode, RedemptionUse, Rule, Setting, TempBalance, Template,
 		TemplateExt, UsageLog, UsageStat, User []ent.Hook
 	}
 	inters struct {
-		Account, AccountExt, ErrLog, Group, GroupAssignment, Key, Pricing,
+		Account, AccountExt, ErrLog, Group, GroupAssignment, ImagePrice, Key, Pricing,
 		RedemptionCode, RedemptionUse, Rule, Setting, TempBalance, Template,
 		TemplateExt, UsageLog, UsageStat, User []ent.Interceptor
 	}

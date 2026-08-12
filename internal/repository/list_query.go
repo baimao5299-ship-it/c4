@@ -13,6 +13,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/imageprice"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/pricing"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
@@ -24,14 +25,14 @@ import (
 // ListQuery 列表查询：分页/筛选/排序。Sort 为白名单内字段名（如 "name"），
 // 非法值返回 ErrInvalidSort；Order 仅 "asc"/"desc"（空 = desc）。
 type ListQuery struct {
-	Limit         int      // <=0 → 20
-	Offset        int      // <0 → 0
-	Name          string   // 模糊匹配（不区分大小写）
-	Email         string   // 用户专属：邮箱模糊匹配
-	Sort          string   // 空 → id
-	Order         string   // asc/desc；空 → desc
-	StatusList    []string // 账号专属：多值 status
-	TemplateID    int64    // 账号专属：0 = 不过滤
+	Limit      int      // <=0 → 20
+	Offset     int      // <0 → 0
+	Name       string   // 模糊匹配（不区分大小写）
+	Email      string   // 用户专属：邮箱模糊匹配
+	Sort       string   // 空 → id
+	Order      string   // asc/desc；空 → desc
+	StatusList []string // 账号专属：多值 status
+	TemplateID int64    // 账号专属：0 = 不过滤
 }
 
 var ErrInvalidSort = errors.New("invalid sort field")
@@ -101,5 +102,9 @@ var (
 	pricingSortFields = map[string]string{
 		"id": pricing.FieldID, "model": pricing.FieldModel,
 		"updated_at": pricing.FieldUpdatedAt,
+	}
+	imagePriceSortFields = map[string]string{
+		"id": imageprice.FieldID, "model": imageprice.FieldModel,
+		"updated_at": imageprice.FieldUpdatedAt,
 	}
 )

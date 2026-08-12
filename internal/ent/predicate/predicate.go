@@ -21,6 +21,9 @@ type Group func(*sql.Selector)
 // GroupAssignment is the predicate function for groupassignment builders.
 type GroupAssignment func(*sql.Selector)
 
+// ImagePrice is the predicate function for imageprice builders.
+type ImagePrice func(*sql.Selector)
+
 // Key is the predicate function for key builders.
 type Key func(*sql.Selector)
 
