@@ -374,7 +374,6 @@ func TestStripImageToolsUnicodeEscapedToolType(t *testing.T) {
 	// 子串 → 预筛 \u 路径 → 解码判定 → 剥除。
 	body := []byte(`{"model":"m","tools":[{"type":"\u0069mage_generation_tool","namespace":"image_gen"},{"type":"function","name":"shell","parameters":{"type":"object"}}],"tool_choice":{"type":"image_generation_tool"}}`)
 	out := stripImageTools(body)
-	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.True(t, json.Valid(out), "输出必须合法 JSON")
 	var m map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(out, &m))
@@ -391,7 +390,6 @@ func TestStripImageToolsBackslashUPrefixLiteral(t *testing.T) {
 	// ≠ 图像工具标识 → 保留（解码器 \\ 前缀感知防漏剥/错剥）。
 	body := []byte(`{"model":"m","tools":[{"type":"\\u0069mage_generation_tool"},{"type":"function","name":"shell","parameters":{"type":"object"}}]}`)
 	out := stripImageTools(body)
-	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.True(t, json.Valid(out), "输出必须合法 JSON")
 	var m map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(out, &m))
@@ -400,16 +398,20 @@ func TestStripImageToolsBackslashUPrefixLiteral(t *testing.T) {
 	require.Len(t, tools, 2, "字面 \\u 形态非图像工具 → 保留")
 }
 
-func TestStripImageToolsAllStrippedAdjacentKeys(t *testing.T) {
-	// 双删组合（三位置逗号）：tools 与 tool_choice 相邻双双全剥——共享逗号
-	// 区间重叠须合并（一次性计算全部区间后统一拼接）。
+func TestStripImageToolsAllStrippedKeyCombos(t *testing.T) {
+	// 双删组合（三位置逗号 + run 合并/分删）：tools 与 tool_choice 双双全剥。
+	// 相邻（共享逗号区间重叠 1 字节）→ run 合并重算边界；非相邻/带前导键 →
+	// 分删各自三位置规则（一次性计算全部区间后统一拼接）。
 	cases := []struct {
-		name string
-		body string
+		name  string
+		body  string
+		model bool // 期望保留 model 键（false = 全剥后空对象）
 	}{
-		{name: "tools first tc second", body: `{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"},"model":"m"}`},
-		{name: "tc first tools second", body: `{"tool_choice":{"type":"image_generation_tool"},"tools":[{"type":"image_generation_tool"}],"model":"m"}`},
+		{name: "tools first tc second", body: `{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"},"model":"m"}`, model: true},
+		{name: "tc first tools second", body: `{"tool_choice":{"type":"image_generation_tool"},"tools":[{"type":"image_generation_tool"}],"model":"m"}`, model: true},
 		{name: "only keys", body: `{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"}}`},
+		{name: "model first", body: `{"model":"m","tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"}}`, model: true},
+		{name: "non adjacent", body: `{"tools":[{"type":"image_generation_tool"}],"model":"m","tool_choice":{"type":"image_generation_tool"}}`, model: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -421,10 +423,10 @@ func TestStripImageToolsAllStrippedAdjacentKeys(t *testing.T) {
 			require.False(t, ok, "全剥 → tools 字段删除")
 			_, ok = m["tool_choice"]
 			require.False(t, ok, "悬挂 tool_choice 同步删除")
-			if len(tc.body) < len(`{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"},"model":"m"}`) {
-				require.Len(t, m, 0, "仅双键全剥 → 空对象")
-			} else {
+			if tc.model {
 				require.JSONEq(t, `"m"`, string(m["model"]), "非图像字段原样保留")
+			} else {
+				require.Len(t, m, 0, "仅双键全剥 → 空对象")
 			}
 		})
 	}
@@ -437,7 +439,6 @@ func TestStripImageTools50ToolsEquivalence(t *testing.T) {
 	out := stripImageTools(body)
 	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.NotSame(t, &body[0], &out[0], "命中且剥离 → 必须产出新帧")
-	require.True(t, json.Valid(out), "拼接输出必须合法 JSON")
 	var m map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(out, &m))
 	var tools []map[string]any
@@ -464,8 +465,9 @@ func TestStripImageToolsHitNoStripZeroAlloc(t *testing.T) {
 }
 
 func TestStripImageToolsStripAllocs(t *testing.T) {
-	// 命中且剥除路径 allocs ≤4（out 预分配 1 + stripped map 1 + iter 闭包
-	// 0-2——range-over-func 闭包分配为编译器行为非语言保证，实测记录）。
+	// 命中且剥除路径 allocs ≤4（out 预分配 1 + idsBuf/keptBuf 栈数组 0-2
+	// （50-tool 溢栈转堆 2，实测 3 allocs/op）+ iter 闭包 0——闭包分配为
+	// 编译器行为非语言保证，实测记录）。
 	body := []byte(`{"model":"m","tools":[{"type":"function","name":"shell","parameters":{"type":"object"}},{"type":"image_generation_tool","namespace":"image_gen"}]}`)
 	allocs := testing.AllocsPerRun(200, func() {
 		out := stripImageTools(body)

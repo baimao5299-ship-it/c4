@@ -60,9 +60,10 @@ func (r topLevelRange) delRange() (start, end int) {
 // scanTopLevelKeys 从 body 扫顶层键，定位 "tools" 与 "tool_choice" 键的
 // 键名区间 + 值区间 + 相邻逗号。键名精确匹配（字符串后跳过空白再冒号——
 // `"tools" : [` 变体命中）；字符串内容含 "tools" 字样不误定位；嵌套值正确
-// 跳过；同名重复键取最后一次出现（对齐 json.Unmarshal map 语义——重复键
-// 后者胜）。顶层非对象（数组/标量）或结构非法 → 双键缺省（原样转发语义，
-// 行为定义）。
+// 跳过；同名重复键取最后一次出现（对齐 json.Unmarshal map 语义——该对齐
+// 仅对值选择成立：剥离仅删末次出现区间，首次残留数组不含图像工具——
+// 方向 benign）。顶层非对象（数组/标量）或结构非法 → 双键缺省（原样转发
+// 语义，行为定义）。
 func scanTopLevelKeys(body []byte) (tools, toolChoice topLevelRange, toolsOK, toolChoiceOK bool) {
 	i := skipSpace(body, 0)
 	if i >= len(body) || body[i] != '{' {

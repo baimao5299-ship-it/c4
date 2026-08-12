@@ -46,6 +46,10 @@ import "bytes"
 // 指向它的 tool_choice 会被误判悬挂而移除。实测 codex 客户端无此形态（工具
 // 名称空间由 namespace 隔离），误判影响 = tool_choice 退回 auto（仍可调用
 // 全部保留工具），故接受。
+//
+// 已知边角（P3-1 标注）：键名 \u 转义（如 "type" 键）不匹配剥离判定——
+// 真实序列化器（serde_json 等）不产生转义 ASCII 键名，wire 不可达；如防
+// 绕过需求则补键名 unescape（当前不做）。
 func stripImageTools(body []byte) []byte {
 	if !bytes.Contains(body, []byte("image")) {
 		return body // 预筛：无命中零解析零分配直转
@@ -231,12 +235,13 @@ func collectToolIDs(t ToolView, ids [][]byte) [][]byte {
 // （首字符 '{'）——type/name/namespace 值 ∈ 已剥工具标识集合 → 悬挂。字符串
 // 形（"auto"/"none"/"required"）恒非悬挂。
 //
-// 逻辑与现状 gjson 版完全等价（集合匹配语义——spec：tool_choice 悬挂逻辑
+// 判定等价于现状 gjson 版（对合法客户端输入——spec：tool_choice 悬挂逻辑
 // 零改动）；实现换为字节扫描（extractKeys 同款状态机，零分配）——与
-// collectToolIDs 的 []byte 标识集匹配，无需 string 转换（gjson 依赖随之
-// 移除，契合 spec 热路径"不做 gjson 依赖"裁决）。比较语义：tc 值经 \uXXXX
-// 解码（对齐提取侧），含其他转义的标识在两侧字节原样——与 gjson 全解码在
-// == 匹配上等价（见 extractKeys 注释）。
+// collectToolIDs 的 []byte 标识集匹配，无需 string 转换（strip 路径不再
+// 调用 gjson；模块级仍 11 文件使用）。病态输入（tc 键重复等）差异方向
+// 保守（不误删悬挂判定）。比较语义：tc 值经 \uXXXX 解码（对齐提取侧），
+// 含其他转义的标识在两侧字节原样——与 gjson 全解码在 == 匹配上等价
+// （见 extractKeys 注释）。
 func toolChoiceDangles(tc []byte, ids [][]byte) bool {
 	if len(tc) == 0 || tc[0] != '{' {
 		return false
