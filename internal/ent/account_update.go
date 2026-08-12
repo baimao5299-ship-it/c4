@@ -6,16 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/account"
-	"github.com/is7qin/c3api/internal/ent/accountext"
-	"github.com/is7qin/c3api/internal/ent/group"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/template"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/accountext"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/template"
 )
 
 // AccountUpdate is the builder for updating Account entities.
@@ -186,6 +186,26 @@ func (_u *AccountUpdate) SetNillableLastUsedAt(v *time.Time) *AccountUpdate {
 // ClearLastUsedAt clears the value of the "last_used_at" field.
 func (_u *AccountUpdate) ClearLastUsedAt() *AccountUpdate {
 	_u.mutation.ClearLastUsedAt()
+	return _u
+}
+
+// SetFailedAt sets the "failed_at" field.
+func (_u *AccountUpdate) SetFailedAt(v time.Time) *AccountUpdate {
+	_u.mutation.SetFailedAt(v)
+	return _u
+}
+
+// SetNillableFailedAt sets the "failed_at" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableFailedAt(v *time.Time) *AccountUpdate {
+	if v != nil {
+		_u.SetFailedAt(*v)
+	}
+	return _u
+}
+
+// ClearFailedAt clears the value of the "failed_at" field.
+func (_u *AccountUpdate) ClearFailedAt() *AccountUpdate {
+	_u.mutation.ClearFailedAt()
 	return _u
 }
 
@@ -416,6 +436,12 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.LastUsedAtCleared() {
 		_spec.ClearField(account.FieldLastUsedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.FailedAt(); ok {
+		_spec.SetField(account.FieldFailedAt, field.TypeTime, value)
+	}
+	if _u.mutation.FailedAtCleared() {
+		_spec.ClearField(account.FieldFailedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(account.FieldUpdatedAt, field.TypeTime, value)
@@ -726,6 +752,26 @@ func (_u *AccountUpdateOne) ClearLastUsedAt() *AccountUpdateOne {
 	return _u
 }
 
+// SetFailedAt sets the "failed_at" field.
+func (_u *AccountUpdateOne) SetFailedAt(v time.Time) *AccountUpdateOne {
+	_u.mutation.SetFailedAt(v)
+	return _u
+}
+
+// SetNillableFailedAt sets the "failed_at" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableFailedAt(v *time.Time) *AccountUpdateOne {
+	if v != nil {
+		_u.SetFailedAt(*v)
+	}
+	return _u
+}
+
+// ClearFailedAt clears the value of the "failed_at" field.
+func (_u *AccountUpdateOne) ClearFailedAt() *AccountUpdateOne {
+	_u.mutation.ClearFailedAt()
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *AccountUpdateOne) SetUpdatedAt(v time.Time) *AccountUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
@@ -983,6 +1029,12 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if _u.mutation.LastUsedAtCleared() {
 		_spec.ClearField(account.FieldLastUsedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.FailedAt(); ok {
+		_spec.SetField(account.FieldFailedAt, field.TypeTime, value)
+	}
+	if _u.mutation.FailedAtCleared() {
+		_spec.ClearField(account.FieldFailedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(account.FieldUpdatedAt, field.TypeTime, value)

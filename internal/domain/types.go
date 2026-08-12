@@ -214,9 +214,17 @@ type Account struct {
 	MaxConcurrency int
 	LastError      *string
 	LastUsedAt     *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DeletedAt      *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
+	// FailedAt SDK 上报的运行时失效时刻（account.failed_at 列，SDK 接入 T1——
+	// 用户裁决 2026-08-13：仅此一列；失效原因复用既有 LastError，两原因字段
+	// 并存会漂移）：nil = 未失效；非 nil = 账号级终止（凭据永久失效/上游封禁/
+	// 判死）的上报时刻。与 Status=disabled 语义分离：disabled = 管理面手动禁用；
+	// failed_at = 运行时失效，两者可并存（失效后管理员仍可手动处理；恢复 =
+	// 清 failed_at + last_error + 恢复调度，T5 细化）。调度器选号不读本字段
+	//（pickFrom 只跳 disabled——摘除必须落库 status）。
+	FailedAt  *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
 	// GroupIDs 写路径（创建/更新）专用：nil = 不设置/不变；非 nil = 替换账号
 	// 全部分组（含空数组 = 清空）。读路径忽略——编辑回显走 GetAccountGroups
 	// 独立查询（toDomainAccount 不填充该字段）。

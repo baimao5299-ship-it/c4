@@ -165,3 +165,20 @@ func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status 
 	_, err := u.Save(ctx)
 	return err
 }
+
+// SetAccountFailed 幂等写账号失效（SDK 接入 T1——统一失效回调处理链第一步）：
+// failed_at + last_error（失效原因文本，复用既有 last_error——用户裁决
+// 2026-08-13：两原因字段并存会漂移；失效后账号摘除不再被调度 → caller.go
+// 的普通失败写点不会覆盖失效原因，复用安全）首写生效——failed_at 已置（首次
+// 上报）→ 0 行不覆盖（保持首次失效时刻与原因；重复上报不重复写；T5 恢复由
+// 管理面清 failed_at + last_error）。不触碰 status（与 disabled 语义分离：
+// disabled = 管理面手动禁用；调度摘除走 scheduler.FailAccount 经 loader 落库）。
+// 账号不存在 → 0 行不报错（审计性写入，无对象可写；调度摘除亦会因快照外账号 no-op）。
+func (r *AccountRepo) SetAccountFailed(ctx context.Context, id int64, failedAt time.Time, reason string) error {
+	_, err := r.client.Account.Update().
+		Where(account.IDEQ(id), account.FailedAtIsNil()).
+		SetFailedAt(failedAt).
+		SetLastError(reason).
+		Save(ctx)
+	return err
+}
