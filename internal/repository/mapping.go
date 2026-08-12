@@ -115,6 +115,7 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 		Status: domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,
 		LastError: a.LastError, LastUsedAt: a.LastUsedAt,
+		FailedAt: a.FailedAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, DeletedAt: a.DeletedAt,
 	}
 }

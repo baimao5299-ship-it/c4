@@ -39,13 +39,13 @@ func init() {
 	// account.DefaultMaxConcurrency holds the default value on creation for the max_concurrency field.
 	account.DefaultMaxConcurrency = accountDescMaxConcurrency.Default.(int)
 	// accountDescUpdatedAt is the schema descriptor for updated_at field.
-	accountDescUpdatedAt := accountFields[10].Descriptor()
+	accountDescUpdatedAt := accountFields[11].Descriptor()
 	// account.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	account.DefaultUpdatedAt = accountDescUpdatedAt.Default.(func() time.Time)
 	// account.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	account.UpdateDefaultUpdatedAt = accountDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// accountDescCreatedAt is the schema descriptor for created_at field.
-	accountDescCreatedAt := accountFields[12].Descriptor()
+	accountDescCreatedAt := accountFields[13].Descriptor()
 	// account.DefaultCreatedAt holds the default value on creation for the created_at field.
 	account.DefaultCreatedAt = accountDescCreatedAt.Default.(func() time.Time)
 	errlogFields := schema.ErrLog{}.Fields()

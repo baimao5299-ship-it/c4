@@ -567,6 +567,38 @@ func (s *Scheduler) MarkResult(accountID int64, kind ResultKind, resetAt *time.T
 	s.rule.Enqueue(ev)
 }
 
+// FailAccount 账号失效摘除（SDK 接入 T1——统一失效回调处理链第二步，
+// sdkbridge.HandleFailure 调用；冷面低频）：快照置 StatusDisabled + last_error
+// 审计（失效原因摘要，域内截断 500）+ 阻塞入队回写 loader 持久化（重启快照
+// 重载后仍摘除——pickFrom 只跳 disabled 不查 failed_at，仅内存摘除会复活）。
+// 复用既有机制：pickFrom 过滤器（selection.go 只跳 disabled）与 MarkResult
+// 防复活守卫（置位后快照为 disabled，在途请求结果回流短路不投递规则事件）。
+// 与规则引擎动作（apply）同构但**不投递规则事件**：直接置快照 + 回写——失效
+// 是 SDK 上报的既成事实，不参与规则状态机（规则可能把它恢复 active）。
+// 回写经既有 writeback 合并管道（后写覆盖先写）落库，与在途 apply 回写不乱序；
+// 阻塞入队区别于普通回写的"队列满丢弃"策略：失效回写必须落库（丢弃 = 重启
+// 复活），冷面阻塞可接受。writebackLoop 未启动（未 Start）时入队不阻塞（缓冲
+// 4096）；进程退出竞态（循环已死且队列满）才阻塞——可接受。
+func (s *Scheduler) FailAccount(accountID int64, reason string) {
+	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
+	if !ok {
+		return
+	}
+	a, ok := byID[accountID]
+	if !ok {
+		return // 快照外账号（已移除/未知）：无状态可改，不投递回写（同 apply）
+	}
+	now := s.timeNow()
+	st := *a.statePtr()
+	st.status = domain.StatusDisabled
+	if t := domain.TruncateErrMsg(reason); t != "" {
+		st.lastError = &t
+	}
+	st.lastUsedAt = &now
+	a.state.Store(&st)
+	s.writeCh <- statusWrite{id: accountID, status: st.status, cooldown: st.cooldownUntil, lastErr: st.lastError, weight: nil}
+}
+
 // ruleKind 映射 ResultKind → 规则引擎事件类别。
 func ruleKind(k ResultKind) rule.Kind {
 	switch k {
@@ -613,6 +645,15 @@ func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *ti
 	a, ok := byID[aid]
 	if !ok {
 		return // 快照外账号（已移除/未知）：无状态可改，不投递回写
+	}
+	// 防复活（T1 P1 评审——探针确定性复现）：disabled 快照的事件回流不得覆盖
+	// 状态——规则事件可能在失效/禁用置位**之前**已入队（MarkResult 守卫只拦
+	// 置位后的新事件，拦不住入队在先的），apply 照常覆盖会把快照与 DB 回写
+	// 重置回 active/unhealthy，账号重新可调度。与 MarkResult 防复活守卫同哲学：
+	// disabled 后规则动作整体失效（含 cooldown/weight，且不投递回写——避免
+	// 旧状态经合并"后写覆盖先写"覆盖 DB 的 disabled）。
+	if a.statePtr().status == domain.StatusDisabled {
+		return
 	}
 	now := s.timeNow()
 	next := *a.statePtr()

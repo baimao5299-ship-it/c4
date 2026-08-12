@@ -3,11 +3,11 @@
 package account
 
 import (
-	"github.com/is7qin/c3api/internal/ent/predicate"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.
@@ -93,6 +93,11 @@ func LastError(v string) predicate.Account {
 // LastUsedAt applies equality check predicate on the "last_used_at" field. It's identical to LastUsedAtEQ.
 func LastUsedAt(v time.Time) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldLastUsedAt, v))
+}
+
+// FailedAt applies equality check predicate on the "failed_at" field. It's identical to FailedAtEQ.
+func FailedAt(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldFailedAt, v))
 }
 
 // UpdatedAt applies equality check predicate on the "updated_at" field. It's identical to UpdatedAtEQ.
@@ -533,6 +538,56 @@ func LastUsedAtIsNil() predicate.Account {
 // LastUsedAtNotNil applies the NotNil predicate on the "last_used_at" field.
 func LastUsedAtNotNil() predicate.Account {
 	return predicate.Account(sql.FieldNotNull(FieldLastUsedAt))
+}
+
+// FailedAtEQ applies the EQ predicate on the "failed_at" field.
+func FailedAtEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldFailedAt, v))
+}
+
+// FailedAtNEQ applies the NEQ predicate on the "failed_at" field.
+func FailedAtNEQ(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldFailedAt, v))
+}
+
+// FailedAtIn applies the In predicate on the "failed_at" field.
+func FailedAtIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldFailedAt, vs...))
+}
+
+// FailedAtNotIn applies the NotIn predicate on the "failed_at" field.
+func FailedAtNotIn(vs ...time.Time) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldFailedAt, vs...))
+}
+
+// FailedAtGT applies the GT predicate on the "failed_at" field.
+func FailedAtGT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldFailedAt, v))
+}
+
+// FailedAtGTE applies the GTE predicate on the "failed_at" field.
+func FailedAtGTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldFailedAt, v))
+}
+
+// FailedAtLT applies the LT predicate on the "failed_at" field.
+func FailedAtLT(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldFailedAt, v))
+}
+
+// FailedAtLTE applies the LTE predicate on the "failed_at" field.
+func FailedAtLTE(v time.Time) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldFailedAt, v))
+}
+
+// FailedAtIsNil applies the IsNil predicate on the "failed_at" field.
+func FailedAtIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldFailedAt))
+}
+
+// FailedAtNotNil applies the NotNil predicate on the "failed_at" field.
+func FailedAtNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldFailedAt))
 }
 
 // UpdatedAtEQ applies the EQ predicate on the "updated_at" field.

@@ -19,6 +19,7 @@ var (
 		{Name: "max_concurrency", Type: field.TypeInt, Default: 8},
 		{Name: "last_error", Type: field.TypeString, Nullable: true},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
+		{Name: "failed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
@@ -32,7 +33,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "accounts_templates_accounts",
-				Columns:    []*schema.Column{AccountsColumns[12]},
+				Columns:    []*schema.Column{AccountsColumns[13]},
 				RefColumns: []*schema.Column{TemplatesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},

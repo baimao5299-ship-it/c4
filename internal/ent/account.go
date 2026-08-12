@@ -4,13 +4,13 @@ package ent
 
 import (
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/account"
-	"github.com/is7qin/c3api/internal/ent/template"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/template"
 )
 
 // Account is the model entity for the Account schema.
@@ -36,6 +36,8 @@ type Account struct {
 	LastError *string `json:"last_error,omitempty"`
 	// LastUsedAt holds the value of the "last_used_at" field.
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	// FailedAt holds the value of the "failed_at" field.
+	FailedAt *time.Time `json:"failed_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// DeletedAt holds the value of the "deleted_at" field.
@@ -99,7 +101,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case account.FieldName, account.FieldUpstreamKey, account.FieldStatus, account.FieldLastError:
 			values[i] = new(sql.NullString)
-		case account.FieldCooldownUntil, account.FieldLastUsedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldCreatedAt:
+		case account.FieldCooldownUntil, account.FieldLastUsedAt, account.FieldFailedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -178,6 +180,13 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.LastUsedAt = new(time.Time)
 				*_m.LastUsedAt = value.Time
+			}
+		case account.FieldFailedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field failed_at", values[i])
+			} else if value.Valid {
+				_m.FailedAt = new(time.Time)
+				*_m.FailedAt = value.Time
 			}
 		case account.FieldUpdatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -279,6 +288,11 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	if v := _m.LastUsedAt; v != nil {
 		builder.WriteString("last_used_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.FailedAt; v != nil {
+		builder.WriteString("failed_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

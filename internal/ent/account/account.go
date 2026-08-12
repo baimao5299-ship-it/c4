@@ -33,6 +33,8 @@ const (
 	FieldLastError = "last_error"
 	// FieldLastUsedAt holds the string denoting the last_used_at field in the database.
 	FieldLastUsedAt = "last_used_at"
+	// FieldFailedAt holds the string denoting the failed_at field in the database.
+	FieldFailedAt = "failed_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
@@ -80,6 +82,7 @@ var Columns = []string{
 	FieldMaxConcurrency,
 	FieldLastError,
 	FieldLastUsedAt,
+	FieldFailedAt,
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldCreatedAt,
@@ -193,6 +196,11 @@ func ByLastError(opts ...sql.OrderTermOption) OrderOption {
 // ByLastUsedAt orders the results by the last_used_at field.
 func ByLastUsedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastUsedAt, opts...).ToFunc()
+}
+
+// ByFailedAt orders the results by the failed_at field.
+func ByFailedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFailedAt, opts...).ToFunc()
 }
 
 // ByUpdatedAt orders the results by the updated_at field.

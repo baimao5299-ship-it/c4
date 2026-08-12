@@ -6,15 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/account"
-	"github.com/is7qin/c3api/internal/ent/accountext"
-	"github.com/is7qin/c3api/internal/ent/group"
-	"github.com/is7qin/c3api/internal/ent/template"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/accountext"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/template"
 )
 
 // AccountCreate is the builder for creating a Account entity.
@@ -123,6 +123,20 @@ func (_c *AccountCreate) SetLastUsedAt(v time.Time) *AccountCreate {
 func (_c *AccountCreate) SetNillableLastUsedAt(v *time.Time) *AccountCreate {
 	if v != nil {
 		_c.SetLastUsedAt(*v)
+	}
+	return _c
+}
+
+// SetFailedAt sets the "failed_at" field.
+func (_c *AccountCreate) SetFailedAt(v time.Time) *AccountCreate {
+	_c.mutation.SetFailedAt(v)
+	return _c
+}
+
+// SetNillableFailedAt sets the "failed_at" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableFailedAt(v *time.Time) *AccountCreate {
+	if v != nil {
+		_c.SetFailedAt(*v)
 	}
 	return _c
 }
@@ -365,6 +379,10 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.LastUsedAt(); ok {
 		_spec.SetField(account.FieldLastUsedAt, field.TypeTime, value)
 		_node.LastUsedAt = &value
+	}
+	if value, ok := _c.mutation.FailedAt(); ok {
+		_spec.SetField(account.FieldFailedAt, field.TypeTime, value)
+		_node.FailedAt = &value
 	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(account.FieldUpdatedAt, field.TypeTime, value)
@@ -617,6 +635,24 @@ func (u *AccountUpsert) ClearLastUsedAt() *AccountUpsert {
 	return u
 }
 
+// SetFailedAt sets the "failed_at" field.
+func (u *AccountUpsert) SetFailedAt(v time.Time) *AccountUpsert {
+	u.Set(account.FieldFailedAt, v)
+	return u
+}
+
+// UpdateFailedAt sets the "failed_at" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateFailedAt() *AccountUpsert {
+	u.SetExcluded(account.FieldFailedAt)
+	return u
+}
+
+// ClearFailedAt clears the value of the "failed_at" field.
+func (u *AccountUpsert) ClearFailedAt() *AccountUpsert {
+	u.SetNull(account.FieldFailedAt)
+	return u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (u *AccountUpsert) SetUpdatedAt(v time.Time) *AccountUpsert {
 	u.Set(account.FieldUpdatedAt, v)
@@ -865,6 +901,27 @@ func (u *AccountUpsertOne) UpdateLastUsedAt() *AccountUpsertOne {
 func (u *AccountUpsertOne) ClearLastUsedAt() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearLastUsedAt()
+	})
+}
+
+// SetFailedAt sets the "failed_at" field.
+func (u *AccountUpsertOne) SetFailedAt(v time.Time) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetFailedAt(v)
+	})
+}
+
+// UpdateFailedAt sets the "failed_at" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateFailedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateFailedAt()
+	})
+}
+
+// ClearFailedAt clears the value of the "failed_at" field.
+func (u *AccountUpsertOne) ClearFailedAt() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearFailedAt()
 	})
 }
 
@@ -1289,6 +1346,27 @@ func (u *AccountUpsertBulk) UpdateLastUsedAt() *AccountUpsertBulk {
 func (u *AccountUpsertBulk) ClearLastUsedAt() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearLastUsedAt()
+	})
+}
+
+// SetFailedAt sets the "failed_at" field.
+func (u *AccountUpsertBulk) SetFailedAt(v time.Time) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetFailedAt(v)
+	})
+}
+
+// UpdateFailedAt sets the "failed_at" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateFailedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateFailedAt()
+	})
+}
+
+// ClearFailedAt clears the value of the "failed_at" field.
+func (u *AccountUpsertBulk) ClearFailedAt() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearFailedAt()
 	})
 }
 
