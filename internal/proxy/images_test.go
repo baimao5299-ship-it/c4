@@ -314,6 +314,7 @@ func TestImagesPureImageModelNotKilledByChatPrecheck(t *testing.T) {
 	require.Zero(t, store.logs[0].Cost, "直连路径未接入 usage 提取（B 边界零改动）→ Cost 0")
 	require.Equal(t, "auto", store.logs[0].BillingTier, "有价行 → service_tier 归一化照常（不 no_price）")
 	require.Nil(t, store.logs[0].PriceInputMillis, "images 日志不落 chat 价快照列（nil）")
+	require.Nil(t, store.logs[0].PricePerImageMillis, "无图分量不落 per-image 快照列")
 }
 
 // TestImagesNoImagePriceWhenImagePricesNil bill 装配但 ImagePrices 未注入（未
