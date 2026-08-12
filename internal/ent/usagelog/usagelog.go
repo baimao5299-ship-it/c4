@@ -172,7 +172,6 @@ const (
 	FormatOpenaiResponsesWs Format = "openai-responses-ws"
 	FormatOpenaiImages      Format = "openai-images"
 	FormatAnthropic         Format = "anthropic"
-	FormatOpenaiImages      Format = "openai-images"
 )
 
 func (f Format) String() string {
