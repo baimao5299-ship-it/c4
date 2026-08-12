@@ -170,6 +170,7 @@ const (
 	FormatOpenaiChat        Format = "openai-chat"
 	FormatOpenaiResponses   Format = "openai-responses"
 	FormatOpenaiResponsesWs Format = "openai-responses-ws"
+	FormatOpenaiImages      Format = "openai-images"
 	FormatAnthropic         Format = "anthropic"
 	FormatOpenaiImages      Format = "openai-images"
 )

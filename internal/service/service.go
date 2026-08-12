@@ -359,11 +359,14 @@ func validateTemplate(t *domain.Template) error {
 		}
 		seen[f] = true
 	}
-	// 类型-格式约束（W1）：responses-special/codex-oauth/codex-pat 类型模板
-	// 只支持 resp / resp-ws 格式（resp-ws 可选）；api_key 类型四格式任意。
+	// 类型-格式约束（W1 + Task B 扩展）：responses-special/codex-oauth/codex-pat
+	// 类型模板支持 resp / resp-ws / openai-images 格式（resp-ws 可选；images
+	// 直连为 Task B 用户裁决：responses-special 与 api_key 同支持两图片端点，
+	// codex 类型走 SDK 生图（T2/T3 接入——未接入前路由命中返回明确 501，见
+	// proxy imagesCaller 分流骨架）；api_key 类型全部格式任意。
 	if t.CredentialType != credential.TypeAPIKey {
 		for _, f := range t.SupportedFormats {
-			if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS {
+			if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS && f != domain.FormatOpenAIImages {
 				return ErrInvalidInput
 			}
 		}

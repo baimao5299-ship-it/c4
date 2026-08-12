@@ -20,15 +20,26 @@ type PriceLookup interface {
 	GetImagePrice(model string) (*domain.ImagePrice, error)
 }
 
+// ImagePriceLookup 图片价格快照读取（service.Service 实现，零 DB 快照读）。
+// Task B images 端点预检用（P1-1 预检按格式切换：images 格式查 GetImagePrice、
+// 跳过 chat 价预检 GetPrice）。任何错误 = 该模型无图片价格（402 拒绝计费而
+// 非按 0 计价——空行语义 = 端点定生死）。
+type ImagePriceLookup interface {
+	GetImagePrice(model string) (*domain.ImagePrice, error)
+}
+
 // BillingHooks 计费钩子（proxy.New 参数；nil = 计费全关：不查价、不记
 // BillingTier、不处理 service_tier 转发策略、不做余额预检）。
 // T3 填满（中间态清理终点）：Balances/Flusher 为真实类型直接接线，无 nil
-// 容忍分支——装配方（main）保证 bill 非 nil 时四字段齐备（计费开关 =
+// 容忍分支——装配方（main）保证 bill 非 nil 时五字段齐备（计费开关 =
 // config.Billing.Enabled，与 hooks 装配同一判定）。
 type BillingHooks struct {
 	Prices   PriceLookup
 	Balances *billing.Balances // 余额只读快照（预检 + 扣费后定向刷新）
 	Flusher  *billing.Flusher  // 批量扣费落库（billed 路由终点）
+	// ImagePrices 图片价格快照（Task B：images 端点预检专用；nil = 未装配
+	// ——images 端点缺价预检跳过，等价计费全关）。
+	ImagePrices ImagePriceLookup
 	// TierPolicy 读取 service_tier 转发策略（nil = 恒透传）：priority/flex/fast
 	// 分别按 settings service_tier_policy_priority / service_tier_policy_flex /
 	// service_tier_policy_fast 快照取值（装配方注入闭包，零 DB）。

@@ -149,13 +149,14 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
-		if p.bill != nil && p.bill.Prices != nil {
-			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
-				p.sched.Release(sel.AccountID)
-				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
-				wsWriteError(client, errNoPrice.msg)
-				return
-			}
+		// 缺价预检（评审 I-1 + P1-1 预检按格式切换）：resp-ws 保留 chat 价预检
+		// 照常执行（评审 P2-3 裁决：纯 image 价模型经 resp 出图会被既有预检
+		// 402——接受，职责边界清晰；共享 helper 只对 images 格式切换）。
+		if err := p.precheckPrice(domain.FormatOpenAIResponsesWS, sel.Model); err != nil {
+			p.sched.Release(sel.AccountID)
+			p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
+			wsWriteError(client, errNoPrice.msg)
+			return
 		}
 		cred, err := p.credentialFor(r.Context(), sel)
 		if err != nil {

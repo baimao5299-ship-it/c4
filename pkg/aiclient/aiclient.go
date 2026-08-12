@@ -120,6 +120,16 @@ func (f *Factory) AnthMessageStreamRaw(ctx context.Context, templateID int64, ba
 	return f.rawPost(ctx, templateID, baseURL, "v1/messages", key, body)
 }
 
+// --- openai images（Task B 直连面） ---
+// images 端点直连透传（JSON + multipart 双协议）：multipart 的 Content-Type
+// 含 boundary（图片文件原样透传），JSON 传空串由 rawPostCT 补
+// application/json。无 SDK 参数路径——直连语义 = 原始请求原样转发（响应
+// 零改写零损失；上游路径 /v1/images/generations|edits 由调用方传 path）。
+
+func (f *Factory) ImagesRaw(ctx context.Context, templateID int64, baseURL, path, key, contentType string, body []byte) (*http.Response, error) {
+	return f.rawPostCT(ctx, templateID, baseURL, path, "Bearer "+key, contentType, body)
+}
+
 // openaiBaseURL 规范化 openai 系 SDK 的 BaseURL：openai-go 约定 BaseURL 含 /v1
 // （内部拼接 "chat/completions"）。模板 base_url 约定为**裸根**（不含 /v1——
 // /v1 是协议细节，由本层按格式追加，见模板校验），故 openai 系在此补 /v1。
@@ -174,6 +184,13 @@ func parseFullURL(base, path string) (*url.URL, error) {
 // 语义，WithContext 保留 ctx 取消语义）。auth 为 Authorization 值
 // （anthropic 用 x-api-key，传 key 本身）。
 func (f *Factory) rawPost(ctx context.Context, templateID int64, baseURL, path, auth string, body []byte) (*http.Response, error) {
+	return f.rawPostCT(ctx, templateID, baseURL, path, auth, "", body)
+}
+
+// rawPostCT rawPost 的 Content-Type 定制变体（Task B images multipart 需要
+// 完整 multipart/form-data Content-Type——含 boundary；contentType 空 →
+// application/json，与 rawPost 逐字节等价）。
+func (f *Factory) rawPostCT(ctx context.Context, templateID int64, baseURL, path, auth, contentType string, body []byte) (*http.Response, error) {
 	full, err := f.fullURLOf(templateID, baseURL, path)
 	if err != nil {
 		return nil, err
@@ -186,7 +203,10 @@ func (f *Factory) rawPost(ctx context.Context, templateID int64, baseURL, path, 
 		ContentLength: int64(len(body)),
 		GetBody:       func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil },
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	req.Header.Set("Content-Type", contentType)
 	if path == "v1/messages" {
 		req.Header.Set("x-api-key", auth)
 	} else {

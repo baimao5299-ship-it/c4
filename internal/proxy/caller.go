@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -166,61 +167,78 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		writeErr(w, errBody)
 		return
 	}
-	// SDK v1.x 参数里没有 Stream 字段（流式由 NewStreaming 在请求选项层注入
-	// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
-	// model 一并在此提取（评审 I-2：不解析完整 params）；service_tier（Phase 5
-	// 计费）同次提取。GC 削减 P3：json.Valid 单遍校验（零分配）保留 400 语义 +
-	// gjson 顶层提取（Type 校验等价原 Unmarshal 的类型拒绝：stream 非 bool、
-	// model/service_tier 非 string → 400；显式 null 与缺失等同零值语义，与
-	// encoding/json 一致）。400 响应消息文案随校验方式变化（无测试断言原文；
-	// 错误码/无记录/Select 前无并发槽语义逐字不变）。
-	if !json.Valid(body) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: invalid JSON"}})
-		return
-	}
-	streamVal := gjson.GetBytes(body, "stream")
-	if streamVal.Type != gjson.True && streamVal.Type != gjson.False && streamVal.Type != gjson.Null {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: stream must be a boolean"}})
-		return
-	}
-	modelVal := gjson.GetBytes(body, "model")
-	if modelVal.Type != gjson.String && modelVal.Type != gjson.Null {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: model must be a string"}})
-		return
-	}
-	tierVal := gjson.GetBytes(body, "service_tier")
-	if tierVal.Type != gjson.String && tierVal.Type != gjson.Null {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: service_tier must be a string"}})
-		return
-	}
-	reqModel := modelVal.String()
-	stream := streamVal.Type == gjson.True
-	// service_tier 归一化 + 转发策略（计费启用才处理；auto/空/未知恒透传）：
-	// strip → 转发体删该字段；reject → 直接 400（记 ErrBilling，不转发）。
-	// 归一化 tier 补入已入 ctx 的 reqMeta（GC 削减 P6：免第二次 WithValue+
-	// WithContext；非计费路径 hasTier=false → BillingTier 恒空）。
-	if p.bill != nil {
-		tier := billing.NormalizeTier(tierVal.String())
-		rm.tier = tier
-		rm.hasTier = true
-		if (tier == billing.TierPriority || tier == billing.TierFlex || tier == billing.TierFast) && p.bill.TierPolicy != nil {
-			switch p.bill.TierPolicy(tier) {
-			case billing.TierPolicyStrip:
-				if body, err = stripServiceTier(body); err != nil {
-					writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+	// images 端点专用 body 分支（评审 P1-2）：multipart 跳过 json.Valid 硬门
+	// 与 gjson 顶层提取（下述 JSON 校验/stream 探测/body 重写对 multipart
+	// 全部失效——multipart 字节对 json.Valid 必然 false，撞门即误杀）；model
+	// 从 form 字段取；图片文件原样透传（不解析内容）；不做
+	// setModel/setStreamAndModel JSON 重写（form model 字段原样透传，spec
+	// §5.1 声明）。JSON 形态照常：model/stream 顶层提取 + service_tier 归一化。
+	var reqModel string
+	var stream bool
+	if format == domain.FormatOpenAIImages && isMultipartForm(r.Header.Get("Content-Type")) {
+		reqModel = imagesMultipartModel(body, r.Header.Get("Content-Type"))
+		// stream 恒 false：multipart 无流式形态（stream 探测仅 JSON 路径）
+	} else {
+		// SDK v1.x 参数里没有 Stream 字段（流式由 NewStreaming 在请求选项层注入
+		// "stream": true），故从原始请求体探测 stream 标志决定走流式还是非流式。
+		// model 一并在此提取（评审 I-2：不解析完整 params）；service_tier（Phase 5
+		// 计费）同次提取。GC 削减 P3：json.Valid 单遍校验（零分配）保留 400 语义 +
+		// gjson 顶层提取（Type 校验等价原 Unmarshal 的类型拒绝：stream 非 bool、
+		// model/service_tier 非 string → 400；显式 null 与缺失等同零值语义，与
+		// encoding/json 一致）。400 响应消息文案随校验方式变化（无测试断言原文；
+		// 错误码/无记录/Select 前无并发槽语义逐字不变）。
+		if !json.Valid(body) {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: invalid JSON"}})
+			return
+		}
+		streamVal := gjson.GetBytes(body, "stream")
+		if streamVal.Type != gjson.True && streamVal.Type != gjson.False && streamVal.Type != gjson.Null {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: stream must be a boolean"}})
+			return
+		}
+		modelVal := gjson.GetBytes(body, "model")
+		if modelVal.Type != gjson.String && modelVal.Type != gjson.Null {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: model must be a string"}})
+			return
+		}
+		tierVal := gjson.GetBytes(body, "service_tier")
+		if tierVal.Type != gjson.String && tierVal.Type != gjson.Null {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: service_tier must be a string"}})
+			return
+		}
+		reqModel = modelVal.String()
+		stream = streamVal.Type == gjson.True
+		// service_tier 归一化 + 转发策略（计费启用才处理；auto/空/未知恒透传）：
+		// strip → 转发体删该字段；reject → 直接 400（记 ErrBilling，不转发）。
+		// 归一化 tier 补入已入 ctx 的 reqMeta（GC 削减 P6：免第二次 WithValue+
+		// WithContext；非计费路径 hasTier=false → BillingTier 恒空）。
+		if p.bill != nil {
+			tier := billing.NormalizeTier(tierVal.String())
+			rm.tier = tier
+			rm.hasTier = true
+			if (tier == billing.TierPriority || tier == billing.TierFlex || tier == billing.TierFast) && p.bill.TierPolicy != nil {
+				switch p.bill.TierPolicy(tier) {
+				case billing.TierPolicyStrip:
+					if body, err = stripServiceTier(body); err != nil {
+						writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+						return
+					}
+				case billing.TierPolicyReject:
+					writeErr(w, errServiceTierRejected)
+					p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start, errServiceTierRejected.msg)
 					return
 				}
-			case billing.TierPolicyReject:
-				writeErr(w, errServiceTierRejected)
-				p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start, errServiceTierRejected.msg)
-				return
 			}
 		}
 	}
 
 	// 路由信息：格式 + 调用器 + 请求体。默认 = 客户端格式直连（零转换）；
+	// images 端点按请求路径选调用器（generations/edits 上游子路径不同）；
 	// 协议转换（W5，只补差）命中时整体替换为模板协议路由。
 	route := forwardRoute{format: format, caller: p.callers[format], body: body}
+	if format == domain.FormatOpenAIImages {
+		route.caller = p.imagesCallerFor(r)
+	}
 
 	sel, err := p.sched.Select(groupID, format, reqModel)
 	if err != nil && errors.Is(err, scheduler.ErrFormatUnavailable) {
@@ -262,15 +280,28 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	)
 	for attempt := 0; attempt < p.cfg.FailoverAttempts; attempt++ {
 		lastSel = sel
-		// 缺价预检（评审 I-1）：每轮 sel 更新后、Call 前查价——计费启用时模型
-		// 无价格 → 释放并发槽 + 402（不按 0 计价），零 DB（快照读）。
-		if p.bill != nil && p.bill.Prices != nil {
-			if _, err := p.bill.Prices.GetPrice(sel.Model); err != nil {
-				p.sched.Release(sel.AccountID)
-				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
-				writeErr(w, errNoPrice)
-				return
-			}
+		// 缺价预检（评审 I-1 + P1-1 预检按格式切换）：每轮 sel 更新后、Call 前
+		// 查价——计费启用时模型无价格 → 释放并发槽 + 402（不按 0 计价），零 DB
+		// （快照读）。images 格式查 GetImagePrice（image_price 表；跳过 chat
+		// 价预检 GetPrice——纯 image 价模型无 pricings 行，chat 预检会先行
+		// 402 误杀，"ImagePrice 定生死"轮不到执行）；其余格式照旧。
+		if err := p.precheckPrice(format, sel.Model); err != nil {
+			p.sched.Release(sel.AccountID)
+			p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
+			writeErr(w, errNoPrice)
+			return
+		}
+		// codex 分流骨架（Task B）：images 端点 codex-oauth/codex-pat 模板选号
+		// 命中 → 明确"未接入"错误（SDK GenerateImage/GenerateImageStream 调用
+		// 在 T2/T3 接入；未接入前显式 501，不让凭据缺失路径误报 502/network）。
+		// 评审 P2-1：post-Select 拒绝一律 recordRejected（与 402 缺价预检同
+		// 路径）——B 放开 codex 声明 images 格式后当下可达，501 必须留
+		// err_logs 审计（error_type=billing，拒绝类采样队列）。
+		if format == domain.FormatOpenAIImages && isCodexCredentialType(sel.CredentialType) {
+			p.sched.Release(sel.AccountID)
+			p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexImagesNotIntegrated.msg)
+			writeErr(w, errCodexImagesNotIntegrated)
+			return
 		}
 		// 凭据每轮取（评审 I-3）：尾部 Select 后 Selection 变化，凭据随账号；
 		// 循环外取一次会把旧账号 key 发给新账号上游。
@@ -386,4 +417,35 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	} else {
 		writeErr(w, &formatError{status: http.StatusBadGateway, msg: "all upstream attempts failed"})
 	}
+}
+
+// precheckPrice 缺价预检（评审 P1-1：预检按格式切换）——images 格式查
+// GetImagePrice（image_price 快照，跳过 chat 价预检 GetPrice：纯 image 价
+// 模型无 pricings 行，chat 预检会先行 402 误杀，"ImagePrice 定生死"轮不到
+// 执行）；其余格式照旧查 chat 价表。resp/resp-ws 共享同一 helper（P2-3
+// 裁决：resp 路径保留 chat 价预检照常执行——行为不变）。零 DB（快照读）。
+// 相应查找器未装配（bill 钩子 nil / 分查找器 nil）→ 不预检（等价计费全关）。
+func (p *Proxy) precheckPrice(format domain.RequestFormat, model string) error {
+	if format == domain.FormatOpenAIImages {
+		if p.bill == nil || p.bill.ImagePrices == nil {
+			return nil
+		}
+		_, err := p.bill.ImagePrices.GetImagePrice(model)
+		return err
+	}
+	if p.bill == nil || p.bill.Prices == nil {
+		return nil
+	}
+	_, err := p.bill.Prices.GetPrice(model)
+	return err
+}
+
+// imagesCallerFor 按端点路径选 images 调用器（generations/edits 上游子路径
+// 不同；两端点同一格式 openai-images——路径后缀区分，New 构造的调用器复用，
+// per-request 零分配）。
+func (p *Proxy) imagesCallerFor(r *http.Request) UpstreamCaller {
+	if strings.HasSuffix(r.URL.Path, "/edits") {
+		return p.imageEdits
+	}
+	return p.imageGenerations
 }

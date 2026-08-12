@@ -87,6 +87,8 @@ func TestAdminAndAIHandlersCoexist(t *testing.T) {
 		{"/admin/templates", "Bearer tok", "admin"},
 		{"/admin/templates/1", "Bearer tok", "admin"},
 		{"/v1/chat/completions", "", "ai"},
+		{"/v1/images/generations", "", "ai"},
+		{"/v1/images/edits", "", "ai"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		if tc.auth != "" {

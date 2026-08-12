@@ -85,6 +85,7 @@ const (
 const (
 	RequestFormatAnthropic       RequestFormat = "anthropic"
 	RequestFormatOpenaiChat      RequestFormat = "openai-chat"
+	RequestFormatOpenaiImages    RequestFormat = "openai-images"
 	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
 )
 
@@ -107,6 +108,7 @@ const (
 const (
 	TemplateSupportedFormatsAnthropic         TemplateSupportedFormats = "anthropic"
 	TemplateSupportedFormatsOpenaiChat        TemplateSupportedFormats = "openai-chat"
+	TemplateSupportedFormatsOpenaiImages      TemplateSupportedFormats = "openai-images"
 	TemplateSupportedFormatsOpenaiResponses   TemplateSupportedFormats = "openai-responses"
 	TemplateSupportedFormatsOpenaiResponsesWs TemplateSupportedFormats = "openai-responses-ws"
 )
@@ -123,6 +125,7 @@ const (
 const (
 	TemplateCreateSupportedFormatsAnthropic         TemplateCreateSupportedFormats = "anthropic"
 	TemplateCreateSupportedFormatsOpenaiChat        TemplateCreateSupportedFormats = "openai-chat"
+	TemplateCreateSupportedFormatsOpenaiImages      TemplateCreateSupportedFormats = "openai-images"
 	TemplateCreateSupportedFormatsOpenaiResponses   TemplateCreateSupportedFormats = "openai-responses"
 	TemplateCreateSupportedFormatsOpenaiResponsesWs TemplateCreateSupportedFormats = "openai-responses-ws"
 )
@@ -138,6 +141,7 @@ const (
 const (
 	TemplatePatchSupportedFormatsAnthropic         TemplatePatchSupportedFormats = "anthropic"
 	TemplatePatchSupportedFormatsOpenaiChat        TemplatePatchSupportedFormats = "openai-chat"
+	TemplatePatchSupportedFormatsOpenaiImages      TemplatePatchSupportedFormats = "openai-images"
 	TemplatePatchSupportedFormatsOpenaiResponses   TemplatePatchSupportedFormats = "openai-responses"
 	TemplatePatchSupportedFormatsOpenaiResponsesWs TemplatePatchSupportedFormats = "openai-responses-ws"
 )
@@ -541,7 +545,7 @@ type GroupVisibility string
 type ImagePrice struct {
 	CreatedAt time.Time `json:"CreatedAt"`
 
-	// InputImageTokenPricePerMillion image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算，1 USD = 100,000 毫分）；null = 无该分量价
+	// InputImageTokenPricePerMillion image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算，1 USD = 100
 	InputImageTokenPricePerMillion *float64 `json:"InputImageTokenPricePerMillion"`
 
 	// Model 模型名（与 pricings.model 同口径）

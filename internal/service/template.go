@@ -87,9 +87,10 @@ func (s *Service) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repos
 		return err
 	}
 	// W1 类型-格式约束：批量 patch 不含 credential_type，supported_formats 变更
-	// 时按既有行类型校验（special/oauth/pat 模板只能改成 resp/resp-ws）。
-	// 一次 IN 批量取模板（替代逐 id GetTemplate 的 N+1）；缺失任一目标 id →
-	// 404（与逐 id 语义一致，先于任何更新）。
+	// 时按既有行类型校验（special/oauth/pat 模板只能改成 resp/resp-ws/
+	// openai-images——Task B 扩展：images 直连两类型同支持，codex 走 SDK 生图
+	// T2/T3 接入）。一次 IN 批量取模板（替代逐 id GetTemplate 的 N+1）；缺失
+	// 任一目标 id → 404（与逐 id 语义一致，先于任何更新）。
 	if p.SupportedFormats != nil {
 		tpls, err := s.store.GetTemplatesByIDs(ctx, ids)
 		if err != nil {
@@ -103,7 +104,7 @@ func (s *Service) UpdateTemplatesBatch(ctx context.Context, ids []int64, p repos
 				continue
 			}
 			for _, f := range *p.SupportedFormats {
-				if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS {
+				if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS && f != domain.FormatOpenAIImages {
 					return ErrInvalidInput
 				}
 			}
