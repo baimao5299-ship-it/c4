@@ -292,10 +292,10 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			return
 		}
 		// codex 分流落位（T2 §2，B 的 501 骨架）：images 端点 codex-oauth/
-		// codex-pat 模板选号命中 → codexImagesCaller（SDK GenerateImage 非流式；
-		// 流式 T3 未接 → caller 内 501 显式拒绝并 recordRejected 审计——评审
-		// P2-1 语义保留）。适配层未装配（SetCodex nil）→ 同样 501 显式拒绝，
-		// 不让凭据缺失路径误报 502/network。else 复位（评审 P1-1）：混合类型
+		// codex-pat 模板选号命中 → codexImagesCaller（GenerateImage 非流式 /
+		// GenerateImageStream 流式 T3 已接——caller 内 stream 分支同签名直赋）。
+		// 适配层未装配（SetCodex nil）→ 501 显式拒绝，不让凭据缺失路径误报
+		// 502/network。else 复位（评审 P1-1）：混合类型
 		// 组 failover 跨类型换账号（codex 失败 → api_key 尝试）时复用旧
 		// codexImagesCaller 会把健康 api_key 账号路由到 Ext=nil 空凭据路径
 		// （502 + 错误率污染 + 无谓失效上报 account 0）——每轮按当轮

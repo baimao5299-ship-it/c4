@@ -314,6 +314,7 @@ func TestImagesPureImageModelNotKilledByChatPrecheck(t *testing.T) {
 	require.Zero(t, store.logs[0].Cost, "直连路径未接入 usage 提取（B 边界零改动）→ Cost 0")
 	require.Equal(t, "auto", store.logs[0].BillingTier, "有价行 → service_tier 归一化照常（不 no_price）")
 	require.Nil(t, store.logs[0].PriceInputMillis, "images 日志不落 chat 价快照列（nil）")
+	require.Nil(t, store.logs[0].PricePerImageMillis, "无图分量不落 per-image 快照列")
 }
 
 // TestImagesNoImagePriceWhenImagePricesNil bill 装配但 ImagePrices 未注入（未
@@ -391,7 +392,7 @@ func TestImagesCodexNotIntegrated501(t *testing.T) {
 	p.HandleImagesGenerations(rec, req)
 
 	require.Equal(t, http.StatusNotImplemented, rec.Code, "codex 未接入必须显式 501：body=%s", rec.Body.String())
-	require.Contains(t, rec.Body.String(), "not integrated", "501 文案明确未接入")
+	require.Contains(t, rec.Body.String(), "adapter not wired", "501 文案 = 装配缺失")
 	require.Zero(t, hits.Load(), "未接入不得转发上游")
 	require.NoError(t, p.rec.Close(context.Background()))
 	// P2-1：err_logs 审计断言（拒绝行走 errlog worker，Close 显式排空）
@@ -405,7 +406,7 @@ func TestImagesCodexNotIntegrated501(t *testing.T) {
 	require.Equal(t, domain.FormatOpenAIImages, l.Format)
 	require.Equal(t, "gpt-image-1", l.Model)
 	require.NotNil(t, l.ErrorMessage)
-	require.Contains(t, *l.ErrorMessage, "not integrated", "文案落 ErrorMessage（域内截断 500）")
+	require.Contains(t, *l.ErrorMessage, "adapter not wired", "文案落 ErrorMessage（域内截断 500）")
 }
 
 // TestImagesCodexPATNotIntegrated501 codex-pat 同 codex-oauth（分流骨架两类型

@@ -260,8 +260,8 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 		InputTokens: u.it, OutputTokens: u.ot, TotalTokens: u.tt,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
 		// 图片生成分量：img = 张数（resp 检测旁路计数 Task D 先行 / images 格式
-		// 直连与 codex 路径 data 数组长）；ii/io = image token 分量（images 格式
-		// 专用，resp 路径恒 0——V1-V3 实证无 image_tokens）。
+		// 直连与 codex 路径 data 数组长 / 流式 completed 事件数）；ii/io = image
+		// token 分量（images 格式专用，resp 路径恒 0——V1-V3 实证无 image_tokens）。
 		ImageCount: u.img, ImageInputTokens: u.ii, ImageOutputTokens: u.io,
 		CreatedAt: time.Now(),
 	}
@@ -468,7 +468,7 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 type usageTuple struct {
 	it, ot, tt int64
 	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
-	img        int64 // 图片张数（resp 检测旁路 spec §6 / images 格式直连与 codex 路径 data 长；零值 = 无图）
+	img        int64 // 图片张数（resp 检测旁路 spec §6 / images 格式直连与 codex 路径 data 长 / 流式 completed 事件数；零值 = 无图）
 	// 图片生成分量（images 格式）：ii/io = image token 分量
 	// （input/output_tokens_details.image_tokens）；text token 分量恒 0——
 	// images 请求只计 image 分量。tt 含 image tokens 不含张数（评审 P3-6
