@@ -73,7 +73,7 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 	if err != nil {
 		return err
 	}
-	return e.client.GenerateImageStream(ctx, toSDKParams(p), func(ev codexsdk.ImageStreamEvent) error {
+	err = e.client.GenerateImageStream(ctx, toSDKParams(p), func(ev codexsdk.ImageStreamEvent) error {
 		var usage *domain.ImageUsage
 		if ev.Usage != nil {
 			usage = &domain.ImageUsage{
@@ -85,6 +85,16 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 		}
 		return fn(domain.ImageStreamEvent{Type: ev.Type, B64JSON: ev.B64JSON, Usage: usage})
 	})
+	if err != nil {
+		// 与 GenerateImage 同款（评审 P1-1 修复）：SDK *HTTPError（字段裸类型，无
+		// StatusCode()/RawJSON() 方法）→ EnvelopeError 包装——网关 statusOf/
+		// upstreamBody/streamErrMessage 的协议才能消费（4xx 状态 + 原始 body
+		// 透传、SSE error 帧 message 取上游文案）；fatal 五类统一回调单次上报
+		// + 原样透传。fn 回调错误（网关写入失败/客户端断开）非 SDK 错误 →
+		// translateError 原样透传（不过滤）。
+		return a.translateError(e, err)
+	}
+	return nil
 }
 
 // clientFor cred → Auth 账号级缓存取 HTTPClient（构造冷面——每账号首次/凭据

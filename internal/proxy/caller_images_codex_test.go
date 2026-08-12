@@ -339,6 +339,30 @@ func TestImagesCodex403Passthrough(t *testing.T) {
 	require.NoError(t, p.rec.Close(context.Background()))
 }
 
+// TestImagesCodexStreamEnvelope4xx 流式首事件前 4xx → 信封透传（T3 复审
+// P1-1 修复回归——适配层 GenerateImageStream 缺 translateError 时 *HTTPError
+// 裸抛：状态归 0 走连接级 → 客户端收占位文案、body 丢失；修复后 403 + 上游
+// 原始 body 透传，与 T2 非流式同口径）。4xx 确定性错误不 failover、信封不
+// 上报回调。
+func TestImagesCodexStreamEnvelope4xx(t *testing.T) {
+	up, c := newCodexImageUpstream(t, codexUpStep{status: 403, body: `{"error":{"message":"no image permission for account"}}`})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, recorder := newTestCodexProxy(t, credential.TypeCodexOAuth, map[int64]*domain.AccountExt{10: codexOAuthExt(10, "at-10", "rt-10")}, up.URL, nil, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
+		`{"model":"gpt-image-2","prompt":"x","stream":true}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleImagesGenerations(rec, req)
+
+	require.Equal(t, 403, rec.Code, "流式首事件前 4xx 透传（信封 StatusCode）")
+	require.Contains(t, rec.Body.String(), "no image permission for account", "上游原始 body 透传（信封 RawJSON——非 'codexsdk: upstream HTTP N' 占位）")
+	require.Equal(t, 1, c.n(), "4xx 确定性错误不 failover")
+	require.Zero(t, recorderCalls(recorder), "信封不上报回调")
+	require.NoError(t, p.rec.Close(context.Background()))
+}
+
 // TestImagesCodexFatalFailAndNoRetry fatal（AT 401 判死——token_invalidated）：
 // 统一回调单次上报（账号失效标记——快照 StatusDisabled）+ 不重试同账号（上游
 // 只收一次）+ 客户端 5xx（failover 耗尽 502——账号已摘除不再被选）。
