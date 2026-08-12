@@ -128,6 +128,39 @@ func TestRespImageDetectOn(t *testing.T) {
 	require.False(t, respImageDetectOn(sel(credential.TypeCodexPAT, true)))
 }
 
+// TestRespImageCountZeroAlloc 热路径零分配断言（评审 P2-1 修复钉住）：
+// 检测开启时每 completed 帧 AllocsPerRun==0——含图帧、无图帧、空数组帧、
+// output 缺失帧四形态全覆盖（gjson GetBytes 数组值物化 Raw 的 1 alloc 已随
+// 字节扫描重写消除；断言回归即失败）。
+func TestRespImageCountZeroAlloc(t *testing.T) {
+	completed := func(output string) []byte {
+		return []byte(`{"type":"response.completed","response":{"id":"rsp_1","status":"completed","model":"m","output":` + output + `}}`)
+	}
+	withImg := completed(respImagesOutput)
+	noImg := completed(`[{"type":"function_call","id":"fc_1","name":"web_search","arguments":"{}","result":"x"},{"type":"message","id":"m1","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]`)
+	empty := completed(`[]`)
+	miss := []byte(`{"type":"response.completed","response":{"id":"r"}}`)
+	raw := []byte(`{"id":"rsp_1","object":"response","status":"completed","model":"m","output":` + respImagesOutput + `}`)
+
+	checks := []struct {
+		name string
+		f    func() int64
+	}{
+		{"含图帧（completed 信封）", func() int64 { return respImageCountCompleted(withImg) }},
+		{"无图帧", func() int64 { return respImageCountCompleted(noImg) }},
+		{"空数组帧", func() int64 { return respImageCountCompleted(empty) }},
+		{"output 缺失帧", func() int64 { return respImageCountCompleted(miss) }},
+		{"非流式响应体", func() int64 { return respImageCountBody(raw) }},
+	}
+	for _, tc := range checks {
+		t.Run(tc.name, func(t *testing.T) {
+			if allocs := testing.AllocsPerRun(200, func() { tc.f() }); allocs != 0 {
+				t.Errorf("AllocsPerRun = %v，要求 0（热路径零分配红线）", allocs)
+			}
+		})
+	}
+}
+
 // --- e2e：resp 非流式（SDK 路径）检测 + 计费 ---
 
 // fakeResponsesImages 假上游（resp 非流式 + 流式）：响应 output 可注入（图片

@@ -30,11 +30,16 @@ import (
 
 // ToolView 工具视图：Raw 为 body 子切片（真零拷贝——引用 tools 值区间字节）；
 // Type/Name/Namespace 为顶层键值（去引号、\uXXXX 已解码；未提取 = 空）。
+// Result/ID 为 resp 响应检测旁路（spec §6）复用提取：ID = id 字符串值；
+// Result = result 值裸字节（字符串值去引号/\u 解码；非字符串值——数组/null/
+// 数字——取原始值区间，空语义在判定处 imageResultNonEmpty 处理）。
 type ToolView struct {
 	Raw       []byte
 	Type      []byte
 	Name      []byte
 	Namespace []byte
+	Result    []byte
+	ID        []byte
 }
 
 // topLevelRange 顶层键-值区间定位结果（splice 改写的地基）：
@@ -184,11 +189,12 @@ func scanToolsIter(raw []byte, yield func(ToolView) bool) {
 	}
 }
 
-// extractKeys 提取元素顶层键（单遍扫描 "type"/"name"/"namespace"）：键名
-// 精确匹配后跳过空白冒号（键名干扰 "type2"/"type " 不误命中）；值取裸字节
-// 去引号；含 \u 的值解码 \uXXXX（最小实现，对齐现状 gjson String() 对判定
-// 目标的比较语义——目标为纯 ASCII 小写字面，其他转义形态出现必 ≠ 目标）。
-// 非对象元素 / 非字符串值跳过。
+// extractKeys 提取元素顶层键（单遍扫描 "type"/"name"/"namespace" + resp 检测
+// 旁路 "result"/"id"）：键名精确匹配后跳过空白冒号（键名干扰 "type2"/"type "
+// 不误命中）；值取裸字节去引号；含 \u 的值解码 \uXXXX（最小实现，对齐现状
+// gjson String() 对判定目标的比较语义——目标为纯 ASCII 小写字面，其他转义
+// 形态出现必 ≠ 目标）。非对象元素跳过；非字符串值仅 result 捕获原始值区间
+// （数组/null 形态——检测侧空语义判定），其余跳过。
 func extractKeys(elem []byte, tv *ToolView) {
 	i := skipSpace(elem, 0)
 	if i >= len(elem) || elem[i] != '{' {
@@ -213,10 +219,14 @@ func extractKeys(elem []byte, tv *ToolView) {
 			return
 		}
 		if elem[j] != '"' {
-			// 非字符串值（判定字段恒为字符串）：跳过值继续
+			// 非字符串值（判定字段恒为字符串；result 需捕获原始值区间——
+			// 数组/null 形态的计数判定）
 			end := skipValue(elem, j)
 			if end < 0 {
 				return
+			}
+			if bytes.Equal(key, resultKeyBytes) {
+				tv.Result = elem[j:end]
 			}
 			i = end
 		} else {
@@ -234,12 +244,65 @@ func extractKeys(elem []byte, tv *ToolView) {
 				tv.Name = val
 			case bytes.Equal(key, namespaceKeyBytes):
 				tv.Namespace = val
+			case bytes.Equal(key, idKeyBytes):
+				tv.ID = val
+			case bytes.Equal(key, resultKeyBytes):
+				tv.Result = val
 			}
 			i = end
 		}
 		// 跳过分隔逗号
 		if k := skipSpace(elem, i); k < len(elem) && elem[k] == ',' {
 			i = k + 1
+		}
+	}
+}
+
+// scanKeyValue 定位对象顶层键的键值区间 [start, end)（值首字节 → 值末字节
+// 后一位置；嵌套值正确跳过——对象/数组内同名键不误定位）。首次命中即返回
+// （重复键病态，值语义取首/末对计数无实质影响）。顶层非对象/结构非法 →
+// ok=false（调用方按无该键处理；json.Valid 前置下不可达，防御性兜底）。
+// resp 响应检测旁路（spec §6）定位 output 数组用（completed 帧先定位
+// "response" 对象再定位其内 "output"；非流式体直接定位顶层 "output"）。
+func scanKeyValue(body []byte, key []byte) (start, end int, ok bool) {
+	i := skipSpace(body, 0)
+	if i >= len(body) || body[i] != '{' {
+		return // 顶层非对象：无键
+	}
+	i++ // '{'
+	for {
+		i = skipSpace(body, i)
+		if i >= len(body) {
+			return
+		}
+		switch body[i] {
+		case '}':
+			return // 对象结束
+		case ',':
+			i++
+		case '"':
+			k, next := parseJSONString(body, i)
+			if next < 0 {
+				return
+			}
+			j := skipSpace(body, next)
+			if j >= len(body) || body[j] != ':' {
+				return
+			}
+			j = skipSpace(body, j+1)
+			if j >= len(body) {
+				return
+			}
+			e := skipValue(body, j)
+			if e < 0 {
+				return
+			}
+			if bytes.Equal(k, key) {
+				return j, e, true
+			}
+			i = e
+		default:
+			return // 结构非法（json.Valid 前置，理论上不可达）
 		}
 	}
 }
@@ -425,6 +488,11 @@ var (
 	typeKeyBytes       = []byte("type")
 	nameKeyBytes       = []byte("name")
 	namespaceKeyBytes  = []byte("namespace")
+	idKeyBytes         = []byte("id")
+	resultKeyBytes     = []byte("result")
+	responseKeyBytes   = []byte("response")
+	outputKeyBytes     = []byte("output")
+	imageGenCallBytes  = []byte("image_generation_call")
 	typeImageGenTool   = []byte("image_generation_tool")
 	typeImageEdits     = []byte("image_edits")
 	typeNamespace      = []byte("namespace")

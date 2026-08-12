@@ -5,6 +5,8 @@
 package proxy
 
 import (
+	"bytes"
+
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/responses"
@@ -116,8 +118,7 @@ func respImageDetectOn(sel *scheduler.Selection) bool {
 
 // respImageCount 族：数 response 对象的 image_generation_call item（spec §6）。
 // 两种输入形态（输出定位路径不同）各一个入口，共享计数核心 countImageItems——
-// 调用方按形态直选，每次调用恰好 1 次 gjson 扫描（不做"先试 A 再回退 B"的
-// 双扫描）：
+// 调用方按形态直选（不做"先试 A 再回退 B"的双扫描）：
 //   - respImageCountCompleted：completed 帧/事件（response.output 信封——
 //     流式 Observer 与 resp-ws relay sniff 同族）
 //   - respImageCountBody：非流式响应体（output 顶层，SDK RawJSON）
@@ -130,55 +131,90 @@ func respImageDetectOn(sel *scheduler.Selection) bool {
 //     type 过滤后不参与
 //   - 有 id 按 id 去重 / id 缺失按出现顺序全数计入（与 SDK 同一 wire 语义）
 //
-// 热路径（复用 sniffResponsesCompleted 同族 gjson 用法）：单遍 ForEach 零
-// 大分配——id 去重走栈数组 [16]string（官方 n 上限 10，零分配兜底；>16 唯一
-// id 的病态帧去重退化为全数计数——只可能虚增不虚减，防御性接受）。无
-// image item 的帧零分配（ForEach 空转）。
+// 热路径零分配（评审 P2-1 修复，AllocsPerRun==0 测试钉住）：复用 strip_scan
+// 同族手写字节扫描（scanKeyValue 定位 + scanTools 元素迭代 + extractKeys 键
+// 提取）——gjson GetBytes 对数组值会物化 Raw 字符串（实测 1 alloc/帧；ForEach
+// 闭包实测 0 alloc，评审归因修正），字节扫描彻底消除。id 去重走栈数组
+// [16][]byte（子切片零拷贝；官方 n 上限 10 零分配兜底；>16 唯一 id 的病态帧
+// 去重退化为全数计数——只可能虚增不虚减，防御性接受）。无 image item 的帧
+// 短路零分配。
 func respImageCountCompleted(data []byte) int64 {
-	return countImageItems(gjson.GetBytes(data, "response.output"))
+	// completed 帧形态：response.output 信封（先定位 "response" 对象，再定位
+	// 其内 "output"——嵌套同名键不误定位）
+	respStart, respEnd, ok := scanKeyValue(data, responseKeyBytes)
+	if !ok {
+		return 0
+	}
+	sub := data[respStart:respEnd]
+	outStart, outEnd, ok := scanKeyValue(sub, outputKeyBytes)
+	if !ok {
+		return 0
+	}
+	return countImageItems(sub[outStart:outEnd])
 }
 
-// respImageCountBody 非流式响应体形态（SDK RawJSON：无 response 信封）。
+// respImageCountBody 非流式响应体形态（SDK RawJSON：无 response 信封，
+// output 顶层直定位）。
 func respImageCountBody(data []byte) int64 {
-	return countImageItems(gjson.GetBytes(data, "output"))
+	outStart, outEnd, ok := scanKeyValue(data, outputKeyBytes)
+	if !ok {
+		return 0
+	}
+	return countImageItems(data[outStart:outEnd])
 }
 
-// countImageItems 计数核心（输出数组定位由调用方完成——两形态仅路径不同，
-// 拆双入口省去 fallback 双扫描）。
-func countImageItems(out gjson.Result) int64 {
+// countImageItems 计数核心（raw = output 数组值字节；调用方完成定位——两
+// 形态仅定位路径不同，拆双入口省去 fallback 双扫描）。
+func countImageItems(raw []byte) int64 {
+	if len(raw) == 0 || raw[0] != '[' {
+		return 0 // 缺失/非数组：无 item 可数
+	}
 	var (
 		count int64
-		ids   [16]string
+		ids   [16][]byte
 		n     int
 	)
-	out.ForEach(func(_, item gjson.Result) bool {
-		if item.Get("type").String() != "image_generation_call" {
-			return true // type 过滤：其他工具 item 的 result 不参与
+	for tv := range scanTools(raw) {
+		if !bytes.Equal(tv.Type, imageGenCallBytes) {
+			continue // type 过滤：其他工具 item 的 result 不参与
 		}
-		r := item.Get("result")
-		if !r.Exists() || r.Type == gjson.Null {
-			return true // result 缺失/null：图未生成
+		if !imageResultNonEmpty(tv.Result) {
+			continue // result 缺失/null/空串/空数组：图未生成
 		}
-		if r.IsArray() {
-			if r.Get("#").Int() <= 0 {
-				return true // 空数组：无结果
-			}
-		} else if r.String() == "" {
-			return true // 空串/标量空值：无结果
-		}
-		if id := item.Get("id").String(); id != "" {
-			for i := 0; i < n; i++ {
-				if ids[i] == id {
-					return true // 已计数（id 去重）
+		if len(tv.ID) > 0 {
+			dup := false
+			for j := 0; j < n; j++ {
+				if bytes.Equal(ids[j], tv.ID) {
+					dup = true
+					break
 				}
 			}
+			if dup {
+				continue // 已计数（id 去重）
+			}
 			if n < len(ids) {
-				ids[n] = id
+				ids[n] = tv.ID
 				n++
 			}
 		} // id 缺失：按出现顺序全数计入（不走去重）
 		count++
-		return true
-	})
+	}
 	return count
+}
+
+// imageResultNonEmpty result 非空判定（spec §6：result 必填非空 = 图已生成）：
+// 缺失/空串/null 字面量/空数组 → 空；非空字符串（base64）与非空数组
+// （image_url 对象形态）→ 非空。与 gjson 版（Exists && Type!=Null && 非空）
+// 语义等价；status 不参与（V1-V3 实证终态 status="generating"）。
+func imageResultNonEmpty(r []byte) bool {
+	if len(r) == 0 {
+		return false
+	}
+	if r[0] == '[' {
+		return !(len(r) == 2 && r[1] == ']') // 空数组 → 空
+	}
+	if r[0] == 'n' && bytes.Equal(r, nullBytes) {
+		return false // null 字面量 → 空
+	}
+	return true
 }
