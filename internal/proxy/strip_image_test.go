@@ -38,6 +38,7 @@ func TestStripImageToolsStripsImageTools(t *testing.T) {
 		]
 	}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.NotSame(t, &body[0], &out[0], "命中且剥离 → 必须产出新帧")
 
 	var m map[string]json.RawMessage
@@ -62,6 +63,7 @@ func TestStripImageToolsStripsImageTools(t *testing.T) {
 func TestStripImageToolsImageEdits(t *testing.T) {
 	body := []byte(`{"model":"m","tools":[{"type":"image_edits","input_image_mask":{"image_url":"data:image/png;base64,x"}},{"type":"code_interpreter"}]}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	var m map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(out, &m))
 	var tools []map[string]any
@@ -78,6 +80,7 @@ func TestStripImageToolsCodexNamespace(t *testing.T) {
 		{"type":"function","name":"shell","parameters":{"type":"object"}}
 	],"tool_choice":{"type":"namespace","name":"image_gen"}}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	var m map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(out, &m))
 	var tools []map[string]any
@@ -135,6 +138,7 @@ func TestStripImageToolsToolChoiceDangling(t *testing.T) {
 func TestStripImageToolsAllStripped(t *testing.T) {
 	body := []byte(`{"model":"m","input":"hi","tools":[{"type":"image_generation_tool","namespace":"image_gen"},{"type":"image_edits"}],"tool_choice":{"type":"image_generation_tool"}}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.NotSame(t, &body[0], &out[0], "命中且剥离 → 必须产出新帧")
 
 	var m map[string]json.RawMessage
@@ -153,6 +157,7 @@ func TestStripImageToolsAllStripped(t *testing.T) {
 func TestStripImageToolsNoImageToolZeroChange(t *testing.T) {
 	body := []byte(`{"model":"m","input":[{"type":"message","role":"user","content":[{"type":"input_image","image_url":"https://example.com/a.png"}]}],"tools":[{"type":"function","name":"shell","description":"Generate an image file"}]}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.Same(t, &body[0], &out[0], "无图像工具 → 原切片直转（零解析改写）")
 }
 
@@ -160,6 +165,7 @@ func TestStripImageToolsNoImageToolZeroChange(t *testing.T) {
 func TestStripImageToolsNoImageSubstring(t *testing.T) {
 	body := []byte(`{"model":"m","tools":[{"type":"function","name":"shell","parameters":{"type":"object"}}]}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.Same(t, &body[0], &out[0], "预筛无命中 → 原切片直转")
 }
 
@@ -172,6 +178,7 @@ func TestStripImageToolsPreFilterZeroAlloc(t *testing.T) {
 		_ = out
 	})
 	require.Zero(t, allocs, "预筛无命中必须零分配")
+	require.True(t, json.Valid(stripImageTools(body)), "输出必须合法 JSON")
 }
 
 // TestStripImageToolsMalformedToolsPassthrough 异常帧（tools 非数组）：
@@ -179,6 +186,7 @@ func TestStripImageToolsPreFilterZeroAlloc(t *testing.T) {
 func TestStripImageToolsMalformedToolsPassthrough(t *testing.T) {
 	body := []byte(`{"model":"m","tools":"image_generation_tool","tool_choice":{"type":"image_generation_tool"}}`)
 	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
 	require.Same(t, &body[0], &out[0], "tools 非数组 → 原样转发")
 }
 
@@ -334,4 +342,134 @@ func TestProxyResponsesStripImageToolsOnNonStream(t *testing.T) {
 	require.Equal(t, "shell", tools[0].(map[string]any)["name"])
 	_, ok := upBody["tool_choice"]
 	require.False(t, ok, "悬挂 tool_choice 不得转发上游")
+}
+
+// ---------------------------------------------------------------------------
+// 2026-08-12-strip-optimize-spec v5 新增用例：非数组守卫三形态 / \u 转义必剥 /
+// \u 字面不解码 / 双删组合（相邻共享逗号）/ 50-tool 等价性 / 无剥除零分配 /
+// 剥除路径分配断言。
+// ---------------------------------------------------------------------------
+
+func TestStripImageToolsNonArrayPassthrough(t *testing.T) {
+	// 非数组守卫补用例（评审缺陷 6）：tools=number/object/null 原样转发。
+	cases := []struct {
+		name  string
+		tools string
+	}{
+		{name: "number", tools: `123`},
+		{name: "object", tools: `{"type":"image_generation_tool"}`},
+		{name: "null", tools: `null`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte(`{"model":"m","tools":` + tc.tools + `,"tool_choice":{"type":"image_generation_tool"}}`)
+			out := stripImageTools(body)
+			require.Same(t, &body[0], &out[0], "tools 非数组 → 原样转发（数组守卫）")
+		})
+	}
+}
+
+func TestStripImageToolsUnicodeEscapedToolType(t *testing.T) {
+	// \u 转义工具标识必剥（与现状 gjson String() 等价）：type 字节无 "image"
+	// 子串 → 预筛 \u 路径 → 解码判定 → 剥除。
+	body := []byte(`{"model":"m","tools":[{"type":"\u0069mage_generation_tool","namespace":"image_gen"},{"type":"function","name":"shell","parameters":{"type":"object"}}],"tool_choice":{"type":"image_generation_tool"}}`)
+	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
+	require.True(t, json.Valid(out), "输出必须合法 JSON")
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out, &m))
+	var tools []map[string]any
+	require.NoError(t, json.Unmarshal(m["tools"], &tools))
+	require.Len(t, tools, 1, "\\u 转义图像工具必须剥除")
+	require.Equal(t, "shell", tools[0]["name"])
+	_, ok := m["tool_choice"]
+	require.False(t, ok, "悬挂 tool_choice 同步移除")
+}
+
+func TestStripImageToolsBackslashUPrefixLiteral(t *testing.T) {
+	// \u 字面（双反斜杠前缀）不解码：type 为字面 "\u0069mage_generation_tool"
+	// ≠ 图像工具标识 → 保留（解码器 \\ 前缀感知防漏剥/错剥）。
+	body := []byte(`{"model":"m","tools":[{"type":"\\u0069mage_generation_tool"},{"type":"function","name":"shell","parameters":{"type":"object"}}]}`)
+	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
+	require.True(t, json.Valid(out), "输出必须合法 JSON")
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out, &m))
+	var tools []map[string]any
+	require.NoError(t, json.Unmarshal(m["tools"], &tools))
+	require.Len(t, tools, 2, "字面 \\u 形态非图像工具 → 保留")
+}
+
+func TestStripImageToolsAllStrippedAdjacentKeys(t *testing.T) {
+	// 双删组合（三位置逗号）：tools 与 tool_choice 相邻双双全剥——共享逗号
+	// 区间重叠须合并（一次性计算全部区间后统一拼接）。
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "tools first tc second", body: `{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"},"model":"m"}`},
+		{name: "tc first tools second", body: `{"tool_choice":{"type":"image_generation_tool"},"tools":[{"type":"image_generation_tool"}],"model":"m"}`},
+		{name: "only keys", body: `{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := stripImageTools([]byte(tc.body))
+			require.True(t, json.Valid(out), "拼接输出必须合法 JSON")
+			var m map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(out, &m))
+			_, ok := m["tools"]
+			require.False(t, ok, "全剥 → tools 字段删除")
+			_, ok = m["tool_choice"]
+			require.False(t, ok, "悬挂 tool_choice 同步删除")
+			if len(tc.body) < len(`{"tools":[{"type":"image_generation_tool"}],"tool_choice":{"type":"image_generation_tool"},"model":"m"}`) {
+				require.Len(t, m, 0, "仅双键全剥 → 空对象")
+			} else {
+				require.JSONEq(t, `"m"`, string(m["model"]), "非图像字段原样保留")
+			}
+		})
+	}
+}
+
+func TestStripImageTools50ToolsEquivalence(t *testing.T) {
+	// 50-tool 边界体等价性（压测同形态：1 image_generation_tool + 49 function）。
+	body := build50ToolBody()
+	require.InDelta(t, 3400, len(body), 600, "压测同形态 ~3.4KB")
+	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
+	require.NotSame(t, &body[0], &out[0], "命中且剥离 → 必须产出新帧")
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON")
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(out, &m))
+	var tools []map[string]any
+	require.NoError(t, json.Unmarshal(m["tools"], &tools))
+	require.Len(t, tools, 49, "1 image_generation_tool 剥离后只剩 49 function")
+	require.Equal(t, "f_49", tools[48]["name"], "保留工具顺序与原样")
+	_, ok := m["tool_choice"]
+	require.False(t, ok, "指向已剥工具的 tool_choice 必须移除")
+	require.JSONEq(t, `"m"`, string(m["model"]))
+}
+
+func TestStripImageToolsHitNoStripZeroAlloc(t *testing.T) {
+	// 预筛命中但无剥除：一次扫描先计数后分配——原切片直转 + 零分配
+	// （require.Same 钉住；range-over-func 闭包分配为编译器行为，实测记录）。
+	body := []byte(`{"model":"m","input":[{"type":"message","role":"user","content":[{"type":"input_image","image_url":"https://example.com/a.png"}]}],"tools":[{"type":"function","name":"shell","description":"Generate an image file"}]}`)
+	out := stripImageTools(body)
+	require.True(t, json.Valid(out), "拼接输出必须合法 JSON（splice 逗号管理兜底）")
+	require.Same(t, &body[0], &out[0], "无图像工具 → 原切片直转（零解析改写）")
+	allocs := testing.AllocsPerRun(200, func() {
+		out := stripImageTools(body)
+		_ = out
+	})
+	require.Zero(t, allocs, "预筛命中但无剥除 → 零分配")
+}
+
+func TestStripImageToolsStripAllocs(t *testing.T) {
+	// 命中且剥除路径 allocs ≤4（out 预分配 1 + stripped map 1 + iter 闭包
+	// 0-2——range-over-func 闭包分配为编译器行为非语言保证，实测记录）。
+	body := []byte(`{"model":"m","tools":[{"type":"function","name":"shell","parameters":{"type":"object"}},{"type":"image_generation_tool","namespace":"image_gen"}]}`)
+	allocs := testing.AllocsPerRun(200, func() {
+		out := stripImageTools(body)
+		_ = out
+	})
+	require.LessOrEqual(t, allocs, 4.0, "命中且剥除路径 allocs ≤4，实测 %.2f", allocs)
 }
