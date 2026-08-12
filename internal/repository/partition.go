@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 import (
@@ -14,9 +18,9 @@ import (
 	"entgo.io/ent/dialect/sql/schema"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"go-proxy-mini/internal/ent/errlog"
-	"go-proxy-mini/internal/ent/usagelog"
-	"go-proxy-mini/internal/ent/usagestat"
+	"github.com/is7qin/c3api/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/usagelog"
+	"github.com/is7qin/c3api/internal/ent/usagestat"
 )
 
 // PartitionRepo 管理按日分区表（Phase 5 T4.5，用户决策 2026-08-09；err_logs/

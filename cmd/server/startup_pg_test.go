@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package main
 
 import (
@@ -15,27 +19,27 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/invalidate"
-	"go-proxy-mini/internal/notify"
-	"go-proxy-mini/internal/proxy"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/service"
-	"go-proxy-mini/internal/snapshot"
-	"go-proxy-mini/pkg/cryptox"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/invalidate"
+	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/internal/proxy"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/service"
+	"github.com/is7qin/c3api/internal/snapshot"
+	"github.com/is7qin/c3api/pkg/cryptox"
 )
 
 // 启动就绪时序（快照注册表）真实 PG 集成基座（与 repository/pricing 包同款
 // 约定）：
 //
-//	TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15432/gpm_test_snap \
+//	TEST_DATABASE_URL=postgres://postgres:c3api@localhost:15432/c3api_test_snap \
 //	  go test ./cmd/server/ -run TestStartupReloadAllPG -v
 //
-// 独立测试库 gpm_test_snap（避开与其它包测试的 DB 竞争）；本测试另用独立
+// 独立测试库 c3api_test_snap（避开与其它包测试的 DB 竞争）；本测试另用独立
 // schema（snapshot_test）与同库其它 schema 隔离。未设置 TEST_DATABASE_URL →
 // t.Skip。
 

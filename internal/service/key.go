@@ -1,14 +1,18 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package service
 
 import (
 	"context"
 	"fmt"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/notify"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/pkg/cryptox"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/pkg/cryptox"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // ErrGroupNotEligible private 组未授予（key 创建组可选性校验；包装

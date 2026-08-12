@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package billing 计费核心：service_tier 归一化 + 价格矩阵纯函数 + 余额快照
 // + 批量扣费 flusher（T2/T3）。扣费落库与请求路径分离。
 package billing
@@ -6,7 +10,7 @@ import (
 	"context"
 	"sync/atomic"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // AssignmentKey 用户-组关联键（T3.5 修正：用户专属倍率按组挂载——用户在不同

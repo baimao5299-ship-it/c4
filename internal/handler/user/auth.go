@@ -1,10 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package user
 
 import (
 	"net/http"
 
-	"go-proxy-mini/internal/auth"
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/auth"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // PostUserAuthRegister 注册（signup_enabled 开关检查在 service；注册即登录：

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Activity, AlertTriangle, Gauge, PowerOff, Boxes, FolderOpen, Users } from 'lucide-react'
@@ -155,7 +159,7 @@ export default function Dashboard() {
                     <ChartContainer config={chartConfig} className="aspect-auto h-[320px] w-full">
                       <BarChart accessibilityLayer data={errData} margin={{ left: 0, right: 8 }}>
                         <defs>
-                          <linearGradient id="gpm-errbar-fill" x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id="c3api-errbar-fill" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="var(--color-err_rate)" stopOpacity={0.9} />
                             <stop offset="100%" stopColor="var(--color-err_rate)" stopOpacity={0.35} />
                           </linearGradient>
@@ -205,7 +209,7 @@ export default function Dashboard() {
                             />
                           }
                         />
-                        <Bar dataKey="err_rate" fill="url(#gpm-errbar-fill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                        <Bar dataKey="err_rate" fill="url(#c3api-errbar-fill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
                       </BarChart>
                     </ChartContainer>
                   )}

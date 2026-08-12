@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package sserelay 提供原始字节级 SSE relay：从 io.Reader 增量读取 SSE 帧，
 // 原样转发给 http.ResponseWriter，自适应批量 Flush，并以 Observer 旁路暴露
 // 事件信息（仅用于 usage 提取，不参与转发决策）。

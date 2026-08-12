@@ -5,10 +5,10 @@ package ent
 import (
 	"context"
 	"fmt"
-	"go-proxy-mini/internal/ent/group"
-	"go-proxy-mini/internal/ent/key"
-	"go-proxy-mini/internal/ent/predicate"
-	"go-proxy-mini/internal/ent/user"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/user"
 	"math"
 
 	"entgo.io/ent"

@@ -5,7 +5,7 @@ package ent
 import (
 	"encoding/json"
 	"fmt"
-	"go-proxy-mini/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/template"
 	"strings"
 	"time"
 

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package scheduler 实现内存优先的账号调度：规则驱动的状态管理（internal/rule 引擎
 // 事件投递 + apply 回调）、选号（格式硬过滤 + 模型偏好 + 预生成加权轮询序列）、
 // 并发槽、快照缓存与异步状态回写。规格 §5。单实例语义：运行时状态仅存内存。
@@ -12,10 +16,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 var (

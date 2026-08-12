@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package usage 承载请求明细的异步落库与预聚合统计（规格 §7.2/§10.5）以及
 // usagelog 保留策略（retention worker，Phase 5 T4.5：按日分区 DROP 清理）。
 // 统计聚合永不失真（同步进内存计数），明细经无界 pending 批量落库（O1 管道化：
@@ -14,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 type UsageConfig struct {

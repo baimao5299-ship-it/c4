@@ -1,10 +1,10 @@
 # 生产配置模板（compose 挂载，只读）。敏感项由环境变量
-# GPM_ADMIN_TOKEN / GPM_DB_DSN / GPM_AUTH_JWT_SECRET 注入覆盖（见 compose.yml），
+# C3API_ADMIN_TOKEN / C3API_DB_DSN / C3API_AUTH_JWT_SECRET 注入覆盖（见 compose.yml），
 # 此处留空即可。
 server = { addr = ":18080", read_header_timeout = "10s", max_header_bytes = 1048576 }
 log = { level = "info", output = "stdout" }
 admin = { token = "" }
-# JWT 密钥（强制——缺失启动失败；生产必须经 env GPM_AUTH_JWT_SECRET 注入，
+# JWT 密钥（强制——缺失启动失败；生产必须经 env C3API_AUTH_JWT_SECRET 注入，
 # 随机生成 = 重启全失效 + 多实例不一致）
 auth = { jwt_secret = "" }
 db = { dsn = "", max_conns = 20 }
@@ -61,6 +61,6 @@ usage = {
 # flush_workers：并行落库 worker 数（默认 8——多角度压测 C 项实证 2026-08-12：
 # 多用户水线告警清零、pending 斜率降 25-40%、QPS/CPU 零回退；每 worker 一笔
 # DeductAndLog 事务，受 DB 连接池余量 db.max_conns 约束，同用户实例内恒串行）。
-# 注：billing 无 env 覆盖项（compose 未注入 GPM_BILLING_*），开关/参数经挂载的
+# 注：billing 无 env 覆盖项（compose 未注入 C3API_BILLING_*），开关/参数经挂载的
 # config.toml 文件修改生效。
 billing = { enabled = false, flush_interval = "1s", balance_refresh_interval = "10s", flush_workers = 8 }

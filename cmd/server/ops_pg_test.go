@@ -1,13 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package main
 
 // GET /ops/workers 真实 PG 端到端（spec 2026-08-11 验收：各 worker 指标与真实
 // 状态一致断言——pending 增长、落盘计数、retention DROP 分区数、注册表 Status
 // 同步；typed struct 断言；admin 鉴权）。
 //
-//	TEST_DATABASE_URL=postgres://postgres:gpm@localhost:5432/gpm_test_ops \
+//	TEST_DATABASE_URL=postgres://postgres:c3api@localhost:5432/c3api_test_ops \
 //	  go test ./cmd/server/ -run TestOpsWorkersPG -v
 //
-// 独立测试库 gpm_test_ops（本任务专用，避开并行 worktree 竞争）；另用独立
+// 独立测试库 c3api_test_ops（本任务专用，避开并行 worktree 竞争）；另用独立
 // schema（ops_test）与同库其它 schema 隔离。未设置 TEST_DATABASE_URL → t.Skip。
 
 import (
@@ -27,18 +31,18 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/proxy"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/server"
-	"go-proxy-mini/internal/service"
-	"go-proxy-mini/internal/snapshot"
-	"go-proxy-mini/internal/usage"
-	"go-proxy-mini/pkg/cryptox"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/proxy"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/server"
+	"github.com/is7qin/c3api/internal/service"
+	"github.com/is7qin/c3api/internal/snapshot"
+	"github.com/is7qin/c3api/internal/usage"
+	"github.com/is7qin/c3api/pkg/cryptox"
 )
 
 // opsTestSchema 本测试专用 schema（同一数据库内隔离命名空间）。

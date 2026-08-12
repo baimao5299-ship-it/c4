@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package main
 
 import (
@@ -9,9 +13,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/invalidate"
-	"go-proxy-mini/internal/notify"
-	"go-proxy-mini/internal/snapshot"
+	"github.com/is7qin/c3api/internal/invalidate"
+	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/internal/snapshot"
 )
 
 // --- 测试重载目标（参照 internal/invalidate/invalidate_test.go 的 rec* 系列） ---

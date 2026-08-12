@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package handler
 
 import (
@@ -11,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	userapi "go-proxy-mini/internal/handler/user"
+	userapi "github.com/is7qin/c3api/internal/handler/user"
 )
 
 // validCode 校验码格式（XXXX-XXXX-XXXX-XXXX，字符集 32：大写 A-Z 去 I/O + 数字 2-9 去 0/1）。

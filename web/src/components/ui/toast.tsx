@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // shadcn base 版 Toast（官方 registry 裁剪：IconPlaceholder → lucide 图标）。
 // 用法：App 根挂 <Toaster />；任意处 `toast.add({ title, description, type })`。
 // 基于 @base-ui/react/toast（与项目其他组件同基座，零新依赖）。

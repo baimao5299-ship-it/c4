@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package rule 实现规则引擎（可编排状态管理）：事件 → 有界 channel → 规则 worker
 // （priority 首中匹配）→ 状态/冷却/权重更新。scheduler.MarkResult 的硬编码状态机
 // 由本包替代：scheduler 只做禁用守卫 + 事件投递（条件投递），动作应用经 SetApply
@@ -13,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // Kind 事件类别（与 scheduler.ResultKind 的映射由 scheduler 侧完成）。

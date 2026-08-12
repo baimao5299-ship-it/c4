@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 用户端总览（/user 默认落地页）：me() 余额卡（Balance/MaxConcurrency/Status/注册时间）
 // + 近况（可用 keys 数 + 最近 7 天用量摘要）。卡片与动画延续管理端 dashboard 模式。
 // 单位语义：User.Balance 为 USD 浮点直显（$ + 2 位小数）；MaxConcurrency 0 = 不限。

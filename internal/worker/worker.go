@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package worker 提供统一后台任务抽象（Global Constraints #5）：顺序启动、
 // 反向排空、panic 捕获（进程不崩）。
 package worker
@@ -7,7 +11,7 @@ import (
 	"fmt"
 	"sync"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // Worker 是后台任务统一契约：Start 非阻塞启动内部 goroutine，Close 排空/释放。

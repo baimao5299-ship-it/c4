@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 页码按钮组计算（标准滑动窗口）：totalPages ≤ 7 全显；否则首尾页 + 当前页前后各 2 页，
 // 缺口以 'ellipsis' 占位（渲染为「…」）。current 靠近首尾时窗口自然收敛。
 // 供 Pagination（offset/limit）与 PagePagination（page/page_size）共用。

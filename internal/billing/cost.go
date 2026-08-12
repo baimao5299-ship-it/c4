@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package billing 计费核心：service_tier 归一化 + 价格矩阵纯函数计算。
 // 纯函数零分配零锁；扣费落库（T3）与请求路径分离。
 package billing
@@ -6,7 +10,7 @@ import (
 	"math"
 	"strings"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // Tier service_tier 归一化档位。与 sub2api 的 fast→priority 归一不同：fast

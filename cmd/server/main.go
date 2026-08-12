@@ -1,4 +1,8 @@
-// go-proxy-mini 入口：配置 → DB/ent → 各模块装配 → 优雅退出。
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
+// github.com/is7qin/c3api 入口：配置 → DB/ent → 各模块装配 → 优雅退出。
 package main
 
 import (
@@ -17,27 +21,27 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	jwtauth "go-proxy-mini/internal/auth"
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/config"
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/handler"
-	userapi "go-proxy-mini/internal/handler/user"
-	"go-proxy-mini/internal/invalidate"
-	"go-proxy-mini/internal/notify"
-	"go-proxy-mini/internal/pricing"
-	"go-proxy-mini/internal/proxy"
-	"go-proxy-mini/internal/repository"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/server"
-	"go-proxy-mini/internal/service"
-	"go-proxy-mini/internal/snapshot"
-	"go-proxy-mini/internal/usage"
-	"go-proxy-mini/internal/worker"
-	"go-proxy-mini/pkg/aiclient"
-	"go-proxy-mini/pkg/httpx"
-	"go-proxy-mini/pkg/logx"
+	jwtauth "github.com/is7qin/c3api/internal/auth"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/config"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/handler"
+	userapi "github.com/is7qin/c3api/internal/handler/user"
+	"github.com/is7qin/c3api/internal/invalidate"
+	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/internal/pricing"
+	"github.com/is7qin/c3api/internal/proxy"
+	"github.com/is7qin/c3api/internal/repository"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/server"
+	"github.com/is7qin/c3api/internal/service"
+	"github.com/is7qin/c3api/internal/snapshot"
+	"github.com/is7qin/c3api/internal/usage"
+	"github.com/is7qin/c3api/internal/worker"
+	"github.com/is7qin/c3api/pkg/aiclient"
+	"github.com/is7qin/c3api/pkg/httpx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 func main() {
@@ -57,7 +61,7 @@ func main() {
 		fatalf("logger: %v", err)
 	}
 	if cfg.Admin.Token == "" || cfg.Auth.JWTSecret == "" || cfg.DB.DSN == "" {
-		fatalf("admin.token, auth.jwt_secret and db.dsn are required (config or GPM_ADMIN_TOKEN/GPM_AUTH_JWT_SECRET/GPM_DB_DSN)")
+		fatalf("admin.token, auth.jwt_secret and db.dsn are required (config or C3API_ADMIN_TOKEN/C3API_AUTH_JWT_SECRET/C3API_DB_DSN)")
 	}
 
 	pool, err := repository.OpenPG(context.Background(), cfg.DB.DSN, int32(cfg.DB.MaxConns))
@@ -234,7 +238,7 @@ func main() {
 	// invalidate 的 settings 分支延迟绑定：service.New 需要去抖器做 Invalidator、
 	// 去抖器需要 svc 做 SettingsReloader（构造环）——svc 构造完成后、Start 前回填。
 	inv.SetSettings(svc)
-	// NOTIFY 监听 worker（Name="notify"）：独立 pgx 连接 LISTEN gpm_invalidate；
+	// NOTIFY 监听 worker（Name="notify"）：独立 pgx 连接 LISTEN c3api_invalidate；
 	// 断线指数退避重连 + 重连即全量刷新（R8）；Src 跳过自播（省重复 reload）。
 	listener := notify.NewListener(notify.ListenerConfig{
 		DSN:        cfg.DB.DSN,

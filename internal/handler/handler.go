@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package handler 实现 /admin/* 的 HTTP 处理：OpenAPI 契约层（oapi-codegen
 // 生成的 ServerInterface + chi 路由），JSON in/out。
 package handler
@@ -7,7 +11,7 @@ import (
 	"errors"
 	"net/http"
 
-	"go-proxy-mini/internal/service"
+	"github.com/is7qin/c3api/internal/service"
 )
 
 // AdminAPI 实现生成的 ServerInterface（契约层唯一实现）。

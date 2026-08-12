@@ -4,8 +4,8 @@ package ent
 
 import (
 	"context"
-	"go-proxy-mini/internal/ent/predicate"
-	"go-proxy-mini/internal/ent/usagelog"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/usagelog"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"

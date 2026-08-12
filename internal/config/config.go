@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package config
 
 import (
@@ -40,7 +44,7 @@ type AdminConfig struct {
 	Token string `koanf:"token"`
 }
 
-// AuthConfig JWT 密钥：强制（GPM_AUTH_JWT_SECRET），缺失启动失败——
+// AuthConfig JWT 密钥：强制（C3API_AUTH_JWT_SECRET），缺失启动失败——
 // 随机生成 = 重启全失效 + 多实例不一致（评审定夺①）。
 type AuthConfig struct {
 	JWTSecret string `koanf:"jwt_secret"`
@@ -121,7 +125,7 @@ func defaults() *Config {
 	}
 }
 
-// Load 先应用默认值，再叠加 TOML 文件，最后叠加 GPM_ 前缀 env。
+// Load 先应用默认值，再叠加 TOML 文件，最后叠加 C3API_ 前缀 env。
 func Load(path string) (*Config, error) {
 	c := defaults()
 	k := koanf.New(".")
@@ -131,9 +135,9 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	if err := k.Load(env.Provider(".", env.Opt{
-		Prefix: "GPM_",
+		Prefix: "C3API_",
 		TransformFunc: func(k, v string) (string, any) {
-			k = strings.ToLower(strings.TrimPrefix(k, "GPM_"))
+			k = strings.ToLower(strings.TrimPrefix(k, "C3API_"))
 			if i := strings.Index(k, "_"); i >= 0 {
 				k = k[:i] + "." + k[i+1:]
 			}
@@ -146,13 +150,13 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	if c.Admin.Token == "" {
-		c.Admin.Token = os.Getenv("GPM_ADMIN_TOKEN")
+		c.Admin.Token = os.Getenv("C3API_ADMIN_TOKEN")
 	}
 	if c.Auth.JWTSecret == "" {
-		c.Auth.JWTSecret = os.Getenv("GPM_AUTH_JWT_SECRET")
+		c.Auth.JWTSecret = os.Getenv("C3API_AUTH_JWT_SECRET")
 	}
 	if c.DB.DSN == "" {
-		c.DB.DSN = os.Getenv("GPM_DB_DSN")
+		c.DB.DSN = os.Getenv("C3API_DB_DSN")
 	}
 	return c, nil
 }

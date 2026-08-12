@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package config
 
 import (
@@ -8,8 +12,8 @@ import (
 )
 
 func TestDefaults(t *testing.T) {
-	t.Setenv("GPM_ADMIN_TOKEN", "tok")
-	t.Setenv("GPM_DB_DSN", "postgres://x")
+	t.Setenv("C3API_ADMIN_TOKEN", "tok")
+	t.Setenv("C3API_DB_DSN", "postgres://x")
 	c, err := Load("")
 	require.NoError(t, err)
 	require.Equal(t, "warn", c.Log.Level)
@@ -25,7 +29,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestEnvOverlay(t *testing.T) {
-	t.Setenv("GPM_PROXY_MAX_INFLIGHT", "7")
+	t.Setenv("C3API_PROXY_MAX_INFLIGHT", "7")
 	c, err := Load("")
 	require.NoError(t, err)
 	require.Equal(t, int64(7), c.Proxy.MaxInflight)

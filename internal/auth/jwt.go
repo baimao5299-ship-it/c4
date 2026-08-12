@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package auth
 
 import (
@@ -7,7 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// 评审定夺①：JWT 密钥 config 强制（GPM_JWT_SECRET），缺失启动失败——
+// 评审定夺①：JWT 密钥 config 强制（C3API_JWT_SECRET），缺失启动失败——
 // 随机生成 = 重启全失效 + 多实例不一致。
 // 评审定夺②：TTL 24h（用户决策 2026-08-11，原 15min 短时效导致日常使用频繁掉线；
 // 账号禁用/降权的即时生效仍靠内存快照广播，长 TTL 仅弱化快照失效后的最终兜底）。

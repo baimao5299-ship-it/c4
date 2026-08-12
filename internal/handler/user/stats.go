@@ -1,10 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package user
 
 import (
 	"net/http"
 	"time"
 
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // GetUserStats 我的用量统计（强制 user_id = 当前用户；from/to 缺省

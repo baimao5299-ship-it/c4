@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package proxy
 
 import (
@@ -10,7 +14,7 @@ import (
 	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // 提取单测用真实上游 JSON 构造（评审 I-1：不得用结构体 marshal 自证——

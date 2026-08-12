@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package aiclient 是 openai/anthropic 官方 SDK 的唯一引用点：客户端懒构建 +
 // 鉴权头注入 + 非流式超时策略。协议类型（params/response/stream）直接透传为
 // 调用签名——它们是协议本身，隐藏它们等于重写协议（违背"用现成库"）。
@@ -25,7 +29,7 @@ import (
 	openaioption "github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 type Config struct {

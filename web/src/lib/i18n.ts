@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import zh from '@/locales/zh.json'
 import en from '@/locales/en.json'
 
-export const LANG_KEY = 'gpm_lang'
+export const LANG_KEY = 'c3api_lang'
 export type AppLang = 'zh-CN' | 'en'
 
-// 语言解析顺序：localStorage gpm_lang → navigator.language（zh 开头 → zh-CN，否则 en）→ 默认 zh-CN。
+// 语言解析顺序：localStorage c3api_lang → navigator.language（zh 开头 → zh-CN，否则 en）→ 默认 zh-CN。
 function detectLang(): AppLang {
   const saved = localStorage.getItem(LANG_KEY)
   if (saved === 'zh-CN' || saved === 'en') return saved

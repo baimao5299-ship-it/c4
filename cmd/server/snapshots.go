@@ -1,15 +1,19 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package main
 
 import (
 	"context"
 
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/proxy"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/server"
-	"go-proxy-mini/internal/service"
-	"go-proxy-mini/internal/snapshot"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/proxy"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/server"
+	"github.com/is7qin/c3api/internal/service"
+	"github.com/is7qin/c3api/internal/snapshot"
 )
 
 // 五路快照 → snapshot.Snapshot 适配器（装配侧，与 schedGroupPub 同模式——

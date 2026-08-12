@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: go-proxy-mini Admin API
+  title: github.com/is7qin/c3api Admin API
   version: 1.0.0
   description: '管理端 API（模板/账号/分组/规则/日志/统计）。认证：Authorization: Bearer <admin_token>。'
 servers:

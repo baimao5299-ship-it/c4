@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package user 实现 /user 面 HTTP 处理（OpenAPI tag: user 的独立
 // ServerInterface）：认证（register/login 公开；me 及业务端点 JWT 保护）+
 // 业务端点（groups/keys/logs/stats，Phase 3a Task 4）。
@@ -8,7 +12,7 @@ import (
 	"errors"
 	"net/http"
 
-	"go-proxy-mini/internal/service"
+	"github.com/is7qin/c3api/internal/service"
 )
 
 // UserAPI 实现生成的 ServerInterface（user 面唯一实现）。

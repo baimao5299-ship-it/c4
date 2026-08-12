@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package proxy
 
 // 错误文本落盘（部署故障修复 #20）：连接级失败 / 4xx / 5xx 的 usage log
@@ -18,14 +22,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/rule"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/usage"
-	"go-proxy-mini/pkg/aiclient"
-	"go-proxy-mini/pkg/cryptox"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/usage"
+	"github.com/is7qin/c3api/pkg/aiclient"
+	"github.com/is7qin/c3api/pkg/cryptox"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // newTestProxyWarn 同 newTestProxyTimeoutLogs，但注入 zap 日志（Warn 断言用）。
@@ -81,7 +85,7 @@ func TestProxyConnErrorLogsErrorMessage(t *testing.T) {
 	store := &captureLogStore{}
 	// 日志文件：zap 持有句柄（Windows 上删除会失败），RemoveAll 忽略错误
 	// （与 flusher_test/usage_test 同模式）
-	dir, err := os.MkdirTemp("", "gpm-errlog-*")
+	dir, err := os.MkdirTemp("", "c3api-errlog-*")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	logOut := filepath.Join(dir, "warn.log")

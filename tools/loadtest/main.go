@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // loadtest 对网关打压测：固定并发 goroutine 持续请求，支持流式首字节和非流式完整响应延迟。
 // 用法: go run ./tools/loadtest -mode stream -addr http://127.0.0.1:8080 -key gk-xxx -concurrency 10000 -duration 5m -healthz http://127.0.0.1:8080/healthz
 //
-//	go run ./tools/loadtest -mode fill -fill-type users -admin-token <GPM_ADMIN_TOKEN> -concurrency 2000 -duration 5m
+//	go run ./tools/loadtest -mode fill -fill-type users -admin-token <C3API_ADMIN_TOKEN> -concurrency 2000 -duration 5m
 //
 // 混合压测（模型请求 + 填充 API 并发）：开两个 loadtest 进程同时跑——一个
 // -mode stream -keys keys.txt、一个 -mode fill，各自 -out 落盘。同机交错跑 +
@@ -51,7 +55,7 @@ var (
 	pprof       = flag.String("pprof", "", "listen addr for /debug/pprof (goroutine dump on hang)")
 	mode        = flag.String("mode", "stream", "request mode: stream, chat or fill")
 	// fill 模式（管理面填充 API 压测）：并发创建用户/key/账号/组/模板/定价。
-	adminToken   = flag.String("admin-token", "", "GPM_ADMIN_TOKEN (fill mode admin APIs; keys fill 走用户面不需要)")
+	adminToken   = flag.String("admin-token", "", "C3API_ADMIN_TOKEN (fill mode admin APIs; keys fill 走用户面不需要)")
 	fillType     = flag.String("fill-type", "users", "fill mode entity: users, keys, accounts, groups, templates, pricing or mixed")
 	fillUser     = flag.String("fill-user", "user0@loadtest.test:loadtest-pass-1", "keys fill: 登录账号 email:password（-fill-user-file 为空时兜底）")
 	fillUserFile = flag.String("fill-user-file", "", "keys fill: 每行 email:password 的账号文件，随机挑（分散登录压力，对齐 setup 用户命名）")
@@ -398,7 +402,7 @@ func validateFillFlags() {
 	switch *fillType {
 	case "users", "accounts", "groups", "templates", "pricing", "mixed":
 		if *adminToken == "" {
-			fmt.Fprintf(os.Stderr, "-mode fill with -fill-type %s requires -admin-token (GPM_ADMIN_TOKEN)\n", *fillType)
+			fmt.Fprintf(os.Stderr, "-mode fill with -fill-type %s requires -admin-token (C3API_ADMIN_TOKEN)\n", *fillType)
 			os.Exit(2)
 		}
 	case "keys":

@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package main
 
 import (
 	"context"
 
-	"go-proxy-mini/internal/invalidate"
-	"go-proxy-mini/internal/notify"
-	"go-proxy-mini/internal/snapshot"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/invalidate"
+	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/internal/snapshot"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // schedGroupPub 把 notify.Publisher 适配为 scheduler.GroupChangePublisher

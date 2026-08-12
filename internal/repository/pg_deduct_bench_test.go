@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 // 热点修复 A 测量基准（spec 2026-08-11）：DeductAndLog 单事务耗时构成测量与
@@ -8,7 +12,7 @@ package repository_test
 //     （FEFO SELECT / 条件 UPDATE / 余额回读 / 每个 CreateBulk 批插入 / COMMIT）。
 //
 // 用法（默认跳过，显式开启）：
-//   HOTFIX_BENCH=1 TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15433/gpm_test_hotfix \
+//   HOTFIX_BENCH=1 TEST_DATABASE_URL=postgres://postgres:c3api@localhost:15433/c3api_test_hotfix \
 //     go test ./internal/repository/ -run TestDeductBenchComposition -v
 
 import (
@@ -23,8 +27,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // deductBenchRounds 每场景测量轮数（≥5 轮 + 首轮预热，取中位数）。

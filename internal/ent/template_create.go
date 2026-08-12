@@ -6,9 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go-proxy-mini/internal/ent/account"
-	"go-proxy-mini/internal/ent/template"
-	"go-proxy-mini/internal/ent/templateext"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/templateext"
 	"time"
 
 	"entgo.io/ent/dialect/sql"

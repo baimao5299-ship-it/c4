@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package handler
 
 import (
@@ -10,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	userapi "go-proxy-mini/internal/handler/user"
+	"github.com/is7qin/c3api/internal/domain"
+	userapi "github.com/is7qin/c3api/internal/handler/user"
 )
 
 // 本文件覆盖 Phase 5 T4 契约扩展：pricing 矩阵 22 字段（PUT 解码 + 响应/列表

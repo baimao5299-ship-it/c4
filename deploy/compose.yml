@@ -1,4 +1,4 @@
-# go-proxy-mini 部署编排：单应用容器（内嵌前端）+ PostgreSQL。
+# github.com/is7qin/c3api 部署编排：单应用容器（内嵌前端）+ PostgreSQL。
 # volume 全部使用目录挂载（bind mount），数据与配置落盘在宿主，便于备份与升级。
 #
 # 用法：
@@ -15,14 +15,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gpm}
-      POSTGRES_DB: go_proxy_mini
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-c3api}
+      POSTGRES_DB: c3api
     volumes:
       # 目录挂载：PG 数据落盘宿主 ./data/pg（备份/迁移直接拷目录）。
       # PG 18+ 要求挂载 /var/lib/postgresql（数据在 data 子目录，支持 pg_upgrade --link）
       - ./data/pg:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d go_proxy_mini"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d c3api"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -36,10 +36,10 @@ services:
       db:
         condition: service_healthy
     environment:
-      # 敏感项走环境变量（config.Load 支持 GPM_ADMIN_TOKEN / GPM_DB_DSN / GPM_AUTH_JWT_SECRET 覆盖）
-      GPM_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (openssl rand -hex 16)}
-      GPM_AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET in .env (openssl rand -hex 32)}
-      GPM_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:-gpm}@db:5432/go_proxy_mini?sslmode=disable
+      # 敏感项走环境变量（config.Load 支持 C3API_ADMIN_TOKEN / C3API_DB_DSN / C3API_AUTH_JWT_SECRET 覆盖）
+      C3API_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (openssl rand -hex 16)}
+      C3API_AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET in .env (openssl rand -hex 32)}
+      C3API_DB_DSN: postgres://postgres:${POSTGRES_PASSWORD:-c3api}@db:5432/c3api?sslmode=disable
     ports:
       - "${PORT:-18080}:18080"
     volumes:

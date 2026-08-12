@@ -2,7 +2,7 @@
 
 package runtime
 
-// The schema-stitching logic is generated in go-proxy-mini/internal/ent/runtime.go
+// The schema-stitching logic is generated in github.com/is7qin/c3api/internal/ent/runtime.go
 
 const (
 	Version = "v0.14.6"                                         // Version of ent codegen.

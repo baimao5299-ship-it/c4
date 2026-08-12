@@ -5,7 +5,7 @@
 ## 通用约定
 
 - **Base URL**：`http://<gateway>/admin`
-- **认证**：所有请求必须带 `Authorization: Bearer <admin_token>`（`config.toml` 的 `admin.token`，或环境变量 `GPM_ADMIN_TOKEN`）。缺失或错误返回 `401`。
+- **认证**：所有请求必须带 `Authorization: Bearer <admin_token>`（`config.toml` 的 `admin.token`，或环境变量 `C3API_ADMIN_TOKEN`）。缺失或错误返回 `401`。
 - **Content-Type**：请求体与响应均为 `application/json`（`rotate-key` 等无请求体操作除外）。
 - **错误格式**：非 2xx 响应体为 `{"error": "<消息>"}`。404 的消息含缺失资源 id（如 `service: not found: id=999 missing`），便于定位。
 - **ID**：路径参数 `{id}` 为模板/账号/分组的整数 ID。

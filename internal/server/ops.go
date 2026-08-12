@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package server
 
 import (
@@ -6,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // GET /ops/workers 管理面端点（spec 2026-08-11）：按需聚合各 worker 可观测

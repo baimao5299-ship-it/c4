@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository
 
 import (
@@ -11,11 +15,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent"
-	"go-proxy-mini/internal/ent/tempbalance"
-	"go-proxy-mini/internal/ent/usagelog"
-	"go-proxy-mini/internal/ent/user"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/tempbalance"
+	"github.com/is7qin/c3api/internal/ent/usagelog"
+	"github.com/is7qin/c3api/internal/ent/user"
 )
 
 // usageLogBatchSize 计费日志单批插入行数上限（#37 P2）：ent CreateBulk 参数 =

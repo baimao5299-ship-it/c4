@@ -5,7 +5,7 @@ package hook
 import (
 	"context"
 	"fmt"
-	"go-proxy-mini/internal/ent"
+	"github.com/is7qin/c3api/internal/ent"
 )
 
 // The AccountFunc type is an adapter to allow the use of ordinary

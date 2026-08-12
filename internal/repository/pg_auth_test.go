@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 package repository_test
 
 import (
@@ -7,18 +11,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/ent/group"
-	"go-proxy-mini/internal/ent/key"
-	"go-proxy-mini/internal/ent/user"
-	"go-proxy-mini/internal/repository"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/user"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // ---------------------------------------------------------------------------
 // Phase 3a 真实 PostgreSQL 测试基座（评审 B1 延续：新表/新语义一律真实 PG）。
 // 启动方式：
 //   docker compose -f deploy/test-compose.yml up -d
-//   TEST_DATABASE_URL=postgres://postgres:gpm@localhost:15432/gpm_test \
+//   TEST_DATABASE_URL=postgres://postgres:c3api@localhost:15432/c3api_test \
 //     go test ./internal/repository/ -run PG -v
 // 未设置 TEST_DATABASE_URL → t.Skip。
 // ---------------------------------------------------------------------------

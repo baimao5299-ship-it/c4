@@ -4,8 +4,8 @@ package ent
 
 import (
 	"fmt"
-	"go-proxy-mini/internal/ent/redemptioncode"
-	"go-proxy-mini/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/ent/redemptioncode"
+	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 	"strings"
 	"time"
 

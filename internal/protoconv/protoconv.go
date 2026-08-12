@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package protoconv 提供网关级协议转换（W5，只补差语义）：客户端协议请求体
 // → 模板协议请求体（ConvertRequest）、模板协议响应 → 客户端协议响应
 // （ConvertResponse 非流式 JSON / StreamMapper 流式 SSE 事件映射）。
@@ -13,7 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"go-proxy-mini/internal/domain"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // ConvertRequest 把客户端协议请求体转换为 dir 指向的模板协议请求体（返回的

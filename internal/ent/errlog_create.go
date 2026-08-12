@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go-proxy-mini/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/errlog"
 	"time"
 
 	"entgo.io/ent/dialect/sql"

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // base-ui Popover 封装（参照 select.tsx / dialog.tsx 的 Portal+Positioner+Popup 结构）。
 // 非 modal：点击外部自动关闭，无背景遮罩。
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"

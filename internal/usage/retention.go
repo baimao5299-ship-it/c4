@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // 归属说明：retention worker 放 usage 包——原 Recorder.janitorLoop（逐行
 // DELETE）已删除，保留策略整体移交本 worker；保留天数与 Recorder 配置同源
 // （config usage.log_retention_days），故与 Recorder 同包管理。
@@ -9,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // PartitionManager 分区管理面（repository.Repository 实现）：保留策略只需

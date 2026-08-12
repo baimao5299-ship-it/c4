@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
 // Package proxy 是 AI 请求热路径：分组 key 鉴权 → 调度器选号 → SDK 转发 → 用量采集。
 // 规格 §6/§9。不变量：热路径零 DB、零 per-request 锁。
 package proxy
@@ -16,13 +20,13 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	"go-proxy-mini/internal/billing"
-	"go-proxy-mini/internal/credential"
-	"go-proxy-mini/internal/domain"
-	"go-proxy-mini/internal/scheduler"
-	"go-proxy-mini/internal/usage"
-	"go-proxy-mini/pkg/aiclient"
-	"go-proxy-mini/pkg/logx"
+	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/usage"
+	"github.com/is7qin/c3api/pkg/aiclient"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 type Config struct {
