@@ -294,8 +294,12 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		// codex 分流骨架（Task B）：images 端点 codex-oauth/codex-pat 模板选号
 		// 命中 → 明确"未接入"错误（SDK GenerateImage/GenerateImageStream 调用
 		// 在 T2/T3 接入；未接入前显式 501，不让凭据缺失路径误报 502/network）。
+		// 评审 P2-1：post-Select 拒绝一律 recordRejected（与 402 缺价预检同
+		// 路径）——B 放开 codex 声明 images 格式后当下可达，501 必须留
+		// err_logs 审计（error_type=billing，拒绝类采样队列）。
 		if format == domain.FormatOpenAIImages && isCodexCredentialType(sel.CredentialType) {
 			p.sched.Release(sel.AccountID)
+			p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexImagesNotIntegrated.msg)
 			writeErr(w, errCodexImagesNotIntegrated)
 			return
 		}

@@ -361,7 +361,8 @@ func TestImagesStreamingSSE(t *testing.T) {
 
 // TestImagesCodexNotIntegrated501 codex 分流骨架：codex-oauth 模板在 images
 // 端点选号命中 → 501 明确"未接入"（SDK 调用 T2/T3 接；未接入前不得误报
-// 502/network），上游不收请求。
+// 502/network），上游不收请求；评审 P2-1：post-Select 拒绝必须 recordRejected
+// 留 err_logs 审计（error_type=billing、StatusCode=501、文案落 ErrorMessage）。
 func TestImagesCodexNotIntegrated501(t *testing.T) {
 	var hits atomic.Int64
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -375,7 +376,8 @@ func TestImagesCodexNotIntegrated501(t *testing.T) {
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIImages},
 		Models:           []string{"gpt-image-1"},
 	}
-	p := newTestProxyTplCapture(t, tpl, 1, true)
+	store := &captureLogStore{}
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, store, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image-1","prompt":"x"}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
@@ -386,10 +388,22 @@ func TestImagesCodexNotIntegrated501(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "not integrated", "501 文案明确未接入")
 	require.Zero(t, hits.Load(), "未接入不得转发上游")
 	require.NoError(t, p.rec.Close(context.Background()))
+	// P2-1：err_logs 审计断言（拒绝行走 errlog worker，Close 显式排空）
+	require.NoError(t, p.errlog.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "501 拒绝必须记一条 err_logs")
+	l := store.logs[0]
+	require.Equal(t, domain.ErrBilling, l.ErrorType, "post-Select 拒绝 error_type=billing（与 402 缺价预检同型）")
+	require.Equal(t, http.StatusNotImplemented, l.StatusCode)
+	require.Equal(t, domain.FormatOpenAIImages, l.Format)
+	require.Equal(t, "gpt-image-1", l.Model)
+	require.NotNil(t, l.ErrorMessage)
+	require.Contains(t, *l.ErrorMessage, "not integrated", "文案落 ErrorMessage（域内截断 500）")
 }
 
 // TestImagesCodexPATNotIntegrated501 codex-pat 同 codex-oauth（分流骨架两类型
-// 一并覆盖）。
+// 一并覆盖；审计断言同上）。
 func TestImagesCodexPATNotIntegrated501(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 	defer up.Close()
@@ -399,13 +413,20 @@ func TestImagesCodexPATNotIntegrated501(t *testing.T) {
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIImages},
 		Models:           []string{"gpt-image-1"},
 	}
-	p := newTestProxyTplCapture(t, tpl, 1, true)
+	store := &captureLogStore{}
+	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, store, nil)
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", strings.NewReader(`{"model":"gpt-image-1"}`))
 	req.Header.Set("Authorization", "Bearer gk-1")
 	rec := httptest.NewRecorder()
 	p.HandleImagesEdits(rec, req)
 	require.Equal(t, http.StatusNotImplemented, rec.Code, "body=%s", rec.Body.String())
 	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "codex-pat 501 同样记 err_logs")
+	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType)
+	require.Equal(t, http.StatusNotImplemented, store.logs[0].StatusCode)
 }
 
 // TestImagesResponsesSpecialDirect responses-special 类型直连（用户裁决：两
