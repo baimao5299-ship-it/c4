@@ -178,6 +178,12 @@ type PricingStore interface {
 	DeleteManual(ctx context.Context, model string) error
 	ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error)
 	GetPricing(ctx context.Context, model string) (*domain.Pricing, error)
+	// Task A 双线：图片生成价格（image_price 表；机制与 pricings 同款）。
+	UpsertImageFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error)
+	UpsertImageManual(ctx context.Context, m *repository.ImagePriceManual) (*domain.ImagePrice, error)
+	DeleteImageManual(ctx context.Context, model string) error
+	ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error)
+	GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error)
 }
 
 type LogStore interface {
@@ -265,6 +271,10 @@ type Service struct {
 	// Phase 5 计费读路径（GetPrice）零 DB 直读；New 初始化 + 管理端改价
 	// （UpsertManualPricing/DeleteManualPricing）+ 同步拉取成功后重载（低频，无锁）。
 	pricing atomic.Pointer[map[string]*domain.Pricing]
+	// imagePrice 图片生成价格全量内存快照（key = model 名；Task A 数据面）：
+	// images 端点计费读路径（GetImagePrice）零 DB 直读；重载时机 = 同步拉取
+	// 成功后 + 管理端改价后（对齐 pricing 快照，低频无锁）。
+	imagePrice atomic.Pointer[map[string]*domain.ImagePrice]
 	// priceFetcher 价格拉取器（pricing.Fetcher 实现）：管理端手动 sync
 	// （SyncPricingNow）与 cron worker 共享同一实例（main 装配注入；nil 时
 	// SyncPricingNow 返回错误——启动配置缺失，不应发生）。
@@ -400,6 +410,8 @@ var listSortFields = map[string][]string{
 	"redemption_uses": {"id", "code_id", "user_id", "value", "created_at"},
 	// 与 repo 层 pricingSortFields 白名单一致（双保险；/admin/pricing）。
 	"pricing": {"model", "updated_at"},
+	// 与 repo 层 imagePriceSortFields 白名单一致（双保险；/admin/image-price）。
+	"image_price": {"model", "updated_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

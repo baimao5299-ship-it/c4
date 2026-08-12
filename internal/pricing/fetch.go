@@ -35,8 +35,12 @@ type Fetcher interface {
 
 // FetchResult 一次拉取的解析结果。
 type FetchResult struct {
-	Rows    []*domain.Pricing // 数值有效的模型价格行（source=litellm）
-	Skipped int               // 无效行跳过数（缺价/非正数/NaN/字段类型非法）
+	Rows      []*domain.Pricing    // 数值有效的模型价格行（source=litellm；有文本价）
+	ImageRows []*domain.ImagePrice // image 价行（source=litellm；任一 image 价分量有效）
+	// Skipped 无效条目跳过数（字段类型非法 / 文本价与 image 价均无效——判定
+	// 含 image 分量；同一条目文本价与 image 价独立判定，互不干扰，只产生任一
+	// 行即不计 skip）。
+	Skipped int
 }
 
 // NewFetcher 构造 HTTP fetcher（client 复用调用方连接池；nil → http.DefaultClient；
@@ -86,24 +90,32 @@ func (f *httpFetcher) Fetch(ctx context.Context, sourceURL string) (*FetchResult
 // above 阶梯（_above_{N}k_tokens，N 任意）不在此 struct——键名动态，走
 // extractAbove 扫描 raw map（见下）。
 type litellmEntry struct {
-	InputCostPerToken                    *float64                `json:"input_cost_per_token"`
-	OutputCostPerToken                   *float64                `json:"output_cost_per_token"`
-	CacheReadInputTokenCost              *float64                `json:"cache_read_input_token_cost"`
-	CacheCreationInputTokenCost          *float64                `json:"cache_creation_input_token_cost"`
-	InputCostPerTokenPriority            *float64                `json:"input_cost_per_token_priority"`
-	OutputCostPerTokenPriority           *float64                `json:"output_cost_per_token_priority"`
-	CacheReadInputTokenCostPriority      *float64                `json:"cache_read_input_token_cost_priority"`
-	CacheCreationInputTokenCostPriority  *float64                `json:"cache_creation_input_token_cost_priority"`
-	InputCostPerTokenFlex                *float64                `json:"input_cost_per_token_flex"`
-	OutputCostPerTokenFlex               *float64                `json:"output_cost_per_token_flex"`
-	CacheReadInputTokenCostFlex          *float64                `json:"cache_read_input_token_cost_flex"`
-	CacheCreationInputTokenCostFlex      *float64                `json:"cache_creation_input_token_cost_flex"`
-	ProviderSpecificEntry                *providerSpecificEntry  `json:"provider_specific_entry"`
-	MaxInputTokens                       *float64                `json:"max_input_tokens"`
-	MaxOutputTokens                      *float64                `json:"max_output_tokens"`
-	Provider                             *string                 `json:"litellm_provider"`
-	Mode                                 *string                 `json:"mode"`
-	SupportsPromptCaching                *bool                   `json:"supports_prompt_caching"`
+	InputCostPerToken                   *float64               `json:"input_cost_per_token"`
+	OutputCostPerToken                  *float64               `json:"output_cost_per_token"`
+	CacheReadInputTokenCost             *float64               `json:"cache_read_input_token_cost"`
+	CacheCreationInputTokenCost         *float64               `json:"cache_creation_input_token_cost"`
+	InputCostPerTokenPriority           *float64               `json:"input_cost_per_token_priority"`
+	OutputCostPerTokenPriority          *float64               `json:"output_cost_per_token_priority"`
+	CacheReadInputTokenCostPriority     *float64               `json:"cache_read_input_token_cost_priority"`
+	CacheCreationInputTokenCostPriority *float64               `json:"cache_creation_input_token_cost_priority"`
+	InputCostPerTokenFlex               *float64               `json:"input_cost_per_token_flex"`
+	OutputCostPerTokenFlex              *float64               `json:"output_cost_per_token_flex"`
+	CacheReadInputTokenCostFlex         *float64               `json:"cache_read_input_token_cost_flex"`
+	CacheCreationInputTokenCostFlex     *float64               `json:"cache_creation_input_token_cost_flex"`
+	ProviderSpecificEntry               *providerSpecificEntry `json:"provider_specific_entry"`
+	MaxInputTokens                      *float64               `json:"max_input_tokens"`
+	MaxOutputTokens                     *float64               `json:"max_output_tokens"`
+	Provider                            *string                `json:"litellm_provider"`
+	Mode                                *string                `json:"mode"`
+	SupportsPromptCaching               *bool                  `json:"supports_prompt_caching"`
+	// image 价字段（Task A 扩展）：input/output_cost_per_image_token 为
+	// USD/token（×1e11 → 毫分/1M）；output_cost_per_image 为 USD/张（×1e5 →
+	// 毫分/张——与 token 价不同换算系、不同单位，计费不走 /1e6 除法）。
+	// image 价独立判定：任一字段有效 → 产出 image_price 行，不碰 pricings
+	// 行有效性（gpt-image-2 形态只有 image 价无文本价）。
+	InputCostPerImageToken  *float64 `json:"input_cost_per_image_token"`
+	OutputCostPerImageToken *float64 `json:"output_cost_per_image_token"`
+	OutputCostPerImage      *float64 `json:"output_cost_per_image"`
 }
 
 // providerSpecificEntry litellm provider_specific_entry（供应商专有倍率）。
@@ -115,23 +127,40 @@ type providerSpecificEntry struct {
 
 // Parse 解析 litellm 价格表 JSON：顶层 map model_name → 行。换算：per-token USD
 // × 1e11 四舍五入取整 → 毫分/1M tokens（1 USD = 100,000 毫分 = 10⁻⁵ USD 精度；
-// ×1e6 tokens × 1e5 毫分）。只保留数值有效行：input/output 价格均存在、有限且
-// > 0（NaN/缺失/非正数/字段类型非法 → 跳过）；max_tokens/cache 价/元数据非法
-// 或缺失 → nil（unknown），不参与有效性判定；raw 对通过判定的行无条件保存
-// （整个原始条目 JSON 完整镜像，含未映射字段，如 rpm/supports_vision）。
+// ×1e6 tokens × 1e5 毫分）；per-image USD × 1e5 → 毫分/张（toMilliCentsPerImage，
+// 与 token 价不同换算系）。
+// **mode 分流（用户裁决 2026-08-12，pricings 与 image_price 统一同一套）**：
+// mode == "chat" 仅入 pricings（非 chat 模型如 embedding/audio/rerank 带 token
+// 价也不收）；mode == "image_generation" 仅入 image_price；其余 mode 与 mode
+// 缺失两表都不收（宁漏勿错，手动设价可补）；两表按 mode 互斥。mode 命中后
+// 文本价与 image 价独立判定：同一条目可同时产出 pricings 行与 image_price 行，
+// 互不干扰；两类均无效（或字段类型非法）→ 整条目跳过（Skipped++，计一次）。
+// 只保留数值有效行：价格存在、有限且 > 0（NaN/缺失/非正数 → 该分量无效）；
+// max_tokens/cache 价/元数据非法或缺失 → nil（unknown），不参与有效性判定；
+// raw 对通过判定的行无条件保存（整个原始条目 JSON 完整镜像，含未映射字段，
+// 如 rpm/supports_vision）。
 func Parse(data []byte) (*FetchResult, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("pricing: parse price table: %w", err)
 	}
-	res := &FetchResult{Rows: make([]*domain.Pricing, 0, len(raw))}
+	res := &FetchResult{
+		Rows:      make([]*domain.Pricing, 0, len(raw)),
+		ImageRows: make([]*domain.ImagePrice, 0, len(raw)),
+	}
 	for model, entry := range raw {
-		p, err := parseEntry(model, entry)
-		if err != nil {
-			res.Skipped++
-			continue
+		valid := false
+		if p, err := parseEntry(model, entry); err == nil {
+			res.Rows = append(res.Rows, p)
+			valid = true
 		}
-		res.Rows = append(res.Rows, p)
+		if img, ok := parseImageEntry(model, entry); ok {
+			res.ImageRows = append(res.ImageRows, img)
+			valid = true
+		}
+		if !valid {
+			res.Skipped++
+		}
 	}
 	return res, nil
 }
@@ -140,6 +169,14 @@ func parseEntry(model string, raw json.RawMessage) (*domain.Pricing, error) {
 	var e litellmEntry
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return nil, err // 字段类型非法（如价格为字符串）→ 整行跳过
+	}
+	// 用户裁决 2026-08-12（pricings 与 image_price 统一同一套 mode 分流）：
+	// 仅 mode == "chat" 入 pricings——embedding/audio/rerank 等带 token 价也
+	// 不再收（现状靠"有 token 价"隐式收会混入 embedding 模型）；mode 缺失 →
+	// 跳过（宁漏勿错，手动设价可补）。image_generation 模型仅入 image_price
+	// （parseImageEntry 判定），两表按 mode 互斥。
+	if e.Mode == nil || *e.Mode != "chat" {
+		return nil, errors.New("pricing: non-chat mode or missing mode")
 	}
 	if !validCost(e.InputCostPerToken) || !validCost(e.OutputCostPerToken) {
 		return nil, errors.New("pricing: missing or non-positive cost")
@@ -213,19 +250,19 @@ func parseEntry(model string, raw json.RawMessage) (*domain.Pricing, error) {
 
 // aboveStep above 阶梯提取结果（三组 × 4 分量 + 共享阈值）。
 type aboveStep struct {
-	threshold       int64
-	prompt          *int64
-	completion      *int64
-	cacheRead       *int64
-	cacheCreation   *int64
-	priorityPrompt  *int64
-	priorityCompletion *int64
-	priorityCacheRead  *int64
+	threshold             int64
+	prompt                *int64
+	completion            *int64
+	cacheRead             *int64
+	cacheCreation         *int64
+	priorityPrompt        *int64
+	priorityCompletion    *int64
+	priorityCacheRead     *int64
 	priorityCacheCreation *int64
-	flexPrompt      *int64
-	flexCompletion  *int64
-	flexCacheRead   *int64
-	flexCacheCreation *int64
+	flexPrompt            *int64
+	flexCompletion        *int64
+	flexCacheRead         *int64
+	flexCacheCreation     *int64
 }
 
 // extractAbove 扫描 raw 提取 above 阶梯（三组：基础/priority/flex × 4 分量）。
@@ -349,6 +386,55 @@ func validCost(v *float64) bool {
 // 五入取整；覆盖 litellm 全价格区间至 $0.00001/1M）。
 func toMilliCentsPerMillion(perTokenUSD float64) int64 {
 	return int64(math.Round(perTokenUSD * 1e11))
+}
+
+// parseImageEntry 独立解析 image 价行（用户裁决 2026-08-12：**按 mode 切分**——
+// 仅 mode == "image_generation" 的条目进入 image_price 判定；chat/embedding/
+// audio 等非生图模型即使带 *_cost_per_image_token 也是多模态视觉 token 价，
+// 非生图价，一律不收——防 gpt-4o 等混入 image_price 表误放行 images 402 预检；
+// mode 缺失 → 跳过（宁漏勿错，手动设价可补））。mode 命中后：任一 image 价
+// 分量有效（存在、有限、> 0——validCost 同款）→ 产出 image_price 行；全无效
+// → ok=false（不碰 pricings 行有效性）。换算：token 价 ×1e11
+// （toMilliCentsPerMillion 复用，毫分/1M image tokens）；per-image ×1e5
+// （toMilliCentsPerImage，毫分/张——禁混用 toMilliCentsPerMillion，错 6 个
+// 数量级）。raw 完整镜像原样保存。
+func parseImageEntry(model string, raw json.RawMessage) (*domain.ImagePrice, bool) {
+	var e litellmEntry
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return nil, false // 字段类型非法 → 整行无效（与 parseEntry 同语义）
+	}
+	if e.Mode == nil || *e.Mode != "image_generation" {
+		return nil, false // 非生图模型/缺失 → 跳过（宁漏勿错）
+	}
+	if !validCost(e.InputCostPerImageToken) && !validCost(e.OutputCostPerImageToken) &&
+		!validCost(e.OutputCostPerImage) {
+		return nil, false // 全 nil/非正/NaN → 无有效 image 价，不产出行
+	}
+	p := &domain.ImagePrice{
+		Model:  model,
+		Source: domain.PricingSourceLitellm,
+		Raw:    raw,
+	}
+	if validCost(e.InputCostPerImageToken) {
+		v := toMilliCentsPerMillion(*e.InputCostPerImageToken)
+		p.InputImageTokenPricePerMillion = &v
+	}
+	if validCost(e.OutputCostPerImageToken) {
+		v := toMilliCentsPerMillion(*e.OutputCostPerImageToken)
+		p.OutputImageTokenPricePerMillion = &v
+	}
+	if validCost(e.OutputCostPerImage) {
+		v := toMilliCentsPerImage(*e.OutputCostPerImage)
+		p.OutputCostPerImageMilli = &v
+	}
+	return p, true
+}
+
+// toMilliCentsPerImage 毫分/张 = per-image USD × 1e5（浮点运算后四舍五入取整；
+// 1 USD = 100,000 毫分——与 token 价的 ×1e11 不同换算系：per-image 按张 flat，
+// 计费（billing.ImageCost）不走 /1e6 除法，禁止与 toMilliCentsPerMillion 混用）。
+func toMilliCentsPerImage(perImageUSD float64) int64 {
+	return int64(math.Round(perImageUSD * 1e5))
 }
 
 // windowTokens 上下文窗口：非法/非正 → 0（调用方转 nil）。

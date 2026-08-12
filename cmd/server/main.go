@@ -286,8 +286,13 @@ func main() {
 		Fetcher:  priceFetcher,
 		Repo:     repos,
 		Settings: svc,
-		Reload:   svc.ReloadPricing,
-		Log:      log,
+		// Task A 双线：文本价 + image 价快照一并刷新（image 拉取成功后同样
+		// 重载 image 快照——spec §2.1 管线扩展）。
+		Reload: func() {
+			svc.ReloadPricing()
+			svc.ReloadImagePricing()
+		},
+		Log: log,
 	})
 	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)

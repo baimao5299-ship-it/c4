@@ -53,13 +53,19 @@ func (s balanceSnapshot) Name() string                     { return "balances" }
 func (s balanceSnapshot) Scopes() []string                 { return nil }
 func (s balanceSnapshot) Reload(ctx context.Context) error { return s.b.Reload(ctx) }
 
-// pricingSnapshot 价格表快照（service pricing 缓存；与 price_sync_cron /
-// 管理端改价同一刷新目标）。
+// pricingSnapshot 价格表快照（service pricing + image_price 缓存；与
+// price_sync_cron / 管理端改价同一刷新目标——Task A 双线：image 快照同路径
+// 首刷，重启后 images 端点计费零 DB 读即时可用）。
 type pricingSnapshot struct{ svc *service.Service }
 
-func (s pricingSnapshot) Name() string                     { return "pricing" }
-func (s pricingSnapshot) Scopes() []string                 { return nil }
-func (s pricingSnapshot) Reload(ctx context.Context) error { return s.svc.ReloadPricingCtx(ctx) }
+func (s pricingSnapshot) Name() string     { return "pricing" }
+func (s pricingSnapshot) Scopes() []string { return nil }
+func (s pricingSnapshot) Reload(ctx context.Context) error {
+	if err := s.svc.ReloadPricingCtx(ctx); err != nil {
+		return err
+	}
+	return s.svc.ReloadImagePricingCtx(ctx)
+}
 
 // snapshotStates 注册表状态 → /ops/workers 响应映射（LastError error 接口
 // JSON 不可用 → 字符串；snapshot.Status 值拷贝，调用方安全持有）。

@@ -54,12 +54,17 @@ func (f *fakeFetcher) urlsSeen() []string {
 	return out
 }
 
-// fakeUpserter 记录式 Upserter（注入返回 n/err）。
+// fakeUpserter 记录式 Upserter（注入返回 n/err；Task A 双线：文本价与 image
+// 价分开记录，可分别注入返回值/错误）。
 type fakeUpserter struct {
-	mu    sync.Mutex
-	n     int
-	err   error
-	calls int
+	mu        sync.Mutex
+	n         int
+	err       error
+	calls     int
+	nImage    int
+	errImage  error
+	callsImg  int
+	imageRows []*domain.ImagePrice
 }
 
 func (u *fakeUpserter) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
@@ -69,10 +74,24 @@ func (u *fakeUpserter) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pri
 	return u.n, u.err
 }
 
+func (u *fakeUpserter) UpsertImageFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.callsImg++
+	u.imageRows = rows
+	return u.nImage, u.errImage
+}
+
 func (u *fakeUpserter) count() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.calls
+}
+
+func (u *fakeUpserter) imageCount() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.callsImg
 }
 
 // fakeSettings 固定值 settings（mutex 保护，测试中可改）。
@@ -264,6 +283,48 @@ func TestSyncPartialUpsertErrorStillReloads(t *testing.T) {
 	err := w.Sync(context.Background())
 	require.Error(t, err, "部分失败错误透传（调用方告警）")
 	require.Equal(t, 1, reloads, "部分落库仍刷新快照")
+}
+
+// TestSyncImageLine Task A 双线：image 行独立落库（UpsertImageFromLiteLLM
+// 收到 FetchResult.ImageRows）+ 成功后同样重载快照；image 线错误在文本价
+// 成功后透传（原文本价错误优先）。
+func TestSyncImageLine(t *testing.T) {
+	t.Run("image rows upserted and reloaded", func(t *testing.T) {
+		img := &domain.ImagePrice{Model: "gpt-image-2", Source: domain.PricingSourceLitellm}
+		f := &fakeFetcher{result: &FetchResult{
+			Rows:      []*domain.Pricing{{Model: "m", Source: domain.PricingSourceLitellm}},
+			ImageRows: []*domain.ImagePrice{img},
+		}}
+		u := &fakeUpserter{n: 1, nImage: 1}
+		reloads := 0
+		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }, Log: nil})
+
+		require.NoError(t, w.Sync(context.Background()))
+		require.Equal(t, 1, u.imageCount(), "image 行 upsert 一次")
+		require.Len(t, u.imageRows, 1, "UpsertImageFromLiteLLM 收到 FetchResult.ImageRows")
+		require.Equal(t, "gpt-image-2", u.imageRows[0].Model)
+		require.Equal(t, 1, reloads, "image 拉取成功后同样重载快照")
+	})
+
+	t.Run("image upsert error propagates when pricing ok", func(t *testing.T) {
+		f := &fakeFetcher{result: &FetchResult{ImageRows: []*domain.ImagePrice{{Model: "gpt-image-2"}}}}
+		u := &fakeUpserter{n: 0, nImage: 0, errImage: errors.New("image batch failed")}
+		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Log: nil})
+
+		err := w.Sync(context.Background())
+		require.Error(t, err, "image 线错误透传（调用方告警）")
+		require.Contains(t, err.Error(), "image batch failed")
+	})
+
+	t.Run("pricing error takes precedence over image error", func(t *testing.T) {
+		f := &fakeFetcher{result: &FetchResult{Rows: []*domain.Pricing{{Model: "m"}}, ImageRows: []*domain.ImagePrice{{Model: "gpt-image-2"}}}}
+		u := &fakeUpserter{n: 0, err: errors.New("pricing batch failed"), nImage: 0, errImage: errors.New("image batch failed")}
+		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Log: nil})
+
+		err := w.Sync(context.Background())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "pricing batch failed", "文本价错误优先")
+	})
 }
 
 // --- cron 循环 ---

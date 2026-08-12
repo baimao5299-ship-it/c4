@@ -5,6 +5,7 @@ package hook
 import (
 	"context"
 	"fmt"
+
 	"github.com/is7qin/c3api/internal/ent"
 )
 
@@ -66,6 +67,18 @@ func (f GroupAssignmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupAssignmentMutation", m)
+}
+
+// The ImagePriceFunc type is an adapter to allow the use of ordinary
+// function as ImagePrice mutator.
+type ImagePriceFunc func(context.Context, *ent.ImagePriceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ImagePriceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ImagePriceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ImagePriceMutation", m)
 }
 
 // The KeyFunc type is an adapter to allow the use of ordinary

@@ -48,11 +48,16 @@ type fakeStore struct {
 	// pricings 模型价格（key = model，一行 = 最终生效价，镜像仓库 unique(model)
 	// 约束；manual > litellm 优先级语义与真实仓库一致）。
 	pricings map[string]*domain.Pricing
+	// imagePrices 图片生成价格（Task A 数据面；同 pricings 的 manual > litellm
+	// 优先级语义）。
+	imagePrices map[string]*domain.ImagePrice
 	// tplExts/accExts 模板/账号类型化扩展（key = 父 id，镜像仓库 1:1 唯一索引）。
 	tplExts map[int64]*domain.TemplateExt
 	accExts map[int64]*domain.AccountExt
 	// pricingListErr 注入 ListPricing 失败（快照 fail-safe 测试）。
 	pricingListErr error
+	// imageListErr 注入 ListImagePrice 失败（image 快照 fail-safe 测试）。
+	imageListErr error
 	// pricingUpsertErr 注入 UpsertFromLiteLLM 失败（手动 sync 失败路径测试）。
 	pricingUpsertErr error
 	nextID           int64
@@ -86,7 +91,8 @@ func newFakeStore() *fakeStore {
 		assign: make(map[int64][]int64), assignMult: make(map[[2]int64]*int),
 		codes: make(map[int64]*domain.RedemptionCode),
 		uses:  make(map[int64]*domain.RedemptionUse), pricings: make(map[string]*domain.Pricing),
-		tplExts: make(map[int64]*domain.TemplateExt), accExts: make(map[int64]*domain.AccountExt),
+		imagePrices: make(map[string]*domain.ImagePrice),
+		tplExts:     make(map[int64]*domain.TemplateExt), accExts: make(map[int64]*domain.AccountExt),
 		nextID: 1,
 	}
 }
@@ -1389,6 +1395,117 @@ func (f *fakeStore) GetPricing(ctx context.Context, model string) (*domain.Prici
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	p, ok := f.pricings[model]
+	if !ok {
+		return nil, fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
+	}
+	c := *p
+	return &c, nil
+}
+
+// --- 图片生成价格（Task A 双线；与文本价同款模拟语义） ---
+
+// UpsertImageFromLiteLLM 模拟批量 upsert + manual 行级互斥：已存在 manual 行
+// → 不覆盖（不计入更新数）；其余插入/更新（source 恒 litellm）。
+func (f *fakeStore) UpsertImageFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, p := range rows {
+		if cur, ok := f.imagePrices[p.Model]; ok && cur.Source == domain.PricingSourceManual {
+			continue // WHERE source != 'manual' 过滤语义
+		}
+		c := *p
+		c.Source = domain.PricingSourceLitellm
+		f.imagePrices[p.Model] = &c
+		n++
+	}
+	return n, nil
+}
+
+// UpsertImageManual 模拟手动设图价格（可接管 litellm 行；返回副本）。三价格
+// 分量全可选：nil = 不设价（NULL 语义）；非 nil = 设价。
+func (f *fakeStore) UpsertImageManual(ctx context.Context, m *repository.ImagePriceManual) (*domain.ImagePrice, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p := &domain.ImagePrice{
+		Model:                           m.Model,
+		InputImageTokenPricePerMillion:  m.InputImageTokenPricePerMillion,
+		OutputImageTokenPricePerMillion: m.OutputImageTokenPricePerMillion,
+		OutputCostPerImageMilli:         m.OutputCostPerImageMilli,
+		Source:                          domain.PricingSourceManual,
+	}
+	f.imagePrices[m.Model] = p
+	c := *p
+	return &c, nil
+}
+
+// DeleteImageManual 模拟删除：仅 source=manual 可删（litellm 行 →
+// ErrConflict）；不存在 → ErrNotFound（同真实 repo 语义）。
+func (f *fakeStore) DeleteImageManual(ctx context.Context, model string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cur, ok := f.imagePrices[model]
+	if !ok {
+		return fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
+	}
+	if cur.Source != domain.PricingSourceManual {
+		return fmt.Errorf("%w: model=%q source=litellm（只允许删手动价）", repository.ErrConflict, model)
+	}
+	delete(f.imagePrices, model)
+	return nil
+}
+
+// ListImagePrice 模拟列表：source/model 筛选 + sort 白名单（model/updated_at）
+// + 分页（sort 非法 → ErrInvalidSort，对齐真实 repo）。
+func (f *fakeStore) ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.imageListErr != nil {
+		return nil, 0, f.imageListErr
+	}
+	var rows []*domain.ImagePrice
+	for _, p := range f.imagePrices {
+		if source != nil && p.Source != *source {
+			continue
+		}
+		if model != "" && !strings.Contains(strings.ToLower(p.Model), strings.ToLower(model)) {
+			continue
+		}
+		c := *p
+		rows = append(rows, &c)
+	}
+	if q.Sort != "" && q.Sort != "model" && q.Sort != "updated_at" {
+		return nil, 0, repository.ErrInvalidSort
+	}
+	if q.Sort == "model" {
+		slices.SortFunc(rows, func(a, b *domain.ImagePrice) int {
+			if q.Order == "desc" {
+				return -strings.Compare(a.Model, b.Model)
+			}
+			return strings.Compare(a.Model, b.Model)
+		})
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	end := q.Offset + q.Limit
+	if end > len(rows) {
+		end = len(rows)
+	}
+	if q.Offset > len(rows) {
+		q.Offset = len(rows)
+	}
+	return rows[q.Offset:end], int64(len(rows)), nil
+}
+
+// GetImagePrice 模拟按 model 取行（缺失 → repository.ErrNotFound）。
+func (f *fakeStore) GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.imagePrices[model]
 	if !ok {
 		return nil, fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
 	}

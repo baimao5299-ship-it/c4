@@ -35,6 +35,7 @@ type Repository struct {
 	Rules        RuleStore
 	Redemptions  *RedemptionRepo
 	Pricing      *PricingRepo
+	ImagePrice   *ImagePriceRepo  // 图片生成价格（Task A 数据面；images 端点计费价格来源）
 	Billing      *BillingRepo     // 扣费落库（Phase 5 T3）
 	Partitions   *PartitionRepo   // 分区表 bootstrap/retention（usage_logs + err_logs + usage_stats，Phase 5 T4.5 + 用户裁决 2026-08-11）
 	TemplateExts *TemplateExtRepo // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
@@ -90,6 +91,7 @@ func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *
 		Rules:        &RuleRepo{client: client},
 		Redemptions:  &RedemptionRepo{client: client, driver: drv},
 		Pricing:      &PricingRepo{client: client, driver: drv},
+		ImagePrice:   &ImagePriceRepo{client: client, driver: drv},
 		Billing:      &BillingRepo{client: client, driver: drv, pool: pool},
 		Partitions:   &PartitionRepo{driver: drv},
 		TemplateExts: &TemplateExtRepo{client: client},
@@ -501,6 +503,28 @@ func (r *Repository) ListPricing(ctx context.Context, q ListQuery, source *domai
 
 func (r *Repository) GetPricing(ctx context.Context, model string) (*domain.Pricing, error) {
 	return r.Pricing.GetPricing(ctx, model)
+}
+
+// --- 图片生成价格（Task A 数据面；机制与 pricings 同款） ---
+
+func (r *Repository) UpsertImageFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error) {
+	return r.ImagePrice.UpsertFromLiteLLM(ctx, rows)
+}
+
+func (r *Repository) UpsertImageManual(ctx context.Context, m *ImagePriceManual) (*domain.ImagePrice, error) {
+	return r.ImagePrice.UpsertManual(ctx, m)
+}
+
+func (r *Repository) DeleteImageManual(ctx context.Context, model string) error {
+	return r.ImagePrice.DeleteManual(ctx, model)
+}
+
+func (r *Repository) ListImagePrice(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
+	return r.ImagePrice.ListImagePrice(ctx, q, source, model)
+}
+
+func (r *Repository) GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error) {
+	return r.ImagePrice.GetImagePrice(ctx, model)
 }
 
 // --- 原子资源更新（评审 I-1：UserStore 扩展；普通 client 与 tx client 均可用） ---

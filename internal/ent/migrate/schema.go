@@ -167,6 +167,24 @@ var (
 			},
 		},
 	}
+	// ImagePricesColumns holds the columns for the "image_prices" table.
+	ImagePricesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "model", Type: field.TypeString, Unique: true},
+		{Name: "input_image_token_price_per_million", Type: field.TypeInt64, Nullable: true},
+		{Name: "output_image_token_price_per_million", Type: field.TypeInt64, Nullable: true},
+		{Name: "output_cost_per_image_milli", Type: field.TypeInt64, Nullable: true},
+		{Name: "raw", Type: field.TypeJSON, Nullable: true},
+		{Name: "source", Type: field.TypeEnum, Enums: []string{"litellm", "manual"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ImagePricesTable holds the schema information for the "image_prices" table.
+	ImagePricesTable = &schema.Table{
+		Name:       "image_prices",
+		Columns:    ImagePricesColumns,
+		PrimaryKey: []*schema.Column{ImagePricesColumns[0]},
+	}
 	// KeysColumns holds the columns for the "keys" table.
 	KeysColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -556,6 +574,7 @@ var (
 		ErrLogsTable,
 		GroupsTable,
 		GroupAssignmentsTable,
+		ImagePricesTable,
 		KeysTable,
 		PricingsTable,
 		RedemptionCodesTable,

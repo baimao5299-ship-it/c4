@@ -45,7 +45,8 @@ const litellmFixtureJSON = `{
   },
   "tiny-rounding": {
     "input_cost_per_token": 6.123456789e-07,
-    "output_cost_per_token": 1e-06
+    "output_cost_per_token": 1e-06,
+    "mode": "chat"
   },
   "no-max-tokens": {
     "input_cost_per_token": 1e-06,
@@ -53,7 +54,8 @@ const litellmFixtureJSON = `{
     "max_input_tokens": null,
     "max_output_tokens": 0,
     "cache_read_input_token_cost": 0,
-    "cache_creation_input_token_cost": null
+    "cache_creation_input_token_cost": null,
+    "mode": "chat"
   },
   "missing-output": {
     "input_cost_per_token": 1e-06
@@ -237,6 +239,7 @@ func TestFetchHTTP(t *testing.T) {
 //   - bad-matrix：矩阵价 0/负 → 该档丢弃 → 全 nil
 const matrixFixtureJSON = `{
   "gpt-5.6-sol": {
+    "mode": "chat",
     "input_cost_per_token": 2e-06,
     "output_cost_per_token": 8e-06,
     "input_cost_per_token_priority": 3e-06,
@@ -256,6 +259,7 @@ const matrixFixtureJSON = `{
     "litellm_provider": "openai"
   },
   "azure/gpt-5.6-sol": {
+    "mode": "chat",
     "input_cost_per_token": 2e-06,
     "output_cost_per_token": 8e-06,
     "input_cost_per_token_priority": 3e-06,
@@ -267,6 +271,7 @@ const matrixFixtureJSON = `{
     "litellm_provider": "azure"
   },
   "future-256k": {
+    "mode": "chat",
     "input_cost_per_token": 1e-06,
     "output_cost_per_token": 2e-06,
     "input_cost_per_token_above_256k_tokens": 9e-07,
@@ -274,6 +279,7 @@ const matrixFixtureJSON = `{
     "cache_read_input_token_cost_above_256k_tokens": 3e-07
   },
   "multi-tier": {
+    "mode": "chat",
     "input_cost_per_token": 1e-06,
     "output_cost_per_token": 2e-06,
     "input_cost_per_token_above_200k_tokens": 9e-07,
@@ -283,6 +289,7 @@ const matrixFixtureJSON = `{
     "cache_read_input_token_cost_above_200k_tokens": 3e-07
   },
   "noisy-model": {
+    "mode": "chat",
     "input_cost_per_token": 1e-06,
     "output_cost_per_token": 2e-06,
     "input_cost_per_character_above_1m_tokens": 1.0,
@@ -294,6 +301,7 @@ const matrixFixtureJSON = `{
     "long_context_output_cost_per_token": 4e-06
   },
   "bad-matrix": {
+    "mode": "chat",
     "input_cost_per_token": 1e-06,
     "output_cost_per_token": 2e-06,
     "input_cost_per_token_above_128k_tokens": 0,
@@ -374,4 +382,166 @@ func TestParseMatrixFields(t *testing.T) {
 	require.Nil(t, bm.AboveThreshold, "above 全无效 → nil")
 	require.Nil(t, bm.PriorityPromptPricePerMillion)
 	require.Nil(t, bm.FastMultiplier)
+}
+
+// --- Task A：image 价独立判定（litellmEntry image 三字段扩展） ---
+
+// imagePriceFixtureJSON 覆盖 image 价判定的全部形态（用户裁决 2026-08-12
+// 按 mode 切分）：mode=image_generation 收——纯 image 价模型（gpt-image-2
+// 官方形态：仅 image token 价无文本价；aiml 形态：仅 per-image 价）、文本价 +
+// image 价双行并存；mode=chat 带视觉 image 字段不收（多模态视觉 token 价非
+// 生图价）；mode 缺失跳过（宁漏勿错）；mode 命中但 image 价全无效（0/负/null
+// → 无 image 行）、字段类型非法（字符串 → 整条目跳过）。
+const imagePriceFixtureJSON = `{
+  "gpt-image-2": {
+    "input_cost_per_image_token": 8e-06,
+    "output_cost_per_image_token": 3e-05,
+    "max_input_tokens": 1000,
+    "litellm_provider": "openai",
+    "mode": "image_generation"
+  },
+  "aiml-image": {
+    "output_cost_per_image": 0.054,
+    "mode": "image_generation"
+  },
+  "dual-pricing": {
+    "input_cost_per_token": 2.5e-06,
+    "output_cost_per_token": 1e-05,
+    "output_cost_per_image": 0.02,
+    "mode": "image_generation"
+  },
+  "chat-with-vision": {
+    "input_cost_per_token": 2.5e-06,
+    "output_cost_per_token": 1e-05,
+    "input_cost_per_image_token": 3e-06,
+    "output_cost_per_image_token": 6e-06,
+    "mode": "chat"
+  },
+  "no-mode-image": {
+    "output_cost_per_image": 0.054
+  },
+  "embedding-token-priced": {
+    "input_cost_per_token": 2.5e-06,
+    "output_cost_per_token": 1e-05,
+    "input_cost_per_image_token": 3e-06,
+    "mode": "embedding"
+  },
+  "no-mode-token": {
+    "input_cost_per_token": 2.5e-06,
+    "output_cost_per_token": 1e-05
+  },
+  "invalid-image": {
+    "input_cost_per_image_token": 0,
+    "output_cost_per_image_token": -3e-05,
+    "output_cost_per_image": null,
+    "mode": "image_generation"
+  },
+  "string-image-cost": {
+    "output_cost_per_image": "0.054",
+    "mode": "image_generation"
+  }
+}`
+
+// TestParseImageRows Task A 双行判定：image 价独立于文本价（任一 image 分量
+// 有效 → image_price 行）；换算断言 ×1e11（token）vs ×1e5（per-image）；
+// 全无效拒绝（Skipped 语义含 image 判定）；与 pricings 双行并存；
+// FetchResult.ImageRows 通道。
+func TestParseImageRows(t *testing.T) {
+	res, err := Parse([]byte(imagePriceFixtureJSON))
+	require.NoError(t, err)
+
+	// 两表按 mode 互斥（用户裁决）：image_generation 仅入 image_price（
+	// dual-pricing 带文本价也不入 pricings）；chat 仅入 pricings（
+	// chat-with-vision 带 image 字段也不入 image_price）；embedding/no-mode
+	// 两表都不收 → Skipped 5（整条目跳过计一次）。
+	require.Len(t, res.Rows, 1, "仅 chat-with-vision 入 pricings")
+	require.Len(t, res.ImageRows, 3, "mode=image_generation 且 image 价有效的模型产 image 行")
+	require.Equal(t, 5, res.Skipped, "invalid/string/no-mode-image/embedding/no-mode-token → skip")
+
+	byModel := map[string]*domain.ImagePrice{}
+	for _, p := range res.ImageRows {
+		byModel[p.Model] = p
+	}
+
+	// gpt-image-2 官方形态：per-token ×1e11（8e-06 → 800,000；3e-05 →
+	// 3,000,000）；无 per-image 价 → nil；raw 完整镜像
+	g := byModel["gpt-image-2"]
+	require.NotNil(t, g.InputImageTokenPricePerMillion)
+	require.Equal(t, int64(800000), *g.InputImageTokenPricePerMillion, "8e-06 USD/token × 1e11 = 800000 毫分/1M")
+	require.NotNil(t, g.OutputImageTokenPricePerMillion)
+	require.Equal(t, int64(3000000), *g.OutputImageTokenPricePerMillion, "3e-05 × 1e11 = 3000000")
+	require.Nil(t, g.OutputCostPerImageMilli, "无 per-image 价 → nil")
+	require.Equal(t, domain.PricingSourceLitellm, g.Source)
+	require.NotNil(t, g.Raw, "raw 完整镜像")
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(g.Raw, &raw))
+	require.Equal(t, "openai", raw["litellm_provider"], "raw 保留元数据")
+
+	// aiml 形态：0.054 USD/张 × 1e5 = 5400 毫分/张（per-image 换算系与 token
+	// 价 ×1e11 不同——混用错 6 个数量级）
+	a := byModel["aiml-image"]
+	require.Nil(t, a.InputImageTokenPricePerMillion, "无 image token 价 → nil")
+	require.NotNil(t, a.OutputCostPerImageMilli)
+	require.Equal(t, int64(5400), *a.OutputCostPerImageMilli, "0.054 × 1e5 = 5400 毫分/张")
+
+	// dual-pricing：mode=image_generation 仅入 image_price——带文本价也不入
+	// pricings（两表按 mode 互斥）
+	d := byModel["dual-pricing"]
+	require.NotNil(t, d.OutputCostPerImageMilli)
+	require.Equal(t, int64(2000), *d.OutputCostPerImageMilli, "0.02 × 1e5 = 2000 毫分/张")
+	for _, p := range res.Rows {
+		require.NotEqual(t, "dual-pricing", p.Model, "image_generation 模型不入 pricings")
+	}
+
+	// invalid-image：0/负/null → 无 image 行（不产出也不计双 skip）
+	_, ok := byModel["invalid-image"]
+	require.False(t, ok, "image 价全无效 → 无 image 行")
+	_, ok = byModel["string-image-cost"]
+	require.False(t, ok, "字段类型非法 → 无 image 行")
+
+	// 用户裁决按 mode 切分：chat 模型带视觉 image 字段不收（多模态视觉 token
+	// 价非生图价）——防 gpt-4o 等混入 image_price 表误放行 images 402 预检；
+	// 其文本价照常产 pricings 行
+	_, ok = byModel["chat-with-vision"]
+	require.False(t, ok, "mode=chat 带 image 字段 → 不收（视觉 token 价非生图价）")
+	var chatRows []*domain.Pricing
+	for _, p := range res.Rows {
+		if p.Model == "chat-with-vision" {
+			chatRows = append(chatRows, p)
+		}
+	}
+	require.Len(t, chatRows, 1, "mode=chat 文本价照常收")
+	require.Equal(t, int64(250000), chatRows[0].PromptPricePerMillion)
+
+	// mode 缺失 → 跳过（宁漏勿错，手动设价可补）
+	_, ok = byModel["no-mode-image"]
+	require.False(t, ok, "mode 缺失 → 跳过")
+
+	// embedding 带 token 价：两表都不收（防混入 pricings 的 embedding 模型）
+	_, ok = byModel["embedding-token-priced"]
+	require.False(t, ok, "mode=embedding 不入 image_price")
+	var embRows []*domain.Pricing
+	for _, p := range res.Rows {
+		if p.Model == "embedding-token-priced" {
+			embRows = append(embRows, p)
+		}
+	}
+	require.Empty(t, embRows, "mode=embedding 不入 pricings（带 token 价也不收）")
+
+	// 无 mode 带 token 价：两表都不收（宁漏勿错，手动设价可补）
+	_, ok = byModel["no-mode-token"]
+	require.False(t, ok, "无 mode 不入 image_price")
+	for _, p := range res.Rows {
+		require.NotEqual(t, "no-mode-token", p.Model, "无 mode 不入 pricings")
+	}
+}
+
+// TestParseImageRowsNoImageFields 无 image 字段的条目：ImageRows 为空、Skipped
+// 语义不变（原 fixture 全部无 image 价 → 4 行 7 跳过，text 判定不受影响）。
+func TestParseImageRowsNoImageFields(t *testing.T) {
+	res, err := Parse([]byte(litellmFixtureJSON))
+	require.NoError(t, err)
+	require.Len(t, res.Rows, 4, "文本价判定不变")
+	require.Empty(t, res.ImageRows, "无 image 字段 → 无 image 行")
+	require.Equal(t, 7, res.Skipped, "Skipped 语义含 image 判定但无 image 字段条目不计额外 skip")
 }

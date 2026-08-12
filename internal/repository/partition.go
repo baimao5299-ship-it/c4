@@ -129,6 +129,15 @@ var usageLogColumnDefs = []string{
 	`price_cache_read_millis bigint NULL`,
 	`cache_creation_tokens bigint NOT NULL DEFAULT 0`,
 	`price_cache_creation_millis bigint NULL`,
+	// 图片生成分量（Task A 数据面；Task B 写路径使用）。price_per_image_millis
+	// 单位 = 毫分/张，例外于本表其余 price_*_millis 列的"毫分/1M tokens"口径
+	// （per-image 计费不走 /1e6 除法——spec §4.2 例外说明）。
+	`image_input_tokens bigint NOT NULL DEFAULT 0`,
+	`image_output_tokens bigint NOT NULL DEFAULT 0`,
+	`image_count bigint NOT NULL DEFAULT 0`,
+	`price_image_input_millis bigint NULL`,
+	`price_image_output_millis bigint NULL`,
+	`price_per_image_millis bigint NULL`,
 	`cost bigint NOT NULL DEFAULT 0`,
 	`billing_tier varchar NULL`,
 	`above_hit boolean NOT NULL DEFAULT false`,

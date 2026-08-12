@@ -7,11 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
+
+	"entgo.io/ent"
+	"entgo.io/ent/dialect/sql"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/imageprice"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/predicate"
 	"github.com/is7qin/c3api/internal/ent/pricing"
@@ -25,11 +31,6 @@ import (
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
 	"github.com/is7qin/c3api/internal/ent/user"
-	"sync"
-	"time"
-
-	"entgo.io/ent"
-	"entgo.io/ent/dialect/sql"
 )
 
 const (
@@ -46,6 +47,7 @@ const (
 	TypeErrLog          = "ErrLog"
 	TypeGroup           = "Group"
 	TypeGroupAssignment = "GroupAssignment"
+	TypeImagePrice      = "ImagePrice"
 	TypeKey             = "Key"
 	TypePricing         = "Pricing"
 	TypeRedemptionCode  = "RedemptionCode"
@@ -5473,6 +5475,917 @@ func (m *GroupAssignmentMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown GroupAssignment edge %s", name)
+}
+
+// ImagePriceMutation represents an operation that mutates the ImagePrice nodes in the graph.
+type ImagePriceMutation struct {
+	config
+	op                                      Op
+	typ                                     string
+	id                                      *int64
+	model                                   *string
+	input_image_token_price_per_million     *int64
+	addinput_image_token_price_per_million  *int64
+	output_image_token_price_per_million    *int64
+	addoutput_image_token_price_per_million *int64
+	output_cost_per_image_milli             *int64
+	addoutput_cost_per_image_milli          *int64
+	raw                                     *json.RawMessage
+	appendraw                               json.RawMessage
+	source                                  *imageprice.Source
+	created_at                              *time.Time
+	updated_at                              *time.Time
+	clearedFields                           map[string]struct{}
+	done                                    bool
+	oldValue                                func(context.Context) (*ImagePrice, error)
+	predicates                              []predicate.ImagePrice
+}
+
+var _ ent.Mutation = (*ImagePriceMutation)(nil)
+
+// imagepriceOption allows management of the mutation configuration using functional options.
+type imagepriceOption func(*ImagePriceMutation)
+
+// newImagePriceMutation creates new mutation for the ImagePrice entity.
+func newImagePriceMutation(c config, op Op, opts ...imagepriceOption) *ImagePriceMutation {
+	m := &ImagePriceMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeImagePrice,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withImagePriceID sets the ID field of the mutation.
+func withImagePriceID(id int64) imagepriceOption {
+	return func(m *ImagePriceMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ImagePrice
+		)
+		m.oldValue = func(ctx context.Context) (*ImagePrice, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ImagePrice.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withImagePrice sets the old ImagePrice of the mutation.
+func withImagePrice(node *ImagePrice) imagepriceOption {
+	return func(m *ImagePriceMutation) {
+		m.oldValue = func(context.Context) (*ImagePrice, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ImagePriceMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ImagePriceMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ImagePrice entities.
+func (m *ImagePriceMutation) SetID(id int64) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ImagePriceMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ImagePriceMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ImagePrice.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetModel sets the "model" field.
+func (m *ImagePriceMutation) SetModel(s string) {
+	m.model = &s
+}
+
+// Model returns the value of the "model" field in the mutation.
+func (m *ImagePriceMutation) Model() (r string, exists bool) {
+	v := m.model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModel returns the old "model" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModel: %w", err)
+	}
+	return oldValue.Model, nil
+}
+
+// ResetModel resets all changes to the "model" field.
+func (m *ImagePriceMutation) ResetModel() {
+	m.model = nil
+}
+
+// SetInputImageTokenPricePerMillion sets the "input_image_token_price_per_million" field.
+func (m *ImagePriceMutation) SetInputImageTokenPricePerMillion(i int64) {
+	m.input_image_token_price_per_million = &i
+	m.addinput_image_token_price_per_million = nil
+}
+
+// InputImageTokenPricePerMillion returns the value of the "input_image_token_price_per_million" field in the mutation.
+func (m *ImagePriceMutation) InputImageTokenPricePerMillion() (r int64, exists bool) {
+	v := m.input_image_token_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputImageTokenPricePerMillion returns the old "input_image_token_price_per_million" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldInputImageTokenPricePerMillion(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputImageTokenPricePerMillion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputImageTokenPricePerMillion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputImageTokenPricePerMillion: %w", err)
+	}
+	return oldValue.InputImageTokenPricePerMillion, nil
+}
+
+// AddInputImageTokenPricePerMillion adds i to the "input_image_token_price_per_million" field.
+func (m *ImagePriceMutation) AddInputImageTokenPricePerMillion(i int64) {
+	if m.addinput_image_token_price_per_million != nil {
+		*m.addinput_image_token_price_per_million += i
+	} else {
+		m.addinput_image_token_price_per_million = &i
+	}
+}
+
+// AddedInputImageTokenPricePerMillion returns the value that was added to the "input_image_token_price_per_million" field in this mutation.
+func (m *ImagePriceMutation) AddedInputImageTokenPricePerMillion() (r int64, exists bool) {
+	v := m.addinput_image_token_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearInputImageTokenPricePerMillion clears the value of the "input_image_token_price_per_million" field.
+func (m *ImagePriceMutation) ClearInputImageTokenPricePerMillion() {
+	m.input_image_token_price_per_million = nil
+	m.addinput_image_token_price_per_million = nil
+	m.clearedFields[imageprice.FieldInputImageTokenPricePerMillion] = struct{}{}
+}
+
+// InputImageTokenPricePerMillionCleared returns if the "input_image_token_price_per_million" field was cleared in this mutation.
+func (m *ImagePriceMutation) InputImageTokenPricePerMillionCleared() bool {
+	_, ok := m.clearedFields[imageprice.FieldInputImageTokenPricePerMillion]
+	return ok
+}
+
+// ResetInputImageTokenPricePerMillion resets all changes to the "input_image_token_price_per_million" field.
+func (m *ImagePriceMutation) ResetInputImageTokenPricePerMillion() {
+	m.input_image_token_price_per_million = nil
+	m.addinput_image_token_price_per_million = nil
+	delete(m.clearedFields, imageprice.FieldInputImageTokenPricePerMillion)
+}
+
+// SetOutputImageTokenPricePerMillion sets the "output_image_token_price_per_million" field.
+func (m *ImagePriceMutation) SetOutputImageTokenPricePerMillion(i int64) {
+	m.output_image_token_price_per_million = &i
+	m.addoutput_image_token_price_per_million = nil
+}
+
+// OutputImageTokenPricePerMillion returns the value of the "output_image_token_price_per_million" field in the mutation.
+func (m *ImagePriceMutation) OutputImageTokenPricePerMillion() (r int64, exists bool) {
+	v := m.output_image_token_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputImageTokenPricePerMillion returns the old "output_image_token_price_per_million" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldOutputImageTokenPricePerMillion(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputImageTokenPricePerMillion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputImageTokenPricePerMillion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputImageTokenPricePerMillion: %w", err)
+	}
+	return oldValue.OutputImageTokenPricePerMillion, nil
+}
+
+// AddOutputImageTokenPricePerMillion adds i to the "output_image_token_price_per_million" field.
+func (m *ImagePriceMutation) AddOutputImageTokenPricePerMillion(i int64) {
+	if m.addoutput_image_token_price_per_million != nil {
+		*m.addoutput_image_token_price_per_million += i
+	} else {
+		m.addoutput_image_token_price_per_million = &i
+	}
+}
+
+// AddedOutputImageTokenPricePerMillion returns the value that was added to the "output_image_token_price_per_million" field in this mutation.
+func (m *ImagePriceMutation) AddedOutputImageTokenPricePerMillion() (r int64, exists bool) {
+	v := m.addoutput_image_token_price_per_million
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearOutputImageTokenPricePerMillion clears the value of the "output_image_token_price_per_million" field.
+func (m *ImagePriceMutation) ClearOutputImageTokenPricePerMillion() {
+	m.output_image_token_price_per_million = nil
+	m.addoutput_image_token_price_per_million = nil
+	m.clearedFields[imageprice.FieldOutputImageTokenPricePerMillion] = struct{}{}
+}
+
+// OutputImageTokenPricePerMillionCleared returns if the "output_image_token_price_per_million" field was cleared in this mutation.
+func (m *ImagePriceMutation) OutputImageTokenPricePerMillionCleared() bool {
+	_, ok := m.clearedFields[imageprice.FieldOutputImageTokenPricePerMillion]
+	return ok
+}
+
+// ResetOutputImageTokenPricePerMillion resets all changes to the "output_image_token_price_per_million" field.
+func (m *ImagePriceMutation) ResetOutputImageTokenPricePerMillion() {
+	m.output_image_token_price_per_million = nil
+	m.addoutput_image_token_price_per_million = nil
+	delete(m.clearedFields, imageprice.FieldOutputImageTokenPricePerMillion)
+}
+
+// SetOutputCostPerImageMilli sets the "output_cost_per_image_milli" field.
+func (m *ImagePriceMutation) SetOutputCostPerImageMilli(i int64) {
+	m.output_cost_per_image_milli = &i
+	m.addoutput_cost_per_image_milli = nil
+}
+
+// OutputCostPerImageMilli returns the value of the "output_cost_per_image_milli" field in the mutation.
+func (m *ImagePriceMutation) OutputCostPerImageMilli() (r int64, exists bool) {
+	v := m.output_cost_per_image_milli
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputCostPerImageMilli returns the old "output_cost_per_image_milli" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldOutputCostPerImageMilli(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputCostPerImageMilli is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputCostPerImageMilli requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputCostPerImageMilli: %w", err)
+	}
+	return oldValue.OutputCostPerImageMilli, nil
+}
+
+// AddOutputCostPerImageMilli adds i to the "output_cost_per_image_milli" field.
+func (m *ImagePriceMutation) AddOutputCostPerImageMilli(i int64) {
+	if m.addoutput_cost_per_image_milli != nil {
+		*m.addoutput_cost_per_image_milli += i
+	} else {
+		m.addoutput_cost_per_image_milli = &i
+	}
+}
+
+// AddedOutputCostPerImageMilli returns the value that was added to the "output_cost_per_image_milli" field in this mutation.
+func (m *ImagePriceMutation) AddedOutputCostPerImageMilli() (r int64, exists bool) {
+	v := m.addoutput_cost_per_image_milli
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearOutputCostPerImageMilli clears the value of the "output_cost_per_image_milli" field.
+func (m *ImagePriceMutation) ClearOutputCostPerImageMilli() {
+	m.output_cost_per_image_milli = nil
+	m.addoutput_cost_per_image_milli = nil
+	m.clearedFields[imageprice.FieldOutputCostPerImageMilli] = struct{}{}
+}
+
+// OutputCostPerImageMilliCleared returns if the "output_cost_per_image_milli" field was cleared in this mutation.
+func (m *ImagePriceMutation) OutputCostPerImageMilliCleared() bool {
+	_, ok := m.clearedFields[imageprice.FieldOutputCostPerImageMilli]
+	return ok
+}
+
+// ResetOutputCostPerImageMilli resets all changes to the "output_cost_per_image_milli" field.
+func (m *ImagePriceMutation) ResetOutputCostPerImageMilli() {
+	m.output_cost_per_image_milli = nil
+	m.addoutput_cost_per_image_milli = nil
+	delete(m.clearedFields, imageprice.FieldOutputCostPerImageMilli)
+}
+
+// SetRaw sets the "raw" field.
+func (m *ImagePriceMutation) SetRaw(jm json.RawMessage) {
+	m.raw = &jm
+	m.appendraw = nil
+}
+
+// Raw returns the value of the "raw" field in the mutation.
+func (m *ImagePriceMutation) Raw() (r json.RawMessage, exists bool) {
+	v := m.raw
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRaw returns the old "raw" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldRaw(ctx context.Context) (v json.RawMessage, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRaw is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRaw requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRaw: %w", err)
+	}
+	return oldValue.Raw, nil
+}
+
+// AppendRaw adds jm to the "raw" field.
+func (m *ImagePriceMutation) AppendRaw(jm json.RawMessage) {
+	m.appendraw = append(m.appendraw, jm...)
+}
+
+// AppendedRaw returns the list of values that were appended to the "raw" field in this mutation.
+func (m *ImagePriceMutation) AppendedRaw() (json.RawMessage, bool) {
+	if len(m.appendraw) == 0 {
+		return nil, false
+	}
+	return m.appendraw, true
+}
+
+// ClearRaw clears the value of the "raw" field.
+func (m *ImagePriceMutation) ClearRaw() {
+	m.raw = nil
+	m.appendraw = nil
+	m.clearedFields[imageprice.FieldRaw] = struct{}{}
+}
+
+// RawCleared returns if the "raw" field was cleared in this mutation.
+func (m *ImagePriceMutation) RawCleared() bool {
+	_, ok := m.clearedFields[imageprice.FieldRaw]
+	return ok
+}
+
+// ResetRaw resets all changes to the "raw" field.
+func (m *ImagePriceMutation) ResetRaw() {
+	m.raw = nil
+	m.appendraw = nil
+	delete(m.clearedFields, imageprice.FieldRaw)
+}
+
+// SetSource sets the "source" field.
+func (m *ImagePriceMutation) SetSource(i imageprice.Source) {
+	m.source = &i
+}
+
+// Source returns the value of the "source" field in the mutation.
+func (m *ImagePriceMutation) Source() (r imageprice.Source, exists bool) {
+	v := m.source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSource returns the old "source" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldSource(ctx context.Context) (v imageprice.Source, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSource: %w", err)
+	}
+	return oldValue.Source, nil
+}
+
+// ResetSource resets all changes to the "source" field.
+func (m *ImagePriceMutation) ResetSource() {
+	m.source = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ImagePriceMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ImagePriceMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ImagePriceMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ImagePriceMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ImagePriceMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ImagePriceMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the ImagePriceMutation builder.
+func (m *ImagePriceMutation) Where(ps ...predicate.ImagePrice) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ImagePriceMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ImagePriceMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ImagePrice, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ImagePriceMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ImagePriceMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ImagePrice).
+func (m *ImagePriceMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ImagePriceMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.model != nil {
+		fields = append(fields, imageprice.FieldModel)
+	}
+	if m.input_image_token_price_per_million != nil {
+		fields = append(fields, imageprice.FieldInputImageTokenPricePerMillion)
+	}
+	if m.output_image_token_price_per_million != nil {
+		fields = append(fields, imageprice.FieldOutputImageTokenPricePerMillion)
+	}
+	if m.output_cost_per_image_milli != nil {
+		fields = append(fields, imageprice.FieldOutputCostPerImageMilli)
+	}
+	if m.raw != nil {
+		fields = append(fields, imageprice.FieldRaw)
+	}
+	if m.source != nil {
+		fields = append(fields, imageprice.FieldSource)
+	}
+	if m.created_at != nil {
+		fields = append(fields, imageprice.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, imageprice.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ImagePriceMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case imageprice.FieldModel:
+		return m.Model()
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		return m.InputImageTokenPricePerMillion()
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		return m.OutputImageTokenPricePerMillion()
+	case imageprice.FieldOutputCostPerImageMilli:
+		return m.OutputCostPerImageMilli()
+	case imageprice.FieldRaw:
+		return m.Raw()
+	case imageprice.FieldSource:
+		return m.Source()
+	case imageprice.FieldCreatedAt:
+		return m.CreatedAt()
+	case imageprice.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ImagePriceMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case imageprice.FieldModel:
+		return m.OldModel(ctx)
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		return m.OldInputImageTokenPricePerMillion(ctx)
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		return m.OldOutputImageTokenPricePerMillion(ctx)
+	case imageprice.FieldOutputCostPerImageMilli:
+		return m.OldOutputCostPerImageMilli(ctx)
+	case imageprice.FieldRaw:
+		return m.OldRaw(ctx)
+	case imageprice.FieldSource:
+		return m.OldSource(ctx)
+	case imageprice.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case imageprice.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ImagePrice field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ImagePriceMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case imageprice.FieldModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModel(v)
+		return nil
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputImageTokenPricePerMillion(v)
+		return nil
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputImageTokenPricePerMillion(v)
+		return nil
+	case imageprice.FieldOutputCostPerImageMilli:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputCostPerImageMilli(v)
+		return nil
+	case imageprice.FieldRaw:
+		v, ok := value.(json.RawMessage)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRaw(v)
+		return nil
+	case imageprice.FieldSource:
+		v, ok := value.(imageprice.Source)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSource(v)
+		return nil
+	case imageprice.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case imageprice.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ImagePrice field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ImagePriceMutation) AddedFields() []string {
+	var fields []string
+	if m.addinput_image_token_price_per_million != nil {
+		fields = append(fields, imageprice.FieldInputImageTokenPricePerMillion)
+	}
+	if m.addoutput_image_token_price_per_million != nil {
+		fields = append(fields, imageprice.FieldOutputImageTokenPricePerMillion)
+	}
+	if m.addoutput_cost_per_image_milli != nil {
+		fields = append(fields, imageprice.FieldOutputCostPerImageMilli)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ImagePriceMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		return m.AddedInputImageTokenPricePerMillion()
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		return m.AddedOutputImageTokenPricePerMillion()
+	case imageprice.FieldOutputCostPerImageMilli:
+		return m.AddedOutputCostPerImageMilli()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ImagePriceMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputImageTokenPricePerMillion(v)
+		return nil
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputImageTokenPricePerMillion(v)
+		return nil
+	case imageprice.FieldOutputCostPerImageMilli:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputCostPerImageMilli(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ImagePrice numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ImagePriceMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(imageprice.FieldInputImageTokenPricePerMillion) {
+		fields = append(fields, imageprice.FieldInputImageTokenPricePerMillion)
+	}
+	if m.FieldCleared(imageprice.FieldOutputImageTokenPricePerMillion) {
+		fields = append(fields, imageprice.FieldOutputImageTokenPricePerMillion)
+	}
+	if m.FieldCleared(imageprice.FieldOutputCostPerImageMilli) {
+		fields = append(fields, imageprice.FieldOutputCostPerImageMilli)
+	}
+	if m.FieldCleared(imageprice.FieldRaw) {
+		fields = append(fields, imageprice.FieldRaw)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ImagePriceMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ImagePriceMutation) ClearField(name string) error {
+	switch name {
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		m.ClearInputImageTokenPricePerMillion()
+		return nil
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		m.ClearOutputImageTokenPricePerMillion()
+		return nil
+	case imageprice.FieldOutputCostPerImageMilli:
+		m.ClearOutputCostPerImageMilli()
+		return nil
+	case imageprice.FieldRaw:
+		m.ClearRaw()
+		return nil
+	}
+	return fmt.Errorf("unknown ImagePrice nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ImagePriceMutation) ResetField(name string) error {
+	switch name {
+	case imageprice.FieldModel:
+		m.ResetModel()
+		return nil
+	case imageprice.FieldInputImageTokenPricePerMillion:
+		m.ResetInputImageTokenPricePerMillion()
+		return nil
+	case imageprice.FieldOutputImageTokenPricePerMillion:
+		m.ResetOutputImageTokenPricePerMillion()
+		return nil
+	case imageprice.FieldOutputCostPerImageMilli:
+		m.ResetOutputCostPerImageMilli()
+		return nil
+	case imageprice.FieldRaw:
+		m.ResetRaw()
+		return nil
+	case imageprice.FieldSource:
+		m.ResetSource()
+		return nil
+	case imageprice.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case imageprice.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ImagePrice field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ImagePriceMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ImagePriceMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ImagePriceMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ImagePriceMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ImagePriceMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ImagePriceMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ImagePriceMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ImagePrice unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ImagePriceMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ImagePrice edge %s", name)
 }
 
 // KeyMutation represents an operation that mutates the Key nodes in the graph.

@@ -22,6 +22,8 @@ type Tx struct {
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
 	GroupAssignment *GroupAssignmentClient
+	// ImagePrice is the client for interacting with the ImagePrice builders.
+	ImagePrice *ImagePriceClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
 	// Pricing is the client for interacting with the Pricing builders.
@@ -182,6 +184,7 @@ func (tx *Tx) init() {
 	tx.ErrLog = NewErrLogClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.GroupAssignment = NewGroupAssignmentClient(tx.config)
+	tx.ImagePrice = NewImagePriceClient(tx.config)
 	tx.Key = NewKeyClient(tx.config)
 	tx.Pricing = NewPricingClient(tx.config)
 	tx.RedemptionCode = NewRedemptionCodeClient(tx.config)

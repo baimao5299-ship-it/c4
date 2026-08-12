@@ -752,6 +752,61 @@ paths:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
         default:
           $ref: '#/components/responses/Error'
+  # --- 图片生成价格（tag: pricing；Task A 数据面——images 端点计费价格来源） ---
+  # 注意 chi 路径顺序：/image-price/{model} 与 /pricing/{model} 同规则（生成器按
+  # spec 顺序注册；image-price 无 sync 子路径，无顺序冲突）。
+  /image-price:
+    get:
+      operationId: GetImagePrice
+      tags: [pricing]
+      summary: 图片生成价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
+        - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
+        - { name: model, in: query, schema: { type: string, description: 模型名模糊搜索（大小写不敏感） } }
+        - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 图片价格列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImagePriceListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /image-price/{model}:
+    parameters:
+      - { name: model, in: path, required: true, schema: { type: string, description: 模型名 } }
+    put:
+      operationId: PutImagePriceModel
+      tags: [pricing]
+      summary: 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ImagePriceUpsert' }
+      responses:
+        '200':
+          description: 设价后的图片价格行
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImagePrice' }
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: DeleteImagePriceModel
+      tags: [pricing]
+      summary: 删除手动图片价格（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   # --- /user 面（tag: user；生成到 internal/handler/user 独立 ServerInterface） ---
   /user/auth/register:
     post:
@@ -1888,8 +1943,35 @@ components:
       required: [rows, skipped, updated]
       properties:
         rows: { type: integer, description: 拉取到的有效模型行数 }
-        skipped: { type: integer, description: 解析时跳过的非法行数 }
-        updated: { type: integer, description: upsert 落库数（manual 行不计） }
+        skipped: { type: integer, description: 解析时跳过的非法条目数（文本价与 image 价均无效，计一次） }
+        updated: { type: integer, description: 文本价 upsert 落库数（manual 行不计） }
+        image_rows: { type: integer, description: 拉取到的有效 image 价行数（Task A 双线） }
+        image_updated: { type: integer, description: image 价 upsert 落库数（manual 行不计） }
+    ImagePrice:
+      type: object
+      required: [Model, Source, CreatedAt, UpdatedAt]
+      properties:
+        Model: { type: string, description: 模型名（与 pricings.model 同口径） }
+        InputImageTokenPricePerMillion: { type: number, format: double, nullable: true, description: image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算，1 USD = 100,000 毫分）；null = 无该分量价 }
+        OutputImageTokenPricePerMillion: { type: number, format: double, nullable: true, description: image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算）；null = 无该分量价 }
+        OutputCostPerImage: { type: number, format: double, nullable: true, description: 每张图价（USD/张；内部存储毫分——×1e5 换算，**与 token 价不同换算系**；计费不走 /1e6 除法）；null = 不启用按张分量 }
+        Source: { $ref: '#/components/schemas/PricingSource' }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    ImagePriceUpsert:
+      type: object
+      properties:
+        input_image_token_price_per_million: { type: number, format: double, minimum: 0, nullable: true, description: image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量 }
+        output_image_token_price_per_million: { type: number, format: double, minimum: 0, nullable: true, description: image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量 }
+        output_cost_per_image: { type: number, format: double, minimum: 0, nullable: true, description: 每张图价（USD/张；API 边界 ×1e5 → 毫分/张——**禁混用 ×1e11 换算**）；缺省/null = 清空该分量 }
+    ImagePriceListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/ImagePrice' }
     RedeemRequest:
       type: object
       required: [code]
