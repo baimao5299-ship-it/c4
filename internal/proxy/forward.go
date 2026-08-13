@@ -420,6 +420,9 @@ var (
 	errBody           = &formatError{status: http.StatusRequestEntityTooLarge, msg: "request body too large"}
 	// errUpgradeRequired 400：resp-ws 端点收到非升级请求（本地拒绝，无记录）。
 	errUpgradeRequired = &formatError{status: http.StatusBadRequest, msg: "websocket upgrade required"}
+	// errGroupNotFound 404：组不存在/快照未加载（GET /v1/models——鉴权已过但
+	// 组失效；对齐 Select 的 ErrGroupNotFound 语义）。
+	errGroupNotFound = &formatError{status: http.StatusNotFound, msg: "group not found"}
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -454,6 +457,7 @@ var errBodies = func() map[*formatError]encodedError {
 		errInsufficientBalance: enc(errInsufficientBalance),
 		errServiceTierRejected: enc(errServiceTierRejected),
 		errUpgradeRequired:     enc(errUpgradeRequired),
+		errGroupNotFound:       enc(errGroupNotFound),
 	}
 }()
 

@@ -48,5 +48,8 @@ func AIRouter(p *Proxy) http.Handler {
 	r.Post("/v1/images/edits", func(w http.ResponseWriter, req *http.Request) {
 		p.handleFormat(domain.FormatOpenAIImages, w, req)
 	})
+	// GET /v1/models（OpenAI 兼容模型列表）：user API key 鉴权；端点冷面——
+	// 快照读零 DB（models.go）。
+	r.Get("/v1/models", p.HandleModels)
 	return r
 }
