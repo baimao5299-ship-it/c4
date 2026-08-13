@@ -276,7 +276,7 @@ flowchart LR
 | `Mount("/")` | AI key 鉴权（proxy） | chat/anthropic/responses + WS（`internal/proxy/router.go:15-39`） |
 | `/assets/*`、`/favicon.svg`、`/`、SPA fallback | 无 | 网关内嵌 web/dist（`internal/server/server.go:117-150` + `cmd/server/embed.go:10-15`） |
 
-- admin 组（`internal/handler/api.gen.go:3349-3502`，openapi 生成）：`/accounts`（含批量 batch-delete/batch-update、`{id}/ext`、`{id}/groups`）、`/groups`（含 assignments）、`/users`（含 `{id}/groups`）、`/templates`（含 batch、`{id}/ext`）、`/keys`、`/pricing`（含 `/pricing/sync`、`/pricing/{model}`）、`/rules`、`/settings`、`/redemption-codes`（含 batch-deactivate、`{id}/deactivate`、`{id}/uses`）、`/usage_logs`、`/err_logs`、`/stats`。
+- admin 组（`internal/handler/api.gen.go:3349-3502`，openapi 生成）：`/accounts`（含批量 batch-delete/batch-update、`{id}/ext`、`{id}/groups`）、`/groups`（含 assignments）、`/users`（含 `{id}/groups`）、`/templates`（含 batch、`{id}/ext`）、`/keys`、`/pricing`（含 `/pricing/sync`；PUT/DELETE 的 model 在 query）、`/rules`、`/settings`、`/redemption-codes`（含 batch-deactivate、`{id}/deactivate`、`{id}/uses`）、`/usage_logs`、`/err_logs`、`/stats`。
 - user 组（`internal/handler/user/api.gen.go:1282-1324`）：`/user/auth/login|register|me`、`/user/keys`（含 `{id}`、`{id}/rotate`）、`/user/groups`、`/user/usage_logs`、`/user/err_logs`、`/user/stats`、`/user/redemptions`。
 - AI 组：`POST /v1/chat/completions`、`POST /v1/responses`（upgrade → WS）、`GET /v1/responses`（仅 upgrade 放行，否则 405）、`POST /v1/messages`（`internal/proxy/router.go:15-39`）。
 

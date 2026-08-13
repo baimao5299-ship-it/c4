@@ -685,8 +685,9 @@ paths:
         default:
           $ref: '#/components/responses/Error'
   # --- litellm 模型价格（tag: pricing；Phase 5 计费价格来源） ---
-  # 注意 chi 路径顺序：/pricing/sync 必须先于 /pricing/{model} 注册（生成器按
-  # spec 顺序注册，防 "sync" 被 {model} 捕获，对齐 /redemption-codes/batch-deactivate 先例）。
+  # 模型标识在 query（PUT/DELETE 的 model 参数）：模型名是自由字符串可含 `/`
+  # （如 1024-x-1024/50-steps/bedrock/amazon.nova-canvas-v1:0），路径参数单段
+  # 匹配会拆段 404——URL 编码与 chi 通配方案均否决，见 spec 裁决（2026-08-14）。
   /pricing:
     get:
       operationId: GetPricing
@@ -708,26 +709,12 @@ paths:
               schema: { $ref: '#/components/schemas/PricingListResponse' }
         default:
           $ref: '#/components/responses/Error'
-  /pricing/sync:
-    post:
-      operationId: PostPricingSync
-      tags: [pricing]
-      summary: 手动触发一次价格同步（fetch 官方价格表 → upsert → 快照重载；失败保留旧价）
-      responses:
-        '200':
-          description: 拉取统计
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PricingSyncResponse' }
-        default:
-          $ref: '#/components/responses/Error'
-  /pricing/{model}:
-    parameters:
-      - { name: model, in: path, required: true, schema: { type: string, description: 模型名 } }
     put:
       operationId: PutPricingModel
       tags: [pricing]
       summary: 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行）
+      parameters:
+        - { name: model, in: query, required: true, schema: { type: string, description: 模型名 } }
       requestBody:
         required: true
         content:
@@ -745,6 +732,8 @@ paths:
       operationId: DeletePricingModel
       tags: [pricing]
       summary: 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
+      parameters:
+        - { name: model, in: query, required: true, schema: { type: string, description: 模型名 } }
       responses:
         '200':
           description: 删除成功
@@ -753,9 +742,21 @@ paths:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /pricing/sync:
+    post:
+      operationId: PostPricingSync
+      tags: [pricing]
+      summary: 手动触发一次价格同步（fetch 官方价格表 → upsert → 快照重载；失败保留旧价）
+      responses:
+        '200':
+          description: 拉取统计
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingSyncResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   # --- 图片生成价格（tag: pricing；Task A 数据面——images 端点计费价格来源） ---
-  # 注意 chi 路径顺序：/image-price/{model} 与 /pricing/{model} 同规则（生成器按
-  # spec 顺序注册；image-price 无 sync 子路径，无顺序冲突）。
+  # 模型标识在 query（PUT/DELETE 的 model 参数，同 /pricing——模型名可含 `/`）。
   /image-price:
     get:
       operationId: GetImagePrice
@@ -777,10 +778,9 @@ paths:
               schema: { $ref: '#/components/schemas/ImagePriceListResponse' }
         default:
           $ref: '#/components/responses/Error'
-  /image-price/{model}:
-    parameters:
-      - { name: model, in: path, required: true, schema: { type: string, description: 模型名 } }
     put:
+      parameters:
+        - { name: model, in: query, required: true, schema: { type: string, description: 模型名 } }
       operationId: PutImagePriceModel
       tags: [pricing]
       summary: 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行）
@@ -798,6 +798,8 @@ paths:
         default:
           $ref: '#/components/responses/Error'
     delete:
+      parameters:
+        - { name: model, in: query, required: true, schema: { type: string, description: 模型名 } }
       operationId: DeleteImagePriceModel
       tags: [pricing]
       summary: 删除手动图片价格（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
@@ -811,8 +813,7 @@ paths:
           $ref: '#/components/responses/Error'
   # --- 按单元计费功能类价格（tag: pricing；价格表三件套——search 起，audio/video
   # 等未来 per-unit 端点复用；对齐 image_price 形态） ---
-  # 注意 chi 路径顺序：/function-prices/{model} 与 /image-price/{model} 同规则
-  # （生成器按 spec 顺序注册；无子路径冲突）。
+  # 模型标识在 query（PUT/DELETE 的 model 参数，同 /pricing——模型名可含 `/`）。
   /function-prices:
     get:
       operationId: GetFunctionPrices
@@ -834,22 +835,9 @@ paths:
               schema: { $ref: '#/components/schemas/FunctionPriceListResponse' }
         default:
           $ref: '#/components/responses/Error'
-  /function-prices/{model}:
-    parameters:
-      - { name: model, in: path, required: true, schema: { type: string, description: 模型/功能标识（如 codex-search） } }
-    get:
-      operationId: GetFunctionPricesModel
-      tags: [pricing]
-      summary: 按 model 取单行（缺失 → 404；codex-search 种子行/默认兜底价见快照读）
-      responses:
-        '200':
-          description: 单行
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FunctionPrice' }
-        default:
-          $ref: '#/components/responses/Error'
     put:
+      parameters:
+        - { name: model, in: query, required: true, schema: { type: string, description: 模型/功能标识（如 codex-search） } }
       operationId: PutFunctionPricesModel
       tags: [pricing]
       summary: 手动设按单元价（price_per_call USD/次 必填 ≥0；×1e5 存储毫分/次；upsert 强制 source=manual，可接管 litellm 行——codex-search 价可改）
@@ -867,6 +855,8 @@ paths:
         default:
           $ref: '#/components/responses/Error'
     delete:
+      parameters:
+        - { name: model, in: query, required: true, schema: { type: string, description: 模型/功能标识（如 codex-search） } }
       operationId: DeleteFunctionPricesModel
       tags: [pricing]
       summary: 删除手动按单元价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回；codex-search 种子行重启补回）

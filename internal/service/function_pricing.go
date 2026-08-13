@@ -108,19 +108,8 @@ func (s *Service) GetFunctionPrice(model string) (*domain.FunctionPrice, error) 
 	return nil, fmt.Errorf("%w: model=%q（无按单元价格数据：请管理端设价或等待 litellm 同步）", ErrNotFound, model)
 }
 
-// GetFunctionPriceRow 管理端单行查询（GET /admin/function-prices/{model}）：
-// 直读 DB 行（非快照——管理面展示实际落库值；快照读 GetFunctionPrice 的
-// codex-search 默认兜底不在此面出现，表行缺失 → 404）。缺失 → ErrNotFound。
-func (s *Service) GetFunctionPriceRow(ctx context.Context, model string) (*domain.FunctionPrice, error) {
-	p, err := s.store.GetFunctionPrice(ctx, model)
-	if err != nil {
-		return nil, mapRepoErr(err)
-	}
-	return p, nil
-}
-
-// UpsertManualFunctionPrice 手动设按单元价（管理端 PUT /admin/function-prices/
-// {model}）：校验（model 非空；price_per_call 全 nil → 400——行有效性 = 按
+// UpsertManualFunctionPrice 手动设按单元价（管理端 PUT /admin/function-prices?
+// model=X）：校验（model 非空；price_per_call 全 nil → 400——行有效性 = 按
 // 单元价非 nil；非 nil 且 < 0 → 400）+ 落库（upsert 强制 source=manual，可
 // 接管 litellm 行）+ 成功后重载快照（读路径即时生效）。FunctionPriceManual
 // 单位：毫分/次（handler 边界已由 API 入参 USD 换算）。
@@ -143,7 +132,7 @@ func (s *Service) UpsertManualFunctionPrice(ctx context.Context, m *repository.F
 }
 
 // DeleteManualFunctionPrice 删除手动按单元价（管理端 DELETE /admin/function-
-// prices/{model}）：仅 source=manual 行可删（litellm 行 → ErrConflict；仓库
+// prices?model=X）：仅 source=manual 行可删（litellm 行 → ErrConflict；仓库
 // 语义）；成功后重载快照——该 model 从快照消失（缺失窗口内 GetFunctionPrice
 // → 兜底/ErrNotFound，下轮拉取补回；codex-search 种子行删除后下轮启动
 // bootstrap 幂等补回）。

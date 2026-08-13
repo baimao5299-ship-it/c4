@@ -12,9 +12,10 @@ import (
 )
 
 // 图片生成价格管理面（/admin/image-price）：列表 / 手动设价 / 删除手动价
-// （Task A 数据面；images 端点计费价格来源）。PUT/DELETE 的 {model} 由 chi
-// 路径参数注入（生成契约签名）；错误映射走 writeServiceErr（ErrNotFound →
-// 404、ErrConflict → 409、ErrInvalidInput → 400——含"至少一价非 nil"校验）。
+// （Task A 数据面；images 端点计费价格来源）。PUT/DELETE 的 model 走 query
+// 参数（生成契约签名 params.Model——模型名可含 `/`，同 /pricing 不入路径）；
+// 错误映射走 writeServiceErr（ErrNotFound → 404、ErrConflict → 409、
+// ErrInvalidInput → 400——含"至少一价非 nil"校验）。
 // 与 /admin/pricing 同形态同单位（token 价 USD/1M per-million；仅多 per-image
 // USD/张 分量，见换算函数注释）。
 
@@ -51,14 +52,14 @@ func (h *AdminAPI) GetImagePrice(w http.ResponseWriter, r *http.Request, params 
 // （usdPerImageToMilli，系数与 usdToMillis 相同但单位语义独立——按张 flat 计费，
 // 独立函数自文档化）。三分量全缺省（nil）→ 400（service 校验：行有效性 = 至少
 // 一价非 nil）。upsert 强制 source=manual，可接管 litellm 行，ServerInterface。
-func (h *AdminAPI) PutImagePriceModel(w http.ResponseWriter, r *http.Request, model string) {
+func (h *AdminAPI) PutImagePriceModel(w http.ResponseWriter, r *http.Request, params PutImagePriceModelParams) {
 	var in ImagePriceUpsert
 	if err := decode(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
 	p, err := h.svc.UpsertManualImagePrice(r.Context(), &repository.ImagePriceManual{
-		Model:                           model,
+		Model:                           params.Model,
 		InputImageTokenPricePerMillion:  usdToMillisPtr(in.InputImageTokenPricePerMillion),
 		OutputImageTokenPricePerMillion: usdToMillisPtr(in.OutputImageTokenPricePerMillion),
 		OutputCostPerImageMilli:         usdPerImageToMilliPtr(in.OutputCostPerImage),
@@ -72,8 +73,8 @@ func (h *AdminAPI) PutImagePriceModel(w http.ResponseWriter, r *http.Request, mo
 
 // DeleteImagePriceModel 删除手动图片价格：仅 source=manual 可删（litellm 行 →
 // 409、不存在 → 404，service 错误映射），ServerInterface。
-func (h *AdminAPI) DeleteImagePriceModel(w http.ResponseWriter, r *http.Request, model string) {
-	if err := h.svc.DeleteManualImagePrice(r.Context(), model); err != nil {
+func (h *AdminAPI) DeleteImagePriceModel(w http.ResponseWriter, r *http.Request, params DeleteImagePriceModelParams) {
+	if err := h.svc.DeleteManualImagePrice(r.Context(), params.Model); err != nil {
 		writeServiceErr(w, err)
 		return
 	}

@@ -42,7 +42,7 @@ func TestPutImagePrice(t *testing.T) {
 
 	// 新模型设价：token 价 8.0/30.0 USD/1M → 800,000/3,000,000 毫分/1M（×1e5，
 	// 与 chat 价同系数）；per-image 0.054 USD/张 → 5,400 毫分/张；回显反向换算
-	rec := do(http.MethodPut, "/admin/image-price/gpt-image-3",
+	rec := do(http.MethodPut, "/admin/image-price?model=gpt-image-3",
 		`{"input_image_token_price_per_million":8.0,"output_image_token_price_per_million":30.0,"output_cost_per_image":0.054}`)
 	require.Equal(t, 200, rec.Code, "put: %s", rec.Body.String())
 	var p ImagePrice
@@ -59,7 +59,7 @@ func TestPutImagePrice(t *testing.T) {
 	// 接管 litellm 行：先 sync 入库再手动设价（litellm 行带 provider → 接管后清空）
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
-	rec = do(http.MethodPut, "/admin/image-price/gpt-image-2",
+	rec = do(http.MethodPut, "/admin/image-price?model=gpt-image-2",
 		`{"input_image_token_price_per_million":8.0,"output_cost_per_image":0.054}`)
 	require.Equal(t, 200, rec.Code, "takeover: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
@@ -68,21 +68,21 @@ func TestPutImagePrice(t *testing.T) {
 	require.Nil(t, p.Provider, "manual 接管后 provider nil（S-2）")
 
 	// 全 nil → 400（行有效性 = 至少一价）
-	rec = do(http.MethodPut, "/admin/image-price/m-none", `{}`)
+	rec = do(http.MethodPut, "/admin/image-price?model=m-none", `{}`)
 	require.Equal(t, 400, rec.Code, "all nil: %s", rec.Body.String())
-	rec = do(http.MethodPut, "/admin/image-price/m-none", `{"input_image_token_price_per_million":null}`)
+	rec = do(http.MethodPut, "/admin/image-price?model=m-none", `{"input_image_token_price_per_million":null}`)
 	require.Equal(t, 400, rec.Code, "explicit null: %s", rec.Body.String())
 
 	// 负数 → 400（token 价与 per-image 各自校验）
-	rec = do(http.MethodPut, "/admin/image-price/m-neg",
+	rec = do(http.MethodPut, "/admin/image-price?model=m-neg",
 		`{"input_image_token_price_per_million":-0.01,"output_cost_per_image":0.054}`)
 	require.Equal(t, 400, rec.Code, "negative token price: %s", rec.Body.String())
-	rec = do(http.MethodPut, "/admin/image-price/m-neg",
+	rec = do(http.MethodPut, "/admin/image-price?model=m-neg",
 		`{"input_image_token_price_per_million":8.0,"output_cost_per_image":-0.054}`)
 	require.Equal(t, 400, rec.Code, "negative per-image: %s", rec.Body.String())
 
 	// 非法 JSON → 400
-	rec = do(http.MethodPut, "/admin/image-price/m-bad", `not json`)
+	rec = do(http.MethodPut, "/admin/image-price?model=m-bad", `not json`)
 	require.Equal(t, 400, rec.Code, "invalid json: %s", rec.Body.String())
 }
 
@@ -166,15 +166,15 @@ func TestDeleteImagePrice(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	rec := do(http.MethodDelete, "/admin/image-price/gpt-image-2", "")
+	rec := do(http.MethodDelete, "/admin/image-price?model=gpt-image-2", "")
 	require.Equal(t, 409, rec.Code, "litellm 行 → 409: %s", rec.Body.String())
 	// G3-2：409 响应体恒英文（对外分层），不含中文
 	require.Contains(t, errMsg(t, rec), "manual price only", "409 消息英文（manual price only）")
 	require.NotContains(t, errMsg(t, rec), "只允许删手动价", "409 消息不得含中文")
 
-	rec = do(http.MethodDelete, "/admin/image-price/manual-m", "")
+	rec = do(http.MethodDelete, "/admin/image-price?model=manual-m", "")
 	require.Equal(t, 200, rec.Code, "manual 删除: %s", rec.Body.String())
 
-	rec = do(http.MethodDelete, "/admin/image-price/no-such", "")
+	rec = do(http.MethodDelete, "/admin/image-price?model=no-such", "")
 	require.Equal(t, 404, rec.Code, "不存在 → 404: %s", rec.Body.String())
 }

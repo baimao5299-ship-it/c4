@@ -44,7 +44,7 @@ func TestPutPricingMatrixFields(t *testing.T) {
 		"above_flex_cache_read_price_per_million":1.51,"above_flex_cache_creation_price_per_million":2.51,
 		"fast_multiplier":2.0
 	}`
-	rec := do(http.MethodPut, "/admin/pricing/matrix-model", body)
+	rec := do(http.MethodPut, "/admin/pricing?model=matrix-model", body)
 	require.Equal(t, 200, rec.Code, "put matrix: %s", rec.Body.String())
 	var p Pricing
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
@@ -69,7 +69,7 @@ func TestPutPricingMatrixFields(t *testing.T) {
 	require.Equal(t, 2.0, *list.Rows[0].FastMultiplier)
 
 	// 部分设价覆盖：其余矩阵字段清空（PUT 全量替换，nil = 清空）
-	rec = do(http.MethodPut, "/admin/pricing/matrix-model",
+	rec = do(http.MethodPut, "/admin/pricing?model=matrix-model",
 		`{"prompt_price_per_million":1,"completion_price_per_million":2,"above_threshold":1000}`)
 	require.Equal(t, 200, rec.Code, "partial overwrite: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
@@ -87,17 +87,17 @@ func TestPutPricingMatrixFields(t *testing.T) {
 		{"above_flex_prompt", `"above_flex_prompt_price_per_million":-0.01`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := do(http.MethodPut, "/admin/pricing/matrix-model",
+			rec := do(http.MethodPut, "/admin/pricing?model=matrix-model",
 				fmt.Sprintf(`{"prompt_price_per_million":1,"completion_price_per_million":2,%s}`, tc.field))
 			require.Equal(t, 400, rec.Code, "%s: %s", tc.name, rec.Body.String())
 		})
 	}
 
 	// fast_multiplier 越界（0 与 >10）→ 400
-	rec = do(http.MethodPut, "/admin/pricing/matrix-model",
+	rec = do(http.MethodPut, "/admin/pricing?model=matrix-model",
 		`{"prompt_price_per_million":1,"completion_price_per_million":2,"fast_multiplier":0}`)
 	require.Equal(t, 400, rec.Code, "fast 0: %s", rec.Body.String())
-	rec = do(http.MethodPut, "/admin/pricing/matrix-model",
+	rec = do(http.MethodPut, "/admin/pricing?model=matrix-model",
 		`{"prompt_price_per_million":1,"completion_price_per_million":2,"fast_multiplier":10.0001}`)
 	require.Equal(t, 400, rec.Code, "fast >10: %s", rec.Body.String())
 

@@ -882,9 +882,9 @@
 
 ### 手动设价
 
-`PUT /admin/pricing/{model}`
+`PUT /admin/pricing?model={model}`
 
-请求体：`{"prompt_price_per_million": 2.5, "completion_price_per_million": 3.0}`（USD/1M tokens 正常值，**必须 ≥ 0**，内部 `math.Round(x × 1e5)` 存毫分；负数 → `400`，model 缺失 → `404`）。可选字段：
+请求体：`{"prompt_price_per_million": 2.5, "completion_price_per_million": 3.0}`（USD/1M tokens 正常值，**必须 ≥ 0**，内部 `math.Round(x × 1e5)` 存毫分；负数 → `400`，model 缺失 → `400`）。`model` 走 query 参数——模型名是自由字符串可含 `/`（如 `1024-x-1024/50-steps/bedrock/amazon.nova-canvas-v1:0`），路径参数单段匹配会拆段 404，故不入路径。可选字段：
 
 - 缓存价：`cache_read_price_per_million` / `cache_creation_price_per_million`（USD/1M 正常值，≥ 0）
 - **矩阵 22 列**：`priority_prompt_price_per_million` 等 priority/flex 各 4 列、`above_threshold`（tokens，integer）+ above 三组各 4 列、`fast_multiplier`（正常值，0 < m ≤ 10）——全部 ≥ 0、缺省或 `null` = 不设该价（落库 NULL）
@@ -893,7 +893,7 @@
 
 ### 删除手动价
 
-`DELETE /admin/pricing/{model}`
+`DELETE /admin/pricing?model={model}`
 
 | 响应 | 说明 |
 |---|---|

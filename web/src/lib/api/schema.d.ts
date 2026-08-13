@@ -450,9 +450,11 @@ export interface paths {
         };
         /** 模型价格列表（分页/筛选/排序；sort 白名单 model/updated_at） */
         get: operations["GetPricing"];
-        put?: never;
+        /** 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行） */
+        put: operations["PutPricingModel"];
         post?: never;
-        delete?: never;
+        /** 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回） */
+        delete: operations["DeletePricingModel"];
         options?: never;
         head?: never;
         patch?: never;
@@ -475,26 +477,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pricing/{model}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                model: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        /** 手动设价（毫分/1M tokens；upsert 强制 source=manual，可接管 litellm 行） */
-        put: operations["PutPricingModel"];
-        post?: never;
-        /** 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回） */
-        delete: operations["DeletePricingModel"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/image-price": {
         parameters: {
             query?: never;
@@ -504,24 +486,6 @@ export interface paths {
         };
         /** 图片生成价格列表（分页/筛选/排序；sort 白名单 model/updated_at） */
         get: operations["GetImagePrice"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/image-price/{model}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                model: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
         /** 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行） */
         put: operations["PutImagePriceModel"];
         post?: never;
@@ -541,25 +505,6 @@ export interface paths {
         };
         /** 按单元计费功能类价格列表（分页/筛选/排序；sort 白名单 model/updated_at） */
         get: operations["GetFunctionPrices"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/function-prices/{model}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                model: string;
-            };
-            cookie?: never;
-        };
-        /** 按 model 取单行（缺失 → 404；codex-search 种子行/默认兜底价见快照读） */
-        get: operations["GetFunctionPricesModel"];
         /** 手动设按单元价（price_per_call USD/次 必填 ≥0；×1e5 存储毫分/次；upsert 强制 source=manual，可接管 litellm 行——codex-search 价可改） */
         put: operations["PutFunctionPricesModel"];
         post?: never;
@@ -2987,34 +2932,13 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    PostPricingSync: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 拉取统计 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingSyncResponse"];
-                };
-            };
-            default: components["responses"]["Error"];
-        };
-    };
     PutPricingModel: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query: {
                 model: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -3037,11 +2961,11 @@ export interface operations {
     };
     DeletePricingModel: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query: {
                 model: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3053,6 +2977,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostPricingSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 拉取统计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingSyncResponse"];
                 };
             };
             default: components["responses"]["Error"];
@@ -3089,11 +3034,11 @@ export interface operations {
     };
     PutImagePriceModel: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query: {
                 model: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -3116,11 +3061,11 @@ export interface operations {
     };
     DeleteImagePriceModel: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query: {
                 model: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3166,36 +3111,13 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    GetFunctionPricesModel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                model: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 单行 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FunctionPrice"];
-                };
-            };
-            default: components["responses"]["Error"];
-        };
-    };
     PutFunctionPricesModel: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query: {
                 model: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -3218,11 +3140,11 @@ export interface operations {
     };
     DeleteFunctionPricesModel: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
+            query: {
                 model: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

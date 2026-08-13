@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net/url"
 	"net/http"
 	"os"
 	"strconv"
@@ -215,7 +216,7 @@ func main() {
 	// 基础价 + 随机 1-2 个矩阵字段（priority/fast 等），保证计费链路有价。
 	pStart := time.Now()
 	for _, model := range pickModels(rng, *priceModels) {
-		admin(http.MethodPut, "/admin/pricing/"+model, randomPricingBody(rng), nil)
+		admin(http.MethodPut, "/admin/pricing?model="+url.QueryEscape(model), randomPricingBody(rng), nil)
 	}
 	fmt.Printf("pricing: %d models (%s)\n", *priceModels, time.Since(pStart).Round(time.Millisecond))
 
