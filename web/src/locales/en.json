@@ -414,9 +414,6 @@
       "total": "Total"
     },
     "pagination": {
-      "total": "{{total}} entries",
-      "page": "Page {{page}} / {{pages}}",
-      "prev": "Prev",
       "next": "Next",
       "latest": "Latest",
       "pageOnly": "Page {{page}}"

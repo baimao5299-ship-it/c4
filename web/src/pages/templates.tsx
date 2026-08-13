@@ -438,7 +438,7 @@ export default function Templates() {
       try {
         return await api.getTemplateExt(extTarget!.ID)
       } catch (e) {
-        if (e instanceof ApiError && e.status === 404) return undefined // 无 ext 行 = 空表单
+        if (e instanceof ApiError && e.status === 404) return null // 无 ext 行 = 空表单（null 是合法数据，undefined 会触发 react-query 数据未定义错误）
         throw e
       }
     },
@@ -449,7 +449,7 @@ export default function Templates() {
     setExtStrip(null)
   }
   useEffect(() => {
-    if (extTarget && !extQ.isLoading && extQ.data !== undefined) setExtStrip(extQ.data?.strip_image_tools ?? null)
+    if (extTarget && !extQ.isLoading && extQ.data !== null) setExtStrip(extQ.data?.strip_image_tools ?? null)
   }, [extTarget, extQ.isLoading, extQ.data])
   const extSave = useMutation({
     mutationFn: () => {

@@ -3,7 +3,7 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 import { useMemo, useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, FileText, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
+import { defaultLogRange, formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
 import { userApi } from '@/lib/api/client'
 import type { MyErrLogParams, MyUsageLogParams } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
@@ -75,17 +75,6 @@ const LIMITS = [10, 20, 50, 100, 200]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
 
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
-// 默认近 24h（组件挂载时固定一次，避免渲染期时间漂移；from/to 契约必填）。
-function defaultRange() {
-  const to = new Date()
-  const from = new Date(to.getTime() - 24 * 3600 * 1000)
-  const local = (d: Date) =>
-    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-  return { from: local(from), to: local(to) }
-}
-
 interface LogFilters {
   group_id: string
   account_id: string
@@ -97,7 +86,7 @@ interface LogFilters {
 }
 
 const emptyFilters = (): LogFilters => ({
-  group_id: '', account_id: '', model: '', error_type: '', status_code: '', ...defaultRange(),
+  group_id: '', account_id: '', model: '', error_type: '', status_code: '', ...defaultLogRange(),
 })
 
 export default function UserLogs() {
@@ -156,7 +145,8 @@ export default function UserLogs() {
       usageParams: base,
       errParams: {
         ...base,
-        status_code: filters.status_code ? Number(filters.status_code) : undefined,
+        // Number('e')=NaN 会以 'NaN' 字符串发送 → 服务端 400；isFinite 过滤为 undefined。
+        status_code: filters.status_code && Number.isFinite(Number(filters.status_code)) ? Number(filters.status_code) : undefined,
       } satisfies MyErrLogParams,
     }
   }, [filters, limit, cursor])
@@ -164,8 +154,6 @@ export default function UserLogs() {
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ['user', 'logs', tab, tab === 'errors' ? errParams : usageParams],
     queryFn: () => (tab === 'errors' ? userApi.getMyErrLogs(errParams) : userApi.getMyUsageLogs(usageParams)),
-    // 翻页时保留上一页数据（表格不闪空），isFetching 期间禁用「下一页」防连点。
-    placeholderData: keepPreviousData,
   })
 
   const rows = data?.rows ?? []
@@ -343,7 +331,7 @@ export default function UserLogs() {
           </Table>
         </Card>
         {/* 分页条：游标分页（无 total/offset）——limit 选择 + 下一页/回到最新；
-            isFetching 时禁用下一页（keepPreviousData 下防连点重复请求） */}
+            isFetching 时禁用下一页（防连点重复请求） */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-muted-foreground">{t('user.logs.pagination.pageOnly', { page })}</div>
           <div className="flex items-center gap-2">

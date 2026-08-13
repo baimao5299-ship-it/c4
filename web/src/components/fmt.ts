@@ -28,6 +28,19 @@ export function toRFC3339(v: string): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
 }
 
+// datetime-local 本地时间补零（YYYY-MM-DDTHH:mm）。
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// 默认近 24h 日志范围（datetime-local 本地时区字面量；调用方在组件挂载时固定一次，
+// 避免渲染期时间漂移；from/to 契约必填）。
+export function defaultLogRange(): { from: string; to: string } {
+  const to = new Date()
+  const from = new Date(to.getTime() - 24 * 3600 * 1000)
+  const local = (d: Date) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return { from: local(from), to: local(to) }
+}
+
 // 逗号列表截断展示，完整内容放 title。
 export function commaList(items: string[] | undefined, max = 3): { text: string; full: string } {
   const full = items?.join(', ') ?? ''

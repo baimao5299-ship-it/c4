@@ -371,7 +371,7 @@ export default function Accounts() {
       try {
         return await api.getAccountExt(extTarget!.ID!)
       } catch (e) {
-        if (e instanceof ApiError && e.status === 404) return undefined // 无 ext 行 = 空表单
+        if (e instanceof ApiError && e.status === 404) return null // 无 ext 行 = 空表单（null 是合法数据，undefined 会触发 react-query 数据未定义错误）
         throw e
       }
     },
