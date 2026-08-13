@@ -881,6 +881,8 @@ export interface components {
             name: string;
             /** Format: int64 */
             template_id: number;
+            /** @description 账号级覆盖（可选）：非空优先于模板 base_url；null = 继承模板 */
+            base_url?: string | null;
             upstream_key: string;
             status?: components["schemas"]["AccountStatus"];
             weight?: number;
@@ -894,6 +896,8 @@ export interface components {
             /** Format: int64 */
             TemplateID?: number;
             Template?: components["schemas"]["Template"];
+            /** @description 账号级覆盖：非空优先于模板 base_url；null = 继承模板 */
+            BaseURL?: string | null;
             UpstreamKey?: string;
             Status?: components["schemas"]["AccountStatus"];
             /** Format: date-time */
@@ -1254,6 +1258,8 @@ export interface components {
             name?: string;
             /** Format: int64 */
             template_id?: number;
+            /** @description 批量三态：空串 = 清空（回继承模板）；null/缺省 = 不变；非空 = 落值 */
+            base_url?: string | null;
             upstream_key?: string;
             /** @enum {string} */
             status?: "active" | "unhealthy" | "429" | "disabled";
