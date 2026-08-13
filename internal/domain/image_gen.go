@@ -55,22 +55,33 @@ type ImageUsage struct {
 	OutputImageTokens int64 `json:"output_image_tokens"` // output_tokens_details.image_tokens
 }
 
-// ImageStreamEvent 事件类型常量（GenerateImageStream 合成流式事件）。
+// ImageStreamEventType 流式事件类型（wire 事件名：上游 SSE 帧 type 字段值与
+// codex-sdk 合成流式事件 Type 值同值域）。类型化（A-P2-10）后 SDK 升级改事件
+// 名 → 适配层显式映射未知 Warn + 跳过（不静默透传落账 0 张）；switch 消费侧
+// 编译期暴露全部调用点。
+type ImageStreamEventType string
+
+// ImageStreamEvent 事件类型常量（GenerateImageStream 合成流式事件 + 直连上游
+// SSE 事件名——wire 事件名四处生产字面量收敛于此：image_usage.go:65 /
+// image_gen.go:66 / caller_images_stream.go buildCompletedFrame / billing 旁路）。
 const (
 	// ImageStreamEventKeepalive 保活事件（生成等待期间每 60s 一个；
 	// B64JSON/Usage 恒 nil）——网关收到首个事件即发 SSE 响应头，keepalive
 	// 保证 CF 120s 响应头超时门槛内必有字节流（524 免疫）。
-	ImageStreamEventKeepalive = "keepalive"
+	ImageStreamEventKeepalive ImageStreamEventType = "keepalive"
 	// ImageStreamEventCompleted 每张图一个 completed 事件（带 b64_json；
 	// usage 仅最后一个事件携带）。
-	ImageStreamEventCompleted = "image_generation.completed"
+	ImageStreamEventCompleted ImageStreamEventType = "image_generation.completed"
+	// ImageStreamEventEditCompleted edits 端点完成事件（直连上游 SSE 形态；
+	// codex-sdk 合成流式不产出——edits 端点也合成 generations.completed）。
+	ImageStreamEventEditCompleted ImageStreamEventType = "image_edit.completed"
 )
 
 // ImageStreamEvent 流式事件（codex-sdk 合成流式产出——网关零合成逻辑，只做
 // SSE 透传：keepalive → ": ping" 注释行；completed → SSE 事件帧）。partial_image
 // 不合成（无 wire 来源）。
 type ImageStreamEvent struct {
-	Type    string      // "keepalive" | "image_generation.completed"
-	B64JSON *string     // completed：原始 PNG base64；keepalive 恒 nil
-	Usage   *ImageUsage // 仅最后一个 completed 事件携带；keepalive 恒 nil
+	Type    ImageStreamEventType // 见上常量组
+	B64JSON *string              // completed：原始 PNG base64；keepalive 恒 nil
+	Usage   *ImageUsage          // 仅最后一个 completed 事件携带；keepalive 恒 nil
 }

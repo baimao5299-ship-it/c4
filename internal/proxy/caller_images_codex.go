@@ -48,15 +48,15 @@ type codexImagesCaller struct {
 
 func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
-	// 客户端请求模型（日志口径）：JSON 顶层提取 / multipart form 提取（与
-	// imagesCaller 的 reqModel 提取同构；body 已在内存，零 IO）。
-	reqModel := gjson.GetBytes(body, "model").String()
 	contentType := r.Header.Get("Content-Type")
-	if isMultipartForm(contentType) {
-		reqModel = imagesMultipartModel(body, contentType)
-	}
 	if p.codex == nil {
 		// 适配层未装配（SetCodex 未调用）：显式 501（防 nil 误走凭据缺失 502）。
+		// reqModel 冷路径直取（未装配 = 服务器配置错误罕见；成功热路径的第 8
+		// 次全文档扫描已消除——见下方 params.Model 复用）。
+		reqModel := gjson.GetBytes(body, "model").String()
+		if isMultipartForm(contentType) {
+			reqModel = imagesMultipartModel(body, contentType)
+		}
 		p.sched.Release(sel.AccountID)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexImagesNotIntegrated.msg)
 		writeErr(w, errCodexImagesNotIntegrated)
@@ -66,12 +66,19 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 	if err != nil {
 		// 本地参数拒绝（post-Select——Release + recordRejected + 400；评审
 		// P2-1 语义：拒绝走 err_logs 审计）。模型映射改写对 codex 无字节透传
-		// 约束，模型兜底走下方 sel.Model。
+		// 约束，模型兜底走下方 sel.Model。reqModel 冷路径直取（同 501）。
+		reqModel := gjson.GetBytes(body, "model").String()
+		if isMultipartForm(contentType) {
+			reqModel = imagesMultipartModel(body, contentType)
+		}
 		p.sched.Release(sel.AccountID)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start, err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": err.Error()}})
 		return 0, nil, true, nil
 	}
+	// 客户端请求模型（日志口径）：复用单遍解析结果 params.Model（JSON 顶层 /
+	// multipart form model 同源）——A-P2-9 不再第 8 次 gjson 全文档扫描。
+	reqModel := params.Model
 	// 模型映射：sel.Model（调度器已应用 ModelMapping——与直连路径 setModel
 	// 改写同语义；multipart 直连不做改写是字节透传约束，codex 网关重建 body
 	// 无此约束）。缺模型（multipart 无 form model 等边角）→ 请求模型兜底。
@@ -163,43 +170,74 @@ func imageParamsFromBody(body []byte, contentType string) (*domain.ImageGenParam
 	return imageParamsJSON(body)
 }
 
+// nullLit JSON null 字面量（可选字段 null → 按缺省忽略——gjson Type 判定同
+// 语义；encoding/json 对 null 解到非指针值为 no-op 不报错，需显式区分）。
+var nullLit = []byte("null")
+
 func imageParamsJSON(body []byte) (*domain.ImageGenParams, error) {
 	if !json.Valid(body) { // 防御：handleFormat 已过 json.Valid 硬门
 		return nil, errors.New("invalid request body: invalid JSON")
 	}
-	model := gjson.GetBytes(body, "model").String()
-	prompt := gjson.GetBytes(body, "prompt").String()
-	if model == "" {
+	// 单遍解析（A-P2-9：原 7 次 gjson.GetBytes 各从头单遍扫描 + Call 侧第 8 次
+	// → json.Unmarshal 单遍——MB 级 base64 data URL body 每请求 ~8 遍全文档扫
+	// 描 → 1 遍）。可选字段走 json.RawMessage（body 子切片零拷贝）——宽松语义
+	// 与 gjson 缺字段默认一致：缺失 → nil，类型不合（字符串 n / 数字 size /
+	// null 等）→ 按缺省忽略（gjson Type 判定同语义）。
+	var raw struct {
+		Model      string            `json:"model"`
+		Prompt     string            `json:"prompt"`
+		N          json.RawMessage   `json:"n"`
+		Size       json.RawMessage   `json:"size"`
+		Quality    json.RawMessage   `json:"quality"`
+		Background json.RawMessage   `json:"background"`
+		Images     []json.RawMessage `json:"images"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, errors.New("invalid request body: invalid JSON")
+	}
+	if raw.Model == "" {
 		return nil, errors.New("invalid request body: model required")
 	}
-	if prompt == "" {
+	if raw.Prompt == "" {
 		return nil, errors.New("invalid request body: prompt required")
 	}
-	p := &domain.ImageGenParams{Model: model, Prompt: prompt}
-	if nv := gjson.GetBytes(body, "n"); nv.Type == gjson.Number {
-		n := int(nv.Int())
-		p.N = &n
+	p := &domain.ImageGenParams{Model: raw.Model, Prompt: raw.Prompt}
+	if len(raw.N) > 0 && !bytes.Equal(raw.N, nullLit) {
+		var f float64
+		if err := json.Unmarshal(raw.N, &f); err == nil { // 数字才认（整数/小数截断——gjson Int 语义）；字符串 → 忽略
+			n := int(f)
+			p.N = &n
+		}
 	}
-	if sv := gjson.GetBytes(body, "size"); sv.Type == gjson.String {
-		s := sv.String()
-		p.Size = &s
+	if len(raw.Size) > 0 && !bytes.Equal(raw.Size, nullLit) {
+		var s string
+		if json.Unmarshal(raw.Size, &s) == nil {
+			p.Size = &s
+		}
 	}
-	if qv := gjson.GetBytes(body, "quality"); qv.Type == gjson.String {
-		s := qv.String()
-		p.Quality = &s
+	if len(raw.Quality) > 0 && !bytes.Equal(raw.Quality, nullLit) {
+		var s string
+		if json.Unmarshal(raw.Quality, &s) == nil {
+			p.Quality = &s
+		}
 	}
-	if bv := gjson.GetBytes(body, "background"); bv.Type == gjson.String {
-		s := bv.String()
-		p.Background = &s
+	if len(raw.Background) > 0 && !bytes.Equal(raw.Background, nullLit) {
+		var s string
+		if json.Unmarshal(raw.Background, &s) == nil {
+			p.Background = &s
+		}
 	}
 	// edits 输入图（JSON 形态 images:[{image_url}]，官方文档实证）；file_id
-	// 形态不映射（需文件上传面，SDK 无此能力——忽略）。
-	for _, ir := range gjson.GetBytes(body, "images").Array() {
-		u := ir.Get("image_url").String()
-		if u == "" {
+	// 形态不映射（需文件上传面，SDK 无此能力——忽略）。元素非对象 / image_url
+	// 缺失或非字符串 → 跳过（gjson Get("image_url").String() 同语义）。
+	for _, ir := range raw.Images {
+		var e struct {
+			ImageURL string `json:"image_url"`
+		}
+		if json.Unmarshal(ir, &e) != nil || e.ImageURL == "" {
 			continue
 		}
-		uu := u
+		uu := e.ImageURL
 		p.Images = append(p.Images, domain.ImageRef{ImageURL: &uu})
 	}
 	return p, nil

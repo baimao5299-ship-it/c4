@@ -726,3 +726,58 @@ func TestImagesCodexMixedGroupFailoverReset(t *testing.T) {
 	require.GreaterOrEqual(t, codexCap.n(), 1, "codex 上游至少一次失败尝试（failover 路径确实被触发）")
 	require.NoError(t, p.rec.Close(context.Background()))
 }
+
+// TestImageParamsJSONSinglePass A-P2-9 单遍解析等价回归：json.Unmarshal 单遍
+// 替代 7×gjson.GetBytes 重扫（MB 级 base64 data URL body 每请求 ~8 遍全文档
+// 扫描 → 1 遍）——同输入同输出：缺字段默认、类型不合忽略（gjson Type 判定
+// 语义）、edits images 提取；MB 级 body 解析正确。
+func TestImageParamsJSONSinglePass(t *testing.T) {
+	// 全字段形态（与旧 gjson 路径逐字段等价）
+	p, err := imageParamsJSON([]byte(`{"model":"gpt-image-2","prompt":"a cat","n":2,"size":"1024x1024","quality":"high","background":"transparent","images":[{"image_url":"https://example.com/in.png"},{"image_url":""}]}`))
+	require.NoError(t, err)
+	require.Equal(t, "gpt-image-2", p.Model)
+	require.Equal(t, "a cat", p.Prompt)
+	require.NotNil(t, p.N)
+	require.Equal(t, 2, *p.N)
+	require.NotNil(t, p.Size)
+	require.Equal(t, "1024x1024", *p.Size)
+	require.NotNil(t, p.Quality)
+	require.Equal(t, "high", *p.Quality)
+	require.NotNil(t, p.Background)
+	require.Equal(t, "transparent", *p.Background)
+	require.Len(t, p.Images, 1, "image_url 非空元素提取；空串元素跳过（gjson 同语义）")
+	require.NotNil(t, p.Images[0].ImageURL)
+	require.Equal(t, "https://example.com/in.png", *p.Images[0].ImageURL)
+
+	// 缺字段 → 默认（gjson 缺字段默认一致：nil / 空切片）
+	p2, err := imageParamsJSON([]byte(`{"model":"gpt-image-2","prompt":"x"}`))
+	require.NoError(t, err)
+	require.Nil(t, p2.N)
+	require.Nil(t, p2.Size)
+	require.Nil(t, p2.Quality)
+	require.Nil(t, p2.Background)
+	require.Empty(t, p2.Images)
+
+	// 类型不合 → 忽略（gjson Type 判定同语义：字符串 n / 数字 size / null 不设）
+	p3, err := imageParamsJSON([]byte(`{"model":"gpt-image-2","prompt":"x","n":"two","size":123,"background":null}`))
+	require.NoError(t, err)
+	require.Nil(t, p3.N, "字符串 n 忽略（gjson Number 判定）")
+	require.Nil(t, p3.Size, "数字 size 忽略（gjson String 判定）")
+	require.Nil(t, p3.Background, "null 忽略")
+
+	// 必填缺失 → 错误；畸形 → 错误
+	_, err = imageParamsJSON([]byte(`{"model":"gpt-image-2"}`))
+	require.ErrorContains(t, err, "prompt required")
+	_, err = imageParamsJSON([]byte(`{"prompt":"x"}`))
+	require.ErrorContains(t, err, "model required")
+	_, err = imageParamsJSON([]byte(`not-json`))
+	require.ErrorContains(t, err, "invalid JSON")
+
+	// MB 级 body（大 base64 data URL 的编辑请求）单遍解析正确
+	b64 := strings.Repeat("A", 1<<20) // 1MB base64
+	big := `{"model":"gpt-image-2","prompt":"edit","images":[{"image_url":"data:image/png;base64,` + b64 + `"}]}`
+	p4, err := imageParamsJSON([]byte(big))
+	require.NoError(t, err)
+	require.Len(t, p4.Images, 1)
+	require.True(t, strings.HasPrefix(*p4.Images[0].ImageURL, "data:image/png;base64,"), "MB 级 data URL 原样提取")
+}

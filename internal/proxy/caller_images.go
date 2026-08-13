@@ -81,15 +81,22 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		// TTFT 采集（首 chunk 时间毫秒，同 chat 流式）；usage 提取（image_count
-		// = image_generation.completed / image_edit.completed 事件计数，spec
-		// §4.1）在 Task C 计费侧接入——本任务零解析透传。
+		// TTFT 采集（首 chunk 时间毫秒，同 chat 流式）+ usage 提取（A-P1-2 接
+		// 线——每帧 data 走 billing.ImageStreamEvent：count 累积 + ii/io 取最后
+		// 一个 completed 帧的 usage（覆盖语义，对齐 caller_images_stream.go codex
+		// 路径口径——写成累积求和多图请求差 N 倍）；即时提取标量、不保留跨帧
+		// 切片（relay 缓冲复用纪律，relay.go:21-27）。
 		var ttft *int64
+		var imgCount, imgII, imgIO int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
 			Observer: func(ev sserelay.Event) {
 				if ttft == nil {
 					ms := time.Since(start).Milliseconds()
 					ttft = &ms
+				}
+				if ok, ii, io := billing.ImageStreamEvent(ev.Data); ok {
+					imgCount++
+					imgII, imgIO = ii, io // 覆盖语义：usage 取末次 completed 帧
 				}
 			},
 		})
@@ -97,18 +104,21 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 		if ttft != nil {
 			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
 		}
+		// 流终落账元组（对齐 caller_images_stream.go 口径）：ii/io = image
+		// tokens、tt = 之和、img = completed 帧计数；三处落账点共用。
+		u := usageTuple{ii: imgII, io: imgIO, tt: imgII + imgIO, img: imgCount}
 		if err != nil {
 			// 客户端断开：上游已消费请求（成功），仍须记录用量（同 chat 语义）
 			if r.Context().Err() != nil {
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrAbort, usageTuple{}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrAbort, u, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, u, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, 200, domain.ErrNone, usageTuple{}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, 200, domain.ErrNone, u, start)))
 		return 200, nil, true, nil
 	}
 
