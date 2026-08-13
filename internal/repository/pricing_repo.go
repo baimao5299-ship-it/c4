@@ -346,12 +346,17 @@ func (r *PricingRepo) DeleteManual(ctx context.Context, model string) error {
 	return nil
 }
 
-// ListPricing 价格列表：分页/筛选（source、model 模糊 ilike）/排序
-// （sort 白名单：model/updated_at；非法值 → ErrInvalidSort，对齐 ListQuery）。
-func (r *PricingRepo) ListPricing(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error) {
+// ListPricing 价格列表：分页/筛选（source、provider 等值、model 模糊 ilike）/
+// 排序（sort 白名单：model/updated_at；非法值 → ErrInvalidSort，对齐
+// ListQuery）。provider 为 DB 侧自由字符串等值（不限于 openapi Provider
+// enum——litellm_provider 动态，新厂商不受枚举约束）。
+func (r *PricingRepo) ListPricing(ctx context.Context, q ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.Pricing, int64, error) {
 	pred := r.client.Pricing.Query()
 	if source != nil {
 		pred = pred.Where(pricing.SourceEQ(pricing.Source(*source)))
+	}
+	if provider != "" {
+		pred = pred.Where(pricing.ProviderEQ(provider))
 	}
 	if model != "" {
 		pred = pred.Where(pricing.ModelContainsFold(model))

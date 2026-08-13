@@ -43,6 +43,20 @@ func (_c *FunctionPriceCreate) SetNillablePricePerCall(v *int64) *FunctionPriceC
 	return _c
 }
 
+// SetProvider sets the "provider" field.
+func (_c *FunctionPriceCreate) SetProvider(v string) *FunctionPriceCreate {
+	_c.mutation.SetProvider(v)
+	return _c
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_c *FunctionPriceCreate) SetNillableProvider(v *string) *FunctionPriceCreate {
+	if v != nil {
+		_c.SetProvider(*v)
+	}
+	return _c
+}
+
 // SetRaw sets the "raw" field.
 func (_c *FunctionPriceCreate) SetRaw(v json.RawMessage) *FunctionPriceCreate {
 	_c.mutation.SetRaw(v)
@@ -194,6 +208,10 @@ func (_c *FunctionPriceCreate) createSpec() (*FunctionPrice, *sqlgraph.CreateSpe
 		_spec.SetField(functionprice.FieldPricePerCall, field.TypeInt64, value)
 		_node.PricePerCall = &value
 	}
+	if value, ok := _c.mutation.Provider(); ok {
+		_spec.SetField(functionprice.FieldProvider, field.TypeString, value)
+		_node.Provider = &value
+	}
 	if value, ok := _c.mutation.Raw(); ok {
 		_spec.SetField(functionprice.FieldRaw, field.TypeJSON, value)
 		_node.Raw = value
@@ -295,6 +313,24 @@ func (u *FunctionPriceUpsert) AddPricePerCall(v int64) *FunctionPriceUpsert {
 // ClearPricePerCall clears the value of the "price_per_call" field.
 func (u *FunctionPriceUpsert) ClearPricePerCall() *FunctionPriceUpsert {
 	u.SetNull(functionprice.FieldPricePerCall)
+	return u
+}
+
+// SetProvider sets the "provider" field.
+func (u *FunctionPriceUpsert) SetProvider(v string) *FunctionPriceUpsert {
+	u.Set(functionprice.FieldProvider, v)
+	return u
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *FunctionPriceUpsert) UpdateProvider() *FunctionPriceUpsert {
+	u.SetExcluded(functionprice.FieldProvider)
+	return u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *FunctionPriceUpsert) ClearProvider() *FunctionPriceUpsert {
+	u.SetNull(functionprice.FieldProvider)
 	return u
 }
 
@@ -439,6 +475,27 @@ func (u *FunctionPriceUpsertOne) UpdatePricePerCall() *FunctionPriceUpsertOne {
 func (u *FunctionPriceUpsertOne) ClearPricePerCall() *FunctionPriceUpsertOne {
 	return u.Update(func(s *FunctionPriceUpsert) {
 		s.ClearPricePerCall()
+	})
+}
+
+// SetProvider sets the "provider" field.
+func (u *FunctionPriceUpsertOne) SetProvider(v string) *FunctionPriceUpsertOne {
+	return u.Update(func(s *FunctionPriceUpsert) {
+		s.SetProvider(v)
+	})
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *FunctionPriceUpsertOne) UpdateProvider() *FunctionPriceUpsertOne {
+	return u.Update(func(s *FunctionPriceUpsert) {
+		s.UpdateProvider()
+	})
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *FunctionPriceUpsertOne) ClearProvider() *FunctionPriceUpsertOne {
+	return u.Update(func(s *FunctionPriceUpsert) {
+		s.ClearProvider()
 	})
 }
 
@@ -758,6 +815,27 @@ func (u *FunctionPriceUpsertBulk) UpdatePricePerCall() *FunctionPriceUpsertBulk 
 func (u *FunctionPriceUpsertBulk) ClearPricePerCall() *FunctionPriceUpsertBulk {
 	return u.Update(func(s *FunctionPriceUpsert) {
 		s.ClearPricePerCall()
+	})
+}
+
+// SetProvider sets the "provider" field.
+func (u *FunctionPriceUpsertBulk) SetProvider(v string) *FunctionPriceUpsertBulk {
+	return u.Update(func(s *FunctionPriceUpsert) {
+		s.SetProvider(v)
+	})
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *FunctionPriceUpsertBulk) UpdateProvider() *FunctionPriceUpsertBulk {
+	return u.Update(func(s *FunctionPriceUpsert) {
+		s.UpdateProvider()
+	})
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *FunctionPriceUpsertBulk) ClearProvider() *FunctionPriceUpsertBulk {
+	return u.Update(func(s *FunctionPriceUpsert) {
+		s.ClearProvider()
 	})
 }
 

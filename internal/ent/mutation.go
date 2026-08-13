@@ -3935,6 +3935,7 @@ type FunctionPriceMutation struct {
 	model             *string
 	price_per_call    *int64
 	addprice_per_call *int64
+	provider          *string
 	raw               *json.RawMessage
 	appendraw         json.RawMessage
 	source            *functionprice.Source
@@ -4156,6 +4157,55 @@ func (m *FunctionPriceMutation) ResetPricePerCall() {
 	delete(m.clearedFields, functionprice.FieldPricePerCall)
 }
 
+// SetProvider sets the "provider" field.
+func (m *FunctionPriceMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *FunctionPriceMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the FunctionPrice entity.
+// If the FunctionPrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FunctionPriceMutation) OldProvider(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (m *FunctionPriceMutation) ClearProvider() {
+	m.provider = nil
+	m.clearedFields[functionprice.FieldProvider] = struct{}{}
+}
+
+// ProviderCleared returns if the "provider" field was cleared in this mutation.
+func (m *FunctionPriceMutation) ProviderCleared() bool {
+	_, ok := m.clearedFields[functionprice.FieldProvider]
+	return ok
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *FunctionPriceMutation) ResetProvider() {
+	m.provider = nil
+	delete(m.clearedFields, functionprice.FieldProvider)
+}
+
 // SetRaw sets the "raw" field.
 func (m *FunctionPriceMutation) SetRaw(jm json.RawMessage) {
 	m.raw = &jm
@@ -4363,12 +4413,15 @@ func (m *FunctionPriceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *FunctionPriceMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.model != nil {
 		fields = append(fields, functionprice.FieldModel)
 	}
 	if m.price_per_call != nil {
 		fields = append(fields, functionprice.FieldPricePerCall)
+	}
+	if m.provider != nil {
+		fields = append(fields, functionprice.FieldProvider)
 	}
 	if m.raw != nil {
 		fields = append(fields, functionprice.FieldRaw)
@@ -4394,6 +4447,8 @@ func (m *FunctionPriceMutation) Field(name string) (ent.Value, bool) {
 		return m.Model()
 	case functionprice.FieldPricePerCall:
 		return m.PricePerCall()
+	case functionprice.FieldProvider:
+		return m.Provider()
 	case functionprice.FieldRaw:
 		return m.Raw()
 	case functionprice.FieldSource:
@@ -4415,6 +4470,8 @@ func (m *FunctionPriceMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldModel(ctx)
 	case functionprice.FieldPricePerCall:
 		return m.OldPricePerCall(ctx)
+	case functionprice.FieldProvider:
+		return m.OldProvider(ctx)
 	case functionprice.FieldRaw:
 		return m.OldRaw(ctx)
 	case functionprice.FieldSource:
@@ -4445,6 +4502,13 @@ func (m *FunctionPriceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPricePerCall(v)
+		return nil
+	case functionprice.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
 		return nil
 	case functionprice.FieldRaw:
 		v, ok := value.(json.RawMessage)
@@ -4522,6 +4586,9 @@ func (m *FunctionPriceMutation) ClearedFields() []string {
 	if m.FieldCleared(functionprice.FieldPricePerCall) {
 		fields = append(fields, functionprice.FieldPricePerCall)
 	}
+	if m.FieldCleared(functionprice.FieldProvider) {
+		fields = append(fields, functionprice.FieldProvider)
+	}
 	if m.FieldCleared(functionprice.FieldRaw) {
 		fields = append(fields, functionprice.FieldRaw)
 	}
@@ -4542,6 +4609,9 @@ func (m *FunctionPriceMutation) ClearField(name string) error {
 	case functionprice.FieldPricePerCall:
 		m.ClearPricePerCall()
 		return nil
+	case functionprice.FieldProvider:
+		m.ClearProvider()
+		return nil
 	case functionprice.FieldRaw:
 		m.ClearRaw()
 		return nil
@@ -4558,6 +4628,9 @@ func (m *FunctionPriceMutation) ResetField(name string) error {
 		return nil
 	case functionprice.FieldPricePerCall:
 		m.ResetPricePerCall()
+		return nil
+	case functionprice.FieldProvider:
+		m.ResetProvider()
 		return nil
 	case functionprice.FieldRaw:
 		m.ResetRaw()
@@ -6262,6 +6335,7 @@ type ImagePriceMutation struct {
 	addoutput_image_token_price_per_million *int64
 	output_cost_per_image_milli             *int64
 	addoutput_cost_per_image_milli          *int64
+	provider                                *string
 	raw                                     *json.RawMessage
 	appendraw                               json.RawMessage
 	source                                  *imageprice.Source
@@ -6623,6 +6697,55 @@ func (m *ImagePriceMutation) ResetOutputCostPerImageMilli() {
 	delete(m.clearedFields, imageprice.FieldOutputCostPerImageMilli)
 }
 
+// SetProvider sets the "provider" field.
+func (m *ImagePriceMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *ImagePriceMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the ImagePrice entity.
+// If the ImagePrice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ImagePriceMutation) OldProvider(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (m *ImagePriceMutation) ClearProvider() {
+	m.provider = nil
+	m.clearedFields[imageprice.FieldProvider] = struct{}{}
+}
+
+// ProviderCleared returns if the "provider" field was cleared in this mutation.
+func (m *ImagePriceMutation) ProviderCleared() bool {
+	_, ok := m.clearedFields[imageprice.FieldProvider]
+	return ok
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *ImagePriceMutation) ResetProvider() {
+	m.provider = nil
+	delete(m.clearedFields, imageprice.FieldProvider)
+}
+
 // SetRaw sets the "raw" field.
 func (m *ImagePriceMutation) SetRaw(jm json.RawMessage) {
 	m.raw = &jm
@@ -6830,7 +6953,7 @@ func (m *ImagePriceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ImagePriceMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 9)
 	if m.model != nil {
 		fields = append(fields, imageprice.FieldModel)
 	}
@@ -6842,6 +6965,9 @@ func (m *ImagePriceMutation) Fields() []string {
 	}
 	if m.output_cost_per_image_milli != nil {
 		fields = append(fields, imageprice.FieldOutputCostPerImageMilli)
+	}
+	if m.provider != nil {
+		fields = append(fields, imageprice.FieldProvider)
 	}
 	if m.raw != nil {
 		fields = append(fields, imageprice.FieldRaw)
@@ -6871,6 +6997,8 @@ func (m *ImagePriceMutation) Field(name string) (ent.Value, bool) {
 		return m.OutputImageTokenPricePerMillion()
 	case imageprice.FieldOutputCostPerImageMilli:
 		return m.OutputCostPerImageMilli()
+	case imageprice.FieldProvider:
+		return m.Provider()
 	case imageprice.FieldRaw:
 		return m.Raw()
 	case imageprice.FieldSource:
@@ -6896,6 +7024,8 @@ func (m *ImagePriceMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldOutputImageTokenPricePerMillion(ctx)
 	case imageprice.FieldOutputCostPerImageMilli:
 		return m.OldOutputCostPerImageMilli(ctx)
+	case imageprice.FieldProvider:
+		return m.OldProvider(ctx)
 	case imageprice.FieldRaw:
 		return m.OldRaw(ctx)
 	case imageprice.FieldSource:
@@ -6940,6 +7070,13 @@ func (m *ImagePriceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetOutputCostPerImageMilli(v)
+		return nil
+	case imageprice.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
 		return nil
 	case imageprice.FieldRaw:
 		v, ok := value.(json.RawMessage)
@@ -7047,6 +7184,9 @@ func (m *ImagePriceMutation) ClearedFields() []string {
 	if m.FieldCleared(imageprice.FieldOutputCostPerImageMilli) {
 		fields = append(fields, imageprice.FieldOutputCostPerImageMilli)
 	}
+	if m.FieldCleared(imageprice.FieldProvider) {
+		fields = append(fields, imageprice.FieldProvider)
+	}
 	if m.FieldCleared(imageprice.FieldRaw) {
 		fields = append(fields, imageprice.FieldRaw)
 	}
@@ -7073,6 +7213,9 @@ func (m *ImagePriceMutation) ClearField(name string) error {
 	case imageprice.FieldOutputCostPerImageMilli:
 		m.ClearOutputCostPerImageMilli()
 		return nil
+	case imageprice.FieldProvider:
+		m.ClearProvider()
+		return nil
 	case imageprice.FieldRaw:
 		m.ClearRaw()
 		return nil
@@ -7095,6 +7238,9 @@ func (m *ImagePriceMutation) ResetField(name string) error {
 		return nil
 	case imageprice.FieldOutputCostPerImageMilli:
 		m.ResetOutputCostPerImageMilli()
+		return nil
+	case imageprice.FieldProvider:
+		m.ResetProvider()
 		return nil
 	case imageprice.FieldRaw:
 		m.ResetRaw()

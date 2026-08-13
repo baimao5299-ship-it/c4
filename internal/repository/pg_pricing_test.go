@@ -278,10 +278,13 @@ func TestPricingListPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()
 
-	_, err := repos.UpsertFromLiteLLM(ctx, []*domain.Pricing{
+	litellmRows := []*domain.Pricing{
 		litellmRow("gpt-4o", 1, 2),
 		litellmRow("claude-sonnet", 3, 4),
-	})
+	}
+	litellmRows[0].Provider = strPtrPG("openai")
+	litellmRows[1].Provider = strPtrPG("anthropic")
+	_, err := repos.UpsertFromLiteLLM(ctx, litellmRows)
 	require.NoError(t, err)
 	_, err = repos.UpsertManual(ctx, manualReq("gpt-4o-mini", 5, 6))
 	require.NoError(t, err)
@@ -289,14 +292,14 @@ func TestPricingListPG(t *testing.T) {
 	require.NoError(t, err)
 
 	// 全量（默认分页 id desc）
-	rows, total, err := repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, nil, "")
+	rows, total, err := repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(4), total)
 	require.Len(t, rows, 4)
 
 	// 筛选 source=manual
 	ms := domain.PricingSourceManual
-	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{}, &ms, "")
+	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{}, &ms, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	for _, p := range rows {
@@ -304,12 +307,40 @@ func TestPricingListPG(t *testing.T) {
 	}
 
 	// model 模糊（ilike，不区分大小写）：gpt → 2 行
-	_, total, err = repos.ListPricing(ctx, repository.ListQuery{}, nil, "gpt")
+	_, total, err = repos.ListPricing(ctx, repository.ListQuery{}, nil, "", "gpt")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 
+	// 筛选 provider=openai → 1 行（manual 行无 provider 不命中）
+	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, nil, "openai", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, "gpt-4o", rows[0].Model)
+	require.NotNil(t, rows[0].Provider)
+	require.Equal(t, "openai", *rows[0].Provider, "litellm 行回显 provider")
+
+	// provider 不命中 → 0 行
+	_, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, nil, "bedrock", "")
+	require.NoError(t, err)
+	require.Zero(t, total)
+
+	// 非 enum 自由字符串可筛（无该厂商行 → 0；与 image/function 表的正例互补）
+	_, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, nil, "some_future_vendor", "")
+	require.NoError(t, err)
+	require.Zero(t, total)
+
+	// 与 source 筛选组合：provider=openai + source=litellm → 1 行；
+	// provider=openai + source=manual → 0（manual 行无 provider）
+	ls := domain.PricingSourceLitellm
+	_, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, &ls, "openai", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	_, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10}, &ms, "openai", "")
+	require.NoError(t, err)
+	require.Zero(t, total)
+
 	// 分页 + sort model asc（全小写首字母，排序与库 collation 无关）
-	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "asc"}, nil, "")
+	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "asc"}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(4), total)
 	require.Len(t, rows, 2)
@@ -317,13 +348,13 @@ func TestPricingListPG(t *testing.T) {
 	require.Equal(t, "gemini-pro", rows[1].Model)
 
 	// sort updated_at desc 合法
-	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10, Sort: "updated_at", Order: "desc"}, nil, "")
+	rows, total, err = repos.ListPricing(ctx, repository.ListQuery{Limit: 10, Sort: "updated_at", Order: "desc"}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(4), total)
 	require.Len(t, rows, 4)
 
 	// 非法 sort → ErrInvalidSort
-	_, _, err = repos.ListPricing(ctx, repository.ListQuery{Sort: "bogus"}, nil, "")
+	_, _, err = repos.ListPricing(ctx, repository.ListQuery{Sort: "bogus"}, nil, "", "")
 	require.ErrorIs(t, err, repository.ErrInvalidSort)
 }
 

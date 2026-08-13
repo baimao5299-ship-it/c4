@@ -53,7 +53,7 @@ func (s *Service) loadImagePricing(ctx context.Context) (map[string]*domain.Imag
 	for offset := 0; ; offset += imagePriceReloadPage {
 		rows, _, err := s.store.ListImagePrice(ctx, repository.ListQuery{
 			Limit: imagePriceReloadPage, Offset: offset, Sort: "model", Order: "asc",
-		}, nil, "")
+		}, nil, "", "")
 		if err != nil {
 			if s.log != nil {
 				s.log.Warn("image price snapshot reload failed", logx.Error(err))
@@ -150,12 +150,12 @@ func (s *Service) DeleteManualImagePrice(ctx context.Context, model string) erro
 
 // ListImagePrice 管理端图片价格列表（GET /admin/image-price）：分页 +
 // source/model 筛选 + sort 白名单校验（非法 → ErrInvalidInput 400）。
-func (s *Service) ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
+func (s *Service) ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.ImagePrice, int64, error) {
 	if source != nil && !source.Valid() {
 		return nil, 0, fmt.Errorf("%w: invalid source %q", ErrInvalidInput, *source)
 	}
 	if err := validateListQuery(q, listSortFields["image_price"]); err != nil {
 		return nil, 0, err
 	}
-	return s.store.ListImagePrice(ctx, q, source, model)
+	return s.store.ListImagePrice(ctx, q, source, provider, model)
 }

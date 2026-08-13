@@ -1392,13 +1392,16 @@ func (f *fakeStore) DeleteManual(ctx context.Context, model string) error {
 	return nil
 }
 
-// ListPricing 模拟列表：source/model 筛选 + model 排序 + 分页。
-func (f *fakeStore) ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error) {
+// ListPricing 模拟列表：source/provider/model 筛选 + model 排序 + 分页。
+func (f *fakeStore) ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.Pricing, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var rows []*domain.Pricing
 	for _, p := range f.pricings {
 		if source != nil && p.Source != *source {
+			continue
+		}
+		if provider != "" && (p.Provider == nil || *p.Provider != provider) {
 			continue
 		}
 		if model != "" && !strings.Contains(strings.ToLower(p.Model), strings.ToLower(model)) {
@@ -1498,13 +1501,16 @@ func (f *fakeStore) DeleteImageManual(ctx context.Context, model string) error {
 	return nil
 }
 
-// ListImagePrice 模拟列表：source/model 筛选 + model 排序 + 分页。
-func (f *fakeStore) ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
+// ListImagePrice 模拟列表：source/provider/model 筛选 + model 排序 + 分页。
+func (f *fakeStore) ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.ImagePrice, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var rows []*domain.ImagePrice
 	for _, p := range f.imagePrices {
 		if source != nil && p.Source != *source {
+			continue
+		}
+		if provider != "" && (p.Provider == nil || *p.Provider != provider) {
 			continue
 		}
 		if model != "" && !strings.Contains(strings.ToLower(p.Model), strings.ToLower(model)) {
@@ -1591,13 +1597,16 @@ func (f *fakeStore) DeleteFunctionManual(ctx context.Context, model string) erro
 	return nil
 }
 
-// ListFunctionPrice 模拟列表：source/model 筛选 + model 排序 + 分页。
-func (f *fakeStore) ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.FunctionPrice, int64, error) {
+// ListFunctionPrice 模拟列表：source/provider/model 筛选 + model 排序 + 分页。
+func (f *fakeStore) ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.FunctionPrice, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var rows []*domain.FunctionPrice
 	for _, p := range f.functionPrices {
 		if source != nil && p.Source != *source {
+			continue
+		}
+		if provider != "" && (p.Provider == nil || *p.Provider != provider) {
 			continue
 		}
 		if model != "" && !strings.Contains(strings.ToLower(p.Model), strings.ToLower(model)) {

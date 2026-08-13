@@ -478,6 +478,8 @@ func parseImageEntry(model string, raw json.RawMessage) (*domain.ImagePrice, boo
 		v := toMilliCentsPerImage(*e.OutputCostPerImage)
 		p.OutputCostPerImageMilli = &v
 	}
+	// 显式元数据：缺失/非法 → nil（不影响行有效性；raw 已完整保留）。
+	p.Provider = e.Provider
 	return p, true
 }
 
@@ -504,6 +506,7 @@ func parseFunctionEntry(model string, raw json.RawMessage) (*domain.FunctionPric
 	return &domain.FunctionPrice{
 		Model:        model,
 		PricePerCall: &v,
+		Provider:     e.Provider, // litellm_provider（litellm 行才有；manual 行 nil）
 		Source:       domain.PricingSourceLitellm,
 		// raw 完整镜像：整个原始条目原样保存（含未映射字段；manual 行恒为 nil）。
 		Raw: raw,

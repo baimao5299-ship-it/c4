@@ -17,19 +17,21 @@ import (
 	"github.com/is7qin/c3api/internal/repository"
 )
 
-// imageSeedFetcher 构造带 image 行的拉取结果（Task A 双线 seed）。
+// imageSeedFetcher 构造带 image 行的拉取结果（Task A 双线 seed；litellm 行带
+// provider——litellm 数据直贴）。
 func imageSeedFetcher() *fakePriceFetcher {
 	return &fakePriceFetcher{res: &pricing.FetchResult{
 		Rows: []*domain.Pricing{
 			{Model: "gpt-4o", PromptPricePerMillion: 250000, CompletionPricePerMillion: 1000000, Source: domain.PricingSourceLitellm},
 		},
 		ImageRows: []*domain.ImagePrice{
-			{Model: "gpt-image-2", InputImageTokenPricePerMillion: i64p(800000), OutputImageTokenPricePerMillion: i64p(3000000), Source: domain.PricingSourceLitellm},
+			{Model: "gpt-image-2", InputImageTokenPricePerMillion: i64p(800000), OutputImageTokenPricePerMillion: i64p(3000000), Provider: strPtr("openai"), Source: domain.PricingSourceLitellm},
 		},
 	}}
 }
 
 func i64p(v int64) *int64 { return &v }
+func strPtr(s string) *string { return &s }
 
 // TestPutImagePrice 手动设图片价格：单位换算（token 价 USD/1M ×1e5 存储、
 // per-image USD/张 ×1e5 存储、回显反向换算）+ 接管 litellm 行 +
@@ -54,7 +56,7 @@ func TestPutImagePrice(t *testing.T) {
 	require.Equal(t, 0.054, *p.OutputCostPerImage, "per-image 回显 USD/张（×1e5 独立换算）")
 	require.Equal(t, PricingSource("manual"), p.Source)
 
-	// 接管 litellm 行：先 sync 入库再手动设价
+	// 接管 litellm 行：先 sync 入库再手动设价（litellm 行带 provider → 接管后清空）
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
 	rec = do(http.MethodPut, "/admin/image-price/gpt-image-2",
@@ -63,6 +65,7 @@ func TestPutImagePrice(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, PricingSource("manual"), p.Source, "手动设价接管 litellm 行")
 	require.Nil(t, p.OutputImageTokenPricePerMillion, "缺省分量 → nil（清空）")
+	require.Nil(t, p.Provider, "manual 接管后 provider nil（S-2）")
 
 	// 全 nil → 400（行有效性 = 至少一价）
 	rec = do(http.MethodPut, "/admin/image-price/m-none", `{}`)
@@ -105,6 +108,28 @@ func TestImagePriceList(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
 	require.Equal(t, int64(1), list.Total)
 	require.Equal(t, PricingSource("litellm"), list.Rows[0].Source)
+
+	// litellm 行回显 provider（拉取直贴）；manual 行 nil
+	rec = do(http.MethodGet, "/admin/image-price?source=litellm", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.NotNil(t, list.Rows[0].Provider)
+	require.Equal(t, "openai", string(*list.Rows[0].Provider), "litellm 行回显 provider")
+	rec = do(http.MethodGet, "/admin/image-price?source=manual", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Nil(t, list.Rows[0].Provider, "manual 行 provider nil")
+
+	// provider 等值筛选：命中 openai → 1 行（manual 行不命中）；不命中 → 0 行
+	rec = do(http.MethodGet, "/admin/image-price?provider=openai", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Equal(t, int64(1), list.Total)
+	require.Equal(t, "gpt-image-2", list.Rows[0].Model)
+	rec = do(http.MethodGet, "/admin/image-price?provider=bedrock", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Zero(t, list.Total, "provider 不命中 → 空列表")
+	// 非 enum 自由字符串也可筛（DB 自由字符串等值）
+	rec = do(http.MethodGet, "/admin/image-price?provider=some_future_vendor", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Zero(t, list.Total)
 
 	rec = do(http.MethodGet, "/admin/image-price?model=IMAGE", "")
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))

@@ -22,14 +22,15 @@ func repositoryFunctionManual(model string, perCall int64) *repository.FunctionP
 	return &repository.FunctionPriceManual{Model: model, PricePerCall: i64p(perCall)}
 }
 
-// functionSeedFetcher 构造带按单元价行的拉取结果（价格表三件套 seed）。
+// functionSeedFetcher 构造带按单元价行的拉取结果（价格表三件套 seed；litellm
+// 行带 provider——litellm 数据直贴）。
 func functionSeedFetcher() *fakePriceFetcher {
 	return &fakePriceFetcher{res: &pricing.FetchResult{
 		Rows: []*domain.Pricing{
 			{Model: "gpt-4o", PromptPricePerMillion: 250000, CompletionPricePerMillion: 1000000, Source: domain.PricingSourceLitellm},
 		},
 		FunctionRows: []*domain.FunctionPrice{
-			{Model: "search-alpha", PricePerCall: i64p(10), Source: domain.PricingSourceLitellm},
+			{Model: "search-alpha", PricePerCall: i64p(10), Provider: strPtr("openai"), Source: domain.PricingSourceLitellm},
 		},
 	}}
 }
@@ -51,7 +52,7 @@ func TestPutFunctionPricesModel(t *testing.T) {
 	require.Equal(t, 0.01, *p.PricePerCall, "回显 USD/次")
 	require.Equal(t, PricingSource("manual"), p.Source)
 
-	// 接管 litellm 行：先 sync 入库再手动设价
+	// 接管 litellm 行：先 sync 入库再手动设价（litellm 行带 provider → 接管后清空）
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
 	rec = do(http.MethodPut, "/admin/function-prices/search-alpha", `{"price_per_call":0.005}`)
@@ -59,6 +60,7 @@ func TestPutFunctionPricesModel(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, PricingSource("manual"), p.Source, "手动设价接管 litellm 行")
 	require.Equal(t, 0.005, *p.PricePerCall)
+	require.Nil(t, p.Provider, "manual 接管后 provider nil（S-2）")
 
 	// codex-search 价可管理端改
 	rec = do(http.MethodPut, "/admin/function-prices/codex-search", `{"price_per_call":0.02}`)
@@ -98,6 +100,8 @@ func TestFunctionPricesGetModel(t *testing.T) {
 	require.NotNil(t, p.PricePerCall)
 	require.Equal(t, 0.0001, *p.PricePerCall, "10 毫分/次 → 0.0001 USD/次")
 	require.Equal(t, PricingSource("litellm"), p.Source)
+	require.NotNil(t, p.Provider, "litellm 行单行回显 provider")
+	require.Equal(t, "openai", string(*p.Provider))
 
 	rec = do(http.MethodGet, "/admin/function-prices/codex-search", "")
 	require.Equal(t, 404, rec.Code, "codex-search 无表行 → 404（默认兜底不在此面）")
@@ -126,6 +130,22 @@ func TestFunctionPricesList(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
 	require.Equal(t, int64(1), list.Total)
 	require.Equal(t, PricingSource("litellm"), list.Rows[0].Source)
+	require.NotNil(t, list.Rows[0].Provider, "litellm 行回显 provider")
+	require.Equal(t, "openai", string(*list.Rows[0].Provider))
+
+	// manual 行 provider nil；provider 等值筛选（命中/不命中/非 enum 可筛）
+	rec = do(http.MethodGet, "/admin/function-prices?source=manual", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Nil(t, list.Rows[0].Provider, "manual 行 provider nil")
+	rec = do(http.MethodGet, "/admin/function-prices?provider=openai", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Equal(t, int64(1), list.Total, "provider 等值筛选命中")
+	rec = do(http.MethodGet, "/admin/function-prices?provider=bedrock", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Zero(t, list.Total, "provider 不命中 → 空列表")
+	rec = do(http.MethodGet, "/admin/function-prices?provider=some_future_vendor", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Zero(t, list.Total, "非 enum 自由字符串可筛（DB 自由字符串等值）")
 
 	rec = do(http.MethodGet, "/admin/function-prices?model=SEARCH-", "")
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))

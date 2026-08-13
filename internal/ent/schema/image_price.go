@@ -29,6 +29,7 @@ func (ImagePrice) Fields() []ent.Field {
 		field.Int64("input_image_token_price_per_million").Optional().Nillable(),
 		field.Int64("output_image_token_price_per_million").Optional().Nillable(),
 		field.Int64("output_cost_per_image_milli").Optional().Nillable(),
+		field.String("provider").Optional().Nillable(), // litellm_provider（litellm 行才有；manual 行 nil）
 		field.JSON("raw", json.RawMessage{}).Optional(),
 		field.Enum("source").Values("litellm", "manual"),
 		field.Time("created_at").Default(time.Now),

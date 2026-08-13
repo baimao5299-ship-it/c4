@@ -74,7 +74,7 @@ func (s *Service) loadPricing(ctx context.Context) (map[string]*domain.Pricing, 
 	for offset := 0; ; offset += pricingReloadPage {
 		rows, _, err := s.store.ListPricing(ctx, repository.ListQuery{
 			Limit: pricingReloadPage, Offset: offset, Sort: "model", Order: "asc",
-		}, nil, "")
+		}, nil, "", "")
 		if err != nil {
 			if s.log != nil {
 				s.log.Warn("pricing snapshot reload failed", logx.Error(err))
@@ -202,17 +202,18 @@ func (s *Service) DeleteManualPricing(ctx context.Context, model string) error {
 	return nil
 }
 
-// ListPricing 管理端价格列表（GET /admin/pricing）：分页 + source/model 筛选 +
-// sort 白名单校验（非法 → ErrInvalidInput 400）。source 枚举非法 → 400（handler
-// 显式校验已做，service 兜底双保险）。
-func (s *Service) ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error) {
+// ListPricing 管理端价格列表（GET /admin/pricing）：分页 + source/provider/model
+// 筛选 + sort 白名单校验（非法 → ErrInvalidInput 400）。source 枚举非法 → 400
+// （handler 显式校验已做，service 兜底双保险）；provider 为自由字符串等值
+// （DB 侧不限于 openapi Provider enum——litellm_provider 动态，新厂商可筛）。
+func (s *Service) ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.Pricing, int64, error) {
 	if source != nil && !source.Valid() {
 		return nil, 0, fmt.Errorf("%w: invalid source %q", ErrInvalidInput, *source)
 	}
 	if err := validateListQuery(q, listSortFields["pricing"]); err != nil {
 		return nil, 0, err
 	}
-	return s.store.ListPricing(ctx, q, source, model)
+	return s.store.ListPricing(ctx, q, source, provider, model)
 }
 
 // SetPriceFetcher 注入价格拉取器（管理端手动 sync 用；与 SyncWorker 共享同一

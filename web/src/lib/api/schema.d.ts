@@ -1463,6 +1463,11 @@ export interface components {
             /** @description 新失效数（已 disabled no-op 不计） */
             deactivated: number;
         };
+        /**
+         * @description 主流厂商枚举（litellm_provider 实际字符串，服务前端下拉框）。**litellm_provider 动态**——litellm 更新会加新厂商，此 enum 为主流集合；新厂商出现时扩 enum（DB 筛选不受限——自由字符串等值）
+         * @enum {string}
+         */
+        Provider: "openai" | "anthropic" | "azure" | "vertex_ai" | "bedrock" | "deepseek" | "mistral" | "cohere" | "xai" | "openrouter" | "groq" | "together_ai" | "fireworks_ai" | "replicate" | "huggingface" | "moonshot" | "zhipu" | "baidu" | "alibaba" | "meta" | "nvidia" | "cerebras" | "perplexity";
         /** @enum {string} */
         PricingSource: "litellm" | "manual";
         Pricing: {
@@ -1560,7 +1565,7 @@ export interface components {
             /** Format: double */
             AboveFlexCacheCreationPricePerMillion?: number | null;
             /** @description litellm_provider（litellm 行才有；manual 行 nil） */
-            Provider?: string | null;
+            Provider?: components["schemas"]["Provider"] | null;
             /** @description litellm mode（chat/completion/embedding 等） */
             Mode?: string | null;
             /** @description litellm supports_prompt_caching */
@@ -1694,6 +1699,8 @@ export interface components {
              * @description 每张图价（USD/张；内部存储毫分——×1e5 换算，与 token 价同系数但单位语义不同：按张 flat，计费不走 /1e6 除法）；null = 不启用按张分量
              */
             OutputCostPerImage?: number | null;
+            /** @description litellm_provider（litellm 行才有；manual 行 nil） */
+            Provider?: components["schemas"]["Provider"] | null;
             Source: components["schemas"]["PricingSource"];
             /** Format: date-time */
             CreatedAt: string;
@@ -1730,6 +1737,8 @@ export interface components {
              * @description 按单元价（USD/次——litellm 原生口径 input_cost_per_query；内部存储毫分/次，×1e5 换算，1 USD = 100
              */
             PricePerCall?: number | null;
+            /** @description litellm_provider（litellm 行才有；manual 行 nil） */
+            Provider?: components["schemas"]["Provider"] | null;
             Source: components["schemas"]["PricingSource"];
             /** Format: date-time */
             CreatedAt: string;
@@ -2955,6 +2964,7 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 source?: "litellm" | "manual";
+                provider?: components["schemas"]["Provider"];
                 model?: string;
                 sort?: string;
                 order?: "asc" | "desc";
@@ -3054,6 +3064,7 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 source?: "litellm" | "manual";
+                provider?: components["schemas"]["Provider"];
                 model?: string;
                 sort?: string;
                 order?: "asc" | "desc";
@@ -3132,6 +3143,7 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 source?: "litellm" | "manual";
+                provider?: components["schemas"]["Provider"];
                 model?: string;
                 sort?: string;
                 order?: "asc" | "desc";

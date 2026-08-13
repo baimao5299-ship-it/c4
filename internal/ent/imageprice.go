@@ -26,6 +26,8 @@ type ImagePrice struct {
 	OutputImageTokenPricePerMillion *int64 `json:"output_image_token_price_per_million,omitempty"`
 	// OutputCostPerImageMilli holds the value of the "output_cost_per_image_milli" field.
 	OutputCostPerImageMilli *int64 `json:"output_cost_per_image_milli,omitempty"`
+	// Provider holds the value of the "provider" field.
+	Provider *string `json:"provider,omitempty"`
 	// Raw holds the value of the "raw" field.
 	Raw json.RawMessage `json:"raw,omitempty"`
 	// Source holds the value of the "source" field.
@@ -46,7 +48,7 @@ func (*ImagePrice) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case imageprice.FieldID, imageprice.FieldInputImageTokenPricePerMillion, imageprice.FieldOutputImageTokenPricePerMillion, imageprice.FieldOutputCostPerImageMilli:
 			values[i] = new(sql.NullInt64)
-		case imageprice.FieldModel, imageprice.FieldSource:
+		case imageprice.FieldModel, imageprice.FieldProvider, imageprice.FieldSource:
 			values[i] = new(sql.NullString)
 		case imageprice.FieldCreatedAt, imageprice.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -97,6 +99,13 @@ func (_m *ImagePrice) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.OutputCostPerImageMilli = new(int64)
 				*_m.OutputCostPerImageMilli = value.Int64
+			}
+		case imageprice.FieldProvider:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider", values[i])
+			} else if value.Valid {
+				_m.Provider = new(string)
+				*_m.Provider = value.String
 			}
 		case imageprice.FieldRaw:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -176,6 +185,11 @@ func (_m *ImagePrice) String() string {
 	if v := _m.OutputCostPerImageMilli; v != nil {
 		builder.WriteString("output_cost_per_image_milli=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.Provider; v != nil {
+		builder.WriteString("provider=")
+		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
 	builder.WriteString("raw=")

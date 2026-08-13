@@ -33,7 +33,7 @@ func (h *AdminAPI) GetFunctionPrices(w http.ResponseWriter, r *http.Request, par
 		s := domain.PricingSource(*params.Source)
 		src = &s
 	}
-	rows, total, err := h.svc.ListFunctionPrice(r.Context(), q, src, deref(params.Model))
+	rows, total, err := h.svc.ListFunctionPrice(r.Context(), q, src, string(deref(params.Provider)), deref(params.Model))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -97,6 +97,7 @@ func toAPIFunctionPrice(p *domain.FunctionPrice) FunctionPrice {
 	return FunctionPrice{
 		Model:        p.Model,
 		PricePerCall: milliPerCallToUSDPtr(p.PricePerCall),
+		Provider:     (*Provider)(p.Provider),
 		Source:       PricingSource(p.Source),
 		CreatedAt:    p.CreatedAt,
 		UpdatedAt:    p.UpdatedAt,

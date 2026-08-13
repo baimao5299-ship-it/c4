@@ -32,7 +32,7 @@ func (h *AdminAPI) GetImagePrice(w http.ResponseWriter, r *http.Request, params 
 		s := domain.PricingSource(*params.Source)
 		src = &s
 	}
-	rows, total, err := h.svc.ListImagePrice(r.Context(), q, src, deref(params.Model))
+	rows, total, err := h.svc.ListImagePrice(r.Context(), q, src, string(deref(params.Provider)), deref(params.Model))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -89,6 +89,7 @@ func toAPIImagePrice(p *domain.ImagePrice) ImagePrice {
 		InputImageTokenPricePerMillion:  millisToUSDPtr(p.InputImageTokenPricePerMillion),
 		OutputImageTokenPricePerMillion: millisToUSDPtr(p.OutputImageTokenPricePerMillion),
 		OutputCostPerImage:              milliPerImageToUSDPtr(p.OutputCostPerImageMilli),
+		Provider:                        (*Provider)(p.Provider),
 		Source:                          PricingSource(p.Source),
 		CreatedAt:                       p.CreatedAt,
 		UpdatedAt:                       p.UpdatedAt,

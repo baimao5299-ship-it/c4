@@ -72,12 +72,15 @@ func TestImagePricePriorityPG(t *testing.T) {
 
 	t.Run("manual upsert takes over litellm row", func(t *testing.T) {
 		m := "c3api-img-pri-litellm-b"
-		n, err := repos.UpsertImageFromLiteLLM(ctx, []*domain.ImagePrice{imageLitellmRow(m, 10, 20, 30)})
+		row := imageLitellmRow(m, 10, 20, 30)
+		row.Provider = strPtrPG("openai")
+		n, err := repos.UpsertImageFromLiteLLM(ctx, []*domain.ImagePrice{row})
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
 		got, err := repos.GetImagePrice(ctx, m)
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceLitellm, got.Source)
+		require.NotNil(t, got.Provider, "litellm 行带 provider")
 
 		p, err := repos.UpsertImageManual(ctx, imageManualReq(m, int64Ptr(300), nil, nil))
 		require.NoError(t, err)
@@ -88,6 +91,7 @@ func TestImagePricePriorityPG(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, got.Source, "source 改为 manual")
 		require.Nil(t, got.OutputCostPerImageMilli, "接管且不设 → 原 litellm 分量清空")
+		require.Nil(t, got.Provider, "manual 接管后 provider 清为 NULL（S-2）")
 		require.Nil(t, got.Raw, "manual 接管后 raw 清为 NULL")
 	})
 
@@ -266,34 +270,55 @@ func TestImagePriceListPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()
 
-	_, err := repos.UpsertImageFromLiteLLM(ctx, []*domain.ImagePrice{
+	litellmRows := []*domain.ImagePrice{
 		imageLitellmRow("gpt-image-2", 800000, 3000000, 0),
 		imageLitellmRow("aiml-image", 0, 0, 5400),
-	})
+	}
+	litellmRows[0].Provider = strPtrPG("openai")  // litellm 行带 provider（拉取直贴）
+	litellmRows[1].Provider = strPtrPG("alibaba") // aiml 为阿里系
+	_, err := repos.UpsertImageFromLiteLLM(ctx, litellmRows)
 	require.NoError(t, err)
 	_, err = repos.UpsertImageManual(ctx, imageManualReq("dall-e-3", int64Ptr(1), nil, nil))
 	require.NoError(t, err)
 
 	// 全量（默认分页 id desc）
-	rows, total, err := repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10}, nil, "")
+	rows, total, err := repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, rows, 3)
 
 	// 筛选 source=manual
 	ms := domain.PricingSourceManual
-	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, &ms, "")
+	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, &ms, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Equal(t, domain.PricingSourceManual, rows[0].Source)
 
 	// model 模糊（ilike，不区分大小写）：image → 2 行
-	_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, nil, "image")
+	_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, nil, "", "image")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 
+	// 筛选 provider=openai → 1 行（manual 行无 provider 不命中）
+	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, nil, "openai", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Equal(t, "gpt-image-2", rows[0].Model)
+	require.NotNil(t, rows[0].Provider)
+	require.Equal(t, "openai", *rows[0].Provider, "litellm 行回显 provider")
+
+	// 筛选 provider=alibaba → 1 行（非 openai 主流形态亦可筛）
+	_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, nil, "alibaba", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+
+	// provider 不命中 → 0 行
+	_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{}, nil, "bedrock", "")
+	require.NoError(t, err)
+	require.Zero(t, total)
+
 	// 分页 + sort model asc
-	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "asc"}, nil, "")
+	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "asc"}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, rows, 2)
@@ -301,13 +326,13 @@ func TestImagePriceListPG(t *testing.T) {
 	require.Equal(t, "dall-e-3", rows[1].Model)
 
 	// sort updated_at desc 合法
-	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10, Sort: "updated_at", Order: "desc"}, nil, "")
+	rows, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10, Sort: "updated_at", Order: "desc"}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total)
 	require.Len(t, rows, 3)
 
 	// 非法 sort → ErrInvalidSort
-	_, _, err = repos.ListImagePrice(ctx, repository.ListQuery{Sort: "bogus"}, nil, "")
+	_, _, err = repos.ListImagePrice(ctx, repository.ListQuery{Sort: "bogus"}, nil, "", "")
 	require.ErrorIs(t, err, repository.ErrInvalidSort)
 }
 
@@ -364,5 +389,113 @@ func TestImagePriceRawAndManualPG(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(800000), *ip.InputImageTokenPricePerMillion, "image_price 行存在")
 		require.Equal(t, int64(5400), *ip.OutputCostPerImageMilli)
+	})
+}
+
+// TestImagePriceProviderPG provider 元数据列（spec 三价格表厂商筛选）：
+// litellm 拉取行 provider 落库 roundtrip（S-1 raw SQL 列清单验证——列缺失即
+// 整批失败）；无 litellm_provider 条目 → provider nil；manual 行（新行与接管
+// litellm 行）provider 恒 nil（S-2）；provider 等值筛选（命中/不命中/nil 不筛/
+// 非 enum 自由字符串可筛——litellm_provider 动态，DB 侧不受 openapi enum 约束）。
+func TestImagePriceProviderPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	t.Run("schema provider column exists on both tables", func(t *testing.T) {
+		// 显式 schema 断言（非分区表 ent migrate 自动 ADD COLUMN，无 DROP 重建）：
+		// 存量手动行新增列默认 NULL（manual 行 nil 语义由下方接管/手动测试覆盖）。
+		db := pgTestDB(t)
+		var cnt int
+		err := db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM information_schema.columns
+			 WHERE table_schema = 'public' AND column_name = 'provider'
+			   AND table_name IN ('image_prices', 'function_prices')`).Scan(&cnt)
+		require.NoError(t, err)
+		require.Equal(t, 2, cnt, "image_prices/function_prices 两表均含 provider 列（可空）")
+	})
+
+	t.Run("litellm provider column roundtrip", func(t *testing.T) {
+		row := imageLitellmRow("c3api-img-prov-a", 100, 200, 300)
+		row.Provider = strPtrPG("openai")
+		n, err := repos.UpsertImageFromLiteLLM(ctx, []*domain.ImagePrice{row})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+
+		got, err := repos.GetImagePrice(ctx, "c3api-img-prov-a")
+		require.NoError(t, err)
+		require.NotNil(t, got.Provider, "litellm 行 provider 落库")
+		require.Equal(t, "openai", *got.Provider)
+
+		// 无 litellm_provider 条目 → NULL（拉取直贴语义：缺失即 nil）
+		_, err = repos.UpsertImageFromLiteLLM(ctx, []*domain.ImagePrice{imageLitellmRow("c3api-img-prov-nil", 1, 2, 3)})
+		require.NoError(t, err)
+		got, err = repos.GetImagePrice(ctx, "c3api-img-prov-nil")
+		require.NoError(t, err)
+		require.Nil(t, got.Provider, "条目无 litellm_provider → nil")
+	})
+
+	t.Run("manual rows and takeover keep provider nil", func(t *testing.T) {
+		// 新 manual 行：无厂商概念 → provider nil
+		p, err := repos.UpsertImageManual(ctx, imageManualReq("c3api-img-prov-manual", int64Ptr(5), nil, nil))
+		require.NoError(t, err)
+		require.Nil(t, p.Provider, "manual 行 provider 恒 nil")
+
+		// S-2 接管：litellm 行带 provider → manual 接管后清 provider
+		m := "c3api-img-prov-takeover"
+		row := imageLitellmRow(m, 10, 20, 30)
+		row.Provider = strPtrPG("anthropic")
+		_, err = repos.UpsertImageFromLiteLLM(ctx, []*domain.ImagePrice{row})
+		require.NoError(t, err)
+		got, err := repos.GetImagePrice(ctx, m)
+		require.NoError(t, err)
+		require.Equal(t, "anthropic", *got.Provider)
+
+		p, err = repos.UpsertImageManual(ctx, imageManualReq(m, int64Ptr(300), nil, nil))
+		require.NoError(t, err)
+		require.Equal(t, domain.PricingSourceManual, p.Source)
+		require.Nil(t, p.Provider, "manual 接管清 provider（S-2）")
+	})
+
+	t.Run("provider equality filter", func(t *testing.T) {
+		rows := []*domain.ImagePrice{
+			imageLitellmRow("c3api-img-f-openai", 1, 2, 3),
+			imageLitellmRow("c3api-img-f-anthropic", 4, 5, 6),
+			imageLitellmRow("c3api-img-f-future", 7, 8, 9),
+		}
+		rows[0].Provider = strPtrPG("openai")
+		rows[1].Provider = strPtrPG("anthropic")
+		rows[2].Provider = strPtrPG("some_future_vendor") // 非 enum 值（litellm 未来新厂商）
+		_, err := repos.UpsertImageFromLiteLLM(ctx, rows)
+		require.NoError(t, err)
+		_, err = repos.UpsertImageManual(ctx, imageManualReq("c3api-img-f-manual", int64Ptr(1), nil, nil))
+		require.NoError(t, err)
+
+		// 等值命中：本子测试 1 行 + roundtrip 子测试的 openai 行 = 2
+		got, total, err := repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10, Sort: "model", Order: "asc"}, nil, "openai", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(2), total)
+		require.Equal(t, "c3api-img-f-openai", got[0].Model)
+
+		// 不命中（无该厂商行）
+		_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10}, nil, "bedrock", "")
+		require.NoError(t, err)
+		require.Zero(t, total)
+
+		// nil 不筛（全量 = 前序子测试 4 行 + 本子测试 4 行）
+		_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10}, nil, "", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(8), total)
+
+		// 非 enum 自由字符串可筛（litellm_provider 动态，DB 不受枚举约束）
+		got, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10}, nil, "some_future_vendor", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(1), total)
+		require.Equal(t, "c3api-img-f-future", got[0].Model)
+
+		// 与 source 筛选组合
+		litellmSrc := domain.PricingSourceLitellm
+		_, total, err = repos.ListImagePrice(ctx, repository.ListQuery{Limit: 10}, &litellmSrc, "openai", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(2), total)
 	})
 }

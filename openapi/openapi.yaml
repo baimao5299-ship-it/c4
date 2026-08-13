@@ -696,6 +696,7 @@ paths:
         - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
         - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
+        - { name: provider, in: query, schema: { $ref: '#/components/schemas/Provider', description: 厂商等值筛选（DB 侧自由字符串，不限于枚举；缺省 = 不筛） } }
         - { name: model, in: query, schema: { type: string, description: 模型名模糊搜索（大小写不敏感） } }
         - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
@@ -764,6 +765,7 @@ paths:
         - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
         - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
+        - { name: provider, in: query, schema: { $ref: '#/components/schemas/Provider', description: 厂商等值筛选（DB 侧自由字符串，不限于枚举；缺省 = 不筛） } }
         - { name: model, in: query, schema: { type: string, description: 模型名模糊搜索（大小写不敏感） } }
         - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
@@ -820,6 +822,7 @@ paths:
         - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
         - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
+        - { name: provider, in: query, schema: { $ref: '#/components/schemas/Provider', description: 厂商等值筛选（DB 侧自由字符串，不限于枚举；缺省 = 不筛） } }
         - { name: model, in: query, schema: { type: string, description: 模型/功能标识模糊搜索（大小写不敏感；含 codex-search） } }
         - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
@@ -1926,6 +1929,10 @@ components:
       properties:
         deactivated: { type: integer, description: 新失效数（已 disabled no-op 不计） }
     # --- litellm 模型价格（Phase 5 计费价格来源） ---
+    Provider:
+      type: string
+      description: 主流厂商枚举（litellm_provider 实际字符串，服务前端下拉框）。**litellm_provider 动态**——litellm 更新会加新厂商，此 enum 为主流集合；新厂商出现时扩 enum（DB 筛选不受限——自由字符串等值）
+      enum: [openai, anthropic, azure, vertex_ai, bedrock, deepseek, mistral, cohere, xai, openrouter, groq, together_ai, fireworks_ai, replicate, huggingface, moonshot, zhipu, baidu, alibaba, meta, nvidia, cerebras, perplexity]
     PricingSource:
       type: string
       enum: [litellm, manual]
@@ -1962,7 +1969,7 @@ components:
         AboveFlexCompletionPricePerMillion: { type: number, format: double, nullable: true }
         AboveFlexCacheReadPricePerMillion: { type: number, format: double, nullable: true }
         AboveFlexCacheCreationPricePerMillion: { type: number, format: double, nullable: true }
-        Provider: { type: string, nullable: true, description: litellm_provider（litellm 行才有；manual 行 nil） }
+        Provider: { allOf: [{ $ref: '#/components/schemas/Provider' }], nullable: true, description: litellm_provider（litellm 行才有；manual 行 nil） }
         Mode: { type: string, nullable: true, description: litellm mode（chat/completion/embedding 等） }
         SupportsPromptCaching: { type: boolean, nullable: true, description: litellm supports_prompt_caching }
         Source: { $ref: '#/components/schemas/PricingSource' }
@@ -2025,6 +2032,7 @@ components:
         InputImageTokenPricePerMillion: { type: number, format: double, nullable: true, description: image token 输入价（USD per 1M image tokens——per-million 口径，与 pricings 字段语义一致；内部存储毫分/1M，×1e5 换算，1 USD = 100,000 毫分）；null = 无该分量价 }
         OutputImageTokenPricePerMillion: { type: number, format: double, nullable: true, description: image token 输出价（USD per 1M image tokens——per-million 口径，与 pricings 字段语义一致；内部存储毫分/1M，×1e5 换算）；null = 无该分量价 }
         OutputCostPerImage: { type: number, format: double, nullable: true, description: 每张图价（USD/张；内部存储毫分——×1e5 换算，与 token 价同系数但单位语义不同：按张 flat，计费不走 /1e6 除法）；null = 不启用按张分量 }
+        Provider: { allOf: [{ $ref: '#/components/schemas/Provider' }], nullable: true, description: litellm_provider（litellm 行才有；manual 行 nil） }
         Source: { $ref: '#/components/schemas/PricingSource' }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
@@ -2048,6 +2056,7 @@ components:
       properties:
         Model: { type: string, description: 模型/功能标识（litellm search 模型名 或 codex-search 固定标识） }
         PricePerCall: { type: number, format: double, nullable: true, description: 按单元价（USD/次——litellm 原生口径 input_cost_per_query；内部存储毫分/次，×1e5 换算，1 USD = 100,000 毫分，**与 token 价不同换算系**，计费不走 /1e6 除法）；null = 无按单元价 }
+        Provider: { allOf: [{ $ref: '#/components/schemas/Provider' }], nullable: true, description: litellm_provider（litellm 行才有；manual 行 nil） }
         Source: { $ref: '#/components/schemas/PricingSource' }
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }

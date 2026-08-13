@@ -26,6 +26,7 @@ func (FunctionPrice) Fields() []ent.Field {
 		field.Int64("id"),
 		field.String("model").Unique(), // 模型/功能标识（litellm search 模型名 或 codex-search 固定标识）
 		field.Int64("price_per_call").Optional().Nillable(),
+		field.String("provider").Optional().Nillable(), // litellm_provider（litellm 行才有；manual 行 nil）
 		field.JSON("raw", json.RawMessage{}).Optional(),
 		field.Enum("source").Values("litellm", "manual"),
 		field.Time("created_at").Default(time.Now),

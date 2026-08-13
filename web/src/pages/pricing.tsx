@@ -36,10 +36,21 @@ type ImagePriceUpsert = components['schemas']['ImagePriceUpsert']
 type FunctionPrice = components['schemas']['FunctionPrice']
 type FunctionPriceUpsert = components['schemas']['FunctionPriceUpsert']
 
-// 页面三 Tab：文本价格 / 图片价格 / 按次价格，各自独立分页/source 筛选/model 搜索。
+// 页面三 Tab：文本价格 / 图片价格 / 按次价格，各自独立分页/source/provider 筛选/model 搜索。
 type TabKey = 'text' | 'image' | 'function'
 
 const SOURCES: PricingSource[] = ['litellm', 'manual']
+
+// 厂商枚举（与 openapi components/schemas/Provider 同源，服务前端下拉框）。
+// litellm_provider 动态——新厂商出现时扩此处与 openapi；DB 筛选为自由字符串
+// 等值，不限于本枚举（服务端不受限）。
+type Provider = components['schemas']['Provider']
+const PROVIDERS: Provider[] = [
+  'openai', 'anthropic', 'azure', 'vertex_ai', 'bedrock', 'deepseek', 'mistral',
+  'cohere', 'xai', 'openrouter', 'groq', 'together_ai', 'fireworks_ai',
+  'replicate', 'huggingface', 'moonshot', 'zhipu', 'baidu', 'alibaba', 'meta',
+  'nvidia', 'cerebras', 'perplexity',
+]
 
 // 可选价格字段（USD/1M tokens 正常值，API 边界换算；表单留空 = 提交时省略 → 落库 NULL）。
 // 类型唯一来源 schema.d.ts：PricingUpsert 键名为小写下划线（与 Go 响应大写字段区分）。
@@ -274,23 +285,25 @@ export default function PricingPage() {
   // —— 页面三 Tab（文本/图片/按次，各自独立状态） ——
   const [tab, setTab] = useState<TabKey>('text')
 
-  // —— 文本价列表：page/page_size 1-based 分页（PagePagination 范式）+ source 筛选 + model 模糊搜索 ——
+  // —— 文本价列表：page/page_size 1-based 分页（PagePagination 范式）+ source/provider 筛选 + model 模糊搜索 ——
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [model, setModel] = useState('')
   const [sourceFilter, setSourceFilter] = useState<'all' | PricingSource>('all')
+  const [providerFilter, setProviderFilter] = useState<'all' | Provider>('all')
   const [activeSort, setActiveSort] = useState<string | null>(null) // null = 默认 model asc
   const [order, setOrder] = useState<SortOrder>('desc')
   const sort = activeSort ?? 'model'
   const ord = activeSort ? order : 'asc'
 
   const { data: textData, isLoading: textLoading, isError: textIsError, error: textError } = useQuery({
-    queryKey: ['pricing', { page, page_size: pageSize, source: sourceFilter, model, sort, order: ord }],
+    queryKey: ['pricing', { page, page_size: pageSize, source: sourceFilter, provider: providerFilter, model, sort, order: ord }],
     queryFn: () =>
       api.listPricing({
         page,
         page_size: pageSize,
         source: sourceFilter === 'all' ? undefined : sourceFilter,
+        provider: providerFilter === 'all' ? undefined : providerFilter,
         model: model || undefined,
         sort,
         order: ord,
@@ -307,6 +320,7 @@ export default function PricingPage() {
   const changePageSize = (s: number) => { setPageSize(s); resetPage() }
   const changeModel = (v: string) => { setModel(v); resetPage() }
   const changeSource = (v: string) => { setSourceFilter(v as 'all' | PricingSource); resetPage() }
+  const changeProvider = (v: string) => { setProviderFilter(v as 'all' | Provider); resetPage() }
   // 列头三态：新列 → 降序；同列降序 → 升序；同列升序 → 取消（回默认 model asc）。
   const onColumnToggle = (col: string) => {
     resetPage()
@@ -320,26 +334,28 @@ export default function PricingPage() {
       setOrder('desc')
     }
   }
-  const hasFilters = model !== '' || sourceFilter !== 'all'
-  const clearFilters = () => { setModel(''); setSourceFilter('all'); resetPage() }
+  const hasFilters = model !== '' || sourceFilter !== 'all' || providerFilter !== 'all'
+  const clearFilters = () => { setModel(''); setSourceFilter('all'); setProviderFilter('all'); resetPage() }
 
   // —— 图片价列表（同形独立状态） ——
   const [imgPage, setImgPage] = useState(1)
   const [imgPageSize, setImgPageSize] = useState(20)
   const [imgModel, setImgModel] = useState('')
   const [imgSource, setImgSource] = useState<'all' | PricingSource>('all')
+  const [imgProvider, setImgProvider] = useState<'all' | Provider>('all')
   const [imgActiveSort, setImgActiveSort] = useState<string | null>(null)
   const [imgOrder, setImgOrder] = useState<SortOrder>('desc')
   const imgSort = imgActiveSort ?? 'model'
   const imgOrd = imgActiveSort ? imgOrder : 'asc'
 
   const { data: imgData, isLoading: imgLoading, isError: imgIsError, error: imgError } = useQuery({
-    queryKey: ['image-pricing', { page: imgPage, page_size: imgPageSize, source: imgSource, model: imgModel, sort: imgSort, order: imgOrd }],
+    queryKey: ['image-pricing', { page: imgPage, page_size: imgPageSize, source: imgSource, provider: imgProvider, model: imgModel, sort: imgSort, order: imgOrd }],
     queryFn: () =>
       api.getImagePrices({
         page: imgPage,
         page_size: imgPageSize,
         source: imgSource === 'all' ? undefined : imgSource,
+        provider: imgProvider === 'all' ? undefined : imgProvider,
         model: imgModel || undefined,
         sort: imgSort,
         order: imgOrd,
@@ -355,6 +371,7 @@ export default function PricingPage() {
   const imgSetPageSize = (s: number) => { setImgPageSize(s); imgReset() }
   const imgSetModel = (v: string) => { setImgModel(v); imgReset() }
   const imgSetSource = (v: string) => { setImgSource(v as 'all' | PricingSource); imgReset() }
+  const imgSetProvider = (v: string) => { setImgProvider(v as 'all' | Provider); imgReset() }
   const imgToggleSort = (col: string) => {
     imgReset()
     if (imgActiveSort !== col) {
@@ -367,26 +384,28 @@ export default function PricingPage() {
       setImgOrder('desc')
     }
   }
-  const imgHasFilters = imgModel !== '' || imgSource !== 'all'
-  const imgClearFilters = () => { setImgModel(''); setImgSource('all'); imgReset() }
+  const imgHasFilters = imgModel !== '' || imgSource !== 'all' || imgProvider !== 'all'
+  const imgClearFilters = () => { setImgModel(''); setImgSource('all'); setImgProvider('all'); imgReset() }
 
   // —— 按次价列表（同形独立状态） ——
   const [fnPage, setFnPage] = useState(1)
   const [fnPageSize, setFnPageSize] = useState(20)
   const [fnModel, setFnModel] = useState('')
   const [fnSource, setFnSource] = useState<'all' | PricingSource>('all')
+  const [fnProvider, setFnProvider] = useState<'all' | Provider>('all')
   const [fnActiveSort, setFnActiveSort] = useState<string | null>(null)
   const [fnOrder, setFnOrder] = useState<SortOrder>('desc')
   const fnSort = fnActiveSort ?? 'model'
   const fnOrd = fnActiveSort ? fnOrder : 'asc'
 
   const { data: fnData, isLoading: fnLoading, isError: fnIsError, error: fnError } = useQuery({
-    queryKey: ['function-pricing', { page: fnPage, page_size: fnPageSize, source: fnSource, model: fnModel, sort: fnSort, order: fnOrd }],
+    queryKey: ['function-pricing', { page: fnPage, page_size: fnPageSize, source: fnSource, provider: fnProvider, model: fnModel, sort: fnSort, order: fnOrd }],
     queryFn: () =>
       api.getFunctionPrices({
         page: fnPage,
         page_size: fnPageSize,
         source: fnSource === 'all' ? undefined : fnSource,
+        provider: fnProvider === 'all' ? undefined : fnProvider,
         model: fnModel || undefined,
         sort: fnSort,
         order: fnOrd,
@@ -402,6 +421,7 @@ export default function PricingPage() {
   const fnSetPageSize = (s: number) => { setFnPageSize(s); fnReset() }
   const fnSetModel = (v: string) => { setFnModel(v); fnReset() }
   const fnSetSource = (v: string) => { setFnSource(v as 'all' | PricingSource); fnReset() }
+  const fnSetProvider = (v: string) => { setFnProvider(v as 'all' | Provider); fnReset() }
   const fnToggleSort = (col: string) => {
     fnReset()
     if (fnActiveSort !== col) {
@@ -414,8 +434,8 @@ export default function PricingPage() {
       setFnOrder('desc')
     }
   }
-  const fnHasFilters = fnModel !== '' || fnSource !== 'all'
-  const fnClearFilters = () => { setFnModel(''); setFnSource('all'); fnReset() }
+  const fnHasFilters = fnModel !== '' || fnSource !== 'all' || fnProvider !== 'all'
+  const fnClearFilters = () => { setFnModel(''); setFnSource('all'); setFnProvider('all'); fnReset() }
 
   // —— 手动触发价格同步（三线统计合一：文本/图片/按次；成功后展示并刷新三个列表） ——
   const sync = useMutation({
@@ -615,6 +635,7 @@ export default function PricingPage() {
 
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
   const sourceItems = Object.fromEntries([['all', t('pricing.all')], ...SOURCES.map(s => [s, t(`pricing.source.${s}`)])])
+  const providerItems = Object.fromEntries([['all', t('pricing.providerAll')], ...PROVIDERS.map(p => [p, p])])
   // 删除按钮：litellm 行禁用 + title 提示（服务端 409 语义前置拦截）。
   const delDisabledTitle = (source: PricingSource) =>
     source === 'litellm' ? t('pricing.deleteLitellmHint') : t('pricing.deleteTitle')
@@ -657,7 +678,16 @@ export default function PricingPage() {
                 {SOURCES.map(s => <SelectItem key={s} value={s} label={t(`pricing.source.${s}`)}>{t(`pricing.source.${s}`)}</SelectItem>)}
               </SelectContent>
             </Select>
-            {sourceFilter !== 'all' && (
+            <Select items={providerItems} value={providerFilter} onValueChange={changeProvider}>
+              <SelectTrigger size="default" className="w-44" aria-label={t('pricing.providerAll')}>
+                <SelectValue placeholder={t('pricing.providerAll')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" label={t('pricing.providerAll')}>{t('pricing.providerAll')}</SelectItem>
+                {PROVIDERS.map(p => <SelectItem key={p} value={p} label={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {(sourceFilter !== 'all' || providerFilter !== 'all') && (
               <Button variant="ghost" size="lg" onClick={clearFilters}><Filter /> {t('list.reset')}</Button>
             )}
           </ListToolbar>
@@ -750,7 +780,16 @@ export default function PricingPage() {
                 {SOURCES.map(s => <SelectItem key={s} value={s} label={t(`pricing.source.${s}`)}>{t(`pricing.source.${s}`)}</SelectItem>)}
               </SelectContent>
             </Select>
-            {imgSource !== 'all' && (
+            <Select items={providerItems} value={imgProvider} onValueChange={imgSetProvider}>
+              <SelectTrigger size="default" className="w-44" aria-label={t('pricing.providerAll')}>
+                <SelectValue placeholder={t('pricing.providerAll')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" label={t('pricing.providerAll')}>{t('pricing.providerAll')}</SelectItem>
+                {PROVIDERS.map(p => <SelectItem key={p} value={p} label={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {(imgSource !== 'all' || imgProvider !== 'all') && (
               <Button variant="ghost" size="lg" onClick={imgClearFilters}><Filter /> {t('list.reset')}</Button>
             )}
           </ListToolbar>
@@ -785,6 +824,7 @@ export default function PricingPage() {
                       <TableHead className="text-right" title="USD/1M image tokens">{t('pricing.image.table.outputToken')}</TableHead>
                       <TableHead className="text-right" title="USD/张">{t('pricing.image.table.perImage')}</TableHead>
                       <TableHead>{t('pricing.table.source')}</TableHead>
+                      <TableHead>{t('pricing.table.provider')}</TableHead>
                       <SortableHeader field="updated_at" label={t('pricing.table.updatedAt')} active={imgActiveSort === 'updated_at'} order={imgOrder} onToggle={imgToggleSort} />
                       <TableHead className="text-right">{t('pricing.table.actions')}</TableHead>
                     </TableRow>
@@ -797,6 +837,7 @@ export default function PricingPage() {
                         <TableCell className="text-right tabular-nums">{formatUsd(p.OutputImageTokenPricePerMillion)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatUsd(p.OutputCostPerImage)}</TableCell>
                         <TableCell><SourceBadge source={p.Source} /></TableCell>
+                        <TableCell className="max-w-32 truncate" title={p.Provider ?? undefined}>{p.Provider || '—'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(p.UpdatedAt)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -835,7 +876,16 @@ export default function PricingPage() {
                 {SOURCES.map(s => <SelectItem key={s} value={s} label={t(`pricing.source.${s}`)}>{t(`pricing.source.${s}`)}</SelectItem>)}
               </SelectContent>
             </Select>
-            {fnSource !== 'all' && (
+            <Select items={providerItems} value={fnProvider} onValueChange={fnSetProvider}>
+              <SelectTrigger size="default" className="w-44" aria-label={t('pricing.providerAll')}>
+                <SelectValue placeholder={t('pricing.providerAll')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" label={t('pricing.providerAll')}>{t('pricing.providerAll')}</SelectItem>
+                {PROVIDERS.map(p => <SelectItem key={p} value={p} label={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {(fnSource !== 'all' || fnProvider !== 'all') && (
               <Button variant="ghost" size="lg" onClick={fnClearFilters}><Filter /> {t('list.reset')}</Button>
             )}
           </ListToolbar>
@@ -868,6 +918,7 @@ export default function PricingPage() {
                       <SortableHeader field="model" label={t('pricing.table.model')} active={fnActiveSort === 'model'} order={fnOrder} onToggle={fnToggleSort} />
                       <TableHead className="text-right" title="USD/次">{t('pricing.function.table.price')}</TableHead>
                       <TableHead>{t('pricing.table.source')}</TableHead>
+                      <TableHead>{t('pricing.table.provider')}</TableHead>
                       <SortableHeader field="updated_at" label={t('pricing.table.updatedAt')} active={fnActiveSort === 'updated_at'} order={fnOrder} onToggle={fnToggleSort} />
                       <TableHead className="text-right">{t('pricing.table.actions')}</TableHead>
                     </TableRow>
@@ -878,6 +929,7 @@ export default function PricingPage() {
                         <TableCell className="max-w-48 truncate font-mono text-sm" title={p.Model}>{p.Model}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatUsd(p.PricePerCall)}</TableCell>
                         <TableCell><SourceBadge source={p.Source} /></TableCell>
+                        <TableCell className="max-w-32 truncate" title={p.Provider ?? undefined}>{p.Provider || '—'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(p.UpdatedAt)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">

@@ -18,6 +18,8 @@ const (
 	FieldModel = "model"
 	// FieldPricePerCall holds the string denoting the price_per_call field in the database.
 	FieldPricePerCall = "price_per_call"
+	// FieldProvider holds the string denoting the provider field in the database.
+	FieldProvider = "provider"
 	// FieldRaw holds the string denoting the raw field in the database.
 	FieldRaw = "raw"
 	// FieldSource holds the string denoting the source field in the database.
@@ -35,6 +37,7 @@ var Columns = []string{
 	FieldID,
 	FieldModel,
 	FieldPricePerCall,
+	FieldProvider,
 	FieldRaw,
 	FieldSource,
 	FieldCreatedAt,
@@ -99,6 +102,11 @@ func ByModel(opts ...sql.OrderTermOption) OrderOption {
 // ByPricePerCall orders the results by the price_per_call field.
 func ByPricePerCall(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPricePerCall, opts...).ToFunc()
+}
+
+// ByProvider orders the results by the provider field.
+func ByProvider(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProvider, opts...).ToFunc()
 }
 
 // BySource orders the results by the source field.

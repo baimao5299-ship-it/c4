@@ -28,6 +28,7 @@ type ImagePrice struct {
 	InputImageTokenPricePerMillion  *int64          // 毫分/1M image tokens；nil = 无该分量价
 	OutputImageTokenPricePerMillion *int64          // 毫分/1M image tokens；nil = 无该分量价
 	OutputCostPerImageMilli         *int64          // 毫分/张 flat；nil = 不启用按张分量
+	Provider                        *string         // litellm_provider（litellm 行才有；manual 行 nil）
 	Raw                             json.RawMessage // litellm 原始条目完整镜像（manual 行恒 nil）
 	Source                          PricingSource
 	CreatedAt                       time.Time

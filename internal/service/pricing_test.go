@@ -305,7 +305,7 @@ func TestListPricing(t *testing.T) {
 
 	t.Run("filter source=manual", func(t *testing.T) {
 		src := domain.PricingSourceManual
-		rows, total, err := svc.ListPricing(ctx, repository.ListQuery{}, &src, "")
+		rows, total, err := svc.ListPricing(ctx, repository.ListQuery{}, &src, "", "")
 		require.NoError(t, err)
 		require.Equal(t, int64(1), total)
 		require.Len(t, rows, 1)
@@ -313,14 +313,14 @@ func TestListPricing(t *testing.T) {
 	})
 
 	t.Run("filter model substring", func(t *testing.T) {
-		rows, total, err := svc.ListPricing(ctx, repository.ListQuery{}, nil, "gpt-4o")
+		rows, total, err := svc.ListPricing(ctx, repository.ListQuery{}, nil, "", "gpt-4o")
 		require.NoError(t, err)
 		require.Equal(t, int64(2), total, "gpt-4o + gpt-4o-mini")
 		require.Len(t, rows, 2)
 	})
 
 	t.Run("sort model desc + pagination", func(t *testing.T) {
-		rows, total, err := svc.ListPricing(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "desc"}, nil, "")
+		rows, total, err := svc.ListPricing(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "desc"}, nil, "", "")
 		require.NoError(t, err)
 		require.Equal(t, int64(3), total)
 		require.Len(t, rows, 2)
@@ -329,17 +329,17 @@ func TestListPricing(t *testing.T) {
 
 	t.Run("invalid source", func(t *testing.T) {
 		src := domain.PricingSource("bogus")
-		_, _, err := svc.ListPricing(ctx, repository.ListQuery{}, &src, "")
+		_, _, err := svc.ListPricing(ctx, repository.ListQuery{}, &src, "", "")
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 
 	t.Run("invalid sort", func(t *testing.T) {
-		_, _, err := svc.ListPricing(ctx, repository.ListQuery{Sort: "price"}, nil, "")
+		_, _, err := svc.ListPricing(ctx, repository.ListQuery{Sort: "price"}, nil, "", "")
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 
 	t.Run("invalid order", func(t *testing.T) {
-		_, _, err := svc.ListPricing(ctx, repository.ListQuery{Order: "sideways"}, nil, "")
+		_, _, err := svc.ListPricing(ctx, repository.ListQuery{Order: "sideways"}, nil, "", "")
 		require.ErrorIs(t, err, ErrInvalidInput)
 	})
 }
