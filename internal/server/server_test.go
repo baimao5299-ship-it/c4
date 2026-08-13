@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
@@ -382,4 +383,40 @@ func TestStatusWriterHijackSemantics(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "does not implement http.Hijacker")
 	})
+}
+
+// TestStatusWriterUnwrapResponseController statusWriter.Unwrap 语义（C-P2-1
+// 前置）：包装 statusWriter 后 http.ResponseController.SetWriteDeadline 必须
+// 沿 Unwrap 链穿透到真实 writer——无 Unwrap 的包装层全链 ErrNotSupported，
+// sserelay 的写侧 deadline 与 ctx 取消联动（半开客户端写卡死修复）在
+// accessLog 包裹后直接失效。
+func TestStatusWriterUnwrapResponseController(t *testing.T) {
+	t.Run("SetWriteDeadline reaches underlying through statusWriter", func(t *testing.T) {
+		wr := &deadlineRecorder{deadline: make(chan time.Time, 1)}
+		err := http.NewResponseController(&statusWriter{ResponseWriter: wr}).SetWriteDeadline(time.Now())
+		require.NoError(t, err)
+		select {
+		case dl := <-wr.deadline:
+			require.False(t, dl.IsZero(), "deadline 必须原样穿透")
+		default:
+			t.Fatal("SetWriteDeadline 未穿透 statusWriter 到达底层 writer")
+		}
+	})
+
+	t.Run("errors when underlying lacks SetWriteDeadline", func(t *testing.T) {
+		sw := &statusWriter{ResponseWriter: httptest.NewRecorder()}
+		err := http.NewResponseController(sw).SetWriteDeadline(time.Now())
+		require.Error(t, err, "httptest.Recorder 无 SetWriteDeadline → ErrNotSupported（语义同底层不支持）")
+	})
+}
+
+// deadlineRecorder 记录 SetWriteDeadline 调用的最小 writer（验证 Unwrap 链穿透）。
+type deadlineRecorder struct {
+	httptest.ResponseRecorder
+	deadline chan time.Time
+}
+
+func (w *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	w.deadline <- t
+	return nil
 }
