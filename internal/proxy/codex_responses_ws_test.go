@@ -225,6 +225,7 @@ func newTestCodexWSProxy(t *testing.T, credType credential.Type, accounts map[in
 	}, logs, noopStatStore{}, nil)
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}

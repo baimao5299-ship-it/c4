@@ -105,6 +105,11 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 		// 头 + keepalive ": ping" + completed 帧 + 流终/abort 计费，全在其内）。
 		return p.streamImageGeneration(ctx, w, r, reqID, groupID, start, sel, reqModel, &cred2, params, p.codex.GenerateImageStream)
 	}
+	// 非流式超时（B-P2-7，与 resp 非流式同款——images 非流式同病）：各自包 ctx
+	// 超时（HTTPClient.Timeout 不可用：流式/非流式共享 client，覆盖整响应体读取
+	// 会切断长流式 SSE）；黑洞读停滞不无限挂起，failover 可转移。
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.UpstreamTimeout)
+	defer cancel()
 	img, err := p.codex.GenerateImage(ctx, &cred2, params)
 	if err != nil {
 		// 错误分类（骨架 statusOf/upstreamBody 零改动复用——信封协议）：

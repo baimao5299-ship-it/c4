@@ -126,6 +126,7 @@ func TestCodexResponsesWSBillingPG(t *testing.T) {
 	})
 	p := New(Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true, BillingCapture: true,
 	}, sched, credential.New(), rec, clients, auth, nil, &BillingHooks{

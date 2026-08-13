@@ -154,6 +154,7 @@ func newTestCodexRespProxy(t *testing.T, credType credential.Type, accounts map[
 	}, logs, noopStatStore{}, nil)
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}
@@ -264,6 +265,45 @@ func TestCodexResponsesMockNonstreamComposite(t *testing.T) {
 	ri, ok := p.sched.Runtime(10)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
+}
+
+// TestCodexResponsesNonstreamTimeout 非流式超时（B-P2-7）：黑洞上游（接受请求
+// 永不回体）→ UpstreamTimeout 包 ctx 超时触发 → 连接级错误转移 → 耗尽 502；
+// 请求在超时窗口内完成（TCP 黑洞读停滞不无限挂起——并发槽/连接/goroutine 不
+// 被占用，failover 可转移）。
+func TestCodexResponsesNonstreamTimeout(t *testing.T) {
+	// release 放行黑洞 handler 返回（服务端不可观测客户端断连——Go http 服务
+	// 端 handler 阻塞期不处理 FIN，r.Context() 不触发；客户端侧连接已被 transport
+	// 关闭，非泄漏）。
+	release := make(chan struct{})
+	defer close(release)
+	blackhole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(blackhole.Close)
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-10")},
+		blackhole.URL, nil, nil, store)
+	p.cfg.UpstreamTimeout = 200 * time.Millisecond // 缩短超时窗口（fixture 默认 5s）
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	start := time.Now()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Less(t, time.Since(start), 5*time.Second, "黑洞上游必须超时返回（不无限挂起）")
+	require.Equal(t, http.StatusBadGateway, resp.StatusCode, "超时 → 连接级 → 耗尽 502")
+	require.Contains(t, string(b), "all upstream attempts failed")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.ErrNetwork, store.logs[0].ErrorType, "超时收尾记 code 0 ErrNetwork")
+	require.Zero(t, store.logs[0].StatusCode)
 }
 
 // TestCodexResponsesMockStreamPassthrough 流式主流程（PAT 静态直连）：客户端
