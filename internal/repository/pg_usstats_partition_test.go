@@ -83,14 +83,15 @@ func TestUsageStatsPartitionBootstrapPG(t *testing.T) {
 	require.Len(t, got, 1, "二次 bootstrap 不重建（数据保留）")
 	require.Equal(t, int64(1), got[0].RequestCount)
 
-	// 预建分区：当日 + 明日（bucket_time 日界）；三枚索引齐
+	// 预建分区：当日 + 明日（bucket_time 日界）；两枚索引齐（F3-1 删 bucket_time
+	// 独立索引——纯写放大无查询受益，(user_id, bucket_time) 复合索引已覆盖前缀）
 	day := bucket.Truncate(24 * time.Hour)
 	require.Contains(t, pgUsageStatsPartitionNames(t, pool), "usage_stats_"+day.Format("20060102"))
 	require.Contains(t, pgUsageStatsPartitionNames(t, pool), "usage_stats_"+day.AddDate(0, 0, 1).Format("20060102"))
 	var n int64
-	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'usage_stats' AND indexname IN ('usagestat_bucket_time','usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error','usagestat_user_id_bucket_time')`).Scan(&n)
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'usage_stats' AND indexname IN ('usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error','usagestat_user_id_bucket_time')`).Scan(&n)
 	require.NoError(t, err)
-	require.Equal(t, int64(3), n, "bootstrap 建齐三枚索引（唯一索引 ON CONFLICT 目标 + 时间索引 + user_id 前缀索引）")
+	require.Equal(t, int64(2), n, "bootstrap 建齐两枚索引（唯一索引 ON CONFLICT 目标 + user_id 前缀索引）")
 }
 
 // TestUsageStatsPartitionUpsertRoutingPG 分区键 upsert 正确（用户裁决要求）：

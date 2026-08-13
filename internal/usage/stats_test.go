@@ -121,6 +121,9 @@ func (c *countingPartitionManager) EnsureErrLogPartitions(ctx context.Context, n
 func (c *countingPartitionManager) EnsureUsageStatsPartitions(ctx context.Context, now, until time.Time) error {
 	return nil
 }
+func (c *countingPartitionManager) DeleteRedemptionUsesBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	return 0, nil
+}
 
 func TestRetentionStats(t *testing.T) {
 	pm := &countingPartitionManager{logDrops: 3, errDrops: 1, statsDrops: 0}

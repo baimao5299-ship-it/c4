@@ -600,6 +600,13 @@ func (r *Repository) DropUsageStatsPartitionsBefore(ctx context.Context, cutoff 
 	return r.Partitions.DropUsageStatsPartitionsBefore(ctx, cutoff)
 }
 
+// DeleteRedemptionUsesBefore redemption_uses 有界批删（F3-2：普通表无分区可
+// DROP，每轮至多删 5000 行；TTL 定死 90 天——retention worker 每轮按
+// redemptionUseRetentionDays 调）。
+func (r *Repository) DeleteRedemptionUsesBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	return r.Partitions.DeleteRedemptionUsesBefore(ctx, cutoff)
+}
+
 // LoadBalances 全量余额快照（Phase 5 计费余额预检数据源）。
 func (r *Repository) LoadBalances(ctx context.Context) (map[int64]int64, error) {
 	return r.Users.LoadBalances(ctx)

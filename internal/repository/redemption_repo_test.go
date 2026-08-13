@@ -149,6 +149,54 @@ func TestRedemptionUsePG(t *testing.T) {
 	require.ErrorIs(t, err, repository.ErrInvalidSort)
 }
 
+// TestRedemptionUseRetentionPG F3-2 redemption_uses 90 天 TTL 有界批删（真实
+// PG）：超窗行清理、窗口内行保留、批删有界（超大批注入 → 多轮收敛，断言每轮
+// 上限 5000）。普通表无分区可 DROP——DELETE 批删路径（retention worker 周期
+// 任务内调用）。
+func TestRedemptionUseRetentionPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	pool := pgTestPool(t)
+
+	// redemption_uses.code_id 有 FK → 先建码
+	code := codeFor("F3R001", domain.RedemptionTypeBalance, 20000)
+	require.NoError(t, repos.CreateCodes(ctx, []*domain.RedemptionCode{code}))
+	got, err := repos.GetByCode(ctx, code.Code)
+	require.NoError(t, err)
+
+	// 超窗行 12000 条（created_at = now - 120 天；user_id 经 generate_series 递增，
+	// 不撞 UNIQUE(code_id, user_id)）+ 窗口内行 3 条（now - 30 天，90 天内保留）
+	pgExec(t, pool,
+		`INSERT INTO redemption_uses (code_id, user_id, value, created_at)
+		 SELECT $1, g, 100, now() - interval '120 days' FROM generate_series(1, 12000) g`, got.ID)
+	pgExec(t, pool,
+		`INSERT INTO redemption_uses (code_id, user_id, value, created_at) VALUES
+		 ($1, 20001, 100, now() - interval '30 days'),
+		 ($1, 20002, 100, now() - interval '30 days'),
+		 ($1, 20003, 100, now() - interval '30 days')`, got.ID)
+
+	cutoff := time.Now().UTC().AddDate(0, 0, -90)
+	require.Equal(t, int64(12000), pgCount(t, pool, `SELECT COUNT(*) FROM redemption_uses WHERE created_at < $1`, cutoff), "预置超窗行")
+	require.Equal(t, int64(3), pgCount(t, pool, `SELECT COUNT(*) FROM redemption_uses WHERE created_at >= $1`, cutoff), "预置窗口内行")
+
+	// 多轮收敛 + 每轮上限：5000/5000/2000/0（有界批删防长事务持锁；上限与
+	// repository.redemptionUsesDeleteBatchLimit 同步锚定）
+	for _, want := range []int64{5000, 5000, 2000, 0} {
+		n, err := repos.DeleteRedemptionUsesBefore(ctx, cutoff)
+		require.NoError(t, err)
+		require.LessOrEqual(t, int64(n), int64(5000), "每轮批删不得超过上限 5000")
+		require.Equal(t, want, int64(n), "本轮删除行数（多轮收敛）")
+	}
+	require.Equal(t, int64(0), pgCount(t, pool, `SELECT COUNT(*) FROM redemption_uses WHERE created_at < $1`, cutoff), "超窗行全部清理")
+
+	// 窗口内行保留（审计语义：90 天窗口内的兑换记录即审计证据）
+	require.Equal(t, int64(3), pgCount(t, pool, `SELECT COUNT(*) FROM redemption_uses WHERE created_at >= $1`, cutoff), "窗口内行不受批删影响")
+	rows, total, err := repos.ListCodeUses(ctx, got.ID, repository.ListQuery{Limit: 10, Sort: "user_id", Order: "asc"})
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total, "ent 读路径一致：仅窗口内行可查")
+	require.Equal(t, int64(20001), rows[0].UserID)
+}
+
 // TestDeactivateCodesPG 批量失效：单事务、返回受影响数、已 disabled no-op 幂等。
 func TestDeactivateCodesPG(t *testing.T) {
 	repos := newPGRepos(t)

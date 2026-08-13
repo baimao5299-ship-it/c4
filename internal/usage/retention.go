@@ -20,6 +20,8 @@ import (
 // DROP 过期分区 + 预建未来分区，不感知分区表内部 DDL。now/until 由调用方
 // 传入（start 边界由 now 推导，测试可注入时钟）。三表各自独立调度（保留期
 // 独立：LogRetentionDays / ErrLogRetentionDays / StatsRetentionDays）。
+// DeleteRedemptionUsesBefore 是普通表（redemption_uses 无分区可 DROP）的
+// 有界批删路径——同为保留策略的周期清理手段，归口本接口（F3-2）。
 type PartitionManager interface {
 	EnsureUsageLogPartitions(ctx context.Context, now, until time.Time) error
 	DropUsageLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
@@ -27,7 +29,13 @@ type PartitionManager interface {
 	DropErrLogPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
 	EnsureUsageStatsPartitions(ctx context.Context, now, until time.Time) error
 	DropUsageStatsPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error)
+	DeleteRedemptionUsesBefore(ctx context.Context, cutoff time.Time) (int, error)
 }
+
+// redemptionUseRetentionDays redemption_uses 保留窗口（TTL 定死 90 天，F3-2）。
+// 90 天窗口内的兑换记录即审计证据，超窗删除不破坏审计语义——兑换审计只需
+// 近期窗口（新近兑换可追溯），留存超出窗口的行无审计价值。
+const redemptionUseRetentionDays = 90
 
 // RetentionConfig retention worker 配置。
 type RetentionConfig struct {
@@ -45,6 +53,9 @@ type RetentionConfig struct {
 //     快 5~6 个量级；按分区名日期判定，无需查元数据——usage_stats 保留清理
 //     用户裁决 2026-08-11：PG DELETE 不释放空间，必须分区 DROP）
 //   - 预建 当日 + 未来 1 天 分区（PG 无自动建分区，防日界跨区插入失败）
+//   - redemption_uses 有界批删（F3-2）：普通表无分区可 DROP，同一循环内每轮
+//     DELETE 至多 5000 行超窗行（TTL 定死 90 天，见 redemptionUseRetentionDays）
+//     ——低频表单轮即清，超大批多轮收敛（每轮上限防长事务持锁）
 //
 // DROP × 在途插入竞态（评审 I-3）：DROP TABLE 需 ACCESS EXCLUSIVE 锁，与
 // 在途插入事务串行；能落进被 DROP 分区（保留期前）的行只有回放/陈旧
@@ -102,10 +113,12 @@ func (w *RetentionWorker) loop(ctx context.Context) {
 	}
 }
 
-// runOnce 单轮巡检：三表各自 DROP 过期分区（独立 cutoff）+ 预建未来分区；失败
-// Warn 不中断循环（下一轮重试）。now 现取一次，cutoff/ensure 边界共用同一时钟
-// （评审 I-2：边界由调用方 now 推导，不各取各的）。逐表错误隔离（一表失败
-// 不影响他表——C32 纪律：usage_stats 180 天 DROP 失败不连带明细表清理）。
+// runOnce 单轮巡检：三表各自 DROP 过期分区（独立 cutoff）+ 预建未来分区 +
+// redemption_uses 有界批删（F3-2，TTL 定死 90 天）；失败 Warn 不中断循环（下一
+// 轮重试）。now 现取一次，cutoff/ensure 边界共用同一时钟（评审 I-2：边界由调用
+// 方 now 推导，不各取各的）。逐表错误隔离（一表失败不影响他表——C32 纪律：
+// usage_stats 180 天 DROP 失败不连带明细表清理；redemption_uses 批删失败不
+// 影响分区三表，反之亦然）。
 func (w *RetentionWorker) runOnce() {
 	now := time.Now()
 	ctx := context.Background()
@@ -152,6 +165,17 @@ func (w *RetentionWorker) runOnce() {
 				w.log.Info("retention dropped usage_stats partitions", logx.Int("count", n))
 			}
 		}
+	}
+	// redemption_uses 有界批删（F3-2）：TTL 定死 90 天（非配置项）——90 天窗口
+	// 内的兑换记录即审计证据，超窗删除不破坏审计语义。每轮至多删 5000 行
+	// （分区三表 O(1) DROP 之外的普通表清理路径），失败 Warn 下轮重试。
+	n, err := w.parts.DeleteRedemptionUsesBefore(ctx, now.AddDate(0, 0, -redemptionUseRetentionDays))
+	if err != nil {
+		if w.log != nil {
+			w.log.Warn("retention delete redemption_uses failed", logx.Error(err))
+		}
+	} else if n > 0 && w.log != nil {
+		w.log.Info("retention deleted redemption_uses", logx.Int("count", n))
 	}
 	if err := w.parts.EnsureUsageLogPartitions(ctx, now, now.AddDate(0, 0, 1)); err != nil {
 		if w.log != nil {
