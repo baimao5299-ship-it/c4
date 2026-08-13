@@ -5,14 +5,17 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	codexsdk "github.com/is7Qin/codex-sdk"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -138,6 +141,42 @@ func (p *Proxy) handleCodexDialError(r *http.Request, reqID string, groupID int6
 		// aiclient 路径 default 同构——lastCode 0 → 耗尽记 ErrNetwork）。
 		return false, 0, domain.TruncateErrMsg(msg)
 	}
+}
+
+// sniffCodexWSDeath 预筛 WS 业务判死事件帧（T5 §3——唯一跨边界点：网关触达
+// SDK 鉴权内部仅此一点；SDK 不解析业务事件帧，auth.go Fatal 注释实证）：
+// 错误事件帧（type=error）的 error.code/error.type ∈ {token_invalidated,
+// token_revoked}（SDK 判死码集语义 auth_errors.go:28-31 + classifyAT401 字段
+// 路径，大小写不敏感——值经 EqualFold 判定）→ 构造 *AuthPermanentlyRevokedError
+// （Code = 命中码，Raw = 原帧）——复用 SDK 判死码集语义，**分类逻辑不进网
+// 关**（只映射既有码集，不新增判定面）。其余帧（含非判死错误事件——业务错
+// 误透传不判死）→ nil。
+//
+// 热路径纪律（与 sniffResponsesCompleted 同款）：bytes.Contains 零分配预筛，
+// 命中才最小 gjson 解析。预筛针取错误事件帧标记 `"type":"error"`——JSON 键
+// 名协议固定小写（值大小写与空白形态由解析层 EqualFold 兜底——与 SDK
+// classifyAT401 同语义，判死码值任意大小写均命中）；带前导/尾随空白键名
+//（`"type" : "error"`）→ 预筛漏过 → 帧照常透传（与既有预筛同形态风险，上
+// 游不产出）。
+func sniffCodexWSDeath(f []byte) *codexsdk.AuthPermanentlyRevokedError {
+	if !bytes.Contains(f, []byte(`"type":"error"`)) {
+		return nil
+	}
+	if !strings.EqualFold(gjson.GetBytes(f, "type").String(), "error") {
+		return nil // 非错误事件帧（业务内容误含错误帧标记）→ 不判死
+	}
+	for _, p := range []string{"error.code", "error.type"} {
+		if code := gjson.GetBytes(f, p).String(); isWSDeathCode(code) {
+			return &codexsdk.AuthPermanentlyRevokedError{Code: strings.ToLower(code), Raw: f}
+		}
+	}
+	return nil
+}
+
+// isWSDeathCode 判死码判定（token_invalidated/token_revoked，大小写不敏感——
+// 与 SDK isATFatalCode 同码集；SDK 私有不可复用，网关侧映射面唯一）。
+func isWSDeathCode(code string) bool {
+	return strings.EqualFold(code, "token_invalidated") || strings.EqualFold(code, "token_revoked")
 }
 
 // codexIdentityFromExt 从账号 ext 快照组装伪装四元组（W1 数据层持久化——账号
@@ -290,6 +329,15 @@ func (p *Proxy) relayCodexWS(client *websocket.Conn, up *codexsdk.Client, r *htt
 				}
 				exit()
 				return
+			}
+			// T5 §3 唯一跨边界点：WS 业务判死事件帧（token_invalidated/
+			// token_revoked）→ 适配层 FatalAuth（Auth.Fatal 毒化——不触发
+			// OnAuthFatal——+ 统一失效回调：写 failed_at + StatusDisabled，
+			// 共用 T1 处理函数；双源去重：同一 fatal 再经 errors.As 二次命
+			// 中仍单次上报）。判死帧照常透传客户端（错误事件属业务流），
+			// 会话随后由上游关闭帧自然收尾。
+			if fatal := sniffCodexWSDeath(f); fatal != nil {
+				p.codex.FatalAuth(sel.AccountID, fatal)
 			}
 			// 热路径纪律：bytes.Contains 零分配预筛，命中才最小 gjson 解析；
 			// 流式中间帧零解析直转（与 aiclient 路径同款——SDK Recv 缓冲直写）。

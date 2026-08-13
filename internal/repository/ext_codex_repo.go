@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
@@ -119,6 +120,42 @@ func (r *AccountExtRepo) TryInsertAccountExt(ctx context.Context, e *domain.Acco
 		return false, nil // 冲突：先写者已落行，本次跳过（不覆盖）
 	}
 	return false, err
+}
+
+// WriteOAuthRotation 轮转回写（SDK 接入 T5 §1——SDK OnTokenRotated 回调落库
+// 面）：account_ext **部分更新**（幂等收敛语义与 upsert 等价——重复回调重复
+// UPDATE 收敛）仅 oauth_token / oauth_refresh_token / oauth_expires_at 三列
+// ——其余列不动（避免 UpsertAccountExt 全量 upsert 的 ClearX 清空：nil 字段
+// 会把 session/thread/window/pat/email 等列清 NULL，ext_codex_repo.go:43-85）。
+//
+// expiresAt 为调用方携带的旧过期时刻（SDK 回调无 expiry、refreshResponse 无
+// expires_in——保旧语义：恒写携带值，不引入新值；nil = 写 NULL，与"未知过
+// 期"语义一致）。at/rt 由 SDK 保证非空（响应缺 refresh_token 时 SDK 保留内
+// 存旧 rt 后回调——盲写不落空）。
+//
+// 行缺失（配置损坏——codex 账号必有 ext 行，选号前提）→ 0 行报错：错误 →
+// SDK D4 回调重试 → 连续达阈值 CallbackDeliveryError fatal（fail-closed：
+// 令牌无法持久化 = 账号失效信号，管理员重新导入后恢复）。不做 INSERT 路径
+// ——ent 要求必填身份列（installation_id/credential_type），回调无身份材料
+//（缺行场景 = 配置损坏，应报错而非以空身份静默建行）。
+func (r *AccountExtRepo) WriteOAuthRotation(ctx context.Context, accountID int64, at, rt string, expiresAt *time.Time) error {
+	u := r.client.AccountExt.Update().
+		Where(accountext.AccountIDEQ(accountID)).
+		SetOauthToken(at).
+		SetOauthRefreshToken(rt)
+	if expiresAt != nil {
+		u = u.SetOauthExpiresAt(*expiresAt)
+	} else {
+		u = u.ClearOauthExpiresAt() // SetNillable(nil) 是 no-op——保旧 nil 需显式清
+	}
+	n, err := u.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: account_id=%d ext row missing (codex account must have account_ext)", ErrNotFound, accountID)
+	}
+	return nil
 }
 
 // GetAccountExt 按账号 id 取扩展行；无行 → ErrNotFound。

@@ -521,6 +521,131 @@ func TestCodexWSRefreshErrorFailover(t *testing.T) {
 	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType, "failover 后成功")
 }
 
+// TestCodexWSDeathFrameFatal WS 业务判死事件帧（T5 §3 唯一跨边界点）：
+// token_invalidated 错误帧 → 适配层 FatalAuth（Auth.Fatal 毒化 + 统一失效
+// 回调单次上报——写 failed_at + StatusDisabled，共用 T1 处理函数）；判死帧
+// 照常透传客户端；会话随后 1000 正常收尾。
+func TestCodexWSDeathFrameFatal(t *testing.T) {
+	// 定制上游：首客户端帧后下发判死事件帧 + created + completed + 回声，
+	// 3 帧后 1000 关闭（codexWSUpstream 固定事件流不含判死帧——独立 handler）
+	mu := &codexWSUpstream{last: 200, frameLimit: 3}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(404)
+			return
+		}
+		mu.mu.Lock()
+		mu.upgrades++
+		mu.mu.Unlock()
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		streamed := false
+		n := 0
+		for {
+			typ, msg, err := c.Read(context.Background())
+			if err != nil {
+				return
+			}
+			mu.mu.Lock()
+			mu.frames = append(mu.frames, string(msg))
+			mu.mu.Unlock()
+			if !streamed {
+				streamed = true
+				for _, f := range []string{
+					// 判死事件帧（error.code = token_invalidated——SDK 判死码集）
+					`{"type":"error","error":{"code":"token_invalidated","message":"access token invalidated","param":null,"type":"token_invalidated"}}`,
+					`{"type":"response.created","response":{"id":"rsp_ws_1","model":"gpt-4o"}}`,
+					responsesWSCompletedFrame,
+				} {
+					if err := c.Write(context.Background(), typ, []byte(f)); err != nil {
+						return
+					}
+				}
+			}
+			payload, err := json.Marshal(map[string]any{"type": "echo", "payload": string(msg)})
+			if err != nil {
+				return
+			}
+			if err := c.Write(context.Background(), typ, payload); err != nil {
+				return
+			}
+			n++
+			if n >= mu.frameLimit {
+				_ = c.Close(websocket.StatusNormalClosure, "")
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+	store := &captureLogStore{}
+	p, recorder := newTestCodexWSProxy(t, credential.TypeCodexOAuth,
+		map[int64]*domain.AccountExt{10: codexWSExt(10, "at-10", "rt-10")}, srv.URL, nil, store)
+
+	s := httptest.NewServer(http.HandlerFunc(p.HandleResponsesWS))
+	defer s.Close()
+	c := dialResponsesWS(t, s)
+	defer c.CloseNow()
+	for _, f := range []string{
+		`{"type":"response.create","model":"gpt-4o","input":"hi"}`,
+		`{"type":"response.input_text.delta","delta":"typing"}`,
+		`{"type":"custom.mid","n":42}`,
+	} {
+		require.NoError(t, c.Write(context.Background(), websocket.MessageText, []byte(f)))
+	}
+	// 事件流（判死帧 + created + completed）+ 3 回声——判死帧照常透传客户端
+	//（错误事件属业务流），上游 3 帧后 1000 关闭
+	got := make([]string, 0, 6)
+	for i := 0; i < 6; i++ {
+		got = append(got, string(readResponsesWSFrame(t, c)))
+	}
+	require.Contains(t, got[0], `"type":"error"`)
+	require.Contains(t, got[0], `"token_invalidated"`, "判死帧透传客户端")
+	readResponsesWSClose(t, c, websocket.StatusNormalClosure)
+
+	// 失效上报恰一次（T5 §3 显式 FailureHandler——共用 T1 处理函数）
+	require.Equal(t, 1, recorderCalls(recorder), "帧判死 → 统一回调恰一次")
+	_, acc, reason := recorder.snapshot()
+	require.Equal(t, int64(10), acc)
+	require.Contains(t, reason, "token_invalidated", "last_error 留痕失效原因摘要")
+	// 调度摘除持久化面：快照置 disabled
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "帧判死 → 账号失效摘除")
+	// 会话正常收尾（上游 1000 → 成功）
+	require.NoError(t, p.rec.Close(context.Background()))
+}
+
+// TestSniffCodexWSDeath sniff 纯函数：判死码集语义（error.code/error.type ∈
+// {token_invalidated, token_revoked}——值大小写不敏感，复用 SDK 判死码集
+// auth_errors.go:28-31 + classifyAT401 字段路径）；type=error 帧前提；非判死
+// 错误事件/业务帧误含错误帧标记 → nil（不误判死）。
+func TestSniffCodexWSDeath(t *testing.T) {
+	// error.code 命中（判死码值大写形态同样命中——解析层 EqualFold）
+	hit := sniffCodexWSDeath([]byte(`{"type":"error","error":{"code":"token_invalidated","message":"x"}}`))
+	require.NotNil(t, hit)
+	require.Equal(t, "token_invalidated", hit.Code)
+	require.Contains(t, string(hit.Raw), "token_invalidated", "Raw 原帧保留（诊断用）")
+	// error.type 命中（token_revoked）
+	hit2 := sniffCodexWSDeath([]byte(`{"type":"error","error":{"message":"y","type":"token_revoked"}}`))
+	require.NotNil(t, hit2)
+	require.Equal(t, "token_revoked", hit2.Code)
+	// 判死码值任意大小写 → 命中（EqualFold 语义与 SDK classifyAT401 一致）
+	hit3 := sniffCodexWSDeath([]byte(`{"type":"error","error":{"code":"TOKEN_INVALIDATED"}}`))
+	require.NotNil(t, hit3)
+	require.Equal(t, "token_invalidated", hit3.Code)
+	// 非错误帧（业务内容误含错误帧标记）→ 不判死
+	require.Nil(t, sniffCodexWSDeath([]byte(`{"type":"response.output_text.delta","delta":"token_invalidated"}`)))
+	// 非判死错误事件（server_error 等业务错误透传不判死）
+	require.Nil(t, sniffCodexWSDeath([]byte(`{"type":"error","error":{"code":"server_error","message":"x"}}`)))
+	// 普通帧 / 空 / 非 JSON
+	require.Nil(t, sniffCodexWSDeath([]byte(`{"type":"response.created","response":{"id":"r"}}`)))
+	require.Nil(t, sniffCodexWSDeath(nil))
+	require.Nil(t, sniffCodexWSDeath([]byte("binary\x00token_invalidated")))
+}
+
 // TestCodexWSAdapterMissing 适配层未装配（SetCodex nil）→ 501 语义显式拒绝
 // （错误帧 + 不上游接触——防 nil 误走凭据缺失 502）。
 func TestCodexWSAdapterMissing(t *testing.T) {

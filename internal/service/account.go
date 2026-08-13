@@ -70,12 +70,19 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 	// 失效）。查询失败 → 空集 + Warn（调度器 ≤30s 同步兜底）。
 	oldGroups, gErr := s.store.GetAccountGroups(ctx, a.ID)
 	keyChanged := false
+	recovered := false // T5 失效恢复审计：此前已失效（failed_at 置位）→ status→active 恢复
 	if cur, err := s.store.GetAccount(ctx, a.ID); err == nil {
 		keyChanged = cur.UpstreamKey != a.UpstreamKey
+		recovered = cur.FailedAt != nil && a.Status == domain.StatusActive
 	}
 	updated, err := s.store.UpdateAccount(ctx, a)
 	if err != nil {
 		return nil, err
+	}
+	if recovered && s.log != nil {
+		// T5 §4 恢复操作审计（日志面）：status→active 隐含清 failed_at +
+		// last_error（repo 层执行），此处留痕恢复动作。
+		s.log.Info("account failure cleared (status->active)", logx.Int64("account_id", a.ID))
 	}
 	if a.GroupIDs != nil {
 		// nil = 不变；非 nil = 替换（含空数组 = 清空）。
@@ -176,6 +183,11 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	}
 	if err := mapRepoErr(s.store.UpdateAccountsBatch(ctx, ids, p)); err != nil {
 		return err
+	}
+	if p.Status != nil && *p.Status == domain.StatusActive && s.log != nil {
+		// T5 §4 恢复操作审计（批量）：status→active 隐含清 failed_at +
+		// last_error（repo 层执行——批量路径不做逐账号旧值比较，操作级留痕）。
+		s.log.Info("account failure cleared (batch status->active)", logx.Int("count", len(ids)))
 	}
 	// 评审 I-3：nil = 未提供；空串 = 清除 upstream_key（同为变更语义）。
 	// 批量路径不做逐账号旧值比较（需 N 次 GetAccount），只要提供了

@@ -190,6 +190,12 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 		}
 		if p.Status != nil {
 			u = u.SetStatus(account.Status(*p.Status))
+			if *p.Status == domain.StatusActive {
+				// T5 失效恢复（管理面批量——status 枚举含 active）：status→
+				// active 隐含清 failed_at + last_error（与 UpdateAccount 单
+				// 路径同语义——恢复动作 = 状态切换）。
+				u = u.ClearFailedAt().ClearLastError()
+			}
 		}
 		if p.Weight != nil {
 			u = u.SetWeight(*p.Weight)

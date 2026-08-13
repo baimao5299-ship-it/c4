@@ -93,11 +93,17 @@ func toAccountStatusList(list []string) ([]account.Status, error) {
 }
 
 func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
-	row, err := r.client.Account.UpdateOneID(a.ID).
+	u := r.client.Account.UpdateOneID(a.ID).
 		SetName(a.Name).SetTemplateID(a.TemplateID).SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
-		SetStatus(account.Status(a.Status)).
-		Save(ctx)
+		SetStatus(account.Status(a.Status))
+	if a.Status == domain.StatusActive {
+		// T5 失效恢复（管理面，P2-2 定死方案 b）：status→active 隐含清
+		// failed_at + last_error（恢复动作 = 状态切换，不做 openapi 字段扩展；
+		// 清字段语义对齐既有 ClearLastError——active ⇒ 未失效不变量）。
+		u = u.ClearFailedAt().ClearLastError()
+	}
+	row, err := u.Save(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +152,10 @@ func (r *AccountRepo) GetAccountGroups(ctx context.Context, accountID int64) ([]
 }
 
 // UpdateAccountStatus 满足 scheduler.Loader：状态/冷却/错误信息回写；weight 非 nil
-// 时一并更新（规则引擎权重动作，nil = 不动 weight）。
+// 时一并更新（规则引擎权重动作，nil = 不动 weight）。status=active 时扩展清
+// failed_at（T5 失效恢复——"active ⇒ 未失效"不变量：ClearLastError 既有语义
+// 同处扩展 failed_at 一并清除；调度器在账号失效后快照为 disabled，规则
+// apply/MarkResult 防复活守卫拦截 active 回写，此处清除不会误伤在途失效）。
 func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error {
 	u := r.client.Account.UpdateOneID(id).SetStatus(account.Status(status))
 	if cooldownUntil != nil {
@@ -158,6 +167,9 @@ func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status 
 		u = u.SetLastError(*lastError)
 	} else {
 		u = u.ClearLastError()
+	}
+	if status == domain.StatusActive {
+		u = u.ClearFailedAt()
 	}
 	if weight != nil {
 		u = u.SetWeight(*weight)
