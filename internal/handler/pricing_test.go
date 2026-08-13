@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -227,6 +228,7 @@ func TestDeletePricing(t *testing.T) {
 	rec = do(http.MethodDelete, "/admin/pricing/claude-3-5-sonnet", "")
 	require.Equal(t, 409, rec.Code, "delete litellm row must 409: %s", rec.Body.String())
 	require.Contains(t, errMsg(t, rec), "claude-3-5-sonnet", "409 消息含 model")
+	require.Contains(t, errMsg(t, rec), "manual price only", "409 响应体恒英文（G3-2 分层）")
 
 	// 不存在 → 404
 	rec = do(http.MethodDelete, "/admin/pricing/no-such-model", "")
@@ -260,10 +262,17 @@ func TestPricingSync(t *testing.T) {
 		require.Equal(t, PricingSource("litellm"), list.Rows[0].Source)
 	})
 
-	t.Run("fetch failure -> 502", func(t *testing.T) {
-		_, do := newPricingRouter(t, &fakePriceFetcher{err: errors.New("upstream unreachable")})
+	t.Run("fetch failure -> 502 fixed copy, no sourceURL leak", func(t *testing.T) {
+		// fetch 层错误按 fetch.go 拼装形态（"pricing: fetch %s: ..."，含
+		// sourceURL——G3-1 外泄面）：502 响应体必须固定文案，不含任何上游细节。
+		const secret = "https://secret-upstream.example/price.json"
+		fetchErr := fmt.Errorf("pricing: fetch %s: %w", secret, errors.New("upstream unreachable"))
+		_, do := newPricingRouter(t, &fakePriceFetcher{err: fetchErr})
 		rec := do(http.MethodPost, "/admin/pricing/sync", "")
 		require.Equal(t, http.StatusBadGateway, rec.Code, "fetch fail must 502: %s", rec.Body.String())
+		require.Equal(t, "pricing sync failed", errMsg(t, rec), "502 固定文案")
+		require.NotContains(t, rec.Body.String(), secret, "sourceURL 不得回显外泄")
+		require.NotContains(t, rec.Body.String(), "upstream unreachable", "上游错误详情不得回显")
 	})
 
 	t.Run("url not set -> 400", func(t *testing.T) {

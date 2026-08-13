@@ -143,6 +143,9 @@ func TestDeleteImagePrice(t *testing.T) {
 
 	rec := do(http.MethodDelete, "/admin/image-price/gpt-image-2", "")
 	require.Equal(t, 409, rec.Code, "litellm 行 → 409: %s", rec.Body.String())
+	// G3-2：409 响应体恒英文（对外分层），不含中文
+	require.Contains(t, errMsg(t, rec), "manual price only", "409 消息英文（manual price only）")
+	require.NotContains(t, errMsg(t, rec), "只允许删手动价", "409 消息不得含中文")
 
 	rec = do(http.MethodDelete, "/admin/image-price/manual-m", "")
 	require.Equal(t, 200, rec.Code, "manual 删除: %s", rec.Body.String())

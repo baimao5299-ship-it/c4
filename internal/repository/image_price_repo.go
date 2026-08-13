@@ -202,7 +202,8 @@ func (r *ImagePriceRepo) UpsertManual(ctx context.Context, m *ImagePriceManual) 
 
 // DeleteManual 删除手动价行：仅 source=manual 可删（litellm 行 → ErrConflict——
 // 语义：只允许删手动价，防误删拉取行；删除后下轮拉取会补回）；
-// 行不存在 → ErrNotFound。
+// 行不存在 → ErrNotFound。错误消息恒英文（G3-2 分层：对外响应体恒英文，
+// 中文仅限内部日志）。
 func (r *ImagePriceRepo) DeleteManual(ctx context.Context, model string) error {
 	n, err := r.client.ImagePrice.Delete().
 		Where(imageprice.ModelEQ(model), imageprice.SourceEQ(imageprice.SourceManual)).
@@ -216,7 +217,7 @@ func (r *ImagePriceRepo) DeleteManual(ctx context.Context, model string) error {
 			return err
 		}
 		if exists {
-			return fmt.Errorf("%w: model=%q source=litellm（只允许删手动价）", ErrConflict, model)
+			return fmt.Errorf("%w: model=%q source=litellm (manual price only)", ErrConflict, model)
 		}
 		return fmt.Errorf("%w: model=%q", ErrNotFound, model)
 	}

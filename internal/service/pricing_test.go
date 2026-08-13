@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -387,6 +388,19 @@ func TestSyncPricingNow(t *testing.T) {
 		svc.SetPriceFetcher(&fakePriceFetcher{err: errors.New("upstream 500")})
 		_, err := svc.SyncPricingNow(ctx)
 		require.ErrorIs(t, err, ErrPriceFetch, "拉取失败 → 502 语义")
+	})
+
+	t.Run("fetch failure chain preserved (%w:%w)", func(t *testing.T) {
+		fs := newFakeStore()
+		svc := newPricingSvc(t, fs)
+		// 模拟 fetch.go 错误拼装形态（"pricing: fetch %s: ..."，含 sourceURL）。
+		underlying := errors.New("connection refused")
+		fetchErr := fmt.Errorf("pricing: fetch %s: %w", "https://example.com/price.json", underlying)
+		svc.SetPriceFetcher(&fakePriceFetcher{err: fetchErr})
+		_, err := svc.SyncPricingNow(ctx)
+		require.ErrorIs(t, err, ErrPriceFetch, "拉取失败 → 502 语义")
+		require.ErrorIs(t, err, underlying,
+			"%w:%w 多重包装保链——errors.Is 穿透命中 fetch 层错误（G3-1：%v 会断链恒 miss）")
 	})
 
 	t.Run("url not set -> ErrInvalidInput", func(t *testing.T) {

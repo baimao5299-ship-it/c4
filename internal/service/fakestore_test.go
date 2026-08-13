@@ -1354,7 +1354,7 @@ func (f *fakeStore) DeleteManual(ctx context.Context, model string) error {
 		return fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
 	}
 	if cur.Source != domain.PricingSourceManual {
-		return fmt.Errorf("%w: model=%q source=litellm（只允许删手动价）", repository.ErrConflict, model)
+		return fmt.Errorf("%w: model=%q source=litellm (manual price only)", repository.ErrConflict, model)
 	}
 	delete(f.pricings, model)
 	return nil
@@ -1465,7 +1465,7 @@ func (f *fakeStore) DeleteImageManual(ctx context.Context, model string) error {
 		return fmt.Errorf("%w: model=%q", repository.ErrNotFound, model)
 	}
 	if cur.Source != domain.PricingSourceManual {
-		return fmt.Errorf("%w: model=%q source=litellm（只允许删手动价）", repository.ErrConflict, model)
+		return fmt.Errorf("%w: model=%q source=litellm (manual price only)", repository.ErrConflict, model)
 	}
 	delete(f.imagePrices, model)
 	return nil

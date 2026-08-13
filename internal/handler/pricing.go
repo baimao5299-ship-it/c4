@@ -107,7 +107,10 @@ func (h *AdminAPI) PostPricingSync(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.svc.SyncPricingNow(r.Context())
 	if err != nil {
 		if errors.Is(err, service.ErrPriceFetch) {
-			writeErr(w, http.StatusBadGateway, err.Error())
+			// G3-1：固定文案，不带上游细节（err 内含 fetch.go 拼入的
+			// sourceURL——回显即外泄）；详情已由 SyncPricingNow 的 fetch 失败
+			// 分支 log.Warn 落日志。
+			writeErr(w, http.StatusBadGateway, "pricing sync failed")
 			return
 		}
 		writeServiceErr(w, err)

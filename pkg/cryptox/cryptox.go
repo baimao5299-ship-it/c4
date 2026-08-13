@@ -7,7 +7,6 @@ package cryptox
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 )
 
@@ -25,9 +24,4 @@ func NewGroupKey() (raw, hash, prefix string) {
 	}
 	raw = "gk-" + hex.EncodeToString(b)
 	return raw, HashKey(raw), raw[:8]
-}
-
-// Equal 常量时间比较两个摘要。
-func Equal(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

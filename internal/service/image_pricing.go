@@ -92,6 +92,9 @@ func (s *Service) GetImagePrice(model string) (*domain.ImagePrice, error) {
 			return p, nil
 		}
 	}
+	// G3-2 分层约定：对外（响应体）恒英文、内部可中文——本错误仅内部消费
+	// （forward.go/caller.go 只 log.Warn，不向响应体回显；402 走固定 errNoPrice
+	// 文案），中文保留可读性。
 	return nil, fmt.Errorf("%w: model=%q（无图片价格数据：请管理端设价或等待 litellm 同步）", ErrNotFound, model)
 }
 
