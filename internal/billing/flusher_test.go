@@ -538,6 +538,54 @@ func TestFlusherCloseWaitsInflight(t *testing.T) {
 	})
 }
 
+// ignoreCtxWriter DeductAndLog 忽略 ctx 永久阻塞（模拟 DB 病态卡死——
+// database/sql 取消路径本身被拖住的极端形态；A-P2-8-2 第二 select 兜底目标）。
+// 测试结束即弃置（在途 goroutine 无放行通道，属刻意泄漏）。
+type ignoreCtxWriter struct {
+	started chan struct{} // 首调已进入（测试等待在途批次）
+}
+
+func (w *ignoreCtxWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+	select {
+	case w.started <- struct{}{}:
+	default:
+	}
+	<-make(chan struct{}) // 永久阻塞（不响应 ctx 取消；无发送者，永不返回）
+	return false, 0, nil
+}
+
+// TestFlusherCloseAbandonsInflightOnTimeout A-P2-8-2（与 usage 包同款）：`<-acquired`
+// 第二 select 预算超时——驱动不尊重 ctx 时 Close 不再无界等待：预算到期 → Cancel
+// baseCtx → 收尾宽限超时 → Warn 放弃排空、截断退出（在途批次由已取消 baseCtx
+// 收尾回灌不丢；后续排空循环都会被 flushMu 挡住，不再触碰）。旧实现无界等待，
+// 编排层强杀 → 全量内存 pending 丢失。
+func TestFlusherCloseAbandonsInflightOnTimeout(t *testing.T) {
+	logger, out := newTestLogger(t)
+	old := inflightAbandonGrace
+	inflightAbandonGrace = 50 * time.Millisecond
+	t.Cleanup(func() { inflightAbandonGrace = old })
+
+	writer := &ignoreCtxWriter{started: make(chan struct{})}
+	f := newTestFlusher(writer)
+	f.log = logger
+	f.Record(&domain.UsageLog{UserID: 1, Cost: 100})
+
+	go f.flush() // ticker 路径批次在途（永久阻塞，不响应取消）
+	<-writer.started
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(100*time.Millisecond))
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, f.Close(ctx))
+	require.Less(t, time.Since(start), 500*time.Millisecond, "放弃排空快速退出（不得无界等待在途批次）")
+
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "billing flusher close: in-flight flush not finished in time, abandoning drain")
+	require.Contains(t, string(b), `"level":"warn"`)
+}
+
 // TestFlusherWaterlineWarns 水线按聚合日志条数计（评审 C-1）：pending 日志条数
 // 超阈值 → Warn（429 风暴 24.5k 日志/s 才是无界增长场景；按去重用户数计 ≤1M
 // 用户不可达恒不告警）。注入小阈值触发；flush 回落复位后再超阈值再次 Warn。
