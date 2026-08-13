@@ -148,13 +148,21 @@ var usageLogColumnDefs = []string{
 var usageLogCreateDDL = partitionedCreateDDL("usage_logs", "created_at", usageLogColumnDefs)
 
 // usageLogIndexDDLs 对齐 ent schema Indexes（同名同列；分区表父表索引为
-// 分区索引，子分区自动继承）。
+// 分区索引，子分区自动继承）。唯一索引含分区键 created_at（分区表硬约束，
+// 见本文件头注释）：request_id 幂等键（方向 A 批次 1a，A-P2-3）——COMMIT
+// 歧义窗口重试撞 23505 由 flusher 按成功处理（防双扣，见
+// internal/billing/flusher.go isUniqueLogConflict）。**部署注意**：本 DDL
+// 仅在未分区 DROP 重建路径执行（ensureTablePartitioned 的 !parted 分支），
+// 存量已分区库升级后须运维手动执行一次
+// `CREATE UNIQUE INDEX IF NOT EXISTS usagelog_request_id_created_at ON
+// usage_logs (request_id, created_at)`（与方向 F usage_stats 部署注意同构）。
 var usageLogIndexDDLs = []string{
 	`CREATE INDEX usagelog_created_at ON usage_logs (created_at)`,
 	`CREATE INDEX usagelog_group_id_created_at ON usage_logs (group_id, created_at)`,
 	`CREATE INDEX usagelog_account_id_created_at ON usage_logs (account_id, created_at)`,
 	`CREATE INDEX usagelog_user_id_created_at ON usage_logs (user_id, created_at)`,
 	`CREATE INDEX usagelog_key_id_created_at ON usage_logs (key_id, created_at)`,
+	`CREATE UNIQUE INDEX usagelog_request_id_created_at ON usage_logs (request_id, created_at)`,
 }
 
 var usageLogAlignColumnDDLs = alignColumnDDLs("usage_logs", usageLogColumnDefs)

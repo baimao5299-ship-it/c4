@@ -509,6 +509,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{UsageLogsColumns[6], UsageLogsColumns[32]},
 			},
+			{
+				Name:    "usagelog_request_id_created_at",
+				Unique:  true,
+				Columns: []*schema.Column{UsageLogsColumns[1], UsageLogsColumns[32]},
+			},
 		},
 	}
 	// UsageStatsColumns holds the columns for the "usage_stats" table.

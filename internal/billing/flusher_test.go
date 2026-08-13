@@ -7,6 +7,7 @@ package billing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -154,6 +156,13 @@ func (w *ctxWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs [
 }
 
 func newTestFlusher(writer DeductWriter) *Flusher {
+	return newTestFlusherWorkers(writer, 1)
+}
+
+// newTestFlusherWorkers 同 newTestFlusher，指定并行 worker 数（分片测试）。
+// worker 数必须经 FlushConfig 传入构造（直接改 f.workers 会让 failCounts
+// 分片槽位与分片数错位——毒 chunk 止损计数越界）。
+func newTestFlusherWorkers(writer DeductWriter, workers int) *Flusher {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
@@ -162,14 +171,8 @@ func newTestFlusher(writer DeductWriter) *Flusher {
 	return NewFlusher(FlushConfig{
 		FlushInterval:          time.Hour,
 		BalanceRefreshInterval: time.Hour,
+		Workers:                workers,
 	}, writer, rec, bal, nil)
-}
-
-// newTestFlusherWorkers 同 newTestFlusher，指定并行 worker 数（分片测试）。
-func newTestFlusherWorkers(writer DeductWriter, workers int) *Flusher {
-	f := newTestFlusher(writer)
-	f.workers = workers
-	return f
 }
 
 // TestFlusherGroupsByUser 聚合分组：按 userID 归并 cost + 日志，Close 排空 +
@@ -768,4 +771,245 @@ func TestFlusherCloseDrainsHugeBacklog(t *testing.T) {
 	require.Equal(t, int64(total), rows, "停机不丢（预算内完整排空）")
 	require.Equal(t, int64(total*2), cost, "cost 精确（无重复扣费）")
 	require.Zero(t, f.pendingN.Load(), "退出前 pending 清空")
+}
+
+// TestFlusherChunkCostSumsLogs 方向 A 批次 1c（A-P2-1）：拆块处 chunk.cost 逐条
+// 累加明细求和（替代比例公式 e.cost * max / len——比例公式与明细求和脱钩，整数
+// 截断可致 chunk.cost=0/成本错位）。非均匀 fixture 双向：前 10k cost=0 后 10k
+// cost=100（首块 Σ=0）与前 10k cost=100 后 10k cost=0（首块 Σ>0）——断言每
+// 事务 chunk.cost == 明细求和 + 跨事务总和保和（无资金损失）。
+func TestFlusherChunkCostSumsLogs(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		first, last         int64 // 前 10k / 后 10k 每条 cost
+		wantChunk1, wantSum int64 // 首块 cost（== Σ 前 10k）、总 cost
+	}{
+		{"zero-cost head", 0, 100, 0, 1_000_000},
+		{"cost-bearing head", 100, 0, 1_000_000, 1_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writer := &fakeDeductWriter{}
+			f := newTestFlusher(writer)
+			for i := 0; i < maxUsageLogsPerTx; i++ {
+				f.Record(&domain.UsageLog{UserID: 1, Cost: tc.first})
+			}
+			for i := 0; i < maxUsageLogsPerTx; i++ {
+				f.Record(&domain.UsageLog{UserID: 1, Cost: tc.last})
+			}
+
+			f.flush() // 20k 行拆 2 块（每块 ≤ maxUsageLogsPerTx 行，单事务有界）
+
+			writer.mu.Lock()
+			defer writer.mu.Unlock()
+			require.Len(t, writer.calls, 2, "20k 行拆 2 事务")
+			require.Equal(t, tc.wantChunk1, writer.calls[0].cost, "首块 cost == 明细求和")
+			require.Equal(t, tc.wantSum-tc.wantChunk1, writer.calls[1].cost, "次块 cost == 明细求和（rest 保和）")
+			var total int64
+			for _, c := range writer.calls {
+				total += c.cost
+			}
+			require.Equal(t, tc.wantSum, total, "跨事务总和保和不变（无资金损失）")
+			require.Zero(t, f.pendingN.Load(), "排空无残留")
+		})
+	}
+}
+
+// poisonWriter 注入指定 request_id 的毒日志：含毒行的块恒失败（模拟单块永久
+// 失败——分区缺失/DB 长故障的毒 chunk 形态），其余块成功。
+type poisonWriter struct {
+	mu      sync.Mutex
+	poison  string
+	poisonN int // 毒块被拒绝的次数（断言弃置前恰 5 次失败往返）
+	calls   []deductCall
+}
+
+func (w *poisonWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, l := range logs {
+		if l.RequestID == w.poison {
+			w.poisonN++
+			return false, 0, errors.New("injected poison failure")
+		}
+	}
+	w.calls = append(w.calls, deductCall{userID: userID, cost: cost, logs: logs})
+	return false, 900000, nil
+}
+
+// TestFlusherPoisonChunkIsolated 方向 A 批次 1b（A-P2-2）：毒 chunk 止损——含毒
+// 行的块连续失败 ≥ maxLogFlushFailures 次 → Error（含 chunk 首行 request_id）+
+// 弃置该块（不 refill）+ 其后剩余下轮继续流动。旧实现：毒块永续回灌，该用户
+// 新日志永远排后（免费蹭用无界 + 快照陈旧）。
+func TestFlusherPoisonChunkIsolated(t *testing.T) {
+	writer := &poisonWriter{poison: "poison-0"}
+	f := newTestFlusher(writer)
+	logger, out := newTestLogger(t)
+	f.log = logger
+
+	const total = 2 * maxUsageLogsPerTx // 20k：毒块（前 10k）+ 正常剩余（后 10k）
+	for i := 0; i < total; i++ {
+		req := fmt.Sprintf("req-%d", i)
+		if i == 0 {
+			req = "poison-0"
+		}
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1, RequestID: req})
+	}
+
+	// 前 4 次失败（未达阈值）：毒块回灌队首重试（失败即停止本 shard——计数
+	// 不被其余块打断），块不丢
+	for i := 0; i < maxLogFlushFailures-1; i++ {
+		f.flush()
+		writer.mu.Lock()
+		poisonN := writer.poisonN
+		writer.mu.Unlock()
+		require.Equal(t, i+1, poisonN, "第 %d 轮毒块被拒", i+1)
+		require.Equal(t, 1, f.pendingCount(), "毒块回灌待重试")
+		require.Equal(t, int64(total), f.pendingN.Load(), "失败块 + 剩余整体回灌（不丢）")
+		writer.mu.Lock()
+		n := len(writer.calls)
+		writer.mu.Unlock()
+		require.Zero(t, n, "毒块弃置前无任何成功调用（失败即停止 shard，剩余块不先落库）")
+	}
+
+	// 第 5 次失败 = 达阈值：弃置毒块（Error 日志含 request_id），剩余回灌
+	f.flush()
+	writer.mu.Lock()
+	n := len(writer.calls)
+	poisonN := writer.poisonN
+	writer.mu.Unlock()
+	require.Zero(t, n, "毒块弃置前无任何成功调用")
+	require.Equal(t, maxLogFlushFailures, poisonN, "恰 5 次失败往返后弃置")
+	require.Equal(t, 1, f.pendingCount())
+	require.Equal(t, int64(total-maxUsageLogsPerTx), f.pendingN.Load(), "毒块弃置（写销），其后剩余回灌不丢")
+
+	// 后续日志继续流动：剩余 10k 下轮 flush 成功落库
+	f.flush()
+	writer.mu.Lock()
+	require.Len(t, writer.calls, 1, "剩余块成功落库")
+	require.Len(t, writer.calls[0].logs, maxUsageLogsPerTx)
+	require.Equal(t, int64(maxUsageLogsPerTx), writer.calls[0].cost)
+	writer.mu.Unlock()
+	require.Zero(t, f.pendingCount(), "毒块弃置 + 剩余排空")
+
+	// 弃置可观测（不静默丢）：Error 日志含首行 request_id + 弃置行数
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "billing deduct failed, dropping poison chunk")
+	require.Contains(t, string(b), `"level":"error"`, "止损升级 Error 级（可观测）")
+	require.Contains(t, string(b), `"request_id":"poison-0"`)
+	require.Contains(t, string(b), `"dropped_logs":10000`)
+}
+
+// TestFlusherPoisonStopLossResetsOnSuccess 毒 chunk 止损计数复位（对齐 usage.go
+// TestLogPoisonStopLossResetsOnSuccess）：失败后成功推进 → 连续失败计数清零——
+// "连续失败 ≥N 次"语义，间隔成功不累计（DB 短时故障不误丢）。
+func TestFlusherPoisonStopLossResetsOnSuccess(t *testing.T) {
+	writer := &fakeDeductWriter{fails: map[int64]int{1: 4}}
+	f := newTestFlusher(writer)
+	for i := 0; i < maxUsageLogsPerTx; i++ {
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	}
+
+	// 4 次连续失败（未达阈值）：回灌重试
+	for i := 0; i < 4; i++ {
+		f.flush()
+		require.Equal(t, 1, f.pendingCount())
+		require.Equal(t, int64(maxUsageLogsPerTx), f.pendingN.Load())
+	}
+	require.Equal(t, 4, f.failCounts[0], "4 次连续失败计数")
+
+	// 成功推进 → 计数复位（间隔成功打断连续性）
+	f.flush()
+	require.Zero(t, f.pendingCount(), "成功落库排空")
+	require.Zero(t, f.failCounts[0], "成功推进复位")
+
+	// 重新注入 5 次失败：若复位失效（计数残留 4），首轮失败即达阈值弃置；
+	// 复位后须再连续 5 次失败才弃置——断言 5 次注入全被消费即证明从 0 重新累计
+	writer.mu.Lock()
+	writer.fails[1] = 5
+	writer.mu.Unlock()
+	f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+	for i := 0; i < 5; i++ {
+		f.flush()
+	}
+	writer.mu.Lock()
+	remain := writer.fails[1]
+	writer.mu.Unlock()
+	require.Zero(t, remain, "5 次注入失败全部消费（复位后从 0 累计，未提前弃置）")
+	require.Zero(t, f.pendingCount(), "5 次连续失败后毒块弃置")
+}
+
+// conflictWriter DeductAndLog 注入 usage_logs 唯一键冲突（方向 A 批次 1a 重试
+// 路径）：pgErr=true → pgx 形态 *pgconn.PgError Code=23505 并经 fmt.Errorf
+// 包装（验证 errors.As 解包）；pgErr=false → ent 形态（非 pgconn，错误链全文本
+// 含 "violates unique constraint"——ent 生成代码的 ConstraintError 包装形态）。
+// failN > 0：前 failN 次调用冲突后成功（COMMIT 歧义窗口形态——先前事务已提交）；
+// persist：每次调用都冲突（重试路径每轮撞 23505 的永久毒丸面）。
+type conflictWriter struct {
+	mu      sync.Mutex
+	pgErr   bool
+	persist bool
+	failN   int
+	calls   []deductCall
+}
+
+func (w *conflictWriter) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (bool, int64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	conflict := w.persist
+	if !conflict && w.failN > 0 {
+		conflict = true
+		w.failN--
+	}
+	if conflict {
+		if w.pgErr {
+			return false, 0, fmt.Errorf("deduct failed: %w", &pgconn.PgError{
+				Code: "23505", Message: `duplicate key value violates unique constraint "usagelog_request_id_created_at"`,
+			})
+		}
+		return false, 0, fmt.Errorf(`ent: constraint failed: duplicate key value violates unique constraint "usagelog_request_id_created_at" (SQLSTATE 23505)`)
+	}
+	w.calls = append(w.calls, deductCall{userID: userID, cost: cost, logs: logs})
+	return false, 900000, nil
+}
+
+// TestFlusherUniqueConflictTreatedAsSuccess 方向 A 批次 1a（A-P2-3）：重试路径
+// 撞唯一键冲突 → 按成功处理——不 refill（无重试 = 无双扣路径）、failCounts 不增
+// （冲突 ≠ 失败，不得计入毒丸止损）、续传循环继续后续块。两路径均验（pgx
+// 23505 经 fmt 包装 + ent 文本形态）。
+func TestFlusherUniqueConflictTreatedAsSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		writer  *conflictWriter
+		persist bool
+	}{
+		{"pgx wrapped once", &conflictWriter{pgErr: true, failN: 1}, false},
+		{"ent text once", &conflictWriter{pgErr: false, failN: 1}, false},
+		{"pgx persistent", &conflictWriter{pgErr: true, persist: true}, true},
+		{"ent text persistent", &conflictWriter{pgErr: false, persist: true}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writer := tc.writer
+			f := newTestFlusher(writer)
+			for i := 0; i < 2*maxUsageLogsPerTx; i++ {
+				f.Record(&domain.UsageLog{UserID: 1, Cost: 1})
+			}
+
+			f.flush() // 拆 2 块；首块撞冲突（once 形态下次块成功落库）
+
+			writer.mu.Lock()
+			defer writer.mu.Unlock()
+			if tc.persist {
+				require.Empty(t, writer.calls, "恒冲突：全部块按成功处理（先前事务已提交，不重试）")
+			} else {
+				require.Len(t, writer.calls, 1, "冲突块按成功不计调用（不重试）；次块成功落库")
+				require.Len(t, writer.calls[0].logs, maxUsageLogsPerTx, "次块明细完整")
+				require.Equal(t, int64(maxUsageLogsPerTx), writer.calls[0].cost)
+			}
+			require.Zero(t, f.failCounts[0], "冲突不累计 failCounts（防毒丸弃置误杀已提交块）")
+			require.Zero(t, f.pendingCount(), "冲突块不 refill（无双扣路径）")
+			require.Zero(t, f.pendingN.Load())
+		})
+	}
 }
