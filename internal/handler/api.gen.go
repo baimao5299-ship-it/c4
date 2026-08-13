@@ -110,10 +110,12 @@ const (
 
 // Defines values for RequestFormat.
 const (
-	RequestFormatAnthropic       RequestFormat = "anthropic"
-	RequestFormatOpenaiChat      RequestFormat = "openai-chat"
-	RequestFormatOpenaiImages    RequestFormat = "openai-images"
-	RequestFormatOpenaiResponses RequestFormat = "openai-responses"
+	RequestFormatAnthropic         RequestFormat = "anthropic"
+	RequestFormatOpenaiChat        RequestFormat = "openai-chat"
+	RequestFormatOpenaiImages      RequestFormat = "openai-images"
+	RequestFormatOpenaiResponses   RequestFormat = "openai-responses"
+	RequestFormatOpenaiResponsesWs RequestFormat = "openai-responses-ws"
+	RequestFormatOpenaiSearch      RequestFormat = "openai-search"
 )
 
 // Defines values for SettingType.
@@ -138,6 +140,7 @@ const (
 	TemplateSupportedFormatsOpenaiImages      TemplateSupportedFormats = "openai-images"
 	TemplateSupportedFormatsOpenaiResponses   TemplateSupportedFormats = "openai-responses"
 	TemplateSupportedFormatsOpenaiResponsesWs TemplateSupportedFormats = "openai-responses-ws"
+	TemplateSupportedFormatsOpenaiSearch      TemplateSupportedFormats = "openai-search"
 )
 
 // Defines values for TemplateCreateCredentialType.
@@ -155,6 +158,7 @@ const (
 	TemplateCreateSupportedFormatsOpenaiImages      TemplateCreateSupportedFormats = "openai-images"
 	TemplateCreateSupportedFormatsOpenaiResponses   TemplateCreateSupportedFormats = "openai-responses"
 	TemplateCreateSupportedFormatsOpenaiResponsesWs TemplateCreateSupportedFormats = "openai-responses-ws"
+	TemplateCreateSupportedFormatsOpenaiSearch      TemplateCreateSupportedFormats = "openai-search"
 )
 
 // Defines values for TemplateExtCredentialType.
@@ -171,6 +175,7 @@ const (
 	OpenaiImages      TemplatePatchSupportedFormats = "openai-images"
 	OpenaiResponses   TemplatePatchSupportedFormats = "openai-responses"
 	OpenaiResponsesWs TemplatePatchSupportedFormats = "openai-responses-ws"
+	OpenaiSearch      TemplatePatchSupportedFormats = "openai-search"
 )
 
 // Defines values for UserRole.
@@ -980,7 +985,7 @@ type TemplateSupportedFormats string
 
 // TemplateCreate defines model for TemplateCreate.
 type TemplateCreate struct {
-	BaseUrl          string                           `json:"base_url"`
+	BaseUrl          *string                          `json:"base_url,omitempty"`
 	CredentialType   *TemplateCreateCredentialType    `json:"credential_type,omitempty"`
 	FormatModels     *map[string][]string             `json:"format_models,omitempty"`
 	ModelMapping     *map[string]string               `json:"model_mapping,omitempty"`

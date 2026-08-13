@@ -55,10 +55,12 @@ const (
 
 // Defines values for RequestFormat.
 const (
-	Anthropic       RequestFormat = "anthropic"
-	OpenaiChat      RequestFormat = "openai-chat"
-	OpenaiImages    RequestFormat = "openai-images"
-	OpenaiResponses RequestFormat = "openai-responses"
+	Anthropic         RequestFormat = "anthropic"
+	OpenaiChat        RequestFormat = "openai-chat"
+	OpenaiImages      RequestFormat = "openai-images"
+	OpenaiResponses   RequestFormat = "openai-responses"
+	OpenaiResponsesWs RequestFormat = "openai-responses-ws"
+	OpenaiSearch      RequestFormat = "openai-search"
 )
 
 // Defines values for UserRole.

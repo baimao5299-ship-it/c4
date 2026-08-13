@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 
+	"github.com/is7qin/c3api/internal/credential"
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/notify"
 	"github.com/is7qin/c3api/internal/repository"
@@ -17,8 +18,14 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 	if err := validateAccount(a); err != nil {
 		return nil, err
 	}
-	if _, err := s.store.GetTemplate(ctx, a.TemplateID); err != nil {
+	tpl, err := s.store.GetTemplate(ctx, a.TemplateID)
+	if err != nil {
 		return nil, mapRepoErr(err) // 模板缺 id → 404
+	}
+	// upstream_key 必填性按模板类型：codex-oauth/codex-pat 凭据走 account_ext
+	// （创建后经 /accounts/{id}/ext 配置），可空；其余类型静态透传必填。
+	if a.UpstreamKey == "" && tpl.CredentialType != credential.TypeCodexOAuth && tpl.CredentialType != credential.TypeCodexPAT {
+		return nil, ErrInvalidInput
 	}
 	if a.GroupIDs != nil {
 		if err := s.checkGroupsExist(ctx, *a.GroupIDs); err != nil {
@@ -59,6 +66,17 @@ func (s *Service) ListAccounts(ctx context.Context, q repository.ListQuery) ([]*
 func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	if err := validateAccount(a); err != nil {
 		return nil, err
+	}
+	// upstream_key 清空仅 codex 类型允许（凭据走 account_ext）；只在必要时查
+	// 模板（非空 key 走原路径，零行为变化）。
+	if a.UpstreamKey == "" {
+		tpl, err := s.store.GetTemplate(ctx, a.TemplateID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		if tpl.CredentialType != credential.TypeCodexOAuth && tpl.CredentialType != credential.TypeCodexPAT {
+			return nil, ErrInvalidInput
+		}
 	}
 	if a.GroupIDs != nil {
 		if err := s.checkGroupsExist(ctx, *a.GroupIDs); err != nil {

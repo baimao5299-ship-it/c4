@@ -357,8 +357,13 @@ func validateTemplate(t *domain.Template) error {
 	if t.Name == "" {
 		return ErrInvalidInput
 	}
-	if err := validateBaseURL(t.BaseURL); err != nil {
-		return err
+	// base_url 全类型可选（用户裁决 2026-08-14：模板层级所有类型都可空——codex
+	// 走 SDK 默认端点；api_key 静态透传留空则路由时失败，管理面不拦截）；提供时
+	// 校验格式（可解析、裸根不含 /v1）。
+	if t.BaseURL != "" {
+		if err := validateBaseURL(t.BaseURL); err != nil {
+			return err
+		}
 	}
 	if len(t.SupportedFormats) == 0 {
 		return ErrInvalidInput
@@ -370,14 +375,14 @@ func validateTemplate(t *domain.Template) error {
 		}
 		seen[f] = true
 	}
-	// 类型-格式约束（W1 + Task B 扩展）：responses-special/codex-oauth/codex-pat
-	// 类型模板支持 resp / resp-ws / openai-images 格式（resp-ws 可选；images
-	// 直连为 Task B 用户裁决：responses-special 与 api_key 同支持两图片端点，
-	// codex 类型走 SDK 生图（T2/T3 接入——未接入前路由命中返回明确 501，见
-	// proxy imagesCaller 分流骨架）；api_key 类型全部格式任意。
+	// 类型-格式约束（W1 + Task B/D 扩展）：responses-special/codex-oauth/codex-pat
+	// 类型模板支持 resp / resp-ws / openai-images / openai-search 格式（images 直连
+	// 为 Task B 用户裁决：responses-special 与 api_key 同支持两图片端点，codex 类型
+	// 走 SDK 生图；search 为 Task D 用户裁决：search 端点四类型分派全可达——
+	// codex 类型走 SDK Search、api_key/responses-special 静态透传）；api_key 类型全部格式任意。
 	if t.CredentialType != credential.TypeAPIKey {
 		for _, f := range t.SupportedFormats {
-			if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS && f != domain.FormatOpenAIImages {
+			if f != domain.FormatOpenAIResponses && f != domain.FormatOpenAIResponsesWS && f != domain.FormatOpenAIImages && f != domain.FormatOpenAISearch {
 				return ErrInvalidInput
 			}
 		}
@@ -398,8 +403,11 @@ func validateTemplate(t *domain.Template) error {
 	return nil
 }
 
+// validateAccount 基础校验。upstream_key 必填性按模板类型由调用方判定
+// （api_key/responses-special 必填；codex-oauth/codex-pat 可选——凭据走
+// account_ext，Create/UpdateAccount 处查模板类型）。
 func validateAccount(a *domain.Account) error {
-	if a.Name == "" || a.UpstreamKey == "" || a.TemplateID <= 0 {
+	if a.Name == "" || a.TemplateID <= 0 {
 		return ErrInvalidInput
 	}
 	if a.Weight < 0 {

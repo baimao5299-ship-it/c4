@@ -1312,7 +1312,7 @@ components:
         deleted: { type: boolean }
     RequestFormat:
       type: string
-      enum: [openai-chat, openai-responses, openai-images, anthropic]
+      enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, openai-search, anthropic]
     AccountStatus:
       type: string
       enum: [active, unhealthy, "429", disabled]
@@ -1321,18 +1321,21 @@ components:
       enum: [none, "429", "4xx", "5xx", network, auth, no_account, abort, billing]
     TemplateCreate:
       type: object
-      required: [name, base_url, supported_formats]
+      required: [name, supported_formats]
       properties:
         name: { type: string }
+        # base_url 全类型可选（2026-08-14 用户裁决）；提供时须为裸根（不含 /v1，
+        # service 校验）。空：codex 类型走 SDK 默认端点；api_key 静态透传留空
+        # 则路由时失败（管理面不拦截）。
         base_url: { type: string }
         # credential_type 模板级：一个模板 = 一种号池；缺省 = api_key。
-        # 生态三类型（responses-special/codex-oauth/codex-pat）只支持 resp / resp-ws
-        # 格式（service 校验）；类型化配置走 /templates/{id}/ext。
+        # 生态三类型（responses-special/codex-oauth/codex-pat）只支持 resp / resp-ws /
+        # openai-images / openai-search 格式（service 校验）；类型化配置走 /templates/{id}/ext。
         credential_type: { type: string, enum: [api_key, responses-special, codex-oauth, codex-pat], default: api_key }
         supported_formats:
           type: array
           minItems: 1
-          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, anthropic] }
+          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, openai-search, anthropic] }
         models:
           type: array
           items: { type: string }
@@ -1354,7 +1357,7 @@ components:
         CredentialType: { type: string, enum: [api_key, responses-special, codex-oauth, codex-pat], description: 模板号池类型；生态三类型只支持 resp / resp-ws 格式 }
         SupportedFormats:
           type: array
-          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, anthropic] }
+          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, openai-search, anthropic] }
         Models:
           type: array
           items: { type: string }
@@ -1375,6 +1378,9 @@ components:
       properties:
         name: { type: string }
         template_id: { type: integer, format: int64 }
+        # upstream_key：api_key/responses-special 模板必填（静态透传上游 key）；
+        # codex-oauth/codex-pat 模板可选（凭据走 account_ext——创建后经
+        # /accounts/{id}/ext 配置；service 按模板类型校验）。
         upstream_key: { type: string }
         status: { $ref: '#/components/schemas/AccountStatus' }
         weight: { type: integer }
@@ -1758,7 +1764,7 @@ components:
         supported_formats:
           type: array
           minItems: 1
-          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, anthropic] }
+          items: { type: string, enum: [openai-chat, openai-responses, openai-responses-ws, openai-images, openai-search, anthropic] }
         models:
           type: array
           items: { type: string }
