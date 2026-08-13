@@ -289,8 +289,12 @@ func (r *PartitionRepo) execDDL(ctx context.Context, query string) error {
 
 // isDuplicateObject 判断"对象已存在"类竞态错误（多实例并发 bootstrap/预建
 // 分区撞名容忍；ent Conn.Exec 原样透传 pgconn 错误，无需解包）：
-//   - 42P07 duplicate_object：无 IF NOT EXISTS 的 CREATE（分区表/索引/日分区）
-//     撞已存在对象；
+//   - 42P07 / 42710 duplicate_object：无 IF NOT EXISTS 的 CREATE（分区表/索引/
+//     日分区）撞已存在对象——同一次撞名 PG 按时序报两种码：并发 CREATE TABLE
+//     双方都通过"是否已分区"判定时，败者类型名预检落在胜者提交之后 → 撞胜者
+//     隐式复合类型 → "type X already exists" 42710；预检落在胜者提交之前 →
+//     关系插入撞锁后 42P07（实测并发 bootstrap 两种码均现，TestUsageLog
+//     PartitionConcurrentBootstrapPG -race 复现）；
 //   - 23505 unique_violation：IF NOT EXISTS 的 CREATE SEQUENCE 并发创建时
 //     "检查-插入"在 pg_class 唯一索引上竞态（PG 已知行为，实测出现）——
 //     仅在 bootstrap 的 CREATE 步骤使用本判定，23505 只能来自并发建对象。
@@ -299,15 +303,39 @@ func isDuplicateObject(err error) bool {
 	if !errors.As(err, &pgErr) {
 		return false
 	}
-	return pgErr.Code == "42P07" || pgErr.Code == "23505"
+	return pgErr.Code == "42P07" || pgErr.Code == "42710" || pgErr.Code == "23505"
 }
 
-// execDDLTolerateDup 执行 DDL；对象已存在类错误（42P07/23505，见
-// isDuplicateObject）视为成功（并发实例已建，多实例语义见
-// ensureTablePartitioned），其余错误原样返回。
-func (r *PartitionRepo) execDDLTolerateDup(ctx context.Context, query string) error {
+// isMissingObject 判断"目标对象不存在"竞态错误（42P01 undefined_table）：
+// 并发 bootstrap 的 **stale-DROP 窗口**专用（评审 I-1 已接受的窗口，见
+// ensureTablePartitioned 注释）——实例基于过期的"未分区"判定执行 DROP TABLE
+// IF EXISTS，可能误删对方刚建的表（含 OWNED BY 级联的序列）；被删侧后续步骤
+// 短暂撞 42P01：OWNED BY/索引/对齐/分区引用缺失的表、CREATE TABLE 引用被级联
+// 删掉的序列。容忍后由"最后执行 DROP 的实例"补建收敛（其 CREATE 必然成功且
+// 无后续 DROP，表最终存在，所有权/索引/分区随之落位）。单实例下 42P01 属配
+// 置错误——容忍后由后续 INSERT 显式失败兜底（与撞名容忍同哲学：不阻塞启动、
+// 下游响亮失败）。
+func isMissingObject(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "42P01"
+}
+
+// isBootstrapRaceError 并发 bootstrap 竞态判定（撞名 isDuplicateObject + 缺失
+// isMissingObject）：任何"另一实例在途"的 DDL 结果（对象已存在或暂缺）均视为
+// 成功继续，双方幂等收敛（最终状态一致，见 ensureTablePartitioned 注释）。
+func isBootstrapRaceError(err error) bool {
+	return isDuplicateObject(err) || isMissingObject(err)
+}
+
+// execDDLTolerateRace 执行 DDL；并发 bootstrap 竞态类错误（撞名 42P07/42710/
+// 23505 + 缺失 42P01，见 isBootstrapRaceError）视为成功（另一实例在途，多实
+// 例语义见 ensureTablePartitioned），其余错误原样返回。
+func (r *PartitionRepo) execDDLTolerateRace(ctx context.Context, query string) error {
 	if err := r.execDDL(ctx, query); err != nil {
-		if isDuplicateObject(err) {
+		if isBootstrapRaceError(err) {
 			return nil
 		}
 		return err
@@ -318,10 +346,11 @@ func (r *PartitionRepo) execDDLTolerateDup(ctx context.Context, query string) er
 // alignTableColumns 幂等补列（ADD COLUMN IF NOT EXISTS）：存量分区表路径按
 // 静态 DDL 全列对齐（缺失列补齐——P1 修复；新建/已有列 no-op；父表 ALTER
 // 自动传播全部分区，PG12+）。多实例并发安全：ADD COLUMN 在父表上
-// AccessExclusive 锁串行，IF NOT EXISTS 幂等收敛。
+// AccessExclusive 锁串行，IF NOT EXISTS 幂等收敛；stale-DROP 窗口内父表短暂
+// 缺失 → 42P01 容忍（后建者的对齐覆盖——收敛语义见 isMissingObject）。
 func (r *PartitionRepo) alignTableColumns(ctx context.Context, table string, alignDDLs []string) error {
 	for _, ddl := range alignDDLs {
-		if err := r.execDDL(ctx, ddl); err != nil {
+		if err := r.execDDLTolerateRace(ctx, ddl); err != nil {
 			return err
 		}
 	}
@@ -335,10 +364,11 @@ func (r *PartitionRepo) alignTableColumns(ctx context.Context, table string, ali
 // （DB 可重建；明细流水，无外键引用）。
 //
 // 多实例语义（评审 I-1）：两实例同时启动/升级时，"是否已分区"判定与 CREATE
-// 之间另一实例可能已建对象——所有 CREATE 步骤（分区表/索引/日分区）对 42P07
-// （duplicate_object）容忍后继续，双方幂等收敛。DROP 为 IF EXISTS 不报错；
-// 理论窗口下并发实例的 DROP 误删对方刚建的分区表时，双方同样经 42P07 容忍
-// 重建索引/分区，最终状态一致（对象集合收敛）。
+// 之间另一实例可能已建对象——所有 CREATE 步骤（分区表/索引/日分区）对撞名类
+// 错误（42P07/42710/23505）容忍后继续，双方幂等收敛。DROP 为 IF EXISTS 不报
+// 错；理论窗口下并发实例的 DROP 误删对方刚建的分区表时（stale-DROP 窗口），
+// 被删侧 OWNED BY/索引/对齐/分区短暂撞 42P01——同样容忍（isBootstrapRaceError
+// 完整覆盖），由"最后执行 DROP 的实例"补建，最终状态一致（对象集合收敛）。
 func (r *PartitionRepo) ensureTablePartitioned(ctx context.Context, table, partitionCol string, columnDefs, indexDDLs, alignDDLs []string, now time.Time) error {
 	parted, err := r.IsTablePartitioned(ctx, table)
 	if err != nil {
@@ -350,19 +380,21 @@ func (r *PartitionRepo) ensureTablePartitioned(ctx context.Context, table, parti
 		}
 		// 序列独立于表创建（CREATE TABLE 的 DEFAULT 需先存在）；OWNED BY 使
 		// DROP TABLE 级联回收（serial 同款生命周期）。IF NOT EXISTS 并发下
-		// 仍可能 23505（catalog 唯一索引竞态，实测），同样容忍。
+		// 仍可能 23505（catalog 唯一索引竞态，实测），同样容忍。全步骤走
+		// execDDLTolerateRace（撞名 + stale-DROP 窗口缺失 42P01——OWNED BY 目
+		// 标表/索引父表/级联删的序列都可能短暂缺失，见 isMissingObject 注释）。
 		seqName := table + "_id_seq"
-		if err := r.execDDLTolerateDup(ctx, `CREATE SEQUENCE IF NOT EXISTS `+seqName); err != nil {
+		if err := r.execDDLTolerateRace(ctx, `CREATE SEQUENCE IF NOT EXISTS `+seqName); err != nil {
 			return fmt.Errorf("create %s: %w", seqName, err)
 		}
-		if err := r.execDDLTolerateDup(ctx, partitionedCreateDDL(table, partitionCol, columnDefs)); err != nil {
+		if err := r.execDDLTolerateRace(ctx, partitionedCreateDDL(table, partitionCol, columnDefs)); err != nil {
 			return fmt.Errorf("create partitioned %s: %w", table, err)
 		}
-		if err := r.execDDL(ctx, `ALTER SEQUENCE `+seqName+` OWNED BY `+table+`.id`); err != nil {
+		if err := r.execDDLTolerateRace(ctx, `ALTER SEQUENCE `+seqName+` OWNED BY `+table+`.id`); err != nil {
 			return fmt.Errorf("own sequence: %w", err)
 		}
 		for _, idx := range indexDDLs {
-			if err := r.execDDLTolerateDup(ctx, idx); err != nil {
+			if err := r.execDDLTolerateRace(ctx, idx); err != nil {
 				return fmt.Errorf("create %s index: %w", table, err)
 			}
 		}
@@ -416,6 +448,12 @@ func (r *PartitionRepo) EnsureTablePartitions(ctx context.Context, table string,
 		from := d.Format("2006-01-02 15:04:05-07")
 		to := d.AddDate(0, 0, 1).Format("2006-01-02 15:04:05-07")
 		if err := r.execDDL(ctx, fmt.Sprintf(`CREATE TABLE %s PARTITION OF %s FOR VALUES FROM ('%s') TO ('%s')`, name, table, from, to)); err != nil {
+			if isMissingObject(err) {
+				// stale-DROP 窗口父表暂缺：跳过本日——父表由后建者补建，其
+				// 同参数分区预建覆盖本日（收敛语义见 isMissingObject；单实例
+				// 配置级缺失 → 后续 INSERT 显式失败兜底）。
+				continue
+			}
 			if isDuplicateObject(err) {
 				// 并发实例已建该分区：重查确认后继续（多实例语义同上）
 				ok2, err2 := r.partitionExists(ctx, name)
