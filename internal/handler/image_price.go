@@ -15,7 +15,8 @@ import (
 // （Task A 数据面；images 端点计费价格来源）。PUT/DELETE 的 {model} 由 chi
 // 路径参数注入（生成契约签名）；错误映射走 writeServiceErr（ErrNotFound →
 // 404、ErrConflict → 409、ErrInvalidInput → 400——含"至少一价非 nil"校验）。
-// 与 /admin/pricing 同形态，仅价格单位不同（见换算函数注释）。
+// 与 /admin/pricing 同形态同单位（token 价 USD/1M per-million；仅多 per-image
+// USD/张 分量，见换算函数注释）。
 
 // GetImagePrice 图片价格列表（分页/筛选/排序，对齐 GetPricing），ServerInterface。
 func (h *AdminAPI) GetImagePrice(w http.ResponseWriter, r *http.Request, params GetImagePriceParams) {
@@ -43,14 +44,13 @@ func (h *AdminAPI) GetImagePrice(w http.ResponseWriter, r *http.Request, params 
 	writeJSON(w, http.StatusOK, ImagePriceListResponse{Total: total, Rows: out})
 }
 
-// PutImagePriceModel 手动设图片价格（API 边界换算——**单位规则与 pricings 不同**）：
-// token 价收 USD per image token（litellm 原生口径；openapi 字段名
-// *_price_per_million 为历史命名，实际为 per-token 价）→ ×1e11 → 毫分/1M
-// （usdPerMillionToMillis，独立换算函数）；per-image 收 USD/张 → ×1e5 →
-// 毫分/张（usdPerImageToMilli，**禁混用 usdToMillis——虽同为 ×1e5 系数，但
-// 单位语义不同且防未来误改**）。三分量全缺省（nil）→ 400（service 校验：行
-// 有效性 = 至少一价非 nil）。upsert 强制 source=manual，可接管 litellm 行，
-// ServerInterface。
+// PutImagePriceModel 手动设图片价格（API 边界换算——**单位规则与 pricings 相同**）：
+// token 价收 USD/1M image tokens（per-million 口径，与字段名 *_price_per_million
+// 及 chat 价 PromptPricePerMillion 语义一致）→ ×1e5 → 毫分/1M（复用
+// usdToMillis，与 chat 价同系数）；per-image 收 USD/张 → ×1e5 → 毫分/张
+// （usdPerImageToMilli，系数与 usdToMillis 相同但单位语义独立——按张 flat 计费，
+// 独立函数自文档化）。三分量全缺省（nil）→ 400（service 校验：行有效性 = 至少
+// 一价非 nil）。upsert 强制 source=manual，可接管 litellm 行，ServerInterface。
 func (h *AdminAPI) PutImagePriceModel(w http.ResponseWriter, r *http.Request, model string) {
 	var in ImagePriceUpsert
 	if err := decode(r, &in); err != nil {
@@ -59,8 +59,8 @@ func (h *AdminAPI) PutImagePriceModel(w http.ResponseWriter, r *http.Request, mo
 	}
 	p, err := h.svc.UpsertManualImagePrice(r.Context(), &repository.ImagePriceManual{
 		Model:                           model,
-		InputImageTokenPricePerMillion:  usdPerMillionToMillisPtr(in.InputImageTokenPricePerMillion),
-		OutputImageTokenPricePerMillion: usdPerMillionToMillisPtr(in.OutputImageTokenPricePerMillion),
+		InputImageTokenPricePerMillion:  usdToMillisPtr(in.InputImageTokenPricePerMillion),
+		OutputImageTokenPricePerMillion: usdToMillisPtr(in.OutputImageTokenPricePerMillion),
 		OutputCostPerImageMilli:         usdPerImageToMilliPtr(in.OutputCostPerImage),
 	})
 	if err != nil {
@@ -81,13 +81,13 @@ func (h *AdminAPI) DeleteImagePriceModel(w http.ResponseWriter, r *http.Request,
 }
 
 // toAPIImagePrice 图片价格领域对象 → 契约类型（API 边界换算：毫分/1M →
-// USD per image token、毫分/张 → USD/张；raw 完整镜像不对外暴露，对齐
-// toAPIPricing）。
+// USD/1M（per-million，与 pricings 同口径）、毫分/张 → USD/张；raw 完整镜像
+// 不对外暴露，对齐 toAPIPricing）。
 func toAPIImagePrice(p *domain.ImagePrice) ImagePrice {
 	return ImagePrice{
 		Model:                           p.Model,
-		InputImageTokenPricePerMillion:  millisPerMillionToUSDPtr(p.InputImageTokenPricePerMillion),
-		OutputImageTokenPricePerMillion: millisPerMillionToUSDPtr(p.OutputImageTokenPricePerMillion),
+		InputImageTokenPricePerMillion:  millisToUSDPtr(p.InputImageTokenPricePerMillion),
+		OutputImageTokenPricePerMillion: millisToUSDPtr(p.OutputImageTokenPricePerMillion),
 		OutputCostPerImage:              milliPerImageToUSDPtr(p.OutputCostPerImageMilli),
 		Source:                          PricingSource(p.Source),
 		CreatedAt:                       p.CreatedAt,

@@ -1681,17 +1681,17 @@ export interface components {
             Model: string;
             /**
              * Format: double
-             * @description image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算，1 USD = 100
+             * @description image token 输入价（USD per 1M image tokens——per-million 口径，与 pricings 字段语义一致；内部存储毫分/1M，×1e5 换算，1 USD = 100
              */
             InputImageTokenPricePerMillion?: number | null;
             /**
              * Format: double
-             * @description image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算）；null = 无该分量价
+             * @description image token 输出价（USD per 1M image tokens——per-million 口径，与 pricings 字段语义一致；内部存储毫分/1M，×1e5 换算）；null = 无该分量价
              */
             OutputImageTokenPricePerMillion?: number | null;
             /**
              * Format: double
-             * @description 每张图价（USD/张；内部存储毫分——×1e5 换算，**与 token 价不同换算系**；计费不走 /1e6 除法）；null = 不启用按张分量
+             * @description 每张图价（USD/张；内部存储毫分——×1e5 换算，与 token 价同系数但单位语义不同：按张 flat，计费不走 /1e6 除法）；null = 不启用按张分量
              */
             OutputCostPerImage?: number | null;
             Source: components["schemas"]["PricingSource"];
@@ -1703,17 +1703,17 @@ export interface components {
         ImagePriceUpsert: {
             /**
              * Format: double
-             * @description image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+             * @description image token 输入价（USD per 1M image tokens——per-million 口径，与 pricings 字段语义一致；API 边界 ×1e5 → 毫分/1M）；缺省/null = 清空该分量
              */
             input_image_token_price_per_million?: number | null;
             /**
              * Format: double
-             * @description image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+             * @description image token 输出价（USD per 1M image tokens——per-million 口径，与 pricings 字段语义一致；API 边界 ×1e5 → 毫分/1M）；缺省/null = 清空该分量
              */
             output_image_token_price_per_million?: number | null;
             /**
              * Format: double
-             * @description 每张图价（USD/张；API 边界 ×1e5 → 毫分/张——**禁混用 ×1e11 换算**）；缺省/null = 清空该分量
+             * @description 每张图价（USD/张；API 边界 ×1e5 → 毫分/张——与 token 价同系数但单位语义独立：按张 flat，不走 /1e6 除法）；缺省/null = 清空该分量
              */
             output_cost_per_image?: number | null;
         };

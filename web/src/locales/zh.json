@@ -763,9 +763,9 @@
         "outputToken": "输出 token 价",
         "perImage": "每张价"
       },
-      "dialogDesc": "单位：image token 价 = USD/image token，每张价 = USD/张；三分量至少填一个，留空的分量保存后清空",
-      "inputTokenLabel": "输入 image token 价（USD/image token）",
-      "outputTokenLabel": "输出 image token 价（USD/image token）",
+      "dialogDesc": "单位：image token 价 = USD/1M image tokens（per-million，与文本价口径一致），每张价 = USD/张；三分量至少填一个，留空的分量保存后清空",
+      "inputTokenLabel": "输入 image token 价（USD/1M image tokens）",
+      "outputTokenLabel": "输出 image token 价（USD/1M image tokens）",
       "perImageLabel": "每张价（USD/张）",
       "formInvalid": "三分量至少填一个（输入/输出 image token 价、每张价）；各分量须为非负数值",
       "newTitle": "手动设图片价格",
