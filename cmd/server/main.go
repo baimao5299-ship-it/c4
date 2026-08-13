@@ -50,9 +50,6 @@ func main() {
 	cfgPath := flag.String("config", "config.toml", "path to TOML config")
 	pprofAddr := flag.String("pprof", "", "listen addr for /debug/pprof (heap/goroutine profile under load)")
 	flag.Parse()
-	if *pprofAddr != "" {
-		go func() { _ = http.ListenAndServe(*pprofAddr, nil) }() // net/http/pprof 自动挂载
-	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -64,6 +61,17 @@ func main() {
 	log, err := logx.New(cfg.Log.Level, cfg.Log.Output)
 	if err != nil {
 		fatalf("logger: %v", err)
+	}
+	// pprof 监听失败可观测（G2-1，spec 2026-08-13）：旧实现 `_ =` 全静默——监听
+	// 失败零日志零观测。goroutine 在 logx.New 之后启动：闭包捕获 log 恒非 nil
+	// （若保留原位置，端口占用等启动期失败时 log 尚 nil，Warn 判空即被丢弃，
+	// 观测仍缺失）；失败 Warn 不 fatal（pprof 非关键面，服务照常启动）。
+	if *pprofAddr != "" {
+		go func() {
+			if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+				log.Warn("pprof server failed", logx.Error(err))
+			}
+		}() // net/http/pprof 自动挂载
 	}
 	// 必填校验（admin.token/auth.jwt_secret/db.dsn）已内聚到 config.Load，此处只做错误处理。
 
@@ -369,6 +377,12 @@ func main() {
 	for _, w := range []worker.Worker{inv, sched, ruleEngine, rec, errlogW, pricingSync, retention, listener, authSync} {
 		if s, ok := w.(server.StatsProvider); ok {
 			opsWorkers = append(opsWorkers, s)
+		} else {
+			// G2-3（spec 2026-08-13）：断言失败 Warn 一次——StatsProvider 是约定
+			// 非强制，新 worker 忘实现时 /ops/workers 静默缺项，启动期提示（非
+			// 错误：无 Stats 的 worker 合法）。
+			log.Warn("worker does not implement StatsProvider, missing from /ops/workers",
+				logx.String("worker", w.Name()))
 		}
 	}
 	if billFlusher != nil {
@@ -467,9 +481,16 @@ func main() {
 	// 4) wm.Shutdown 反向排空：billingFlusher 最先（扣费 + 计费日志全量落库）
 	//    → rec 排空明细 → rule → sched
 	srvCtx, cancelSrv := context.WithTimeout(shutdownCtx, 2*time.Second)
-	_ = httpSrv.Shutdown(srvCtx)
+	// G2-2（spec 2026-08-13）：httpSrv 两项错误并入 shutdown Warn（旧实现
+	// `_ =` 全丢弃；wm.Shutdown 内部已对 worker Close 失败 Warn，此处补齐
+	// httpSrv 静默面）。
+	if err := httpSrv.Shutdown(srvCtx); err != nil {
+		log.Warn("http server shutdown failed", logx.Error(err))
+	}
 	cancelSrv()
-	_ = httpSrv.Close()
+	if err := httpSrv.Close(); err != nil {
+		log.Warn("http server close failed", logx.Error(err))
+	}
 	waitForInflight(px, shutdownCtx, log)
 	_ = wm.Shutdown(shutdownCtx)
 	log.Info("shutdown complete")
