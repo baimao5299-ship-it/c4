@@ -68,6 +68,33 @@ const (
 	PricingSourceManual  PricingSource = "manual"
 )
 
+// Defines values for Provider.
+const (
+	ProviderAlibaba     Provider = "alibaba"
+	ProviderAnthropic   Provider = "anthropic"
+	ProviderAzure       Provider = "azure"
+	ProviderBaidu       Provider = "baidu"
+	ProviderBedrock     Provider = "bedrock"
+	ProviderCerebras    Provider = "cerebras"
+	ProviderCohere      Provider = "cohere"
+	ProviderDeepseek    Provider = "deepseek"
+	ProviderFireworksAi Provider = "fireworks_ai"
+	ProviderGroq        Provider = "groq"
+	ProviderHuggingface Provider = "huggingface"
+	ProviderMeta        Provider = "meta"
+	ProviderMistral     Provider = "mistral"
+	ProviderMoonshot    Provider = "moonshot"
+	ProviderNvidia      Provider = "nvidia"
+	ProviderOpenai      Provider = "openai"
+	ProviderOpenrouter  Provider = "openrouter"
+	ProviderPerplexity  Provider = "perplexity"
+	ProviderReplicate   Provider = "replicate"
+	ProviderTogetherAi  Provider = "together_ai"
+	ProviderVertexAi    Provider = "vertex_ai"
+	ProviderXai         Provider = "xai"
+	ProviderZhipu       Provider = "zhipu"
+)
+
 // Defines values for RedemptionStatus.
 const (
 	RedemptionStatusActive   RedemptionStatus = "active"
@@ -139,11 +166,11 @@ const (
 
 // Defines values for TemplatePatchSupportedFormats.
 const (
-	TemplatePatchSupportedFormatsAnthropic         TemplatePatchSupportedFormats = "anthropic"
-	TemplatePatchSupportedFormatsOpenaiChat        TemplatePatchSupportedFormats = "openai-chat"
-	TemplatePatchSupportedFormatsOpenaiImages      TemplatePatchSupportedFormats = "openai-images"
-	TemplatePatchSupportedFormatsOpenaiResponses   TemplatePatchSupportedFormats = "openai-responses"
-	TemplatePatchSupportedFormatsOpenaiResponsesWs TemplatePatchSupportedFormats = "openai-responses-ws"
+	Anthropic         TemplatePatchSupportedFormats = "anthropic"
+	OpenaiChat        TemplatePatchSupportedFormats = "openai-chat"
+	OpenaiImages      TemplatePatchSupportedFormats = "openai-images"
+	OpenaiResponses   TemplatePatchSupportedFormats = "openai-responses"
+	OpenaiResponsesWs TemplatePatchSupportedFormats = "openai-responses-ws"
 )
 
 // Defines values for UserRole.
@@ -472,9 +499,12 @@ type FunctionPrice struct {
 	Model string `json:"Model"`
 
 	// PricePerCall 按单元价（USD/次——litellm 原生口径 input_cost_per_query；内部存储毫分/次，×1e5 换算，1 USD = 100
-	PricePerCall *float64      `json:"PricePerCall"`
-	Source       PricingSource `json:"Source"`
-	UpdatedAt    time.Time     `json:"UpdatedAt"`
+	PricePerCall *float64 `json:"PricePerCall"`
+
+	// Provider litellm_provider（litellm 行才有；manual 行 nil）
+	Provider  *Provider     `json:"Provider"`
+	Source    PricingSource `json:"Source"`
+	UpdatedAt time.Time     `json:"UpdatedAt"`
 }
 
 // FunctionPriceListResponse defines model for FunctionPriceListResponse.
@@ -592,9 +622,12 @@ type ImagePrice struct {
 	OutputCostPerImage *float64 `json:"OutputCostPerImage"`
 
 	// OutputImageTokenPricePerMillion image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算）；null = 无该分量价
-	OutputImageTokenPricePerMillion *float64      `json:"OutputImageTokenPricePerMillion"`
-	Source                          PricingSource `json:"Source"`
-	UpdatedAt                       time.Time     `json:"UpdatedAt"`
+	OutputImageTokenPricePerMillion *float64 `json:"OutputImageTokenPricePerMillion"`
+
+	// Provider litellm_provider（litellm 行才有；manual 行 nil）
+	Provider  *Provider     `json:"Provider"`
+	Source    PricingSource `json:"Source"`
+	UpdatedAt time.Time     `json:"UpdatedAt"`
 }
 
 // ImagePriceListResponse defines model for ImagePriceListResponse.
@@ -683,7 +716,7 @@ type Pricing struct {
 	PromptPricePerMillion float64 `json:"PromptPricePerMillion"`
 
 	// Provider litellm_provider（litellm 行才有；manual 行 nil）
-	Provider *string       `json:"Provider"`
+	Provider *Provider     `json:"Provider"`
 	Source   PricingSource `json:"Source"`
 
 	// SupportsPromptCaching litellm supports_prompt_caching
@@ -773,6 +806,9 @@ type PricingUpsert struct {
 	// PromptPricePerMillion USD/1M tokens（API 边界换算；内部存储毫分——1 USD = 100
 	PromptPricePerMillion float64 `json:"prompt_price_per_million"`
 }
+
+// Provider 主流厂商枚举（litellm_provider 实际字符串，服务前端下拉框）。**litellm_provider 动态**——litellm 更新会加新厂商，此 enum 为主流集合；新厂商出现时扩 enum（DB 筛选不受限——自由字符串等值）
+type Provider string
 
 // RedemptionCode defines model for RedemptionCode.
 type RedemptionCode struct {
@@ -1143,6 +1179,7 @@ type GetFunctionPricesParams struct {
 	Page     *int                           `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *int                           `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Source   *GetFunctionPricesParamsSource `form:"source,omitempty" json:"source,omitempty"`
+	Provider *Provider                      `form:"provider,omitempty" json:"provider,omitempty"`
 	Model    *string                        `form:"model,omitempty" json:"model,omitempty"`
 	Sort     *string                        `form:"sort,omitempty" json:"sort,omitempty"`
 	Order    *GetFunctionPricesParamsOrder  `form:"order,omitempty" json:"order,omitempty"`
@@ -1171,6 +1208,7 @@ type GetImagePriceParams struct {
 	Page     *int                       `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *int                       `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Source   *GetImagePriceParamsSource `form:"source,omitempty" json:"source,omitempty"`
+	Provider *Provider                  `form:"provider,omitempty" json:"provider,omitempty"`
 	Model    *string                    `form:"model,omitempty" json:"model,omitempty"`
 	Sort     *string                    `form:"sort,omitempty" json:"sort,omitempty"`
 	Order    *GetImagePriceParamsOrder  `form:"order,omitempty" json:"order,omitempty"`
@@ -1187,6 +1225,7 @@ type GetPricingParams struct {
 	Page     *int                    `form:"page,omitempty" json:"page,omitempty"`
 	PageSize *int                    `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Source   *GetPricingParamsSource `form:"source,omitempty" json:"source,omitempty"`
+	Provider *Provider               `form:"provider,omitempty" json:"provider,omitempty"`
 	Model    *string                 `form:"model,omitempty" json:"model,omitempty"`
 	Sort     *string                 `form:"sort,omitempty" json:"sort,omitempty"`
 	Order    *GetPricingParamsOrder  `form:"order,omitempty" json:"order,omitempty"`
@@ -2308,6 +2347,14 @@ func (siw *ServerInterfaceWrapper) GetFunctionPrices(w http.ResponseWriter, r *h
 		return
 	}
 
+	// ------------- Optional query parameter "provider" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "provider", r.URL.Query(), &params.Provider)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
 	// ------------- Optional query parameter "model" -------------
 
 	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
@@ -2676,6 +2723,14 @@ func (siw *ServerInterfaceWrapper) GetImagePrice(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// ------------- Optional query parameter "provider" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "provider", r.URL.Query(), &params.Provider)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
 	// ------------- Optional query parameter "model" -------------
 
 	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
@@ -2790,6 +2845,14 @@ func (siw *ServerInterfaceWrapper) GetPricing(w http.ResponseWriter, r *http.Req
 	err = runtime.BindQueryParameter("form", true, false, "source", r.URL.Query(), &params.Source)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "provider" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "provider", r.URL.Query(), &params.Provider)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
 		return
 	}
 

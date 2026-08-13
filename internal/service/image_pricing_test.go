@@ -187,22 +187,22 @@ func TestListImagePrice(t *testing.T) {
 	svc := newImagePricingSvc(t, fs)
 	ctx := context.Background()
 
-	rows, total, err := svc.ListImagePrice(ctx, repository.ListQuery{}, nil, "")
+	rows, total, err := svc.ListImagePrice(ctx, repository.ListQuery{}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)
 
 	src := domain.PricingSourceManual
-	rows, total, err = svc.ListImagePrice(ctx, repository.ListQuery{}, &src, "")
+	rows, total, err = svc.ListImagePrice(ctx, repository.ListQuery{}, &src, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Equal(t, domain.PricingSourceManual, rows[0].Source)
 
 	badSrc := domain.PricingSource("bogus")
-	_, _, err = svc.ListImagePrice(ctx, repository.ListQuery{}, &badSrc, "")
+	_, _, err = svc.ListImagePrice(ctx, repository.ListQuery{}, &badSrc, "", "")
 	require.ErrorIs(t, err, ErrInvalidInput, "非法 source → 400")
 
-	_, _, err = svc.ListImagePrice(ctx, repository.ListQuery{Sort: "bogus"}, nil, "")
+	_, _, err = svc.ListImagePrice(ctx, repository.ListQuery{Sort: "bogus"}, nil, "", "")
 	require.ErrorIs(t, err, ErrInvalidInput, "非法 sort → 400")
 }
 

@@ -683,6 +683,7 @@
     "new": "手动设价",
     "searchModel": "搜索模型",
     "all": "全部来源",
+    "providerAll": "全部厂商",
     "filterEmpty": "没有符合条件的模型价格",
     "emptyTitle": "暂无价格数据",
     "emptyDesc": "先同步官方价格表，或手动为模型设价",

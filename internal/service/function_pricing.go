@@ -54,7 +54,7 @@ func (s *Service) loadFunctionPricing(ctx context.Context) (map[string]*domain.F
 	for offset := 0; ; offset += functionPriceReloadPage {
 		rows, _, err := s.store.ListFunctionPrice(ctx, repository.ListQuery{
 			Limit: functionPriceReloadPage, Offset: offset, Sort: "model", Order: "asc",
-		}, nil, "")
+		}, nil, "", "")
 		if err != nil {
 			if s.log != nil {
 				s.log.Warn("function price snapshot reload failed", logx.Error(err))
@@ -157,12 +157,12 @@ func (s *Service) DeleteManualFunctionPrice(ctx context.Context, model string) e
 
 // ListFunctionPrice 管理端按单元价列表（GET /admin/function-prices）：分页 +
 // source/model 筛选 + sort 白名单校验（非法 → ErrInvalidInput 400）。
-func (s *Service) ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.FunctionPrice, int64, error) {
+func (s *Service) ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.FunctionPrice, int64, error) {
 	if source != nil && !source.Valid() {
 		return nil, 0, fmt.Errorf("%w: invalid source %q", ErrInvalidInput, *source)
 	}
 	if err := validateListQuery(q, listSortFields["function_price"]); err != nil {
 		return nil, 0, err
 	}
-	return s.store.ListFunctionPrice(ctx, q, source, model)
+	return s.store.ListFunctionPrice(ctx, q, source, provider, model)
 }

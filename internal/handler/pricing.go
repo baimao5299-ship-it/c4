@@ -18,8 +18,8 @@ import (
 // 走 writeServiceErr（ErrNotFound → 404、ErrConflict → 409、ErrInvalidInput →
 // 400），sync 拉取上游失败 → 502（ErrPriceFetch）。
 
-// GetPricing 价格列表（增强分页范式 page/page_size + source/model 筛选 +
-// sort 白名单，ServerInterface）。
+// GetPricing 价格列表（增强分页范式 page/page_size + source/provider/model
+// 筛选 + sort 白名单，ServerInterface）。
 func (h *AdminAPI) GetPricing(w http.ResponseWriter, r *http.Request, params GetPricingParams) {
 	q, err := pageToQuery(params.Page, params.PageSize)
 	if err != nil {
@@ -33,7 +33,7 @@ func (h *AdminAPI) GetPricing(w http.ResponseWriter, r *http.Request, params Get
 		s := domain.PricingSource(*params.Source)
 		src = &s
 	}
-	rows, total, err := h.svc.ListPricing(r.Context(), q, src, deref(params.Model))
+	rows, total, err := h.svc.ListPricing(r.Context(), q, src, string(deref(params.Provider)), deref(params.Model))
 	if err != nil {
 		writeServiceErr(w, err)
 		return
@@ -160,7 +160,7 @@ func toAPIPricing(p *domain.Pricing) Pricing {
 		AboveFlexCacheReadPricePerMillion:         millisToUSDPtr(p.AboveFlexCacheReadPricePerMillion),
 		AboveFlexCacheCreationPricePerMillion:     millisToUSDPtr(p.AboveFlexCacheCreationPricePerMillion),
 		FastMultiplier:                            multI64ToNormalPtr(p.FastMultiplier),
-		Provider:                                  p.Provider,
+		Provider:                                  (*Provider)(p.Provider),
 		Mode:                                      p.Mode,
 		SupportsPromptCaching:                     p.SupportsPromptCaching,
 		Source:                                    PricingSource(p.Source),

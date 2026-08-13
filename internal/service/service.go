@@ -176,19 +176,19 @@ type PricingStore interface {
 	UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error)
 	UpsertManual(ctx context.Context, m *repository.PricingManual) (*domain.Pricing, error)
 	DeleteManual(ctx context.Context, model string) error
-	ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error)
+	ListPricing(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.Pricing, int64, error)
 	GetPricing(ctx context.Context, model string) (*domain.Pricing, error)
 	// Task A 双线：图片生成价格（image_price 表；机制与 pricings 同款）。
 	UpsertImageFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error)
 	UpsertImageManual(ctx context.Context, m *repository.ImagePriceManual) (*domain.ImagePrice, error)
 	DeleteImageManual(ctx context.Context, model string) error
-	ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error)
+	ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.ImagePrice, int64, error)
 	GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error)
 	// 价格表三件套：按单元计费功能类价格（function_price 表；机制同款）。
 	UpsertFunctionFromLiteLLM(ctx context.Context, rows []*domain.FunctionPrice) (int, error)
 	UpsertFunctionManual(ctx context.Context, m *repository.FunctionPriceManual) (*domain.FunctionPrice, error)
 	DeleteFunctionManual(ctx context.Context, model string) error
-	ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.FunctionPrice, int64, error)
+	ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.FunctionPrice, int64, error)
 	GetFunctionPrice(ctx context.Context, model string) (*domain.FunctionPrice, error)
 }
 

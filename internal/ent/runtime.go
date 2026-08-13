@@ -74,11 +74,11 @@ func init() {
 	functionpriceFields := schema.FunctionPrice{}.Fields()
 	_ = functionpriceFields
 	// functionpriceDescCreatedAt is the schema descriptor for created_at field.
-	functionpriceDescCreatedAt := functionpriceFields[5].Descriptor()
+	functionpriceDescCreatedAt := functionpriceFields[6].Descriptor()
 	// functionprice.DefaultCreatedAt holds the default value on creation for the created_at field.
 	functionprice.DefaultCreatedAt = functionpriceDescCreatedAt.Default.(func() time.Time)
 	// functionpriceDescUpdatedAt is the schema descriptor for updated_at field.
-	functionpriceDescUpdatedAt := functionpriceFields[6].Descriptor()
+	functionpriceDescUpdatedAt := functionpriceFields[7].Descriptor()
 	// functionprice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	functionprice.DefaultUpdatedAt = functionpriceDescUpdatedAt.Default.(func() time.Time)
 	// functionprice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -112,11 +112,11 @@ func init() {
 	imagepriceFields := schema.ImagePrice{}.Fields()
 	_ = imagepriceFields
 	// imagepriceDescCreatedAt is the schema descriptor for created_at field.
-	imagepriceDescCreatedAt := imagepriceFields[7].Descriptor()
+	imagepriceDescCreatedAt := imagepriceFields[8].Descriptor()
 	// imageprice.DefaultCreatedAt holds the default value on creation for the created_at field.
 	imageprice.DefaultCreatedAt = imagepriceDescCreatedAt.Default.(func() time.Time)
 	// imagepriceDescUpdatedAt is the schema descriptor for updated_at field.
-	imagepriceDescUpdatedAt := imagepriceFields[8].Descriptor()
+	imagepriceDescUpdatedAt := imagepriceFields[9].Descriptor()
 	// imageprice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	imageprice.DefaultUpdatedAt = imagepriceDescUpdatedAt.Default.(func() time.Time)
 	// imageprice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

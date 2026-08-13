@@ -75,8 +75,8 @@ func seedPricing(t *testing.T, h *AdminAPI, f pricing.Fetcher) {
 // 非法参数 400。
 func TestPricingList(t *testing.T) {
 	f := &fakePriceFetcher{res: &pricing.FetchResult{Rows: []*domain.Pricing{
-		{Model: "claude-3-5-sonnet", PromptPricePerMillion: 300000, CompletionPricePerMillion: 1500000, Source: domain.PricingSourceLitellm},
-		{Model: "claude-3-opus", PromptPricePerMillion: 1500000, CompletionPricePerMillion: 7500000, Source: domain.PricingSourceLitellm},
+		{Model: "claude-3-5-sonnet", PromptPricePerMillion: 300000, CompletionPricePerMillion: 1500000, Provider: strPtr("anthropic"), Source: domain.PricingSourceLitellm},
+		{Model: "claude-3-opus", PromptPricePerMillion: 1500000, CompletionPricePerMillion: 7500000, Provider: strPtr("anthropic"), Source: domain.PricingSourceLitellm},
 	}, Skipped: 2}}
 	h, do := newPricingRouter(t, f)
 	seedPricing(t, h, f)
@@ -109,6 +109,34 @@ func TestPricingList(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "model search: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
 	require.Equal(t, int64(2), list.Total, "gpt-4o + gpt-4o-mini")
+
+	// litellm 行回显 provider（拉取直贴）；manual 行 nil
+	rec = do(http.MethodGet, "/admin/pricing?source=litellm", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	for _, p := range list.Rows {
+		require.NotNil(t, p.Provider, "litellm 行回显 provider")
+		require.Equal(t, "anthropic", string(*p.Provider))
+	}
+	rec = do(http.MethodGet, "/admin/pricing?source=manual", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	for _, p := range list.Rows {
+		require.Nil(t, p.Provider, "manual 行 provider nil（无厂商概念）")
+	}
+
+	// provider 等值筛选：命中 anthropic → 2 行；不命中 → 0 行；非 enum 可筛
+	rec = do(http.MethodGet, "/admin/pricing?provider=anthropic", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Equal(t, int64(2), list.Total, "provider 等值筛选命中（claude 两行）")
+	rec = do(http.MethodGet, "/admin/pricing?provider=openai", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Zero(t, list.Total, "provider 不命中（manual 行无 provider）")
+	rec = do(http.MethodGet, "/admin/pricing?provider=some_future_vendor", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Zero(t, list.Total, "非 enum 自由字符串可筛（DB 自由字符串等值）")
+	// provider + model 组合筛选
+	rec = do(http.MethodGet, "/admin/pricing?provider=anthropic&model=claude-3-opus", "")
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	require.Equal(t, int64(1), list.Total)
 
 	// 排序 + 分页
 	rec = do(http.MethodGet, "/admin/pricing?sort=model&order=desc", "")

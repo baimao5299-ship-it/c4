@@ -71,6 +71,20 @@ func (_c *ImagePriceCreate) SetNillableOutputCostPerImageMilli(v *int64) *ImageP
 	return _c
 }
 
+// SetProvider sets the "provider" field.
+func (_c *ImagePriceCreate) SetProvider(v string) *ImagePriceCreate {
+	_c.mutation.SetProvider(v)
+	return _c
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_c *ImagePriceCreate) SetNillableProvider(v *string) *ImagePriceCreate {
+	if v != nil {
+		_c.SetProvider(*v)
+	}
+	return _c
+}
+
 // SetRaw sets the "raw" field.
 func (_c *ImagePriceCreate) SetRaw(v json.RawMessage) *ImagePriceCreate {
 	_c.mutation.SetRaw(v)
@@ -230,6 +244,10 @@ func (_c *ImagePriceCreate) createSpec() (*ImagePrice, *sqlgraph.CreateSpec) {
 		_spec.SetField(imageprice.FieldOutputCostPerImageMilli, field.TypeInt64, value)
 		_node.OutputCostPerImageMilli = &value
 	}
+	if value, ok := _c.mutation.Provider(); ok {
+		_spec.SetField(imageprice.FieldProvider, field.TypeString, value)
+		_node.Provider = &value
+	}
 	if value, ok := _c.mutation.Raw(); ok {
 		_spec.SetField(imageprice.FieldRaw, field.TypeJSON, value)
 		_node.Raw = value
@@ -379,6 +397,24 @@ func (u *ImagePriceUpsert) AddOutputCostPerImageMilli(v int64) *ImagePriceUpsert
 // ClearOutputCostPerImageMilli clears the value of the "output_cost_per_image_milli" field.
 func (u *ImagePriceUpsert) ClearOutputCostPerImageMilli() *ImagePriceUpsert {
 	u.SetNull(imageprice.FieldOutputCostPerImageMilli)
+	return u
+}
+
+// SetProvider sets the "provider" field.
+func (u *ImagePriceUpsert) SetProvider(v string) *ImagePriceUpsert {
+	u.Set(imageprice.FieldProvider, v)
+	return u
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *ImagePriceUpsert) UpdateProvider() *ImagePriceUpsert {
+	u.SetExcluded(imageprice.FieldProvider)
+	return u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *ImagePriceUpsert) ClearProvider() *ImagePriceUpsert {
+	u.SetNull(imageprice.FieldProvider)
 	return u
 }
 
@@ -579,6 +615,27 @@ func (u *ImagePriceUpsertOne) UpdateOutputCostPerImageMilli() *ImagePriceUpsertO
 func (u *ImagePriceUpsertOne) ClearOutputCostPerImageMilli() *ImagePriceUpsertOne {
 	return u.Update(func(s *ImagePriceUpsert) {
 		s.ClearOutputCostPerImageMilli()
+	})
+}
+
+// SetProvider sets the "provider" field.
+func (u *ImagePriceUpsertOne) SetProvider(v string) *ImagePriceUpsertOne {
+	return u.Update(func(s *ImagePriceUpsert) {
+		s.SetProvider(v)
+	})
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *ImagePriceUpsertOne) UpdateProvider() *ImagePriceUpsertOne {
+	return u.Update(func(s *ImagePriceUpsert) {
+		s.UpdateProvider()
+	})
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *ImagePriceUpsertOne) ClearProvider() *ImagePriceUpsertOne {
+	return u.Update(func(s *ImagePriceUpsert) {
+		s.ClearProvider()
 	})
 }
 
@@ -954,6 +1011,27 @@ func (u *ImagePriceUpsertBulk) UpdateOutputCostPerImageMilli() *ImagePriceUpsert
 func (u *ImagePriceUpsertBulk) ClearOutputCostPerImageMilli() *ImagePriceUpsertBulk {
 	return u.Update(func(s *ImagePriceUpsert) {
 		s.ClearOutputCostPerImageMilli()
+	})
+}
+
+// SetProvider sets the "provider" field.
+func (u *ImagePriceUpsertBulk) SetProvider(v string) *ImagePriceUpsertBulk {
+	return u.Update(func(s *ImagePriceUpsert) {
+		s.SetProvider(v)
+	})
+}
+
+// UpdateProvider sets the "provider" field to the value that was provided on create.
+func (u *ImagePriceUpsertBulk) UpdateProvider() *ImagePriceUpsertBulk {
+	return u.Update(func(s *ImagePriceUpsert) {
+		s.UpdateProvider()
+	})
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (u *ImagePriceUpsertBulk) ClearProvider() *ImagePriceUpsertBulk {
+	return u.Update(func(s *ImagePriceUpsert) {
+		s.ClearProvider()
 	})
 }
 

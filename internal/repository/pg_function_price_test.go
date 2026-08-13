@@ -63,14 +63,20 @@ func TestFunctionPricePriorityPG(t *testing.T) {
 
 	t.Run("manual upsert takes over litellm row", func(t *testing.T) {
 		m := "c3api-fn-pri-litellm-a"
-		n, err := repos.UpsertFunctionFromLiteLLM(ctx, []*domain.FunctionPrice{functionLitellmRow(m, 5000)})
+		row := functionLitellmRow(m, 5000)
+		row.Provider = strPtrPG("openai")
+		n, err := repos.UpsertFunctionFromLiteLLM(ctx, []*domain.FunctionPrice{row})
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
+		got, err := repos.GetFunctionPrice(ctx, m)
+		require.NoError(t, err)
+		require.NotNil(t, got.Provider, "litellm 行带 provider")
 
 		p, err := repos.UpsertFunctionManual(ctx, functionManualReq(m, 77))
 		require.NoError(t, err)
 		require.Equal(t, domain.PricingSourceManual, p.Source)
 		require.Equal(t, int64(77), *p.PricePerCall, "手动设价接管 litellm 行")
+		require.Nil(t, p.Provider, "manual 接管后 provider 清为 NULL（S-2）")
 	})
 
 	t.Run("delete manual then sync restores litellm price", func(t *testing.T) {
@@ -118,6 +124,7 @@ func TestFunctionPriceSeedPG(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.DefaultCodexSearchPricePerCall, *p.PricePerCall, "种子价 $0.01/次 = 1000 毫分")
 	require.Equal(t, domain.PricingSourceManual, p.Source, "种子 source=manual")
+	require.Nil(t, p.Provider, "codex-search 种子为 manual 行，provider 恒 nil（无厂商概念）")
 
 	// 幂等：重复调用不报错、不覆盖
 	require.NoError(t, repos.EnsureFunctionPriceSeed(ctx))
@@ -201,38 +208,133 @@ func TestFunctionPriceListPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()
 
-	_, err := repos.UpsertFunctionFromLiteLLM(ctx, []*domain.FunctionPrice{
+	fnRows := []*domain.FunctionPrice{
 		functionLitellmRow("search-a", 10),
 		functionLitellmRow("search-b", 20),
 		functionLitellmRow("search-c", 30),
-	})
+	}
+	fnRows[0].Provider = strPtrPG("openai") // litellm 行带 provider（拉取直贴）
+	fnRows[2].Provider = strPtrPG("openai")
+	_, err := repos.UpsertFunctionFromLiteLLM(ctx, fnRows)
 	require.NoError(t, err)
 	_, err = repos.UpsertFunctionManual(ctx, functionManualReq("codex-search", 1000))
 	require.NoError(t, err)
 
-	rows, total, err := repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20, Sort: "model", Order: "asc"}, nil, "")
+	rows, total, err := repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20, Sort: "model", Order: "asc"}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(4), total)
 	require.Len(t, rows, 4)
 	require.Equal(t, "codex-search", rows[0].Model, "model asc 排序")
 
 	litellm := domain.PricingSourceLitellm
-	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20}, &litellm, "")
+	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20}, &litellm, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total, "source 筛选")
 
-	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20}, nil, "SEARCH-")
+	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20}, nil, "", "SEARCH-")
 	require.NoError(t, err)
 	require.Equal(t, int64(3), total, "model 模糊（大小写不敏感；search- 前缀命中三行，不含 codex-search）")
 
-	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "asc"}, nil, "")
+	// 筛选 provider=openai → 2 行（search-a/search-c；manual 行无 provider 不命中）
+	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20, Sort: "model", Order: "asc"}, nil, "openai", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total, "provider 等值筛选")
+	require.Equal(t, "search-a", rows[0].Model)
+	require.NotNil(t, rows[0].Provider)
+	require.Equal(t, "openai", *rows[0].Provider, "litellm 行回显 provider")
+
+	// provider 不命中 → 0 行
+	_, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20}, nil, "anthropic", "")
+	require.NoError(t, err)
+	require.Zero(t, total)
+
+	rows, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 2, Offset: 0, Sort: "model", Order: "asc"}, nil, "", "")
 	require.NoError(t, err)
 	require.Equal(t, int64(4), total)
 	require.Len(t, rows, 2, "分页第一页两行")
 
-	_, _, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20, Sort: "bogus"}, nil, "")
+	_, _, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 20, Sort: "bogus"}, nil, "", "")
 	require.ErrorIs(t, err, repository.ErrInvalidSort, "sort 白名单外 → ErrInvalidSort")
 
 	_, err = repos.GetFunctionPrice(ctx, "c3api-fn-missing")
 	require.ErrorIs(t, err, repository.ErrNotFound)
+}
+
+// TestFunctionPriceProviderPG provider 元数据列（spec 三价格表厂商筛选）：
+// litellm 拉取行 provider 落库 roundtrip（S-1 raw SQL 列清单验证）+ 更新路径
+// provider 随行更新；manual 行（含 codex-search 种子与接管）provider 恒 nil
+// （S-2）；provider 等值筛选（命中/nil 不筛/非 enum 自由字符串可筛）。
+func TestFunctionPriceProviderPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	t.Run("litellm provider column roundtrip and update", func(t *testing.T) {
+		row := functionLitellmRow("c3api-fn-prov-a", 10)
+		row.Provider = strPtrPG("openai")
+		n, err := repos.UpsertFunctionFromLiteLLM(ctx, []*domain.FunctionPrice{row})
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+
+		got, err := repos.GetFunctionPrice(ctx, "c3api-fn-prov-a")
+		require.NoError(t, err)
+		require.NotNil(t, got.Provider, "litellm 行 provider 落库")
+		require.Equal(t, "openai", *got.Provider)
+
+		// 更新路径：litellm 行再同步 → provider 随行更新（覆盖旧值）
+		row2 := functionLitellmRow("c3api-fn-prov-a", 20)
+		row2.Provider = strPtrPG("groq")
+		_, err = repos.UpsertFunctionFromLiteLLM(ctx, []*domain.FunctionPrice{row2})
+		require.NoError(t, err)
+		got, err = repos.GetFunctionPrice(ctx, "c3api-fn-prov-a")
+		require.NoError(t, err)
+		require.Equal(t, "groq", *got.Provider, "provider 随 litellm 更新")
+
+		// 无 litellm_provider 条目 → NULL
+		_, err = repos.UpsertFunctionFromLiteLLM(ctx, []*domain.FunctionPrice{functionLitellmRow("c3api-fn-prov-nil", 5)})
+		require.NoError(t, err)
+		got, err = repos.GetFunctionPrice(ctx, "c3api-fn-prov-nil")
+		require.NoError(t, err)
+		require.Nil(t, got.Provider)
+	})
+
+	t.Run("manual row provider nil", func(t *testing.T) {
+		p, err := repos.UpsertFunctionManual(ctx, functionManualReq("c3api-fn-prov-manual", 42))
+		require.NoError(t, err)
+		require.Nil(t, p.Provider, "manual 行 provider 恒 nil（无厂商概念）")
+	})
+
+	t.Run("provider equality filter", func(t *testing.T) {
+		rows := []*domain.FunctionPrice{
+			functionLitellmRow("c3api-fn-f-openai", 10),
+			functionLitellmRow("c3api-fn-f-anthropic", 20),
+			functionLitellmRow("c3api-fn-f-future", 30),
+		}
+		rows[0].Provider = strPtrPG("openai")
+		rows[1].Provider = strPtrPG("anthropic")
+		rows[2].Provider = strPtrPG("some_future_vendor") // 非 enum 值（litellm 未来新厂商）
+		_, err := repos.UpsertFunctionFromLiteLLM(ctx, rows)
+		require.NoError(t, err)
+
+		// 等值命中
+		got, total, err := repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 10, Sort: "model", Order: "asc"}, nil, "openai", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(1), total)
+		require.Equal(t, "c3api-fn-f-openai", got[0].Model)
+
+		// 不命中
+		_, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 10}, nil, "bedrock", "")
+		require.NoError(t, err)
+		require.Zero(t, total)
+
+		// nil 不筛（全量 = 前序子测试 3 行 + 本子测试 3 行）
+		_, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 10}, nil, "", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(6), total)
+
+		// 非 enum 自由字符串可筛（litellm_provider 动态，DB 不受枚举约束）
+		got, total, err = repos.ListFunctionPrice(ctx, repository.ListQuery{Limit: 10}, nil, "some_future_vendor", "")
+		require.NoError(t, err)
+		require.Equal(t, int64(1), total)
+		require.Equal(t, "c3api-fn-f-future", got[0].Model)
+	})
 }

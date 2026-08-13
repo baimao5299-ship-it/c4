@@ -22,6 +22,8 @@ const (
 	FieldOutputImageTokenPricePerMillion = "output_image_token_price_per_million"
 	// FieldOutputCostPerImageMilli holds the string denoting the output_cost_per_image_milli field in the database.
 	FieldOutputCostPerImageMilli = "output_cost_per_image_milli"
+	// FieldProvider holds the string denoting the provider field in the database.
+	FieldProvider = "provider"
 	// FieldRaw holds the string denoting the raw field in the database.
 	FieldRaw = "raw"
 	// FieldSource holds the string denoting the source field in the database.
@@ -41,6 +43,7 @@ var Columns = []string{
 	FieldInputImageTokenPricePerMillion,
 	FieldOutputImageTokenPricePerMillion,
 	FieldOutputCostPerImageMilli,
+	FieldProvider,
 	FieldRaw,
 	FieldSource,
 	FieldCreatedAt,
@@ -115,6 +118,11 @@ func ByOutputImageTokenPricePerMillion(opts ...sql.OrderTermOption) OrderOption 
 // ByOutputCostPerImageMilli orders the results by the output_cost_per_image_milli field.
 func ByOutputCostPerImageMilli(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOutputCostPerImageMilli, opts...).ToFunc()
+}
+
+// ByProvider orders the results by the provider field.
+func ByProvider(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProvider, opts...).ToFunc()
 }
 
 // BySource orders the results by the source field.

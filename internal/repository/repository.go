@@ -504,8 +504,8 @@ func (r *Repository) DeleteManual(ctx context.Context, model string) error {
 	return r.Pricing.DeleteManual(ctx, model)
 }
 
-func (r *Repository) ListPricing(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.Pricing, int64, error) {
-	return r.Pricing.ListPricing(ctx, q, source, model)
+func (r *Repository) ListPricing(ctx context.Context, q ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.Pricing, int64, error) {
+	return r.Pricing.ListPricing(ctx, q, source, provider, model)
 }
 
 func (r *Repository) GetPricing(ctx context.Context, model string) (*domain.Pricing, error) {
@@ -526,8 +526,8 @@ func (r *Repository) DeleteImageManual(ctx context.Context, model string) error 
 	return r.ImagePrice.DeleteManual(ctx, model)
 }
 
-func (r *Repository) ListImagePrice(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
-	return r.ImagePrice.ListImagePrice(ctx, q, source, model)
+func (r *Repository) ListImagePrice(ctx context.Context, q ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.ImagePrice, int64, error) {
+	return r.ImagePrice.ListImagePrice(ctx, q, source, provider, model)
 }
 
 func (r *Repository) GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error) {
@@ -548,8 +548,8 @@ func (r *Repository) DeleteFunctionManual(ctx context.Context, model string) err
 	return r.FunctionPrice.DeleteManual(ctx, model)
 }
 
-func (r *Repository) ListFunctionPrice(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.FunctionPrice, int64, error) {
-	return r.FunctionPrice.ListFunctionPrice(ctx, q, source, model)
+func (r *Repository) ListFunctionPrice(ctx context.Context, q ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.FunctionPrice, int64, error) {
+	return r.FunctionPrice.ListFunctionPrice(ctx, q, source, provider, model)
 }
 
 func (r *Repository) GetFunctionPrice(ctx context.Context, model string) (*domain.FunctionPrice, error) {

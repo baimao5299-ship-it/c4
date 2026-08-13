@@ -64,6 +64,11 @@ func PricePerCall(v int64) predicate.FunctionPrice {
 	return predicate.FunctionPrice(sql.FieldEQ(FieldPricePerCall, v))
 }
 
+// Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
+func Provider(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldEQ(FieldProvider, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.FunctionPrice {
 	return predicate.FunctionPrice(sql.FieldEQ(FieldCreatedAt, v))
@@ -187,6 +192,81 @@ func PricePerCallIsNil() predicate.FunctionPrice {
 // PricePerCallNotNil applies the NotNil predicate on the "price_per_call" field.
 func PricePerCallNotNil() predicate.FunctionPrice {
 	return predicate.FunctionPrice(sql.FieldNotNull(FieldPricePerCall))
+}
+
+// ProviderEQ applies the EQ predicate on the "provider" field.
+func ProviderEQ(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldEQ(FieldProvider, v))
+}
+
+// ProviderNEQ applies the NEQ predicate on the "provider" field.
+func ProviderNEQ(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldNEQ(FieldProvider, v))
+}
+
+// ProviderIn applies the In predicate on the "provider" field.
+func ProviderIn(vs ...string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldIn(FieldProvider, vs...))
+}
+
+// ProviderNotIn applies the NotIn predicate on the "provider" field.
+func ProviderNotIn(vs ...string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldNotIn(FieldProvider, vs...))
+}
+
+// ProviderGT applies the GT predicate on the "provider" field.
+func ProviderGT(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldGT(FieldProvider, v))
+}
+
+// ProviderGTE applies the GTE predicate on the "provider" field.
+func ProviderGTE(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldGTE(FieldProvider, v))
+}
+
+// ProviderLT applies the LT predicate on the "provider" field.
+func ProviderLT(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldLT(FieldProvider, v))
+}
+
+// ProviderLTE applies the LTE predicate on the "provider" field.
+func ProviderLTE(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldLTE(FieldProvider, v))
+}
+
+// ProviderContains applies the Contains predicate on the "provider" field.
+func ProviderContains(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldContains(FieldProvider, v))
+}
+
+// ProviderHasPrefix applies the HasPrefix predicate on the "provider" field.
+func ProviderHasPrefix(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldHasPrefix(FieldProvider, v))
+}
+
+// ProviderHasSuffix applies the HasSuffix predicate on the "provider" field.
+func ProviderHasSuffix(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldHasSuffix(FieldProvider, v))
+}
+
+// ProviderIsNil applies the IsNil predicate on the "provider" field.
+func ProviderIsNil() predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldIsNull(FieldProvider))
+}
+
+// ProviderNotNil applies the NotNil predicate on the "provider" field.
+func ProviderNotNil() predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldNotNull(FieldProvider))
+}
+
+// ProviderEqualFold applies the EqualFold predicate on the "provider" field.
+func ProviderEqualFold(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldEqualFold(FieldProvider, v))
+}
+
+// ProviderContainsFold applies the ContainsFold predicate on the "provider" field.
+func ProviderContainsFold(v string) predicate.FunctionPrice {
+	return predicate.FunctionPrice(sql.FieldContainsFold(FieldProvider, v))
 }
 
 // RawIsNil applies the IsNil predicate on the "raw" field.

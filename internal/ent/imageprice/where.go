@@ -74,6 +74,11 @@ func OutputCostPerImageMilli(v int64) predicate.ImagePrice {
 	return predicate.ImagePrice(sql.FieldEQ(FieldOutputCostPerImageMilli, v))
 }
 
+// Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
+func Provider(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldEQ(FieldProvider, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.ImagePrice {
 	return predicate.ImagePrice(sql.FieldEQ(FieldCreatedAt, v))
@@ -297,6 +302,81 @@ func OutputCostPerImageMilliIsNil() predicate.ImagePrice {
 // OutputCostPerImageMilliNotNil applies the NotNil predicate on the "output_cost_per_image_milli" field.
 func OutputCostPerImageMilliNotNil() predicate.ImagePrice {
 	return predicate.ImagePrice(sql.FieldNotNull(FieldOutputCostPerImageMilli))
+}
+
+// ProviderEQ applies the EQ predicate on the "provider" field.
+func ProviderEQ(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldEQ(FieldProvider, v))
+}
+
+// ProviderNEQ applies the NEQ predicate on the "provider" field.
+func ProviderNEQ(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldNEQ(FieldProvider, v))
+}
+
+// ProviderIn applies the In predicate on the "provider" field.
+func ProviderIn(vs ...string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldIn(FieldProvider, vs...))
+}
+
+// ProviderNotIn applies the NotIn predicate on the "provider" field.
+func ProviderNotIn(vs ...string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldNotIn(FieldProvider, vs...))
+}
+
+// ProviderGT applies the GT predicate on the "provider" field.
+func ProviderGT(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldGT(FieldProvider, v))
+}
+
+// ProviderGTE applies the GTE predicate on the "provider" field.
+func ProviderGTE(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldGTE(FieldProvider, v))
+}
+
+// ProviderLT applies the LT predicate on the "provider" field.
+func ProviderLT(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldLT(FieldProvider, v))
+}
+
+// ProviderLTE applies the LTE predicate on the "provider" field.
+func ProviderLTE(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldLTE(FieldProvider, v))
+}
+
+// ProviderContains applies the Contains predicate on the "provider" field.
+func ProviderContains(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldContains(FieldProvider, v))
+}
+
+// ProviderHasPrefix applies the HasPrefix predicate on the "provider" field.
+func ProviderHasPrefix(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldHasPrefix(FieldProvider, v))
+}
+
+// ProviderHasSuffix applies the HasSuffix predicate on the "provider" field.
+func ProviderHasSuffix(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldHasSuffix(FieldProvider, v))
+}
+
+// ProviderIsNil applies the IsNil predicate on the "provider" field.
+func ProviderIsNil() predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldIsNull(FieldProvider))
+}
+
+// ProviderNotNil applies the NotNil predicate on the "provider" field.
+func ProviderNotNil() predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldNotNull(FieldProvider))
+}
+
+// ProviderEqualFold applies the EqualFold predicate on the "provider" field.
+func ProviderEqualFold(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldEqualFold(FieldProvider, v))
+}
+
+// ProviderContainsFold applies the ContainsFold predicate on the "provider" field.
+func ProviderContainsFold(v string) predicate.ImagePrice {
+	return predicate.ImagePrice(sql.FieldContainsFold(FieldProvider, v))
 }
 
 // RawIsNil applies the IsNil predicate on the "raw" field.

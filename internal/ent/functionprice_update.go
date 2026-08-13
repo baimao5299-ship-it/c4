@@ -71,6 +71,26 @@ func (_u *FunctionPriceUpdate) ClearPricePerCall() *FunctionPriceUpdate {
 	return _u
 }
 
+// SetProvider sets the "provider" field.
+func (_u *FunctionPriceUpdate) SetProvider(v string) *FunctionPriceUpdate {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *FunctionPriceUpdate) SetNillableProvider(v *string) *FunctionPriceUpdate {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *FunctionPriceUpdate) ClearProvider() *FunctionPriceUpdate {
+	_u.mutation.ClearProvider()
+	return _u
+}
+
 // SetRaw sets the "raw" field.
 func (_u *FunctionPriceUpdate) SetRaw(v json.RawMessage) *FunctionPriceUpdate {
 	_u.mutation.SetRaw(v)
@@ -198,6 +218,12 @@ func (_u *FunctionPriceUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	if _u.mutation.PricePerCallCleared() {
 		_spec.ClearField(functionprice.FieldPricePerCall, field.TypeInt64)
 	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(functionprice.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(functionprice.FieldProvider, field.TypeString)
+	}
 	if value, ok := _u.mutation.Raw(); ok {
 		_spec.SetField(functionprice.FieldRaw, field.TypeJSON, value)
 	}
@@ -276,6 +302,26 @@ func (_u *FunctionPriceUpdateOne) AddPricePerCall(v int64) *FunctionPriceUpdateO
 // ClearPricePerCall clears the value of the "price_per_call" field.
 func (_u *FunctionPriceUpdateOne) ClearPricePerCall() *FunctionPriceUpdateOne {
 	_u.mutation.ClearPricePerCall()
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *FunctionPriceUpdateOne) SetProvider(v string) *FunctionPriceUpdateOne {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *FunctionPriceUpdateOne) SetNillableProvider(v *string) *FunctionPriceUpdateOne {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *FunctionPriceUpdateOne) ClearProvider() *FunctionPriceUpdateOne {
+	_u.mutation.ClearProvider()
 	return _u
 }
 
@@ -435,6 +481,12 @@ func (_u *FunctionPriceUpdateOne) sqlSave(ctx context.Context) (_node *FunctionP
 	}
 	if _u.mutation.PricePerCallCleared() {
 		_spec.ClearField(functionprice.FieldPricePerCall, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(functionprice.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(functionprice.FieldProvider, field.TypeString)
 	}
 	if value, ok := _u.mutation.Raw(); ok {
 		_spec.SetField(functionprice.FieldRaw, field.TypeJSON, value)

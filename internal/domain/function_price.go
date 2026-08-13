@@ -20,6 +20,7 @@ type FunctionPrice struct {
 	ID           int64
 	Model        string
 	PricePerCall *int64          // 毫分/单元（次/秒等）；nil = 无按单元价
+	Provider     *string         // litellm_provider（litellm 行才有；manual 行 nil）
 	Raw          json.RawMessage // litellm 原始条目完整镜像（manual 行恒 nil）
 	Source       PricingSource
 	CreatedAt    time.Time

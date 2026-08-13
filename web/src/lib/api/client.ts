@@ -157,16 +157,16 @@ export class ApiClient {
   deactivateRedemptionCodesBatch = (ids: number[]) => this.request<components['schemas']['BatchDeactivateResponse']>('/redemption-codes/batch-deactivate', { method: 'POST', body: JSON.stringify({ ids }) })
   getRedemptionCodeUses = (id: number) => this.request<components['schemas']['RedemptionUseListResponse']>(`/redemption-codes/${id}/uses`)
   // —— 定价 ——
-  listPricing = (p?: { page?: number; page_size?: number; source?: string; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['PricingListResponse']>('/pricing', { params: toQuery(p) })
+  listPricing = (p?: { page?: number; page_size?: number; source?: string; provider?: components['schemas']['Provider']; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['PricingListResponse']>('/pricing', { params: toQuery(p) })
   syncPricing = () => this.request<components['schemas']['PricingSyncResponse']>('/pricing/sync', { method: 'POST' })
   upsertPricing = (model: string, b: components['schemas']['PricingUpsert']) => this.request<components['schemas']['Pricing']>(`/pricing/${model}`, { method: 'PUT', body: JSON.stringify(b) })
   deletePricing = (model: string) => this.request<components['schemas']['DeletedResponse']>(`/pricing/${model}`, { method: 'DELETE' })
   // —— 图片价格（Task A 数据面计费来源）——
-  getImagePrices = (p?: { page?: number; page_size?: number; source?: string; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['ImagePriceListResponse']>('/image-price', { params: toQuery(p) })
+  getImagePrices = (p?: { page?: number; page_size?: number; source?: string; provider?: components['schemas']['Provider']; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['ImagePriceListResponse']>('/image-price', { params: toQuery(p) })
   putImagePrice = (model: string, b: components['schemas']['ImagePriceUpsert']) => this.request<components['schemas']['ImagePrice']>(`/image-price/${model}`, { method: 'PUT', body: JSON.stringify(b) })
   deleteImagePrice = (model: string) => this.request<components['schemas']['DeletedResponse']>(`/image-price/${model}`, { method: 'DELETE' })
   // —— 按单元功能价（search 起，per-unit 端点复用）——
-  getFunctionPrices = (p?: { page?: number; page_size?: number; source?: string; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['FunctionPriceListResponse']>('/function-prices', { params: toQuery(p) })
+  getFunctionPrices = (p?: { page?: number; page_size?: number; source?: string; provider?: components['schemas']['Provider']; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['FunctionPriceListResponse']>('/function-prices', { params: toQuery(p) })
   getFunctionPrice = (model: string) => this.request<components['schemas']['FunctionPrice']>(`/function-prices/${model}`)
   putFunctionPrice = (model: string, b: components['schemas']['FunctionPriceUpsert']) => this.request<components['schemas']['FunctionPrice']>(`/function-prices/${model}`, { method: 'PUT', body: JSON.stringify(b) })
   deleteFunctionPrice = (model: string) => this.request<components['schemas']['DeletedResponse']>(`/function-prices/${model}`, { method: 'DELETE' })

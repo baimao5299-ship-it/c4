@@ -114,6 +114,7 @@ const litellmFixtureJSON = `{
   },
   "search-model-1": {
     "input_cost_per_query": 0.0001,
+    "litellm_provider": "openai",
     "mode": "search"
   },
   "search-noquery": {
@@ -275,6 +276,8 @@ func TestParseModeRouting(t *testing.T) {
 	require.NotNil(t, sf.PricePerCall)
 	require.Equal(t, int64(10), *sf.PricePerCall, "0.0001 USD/次 × 1e5 = 10 毫分/次")
 	require.Equal(t, domain.PricingSourceLitellm, sf.Source)
+	require.NotNil(t, sf.Provider, "litellm_provider 提取（litellm 行才有）")
+	require.Equal(t, "openai", *sf.Provider)
 	require.NotNil(t, sf.Raw, "raw 完整镜像")
 	require.Contains(t, string(sf.Raw), "input_cost_per_query", "raw 含 per-query 价字段")
 	require.Nil(t, rows["search-model-1"], "search 不入 pricings")
@@ -624,17 +627,20 @@ func TestParseImageRows(t *testing.T) {
 	require.Equal(t, int64(3000000), *g.OutputImageTokenPricePerMillion, "3e-05 × 1e11 = 3000000")
 	require.Nil(t, g.OutputCostPerImageMilli, "无 per-image 价 → nil")
 	require.Equal(t, domain.PricingSourceLitellm, g.Source)
+	require.NotNil(t, g.Provider, "litellm_provider 提取（image 行 litellm 数据直贴）")
+	require.Equal(t, "openai", *g.Provider)
 	require.NotNil(t, g.Raw, "raw 完整镜像")
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(g.Raw, &raw))
 	require.Equal(t, "openai", raw["litellm_provider"], "raw 保留元数据")
 
 	// aiml 形态：0.054 USD/张 × 1e5 = 5400 毫分/张（per-image 换算系与 token
-	// 价 ×1e11 不同——混用错 6 个数量级）
+	// 价 ×1e11 不同——混用错 6 个数量级）；无 litellm_provider → provider nil
 	a := byModel["aiml-image"]
 	require.Nil(t, a.InputImageTokenPricePerMillion, "无 image token 价 → nil")
 	require.NotNil(t, a.OutputCostPerImageMilli)
 	require.Equal(t, int64(5400), *a.OutputCostPerImageMilli, "0.054 × 1e5 = 5400 毫分/张")
+	require.Nil(t, a.Provider, "条目无 litellm_provider → nil")
 
 	// dual-pricing：mode=image_generation 仅入 image_price——带文本价也不入
 	// pricings（两表按 mode 互斥）
@@ -697,5 +703,6 @@ func TestParseImageRowsNoImageFields(t *testing.T) {
 	require.Len(t, res.Rows, 6, "文本价判定不变（含 responses 扩展）")
 	require.Len(t, res.ImageRows, 1, "仅 image_edit 面行入 image_price")
 	require.Equal(t, "gpt-image-edit-1", res.ImageRows[0].Model)
+	require.Nil(t, res.ImageRows[0].Provider, "image_edit 条目无 litellm_provider → nil")
 	require.Equal(t, 11, res.Skipped, "Skipped 语义含 image 判定但无 image 字段条目不计额外 skip")
 }

@@ -22,6 +22,8 @@ type FunctionPrice struct {
 	Model string `json:"model,omitempty"`
 	// PricePerCall holds the value of the "price_per_call" field.
 	PricePerCall *int64 `json:"price_per_call,omitempty"`
+	// Provider holds the value of the "provider" field.
+	Provider *string `json:"provider,omitempty"`
 	// Raw holds the value of the "raw" field.
 	Raw json.RawMessage `json:"raw,omitempty"`
 	// Source holds the value of the "source" field.
@@ -42,7 +44,7 @@ func (*FunctionPrice) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case functionprice.FieldID, functionprice.FieldPricePerCall:
 			values[i] = new(sql.NullInt64)
-		case functionprice.FieldModel, functionprice.FieldSource:
+		case functionprice.FieldModel, functionprice.FieldProvider, functionprice.FieldSource:
 			values[i] = new(sql.NullString)
 		case functionprice.FieldCreatedAt, functionprice.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -79,6 +81,13 @@ func (_m *FunctionPrice) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.PricePerCall = new(int64)
 				*_m.PricePerCall = value.Int64
+			}
+		case functionprice.FieldProvider:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider", values[i])
+			} else if value.Valid {
+				_m.Provider = new(string)
+				*_m.Provider = value.String
 			}
 		case functionprice.FieldRaw:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -148,6 +157,11 @@ func (_m *FunctionPrice) String() string {
 	if v := _m.PricePerCall; v != nil {
 		builder.WriteString("price_per_call=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.Provider; v != nil {
+		builder.WriteString("provider=")
+		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
 	builder.WriteString("raw=")

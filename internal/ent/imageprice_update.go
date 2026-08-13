@@ -125,6 +125,26 @@ func (_u *ImagePriceUpdate) ClearOutputCostPerImageMilli() *ImagePriceUpdate {
 	return _u
 }
 
+// SetProvider sets the "provider" field.
+func (_u *ImagePriceUpdate) SetProvider(v string) *ImagePriceUpdate {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *ImagePriceUpdate) SetNillableProvider(v *string) *ImagePriceUpdate {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *ImagePriceUpdate) ClearProvider() *ImagePriceUpdate {
+	_u.mutation.ClearProvider()
+	return _u
+}
+
 // SetRaw sets the "raw" field.
 func (_u *ImagePriceUpdate) SetRaw(v json.RawMessage) *ImagePriceUpdate {
 	_u.mutation.SetRaw(v)
@@ -270,6 +290,12 @@ func (_u *ImagePriceUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	if _u.mutation.OutputCostPerImageMilliCleared() {
 		_spec.ClearField(imageprice.FieldOutputCostPerImageMilli, field.TypeInt64)
 	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(imageprice.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(imageprice.FieldProvider, field.TypeString)
+	}
 	if value, ok := _u.mutation.Raw(); ok {
 		_spec.SetField(imageprice.FieldRaw, field.TypeJSON, value)
 	}
@@ -402,6 +428,26 @@ func (_u *ImagePriceUpdateOne) AddOutputCostPerImageMilli(v int64) *ImagePriceUp
 // ClearOutputCostPerImageMilli clears the value of the "output_cost_per_image_milli" field.
 func (_u *ImagePriceUpdateOne) ClearOutputCostPerImageMilli() *ImagePriceUpdateOne {
 	_u.mutation.ClearOutputCostPerImageMilli()
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *ImagePriceUpdateOne) SetProvider(v string) *ImagePriceUpdateOne {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *ImagePriceUpdateOne) SetNillableProvider(v *string) *ImagePriceUpdateOne {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// ClearProvider clears the value of the "provider" field.
+func (_u *ImagePriceUpdateOne) ClearProvider() *ImagePriceUpdateOne {
+	_u.mutation.ClearProvider()
 	return _u
 }
 
@@ -579,6 +625,12 @@ func (_u *ImagePriceUpdateOne) sqlSave(ctx context.Context) (_node *ImagePrice, 
 	}
 	if _u.mutation.OutputCostPerImageMilliCleared() {
 		_spec.ClearField(imageprice.FieldOutputCostPerImageMilli, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(imageprice.FieldProvider, field.TypeString, value)
+	}
+	if _u.mutation.ProviderCleared() {
+		_spec.ClearField(imageprice.FieldProvider, field.TypeString)
 	}
 	if value, ok := _u.mutation.Raw(); ok {
 		_spec.SetField(imageprice.FieldRaw, field.TypeJSON, value)

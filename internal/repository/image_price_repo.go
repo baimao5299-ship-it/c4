@@ -52,9 +52,10 @@ func (r *ImagePriceRepo) UpsertFromLiteLLM(ctx context.Context, rows []*domain.I
 // upsertImageLitellmBatch 单批 upsert（独立事务，单语句原子）：raw SQL 手工拼
 // 多行 VALUES + ON CONFLICT (model) DO UPDATE SET ... WHERE image_price.source
 // != 'manual'（ent v0.14 的 upsert 构建器不支持 DO UPDATE 的 WHERE 条件）。
-// 8 列 = model + 三价格 + raw + source + created_at/updated_at；raw JSONB
-// 转 string 传参并 SQL 侧显式 ::jsonb 强转（nil → NULL）；批内按 model 排序
-// （锁顺序一致化，防多实例并发 deadlock——对齐 upsertLitellmBatch 先例）。
+// 9 列 = model + 三价格 + provider + raw + source + created_at/updated_at；
+// raw JSONB 转 string 传参并 SQL 侧显式 ::jsonb 强转（nil → NULL）；批内按
+// model 排序（锁顺序一致化，防多实例并发 deadlock——对齐 upsertLitellmBatch
+// 先例）。
 func (r *ImagePriceRepo) upsertImageLitellmBatch(ctx context.Context, batch []*domain.ImagePrice, now time.Time) (int, error) {
 	sort.SliceStable(batch, func(i, j int) bool { return batch[i].Model < batch[j].Model })
 	insertCols := []string{
@@ -62,15 +63,16 @@ func (r *ImagePriceRepo) upsertImageLitellmBatch(ctx context.Context, batch []*d
 		imageprice.FieldInputImageTokenPricePerMillion,
 		imageprice.FieldOutputImageTokenPricePerMillion,
 		imageprice.FieldOutputCostPerImageMilli,
+		imageprice.FieldProvider,
 		imageprice.FieldRaw,
 		imageprice.FieldSource,
 		imageprice.FieldCreatedAt,
 		imageprice.FieldUpdatedAt,
 	}
-	// 除 model/source/created_at 外全更新（三价格 + raw + updated_at）；
+	// 除 model/source/created_at 外全更新（三价格 + provider + raw + updated_at）；
 	// source 由 WHERE 条件保护，created_at 首次插入后不变。
 	updateCols := append(append([]string{}, insertCols[1:len(insertCols)-3]...), imageprice.FieldUpdatedAt)
-	const colsPerRow = 8
+	const colsPerRow = 9
 	var buf strings.Builder
 	buf.WriteString("INSERT INTO " + imageprice.Table + " (" + strings.Join(insertCols, ", ") + ") VALUES ")
 	args := make([]any, 0, len(batch)*colsPerRow)
@@ -84,14 +86,14 @@ func (r *ImagePriceRepo) upsertImageLitellmBatch(ctx context.Context, batch []*d
 			if c > 1 {
 				buf.WriteString(", ")
 			}
-			if c == 5 { // raw 列 → ::jsonb 强转
+			if c == 6 { // raw 列 → ::jsonb 强转
 				fmt.Fprintf(&buf, "$%d::jsonb", n+c)
 			} else {
 				fmt.Fprintf(&buf, "$%d", n+c)
 			}
 		}
 		buf.WriteString(")")
-		var inP, outP, perP, raw any
+		var inP, outP, perP, provider, raw any
 		if p.InputImageTokenPricePerMillion != nil {
 			inP = *p.InputImageTokenPricePerMillion
 		}
@@ -101,11 +103,14 @@ func (r *ImagePriceRepo) upsertImageLitellmBatch(ctx context.Context, batch []*d
 		if p.OutputCostPerImageMilli != nil {
 			perP = *p.OutputCostPerImageMilli
 		}
+		if p.Provider != nil {
+			provider = *p.Provider
+		}
 		if len(p.Raw) > 0 {
 			raw = string(p.Raw)
 		}
 		// source 恒为 litellm（本方法即 litellm 拉取路径，防止误传 manual 行破坏优先级）。
-		args = append(args, p.Model, inP, outP, perP, raw,
+		args = append(args, p.Model, inP, outP, perP, provider, raw,
 			string(domain.PricingSourceLitellm), now, now)
 	}
 	buf.WriteString(" ON CONFLICT (" + imageprice.FieldModel + ") DO UPDATE SET ")
@@ -190,8 +195,9 @@ func (r *ImagePriceRepo) UpsertManual(ctx context.Context, m *ImagePriceManual) 
 			} else {
 				u.ClearOutputCostPerImageMilli()
 			}
-			// manual 行恒无 litellm raw：接管 litellm 行时清掉（新行本来 NULL）。
-			u.ClearRaw()
+			// manual 行恒无 litellm 元数据/raw：接管 litellm 行时清掉（新行本来 NULL）。
+			u.ClearProvider().
+				ClearRaw()
 		}).
 		ID(ctx)
 	if err != nil {
@@ -224,12 +230,16 @@ func (r *ImagePriceRepo) DeleteManual(ctx context.Context, model string) error {
 	return nil
 }
 
-// ListImagePrice 图片价格列表：分页/筛选（source、model 模糊 ilike）/排序
-// （sort 白名单：model/updated_at；非法值 → ErrInvalidSort，对齐 ListQuery）。
-func (r *ImagePriceRepo) ListImagePrice(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error) {
+// ListImagePrice 图片价格列表：分页/筛选（source、provider 等值、model 模糊
+// ilike）/排序（sort 白名单：model/updated_at；非法值 → ErrInvalidSort，
+// 对齐 ListQuery）。
+func (r *ImagePriceRepo) ListImagePrice(ctx context.Context, q ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.ImagePrice, int64, error) {
 	pred := r.client.ImagePrice.Query()
 	if source != nil {
 		pred = pred.Where(imageprice.SourceEQ(imageprice.Source(*source)))
+	}
+	if provider != "" {
+		pred = pred.Where(imageprice.ProviderEQ(provider))
 	}
 	if model != "" {
 		pred = pred.Where(imageprice.ModelContainsFold(model))
@@ -279,6 +289,7 @@ func toDomainImagePrice(p *ent.ImagePrice) *domain.ImagePrice {
 		InputImageTokenPricePerMillion:  p.InputImageTokenPricePerMillion,
 		OutputImageTokenPricePerMillion: p.OutputImageTokenPricePerMillion,
 		OutputCostPerImageMilli:         p.OutputCostPerImageMilli,
+		Provider:                        p.Provider,
 		Raw:                             p.Raw,
 		Source:                          domain.PricingSource(p.Source),
 		CreatedAt:                       p.CreatedAt,

@@ -683,6 +683,7 @@
     "new": "Set manual price",
     "searchModel": "Search model",
     "all": "All sources",
+    "providerAll": "All providers",
     "filterEmpty": "No pricing matches the filters",
     "emptyTitle": "No pricing data",
     "emptyDesc": "Sync the official price list, or set a manual price",
