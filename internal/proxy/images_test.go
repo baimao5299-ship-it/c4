@@ -412,6 +412,55 @@ func TestImagesStreamingSSE(t *testing.T) {
 	require.NoError(t, p.rec.Close(context.Background()))
 }
 
+// TestImagesStreamDirectBilling A-P1-2 直连流式 images 计费接线：api_key 模板 +
+// stream:true 上游 SSE completed 帧（含 usage image_tokens）→ Observer 逐帧提取
+// → 流终落账非零——count = completed 帧数累积、ii/io 取最后一个 completed 帧的
+// usage（覆盖语义，对齐 codex 流式路径——累积求和多图差 N 倍）、ImageCost
+// per-image 分量照算（修复前整单 usageTuple{} 免费）。
+func TestImagesStreamDirectBilling(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		fl := w.(http.Flusher)
+		fmt.Fprintf(w, "data: %s\n\n", `{"type":"image_generation.completed","data":[{"b64_json":"QUJD"}],"usage":{"input_tokens_details":{"image_tokens":1000},"output_tokens_details":{"image_tokens":4000}}}`)
+		fl.Flush()
+		fmt.Fprintf(w, "data: %s\n\n", `{"type":"image_generation.completed","data":[{"b64_json":"REVG"}],"usage":{"input_tokens_details":{"image_tokens":2000},"output_tokens_details":{"image_tokens":8000}}}`)
+		fl.Flush()
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		fl.Flush()
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestImagesProxyWithBill(t, up.URL, &BillingHooks{
+		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}, im: map[string]*domain.ImagePrice{"gpt-image-1": perImagePriceRow("gpt-image-1")}},
+		ImagePrices: &fakeImagePriceLookup{m: map[string]*domain.ImagePrice{"gpt-image-1": perImagePriceRow("gpt-image-1")}},
+		Balances:    billingBalances(),
+	}, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
+		`{"model":"gpt-image-1","prompt":"a cat","stream":true}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleImagesGenerations(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.Contains(t, rec.Body.String(), "data: [DONE]", "SSE 原样透传")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	l := store.logs[0]
+	require.Equal(t, domain.FormatOpenAIImages, l.Format)
+	require.Equal(t, domain.ErrNone, l.ErrorType)
+	require.Equal(t, int64(2), l.ImageCount, "count = completed 帧数累积（partial/DONE 不计）")
+	require.Equal(t, int64(2000), l.ImageInputTokens, "usage 取末个 completed 帧（覆盖语义）")
+	require.Equal(t, int64(8000), l.ImageOutputTokens)
+	require.Equal(t, int64(10000), l.TotalTokens, "tt = image tokens 之和（张数不入）")
+	require.Equal(t, int64(2*5400), l.Cost, "per-image 分量照算（修复前恒 0——整单免费）")
+	require.NotNil(t, l.PricePerImageMillis)
+	require.Equal(t, int64(5400), *l.PricePerImageMillis)
+}
+
 // TestImagesCodexNotIntegrated501 codex 分流骨架：codex-oauth 模板在 images
 // 端点选号命中 → 501 明确"未接入"（SDK 调用 T2/T3 接；未接入前不得误报
 // 502/network），上游不收请求；评审 P2-1：post-Select 拒绝必须 recordRejected

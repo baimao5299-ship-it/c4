@@ -9,6 +9,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/is7qin/c3api/internal/credential"
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // fakeStreamGen 模拟 T2 适配层 GenerateImageStream（同签名——mock 替身不落
@@ -339,7 +342,7 @@ func TestStreamImageUnknownEventSkipped(t *testing.T) {
 	r, rec := streamImageReq(t, nil)
 	b64a := "aGVsbG8="
 	events := []domain.ImageStreamEvent{
-		{Type: "partial_image", B64JSON: &b64a},
+		{Type: domain.ImageStreamEventType("partial_image"), B64JSON: &b64a},
 		{Type: domain.ImageStreamEventCompleted, B64JSON: &b64a},
 	}
 	code, _, _, err := p.streamImageGeneration(context.Background(), rec, r, "req-1", 10, time.Now(), streamImageSel(), "gpt-image-2", streamImageCred(), streamImageParams(), fakeStreamGen(events, nil, nil))
@@ -349,6 +352,37 @@ func TestStreamImageUnknownEventSkipped(t *testing.T) {
 	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: image_generation.completed"))
 	l := collectImageLogs(t, p, store)
 	require.Equal(t, int64(1), l.ImageCount, "partial_image 不计费不计数")
+}
+
+// TestStreamImageUnknownEventWarns 未知事件类型 → Warn（A-P2-10 静默面收敛）：
+// 不写帧不计费，且 p.log 装配时日志留痕（修复前零日志零告警——SDK 升级改事
+// 件名则落账 0 张无从发现；适配层已显式映射过滤，此处分层防御）。
+func TestStreamImageUnknownEventWarns(t *testing.T) {
+	p, store := newImageStreamTestProxy(t, nil)
+	dir, err := os.MkdirTemp("", "c3api-imgwarn-*")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	logOut := filepath.Join(dir, "warn.log")
+	logger, err := logx.New("warn", logOut)
+	require.NoError(t, err)
+	p.log = logger // 测试代理默认 nil 日志——按需注入（与 p.bill 覆盖同模式）
+	r, rec := streamImageReq(t, nil)
+	b64a := "aGVsbG8="
+	events := []domain.ImageStreamEvent{
+		{Type: domain.ImageStreamEventType("partial_image"), B64JSON: &b64a},
+		{Type: domain.ImageStreamEventCompleted, B64JSON: &b64a},
+	}
+	code, _, _, err := p.streamImageGeneration(context.Background(), rec, r, "req-1", 10, time.Now(), streamImageSel(), "gpt-image-2", streamImageCred(), streamImageParams(), fakeStreamGen(events, nil, nil))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, code)
+	require.NotContains(t, rec.Body.String(), "partial_image", "未知事件不写帧")
+	l := collectImageLogs(t, p, store)
+	require.Equal(t, int64(1), l.ImageCount, "未知事件不计费不计数")
+	data, err := os.ReadFile(logOut)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "image stream: unknown event type skipped", "未知事件必须 Warn（不静默吞）")
+	require.Contains(t, string(data), "partial_image", "Warn 带事件名")
+	require.Contains(t, string(data), "req-1", "Warn 带 request_id")
 }
 
 // TestStreamImageBillingNoPrice 价格快照缺失（预检后竞态）：BillingTier=

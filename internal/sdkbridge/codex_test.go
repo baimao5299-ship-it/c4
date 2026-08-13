@@ -225,6 +225,28 @@ func jsonGetStr(t *testing.T, b []byte, path string) string {
 	return gjson.GetBytes(b, path).String()
 }
 
+// TestMapStreamEventType 流式事件类型显式映射（A-P2-10 转换单测防漂移）：SDK
+// 事件名 → domain 类型化常量（case 用 SDK 常量）；未知（SDK 升级改事件名）→
+// ok=false——适配层 Warn + 跳过，不静默透传导致网关落账 0 张零告警。
+func TestMapStreamEventType(t *testing.T) {
+	cases := []struct {
+		in   string
+		want domain.ImageStreamEventType
+		ok   bool
+	}{
+		{codexsdk.ImageStreamEventCompleted, domain.ImageStreamEventCompleted, true},
+		{codexsdk.ImageStreamEventKeepalive, domain.ImageStreamEventKeepalive, true},
+		{"partial_image", "", false},
+		{"image_generation.failed", "", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := mapStreamEventType(tc.in)
+		require.Equal(t, tc.ok, ok, "type=%q", tc.in)
+		require.Equal(t, tc.want, got, "type=%q", tc.in)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // cred → Auth 缓存
 // ---------------------------------------------------------------------------

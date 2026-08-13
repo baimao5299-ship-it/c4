@@ -8,6 +8,8 @@ import (
 	"bytes"
 
 	"github.com/tidwall/gjson"
+
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // 图片用量提取纯函数（spec §4.1 官方文档实证）：images 端点响应（非流式
@@ -28,21 +30,21 @@ func ImageUsageFromResponse(data []byte) (imageInputTokens, imageOutputTokens, i
 		gjson.GetBytes(data, "data.#").Int()
 }
 
-// typePrefix `"type":"` 顶层键前缀（上游 SSE 事件恒为该形态；type 值恒为
-// 无转义 ASCII——值区间直接字节比较）。
-const typePrefix = `"type":"`
+// eventTypePrefix `{"type":"` 帧首顶层锚定（上游 SSE data 帧恒为该形态开头；
+// type 值恒为无转义 ASCII——值区间直接字节比较）。锚定后嵌套 `"type":"` 先
+// 出现的帧不误判——P3-D：接线后本函数为每帧计费热路径，宁漏勿错。
+const eventTypePrefix = `{"type":"`
 
-// eventTypeIs 零分配判定 data 的 type 字段值 == want：`"type":"` 定位 +
+// eventTypeIs 零分配判定 data 的 type 字段值 == want：帧首 `{"type":"` 锚定 +
 // 值字节逐个比较 + 闭引号边界。want 为编译期常量（循环逐字节索引无拷贝）。
-// 转义/空白变体不匹配 → 不计费（防御方向 = 不误计，宁漏勿错——上游事件
-// 机器生成恒该形态）。gjson 对字符串型结果会物化 Str（实测 32B/次），
+// 非首键/转义/空白变体不匹配 → 不计费（防御方向 = 不误计，宁漏勿错——上游
+// 事件机器生成恒该形态）。gjson 对字符串型结果会物化 Str（实测 32B/次），
 // 热路径零分配红线故不用 gjson 取 type。
 func eventTypeIs(data []byte, want string) bool {
-	i := bytes.Index(data, []byte(typePrefix))
-	if i < 0 {
+	if !bytes.HasPrefix(data, []byte(eventTypePrefix)) {
 		return false
 	}
-	v := i + len(typePrefix)
+	v := len(eventTypePrefix)
 	if v+len(want) >= len(data) || data[v+len(want)] != '"' {
 		return false
 	}
@@ -55,14 +57,14 @@ func eventTypeIs(data []byte, want string) bool {
 }
 
 // ImageStreamEvent 流式（SSE）images 事件判定：type ∈ {image_generation.
-// completed, image_edit.completed} → completed=true（每完成一张一个事件），
-// 并返回该事件携带的 usage image tokens（input/output_tokens_details.
-// image_tokens；事件无 usage → 0）；其余事件（partial_image 等）→
-// completed=false 不计费不计数。
+// completed, image_edit.completed}（domain 类型化常量——wire 事件名收敛，
+// A-P2-10）→ completed=true（每完成一张一个事件），并返回该事件携带的
+// usage image tokens（input/output_tokens_details.image_tokens；事件无
+// usage → 0）；其余事件（partial_image 等）→ completed=false 不计费不计数。
 // 流终计费：调用方按 completed 累加张数（image_count），usage 取**末次**
 // completed 事件的 tokens；流中途失败/ErrAbort → 已收集 usage 照常计费。
 func ImageStreamEvent(data []byte) (completed bool, imageInputTokens, imageOutputTokens int64) {
-	if !(eventTypeIs(data, "image_generation.completed") || eventTypeIs(data, "image_edit.completed")) {
+	if !(eventTypeIs(data, string(domain.ImageStreamEventCompleted)) || eventTypeIs(data, string(domain.ImageStreamEventEditCompleted))) {
 		return false, 0, 0
 	}
 	return true,

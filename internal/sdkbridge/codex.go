@@ -122,6 +122,15 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 		return err
 	}
 	err = e.client.GenerateImageStream(ctx, toSDKParams(p), func(ev codexsdk.ImageStreamEvent) error {
+		// 事件类型显式映射（A-P2-10）：SDK 升级改事件名 → 未知 Warn + 跳过
+		// （不静默透传——未知类型落入网关 default 静默分支则落账 0 张零告警）。
+		t, ok := mapStreamEventType(ev.Type)
+		if !ok {
+			if a.log != nil {
+				a.log.Warn("codex image stream: unknown event type skipped", logx.String("type", ev.Type))
+			}
+			return nil
+		}
 		var usage *domain.ImageUsage
 		if ev.Usage != nil {
 			usage = &domain.ImageUsage{
@@ -131,7 +140,7 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 				OutputImageTokens: ev.Usage.OutputImageTokens,
 			}
 		}
-		return fn(domain.ImageStreamEvent{Type: ev.Type, B64JSON: ev.B64JSON, Usage: usage})
+		return fn(domain.ImageStreamEvent{Type: t, B64JSON: ev.B64JSON, Usage: usage})
 	})
 	if err != nil {
 		// 与 GenerateImage 同款（评审 P1-1 修复）：SDK *HTTPError（字段裸类型，无
@@ -486,6 +495,20 @@ func asFatal(err error) error {
 func IsFatal(err error) bool { return asFatal(err) != nil }
 
 // --- domain ↔ codexsdk 双向转换（集中本文件 + 转换单测防漂移） ---
+
+// mapStreamEventType codexsdk 流式事件类型 → domain 类型化常量（A-P2-10 显式
+// 映射：SDK 升级改事件名 → ok=false——调用方 Warn + 跳过，不静默透传落账
+// 0 张；case 用 SDK 常量防漂移）。
+func mapStreamEventType(t string) (domain.ImageStreamEventType, bool) {
+	switch t {
+	case codexsdk.ImageStreamEventCompleted:
+		return domain.ImageStreamEventCompleted, true
+	case codexsdk.ImageStreamEventKeepalive:
+		return domain.ImageStreamEventKeepalive, true
+	default:
+		return "", false
+	}
+}
 
 // toSDKParams domain.ImageGenParams → codexsdk.ImageGenParams（字段同构；
 // nil 指针/空切片语义保留——可选字段不发）。SDK 只读消费转换产物，无别名风险。

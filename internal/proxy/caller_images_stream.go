@@ -13,6 +13,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // imageStreamGenerator 流式生图能力——sdkbridge.Codex.GenerateImageStream
@@ -88,7 +89,15 @@ func (p *Proxy) streamImageGeneration(ctx context.Context, w http.ResponseWriter
 			}
 			return writeFrame(buildCompletedFrame(&ev))
 		default:
-			return nil // 未知事件类型——跳过（SDK 合成流不产出）
+			// 未知事件类型——跳过 + Warn（A-P2-10：SDK 升级改事件名 → 落账 0 张
+			// 的静默面收敛——不静默吞，告警留痕；适配层已显式映射过滤，此处为
+			// 分层防御）。
+			if p.log != nil {
+				p.log.Warn("image stream: unknown event type skipped",
+					logx.String("request_id", reqID),
+					logx.String("type", string(ev.Type)))
+			}
+			return nil
 		}
 	})
 
@@ -164,8 +173,11 @@ func buildCompletedFrame(ev *domain.ImageStreamEvent) []byte {
 	if ev.B64JSON != nil {
 		b64len = len(*ev.B64JSON)
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, len("event: image_generation.completed\ndata: ")+b64len+96))
-	buf.WriteString("event: image_generation.completed\ndata: ")
+	// 事件名收敛为 domain.ImageStreamEventCompleted（wire 事件名四处生产字面量
+	// 收敛，A-P2-10——编译期常量拼接，零运行时开销）。
+	const evLine = "event: " + string(domain.ImageStreamEventCompleted) + "\ndata: "
+	buf := bytes.NewBuffer(make([]byte, 0, len(evLine)+b64len+96))
+	buf.WriteString(evLine)
 	buf.WriteString(`{"b64_json":`)
 	b64, _ := json.Marshal(ev.B64JSON)
 	buf.Write(b64)
