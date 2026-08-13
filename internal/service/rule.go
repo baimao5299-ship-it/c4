@@ -226,12 +226,15 @@ func decodeStrict(raw map[string]any, v any) error {
 	return dec.Decode(v)
 }
 
-// mapRuleRepoErr 规则存储错误映射：唯一约束冲突 → ErrConflict（409）；
-// 缺失 id → ErrNotFound（保留 "id=5 missing" 详情，404 响应带 id）。
+// mapRuleRepoErr 规则存储错误映射：唯一约束冲突 → ErrConflict（409，保留冲突
+// 详情 "priority=10 or name=\"x\""——与 mapRepoErr 对齐，两函数唯一差异即此
+// 分支，规则 409 响应体带详情）；缺失 id → ErrNotFound（保留 "id=5 missing"
+// 详情，404 响应带 id）。
 func mapRuleRepoErr(err error) error {
 	switch {
 	case errors.Is(err, repository.ErrConflict):
-		return ErrConflict
+		detail := strings.TrimPrefix(err.Error(), repository.ErrConflict.Error()+": ")
+		return fmt.Errorf("%w: %s", ErrConflict, detail)
 	case errors.Is(err, repository.ErrNotFound):
 		detail := strings.TrimPrefix(err.Error(), repository.ErrNotFound.Error()+": ")
 		return fmt.Errorf("%w: %s", ErrNotFound, detail)

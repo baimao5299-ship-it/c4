@@ -82,7 +82,7 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 	if s.local != nil {
 		relCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		_ = s.local.Apply(relCtx, notify.Change{Settings: true})
+		s.local.Apply(relCtx, notify.Change{Settings: true})
 	}
 	s.publish(ctx, notify.Change{Settings: true}) // 其余实例 settings 快照重载（#14 多实例）
 	return set, nil

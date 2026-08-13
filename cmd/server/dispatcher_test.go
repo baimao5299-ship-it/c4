@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -188,14 +189,14 @@ func waitFlush(t *testing.T, pred func() bool) {
 func TestDispatcherApplyMapping(t *testing.T) {
 	t.Run("Users", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Users: true}))
+		rg.d.Apply(context.Background(), notify.Change{Users: true})
 		waitFlush(t, func() bool { return rg.auth.calls() > 0 })
 		require.Equal(t, 1, rg.auth.calls(), "users → auth Reload 一次")
 	})
 
 	t.Run("Templates", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Templates: true}))
+		rg.d.Apply(context.Background(), notify.Change{Templates: true})
 		waitFlush(t, func() bool { f, g := rg.sched.counts(); return f > 0 || len(g) > 0 })
 		full, groups := rg.sched.counts()
 		require.Equal(t, 1, full, "templates → sched 全量")
@@ -205,7 +206,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 
 	t.Run("Groups", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Groups: []int64{10, 20}}))
+		rg.d.Apply(context.Background(), notify.Change{Groups: []int64{10, 20}})
 		waitFlush(t, func() bool { _, g := rg.sched.counts(); return len(g) > 0 })
 		_, groups := rg.sched.counts()
 		require.ElementsMatch(t, []int64{10, 20}, groups, "groups → sched 组级定向")
@@ -215,7 +216,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 	t.Run("GroupsWithClients", func(t *testing.T) {
 		rg := newTestDispatcher(t)
 		// 账号 upstream_key 变更：组级 + clients 同批（service account.go 发布点形态）
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Groups: []int64{10}, Clients: true}))
+		rg.d.Apply(context.Background(), notify.Change{Groups: []int64{10}, Clients: true})
 		waitFlush(t, func() bool { _, g := rg.sched.counts(); return len(g) > 0 && rg.clients.calls() > 0 })
 		_, groups := rg.sched.counts()
 		require.ElementsMatch(t, []int64{10}, groups)
@@ -225,7 +226,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 	t.Run("StandaloneClients", func(t *testing.T) {
 		rg := newTestDispatcher(t)
 		// 防御性兜底：服务端发布点恒与 Templates/Groups 并排，独立 Clients 也映射
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Clients: true}))
+		rg.d.Apply(context.Background(), notify.Change{Clients: true})
 		waitFlush(t, func() bool { return rg.clients.calls() > 0 })
 		full, groups := rg.sched.counts()
 		require.Equal(t, 0, full, "独立 clients 不触发 sched 重载")
@@ -235,21 +236,21 @@ func TestDispatcherApplyMapping(t *testing.T) {
 
 	t.Run("Multipliers", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Multipliers: true}))
+		rg.d.Apply(context.Background(), notify.Change{Multipliers: true})
 		waitFlush(t, func() bool { return rg.bal.multCalls() > 0 })
 		require.Equal(t, 1, rg.bal.multCalls(), "multipliers → 余额倍率定向刷新")
 	})
 
 	t.Run("Keys", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Keys: true}))
+		rg.d.Apply(context.Background(), notify.Change{Keys: true})
 		waitFlush(t, func() bool { return rg.auth.calls() > 0 })
 		require.Equal(t, 1, rg.auth.calls(), "keys → auth 快照全量 Reload")
 	})
 
 	t.Run("Settings", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Settings: true}))
+		rg.d.Apply(context.Background(), notify.Change{Settings: true})
 		// #36 时序（R2 M-1）：settings 快照同步刷新（Apply 内，非去抖 flush——
 		// scope 重载必须读到新 N）。
 		require.Equal(t, 1, rg.settings.calls(), "settings → settings 快照同步重载")
@@ -263,7 +264,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 
 	t.Run("Rules", func(t *testing.T) {
 		rg := newTestDispatcher(t)
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Rules: true}))
+		rg.d.Apply(context.Background(), notify.Change{Rules: true})
 		waitFlush(t, func() bool { return rg.rules.calls() > 0 })
 		require.Equal(t, 1, rg.rules.calls(), "rules → 规则表全量重载")
 	})
@@ -272,7 +273,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 		rg := newTestDispatcher(t)
 		// 载荷守卫降级形态（Groups 超限 → Templates=true，R9）：组级被全量包含
 		// 跳过，语义仍正确（不重复组级重载）。
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Templates: true, Groups: []int64{10}}))
+		rg.d.Apply(context.Background(), notify.Change{Templates: true, Groups: []int64{10}})
 		waitFlush(t, func() bool { f, _ := rg.sched.counts(); return f > 0 })
 		full, groups := rg.sched.counts()
 		require.Equal(t, 1, full)
@@ -282,7 +283,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 	t.Run("EmptyChange", func(t *testing.T) {
 		rg := newTestDispatcher(t)
 		// 空 Change：无任何标记（service.publish 已判空跳过，双保险）
-		require.NoError(t, rg.d.Apply(context.Background(), notify.Change{}))
+		rg.d.Apply(context.Background(), notify.Change{})
 		time.Sleep(5 * time.Millisecond)
 		require.Equal(t, 0, rg.auth.calls())
 		full, groups := rg.sched.counts()
@@ -301,7 +302,7 @@ func TestDispatcherApplyMapping(t *testing.T) {
 // （脏标记语义——变更只对应其快照集合）。
 func TestDispatcherSettingsScopePrecision(t *testing.T) {
 	rg := newTestDispatcher(t)
-	require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Settings: true}))
+	rg.d.Apply(context.Background(), notify.Change{Settings: true})
 	require.Eventually(t, func() bool { return rg.snapAuth.calls() > 0 }, time.Second, time.Millisecond)
 	require.Equal(t, 1, rg.snapAuth.calls())
 	require.Equal(t, 0, rg.snapSched.calls(), "settings 变更不重载未声明 settings scope 的 scheduler")
@@ -309,7 +310,7 @@ func TestDispatcherSettingsScopePrecision(t *testing.T) {
 	require.Equal(t, 0, rg.snapBal.calls())
 	// 其它变更类型不走注册表（去抖器路径已断言于映射表测试）：确认无注册表
 	// 误触发——users 变更后 auth 快照仍只有 settings 那一次。
-	require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Users: true}))
+	rg.d.Apply(context.Background(), notify.Change{Users: true})
 	waitFlush(t, func() bool { return rg.auth.calls() > 0 })
 	require.Equal(t, 1, rg.snapAuth.calls(), "users 变更不触发注册表（去抖器矩阵覆盖）")
 	require.Equal(t, 0, rg.snapSched.calls())
@@ -319,10 +320,58 @@ func TestDispatcherSettingsScopePrecision(t *testing.T) {
 // 本地变更落入同一去抖窗口 → 一次 flush，不重复 reload（设计文档 §2.3）。
 func TestDispatcherApplyMergesSingleFlush(t *testing.T) {
 	rg := newTestDispatcher(t)
-	require.NoError(t, rg.d.Apply(context.Background(), notify.Change{Users: true}))
+	rg.d.Apply(context.Background(), notify.Change{Users: true})
 	rg.inv.Users() // 模拟本地 admin 变更（同一去抖器）
 	waitFlush(t, func() bool { return rg.auth.calls() > 0 })
 	require.Equal(t, 1, rg.auth.calls(), "远端 + 本地同窗口合并为一次 reload")
+}
+
+// errSettings2 ReloadSettings 恒失败（G1-1 Apply 失败注入）。
+type errSettings2 struct{ recSettings2 }
+
+func (e *errSettings2) ReloadSettings(ctx context.Context) error {
+	return errors.New("settings boom")
+}
+
+// errSnap2 快照 Reload 恒失败但记录调用（G1-1 Apply 失败注入）。
+type errSnap2 struct {
+	recSnap
+}
+
+func (e *errSnap2) Reload(ctx context.Context) error {
+	e.recSnap.Reload(ctx)
+	return errors.New("snapshot boom")
+}
+
+// TestDispatcherApplyFailureTolerated G1-1（p2-02/G-P2-1）：Apply 无返回值——
+// 内部失败（settings 同步重载失败 + 注册表 scope 快照重载失败）独立 Warn 消
+// 化，不透传：无 panic，同批其他变更位仍被吞入去抖（事件提示语义不破坏）。
+func TestDispatcherApplyFailureTolerated(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	auth := &recAuth2{}
+	inv := invalidate.New(invalidate.Config{
+		Window:   time.Millisecond,
+		Sched:    &recSched2{},
+		Clients:  &recClients2{},
+		Auth:     auth,
+		Balances: &recBal2{},
+		Rules:    &recRules2{},
+	})
+	settings := &errSettings2{}
+	inv.SetSettings(settings)
+	failSnap := &errSnap2{recSnap: recSnap{name: "auth", scopes: []string{snapshot.ScopeSettings}}}
+	reg := snapshot.New()
+	require.NoError(t, reg.Register(failSnap))
+	d := &dispatcher{inv: inv, svc: settings, snapshots: reg, log: nil} // log nil = 静默（测试）
+	require.NoError(t, inv.Start(ctx))
+
+	// settings 同步重载失败 + scope 快照重载失败：Apply 无返回值、无 panic。
+	d.Apply(ctx, notify.Change{Settings: true, Users: true})
+	waitFlush(t, func() bool { return auth.calls() > 0 })
+	require.Equal(t, 1, auth.calls(), "settings 分支失败不影响同批 users 变更吞入去抖")
+	require.Equal(t, 1, failSnap.calls(), "scope 重载失败也尝试过（Warn 消化）")
 }
 
 // settingsNStub settings 快照桩（N 时序断言）：ReloadSettings 从 dbN 现读——
@@ -388,7 +437,7 @@ func TestDispatcherSettingsTiming(t *testing.T) {
 
 	// 模拟远端实例 UpdateSetting 落库（本实例 settings 快照仍是旧 N）。
 	st.dbN.Store(2)
-	require.NoError(t, d.Apply(ctx, notify.Change{Settings: true}))
+	d.Apply(ctx, notify.Change{Settings: true})
 
 	// settings 快照同步刷新（Apply 内，非去抖 flush）→ auth reload 读到新 N。
 	require.Equal(t, 2, st.N(), "Apply 后 settings 快照已是新 N（同步重载）")

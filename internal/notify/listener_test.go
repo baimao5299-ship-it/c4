@@ -49,11 +49,10 @@ type fakeDisp struct {
 	full    int
 }
 
-func (f *fakeDisp) Apply(ctx context.Context, ch Change) error {
+func (f *fakeDisp) Apply(ctx context.Context, ch Change) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.applied = append(f.applied, ch)
-	return nil
 }
 func (f *fakeDisp) FullRefresh(ctx context.Context) error {
 	f.mu.Lock()

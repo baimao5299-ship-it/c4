@@ -66,9 +66,10 @@ type dispatcher struct {
 //
 // 合并语义：Templates + Groups 同窗（载荷守卫降级 full）→ 去抖器 merge 后
 // 组级被全量包含跳过，语义仍正确。除 settings 分支（同步 ReloadSettings 一
-// 次 DB 读——低频路径，时序见上）外 Mark 路径零锁零 DB，恒返回 nil；注册表
-// scope 重载错误内部 Warn（Apply 仍返回 nil——NOTIFY 是事件提示）。
-func (d *dispatcher) Apply(ctx context.Context, ch notify.Change) error {
+// 次 DB 读——低频路径，时序见上）外 Mark 路径零锁零 DB。无返回值：内部失败
+// 独立 Warn 消化，不透传（G-P2-1：NOTIFY 是事件提示，调用方无任何可执行动
+// 作，透传只会造成 listener 侧双 Warn；模块周期 ticker / 60s 兜底已存在）。
+func (d *dispatcher) Apply(ctx context.Context, ch notify.Change) {
 	if ch.Users {
 		d.inv.Users()
 	}
@@ -106,7 +107,6 @@ func (d *dispatcher) Apply(ctx context.Context, ch notify.Change) error {
 	if ch.Rules {
 		d.inv.Rules()
 	}
-	return nil
 }
 
 // reloadScopes 注册表按 scope 精确重载（nil 注册表 = 未装配，no-op）。错误
