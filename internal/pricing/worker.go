@@ -32,10 +32,13 @@ type SettingReader interface {
 
 // Upserter 拉取价落库（*repository.Repository 实现；500/批独立事务 + manual
 // 行级互斥 WHERE source != 'manual'，部分成功可接受）。Image 线为 Task A 双线
-// 扩展：与文本价同款机制独立落库（image_price 表，不碰 pricings 行有效性）。
+// 扩展：与文本价同款机制独立落库（image_price 表，不碰 pricings 行有效性）；
+// Function 线为价格表三件套扩展：search 等按单元计费功能类独立落库
+// （function_price 表，同款机制）。
 type Upserter interface {
 	UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error)
 	UpsertImageFromLiteLLM(ctx context.Context, rows []*domain.ImagePrice) (int, error)
+	UpsertFunctionFromLiteLLM(ctx context.Context, rows []*domain.FunctionPrice) (int, error)
 }
 
 // SyncWorkerConfig SyncWorker 装配参数。
@@ -102,11 +105,13 @@ func (w *SyncWorker) Start(ctx context.Context) error {
 // 幂等，未 Start 时也安全。
 func (w *SyncWorker) Close(ctx context.Context) error { return nil }
 
-// Sync 执行一次完整同步（fetch → 文本价 upsert → image 价 upsert → reload）：
-// worker 内部路径与后续管理端手动触发（Task 3 SyncPricingNow）共用；错误由
-// 调用方决定告警语义（worker 循环内 Warn 后等下个周期）。
-// Task A 双线扩展：image 价与文本价独立判定、独立落库；image 拉取成功后同样
-// 刷新 image 快照（Reload 装配点由调用方聚合 pricing + image 双重载）。
+// Sync 执行一次完整同步（fetch → 文本价 upsert → image 价 upsert → function
+// 价 upsert → reload）：worker 内部路径与后续管理端手动触发（Task 3
+// SyncPricingNow）共用；错误由调用方决定告警语义（worker 循环内 Warn 后等下
+// 个周期）。
+// 三线扩展：image 价与 function 价均与文本价独立判定、独立落库；拉取成功后
+// 同样刷新对应快照（Reload 装配点由调用方聚合 pricing + image + function
+// 三重载）。
 func (w *SyncWorker) Sync(ctx context.Context) error {
 	start := w.now()
 	url := w.settings.PriceSourceURL()
@@ -120,11 +125,16 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 	}
 	n, err := w.repo.UpsertFromLiteLLM(ctx, res.Rows)
 	nImage, imgErr := w.repo.UpsertImageFromLiteLLM(ctx, res.ImageRows)
+	nFunction, fnErr := w.repo.UpsertFunctionFromLiteLLM(ctx, res.FunctionRows)
 	// upsert 部分成功后仍刷新快照（已落库的批立即生效）；fetch 失败则数据未变，
 	// 保留旧快照（下方因错误直接返回）。错误语义：文本价错误优先（原路径行为），
-	// 无则透传 image 价错误——两线均为部分成功可接受，重试语义不变。
+	// 无则透传 image 价错误、再透传 function 价错误——三线均为部分成功可接受，
+	// 重试语义不变。
 	if err == nil {
 		err = imgErr
+	}
+	if err == nil {
+		err = fnErr
 	}
 	if w.reload != nil {
 		w.reload()
@@ -132,8 +142,10 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 	if err == nil && w.log != nil {
 		w.log.Info("pricing: sync done",
 			logx.Int("rows", len(res.Rows)), logx.Int("image_rows", len(res.ImageRows)),
+			logx.Int("function_rows", len(res.FunctionRows)),
 			logx.Int("skipped", res.Skipped),
 			logx.Int("updated", n), logx.Int("image_updated", nImage),
+			logx.Int("function_updated", nFunction),
 			logx.Duration("elapsed", w.now().Sub(start)),
 		)
 	}

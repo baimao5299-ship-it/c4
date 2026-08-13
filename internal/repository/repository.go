@@ -22,25 +22,26 @@ import (
 // Repository 聚合各实体仓库（绑定单一 client + driver；WithTx 复用同一构造函数
 // newRepository 构造 tx 版实例）。
 type Repository struct {
-	Templates    *TemplateRepo
-	Accounts     *AccountRepo
-	Groups       *GroupRepo
-	Users        *UserRepo
-	Keys         *KeyRepo
-	Assignments  *GroupAssignmentRepo
-	Settings     *SettingRepo
-	Usages       *UsageRepo  // usage_logs 明细（消费面改名：log → usage 语义）
-	ErrLogs      *ErrLogRepo // err_logs 错误审计明细（分表设计）
-	Stats        *StatRepo
-	Rules        RuleStore
-	Redemptions  *RedemptionRepo
-	Pricing      *PricingRepo
-	ImagePrice   *ImagePriceRepo  // 图片生成价格（Task A 数据面；images 端点计费价格来源）
-	Billing      *BillingRepo     // 扣费落库（Phase 5 T3）
-	Partitions   *PartitionRepo   // 分区表 bootstrap/retention（usage_logs + err_logs + usage_stats，Phase 5 T4.5 + 用户裁决 2026-08-11）
-	TemplateExts *TemplateExtRepo // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
-	AccountExts  *AccountExtRepo  // 账号类型化鉴权扩展（account_ext 1:1；W1 数据层，消费接线 W6）
-	Client       *ent.Client
+	Templates     *TemplateRepo
+	Accounts      *AccountRepo
+	Groups        *GroupRepo
+	Users         *UserRepo
+	Keys          *KeyRepo
+	Assignments   *GroupAssignmentRepo
+	Settings      *SettingRepo
+	Usages        *UsageRepo  // usage_logs 明细（消费面改名：log → usage 语义）
+	ErrLogs       *ErrLogRepo // err_logs 错误审计明细（分表设计）
+	Stats         *StatRepo
+	Rules         RuleStore
+	Redemptions   *RedemptionRepo
+	Pricing       *PricingRepo
+	ImagePrice    *ImagePriceRepo    // 图片生成价格（Task A 数据面；images 端点计费价格来源）
+	FunctionPrice *FunctionPriceRepo // 按单元计费功能类价格（search 起；对齐 image_price 形态）
+	Billing       *BillingRepo       // 扣费落库（Phase 5 T3）
+	Partitions    *PartitionRepo     // 分区表 bootstrap/retention（usage_logs + err_logs + usage_stats，Phase 5 T4.5 + 用户裁决 2026-08-11）
+	TemplateExts  *TemplateExtRepo   // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
+	AccountExts   *AccountExtRepo    // 账号类型化鉴权扩展（account_ext 1:1；W1 数据层，消费接线 W6）
+	Client        *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
 	// WithTx 内为事务驱动（txDriver），保证 raw SQL 与 ent 构建器同连接。
@@ -82,26 +83,27 @@ func NewWithPG(ctx context.Context, drv dialect.Driver, migrate bool, pool *pgxp
 func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
 	accounts := &AccountRepo{client: client}
 	return &Repository{
-		Templates:    &TemplateRepo{client: client},
-		Accounts:     accounts,
-		Groups:       &GroupRepo{client: client, accounts: accounts, driver: drv},
-		Users:        &UserRepo{client: client, driver: drv},
-		Keys:         &KeyRepo{client: client, driver: drv},
-		Assignments:  &GroupAssignmentRepo{client: client},
-		Settings:     &SettingRepo{client: client},
-		Usages:       &UsageRepo{client: client},
-		ErrLogs:      &ErrLogRepo{client: client},
-		Stats:        &StatRepo{client: client, pool: pool},
-		Rules:        &RuleRepo{client: client},
-		Redemptions:  &RedemptionRepo{client: client, driver: drv},
-		Pricing:      &PricingRepo{client: client, driver: drv},
-		ImagePrice:   &ImagePriceRepo{client: client, driver: drv},
-		Billing:      &BillingRepo{client: client, driver: drv, pool: pool},
-		Partitions:   &PartitionRepo{driver: drv},
-		TemplateExts: &TemplateExtRepo{client: client},
-		AccountExts:  &AccountExtRepo{client: client},
-		Client:       client,
-		driver:       drv,
+		Templates:     &TemplateRepo{client: client},
+		Accounts:      accounts,
+		Groups:        &GroupRepo{client: client, accounts: accounts, driver: drv},
+		Users:         &UserRepo{client: client, driver: drv},
+		Keys:          &KeyRepo{client: client, driver: drv},
+		Assignments:   &GroupAssignmentRepo{client: client},
+		Settings:      &SettingRepo{client: client},
+		Usages:        &UsageRepo{client: client},
+		ErrLogs:       &ErrLogRepo{client: client},
+		Stats:         &StatRepo{client: client, pool: pool},
+		Rules:         &RuleRepo{client: client},
+		Redemptions:   &RedemptionRepo{client: client, driver: drv},
+		Pricing:       &PricingRepo{client: client, driver: drv},
+		ImagePrice:    &ImagePriceRepo{client: client, driver: drv},
+		FunctionPrice: &FunctionPriceRepo{client: client, driver: drv},
+		Billing:       &BillingRepo{client: client, driver: drv, pool: pool},
+		Partitions:    &PartitionRepo{driver: drv},
+		TemplateExts:  &TemplateExtRepo{client: client},
+		AccountExts:   &AccountExtRepo{client: client},
+		Client:        client,
+		driver:        drv,
 	}
 }
 
@@ -529,6 +531,35 @@ func (r *Repository) ListImagePrice(ctx context.Context, q ListQuery, source *do
 
 func (r *Repository) GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error) {
 	return r.ImagePrice.GetImagePrice(ctx, model)
+}
+
+// --- 按单元计费功能类价格（Task 价格表三件套；机制与 pricings/image_price 同款） ---
+
+func (r *Repository) UpsertFunctionFromLiteLLM(ctx context.Context, rows []*domain.FunctionPrice) (int, error) {
+	return r.FunctionPrice.UpsertFromLiteLLM(ctx, rows)
+}
+
+func (r *Repository) UpsertFunctionManual(ctx context.Context, m *FunctionPriceManual) (*domain.FunctionPrice, error) {
+	return r.FunctionPrice.UpsertManual(ctx, m)
+}
+
+func (r *Repository) DeleteFunctionManual(ctx context.Context, model string) error {
+	return r.FunctionPrice.DeleteManual(ctx, model)
+}
+
+func (r *Repository) ListFunctionPrice(ctx context.Context, q ListQuery, source *domain.PricingSource, model string) ([]*domain.FunctionPrice, int64, error) {
+	return r.FunctionPrice.ListFunctionPrice(ctx, q, source, model)
+}
+
+func (r *Repository) GetFunctionPrice(ctx context.Context, model string) (*domain.FunctionPrice, error) {
+	return r.FunctionPrice.GetFunctionPrice(ctx, model)
+}
+
+// EnsureFunctionPriceSeed 幂等插入 codex-search 初始化行（bootstrap 钩子；main
+// 启动期 ent migrate 之后调用，失败即 fatal——默认按次价不可缺）。ON CONFLICT
+// DO NOTHING：已存在（含管理端改价后的行）恒不覆盖。
+func (r *Repository) EnsureFunctionPriceSeed(ctx context.Context) error {
+	return r.FunctionPrice.EnsureCodexSearchSeed(ctx)
 }
 
 // --- 原子资源更新（评审 I-1：UserStore 扩展；普通 client 与 tx client 均可用） ---

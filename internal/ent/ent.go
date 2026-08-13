@@ -15,6 +15,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/functionprice"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
 	"github.com/is7qin/c3api/internal/ent/imageprice"
@@ -93,6 +94,7 @@ func checkColumn(t, c string) error {
 			account.Table:         account.ValidColumn,
 			accountext.Table:      accountext.ValidColumn,
 			errlog.Table:          errlog.ValidColumn,
+			functionprice.Table:   functionprice.ValidColumn,
 			group.Table:           group.ValidColumn,
 			groupassignment.Table: groupassignment.ValidColumn,
 			imageprice.Table:      imageprice.ValidColumn,

@@ -269,6 +269,38 @@ func milliPerImageToUSDPtr(v *int64) *float64 {
 	return &f
 }
 
+// --- 按单元价 API 边界换算（价格表三件套；单位规则独立，函数自文档化） ---
+//
+// 1 USD = 100,000 毫分。按单元价：USD/次 ×1e5 → 毫分/次（litellm
+// input_cost_per_query 原生口径；系数与 usdPerImageToMilli/usdToMillis 相同但
+// 单位语义独立——按次 flat 计费不走 /1e6 除法，独立函数防误用）。
+
+// usdPerCallToMilli USD/次 → 毫分/次（×1e5；math.Round 消除浮点取整误差）。
+func usdPerCallToMilli(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
+
+// milliPerCallToUSD 毫分/次 → USD/次（/1e5；API 展示换算，回显 litellm 原生
+// 口径 input_cost_per_query）。
+func milliPerCallToUSD(millis int64) float64 { return float64(millis) / 1e5 }
+
+// usdPerCallToMilliPtr *float64（USD/次，litellm 原生口径）→ *int64（毫分/次）；
+// nil 透传。
+func usdPerCallToMilliPtr(v *float64) *int64 {
+	if v == nil {
+		return nil
+	}
+	i := usdPerCallToMilli(*v)
+	return &i
+}
+
+// milliPerCallToUSDPtr *int64（毫分/次）→ *float64（USD/次）；nil 透传。
+func milliPerCallToUSDPtr(v *int64) *float64 {
+	if v == nil {
+		return nil
+	}
+	f := milliPerCallToUSD(*v)
+	return &f
+}
+
 // normalToMultI64Ptr *float64（正常值）→ *int64（万分数）；nil 透传。
 func normalToMultI64Ptr(v *float64) *int64 {
 	if v == nil {

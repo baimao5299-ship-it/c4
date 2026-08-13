@@ -84,7 +84,45 @@ const litellmFixtureJSON = `{
     "input_cost_per_token": 1e999,
     "output_cost_per_token": 1e-06
   },
-  "not-an-object": 42
+  "not-an-object": 42,
+  "gpt-5-resp": {
+    "input_cost_per_token": 1e-05,
+    "output_cost_per_token": 2e-05,
+    "mode": "responses"
+  },
+  "gpt-5-completion": {
+    "input_cost_per_token": 1e-05,
+    "output_cost_per_token": 2e-05,
+    "mode": "completion"
+  },
+  "text-embedding-3": {
+    "input_cost_per_token": 1e-06,
+    "output_cost_per_token": 1e-06,
+    "mode": "embedding"
+  },
+  "gpt-image-edit-1": {
+    "input_cost_per_image_token": 1e-05,
+    "output_cost_per_image": 0.02,
+    "mode": "image_edit"
+  },
+  "gpt-image-chat": {
+    "input_cost_per_token": 2.5e-06,
+    "output_cost_per_token": 1e-05,
+    "input_cost_per_image_token": 1e-05,
+    "output_cost_per_image": 0.02,
+    "mode": "chat"
+  },
+  "search-model-1": {
+    "input_cost_per_query": 0.0001,
+    "mode": "search"
+  },
+  "search-noquery": {
+    "mode": "search"
+  },
+  "search-zeroquery": {
+    "input_cost_per_query": 0,
+    "mode": "search"
+  }
 }`
 
 // TestParseValidRows 解析 + 毫分换算精确断言（×1e11 四舍五入）：
@@ -94,8 +132,10 @@ const litellmFixtureJSON = `{
 func TestParseValidRows(t *testing.T) {
 	res, err := Parse([]byte(litellmFixtureJSON), nil)
 	require.NoError(t, err)
-	require.Equal(t, 4, len(res.Rows), "4 个数值有效行")
-	require.Equal(t, 7, res.Skipped, "7 个无效行跳过")
+	require.Equal(t, 6, len(res.Rows), "6 个数值有效行（4 原 chat + responses/image_edit 扩展各 1）")
+	require.Equal(t, 11, res.Skipped, "11 个无效/无消费面条目跳过")
+	require.Equal(t, 1, len(res.ImageRows), "1 个 image 价行（image_edit 扩展）")
+	require.Equal(t, 1, len(res.FunctionRows), "1 个按单元价行（search）")
 
 	byModel := map[string]*domain.Pricing{}
 	for _, p := range res.Rows {
@@ -179,6 +219,79 @@ func TestParseInvalidRowsSkipped(t *testing.T) {
 	}
 }
 
+// TestParseModeRouting 分流修正断言（用户裁决 2026-08-13，按消费面收）：
+//   - responses 模式模型入 pricings（responses 端点计费走 GetPrice）
+//   - image_edit 模式模型入 image_price（edits 端点计费走 GetImagePrice）
+//   - completion/embedding 不入 pricings（无消费端点；宁漏勿错）
+//   - chat 模型带 image 价分量 → 仍只入 pricings（image 价按 mode 互斥，不收）
+//   - search 模型带 input_cost_per_query → 入 function_price（×1e5 毫分/次）；
+//     无 per-query 价/0 → 跳过（宁漏勿错）
+func TestParseModeRouting(t *testing.T) {
+	res, err := Parse([]byte(litellmFixtureJSON), nil)
+	require.NoError(t, err)
+
+	rows := map[string]*domain.Pricing{}
+	for _, p := range res.Rows {
+		rows[p.Model] = p
+	}
+	imgRows := map[string]*domain.ImagePrice{}
+	for _, p := range res.ImageRows {
+		imgRows[p.Model] = p
+	}
+	fnRows := map[string]*domain.FunctionPrice{}
+	for _, p := range res.FunctionRows {
+		fnRows[p.Model] = p
+	}
+
+	// responses 入 pricings
+	r := rows["gpt-5-resp"]
+	require.NotNil(t, r, "responses 模式入 pricings")
+	require.Equal(t, int64(1000000), r.PromptPricePerMillion, "1e-5 × 1e11 = 1000000")
+	require.Equal(t, int64(2000000), r.CompletionPricePerMillion)
+
+	// completion/embedding 不入 pricings（无 /v1/completions 等消费端点）
+	for _, m := range []string{"gpt-5-completion", "text-embedding-3"} {
+		require.Nil(t, rows[m], "%s 不入 pricings（无消费面）", m)
+		require.Nil(t, imgRows[m], "%s 不入 image_price", m)
+		require.Nil(t, fnRows[m], "%s 不入 function_price", m)
+	}
+
+	// image_edit 入 image_price；换算 per-image ×1e5、per-image-token ×1e11
+	ie := imgRows["gpt-image-edit-1"]
+	require.NotNil(t, ie, "image_edit 模式入 image_price")
+	require.NotNil(t, ie.InputImageTokenPricePerMillion)
+	require.Equal(t, int64(1000000), *ie.InputImageTokenPricePerMillion, "1e-5 USD/image token → 1000000 毫分/1M")
+	require.NotNil(t, ie.OutputCostPerImageMilli)
+	require.Equal(t, int64(2000), *ie.OutputCostPerImageMilli, "0.02 USD/张 × 1e5 → 2000 毫分/张")
+	require.Nil(t, rows["gpt-image-edit-1"], "image_edit 不入 pricings（mode 互斥）")
+
+	// chat 模型带 image 价分量：只入 pricings（image 分量不收）
+	require.NotNil(t, rows["gpt-image-chat"], "chat 模式仍入 pricings")
+	require.Nil(t, imgRows["gpt-image-chat"], "chat 模型 image 价分量不收（非生图/编辑面）")
+
+	// search 入 function_price：input_cost_per_query 0.0001 USD/次 × 1e5 → 10 毫分/次
+	sf := fnRows["search-model-1"]
+	require.NotNil(t, sf, "search 模式入 function_price")
+	require.NotNil(t, sf.PricePerCall)
+	require.Equal(t, int64(10), *sf.PricePerCall, "0.0001 USD/次 × 1e5 = 10 毫分/次")
+	require.Equal(t, domain.PricingSourceLitellm, sf.Source)
+	require.NotNil(t, sf.Raw, "raw 完整镜像")
+	require.Contains(t, string(sf.Raw), "input_cost_per_query", "raw 含 per-query 价字段")
+	require.Nil(t, rows["search-model-1"], "search 不入 pricings")
+	require.Nil(t, imgRows["search-model-1"], "search 不入 image_price")
+
+	// search 无 per-query 价 / 0 价 → 跳过（宁漏勿错）
+	for _, m := range []string{"search-noquery", "search-zeroquery"} {
+		require.Nil(t, fnRows[m], "%s 无有效 per-query 价不入 function_price", m)
+	}
+
+	// 三线独立：同一条目只命中一表，不互扰跳过计数
+	require.Equal(t, 6, len(res.Rows))
+	require.Equal(t, 1, len(res.ImageRows))
+	require.Equal(t, 1, len(res.FunctionRows))
+	require.Equal(t, 11, res.Skipped)
+}
+
 // TestParseTopLevelError 顶层非对象（数组）→ 整体解析错误。
 func TestParseTopLevelError(t *testing.T) {
 	_, err := Parse([]byte(`[{"input_cost_per_token": 1e-06}]`), nil)
@@ -206,8 +319,8 @@ func TestFetchHTTP(t *testing.T) {
 	f := NewFetcher(nil, nil)
 	res, err := f.Fetch(context.Background(), srv.URL)
 	require.NoError(t, err)
-	require.Len(t, res.Rows, 4)
-	require.Equal(t, 7, res.Skipped)
+	require.Len(t, res.Rows, 6)
+	require.Equal(t, 11, res.Skipped)
 
 	// 非 200
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -575,12 +688,14 @@ func TestParseImageRows(t *testing.T) {
 	}
 }
 
-// TestParseImageRowsNoImageFields 无 image 字段的条目：ImageRows 为空、Skipped
-// 语义不变（原 fixture 全部无 image 价 → 4 行 7 跳过，text 判定不受影响）。
+// TestParseImageRowsNoImageFields 无 image 字段的条目：不产出 image 行、Skipped
+// 语义不变（fixture 仅 gpt-image-edit-1 带 image_edit 面 image 价 → 只该行入
+// image_price；chat 模型带 image 价分量不入——mode 互斥，text 判定不受影响）。
 func TestParseImageRowsNoImageFields(t *testing.T) {
 	res, err := Parse([]byte(litellmFixtureJSON), nil)
 	require.NoError(t, err)
-	require.Len(t, res.Rows, 4, "文本价判定不变")
-	require.Empty(t, res.ImageRows, "无 image 字段 → 无 image 行")
-	require.Equal(t, 7, res.Skipped, "Skipped 语义含 image 判定但无 image 字段条目不计额外 skip")
+	require.Len(t, res.Rows, 6, "文本价判定不变（含 responses 扩展）")
+	require.Len(t, res.ImageRows, 1, "仅 image_edit 面行入 image_price")
+	require.Equal(t, "gpt-image-edit-1", res.ImageRows[0].Model)
+	require.Equal(t, 11, res.Skipped, "Skipped 语义含 image 判定但无 image 字段条目不计额外 skip")
 }

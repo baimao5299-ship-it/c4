@@ -54,17 +54,21 @@ func (f *fakeFetcher) urlsSeen() []string {
 	return out
 }
 
-// fakeUpserter 记录式 Upserter（注入返回 n/err；Task A 双线：文本价与 image
-// 价分开记录，可分别注入返回值/错误）。
+// fakeUpserter 记录式 Upserter（注入返回 n/err；三线：文本价、image 价与
+// 按单元价分开记录，可分别注入返回值/错误）。
 type fakeUpserter struct {
-	mu        sync.Mutex
-	n         int
-	err       error
-	calls     int
-	nImage    int
-	errImage  error
-	callsImg  int
-	imageRows []*domain.ImagePrice
+	mu          sync.Mutex
+	n           int
+	err         error
+	calls       int
+	nImage      int
+	errImage    error
+	callsImg    int
+	imageRows   []*domain.ImagePrice
+	nFunction   int
+	errFunction error
+	callsFn     int
+	fnRows      []*domain.FunctionPrice
 }
 
 func (u *fakeUpserter) UpsertFromLiteLLM(ctx context.Context, rows []*domain.Pricing) (int, error) {
@@ -82,6 +86,14 @@ func (u *fakeUpserter) UpsertImageFromLiteLLM(ctx context.Context, rows []*domai
 	return u.nImage, u.errImage
 }
 
+func (u *fakeUpserter) UpsertFunctionFromLiteLLM(ctx context.Context, rows []*domain.FunctionPrice) (int, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.callsFn++
+	u.fnRows = rows
+	return u.nFunction, u.errFunction
+}
+
 func (u *fakeUpserter) count() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -92,6 +104,12 @@ func (u *fakeUpserter) imageCount() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.callsImg
+}
+
+func (u *fakeUpserter) functionCount() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.callsFn
 }
 
 // fakeSettings 固定值 settings（mutex 保护，测试中可改）。
@@ -319,6 +337,48 @@ func TestSyncImageLine(t *testing.T) {
 	t.Run("pricing error takes precedence over image error", func(t *testing.T) {
 		f := &fakeFetcher{result: &FetchResult{Rows: []*domain.Pricing{{Model: "m"}}, ImageRows: []*domain.ImagePrice{{Model: "gpt-image-2"}}}}
 		u := &fakeUpserter{n: 0, err: errors.New("pricing batch failed"), nImage: 0, errImage: errors.New("image batch failed")}
+		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Log: nil})
+
+		err := w.Sync(context.Background())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "pricing batch failed", "文本价错误优先")
+	})
+}
+
+// TestSyncFunctionLine 按单元价线（价格表三件套）：function 行独立 upsert +
+// 快照重载；function 线错误在文本价/image 价之后透传（错误优先级三线一致）。
+func TestSyncFunctionLine(t *testing.T) {
+	t.Run("function rows upserted and reloaded", func(t *testing.T) {
+		perCall := int64(1000)
+		fn := &domain.FunctionPrice{Model: "codex-search", PricePerCall: &perCall, Source: domain.PricingSourceLitellm}
+		f := &fakeFetcher{result: &FetchResult{
+			Rows:         []*domain.Pricing{{Model: "m", Source: domain.PricingSourceLitellm}},
+			FunctionRows: []*domain.FunctionPrice{fn},
+		}}
+		u := &fakeUpserter{n: 1, nFunction: 1}
+		reloads := 0
+		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }, Log: nil})
+
+		require.NoError(t, w.Sync(context.Background()))
+		require.Equal(t, 1, u.functionCount(), "function 行 upsert 一次")
+		require.Len(t, u.fnRows, 1, "UpsertFunctionFromLiteLLM 收到 FetchResult.FunctionRows")
+		require.Equal(t, "codex-search", u.fnRows[0].Model)
+		require.Equal(t, 1, reloads, "function 拉取成功后同样重载快照")
+	})
+
+	t.Run("function upsert error propagates when pricing/image ok", func(t *testing.T) {
+		f := &fakeFetcher{result: &FetchResult{FunctionRows: []*domain.FunctionPrice{{Model: "codex-search"}}}}
+		u := &fakeUpserter{n: 0, nImage: 0, nFunction: 0, errFunction: errors.New("function batch failed")}
+		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Log: nil})
+
+		err := w.Sync(context.Background())
+		require.Error(t, err, "function 线错误透传（调用方告警）")
+		require.Contains(t, err.Error(), "function batch failed")
+	})
+
+	t.Run("pricing error takes precedence over function error", func(t *testing.T) {
+		f := &fakeFetcher{result: &FetchResult{Rows: []*domain.Pricing{{Model: "m"}}, FunctionRows: []*domain.FunctionPrice{{Model: "codex-search"}}}}
+		u := &fakeUpserter{n: 0, err: errors.New("pricing batch failed"), nFunction: 0, errFunction: errors.New("function batch failed")}
 		w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Log: nil})
 
 		err := w.Sync(context.Background())

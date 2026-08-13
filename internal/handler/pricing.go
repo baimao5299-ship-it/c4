@@ -120,6 +120,9 @@ func (h *AdminAPI) PostPricingSync(w http.ResponseWriter, r *http.Request) {
 		Rows: stats.Rows, Skipped: stats.Skipped, Updated: stats.Updated,
 		ImageRows:    ptr(stats.ImageRows), // Task A 双线：image 价行统计（可选字段）
 		ImageUpdated: ptr(stats.ImageUpdated),
+		// 价格表三件套：按单元价行统计（可选字段）。
+		FunctionRows:    ptr(stats.FunctionRows),
+		FunctionUpdated: ptr(stats.FunctionUpdated),
 	})
 }
 

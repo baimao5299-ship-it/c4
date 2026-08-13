@@ -184,6 +184,12 @@ type PricingStore interface {
 	DeleteImageManual(ctx context.Context, model string) error
 	ListImagePrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.ImagePrice, int64, error)
 	GetImagePrice(ctx context.Context, model string) (*domain.ImagePrice, error)
+	// 价格表三件套：按单元计费功能类价格（function_price 表；机制同款）。
+	UpsertFunctionFromLiteLLM(ctx context.Context, rows []*domain.FunctionPrice) (int, error)
+	UpsertFunctionManual(ctx context.Context, m *repository.FunctionPriceManual) (*domain.FunctionPrice, error)
+	DeleteFunctionManual(ctx context.Context, model string) error
+	ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, model string) ([]*domain.FunctionPrice, int64, error)
+	GetFunctionPrice(ctx context.Context, model string) (*domain.FunctionPrice, error)
 }
 
 type LogStore interface {
@@ -275,6 +281,11 @@ type Service struct {
 	// images 端点计费读路径（GetImagePrice）零 DB 直读；重载时机 = 同步拉取
 	// 成功后 + 管理端改价后（对齐 pricing 快照，低频无锁）。
 	imagePrice atomic.Pointer[map[string]*domain.ImagePrice]
+	// functionPrice 按单元计费功能类价格全量内存快照（key = model/功能标识；
+	// 价格表三件套）：search 等按单元计费读路径（GetFunctionPrice）零 DB 直读；
+	// 重载时机 = 同步拉取成功后 + 管理端改价后（对齐 pricing/imagePrice 快照，
+	// 低频无锁）。
+	functionPrice atomic.Pointer[map[string]*domain.FunctionPrice]
 	// priceFetcher 价格拉取器（pricing.Fetcher 实现）：管理端手动 sync
 	// （SyncPricingNow）与 cron worker 共享同一实例（main 装配注入；nil 时
 	// SyncPricingNow 返回错误——启动配置缺失，不应发生）。
@@ -415,6 +426,8 @@ var listSortFields = map[string][]string{
 	"pricing": {"model", "updated_at"},
 	// 与 repo 层 imagePriceSortFields 白名单一致（双保险；/admin/image-price）。
 	"image_price": {"model", "updated_at"},
+	// 与 repo 层 functionPriceSortFields 白名单一致（双保险；/admin/function-prices）。
+	"function_price": {"model", "updated_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。

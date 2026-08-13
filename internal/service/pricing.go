@@ -22,14 +22,17 @@ var ErrPriceFetch = errors.New("service: price fetch failed")
 
 // PricingSyncStats 一次手动同步的拉取统计（POST /admin/pricing/sync 响应）。
 // Task A 双线扩展：ImageRows/ImageUpdated 为 image_price 行统计（与文本价
-// 独立判定独立落库）；Skipped 语义含 image 判定——既无文本价也无 image 价的
-// 条目计一次。
+// 独立判定独立落库）；价格表三件套再扩：FunctionRows/FunctionUpdated 为
+// function_price 行统计（同款独立判定独立落库）；Skipped 语义含三线判定——
+// 文本价、image 价与 function 价均无效的条目计一次。
 type PricingSyncStats struct {
-	Rows         int // 拉取到的有效模型行数
-	Skipped      int // 解析时跳过的非法条目数（文本价与 image 价均无效）
-	Updated      int // 文本价 upsert 落库数（manual 行不计）
-	ImageRows    int // 拉取到的有效 image 价行数
-	ImageUpdated int // image 价 upsert 落库数（manual 行不计）
+	Rows            int // 拉取到的有效模型行数
+	Skipped         int // 解析时跳过的非法条目数（文本价、image 价与 function 价均无效）
+	Updated         int // 文本价 upsert 落库数（manual 行不计）
+	ImageRows       int // 拉取到的有效 image 价行数
+	ImageUpdated    int // image 价 upsert 落库数（manual 行不计）
+	FunctionRows    int // 拉取到的有效按单元价行数（search 等）
+	FunctionUpdated int // 按单元价 upsert 落库数（manual 行不计）
 }
 
 // pricingReloadPage 快照全量加载的分页大小（litellm 官方表 ~2k 模型 → 3 页内取完）。
@@ -219,12 +222,13 @@ func (s *Service) SetPriceFetcher(f pricing.Fetcher) { s.priceFetcher = f }
 
 // SyncPricingNow 手动触发一次价格同步（管理端 POST /admin/pricing/sync）：与
 // SyncWorker.Sync 同路径语义——fetch（price_source_url settings 快照，零 DB）
-// → 文本价 UpsertFromLiteLLM + image 价 UpsertImageFromLiteLLM（双线独立判定
-// 独立落库，均 manual 行级互斥，永不覆盖手动价）→ 文本价 + image 价快照重载。
-// 与 cron 并发安全（幂等 upsert，最坏浪费一次 fetch——M-3 语义）。错误映射：
-// 拉取失败 → ErrPriceFetch（502）；url 未配置 → ErrInvalidInput（400）；
-// upsert 失败 → 原样（500；文本价错误优先，无则透传 image 价错误——两线均
-// 部分成功可接受）。返回拉取统计（含 image 行统计）。
+// → 文本价 UpsertFromLiteLLM + image 价 UpsertImageFromLiteLLM + 按单元价
+// UpsertFunctionFromLiteLLM（三线独立判定独立落库，均 manual 行级互斥，永不
+// 覆盖手动价）→ 三线快照重载。与 cron 并发安全（幂等 upsert，最坏浪费一次
+// fetch——M-3 语义）。错误映射：拉取失败 → ErrPriceFetch（502）；url 未配置 →
+// ErrInvalidInput（400）；upsert 失败 → 原样（500；文本价错误优先，无则透传
+// image 价错误、再透传 function 价错误——三线均部分成功可接受）。返回拉取
+// 统计（含 image/function 行统计）。
 func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error) {
 	if s.priceFetcher == nil {
 		return nil, errors.New("pricing: fetcher not injected")
@@ -245,19 +249,25 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 	}
 	n, err := s.store.UpsertFromLiteLLM(ctx, res.Rows)
 	nImage, imgErr := s.store.UpsertImageFromLiteLLM(ctx, res.ImageRows)
+	nFunction, fnErr := s.store.UpsertFunctionFromLiteLLM(ctx, res.FunctionRows)
 	if err == nil {
 		err = imgErr
 	}
-	// upsert 部分成功后仍刷新双线快照（已落库的批立即生效）；fetch 失败则数据
+	if err == nil {
+		err = fnErr
+	}
+	// upsert 部分成功后仍刷新三线快照（已落库的批立即生效）；fetch 失败则数据
 	// 未变，保留旧快照（上方因错误直接返回）。
 	s.reloadPricing(ctx)
 	s.reloadImagePricing(ctx)
+	s.reloadFunctionPricing(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &PricingSyncStats{
 		Rows: len(res.Rows), Skipped: res.Skipped, Updated: n,
 		ImageRows: len(res.ImageRows), ImageUpdated: nImage,
+		FunctionRows: len(res.FunctionRows), FunctionUpdated: nFunction,
 	}, nil
 }
 
