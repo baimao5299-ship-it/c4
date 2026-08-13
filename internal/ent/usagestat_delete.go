@@ -4,12 +4,12 @@ package ent
 
 import (
 	"context"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/usagestat"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/usagestat"
 )
 
 // UsageStatDelete is the builder for deleting a UsageStat entity.

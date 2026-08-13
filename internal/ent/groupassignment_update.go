@@ -6,15 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/group"
-	"github.com/is7qin/c3api/internal/ent/groupassignment"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/user"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/user"
 )
 
 // GroupAssignmentUpdate is the builder for updating GroupAssignment entities.

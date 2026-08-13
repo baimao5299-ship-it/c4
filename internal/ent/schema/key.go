@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 )
 
 // Key 客户端 API key：独立表（重建 group 内嵌 key 语义，不向后兼容）。
@@ -42,5 +43,16 @@ func (Key) Edges() []ent.Edge {
 			Field("group_id").
 			Unique().
 			Required(),
+	}
+}
+
+// Indexes 管理面两路径的索引载体：ListKeysByUser（user_id EQ + deleted_at
+// IS NULL，先 Count 全扫再取页）与 DeleteKeysByGroup（group_id EQ ± 软删
+// 过滤）。写路径低频（CreateKey/UpdateKey/软删），AddQuotaUsed 按 id 批量
+// 不触碰新索引列——零额外写放大。
+func (Key) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("user_id", "deleted_at"),
+		index.Fields("group_id", "deleted_at"),
 	}
 }

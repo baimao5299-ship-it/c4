@@ -6,12 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/errlog"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/errlog"
 )
 
 // ErrLogCreate is the builder for creating a ErrLog entity.

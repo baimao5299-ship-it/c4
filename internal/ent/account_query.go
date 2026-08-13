@@ -6,17 +6,17 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/account"
-	"github.com/is7qin/c3api/internal/ent/accountext"
-	"github.com/is7qin/c3api/internal/ent/group"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/template"
 	"math"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/accountext"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/template"
 )
 
 // AccountQuery is the builder for querying Account entities.

@@ -6,17 +6,17 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/account"
-	"github.com/is7qin/c3api/internal/ent/group"
-	"github.com/is7qin/c3api/internal/ent/groupassignment"
-	"github.com/is7qin/c3api/internal/ent/key"
-	"github.com/is7qin/c3api/internal/ent/predicate"
 	"math"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 )
 
 // GroupQuery is the builder for querying Group entities.

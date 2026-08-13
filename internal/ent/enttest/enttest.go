@@ -9,9 +9,8 @@ import (
 	// required by schema hooks.
 	_ "github.com/is7qin/c3api/internal/ent/runtime"
 
-	"github.com/is7qin/c3api/internal/ent/migrate"
-
 	"entgo.io/ent/dialect/sql/schema"
+	"github.com/is7qin/c3api/internal/ent/migrate"
 )
 
 type (

@@ -6,16 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/account"
-	"github.com/is7qin/c3api/internal/ent/group"
-	"github.com/is7qin/c3api/internal/ent/groupassignment"
-	"github.com/is7qin/c3api/internal/ent/key"
-	"github.com/is7qin/c3api/internal/ent/predicate"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 )
 
 // GroupUpdate is the builder for updating Group entities.

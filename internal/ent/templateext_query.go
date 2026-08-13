@@ -5,15 +5,15 @@ package ent
 import (
 	"context"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/template"
-	"github.com/is7qin/c3api/internal/ent/templateext"
 	"math"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/templateext"
 )
 
 // TemplateExtQuery is the builder for querying TemplateExt entities.

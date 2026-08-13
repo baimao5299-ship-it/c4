@@ -5,14 +5,14 @@ package ent
 import (
 	"context"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/errlog"
-	"github.com/is7qin/c3api/internal/ent/predicate"
 	"math"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 )
 
 // ErrLogQuery is the builder for querying ErrLog entities.

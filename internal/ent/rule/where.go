@@ -3,10 +3,10 @@
 package rule
 
 import (
-	"github.com/is7qin/c3api/internal/ent/predicate"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.

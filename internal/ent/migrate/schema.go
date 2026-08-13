@@ -85,7 +85,7 @@ var (
 		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "model", Type: field.TypeString, Default: ""},
-		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "anthropic"}},
+		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "openai-images", "anthropic"}},
 		{Name: "status_code", Type: field.TypeInt, Default: 0},
 		{Name: "error_type", Type: field.TypeString, Default: "none"},
 		{Name: "error_message", Type: field.TypeString, Nullable: true},
@@ -219,6 +219,18 @@ var (
 				Columns:    []*schema.Column{KeysColumns[12]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "key_user_id_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{KeysColumns[12], KeysColumns[9]},
+			},
+			{
+				Name:    "key_group_id_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{KeysColumns[11], KeysColumns[9]},
 			},
 		},
 	}
@@ -374,6 +386,13 @@ var (
 				OnDelete:   schema.NoAction,
 			},
 		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tempbalance_user_id_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{TempBalancesColumns[5], TempBalancesColumns[2]},
+			},
+		},
 	}
 	// TemplatesColumns holds the columns for the "templates" table.
 	TemplatesColumns = []*schema.Column{
@@ -523,6 +542,11 @@ var (
 				Name:    "usagestat_bucket_time",
 				Unique:  false,
 				Columns: []*schema.Column{UsageStatsColumns[1]},
+			},
+			{
+				Name:    "usagestat_user_id_bucket_time",
+				Unique:  false,
+				Columns: []*schema.Column{UsageStatsColumns[5], UsageStatsColumns[1]},
 			},
 			{
 				Name:    "usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error",

@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/errlog"
-	"github.com/is7qin/c3api/internal/ent/predicate"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/predicate"
 )
 
 // ErrLogUpdate is the builder for updating ErrLog entities.

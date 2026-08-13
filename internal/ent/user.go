@@ -4,12 +4,12 @@ package ent
 
 import (
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/user"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/user"
 )
 
 // User is the model entity for the User schema.

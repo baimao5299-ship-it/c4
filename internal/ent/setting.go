@@ -4,12 +4,12 @@ package ent
 
 import (
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/setting"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/setting"
 )
 
 // Setting is the model entity for the Setting schema.

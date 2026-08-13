@@ -4,12 +4,12 @@ package ent
 
 import (
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/template"
-	"github.com/is7qin/c3api/internal/ent/templateext"
 	"strings"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/templateext"
 )
 
 // TemplateExt is the model entity for the TemplateExt schema.

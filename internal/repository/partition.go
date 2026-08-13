@@ -231,6 +231,7 @@ var usageStatsCreateDDL = partitionedCreateDDL("usage_stats", "bucket_time", usa
 var usageStatsIndexDDLs = []string{
 	`CREATE INDEX usagestat_bucket_time ON usage_stats (bucket_time)`,
 	`CREATE UNIQUE INDEX usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error ON usage_stats (bucket_time, group_id, account_id, template_id, user_id, model, is_error)`,
+	`CREATE INDEX usagestat_user_id_bucket_time ON usage_stats (user_id, bucket_time)`,
 }
 
 var usageStatsAlignColumnDDLs = alignColumnDDLs("usage_stats", usageStatsColumnDefs)

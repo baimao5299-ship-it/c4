@@ -6,17 +6,17 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/groupassignment"
-	"github.com/is7qin/c3api/internal/ent/key"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/tempbalance"
-	"github.com/is7qin/c3api/internal/ent/user"
 	"math"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/tempbalance"
+	"github.com/is7qin/c3api/internal/ent/user"
 )
 
 // UserQuery is the builder for querying User entities.

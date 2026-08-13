@@ -4,13 +4,13 @@ package ent
 
 import (
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/redemptioncode"
-	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/ent/redemptioncode"
+	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 )
 
 // RedemptionUse is the model entity for the RedemptionUse schema.

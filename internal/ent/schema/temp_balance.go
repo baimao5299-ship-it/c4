@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 )
 
 // TempBalance 临时额度：每笔独立行、独立到期（多笔不同到期共存）。
@@ -31,5 +32,14 @@ func (TempBalance) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
+	}
+}
+
+// Indexes 计费 FEFO 查询（user_id EQ + ORDER BY expires_at，permanent 最后）
+// 的索引载体：user_id 收敛到用户子集，expires_at 序直接满足排序（PG ASC
+// 默认 NULLS LAST，与 nil=永久最后注释语义一致）。
+func (TempBalance) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("user_id", "expires_at"),
 	}
 }

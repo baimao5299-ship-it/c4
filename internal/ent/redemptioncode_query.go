@@ -6,15 +6,15 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
-	"github.com/is7qin/c3api/internal/ent/predicate"
-	"github.com/is7qin/c3api/internal/ent/redemptioncode"
-	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 	"math"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/ent/predicate"
+	"github.com/is7qin/c3api/internal/ent/redemptioncode"
+	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 )
 
 // RedemptionCodeQuery is the builder for querying RedemptionCode entities.
