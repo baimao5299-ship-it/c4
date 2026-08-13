@@ -145,6 +145,10 @@ func (m *FunctionPriceManual) HasAnyPrice() bool {
 // PricePerCall 语义见 FunctionPriceManual：非 nil = 覆盖（可为 0）；nil =
 // 清空（接管行该分量价清除）。manual 行恒不写 raw（接管 litellm 行时清空）。
 // 返回落库后的完整行（GetFunctionPrice 重查）。
+// 调用方需先校验行有效性（HasAnyPrice）：全 nil 属非法状态（service 层
+// 400 拦截，当前唯一入口 PUT 必经）。冲突路径的 nil → ClearPricePerCall
+// 分支因此不可达，保留为防御完整性——防未来绕过 service 直接调用时
+// 产生全 nil 落行；如该约束被违反，请先在此方法补显式拒绝。
 func (r *FunctionPriceRepo) UpsertManual(ctx context.Context, m *FunctionPriceManual) (*domain.FunctionPrice, error) {
 	if m.Model == "" {
 		return nil, fmt.Errorf("function_price: model is required")

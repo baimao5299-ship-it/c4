@@ -60,7 +60,8 @@ func (h *AdminAPI) GetFunctionPricesModel(w http.ResponseWriter, r *http.Request
 // PutFunctionPricesModel 手动设按单元价（API 边界换算：收 USD/次——litellm
 // 原生口径 input_cost_per_query → ×1e5 → 毫分/次（usdPerCallToMilli，**禁混用
 // usdToMillis——虽同为 ×1e5 系数，但单位语义不同且防未来误改**）；price_per_call
-// 必填（契约 required；service 校验兜底）≥0（0 = 按次免费）。upsert 强制
+// 必填（schema 未声明 required；service 校验兜底——缺省/null → 400，见 openapi
+// FunctionPriceUpsert 描述）≥0（0 = 按次免费）。upsert 强制
 // source=manual，可接管 litellm 行（codex-search 价可改），ServerInterface。
 func (h *AdminAPI) PutFunctionPricesModel(w http.ResponseWriter, r *http.Request, model string) {
 	var in FunctionPriceUpsert
