@@ -7,6 +7,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -108,8 +109,10 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 		// tokens、tt = 之和、img = completed 帧计数；三处落账点共用。
 		u := usageTuple{ii: imgII, io: imgIO, tt: imgII + imgIO, img: imgCount}
 		if err != nil {
-			// 客户端断开：上游已消费请求（成功），仍须记录用量（同 chat 语义）
-			if r.Context().Err() != nil {
+			// 客户端断开：上游已消费请求（成功），仍须记录用量（同 chat 语义）。
+			// errors.Is(err, context.Canceled) 即客户端断开——sserelay.normalize
+			// 已区分三类（C-P2-2）：上游停滞超时 → DeadlineExceeded 走上游错误分支。
+			if errors.Is(err, context.Canceled) {
 				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrAbort, u, start)))
 				return 0, nil, true, nil
 			}

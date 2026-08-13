@@ -7,6 +7,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -79,11 +80,11 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
 		}
 		if err != nil {
-			// 客户端断开：释放槽位，无法转移。不能按 errors.Is(err, context.Canceled)
-			// 判断——sserelay.normalize 把任何 ctx 错误（含超时）折叠为 context.Canceled，
-			// 超时只会取消子 ctx 而父 ctx（r.Context()）仍存活；上游停滞超时必须走
-			// 上游错误分支（recordStreamAbort + ResultError），不得当作客户端断开。
-			if r.Context().Err() != nil {
+			// 客户端断开：释放槽位，无法转移。errors.Is(err, context.Canceled) 即
+			// 客户端断开——sserelay.normalize 已区分三类（C-P2-2）：父 ctx 取消 →
+			// Canceled；上游停滞超时（UpstreamStreamTimeout）→ DeadlineExceeded，
+			// 走上游错误分支（recordStreamAbort + ResultError），不得当作客户端断开。
+			if errors.Is(err, context.Canceled) {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
 				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, start)))

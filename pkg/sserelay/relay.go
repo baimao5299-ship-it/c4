@@ -63,6 +63,7 @@ type Config struct {
 
 type relay struct {
 	ctx context.Context
+	w   http.ResponseWriter // 原始 dst：取消联动设写侧 deadline（C-P2-1 方案 1）
 	bw  *bufio.Writer
 	br  *bufio.Reader
 	fl  http.Flusher
@@ -72,10 +73,11 @@ type relay struct {
 	pending  int        // 累计写入字节；阈值/timer/结束残余 flush 后归零（首事件 latency flush 不归零，其字节继续计入阈值）
 	lastTick time.Time
 
-	timer      *time.Timer
-	timerArmed bool // 按需武装：仅当存在待 flush 数据时 timer 才在跑（瞬时短流零 timer 开销）
-	stopFlush  chan struct{} // 关闭后 timer goroutine 退出
-	timerDone  chan struct{}
+	timer        *time.Timer
+	timerArmed   bool // 按需武装：仅当存在待 flush 数据时 timer 才在跑（瞬时短流零 timer 开销）
+	stopFlush    chan struct{} // 关闭后 timer goroutine 与 deadline watcher 退出
+	timerDone    chan struct{}
+	deadlineDone chan struct{} // deadline watcher 退出信号
 }
 
 // relayBufio 池化的 bufio 读写器（每流各 8KB；GC 削减 P6：免每流 2×8KB 新建
@@ -108,13 +110,16 @@ func Relay(ctx context.Context, dst http.ResponseWriter, src io.Reader, cfg Conf
 	rb.br.Reset(&ctxReader{ctx: ctx, r: src})
 	r := &relay{
 		ctx: ctx, cfg: cfg,
-		bw:        rb.bw,
-		br:        rb.br,
-		stopFlush: make(chan struct{}),
-		timerDone: make(chan struct{}),
+		w:            dst,
+		bw:           rb.bw,
+		br:           rb.br,
+		stopFlush:    make(chan struct{}),
+		timerDone:    make(chan struct{}),
+		deadlineDone: make(chan struct{}),
 	}
 	r.fl, _ = dst.(http.Flusher)
 	r.startFlushTimer()
+	r.startDeadlineWatcher()
 
 	err := r.run()
 	r.stopFlushTimer()
@@ -210,6 +215,17 @@ func (r *relay) run() error {
 			}
 		}
 		if err == io.EOF {
+			// ReadSlice "数据+io.EOF" 双返回时末帧已累积未 flush：正常流末帧
+			// 已由空行派发（此处 frame.Len()==0，行为零变化）；无末尾空行的
+			// 关闭风格（第三方兼容上游）会丢最后一帧 → Observer 看不到
+			// completed 帧 → usage 提取落空 → cost=0 落账。EOF 中途截断
+			// （末行无 \n）按原样转发直写（WHATWG 视同空行派发）。
+			// flushFrame 写错误必须传播（与正常空行 flush 分支行为一致）。
+			if frame.Len() > 0 {
+				if err := flushFrame(); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 		if err == bufio.ErrBufferFull {
@@ -245,9 +261,17 @@ func splitField(line []byte) ([]byte, []byte) {
 	return name, val
 }
 
+// normalize 错误分类（C-P2-2）：父 ctx 取消 → context.Canceled；子 ctx 超时
+// （UpstreamStreamTimeout）→ context.DeadlineExceeded（r.ctx.Err() 原样返回，
+// 不再折叠成 Canceled）；上游读错误原样透传。三类可区分——调用方无需再
+// "查 r.Context().Err()" 补丁，标准 errors.Is(err, context.Canceled) 即可
+// 判定客户端断开。
 func (r *relay) normalize(err error) error {
-	if err == context.Canceled || r.ctx.Err() != nil {
+	if err == context.Canceled {
 		return context.Canceled
+	}
+	if r.ctx.Err() != nil {
+		return r.ctx.Err()
 	}
 	return err
 }
@@ -255,7 +279,7 @@ func (r *relay) normalize(err error) error {
 func (r *relay) checkCancel() error {
 	select {
 	case <-r.ctx.Done():
-		return context.Canceled
+		return r.ctx.Err() // 取消/超时分类同 normalize（不折叠）
 	default:
 		return nil
 	}
@@ -321,8 +345,34 @@ func (r *relay) startFlushTimer() {
 
 func (r *relay) stopFlushTimer() {
 	r.timer.Stop()
-	close(r.stopFlush) // 唤醒可能阻塞在 select 上的 timer goroutine
+	close(r.stopFlush) // 唤醒阻塞在 select 上的 timer goroutine 与 deadline watcher
 	<-r.timerDone      // 等 timer goroutine 退出后才允许释放 writer
+	<-r.deadlineDone   // 等 deadline watcher 退出（取消联动 goroutine 无泄漏）
+}
+
+// startDeadlineWatcher 写侧 deadline 与 ctx.Done 联动（C-P2-1 方案 1）：
+// "取消 = 写失败 = 正常退出"——半开客户端上阻塞的写（bw.Flush 持 r.mu、
+// 无 ctx 感知，全库无 SetWriteDeadline）在 deadline 处失败返回，flushFrame
+// 传播 → run 正常退出；无此联动则 run + timer 双 goroutine 永久泄漏
+// （每流 2 goroutine + 2×8KB 池化 bufio）。
+// 独立 goroutine 而非挂 timer goroutine（方案 2 失效窗口：timer 已消费 C
+// 后阻塞在 r.mu.Lock/flush 时，ctx.Done 无法唤醒锁等待者）；本 goroutine
+// 永不触碰 r.mu，取消必然可达。设置后即退出；流正常结束时由 stopFlush
+// 唤醒退出（net/http 在 handler 返回后自行复位 conn 写 deadline，无残留
+// 影响 keep-alive 复用）。
+func (r *relay) startDeadlineWatcher() {
+	go func() {
+		defer close(r.deadlineDone)
+		select {
+		case <-r.ctx.Done():
+			// dst 可能被中间件包装（accessLog 的 statusWriter）——
+			// ResponseController 沿 Unwrap 链下探到真实 writer 才能生效
+			// （无 Unwrap 的包装层 = ErrNotSupported，C-P2-1 前置修复：
+			// middleware.statusWriter.Unwrap）。
+			_ = http.NewResponseController(r.w).SetWriteDeadline(time.Now())
+		case <-r.stopFlush:
+		}
+	}()
 }
 
 // flushLocked 批量 flush（阈值 / timer / 结束残余触发）：pending > 0 时执行

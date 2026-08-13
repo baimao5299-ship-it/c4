@@ -64,6 +64,38 @@ func TestRelayVeryLongFrame(t *testing.T) {
 	require.Equal(t, src, rec.Body.String())
 }
 
+// TestRelayEOFFlushesFinalFrameWithoutBlankLine C-P1-1 回归：EOF 双返回
+// （"数据+io.EOF"，无末尾空行的关闭风格——第三方兼容上游）时末帧必须 flush
+// ——否则 Observer 看不到 completed 帧 → usage 提取落空 → cost=0 落账；
+// 输出字节必须完整原样（EOF 中途截断按 WHATWG 视同空行派发直写）。
+func TestRelayEOFFlushesFinalFrameWithoutBlankLine(t *testing.T) {
+	src := "data: {\"type\":\"response.completed\",\"usage\":{\"total_tokens\":9}}\n"
+	var got []Event
+	rec := httptest.NewRecorder()
+	require.NoError(t, relayStream(rec, src, Config{
+		Observer: func(e Event) { got = append(got, e) },
+	}))
+	require.Len(t, got, 1, "EOF 无空行帧必须派发给 Observer（丢帧 = 计费为零）")
+	require.Equal(t, `{"type":"response.completed","usage":{"total_tokens":9}}`, string(got[0].Data))
+	require.Equal(t, src, rec.Body.String(), "输出字节必须完整原样转发")
+}
+
+// TestRelayEOFFlushesLongLineWithoutNewline C-P1-1 顺带覆盖：ErrBufferFull
+// + EOF 双返回的长行（> 8KiB bufio buffer、无末尾换行）——末帧由多段累积，
+// EOF 时必须整体 flush（字节完整 + Observer 可见），不可丢。
+func TestRelayEOFFlushesLongLineWithoutNewline(t *testing.T) {
+	long := strings.Repeat("x", 1<<20) // 1 MiB 单行
+	src := "data: " + long             // 无 \n
+	var got []Event
+	rec := httptest.NewRecorder()
+	require.NoError(t, relayStream(rec, src, Config{
+		Observer: func(e Event) { got = append(got, e) },
+	}))
+	require.Len(t, got, 1, "ErrBufferFull+EOF 长行必须派发为末帧")
+	require.NotEmpty(t, got[0].Data)
+	require.Equal(t, src, rec.Body.String(), "长行字节必须完整原样转发")
+}
+
 func TestRelayObserverReceivesTypedEvent(t *testing.T) {
 	var got []Event
 	rec := httptest.NewRecorder()
@@ -216,6 +248,106 @@ func TestRelayContextCancelStops(t *testing.T) {
 type blockingReader struct{ ch chan struct{} }
 
 func (r *blockingReader) Read(p []byte) (int, error) { <-r.ch; return 0, io.EOF }
+
+// ctxBlockingReader 阻塞直到 ctx 结束或 release 关闭（ctxReader 只在本层
+// Read 入口查 ctx，无法中断已阻塞的下层 Read——模拟"上游停滞"必须由本层
+// 感知 ctx 取消）。
+type ctxBlockingReader struct {
+	ctx context.Context
+	ch  chan struct{}
+}
+
+func (r *ctxBlockingReader) Read(p []byte) (int, error) {
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	case <-r.ch:
+		return 0, io.EOF
+	}
+}
+
+// TestRelayTimeoutClassifiesAsDeadlineExceeded C-P2-2 回归：子 ctx 超时
+// （UpstreamStreamTimeout）必须分类为 context.DeadlineExceeded 而非被折叠
+// 成 context.Canceled——调用方据此区分"客户端断开"与"上游停滞超时"
+// （5 个 caller 的 r.Context().Err() 补丁已删，靠 normalize 的三类可区分）。
+func TestRelayTimeoutClassifiesAsDeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	rd := &ctxBlockingReader{ctx: ctx, ch: make(chan struct{})}
+	err := Relay(ctx, httptest.NewRecorder(), rd, Config{})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotErrorIs(t, err, context.Canceled, "超时不得折叠为 Canceled（否则被记成 200+ErrAbort）")
+}
+
+// TestRelayCancelClassifiesAsCanceled C-P2-2 对称断言：父 ctx 取消（客户端
+// 断开）必须分类为 context.Canceled——与超时区分开（errors.Is 断言）。
+func TestRelayCancelClassifiesAsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rd := &ctxBlockingReader{ctx: ctx, ch: make(chan struct{})}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Relay(ctx, httptest.NewRecorder(), rd, Config{}) }()
+	time.Sleep(10 * time.Millisecond) // 确保已阻塞在 Read 后再取消（读侧取消路径）
+	cancel()
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("取消未停止 relay")
+	}
+}
+
+// deadClientWriter 模拟半开客户端（进程死亡、无 FIN/RST 收包）：Write 永久
+// 阻塞，直到 SetWriteDeadline 被调用（ctx 取消联动）才失败返回——"取消 =
+// 写失败 = 正常退出"的唯一路径。实现退化（deadline 无独立 watcher，永不被
+// 设置）时 Write 永不返回 → Relay 挂死 → 测试超时失败（兜底抓住方案 2 类
+// 失效：timer goroutine 阻塞在 r.mu 上时 ctx.Done 无法唤醒锁等待者）。
+type deadClientWriter struct {
+	entered    chan struct{} // Write 已进入阻塞（测试等它再取消）
+	deadlineCh chan struct{} // SetWriteDeadline 已调用 → 放行 Write
+	once       sync.Once
+}
+
+func (w *deadClientWriter) Header() http.Header { return http.Header{} }
+func (w *deadClientWriter) WriteHeader(int)     {}
+
+func (w *deadClientWriter) Write(p []byte) (int, error) {
+	select {
+	case w.entered <- struct{}{}:
+	default:
+	}
+	<-w.deadlineCh
+	return 0, errors.New("simulated write deadline: client not reading")
+}
+
+func (w *deadClientWriter) SetWriteDeadline(time.Time) error {
+	w.once.Do(func() { close(w.deadlineCh) })
+	return nil
+}
+
+// TestRelayCancelUnblocksDeadClientWrite C-P2-1 回归：半开客户端（写阻塞）
+// → ctx 取消后必须写失败退出且无 goroutine 泄漏（run + timer + watcher
+// 全汇合——Relay 返回即 stopFlushTimer 已 join 全部内部 goroutine）。
+func TestRelayCancelUnblocksDeadClientWrite(t *testing.T) {
+	wr := &deadClientWriter{entered: make(chan struct{}, 1), deadlineCh: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	src := &stagedReader{chunks: [][]byte{[]byte("data: x\n\n")}, block: make(chan struct{})}
+	errCh := make(chan error, 1)
+	go func() { errCh <- Relay(ctx, wr, src, Config{}) }()
+	select {
+	case <-wr.entered:
+	case <-time.After(time.Second):
+		t.Fatal("首事件 flush 未进入底层写阻塞（测试前置失败）")
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		require.Error(t, err, "取消后阻塞写必须以写错误失败退出")
+	case <-time.After(2 * time.Second):
+		t.Fatal("取消后写阻塞未解除：relay 未退出（deadline 联动失效——双 goroutine 泄漏）")
+	}
+	close(src.block)
+}
 
 // plainWriter 只实现 http.ResponseWriter 的 Header/Write/WriteHeader，
 // 刻意不提供 Flush 方法，用于覆盖 dst 无 Flusher 的路径。

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -105,8 +106,10 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 		if err != nil {
 			// 客户端断开/流中止语义与模板 caller 逐字同构（recordStreamAbort +
-			// MarkResult；客户端断开 finish ErrAbort 不转移）。
-			if r.Context().Err() != nil {
+			// MarkResult；客户端断开 finish ErrAbort 不转移）。errors.Is(err,
+			// context.Canceled) 即客户端断开——sserelay.normalize 已区分三类
+			// （C-P2-2）：上游停滞超时 → DeadlineExceeded 走上游错误分支。
+			if errors.Is(err, context.Canceled) {
 				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
