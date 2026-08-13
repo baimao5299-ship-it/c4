@@ -495,6 +495,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/image-price": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 图片生成价格列表（分页/筛选/排序；sort 白名单 model/updated_at） */
+        get: operations["GetImagePrice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/image-price/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行） */
+        put: operations["PutImagePriceModel"];
+        post?: never;
+        /** 删除手动图片价格（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回） */
+        delete: operations["DeleteImagePriceModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/function-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按单元计费功能类价格列表（分页/筛选/排序；sort 白名单 model/updated_at） */
+        get: operations["GetFunctionPrices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/function-prices/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        /** 按 model 取单行（缺失 → 404；codex-search 种子行/默认兜底价见快照读） */
+        get: operations["GetFunctionPricesModel"];
+        /** 手动设按单元价（price_per_call USD/次 必填 ≥0；×1e5 存储毫分/次；upsert 强制 source=manual，可接管 litellm 行——codex-search 价可改） */
+        put: operations["PutFunctionPricesModel"];
+        post?: never;
+        /** 删除手动按单元价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回；codex-search 种子行重启补回） */
+        delete: operations["DeleteFunctionPricesModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/user/auth/register": {
         parameters: {
             query?: never;
@@ -807,7 +882,7 @@ export interface components {
             deleted: boolean;
         };
         /** @enum {string} */
-        RequestFormat: "openai-chat" | "openai-responses" | "anthropic";
+        RequestFormat: "openai-chat" | "openai-responses" | "openai-images" | "anthropic";
         /** @enum {string} */
         AccountStatus: "active" | "unhealthy" | "429" | "disabled";
         /** @enum {string} */
@@ -820,7 +895,7 @@ export interface components {
              * @enum {string}
              */
             credential_type: "api_key" | "responses-special" | "codex-oauth" | "codex-pat";
-            supported_formats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "anthropic")[];
+            supported_formats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "anthropic")[];
             models?: string[];
             format_models?: {
                 [key: string]: string[];
@@ -839,7 +914,7 @@ export interface components {
              * @enum {string}
              */
             CredentialType?: "api_key" | "responses-special" | "codex-oauth" | "codex-pat";
-            SupportedFormats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "anthropic")[];
+            SupportedFormats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "anthropic")[];
             Models?: string[];
             FormatModels?: {
                 [key: string]: string[];
@@ -1221,7 +1296,7 @@ export interface components {
         TemplatePatch: {
             name?: string;
             base_url?: string;
-            supported_formats?: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "anthropic")[];
+            supported_formats?: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "anthropic")[];
             models?: string[];
             format_models?: {
                 [key: string]: string[];
@@ -1588,10 +1663,90 @@ export interface components {
         PricingSyncResponse: {
             /** @description 拉取到的有效模型行数 */
             rows: number;
-            /** @description 解析时跳过的非法行数 */
+            /** @description 解析时跳过的非法条目数（文本价、image 价与 function 价均无效，计一次） */
             skipped: number;
-            /** @description upsert 落库数（manual 行不计） */
+            /** @description 文本价 upsert 落库数（manual 行不计） */
             updated: number;
+            /** @description 拉取到的有效 image 价行数（Task A 双线） */
+            image_rows?: number;
+            /** @description image 价 upsert 落库数（manual 行不计） */
+            image_updated?: number;
+            /** @description 拉取到的有效按单元价行数（价格表三件套） */
+            function_rows?: number;
+            /** @description 按单元价 upsert 落库数（manual 行不计） */
+            function_updated?: number;
+        };
+        ImagePrice: {
+            /** @description 模型名（与 pricings.model 同口径） */
+            Model: string;
+            /**
+             * Format: double
+             * @description image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算，1 USD = 100
+             */
+            InputImageTokenPricePerMillion?: number | null;
+            /**
+             * Format: double
+             * @description image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；内部存储毫分/1M，per-token USD ×1e11 换算）；null = 无该分量价
+             */
+            OutputImageTokenPricePerMillion?: number | null;
+            /**
+             * Format: double
+             * @description 每张图价（USD/张；内部存储毫分——×1e5 换算，**与 token 价不同换算系**；计费不走 /1e6 除法）；null = 不启用按张分量
+             */
+            OutputCostPerImage?: number | null;
+            Source: components["schemas"]["PricingSource"];
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        ImagePriceUpsert: {
+            /**
+             * Format: double
+             * @description image token 输入价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+             */
+            input_image_token_price_per_million?: number | null;
+            /**
+             * Format: double
+             * @description image token 输出价（USD per image token——litellm 原生口径，字段名 *_price_per_million 为历史命名；API 边界 ×1e11 → 毫分/1M）；缺省/null = 清空该分量
+             */
+            output_image_token_price_per_million?: number | null;
+            /**
+             * Format: double
+             * @description 每张图价（USD/张；API 边界 ×1e5 → 毫分/张——**禁混用 ×1e11 换算**）；缺省/null = 清空该分量
+             */
+            output_cost_per_image?: number | null;
+        };
+        ImagePriceListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["ImagePrice"][];
+        };
+        FunctionPrice: {
+            /** @description 模型/功能标识（litellm search 模型名 或 codex-search 固定标识） */
+            Model: string;
+            /**
+             * Format: double
+             * @description 按单元价（USD/次——litellm 原生口径 input_cost_per_query；内部存储毫分/次，×1e5 换算，1 USD = 100
+             */
+            PricePerCall?: number | null;
+            Source: components["schemas"]["PricingSource"];
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        FunctionPriceUpsert: {
+            /**
+             * Format: double
+             * @description 按单元价（USD/次；API 边界 ×1e5 → 毫分/次）；必填且 ≥0——缺省/null → 400（service 行有效性校验：按单元价非 nil；0 = 按次免费）
+             */
+            price_per_call?: number | null;
+        };
+        FunctionPriceListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["FunctionPrice"][];
         };
         RedeemRequest: {
             code: string;
@@ -1684,9 +1839,12 @@ export interface components {
             CreatedAt?: string;
         };
         LogsResponse: {
-            /** Format: int64 */
-            total: number;
             rows: components["schemas"]["UsageLog"][];
+            /**
+             * Format: int64
+             * @description 下一页游标（本页最后一条 id）；null = 无更多行
+             */
+            next_cursor: number | null;
         };
         /** @description 错误明细审计（err_logs 瘦表：拒绝 + 异常双轨；无 token/价格列） */
         ErrLog: {
@@ -1724,9 +1882,12 @@ export interface components {
             CreatedAt?: string;
         };
         ErrLogsResponse: {
-            /** Format: int64 */
-            total: number;
             rows: components["schemas"]["ErrLog"][];
+            /**
+             * Format: int64
+             * @description 下一页游标（本页最后一条 id）；null = 无更多行
+             */
+            next_cursor: number | null;
         };
         StatBucket: {
             /** Format: date-time */
@@ -2887,6 +3048,185 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetImagePrice: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                source?: "litellm" | "manual";
+                model?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 图片价格列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImagePriceListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutImagePriceModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImagePriceUpsert"];
+            };
+        };
+        responses: {
+            /** @description 设价后的图片价格行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImagePrice"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    DeleteImagePriceModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetFunctionPrices: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                source?: "litellm" | "manual";
+                model?: string;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 按单元价列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionPriceListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetFunctionPricesModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 单行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionPrice"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutFunctionPricesModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FunctionPriceUpsert"];
+            };
+        };
+        responses: {
+            /** @description 设价后的按单元价行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionPrice"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    DeleteFunctionPricesModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     PostUserAuthRegister: {
         parameters: {
             query?: never;
@@ -3129,15 +3469,15 @@ export interface operations {
     };
     GetUserUsageLogs: {
         parameters: {
-            query?: {
+            query: {
                 limit?: number;
-                offset?: number;
+                cursor?: number;
                 group_id?: number;
                 account_id?: number;
                 model?: string;
                 error_type?: string;
-                from?: string;
-                to?: string;
+                from: string;
+                to: string;
             };
             header?: never;
             path?: never;
@@ -3145,7 +3485,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 分页结果 */
+            /** @description 分页结果（next_cursor 非空表示还有下一页） */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3159,16 +3499,16 @@ export interface operations {
     };
     GetUserErrLogs: {
         parameters: {
-            query?: {
+            query: {
                 limit?: number;
-                offset?: number;
+                cursor?: number;
                 group_id?: number;
                 account_id?: number;
                 model?: string;
                 status_code?: number;
                 error_type?: string;
-                from?: string;
-                to?: string;
+                from: string;
+                to: string;
             };
             header?: never;
             path?: never;
@@ -3176,7 +3516,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 分页结果 */
+            /** @description 分页结果（next_cursor 非空表示还有下一页） */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3390,16 +3730,16 @@ export interface operations {
     };
     GetUsageLogs: {
         parameters: {
-            query?: {
+            query: {
                 limit?: number;
-                offset?: number;
+                cursor?: number;
                 group_id?: number;
                 account_id?: number;
                 user_id?: number;
                 model?: string;
                 error_type?: string;
-                from?: string;
-                to?: string;
+                from: string;
+                to: string;
             };
             header?: never;
             path?: never;
@@ -3407,7 +3747,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 分页结果 */
+            /** @description 分页结果（next_cursor 非空表示还有下一页） */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3421,17 +3761,17 @@ export interface operations {
     };
     GetErrLogs: {
         parameters: {
-            query?: {
+            query: {
                 limit?: number;
-                offset?: number;
+                cursor?: number;
                 group_id?: number;
                 account_id?: number;
                 user_id?: number;
                 model?: string;
                 status_code?: number;
                 error_type?: string;
-                from?: string;
-                to?: string;
+                from: string;
+                to: string;
             };
             header?: never;
             path?: never;
@@ -3439,7 +3779,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 分页结果 */
+            /** @description 分页结果（next_cursor 非空表示还有下一页） */
             200: {
                 headers: {
                     [name: string]: unknown;
