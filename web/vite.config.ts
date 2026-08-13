@@ -9,9 +9,12 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     proxy: {
-      '/admin': { target: 'http://127.0.0.1:18080', changeOrigin: true },
+      // target 用 localhost（::1）而非 127.0.0.1：本机 127.0.0.1:18080 可能被
+      // 其他进程（如 mock-mfp-api.mjs 联调服务）占用，特定地址绑定优先于 0.0.0.0，
+      // 代理会误入 mock 返回 404。localhost 解析到 ::1 命中真后端。
+      '/admin': { target: 'http://localhost:18080', changeOrigin: true },
       '/user': {
-        target: 'http://127.0.0.1:18080',
+        target: 'http://localhost:18080',
         changeOrigin: true,
         // 页面导航（Accept: text/html，如 /user/login /user/keys 等 SPA 路由）交回
         // vite 返回 index.html；API fetch（Accept: */*）代理到后端。
