@@ -39,7 +39,8 @@ type Codex struct {
 // SetTransport 装配 SDK HTTPClient 的上游 transport（resp 补压测修复——SDK
 // 默认 transport MaxIdleConnsPerHost=2，压测 profile ~12% CPU 连接风暴；main
 // 装配 httpx.NewTransport(网关同形态连接池参数)。构造期一次（冷面），热路径
-// 零影响；nil = SDK 默认（测试形态）。
+// 零影响；nil = SDK 默认（测试形态）。httpx 默认 Proxy=nil 直连（C2-1 防劫持
+// ——环境代理不静默改道 SDK 上游请求，main 装配传 nil 同网关既有 client）。
 func (a *Codex) SetTransport(rt http.RoundTripper) {
 	a.transport = rt
 }

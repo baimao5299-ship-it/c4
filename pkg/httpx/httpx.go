@@ -8,6 +8,7 @@ package httpx
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -20,11 +21,16 @@ type TransportConfig struct {
 	IdleConnTimeout time.Duration
 	DialTimeout     time.Duration
 	ForceHTTP2      bool
+	// Proxy 上游请求代理函数（nil = 直连，默认）。不再隐式装配
+	// http.ProxyFromEnvironment——HTTP_PROXY 设了会静默改道全部上游请求
+	//（含 x-api-key/Authorization 凭据，WS 升级大概率失败），压测行为随
+	// 环境漂移。装配方（main NewClient / SetTransport 两处）显式决定。
+	Proxy func(*http.Request) (*url.URL, error)
 }
 
 func NewTransport(cfg TransportConfig) *http.Transport {
 	return &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		Proxy: cfg.Proxy, // nil = 直连（防环境代理劫持 + 压测确定性）；装配方显式决定
 		DialContext: (&net.Dialer{
 			Timeout:   cfg.DialTimeout,
 			KeepAlive: 30 * time.Second,
