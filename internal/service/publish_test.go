@@ -70,11 +70,10 @@ type recLocalDispatcher struct {
 	applied []notify.Change
 }
 
-func (r *recLocalDispatcher) Apply(ctx context.Context, ch notify.Change) error {
+func (r *recLocalDispatcher) Apply(ctx context.Context, ch notify.Change) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.applied = append(r.applied, ch)
-	return nil
 }
 func (r *recLocalDispatcher) FullRefresh(ctx context.Context) error { return nil }
 func (r *recLocalDispatcher) changes() []notify.Change {

@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // fakeReloader 记录规则引擎 Reload 调用（invalidate 钩子断言用）。
@@ -124,8 +126,10 @@ func TestCreateRulePriorityConflict(t *testing.T) {
 	require.NoError(t, err)
 	_, err = svc.CreateRule(context.Background(), RuleInput{Name: "r2", Priority: 10, When: validWhen(), Then: validThen()})
 	require.ErrorIs(t, err, ErrConflict, "priority 唯一冲突 → ErrConflict（409 语义）")
+	require.Contains(t, err.Error(), `priority=10 or name="r2"`, "409 消息含冲突详情（G1-2）")
 	_, err = svc.CreateRule(context.Background(), RuleInput{Name: "r1", Priority: 20, When: validWhen(), Then: validThen()})
 	require.ErrorIs(t, err, ErrConflict, "name 唯一冲突同样映射 ErrConflict")
+	require.Contains(t, err.Error(), `name="r1"`, "409 消息含冲突详情（G1-2）")
 	require.Equal(t, 1, rl.calls, "冲突失败不触发 Reload")
 }
 
@@ -174,7 +178,21 @@ func TestUpdateRuleMerge(t *testing.T) {
 	p := 20
 	_, err = svc.UpdateRule(context.Background(), created.ID, RulePatch{Priority: &p})
 	require.ErrorIs(t, err, ErrConflict)
+	require.Contains(t, err.Error(), `priority=20`, "更新路径 409 消息同样含冲突详情（G1-2）")
 	require.Equal(t, 4, rl.calls, "冲突失败不触发 Reload")
+}
+
+// TestMapRuleRepoErrConflict mapRuleRepoErr 的 ErrConflict 分支：repository.ErrConflict →
+// service.ErrConflict（保留冲突详情，handler 409 响应带详情——G1-2 对齐 mapRepoErr）；
+// 非冲突错误原样透传。
+func TestMapRuleRepoErrConflict(t *testing.T) {
+	err := fmt.Errorf("%w: priority=%d or name=%q", repository.ErrConflict, 10, "r2")
+	mapped := mapRuleRepoErr(err)
+	require.ErrorIs(t, mapped, ErrConflict, "repository.ErrConflict → service.ErrConflict")
+	require.Contains(t, mapped.Error(), `priority=10 or name="r2"`, "409 消息保留冲突详情")
+
+	raw := errors.New("boom")
+	require.Same(t, raw, mapRuleRepoErr(raw), "非映射错误原样透传")
 }
 
 func TestDeleteRule(t *testing.T) {

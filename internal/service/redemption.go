@@ -95,7 +95,6 @@ func (s *Service) GenerateCodes(ctx context.Context, req GenerateRequest, create
 	if count <= 0 {
 		count = 1
 	}
-	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		codes := make([]*domain.RedemptionCode, 0, count)
 		for i := 0; i < count; i++ {
@@ -112,7 +111,6 @@ func (s *Service) GenerateCodes(ctx context.Context, req GenerateRequest, create
 			})
 		}
 		if err := s.store.CreateCodes(ctx, codes); err != nil {
-			lastErr = err
 			if errors.Is(err, repository.ErrConflict) && attempt < 4 {
 				continue // code 唯一冲突 → 换新码重试（N=5）
 			}
@@ -125,7 +123,7 @@ func (s *Service) GenerateCodes(ctx context.Context, req GenerateRequest, create
 		}
 		return codes, nil
 	}
-	return nil, mapRepoErr(lastErr) // 不可达：N=5 全冲突后的兜底返回
+	panic("unreachable") // 循环内 5 次迭代全部 return（continue 仅 attempt<4，末次冲突必 return）
 }
 
 // ListCodes 兑换码列表（/admin/redemption-codes）：type/status 筛选

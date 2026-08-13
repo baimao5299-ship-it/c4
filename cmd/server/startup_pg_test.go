@@ -256,7 +256,7 @@ func TestSettingsTimingPG(t *testing.T) {
 	// --- 远端路径：其他实例落库 N=2（本实例不经 UpdateSetting）---
 	_, err = repos.SetSetting(ctx, "cluster.instances", domain.SettingTypeNumber, "2")
 	require.NoError(t, err)
-	require.NoError(t, disp.Apply(ctx, notify.Change{Settings: true}))
+	disp.Apply(ctx, notify.Change{Settings: true})
 	require.Eventually(t, func() bool { return seenN.Load() == 2 }, 2*time.Second, 5*time.Millisecond,
 		"远端 settings 变更：快照先同步刷新、auth.Reload 读到新 N（预算按新 N 重算）")
 
