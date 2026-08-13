@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -26,6 +27,31 @@ func newRuleSvc() (*Service, *fakeStore, *fakeReloader) {
 	fs := newFakeStore()
 	rl := &fakeReloader{}
 	return &Service{store: fs, ruleReload: rl}, fs, rl
+}
+
+// fakeRuleReloader 函数式 RuleReloader（B4-4 断言注入）。
+type fakeRuleReloader func(ctx context.Context) error
+
+func (f fakeRuleReloader) Reload(ctx context.Context) error { return f(ctx) }
+
+// TestReloadRulesSurvivesRequestCancel B4-4（p2-12）：请求 ctx 已取消（客户端
+// 断开）→ 规则重载仍必须执行完成——reloadRules 用 context.WithoutCancel 剥离
+// 取消信号（与 publish 同纪律 service.go:320）；且重载拿到的 ctx 不可取消。
+func TestReloadRulesSurvivesRequestCancel(t *testing.T) {
+	called := make(chan struct{})
+	svc := &Service{ruleReload: fakeRuleReloader(func(rc context.Context) error {
+		require.NoError(t, rc.Err(), "WithoutCancel 后重载 ctx 不可取消（B4-4）")
+		close(called)
+		return nil
+	})}
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel() // 请求 ctx 已取消（客户端断开）
+	svc.reloadRules(reqCtx)
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("请求 ctx 取消后规则重载必须仍执行完成（B4-4）")
+	}
 }
 
 func validWhen() map[string]any { return map[string]any{"kind": "error"} }

@@ -242,7 +242,7 @@ func (l *Listener) consume(ctx context.Context, conn Conn) bool {
 			continue
 		}
 		if ch.Src != "" && ch.Src == l.cfg.Src {
-			continue // 自播跳过：省一次重复 reload
+			continue // 自播跳过：省一次重复 reload（Src 含实例随机 nonce，判等只命中本实例，B4-1）
 		}
 		if err := l.cfg.Dispatcher.Apply(ctx, ch); err != nil && l.cfg.Log != nil {
 			l.cfg.Log.Warn("notify apply failed", logx.Error(err))

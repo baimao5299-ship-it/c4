@@ -122,7 +122,7 @@ func (p *Publisher) Publish(ctx context.Context, ch Change) error {
 	if p.pool == nil {
 		return fmt.Errorf("notify: publisher pool not configured")
 	}
-	ch.Src = p.src // 接收端跳过自播（空 src = 不跳过，单实例部署无碍）
+	ch.Src = p.src // 接收端跳过自播（Src 含实例随机 nonce，B4-1 跨实例唯一；空 src = 不跳过，单实例部署无碍）
 	payload := Marshal(ch)
 	_, err := p.pool.Exec(ctx, notifySQL, string(payload))
 	if err != nil && p.log != nil {
