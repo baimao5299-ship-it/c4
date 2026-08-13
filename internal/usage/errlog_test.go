@@ -6,7 +6,8 @@ package usage
 
 // err_logs worker 单测（架构审查 C28）：有界队列满非阻塞丢弃 + 计数、B2 双队列
 // 豁免（拒绝风暴不丢双轨行）、flush 批界、Close 完整排空/预算截断、InsertBatch
-// 失败止损丢弃、S4 尾窗口竞态、告警边沿（S3）。
+// 失败豁免回灌重试 + 拒绝按采样语义丢弃（A-P1-3/A-P2-8-1 双计数口径）、S4 尾
+// 窗口竞态、告警边沿（S3）。
 
 import (
 	"context"
@@ -40,6 +41,13 @@ func (c *captureErrLogInserter) InsertBatch(ctx context.Context, logs []*domain.
 	}
 	c.batches = append(c.batches, logs)
 	return nil
+}
+
+// setFail 注入/解除落库失败（持锁写，避免与 InsertBatch 读竞态）。
+func (c *captureErrLogInserter) setFail(v bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.fail = v
 }
 
 func (c *captureErrLogInserter) rows() []*domain.UsageLog {
@@ -199,7 +207,8 @@ func TestErrLogWorkerCloseTruncatesOnBudget(t *testing.T) {
 
 // TestErrLogWorkerCloseTruncationCountsQueueBacklog R2-C1 精确回归：预算已到期
 // 时 Close 立即截断——截断面 = 本批（BatchSize 100，双轨优先：50 双轨 + 50 拒绝）
-// + 两队列剩余积压（拒绝 200），全部并入 dropped 对账指标，不低估。
+// + 两队列剩余积压（拒绝 200），全部并入 dropped 对账指标，不低估；本批按来源
+// 拆类计数（A-P2-8-1：droppedExempt 只计豁免行、droppedReject 只计拒绝行）。
 func TestErrLogWorkerCloseTruncationCountsQueueBacklog(t *testing.T) {
 	w := NewErrLogWorker(ErrLogConfig{QueueSize: 4096, BatchSize: 100, FlushInterval: time.Hour},
 		&captureErrLogInserter{}, nil)
@@ -213,12 +222,14 @@ func TestErrLogWorkerCloseTruncationCountsQueueBacklog(t *testing.T) {
 	defer cancel()
 	require.NoError(t, w.Close(ctx))
 	require.Zero(t, w.Inserted(), "预算已到期：无任何落库")
-	require.Equal(t, int64(100), w.DroppedExempt(), "本批 100（50 双轨 + 50 拒绝）按 dropBatch 既有语义计入双轨丢弃")
-	require.Equal(t, int64(200), w.DroppedReject(), "R2-C1：拒绝队列剩余积压并入丢弃计数（对账不低估）")
+	require.Equal(t, int64(50), w.DroppedExempt(), "本批豁免行 50 按类计入双轨丢弃（对齐 Close 截断按类拆对）")
+	require.Equal(t, int64(250), w.DroppedReject(), "本批拒绝行 50 + 拒绝队列剩余 200 按类计入（R2-C1：对账不低估）")
 }
 
-// TestErrLogWorkerInsertFailureDrops InsertBatch 失败 → 整批丢弃止损 + 计数
-// （审计明细非计费：不无限回灌卡死）。
+// TestErrLogWorkerInsertFailureDrops Close 排空失败止损（改写——旧行为"失败即
+// 丢"已废除）：豁免行回灌重试一次仍失败 → 按类丢弃、拒绝行直接按采样语义丢弃
+// ——双计数各自归位（droppedExempt 只计豁免行、droppedReject 只计拒绝行），
+// 不再整批混计双轨丢弃（A-P2-8-1）。
 func TestErrLogWorkerInsertFailureDrops(t *testing.T) {
 	store := &captureErrLogInserter{fail: true}
 	w := newTestErrLogWorker(store, 64)
@@ -226,7 +237,83 @@ func TestErrLogWorkerInsertFailureDrops(t *testing.T) {
 	w.EnqueueRejected(rejectLog(1))
 	require.NoError(t, w.Close(context.Background()))
 	require.Zero(t, w.Inserted())
-	require.Equal(t, int64(2), w.DroppedExempt(), "失败批并入丢弃计数（对账指标）")
+	require.Equal(t, int64(1), w.DroppedExempt(), "豁免行重试一次仍失败 → 按类丢弃（不无限重试）")
+	require.Equal(t, int64(1), w.DroppedReject(), "拒绝行按采样语义丢弃（计数入类）")
+}
+
+// TestErrLogWorkerInsertFailureRequuesForRetry A-P1-3 核心：flush 落库失败 →
+// 豁免行回灌 exemptQ 下轮重试（保 provenance——不随拒绝行丢弃）、拒绝行按采样
+// 语义丢弃；DB 恢复后下轮 flush 回灌行落盘成功（旧行为"首次失败即丢"已被
+// 回灌重试取代，违反不变式 A2 的整批丢弃路径不再存在）。
+func TestErrLogWorkerInsertFailureRequuesForRetry(t *testing.T) {
+	store := &captureErrLogInserter{fail: true}
+	w := newTestErrLogWorker(store, 64)
+	w.EnqueueError(errorLog(1))
+	w.EnqueueRejected(rejectLog(1))
+	w.flush() // 失败 → 豁免行回灌、拒绝行丢弃
+	require.Zero(t, w.Inserted())
+	require.Equal(t, int64(1), w.DroppedReject(), "拒绝行按采样语义丢弃（计数入类）")
+	require.Zero(t, w.DroppedExempt(), "豁免行回灌不丢（双轨行恒落盘语义由重试兑现）")
+	require.Equal(t, 1, len(w.exemptQ), "豁免行回灌 exemptQ 等下轮重试")
+	require.Zero(t, len(w.rejectQ), "拒绝队列已清空（本批拒绝行丢弃）")
+	// DB 恢复 → 下轮 flush 回灌行落盘成功
+	store.setFail(false)
+	w.flush()
+	require.Equal(t, int64(1), w.Inserted(), "回灌豁免行下轮落盘成功")
+	require.Zero(t, w.DroppedExempt())
+	require.Zero(t, w.Queued(), "队列排空")
+}
+
+// TestErrLogWorkerMixedBatchFailure 混合批次失败（豁免行稀疏 + 拒绝行补位——
+// p2-11 实证为风暴期常态）：exempt 全部回灌重试、reject 全部按采样语义丢弃、
+// 双计数各自归位（A-P2-8-1：droppedExempt 只计豁免行、droppedReject 只计拒绝
+// 行——S3 对账口径，拒绝风暴不再错类混计）。
+func TestErrLogWorkerMixedBatchFailure(t *testing.T) {
+	store := &captureErrLogInserter{fail: true}
+	w := newTestErrLogWorker(store, 64)
+	for i := 0; i < 10; i++ {
+		w.EnqueueError(errorLog(i))
+	}
+	for i := 0; i < 20; i++ {
+		w.EnqueueRejected(rejectLog(i))
+	}
+	w.flush()
+	require.Zero(t, w.Inserted())
+	require.Equal(t, int64(20), w.DroppedReject(), "拒绝行全部按采样语义丢弃（拒绝风暴采样面）")
+	require.Zero(t, w.DroppedExempt(), "豁免行全部回灌（0 丢弃）")
+	require.Equal(t, 10, len(w.exemptQ), "豁免行全部回灌 exemptQ")
+	require.Zero(t, len(w.rejectQ), "拒绝队列已清空")
+	// DB 恢复 → 回灌豁免行全部落盘
+	store.setFail(false)
+	w.flush()
+	require.Equal(t, int64(10), w.Inserted())
+	require.Equal(t, int64(20), w.DroppedReject())
+	require.Zero(t, w.DroppedExempt())
+	require.Zero(t, w.Queued())
+}
+
+// TestErrLogWorkerPersistentFailureBoundedBackpressure DB 持续故障硬约束：回灌
+// 不产生无限增长——豁免队列恒 ≤ 容量（有界队列即反压面），新到达豁免行按既有
+// 溢出采样语义丢弃计数（内存上界不破坏）；DB 恢复后回灌行全部落盘。
+func TestErrLogWorkerPersistentFailureBoundedBackpressure(t *testing.T) {
+	store := &captureErrLogInserter{fail: true}
+	w := NewErrLogWorker(ErrLogConfig{QueueSize: 64, ExemptQueueSize: 8, BatchSize: 50, FlushInterval: time.Hour}, store, nil)
+	for i := 0; i < 100; i++ {
+		w.EnqueueError(errorLog(i))
+	}
+	require.Equal(t, int64(92), w.DroppedExempt(), "豁免队列溢出按既有采样语义丢弃")
+	require.Equal(t, 8, len(w.exemptQ), "豁免队列有界")
+	for i := 0; i < 10; i++ { // 持续故障多轮 flush：回灌恒 ≤ 容量，不增长
+		w.flush()
+		require.LessOrEqual(t, len(w.exemptQ), 8, "回灌不产生无限增长（内存上界）")
+		require.Zero(t, w.DroppedReject())
+	}
+	require.Equal(t, int64(92), w.DroppedExempt(), "回灌本身不新增丢弃（恒 ≤ 容量回填）")
+	// DB 恢复 → 回灌行全部落盘
+	store.setFail(false)
+	w.flush()
+	require.Equal(t, int64(8), w.Inserted(), "DB 恢复后回灌行全部落盘")
+	require.Zero(t, w.Queued())
 }
 
 // TestErrLogWorkerCloseTailWindowNoSilentLoss S4：Close 与 Enqueue 并发——置位

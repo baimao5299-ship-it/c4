@@ -15,13 +15,17 @@ package usage
 // 推断（Err429/ErrBilling/ErrAuth 在拒绝类与双轨类同时出现）：
 //   - 豁免队列（exemptQ）：**双轨行**（abort/failover 已计费错误：finish/
 //     recordLog 投递的 usage_logs 错误行）——**不参与拒绝风暴采样丢弃，恒落盘**
-//     （已计费错误审计价值最高；仅本队列自身溢出才丢——排空 1k/s 下正常不可达）。
+//     （已计费错误审计价值最高；落库失败 → 回灌重试（下轮 flush/停机预算内），
+//     仅本队列自身溢出才丢——排空 1k/s 下正常不可达）。
 //   - 普通队列（rejectQ）：**拒绝行**（recordRejected：401/429/402/400/404 本地
 //     拒绝 + 组限流）——风暴采样丢弃面。
 //
 // 不变式（架构审查 A2 固化）：err_logs ⊇ usage_logs 全部错误行（双轨行永不
 // 采样）∪ 采样后的拒绝行；丢弃计数（DroppedReject/DroppedExempt）即统计面
-// usagestat（全量）与 err_logs（采样）的对账指标。停机：Close 幂等排空（受
+// usagestat（全量）与 err_logs（采样）的对账指标。落库失败：**豁免行回灌
+// exemptQ 重试（保 provenance——拒绝行回流豁免队列会篡改采样语义）、拒绝行按
+// 采样语义丢弃**（有界队列即反压面：回灌不产生无限增长，DB 持续故障时豁免行
+// 最终按自身溢出丢弃计数——内存上界不破坏）。停机：Close 幂等排空（受
 // shutdown ctx 预算约束，与 flusher 停机语义一致）。
 
 import (
@@ -49,7 +53,8 @@ type ErrLogInserter interface {
 }
 
 // errlogFlushTimeout 单批落盘超时（防慢 DB/挂死连接无界占用 worker 循环——
-// 超时即失败丢弃，审计明细非计费，不无限重试）。
+// 超时即失败：豁免行回灌下轮重试（有界队列即反压面），拒绝行按采样语义丢弃，
+// 不无限重试）。
 const errlogFlushTimeout = 5 * time.Second
 
 // errlogDropWarnThreshold 拒绝行丢弃累计告警阈值：丢弃计数 ≥ 阈值后 Warn 恰好
@@ -72,7 +77,7 @@ type ErrLogWorker struct {
 	exemptQ chan *domain.UsageLog
 	rejectQ chan *domain.UsageLog
 	// 丢弃计数按类拆分（架构审查 S3：reject 丢弃 / 双轨丢弃，对账指标）：
-	// 双轨丢弃 >0 即告警（异常态——豁免队列溢出）。
+	// 双轨丢弃 >0 即异常态（豁免队列溢出 / 落库失败止损重试耗尽）。
 	droppedReject atomic.Int64
 	droppedExempt atomic.Int64
 	inserted      atomic.Int64 // 成功落盘计数（观测/测试）
@@ -176,22 +181,29 @@ func (w *ErrLogWorker) enqueue(q chan *domain.UsageLog, l *domain.UsageLog, drop
 
 // flush 排空队列中至多 BatchSize 行并批量落库（单写者：仅 loop 调用；Close 在
 // loopDone 之后独占队列）。豁免队列优先（双轨行恒落盘语义：风暴下拒绝行让位
-// 采样）。失败 → Warn + 该批丢弃（丢弃并入类计数）——审计明细非计费：DB 故障
-// 不无限回灌卡死（与 Recorder 毒丸止损同向，此处直接丢弃不复灌）。
+// 采样）。失败 → Warn（带首行 request_id，对齐 Recorder 先例 usage.go:376）+
+// **豁免行回灌 exemptQ 下轮重试、拒绝行按采样语义丢弃**——有界队列即反压面：
+// DB 持续故障时回灌不增长（恒 ≤ 容量），新到达行按既有采样面丢弃计数；不变式
+// A2 双轨行恒落盘承诺仅覆盖豁免行，此处由回灌重试兑现（区别于 Recorder 的
+// 毒丸止损：errlog 无 5 次阈值，重试预算由队列有界性隐含）。
 // 批次处理完成后两队列均空 → 丢弃告警边沿回落（S3——每风暴一次，不刷屏：
 // 连续风暴期队列恒满不回落，风暴平息排空后下次风暴再告警）。
 func (w *ErrLogWorker) flush() {
-	batch := w.takeBatch()
-	if len(batch) == 0 {
+	exempts, rejects := w.takeBatch()
+	if len(exempts) == 0 && len(rejects) == 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), errlogFlushTimeout)
 	defer cancel()
+	batch := append(exempts, rejects...) // 复用豁免切片预留容量（len ≤ BatchSize，零新分配）
 	if err := w.writer.InsertBatch(ctx, batch); err != nil {
+		w.refillExempt(exempts)   // 豁免行回灌重试（保 provenance）
+		w.dropBatch(nil, rejects) // 拒绝行按采样语义丢弃（计数入类）
 		if w.log != nil {
-			w.log.Warn("errlog batch insert failed, dropping batch", logx.Error(err))
+			w.log.Warn("errlog batch insert failed, exempt requeued for retry",
+				logx.Error(err), logx.String("request_id", firstRequestID(exempts, rejects)),
+				logx.Int("exempt_requeued", len(exempts)), logx.Int("reject_dropped", len(rejects)))
 		}
-		w.dropBatch(batch)
 	} else {
 		w.inserted.Add(int64(len(batch)))
 	}
@@ -201,42 +213,72 @@ func (w *ErrLogWorker) flush() {
 	}
 }
 
-// dropBatch 落库失败止损：整批丢弃并计入**双轨丢弃**（错误行审计最重——失败
-// 场景恰是审计需求时；丢弃类计数即对账指标）。
-func (w *ErrLogWorker) dropBatch(batch []*domain.UsageLog) {
-	w.droppedExempt.Add(int64(len(batch)))
+// refillExempt 落库失败回灌：豁免行重回 exemptQ 等下轮重试（保 provenance——
+// 拒绝行回流豁免队列会篡改采样语义，故只回灌豁免行）。复用 enqueue 非阻塞
+// 投递：队列满（DB 持续故障 + 豁免积压）→ 按豁免溢出既有语义丢弃计数——有界
+// 队列即反压面，回灌不产生无限增长（内存上界不破坏）；Close 已置位 closed →
+// 丢弃计数（S4：无尾窗口静默丢）。
+func (w *ErrLogWorker) refillExempt(exempts []*domain.UsageLog) {
+	for _, l := range exempts {
+		w.enqueue(w.exemptQ, l, &w.droppedExempt, &w.warnExempt, 1)
+	}
 }
 
-// takeBatch 从两队列取至多 BatchSize 行（豁免优先；非阻塞轮询——队列空即返回；
-// 单写者/Close 独占调用，无锁）。
-func (w *ErrLogWorker) takeBatch() []*domain.UsageLog {
-	batch := make([]*domain.UsageLog, 0, w.cfg.BatchSize)
-	for len(batch) < w.cfg.BatchSize {
+// dropBatch 落库失败止损：按来源拆类计数——豁免行计 droppedExempt、拒绝行计
+// droppedReject（S3 对账语义；与 Close 截断路径按类拆对对齐，拒绝风暴下不再
+// 错类混计）。
+func (w *ErrLogWorker) dropBatch(exempts, rejects []*domain.UsageLog) {
+	w.droppedExempt.Add(int64(len(exempts)))
+	w.droppedReject.Add(int64(len(rejects)))
+}
+
+// takeBatch 从两队列取至多 BatchSize 行并**按来源拆回**（豁免优先——双轨行恒
+// 落盘语义：风暴下拒绝行让位采样；来源可拆是失败回灌保 provenance 的前提）。
+// 非阻塞轮询——队列空即返回；单写者/Close 独占调用，无锁。
+func (w *ErrLogWorker) takeBatch() (exempts, rejects []*domain.UsageLog) {
+	exempts = make([]*domain.UsageLog, 0, w.cfg.BatchSize)
+	for len(exempts) < w.cfg.BatchSize {
 		select {
 		case l := <-w.exemptQ:
-			batch = append(batch, l)
+			exempts = append(exempts, l)
 		default:
 			goto reject
 		}
 	}
 reject:
-	for len(batch) < w.cfg.BatchSize {
+	rejects = make([]*domain.UsageLog, 0, w.cfg.BatchSize-len(exempts))
+	for len(exempts)+len(rejects) < w.cfg.BatchSize {
 		select {
 		case l := <-w.rejectQ:
-			batch = append(batch, l)
+			rejects = append(rejects, l)
 		default:
-			return batch
+			return
 		}
 	}
-	return batch
+	return
+}
+
+// firstRequestID 批次首行 request_id（失败取证面——对齐 Recorder 毒丸止损先例
+// usage.go:376；批次顺序 = 豁免优先 + 拒绝补位）。
+func firstRequestID(exempts, rejects []*domain.UsageLog) string {
+	if len(exempts) > 0 {
+		return exempts[0].RequestID
+	}
+	if len(rejects) > 0 {
+		return rejects[0].RequestID
+	}
+	return ""
 }
 
 // Close 幂等排空（优雅停机核心）：置位 closed（此后 Enqueue 丢弃计数——无尾
 // 窗口静默丢，S4）→ 等 worker goroutine 退出（受预算约束；loop 退出前在途
 // flush 已同步收尾）→ 两队列剩余条目分批落库（每批 ≤ BatchSize，预算内完整
-// 排空——正常停机双轨行 + 未丢弃拒绝行不丢）；ctx 到期 → Warn（含已排空/剩余
-// 条数）+ 截断退出（剩余丢弃计数），不阻塞停机。Close 结束打印 inserted/
-// dropped 终值（S3 对账观测）。未 Start 也安全（跳过 loop 等待直接排空）。
+// 排空——正常停机双轨行 + 未丢弃拒绝行不丢）；排空失败同 flush 语义：豁免行
+// 回灌重试一次（排空循环为紧凑 while、无 ticker 节奏，回灌无限重试即紧循环打
+// 爆 DB——仅重试一次，保留"不无限重试"的既有预算语义）、拒绝行按采样语义
+// 丢弃；ctx 到期 → Warn（含已排空/剩余条数）+ 截断退出（剩余丢弃计数），不
+// 阻塞停机。Close 结束打印 inserted/dropped 终值（S3 对账观测）。未 Start 也
+// 安全（跳过 loop 等待直接排空）。
 func (w *ErrLogWorker) Close(ctx context.Context) error {
 	w.closeOnce.Do(func() {
 		w.mu.Lock()
@@ -253,15 +295,15 @@ func (w *ErrLogWorker) Close(ctx context.Context) error {
 		}
 		var flushed int64
 		for {
-			batch := w.takeBatch()
-			if len(batch) == 0 {
+			exempts, rejects := w.takeBatch()
+			if len(exempts) == 0 && len(rejects) == 0 {
 				break
 			}
 			if ctx.Err() != nil { // 预算到期：截断退出（剩余丢弃计数——R2-C1：截断面
 				// = 本批 + 两队列剩余积压，全部并入 dropped 对账指标，不低估；与
 				// flusher 截断 Warn 同族——错误审计明细非计费，截断可接受）
-				remaining := len(batch) + len(w.exemptQ) + len(w.rejectQ)
-				w.dropBatch(batch)
+				remaining := len(exempts) + len(rejects) + len(w.exemptQ) + len(w.rejectQ)
+				w.dropBatch(exempts, rejects)
 				w.droppedExempt.Add(int64(len(w.exemptQ))) // 双轨行剩余（豁免队列）
 				w.droppedReject.Add(int64(len(w.rejectQ))) // 拒绝行剩余（普通队列）
 				if w.log != nil {
@@ -270,10 +312,20 @@ func (w *ErrLogWorker) Close(ctx context.Context) error {
 				}
 				return
 			}
+			batch := append(exempts, rejects...) // 复用豁免切片预留容量（len ≤ BatchSize，零新分配）
 			if err := w.writer.InsertBatch(ctx, batch); err != nil {
-				w.dropBatch(batch)
+				if len(exempts) > 0 { // 豁免行回灌重试一次（同 flush 语义，见函数注释）
+					if retryErr := w.writer.InsertBatch(ctx, exempts); retryErr == nil {
+						w.inserted.Add(int64(len(exempts)))
+						flushed += int64(len(exempts))
+					} else {
+						w.dropBatch(exempts, nil)
+					}
+				}
+				w.dropBatch(nil, rejects) // 拒绝行按采样语义丢弃（计数入类）
 				if w.log != nil {
-					w.log.Warn("errlog close drain batch failed", logx.Error(err))
+					w.log.Warn("errlog close drain batch failed",
+						logx.Error(err), logx.String("request_id", firstRequestID(exempts, rejects)))
 				}
 				continue
 			}
@@ -293,8 +345,8 @@ func (w *ErrLogWorker) Close(ctx context.Context) error {
 // DroppedReject 拒绝行丢弃计数（队列满采样；统计面对账指标）。
 func (w *ErrLogWorker) DroppedReject() int64 { return w.droppedReject.Load() }
 
-// DroppedExempt 双轨行丢弃计数（恒 0 为正常——豁免队列溢出/落库失败止损；
-// >0 即异常态观测）。
+// DroppedExempt 双轨行丢弃计数（恒 0 为正常——豁免队列溢出/落库失败止损重试
+// 耗尽；>0 即异常态观测）。
 func (w *ErrLogWorker) DroppedExempt() int64 { return w.droppedExempt.Load() }
 
 // Inserted 成功落盘计数（测试/指标观测）。
