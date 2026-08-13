@@ -263,10 +263,12 @@ func TestReloadSettings(t *testing.T) {
 }
 
 // TestClusterInstances cluster.instances 读取：默认 1；UpdateSetting 后生效；
-// 非法值回退 1。
+// 非法值回退 1（回退路径 = DB 直写绕过校验后快照重载，见末尾用例）。
+// A-P2-11 强化：PUT 0（低于注册表 Min=1）→ 400 拒绝，不再"接受回退 1"
+// （护栏前置；除零安全面本就由消费端双守卫覆盖，见 spec 评审）。
 func TestClusterInstances(t *testing.T) {
 	ctx := context.Background()
-	svc, _, pr := newPubSvc()
+	svc, fs, pr := newPubSvc()
 	require.Equal(t, 1, svc.ClusterInstances(), "无 DB 行 → 注册表默认 1")
 
 	_, err := svc.UpdateSetting(ctx, "cluster.instances", "3")
@@ -275,11 +277,17 @@ func TestClusterInstances(t *testing.T) {
 	require.Equal(t, 3, svc.ClusterInstances(), "UpdateSetting 后快照生效")
 
 	_, err = svc.UpdateSetting(ctx, "cluster.instances", "0")
-	require.NoError(t, err)
-	require.Equal(t, 1, svc.ClusterInstances(), "非法值（0）回退 1")
+	require.ErrorIs(t, err, ErrInvalidInput, "PUT 0 → 400 拒绝（低于 Min=1）")
+	require.Equal(t, 3, svc.ClusterInstances(), "400 拒绝未落库 → 快照保持上一次合法值")
 	_, err = svc.UpdateSetting(ctx, "cluster.instances", "abc")
 	require.Error(t, err, "非数字被 UpdateSetting 类型化校验拒绝")
-	require.Equal(t, 1, svc.ClusterInstances(), "非法值回退 1")
+	require.Equal(t, 3, svc.ClusterInstances(), "400 拒绝未落库 → 快照保持上一次合法值")
+
+	// 回退 1 路径（护栏不覆盖 DB 直写）：绕过 UpdateSetting 落库非法值 → 重载回退 1
+	_, err = fs.SetSetting(ctx, "cluster.instances", domain.SettingTypeNumber, "0")
+	require.NoError(t, err)
+	require.NoError(t, svc.ReloadSettings(ctx))
+	require.Equal(t, 1, svc.ClusterInstances(), "非法值（0）回退 1")
 }
 
 // TestUpdateSettingLocalScopeReload #36 本地实例即时重算（R2 M-1）：UpdateSetting

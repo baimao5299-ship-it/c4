@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"time"
 
@@ -19,19 +20,25 @@ func (s *Service) GetSettings(ctx context.Context) ([]*domain.Setting, error) {
 	return s.store.GetAllSettings(ctx)
 }
 
-// serviceTierPolicyKeys service_tier 转发策略设置（值域 passthrough/strip/reject，
-// 见 domain.DefaultSettings 注释；非法值 → 400）。
-var serviceTierPolicyKeys = map[string]bool{
-	"service_tier_policy_priority": true,
-	"service_tier_policy_flex":     true,
-	"service_tier_policy_fast":     true,
-}
+// serviceTierPolicyKeys service_tier 转发策略 key → 值域（P3-7：从注册表
+// PolicyValues 枚举域派生，消双处同步——注册表是唯一事实源，新增策略 key 只改
+// 注册表一处，此处随派生自动跟随；非法值 → 400，见 UpdateSetting）。
+var serviceTierPolicyKeys = func() map[string][]string {
+	m := make(map[string][]string, 3)
+	for _, d := range domain.DefaultSettings {
+		if len(d.PolicyValues) > 0 {
+			m[d.Key] = d.PolicyValues
+		}
+	}
+	return m
+}()
 
 // UpdateSetting 类型化校验后更新（/admin/settings PUT）：
 // key ∈ 内置注册表（未知 key → 400）；switch 必须 true/false；number 必须
-// 数字；service_tier_policy_* 必须 passthrough/strip/reject。更新成功后同步
-// 内存快照——注册等读路径即时生效；本地直连分发器按 scope 精确重载（#36
-// auth gate 预算按新 N 即时重算）+ NOTIFY 广播其余实例。
+// 数字且落在注册表 Min/Max 值域内（负值/越界 → 400）；带 PolicyValues 枚举
+// 域的条目（service_tier_policy_*）必须命中枚举。更新成功后同步内存快照——
+// 注册等读路径即时生效；本地直连分发器按 scope 精确重载（#36 auth gate 预算
+// 按新 N 即时重算）+ NOTIFY 广播其余实例。
 func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain.Setting, error) {
 	def := domain.DefaultSetting(key)
 	if def == nil {
@@ -43,11 +50,20 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 			return nil, ErrInvalidInput
 		}
 	case domain.SettingTypeNumber:
-		if _, err := strconv.ParseInt(value, 10, 64); err != nil {
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		// 值域护栏（A-P2-11）：注册表 Min/Max 是单一事实源——越界 → 400，
+		// 与管理面 CreateUser/UpdateUser 负值拒绝语义一致；消费端零改动。
+		if def.Min != nil && n < *def.Min {
+			return nil, ErrInvalidInput
+		}
+		if def.Max != nil && n > *def.Max {
 			return nil, ErrInvalidInput
 		}
 	}
-	if serviceTierPolicyKeys[key] && value != "passthrough" && value != "strip" && value != "reject" {
+	if vals, ok := serviceTierPolicyKeys[key]; ok && !slices.Contains(vals, value) {
 		return nil, ErrInvalidInput
 	}
 	set, err := s.store.SetSetting(ctx, key, def.Type, value)

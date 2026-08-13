@@ -370,12 +370,18 @@ type GroupAssignment struct {
 }
 
 // Setting 类型化配置（key/type/value；signup_enabled 注册开关等）。
+// Min/Max 数值值域（含边界；nil = 无限制）、PolicyValues 字符串枚举值域
+// （空 = 不限）——仅注册表条目携带（管理面 UpdateSetting 校验用，A-P2-11 护栏
+// 前置）；DB 行不落库（读路径由注册表默认兜底合并，见 SettingRepo.GetAll）。
 type Setting struct {
-	ID        int64
-	Key       string
-	Type      SettingType
-	Value     string
-	UpdatedAt time.Time
+	ID           int64
+	Key          string
+	Type         SettingType
+	Value        string
+	Min          *int64   // 数值最小值（含）；nil = 无下限
+	Max          *int64   // 数值最大值（含）；nil = 无上限
+	PolicyValues []string // 字符串枚举值域（如 service_tier 策略 key）；空 = 不限
+	UpdatedAt    time.Time
 }
 
 // KeyMeta 鉴权快照条目：key + 归属用户的关键门禁字段（Auth 内存表元素，
