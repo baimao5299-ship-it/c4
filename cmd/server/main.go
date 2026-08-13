@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
@@ -99,15 +100,19 @@ func main() {
 		fatalDB("usage_stats partition bootstrap", err)
 	}
 
-	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname-pid
-	// （config 无实例字段，最小方案；评审 I-2：同主机多实例各进程 pid 不同，
-	// Src 不碰撞，接收端凭此跳过自播）。发布在 DB 写成功后（与 inv.* 调用点
-	// 并排）；计费路径永不发布。
+	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname-pid-
+	// nonce（config 无实例字段，最小方案；B4-1/p2-05：容器化多实例同 hostname、
+	// pid namespace 各自 pid 1 → 纯 hostname-pid 互相碰撞 → 互把对方 NOTIFY 当
+	// 自播跳过 → users/templates/groups/keys/rules 失效静默全灭；随机 nonce 保证
+	// 跨实例唯一）。发布在 DB 写成功后（与 inv.* 调用点并排）；计费路径永不发布。
 	host, err := os.Hostname()
 	if err != nil {
 		fatalf("hostname: %v", err)
 	}
-	src := fmt.Sprintf("%s-%d", host, os.Getpid())
+	src, err := instanceSrc(host, os.Getpid())
+	if err != nil {
+		fatalf("instance src: %v", err)
+	}
 	pub := notify.NewPublisher(pool, src, log)
 
 	// 规则引擎先行构造（不 Reload——New 只建结构）：scheduler 构造期注册 apply 回调。
@@ -446,6 +451,18 @@ func main() {
 	_ = wm.Shutdown(shutdownCtx)
 	log.Info("shutdown complete")
 	_ = log.Sync()
+}
+
+// instanceSrc 生成实例 ID（NOTIFY Src）：hostname-pid-nonce。B4-1（p2-05）：
+// 容器化多实例同 hostname、pid namespace 各自 pid 1 → 纯 hostname-pid 碰撞 →
+// 互把对方 NOTIFY 当自播跳过 → 失效静默全灭；crypto/rand 随机 nonce 保证跨
+// 实例唯一（6B 熵，同宿主两实例碰撞概率 ~2^-48，可忽略）。
+func instanceSrc(host string, pid int) (string, error) {
+	nonce := make([]byte, 6)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%d-%x", host, pid, nonce), nil
 }
 
 // waitForInflight 等在途请求归零（优雅停机第 3 步）：100ms 轮询 px.Inflight()；

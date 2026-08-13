@@ -164,11 +164,14 @@ func (s *Service) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, 
 
 // reloadRules 规则引擎全量重载（规则 CRUD 后触发）。Reload 失败记日志——
 // 管理端操作已成功，重载失败由下一次 CRUD/启动重试兜底。
+// 脱离请求 ctx（B4-4/p2-12）：请求 ctx 取消（客户端断开）→ 重载中止 → 引擎按
+// 旧规则跑；context.WithoutCancel 剥离取消/超时信号仅继承值（与 publish 同纪律
+// service.go:320）。invalidate Rules 分支（reloadAll 已 Background）为双保险。
 func (s *Service) reloadRules(ctx context.Context) {
 	if s.ruleReload == nil {
 		return
 	}
-	if err := s.ruleReload.Reload(ctx); err != nil && s.log != nil {
+	if err := s.ruleReload.Reload(context.WithoutCancel(ctx)); err != nil && s.log != nil {
 		s.log.Warn("rule engine reload failed", logx.Error(err))
 	}
 }

@@ -36,6 +36,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/is7qin/c3api/internal/worker"
 	"github.com/is7qin/c3api/pkg/logx"
 )
 
@@ -137,6 +138,10 @@ type Config struct {
 type Debouncer struct {
 	cfg      Config
 	newTimer func(time.Duration) <-chan time.Time // 测试注入 fake 时钟（默认 time.NewTimer）
+	// goFn 托管 goroutine 启动器（B4-3/p2-03：裸 goroutine → worker.Manager.Go
+	// 同契约——panic 捕获 + Warn，进程不崩，worker.go:6 承诺）。默认
+	// worker.New(cfg.Log).Go；测试可注入记录/替代实现。
+	goFn     func(ctx context.Context, name string, fn func(context.Context))
 	state    atomic.Pointer[State]
 	wake     chan struct{} // 空 → 非空置脏唤醒执行 goroutine（cap 1）
 	startOnce atomic.Bool
@@ -149,6 +154,7 @@ func New(cfg Config) *Debouncer {
 	}
 	d := &Debouncer{cfg: cfg, wake: make(chan struct{}, 1)}
 	d.newTimer = func(dur time.Duration) <-chan time.Time { return time.NewTimer(dur).C }
+	d.goFn = worker.New(cfg.Log).Go // B4-3：托管 goroutine（recover 兜底）
 	return d
 }
 
@@ -249,7 +255,7 @@ func (d *Debouncer) Start(ctx context.Context) error {
 	if !d.startOnce.CompareAndSwap(false, true) {
 		return fmt.Errorf("invalidate: already started")
 	}
-	go d.loop(ctx)
+	d.goFn(ctx, d.Name(), d.loop) // B4-3：裸 goroutine → 托管（Manager.Go 契约的 recover：loop panic 不崩进程）
 	return nil
 }
 
@@ -339,6 +345,9 @@ func (d *Debouncer) reloadAll(st *State) {
 		}
 	}
 	if st.Kinds&KindRules != 0 && d.cfg.Rules != nil {
+		// B4-4/p2-12：规则快照无周期兜底（对照 auth 60s / sched 30s / balances
+		// 10s）——本分支 Background 双保险：事件驱动的全量重载不随任何请求 ctx
+		// 取消（周期 ticker 属行为新增，spec 标注可选裁决，本批次不实现）。
 		if err := d.cfg.Rules.ReloadRules(context.Background()); err != nil && d.cfg.Log != nil {
 			d.cfg.Log.Warn("rules reload failed", logx.Error(err))
 		}
