@@ -112,14 +112,17 @@ func (r *KeyRepo) ListKeysByUser(ctx context.Context, userID int64, q ListQuery)
 	return out, int64(total), nil
 }
 
-// UpdateKey 更新 name/status/max_concurrency/quota/quota_used（hash 走 RotateKey）。
+// UpdateKey 更新 name/status/max_concurrency/quota（hash 走 RotateKey）。
+// quota_used 不写——Recorder 派生计数器（p2-12 核实：service 层无任何路径
+// 意图写该列，全字段写回会覆盖 AddQuotaUsed 增量 → 永久少记、gate 超用
+// 不 429）；ent Save re-SELECT 返回行 → 调用方拿到的 QuotaUsed 反为 DB 新鲜
+// 值，upsertKeyMeta 顺带同步最新。
 func (r *KeyRepo) UpdateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
 	row, err := r.client.Key.UpdateOneID(k.ID).
 		SetName(k.Name).
 		SetStatus(key.Status(k.Status)).
 		SetMaxConcurrency(k.MaxConcurrency).
 		SetQuota(k.Quota).
-		SetQuotaUsed(k.QuotaUsed).
 		Save(ctx)
 	if err != nil {
 		return nil, errMissingID(err, k.ID)

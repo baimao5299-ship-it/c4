@@ -313,8 +313,8 @@ func (r *Repository) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User
 	return r.Users.ListUsers(ctx, q)
 }
 
-func (r *Repository) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
-	return r.Users.UpdateUser(ctx, u)
+func (r *Repository) UpdateUser(ctx context.Context, p *UserPatch) (*domain.User, error) {
+	return r.Users.UpdateUser(ctx, p)
 }
 
 func (r *Repository) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {

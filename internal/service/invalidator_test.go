@@ -87,8 +87,15 @@ func TestInvalidatorMatrix(t *testing.T) {
 			domain.UserStatusActive, 8, 1000)
 		require.NoError(t, err)
 		require.Equal(t, 1, rec.countKind("users"), "创建用户 → Users()")
-		_, err = svc.UpdateUser(ctx, &domain.User{ID: u.ID, Email: u.Email,
-			Role: domain.RoleUser, Status: domain.UserStatusActive, MaxConcurrency: 4, Balance: 900})
+		// patch 形态（条件写）：旧值条件 = 创建快照（MaxConcurrency 8 / Balance 1000）
+		role, st := domain.RoleUser, domain.UserStatusActive
+		mc, oldMC := 4, 8
+		bal, oldBal := int64(900), int64(1000)
+		_, err = svc.UpdateUser(ctx, &repository.UserPatch{
+			ID: u.ID, Role: &role, Status: &st,
+			MaxConcurrency: &mc, OldMaxConcurrency: &oldMC,
+			Balance: &bal, OldBalance: &oldBal,
+		})
 		require.NoError(t, err)
 		require.Equal(t, 2, rec.countKind("users"), "更新用户 → Users()")
 		require.Zero(t, rec.countKind("templates"))

@@ -56,12 +56,16 @@ func TestPGUserCRUD(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, missing)
 
-	// Update（role/status/max_concurrency/balance）
-	u.Role = domain.RolePlatformAdmin
-	u.Status = domain.UserStatusDisabled
-	u.MaxConcurrency = 3
-	u.Balance = 12345
-	updated, err := repos.UpdateUser(ctx, u)
+	// Update（patch：role/status/max_concurrency/balance 全字段显式设置；
+	// 旧值条件 = 创建快照——0 行/误判覆盖并发增量的回归网）
+	oldMC, oldBal := u.MaxConcurrency, u.Balance
+	role, st := domain.RolePlatformAdmin, domain.UserStatusDisabled
+	mc, bal := 3, int64(12345)
+	updated, err := repos.UpdateUser(ctx, &repository.UserPatch{
+		ID: u.ID, Role: &role, Status: &st,
+		MaxConcurrency: &mc, OldMaxConcurrency: &oldMC,
+		Balance: &bal, OldBalance: &oldBal,
+	})
 	require.NoError(t, err)
 	require.Equal(t, domain.RolePlatformAdmin, updated.Role)
 	require.Equal(t, domain.UserStatusDisabled, updated.Status)
@@ -127,23 +131,24 @@ func TestPGKeyLifecycle(t *testing.T) {
 	k.Status = domain.KeyStatusDisabled
 	k.MaxConcurrency = 2
 	k.Quota = 200
-	k.QuotaUsed = 15
+	k.QuotaUsed = 15 // 陈旧快照——A-P2-5：UpdateKey 剥离 SetQuotaUsed（Recorder 派生计数器）
 	updated, err := repos.UpdateKey(ctx, k)
 	require.NoError(t, err)
 	require.Equal(t, domain.KeyStatusDisabled, updated.Status)
 	require.Equal(t, 2, updated.MaxConcurrency)
 	require.Equal(t, int64(200), updated.Quota)
+	require.Equal(t, int64(10), updated.QuotaUsed, "返回行 QuotaUsed = DB 新鲜值（快照 15 不落库）")
 
 	// RotateKey（hash/key_prefix 换新）
 	rotated, err := repos.RotateKey(ctx, k.ID, "hash-k1-new", "gk-bbbb")
 	require.NoError(t, err)
 	require.Equal(t, "hash-k1-new", rotated.KeyHash)
 
-	// AddQuotaUsed 增量回写（Recorder 节奏）
+	// AddQuotaUsed 增量回写（Recorder 节奏）：基数 10（UpdateKey 未覆盖）→ 15
 	require.NoError(t, repos.Keys.AddQuotaUsed(ctx, map[int64]int64{k.ID: 5, 99999: 3}))
 	got2, err := repos.GetKey(ctx, k.ID)
 	require.NoError(t, err)
-	require.Equal(t, int64(20), got2.QuotaUsed, "5 增量生效；缺失 key 静默跳过")
+	require.Equal(t, int64(15), got2.QuotaUsed, "5 增量生效；缺失 key 静默跳过（UpdateKey 不再覆盖基数）")
 
 	// DeleteKey（软删）：GET 单个仍可查（含 deleted_at）；鉴权路径不可见
 	require.NoError(t, repos.DeleteKey(ctx, k.ID))
@@ -207,9 +212,9 @@ func TestPGLoadKeysSnapshot(t *testing.T) {
 	require.Equal(t, domain.KeyStatusDisabled, d.KeyStatus)
 	require.False(t, d.HasQuota, "quota=0 → HasQuota false")
 
-	// 用户禁用后快照同步（invalidate → Reload 的数据源）
-	u.Status = domain.UserStatusDisabled
-	_, err = repos.UpdateUser(ctx, u)
+	// 用户禁用后快照同步（invalidate → Reload 的数据源；patch 只改 status）
+	st := domain.UserStatusDisabled
+	_, err = repos.UpdateUser(ctx, &repository.UserPatch{ID: u.ID, Status: &st})
 	require.NoError(t, err)
 	m2, err := repos.Keys.LoadKeys(ctx)
 	require.NoError(t, err)

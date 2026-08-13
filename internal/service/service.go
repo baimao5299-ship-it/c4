@@ -57,7 +57,7 @@ type UserStore interface {
 	GetUser(ctx context.Context, id int64) (*domain.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
 	ListUsers(ctx context.Context, q repository.ListQuery) ([]*domain.User, int64, error)
-	UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error)
+	UpdateUser(ctx context.Context, p *repository.UserPatch) (*domain.User, error)
 	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
 	// 原子资源更新（评审 I-1：兑换码 applier 用；普通 client 与 tx client 均可用）。
 	UpdateUserBalance(ctx context.Context, userID, delta int64) error

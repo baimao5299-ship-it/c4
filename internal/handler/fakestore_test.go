@@ -728,17 +728,33 @@ func (f *fakeStore) ListUsers(ctx context.Context, q repository.ListQuery) ([]*d
 	return out, int64(len(out)), nil
 }
 
-func (f *fakeStore) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
+func (f *fakeStore) UpdateUser(ctx context.Context, p *repository.UserPatch) (*domain.User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	cur, ok := f.users[u.ID]
+	cur, ok := f.users[p.ID]
 	if !ok {
-		return nil, missingErr(u.ID)
+		return nil, missingErr(p.ID)
 	}
-	cur.Role = u.Role
-	cur.Status = u.Status
-	cur.MaxConcurrency = u.MaxConcurrency
-	cur.Balance = u.Balance
+	// 条件更新语义（对齐真实 repo）：balance/max_concurrency 显式设置时旧值
+	// 不满足（期间有扣费/并发变更）→ ErrConflict。
+	if p.MaxConcurrency != nil {
+		if p.OldMaxConcurrency == nil || cur.MaxConcurrency != *p.OldMaxConcurrency {
+			return nil, fmt.Errorf("%w: id=%d max_concurrency changed", repository.ErrConflict, p.ID)
+		}
+		cur.MaxConcurrency = *p.MaxConcurrency
+	}
+	if p.Balance != nil {
+		if p.OldBalance == nil || cur.Balance != *p.OldBalance {
+			return nil, fmt.Errorf("%w: id=%d balance changed", repository.ErrConflict, p.ID)
+		}
+		cur.Balance = *p.Balance
+	}
+	if p.Role != nil {
+		cur.Role = *p.Role
+	}
+	if p.Status != nil {
+		cur.Status = *p.Status
+	}
 	c := *cur
 	return &c, nil
 }
