@@ -195,6 +195,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}

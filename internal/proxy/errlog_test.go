@@ -46,6 +46,7 @@ func newTestProxyWarn(t *testing.T, upstream string, accountID int64, logs usage
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}

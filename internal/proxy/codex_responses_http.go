@@ -85,6 +85,12 @@ func (p *Proxy) nonstreamCodexResponses(ctx context.Context, w http.ResponseWrit
 	if err != nil {
 		return 0, nil, false, err // 本地 JSON 错误（handleFormat 已过 json.Valid 硬门——防御）
 	}
+	// 非流式超时（B-P2-7）：HTTPClient.Timeout 不可用（流式/非流式四方法共享，
+	// 覆盖整个响应体读取会切断长流式 SSE）——非流式方法各自包 ctx 超时；TCP
+	// 黑洞读停滞 → 超时触发 → 连接级错误转移（并发槽/连接/goroutine 不无限占用，
+	// failover 可转移）。
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.UpstreamTimeout)
+	defer cancel()
 	resp, err := p.codex.Responses(ctx, cred, streamBody)
 	if err != nil {
 		return statusOf(err), upstreamBody(err), false, err

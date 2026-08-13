@@ -283,6 +283,7 @@ func main() {
 	px := proxy.New(proxy.Config{
 		MaxBodySize:           cfg.Proxy.MaxBodySize,
 		MaxInflight:           cfg.Proxy.MaxInflight,
+		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
 		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
 		FailoverAttempts:      cfg.Proxy.FailoverAttempts,
 		GroupKeyRPM:           cfg.Limit.GroupKeyRPM,

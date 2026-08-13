@@ -43,9 +43,10 @@ const rspSpecialPGTestSchema = "proxy_rsp_special_test"
 // TestPGResponsesSpecialCredential responses-special 模板（主列
 // credential_type）+ 账号 upstream_key → 真实 PG 快照 → Selection →
 // credentialFor 取 key 成功（P4 502 消灭断言：修复前 TypeResponsesSpecial 未
-// 注册 → For 兜底 apiKeyProvider → Credential 类型不匹配 ErrUnsupported →
-// 真实流量 502 unsupported credential type；本断言确定性红）。HTTP 补充：
-// 完整 resp-ws 会话正常闭环（上游校验 Authorization: Bearer <账号 key>）。
+// 注册 → For 兜底（现 unsupportedProvider，旧 apiKeyProvider）→ Credential
+// 类型不匹配 ErrUnsupported → 真实流量 502 unsupported credential type；本断
+// 言确定性红）。HTTP 补充：完整 resp-ws 会话正常闭环（上游校验 Authorization:
+// Bearer <账号 key>）。
 func TestPGResponsesSpecialCredential(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -126,6 +127,7 @@ func newPGTestProxy(t *testing.T, sched *scheduler.Scheduler, groupID int64) *Pr
 	t.Helper()
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}

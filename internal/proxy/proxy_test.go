@@ -277,6 +277,7 @@ func newTestProxyTplTimeoutRec(t *testing.T, tpl *domain.Template, accountID int
 	}}}
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: streamTimeout,
 		GroupKeyRPM:           0, UsageCapture: usageCapture,
 	}

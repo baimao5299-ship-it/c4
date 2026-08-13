@@ -82,30 +82,18 @@ type Provider interface {
 // ErrUnsupported 未知/未注册的凭据类型。
 var ErrUnsupported = errors.New("credential: unsupported credential type")
 
-// apiKeyProvider 默认实现：直接返回 CredentialInput.APIKey（空 Key 也原样
-// 返回——行为与现状一致，Key 非空校验在别处）。类型不匹配 → 错误（防御性：
-// For 的兜底路径也会命中——未注册的 Valid 类型（responses-special 注册前）落回
-// 本 provider，必须显式报错而非吐值，杜绝号池类型凭据错配）。
-type apiKeyProvider struct{}
+// staticKeyProvider 静态 Key 直读 provider（api_key / responses-special 两类型
+// 共用——B-P2-1 消两份逐字同构 provider：key 来源同为账号 upstream_key，差异
+// 仅类型标记，注册表按类型分发）。直接返回 CredentialInput.APIKey（空 Key 也
+// 原样返回——行为与现状一致，Key 非空校验在别处）。类型不匹配 → 错误（防御
+// 性：For 的兜底路径也会命中——未注册的 Valid 类型落回 unsupportedProvider，
+// 显式报错而非吐值，杜绝号池类型凭据错配）。
+type staticKeyProvider struct{ typ Type }
 
-func (apiKeyProvider) Type() Type { return TypeAPIKey }
+func (p staticKeyProvider) Type() Type { return p.typ }
 
-func (apiKeyProvider) Credential(_ context.Context, in CredentialInput) (string, error) {
-	if in.Type != TypeAPIKey {
-		return "", fmt.Errorf("%w: %q", ErrUnsupported, in.Type)
-	}
-	return in.APIKey, nil
-}
-
-// responsesSpecialProvider 与 apiKeyProvider 同构：Responses 特殊需求模板的
-// 静态 Key 直读（key 来源同为账号 upstream_key，仅类型标记不同——注册表按
-// 类型分发）。类型不匹配 → 错误（同 api_key 防御语义）。
-type responsesSpecialProvider struct{}
-
-func (responsesSpecialProvider) Type() Type { return TypeResponsesSpecial }
-
-func (responsesSpecialProvider) Credential(_ context.Context, in CredentialInput) (string, error) {
-	if in.Type != TypeResponsesSpecial {
+func (p staticKeyProvider) Credential(_ context.Context, in CredentialInput) (string, error) {
+	if in.Type != p.typ {
 		return "", fmt.Errorf("%w: %q", ErrUnsupported, in.Type)
 	}
 	return in.APIKey, nil
@@ -117,21 +105,32 @@ type Registry struct{ m map[Type]Provider }
 // New 构造注册表并默认注册 api_key + responses-special 两 provider。
 func New() *Registry {
 	r := &Registry{m: make(map[Type]Provider)}
-	r.Register(apiKeyProvider{})
-	r.Register(responsesSpecialProvider{})
+	r.Register(staticKeyProvider{TypeAPIKey})
+	r.Register(staticKeyProvider{TypeResponsesSpecial})
 	return r
 }
 
 // Register 注册/覆盖指定类型的 provider。
 func (r *Registry) Register(p Provider) { r.m[p.Type()] = p }
 
-// For 取类型的 provider；未注册 → apiKeyProvider 兜底。兜底是安全网而非
-// 静默 fallback：Valid() 通过但未注册的类型（如 responses-special 注册前）
-// 也会走到这里——兜底 provider 的 Credential 对不匹配类型返回 ErrUnsupported，
-// 显式报错不吐值（评审 M1）。
+// unsupportedProvider 未注册类型兜底 provider（B-P2-1：不再复用 apiKeyProvider
+// ——旧兜底 Type() 恒返回 TypeAPIKey，对 TypeCodexOAuth 等撒谎，是未来 codex
+// HTTP 面注册时错配咬合点）。Type() 返回**真实请求类型**；Credential 恒
+// ErrUnsupported（错误文本与现状一致——含输入类型，显式报错不吐值，评审 M1）。
+type unsupportedProvider struct{ typ Type }
+
+func (p unsupportedProvider) Type() Type { return p.typ }
+
+func (unsupportedProvider) Credential(_ context.Context, in CredentialInput) (string, error) {
+	return "", fmt.Errorf("%w: %q", ErrUnsupported, in.Type)
+}
+
+// For 取类型的 provider；未注册 → unsupportedProvider 兜底。兜底是安全网而非
+// 静默 fallback：Valid() 通过但未注册的类型也会走到这里——兜底 provider 的
+// Credential 恒返回 ErrUnsupported，显式报错不吐值（评审 M1）。
 func (r *Registry) For(t Type) Provider {
 	if p, ok := r.m[t]; ok {
 		return p
 	}
-	return apiKeyProvider{}
+	return unsupportedProvider{typ: t}
 }

@@ -185,6 +185,7 @@ func newTestCodexProxy(t *testing.T, credType credential.Type, accounts map[int6
 	}, logs, noopStatStore{}, nil)
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamTimeout:       5 * time.Second,
 		UpstreamStreamTimeout: 30 * time.Second,
 		GroupKeyRPM:           0, UsageCapture: true,
 	}
@@ -520,7 +521,7 @@ func TestImagesCodexAdapterMissing501(t *testing.T) {
 	clients := aiclient.NewFactory(hc, aiclient.Config{UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second})
 	p := New(Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
-		UpstreamStreamTimeout: 30 * time.Second, GroupKeyRPM: 0, UsageCapture: true,
+		UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second, GroupKeyRPM: 0, UsageCapture: true,
 	}, sched, credential.New(), rec, clients, auth, nil, nil, usage.NewErrLogWorker(usage.ErrLogConfig{QueueSize: 4096, FlushInterval: time.Hour}, store, nil))
 	// 不调 SetCodex —— 未装配形态
 
@@ -707,7 +708,7 @@ func TestImagesCodexMixedGroupFailoverReset(t *testing.T) {
 	failure := sdkbridge.NewFailureHandler(sdkbridge.FailureDeps{Store: fs, Failer: sched, Log: nil})
 	p := New(Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
-		UpstreamStreamTimeout: 30 * time.Second, GroupKeyRPM: 0, UsageCapture: true,
+		UpstreamTimeout: 5 * time.Second, UpstreamStreamTimeout: 30 * time.Second, GroupKeyRPM: 0, UsageCapture: true,
 	}, sched, credential.New(), rec, clients, auth, nil, nil, errlogW)
 	p.SetCodex(sdkbridge.NewCodex(failure))
 
