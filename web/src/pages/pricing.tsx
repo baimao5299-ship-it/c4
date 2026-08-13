@@ -259,8 +259,8 @@ function toFunctionForm(p: FunctionPrice): FunctionForm {
 }
 const toFunctionBody = (f: FunctionForm): FunctionPriceUpsert => ({ price_per_call: Number(f.pricePerCall) })
 
-// USD 值展示：常规值 4 位小数；极小值（image token 价为 per-token 口径，量级可达 1e-6 以下）
-// 用科学计数，避免显示 0.0000。空值 → —。
+// USD 值展示：常规值 4 位小数；极小值（如 per-image 价低至 1e-4 以下）用科学
+// 计数，避免显示 0.0000。空值 → —。
 const formatUsd = (v: number | null | undefined): string => {
   if (v == null) return '—'
   if (v === 0) return '$0'
@@ -781,8 +781,8 @@ export default function PricingPage() {
                   <TableHeader>
                     <TableRow>
                       <SortableHeader field="model" label={t('pricing.table.model')} active={imgActiveSort === 'model'} order={imgOrder} onToggle={imgToggleSort} />
-                      <TableHead className="text-right" title="USD/image token">{t('pricing.image.table.inputToken')}</TableHead>
-                      <TableHead className="text-right" title="USD/image token">{t('pricing.image.table.outputToken')}</TableHead>
+                      <TableHead className="text-right" title="USD/1M image tokens">{t('pricing.image.table.inputToken')}</TableHead>
+                      <TableHead className="text-right" title="USD/1M image tokens">{t('pricing.image.table.outputToken')}</TableHead>
                       <TableHead className="text-right" title="USD/张">{t('pricing.image.table.perImage')}</TableHead>
                       <TableHead>{t('pricing.table.source')}</TableHead>
                       <SortableHeader field="updated_at" label={t('pricing.table.updatedAt')} active={imgActiveSort === 'updated_at'} order={imgOrder} onToggle={imgToggleSort} />

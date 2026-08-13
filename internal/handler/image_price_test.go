@@ -31,25 +31,25 @@ func imageSeedFetcher() *fakePriceFetcher {
 
 func i64p(v int64) *int64 { return &v }
 
-// TestPutImagePrice 手动设图片价格：单位换算（token 价 USD per image token
-// ×1e11 存储、per-image USD/张 ×1e5 存储、回显反向换算）+ 接管 litellm 行 +
+// TestPutImagePrice 手动设图片价格：单位换算（token 价 USD/1M ×1e5 存储、
+// per-image USD/张 ×1e5 存储、回显反向换算）+ 接管 litellm 行 +
 // 缺省分量清空 + 校验（全 nil → 400、负数 → 400）。
 func TestPutImagePrice(t *testing.T) {
 	f := imageSeedFetcher()
 	h, do := newPricingRouter(t, f)
 
-	// 新模型设价：token 价 8e-06/3e-05 USD per image token → 800,000/3,000,000
-	// 毫分/1M；per-image 0.054 USD/张 → 5,400 毫分/张；回显反向换算
+	// 新模型设价：token 价 8.0/30.0 USD/1M → 800,000/3,000,000 毫分/1M（×1e5，
+	// 与 chat 价同系数）；per-image 0.054 USD/张 → 5,400 毫分/张；回显反向换算
 	rec := do(http.MethodPut, "/admin/image-price/gpt-image-3",
-		`{"input_image_token_price_per_million":0.000008,"output_image_token_price_per_million":0.00003,"output_cost_per_image":0.054}`)
+		`{"input_image_token_price_per_million":8.0,"output_image_token_price_per_million":30.0,"output_cost_per_image":0.054}`)
 	require.Equal(t, 200, rec.Code, "put: %s", rec.Body.String())
 	var p ImagePrice
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, "gpt-image-3", p.Model)
 	require.NotNil(t, p.InputImageTokenPricePerMillion)
-	require.Equal(t, 0.000008, *p.InputImageTokenPricePerMillion, "token 价回显 USD per image token")
+	require.Equal(t, 8.0, *p.InputImageTokenPricePerMillion, "token 价回显 USD/1M（per-million）")
 	require.NotNil(t, p.OutputImageTokenPricePerMillion)
-	require.Equal(t, 0.00003, *p.OutputImageTokenPricePerMillion)
+	require.Equal(t, 30.0, *p.OutputImageTokenPricePerMillion)
 	require.NotNil(t, p.OutputCostPerImage)
 	require.Equal(t, 0.054, *p.OutputCostPerImage, "per-image 回显 USD/张（×1e5 独立换算）")
 	require.Equal(t, PricingSource("manual"), p.Source)
@@ -58,7 +58,7 @@ func TestPutImagePrice(t *testing.T) {
 	_, err := h.svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
 	rec = do(http.MethodPut, "/admin/image-price/gpt-image-2",
-		`{"input_image_token_price_per_million":0.000008,"output_cost_per_image":0.054}`)
+		`{"input_image_token_price_per_million":8.0,"output_cost_per_image":0.054}`)
 	require.Equal(t, 200, rec.Code, "takeover: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
 	require.Equal(t, PricingSource("manual"), p.Source, "手动设价接管 litellm 行")
@@ -75,7 +75,7 @@ func TestPutImagePrice(t *testing.T) {
 		`{"input_image_token_price_per_million":-0.01,"output_cost_per_image":0.054}`)
 	require.Equal(t, 400, rec.Code, "negative token price: %s", rec.Body.String())
 	rec = do(http.MethodPut, "/admin/image-price/m-neg",
-		`{"input_image_token_price_per_million":0.000008,"output_cost_per_image":-0.054}`)
+		`{"input_image_token_price_per_million":8.0,"output_cost_per_image":-0.054}`)
 	require.Equal(t, 400, rec.Code, "negative per-image: %s", rec.Body.String())
 
 	// 非法 JSON → 400

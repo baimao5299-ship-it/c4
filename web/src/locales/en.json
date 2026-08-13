@@ -763,9 +763,9 @@
         "outputToken": "Output token",
         "perImage": "Per image"
       },
-      "dialogDesc": "Units: image token prices = USD per image token, per-image price = USD per image; fill at least one component, blank components are cleared on save",
-      "inputTokenLabel": "Input image token price (USD/image token)",
-      "outputTokenLabel": "Output image token price (USD/image token)",
+      "dialogDesc": "Units: image token prices = USD per 1M image tokens (per-million, same convention as text pricing), per-image price = USD per image; fill at least one component, blank components are cleared on save",
+      "inputTokenLabel": "Input image token price (USD/1M image tokens)",
+      "outputTokenLabel": "Output image token price (USD/1M image tokens)",
       "perImageLabel": "Price per image (USD/image)",
       "formInvalid": "Fill at least one component (input/output image token price, per-image price); each value must be a non-negative number",
       "newTitle": "Set manual image price",
