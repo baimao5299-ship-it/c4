@@ -3,8 +3,8 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { FileText, RotateCcw } from 'lucide-react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { ChevronRight, FileText, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,15 +15,21 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Pagination } from '@/components/pagination'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
 import { userApi } from '@/lib/api/client'
+import type { MyErrLogParams, MyUsageLogParams } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 
 type ErrorType = components['schemas']['ErrorType']
+type UsageLog = components['schemas']['UsageLog']
+type ErrLog = components['schemas']['ErrLog']
 
+// 错误类型全值域（err_logs 完整错误面：拒绝 + 异常双轨）。
 const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort', 'billing']
+// usage_logs 放行面只有 none/abort 两种错误类型。
+const USAGE_ERROR_TYPES: ErrorType[] = ['none', 'abort']
 
 // 与管理端 logs.tsx 同款色板：none 绿 / 4xx 黄 / 5xx、network、abort 红 / 429 橙 / auth、no_account 灰 / billing 紫。
 const ERROR_META: Record<ErrorType, string> = {
@@ -65,60 +71,103 @@ function latencyColor(ms: number): { dot: string; text: string } {
   return { dot: 'bg-red-500', text: 'text-red-500' }
 }
 
+const LIMITS = [10, 20, 50, 100, 200]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// 默认近 24h（组件挂载时固定一次，避免渲染期时间漂移；from/to 契约必填）。
+function defaultRange() {
+  const to = new Date()
+  const from = new Date(to.getTime() - 24 * 3600 * 1000)
+  const local = (d: Date) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return { from: local(from), to: local(to) }
+}
 
 interface LogFilters {
   group_id: string
   account_id: string
   model: string
   error_type: string
+  status_code: string
   from: string
   to: string
 }
 
 const emptyFilters = (): LogFilters => ({
-  group_id: '', account_id: '', model: '', error_type: '', from: '', to: '',
+  group_id: '', account_id: '', model: '', error_type: '', status_code: '', ...defaultRange(),
 })
 
 export default function UserLogs() {
   const { t } = useTranslation()
-  const [filters, setFilters] = useState<LogFilters>(emptyFilters())
+  const [tab, setTab] = useState<'usage' | 'errors'>('usage')
+  const [filters, setFilters] = useState<LogFilters>(emptyFilters)
   const [limit, setLimit] = useState(20)
-  const [offset, setOffset] = useState(0)
+  const [cursor, setCursor] = useState<number | null>(null)
+  // 自计页号（游标分页无 total/offset；每次「下一页」+1，过滤/回最新重置为 1）。
+  const [page, setPage] = useState(1)
 
   // 过滤条件 / 每页条数变化 → 回到第一页（同一事件内同步重置，避免双请求）。
   const set = (patch: Partial<LogFilters>) => {
     setFilters(f => ({ ...f, ...patch }))
-    setOffset(0)
+    setCursor(null)
+    setPage(1)
   }
-  const changeLimit = (v: number) => {
-    setLimit(v)
-    setOffset(0)
+  const changeLimit = (v: string) => {
+    setLimit(Number(v))
+    setCursor(null)
+    setPage(1)
+  }
+  // Tab 切换：各自独立游标；usage 面错误类型值域收窄为 none/abort，超出值重置。
+  const switchTab = (v: string) => {
+    setTab(v as 'usage' | 'errors')
+    if (v === 'usage' && filters.error_type && !USAGE_ERROR_TYPES.includes(filters.error_type as ErrorType)) {
+      setFilters(f => ({ ...f, error_type: '' }))
+    }
+    setCursor(null)
+    setPage(1)
+  }
+  const goNext = () => {
+    if (data?.next_cursor == null) return
+    setCursor(data.next_cursor)
+    setPage(p => p + 1)
+  }
+  const goLatest = () => {
+    setCursor(null)
+    setPage(1)
   }
 
-  // 参数对象随 filter/limit/offset 派生 → queryKey 变化即触发新查询。
-  // 服务端强制 user_id=当前用户，客户端不传。
-  const params = useMemo(
-    () => ({
+  // 参数对象随 filter/limit/cursor/tab 派生 → queryKey 变化即触发新查询。
+  // 服务端强制 user_id=当前用户，客户端不传；status_code 仅错误面契约支持。
+  const { usageParams, errParams } = useMemo(() => {
+    const base: MyUsageLogParams = {
       group_id: filters.group_id ? Number(filters.group_id) : undefined,
       account_id: filters.account_id ? Number(filters.account_id) : undefined,
       model: filters.model || undefined,
       error_type: filters.error_type || undefined,
-      from: toRFC3339(filters.from),
-      to: toRFC3339(filters.to),
+      from: toRFC3339(filters.from) ?? '',
+      to: toRFC3339(filters.to) ?? '',
       limit,
-      offset,
-    }),
-    [filters, limit, offset]
-  )
+      cursor: cursor ?? undefined,
+    }
+    return {
+      usageParams: base,
+      errParams: {
+        ...base,
+        status_code: filters.status_code ? Number(filters.status_code) : undefined,
+      } satisfies MyErrLogParams,
+    }
+  }, [filters, limit, cursor])
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['user', 'logs', params],
-    queryFn: () => userApi.getUserLogs(params),
+  const { data, isLoading, isError, error, isFetching } = useQuery({
+    queryKey: ['user', 'logs', tab, tab === 'errors' ? errParams : usageParams],
+    queryFn: () => (tab === 'errors' ? userApi.getMyErrLogs(errParams) : userApi.getMyUsageLogs(usageParams)),
+    // 翻页时保留上一页数据（表格不闪空），isFetching 期间禁用「下一页」防连点。
+    placeholderData: keepPreviousData,
   })
 
-  const total = data?.total ?? 0
   const rows = data?.rows ?? []
 
   return (
@@ -128,7 +177,15 @@ export default function UserLogs() {
         <p className="text-sm text-muted-foreground">{t('user.logs.subtitle')}</p>
       </div>
 
-      {/* 过滤栏：分组/账号/模型/错误类型 + 时间范围（参数与管理端同构） */}
+      {/* Tab 切换：用量日志 / 错误日志（两表独立游标） */}
+      <Tabs value={tab} onValueChange={v => v && switchTab(v)}>
+        <TabsList>
+          <TabsTrigger value="usage">{t('user.logs.tab.usage')}</TabsTrigger>
+          <TabsTrigger value="errors">{t('user.logs.tab.errors')}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* 过滤栏：分组/账号/模型/错误类型（+错误面状态码）+ 时间范围（参数与管理端同构，无 user_id） */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <div className="space-y-1.5">
@@ -146,23 +203,29 @@ export default function UserLogs() {
           <div className="space-y-1.5">
             <Label>{t('user.logs.filter.errorType')}</Label>
             <Select
-              items={Object.fromEntries([[ERROR_ALL, t('user.logs.filter.all')], ...ERROR_TYPES.map(et => [et, t(`errorType.${et}`)])])}
+              items={Object.fromEntries([[ERROR_ALL, t('user.logs.filter.all')], ...(tab === 'errors' ? ERROR_TYPES : USAGE_ERROR_TYPES).map(et => [et, t(`errorType.${et}`)])])}
               value={filters.error_type || ERROR_ALL}
               onValueChange={v => set({ error_type: v === ERROR_ALL ? '' : v })}
             >
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ERROR_ALL} label={t('user.logs.filter.all')}>{t('user.logs.filter.all')}</SelectItem>
-                {ERROR_TYPES.map(et => <SelectItem key={et} value={et} label={t(`errorType.${et}`)}>{t(`errorType.${et}`)}</SelectItem>)}
+                {(tab === 'errors' ? ERROR_TYPES : USAGE_ERROR_TYPES).map(et => <SelectItem key={et} value={et} label={t(`errorType.${et}`)}>{t(`errorType.${et}`)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
+          {tab === 'errors' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="user-log-status">{t('user.logs.filter.statusCode')}</Label>
+              <Input id="user-log-status" type="number" min={0} placeholder="429" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={{ from: filters.from, to: filters.to }} onChange={v => set(v)} />
           </div>
           <div className="flex items-end">
-            <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setOffset(0) }}>
+            <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setCursor(null); setPage(1) }}>
               <RotateCcw /> {t('user.logs.filter.reset')}
             </Button>
           </div>
@@ -192,14 +255,19 @@ export default function UserLogs() {
                 <Th>{t('user.logs.table.createdAt')}</Th>
                 <Th>{t('user.logs.table.model')}</Th>
                 <Th>{t('user.logs.table.errorType')}</Th>
-                <Th className="text-right">{t('user.logs.table.inputTokens')}</Th>
-                <Th className="text-right">{t('user.logs.table.outputTokens')}</Th>
-                <Th className="text-right">{t('user.logs.table.latency')}</Th>
-                <Th className="text-right">{t('user.logs.table.cost')}</Th>
+                {tab === 'errors' && <Th className="text-right">{t('user.logs.table.statusCode')}</Th>}
+                {tab === 'errors' && <Th>{t('user.logs.table.errorMessage')}</Th>}
+                {tab === 'errors' && <Th className="text-right">{t('user.logs.table.latency')}</Th>}
+                {tab === 'errors' && <Th>{t('user.logs.table.billingTier')}</Th>}
+                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.inputTokens')}</Th>}
+                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.outputTokens')}</Th>}
+                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.latency')}</Th>}
+                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.cost')}</Th>}
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
-              {rows.map(l => (
+              {tab === 'usage'
+                ? (rows as UsageLog[]).map(l => (
                 <TableRow key={l.ID}>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
                   {/* 模型链式（管理端同款）：请求模型加粗 + 映射模型缩进灰（有值才显示 ↳） */}
@@ -233,12 +301,77 @@ export default function UserLogs() {
                   {/* 计费列：Cost 毫分 → USD（0/空显示 —） */}
                   <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>
                 </TableRow>
-              ))}
+                ))
+                : (rows as ErrLog[]).map(l => (
+                <TableRow key={l.ID}>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
+                  {/* 错误面模型无映射链（ErrLog 无 MappedModel）：单行 truncate + title 悬停 */}
+                  <TableCell>
+                    <div className="max-w-40 truncate text-xs font-medium" title={l.Model}>{l.Model ?? '—'}</div>
+                  </TableCell>
+                  <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
+                  {/* 状态码：0 = 连接级错误（无 HTTP 码）显示 — */}
+                  <TableCell className="text-right tabular-nums">
+                    {l.StatusCode ? <Badge variant="outline">{l.StatusCode}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  {/* 错误信息：max-w truncate + title 悬停全文（域内已截断 500 字符） */}
+                  <TableCell className="max-w-72">
+                    {l.ErrorMessage ? (
+                      <span className="block truncate text-xs text-muted-foreground" title={l.ErrorMessage}>{l.ErrorMessage}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  {/* 延迟：错误面无 TTFT，仅总耗时（健康色点 + 着色数字），时长 ms */}
+                  <TableCell className="text-right tabular-nums">
+                    {l.LatencyMS != null ? (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
+                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  {/* 计费档：service_tier 归一化值；null = 未计费路径 */}
+                  <TableCell>
+                    {l.BillingTier ? <Badge variant="outline">{l.BillingTier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                </TableRow>
+                ))}
             </TableBody>
           </Table>
         </Card>
-        {/* 分页条：复用共享 Pagination（offset/limit），文案走 list.* 既有键 */}
-        <Pagination total={total} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
+        {/* 分页条：游标分页（无 total/offset）——limit 选择 + 下一页/回到最新；
+            isFetching 时禁用下一页（keepPreviousData 下防连点重复请求） */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-muted-foreground">{t('user.logs.pagination.pageOnly', { page })}</div>
+          <div className="flex items-center gap-2">
+            <Select
+              items={Object.fromEntries(LIMITS.map(n => [String(n), String(n)]))}
+              value={String(limit)}
+              onValueChange={changeLimit}
+            >
+              <SelectTrigger size="sm" aria-label={`${t('list.pageSize')}: ${limit}`}>
+                <span className="text-xs">{t('list.pageSize')}</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LIMITS.map(n => <SelectItem key={n} value={String(n)} label={String(n)}>{n}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {data?.next_cursor != null && (
+              <Button variant="outline" size="sm" disabled={isFetching} onClick={goNext}>
+                <span className="hidden sm:inline">{t('user.logs.pagination.next')}</span> <ChevronRight />
+              </Button>
+            )}
+            {page > 1 && (
+              <Button variant="outline" size="sm" disabled={isFetching} onClick={goLatest}>
+                <RotateCcw /> <span className="hidden sm:inline">{t('user.logs.pagination.latest')}</span>
+              </Button>
+            )}
+          </div>
+        </div>
         </>
       )}
     </div>

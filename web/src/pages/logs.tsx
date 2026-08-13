@@ -3,8 +3,8 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileText, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { ArrowDown, ArrowUp, ChevronRight, FileText, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { Badge } from '@/components/ui/badge'
@@ -17,15 +17,22 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
 import { cn } from '@/lib/utils'
+import type { ErrLogParams, UsageLogParams } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 
 type ErrorType = components['schemas']['ErrorType']
 type RequestFormat = components['schemas']['RequestFormat']
+type UsageLog = components['schemas']['UsageLog']
+type ErrLog = components['schemas']['ErrLog']
 
+// 错误类型全值域（err_logs 完整错误面：拒绝 + 异常双轨）。
 const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort', 'billing']
+// usage_logs 放行面只有 none/abort 两种错误类型。
+const USAGE_ERROR_TYPES: ErrorType[] = ['none', 'abort']
 
 // brief Step 1 色板：none 绿 / 4xx 黄 / 5xx、network、abort 红 / 429 橙 / auth、no_account 灰 / billing 紫。
 const ERROR_META: Record<ErrorType, string> = {
@@ -50,6 +57,7 @@ function ErrorTypeBadge({ type }: { type?: ErrorType }) {
 const FORMAT_LABELS: Record<RequestFormat, string> = {
   'openai-chat': 'OpenAI Chat',
   'openai-responses': 'OpenAI Responses',
+  'openai-images': 'OpenAI Images',
   anthropic: 'Anthropic',
 }
 
@@ -90,15 +98,27 @@ const fmtPricePerM = (millis: number): string => {
 const fmtTokens = (n: number): string =>
   n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K` : String(n)
 
-const LIMITS = [10, 20, 50, 100, 1000]
+const LIMITS = [10, 20, 50, 100, 200]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
 const ERROR_ALL = '__all__'
 
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// 默认近 24h（组件挂载时固定一次，避免渲染期时间漂移；from/to 契约必填）。
+function defaultRange() {
+  const to = new Date()
+  const from = new Date(to.getTime() - 24 * 3600 * 1000)
+  const local = (d: Date) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return { from: local(from), to: local(to) }
+}
+
 // 可隐藏列（时间/请求 ID 始终可见，参考 sub2api 使用明细的列设置模式）；
 // BillingTier/AboveHit/Overdraft 已并入 Tokens 悬停窗（不再独立列）。
-// 隐藏选择持久化到 localStorage（logs-hidden-columns）。
+// 隐藏选择持久化到 localStorage（logs-hidden-columns）。用量/错误两 Tab 列集不同。
 const HIDDEN_STORAGE_KEY = 'logs-hidden-columns'
-const HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'errorType', 'cost', 'latency', 'tokens'] as const
+const USAGE_HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'errorType', 'cost', 'latency', 'tokens'] as const
+const ERR_HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'statusCode', 'errorType', 'errorMessage', 'latency', 'billingTier'] as const
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -113,48 +133,81 @@ interface LogFilters {
   account_id: string
   model: string
   error_type: string
+  status_code: string
   from: string
   to: string
 }
 
 const emptyFilters = (): LogFilters => ({
-  group_id: '', account_id: '', model: '', error_type: '', from: '', to: '',
+  group_id: '', account_id: '', model: '', error_type: '', status_code: '', ...defaultRange(),
 })
 
 export default function Logs() {
   const { t } = useTranslation()
-  const [filters, setFilters] = useState<LogFilters>(emptyFilters())
+  const [tab, setTab] = useState<'usage' | 'errors'>('usage')
+  const [filters, setFilters] = useState<LogFilters>(emptyFilters)
   const [limit, setLimit] = useState(20)
-  const [offset, setOffset] = useState(0)
+  const [cursor, setCursor] = useState<number | null>(null)
+  // 自计页号（游标分页无 total/offset；每次「下一页」+1，过滤/回最新重置为 1）。
+  const [page, setPage] = useState(1)
 
   // 过滤条件 / 每页条数变化 → 回到第一页（同一事件内同步重置，避免双请求）。
   const set = (patch: Partial<LogFilters>) => {
     setFilters(f => ({ ...f, ...patch }))
-    setOffset(0)
+    setCursor(null)
+    setPage(1)
   }
   const changeLimit = (v: string) => {
     setLimit(Number(v))
-    setOffset(0)
+    setCursor(null)
+    setPage(1)
+  }
+  // Tab 切换：各自独立游标；usage 面错误类型值域收窄为 none/abort，超出值重置。
+  const switchTab = (v: string) => {
+    setTab(v as 'usage' | 'errors')
+    if (v === 'usage' && filters.error_type && !USAGE_ERROR_TYPES.includes(filters.error_type as ErrorType)) {
+      setFilters(f => ({ ...f, error_type: '' }))
+    }
+    setCursor(null)
+    setPage(1)
+  }
+  const goNext = () => {
+    if (data?.next_cursor == null) return
+    setCursor(data.next_cursor)
+    setPage(p => p + 1)
+  }
+  const goLatest = () => {
+    setCursor(null)
+    setPage(1)
   }
 
-  // 参数对象随 filter/limit/offset 派生 → queryKey 变化即触发新查询。
-  const params = useMemo(
-    () => ({
+  // 参数对象随 filter/limit/cursor/tab 派生 → queryKey 变化即触发新查询。
+  // 管理端多 user_id（服务端筛选）；status_code 仅错误面契约支持。
+  const { usageParams, errParams } = useMemo(() => {
+    const base: UsageLogParams = {
       group_id: filters.group_id ? Number(filters.group_id) : undefined,
       account_id: filters.account_id ? Number(filters.account_id) : undefined,
       model: filters.model || undefined,
       error_type: filters.error_type || undefined,
-      from: toRFC3339(filters.from),
-      to: toRFC3339(filters.to),
+      from: toRFC3339(filters.from) ?? '',
+      to: toRFC3339(filters.to) ?? '',
       limit,
-      offset,
-    }),
-    [filters, limit, offset]
-  )
+      cursor: cursor ?? undefined,
+    }
+    return {
+      usageParams: base,
+      errParams: {
+        ...base,
+        status_code: filters.status_code ? Number(filters.status_code) : undefined,
+      } satisfies ErrLogParams,
+    }
+  }, [filters, limit, cursor])
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['logs', params],
-    queryFn: () => api.getLogs(params),
+  const { data, isLoading, isError, error, isFetching } = useQuery({
+    queryKey: ['logs', tab, tab === 'errors' ? errParams : usageParams],
+    queryFn: () => (tab === 'errors' ? api.getErrLogs(errParams) : api.getUsageLogs(usageParams)),
+    // 翻页时保留上一页数据（表格不闪空），isFetching 期间禁用「下一页」防连点。
+    placeholderData: keepPreviousData,
   })
 
   // —— 名称映射：日志行只存 ID，组/账号列显示名称（未命中回退 #id）——
@@ -179,10 +232,7 @@ export default function Logs() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const total = data?.total ?? 0
   const rows = data?.rows ?? []
-  const pages = Math.max(1, Math.ceil(total / limit))
-  const page = total === 0 ? 1 : Math.floor(offset / limit) + 1
 
   // —— 列可见性（localStorage 持久化）——
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(loadHiddenCols)
@@ -204,7 +254,15 @@ export default function Logs() {
         <p className="text-sm text-muted-foreground">{t('logs.subtitle')}</p>
       </div>
 
-      {/* 过滤栏：分组/账号/模型/错误类型 + 时间范围 */}
+      {/* Tab 切换：用量日志 / 错误日志（两表独立游标与列集） */}
+      <Tabs value={tab} onValueChange={v => v && switchTab(v)}>
+        <TabsList>
+          <TabsTrigger value="usage">{t('logs.tab.usage')}</TabsTrigger>
+          <TabsTrigger value="errors">{t('logs.tab.errors')}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* 过滤栏：分组/账号/模型/错误类型（+错误面状态码）+ 时间范围 */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <div className="space-y-1.5">
@@ -222,38 +280,44 @@ export default function Logs() {
           <div className="space-y-1.5">
             <Label>{t('logs.filter.errorType')}</Label>
             <Select
-              items={Object.fromEntries([[ERROR_ALL, t('logs.filter.all')], ...ERROR_TYPES.map(et => [et, t(`errorType.${et}`)])])}
+              items={Object.fromEntries([[ERROR_ALL, t('logs.filter.all')], ...(tab === 'errors' ? ERROR_TYPES : USAGE_ERROR_TYPES).map(et => [et, t(`errorType.${et}`)])])}
               value={filters.error_type || ERROR_ALL}
               onValueChange={v => set({ error_type: v === ERROR_ALL ? '' : v })}
             >
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ERROR_ALL} label={t('logs.filter.all')}>{t('logs.filter.all')}</SelectItem>
-                {ERROR_TYPES.map(et => <SelectItem key={et} value={et} label={t(`errorType.${et}`)}>{t(`errorType.${et}`)}</SelectItem>)}
+                {(tab === 'errors' ? ERROR_TYPES : USAGE_ERROR_TYPES).map(et => <SelectItem key={et} value={et} label={t(`errorType.${et}`)}>{t(`errorType.${et}`)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
+          {tab === 'errors' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="log-status">{t('logs.filter.statusCode')}</Label>
+              <Input id="log-status" type="number" min={0} placeholder="429" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={{ from: filters.from, to: filters.to }} onChange={v => set(v)} />
           </div>
           <div className="flex items-end">
-            <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setOffset(0) }}>
+            <Button variant="outline" className="w-full" onClick={() => { setFilters(emptyFilters()); setCursor(null); setPage(1) }}>
               <RotateCcw /> {t('logs.filter.reset')}
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* 列设置 + 表格 */}
+      {/* 列设置 + 表格标题（游标分页无 total，标题用当前 Tab 名） */}
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-muted-foreground">{t('logs.table.title', { total })}</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{t(tab === 'errors' ? 'logs.tab.errors' : 'logs.tab.usage')}</h2>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm"><SlidersHorizontal className="size-4" />{t('logs.columnSettings')}</Button>} />
           <DropdownMenuContent align="end" className="max-h-80 w-48 overflow-y-auto">
             <DropdownMenuGroup>
               <DropdownMenuLabel>{t('logs.columnSettings')}</DropdownMenuLabel>
-              {HIDDENABLE_COLS.map(key => (
+              {(tab === 'errors' ? ERR_HIDDENABLE_COLS : USAGE_HIDDENABLE_COLS).map(key => (
                 <DropdownMenuCheckboxItem
                   key={key}
                   checked={isColVisible(key)}
@@ -295,14 +359,18 @@ export default function Logs() {
                 {isColVisible('account') && <Th className="text-right">{t('logs.table.account')}</Th>}
                 {isColVisible('model') && <Th>{t('logs.table.model')}</Th>}
                 {isColVisible('format') && <Th>{t('logs.table.format')}</Th>}
+                {tab === 'errors' && isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
                 {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
-                {isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
-                {isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
+                {tab === 'errors' && isColVisible('errorMessage') && <Th>{t('logs.table.errorMessage')}</Th>}
                 {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
+                {tab === 'errors' && isColVisible('billingTier') && <Th>{t('logs.table.billingTier')}</Th>}
+                {tab === 'usage' && isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
+                {tab === 'usage' && isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
-              {rows.map(l => (
+              {tab === 'usage'
+                ? (rows as UsageLog[]).map(l => (
                 <TableRow key={l.ID}>
                   <TableCell className="max-w-36">
                     <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
@@ -465,17 +533,90 @@ export default function Logs() {
                   </TableCell>
                   )}
                 </TableRow>
-              ))}
+                ))
+                : (rows as ErrLog[]).map(l => (
+                <TableRow key={l.ID}>
+                  <TableCell className="max-w-36">
+                    <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
+                  {/* 鉴权归属：用户(邮箱)/Key；组/账号显示名称，未命中回退 #id（0 = 无鉴权） */}
+                  {isColVisible('user') && (
+                    <TableCell className="text-right">
+                      {l.UserID ? (
+                        <span className="inline-block max-w-40 truncate align-middle tabular-nums" title={userEmailById?.get(l.UserID)}>
+                          {userEmailById?.get(l.UserID) ?? `#${l.UserID}`}
+                        </span>
+                      ) : '—'}
+                    </TableCell>
+                  )}
+                  {isColVisible('key') && <TableCell className="text-right tabular-nums">{l.KeyID ? `#${l.KeyID}` : '—'}</TableCell>}
+                  {isColVisible('group') && (
+                    <TableCell className="text-right">
+                      {l.GroupID ? <span className="tabular-nums">{groupNameById?.get(l.GroupID) ?? `#${l.GroupID}`}</span> : '—'}
+                    </TableCell>
+                  )}
+                  {isColVisible('account') && (
+                    <TableCell className="text-right">
+                      {l.AccountID ? <span className="tabular-nums">{accountNameById?.get(l.AccountID) ?? `#${l.AccountID}`}</span> : '—'}
+                    </TableCell>
+                  )}
+                  {/* 错误面模型无映射链（ErrLog 无 MappedModel）：单行 truncate + title 悬停 */}
+                  {isColVisible('model') && (
+                  <TableCell>
+                    <div className="max-w-40 truncate text-xs font-medium" title={l.Model}>{l.Model ?? '—'}</div>
+                  </TableCell>
+                  )}
+                  {isColVisible('format') && (
+                  <TableCell>
+                    {l.Format ? <Badge variant="outline">{FORMAT_LABELS[l.Format]}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
+                  )}
+                  {/* 状态码：0 = 连接级错误（无 HTTP 码）显示 — */}
+                  {isColVisible('statusCode') && (
+                    <TableCell className="text-right tabular-nums">
+                      {l.StatusCode ? <Badge variant="outline">{l.StatusCode}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                  )}
+                  {isColVisible('errorType') && <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>}
+                  {/* 错误信息：max-w truncate + title 悬停全文（与用户列同做法；域内已截断 500 字符） */}
+                  {isColVisible('errorMessage') && (
+                    <TableCell className="max-w-72">
+                      {l.ErrorMessage ? (
+                        <span className="block truncate text-xs text-muted-foreground" title={l.ErrorMessage}>{l.ErrorMessage}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  )}
+                  {/* 耗时：错误面无 TTFT，仅总耗时（健康色点 + 着色数字） */}
+                  {isColVisible('latency') && (
+                  <TableCell className="text-right tabular-nums">
+                    {l.LatencyMS != null ? (
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS))} />
+                        <span className="text-xs text-muted-foreground">{fmtDuration(l.LatencyMS)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  )}
+                  {/* 计费档：service_tier 归一化值；null = 未计费路径 */}
+                  {isColVisible('billingTier') && (
+                    <TableCell>
+                      {l.BillingTier ? <Badge variant="outline">{l.BillingTier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                  )}
+                </TableRow>
+                ))}
             </TableBody>
           </Table>
         </Card>
-        {/* 分页条：独立于表格卡片，对齐 pagination-demo（outline 按钮 + chevron 图标 + 移动端隐藏文字） */}
+        {/* 分页条：游标分页（无 total/offset）——limit 选择 + 下一页/回到最新；
+            isFetching 时禁用下一页（keepPreviousData 下防连点重复请求） */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground">
-            {t('logs.pagination.total', { total })}
-            <span className="mx-2">·</span>
-            {t('logs.pagination.page', { page, pages })}
-          </div>
+          <div className="text-sm text-muted-foreground">{t('logs.pagination.pageOnly', { page })}</div>
           <div className="flex items-center gap-2">
             <Select
               items={Object.fromEntries(LIMITS.map(n => [String(n), String(n)]))}
@@ -490,12 +631,16 @@ export default function Logs() {
                 {LIMITS.map(n => <SelectItem key={n} value={String(n)} label={String(n)}>{n}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
-              <ChevronLeft /> <span className="hidden sm:inline">{t('logs.pagination.prev')}</span>
-            </Button>
-            <Button variant="outline" size="sm" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>
-              <span className="hidden sm:inline">{t('logs.pagination.next')}</span> <ChevronRight />
-            </Button>
+            {data?.next_cursor != null && (
+              <Button variant="outline" size="sm" disabled={isFetching} onClick={goNext}>
+                <span className="hidden sm:inline">{t('logs.pagination.next')}</span> <ChevronRight />
+              </Button>
+            )}
+            {page > 1 && (
+              <Button variant="outline" size="sm" disabled={isFetching} onClick={goLatest}>
+                <RotateCcw /> <span className="hidden sm:inline">{t('logs.pagination.latest')}</span>
+              </Button>
+            )}
           </div>
         </div>
         </>
