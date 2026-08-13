@@ -5,18 +5,23 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/is7qin/c3api/internal/auth"
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/aiclient"
 )
 
 func TestHealthz(t *testing.T) {
@@ -304,4 +309,77 @@ func TestUserMount(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code, "/user/* 必须由 UserHandler 处理")
+}
+
+// --- 补压测修复回归（resp-ws 501 + statusWriter Hijack 语义） ---
+
+// TestWSUpgradeThroughMiddlewareChain resp-ws 升级走完整中间件链必须成功
+// （补压测发现：statusWriter 缺 http.Hijacker → accessLog 包裹后
+// coder/websocket Accept 拿不到 Hijacker → 全部升级被 501 拒）。既有 proxy
+// 单测直打 handler 绕过 server 中间件链，未暴露——此处必须过完整链
+// （recoverer + accessLog + inflightLimiter）后升级并真实收发帧。
+func TestWSUpgradeThroughMiddlewareChain(t *testing.T) {
+	ai := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := aiclient.AcceptResponsesWS(w, r)
+		if err != nil {
+			return // Accept 已写出 4xx/501（回归点：此处不得走到）
+		}
+		defer conn.CloseNow()
+		typ, msg, err := conn.Read(context.Background()) // 读一帧回一帧，证明连接真实可用
+		if err != nil {
+			return
+		}
+		_ = conn.Write(context.Background(), typ, msg)
+	})
+	s := NewServer(Options{AdminToken: "tok", AIHandler: ai})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http")
+	conn, _, err := websocket.Dial(context.Background(), wsURL+"/v1/responses", nil)
+	require.NoError(t, err, "resp-ws 升级必须经完整中间件链成功（回归：statusWriter 缺 Hijacker → 501）")
+	defer conn.CloseNow()
+	require.NoError(t, conn.Write(context.Background(), websocket.MessageText, []byte("hi")))
+	typ, msg, err := conn.Read(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, websocket.MessageText, typ)
+	require.Equal(t, "hi", string(msg))
+}
+
+// TestStatusWriterHijackSemantics statusWriter.Hijack 转发语义：Hijack 必须
+// 直达底层 writer（接入真实 net/http server——hijack 后裸写 HTTP 响应，
+// 客户端原样收到即证明转发成功）；底层不支持 Hijacker（httptest.Recorder）
+// → 明确报错而非 panic。写头后的语义由底层自带（Go 1.26 写头后 Hijack 先
+// flush 再接管——coder/websocket Accept 正是先 WriteHeader(101) 后 Hijack
+// 的调用顺序），包装层不添加状态判定。
+func TestStatusWriterHijackSemantics(t *testing.T) {
+	t.Run("forwards to underlying", func(t *testing.T) {
+		type hres struct{ err error }
+		res := make(chan hres, 1)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, rw, err := (&statusWriter{ResponseWriter: w}).Hijack()
+			if err != nil {
+				res <- hres{err}
+				return
+			}
+			defer conn.Close()
+			_, _ = rw.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+			_ = rw.Flush()
+			res <- hres{}
+		}))
+		defer srv.Close()
+		resp, err := http.Get(srv.URL)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		require.Equal(t, "ok", string(b), "hijack 后裸写响应必须原样到达客户端（转发失败的信号）")
+		require.NoError(t, (<-res).err, "Hijack 必须转发成功")
+	})
+
+	t.Run("errors when underlying lacks hijacker", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		_, _, err := (&statusWriter{ResponseWriter: rec}).Hijack()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not implement http.Hijacker")
+	})
 }

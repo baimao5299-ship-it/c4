@@ -14,9 +14,12 @@ import (
 type TransportConfig struct {
 	MaxIdleConns        int
 	MaxIdleConnsPerHost int
-	IdleConnTimeout     time.Duration
-	DialTimeout         time.Duration
-	ForceHTTP2          bool
+	// MaxConnsPerHost 单 host 连接总数上限（含在用+空闲；0 = 不限）。
+	// 网关既有 client 保持 0 不限（压测验证形态）；SDK 适配层装配显式上界。
+	MaxConnsPerHost int
+	IdleConnTimeout time.Duration
+	DialTimeout     time.Duration
+	ForceHTTP2      bool
 }
 
 func NewTransport(cfg TransportConfig) *http.Transport {
@@ -29,6 +32,7 @@ func NewTransport(cfg TransportConfig) *http.Transport {
 		ForceAttemptHTTP2:     cfg.ForceHTTP2,
 		MaxIdleConns:          cfg.MaxIdleConns,
 		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxConnsPerHost,
 		IdleConnTimeout:       cfg.IdleConnTimeout,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: time.Second,

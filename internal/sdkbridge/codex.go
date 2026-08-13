@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,18 @@ type Codex struct {
 	rotate  RotationStore         // T5 轮转回写落库面；nil = 不落库（测试/未装配）
 	inval   func(accountID int64) // T5 P3-3 回写后失效账号快照条目（下个会话重载新凭据）；nil = 不失效
 	log     *logx.Logger          // T5 回写/失效错误日志；nil = 不记
+	// transport SDK HTTPClient 上游 transport（resp HTTP 面连接池形态；nil =
+	// SDK 默认——MaxIdleConnsPerHost=2，补压测连接风暴根因）。装配点见
+	// SetTransport（main 注入 httpx 网关同形态 transport）。
+	transport http.RoundTripper
+}
+
+// SetTransport 装配 SDK HTTPClient 的上游 transport（resp 补压测修复——SDK
+// 默认 transport MaxIdleConnsPerHost=2，压测 profile ~12% CPU 连接风暴；main
+// 装配 httpx.NewTransport(网关同形态连接池参数)。构造期一次（冷面），热路径
+// 零影响；nil = SDK 默认（测试形态）。
+func (a *Codex) SetTransport(rt http.RoundTripper) {
+	a.transport = rt
 }
 
 // RotationStore 轮转回写落库面（repository.AccountExtRepo 满足；接口化供测试
@@ -203,18 +216,20 @@ func (a *Codex) entryFor(cred *domain.AccountCredential) (*codexEntry, error) {
 
 // clientFor entryFor + HTTPClient 懒构造（GenerateImage/Stream 面——非 nil
 // 后同账号复用连接池；sig 变更 → entryFor 重建条目）。NewHTTPClient 为纯构
-// 造（无 I/O 无 error），双检锁防并发重复构造。
+// 造（无 I/O 无 error）；构造/读取全程持 a.mu——entryFor 每次调用已取锁，
+// 无新增竞争（补压测 -race 实证修复：原双检锁锁外读 e.client vs 锁内写，
+// 数据竞争；去掉锁外快路径即消除）。
 func (a *Codex) clientFor(cred *domain.AccountCredential) (*codexEntry, error) {
 	e, err := a.entryFor(cred)
 	if err != nil {
 		return nil, err
 	}
-	if e.client != nil {
-		return e, nil
-	}
 	var opts []codexsdk.Option
 	if cred.BaseURL != "" {
 		opts = append(opts, codexsdk.WithBaseURL(cred.BaseURL))
+	}
+	if a.transport != nil {
+		opts = append(opts, codexsdk.WithTransport(a.transport))
 	}
 	a.mu.Lock()
 	if e.client == nil {
