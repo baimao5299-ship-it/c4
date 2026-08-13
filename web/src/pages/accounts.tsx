@@ -5,17 +5,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, Users, Ban, CircleCheck, Filter } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, Ban, CircleCheck, Filter, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
-import { ApiUnauthorized } from '@/lib/api/client'
+import { ApiError, ApiUnauthorized } from '@/lib/api/client'
 import { BatchBar } from '@/components/batch-bar'
 import { ListToolbar } from '@/components/list-toolbar'
 import { Pagination } from '@/components/pagination'
 import { SortableHeader, type SortOrder } from '@/components/sortable-header'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DateTimePicker } from '@/components/ui/date-picker'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,15 +26,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from '@/components/ui/toast'
 import { StatusBadge } from '@/components/status-badge'
-import { formatPercent, truncate } from '@/components/fmt'
+import { formatPercent, toRFC3339, truncate } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type AccountView = components['schemas']['AccountView']
 type AccountCreate = components['schemas']['AccountCreate']
 type AccountPatch = components['schemas']['AccountPatch']
 type AccountStatus = components['schemas']['AccountStatus']
+type AccountExt = components['schemas']['AccountExt']
 type Group = components['schemas']['Group']
+
+// codex 生态账号（AccountExt 仅支持 codex-oauth/codex-pat）：凭据走扩展配置，列表上游 key 不承载凭据
+const CODE_CREDENTIAL_TYPES: NonNullable<components['schemas']['Template']['CredentialType']>[] = ['codex-oauth', 'codex-pat']
+const isCodexTemplate = (a: AccountView) =>
+  a.Template?.CredentialType === 'codex-oauth' || a.Template?.CredentialType === 'codex-pat'
+
+// RFC3339（API）→ datetime-local 'YYYY-MM-DDTHH:mm'（本地时区；DateTimePicker 值格式，'' = 未设置）
+function toLocalDT(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 // 批量更新表单里 status/template_id 的「不修改」哨兵值。
 type BatchStatus = 'all' | AccountStatus
 
@@ -345,8 +362,78 @@ export default function Accounts() {
     save.mutate(form)
   }
 
+  // —— 扩展配置（codex-oauth/codex-pat 模板；GET 404 = 无 ext 行 → 空表单，credential_type 预填模板类型） ——
+  const [extTarget, setExtTarget] = useState<AccountView | null>(null)
+  const [extForm, setExtForm] = useState({ oauth_token: '', oauth_refresh_token: '', oauth_expires_at: '', pat_key: '', email: '' })
+  const extQ = useQuery({
+    queryKey: ['account-ext', extTarget?.ID],
+    queryFn: async () => {
+      try {
+        return await api.getAccountExt(extTarget!.ID!)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return undefined // 无 ext 行 = 空表单
+        throw e
+      }
+    },
+    enabled: !!extTarget,
+  })
+  const openExt = (a: AccountView) => {
+    setExtTarget(a)
+    setExtForm({ oauth_token: '', oauth_refresh_token: '', oauth_expires_at: '', pat_key: '', email: '' })
+  }
+  // 读回显填充（404/无数据 = 保持空表单）
+  useEffect(() => {
+    const d = extQ.data
+    if (extTarget && !extQ.isLoading && d) {
+      setExtForm({
+        oauth_token: d.oauth_token ?? '',
+        oauth_refresh_token: d.oauth_refresh_token ?? '',
+        oauth_expires_at: d.oauth_expires_at ? toLocalDT(d.oauth_expires_at) : '',
+        pat_key: d.pat_key ?? '',
+        email: d.email ?? '',
+      })
+    }
+  }, [extTarget, extQ.isLoading, extQ.data])
+  const extCredentialType: AccountExt['credential_type'] = extTarget?.Template?.CredentialType === 'codex-pat' ? 'codex-pat' : 'codex-oauth'
+  const extSave = useMutation({
+    mutationFn: () => {
+      const a = extTarget!
+      const ct: AccountExt['credential_type'] = extCredentialType
+      if (ct === 'codex-oauth' && !extForm.oauth_token.trim()) throw new Error(t('accounts.ext.oauthTokenRequired'))
+      const cur = extQ.data
+      const body: AccountExt = {
+        account_id: a.ID,
+        credential_type: ct,
+        email: extForm.email.trim() || null,
+        // 类型-列组约束（service 校验）：oauth 只允许 oauth_* 列组；pat 只允许 pat_key（其余置 NULL）
+        ...(ct === 'codex-oauth'
+          ? {
+              oauth_token: extForm.oauth_token.trim() || null,
+              oauth_refresh_token: extForm.oauth_refresh_token.trim() || null,
+              oauth_expires_at: toRFC3339(extForm.oauth_expires_at) ?? null,
+              pat_key: null,
+            }
+          : {
+              pat_key: extForm.pat_key.trim() || null,
+              oauth_token: null,
+              oauth_refresh_token: null,
+              oauth_expires_at: null,
+            }),
+        // 身份四元组只读展示：回显原值，防 PUT 全列更新清空（首次写入由 service 自动生成）
+        ...(cur ? { installation_id: cur.installation_id, session_id: cur.session_id, thread_id: cur.thread_id, window_id: cur.window_id } : {}),
+      }
+      return api.putAccountExt(a.ID!, body)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      setExtTarget(null)
+      toast.add({ title: t('accounts.ext.saveSuccess'), type: 'success' })
+    },
+  })
+
   const errMsg = (e: unknown) => (e instanceof ApiUnauthorized ? null : (e as Error)?.message)
   const templateName = (a: AccountView) => a.Template?.Name ?? (a.TemplateID ? `#${a.TemplateID}` : '—')
+  const selTemplate = templates.find(tp => String(tp.ID) === form.template_id)
 
   return (
     <div className="space-y-6">
@@ -501,6 +588,9 @@ export default function Accounts() {
                         >
                           {a.Status === 'disabled' ? <CircleCheck /> : <Ban />}
                         </Button>
+                        {isCodexTemplate(a) && (
+                          <Button variant="ghost" size="icon-sm" title={t('accounts.ext.button')} onClick={() => openExt(a)}><Settings2 /></Button>
+                        )}
                         <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(a)}><Pencil /></Button>
                         <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(a)}><Trash2 /></Button>
                       </div>
@@ -538,6 +628,9 @@ export default function Accounts() {
                   {templates.map(tp => <SelectItem key={tp.ID} value={String(tp.ID)} label={tp.Name ?? `#${tp.ID}`}>{tp.Name ?? `#${tp.ID}`}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {selTemplate && CODE_CREDENTIAL_TYPES.includes(selTemplate.CredentialType as typeof CODE_CREDENTIAL_TYPES[number]) && (
+                <p className="text-xs text-muted-foreground">{t('accounts.ext.credHint')}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="acc-key">Upstream Key</Label>
@@ -692,6 +785,97 @@ export default function Accounts() {
             <Button variant="outline" onClick={() => closeBatchUpdate()} disabled={batchUpdate.isPending}>{t('common.cancel')}</Button>
             <Button onClick={submitBatchUpdate} disabled={batchUpdate.isPending}>
               {batchUpdate.isPending ? t('common.saving') : t('list.batchUpdate')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 扩展配置（codex 生态账号；credential_type 分流 oauth 列组 / pat_key；身份四元组只读） —— */}
+      <Dialog open={!!extTarget} onOpenChange={o => { if (!o && !extSave.isPending) setExtTarget(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('accounts.ext.title', { id: extTarget?.ID })}</DialogTitle>
+            <DialogDescription>{t('accounts.ext.desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>{t('accounts.ext.credentialType')}</Label>
+              <Badge variant="outline" className="font-mono">{extQ.data?.credential_type ?? extCredentialType}</Badge>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="acc-ext-email">{t('accounts.ext.email')}</Label>
+              <Input
+                id="acc-ext-email"
+                value={extForm.email}
+                placeholder={t('accounts.ext.emailPlaceholder')}
+                onChange={e => setExtForm(f => ({ ...f, email: e.target.value }))}
+              />
+            </div>
+            {extCredentialType === 'codex-oauth' ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-ext-oauth-token">{t('accounts.ext.oauthToken')}</Label>
+                  <Input
+                    id="acc-ext-oauth-token"
+                    type="password"
+                    value={extForm.oauth_token}
+                    onChange={e => setExtForm(f => ({ ...f, oauth_token: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('accounts.ext.oauthTokenRequired')}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-ext-oauth-refresh">{t('accounts.ext.oauthRefreshToken')}</Label>
+                  <Input
+                    id="acc-ext-oauth-refresh"
+                    type="password"
+                    value={extForm.oauth_refresh_token}
+                    onChange={e => setExtForm(f => ({ ...f, oauth_refresh_token: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t('accounts.ext.oauthExpiresAt')}</Label>
+                  <DateTimePicker
+                    id="acc-ext-oauth-expires"
+                    value={extForm.oauth_expires_at}
+                    onChange={v => setExtForm(f => ({ ...f, oauth_expires_at: v }))}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="acc-ext-pat">{t('accounts.ext.patKey')}</Label>
+                <Input
+                  id="acc-ext-pat"
+                  type="password"
+                  value={extForm.pat_key}
+                  onChange={e => setExtForm(f => ({ ...f, pat_key: e.target.value }))}
+                />
+              </div>
+            )}
+            {/* 身份四元组：只读展示（首次写入自动生成、恒等约束——不提供编辑） */}
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">{t('accounts.ext.identityNote')}</p>
+              <div className="space-y-0.5 font-mono text-xs text-muted-foreground">
+                <p>{t('accounts.ext.installationId')}: {extQ.data?.installation_id ?? '—'}</p>
+                <p>{t('accounts.ext.sessionId')}: {extQ.data?.session_id ?? '—'}</p>
+                <p>{t('accounts.ext.threadId')}: {extQ.data?.thread_id ?? '—'}</p>
+                <p>{t('accounts.ext.windowId')}: {extQ.data?.window_id ?? '—'}</p>
+              </div>
+            </div>
+            {extQ.isError && (
+              <p className="text-sm text-destructive">{t('accounts.ext.loadFailed', { message: (extQ.error as Error).message })}</p>
+            )}
+            {extSave.isError && errMsg(extSave.error) && (
+              <p className="text-sm text-destructive">{errMsg(extSave.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtTarget(null)} disabled={extSave.isPending}>{t('common.cancel')}</Button>
+            <Button
+              onClick={() => extSave.mutate()}
+              disabled={extSave.isPending || extQ.isLoading || (extCredentialType === 'codex-oauth' && !extForm.oauth_token.trim())}
+            >
+              {extSave.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

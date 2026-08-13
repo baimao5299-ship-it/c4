@@ -305,6 +305,21 @@
     "createdSuccess": "Group created",
     "newTitle": "New group",
     "newDesc": "Set the name and visibility; the price multiplier can be adjusted later in edit",
+    "protocolConvertLabel": "Protocol conversion",
+    "protocolConvert": {
+      "off": "Off",
+      "chat_to_resp": "Chat → Responses",
+      "mess_to_resp": "Messages → Responses",
+      "resp_to_mess": "Responses → Messages",
+      "chat_to_mess": "Chat → Messages"
+    },
+    "protocolConvertShort": {
+      "off": "off",
+      "chat_to_resp": "chat→resp",
+      "mess_to_resp": "mess→resp",
+      "resp_to_mess": "resp→mess",
+      "chat_to_mess": "chat→mess"
+    },
     "nameLabel": "Name",
     "namePlaceholder": "e.g. prod-web",
     "visibilityLabel": "Visibility",

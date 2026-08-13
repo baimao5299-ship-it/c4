@@ -5,10 +5,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Boxes, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Boxes, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
-import { ApiUnauthorized } from '@/lib/api/client'
+import { ApiError, ApiUnauthorized } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 import { BatchBar } from '@/components/batch-bar'
 import { commaList, formatDateTime, truncate } from '@/components/fmt'
@@ -31,28 +31,38 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { toast } from '@/components/ui/toast'
 
 type Template = components['schemas']['Template']
 type TemplateCreate = components['schemas']['TemplateCreate']
 type TemplatePatch = components['schemas']['TemplatePatch']
+type TemplateExt = components['schemas']['TemplateExt']
 // 模板格式联合 = API SupportedFormats 元素类型（W1 扩展后为 4 值含 openai-responses-ws；
 // 不用 RequestFormat 别名——usage 侧枚举保持 3 值，模板格式与其已分化）。
 type TemplateFormat = components['schemas']['Template']['SupportedFormats'][number]
+type TemplateCredentialType = NonNullable<Template['CredentialType']>
 
 const FORMAT_LABELS: Record<TemplateFormat, string> = {
   'openai-chat': 'OpenAI Chat',
   'openai-responses': 'OpenAI Responses',
   'openai-responses-ws': 'OpenAI Responses (WS)',
+  'openai-images': 'OpenAI Images',
   anthropic: 'Anthropic',
 }
 const FORMATS = Object.keys(FORMAT_LABELS) as TemplateFormat[]
 
-// 凭据类型（模板级：一个模板 = 一种号池，账号继承；号池生态类型后续追加）
-const CREDENTIAL_TYPE_LABELS: Record<string, string> = {
-  api_key: 'API Key',
+// 凭据类型（模板级：一个模板 = 一种号池，账号继承）
+const CREDENTIAL_TYPES: TemplateCredentialType[] = ['api_key', 'responses-special', 'codex-oauth', 'codex-pat']
+// 生态三类型：走 SDK 类型化端点；模板格式联动限制为 resp / resp-ws（service 校验前置）
+const ECO_CREDENTIAL_TYPES: TemplateCredentialType[] = ['responses-special', 'codex-oauth', 'codex-pat']
+const ECO_FORMATS: TemplateFormat[] = ['openai-responses', 'openai-responses-ws']
+const CREDENTIAL_BADGE_STYLES: Partial<Record<TemplateCredentialType, string>> = {
+  'responses-special': 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400',
+  'codex-oauth': 'bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400',
+  'codex-pat': 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400',
 }
-const CREDENTIAL_TYPES = Object.keys(CREDENTIAL_TYPE_LABELS)
 
 // —— 多格式表单状态（supported_formats/format_models；default_format/model_formats 已废弃） ——
 interface FormatRow {
@@ -148,6 +158,16 @@ function FormatBadge({ format }: { format?: string }) {
   return <Badge variant="outline">{format ? (FORMAT_LABELS[format as TemplateFormat] ?? format) : '—'}</Badge>
 }
 
+// 凭据类型徽章：api_key 灰显；生态三类型彩色（号池走 SDK 类型化端点）
+function CredentialTypeBadge({ credentialType }: { credentialType?: string }) {
+  const { t } = useTranslation()
+  const ct = (credentialType ?? 'api_key') as TemplateCredentialType
+  const style = CREDENTIAL_BADGE_STYLES[ct]
+  return style
+    ? <Badge className={style}>{t(`templates.credentialType.${ct}`)}</Badge>
+    : <Badge variant="outline">{t(`templates.credentialType.${ct}`)}</Badge>
+}
+
 // —— 表单区（创建/编辑与批量更新共用；batch 模式下所有字段可选） ——
 function FormFields({
   form,
@@ -216,25 +236,39 @@ function FormFields({
         <div className="space-y-1.5">
           <Label htmlFor="tpl-cred-type">{t('templates.credentialTypeLabel')}</Label>
           <Select
-            items={CREDENTIAL_TYPE_LABELS}
+            items={Object.fromEntries(CREDENTIAL_TYPES.map(ct => [ct, t(`templates.credentialType.${ct}`)]))}
             value={form.credential_type || 'api_key'}
-            onValueChange={v => setForm(f => ({ ...f, credential_type: v }))}
+            onValueChange={v => setForm(f => {
+              // 生态三类型：supported_formats 联动限制为 resp / resp-ws（service 校验前置）
+              if (!ECO_CREDENTIAL_TYPES.includes(v as TemplateCredentialType)) return { ...f, credential_type: v }
+              const supported_formats = f.supported_formats.filter(x => ECO_FORMATS.includes(x))
+              const format_models = f.format_models.filter(r => ECO_FORMATS.includes(r.format))
+              return {
+                ...f,
+                credential_type: v,
+                supported_formats: supported_formats.length ? supported_formats : [...ECO_FORMATS],
+                format_models,
+              }
+            })}
           >
             <SelectTrigger id="tpl-cred-type" className="w-48"><SelectValue /></SelectTrigger>
             <SelectContent>
               {CREDENTIAL_TYPES.map(ct => (
-                <SelectItem key={ct} value={ct} label={CREDENTIAL_TYPE_LABELS[ct]}>{CREDENTIAL_TYPE_LABELS[ct]}</SelectItem>
+                <SelectItem key={ct} value={ct} label={t(`templates.credentialType.${ct}`)}>{t(`templates.credentialType.${ct}`)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
+          {ECO_CREDENTIAL_TYPES.includes(form.credential_type as TemplateCredentialType) && (
+            <p className="text-xs text-muted-foreground">{t('templates.ecoFormatHint')}</p>
+          )}
         </div>
       )}
 
-      {/* supported_formats：chips 多选（非空校验） */}
+      {/* supported_formats：chips 多选（非空校验）；生态类型只显示 resp / resp-ws */}
       <div className="space-y-1.5">
         <Label>{t('templates.supportedFormatsLabel')}</Label>
         <div className="flex flex-wrap gap-1.5">
-          {FORMATS.map(f => {
+          {(ECO_CREDENTIAL_TYPES.includes(form.credential_type as TemplateCredentialType) ? ECO_FORMATS : FORMATS).map(f => {
             const on = form.supported_formats.includes(f)
             return (
               <Button
@@ -394,6 +428,45 @@ export default function Templates() {
   const batchResolve = useRef<((r: 'cancelled' | 'submitted') => void) | null>(null)
   // —— 删除确认 ——
   const [deleting, setDeleting] = useState<Template | null>(null)
+
+  // —— 扩展配置（生态三类型；GET 404 = 无 ext 行 → 空表单；strip_image_tools 三态：未配置/开/关） ——
+  const [extTarget, setExtTarget] = useState<Template | null>(null)
+  const [extStrip, setExtStrip] = useState<boolean | null>(null)
+  const extQ = useQuery({
+    queryKey: ['template-ext', extTarget?.ID],
+    queryFn: async () => {
+      try {
+        return await api.getTemplateExt(extTarget!.ID)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return undefined // 无 ext 行 = 空表单
+        throw e
+      }
+    },
+    enabled: !!extTarget,
+  })
+  const openExt = (t: Template) => {
+    setExtTarget(t)
+    setExtStrip(null)
+  }
+  useEffect(() => {
+    if (extTarget && !extQ.isLoading && extQ.data !== undefined) setExtStrip(extQ.data?.strip_image_tools ?? null)
+  }, [extTarget, extQ.isLoading, extQ.data])
+  const extSave = useMutation({
+    mutationFn: () => {
+      const tpl = extTarget!
+      const body: TemplateExt = {
+        template_id: tpl.ID,
+        credential_type: tpl.CredentialType as TemplateExt['credential_type'],
+        strip_image_tools: extStrip,
+      }
+      return api.putTemplateExt(tpl.ID, body)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      setExtTarget(null)
+      toast.add({ title: tr('templates.ext.saveSuccess'), type: 'success' })
+    },
+  })
 
   const openCreate = () => {
     setEditing(null)
@@ -575,7 +648,7 @@ export default function Templates() {
                       <TableCell className="max-w-36 truncate" title={t.Name}>{t.Name}</TableCell>
                       <TableCell className="max-w-52 truncate font-mono text-xs" title={t.BaseURL}>{t.BaseURL}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{CREDENTIAL_TYPE_LABELS[t.CredentialType ?? 'api_key'] ?? t.CredentialType ?? 'api_key'}</Badge>
+                        <CredentialTypeBadge credentialType={t.CredentialType} />
                       </TableCell>
                       <TableCell>
                         <div className="flex max-w-44 flex-wrap gap-1">
@@ -614,6 +687,11 @@ export default function Templates() {
                       <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.CreatedAt)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {ECO_CREDENTIAL_TYPES.includes(t.CredentialType as TemplateCredentialType) && (
+                            <Button variant="ghost" size="icon-sm" title={tr('templates.ext.button')} onClick={() => openExt(t)}>
+                              <Settings2 />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon-sm" title={tr('common.edit')} onClick={() => openEdit(t)}>
                             <Pencil />
                           </Button>
@@ -678,6 +756,57 @@ export default function Templates() {
             <Button variant="outline" onClick={() => closeBatchUpdate()}>{tr('common.cancel')}</Button>
             <Button onClick={submitBatch} disabled={batchUpdate.isPending}>
               {batchUpdate.isPending ? tr('common.saving') : tr('common.saveChanges')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 扩展配置（生态三类型模板；strip_image_tools 三态：未配置/开/关） —— */}
+      <Dialog open={!!extTarget} onOpenChange={o => { if (!o && !extSave.isPending) setExtTarget(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{tr('templates.ext.title', { id: extTarget?.ID })}</DialogTitle>
+            <DialogDescription>{tr('templates.ext.desc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>{tr('templates.ext.credentialType')}</Label>
+              {extTarget && <CredentialTypeBadge credentialType={extTarget.CredentialType} />}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <Label>{tr('templates.ext.stripImageTools')}</Label>
+                  <p className="text-xs text-muted-foreground">{tr('templates.ext.stripImageToolsHint')}</p>
+                </div>
+                <Switch
+                  checked={extStrip === true}
+                  disabled={extQ.isLoading || extSave.isPending}
+                  onCheckedChange={c => setExtStrip(c)}
+                  aria-label={tr('templates.ext.stripImageTools')}
+                />
+              </div>
+              {extStrip === null && <p className="text-xs text-muted-foreground">{tr('templates.ext.stripImageToolsUnset')}</p>}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={extStrip === null || extQ.isLoading || extSave.isPending}
+                onClick={() => setExtStrip(null)}
+              >
+                <X /> {tr('templates.ext.clear')}
+              </Button>
+            </div>
+            {extQ.isError && (
+              <p className="text-sm text-destructive">{tr('templates.ext.loadFailed', { message: (extQ.error as Error).message })}</p>
+            )}
+            {extSave.isError && errMsg(extSave.error) && (
+              <p className="text-sm text-destructive">{errMsg(extSave.error)}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtTarget(null)} disabled={extSave.isPending}>{tr('common.cancel')}</Button>
+            <Button onClick={() => extSave.mutate()} disabled={extSave.isPending || extQ.isLoading}>
+              {extSave.isPending ? tr('common.saving') : tr('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

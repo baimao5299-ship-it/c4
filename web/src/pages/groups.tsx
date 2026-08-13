@@ -31,7 +31,11 @@ import type { components } from '@/lib/api/schema'
 
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
+type GroupProtocolConvert = components['schemas']['GroupProtocolConvert']
 type GroupAssignmentsBody = components['schemas']['GroupAssignmentsBody']
+
+// 协议转换（W5 网关 internal/protoconv 消费）：五值，缺省 off
+const PROTOCOL_CONVERTS: GroupProtocolConvert[] = ['off', 'chat_to_resp', 'mess_to_resp', 'resp_to_mess', 'chat_to_mess']
 
 // 授予弹窗行内专属倍率态：mult = 输入框文本（'' = 未填）；cleared = 用户显式点过
 // 「清除为未设置」（提交 null）；勾选留空且未清除 = 省略键（沿用当前值）。
@@ -348,27 +352,30 @@ export default function Groups() {
     })
   }
 
-  // —— 创建（表单：name + visibility；POST 不设倍率）——
+  // —— 创建（表单：name + visibility + protocol_convert；POST 不设倍率）——
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createVisibility, setCreateVisibility] = useState<GroupVisibility>('public')
+  const [createProtocol, setCreateProtocol] = useState<GroupProtocolConvert>('off')
   const openCreate = () => {
     setCreateName('')
     setCreateVisibility('public')
+    setCreateProtocol('off')
     setCreateOpen(true)
   }
   const create = useMutation({
-    mutationFn: (n: string) => api.createGroup({ name: n, visibility: createVisibility }),
+    mutationFn: (n: string) => api.createGroup({ name: n, visibility: createVisibility, protocol_convert: createProtocol }),
     onSuccess: (_g, name) => {
       qc.invalidateQueries({ queryKey: ['groups'] })
       setCreateOpen(false)
       toast.add({ title: t('groups.createdSuccess'), description: name, type: 'success' })
     },
   })
-  // —— 编辑（name + visibility；PUT 缺省字段保持原值，此处总是显式提交）——
+  // —— 编辑（name + visibility + protocol_convert；PUT 缺省字段保持原值，此处总是显式提交）——
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
   const [editVisibility, setEditVisibility] = useState<GroupVisibility>('public')
+  const [editProtocol, setEditProtocol] = useState<GroupProtocolConvert>('off')
   // 倍率用字符串态：空 = 不修改（PUT 省略键，后端保持原值）
   const [editMultiplier, setEditMultiplier] = useState('')
   // —— 删除 ——
@@ -376,7 +383,7 @@ export default function Groups() {
 
   const rename = useMutation({
     mutationFn: () => {
-      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility }
+      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility, protocol_convert: editProtocol }
       const m = editMultiplier.trim()
       if (m !== '') {
         const v = Number(m)
@@ -467,6 +474,7 @@ export default function Groups() {
                   <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
                   <TableHead>{t('groups.table.visibility')}</TableHead>
                   <TableHead>{t('groups.table.priceMultiplier')}</TableHead>
+                  <TableHead>{t('groups.table.protocolConvert')}</TableHead>
                   <SortableHeader field="created_at" label={t('groups.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
                   <TableHead className="text-right">{t('groups.table.actions')}</TableHead>
                 </TableRow>
@@ -481,11 +489,18 @@ export default function Groups() {
                     <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
                     <TableCell><VisibilityBadge visibility={g.Visibility} /></TableCell>
                     <TableCell className="tabular-nums">{formatMultiplier(g.PriceMultiplier, t)}</TableCell>
+                    <TableCell>
+                      {g.ProtocolConvert && g.ProtocolConvert !== 'off' ? (
+                        <Badge variant="secondary" className="font-mono text-xs">{t(`groups.protocolConvertShort.${g.ProtocolConvert}`)}</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(g.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon-sm" title={t('groups.assignButton')} onClick={() => openAssign(g)}><UserPlus /></Button>
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public'); setEditMultiplier(g.PriceMultiplier != null ? String(g.PriceMultiplier) : '') }}><Pencil /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public'); setEditProtocol(g.ProtocolConvert ?? 'off'); setEditMultiplier(g.PriceMultiplier != null ? String(g.PriceMultiplier) : '') }}><Pencil /></Button>
                         <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
                       </div>
                     </TableCell>
@@ -530,6 +545,21 @@ export default function Groups() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-create-protocol">{t('groups.protocolConvertLabel')}</Label>
+              <Select
+                items={Object.fromEntries(PROTOCOL_CONVERTS.map(v => [v, t(`groups.protocolConvert.${v}`)]))}
+                value={createProtocol}
+                onValueChange={v => setCreateProtocol(v as GroupProtocolConvert)}
+              >
+                <SelectTrigger id="grp-create-protocol" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PROTOCOL_CONVERTS.map(v => (
+                    <SelectItem key={v} value={v} label={t(`groups.protocolConvert.${v}`)}>{t(`groups.protocolConvert.${v}`)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {create.isError && errMsg(create.error) && (
               <p className="text-sm text-destructive">{errMsg(create.error)}</p>
             )}
@@ -565,6 +595,21 @@ export default function Groups() {
                 <SelectContent>
                   <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
                   <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-edit-protocol">{t('groups.protocolConvertLabel')}</Label>
+              <Select
+                items={Object.fromEntries(PROTOCOL_CONVERTS.map(v => [v, t(`groups.protocolConvert.${v}`)]))}
+                value={editProtocol}
+                onValueChange={v => setEditProtocol(v as GroupProtocolConvert)}
+              >
+                <SelectTrigger id="grp-edit-protocol" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PROTOCOL_CONVERTS.map(v => (
+                    <SelectItem key={v} value={v} label={t(`groups.protocolConvert.${v}`)}>{t(`groups.protocolConvert.${v}`)}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
