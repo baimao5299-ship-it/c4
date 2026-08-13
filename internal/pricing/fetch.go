@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // FetchTimeout 单次拉取 HTTP 超时。
@@ -44,16 +45,18 @@ type FetchResult struct {
 }
 
 // NewFetcher 构造 HTTP fetcher（client 复用调用方连接池；nil → http.DefaultClient；
-// 超时由 Fetch 内 context 保证，独立于 client.Timeout）。
-func NewFetcher(client *http.Client) Fetcher {
+// log nil 可用（静默，与 SyncWorkerConfig.Log 同款约定）；超时由 Fetch 内
+// context 保证，独立于 client.Timeout）。
+func NewFetcher(client *http.Client, log *logx.Logger) Fetcher {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &httpFetcher{client: client}
+	return &httpFetcher{client: client, log: log}
 }
 
 type httpFetcher struct {
 	client *http.Client
+	log    *logx.Logger // A-P2-12 方案 A 可观测化：多档位 Warn 目标；nil = 静默
 }
 
 // Fetch GET 拉取并解析。状态非 200 / 体超限 / JSON 顶层解析失败 → 错误；单行
@@ -77,7 +80,7 @@ func (f *httpFetcher) Fetch(ctx context.Context, sourceURL string) (*FetchResult
 	if err != nil {
 		return nil, fmt.Errorf("pricing: fetch %s: read body: %w", sourceURL, err)
 	}
-	return Parse(data)
+	return Parse(data, f.log)
 }
 
 // litellmEntry litellm 价格表单模型行的目标字段（input/output_cost_per_token 与
@@ -139,7 +142,9 @@ type providerSpecificEntry struct {
 // max_tokens/cache 价/元数据非法或缺失 → nil（unknown），不参与有效性判定；
 // raw 对通过判定的行无条件保存（整个原始条目 JSON 完整镜像，含未映射字段，
 // 如 rpm/supports_vision）。
-func Parse(data []byte) (*FetchResult, error) {
+// log：A-P2-12 方案 A 可观测化告警（多档位当前按基础价计费）目标；nil 可用
+// （静默——测试/无装配场景不告警，与 SyncWorkerConfig.Log 同款约定）。
+func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("pricing: parse price table: %w", err)
@@ -150,7 +155,7 @@ func Parse(data []byte) (*FetchResult, error) {
 	}
 	for model, entry := range raw {
 		valid := false
-		if p, err := parseEntry(model, entry); err == nil {
+		if p, err := parseEntry(model, entry, log); err == nil {
 			res.Rows = append(res.Rows, p)
 			valid = true
 		}
@@ -165,7 +170,7 @@ func Parse(data []byte) (*FetchResult, error) {
 	return res, nil
 }
 
-func parseEntry(model string, raw json.RawMessage) (*domain.Pricing, error) {
+func parseEntry(model string, raw json.RawMessage, log *logx.Logger) (*domain.Pricing, error) {
 	var e litellmEntry
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return nil, err // 字段类型非法（如价格为字符串）→ 整行跳过
@@ -222,11 +227,17 @@ func parseEntry(model string, raw json.RawMessage) (*domain.Pricing, error) {
 	assign(&p.FlexCacheCreationPricePerMillion, e.CacheCreationInputTokenCostFlex, 1e11)
 	if e.ProviderSpecificEntry != nil {
 		assign(&p.FastMultiplier, e.ProviderSpecificEntry.Fast, 1e4) // 倍率 → 万分数
+		// A-P2-4 双保险（防线前移）：钳制而非拒绝（拒绝致该模型整条无价全 402）；
+		// 与 billing.Cost fast 分支同值钳制，防超界万分数（仅可经手动 DB 或异常
+		// 源进入）再入快照。钳后溢出预算（cost.go 注释）先决条件恒成立。
+		if p.FastMultiplier != nil && *p.FastMultiplier > 100000 {
+			*p.FastMultiplier = 100000
+		}
 	}
 	// above 阶梯（三组：基础/priority/flex）：扫描 raw key 锚定精确名
 	// *_above_{N}k_tokens（+ 可选 _priority/_flex 后缀），N 任意动态提取；
 	// 每组取含完整 prompt+completion 价的最大 N；缺失 = nil。
-	if a := extractAbove(raw); a != nil {
+	if a := extractAbove(model, raw, log); a != nil {
 		p.AboveThreshold = &a.threshold
 		p.AbovePromptPricePerMillion = a.prompt
 		p.AboveCompletionPricePerMillion = a.completion
@@ -272,7 +283,13 @@ type aboveStep struct {
 // 272k/512k/未来新档均识别），阈值 = N×1000。每组取含完整 prompt+completion
 // 价的最大 N；共享阈值 = 各组选中 N 的最大值（实测同模型各组 N 一致）；组内
 // 缺失分量 = nil（如 azure 无 cache_creation above_priority）。全无匹配 → nil。
-func extractAbove(raw json.RawMessage) *aboveStep {
+// **A-P2-12 方案 A（可观测化）**：同组出现多个合格档位（多档位并存）时低档
+// 被静默丢弃 → 低档 token 按基础价计费（少收）。不改变提取逻辑（不动数据
+// 模型——完整多档模型方案 B 单独立 spec 演进），仅检测到即 log.Warn；log nil
+// 可用（静默）。model 仅作 Warn 字段（定位具体模型）。
+func extractAbove(model string, raw json.RawMessage, log *logx.Logger) *aboveStep {
+	// 组名（Warn 字段用，与计费 tier 语义一致）。
+	groupNames := [3]string{"base", "priority", "flex"}
 	var bases = [4]string{
 		"input_cost_per_token_above_",
 		"output_cost_per_token_above_",
@@ -336,16 +353,27 @@ func extractAbove(raw json.RawMessage) *aboveStep {
 	setGroup := func(g int, dst *[4]**int64) {
 		best, ok := int64(0), false
 		var bestV [4]float64
+		qualifying := 0 // 含完整 prompt+completion 的合格档位数（>1 = 低档被丢弃）
 		for n, s := range cols[g] {
 			if s[0] == 0 || s[1] == 0 {
 				continue
 			}
+			qualifying++
 			if n > best {
 				best, bestV, ok = n, s, true
 			}
 		}
 		if !ok {
 			return
+		}
+		// A-P2-12 方案 A（多档位当前按基础价计费，仅可观测化）：同组多个合格
+		// 档位并存 → 低档静默丢弃（低档 token 按基础价计费少收）。仅告警不改
+		// 计费行为；完整多档模型（方案 B）单独立 spec 演进。官方表实测恒单档
+		// 不触发，此 Warn 为前瞻性容量缺陷的前置哨兵。
+		if qualifying > 1 && log != nil {
+			log.Warn("pricing: multi-tier above pricing dropped, lower tiers billed at base price",
+				logx.String("model", model), logx.String("group", groupNames[g]),
+				logx.Int64("kept_tier_tokens", best*1000))
 		}
 		for c := 0; c < 4; c++ {
 			if bestV[c] != 0 {

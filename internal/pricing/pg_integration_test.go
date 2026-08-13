@@ -70,7 +70,7 @@ func TestSyncFlowPG(t *testing.T) {
 
 	reloads := 0
 	w := NewSyncWorker(SyncWorkerConfig{
-		Fetcher:  NewFetcher(nil),
+		Fetcher:  NewFetcher(nil, nil),
 		Repo:     repos,
 		Settings: &fakeSettings{url: srv.URL, cron: "0 3 * * *"},
 		Reload:   func() { reloads++ },

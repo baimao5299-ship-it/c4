@@ -318,7 +318,8 @@ func main() {
 	// 定期循环；source_url/cron 每轮从 svc 的 settings 快照现读（变更下次循环
 	// 生效，无热加载通道）；同步成功后刷新 svc 价格快照（Phase 5 计费读零 DB）。
 	// fetcher 与 svc 共享同一实例（手动 sync 端点 /admin/pricing/sync 同路径）。
-	priceFetcher := pricing.NewFetcher(hc)
+	// log：A-P2-12 方案 A 多档位 Warn 目标（nil 则静默——不传即退化为无告警）。
+	priceFetcher := pricing.NewFetcher(hc, log)
 	svc.SetPriceFetcher(priceFetcher)
 	pricingSync := pricing.NewSyncWorker(pricing.SyncWorkerConfig{
 		Fetcher:  priceFetcher,

@@ -9,12 +9,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // litellmFixtureJSON 模拟 litellm 官方价格表结构（model_name → 行）：
@@ -88,7 +92,7 @@ const litellmFixtureJSON = `{
 // 1500000；6.123456789e-7 → 61235（round）；cache 价换算 + 元数据提取 +
 // max_tokens roundtrip（含 null/0 → nil）。
 func TestParseValidRows(t *testing.T) {
-	res, err := Parse([]byte(litellmFixtureJSON))
+	res, err := Parse([]byte(litellmFixtureJSON), nil)
 	require.NoError(t, err)
 	require.Equal(t, 4, len(res.Rows), "4 个数值有效行")
 	require.Equal(t, 7, res.Skipped, "7 个无效行跳过")
@@ -163,7 +167,7 @@ func TestParseValidRows(t *testing.T) {
 // TestParseInvalidRowsSkipped 无效行全部跳过：
 // 缺 output 价 / 0 价 / null / 负价 / 字符串类型 / 溢出数字 / 非对象行。
 func TestParseInvalidRowsSkipped(t *testing.T) {
-	res, err := Parse([]byte(litellmFixtureJSON))
+	res, err := Parse([]byte(litellmFixtureJSON), nil)
 	require.NoError(t, err)
 	skipped := map[string]bool{}
 	for _, p := range res.Rows {
@@ -177,15 +181,15 @@ func TestParseInvalidRowsSkipped(t *testing.T) {
 
 // TestParseTopLevelError 顶层非对象（数组）→ 整体解析错误。
 func TestParseTopLevelError(t *testing.T) {
-	_, err := Parse([]byte(`[{"input_cost_per_token": 1e-06}]`))
+	_, err := Parse([]byte(`[{"input_cost_per_token": 1e-06}]`), nil)
 	require.Error(t, err)
-	_, err = Parse([]byte(`not json`))
+	_, err = Parse([]byte(`not json`), nil)
 	require.Error(t, err)
 }
 
 // TestParseEmpty 空对象 → 0 行 0 跳过。
 func TestParseEmpty(t *testing.T) {
-	res, err := Parse([]byte(`{}`))
+	res, err := Parse([]byte(`{}`), nil)
 	require.NoError(t, err)
 	require.Empty(t, res.Rows)
 	require.Zero(t, res.Skipped)
@@ -199,7 +203,7 @@ func TestFetchHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := NewFetcher(nil)
+	f := NewFetcher(nil, nil)
 	res, err := f.Fetch(context.Background(), srv.URL)
 	require.NoError(t, err)
 	require.Len(t, res.Rows, 4)
@@ -315,7 +319,7 @@ const matrixFixtureJSON = `{
 // （动态阈值 N×1000，锚定精确 key 排除干扰）+ fast 万分数换算。矩阵价缺失/
 // 无效不参与行有效性判定（行仍解析成功）。
 func TestParseMatrixFields(t *testing.T) {
-	res, err := Parse([]byte(matrixFixtureJSON))
+	res, err := Parse([]byte(matrixFixtureJSON), nil)
 	require.NoError(t, err)
 	require.Equal(t, 6, len(res.Rows), "矩阵 fixture 全部数值有效（矩阵价无效不影响行有效性）")
 
@@ -384,6 +388,41 @@ func TestParseMatrixFields(t *testing.T) {
 	require.Nil(t, bm.FastMultiplier)
 }
 
+// newFetchTestLogger warn 级文件 logger（Warn 断言用；与 flusher_test 同款
+// 模式——zap OutputPaths 仅支持文件路径）。
+func newFetchTestLogger(t *testing.T) (*logx.Logger, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "pricing-fetch-test-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	out := filepath.Join(dir, "out.json")
+	logger, err := logx.New("warn", out)
+	require.NoError(t, err)
+	return logger, out
+}
+
+// TestExtractAboveMultiTierWarn A-P2-12 方案 A 可观测化：同模型同组多个合格
+// above 档位并存（setGroup 丢弃低档——多档位当前按基础价计费）→ Warn 恰一条；
+// 单档/无档/全无效档模型不告警。仅告警不改变提取结果（multi-tier 模型仍取
+// 最大 N=500k，与 TestParseMatrixFields 断言一致）。
+func TestExtractAboveMultiTierWarn(t *testing.T) {
+	logger, out := newFetchTestLogger(t)
+	res, err := Parse([]byte(matrixFixtureJSON), logger)
+	require.NoError(t, err)
+	require.Len(t, res.Rows, 6, "Warn 不影响解析结果/行有效性")
+
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	// 恰一条：仅 multi-tier 模型 base 组 200k/500k 两档并存触发；gpt-5.6-sol
+	// （flex 单档）/azure（priority 单档）/future-256k（base 单档）/
+	// noisy-model（无档）/bad-matrix（全无效）均不告警。
+	require.Equal(t, 1, strings.Count(string(b), "multi-tier above pricing dropped"))
+	require.Contains(t, string(b), `"model":"multi-tier"`)
+	require.Contains(t, string(b), `"group":"base"`)
+	require.Contains(t, string(b), `"kept_tier_tokens":500000`)
+}
+
 // --- Task A：image 价独立判定（litellmEntry image 三字段扩展） ---
 
 // imagePriceFixtureJSON 覆盖 image 价判定的全部形态（用户裁决 2026-08-12
@@ -447,7 +486,7 @@ const imagePriceFixtureJSON = `{
 // 全无效拒绝（Skipped 语义含 image 判定）；与 pricings 双行并存；
 // FetchResult.ImageRows 通道。
 func TestParseImageRows(t *testing.T) {
-	res, err := Parse([]byte(imagePriceFixtureJSON))
+	res, err := Parse([]byte(imagePriceFixtureJSON), nil)
 	require.NoError(t, err)
 
 	// 两表按 mode 互斥（用户裁决）：image_generation 仅入 image_price（
@@ -539,7 +578,7 @@ func TestParseImageRows(t *testing.T) {
 // TestParseImageRowsNoImageFields 无 image 字段的条目：ImageRows 为空、Skipped
 // 语义不变（原 fixture 全部无 image 价 → 4 行 7 跳过，text 判定不受影响）。
 func TestParseImageRowsNoImageFields(t *testing.T) {
-	res, err := Parse([]byte(litellmFixtureJSON))
+	res, err := Parse([]byte(litellmFixtureJSON), nil)
 	require.NoError(t, err)
 	require.Len(t, res.Rows, 4, "文本价判定不变")
 	require.Empty(t, res.ImageRows, "无 image 字段 → 无 image 行")

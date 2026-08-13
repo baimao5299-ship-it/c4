@@ -211,6 +211,18 @@ func TestCostOverflowBudget(t *testing.T) {
 	cost, hit = Cost(p, TierFast, 100, 100, 100, 100)
 	require.Equal(t, int64(4e8), cost, "fast ×1e5：4e7×1e5 = 4e12，无溢出")
 	require.False(t, hit)
+
+	// A-P2-4 超界 m（仅可经手动 DB 操作或异常源进入，钳制而非拒绝）：fast
+	// 分支钳到 1e5 后结果与上限档一致，无回绕——钳前 4e7×1e9 = 4e16 超收
+	// 1e4 倍、4e7×1e15 = 4e22 溢出 MaxInt64 回绕成负。
+	p.FastMultiplier = i64(1e9)
+	cost, hit = Cost(p, TierFast, 100, 100, 100, 100)
+	require.Equal(t, int64(4e8), cost, "m=1e9 钳到 1e5：4e7×1e5 = 4e12，无超收")
+	require.False(t, hit)
+	p.FastMultiplier = i64(1e15)
+	cost, hit = Cost(p, TierFast, 100, 100, 100, 100)
+	require.Equal(t, int64(4e8), cost, "m=1e15 钳到 1e5：无回绕（钳前 4e22 溢出 MaxInt64）")
+	require.False(t, hit)
 }
 
 // TestCostTokenClamp 溢出钳制（评审 I-1）：恶意/异常上游报超大 token（9e15/

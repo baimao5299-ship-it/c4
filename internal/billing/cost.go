@@ -67,9 +67,11 @@ const (
 
 // 溢出预算（评审 I-2）：合法域单段 t×p ≤ 1e13（毫分×1e6 原始单位），四分量
 // 合计 ≤ 4e13；fast 万分数 ≤ 1e5（实测 ×6.0 = 60000，留余量）→ 4e13×1e5
-// = 4e18 < MaxInt64。价格列已由写路径校验 ≥ 0（service 校验/fetcher
-// validCost）；负数 token 钳 0。除 1e6 在求和后一次完成（毫分/1M tokens
-// → 毫分）。
+// = 4e18 < MaxInt64。fast 万分数上界由钳制强制（A-P2-4 双保险：本函数 fast
+// 分支 + pricing fetch assign 同钳 > 1e5 → 1e5——快照可经任何途径进入超界
+// 值含手动 DB 操作，钳后本预算先决条件恢复成立）。价格列已由写路径校验 ≥ 0
+// （service 校验/fetcher validCost）；负数 token 钳 0。除 1e6 在求和后一次
+// 完成（毫分/1M tokens → 毫分）。
 const (
 	milliPerMillion = 1_000_000 // 毫分/1M tokens → 毫分的除数
 )
@@ -105,7 +107,8 @@ func clampToken(t, p int64) int64 {
 // aboveHit = 任一分量实际拆段（t > 阈值且该分量 above 价存在）。
 //
 // fast：tier == TierFast 且 FastMultiplier 有效（> 0）→ 整单 ×（万分数，
-// 四舍五入）——total = (total×m+5000)/10000。
+// 四舍五入）——total = (total×m+5000)/10000；m 先钳 ≤ 1e5（A-P2-4，见下方
+// 分支注释与溢出预算注释）。
 func Cost(p *domain.Pricing, tier Tier, pt, ct, cr, cc int64) (int64, bool) {
 	clamp := func(t int64) int64 {
 		if t < 0 {
@@ -185,7 +188,15 @@ func Cost(p *domain.Pricing, tier Tier, pt, ct, cr, cc int64) (int64, bool) {
 	}
 	cost := (raw + milliPerMillion/2) / milliPerMillion // 四舍五入 → 毫分
 	if tier == TierFast && p.FastMultiplier != nil && *p.FastMultiplier > 0 {
-		cost = (cost**p.FastMultiplier + 5000) / 10000
+		// A-P2-4 fast 倍率钳制（必要层）：快照可经任何途径进入超界值（含手动
+		// DB 操作；fetch assign 双保险防的是脏数据再入快照，本层兜住快照已脏
+		// 的情形）。钳制而非拒绝（拒绝致该模型整条无价全 402）；钳后 cost ≤
+		// 9.22e13 毫分 ≪ MaxInt64，溢出预算注释先决条件恢复成立；纯算术零分配。
+		m := *p.FastMultiplier
+		if m > 100000 {
+			m = 100000
+		}
+		cost = (cost*m + 5000) / 10000
 	}
 	return cost, aboveHit
 }
