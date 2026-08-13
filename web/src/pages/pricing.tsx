@@ -768,7 +768,7 @@ export default function PricingPage() {
           )}
         </TabsContent>
 
-        {/* —— Tab 2：图片价格（USD/image token + USD/张） —— */}
+        {/* —— Tab 2：图片价格（USD/1M image tokens + USD/张，per-million 口径同文本价） —— */}
         <TabsContent value="image" className="space-y-6 pt-4">
           <ListToolbar name={imgModel} onNameChange={imgSetModel} placeholder={t('pricing.searchModel')}>
             <Select items={sourceItems} value={imgSource} onValueChange={imgSetSource}>
