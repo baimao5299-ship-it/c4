@@ -15,6 +15,11 @@ func (Account) Fields() []ent.Field {
 		field.Int64("id"),
 		field.String("name"),
 		field.Int64("template_id"),
+		// base_url 账号级覆盖（路由属性，用户裁决 2026-08-14 置于静态凭据面
+		// upstream_key 之前）：nil = 继承模板 base_url；非空 = 覆盖模板值。
+		// 无迁移逻辑——ent auto-migrate 自动加列（accounts 非分区表），无默认值/
+		// 回填：旧行 NULL = 继承模板（旧行为天然成立）。
+		field.String("base_url").Optional().Nillable(),
 		field.String("upstream_key"),
 		field.Enum("status").
 			Values("active", "unhealthy", "429", "disabled").

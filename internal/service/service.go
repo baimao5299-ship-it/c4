@@ -415,6 +415,13 @@ func validateAccount(a *domain.Account) error {
 	if a.MaxConcurrency < 1 {
 		a.MaxConcurrency = 8
 	}
+	// 账号级 base_url 提供时复用 validateBaseURL（对齐模板面先例；nil/空串
+	// 跳过——create 路径空串已归一 nil，此处双保险）。
+	if a.BaseURL != nil && *a.BaseURL != "" {
+		if err := validateBaseURL(*a.BaseURL); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -511,6 +518,12 @@ func validateAccountPatch(p repository.AccountPatch) error {
 	}
 	if p.UpstreamKey != nil && *p.UpstreamKey == "" {
 		return ErrInvalidInput
+	}
+	// 批量 base_url 三态（C1）：空串 = 清空（合法）；非空时复用 validateBaseURL。
+	if p.BaseURL != nil && *p.BaseURL != "" {
+		if err := validateBaseURL(*p.BaseURL); err != nil {
+			return err
+		}
 	}
 	if p.TemplateID != nil && *p.TemplateID <= 0 {
 		return ErrInvalidInput

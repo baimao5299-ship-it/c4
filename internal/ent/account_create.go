@@ -37,6 +37,20 @@ func (_c *AccountCreate) SetTemplateID(v int64) *AccountCreate {
 	return _c
 }
 
+// SetBaseURL sets the "base_url" field.
+func (_c *AccountCreate) SetBaseURL(v string) *AccountCreate {
+	_c.mutation.SetBaseURL(v)
+	return _c
+}
+
+// SetNillableBaseURL sets the "base_url" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableBaseURL(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetBaseURL(*v)
+	}
+	return _c
+}
+
 // SetUpstreamKey sets the "upstream_key" field.
 func (_c *AccountCreate) SetUpstreamKey(v string) *AccountCreate {
 	_c.mutation.SetUpstreamKey(v)
@@ -352,6 +366,10 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_spec.SetField(account.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
+	if value, ok := _c.mutation.BaseURL(); ok {
+		_spec.SetField(account.FieldBaseURL, field.TypeString, value)
+		_node.BaseURL = &value
+	}
 	if value, ok := _c.mutation.UpstreamKey(); ok {
 		_spec.SetField(account.FieldUpstreamKey, field.TypeString, value)
 		_node.UpstreamKey = value
@@ -518,6 +536,24 @@ func (u *AccountUpsert) SetTemplateID(v int64) *AccountUpsert {
 // UpdateTemplateID sets the "template_id" field to the value that was provided on create.
 func (u *AccountUpsert) UpdateTemplateID() *AccountUpsert {
 	u.SetExcluded(account.FieldTemplateID)
+	return u
+}
+
+// SetBaseURL sets the "base_url" field.
+func (u *AccountUpsert) SetBaseURL(v string) *AccountUpsert {
+	u.Set(account.FieldBaseURL, v)
+	return u
+}
+
+// UpdateBaseURL sets the "base_url" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateBaseURL() *AccountUpsert {
+	u.SetExcluded(account.FieldBaseURL)
+	return u
+}
+
+// ClearBaseURL clears the value of the "base_url" field.
+func (u *AccountUpsert) ClearBaseURL() *AccountUpsert {
+	u.SetNull(account.FieldBaseURL)
 	return u
 }
 
@@ -768,6 +804,27 @@ func (u *AccountUpsertOne) SetTemplateID(v int64) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateTemplateID() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateTemplateID()
+	})
+}
+
+// SetBaseURL sets the "base_url" field.
+func (u *AccountUpsertOne) SetBaseURL(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetBaseURL(v)
+	})
+}
+
+// UpdateBaseURL sets the "base_url" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateBaseURL() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateBaseURL()
+	})
+}
+
+// ClearBaseURL clears the value of the "base_url" field.
+func (u *AccountUpsertOne) ClearBaseURL() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearBaseURL()
 	})
 }
 
@@ -1213,6 +1270,27 @@ func (u *AccountUpsertBulk) SetTemplateID(v int64) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateTemplateID() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateTemplateID()
+	})
+}
+
+// SetBaseURL sets the "base_url" field.
+func (u *AccountUpsertBulk) SetBaseURL(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetBaseURL(v)
+	})
+}
+
+// UpdateBaseURL sets the "base_url" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateBaseURL() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateBaseURL()
+	})
+}
+
+// ClearBaseURL clears the value of the "base_url" field.
+func (u *AccountUpsertBulk) ClearBaseURL() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearBaseURL()
 	})
 }
 

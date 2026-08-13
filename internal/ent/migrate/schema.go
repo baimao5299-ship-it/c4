@@ -12,6 +12,7 @@ var (
 	AccountsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString},
+		{Name: "base_url", Type: field.TypeString, Nullable: true},
 		{Name: "upstream_key", Type: field.TypeString},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"active", "unhealthy", "429", "disabled"}, Default: "active"},
 		{Name: "cooldown_until", Type: field.TypeTime, Nullable: true},
@@ -33,7 +34,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "accounts_templates_accounts",
-				Columns:    []*schema.Column{AccountsColumns[13]},
+				Columns:    []*schema.Column{AccountsColumns[14]},
 				RefColumns: []*schema.Column{TemplatesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},

@@ -59,6 +59,26 @@ func (_u *AccountUpdate) SetNillableTemplateID(v *int64) *AccountUpdate {
 	return _u
 }
 
+// SetBaseURL sets the "base_url" field.
+func (_u *AccountUpdate) SetBaseURL(v string) *AccountUpdate {
+	_u.mutation.SetBaseURL(v)
+	return _u
+}
+
+// SetNillableBaseURL sets the "base_url" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableBaseURL(v *string) *AccountUpdate {
+	if v != nil {
+		_u.SetBaseURL(*v)
+	}
+	return _u
+}
+
+// ClearBaseURL clears the value of the "base_url" field.
+func (_u *AccountUpdate) ClearBaseURL() *AccountUpdate {
+	_u.mutation.ClearBaseURL()
+	return _u
+}
+
 // SetUpstreamKey sets the "upstream_key" field.
 func (_u *AccountUpdate) SetUpstreamKey(v string) *AccountUpdate {
 	_u.mutation.SetUpstreamKey(v)
@@ -401,6 +421,12 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(account.FieldName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.BaseURL(); ok {
+		_spec.SetField(account.FieldBaseURL, field.TypeString, value)
+	}
+	if _u.mutation.BaseURLCleared() {
+		_spec.ClearField(account.FieldBaseURL, field.TypeString)
+	}
 	if value, ok := _u.mutation.UpstreamKey(); ok {
 		_spec.SetField(account.FieldUpstreamKey, field.TypeString, value)
 	}
@@ -619,6 +645,26 @@ func (_u *AccountUpdateOne) SetNillableTemplateID(v *int64) *AccountUpdateOne {
 	if v != nil {
 		_u.SetTemplateID(*v)
 	}
+	return _u
+}
+
+// SetBaseURL sets the "base_url" field.
+func (_u *AccountUpdateOne) SetBaseURL(v string) *AccountUpdateOne {
+	_u.mutation.SetBaseURL(v)
+	return _u
+}
+
+// SetNillableBaseURL sets the "base_url" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableBaseURL(v *string) *AccountUpdateOne {
+	if v != nil {
+		_u.SetBaseURL(*v)
+	}
+	return _u
+}
+
+// ClearBaseURL clears the value of the "base_url" field.
+func (_u *AccountUpdateOne) ClearBaseURL() *AccountUpdateOne {
+	_u.mutation.ClearBaseURL()
 	return _u
 }
 
@@ -993,6 +1039,12 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(account.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BaseURL(); ok {
+		_spec.SetField(account.FieldBaseURL, field.TypeString, value)
+	}
+	if _u.mutation.BaseURLCleared() {
+		_spec.ClearField(account.FieldBaseURL, field.TypeString)
 	}
 	if value, ok := _u.mutation.UpstreamKey(); ok {
 		_spec.SetField(account.FieldUpstreamKey, field.TypeString, value)

@@ -84,13 +84,26 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 		}
 	}
 	// O2 组级定向：变更前取旧组（账号移组 A→B 时 A、B 两组快照都要重载——
-	// 旧组移除账号、新组加入账号）+ 旧 upstream_key 比较（变更 → clients
-	// 失效）。查询失败 → 空集 + Warn（调度器 ≤30s 同步兜底）。
+	// 旧组移除账号、新组加入账号）+ 旧 upstream_key/base_url 比较（变更 →
+	// clients 失效）。查询失败 → 空集 + Warn（调度器 ≤30s 同步兜底）。
 	oldGroups, gErr := s.store.GetAccountGroups(ctx, a.ID)
 	keyChanged := false
 	recovered := false // T5 失效恢复审计：此前已失效（failed_at 置位）→ status→active 恢复
 	if cur, err := s.store.GetAccount(ctx, a.ID); err == nil {
 		keyChanged = cur.UpstreamKey != a.UpstreamKey
+		// baseURLChanged 并入 keyChanged（C2——BaseURL 构建时固化在 client 缓存
+		// 键内，非流式路径新值不生效直到失效）：按值判定（M4——nil↔"" 同值，
+		// DB 经 create 归一/批量空串落 NULL 无 "" 形态，误报仅多余失效无害；
+		// 不引入 helper）。复用既有 Accounts(gids, keyChanged) 参数面，
+		// 零新增失效类型/调用点。
+		curB, newB := "", ""
+		if cur.BaseURL != nil {
+			curB = *cur.BaseURL
+		}
+		if a.BaseURL != nil {
+			newB = *a.BaseURL
+		}
+		keyChanged = keyChanged || curB != newB
 		recovered = cur.FailedAt != nil && a.Status == domain.StatusActive
 	}
 	updated, err := s.store.UpdateAccount(ctx, a)
@@ -116,7 +129,7 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 		s.log.Warn("account groups query failed", logx.Int64("account_id", a.ID), logx.Error(gErr))
 	}
 	s.inv.Accounts(gids, keyChanged)
-	s.publish(ctx, notify.Change{Groups: gids, Clients: keyChanged}) // upstream_key 变更 → clients 失效
+	s.publish(ctx, notify.Change{Groups: gids, Clients: keyChanged}) // upstream_key/base_url 变更 → clients 失效
 	return updated, nil
 }
 
@@ -210,9 +223,10 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	// 评审 I-3：nil = 未提供；空串 = 清除 upstream_key（同为变更语义）。
 	// 批量路径不做逐账号旧值比较（需 N 次 GetAccount），只要提供了
 	// UpstreamKey 就保守标记 clients 失效——clients 失效成本远低于旧 key
-	// 滞留风险（宁可多失效一次）。
-	s.inv.Accounts(gids, p.UpstreamKey != nil)
-	s.publish(ctx, notify.Change{Groups: gids, Clients: p.UpstreamKey != nil})
+	// 滞留风险（宁可多失效一次）。BaseURL 同此保守失效（C2——含 "" 清空态，
+	// 复用既有 Accounts(gids, keyChanged) 调用面）。
+	s.inv.Accounts(gids, p.UpstreamKey != nil || p.BaseURL != nil)
+	s.publish(ctx, notify.Change{Groups: gids, Clients: p.UpstreamKey != nil || p.BaseURL != nil})
 	return nil
 }
 

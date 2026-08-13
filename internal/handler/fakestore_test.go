@@ -522,6 +522,15 @@ func (f *fakeStore) UpdateAccountsBatch(ctx context.Context, ids []int64, p repo
 		if p.UpstreamKey != nil {
 			a.UpstreamKey = *p.UpstreamKey
 		}
+		if p.BaseURL != nil {
+			// 批量三态（C1，对齐真实 repo）："" = 清空（NULL = 继承模板）；非空 = 落值
+			if *p.BaseURL == "" {
+				a.BaseURL = nil
+			} else {
+				b := *p.BaseURL
+				a.BaseURL = &b
+			}
+		}
 		if p.Status != nil {
 			a.Status = *p.Status
 		}

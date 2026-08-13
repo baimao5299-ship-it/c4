@@ -277,6 +277,8 @@ const (
 
 // Account defines model for Account.
 type Account struct {
+	// BaseURL 账号级覆盖：非空优先于模板 base_url；null = 继承模板
+	BaseURL       *string    `json:"BaseURL"`
 	CooldownUntil *time.Time `json:"CooldownUntil"`
 	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
 
@@ -297,6 +299,8 @@ type Account struct {
 
 // AccountCreate defines model for AccountCreate.
 type AccountCreate struct {
+	// BaseUrl 账号级覆盖（可选）：非空优先于模板 base_url；null = 继承模板
+	BaseUrl        *string        `json:"base_url"`
 	GroupIds       *[]int64       `json:"group_ids,omitempty"`
 	MaxConcurrency *int           `json:"max_concurrency,omitempty"`
 	Name           string         `json:"name"`
@@ -357,6 +361,8 @@ type AccountListResponse struct {
 
 // AccountPatch defines model for AccountPatch.
 type AccountPatch struct {
+	// BaseUrl 批量三态：空串 = 清空（回继承模板）；null/缺省 = 不变；非空 = 落值
+	BaseUrl        *string             `json:"base_url"`
 	GroupIds       *[]int64            `json:"group_ids,omitempty"`
 	MaxConcurrency *int                `json:"max_concurrency,omitempty"`
 	Name           *string             `json:"name,omitempty"`
@@ -374,6 +380,8 @@ type AccountStatus string
 
 // AccountView defines model for AccountView.
 type AccountView struct {
+	// BaseURL 账号级覆盖：非空优先于模板 base_url；null = 继承模板
+	BaseURL       *string    `json:"BaseURL"`
 	CooldownUntil *time.Time `json:"CooldownUntil"`
 	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
 

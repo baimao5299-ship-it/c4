@@ -18,7 +18,9 @@ type AccountRepo struct{ client *ent.Client }
 
 func (r *AccountRepo) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	row, err := r.client.Account.Create().
-		SetName(a.Name).SetTemplateID(a.TemplateID).SetUpstreamKey(a.UpstreamKey).
+		SetName(a.Name).SetTemplateID(a.TemplateID).
+		SetNillableBaseURL(a.BaseURL). // 账号级 base_url（nil = 继承模板）
+		SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
 		Save(ctx)
 	if err != nil {
@@ -94,9 +96,18 @@ func toAccountStatusList(list []string) ([]account.Status, error) {
 
 func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
 	u := r.client.Account.UpdateOneID(a.ID).
-		SetName(a.Name).SetTemplateID(a.TemplateID).SetUpstreamKey(a.UpstreamKey).
+		SetName(a.Name).SetTemplateID(a.TemplateID).
+		SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
 		SetStatus(account.Status(a.Status))
+	// 账号级 base_url 全量替换语义（对齐其余字段的「全字段 Set」现状——PUT 是
+	// 全量替换：nil = 继承模板 → ClearBaseURL 清空既有覆盖；非空 → SetBaseURL。
+	// SetNillableBaseURL(nil) 是 no-op，无法表达「清空」，故显式分写）。
+	if a.BaseURL != nil {
+		u = u.SetBaseURL(*a.BaseURL)
+	} else {
+		u = u.ClearBaseURL()
+	}
 	if a.Status == domain.StatusActive {
 		// T5 失效恢复（管理面，P2-2 定死方案 b）：status→active 隐含清
 		// failed_at + last_error（恢复动作 = 状态切换，不做 openapi 字段扩展；

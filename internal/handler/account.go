@@ -16,7 +16,7 @@ import (
 // accountFromBody 生成类型 body → 领域对象（create/update 共用；GroupIDs
 // nil = 不设置/不变，非 nil = 替换语义含空数组清空）。
 func accountFromBody(in AccountCreate) *domain.Account {
-	return &domain.Account{
+	a := &domain.Account{
 		Name:           in.Name,
 		TemplateID:     in.TemplateId,
 		UpstreamKey:    in.UpstreamKey,
@@ -25,6 +25,12 @@ func accountFromBody(in AccountCreate) *domain.Account {
 		MaxConcurrency: deref(in.MaxConcurrency),
 		GroupIDs:       in.GroupIds,
 	}
+	// base_url 空串归一 nil（create/update 路径 "" 与 null 合并为「继承
+	// 模板」——防 "" 落库产生存储漂移，DB 恒 nil|非空两种形态）。
+	if in.BaseUrl != nil && *in.BaseUrl != "" {
+		a.BaseURL = in.BaseUrl
+	}
+	return a
 }
 
 // PostAccounts 创建账号（ServerInterface）。
@@ -192,14 +198,15 @@ func accountPatchFromBody(f *AccountPatch) (repository.AccountPatch, error) {
 		Name:           f.Name,
 		TemplateID:     f.TemplateId,
 		UpstreamKey:    f.UpstreamKey,
+		BaseURL:        f.BaseUrl, // 透传不归一：批量 "" = 清空语义（与 create 路径归一语义分写）
 		Status:         (*domain.AccountStatus)(f.Status),
 		Weight:         f.Weight,
 		MaxConcurrency: f.MaxConcurrency,
 		GroupIDs:       f.GroupIds,
 	}
 	if p.Name == nil && p.TemplateID == nil && p.UpstreamKey == nil &&
-		p.Status == nil && p.Weight == nil && p.MaxConcurrency == nil &&
-		p.GroupIDs == nil {
+		p.BaseURL == nil && p.Status == nil && p.Weight == nil &&
+		p.MaxConcurrency == nil && p.GroupIDs == nil {
 		return repository.AccountPatch{}, errors.New("fields must contain at least one field")
 	}
 	return p, nil

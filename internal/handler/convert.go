@@ -53,6 +53,7 @@ func toAPIAccount(a *domain.Account) Account {
 		Name:           &a.Name,
 		TemplateID:     &a.TemplateID,
 		Template:       tpl,
+		BaseURL:        a.BaseURL, // 账号级覆盖（nil = 继承模板）
 		UpstreamKey:    &a.UpstreamKey,
 		Status:         &st,
 		CooldownUntil:  a.CooldownUntil,
@@ -75,6 +76,8 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 		Name:           base.Name,
 		TemplateID:     base.TemplateID,
 		Template:       base.Template,
+		// BaseURL 平铺逐字段拷贝（C3——缺则列表/编辑回显恒缺，前端保存静默清空）
+		BaseURL:        base.BaseURL,
 		UpstreamKey:    base.UpstreamKey,
 		Status:         base.Status,
 		CooldownUntil:  base.CooldownUntil,

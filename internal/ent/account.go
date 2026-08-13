@@ -22,6 +22,8 @@ type Account struct {
 	Name string `json:"name,omitempty"`
 	// TemplateID holds the value of the "template_id" field.
 	TemplateID int64 `json:"template_id,omitempty"`
+	// BaseURL holds the value of the "base_url" field.
+	BaseURL *string `json:"base_url,omitempty"`
 	// UpstreamKey holds the value of the "upstream_key" field.
 	UpstreamKey string `json:"upstream_key,omitempty"`
 	// Status holds the value of the "status" field.
@@ -99,7 +101,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case account.FieldID, account.FieldTemplateID, account.FieldWeight, account.FieldMaxConcurrency:
 			values[i] = new(sql.NullInt64)
-		case account.FieldName, account.FieldUpstreamKey, account.FieldStatus, account.FieldLastError:
+		case account.FieldName, account.FieldBaseURL, account.FieldUpstreamKey, account.FieldStatus, account.FieldLastError:
 			values[i] = new(sql.NullString)
 		case account.FieldCooldownUntil, account.FieldLastUsedAt, account.FieldFailedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -135,6 +137,13 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field template_id", values[i])
 			} else if value.Valid {
 				_m.TemplateID = value.Int64
+			}
+		case account.FieldBaseURL:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field base_url", values[i])
+			} else if value.Valid {
+				_m.BaseURL = new(string)
+				*_m.BaseURL = value.String
 			}
 		case account.FieldUpstreamKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -263,6 +272,11 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("template_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.TemplateID))
+	builder.WriteString(", ")
+	if v := _m.BaseURL; v != nil {
+		builder.WriteString("base_url=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("upstream_key=")
 	builder.WriteString(_m.UpstreamKey)
