@@ -172,6 +172,26 @@ func (a *Codex) Responses(ctx context.Context, cred *domain.AccountCredential, p
 	return resp, nil
 }
 
+// Search codex search 端点透传调用（spec 2026-08-13）：cred → 缓存取
+// HTTPClient（clientFor——统一 client 形态直接复用，无独立实例问题）→
+// e.client.Search(ctx, payload)（URL 方法内派生：baseURL（responses 完整端
+// 点）尾段 /responses → /alpha/search——网关零拼装；请求/响应体 opaque 零解
+// 析——alpha 端点实验性，上游变更网关免疫）。**无头注入**（x-codex-turn-
+// metadata 统一不转发——与 resp HTTP 路径现状一致；SDK Search 默认头面无该
+// 头）。错误翻译同 Responses（translateError——信封/fatal 统一回调双源去重/
+// RefreshError 分类复用）。
+func (a *Codex) Search(ctx context.Context, cred *domain.AccountCredential, payload []byte) (*codexsdk.HTTPResponse, error) {
+	e, err := a.clientFor(cred)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := e.client.Search(ctx, payload)
+	if err != nil {
+		return nil, a.translateError(e, err)
+	}
+	return resp, nil
+}
+
 // StreamResponses 流式 responses SSE 透传（T6 §1）：cred → 缓存取 HTTPClient →
 // c.Stream(ctx, payload, fn)（SSE data: 行逐帧交付零拷贝——SDK 回调 raw 指向
 // scanner 复用缓冲，**仅回调执行期间有效**：fn 必须立即消费，不得跨回调保留

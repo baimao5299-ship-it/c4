@@ -748,6 +748,77 @@ func TestCodexStreamResponsesPassthrough(t *testing.T) {
 	require.Equal(t, []string{t6RespCreated, t6RespItemEv, t6RespDone}, got, "逐载荷透传（[DONE] 不回调）")
 }
 
+// searchReqPayload search 端点请求 fixture（opaque——网关零解析断言面）。
+const searchReqPayload = `{"id":"req_1","model":"gpt-4o","input":[{"type":"web_search_call"}],"commands":[],"settings":{},"max_output_tokens":256}`
+
+// TestCodexSearchPassthrough Search 端点（spec 2026-08-13）：统一 client 形态
+// ——clientFor 缓存客户端 → e.client.Search；URL 方法内派生（baseURL 完整
+// /v1/responses 端点 → /v1/alpha/search）；请求/响应体 opaque 零解析；PAT
+// 静态鉴权；无头注入。
+func TestCodexSearchPassthrough(t *testing.T) {
+	const searchRaw = `{"id":"req_1","output":"o","results":[{"type":"web_search"}],"encrypted_output":"enc"}`
+	var mu sync.Mutex
+	var paths, auths []string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		auths = append(auths, r.Header.Get("Authorization"))
+		gotBody = b
+		mu.Unlock()
+		if r.URL.Path != "/v1/alpha/search" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(searchRaw))
+	}))
+	t.Cleanup(srv.Close)
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-search", BaseURL: srv.URL + "/v1/responses"}
+
+	resp, err := a.Search(context.Background(), cred, []byte(searchReqPayload))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, searchRaw, string(resp.Raw), "opaque 响应原样交付（零解析）")
+	// 快照读（锁内复制——后续 Search 调用期间不得持锁：handler 需同一把锁）。
+	mu.Lock()
+	paths0, auths0, body0 := append([]string(nil), paths...), append([]string(nil), auths...), string(gotBody)
+	mu.Unlock()
+	require.Equal(t, []string{"/v1/alpha/search"}, paths0, "URL 方法内派生：/responses 尾段 → /alpha/search")
+	require.Equal(t, []string{"Bearer pat-search"}, auths0, "PAT 静态鉴权（clientFor 缓存客户端）")
+	require.Equal(t, searchReqPayload, body0, "请求体原样（零改写）")
+	// 同一 cred 二次调用：clientFor 缓存客户端直接复用（统一 client 形态——无
+	// 独立构造器）；路径/凭据仍正确。
+	_, err = a.Search(context.Background(), cred, []byte(searchReqPayload))
+	require.NoError(t, err)
+	mu.Lock()
+	require.Len(t, paths, 2, "缓存客户端复用——第二次调用同路径")
+	mu.Unlock()
+}
+
+// TestCodexSearchEnvelope4xx Search 信封错误翻译（translateError——与
+// Responses 同款）：上游 403 → EnvelopeError（403 + 原始 body——网关
+// statusOf/upstreamBody 复用）。
+func TestCodexSearchEnvelope4xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"detail":"Forbidden"}`))
+	}))
+	t.Cleanup(srv.Close)
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-4xx", BaseURL: srv.URL + "/v1/responses"}
+
+	_, err := a.Search(context.Background(), cred, []byte(`{}`))
+	require.Error(t, err)
+	var env *EnvelopeError
+	require.ErrorAs(t, err, &env, "SDK *HTTPError → 信封包装")
+	require.Equal(t, http.StatusForbidden, env.StatusCode())
+	require.Equal(t, `{"detail":"Forbidden"}`, env.RawJSON(), "原始 body 透传")
+}
+
 // TestCodexResponsesEnvelope4xx 信封包装：上游 403 → EnvelopeError（403 + 原始
 // body + Unwrap 链 errors.As *HTTPError 穿透——网关 statusOf/upstreamBody 复用）。
 func TestCodexResponsesEnvelope4xx(t *testing.T) {

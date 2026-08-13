@@ -165,6 +165,22 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		p.applyImageBilling(l)
 		return
 	}
+	// search 格式走按单元价计费（spec 2026-08-13：search 独立按次计费——
+	// codex-search 固定功能标识，GetFunctionPrice 表行价或默认 1000 毫分兜底；
+	// **不查 GetPrice/GetImagePrice**——codex 模型多半无价，chat 价路径会落
+	// no_price 静默 0 计费，恰是用户裁决要杜绝的）。
+	if l.Format == domain.FormatOpenAISearch {
+		if p.bill.FunctionPrices == nil {
+			// 按单元价查找器未装配（评审 M-3）：Warn 防御性留痕——P2-1"杜绝静默
+			// 0 计费"精神（生产装配正常不可达，仅防装配缺失静默掉价）。
+			if p.log != nil {
+				p.log.Warn("billing function price lookup unavailable", logx.String("model", domain.CodexSearchModel))
+			}
+			return
+		}
+		p.applyFunctionBilling(l)
+		return
+	}
 	model := l.MappedModel
 	if model == "" {
 		model = l.Model
@@ -254,6 +270,29 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 	}
 	l.Cost = billing.ImageCost(ip, l.InputTokens, l.OutputTokens, l.CallCount)
 	l.Cost = applyMultiplier(l.Cost, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
+}
+
+// applyFunctionBilling 按单元计费（openai-search 格式专用——只计按次分量）：
+// GetFunctionPrice("codex-search") 快照读（零 DB）→ PricePerCallMillis 按次价
+// 快照（仅 call_count > 0 落——对齐 images 先例，错误行不落按次价快照，评审
+// M-2）+ Cost = 按次价 × call_count（search 成功恒 1——无 token 分量，响应
+// 无 usage）。计费模型 = codex-search 固定标识（不查 GetPrice/GetImagePrice
+// ——codex 模型多半无价）。价格缺失（GetFunctionPrice 对 codex-search 有默认
+// 行兜底，正常不可达）→ Warn + no_price + cost 0（运行时防御，审计留痕不按
+// 0 计价）。倍率同 chat 路径整单施加。
+func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
+	fp, err := p.bill.FunctionPrices.GetFunctionPrice(domain.CodexSearchModel)
+	if err != nil || fp == nil || fp.PricePerCall == nil {
+		if p.log != nil {
+			p.log.Warn("billing function price lookup failed", logx.String("model", domain.CodexSearchModel), logx.Error(err))
+		}
+		l.BillingTier = "no_price"
+		return
+	}
+	if l.CallCount > 0 {
+		l.PricePerCallMillis = fp.PricePerCall
+	}
+	l.Cost = applyMultiplier(*fp.PricePerCall*l.CallCount, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
 }
 
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：

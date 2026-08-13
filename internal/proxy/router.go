@@ -48,6 +48,10 @@ func AIRouter(p *Proxy) http.Handler {
 	r.Post("/v1/images/edits", func(w http.ResponseWriter, req *http.Request) {
 		p.handleFormat(domain.FormatOpenAIImages, w, req)
 	})
+	// codex /v1/alpha/search（spec 2026-08-13）：codex CLI web search 独立 unary
+	// 端点——透传路由（专用编排 HandleSearch：独立选号 + 四类型分派 + 按次计费
+	// 落账，forward_search.go）。
+	r.Post("/v1/alpha/search", p.HandleSearch)
 	// GET /v1/models（OpenAI 兼容模型列表）：user API key 鉴权；端点冷面——
 	// 快照读零 DB（models.go）。
 	r.Get("/v1/models", p.HandleModels)
