@@ -152,18 +152,65 @@ func (r *UserRepo) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, 
 	return out, int64(total), nil
 }
 
-// UpdateUser 更新 role/status/max_concurrency/balance（email 不可变、密码走
-// UpdateUserPassword）。价格倍率按组（T3.5 修正）挂在 group_assignments 上，
-// 用户本体无倍率字段——见 GroupAssignmentRepo.SetMultiplier。
-func (r *UserRepo) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
-	row, err := r.client.User.UpdateOneID(u.ID).
-		SetRole(user.Role(u.Role)).
-		SetStatus(user.Status(u.Status)).
-		SetMaxConcurrency(u.MaxConcurrency).
-		SetBalance(u.Balance).
-		Save(ctx)
+// UserPatch 用户更新补丁（管理面 PUT patch 语义）：显式字段 = 请求显式提供的
+// 字段；role/status 无条件写（无增量写者）；balance/max_concurrency 显式设置
+// 时必带旧值条件（OldXxx = GET 快照，服务层重试时重读刷新）——旧值不满足
+// （期间有扣费/并发变更）→ 0 行 → ErrConflict，绝不无条件覆盖并发增量
+// （v02 核实：GET 快照陈旧值写回与 flusher 扣费双向覆盖，余额凭空复活）。
+type UserPatch struct {
+	ID               int64
+	Role             *domain.Role
+	Status           *domain.UserStatus
+	MaxConcurrency   *int
+	OldMaxConcurrency *int
+	Balance          *int64
+	OldBalance       *int64
+}
+
+// UpdateUser 按 patch 更新（email 不可变、密码走 UpdateUserPassword）。价格
+// 倍率按组（T3.5 修正）挂在 group_assignments 上，用户本体无倍率字段——见
+// GroupAssignmentRepo.SetMultiplier。
+// 条件更新形态 `Update().Where(id, balance=old)`（评审 I-1 原子原语同族：不用
+// FOR UPDATE 行锁——跨请求持锁与多实例不兼容）；0 行命中：用户缺失 →
+// ErrNotFound，条件不满足（期间有扣费）→ ErrConflict（service 层重读重试
+// ≤3 次，new 保持管理员显式意图）。成功路径 UPDATE + Get 返回行（与旧
+// UpdateOneID 的 UPDATE + re-SELECT 同往返数）。
+func (r *UserRepo) UpdateUser(ctx context.Context, p *UserPatch) (*domain.User, error) {
+	if p.MaxConcurrency != nil && p.OldMaxConcurrency == nil {
+		return nil, fmt.Errorf("repository: UpdateUser patch: max_concurrency set without old value")
+	}
+	if p.Balance != nil && p.OldBalance == nil {
+		return nil, fmt.Errorf("repository: UpdateUser patch: balance set without old value")
+	}
+	upd := r.client.User.Update().Where(user.ID(p.ID))
+	if p.Role != nil {
+		upd.SetRole(user.Role(*p.Role))
+	}
+	if p.Status != nil {
+		upd.SetStatus(user.Status(*p.Status))
+	}
+	if p.MaxConcurrency != nil {
+		upd.Where(user.MaxConcurrency(*p.OldMaxConcurrency))
+		upd.SetMaxConcurrency(*p.MaxConcurrency)
+	}
+	if p.Balance != nil {
+		upd.Where(user.Balance(*p.OldBalance))
+		upd.SetBalance(*p.Balance)
+	}
+	n, err := upd.Save(ctx)
 	if err != nil {
-		return nil, errMissingID(err, u.ID)
+		return nil, errMissingID(err, p.ID)
+	}
+	if n == 0 {
+		// 0 行命中：用户缺失或条件不满足——回查区分（ErrNotFound / ErrConflict）。
+		if _, err := r.client.User.Get(ctx, p.ID); err != nil {
+			return nil, errMissingID(err, p.ID)
+		}
+		return nil, fmt.Errorf("%w: id=%d balance/max_concurrency 期间有并发变更", ErrConflict, p.ID)
+	}
+	row, err := r.client.User.Get(ctx, p.ID)
+	if err != nil {
+		return nil, errMissingID(err, p.ID)
 	}
 	return toDomainUser(row), nil
 }

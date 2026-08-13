@@ -338,6 +338,42 @@ func TestAdminUsers(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code, "missing user: %s", rec.Body.String())
 }
 
+// TestAdminPutUsersPatchSemantics A-P1-1 patch 形态端到端：只改 balance 的 PUT
+// 不误拒（评审 P3-B 零值面）、不触碰 role/status/并发；只改 role 不触碰
+// balance——GET 快照陈旧值不再全量写回（v02 核实双向覆盖修复）。
+func TestAdminPutUsersPatchSemantics(t *testing.T) {
+	doAdmin, doUser, store := newSharedRouters(t)
+	_, uid := registerAndGet(t, doUser, "patchb@example.com")
+	require.NoError(t, store.UpdateUserBalance(t.Context(), uid, 100000)) // 1 USD = 100,000 毫分
+
+	// 只改 balance（USD 50）：Role/Status 零值不误拒；role 不被快照写回
+	rec := doAdmin(http.MethodPut, "/admin/users/"+itoa(uid), `{"balance":50}`, "")
+	require.Equal(t, http.StatusOK, rec.Code, "只改 balance 不误拒: %s", rec.Body.String())
+	var updated User
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
+	require.Equal(t, 50.0, *updated.Balance, "回显 USD 换算")
+	require.Equal(t, UserRole("user"), *updated.Role, "role 未被 GET 快照写回")
+	u2, err := store.GetUser(t.Context(), uid)
+	require.NoError(t, err)
+	require.Equal(t, int64(5000000), u2.Balance, "50 USD = 5,000,000 毫分落库")
+
+	// 只改 role：balance 不丢
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid), `{"role":"platform_admin"}`, "")
+	require.Equal(t, http.StatusOK, rec.Code, "只改 role: %s", rec.Body.String())
+	u3, err := store.GetUser(t.Context(), uid)
+	require.NoError(t, err)
+	require.Equal(t, int64(5000000), u3.Balance, "只改 role 不触碰 balance（旧实现快照写回面）")
+	require.Equal(t, domain.RolePlatformAdmin, u3.Role)
+
+	// 空 body → 200 无副作用（全 nil patch no-op）
+	rec = doAdmin(http.MethodPut, "/admin/users/"+itoa(uid), `{}`, "")
+	require.Equal(t, http.StatusOK, rec.Code, "空 patch: %s", rec.Body.String())
+	u4, err := store.GetUser(t.Context(), uid)
+	require.NoError(t, err)
+	require.Equal(t, int64(5000000), u4.Balance)
+	require.Equal(t, domain.RolePlatformAdmin, u4.Role)
+}
+
 // TestAdminGroupAssignments 替换语义：授予/撤销/清空；用户缺失 → 404；
 // 重复/非法 id → 400。
 func TestAdminGroupAssignments(t *testing.T) {

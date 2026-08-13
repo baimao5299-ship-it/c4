@@ -13,6 +13,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // pubRecorder 记录 Publish 收到的 Change 的测试假件（#14 T2 发布点断言：
@@ -172,8 +173,15 @@ func TestPublishMatrix(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, pr.last().Users, "管理面创建用户 → Users:true")
 
-		_, err = svc.UpdateUser(ctx, &domain.User{ID: u.ID, Email: u.Email,
-			Role: domain.RoleUser, Status: domain.UserStatusActive, MaxConcurrency: 4, Balance: 900})
+		// patch 形态（条件写）：旧值条件 = 创建快照（MaxConcurrency 8 / Balance 1000）
+		role, st := domain.RoleUser, domain.UserStatusActive
+		mc, oldMC := 4, 8
+		bal, oldBal := int64(900), int64(1000)
+		_, err = svc.UpdateUser(ctx, &repository.UserPatch{
+			ID: u.ID, Role: &role, Status: &st,
+			MaxConcurrency: &mc, OldMaxConcurrency: &oldMC,
+			Balance: &bal, OldBalance: &oldBal,
+		})
 		require.NoError(t, err)
 		require.True(t, pr.last().Users, "更新用户 → Users:true")
 		require.Equal(t, 3, pr.total(), "一次操作一条 NOTIFY")

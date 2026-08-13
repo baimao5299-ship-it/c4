@@ -17,6 +17,7 @@ import (
 	"github.com/is7qin/c3api/internal/auth"
 	"github.com/is7qin/c3api/internal/domain"
 	userapi "github.com/is7qin/c3api/internal/handler/user"
+	"github.com/is7qin/c3api/internal/repository"
 	"github.com/is7qin/c3api/internal/service"
 )
 
@@ -116,8 +117,8 @@ func TestUserLoginDisabled(t *testing.T) {
 	require.Equal(t, 200, rec.Code)
 	u, err := store.GetUserByEmail(t.Context(), "d@example.com")
 	require.NoError(t, err)
-	u.Status = domain.UserStatusDisabled
-	_, err = store.UpdateUser(t.Context(), u)
+	st := domain.UserStatusDisabled
+	_, err = store.UpdateUser(t.Context(), &repository.UserPatch{ID: u.ID, Status: &st})
 	require.NoError(t, err)
 	rec = do(http.MethodPost, "/user/auth/login", `{"email":"d@example.com","password":"s3cret-pass"}`, "")
 	require.Equal(t, http.StatusUnauthorized, rec.Code, "disabled login: %s", rec.Body.String())

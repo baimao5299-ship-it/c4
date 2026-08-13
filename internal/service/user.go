@@ -158,23 +158,48 @@ func (s *Service) ListUsers(ctx context.Context, q repository.ListQuery) ([]*dom
 	return s.store.ListUsers(ctx, q)
 }
 
-// UpdateUser 用户管理面更新（role/status/max_concurrency/balance）。用户状态/
-// 并发/额度变更 → invalidate → Auth.Reload 全量刷新（评审 I-2）。价格倍率按
-// 组（T3.5 修正）经 group_assignment 设置，用户本体无倍率字段。
-func (s *Service) UpdateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
-	if !u.Role.Valid() || !u.Status.Valid() {
+// maxUserUpdateRetries 条件更新 0 行（期间有扣费/并发变更）→ 重读重试上限
+// （v02 修复方向：重试时 new 保持管理员显式意图，仅刷新旧值条件）。
+const maxUserUpdateRetries = 3
+
+// UpdateUser 用户管理面更新（role/status/max_concurrency/balance 按 patch 显式
+// 字段生效——未提供字段不触碰 DB 列，杜绝 GET 快照陈旧值写回覆盖计费扣费）。
+// 校验按 patch 字段生效（评审 P3-B：只改 balance 的 PUT 不被未提供字段的
+// 零值误拒）。balance/max_concurrency 显式设置 → 条件更新（旧值 = GET 快照）；
+// 0 行 → 重读当前值刷新旧值条件重试 ≤3 次 → 超限 ErrConflict（409）。用户
+// 状态/并发/额度变更 → invalidate → Auth.Reload 全量刷新（评审 I-2）。价格
+// 倍率按组（T3.5 修正）经 group_assignment 设置，用户本体无倍率字段。
+func (s *Service) UpdateUser(ctx context.Context, p *repository.UserPatch) (*domain.User, error) {
+	if p.Role != nil && !p.Role.Valid() {
 		return nil, ErrInvalidInput
 	}
-	if u.MaxConcurrency < 0 || u.Balance < 0 {
+	if p.Status != nil && !p.Status.Valid() {
 		return nil, ErrInvalidInput
 	}
-	updated, err := s.store.UpdateUser(ctx, u)
-	if err != nil {
-		return nil, mapRepoErr(err)
+	if p.MaxConcurrency != nil && *p.MaxConcurrency < 0 {
+		return nil, ErrInvalidInput
 	}
-	s.inv.Users()
-	s.publish(ctx, notify.Change{Users: true})
-	return updated, nil
+	if p.Balance != nil && *p.Balance < 0 {
+		return nil, ErrInvalidInput
+	}
+	for attempt := 0; ; attempt++ {
+		updated, err := s.store.UpdateUser(ctx, p)
+		if err == nil {
+			s.inv.Users()
+			s.publish(ctx, notify.Change{Users: true})
+			return updated, nil
+		}
+		if !errors.Is(err, repository.ErrConflict) || attempt >= maxUserUpdateRetries {
+			return nil, mapRepoErr(err)
+		}
+		// 条件不满足（期间有扣费）：重读当前值刷新旧值条件，new 不变重试。
+		cur, err := s.store.GetUser(ctx, p.ID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		p.OldMaxConcurrency = &cur.MaxConcurrency
+		p.OldBalance = &cur.Balance
+	}
 }
 
 // validEmail 简单邮箱格式校验（net/mail 解析 + 纯地址形式）。
