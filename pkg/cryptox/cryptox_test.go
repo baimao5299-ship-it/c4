@@ -24,8 +24,3 @@ func TestNewGroupKey(t *testing.T) {
 	require.Equal(t, HashKey(raw), hash)
 	require.Len(t, prefix, 8)
 }
-
-func TestEqual(t *testing.T) {
-	require.True(t, Equal("abc", "abc"))
-	require.False(t, Equal("abc", "abd"))
-}

@@ -108,6 +108,9 @@ func (s *Service) GetPrice(model string) (*domain.Pricing, error) {
 			return p, nil
 		}
 	}
+	// G3-2 分层约定：对外（响应体）恒英文、内部可中文——本错误仅内部消费
+	// （forward.go/caller.go 只 log.Warn，不向响应体回显；402 走固定 errNoPrice
+	// 文案），中文保留可读性。
 	return nil, fmt.Errorf("%w: model=%q（无价格数据：请管理端设价或等待 litellm 同步）", ErrNotFound, model)
 }
 
@@ -232,7 +235,13 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 	}
 	res, err := s.priceFetcher.Fetch(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrPriceFetch, err)
+		// G3-1：502 响应体为固定文案（handler/pricing.go PostPricingSync），
+		// 上游详情（含 sourceURL）仅在此 Warn 落日志——防经 admin 面回显外泄。
+		if s.log != nil {
+			s.log.Warn("pricing sync failed", logx.Error(err))
+		}
+		// %w: %w 多重包装保链：%v 会断链，errors.Is 无法命中 fetch 层错误。
+		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
 	}
 	n, err := s.store.UpsertFromLiteLLM(ctx, res.Rows)
 	nImage, imgErr := s.store.UpsertImageFromLiteLLM(ctx, res.ImageRows)
