@@ -191,6 +191,75 @@ func TestFlushStatsRefeedsCacheTokens(t *testing.T) {
 	require.Equal(t, int64(2), ss.buckets[0].RequestCount)
 }
 
+// blockingStatStore Upsert 首调阻塞至 release（模拟统计 flush 在途——桶已
+// swap、锁已释放；A-P2-8-3 O(1) 交换后并发正确性测试用）。
+type blockingStatStore struct {
+	started chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	buckets []*domain.StatBucket
+}
+
+func (m *blockingStatStore) Upsert(ctx context.Context, b []*domain.StatBucket) error {
+	select {
+	case m.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-m.release:
+		m.mu.Lock()
+		m.buckets = append(m.buckets, b...)
+		m.mu.Unlock()
+		return nil
+	}
+}
+
+// TestFlushStatsSwapConcurrentCorrect A-P2-8-3/P3-4：flushStats 锁内 O(1) 换引用
+// 后并发正确性——统计 flush 在途（桶已 swap、锁已释放）时并发 Record 聚合进
+// 新 counters map；两轮 flush 合并断言桶计数不丢不重（换出后旧 map 无写者，
+// 写者只碰新 map——锁内仅剩 O(1) 聚合 + 换引用）。同时覆盖 Record 单临界区
+// （P3-4 合并双锁后行为不变：聚合 + pending append 一把锁）。
+func TestFlushStatsSwapConcurrentCorrect(t *testing.T) {
+	ss := &blockingStatStore{started: make(chan struct{}), release: make(chan struct{})}
+	r := New(UsageConfig{BatchSize: 10}, &memLogStore{}, ss, nil)
+	now := time.Now().Truncate(time.Hour)
+	rec := func(i int) *domain.UsageLog {
+		return &domain.UsageLog{RequestID: fmt.Sprintf("r-%d", i), GroupID: 1, Model: "m",
+			Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone,
+			TotalTokens: 1, CreatedAt: now}
+	}
+	for i := 0; i < 100; i++ {
+		r.Aggregate(rec(i)) // 首批：桶 A 计数 100
+	}
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		r.flushStats(context.Background()) // 首批在途（桶已 swap，锁已释放）
+	}()
+	<-ss.started
+
+	// flush 在途期间并发 Record：聚合进新 counters（O(1) 交换后锁内无遍历，
+	// Record 不阻塞；单临界区合并双锁后行为不变）
+	for i := 0; i < 100; i++ {
+		r.Record(rec(i))
+	}
+	close(ss.release)
+	<-firstDone
+
+	r.flushStats(context.Background()) // 第二批：在途期间聚合的桶
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	require.Len(t, ss.buckets, 2, "两轮 flush 各一个桶")
+	var count int64
+	for _, b := range ss.buckets {
+		count += b.RequestCount
+	}
+	require.Equal(t, int64(200), count, "换批不丢不重（首批 100 + 在途期间 100）")
+	require.Equal(t, 100, r.Pending(), "Record 明细留在 pending（本次未 flush 明细）")
+}
+
 // TestAggregateSkipsLogChannel Aggregate 只聚合统计（含 cost 进 StatBucket），
 // 不入明细 pending——T3 计费 Flusher 复用同一聚合（每日志恰好一个写者）。
 func TestAggregateSkipsLogChannel(t *testing.T) {
@@ -353,8 +422,11 @@ func (m *failOnceLogStore) InsertBatch(ctx context.Context, logs []*domain.Usage
 	return nil
 }
 
-// TestLogRefillOnFailure 失败回灌：InsertBatch 失败 → 该 chunk 回灌 pending
-// 不丢；下次 flush 重试成功（旧实现失败直接丢弃 + Warn——回灌是 O1 纪律）。
+// TestLogRefillOnFailure 失败回灌：InsertBatch 失败 → 二分隔离（A-P2-8-4）后
+// 未落库行回灌 pending 不丢；下次 flush 重试成功。瞬态失败（failOnce：仅首调
+// 失败）时二分探测把失败 chunk 全部重试成功落库（部分成功语义：成功半照常
+// 入库，不丢不重；失败半的残余回灌），其后剩余回灌——旧实现失败 chunk + 剩余
+// 整体回灌 0 落库，回灌纪律不丢行不变，仅成功行提前落库。
 func TestLogRefillOnFailure(t *testing.T) {
 	ls := &failOnceLogStore{}
 	ls.fail.Store(true)
@@ -364,79 +436,128 @@ func TestLogRefillOnFailure(t *testing.T) {
 	for i := 0; i < 250; i++ {
 		r.Record(&domain.UsageLog{RequestID: "x", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
 	}
-	// 首次 flush：chunk1(100) 失败回灌（连同其后剩余 150 一并回灌）→ 落库 0
-	require.Zero(t, r.flushLogs(context.Background()))
-	require.Equal(t, 250, r.Pending(), "失败 chunk 连同剩余回灌，不丢")
+	// 首次 flush：chunk1(100) 首调失败 → 二分探测重试全量成功（瞬态失败不丢行
+	// 不重复），其后剩余 150 回灌 → 落库 100
+	require.Equal(t, int64(100), r.flushLogs(context.Background()))
+	require.Equal(t, 150, r.Pending(), "失败 chunk 后剩余回灌，不丢")
 	// 第二次 flush：全部落库
-	require.Equal(t, int64(250), r.flushLogs(context.Background()))
+	require.Equal(t, int64(150), r.flushLogs(context.Background()))
 	ls.mu.Lock()
 	require.Len(t, ls.logs, 250)
 	ls.mu.Unlock()
 	require.Zero(t, r.Pending())
 }
 
-// failAlwaysLogStore 恒失败 InsertBatch（毒丸行止损路径：模拟单行永久失败——
-// 如 created_at 无分区、约束冲突）。
-type failAlwaysLogStore struct{}
-
-func (m *failAlwaysLogStore) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
-	return errors.New("poison row")
+// poisonRowLogStore 注入指定 request_id 的毒丸行（A-P2-8-4 二分定位对象）：含
+// 毒丸行的批恒失败（模拟单行永久失败——约束冲突/畸形数据形态），其余批正常
+// 入库。并发安全（flushLogs 多 worker 并行调用）。
+type poisonRowLogStore struct {
+	mu     sync.Mutex
+	poison string
+	logs   []*domain.UsageLog
 }
 
-// TestLogPoisonChunkDroppedAfterMaxFailures 毒丸行止损（评审 I-3）：单行永久
-// 失败时，回灌重试只进行 maxLogFlushFailures 次——连续失败 ≥N → Error 日志
-//（含首行 request_id）+ 显式丢弃该 chunk，不再无限回灌卡死该 shard（旧实现
-// 无失败计数：workers=1 时整管道吞吐归零，仅 Warn）。
-func TestLogPoisonChunkDroppedAfterMaxFailures(t *testing.T) {
-	logger, out := usageTestLogger(t)
-	r := New(UsageConfig{BatchSize: 100, Workers: 1}, &failAlwaysLogStore{}, &memStatStore{}, logger)
-	now := time.Now()
-	for i := 0; i < 3; i++ {
-		r.Record(&domain.UsageLog{RequestID: fmt.Sprintf("req-%d", i), Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
+func (m *poisonRowLogStore) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, l := range logs {
+		if l.RequestID == m.poison {
+			return errors.New("injected poison row failure")
+		}
 	}
-	old := maxLogFlushFailures
-	maxLogFlushFailures = 3
-	defer func() { maxLogFlushFailures = old }()
+	m.logs = append(m.logs, logs...)
+	return nil
+}
 
-	// 前 N-1 次失败：仍回灌不丢（连续失败计数未到阈值）
-	for i := 0; i < 2; i++ {
-		require.Zero(t, r.flushLogs(context.Background()))
-		require.Equal(t, 3, r.Pending(), "失败回灌不丢")
+// TestLogPoisonRowIsolatedByBisect 毒丸止损二分隔离（A-P2-8-4）：单行毒丸（旧
+// 实现整 chunk 丢弃，单行毒丸连带 499 行有效明细）——失败路径二分重试定位
+// 毒丸行 → 仅丢弃该行（Error + request_id + dropped_logs=1）、其余行全部成功
+// 落库（"其余入库"）、计数复位、无回灌残留。
+func TestLogPoisonRowIsolatedByBisect(t *testing.T) {
+	logger, out := usageTestLogger(t)
+	ls := &poisonRowLogStore{poison: "poison-3"}
+	r := New(UsageConfig{BatchSize: 8, Workers: 1}, ls, &memStatStore{}, logger)
+	now := time.Now()
+	for i := 0; i < 8; i++ {
+		req := fmt.Sprintf("req-%d", i)
+		if i == 3 {
+			req = "poison-3"
+		}
+		r.Record(&domain.UsageLog{RequestID: req, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
 	}
-	// 第 N 次失败：毒丸 chunk 显式丢弃（Error + 首行 request_id），无剩余回灌
-	require.Zero(t, r.flushLogs(context.Background()))
-	require.Zero(t, r.Pending(), "毒丸 chunk 隔离丢弃，不再回灌")
+
+	flushed := r.flushLogs(context.Background())
+	require.Equal(t, int64(7), flushed, "毒丸行外 7 行由二分过程全部落库")
+	ls.mu.Lock()
+	require.Len(t, ls.logs, 7, "其余行全部入库（不再整 chunk 连带丢弃）")
+	ls.mu.Unlock()
+	require.Zero(t, r.Pending(), "毒丸行丢弃、其余入库，无回灌残留")
+	require.Zero(t, r.failCounts[0], "毒丸定位隔离 → 计数复位")
 
 	require.NoError(t, logger.Sync())
 	b, err := os.ReadFile(out)
 	require.NoError(t, err)
-	require.Contains(t, string(b), "usage batch insert failed, dropping poison chunk")
-	require.Contains(t, string(b), `"level":"error"`, "止损升级 Error 级")
-	require.Contains(t, string(b), `"request_id":"req-0"`, "Error 日志含首行 request_id")
-	require.Contains(t, string(b), `"dropped_logs":3`)
+	require.Contains(t, string(b), "usage batch insert failed, dropping poison row")
+	require.Contains(t, string(b), `"level":"error"`, "毒丸止损升级 Error 级")
+	require.Contains(t, string(b), `"request_id":"poison-3"`, "Error 日志含毒丸行 request_id")
+	require.Contains(t, string(b), `"dropped_logs":1`, "仅丢弃单行")
 }
 
-// TestLogPoisonStopLossResetsOnSuccess 毒丸止损计数复位：失败后成功推进 → 连续
-// 失败计数清零（"连续失败 N 次"语义——间隔成功不累计，DB 短时故障不误丢）。
-func TestLogPoisonStopLossResetsOnSuccess(t *testing.T) {
-	ls := &failOnceLogStore{}
-	ls.fail.Store(true)
-	r := New(UsageConfig{BatchSize: 10, Workers: 1}, ls, &memStatStore{}, nil)
-	old := maxLogFlushFailures
-	maxLogFlushFailures = 2
-	defer func() { maxLogFlushFailures = old }()
+// dbDownLogStore 可切换整库故障的 InsertBatch（A-P2-8-4 整库故障形态）：fail=
+// true 恒失败（含二分探测——两半都失败），fail=false 正常入库——模拟 DB 恢复
+// 后重试成功。并发安全。
+type dbDownLogStore struct {
+	mu   sync.Mutex
+	fail bool
+	logs []*domain.UsageLog
+}
 
+func (m *dbDownLogStore) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.fail {
+		return errors.New("db down")
+	}
+	m.logs = append(m.logs, logs...)
+	return nil
+}
+
+// TestLogDBFailureRefillsNoProgressiveDrop 整库故障二分归因（A-P2-8-4）：两半都
+// 失败 → 未落库行全部回灌（不丢）+ 不累计失败计数——故障期无进行式丢弃（旧
+// 实现每 5 周期丢 1 chunk/分片 ≈ 24 万行蒸发）；DB 恢复即重试成功（成功路径
+// 计数复位）。
+func TestLogDBFailureRefillsNoProgressiveDrop(t *testing.T) {
+	logger, out := usageTestLogger(t)
+	ls := &dbDownLogStore{fail: true}
+	r := New(UsageConfig{BatchSize: 4, Workers: 1}, ls, &memStatStore{}, logger)
 	now := time.Now()
-	r.Record(&domain.UsageLog{RequestID: "a", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
-	// 失败 1 次 → 回灌；随后成功 → 计数复位；再失败 1 次 → 未到阈值 2，仍回灌
-	require.Zero(t, r.flushLogs(context.Background()))
-	require.Equal(t, 1, r.Pending())
-	require.Equal(t, int64(1), r.flushLogs(context.Background()))
+	for i := 0; i < 4; i++ {
+		r.Record(&domain.UsageLog{RequestID: fmt.Sprintf("req-%d", i), Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
+	}
+
+	// 故障期多轮 flush（6 轮 > 旧阈值 5，旧实现此处已丢弃 chunk）：全部回灌不丢
+	// + 失败计数不累计（无任何触发丢弃）
+	for i := 0; i < 6; i++ {
+		require.Zero(t, r.flushLogs(context.Background()))
+		require.Equal(t, 4, r.Pending(), "整库故障回灌不丢（无进行式丢弃）")
+		require.Zero(t, r.failCounts[0], "整库故障不累计失败计数")
+	}
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "usage batch insert failed (DB-wide), refilled")
+	require.NotContains(t, string(b), "dropping poison", "故障期无任何丢弃（不区分失败原因的整 chunk 止损已废除）")
+
+	// DB 恢复：重试成功全量落库（成功路径计数复位）
+	ls.mu.Lock()
+	ls.fail = false
+	ls.mu.Unlock()
+	require.Equal(t, int64(4), r.flushLogs(context.Background()))
+	ls.mu.Lock()
+	require.Len(t, ls.logs, 4)
+	ls.mu.Unlock()
 	require.Zero(t, r.Pending())
-	ls.fail.Store(true)
-	r.Record(&domain.UsageLog{RequestID: "b", Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: now})
-	require.Zero(t, r.flushLogs(context.Background()))
-	require.Equal(t, 1, r.Pending(), "复位后第 1 次失败未到阈值，回灌不丢")
+	require.Zero(t, r.failCounts[0])
 }
 
 // blockingLogStore 阻塞 InsertBatch（模拟慢 DB）：首调通知 started，release
@@ -552,6 +673,53 @@ func TestCloseWaitsInflight(t *testing.T) {
 		require.Contains(t, string(b), `"remaining_logs":2`)
 		<-flushDone
 	})
+}
+
+// ignoreCtxLogStore InsertBatch 忽略 ctx 永久阻塞（模拟 DB 病态卡死——
+// database/sql 取消路径本身被拖住的极端形态；A-P2-8-2 第二 select 兜底目标）。
+// 测试结束即弃置（在途 goroutine 无放行通道，属刻意泄漏）。
+type ignoreCtxLogStore struct {
+	started chan struct{} // 首调已进入（测试等待在途批次）
+}
+
+func (m *ignoreCtxLogStore) InsertBatch(ctx context.Context, logs []*domain.UsageLog) error {
+	select {
+	case m.started <- struct{}{}:
+	default:
+	}
+	<-make(chan struct{}) // 永久阻塞（不响应 ctx 取消；无发送者，永不返回）
+	return nil
+}
+
+// TestCloseAbandonsInflightOnTimeout A-P2-8-2：`<-acquired` 第二 select 预算超时
+// ——驱动不尊重 ctx（DB 病态卡死形态）时 Close 不再无界等待：预算到期 → Cancel
+// baseCtx → 收尾宽限超时 → Warn 放弃排空、截断退出（在途批次由已取消 baseCtx
+// 收尾回灌不丢——数据不因本超时而丢失；后续排空/统计收尾都被 flushMu 挡住，
+// 不再触碰）。旧实现 `<-acquired` 无界等待，编排层强杀 → 全量内存 pending 丢失。
+func TestCloseAbandonsInflightOnTimeout(t *testing.T) {
+	logger, out := usageTestLogger(t)
+	old := inflightAbandonGrace
+	inflightAbandonGrace = 50 * time.Millisecond
+	defer func() { inflightAbandonGrace = old }()
+
+	ls := &ignoreCtxLogStore{started: make(chan struct{})}
+	r := New(UsageConfig{BatchSize: 10}, ls, &memStatStore{}, logger)
+	r.Record(&domain.UsageLog{RequestID: "a", UserID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: time.Now()})
+
+	go r.flushLogs(r.baseCtx) // ticker 路径批次在途（永久阻塞，不响应取消）
+	<-ls.started
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(100*time.Millisecond))
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, r.Close(ctx))
+	require.Less(t, time.Since(start), 500*time.Millisecond, "放弃排空快速退出（不得无界等待在途批次）")
+
+	require.NoError(t, logger.Sync())
+	b, err := os.ReadFile(out)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "usage close: in-flight flush not finished in time, abandoning drain")
+	require.Contains(t, string(b), `"level":"warn"`)
 }
 
 // TestRecordDuringFlushNotBlocked flush 在途（DB 阻塞）时 Record 必须立即返回

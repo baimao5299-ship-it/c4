@@ -56,11 +56,12 @@ const (
 // var（非 const）：测试注入小阈值，默认 1M 不变，后续可配置化。
 var pendingWaterline int64 = 1_000_000
 
-// maxLogFlushFailures 毒丸行止损阈值（评审 I-3）：单 shard 连续 flush 失败
-// ≥ 此数 → 显式丢弃该失败 chunk（Error 日志 + 首行 request_id），不再无限
-// 回灌卡死该 shard（旧实现：一行永久失败则 workers=1 时整管道吞吐归零）。
+// inflightAbandonGrace 在途批次收尾宽限（A-P2-8-2）：Close 预算到期 Cancel
+// baseCtx 后给在途批次收尾的兜底等待——正常情形取消传播微秒级完成（完整排空
+// 语义不变）；DB 病态卡死（database/sql 取消路径本身被拖住）时超时即放弃排空、
+// Warn 截断退出（在途批次由已取消 baseCtx 收尾回灌不丢），不无界阻塞停机。
 // var（非 const）：测试注入小阈值。
-var maxLogFlushFailures = 5
+var inflightAbandonGrace = 500 * time.Millisecond
 
 type Recorder struct {
 	cfg       UsageConfig
@@ -83,10 +84,12 @@ type Recorder struct {
 	// 排队、延迟同幅放大（额度持久化滞后，**非丢数据**）。ticker/Close 两处
 	// 触发互斥；在途批次即其持有者。
 	flushMu sync.Mutex
-	// failCounts 分片级连续 flush 失败计数（毒丸行止损，I-3）：flushLogs 失败
-	// 路径自增、成功推进复位；仅 flush 失败/成功路径写（Record 热路径零触碰）。
-	// 安全：flushLogs 由 flushMu 串行，单次调用内每分片恰一个 goroutine 写
-	// 自己的槽位，wg.Wait 后才进入下一轮 flush。
+	// failCounts 分片级 flush 失败计数（A-P2-8-4 二分隔离后为复位面保留）：毒丸
+	// 行定位丢弃后复位、成功推进复位；整库故障（两半都失败）**不累计**——DB
+	// 恢复即重试成功，消除故障期进行式丢明细（旧实现每 5 周期丢 1 chunk/分片）。
+	// 仅失败归因/成功路径写（Record 热路径零触碰）。安全：flushLogs 由 flushMu
+	// 串行，单次调用内每分片恰一个 goroutine 写自己的槽位，wg.Wait 后才进入
+	// 下一轮 flush。
 	failCounts  []int
 	startOnce   atomic.Bool
 	loopDone    chan struct{} // Start 的两个 loop 全部退出后关闭
@@ -179,8 +182,11 @@ func (r *Recorder) Record(l *domain.UsageLog) {
 				logx.String("request_id", l.RequestID))
 		}
 	}
-	r.Aggregate(l)
+	// 单临界区（P3-4，与 A-P2-8-3 同批）：聚合与 pending append 合并一把锁——
+	// 锁内仅剩 O(1) 操作（聚合 + append），Record 恰一次取锁，两次取锁的原子
+	// 开销与争用窗口一并消除（旧实现 aggregate 内 + append 各取一次）。
 	r.mu.Lock()
+	r.aggregateLocked(l)
 	r.pending = append(r.pending, l)
 	n := r.pendingN.Add(1)
 	r.mu.Unlock()
@@ -195,18 +201,20 @@ func (r *Recorder) Record(l *domain.UsageLog) {
 // channel）——T3 计费 Flusher 复用同一聚合（billed 请求只经 Flusher 不落本
 // 明细；每日志恰好一个写者）。与 Record 等价，仅跳过明细投递。
 func (r *Recorder) Aggregate(l *domain.UsageLog) {
-	r.aggregate(l)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.aggregateLocked(l)
 }
 
 // Pending 返回尚未落库的明细条数（测试与积压观测用）。
 func (r *Recorder) Pending() int { return int(r.pendingN.Load()) }
 
-func (r *Recorder) aggregate(l *domain.UsageLog) {
+// aggregateLocked 无锁聚合主体（调用方必须已持有 r.mu；P3-4 后 Record 与
+// Aggregate 共用——Record 在单临界区内聚合 + append，Aggregate 独立取锁）。
+func (r *Recorder) aggregateLocked(l *domain.UsageLog) {
 	hour := l.CreatedAt.UTC().Truncate(time.Hour)
 	isErr := l.ErrorType != domain.ErrNone
 	key := statBucketKeyOf(hour.Unix(), l.GroupID, l.AccountID, l.TemplateID, l.UserID, l.Model, isErr)
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	c, ok := r.counters[key]
 	if !ok {
 		c = &statCounters{bucket: domain.StatBucket{
@@ -308,17 +316,17 @@ func (r *Recorder) logWriterLoop(ctx context.Context) {
 // flushLogs 换批 + 并行落库（O1 管道化消费侧）：锁内 swap 整个 pending（换新
 // slice，flush 期间新日志进新 pending 零阻塞）→ 按 userID 分片（同 user 恒同
 // worker）→ N worker 并发逐 chunk InsertBatch（chunk = cfg.BatchSize；ent
-// CreateBulk 参数上限 PG 65535，500 × ~20 列安全）→ 失败 chunk 连同其后剩余
-// 一并回灌 pending（不丢，下次 flush 重试；DB 故障不锤击——本 shard 停止；
-// 连续失败 ≥ maxLogFlushFailures 显式止损丢弃，见下）。预算到期：未处理部分
-// 原样回灌（由 Close 决定截断放弃）。返回本批成功落库条数（Close 汇总作
-// Warn 诊断）。flushMu 串行单入口（ticker/Close 两处触发共用；在途批次即其
-// 持有者——Close 以获取 flushMu 等待在途批次）。**互斥耦合（评审 I-1）**：
-// flushLogs 与 flushStats 共用 flushMu（Close 在途屏障需要）——DB 故障积压
-// 时单次 flushLogs 占锁可致额度回写/统计 Upsert 延迟同幅放大（非丢数据）。
-// 毒丸行止损（评审 I-3）：单 chunk 连续失败 ≥ maxLogFlushFailures → Error
-// 日志（含首行 request_id）+ 显式丢弃该 chunk（不再无限回灌卡死本 shard；
-// 显式止损，非静默丢）。
+// CreateBulk 参数上限 PG 65535，500 × ~20 列安全）→ 失败 chunk 二分隔离归因
+// （A-P2-8-4，见 poisonBisect）后连同其后剩余一并回灌 pending（不丢，下次
+// flush 重试；DB 故障不锤击——本 shard 停止）。预算到期：未处理部分原样回灌
+// （由 Close 决定截断放弃）。返回本批成功落库条数（Close 汇总作 Warn 诊断）。
+// flushMu 串行单入口（ticker/Close 两处触发共用；在途批次即其持有者——Close
+// 以获取 flushMu 等待在途批次）。**互斥耦合（评审 I-1）**：flushLogs 与
+// flushStats 共用 flushMu（Close 在途屏障需要）——DB 故障积压时单次 flushLogs
+// 占锁可致额度回写/统计 Upsert 延迟同幅放大（非丢数据）。毒丸行止损
+// （A-P2-8-4 二分隔离替代评审 I-3 的整 chunk 止损）：单行毒丸 → 二分定位后仅
+// 丢弃该行（Error + request_id），其余行照常落库；整库故障 → 回灌不丢 + 不
+// 累计失败计数（DB 恢复即重试成功，消除故障期进行式丢明细）。
 func (r *Recorder) flushLogs(ctx context.Context) int64 {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
@@ -365,25 +373,44 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 				}
 				end := min(start+r.cfg.BatchSize, len(s))
 				if err := r.logs.InsertBatch(ctx, s[start:end]); err != nil {
-					r.failCounts[si]++ // 连续失败计数（仅失败路径写；热路径零触碰）
-					if r.failCounts[si] >= maxLogFlushFailures {
-						// 毒丸行止损（评审 I-3）：连续失败 ≥N 次 → 显式丢弃该
-						// chunk（Error + 首行 request_id），隔离后不再回灌——
-						// 避免单行永久失败（created_at 无分区/约束冲突）无限
-						// 卡死本 shard（旧实现 workers=1 时整管道吞吐归零）。
+					// 毒丸止损二分隔离（A-P2-8-4）：整 chunk 失败不再直接计数/
+					// 丢弃（旧实现整 chunk 500 行丢弃，单行毒丸连带 499 行；且
+					// 丢弃后立即复位不区分失败原因 → DB 持续故障时每 5 周期丢
+					// 1 chunk/分片，故障期进行式丢明细）——二分重试归因（失败
+					// 路径非热路径，性能不敏感）：
+					//   - 单半成功另半失败 → 继续二分定位毒丸行 → 丢弃该行
+					//     （Error + request_id）+ 其余行已由二分过程成功落库 +
+					//     shard 剩余回灌 + 计数复位；
+					//   - 两半都失败（整库故障）→ 未落库行全部回灌（不丢）+
+					//     不累计失败计数——DB 恢复即重试成功。
+					if end-start == 1 {
+						// 单行 chunk 无法二分归因（无同级半可对照）——按整库
+						// 故障语义回灌不丢（BatchSize=1 仅测试形态；防故障期
+						// 单行误丢）。
 						if r.log != nil {
-							r.log.Error("usage batch insert failed, dropping poison chunk",
-								logx.Error(err), logx.String("request_id", s[start].RequestID),
-								logx.Int("dropped_logs", end-start))
+							r.log.Warn("usage batch insert failed (DB-wide), refilled", logx.Error(err))
 						}
-						r.failCounts[si] = 0
-						r.refillLogs(s[end:]) // 毒丸 chunk 隔离丢弃；其后剩余回灌（不丢）
+						r.refillLogs(s[start:])
 						return
 					}
-					if r.log != nil {
-						r.log.Warn("usage batch insert failed", logx.Error(err))
+					poison, refill, n := r.poisonBisect(ctx, s[start:end])
+					if poison != nil {
+						if r.failCounts[si] > 0 {
+							r.failCounts[si] = 0 // 毒丸定位隔离 → 计数复位
+						}
+						if r.log != nil {
+							r.log.Error("usage batch insert failed, dropping poison row",
+								logx.Error(err), logx.String("request_id", poison.RequestID),
+								logx.Int("dropped_logs", 1))
+						}
+					} else if r.log != nil {
+						r.log.Warn("usage batch insert failed (DB-wide), refilled", logx.Error(err))
 					}
-					r.refillLogs(s[start:]) // 失败 chunk + 其后剩余一并回灌（不丢）
+					if len(refill) > 0 {
+						r.refillLogs(refill) // 整库故障：未落库行回灌（不丢）
+					}
+					r.refillLogs(s[end:]) // 其后剩余回灌（不丢）
+					drained.Add(n)        // 二分过程成功落库的行数（毒丸定位：其余全部）
 					return
 				}
 				if r.failCounts[si] > 0 {
@@ -395,6 +422,45 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 	}
 	wg.Wait()
 	return drained.Load()
+}
+
+// poisonBisect 毒丸止损二分隔离（A-P2-8-4）：chunk 整体 InsertBatch 已失败
+// （调用方保证 len ≥ 2）后的二分重试归因——失败路径非热路径，性能不敏感但
+// 逻辑可测。返回：
+//   - poison != nil：已定位毒丸行（该行未落库，由调用方丢弃）；其余行均已由
+//     二分过程的成功半落库（"其余入库"，不再整 chunk 连带丢弃）；
+//   - refill：未落库需回灌的行（两半都失败 = 整库故障时 = chunk 全部；调用方
+//     回灌不丢、不累计失败计数——DB 恢复即重试成功）；
+//   - drained：二分过程成功落库的行数。
+//
+// 递归不变量：chunk 已知含毒（父级某半成功对照保证）。纯瞬态失败（无毒丸行）
+// 时逐层对照使最后一行被判为毒丸——len==1 分支重试该行消歧：重试成功 = 瞬态
+// 失败，该行照常落库；重试仍失败 = 毒丸行。单行 chunk（BatchSize=1）无同级半
+// 可对照，由调用方按整库故障语义回灌（防故障期误丢）。
+func (r *Recorder) poisonBisect(ctx context.Context, chunk []*domain.UsageLog) (poison *domain.UsageLog, refill []*domain.UsageLog, drained int64) {
+	if len(chunk) == 1 {
+		// 同级半已成功（父级对照）：重试区分瞬态失败与毒丸行
+		if err := r.logs.InsertBatch(ctx, chunk); err == nil {
+			return nil, nil, 1
+		}
+		return chunk[0], nil, 0
+	}
+	mid := len(chunk) / 2
+	left, right := chunk[:mid], chunk[mid:]
+	if err := r.logs.InsertBatch(ctx, left); err == nil {
+		// 左半成功 → 毒丸在右半；左半已落库，继续二分右半
+		p, rf, d := r.poisonBisect(ctx, right)
+		return p, rf, d + int64(len(left))
+	}
+	if err := r.logs.InsertBatch(ctx, right); err == nil {
+		// 右半成功 → 毒丸在左半；右半已落库，继续二分左半
+		p, rf, d := r.poisonBisect(ctx, left)
+		return p, rf, d + int64(len(right))
+	}
+	// 两半都失败 → 整库故障：全部未落库行回灌（不丢），调用方不累计失败计数。
+	// （同节点双毒丸行亦归入此类：下轮 flush 整体重试仍两半都失败——继续回灌
+	// 不丢，可观测性由 pending 增长 + DB-wide Warn 覆盖。）
+	return nil, chunk, 0
 }
 
 // refillLogs 失败/截断回灌：合并回当前 pending（锁内 append——flush 期间
@@ -443,17 +509,25 @@ func (r *Recorder) flushStats(ctx context.Context) {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
 
+	// 锁内只换 map 引用（O(1)，A-P2-8-3）：换批 = 交换引用 + 建新 map，锁外遍历
+	// old 建桶分片（换出后无写者——写者只碰新 map，无数据竞争；回灌合并语义不
+	// 变，refillBuckets 本就走新 map 累加）。旧实现锁内全量迭代 counters + 双
+	// map swap，10⁵+ 桶时毫秒级阻塞 Record 的 pending append 与 billing Flusher
+	// 复用的 Aggregate（进计费路径）；与 P3-4（Record 双锁合并）同批后锁内仅剩
+	// O(1) 聚合。
 	r.mu.Lock()
-	buckets := make([]*domain.StatBucket, 0, len(r.counters))
-	for _, c := range r.counters {
-		b := c.bucket
-		buckets = append(buckets, &b)
-	}
+	old := r.counters
 	r.counters = make(map[statBucketKey]*statCounters)
 	quota := r.quotaUsed
 	r.quotaUsed = make(map[int64]int64)
 	qw := r.quota
 	r.mu.Unlock()
+
+	buckets := make([]*domain.StatBucket, 0, len(old))
+	for _, c := range old {
+		b := c.bucket
+		buckets = append(buckets, &b)
+	}
 
 	// 额度回写（增量；失败整组回灌合并，下次 flush 重试——与 stats 同语义）。
 	if qw != nil && len(quota) > 0 {
@@ -578,8 +652,10 @@ func (r *Recorder) refillBuckets(buckets []*domain.StatBucket) {
 // 约束的排空循环（此时无在途批次、flushMu 无竞争）。正常情形完整排空语义
 // 不变（无 deadline ctx = 全部落库）；ctx 到期 → Cancel baseCtx（在途落库
 // 快速失败回灌，不丢）+ Warn（flushed/remaining 条数单位一致）+ 截断退出，
-// 不阻塞停机。统计面由 flushStats 以本 ctx 预算收尾（到期截断 + Warn）。
-// 未 Start 也安全（跳过聚合等待；在途 flush 与 pending 残留同样等待/排空）。
+// 不阻塞停机；在途批次收尾超时（A-P2-8-2）→ 放弃排空、Warn 截断退出（在途
+// 由已取消 baseCtx 收尾回灌不丢）。统计面由 flushStats 以本 ctx 预算收尾
+// （到期截断 + Warn）。未 Start 也安全（跳过聚合等待；在途 flush 与 pending
+// 残留同样等待/排空）。
 func (r *Recorder) Close(ctx context.Context) error {
 	r.closeOnce.Do(func() {
 		defer r.baseCancel() // recorder 关闭后 baseCtx 不得再有存活批次
@@ -609,8 +685,23 @@ func (r *Recorder) Close(ctx context.Context) error {
 			r.flushMu.Unlock()
 		case <-ctx.Done():
 			r.baseCancel()
-			<-acquired // 取消后在途批次快速收尾（落库尊重 ctx）
-			r.flushMu.Unlock()
+			// 第二 select 兜底（A-P2-8-2，对齐 loopDone 等待模式）：预算到期后
+			// 等在途批次收尾——正常情形取消传播微秒级完成，预算内等其自然
+			// 完成（完整排空语义不变，随后排空循环照常 Warn 截断）；但 DB
+			// 病态卡死时 database/sql 取消路径本身可能被拖住，`<-acquired`
+			// 无界等待违反"到期截断退出、不阻塞停机"承诺——超时 → 放弃排空、
+			// Warn 截断退出（在途批次由已取消 baseCtx 收尾回灌不丢；后续排空
+			// 循环/统计收尾都会被 flushMu 挡住，不可再触碰）。
+			select {
+			case <-acquired:
+				r.flushMu.Unlock()
+			case <-time.After(inflightAbandonGrace):
+				if r.log != nil {
+					r.log.Warn("usage close: in-flight flush not finished in time, abandoning drain")
+				}
+				r.closed.Store(true)
+				return
+			}
 		}
 		// 排空明细（预算内循环；到期 → Warn 截断退出——flushed/remaining 均
 		// 为明细条数，单位一致）。

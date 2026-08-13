@@ -75,6 +75,13 @@ type flusherPending struct {
 // 声明，止损逻辑分属两处）。var（非 const）：测试注入小阈值。
 var maxLogFlushFailures = 5
 
+// inflightAbandonGrace 在途批次收尾宽限（A-P2-8-2，与 usage 包同值同语义——两
+// 包各自声明）：Close 预算到期 Cancel baseCtx 后给在途批次收尾的兜底等待——
+// 正常情形取消传播微秒级完成（完整排空语义不变）；DB 病态卡死（database/sql
+// 取消路径本身被拖住）时超时即放弃排空、Warn 截断退出（在途批次由已取消
+// baseCtx 收尾回灌不丢），不无界阻塞停机。var（非 const）：测试注入小阈值。
+var inflightAbandonGrace = 500 * time.Millisecond
+
 // Flusher 计费批量落库（worker.Worker 契约，Name="billing"）。O1 管道化：
 // Record 只做统计聚合（stats.Aggregate——billed 流量进 usagestat 统计面，与
 // 非 billed 一视同仁，每日志恰好一个写者）+ 短锁归并 pending map（userID →
@@ -208,8 +215,9 @@ func (f *Flusher) Record(l *domain.UsageLog) {
 // 情形完整排空语义不变（无 deadline ctx = 全部落库）；ctx 到期 → Cancel
 // baseCtx（在途批次 DeductAndLog 快速失败回灌，不丢）+ Warn（含已排空/剩余
 // 条数）+ 截断退出，不阻塞停机（O1 复测：44k/s 压测后 1.7M pending 无预算
-// 排空需数分钟）。未 Start 也安全（跳过聚合等待；在途 flush 与 pending 残留
-// 同样等待/排空）。
+// 排空需数分钟）；在途批次收尾超时（A-P2-8-2）→ 放弃排空、Warn 截断退出
+// （在途由已取消 baseCtx 收尾回灌不丢）。未 Start 也安全（跳过聚合等待；在途
+// flush 与 pending 残留同样等待/排空）。
 func (f *Flusher) Close(ctx context.Context) error {
 	f.closeOnce.Do(func() {
 		defer f.baseCancel() // flusher 关闭后 baseCtx 不得再有存活批次
@@ -239,8 +247,22 @@ func (f *Flusher) Close(ctx context.Context) error {
 			f.flushMu.Unlock()
 		case <-ctx.Done():
 			f.baseCancel()
-			<-acquired // 取消后在途批次快速收尾（DeductAndLog 尊重 ctx）
-			f.flushMu.Unlock()
+			// 第二 select 兜底（A-P2-8-2，对齐 usage.go loopDone 等待模式）：预算
+			// 到期后在途批次应随 baseCtx 取消快速失败收尾（回灌不丢）——但 DB
+			// 病态卡死时 database/sql 取消路径本身可能被拖住，`<-acquired` 无界
+			// 等待违反"到期截断退出、不阻塞停机"承诺（编排层强杀 → 全量内存
+			// pending 丢失）：超时 → 放弃排空、Warn 截断退出（在途批次由已
+			// 取消 baseCtx 收尾回灌不丢；后续排空循环都会被 flushMu 挡住，不可
+			// 再触碰）。
+			select {
+			case <-acquired:
+				f.flushMu.Unlock()
+			case <-time.After(inflightAbandonGrace):
+				if f.log != nil {
+					f.log.Warn("billing flusher close: in-flight flush not finished in time, abandoning drain")
+				}
+				return
+			}
 		}
 		var flushed int64
 		for f.pendingCount() > 0 {
