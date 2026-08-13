@@ -282,6 +282,19 @@ func main() {
 		Failer: sched,
 		Log:    log,
 	}))
+	// SDK HTTPClient 上游 transport（resp 补压测修复——SDK 默认 transport
+	// MaxIdleConnsPerHost=2 连接风暴，压测 profile ~12% CPU）：连接池参数与
+	// 网关既有 client 同形态（同一 httpx 构造 helper + cfg.Upstream 同源），
+	// MaxConnsPerHost 显式上界对齐 MaxIdleConnsPerHost（防单上游连接失控；
+	// 网关既有 client 不设 = 不限，压测验证形态保持）。
+	codexAdapter.SetTransport(httpx.NewTransport(httpx.TransportConfig{
+		MaxIdleConns:        cfg.Upstream.MaxIdleConns,
+		MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
+		MaxConnsPerHost:     cfg.Upstream.MaxIdleConnsPerHost,
+		IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
+		DialTimeout:         cfg.Upstream.DialTimeout,
+		ForceHTTP2:          cfg.Upstream.ForceHTTP2,
+	}))
 	// T5 §1 轮转回写面装配：WithOnTokenRotated → account_ext 部分更新 upsert
 	//（oauth_token + oauth_refresh_token + oauth_expires_at 保旧）+ 失效调度器
 	// AccountExt 内存快照条目（P3-3——下个会话重载新凭据；不重建 Auth 缓存）。

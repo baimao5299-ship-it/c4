@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	codexsdk "github.com/is7Qin/codex-sdk"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/httpx"
 )
 
 // ---------------------------------------------------------------------------
@@ -821,6 +823,65 @@ func TestCodexStreamResponsesFnError(t *testing.T) {
 		return sentinel
 	})
 	require.ErrorIs(t, err, sentinel, "fn 回调错误原样透传")
+}
+
+// TestCodexTransportPoolReuse 补压测修复回归（连接风暴）：SDK 默认 transport
+// MaxIdleConnsPerHost=2 → 高并发爆发后连接被池化丢弃，下波大量重拨（压测
+// profile ~12% CPU 连接风暴）。装配网关同形态 transport
+// （httpx.NewTransport——复用既有构造 helper + MaxIdleConnsPerHost=2048）
+// 后，第二波并发必须零新拨号（池内复用）。走 GenerateImage（Do 排空路径
+// ——响应体完整读到 EOF，连接确定可复用）；resp HTTP / 流式 images 与
+// GenerateImage 共用同一 clientFor 装配的 HTTPClient + transport（T2 机
+// 制——连接池断言同源）。计数 DialContext 包装判定拨号次数。
+func TestCodexTransportPoolReuse(t *testing.T) {
+	up, _ := newCodexUpstream(t, codexUpstreamStep{status: 200, body: okImageResponse})
+	defer up.Close()
+
+	var dials atomic.Int64
+	tr := httpx.NewTransport(httpx.TransportConfig{
+		MaxIdleConns:        8192,
+		MaxIdleConnsPerHost: 2048,
+		IdleConnTimeout:     90 * time.Second,
+		DialTimeout:         10 * time.Second,
+		ForceHTTP2:          false,
+	})
+	tr.Proxy = nil // 测试确定性：不经环境代理
+	baseDial := tr.DialContext
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dials.Add(1)
+		return baseDial(ctx, network, addr)
+	}
+	a := NewCodex(nil)
+	a.SetTransport(tr)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-pool", BaseURL: up.URL + "/images/generations"}
+	p := &domain.ImageGenParams{Model: "gpt-image-2", Prompt: "cat"}
+
+	const n = 16
+	burst := func() error {
+		var wg sync.WaitGroup
+		errs := make(chan error, n)
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, err := a.GenerateImage(context.Background(), cred, p)
+				errs <- err
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	require.NoError(t, burst())
+	require.Equal(t, int64(n), dials.Load(), "首波并发 = n 条新连接")
+	require.NoError(t, burst())
+	require.Equal(t, int64(n), dials.Load(), "第二波必须零新拨号——连接池复用（MaxIdleConnsPerHost=2048 生效；SDK 默认 2 会再拨 n-2 条）")
 }
 
 // ---------------------------------------------------------------------------

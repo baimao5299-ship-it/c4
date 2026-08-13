@@ -5,8 +5,11 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -92,6 +95,19 @@ func (w *statusWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack 委托给内层 writer（WS 升级必需——coder/websocket Accept 要求
+// http.Hijacker，补压测发现：accessLog 包裹后 resp-ws 全部升级被 501 拒）。
+// 纯转发不添加状态判定：header 是否已写等语义由底层 net/http 自带（实测
+// Go 1.26 写头后 Hijack 先 flush 再接管——coder/websocket Accept 正是先
+// WriteHeader(101) 后 Hijack 的调用顺序，转发即兼容）。Hijack 后连接脱离
+// HTTP 服务管理（http.Hijacker 文档语义）。
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, errors.New("underlying ResponseWriter does not implement http.Hijacker")
 }
 
 func recoverer(log *logx.Logger) func(http.Handler) http.Handler {
