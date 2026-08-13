@@ -22,6 +22,14 @@ import (
 	"github.com/is7qin/c3api/internal/ent/user"
 )
 
+// deductTimeout 计费扣费事务 per-query 超时（F-P2-4 降级形态）：会话级
+// statement_timeout=10s 与 admin 面 ScanStats 大窗口聚合实测冲突（720 万行/30
+// 天 → 57014，见 f1-impl-report.md 副作用核实）→ 按 spec 授权降级为计费路径
+// per-query 超时：扣费事务整体 10s 上限（执行时长 + 锁等待双有界；锁等待另有
+// 池级 lock_timeout=5s 会话 GUC 先行兜底——SELECT 不取行锁不受其影响）。
+// 超时 → 事务取消回滚 → 调用方（billing.Flusher）失败回灌不丢不重。
+const deductTimeout = 10 * time.Second
+
 // usageLogBatchSize 计费日志单批插入行数上限（#37 P2）：ent CreateBulk 参数 =
 // 列数 × 行数，超 PG 65535 参数上限即失败（"extended protocol limited to
 // 65535 parameters"，19 列 × ~3448 行——压测实证扣费停滞根因）。
@@ -77,7 +85,13 @@ type BillingRepo struct {
 //
 // 任一步失败整体回滚。cost == 0 → 只插日志（不扣款；balanceAfter = 当前余额
 // 原值，overdrafted=false）。
+//
+// F-P2-4：整个扣费事务受 deductTimeout per-query 超时约束（ctx 截止——pgx
+// deadline watcher 取消在途语句 → 事务回滚；覆盖执行时长与锁等待双面，见
+// deductTimeout 注释）。
 func (r *BillingRepo) DeductAndLog(ctx context.Context, userID, cost int64, logs []*domain.UsageLog) (overdrafted bool, balanceAfter int64, err error) {
+	ctx, cancel := context.WithTimeout(ctx, deductTimeout)
+	defer cancel()
 	if r.pool != nil {
 		return r.deductAndLogCopy(ctx, userID, cost, logs)
 	}

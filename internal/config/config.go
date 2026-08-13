@@ -53,6 +53,12 @@ type AuthConfig struct {
 	JWTSecret string `koanf:"jwt_secret"`
 }
 
+// DBConfig 数据库连接。DSN 无需手工写 lock_timeout——OpenPG 统一补丁
+// （F-P2-4：计费路径防卡死 lock_timeout=5s 会话级 + 计费扣费事务 per-query
+// 10s 超时 + MaxConnLifetime=30m 滚动轮换，详见 repository.OpenPG /
+// BillingRepo.DeductAndLog；statement_timeout 不设会话级——与 admin 面
+// ScanStats 大窗口聚合实测冲突降级，见 f1-impl-report.md；用户 DSN 已显式
+// 配置同名参数时尊重用户配置不覆盖）。
 type DBConfig struct {
 	DSN      string `koanf:"dsn"`
 	MaxConns int    `koanf:"max_conns"`
@@ -118,7 +124,11 @@ func defaults() *Config {
 	return &Config{
 		Server:    ServerConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 1 << 20},
 		Log:       LogConfig{Level: "warn", Output: "stdout"},
-		DB:        DBConfig{MaxConns: 20}, // #17：10→20（billing 8 worker + stats 8 worker + 余量；统计 COPY 批量写已改毫秒级短事务）
+		// #17：10→20（billing 8 worker + stats 8 worker + 余量；统计 COPY 批量写已改毫秒级短事务）。
+		// 连接参数（lock_timeout=5s 会话级 + 计费 per-query 10s 超时 + MaxConnLifetime=30m，
+		// F-P2-4 计费路径防卡死）由 OpenPG/DeductAndLog 统一补，DSN 无需手工写（用户显式
+		// 配置同名参数时尊重不覆盖；statement_timeout 不设会话级——副作用核实见 f1-impl-report.md）。
+		DB: DBConfig{MaxConns: 20},
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, SyncInterval: 30 * time.Second},

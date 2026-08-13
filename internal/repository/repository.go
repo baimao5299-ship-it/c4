@@ -8,6 +8,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"entgo.io/ent/dialect"
@@ -658,13 +659,79 @@ func (r *Repository) UpdateUserMaxConcurrency(ctx context.Context, userID int64,
 	return r.Users.UpdateUserMaxConcurrency(ctx, userID, value)
 }
 
+// poolTimeoutParams 计费路径防卡死参数（F-P2-4，P2，spec 2026-08-13）：
+//   - lock_timeout=5s：锁等待上限——管理员 pg_dump/长事务持锁期间一条 FEFO
+//     UPDATE 曾无限卡锁等待（PG 默认 lock_timeout=0）→ 8 个 flush worker 全
+//     阻塞 → flushMu 永持 → 全局计费停摆 + pending 内存无界；5s 后该语句报错
+//     （SQLSTATE 55P03），失败 chunk 回灌下轮重试（不丢不重），flushMu 释放。
+//
+// 明确不含 statement_timeout（评审 P3-A 扩面实测降级，spec 授权"若冲突 → 降级
+// 为计费路径 per-query 超时并注明"）：会话级 statement_timeout=10s 与 admin 面
+// ScanStats 大窗口聚合冲突——720 万行/30 天窗口实测 >10s 被 57014 杀死（从"慢
+// 返回"变"超时错误"，用户面失败语义更糟；DB 侧聚合实测仅 ~1-2s，超时主因是
+// 7.2M 行客户端 ent 解码，管理面 DB 端 GROUP BY 优化留 F-P2-2 单独评估）。降级
+// 形态：计费路径 per-query 10s 超时由 BillingRepo.DeductAndLog 的 ctx 截止
+// 实现（deductTimeout），执行时长与锁等待双有界；其余路径维持现状语义（慢
+// 返回，无回归）。全部实测数字见 docs/superpowers/reports/f1-impl-report.md。
+//
+// 形态：pgx DSN query 参数 → 连接启动包 → 会话级 GUC（lock_timeout 为 USERSET
+// context，可启动期设置），作用于本池全部连接（含 ent 路径）。SELECT 路径不
+// 取行锁不受 lock_timeout 影响（快照全量扫描/ScanStats//user/stats 各面实测
+// ms 级，见实现报告）。
+var poolTimeoutParams = []string{"lock_timeout=5s"}
+
+// appendPoolTimeouts 用户 DSN 未显式含同名参数时统一追加（OpenPG 统一补丁
+// 形态——不依赖各 config.toml 手工写；用户已显式配置该参数 → 尊重用户配置，
+// 不覆盖）。分隔符按 DSN 形态裁定：URL 形态（postgres://...）无 query 参数 →
+// "?"，已有（如 ?sslmode=disable）→ "&"；keyword/value 形态（host=... dbname=...）
+// → 空格。追加第一参后形态变化（出现 ?），后续参数自动切 "&"。
+func appendPoolTimeouts(dsn string) string {
+	key := func(kv string) string { return kv[:strings.IndexByte(kv, '=')+1] }
+	missing := 0
+	for _, kv := range poolTimeoutParams {
+		if !strings.Contains(dsn, key(kv)) {
+			missing++
+		}
+	}
+	if missing == 0 {
+		return dsn
+	}
+	var b strings.Builder
+	b.Grow(len(dsn) + 48)
+	b.WriteString(dsn)
+	for _, kv := range poolTimeoutParams {
+		if strings.Contains(dsn, key(kv)) {
+			continue // 用户已显式配置该参数 → 不覆盖
+		}
+		switch {
+		case strings.Contains(b.String(), "?"):
+			b.WriteString("&") // URL 形态且已有 query 参数（?sslmode=disable 等）
+		case strings.Contains(dsn, "://"):
+			b.WriteString("?") // URL 形态无 query 参数
+		default:
+			b.WriteString(" ") // keyword/value 形态（host=... dbname=...）
+		}
+		b.WriteString(kv)
+	}
+	return b.String()
+}
+
 // OpenPG 打开 pgx 连接池（生产入口；ent driver 由调用方用
 // entsql.OpenDB(dialect.Postgres, stdlib.OpenDBFromPool(pool)) 构建）。
+//
+// 计费路径防卡死（F-P2-4）：OpenPG 统一给 DSN 补 lock_timeout=5s（用户 DSN
+// 未含时，appendPoolTimeouts）+ MaxConnLifetime=30m 滚动轮换。statement_timeout
+// 因全局副作用实测冲突不设会话级（见 poolTimeoutParams 注释）——计费路径执行
+// 时长由 BillingRepo.DeductAndLog 的 per-query 10s ctx 超时兜底。
 func OpenPG(ctx context.Context, dsn string, maxConns int32) (*pgxpool.Pool, error) {
-	cfg, err := pgxpool.ParseConfig(dsn)
+	cfg, err := pgxpool.ParseConfig(appendPoolTimeouts(dsn))
 	if err != nil {
 		return nil, err
 	}
 	cfg.MaxConns = maxConns
+	// MaxConnLifetime 30m 滚动轮换（用户裁决 2026-08-13 实施）：每条连接到期后
+	// 按需重建（非全量轮换——PG 侧连接数峰值不变），防网络抖动后长连接脏状态；
+	// HealthCheckPeriod 30s 健康检查保留为双保险（不设）。
+	cfg.MaxConnLifetime = 30 * time.Minute
 	return pgxpool.NewWithConfig(ctx, cfg)
 }
