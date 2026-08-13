@@ -63,6 +63,13 @@ interface FormState {
   weight: string
   max_concurrency: string
   group_ids: number[]
+  // codex 凭据（按模板类型分流：codex-oauth → oauth_* 组；codex-pat → pat_key；
+  // 与 account_ext 字段对应——保存时链式写入扩展配置）
+  oauth_token: string
+  oauth_refresh_token: string
+  oauth_expires_at: string
+  pat_key: string
+  email: string
 }
 
 const emptyForm = (): FormState => ({
@@ -73,6 +80,11 @@ const emptyForm = (): FormState => ({
   weight: '0',
   max_concurrency: '8',
   group_ids: [],
+  oauth_token: '',
+  oauth_refresh_token: '',
+  oauth_expires_at: '',
+  pat_key: '',
+  email: '',
 })
 
 function toForm(a: AccountView): FormState {
@@ -84,8 +96,13 @@ function toForm(a: AccountView): FormState {
     weight: String(a.Weight ?? 0),
     max_concurrency: String(a.MaxConcurrency ?? 8),
     // 编辑回显不走账号列表（I-1 方案 B）：对话框挂载时经 getAccountGroups
-    // 拉取，加载完成前禁用保存（防误发 [] 清空）。
+    // 拉取，加载完成前禁用保存（防误发 [] 清空）。codex 凭据经 ext 拉取回显。
     group_ids: [],
+    oauth_token: '',
+    oauth_refresh_token: '',
+    oauth_expires_at: '',
+    pat_key: '',
+    email: '',
   }
 }
 
@@ -319,9 +336,37 @@ export default function Accounts() {
   const groupsLoaded = !editing || (groupsEcho.data !== undefined && !groupsEcho.isError)
   useEffect(() => {
     if (groupsEcho.data) {
-      setForm(f => ({ ...f, group_ids: [...groupsEcho.data!.group_ids] }))
+      setForm(f => ({ ...f, group_ids: [...(groupsEcho.data!.group_ids ?? [])] }))
     }
   }, [groupsEcho.data])
+
+  // codex 账号编辑回显：对话框挂载时拉 ext 凭据（404 = 无 ext 行 → 空表单）；
+  // 与「扩展配置」弹窗同一数据源，此处仅填充表单。
+  const extEcho = useQuery({
+    queryKey: ['account-ext-echo', editing?.ID],
+    queryFn: async () => {
+      try {
+        return await api.getAccountExt(editing!.ID!)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null // 无 ext 行 = 空表单
+        throw e
+      }
+    },
+    enabled: dialogOpen && !!editing && isCodexTemplate(editing),
+  })
+  useEffect(() => {
+    const d = extEcho.data
+    if (editing && !extEcho.isLoading && d) {
+      setForm(f => ({
+        ...f,
+        oauth_token: d.oauth_token ?? '',
+        oauth_refresh_token: d.oauth_refresh_token ?? '',
+        oauth_expires_at: d.oauth_expires_at ? toLocalDT(d.oauth_expires_at) : '',
+        pat_key: d.pat_key ?? '',
+        email: d.email ?? '',
+      }))
+    }
+  }, [editing, extEcho.isLoading, extEcho.data])
 
   const openCreate = () => {
     setEditing(null)
@@ -334,12 +379,42 @@ export default function Accounts() {
     setDialogOpen(true)
   }
 
+  // 表单直填凭据：codex 类型账号本体（upstream_key 可空）+ 链式 PUT account_ext
+  // （oauth 列组 / pat_key 按模板类型分流；与「扩展配置」弹窗共用写路径）。
   const save = useMutation({
-    mutationFn: (f: FormState) =>
-      editing ? api.updateAccount(editing.ID!, toBody(f, true)) : api.createAccount(toBody(f, false)),
+    mutationFn: async (f: FormState) => {
+      const ct = selTemplate?.CredentialType
+      const id = editing?.ID ?? (await api.createAccount(toBody(f, false))).ID
+      if (editing) await api.updateAccount(id!, toBody(f, true))
+      if (id && (ct === 'codex-oauth' || ct === 'codex-pat')) {
+        const cur = extEcho.data
+        const extBody: AccountExt = {
+          account_id: id,
+          credential_type: ct,
+          email: (f.email?.trim() ?? cur?.email ?? null) as string | null | undefined,
+          ...(ct === 'codex-oauth'
+            ? {
+                oauth_token: f.oauth_token.trim() || null,
+                oauth_refresh_token: f.oauth_refresh_token.trim() || null,
+                oauth_expires_at: toRFC3339(f.oauth_expires_at) ?? null,
+                pat_key: null,
+              }
+            : {
+                pat_key: f.pat_key.trim() || null,
+                oauth_token: null,
+                oauth_refresh_token: null,
+                oauth_expires_at: null,
+              }),
+          // 身份四元组只读：回显原值防清空（首次写入由 service 自动生成）
+          ...(cur ? { installation_id: cur.installation_id, session_id: cur.session_id, thread_id: cur.thread_id, window_id: cur.window_id } : {}),
+        }
+        await api.putAccountExt(id, extBody)
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
       setDialogOpen(false)
+      toast.add({ title: t('accounts.saveSuccess'), type: 'success' })
     },
   })
   const toggle = useMutation({
@@ -358,7 +433,13 @@ export default function Accounts() {
   })
 
   const submit = () => {
-    if (!form.name.trim() || !form.template_id || !form.upstream_key) return
+    // 凭据必填性按模板类型分流：api_key/responses-special → upstream_key；
+    // codex-oauth → oauth_token；codex-pat → pat_key（后端同步校验）。
+    if (!form.name.trim() || !form.template_id) return
+    const ct = selTemplate?.CredentialType
+    if (ct === 'codex-oauth' && !form.oauth_token.trim()) return
+    if (ct === 'codex-pat' && !form.pat_key.trim()) return
+    if (ct !== 'codex-oauth' && ct !== 'codex-pat' && !form.upstream_key) return
     save.mutate(form)
   }
 
@@ -632,10 +713,76 @@ export default function Accounts() {
                 <p className="text-xs text-muted-foreground">{t('accounts.ext.credHint')}</p>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="acc-key">Upstream Key</Label>
-              <Input id="acc-key" type="password" value={form.upstream_key} placeholder="sk-..." onChange={e => setForm(f => ({ ...f, upstream_key: e.target.value }))} />
-            </div>
+            {/* 凭据字段按模板类型分流：codex-oauth → OAuth 列组；codex-pat → PAT Key；
+                api_key/responses-special → 上游 Key。codex 凭据保存时链式写入 account_ext */}
+            {selTemplate?.CredentialType === 'codex-oauth' ? (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-oauth-token">{t('accounts.ext.oauthToken')}</Label>
+                  <Input
+                    id="acc-oauth-token"
+                    type="password"
+                    value={form.oauth_token}
+                    placeholder={t('accounts.ext.oauthTokenPlaceholder')}
+                    onChange={e => setForm(f => ({ ...f, oauth_token: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-oauth-refresh">{t('accounts.ext.oauthRefreshToken')}</Label>
+                  <Input
+                    id="acc-oauth-refresh"
+                    type="password"
+                    value={form.oauth_refresh_token}
+                    placeholder={t('accounts.ext.oauthRefreshPlaceholder')}
+                    onChange={e => setForm(f => ({ ...f, oauth_refresh_token: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t('accounts.ext.oauthExpiresAt')}</Label>
+                  <DateTimePicker
+                    id="acc-oauth-expires"
+                    value={form.oauth_expires_at}
+                    onChange={v => setForm(f => ({ ...f, oauth_expires_at: v }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-ext-email">{t('accounts.ext.email')}</Label>
+                  <Input
+                    id="acc-ext-email"
+                    value={form.email}
+                    placeholder={t('accounts.ext.emailPlaceholder')}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+              </div>
+            ) : selTemplate?.CredentialType === 'codex-pat' ? (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-pat">{t('accounts.ext.patKey')}</Label>
+                  <Input
+                    id="acc-pat"
+                    type="password"
+                    value={form.pat_key}
+                    placeholder={t('accounts.ext.patKeyPlaceholder')}
+                    onChange={e => setForm(f => ({ ...f, pat_key: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-ext-email">{t('accounts.ext.email')}</Label>
+                  <Input
+                    id="acc-ext-email"
+                    value={form.email}
+                    placeholder={t('accounts.ext.emailPlaceholder')}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="acc-key">Upstream Key</Label>
+                <Input id="acc-key" type="password" value={form.upstream_key} placeholder="sk-..." onChange={e => setForm(f => ({ ...f, upstream_key: e.target.value }))} />
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>{t('accounts.statusLabel')}</Label>
@@ -678,7 +825,18 @@ export default function Accounts() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={submit} disabled={save.isPending || !form.name.trim() || !form.template_id || !form.upstream_key || (editing && !groupsLoaded)}>
+            <Button
+              onClick={submit}
+              disabled={
+                save.isPending ||
+                !form.name.trim() ||
+                !form.template_id ||
+                (selTemplate?.CredentialType === 'codex-oauth' && !form.oauth_token.trim()) ||
+                (selTemplate?.CredentialType === 'codex-pat' && !form.pat_key.trim()) ||
+                (selTemplate?.CredentialType !== 'codex-oauth' && selTemplate?.CredentialType !== 'codex-pat' && form.upstream_key === '') ||
+                (editing && !groupsLoaded)
+              }
+            >
               {save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}
             </Button>
           </DialogFooter>

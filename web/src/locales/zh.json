@@ -133,7 +133,7 @@
       "codex-oauth": "Codex OAuth",
       "codex-pat": "Codex PAT"
     },
-    "ecoFormatHint": "生态类型只支持 OpenAI Responses / Responses (WS) 格式",
+    "ecoFormatHint": "生态类型只支持 OpenAI Responses / Responses (WS) / Images / Search 格式",
     "nameLabel": "名称",
     "namePlaceholder": "如 openai-main",
     "supportedFormatsLabel": "支持的请求格式",
@@ -162,11 +162,10 @@
       "credentialType": "号池类型",
       "stripImageTools": "剥离图像 tool（strip_image_tools）",
       "stripImageToolsHint": "开启后剥离该模板账号响应中的图像 tool；未配置 = 关闭",
-      "stripImageToolsUnset": "未配置（关闭）",
-      "clear": "清除配置",
       "saveSuccess": "扩展配置已保存",
       "loadFailed": "读取扩展配置失败：{{message}}"
-    }
+    },
+    "baseUrlOptional": "可选：留空使用默认端点（codex 类型为 SDK 默认；api_key 类型留空将导致上游请求失败）"
   },
   "accounts": {
     "title": "账号",
@@ -232,7 +231,10 @@
       "identityNote": "身份四元组：首次写入自动生成、恒定不变——只读展示",
       "credHint": "该模板为 codex 生态类型：账号凭据在「扩展配置」中设置",
       "saveSuccess": "扩展配置已保存",
-      "loadFailed": "读取扩展配置失败：{{message}}"
+      "loadFailed": "读取扩展配置失败：{{message}}",
+      "oauthTokenPlaceholder": "OAuth 访问令牌",
+      "oauthRefreshPlaceholder": "OAuth 刷新令牌（可选）",
+      "patKeyPlaceholder": "Codex PAT Key"
     }
   },
   "users": {

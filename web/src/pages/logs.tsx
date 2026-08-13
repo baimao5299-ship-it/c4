@@ -57,7 +57,9 @@ function ErrorTypeBadge({ type }: { type?: ErrorType }) {
 const FORMAT_LABELS: Record<RequestFormat, string> = {
   'openai-chat': 'OpenAI Chat',
   'openai-responses': 'OpenAI Responses',
+  'openai-responses-ws': 'OpenAI Responses (WS)',
   'openai-images': 'OpenAI Images',
+  'openai-search': 'OpenAI Search',
   anthropic: 'Anthropic',
 }
 

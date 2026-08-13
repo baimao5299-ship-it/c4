@@ -49,15 +49,17 @@ const FORMAT_LABELS: Record<TemplateFormat, string> = {
   'openai-responses': 'OpenAI Responses',
   'openai-responses-ws': 'OpenAI Responses (WS)',
   'openai-images': 'OpenAI Images',
+  'openai-search': 'OpenAI Search (/v1/alpha/search)',
   anthropic: 'Anthropic',
 }
 const FORMATS = Object.keys(FORMAT_LABELS) as TemplateFormat[]
 
 // 凭据类型（模板级：一个模板 = 一种号池，账号继承）
 const CREDENTIAL_TYPES: TemplateCredentialType[] = ['api_key', 'responses-special', 'codex-oauth', 'codex-pat']
-// 生态三类型：走 SDK 类型化端点；模板格式联动限制为 resp / resp-ws（service 校验前置）
+// 生态三类型：走 SDK 类型化端点；模板格式联动限制为 resp / resp-ws / images /
+// search（service 校验前置——与 validateTemplate 白名单一致）
 const ECO_CREDENTIAL_TYPES: TemplateCredentialType[] = ['responses-special', 'codex-oauth', 'codex-pat']
-const ECO_FORMATS: TemplateFormat[] = ['openai-responses', 'openai-responses-ws']
+const ECO_FORMATS: TemplateFormat[] = ['openai-responses', 'openai-responses-ws', 'openai-images', 'openai-search']
 const CREDENTIAL_BADGE_STYLES: Partial<Record<TemplateCredentialType, string>> = {
   'responses-special': 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400',
   'codex-oauth': 'bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400',
@@ -81,6 +83,8 @@ interface FormState {
   modelsText: string
   format_models: FormatRow[]
   model_mapping: MappingRow[]
+  // 模板级图像 tool 剥离（生态类型；false = 未配置 = 关闭——保存时链式写 ext）
+  strip_image_tools: boolean
 }
 
 const emptyForm = (): FormState => ({
@@ -91,6 +95,7 @@ const emptyForm = (): FormState => ({
   modelsText: '',
   format_models: [],
   model_mapping: [],
+  strip_image_tools: false,
 })
 
 function toForm(t: Template): FormState {
@@ -105,6 +110,8 @@ function toForm(t: Template): FormState {
       modelsText: (models ?? []).join(', '),
     })),
     model_mapping: Object.entries(t.ModelMapping ?? {}).map(([key, value]) => ({ key, value })),
+    // 编辑回显经 GET /templates/{id}/ext 拉取填充（见 dialog 挂载 effect）
+    strip_image_tools: false,
   }
 }
 
@@ -229,10 +236,13 @@ function FormFields({
           placeholder="https://api.openai.com"
           onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
         />
+        {/* base_url 全类型可选（2026-08-14 用户裁决）：codex 走 SDK 默认端点；api_key 留空则上游请求失败 */}
+        {!batch && <p className="text-xs text-muted-foreground">{t('templates.baseUrlOptional')}</p>}
       </div>
 
       {/* credential_type：一个模板 = 一种号池（非 api_key 类型走 SDK 内置端点，base_url 忽略） */}
       {!batch && (
+        <>
         <div className="space-y-1.5">
           <Label htmlFor="tpl-cred-type">{t('templates.credentialTypeLabel')}</Label>
           <Select
@@ -262,9 +272,26 @@ function FormFields({
             <p className="text-xs text-muted-foreground">{t('templates.ecoFormatHint')}</p>
           )}
         </div>
+        {/* 模板级图像 tool 剥离（生态类型；与行操作「扩展配置」弹窗同一数据源——
+            此处表单内直配，保存时链式写 ext。开关两态：false = 未配置 = 关闭，
+            与 null 语义等价（后端 nullable 仅区分「未配置」历史）） */}
+        {ECO_CREDENTIAL_TYPES.includes(form.credential_type as TemplateCredentialType) && (
+          <div className="flex items-center justify-between gap-2">
+            <div className="space-y-0.5">
+              <Label>{t('templates.ext.stripImageTools')}</Label>
+              <p className="text-xs text-muted-foreground">{t('templates.ext.stripImageToolsHint')}</p>
+            </div>
+            <Switch
+              checked={form.strip_image_tools === true}
+              onCheckedChange={c => setForm(f => ({ ...f, strip_image_tools: c }))}
+              aria-label={t('templates.ext.stripImageTools')}
+            />
+          </div>
+        )}
+        </>
       )}
 
-      {/* supported_formats：chips 多选（非空校验）；生态类型只显示 resp / resp-ws */}
+      {/* supported_formats：chips 多选（非空校验）；生态类型只显示白名单格式（resp / resp-ws / images / search） */}
       <div className="space-y-1.5">
         <Label>{t('templates.supportedFormatsLabel')}</Label>
         <div className="flex flex-wrap gap-1.5">
@@ -480,6 +507,24 @@ export default function Templates() {
     setValidationMsg(null)
     setDialogOpen(true)
   }
+  // 编辑回显：生态类型模板拉 ext 填充 strip_image_tools（404 = 无 ext 行 → 未配置）
+  const templateExtEcho = useQuery({
+    queryKey: ['template-ext-echo', editing?.ID],
+    queryFn: async () => {
+      try {
+        return await api.getTemplateExt(editing!.ID)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null // 无 ext 行 = 未配置
+        throw e
+      }
+    },
+    enabled: !!editing && dialogOpen && ECO_CREDENTIAL_TYPES.includes(editing?.CredentialType as TemplateCredentialType),
+  })
+  useEffect(() => {
+    if (editing && !templateExtEcho.isLoading) {
+      setForm(f => ({ ...f, strip_image_tools: templateExtEcho.data?.strip_image_tools ?? false }))
+    }
+  }, [editing, templateExtEcho.isLoading, templateExtEcho.data])
   // BatchBar 的 onUpdate 返回 promise：对话框关闭（提交成功/取消）时 resolve。
   const closeBatchUpdate = (r: 'cancelled' | 'submitted' = 'cancelled') => {
     setBatchOpen(false)
@@ -496,8 +541,25 @@ export default function Templates() {
     })
   }
 
+  // 生态类型保存链式写 ext（strip_image_tools 三态）；api_key 类型无 ext 行
   const save = useMutation({
-    mutationFn: (f: FormState) => (editing ? api.updateTemplate(editing.ID, toBody(f)) : api.createTemplate(toBody(f))),
+    mutationFn: async (f: FormState) => {
+      const ct = (f.credential_type || 'api_key') as TemplateCredentialType
+      let id = editing?.ID
+      if (!editing) {
+        id = (await api.createTemplate(toBody(f))).ID
+      } else {
+        await api.updateTemplate(editing.ID, toBody(f))
+      }
+      if (id && ECO_CREDENTIAL_TYPES.includes(ct)) {
+        const body: TemplateExt = {
+          template_id: id,
+          credential_type: ct as TemplateExt['credential_type'],
+          strip_image_tools: f.strip_image_tools,
+        }
+        await api.putTemplateExt(id, body)
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] })
       setDialogOpen(false)
@@ -534,7 +596,8 @@ export default function Templates() {
 
   const submit = () => {
     setValidationMsg(null)
-    if (!form.name.trim() || !form.base_url.trim() || form.supported_formats.length === 0) {
+    // base_url：codex 类型可选（SDK 默认端点），后端按类型校验必填性
+    if (!form.name.trim() || form.supported_formats.length === 0) {
       setValidationMsg(tr('templates.formRequired'))
       return
     }
@@ -773,28 +836,17 @@ export default function Templates() {
               <Label>{tr('templates.ext.credentialType')}</Label>
               {extTarget && <CredentialTypeBadge credentialType={extTarget.CredentialType} />}
             </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="space-y-0.5">
-                  <Label>{tr('templates.ext.stripImageTools')}</Label>
-                  <p className="text-xs text-muted-foreground">{tr('templates.ext.stripImageToolsHint')}</p>
-                </div>
-                <Switch
-                  checked={extStrip === true}
-                  disabled={extQ.isLoading || extSave.isPending}
-                  onCheckedChange={c => setExtStrip(c)}
-                  aria-label={tr('templates.ext.stripImageTools')}
-                />
+            <div className="flex items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <Label>{tr('templates.ext.stripImageTools')}</Label>
+                <p className="text-xs text-muted-foreground">{tr('templates.ext.stripImageToolsHint')}</p>
               </div>
-              {extStrip === null && <p className="text-xs text-muted-foreground">{tr('templates.ext.stripImageToolsUnset')}</p>}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={extStrip === null || extQ.isLoading || extSave.isPending}
-                onClick={() => setExtStrip(null)}
-              >
-                <X /> {tr('templates.ext.clear')}
-              </Button>
+              <Switch
+                checked={extStrip === true}
+                disabled={extQ.isLoading || extSave.isPending}
+                onCheckedChange={c => setExtStrip(c)}
+                aria-label={tr('templates.ext.stripImageTools')}
+              />
             </div>
             {extQ.isError && (
               <p className="text-sm text-destructive">{tr('templates.ext.loadFailed', { message: (extQ.error as Error).message })}</p>

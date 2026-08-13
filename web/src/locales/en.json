@@ -133,7 +133,7 @@
       "codex-oauth": "Codex OAuth",
       "codex-pat": "Codex PAT"
     },
-    "ecoFormatHint": "Ecosystem types support only OpenAI Responses / Responses (WS) formats",
+    "ecoFormatHint": "Ecosystem types support only OpenAI Responses / Responses (WS) / Images / Search formats",
     "nameLabel": "Name",
     "namePlaceholder": "e.g. openai-main",
     "supportedFormatsLabel": "Supported request formats",
@@ -162,11 +162,10 @@
       "credentialType": "Credential type",
       "stripImageTools": "Strip image tools (strip_image_tools)",
       "stripImageToolsHint": "Strips image tools from this template's account responses; unset = off",
-      "stripImageToolsUnset": "Not configured (off)",
-      "clear": "Clear",
       "saveSuccess": "Extensions saved",
       "loadFailed": "Failed to load extensions: {{message}}"
-    }
+    },
+    "baseUrlOptional": "Optional: leave empty to use the default endpoint (SDK default for codex types; empty may fail upstream requests for api_key types)"
   },
   "accounts": {
     "title": "Accounts",
@@ -232,7 +231,10 @@
       "identityNote": "Identity quartet: auto-generated on first write, immutable — read-only",
       "credHint": "This template is a codex ecosystem type: account credentials are set in Extensions",
       "saveSuccess": "Extensions saved",
-      "loadFailed": "Failed to load extensions: {{message}}"
+      "loadFailed": "Failed to load extensions: {{message}}",
+      "oauthTokenPlaceholder": "OAuth access token",
+      "oauthRefreshPlaceholder": "OAuth refresh token (optional)",
+      "patKeyPlaceholder": "Codex PAT key"
     }
   },
   "users": {

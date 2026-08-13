@@ -882,20 +882,20 @@ export interface components {
             deleted: boolean;
         };
         /** @enum {string} */
-        RequestFormat: "openai-chat" | "openai-responses" | "openai-images" | "anthropic";
+        RequestFormat: "openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "openai-search" | "anthropic";
         /** @enum {string} */
         AccountStatus: "active" | "unhealthy" | "429" | "disabled";
         /** @enum {string} */
         ErrorType: "none" | "429" | "4xx" | "5xx" | "network" | "auth" | "no_account" | "abort" | "billing";
         TemplateCreate: {
             name: string;
-            base_url: string;
+            base_url?: string;
             /**
              * @default api_key
              * @enum {string}
              */
             credential_type: "api_key" | "responses-special" | "codex-oauth" | "codex-pat";
-            supported_formats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "anthropic")[];
+            supported_formats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "openai-search" | "anthropic")[];
             models?: string[];
             format_models?: {
                 [key: string]: string[];
@@ -914,7 +914,7 @@ export interface components {
              * @enum {string}
              */
             CredentialType?: "api_key" | "responses-special" | "codex-oauth" | "codex-pat";
-            SupportedFormats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "anthropic")[];
+            SupportedFormats: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "openai-search" | "anthropic")[];
             Models?: string[];
             FormatModels?: {
                 [key: string]: string[];
@@ -1296,7 +1296,7 @@ export interface components {
         TemplatePatch: {
             name?: string;
             base_url?: string;
-            supported_formats?: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "anthropic")[];
+            supported_formats?: ("openai-chat" | "openai-responses" | "openai-responses-ws" | "openai-images" | "openai-search" | "anthropic")[];
             models?: string[];
             format_models?: {
                 [key: string]: string[];
