@@ -585,6 +585,245 @@ func TestCodexIncompleteNotReportedTwice(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T6：Responses / StreamResponses 面（resp 接入——SSE mock 上游；fixture 对齐
+// codex-sdk responses_test.go 事件形态）
+// ---------------------------------------------------------------------------
+
+// codexRespUpstream responses 端点 SSE mock：步骤按序弹出（耗尽重复最后一步），
+// 记录鉴权头/请求体；200 步 → 逐 events 发 data: 行 + [DONE]。
+type codexRespUpstream struct {
+	mu     sync.Mutex
+	calls  int
+	auths  []string
+	bodies [][]byte
+	steps  []codexRespStep
+	last   codexRespStep
+}
+
+type codexRespStep struct {
+	status int
+	events []string // SSE data 载荷（status==200 时逐行下发 + [DONE]）
+	body   string   // 非 200 错误体
+}
+
+func newCodexRespUpstream(t *testing.T, steps ...codexRespStep) (*httptest.Server, *codexRespUpstream) {
+	t.Helper()
+	c := &codexRespUpstream{last: codexRespStep{status: 500, body: `{}`}}
+	if len(steps) > 0 {
+		c.steps = steps
+		c.last = steps[len(steps)-1]
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		c.mu.Lock()
+		c.calls++
+		c.auths = append(c.auths, r.Header.Get("Authorization"))
+		c.bodies = append(c.bodies, b)
+		step := c.last
+		if len(c.steps) > 0 {
+			step = c.steps[0]
+			c.steps = c.steps[1:]
+			c.last = step
+		}
+		c.mu.Unlock()
+		if step.status != http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(step.status)
+			_, _ = w.Write([]byte(step.body))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		for _, ev := range step.events {
+			_, _ = io.WriteString(w, "data: "+ev+"\n\n")
+			f.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		f.Flush()
+	}))
+	t.Cleanup(srv.Close)
+	return srv, c
+}
+
+func (c *codexRespUpstream) callsN() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func (c *codexRespUpstream) auth(i int) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.auths[i]
+}
+
+func (c *codexRespUpstream) body(i int) []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bodies[i]
+}
+
+// T6 事件 fixture（对齐 codex-sdk responses_test.go：created/item.done/completed
+// 形状；usage 顶层五计数含 cache 明细——P1-1 双路径断言共用）。SDK 聚合器从
+// output_item.done 事件提取 item 对象（合成体 output 只含 item——t6RespItem）。
+const (
+	t6RespCreated = `{"type":"response.created","response":{"id":"resp_t6","object":"response","status":"in_progress","model":"gpt-5.6"}}`
+	t6RespItem    = `{"id":"msg_1","status":"completed","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello"}]}`
+	t6RespItemEv  = `{"type":"output_item.done","item":` + t6RespItem + `}`
+	t6RespUsage   = `{"input_tokens":10,"output_tokens":20,"total_tokens":30,"input_tokens_details":{"cached_tokens":2},"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3}}`
+	t6RespDone    = `{"type":"response.completed","response":{"id":"resp_t6","object":"response","status":"completed"},"usage":` + t6RespUsage + `}`
+)
+
+// respCred 构造 responses 端点测试凭据（完整 /v1/responses 端点——clientFor
+// WithBaseURL 完整端点语义）。
+func respCred(accountID int64, at, rt, baseURL string) *domain.AccountCredential {
+	exp := time.Now().Add(time.Hour)
+	return &domain.AccountCredential{
+		AccountID: accountID, OAuthToken: at, OAuthRefreshToken: rt, OAuthExpiresAt: &exp,
+		BaseURL: baseURL + "/v1/responses",
+	}
+}
+
+// TestCodexResponsesAggregateNonstream 合成非流式：PAT 静态直连 → SSE 事件聚
+// 合 → 合成体正确（id/output 流序/usage 原样）；wire 面：鉴权头 + stream:true
+// 注入（payload 未带 stream）+ 其余字段保留。
+func TestCodexResponsesAggregateNonstream(t *testing.T) {
+	up, c := newCodexRespUpstream(t, codexRespStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-resp", BaseURL: up.URL + "/v1/responses"}
+
+	resp, err := a.Responses(context.Background(), cred, []byte(`{"model":"gpt-5.6","input":"hi"}`))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	want := `{"id":"resp_t6","object":"response","status":"completed","output":[` + t6RespItem + `],"usage":` + t6RespUsage + `}`
+	require.Equal(t, want, string(resp.Raw), "合成体 = id/output 流序/usage 原样")
+	require.Equal(t, "Bearer pat-resp", c.auth(0), "PAT 静态鉴权")
+	if !gjson.GetBytes(c.body(0), "stream").Bool() {
+		t.Fatalf("payload 未带 stream 应注入 stream:true, body = %s", c.body(0))
+	}
+	if gjson.GetBytes(c.body(0), "model").String() != "gpt-5.6" || gjson.GetBytes(c.body(0), "input").String() != "hi" {
+		t.Fatalf("注入不应动其余字段: %s", c.body(0))
+	}
+}
+
+// TestCodexStreamResponsesPassthrough 流式透传：fn 收到逐 data: 载荷（零拷贝
+// 语义——字节与原事件一致）；[DONE] 不回调（SDK 消费语义——网关自行补发）。
+func TestCodexStreamResponsesPassthrough(t *testing.T) {
+	up, _ := newCodexRespUpstream(t, codexRespStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-s", BaseURL: up.URL + "/v1/responses"}
+
+	var got []string
+	err := a.StreamResponses(context.Background(), cred, []byte(`{"model":"m","stream":true}`), func(raw []byte) error {
+		got = append(got, string(raw)) // 测试内立即拷贝（回调外切片失效语义）
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{t6RespCreated, t6RespItemEv, t6RespDone}, got, "逐载荷透传（[DONE] 不回调）")
+}
+
+// TestCodexResponsesEnvelope4xx 信封包装：上游 403 → EnvelopeError（403 + 原始
+// body + Unwrap 链 errors.As *HTTPError 穿透——网关 statusOf/upstreamBody 复用）。
+func TestCodexResponsesEnvelope4xx(t *testing.T) {
+	up, _ := newCodexRespUpstream(t, codexRespStep{status: 403, body: `{"detail":"Forbidden"}`})
+	defer up.Close()
+	handler := &recordingHandler{}
+	a := NewCodex(handler.add)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-4xx", BaseURL: up.URL + "/v1/responses"}
+
+	_, err := a.Responses(context.Background(), cred, []byte(`{}`))
+	require.Error(t, err)
+	var env *EnvelopeError
+	require.True(t, errors.As(err, &env), "信封类型 errors.As 命中: %v", err)
+	require.Equal(t, 403, env.StatusCode())
+	require.Equal(t, `{"detail":"Forbidden"}`, env.RawJSON())
+	var he *codexsdk.HTTPError
+	require.True(t, errors.As(err, &he), "Unwrap 保留 errors.As 链（SDK 类型仍可命中）")
+	require.Empty(t, handler.snapshot(), "信封错误不上报回调（透传协议）")
+}
+
+// TestCodexResponses401Rotate 401 非判死 → SDK 单飞 refresh → 自动重试一次成
+// 功（轮转后聚合正常；新旧 at 序列断言——首拨旧 at 401 / 重试新 at 200）。
+func TestCodexResponses401Rotate(t *testing.T) {
+	var mu sync.Mutex
+	var auths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		auths = append(auths, r.Header.Get("Authorization"))
+		mu.Unlock()
+		if r.Header.Get("Authorization") == "Bearer at-old" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		for _, ev := range []string{t6RespCreated, t6RespItemEv, t6RespDone} {
+			_, _ = io.WriteString(w, "data: "+ev+"\n\n")
+			f.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		f.Flush()
+	}))
+	t.Cleanup(srv.Close)
+	rm := newCodexMockRefresh(t, codexUpstreamStep{status: 200, body: `{"access_token":"at-new","refresh_token":"rt-new"}`})
+	a := NewCodex(nil)
+	cred := respCred(7, "at-old", "rt-1", srv.URL)
+
+	resp, err := a.Responses(context.Background(), cred, []byte(`{"model":"m"}`))
+	require.NoError(t, err)
+	require.Equal(t, `"resp_t6"`, gjson.GetBytes(resp.Raw, "id").Raw, "轮转后应成功聚合")
+	require.Equal(t, 1, rm.callsN(), "refresh 恰一次（单飞）")
+	mu.Lock()
+	require.Equal(t, []string{"Bearer at-old", "Bearer at-new"}, auths, "请求序列 = 旧 at 401 → 新 at 重试")
+	mu.Unlock()
+}
+
+// TestCodexResponsesFatal 401 判死码 → *AuthPermanentlyRevokedError 透传 +
+// 统一回调单次上报 + 缓存失效剔除（不重试）。
+func TestCodexResponsesFatal(t *testing.T) {
+	var reqs atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"code":"token_invalidated"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	handler := &recordingHandler{}
+	a := NewCodex(handler.add)
+	cred := respCred(7, "at-old", "rt-1", srv.URL)
+
+	_, err := a.Responses(context.Background(), cred, []byte(`{}`))
+	require.Error(t, err)
+	var ap *codexsdk.AuthPermanentlyRevokedError
+	require.True(t, errors.As(err, &ap), "fatal 原样透传（errors.As 命中）: %v", err)
+	require.Equal(t, int64(1), reqs.Load(), "判死不重试")
+	calls := handler.snapshot()
+	require.Len(t, calls, 1, "fatal 单次上报（回调 + errors.As 双源去重）")
+	require.Equal(t, int64(7), calls[0].accountID)
+	a.mu.Lock()
+	require.Len(t, a.entries, 0, "fatal 上报后失效剔除——缓存条目摘除")
+	a.mu.Unlock()
+}
+
+// TestCodexStreamResponsesFnError fn 回调错误（网关写出失败/客户端断开路径）
+// → SDK 终止读取并原样透传（非 SDK 错误不过滤）。
+func TestCodexStreamResponsesFnError(t *testing.T) {
+	up, _ := newCodexRespUpstream(t, codexRespStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-fn", BaseURL: up.URL + "/v1/responses"}
+
+	sentinel := errors.New("client write failed")
+	err := a.StreamResponses(context.Background(), cred, []byte(`{}`), func(raw []byte) error {
+		return sentinel
+	})
+	require.ErrorIs(t, err, sentinel, "fn 回调错误原样透传")
+}
+
+// ---------------------------------------------------------------------------
 // T4 §2/§5：Dial 面（resp-ws 接线——错误契约/轮转；伪装选项由网关侧组装，
 // 本文件测适配层 Dial 的凭据→Auth 缓存 + 错误翻译）
 // ---------------------------------------------------------------------------

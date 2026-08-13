@@ -26,6 +26,15 @@ type responsesCaller struct{ p *Proxy }
 func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 
+	// codex 类型分流（T6 §1）：codex-oauth/codex-pat → 适配层调用（SDK 合成非
+	// 流式 Responses / Stream SSE 透传——实现独立文件 codex_responses_http.go）；
+	// api_key / responses-special → typed 段（下方原样，零改动）。分流在
+	// stripImageTools 之前——codex 分支**不剥离**（用户裁决：strip 仅针对
+	// resp/resp-ws 的 responses-special）。
+	if isCodexCredentialType(sel.CredentialType) {
+		return p.callCodexResponses(ctx, w, r, reqID, groupID, start, sel, body, stream)
+	}
+
 	// 图像 tool 剥离（W4；模板级开关，三类型公共能力）：关闭 = 快照布尔读 +
 	// 分支零开销；开启 = stripImageTools 内部 "image" 子串预筛，无命中零解析
 	// 直转，命中才最小解析改写。剥离在客户端入站帧转发上游前执行（网关能力，

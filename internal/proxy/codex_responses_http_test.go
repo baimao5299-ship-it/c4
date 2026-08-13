@@ -1,0 +1,681 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
+// deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
+
+package proxy
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+
+	"github.com/is7qin/c3api/internal/credential"
+	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/rule"
+	"github.com/is7qin/c3api/internal/scheduler"
+	"github.com/is7qin/c3api/internal/sdkbridge"
+	"github.com/is7qin/c3api/internal/usage"
+	"github.com/is7qin/c3api/pkg/aiclient"
+	"github.com/is7qin/c3api/pkg/cryptox"
+)
+
+// --- T6：codex 类型 resp HTTP 路径本地 mock 上游测试 ---
+// 真实上游不可控面（401 轮转 / 信封 / 帧规格）用本地可编程 mock 覆盖；真实凭据
+// e2e（happy path / 计费落库）在 pg_codex_responses_http_test.go。
+
+// T6 事件 fixture（对齐 codex-sdk responses_test.go：created/item.done/completed
+// 形状；usage 顶层五计数含 cache 明细——P1-1 双路径断言共用）。SDK 聚合器从
+// output_item.done 事件提取 item 对象（合成体 output 只含 item——t6RespItem）。
+const (
+	t6RespCreated = `{"type":"response.created","response":{"id":"resp_t6","object":"response","status":"in_progress","model":"gpt-5.6"}}`
+	t6RespItem    = `{"id":"msg_1","status":"completed","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello"}]}`
+	t6RespItemEv  = `{"type":"output_item.done","item":` + t6RespItem + `}`
+	t6RespUsage   = `{"input_tokens":10,"output_tokens":20,"total_tokens":30,"input_tokens_details":{"cached_tokens":2},"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3}}`
+	t6RespDone    = `{"type":"response.completed","response":{"id":"resp_t6","object":"response","status":"completed"},"usage":` + t6RespUsage + `}`
+)
+
+// codexHTTPUpstream codex 类型 resp HTTP 路径 mock 上游（/v1/responses 端点）：
+// 记录鉴权头/请求体；步骤按序弹出（耗尽重复最后一步）——200 步 → 逐 events
+// 发 SSE data: 行 + [DONE]；非 200 → JSON 错误体。
+type codexHTTPUpstream struct {
+	mu     sync.Mutex
+	calls  int
+	auths  []string
+	bodies [][]byte
+	steps  []codexHTTPStep
+	last   codexHTTPStep
+}
+
+type codexHTTPStep struct {
+	status int
+	events []string // SSE data 载荷（status==200 时逐行下发 + [DONE]）
+	body   string   // 非 200 错误体
+}
+
+func newCodexHTTPUpstream(t *testing.T, steps ...codexHTTPStep) (*httptest.Server, *codexHTTPUpstream) {
+	t.Helper()
+	c := &codexHTTPUpstream{last: codexHTTPStep{status: 500, body: `{}`}}
+	if len(steps) > 0 {
+		c.steps = steps
+		c.last = steps[len(steps)-1]
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		c.mu.Lock()
+		c.calls++
+		c.auths = append(c.auths, r.Header.Get("Authorization"))
+		c.bodies = append(c.bodies, b)
+		step := c.last
+		if len(c.steps) > 0 {
+			step = c.steps[0]
+			c.steps = c.steps[1:]
+			c.last = step
+		}
+		c.mu.Unlock()
+		if step.status != http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(step.status)
+			_, _ = w.Write([]byte(step.body))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		for _, ev := range step.events {
+			_, _ = io.WriteString(w, "data: "+ev+"\n\n")
+			f.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		f.Flush()
+	}))
+	t.Cleanup(srv.Close)
+	return srv, c
+}
+
+func (c *codexHTTPUpstream) callsN() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func (c *codexHTTPUpstream) auth(i int) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.auths[i]
+}
+
+func (c *codexHTTPUpstream) body(i int) []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bodies[i]
+}
+
+// codexPATExt 构造 codex-pat 账号扩展（PAT 静态凭据——无 oauth 列）。
+func codexPATExt(accountID int64, pat string) *domain.AccountExt {
+	return &domain.AccountExt{
+		AccountID: accountID, CredentialType: credential.TypeCodexPAT, PATKey: &pat,
+	}
+}
+
+// newTestCodexRespProxy 构造 codex 类型 resp HTTP 测试代理：模板（credType 类
+// 型 + openai-responses 格式 + gpt-4o；mapping = 模板 ModelMapping——nil = 无
+// 映射）+ 携带 Ext 的账号（同组 10，可多账号）+ 装配适配层（统一失效回调走
+// 真实 T1 处理链——fakeFailureStore 落库替身 + 真实调度器 FailAccount 摘除）。
+// 模板 BaseURL = mock 上游根（ResponsesWSURL 拼完整 /v1/responses 端点）。
+// bill 为计费钩子（nil = 计费全关）。
+func newTestCodexRespProxy(t *testing.T, credType credential.Type, accounts map[int64]*domain.AccountExt, upstream string, mapping map[string]string, bill *BillingHooks, logs *captureLogStore) (*Proxy, *fakeFailureStore) {
+	t.Helper()
+	tpl := &domain.Template{
+		ID: 1, Name: "t", BaseURL: upstream,
+		CredentialType:   credType,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIResponses},
+		Models:           []string{"gpt-4o"},
+		ModelMapping:     mapping,
+	}
+	accs := make(map[int64][]*domain.Account, 1)
+	for id, ext := range accounts {
+		accs[10] = append(accs[10], &domain.Account{
+			ID: id, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "",
+			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4, Ext: ext,
+		})
+	}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour,
+		StatsFlushInterval: time.Hour,
+	}, logs, noopStatStore{}, nil)
+	cfg := Config{
+		MaxBodySize: 1 << 20, FailoverAttempts: 2,
+		UpstreamStreamTimeout: 30 * time.Second,
+		GroupKeyRPM:           0, UsageCapture: true,
+	}
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	sched := scheduler.New(scheduler.Config{DefaultMaxConcurrency: 4, SyncInterval: time.Hour}, noopLoader{accs: accs}, re, nil)
+	require.NoError(t, sched.InvalidateAllSync())
+	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
+		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),
+	}}, noopUserLoader{}, nil)
+	require.NoError(t, auth.Reload(context.Background()))
+	hc := &http.Client{Transport: http.DefaultTransport}
+	clients := aiclient.NewFactory(hc, aiclient.Config{
+		UpstreamTimeout:       5 * time.Second,
+		UpstreamStreamTimeout: 30 * time.Second,
+	})
+	store := &fakeFailureStore{}
+	failure := sdkbridge.NewFailureHandler(sdkbridge.FailureDeps{Store: store, Failer: sched, Log: nil})
+	// 错误明细 worker（4xx/fatal/network 失败行走 err_logs 分表——routeLog
+	// 语义：失败行不入 usage_logs；短 FlushInterval 快速落袋供断言）。
+	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{
+		QueueSize: 4096, BatchSize: 100,
+		FlushInterval: 20 * time.Millisecond,
+	}, logs, nil)
+	wctx, wcancel := context.WithCancel(context.Background())
+	require.NoError(t, errlogW.Start(wctx))
+	t.Cleanup(func() { wcancel(); _ = errlogW.Close(context.Background()) })
+	p := New(cfg, sched, credential.New(), rec, clients, auth, nil, bill, errlogW)
+	p.SetCodex(sdkbridge.NewCodex(failure))
+	return p, store
+}
+
+// postResponses 向网关发 /v1/responses 请求（Bearer gk-1），返回响应。
+func postResponses(t *testing.T, srv *httptest.Server, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/responses", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer gk-1")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// splitSSEFrames 把 `data: X\n\n` 帧流拆成 X 载荷序列（测试辅助；fixture 内无
+// \n\n 嵌入）。
+func splitSSEFrames(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n\n") {
+		if line == "" {
+			continue
+		}
+		out = append(out, strings.TrimPrefix(line, "data: "))
+	}
+	return out
+}
+
+// TestCodexResponsesMockNonstreamComposite 非流式主流程（oauth + ModelMapping）：
+// SDK 合成体透传（网关侧断言）+ setModel 改写落位（wire model = 映射模型）+
+// stream:true 注入 + 顶层 usage 五计数（P1-1 非流式路径）+ cred 传递（Bearer
+// at-10）。
+func TestCodexResponsesMockNonstreamComposite(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexOAuth,
+		map[int64]*domain.AccountExt{10: codexOAuthExt(10, "at-10", "rt-10")},
+		up.URL, map[string]string{"gpt-4o": "gpt-5.6"}, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	want := `{"id":"resp_t6","object":"response","status":"completed","output":[` + t6RespItem + `],"usage":` + t6RespUsage + `}`
+	require.Equal(t, want, string(b), "合成体透传（id/output 流序/usage 原样）")
+
+	// wire 断言：setModel 改写（映射 gpt-4o → gpt-5.6 落位——P2-2）+ stream:true
+	// 注入（SDK 无条件覆盖）+ 其余字段保留 + 凭据传递
+	upc.mu.Lock()
+	defer upc.mu.Unlock()
+	require.Equal(t, 1, upc.calls)
+	require.Equal(t, "Bearer at-10", upc.auths[0], "cred 传递断言（oauth 初始 at）")
+	require.Equal(t, "gpt-5.6", gjson.GetBytes(upc.bodies[0], "model").String(), "setModel 改写生效（ModelMapping 对 codex 账号不静默失效）")
+	if !gjson.GetBytes(upc.bodies[0], "stream").Bool() {
+		t.Fatalf("非流式 wire 必须 stream:true（SDK 注入）, body = %s", upc.bodies[0])
+	}
+	require.Equal(t, "hi", gjson.GetBytes(upc.bodies[0], "input").String(), "注入不应动其余字段")
+
+	// usage 断言（P1-1 非流式：合成体 Raw 顶层解析）
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	lg := store.logs[0]
+	require.Equal(t, domain.ErrNone, lg.ErrorType)
+	require.Equal(t, http.StatusOK, lg.StatusCode)
+	require.Equal(t, int64(10), lg.InputTokens)
+	require.Equal(t, int64(20), lg.OutputTokens)
+	require.Equal(t, int64(30), lg.TotalTokens)
+	require.Equal(t, int64(2), lg.CacheReadTokens)
+	require.Equal(t, int64(4), lg.CacheCreationTokens)
+	require.Equal(t, domain.FormatOpenAIResponses, lg.Format)
+	require.Equal(t, "gpt-4o", lg.Model)
+	require.Equal(t, "gpt-5.6", lg.MappedModel, "映射后模型落 MappedModel")
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
+}
+
+// TestCodexResponsesMockStreamPassthrough 流式主流程（PAT 静态直连）：客户端
+// 帧规格（P2-1）——每载荷重帧 `data: <payload>\n\n`、event: 行不出现、流末补发
+// data: [DONE]；usage 顶层嗅探（P1-1 流式路径：completed 帧五计数）；stream:
+// true 原样透传（wire 保持客户端值）；PAT cred 传递。
+func TestCodexResponsesMockStreamPassthrough(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-10")},
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","stream":true,"input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+	body := string(b)
+	require.NotContains(t, body, "event:", "event: 行不出现（SDK 交付载荷重帧——P2-1 帧规格）")
+	require.Equal(t, []string{t6RespCreated, t6RespItemEv, t6RespDone, "[DONE]"},
+		splitSSEFrames(body), "逐载荷重帧 + 流末补发 [DONE]")
+
+	// wire 断言：stream:true 原样透传（客户端已带）+ PAT 凭据
+	upc.mu.Lock()
+	defer upc.mu.Unlock()
+	require.Equal(t, 1, upc.calls)
+	require.Equal(t, "Bearer pat-10", upc.auths[0], "PAT 静态直连（cred 传递断言）")
+	if !gjson.GetBytes(upc.bodies[0], "stream").Bool() {
+		t.Fatalf("客户端已带 stream:true 应原样透传, body = %s", upc.bodies[0])
+	}
+	require.Equal(t, "gpt-4o", gjson.GetBytes(upc.bodies[0], "model").String(), "未映射 → 模型不改写")
+
+	// usage 断言（P1-1 流式：fn 嗅探 response.completed 帧顶层 usage）
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	lg := store.logs[0]
+	require.Equal(t, domain.ErrNone, lg.ErrorType)
+	require.Equal(t, http.StatusOK, lg.StatusCode)
+	require.Equal(t, int64(10), lg.InputTokens)
+	require.Equal(t, int64(20), lg.OutputTokens)
+	require.Equal(t, int64(30), lg.TotalTokens)
+	require.Equal(t, int64(2), lg.CacheReadTokens)
+	require.Equal(t, int64(4), lg.CacheCreationTokens)
+	require.Equal(t, domain.FormatOpenAIResponses, lg.Format)
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "成功路径必须释放并发槽")
+}
+
+// TestCodexResponses401RotateFailover 401 非判死 → SDK 单飞 refresh → 自动重试
+// 一次成功（oauth 轮转形态：新旧 at 序列断言）。
+func TestCodexResponses401RotateFailover(t *testing.T) {
+	var mu sync.Mutex
+	var auths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		auths = append(auths, r.Header.Get("Authorization"))
+		mu.Unlock()
+		if r.Header.Get("Authorization") == "Bearer at-10" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		f := w.(http.Flusher)
+		for _, ev := range []string{t6RespCreated, t6RespItemEv, t6RespDone} {
+			_, _ = io.WriteString(w, "data: "+ev+"\n\n")
+			f.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		f.Flush()
+	}))
+	t.Cleanup(srv.Close)
+	rm := newCodexWSRefreshMock(t, codexUpStep{status: 200, body: `{"access_token":"at-new","refresh_token":"rt-new"}`})
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexOAuth,
+		map[int64]*domain.AccountExt{10: codexOAuthExt(10, "at-10", "rt-10")},
+		srv.URL, nil, nil, store)
+
+	gw := httptest.NewServer(AIRouter(p))
+	defer gw.Close()
+	resp := postResponses(t, gw, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, `"resp_t6"`, gjson.GetBytes(b, "id").Raw, "轮转后成功聚合")
+	require.Equal(t, 1, rm.callsN(), "refresh 恰一次（单飞）")
+	mu.Lock()
+	require.Equal(t, []string{"Bearer at-10", "Bearer at-new"}, auths, "请求序列 = 旧 at 401 → 新 at 重试")
+	mu.Unlock()
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType, "轮转后成功路径")
+	store.mu.Unlock()
+}
+
+// TestCodexResponsesEnvelope4xxPassthrough 信封 4xx（403）→ 确定性拒绝透传不
+// 转移：网关 403 + 原始 body 原样；Err4xx 走 err_logs；上游恰一次接触。
+func TestCodexResponsesEnvelope4xxPassthrough(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 403, body: `{"detail":"Forbidden"}`})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Equal(t, `{"detail":"Forbidden"}`, string(b), "4xx 原样透传（信封 RawJSON）")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.Err4xx, store.logs[0].ErrorType, "4xx 失败行走 err_logs 分表")
+	require.Equal(t, http.StatusForbidden, store.logs[0].StatusCode)
+	require.Equal(t, 1, upc.callsN(), "4xx 确定性拒绝不转移")
+}
+
+// TestCodexResponses429Failover 信封 429 → Result429 转移：首账号 429 → 次账号
+// 成功（failover 分类不变——statusOf/upstreamBody 复用面）。
+func TestCodexResponses429Failover(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t,
+		codexHTTPStep{status: http.StatusTooManyRequests, body: `{"error":{"message":"rate limited"}}`},
+		codexHTTPStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-10"), 20: codexPATExt(20, "pat-20")},
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, `"resp_t6"`, gjson.GetBytes(b, "id").Raw, "failover 后成功")
+	require.Equal(t, 2, upc.callsN(), "429 → 转移其它账号（恰两次上游接触）")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType, "failover 后成功路径")
+}
+
+// TestCodexResponsesFatalNoRetry 裸 fatal（401 判死 token_invalidated）→ 统一
+// 回调上报（账号失效标记 + 快照摘除）+ 不重试同账号：耗尽 502 + ErrNetwork；
+// 上游恰一次接触；失效上报恰一次（account 10）。
+func TestCodexResponsesFatalNoRetry(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 401, body: `{"error":{"code":"token_invalidated"}}`})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, recorder := newTestCodexRespProxy(t, credential.TypeCodexOAuth,
+		map[int64]*domain.AccountExt{10: codexOAuthExt(10, "at-10", "rt-10")},
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusBadGateway, resp.StatusCode, "fatal 耗尽 → 502")
+	require.Contains(t, string(b), "all upstream attempts failed")
+	require.Equal(t, 1, upc.callsN(), "判死不重试——上游恰一次接触")
+	require.Equal(t, 1, recorderCalls(recorder), "统一回调恰一次")
+	_, acc, _ := recorder.snapshot()
+	require.Equal(t, int64(10), acc)
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusDisabled, ri.Status, "fatal → 账号失效摘除（failover 不重试同账号）")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.ErrNetwork, store.logs[0].ErrorType, "fatal 收尾记 code 0 ErrNetwork")
+	require.Equal(t, 0, store.logs[0].StatusCode)
+}
+
+// TestCodexResponsesExtMissing 配置损坏（codex 账号缺 ext 快照）→ 连接级错误
+// 转移（耗尽 502 + ErrNetwork）；不上报失效（避免 account 0 无谓上报）。
+func TestCodexResponsesExtMissing(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, recorder := newTestCodexRespProxy(t, credential.TypeCodexOAuth,
+		map[int64]*domain.AccountExt{10: nil}, // ext 快照缺失（配置损坏）
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusBadGateway, resp.StatusCode, "连接级错误耗尽 → 502")
+	require.Equal(t, 0, upc.callsN(), "配置错误不触达上游")
+	require.Equal(t, 0, recorderCalls(recorder), "配置错误不上报失效（account 0 无谓上报防线）")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.ErrNetwork, store.logs[0].ErrorType)
+	require.Equal(t, 0, store.logs[0].StatusCode)
+}
+
+// TestCodexResponsesAdapterMissing 适配层未装配（SetCodex nil）→ 501 语义显式
+// 拒绝（防 nil 误走凭据缺失 502；err_logs ErrBilling；上游零接触）。
+func TestCodexResponsesAdapterMissing(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+	p.codex = nil // 装配缺失模拟（main 未 SetCodex）
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	require.Contains(t, string(b), "adapter not wired")
+	require.Equal(t, 0, upc.callsN(), "未装配不触达上游")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.ErrBilling, store.logs[0].ErrorType, "501 本地拒绝走 err_logs")
+	require.Equal(t, http.StatusNotImplemented, store.logs[0].StatusCode)
+}
+
+// --- 流式收尾双分支（直接调用——编排级 failover 循环外的流中止语义） ---
+
+// frameFailWriter 第 failFrom 次 Write 起失败（首帧写成功、后续帧写失败的流
+// 中止路径测试替身；Flush 计数供逐帧 flush 断言）。
+type frameFailWriter struct {
+	header   http.Header
+	status   int
+	writes   int
+	failFrom int
+	flushes  int
+	body     bytes.Buffer
+}
+
+func (w *frameFailWriter) Header() http.Header  { return w.header }
+func (w *frameFailWriter) WriteHeader(code int) { w.status = code }
+func (w *frameFailWriter) Write(b []byte) (int, error) {
+	w.writes++
+	if w.writes >= w.failFrom {
+		return 0, errors.New("client write failed")
+	}
+	return w.body.Write(b)
+}
+func (w *frameFailWriter) Flush() { w.flushes++ }
+
+// selectCodexAccount 直接调用前置：按 codex 类型选号（占并发槽）。
+func selectCodexAccount(t *testing.T, p *Proxy, accountID int64) *scheduler.Selection {
+	t.Helper()
+	sel, err := p.sched.Select(10, domain.FormatOpenAIResponses, "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, accountID, sel.AccountID)
+	return sel
+}
+
+// TestCodexResponsesStreamMidstreamWriteError 流中止（fn 写出失败——客户端断开
+// 等价症状但 r.Context() 存活 = 上游侧问题）：recordStreamAbort + ResultError
+// + 不补发 [DONE]；200 已写出（statusOf(err)=0 归连接级）。
+func TestCodexResponsesStreamMidstreamWriteError(t *testing.T) {
+	up, _ := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+	sel := selectCodexAccount(t, p, 10)
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	w := &frameFailWriter{header: make(http.Header), failFrom: 4} // 帧1（3 写）成功，帧2 首写失败
+
+	code, respBody, handled, callErr := p.callCodexResponses(req.Context(), w, req, "req-1", 10, time.Now(), sel, []byte(`{"model":"gpt-4o","stream":true}`), true)
+	require.True(t, handled, "流中止已收尾（handled）")
+	require.Equal(t, 0, code)
+	require.Nil(t, respBody)
+	require.NoError(t, callErr, "流中止按记录收尾，错误不返回到 failover 循环")
+	require.Equal(t, http.StatusOK, w.status, "200 已写出（流已开始）")
+	require.Equal(t, 4, w.writes, "首帧 3 段直写成功 + 帧2 首段写失败（失败调用计入）")
+	require.NotContains(t, w.body.String(), "[DONE]", "上游错误不补发 [DONE]")
+	require.GreaterOrEqual(t, w.flushes, 1, "每帧 flush（P2-1）")
+
+	p.sched.FlushRules() // MarkResult 异步投递：断言前排空
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusUnhealthy, ri.Status, "上游流中止 → ResultError")
+	require.Zero(t, ri.Concurrency, "收尾释放并发槽")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType, "recordStreamAbort → 200 ErrAbort 记录")
+	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	require.Zero(t, store.logs[0].TotalTokens, "completed 帧未送达（中止前未收 usage 帧）→ 0")
+}
+
+// TestCodexResponsesStreamDoneWriteAbort 流正常结束（SDK 已消费 [DONE]/EOF）
+// 但补发 [DONE] 帧写出失败（客户端已断）：按 abort 收尾——usage 照记（completed
+// 帧已嗅探）+ 不 MarkResult（客户端行为非上游错误）+ [DONE] 未送达。
+func TestCodexResponsesStreamDoneWriteAbort(t *testing.T) {
+	up, _ := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+	sel := selectCodexAccount(t, p, 10)
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	// 3 帧 × 3 写 = 9 写成功，[DONE] 帧首写（第 10 写）失败
+	w := &frameFailWriter{header: make(http.Header), failFrom: 10}
+
+	code, respBody, handled, callErr := p.callCodexResponses(req.Context(), w, req, "req-1", 10, time.Now(), sel, []byte(`{"model":"gpt-4o","stream":true}`), true)
+	require.True(t, handled)
+	require.Equal(t, 0, code)
+	require.Nil(t, respBody)
+	require.NoError(t, callErr)
+	require.Equal(t, 10, w.writes, "3 载荷帧 9 段直写成功 + [DONE] 首段写失败（失败调用计入）")
+	require.NotContains(t, w.body.String(), "[DONE]", "[DONE] 未送达（客户端已断）")
+	require.NotContains(t, w.body.String(), "event:", "event: 行不出现")
+
+	p.sched.FlushRules()
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status, "客户端断开不 MarkResult（不冷却）")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType)
+	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	require.Equal(t, int64(10), store.logs[0].InputTokens, "completed 帧 usage 已嗅探——abort 记录不丢用量")
+	require.Equal(t, int64(20), store.logs[0].OutputTokens)
+	require.Equal(t, int64(30), store.logs[0].TotalTokens)
+	require.Equal(t, int64(2), store.logs[0].CacheReadTokens)
+	require.Equal(t, int64(4), store.logs[0].CacheCreationTokens)
+}
+
+// gateWriter 首个 Write 阻塞（模拟慢客户端）直到 release 关闭；放行后正常写
+// （客户端断开测试替身——阻塞期间取消请求 ctx）。
+type gateWriter struct {
+	header  http.Header
+	status  int
+	first   chan struct{} // 首个 Write 已到达（通知测试）
+	release chan struct{} // 放行（关闭后 Write 正常）
+	flushes int
+	body    bytes.Buffer
+}
+
+func (w *gateWriter) Header() http.Header  { return w.header }
+func (w *gateWriter) WriteHeader(code int) { w.status = code }
+func (w *gateWriter) Write(b []byte) (int, error) {
+	select {
+	case <-w.first: // 已放行
+	default:
+		close(w.first)
+		<-w.release // 阻塞直到测试放行（模拟客户端停滞窗口）
+	}
+	return w.body.Write(b)
+}
+func (w *gateWriter) Flush() { w.flushes++ }
+
+// TestCodexResponsesStreamClientDisconnect 客户端断开（r.Context() 取消）：
+// 不 MarkResult + 200 ErrAbort 记录（上游已消费请求——成功请求丢日志防线）。
+func TestCodexResponsesStreamClientDisconnect(t *testing.T) {
+	up, _ := newCodexHTTPUpstream(t, codexHTTPStep{status: 200, events: []string{t6RespCreated, t6RespItemEv, t6RespDone}})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+	sel := selectCodexAccount(t, p, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(ctx)
+	w := &gateWriter{header: make(http.Header), first: make(chan struct{}), release: make(chan struct{})}
+
+	done := make(chan struct{})
+	var code int
+	var handled bool
+	go func() {
+		defer close(done)
+		code, _, handled, _ = p.callCodexResponses(ctx, w, req, "req-1", 10, time.Now(), sel, []byte(`{"model":"gpt-4o","stream":true}`), true)
+	}()
+	<-w.first // 首帧写出中（阻塞）——模拟客户端停滞窗口
+	cancel()  // 客户端断开
+	close(w.release)
+	<-done
+	require.True(t, handled)
+	require.Equal(t, 0, code)
+	require.Equal(t, http.StatusOK, w.status)
+
+	p.sched.FlushRules()
+	ri, ok := p.sched.Runtime(10)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status, "客户端断开不 MarkResult（上游无错）")
+	require.Zero(t, ri.Concurrency, "abort 收尾释放并发槽")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, domain.ErrAbort, store.logs[0].ErrorType, "客户端断开 → 200 ErrAbort（记录不丢）")
+	require.Equal(t, http.StatusOK, store.logs[0].StatusCode)
+	require.Equal(t, domain.FormatOpenAIResponses, store.logs[0].Format)
+}

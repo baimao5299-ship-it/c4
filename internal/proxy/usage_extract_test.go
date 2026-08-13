@@ -109,6 +109,65 @@ func TestResponsesStreamUsage(t *testing.T) {
 	require.Zero(t, cc, "Responses 无 cache_creation 对象，恒 0 预期（M4）")
 }
 
+// —— codex resp 顶层 usage（P1-1——T6：SDK 路径 usage 形状为顶层；fixture 对齐
+// codex-sdk responses_test.go respUsage 形状 + cache 明细） ——
+
+func TestResponsesTopLevelUsage(t *testing.T) {
+	// 流式 completed 帧形态（顶层 usage——response 对象内无 usage）
+	completed := []byte(`{"type":"response.completed","response":{"id":"r","object":"response","status":"completed"},"usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30,"input_tokens_details":{"cached_tokens":2},"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3}}}`)
+	it, ot, tt, cr, cc := responsesTopLevelUsage(completed)
+	require.Equal(t, int64(10), it)
+	require.Equal(t, int64(20), ot)
+	require.Equal(t, int64(30), tt)
+	require.Equal(t, int64(2), cr, "顶层 usage.input_tokens_details.cached_tokens")
+	require.Equal(t, int64(4), cc, "顶层 cache_creation ephemeral 5m+1h 聚合")
+
+	// 合成体形态（无 type 字段——usage 同样顶层）
+	composite := []byte(`{"id":"resp_001","object":"response","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30,"input_tokens_details":{"cached_tokens":2}}}`)
+	it, ot, tt, cr, cc = responsesTopLevelUsage(composite)
+	require.Equal(t, int64(10), it)
+	require.Equal(t, int64(20), ot)
+	require.Equal(t, int64(30), tt)
+	require.Equal(t, int64(2), cr)
+	require.Zero(t, cc, "无 cache_creation → 0")
+
+	// 缺失/显式 null → 0（不阻塞采集）
+	_, _, _, cr, cc = responsesTopLevelUsage([]byte(`{"usage":{}}`))
+	require.Zero(t, cr)
+	require.Zero(t, cc)
+	_, _, _, cr, cc = responsesTopLevelUsage([]byte(`{"usage":{"input_tokens_details":{"cached_tokens":null}}}`))
+	require.Zero(t, cr, "显式 null 与缺失等价")
+}
+
+func TestSniffResponsesCompletedTop(t *testing.T) {
+	completed := []byte(`{"type":"response.completed","response":{"id":"r","object":"response","status":"completed"},"usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30,"input_tokens_details":{"cached_tokens":2},"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":3}}}`)
+	u, ok := sniffResponsesCompletedTop(completed)
+	require.True(t, ok, "completed 帧命中")
+	require.Equal(t, int64(10), u.it)
+	require.Equal(t, int64(20), u.ot)
+	require.Equal(t, int64(30), u.tt)
+	require.Equal(t, int64(2), u.cr)
+	require.Equal(t, int64(4), u.cc)
+
+	// 精确判定：正文含 "type":"response.completed" 子串的**非 completed 帧**
+	//（消息文本）不命中——WS 路径 bytes.Contains 预筛会误命中（P1-1 冻结防线）
+	messageFrame := []byte(`{"type":"message","content":[{"type":"output_text","text":"say {\"type\":\"response.completed\"} please"}]}`)
+	_, ok = sniffResponsesCompletedTop(messageFrame)
+	require.False(t, ok, "正文含子串的非 completed 帧不得命中（type 精确判定）")
+
+	// 非 JSON 行 / 未知类型 → 不命中
+	_, ok = sniffResponsesCompletedTop([]byte(`this is not json`))
+	require.False(t, ok)
+	_, ok = sniffResponsesCompletedTop([]byte(`{"type":"output_item.done","item":{"id":"m"}}`))
+	require.False(t, ok)
+
+	// completed 但 usage 缺失 → 命中 + 全 0（缺失 = 0，不阻塞采集）
+	u, ok = sniffResponsesCompletedTop([]byte(`{"type":"response.completed","response":{"id":"r"}}`))
+	require.True(t, ok)
+	require.Zero(t, u.it)
+	require.Zero(t, u.cc)
+}
+
 // —— Responses 非流式（直读 + RawJSON） ——
 
 func TestResponsesUsageFromResponse(t *testing.T) {

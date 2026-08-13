@@ -99,6 +99,39 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 	return nil
 }
 
+// Responses 非流式 responses 合成调用（T6 §1）：cred → 缓存取 HTTPClient
+// （clientFor——T2 机制复用）→ c.Responses(ctx, payload)（SDK 合成非流式——
+// 内部无条件 stream:true + SSE 事件聚合重组完整响应体；网关以非流式语义消费，
+// 原样转发 + 顶层 usage 提取）。错误翻译同 GenerateImage（translateError——
+// SDK *HTTPError → 信封；fatal 五类统一回调双源去重；RefreshError/网络原样）。
+func (a *Codex) Responses(ctx context.Context, cred *domain.AccountCredential, payload []byte) (*codexsdk.HTTPResponse, error) {
+	e, err := a.clientFor(cred)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := e.client.Responses(ctx, payload)
+	if err != nil {
+		return nil, a.translateError(e, err)
+	}
+	return resp, nil
+}
+
+// StreamResponses 流式 responses SSE 透传（T6 §1）：cred → 缓存取 HTTPClient →
+// c.Stream(ctx, payload, fn)（SSE data: 行逐帧交付零拷贝——SDK 回调 raw 指向
+// scanner 复用缓冲，**仅回调执行期间有效**：fn 必须立即消费，不得跨回调保留
+// 切片）。错误翻译同 Responses。fn 返回错误 → SDK 终止读取并原样透传（网关
+// 写出失败/客户端断开路径——translateError 对非 SDK 错误不过滤）。
+func (a *Codex) StreamResponses(ctx context.Context, cred *domain.AccountCredential, payload []byte, fn func(raw []byte) error) error {
+	e, err := a.clientFor(cred)
+	if err != nil {
+		return err
+	}
+	if err := e.client.Stream(ctx, payload, fn); err != nil {
+		return a.translateError(e, err)
+	}
+	return nil
+}
+
 // entryFor cred → 账号级缓存条目（构造冷面——每账号首次/凭据变更后；互斥锁
 // + 签名比对，同账号并发请求单飞构造——对齐 SDK OAuth 单飞 refresh 语义）：
 //   - 同账号复用（Auth 内 at 缓存/轮转状态保持；sig 相同直接返回）
