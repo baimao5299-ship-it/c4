@@ -468,6 +468,39 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 	s.store.store(newM, newByID)
 }
 
+// InvalidateAccount 单账号快照失效（SDK 接入 T5 §1 P3-3——轮转回写后同步
+// AccountExt 内存快照：下个会话重载新凭据，避免旧令牌 401 额外往返）。复用
+// 既有组级定向重载（InvalidateGroup——账号所属各组并集去重；旋转低频事件，
+// 组级重载成本可接受）。快照外账号（已移除/未知）→ no-op。与失效上报不同
+// 步（sdkbridge 轮转回调内调用；重载失败由 InvalidateGroup 内部 Warn 记录，
+// 不阻断——令牌已落库，下个会话经适配层 Auth 内存新 at 自愈）。
+func (s *Scheduler) InvalidateAccount(accountID int64) {
+	// groupIDs 仅经 reloadMu 读写（评审 M-1 纪律——InvalidateGroup 的从组移
+	// 除路径原地改写），读快照须持锁。
+	s.reloadMu.Lock()
+	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
+	var gids []int64
+	if ok {
+		if as, exists := byID[accountID]; exists {
+			gids = append([]int64(nil), as.groupIDs...)
+		} else {
+			ok = false // 快照外账号：无可失效条目
+		}
+	}
+	s.reloadMu.Unlock()
+	if !ok {
+		return
+	}
+	seen := make(map[int64]struct{}, len(gids))
+	for _, g := range gids {
+		if _, dup := seen[g]; dup {
+			continue
+		}
+		seen[g] = struct{}{}
+		s.InvalidateGroup(g)
+	}
+}
+
 // removeGid 摘除 groupIDs 中的指定组（实例共享纪律：组级重载的从组移除路径）。
 func removeGid(gids []int64, gid int64) []int64 {
 	out := gids[:0]

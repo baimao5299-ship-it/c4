@@ -15,26 +15,59 @@ import (
 	codexsdk "github.com/is7Qin/codex-sdk"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // Codex 是 codex SDK 适配层（T2 §1——SDK 调用集中于此，codexsdk import 仅限
 // 本文件族）：cred → Auth 账号级缓存 + GenerateImage 包装 + 信封包装 +
-// fatal → 统一回调（双源去重）。新增能力（T3 流式 / T4 Dial / T6 resp）同形态
-// 扩展本文件。
+// fatal → 统一回调（双源去重）+ 轮转回写（T5）。新增能力（T3 流式 / T4 Dial /
+// T6 resp）同形态扩展本文件。
 type Codex struct {
 	mu      sync.Mutex
 	entries map[int64]*codexEntry // accountID → 客户端缓存（同账号复用）
 	failure FailureHandler        // T1 统一失效回调；nil = no-op（测试/未装配）
+	rotate  RotationStore         // T5 轮转回写落库面；nil = 不落库（测试/未装配）
+	inval   func(accountID int64) // T5 P3-3 回写后失效账号快照条目（下个会话重载新凭据）；nil = 不失效
+	log     *logx.Logger          // T5 回写/失效错误日志；nil = 不记
+}
+
+// RotationStore 轮转回写落库面（repository.AccountExtRepo 满足；接口化供测试
+// 注入与装配侧解耦）。部分更新 upsert——仅 oauth_token/oauth_refresh_token/
+// oauth_expires_at（expiresAt 为调用方携带的旧值，保旧语义），其余列不动。
+type RotationStore interface {
+	WriteOAuthRotation(ctx context.Context, accountID int64, at, rt string, expiresAt *time.Time) error
+}
+
+// RotationDeps 轮转回写依赖（T5 §1——main 装配：repository.AccountExts +
+// scheduler）。
+type RotationDeps struct {
+	Store RotationStore
+	// InvalidateSnapshot 回写成功后失效调度器 AccountExt 内存快照对应条目
+	// （P3-3——下个会话重载新凭据）；nil = 不失效（测试/未装配）。
+	InvalidateSnapshot func(accountID int64)
+	// Log 回写/失效错误日志（旋转低频事件，错误恒 Warn 记一条）；nil = 不记。
+	Log *logx.Logger
+}
+
+// SetRotationDeps 装配轮转回写面（T5 §1；Store nil = 回调不落库——测试形态）。
+// 与 failure 回调（构造时注册）分离：回写面冷面低频，main 装配点独立。
+func (a *Codex) SetRotationDeps(deps RotationDeps) {
+	a.rotate = deps.Store
+	a.inval = deps.InvalidateSnapshot
+	a.log = deps.Log
 }
 
 // codexEntry 单账号缓存条目：Auth（HTTP/WS 双面共享——at 缓存/单飞/rt 轮换
 // 在 SDK Auth 内）+ HTTPClient（HTTP 面懒构造，nil = 未构造）+ 重建判定签名
 // + fatal 已上报标记（双源去重——回调路径与 errors.As 路径共享同一 CAS）。
+// expiresAt 为构造时凭据携带的旧过期时刻（T5——轮转回调无 expiry，回写保旧
+// 用；外部凭据变更 → 重建刷新）。
 type codexEntry struct {
 	accountID int64
 	auth      codexsdk.Auth
 	client    *codexsdk.HTTPClient
 	sig       string // 凭据签名（外部凭据变更 → 重建）
+	expiresAt *time.Time
 	reported  atomic.Bool
 }
 
@@ -207,6 +240,8 @@ func (a *Codex) translateDialError(e *codexEntry, err error) error {
 //     过期 → 不传 WithInitialAccessToken（SDK 走初始 at 缺省路径，首请求前用
 //     rt 换取——auth_oauth.go:106-109 只判非空不判过期，401 自愈）；未过期/
 //     未知（nil）→ 预置单参 at 避免首调用强制 refresh
+//   - WithOnTokenRotated（T5 §1）：每次 refresh 成功产出新 at+rt → account_ext
+//     部分更新回写（幂等；回调在 SDK 单飞内串行——同账号并发轮转不重复回写）
 //   - codex-pat：PAT(key)
 //   - 空 rt（oauth 缺 refresh_token）→ 上报失效（凭据不完整）并返回错误，不
 //     panic
@@ -217,10 +252,12 @@ func (a *Codex) buildAuth(cred *domain.AccountCredential, e *codexEntry) (codexs
 	if cred.OAuthRefreshToken == "" {
 		return nil, errCredentialIncomplete // 上报在 clientFor 锁外执行（见 clientFor）
 	}
+	e.expiresAt = cred.OAuthExpiresAt // T5 回写保旧（SDK 回调无 expiry）
 	opts := []codexsdk.OAuthOption{
 		// 统一回调装配（T2 §3）：SDK 判死（RT 判死码 / token 端点 401 / 账号
 		// 禁用 / AT 401 判死 / 回调连续失败）→ 双源去重单次上报
 		codexsdk.WithOnAuthFatal(func(fatal error) { a.reportFatal(e, fatal) }),
+		codexsdk.WithOnTokenRotated(func(at, rt string) { a.rotateWriteback(e, at, rt) }),
 	}
 	if atUsable(cred) {
 		opts = append(opts, codexsdk.WithInitialAccessToken(cred.OAuthToken))
@@ -255,19 +292,100 @@ func credSig(c *domain.AccountCredential) string {
 	return c.OAuthToken + "\x00" + c.OAuthRefreshToken + "\x00" + c.PATKey + "\x00" + c.BaseURL
 }
 
-// reportFatal fatal 统一上报（双源去重核心）：rotationAuth 路径同一 fatal 既
-// 触发 WithOnAuthFatal 又随返回错误 errors.As 命中——**以回调为准去重、单次
-// 上报**（CAS 胜者上报；败者并发调用/errors.As 补报路径跳过）。上报后失效
-// 剔除（T1 联动——账号已判死，缓存条目随弃，管理面恢复后重建）。
-func (a *Codex) reportFatal(e *codexEntry, fatal error) {
+// report 单次上报核心（双源去重——CAS 胜者上报，败者并发调用/补报路径跳过）；
+// evict=true 上报后失效剔除条目（HTTP 路径——账号已判死，缓存条目随弃，管理
+// 面恢复后重建）。WS 帧路径（FatalAuth）用 evict=false——毒化 Auth 保留。
+func (a *Codex) report(e *codexEntry, fatal error, evict bool) {
 	if !e.reported.CompareAndSwap(false, true) {
 		return
 	}
 	if a.failure != nil {
 		a.failure(e.accountID, fatal)
 	}
-	a.evict(e.accountID)
+	if evict {
+		a.evict(e.accountID)
+	}
 }
+
+// reportFatal fatal 统一上报（双源去重核心）：rotationAuth 路径同一 fatal 既
+// 触发 WithOnAuthFatal 又随返回错误 errors.As 命中——**以回调为准去重、单次
+// 上报**（CAS 胜者上报；败者并发调用/errors.As 补报路径跳过）。上报后失效
+// 剔除（T1 联动——账号已判死，缓存条目随弃，管理面恢复后重建）。
+func (a *Codex) reportFatal(e *codexEntry, fatal error) {
+	a.report(e, fatal, true)
+}
+
+// FatalAuth 显式终止 + 单次上报（T5 §3——WS 业务判死事件帧接线，relay 解析
+// 帧后调用；唯一跨边界点）：
+//   - e.auth.Fatal(fatal)：SDK 显式终止——**不触发 OnAuthFatal**（实证
+//     auth_oauth.go:187-195），仅毒化 Auth（后续 Authorization 恒返回该错误）
+//   - 上报走 report(e, fatal, false)：与 errors.As 路径共享 CAS 双源去重
+//     （帧判死后同一 fatal 再经 errors.As 二次命中 → 仍单次上报——P3-4）；
+//     **不剔除**——毒化 Auth 保留至外部凭据变更（管理面重新导入 → sig 变化
+//     重建；与"不重建缓存"裁决一致——剔除会丢毒化态，凭据未变重建后仍走
+//     旧 token）
+//
+// 条目不存在（未构造/并发 fatal 已上报剔除）→ no-op（无 Auth 可毒化；上报
+// 已由并发胜者完成，账号已走失效链）。
+func (a *Codex) FatalAuth(accountID int64, fatal error) {
+	if fatal == nil {
+		return // 防御：无错误不上报
+	}
+	a.mu.Lock()
+	e := a.entries[accountID]
+	a.mu.Unlock()
+	if e == nil {
+		return // 并发 fatal 已上报剔除 / 未构造：无 Auth 可毒化，上报已由胜者完成
+	}
+	e.auth.Fatal(fatal)
+	a.report(e, fatal, false)
+}
+
+// rotateWriteback 轮转回写（T5 §1——SDK OnTokenRotated 回调；在 SDK 单飞内
+// 串行执行——同账号并发轮转天然单飞，无需额外互斥）：
+//   - account_ext 部分更新 upsert（oauth_token + oauth_refresh_token +
+//     oauth_expires_at 保旧——携带 e.expiresAt 构造时旧值）
+//   - 失败 → panic（SDK D4 契约：回调失败 = 令牌持久化中断信号——callRotate
+//     recover 后记 pending 下次 refresh 前重试，连续达阈值 →
+//     CallbackDeliveryError fatal → 统一回调摘除；fail-closed）
+//   - 成功后失效调度器 AccountExt 内存快照条目（P3-3——下个会话重载新凭据；
+//     失效失败仅 Warn 不阻断——令牌已落库，适配层 Auth 内存新 at 自愈）
+//   - **不重建缓存**：回调写回的是本 Auth 内部已更新的状态（at 缓存/rt 轮换
+//     已在 SDK 内生效），重建丢 at 缓存破坏轮转连续性；仅外部凭据变更重建
+//     （T2 机制——sig 比对）
+//   - **D4 pending 竞态（P3-5，接受）**：适配层重建缓存后旧 Auth 在途 401 →
+//     deliverPendingRotate 可能写回旧轮转结果——旧 rt 已吊销则 refresh 判死
+//     正确摘除，基本自愈；低概率，不额外防护
+//
+// 回调在 SDK 单飞内阻塞并发等待者——必须快速返回（本地 upsert 毫秒级）；
+// 用固定短超时兜底 PG 故障（超时 → D4 重试链接管）。
+func (a *Codex) rotateWriteback(e *codexEntry, at, rt string) {
+	if a.rotate == nil {
+		return // 未装配（测试形态）：no-op
+	}
+	if at == "" || rt == "" {
+		return // 盲写防御：SDK 已保证非空（响应缺 refresh 时回调收旧 rt），双保险
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), rotateWritebackTimeout)
+	defer cancel()
+	if err := a.rotate.WriteOAuthRotation(ctx, e.accountID, at, rt, e.expiresAt); err != nil {
+		if a.log != nil {
+			// 运维信号即时留痕（D4 重试至多 3 次各记一条——DB 故障持续期的
+			// 真实告警；fatal 上报后账号摘除，告警自停）
+			a.log.Warn("codex rotation writeback failed", logx.Int64("account_id", e.accountID), logx.Error(err))
+		}
+		// D4 契约：回调失败 → panic → SDK recover → pending 重试 → 达阈值
+		// CallbackDeliveryError fatal（令牌无法持久化 = 账号失效信号）
+		panic(err)
+	}
+	if a.inval != nil {
+		a.inval(e.accountID)
+	}
+}
+
+// rotateWritebackTimeout 轮转回写固定超时（回调在 SDK 单飞内阻塞并发等待
+// 者——本地 upsert 毫秒级，3s 兜底 PG 故障；超时 → D4 重试链接管）。
+const rotateWritebackTimeout = 3 * time.Second
 
 // evict 失效剔除（缓存条目摘除；不存在 = no-op——并发/重复上报安全）。
 func (a *Codex) evict(accountID int64) {

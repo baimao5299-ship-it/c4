@@ -277,11 +277,20 @@ func main() {
 	// codex SDK 适配层装配（T2 §3——统一失效回调先落生图路径；T5 全量）：
 	// 适配层构造注册 WithOnAuthFatal → 统一回调 → 失效处理链（写 failed_at +
 	// 调度摘除 + 审计，T1 契约）。
-	px.SetCodex(sdkbridge.NewCodex(sdkbridge.NewFailureHandler(sdkbridge.FailureDeps{
+	codexAdapter := sdkbridge.NewCodex(sdkbridge.NewFailureHandler(sdkbridge.FailureDeps{
 		Store:  repos.Accounts,
 		Failer: sched,
 		Log:    log,
-	})))
+	}))
+	// T5 §1 轮转回写面装配：WithOnTokenRotated → account_ext 部分更新 upsert
+	//（oauth_token + oauth_refresh_token + oauth_expires_at 保旧）+ 失效调度器
+	// AccountExt 内存快照条目（P3-3——下个会话重载新凭据；不重建 Auth 缓存）。
+	codexAdapter.SetRotationDeps(sdkbridge.RotationDeps{
+		Store:              repos.AccountExts,
+		InvalidateSnapshot: sched.InvalidateAccount,
+		Log:                log,
+	})
+	px.SetCodex(codexAdapter)
 	// 多实例集群 N 注入（#14 T3b）：gate 预算 ceil(剩余/N) + limit RPM ceil(rpm/N)。
 	// svc 构造后调用（svc.ClusterInstances 读 settings 快照）；settings NOTIFY
 	// 变更 N 后再次调用即触发预算即时重算（设计 §3.4）。
