@@ -158,52 +158,83 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 			wsWriteError(client, errNoPrice.msg)
 			return
 		}
-		cred, err := p.credentialFor(r.Context(), sel)
-		if err != nil {
-			// 凭据错误按网络错误处理（等价 handleFormat 的 code==0 语义）
-			lastCode, lastErrMsg = 0, domain.TruncateErrMsg(err.Error())
-			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, lastErrMsg)
-		} else {
-			up, resp, dialErr := p.clients.ResponsesWSDial(r.Context(), sel.TemplateID, sel.BaseURL, cred, wsPassthroughHeaders(r.Header))
+		if isCodexCredentialType(sel.CredentialType) {
+			// codex 独立 relay 变体（T4 §1）：SDK Dial 路径——快照派生 cred 直供
+			// 适配层（不经 credentialFor 单字符串路径：codex 凭据为复合结构
+			// oauth_token+refresh_token+expires_at+pat+accountID，单字符串契约表
+			// 达不了——注册表未注册 codex 类型，见 dialCodexWS 注释），伪装四元
+			// 组 + 头部族剥离 + 心跳单源全部在 dialCodexWS/relayCodexWS
+			//（codex_responses_ws.go）。
+			up, dialErr := p.dialCodexWS(r, sel)
 			if dialErr == nil {
-				handled, fwMsg := p.relayResponsesWS(client, up, r, reqID, groupID, start, sel, reqModel, firstTyp, first)
+				handled, fwMsg := p.relayCodexWS(client, up, r, reqID, groupID, start, sel, reqModel, firstTyp, first)
 				if handled {
 					return
 				}
 				// 首帧转发失败 = 上游未消费请求 → 连接级错误转移（同拨号失败）
 				lastCode, lastErrMsg = 0, fwMsg
 				p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, lastErrMsg)
+			} else if stop, code, msg := p.handleCodexDialError(r, reqID, groupID, start, sel, reqModel, client, dialErr); stop {
+				// 501/fatal/4xx 已收尾（错误帧 + 记录）——请求终止不转移
+				return
 			} else {
-				// 拨号失败分类（与 handleFormat 的 code 分支同构）：
-				// 429 → Result429 转移；4xx → 透传不转移（错误帧 + 记录）；
-				// 其余（5xx/连接级）→ ResultError 转移。
-				code := 0
-				var msg string
-				if resp != nil {
-					code = resp.StatusCode
-					msg = upstreamErrMsg(readUpstreamBody(resp))
-					_ = resp.Body.Close()
-				}
-				if msg == "" {
-					msg = dialErr.Error()
-				}
-				switch {
-				case code == http.StatusTooManyRequests:
-					lastCode, lastErrMsg = code, domain.TruncateErrMsg(msg)
+				// 429 → Result429 转移（规则引擎 Kind429 冷却分类——与 aiclient
+				// 路径同构）；5xx/RefreshError/网络（code 0）→ ResultError 转移。
+				lastCode, lastErrMsg = code, msg
+				if code == http.StatusTooManyRequests {
 					p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil, code, lastErrMsg)
-				case code >= 400 && code < 500:
-					// 4xx 确定性拒绝：上游未接受请求，透传错误文本不转移
-					// （同 handleFormat：finish 释放槽 + 计费 + 记录）。
-					l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, code, domain.Err4xx, usageTuple{}, start))
-					if em := domain.TruncateErrMsg(msg); em != "" {
-						l.ErrorMessage = &em
-					}
-					p.finish(sel.AccountID, l)
-					wsWriteError(client, emOr(msg, "upstream rejected request"))
-					return
-				default:
-					lastCode, lastErrMsg = 0, domain.TruncateErrMsg(msg)
+				} else {
 					p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, lastErrMsg)
+				}
+			}
+		} else {
+			cred, err := p.credentialFor(r.Context(), sel)
+			if err != nil {
+				// 凭据错误按网络错误处理（等价 handleFormat 的 code==0 语义）
+				lastCode, lastErrMsg = 0, domain.TruncateErrMsg(err.Error())
+				p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, lastErrMsg)
+			} else {
+				up, resp, dialErr := p.clients.ResponsesWSDial(r.Context(), sel.TemplateID, sel.BaseURL, cred, wsPassthroughHeaders(r.Header))
+				if dialErr == nil {
+					handled, fwMsg := p.relayResponsesWS(client, up, r, reqID, groupID, start, sel, reqModel, firstTyp, first)
+					if handled {
+						return
+					}
+					// 首帧转发失败 = 上游未消费请求 → 连接级错误转移（同拨号失败）
+					lastCode, lastErrMsg = 0, fwMsg
+					p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, lastErrMsg)
+				} else {
+					// 拨号失败分类（与 handleFormat 的 code 分支同构）：
+					// 429 → Result429 转移；4xx → 透传不转移（错误帧 + 记录）；
+					// 其余（5xx/连接级）→ ResultError 转移。
+					code := 0
+					var msg string
+					if resp != nil {
+						code = resp.StatusCode
+						msg = upstreamErrMsg(readUpstreamBody(resp))
+						_ = resp.Body.Close()
+					}
+					if msg == "" {
+						msg = dialErr.Error()
+					}
+					switch {
+					case code == http.StatusTooManyRequests:
+						lastCode, lastErrMsg = code, domain.TruncateErrMsg(msg)
+						p.sched.MarkResult(sel.AccountID, scheduler.Result429, nil, code, lastErrMsg)
+					case code >= 400 && code < 500:
+						// 4xx 确定性拒绝：上游未接受请求，透传错误文本不转移
+						// （同 handleFormat：finish 释放槽 + 计费 + 记录）。
+						l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, code, domain.Err4xx, usageTuple{}, start))
+						if em := domain.TruncateErrMsg(msg); em != "" {
+							l.ErrorMessage = &em
+						}
+						p.finish(sel.AccountID, l)
+						wsWriteError(client, emOr(msg, "upstream rejected request"))
+						return
+					default:
+						lastCode, lastErrMsg = 0, domain.TruncateErrMsg(msg)
+						p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, 0, lastErrMsg)
+					}
 				}
 			}
 		}
@@ -380,7 +411,7 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	wg.Add(1)
 	go func() { // 心跳：向上游周期 Ping（pong 超时 = 上游失联 → 按上游错误收尾）
 		defer wg.Done()
-		ticker := time.NewTicker(responsesWSHeartbeatInterval)
+		ticker := time.NewTicker(p.wsHeartbeatInterval) // seam：测试缩短验证节奏（T4）
 		defer ticker.Stop()
 		for {
 			select {

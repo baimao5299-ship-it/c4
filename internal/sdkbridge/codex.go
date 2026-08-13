@@ -27,10 +27,12 @@ type Codex struct {
 	failure FailureHandler        // T1 统一失效回调；nil = no-op（测试/未装配）
 }
 
-// codexEntry 单账号缓存条目：Auth/HTTPClient + 重建判定签名 + fatal 已上报标记
-// （双源去重——回调路径与 errors.As 路径共享同一 CAS）。
+// codexEntry 单账号缓存条目：Auth（HTTP/WS 双面共享——at 缓存/单飞/rt 轮换
+// 在 SDK Auth 内）+ HTTPClient（HTTP 面懒构造，nil = 未构造）+ 重建判定签名
+// + fatal 已上报标记（双源去重——回调路径与 errors.As 路径共享同一 CAS）。
 type codexEntry struct {
 	accountID int64
+	auth      codexsdk.Auth
 	client    *codexsdk.HTTPClient
 	sig       string // 凭据签名（外部凭据变更 → 重建）
 	reported  atomic.Bool
@@ -97,10 +99,9 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 	return nil
 }
 
-// clientFor cred → Auth 账号级缓存取 HTTPClient（构造冷面——每账号首次/凭据
-// 变更后；互斥锁 + 签名比对，同账号并发请求单飞构造——对齐 SDK OAuth 单飞
-// refresh 语义）：
-//   - 同账号复用（轮转状态/连接池保持；sig 相同直接返回）
+// entryFor cred → 账号级缓存条目（构造冷面——每账号首次/凭据变更后；互斥锁
+// + 签名比对，同账号并发请求单飞构造——对齐 SDK OAuth 单飞 refresh 语义）：
+//   - 同账号复用（Auth 内 at 缓存/轮转状态保持；sig 相同直接返回）
 //   - 仅外部凭据变更（管理面导入/更新——token/rt/pat/base URL 任一变化 → sig
 //     不同）后重建；**轮转回调写回不重建**（回调写回的是本 Auth 内部已更新
 //     的状态，重建丢 at 缓存破坏轮转连续性——写回走 T5 管理面通道，不经缓存）
@@ -108,7 +109,10 @@ func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCre
 //   - 空 rt 防护（P2-3）：codex-oauth 缺 refresh_token → 按失效上报（账号凭据
 //     不完整）不 panic（OAuthWithRotation 空 rt 构造 panic）；PAT 走 PAT(key)
 //     无此面
-func (a *Codex) clientFor(cred *domain.AccountCredential) (*codexEntry, error) {
+//
+// 条目承载 Auth（HTTP 面 GenerateImage/Stream 与 WS 面 Dial 共享——连接
+// per-请求不缓存，Auth 账号级状态跨面复用；HTTPClient 由 clientFor 懒构造）。
+func (a *Codex) entryFor(cred *domain.AccountCredential) (*codexEntry, error) {
 	sig := credSig(cred)
 	a.mu.Lock()
 	if e := a.entries[cred.AccountID]; e != nil && e.sig == sig {
@@ -118,11 +122,7 @@ func (a *Codex) clientFor(cred *domain.AccountCredential) (*codexEntry, error) {
 	e := &codexEntry{accountID: cred.AccountID, sig: sig}
 	auth, err := a.buildAuth(cred, e)
 	if err == nil {
-		var opts []codexsdk.Option
-		if cred.BaseURL != "" {
-			opts = append(opts, codexsdk.WithBaseURL(cred.BaseURL))
-		}
-		e.client = codexsdk.NewHTTPClient(auth, opts...)
+		e.auth = auth
 		a.entries[cred.AccountID] = e
 	}
 	a.mu.Unlock()
@@ -133,6 +133,72 @@ func (a *Codex) clientFor(cred *domain.AccountCredential) (*codexEntry, error) {
 		return nil, err
 	}
 	return e, nil
+}
+
+// clientFor entryFor + HTTPClient 懒构造（GenerateImage/Stream 面——非 nil
+// 后同账号复用连接池；sig 变更 → entryFor 重建条目）。NewHTTPClient 为纯构
+// 造（无 I/O 无 error），双检锁防并发重复构造。
+func (a *Codex) clientFor(cred *domain.AccountCredential) (*codexEntry, error) {
+	e, err := a.entryFor(cred)
+	if err != nil {
+		return nil, err
+	}
+	if e.client != nil {
+		return e, nil
+	}
+	var opts []codexsdk.Option
+	if cred.BaseURL != "" {
+		opts = append(opts, codexsdk.WithBaseURL(cred.BaseURL))
+	}
+	a.mu.Lock()
+	if e.client == nil {
+		e.client = codexsdk.NewHTTPClient(e.auth, opts...)
+	}
+	a.mu.Unlock()
+	return e, nil
+}
+
+// Dial 建立到上游的 Responses WebSocket 连接（T4 §2 接线）：cred → Auth 缓存
+// 取（entryFor——账号级长存：at 缓存/单飞/rt 轮换在 Auth 内，与 HTTP 面共享；
+// WS 连接本身 per-请求不缓存）→ codexsdk.Dial(ctx, auth, opts...)。opts 由
+// 网关侧组装（codex_responses_ws.go——伪装四元组 / WithPingInterval(0) /
+// WithPayloadFiltering(false) / 透传头）；cred.BaseURL 由本方法应用（完整
+// responses 端点——P3-1，与 clientFor 同款）。错误翻译（translateDialError）：
+//   - *DialError → 信封包装（EnvelopeError——StatusCode()/RawJSON()/Unwrap
+//     链，Refreshed 语义保留：已轮转重连一次仍失败 → 网关避免双份刷新）
+//   - 裸错误（Dial 401 轮转路径 refresh 失败——client.go:391-394 透传，不包
+//     DialError）→ translateError 既有双分支：fatal 类（RefreshOAuthError /
+//     AccountDisabledError）→ 统一回调单次上报 + 原样透传（网关"该请求不转
+//     移"，IsFatal 判定）；RefreshError/网络 → 原样透传（网关正常 failover）
+func (a *Codex) Dial(ctx context.Context, cred *domain.AccountCredential, opts ...codexsdk.Option) (*codexsdk.Client, error) {
+	e, err := a.entryFor(cred)
+	if err != nil {
+		return nil, err
+	}
+	// cred.BaseURL 由调用方路由填充（T4：aiclient fullURLOf 派生完整 responses
+	// 端点——P3-1 完整端点语义；空 → SDK 内置 DefaultResponsesURL）。与
+	// clientFor（HTTP 面）同款：适配层统一应用，调用方不再重复传 WithBaseURL。
+	if cred.BaseURL != "" {
+		opts = append(opts, codexsdk.WithBaseURL(cred.BaseURL))
+	}
+	c, err := codexsdk.Dial(ctx, e.auth, opts...)
+	if err != nil {
+		return nil, a.translateDialError(e, err)
+	}
+	return c, nil
+}
+
+// translateDialError Dial 错误翻译（T4 §5 错误契约）：*DialError → 信封
+// （Refreshed 保留）；其余（refresh 失败裸错误）复用 translateError 双分支
+// （fatal → 统一回调 + 原样；RefreshError/网络 → 原样 → 网关 failover 分类）。
+func (a *Codex) translateDialError(e *codexEntry, err error) error {
+	var de *codexsdk.DialError
+	if errors.As(err, &de) {
+		env := NewEnvelopeError(de.StatusCode, "", de)
+		env.Refreshed = de.Refreshed
+		return env
+	}
+	return a.translateError(e, err)
 }
 
 // buildAuth 按 cred 构造 SDK Auth（构造前校验——P2-3）：
@@ -248,6 +314,10 @@ func asFatal(err error) error {
 	}
 	return nil
 }
+
+// IsFatal 网关侧 fatal 判定（T4 §5：Dial 裸错误 fatal 类 → 该请求不转移，由
+// handleCodexDialError 调用）：与 asFatal 同构导出（errors.As 穿透信封链）。
+func IsFatal(err error) bool { return asFatal(err) != nil }
 
 // --- domain ↔ codexsdk 双向转换（集中本文件 + 转换单测防漂移） ---
 
