@@ -10,11 +10,13 @@ package repository
 // 生成（结构性无漂移），本断言兜底任一侧被绕过/手改。
 
 import (
+	"errors"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,4 +84,30 @@ func TestUsageStatsAlignColumnsMatchCreateDDL(t *testing.T) {
 	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
 	require.Contains(t, source, "bucket_time", "对齐锚必须覆盖分区键 bucket_time")
 	require.Contains(t, source, "cost", "对齐锚必须覆盖计费预聚合列")
+}
+
+// TestIsBootstrapRaceErrorCodeSet 并发 bootstrap 容忍码集锚：撞名
+// （isDuplicateObject——42P07 关系插入撞锁 / 42710 类型名预检撞隐式复合类型 /
+// 23505 CREATE SEQUENCE 并发）+ 缺失（isMissingObject——42P01，stale-DROP 窗
+// 口）全部容忍；其余错误码与非 pgconn 错误不误判。漏 42710/42P01 均导致
+// TestUsageLogPartitionConcurrentBootstrapPG 偶发失败（2026-08-13 实测两种码
+// 均现）。
+func TestIsBootstrapRaceErrorCodeSet(t *testing.T) {
+	pgErr := func(code string) error {
+		return &pgconn.PgError{Code: code}
+	}
+	// 撞名集
+	require.True(t, isDuplicateObject(pgErr("42P07")), "CREATE TABLE 撞关系 42P07")
+	require.True(t, isDuplicateObject(pgErr("42710")), "CREATE TABLE 撞隐式复合类型 42710")
+	require.True(t, isDuplicateObject(pgErr("23505")), "CREATE SEQUENCE 并发 23505")
+	// 缺失集（stale-DROP 窗口）
+	require.True(t, isMissingObject(pgErr("42P01")), "OWNED BY/索引/对齐/分区引用缺失的表或序列 42P01")
+	require.False(t, isMissingObject(pgErr("42P07")), "撞名非缺失不得归入 42P01 集")
+	// 组合判定
+	require.True(t, isBootstrapRaceError(pgErr("42P07")), "撞名 → bootstrap 竞态")
+	require.True(t, isBootstrapRaceError(pgErr("42710")), "类型撞名 → bootstrap 竞态")
+	require.True(t, isBootstrapRaceError(pgErr("23505")), "序列并发 → bootstrap 竞态")
+	require.True(t, isBootstrapRaceError(pgErr("42P01")), "窗口缺失 → bootstrap 竞态")
+	require.False(t, isBootstrapRaceError(pgErr("42P02")), "其它错误码不误判")
+	require.False(t, isBootstrapRaceError(errors.New("network error")), "非 pgconn 错误不误判")
 }

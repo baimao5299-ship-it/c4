@@ -196,9 +196,11 @@
 | `active` | 创建/成功请求 | — |
 | `unhealthy` | 上游 5xx / 连接级错误 / 流中断 | 指数退避冷却（5s×2ⁿ，上限 5min）后自动恢复 |
 | `429` | 上游 429 | 固定冷却（默认 30s）后自动恢复 |
-| `disabled` | 管理端手动设置 | 手动改回（`PUT`） |
+| `disabled` | 管理端手动设置；或 SDK 凭据判死（codex-oauth/codex-pat 账号，`failed_at` 落库 + 调度摘除） | 手动改回（`PUT`） |
 
 > `unhealthy` / `429` 为**健康轴**（自动退避），`disabled` 为**启用轴**（手动）。管理端 `PUT` 设 `disabled` 后，在途请求完成不会覆盖回写（防复活守卫）。
+
+> **失效恢复须知（SDK 接入账号——codex-oauth / codex-pat）**：凭据被判死（refresh token 判死、token 端点 401、账号禁用等 SDK 判定终止）后账号置 `disabled` 摘除并写 `failed_at`。管理面将 status 改回 `active`（隐含清 `failed_at` / `last_error`）**只恢复"可调度"**——若凭据确已判死，请求面仍恒失败（适配层毒化凭据保留至凭据变更重建，失败会再次触发摘除）。**恢复须重新导入凭据**（`PUT /admin/accounts/{id}/ext` 更新 account_ext 后凭据签名变化 → 适配层重建）才可真正服务——这是有意设计：判死凭据不得在未重新导入的情况下复活。
 
 ### 账号列表（含运行时视图）
 

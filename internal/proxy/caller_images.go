@@ -16,6 +16,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"github.com/is7qin/c3api/internal/billing"
 	"github.com/is7qin/c3api/internal/credential"
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/scheduler"
@@ -111,8 +112,11 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 		return 200, nil, true, nil
 	}
 
-	// 非流式：直连透传——上游响应原样转发（不解析：data.length/usage 提取在
-	// Task C 计费侧；响应零改写零损失）。
+	// 非流式：直连透传——上游响应原样转发（响应零改写零损失）+ **计费提取
+	// （T2 P3-4 遗留接入）**：复用 C 的 image_usage 提取纯函数
+	// （ImageUsageFromResponse——data 长 = 张数 + usage image_tokens，与 codex
+	// 路径同口径）→ ImageCost 落账含 image 分量（压测期直连计费分量恒 0 的
+	// 收敛）。提取在已读入的转发字节上执行——零额外解析零分配。
 	resp, err := p.clients.ImagesRaw(ctx, sel.TemplateID, sel.BaseURL, c.path, cred, upCT, upBody)
 	if err != nil {
 		return statusOf(err), upstreamBody(err), false, err
@@ -135,7 +139,10 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, 200, domain.ErrNone, usageTuple{}, start)))
+	// usage 提取（codexImagesCaller 同款形态：ii/io = image tokens，tt = 之和，
+	// img = data 数组长；gjson 输入字节直读零分配）。
+	ii, io, count := billing.ImageUsageFromResponse(data)
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, 200, domain.ErrNone, usageTuple{ii: ii, io: io, tt: ii + io, img: count}, start)))
 	return 200, nil, true, nil
 }
 

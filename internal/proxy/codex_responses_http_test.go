@@ -670,13 +670,16 @@ func TestCodexResponsesStreamDoneWriteAbort(t *testing.T) {
 	require.Equal(t, int64(4), store.logs[0].CacheCreationTokens)
 }
 
-// gateWriter 首个 Write 阻塞（模拟慢客户端）直到 release 关闭；放行后正常写
-// （客户端断开测试替身——阻塞期间取消请求 ctx）。
+// gateWriter 首个 Write 阻塞（模拟慢客户端）直到 release 关闭；放行后：
+// ctx 未取消 → 正常写；ctx 已取消 → 返回 ctx.Err()（真实断连的写失败语义——
+// 评审修法：断开路径确定走 abort 分支，消除"SDK 读循环赶在 ctx 生效前读完
+// 已缓冲小 body → 成功分支"的时序 flake——0c304d8 既有，非 T6 引入）。
 type gateWriter struct {
 	header  http.Header
 	status  int
-	first   chan struct{} // 首个 Write 已到达（通知测试）
-	release chan struct{} // 放行（关闭后 Write 正常）
+	ctx     context.Context // 客户端请求 ctx（取消 → Write 失败，仿真实写失败）
+	first   chan struct{}   // 首个 Write 已到达（通知测试）
+	release chan struct{}   // 放行（关闭后 Write 正常）
 	flushes int
 	body    bytes.Buffer
 }
@@ -689,6 +692,9 @@ func (w *gateWriter) Write(b []byte) (int, error) {
 	default:
 		close(w.first)
 		<-w.release // 阻塞直到测试放行（模拟客户端停滞窗口）
+	}
+	if w.ctx != nil && w.ctx.Err() != nil {
+		return 0, w.ctx.Err() // 客户端已断——确定性走 abort 分支
 	}
 	return w.body.Write(b)
 }
@@ -706,7 +712,7 @@ func TestCodexResponsesStreamClientDisconnect(t *testing.T) {
 	sel := selectCodexAccount(t, p, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(ctx)
-	w := &gateWriter{header: make(http.Header), first: make(chan struct{}), release: make(chan struct{})}
+	w := &gateWriter{header: make(http.Header), ctx: ctx, first: make(chan struct{}), release: make(chan struct{})}
 
 	done := make(chan struct{})
 	var code int

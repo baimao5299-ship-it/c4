@@ -304,17 +304,63 @@ func TestImagesPureImageModelNotKilledByChatPrecheck(t *testing.T) {
 	require.Equal(t, 1, c.calls, "预检通过 → 正常转发")
 	require.NoError(t, p.rec.Close(context.Background()))
 	// T2 起 images 日志走 applyImageBilling（价格快照有行 → 不 no_price 标记、
-	// 不落 chat 价快照列）。直连路径 usage 提取（data 长/image tokens）在
-	// 调用器侧尚未接入（Task B 边界"直连路径零改动"——后续任务接入后同一
-	// applyImageBilling 生效），故张数/分量恒 0、Cost 0——不按 0 计价的断言面
-	// 是 no_price 标记不出现（有价行）。
+	// 不落 chat 价快照列）。T2 P3-4 起直连路径接入 usage 提取（data 长 =
+	// 张数——fake 上游返回 2 元素 data、无 usage → 无 token 分量，per-image
+	// 分量照算）——不按 0 计价的断言面 = no_price 标记不出现（有价行）+ Cost
+	// 含 image 分量。
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
-	require.Zero(t, store.logs[0].Cost, "直连路径未接入 usage 提取（B 边界零改动）→ Cost 0")
+	require.Equal(t, int64(2), store.logs[0].ImageCount, "直连路径张数 = data 长")
+	require.Equal(t, int64(2*5400), store.logs[0].Cost, "直连路径 ImageCost per-image 分量（5400 毫分/张 × 2）")
 	require.Equal(t, "auto", store.logs[0].BillingTier, "有价行 → service_tier 归一化照常（不 no_price）")
 	require.Nil(t, store.logs[0].PriceInputMillis, "images 日志不落 chat 价快照列（nil）")
-	require.Nil(t, store.logs[0].PricePerImageMillis, "无图分量不落 per-image 快照列")
+	require.NotNil(t, store.logs[0].PricePerImageMillis, "有张数 → per-image 价格快照落列")
+	require.Equal(t, int64(5400), *store.logs[0].PricePerImageMillis)
+}
+
+// TestImagesDirectUsageExtractionBilling T2 P3-4 直连路径 usage 提取断言：api_key
+// 直连 /v1/images/generations（Task B 路径）计费含 image 分量——上游响应带
+// 嵌套 usage image_tokens（与 codexTestImageResponse 同 wire 形态）→
+// ImageCount = data 长 + ImageInput/OutputTokens = image_tokens + ImageCost
+// 落账（与 codexImagesCaller 同口径——同一 ImageUsageFromResponse 纯函数，
+// 断言字段与 TestImagesCodexGenerationsOK 逐项对齐）。直连路径零改写不在此
+// 测（TestImagesGenerationsJSONDirect 已钉原样透传）。
+func TestImagesDirectUsageExtractionBilling(t *testing.T) {
+	// 与 codexTestImageResponse 同形态（2 张 + image_tokens 1/2——同口径比对基准）
+	const body = `{"created":1720000000,"data":[{"b64_json":"QUJD"},{"b64_json":"REVG"}],"usage":{"input_tokens":2,"output_tokens":3,"input_tokens_details":{"image_tokens":1},"output_tokens_details":{"image_tokens":2}}}`
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestImagesProxyWithBill(t, up.URL, &BillingHooks{
+		Prices:      &fakePriceLookup{m: map[string]*domain.Pricing{}, im: map[string]*domain.ImagePrice{"gpt-image-1": perImagePriceRow("gpt-image-1")}},
+		ImagePrices: &fakeImagePriceLookup{m: map[string]*domain.ImagePrice{"gpt-image-1": perImagePriceRow("gpt-image-1")}},
+		Balances:    billingBalances(),
+	}, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image-1","prompt":"a cat","n":2}`))
+	req.Header.Set("Authorization", "Bearer gk-1")
+	rec := httptest.NewRecorder()
+	p.HandleImagesGenerations(rec, req)
+
+	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, body, rec.Body.String(), "直连响应原样透传（提取与转发共用同一字节）")
+	require.NoError(t, p.rec.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	l := store.logs[0]
+	require.Equal(t, domain.FormatOpenAIImages, l.Format)
+	require.Equal(t, int64(2), l.ImageCount, "张数 = data 长（与 codex 路径同口径）")
+	require.Equal(t, int64(1), l.ImageInputTokens, "usage image_tokens 输入（与 codex 路径同口径）")
+	require.Equal(t, int64(2), l.ImageOutputTokens, "usage image_tokens 输出（与 codex 路径同口径）")
+	require.Equal(t, int64(3), l.TotalTokens, "TotalTokens = image tokens 之和（张数不入）")
+	require.Equal(t, int64(2*5400), l.Cost, "ImageCost per-image 分量（5400 毫分/张 × 2）")
+	require.NotNil(t, l.PricePerImageMillis, "per-image 价格快照落列")
+	require.Equal(t, int64(5400), *l.PricePerImageMillis)
 }
 
 // TestImagesNoImagePriceWhenImagePricesNil bill 装配但 ImagePrices 未注入（未
