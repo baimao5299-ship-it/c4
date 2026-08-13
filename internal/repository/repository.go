@@ -50,20 +50,24 @@ type Repository struct {
 // New 用既有 driver 构建仓库（PG 生产：entsql.OpenDB(dialect.Postgres, db)；测试：
 // pgxmock 适配器）。不注入 pgx 连接池——Stats.Upsert 的 COPY 批量写路径需要
 // NewWithPG；未注入池时 Upsert 返回显式错误（不静默降级回 raw SQL）。
+// migrate 超时由生产路径经 NewWithPG 控制（测试/工具等短生命周期路径内部用
+// Background——migrate 失败即返回错误，无悬挂风险）。
 func New(drv dialect.Driver, migrate bool) (*Repository, error) {
-	return NewWithPG(drv, migrate, nil)
+	return NewWithPG(context.Background(), drv, migrate, nil)
 }
 
 // NewWithPG 同 New，附加 pgx 连接池（Stats.Upsert COPY 两阶段专用：生产
 // main.go 传 OpenPG 池；池与 ent driver 同 DSN 共享连接上限 max_conns）。
-func NewWithPG(drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repository, error) {
+// ctx 供 migrate（ent Schema.Create）使用——生产 main 传 startupCtx
+// （30s 预算，超时 fatal 文案 "db bootstrap timed out after 30s" 可归因）。
+func NewWithPG(ctx context.Context, drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repository, error) {
 	client := ent.NewClient(ent.Driver(drv))
 	if migrate {
 		// usage_logs/err_logs 经 migrateHookExcludesPartitioned 从迁移列表过滤
 		// ——分区表 DDL 由 Partitions.EnsureUsageLogPartitioned/
 		// EnsureErrLogPartitioned 独占管理（atlas 对分区表 diff 规划期必失败，
 		// 真实 PG 实测结论见 partition.go）。
-		if err := client.Schema.Create(context.Background(), migrateHookExcludesPartitioned()); err != nil {
+		if err := client.Schema.Create(ctx, migrateHookExcludesPartitioned()); err != nil {
 			return nil, err
 		}
 	}

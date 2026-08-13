@@ -5,10 +5,13 @@
 package config
 
 import (
-	"os"
+	"encoding"
+	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/toml/v2"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
@@ -76,11 +79,10 @@ type LimitConfig struct {
 	GroupKeyRPM int `koanf:"group_key_rpm"`
 }
 
+// SchedulerConfig 注意：cooldown_429 / backoff_base / backoff_max 已删除
+// （2026-08-13 用户裁决：不向后兼容）——配置含这些旧键将启动报错（ErrorUnused）。
 type SchedulerConfig struct {
 	DefaultMaxConcurrency int           `koanf:"default_max_concurrency"`
-	Cooldown429           time.Duration `koanf:"cooldown_429"`
-	BackoffBase           time.Duration `koanf:"backoff_base"`
-	BackoffMax            time.Duration `koanf:"backoff_max"`
 	SyncInterval          time.Duration `koanf:"sync_interval"`
 }
 
@@ -119,13 +121,15 @@ func defaults() *Config {
 		DB:        DBConfig{MaxConns: 20}, // #17：10→20（billing 8 worker + stats 8 worker + 余量；统计 COPY 批量写已改毫秒级短事务）
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
-		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, Cooldown429: 30 * time.Second, BackoffBase: 5 * time.Second, BackoffMax: 5 * time.Minute, SyncInterval: 30 * time.Second},
+		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, SyncInterval: 30 * time.Second},
 		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 8, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
 		Billing:   BillingConfig{Enabled: false, FlushInterval: 1 * time.Second, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 8},
 	}
 }
 
-// Load 先应用默认值，再叠加 TOML 文件，最后叠加 C3API_ 前缀 env。
+// Load 先应用默认值，再叠加 TOML 文件，最后叠加 C3API_ 前缀 env（前缀必须大写），
+// 然后统一校验（validate：duration/数值下限、必填、占位密钥、未知键——fail-fast）。
+// 配置仅启动时读取，变更需滚动重启（无热更新）。
 func Load(path string) (*Config, error) {
 	c := defaults()
 	k := koanf.New(".")
@@ -146,17 +150,157 @@ func Load(path string) (*Config, error) {
 	}), nil); err != nil {
 		return nil, err
 	}
-	if err := k.Unmarshal("", c); err != nil {
+	// ErrorUnused：配置显式写未知键（拼写错误/已删旧键）→ 启动报错（D-P2-1）。
+	// ⚠ DecoderConfig 必须完整复制 koanf 默认（StringToTimeDurationHookFunc +
+	// textUnmarshalerHookFunc + WeaklyTypedInput: true）——漏任一：duration 字符串
+	// 解析（"500ms"）全失效，且 env 路径裸数字 fail-fast 保护丢失（p2-14 P2-A 交叉风险）。
+	if err := k.UnmarshalWithConf("", c, koanf.UnmarshalConf{
+		DecoderConfig: &mapstructure.DecoderConfig{
+			DecodeHook: mapstructure.ComposeDecodeHookFunc(
+				mapstructure.StringToTimeDurationHookFunc(),
+				textUnmarshalerHookFunc()),
+			WeaklyTypedInput: true,
+			ErrorUnused:      true,
+		},
+	}); err != nil {
 		return nil, err
 	}
-	if c.Admin.Token == "" {
-		c.Admin.Token = os.Getenv("C3API_ADMIN_TOKEN")
+	return c, validate(c)
+}
+
+// validate Load 末尾统一校验（fail-fast，错误含 koanf 字段路径，形如
+// "scheduler.sync_interval must be > 0"）：
+//   - duration 字段 ≥1ms 硬校验：拦截 5 处 time.NewTicker panic 面（scheduler/
+//     usage×2/flusher×2）与 errlog.go:123 第 6 个 ticker 的 500ns 烧穿面（D-P2-2：
+//     裸数字 `flush_interval = 500` → 500ns ticker → 队列非空 DB 写风暴 / 队列空
+//     CPU 忙轮询）。errlog_flush_interval=0 由"钳位到默认"变为"启动报错"——有意
+//     选择（errlog 无文档化"0=禁用"语义，取 p2-14"全部 duration 字段"立场）；
+//   - 数值字段 ≥1：DefaultMaxConcurrency（silent 全坏面——从"健康地拒绝全流量"
+//     转启动即报错）、DB.MaxConns（puddle 层报 MaxSize 无法归因到 db.max_conns）；
+//   - 必填：admin.token / auth.jwt_secret / db.dsn（自 main.go:64-66 移入内聚）；
+//   - 占位密钥精确匹配拒绝（change-me 系列防原样部署鉴权绕过；精确匹配防误杀恰
+//     以 change-me 开头的合法随机值，派生占位由"空值 + 强制 env"形态兜底）。
+//
+// 明确排除：retention 天数（<=0 = 不删除，文档化惯例）、int 型钳位字段
+// （BatchSize/FlushWorkers/ErrLogQueueSize/ErrLogBatchSize）、Limit.GroupKeyRPM
+// （出厂 0）、Proxy.MaxInflight（server 侧 0→50000 兜底，proxy 消费语义未核实——
+// 范围外）。
+func validate(c *Config) error {
+	for _, d := range []struct {
+		path  string
+		value time.Duration
+	}{
+		{"proxy.upstream_timeout", c.Proxy.UpstreamTimeout},
+		{"proxy.upstream_stream_timeout", c.Proxy.UpstreamStreamTimeout},
+		{"scheduler.sync_interval", c.Scheduler.SyncInterval},
+		{"usage.flush_interval", c.Usage.FlushInterval},
+		{"usage.stats_flush_interval", c.Usage.StatsFlushInterval},
+		{"usage.errlog_flush_interval", c.Usage.ErrLogFlushInterval},
+		{"billing.flush_interval", c.Billing.FlushInterval},
+		{"billing.balance_refresh_interval", c.Billing.BalanceRefreshInterval},
+	} {
+		if d.value < time.Millisecond {
+			return fmt.Errorf("%s must be >= 1ms (got %s)", d.path, d.value)
+		}
 	}
-	if c.Auth.JWTSecret == "" {
-		c.Auth.JWTSecret = os.Getenv("C3API_AUTH_JWT_SECRET")
+	for _, n := range []struct {
+		path  string
+		value int
+	}{
+		{"scheduler.default_max_concurrency", c.Scheduler.DefaultMaxConcurrency},
+		{"db.max_conns", c.DB.MaxConns},
+	} {
+		if n.value < 1 {
+			return fmt.Errorf("%s must be >= 1 (got %d)", n.path, n.value)
+		}
 	}
-	if c.DB.DSN == "" {
-		c.DB.DSN = os.Getenv("C3API_DB_DSN")
+	for _, r := range []struct {
+		path  string
+		value string
+	}{
+		{"admin.token", c.Admin.Token},
+		{"auth.jwt_secret", c.Auth.JWTSecret},
+		{"db.dsn", c.DB.DSN},
+	} {
+		if r.value == "" {
+			return fmt.Errorf("%s is required (set in config file or C3API_ADMIN_TOKEN/C3API_AUTH_JWT_SECRET/C3API_DB_DSN)", r.path)
+		}
 	}
-	return c, nil
+	for _, p := range []struct {
+		path  string
+		value string
+	}{
+		{"admin.token", c.Admin.Token},
+		{"auth.jwt_secret", c.Auth.JWTSecret},
+	} {
+		switch p.value {
+		case "change-me", "change-me-too", "dev-admin-token", "dev-jwt-secret-for-local":
+			return fmt.Errorf("%s must not be a placeholder value (got %q); inject via C3API_ADMIN_TOKEN/C3API_AUTH_JWT_SECRET", p.path, p.value)
+		}
+	}
+	return nil
+}
+
+// textUnmarshalerHookFunc 镜像 koanf v2.3.6 内部同名 hook（未导出，spec 要求完整
+// 复制默认 DecoderConfig）：支持实现 encoding.TextUnmarshaler 的自定义 string 类型。
+// 现配置结构无此类字段，保留与 koanf 默认行为逐位一致（防后续字段类型变更漂移）。
+func textUnmarshalerHookFunc() mapstructure.DecodeHookFuncType {
+	return func(
+		f reflect.Type,
+		t reflect.Type,
+		data any,
+	) (any, error) {
+		if f.Kind() != reflect.String {
+			return data, nil
+		}
+		result := reflect.New(t).Interface()
+		unmarshaller, ok := result.(encoding.TextUnmarshaler)
+		if !ok {
+			return data, nil
+		}
+
+		// default text representation is the actual value of the `from` string
+		var (
+			dataVal = reflect.ValueOf(data)
+			text    = []byte(dataVal.String())
+		)
+		if f.Kind() == t.Kind() {
+			// source and target are of underlying type string
+			var (
+				err    error
+				ptrVal = reflect.New(dataVal.Type())
+			)
+			if !ptrVal.Elem().CanSet() {
+				// cannot set, skip, this should not happen
+				if err := unmarshaller.UnmarshalText(text); err != nil {
+					return nil, err
+				}
+				return result, nil
+			}
+			ptrVal.Elem().Set(dataVal)
+
+			// We need to assert that both, the value type and the pointer type
+			// do (not) implement the TextMarshaller interface before proceeding and simply
+			// using the string value of the string type.
+			// it might be the case that the internal string representation differs from
+			// the (un)marshalled string.
+
+			for _, v := range []reflect.Value{dataVal, ptrVal} {
+				if marshaller, ok := v.Interface().(encoding.TextMarshaler); ok {
+					text, err = marshaller.MarshalText()
+					if err != nil {
+						return nil, err
+					}
+					break
+				}
+			}
+		}
+
+		// text is either the source string's value or the source string type's marshaled value
+		// which may differ from its internal string value.
+		if err := unmarshaller.UnmarshalText(text); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
 }

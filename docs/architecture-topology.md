@@ -121,7 +121,7 @@ flowchart LR
 - **配额**：`QuotaExhausted`（`internal/proxy/gate.go:263-279`）本地预算两原子读；耗尽才触发 DB 复核认领（`internal/proxy/gate.go:316-364`，慢路径单飞 + 10s 失败退避）；复核公式 `budget = consumed + ceil(remaining_eff/N)`（#37 P1 收敛修正，防复核无限续额）。
 - **余额预检**（`internal/proxy/caller.go:128-142`）：快照读零 DB（滞后 ≤ balance_refresh_interval）；快照缺失/≤0 且非免费组 → 402；免费组（EffectiveMultiplier==0）放行。
 - **并发门禁**：user → key 两级 CAS（`internal/proxy/gate.go:215-240`），key 失败回滚 user 计数；跨 reload 在途值继承。
-- **限流**：`internal/proxy/limit.go:35-49` 固定窗口 `ceil(group_key_rpm/N)`；`cooldown_429/backoff_*` 已废弃（`config.example.toml:23-24` 注释）——429 冷却与错误退避由规则引擎（种子 + `/admin/rules` 自定义）接管。
+- **限流**：`internal/proxy/limit.go:35-49` 固定窗口 `ceil(group_key_rpm/N)`；`cooldown_429/backoff_*` 已移除（2026-08-13 用户裁决：配置含这些键将启动失败）——429 冷却与错误退避由规则引擎（种子 + `/admin/rules` 自定义）接管。
 - **选号**：`internal/scheduler/selection.go:13-41` tier1（模型偏好 Serves）→ tier2 → 默认桶；预生成加权轮询序列（零热路径计算）；协议转换只补差（`internal/proxy/caller.go:36-56`，off 零开销）。
 - **流式透传**：aiclient 流式入口经 `pkg/sserelay` 字节级 relay + Observer 旁路提取 usage；WS 1:1 透传（`internal/proxy/caller_responses_ws.go:236`）。
 - **usage 计费**：`finish`（`internal/proxy/forward.go:100-109`）→ `routeLog`（`internal/proxy/forward.go:250-262`）分表路由——放行行（error_type ∈ {none, abort}）billed → Flusher / 非 billed → rec.Record；失败行只聚合统计 + err_logs。
@@ -293,12 +293,12 @@ flowchart LR
 | `[db]` | repository.OpenPG | dsn/max_conns（20 = billing 8 + stats 8 worker + 余量） |
 | `[proxy]` | proxy.New | max_body_size/max_inflight/upstream_timeout/upstream_stream_timeout/failover_attempts/usage_capture |
 | `[upstream]` | httpx.TransportConfig | 连接池参数（max_idle_conns 8192 / per_host 2048 / force_http2） |
-| `[limit]` | fixedWindowLimiter | group_key_rpm（0 = 关）；**cooldown_429/backoff_* 已废弃**（`config.example.toml:23-24` 注释，规则引擎接管） |
+| `[limit]` | fixedWindowLimiter | group_key_rpm（0 = 关）；**cooldown_429/backoff_* 已移除**（配置含这些键将启动失败，规则引擎接管） |
 | `[scheduler]` | scheduler.Config | default_max_concurrency/sync_interval |
 | `[usage]` | usage.Recorder + ErrLogWorker + RetentionWorker | batch_size/flush_interval/log_retention_days=30/stats_flush_interval/flush_workers=8；errlog_queue_size=4096/errlog_batch_size=500/errlog_flush_interval=500ms/errlog_retention_days=7/stats_retention_days=180 |
 | `[billing]` | billing.NewFlusher + BillingHooks | enabled（默认关 opt-in）/flush_interval=1s/balance_refresh_interval=10s/flush_workers=8 |
 
-- 必填校验（`cmd/server/main.go:58-60`）：admin.token、auth.jwt_secret、db.dsn 缺失即 fatal。
+- 必填校验（`internal/config/config.go` Load 末尾 validate）：admin.token、auth.jwt_secret、db.dsn 缺失/占位符即 fatal（占位符精确匹配拒绝：change-me/change-me-too/dev-admin-token/dev-jwt-secret-for-local）。
 - 分区/保留/倍率等策略参数在 **DB settings 表**而非 config（`internal/domain/settings.go:10-38`）：signup 默认资源、price_source_url/price_sync_cron、service_tier_policy_*、cluster.instances。
 
 ## 13. 架构决策记录（ADR）

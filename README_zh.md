@@ -55,6 +55,10 @@ docker compose --env-file .env -f deploy/compose.yml up -d --build
 ### 方式 B：本地开发
 
 ```bash
+# 0. 注入本地开发密钥（config.toml 留空值；占位符如 change-me 会被 Load 拒绝）
+export C3API_ADMIN_TOKEN=local-admin-token
+export C3API_AUTH_JWT_SECRET=$(openssl rand -hex 16)
+
 # 1. 启动网关（默认 :18080）
 go run ./cmd/server -config config.toml
 
@@ -89,7 +93,7 @@ cd web && pnpm install && pnpm run dev
 
 ## 配置
 
-网关加载 `config.toml`（模板见 `config.example.toml`），`C3API_` 前缀环境变量可覆盖：
+网关加载 `config.toml`（模板见 `config.example.toml`），`C3API_` 前缀环境变量可覆盖（前缀**必须大写**）：
 
 | 变量 | 说明 |
 |---|---|
@@ -98,6 +102,10 @@ cd web && pnpm install && pnpm run dev
 | `C3API_DB_DSN` | PostgreSQL 连接串 |
 
 完整配置项（server / log / admin / auth / db / proxy / upstream / limit / scheduler / usage / billing）见 `config.example.toml`。
+
+- **纯 env 部署**（如 K8s）：传 `-config ""` 完全跳过配置文件——flag 默认 config.toml，无文件即启动失败。
+- **配置仅启动时读取**，变更需滚动重启（无热更新）。
+- **非法配置启动即报错**（含字段名）：duration/间隔 ≤0 或 <1ms、未知键（拼写错误/已移除旧键）、必填密钥缺失、占位符（change-me、dev-admin-token 等）一律拒绝。
 
 ## 部署
 

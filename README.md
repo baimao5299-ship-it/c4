@@ -55,6 +55,11 @@ The gateway listens on `http://127.0.0.1:18080` — admin console at `/admin`, h
 ### Option B: Local development
 
 ```bash
+# 0. Inject local dev secrets once (config.toml keeps empty values; placeholder
+#    values like change-me are rejected by config.Load)
+export C3API_ADMIN_TOKEN=local-admin-token
+export C3API_AUTH_JWT_SECRET=$(openssl rand -hex 16)
+
 # 1. Start the gateway (default :18080)
 go run ./cmd/server -config config.toml
 
@@ -89,7 +94,7 @@ Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request for
 
 ## Configuration
 
-The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_`-prefixed environment variables:
+The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_`-prefixed environment variables (the prefix must be **uppercase**):
 
 | Variable | Description |
 |---|---|
@@ -98,6 +103,10 @@ The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_
 | `C3API_DB_DSN` | PostgreSQL DSN |
 
 See `config.example.toml` for the full schema (server, log, admin, auth, db, proxy, upstream, limit, scheduler, usage, billing).
+
+- **Env-only deployments** (e.g. K8s): pass `-config ""` to skip the config file entirely — the flag defaults to `config.toml`, and a missing file is a startup error.
+- **Config is read once at startup** — changes require a rolling restart (no hot reload).
+- **Invalid config fails fast at startup** with the offending key: non-positive durations/intervals, unknown keys (typos, removed legacy keys), missing required secrets, and placeholder values (`change-me`, `dev-admin-token`, …) are all rejected.
 
 ## Deployment
 

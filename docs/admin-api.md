@@ -655,7 +655,7 @@
 | `400` | `when`/`then` 含未知字段、`kind` 非法、计数为负、`window_seconds` < 1、比例越界或缺 `count_total_ge`、`then` 无动作、`cooldown` 非法、`weight` 越界 |
 | `409` | `priority` 或 `name` 唯一冲突 |
 
-> 配置变更：`scheduler.cooldown_429` / `scheduler.backoff_base` / `scheduler.backoff_max` **已废弃**（不再参与任何决策，仅保留读取兼容）。429 冷却、错误退避与恢复节奏统一由规则引擎的种子规则与自定义规则接管。
+> 配置变更：`scheduler.cooldown_429` / `scheduler.backoff_base` / `scheduler.backoff_max` **已移除**（2026-08-13 用户裁决：不向后兼容）——配置含这些键将启动失败（未知键报错）。429 冷却、错误退避与恢复节奏统一由规则引擎的种子规则与自定义规则接管。
 
 ## 兑换码 Redemption Codes
 

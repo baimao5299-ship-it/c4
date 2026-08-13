@@ -55,27 +55,33 @@ func main() {
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		fatalf("config: %v", err)
+		// 附 -config 路径与 CWD（p2-01 P3-8）：相对路径文件缺失/校验失败可归因；
+		// env-only 部署（-config ""）报错时此处即线索。
+		wd, _ := os.Getwd()
+		fatalf("config: %v (path: %s, cwd: %s)", err, *cfgPath, wd)
 	}
 	log, err := logx.New(cfg.Log.Level, cfg.Log.Output)
 	if err != nil {
 		fatalf("logger: %v", err)
 	}
-	if cfg.Admin.Token == "" || cfg.Auth.JWTSecret == "" || cfg.DB.DSN == "" {
-		fatalf("admin.token, auth.jwt_secret and db.dsn are required (config or C3API_ADMIN_TOKEN/C3API_AUTH_JWT_SECRET/C3API_DB_DSN)")
-	}
+	// 必填校验（admin.token/auth.jwt_secret/db.dsn）已内聚到 config.Load，此处只做错误处理。
 
-	pool, err := repository.OpenPG(context.Background(), cfg.DB.DSN, int32(cfg.DB.MaxConns))
+	// 启动期 DB 操作统一 30s 预算（OpenPG + ent migrate + 三分区 bootstrap）：
+	// 超时/失败经 fatalDB 明确文案（"db bootstrap timed out after 30s" 可归因）。
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelStartup()
+
+	pool, err := repository.OpenPG(startupCtx, cfg.DB.DSN, int32(cfg.DB.MaxConns))
 	if err != nil {
-		fatalf("db: %v", err)
+		fatalDB("db", err)
 	}
 	defer pool.Close()
 	// ent v0.14.6 的 entsql.OpenDB 只接受 *sql.DB：pgxpool 经 pgx/stdlib 桥接（用户决策 2026-08-05）
 	db := stdlib.OpenDBFromPool(pool)
 	drv := entsql.OpenDB(dialect.Postgres, db)
-	repos, err := repository.NewWithPG(drv, true, pool) // pool 供 Stats.Upsert COPY 两阶段批量写（#17）与 Billing.DeductAndLog COPY 路径（热点修复 A 扩）
+	repos, err := repository.NewWithPG(startupCtx, drv, true, pool) // pool 供 Stats.Upsert COPY 两阶段批量写（#17）与 Billing.DeductAndLog COPY 路径（热点修复 A 扩）
 	if err != nil {
-		fatalf("migrate: %v", err)
+		fatalDB("migrate", err)
 	}
 	// usage_logs/err_logs/usage_stats 分区 bootstrap（Phase 5 T4.5 + 分表设计 +
 	// 用户裁决 2026-08-11 三表统一分区机制）：ent migrate 已跳过三表
@@ -83,14 +89,14 @@ func main() {
 	// 结论见 internal/repository/partition.go），此处独占建分区表 + 预建当日/明日
 	// 分区 + 索引；幂等（已分区 → 仅补齐分区），失败即 fatal（明细/审计/统计表
 	// 不可缺）。
-	if err := repos.EnsureUsageLogPartitioned(context.Background(), time.Now()); err != nil {
-		fatalf("usagelog partition bootstrap: %v", err)
+	if err := repos.EnsureUsageLogPartitioned(startupCtx, time.Now()); err != nil {
+		fatalDB("usagelog partition bootstrap", err)
 	}
-	if err := repos.EnsureErrLogPartitioned(context.Background(), time.Now()); err != nil {
-		fatalf("err_logs partition bootstrap: %v", err)
+	if err := repos.EnsureErrLogPartitioned(startupCtx, time.Now()); err != nil {
+		fatalDB("err_logs partition bootstrap", err)
 	}
-	if err := repos.EnsureUsageStatsPartitioned(context.Background(), time.Now()); err != nil {
-		fatalf("usage_stats partition bootstrap: %v", err)
+	if err := repos.EnsureUsageStatsPartitioned(startupCtx, time.Now()); err != nil {
+		fatalDB("usage_stats partition bootstrap", err)
 	}
 
 	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname-pid
@@ -392,10 +398,19 @@ func main() {
 	// 调度器初始加载已由上方注册表 ReloadAll 完成（先于 StartAll 与流量）——
 	// 此处不再单独 InvalidateAllSync（单一启动入口）。
 
+	// http.Server 超时（D-P2-4，现存最重 P2）：IdleTimeout 防 keep-alive 空闲连接
+	// 与 goroutine 无限驻留（有效 key 吃满 50000 并发面数小时即修复面）；ReadTimeout
+	// = proxy.upstream_timeout 同源单一事实源（120s）——只限请求头+体读取时长，不
+	// 限制响应写出（net/http 语义），SSE 长流不受影响。slowloris 场景：1KB/s ×
+	// 4MB ≈ 4096s → 120s 截断。
+	// 不设 WriteTimeout：会切断 SSE 长流（03-streaming.md C-P2-1 依赖节）；写侧
+	// 防线是 C 方向 C-P2-1 的 SetWriteDeadline。
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		ReadTimeout:       cfg.Proxy.UpstreamTimeout,
+		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
 	wm.Go(ctx, "http-server", func(ctx context.Context) {
@@ -437,6 +452,14 @@ func waitForInflight(px *proxy.Proxy, ctx context.Context, log *logx.Logger) {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// fatalDB 启动期 DB 操作失败 fatal（D-P2-3）：30s 预算超时 → 明确可归因文案。
+func fatalDB(step string, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		fatalf("db bootstrap timed out after 30s (%s): %v", step, err)
+	}
+	fatalf("%s: %v", step, err)
 }
 
 func fatalf(format string, args ...any) {
