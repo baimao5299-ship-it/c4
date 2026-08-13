@@ -43,6 +43,7 @@ func TestRequestFormatValid(t *testing.T) {
 	for _, f := range []RequestFormat{
 		FormatOpenAIChat, FormatOpenAIResponses, FormatOpenAIResponsesWS, FormatAnthropic,
 		FormatOpenAIImages, // spec §4.3：openai-images（images 端点落库 format）
+		FormatOpenAISearch, // spec 2026-08-13：openai-search（search 端点落库 format——本 task 只扩枚举）
 	} {
 		require.True(t, f.Valid(), "format %s should be valid", f)
 	}

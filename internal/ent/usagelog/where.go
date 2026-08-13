@@ -154,34 +154,14 @@ func PriceCacheCreationMillis(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldPriceCacheCreationMillis, v))
 }
 
-// ImageInputTokens applies equality check predicate on the "image_input_tokens" field. It's identical to ImageInputTokensEQ.
-func ImageInputTokens(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldImageInputTokens, v))
+// CallCount applies equality check predicate on the "call_count" field. It's identical to CallCountEQ.
+func CallCount(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCallCount, v))
 }
 
-// ImageOutputTokens applies equality check predicate on the "image_output_tokens" field. It's identical to ImageOutputTokensEQ.
-func ImageOutputTokens(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldImageOutputTokens, v))
-}
-
-// ImageCount applies equality check predicate on the "image_count" field. It's identical to ImageCountEQ.
-func ImageCount(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldImageCount, v))
-}
-
-// PriceImageInputMillis applies equality check predicate on the "price_image_input_millis" field. It's identical to PriceImageInputMillisEQ.
-func PriceImageInputMillis(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageOutputMillis applies equality check predicate on the "price_image_output_millis" field. It's identical to PriceImageOutputMillisEQ.
-func PriceImageOutputMillis(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPriceImageOutputMillis, v))
-}
-
-// PricePerImageMillis applies equality check predicate on the "price_per_image_millis" field. It's identical to PricePerImageMillisEQ.
-func PricePerImageMillis(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPricePerImageMillis, v))
+// PricePerCallMillis applies equality check predicate on the "price_per_call_millis" field. It's identical to PricePerCallMillisEQ.
+func PricePerCallMillis(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPricePerCallMillis, v))
 }
 
 // Cost applies equality check predicate on the "cost" field. It's identical to CostEQ.
@@ -1239,274 +1219,94 @@ func PriceCacheCreationMillisNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldPriceCacheCreationMillis))
 }
 
-// ImageInputTokensEQ applies the EQ predicate on the "image_input_tokens" field.
-func ImageInputTokensEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldImageInputTokens, v))
+// CallCountEQ applies the EQ predicate on the "call_count" field.
+func CallCountEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCallCount, v))
 }
 
-// ImageInputTokensNEQ applies the NEQ predicate on the "image_input_tokens" field.
-func ImageInputTokensNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldImageInputTokens, v))
+// CallCountNEQ applies the NEQ predicate on the "call_count" field.
+func CallCountNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCallCount, v))
 }
 
-// ImageInputTokensIn applies the In predicate on the "image_input_tokens" field.
-func ImageInputTokensIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldImageInputTokens, vs...))
+// CallCountIn applies the In predicate on the "call_count" field.
+func CallCountIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCallCount, vs...))
 }
 
-// ImageInputTokensNotIn applies the NotIn predicate on the "image_input_tokens" field.
-func ImageInputTokensNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldImageInputTokens, vs...))
+// CallCountNotIn applies the NotIn predicate on the "call_count" field.
+func CallCountNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCallCount, vs...))
 }
 
-// ImageInputTokensGT applies the GT predicate on the "image_input_tokens" field.
-func ImageInputTokensGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldImageInputTokens, v))
+// CallCountGT applies the GT predicate on the "call_count" field.
+func CallCountGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCallCount, v))
 }
 
-// ImageInputTokensGTE applies the GTE predicate on the "image_input_tokens" field.
-func ImageInputTokensGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldImageInputTokens, v))
+// CallCountGTE applies the GTE predicate on the "call_count" field.
+func CallCountGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCallCount, v))
 }
 
-// ImageInputTokensLT applies the LT predicate on the "image_input_tokens" field.
-func ImageInputTokensLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldImageInputTokens, v))
+// CallCountLT applies the LT predicate on the "call_count" field.
+func CallCountLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCallCount, v))
 }
 
-// ImageInputTokensLTE applies the LTE predicate on the "image_input_tokens" field.
-func ImageInputTokensLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldImageInputTokens, v))
+// CallCountLTE applies the LTE predicate on the "call_count" field.
+func CallCountLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCallCount, v))
 }
 
-// ImageOutputTokensEQ applies the EQ predicate on the "image_output_tokens" field.
-func ImageOutputTokensEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldImageOutputTokens, v))
+// PricePerCallMillisEQ applies the EQ predicate on the "price_per_call_millis" field.
+func PricePerCallMillisEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldPricePerCallMillis, v))
 }
 
-// ImageOutputTokensNEQ applies the NEQ predicate on the "image_output_tokens" field.
-func ImageOutputTokensNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldImageOutputTokens, v))
+// PricePerCallMillisNEQ applies the NEQ predicate on the "price_per_call_millis" field.
+func PricePerCallMillisNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldPricePerCallMillis, v))
 }
 
-// ImageOutputTokensIn applies the In predicate on the "image_output_tokens" field.
-func ImageOutputTokensIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldImageOutputTokens, vs...))
+// PricePerCallMillisIn applies the In predicate on the "price_per_call_millis" field.
+func PricePerCallMillisIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldPricePerCallMillis, vs...))
 }
 
-// ImageOutputTokensNotIn applies the NotIn predicate on the "image_output_tokens" field.
-func ImageOutputTokensNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldImageOutputTokens, vs...))
+// PricePerCallMillisNotIn applies the NotIn predicate on the "price_per_call_millis" field.
+func PricePerCallMillisNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldPricePerCallMillis, vs...))
 }
 
-// ImageOutputTokensGT applies the GT predicate on the "image_output_tokens" field.
-func ImageOutputTokensGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldImageOutputTokens, v))
+// PricePerCallMillisGT applies the GT predicate on the "price_per_call_millis" field.
+func PricePerCallMillisGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldPricePerCallMillis, v))
 }
 
-// ImageOutputTokensGTE applies the GTE predicate on the "image_output_tokens" field.
-func ImageOutputTokensGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldImageOutputTokens, v))
+// PricePerCallMillisGTE applies the GTE predicate on the "price_per_call_millis" field.
+func PricePerCallMillisGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldPricePerCallMillis, v))
 }
 
-// ImageOutputTokensLT applies the LT predicate on the "image_output_tokens" field.
-func ImageOutputTokensLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldImageOutputTokens, v))
+// PricePerCallMillisLT applies the LT predicate on the "price_per_call_millis" field.
+func PricePerCallMillisLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldPricePerCallMillis, v))
 }
 
-// ImageOutputTokensLTE applies the LTE predicate on the "image_output_tokens" field.
-func ImageOutputTokensLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldImageOutputTokens, v))
+// PricePerCallMillisLTE applies the LTE predicate on the "price_per_call_millis" field.
+func PricePerCallMillisLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldPricePerCallMillis, v))
 }
 
-// ImageCountEQ applies the EQ predicate on the "image_count" field.
-func ImageCountEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldImageCount, v))
+// PricePerCallMillisIsNil applies the IsNil predicate on the "price_per_call_millis" field.
+func PricePerCallMillisIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldPricePerCallMillis))
 }
 
-// ImageCountNEQ applies the NEQ predicate on the "image_count" field.
-func ImageCountNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldImageCount, v))
-}
-
-// ImageCountIn applies the In predicate on the "image_count" field.
-func ImageCountIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldImageCount, vs...))
-}
-
-// ImageCountNotIn applies the NotIn predicate on the "image_count" field.
-func ImageCountNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldImageCount, vs...))
-}
-
-// ImageCountGT applies the GT predicate on the "image_count" field.
-func ImageCountGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldImageCount, v))
-}
-
-// ImageCountGTE applies the GTE predicate on the "image_count" field.
-func ImageCountGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldImageCount, v))
-}
-
-// ImageCountLT applies the LT predicate on the "image_count" field.
-func ImageCountLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldImageCount, v))
-}
-
-// ImageCountLTE applies the LTE predicate on the "image_count" field.
-func ImageCountLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldImageCount, v))
-}
-
-// PriceImageInputMillisEQ applies the EQ predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageInputMillisNEQ applies the NEQ predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageInputMillisIn applies the In predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldPriceImageInputMillis, vs...))
-}
-
-// PriceImageInputMillisNotIn applies the NotIn predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldPriceImageInputMillis, vs...))
-}
-
-// PriceImageInputMillisGT applies the GT predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageInputMillisGTE applies the GTE predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageInputMillisLT applies the LT predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageInputMillisLTE applies the LTE predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldPriceImageInputMillis, v))
-}
-
-// PriceImageInputMillisIsNil applies the IsNil predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisIsNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIsNull(FieldPriceImageInputMillis))
-}
-
-// PriceImageInputMillisNotNil applies the NotNil predicate on the "price_image_input_millis" field.
-func PriceImageInputMillisNotNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotNull(FieldPriceImageInputMillis))
-}
-
-// PriceImageOutputMillisEQ applies the EQ predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPriceImageOutputMillis, v))
-}
-
-// PriceImageOutputMillisNEQ applies the NEQ predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldPriceImageOutputMillis, v))
-}
-
-// PriceImageOutputMillisIn applies the In predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldPriceImageOutputMillis, vs...))
-}
-
-// PriceImageOutputMillisNotIn applies the NotIn predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldPriceImageOutputMillis, vs...))
-}
-
-// PriceImageOutputMillisGT applies the GT predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldPriceImageOutputMillis, v))
-}
-
-// PriceImageOutputMillisGTE applies the GTE predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldPriceImageOutputMillis, v))
-}
-
-// PriceImageOutputMillisLT applies the LT predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldPriceImageOutputMillis, v))
-}
-
-// PriceImageOutputMillisLTE applies the LTE predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldPriceImageOutputMillis, v))
-}
-
-// PriceImageOutputMillisIsNil applies the IsNil predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisIsNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIsNull(FieldPriceImageOutputMillis))
-}
-
-// PriceImageOutputMillisNotNil applies the NotNil predicate on the "price_image_output_millis" field.
-func PriceImageOutputMillisNotNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotNull(FieldPriceImageOutputMillis))
-}
-
-// PricePerImageMillisEQ applies the EQ predicate on the "price_per_image_millis" field.
-func PricePerImageMillisEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldEQ(FieldPricePerImageMillis, v))
-}
-
-// PricePerImageMillisNEQ applies the NEQ predicate on the "price_per_image_millis" field.
-func PricePerImageMillisNEQ(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNEQ(FieldPricePerImageMillis, v))
-}
-
-// PricePerImageMillisIn applies the In predicate on the "price_per_image_millis" field.
-func PricePerImageMillisIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIn(FieldPricePerImageMillis, vs...))
-}
-
-// PricePerImageMillisNotIn applies the NotIn predicate on the "price_per_image_millis" field.
-func PricePerImageMillisNotIn(vs ...int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotIn(FieldPricePerImageMillis, vs...))
-}
-
-// PricePerImageMillisGT applies the GT predicate on the "price_per_image_millis" field.
-func PricePerImageMillisGT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGT(FieldPricePerImageMillis, v))
-}
-
-// PricePerImageMillisGTE applies the GTE predicate on the "price_per_image_millis" field.
-func PricePerImageMillisGTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldGTE(FieldPricePerImageMillis, v))
-}
-
-// PricePerImageMillisLT applies the LT predicate on the "price_per_image_millis" field.
-func PricePerImageMillisLT(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLT(FieldPricePerImageMillis, v))
-}
-
-// PricePerImageMillisLTE applies the LTE predicate on the "price_per_image_millis" field.
-func PricePerImageMillisLTE(v int64) predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldLTE(FieldPricePerImageMillis, v))
-}
-
-// PricePerImageMillisIsNil applies the IsNil predicate on the "price_per_image_millis" field.
-func PricePerImageMillisIsNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldIsNull(FieldPricePerImageMillis))
-}
-
-// PricePerImageMillisNotNil applies the NotNil predicate on the "price_per_image_millis" field.
-func PricePerImageMillisNotNil() predicate.UsageLog {
-	return predicate.UsageLog(sql.FieldNotNull(FieldPricePerImageMillis))
+// PricePerCallMillisNotNil applies the NotNil predicate on the "price_per_call_millis" field.
+func PricePerCallMillisNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldPricePerCallMillis))
 }
 
 // CostEQ applies the EQ predicate on the "cost" field.

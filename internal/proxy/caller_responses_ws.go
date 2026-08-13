@@ -305,7 +305,7 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	endCh := make(chan struct{}, 3)
 	var (
 		it, ot, tt, cr, cc        int64
-		img                       int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
+		img                       int64 // resp 检测功能调用计数（spec §6 旁路；respImageDetectOn 门控）——落 CallCount
 		ttft                      *int64
 		wg                        sync.WaitGroup
 		endMu                     sync.Mutex
@@ -443,7 +443,7 @@ func (p *Proxy) relayResponsesWS(client, up *websocket.Conn, r *http.Request, re
 	//   ③ 上游错误关闭/网络错误/心跳失联 → recordStreamAbort + ResultError
 	// 关闭传播在取消之前：client.Close 握手本身解除客户端循环的阻塞 Read
 	// （对端回关闭帧 → Read 自然返回退出），客户端拿到正常关闭帧。
-	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}
+	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}
 	logCtx := relayCtx
 	if ttft != nil {
 		logCtx = context.WithValue(relayCtx, ctxKeyTTFT{}, ttft)

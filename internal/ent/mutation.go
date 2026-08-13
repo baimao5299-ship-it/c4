@@ -17533,18 +17533,10 @@ type UsageLogMutation struct {
 	addcache_creation_tokens       *int64
 	price_cache_creation_millis    *int64
 	addprice_cache_creation_millis *int64
-	image_input_tokens             *int64
-	addimage_input_tokens          *int64
-	image_output_tokens            *int64
-	addimage_output_tokens         *int64
-	image_count                    *int64
-	addimage_count                 *int64
-	price_image_input_millis       *int64
-	addprice_image_input_millis    *int64
-	price_image_output_millis      *int64
-	addprice_image_output_millis   *int64
-	price_per_image_millis         *int64
-	addprice_per_image_millis      *int64
+	call_count                     *int64
+	addcall_count                  *int64
+	price_per_call_millis          *int64
+	addprice_per_call_millis       *int64
 	cost                           *int64
 	addcost                        *int64
 	billing_tier                   *string
@@ -18890,382 +18882,130 @@ func (m *UsageLogMutation) ResetPriceCacheCreationMillis() {
 	delete(m.clearedFields, usagelog.FieldPriceCacheCreationMillis)
 }
 
-// SetImageInputTokens sets the "image_input_tokens" field.
-func (m *UsageLogMutation) SetImageInputTokens(i int64) {
-	m.image_input_tokens = &i
-	m.addimage_input_tokens = nil
+// SetCallCount sets the "call_count" field.
+func (m *UsageLogMutation) SetCallCount(i int64) {
+	m.call_count = &i
+	m.addcall_count = nil
 }
 
-// ImageInputTokens returns the value of the "image_input_tokens" field in the mutation.
-func (m *UsageLogMutation) ImageInputTokens() (r int64, exists bool) {
-	v := m.image_input_tokens
+// CallCount returns the value of the "call_count" field in the mutation.
+func (m *UsageLogMutation) CallCount() (r int64, exists bool) {
+	v := m.call_count
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldImageInputTokens returns the old "image_input_tokens" field's value of the UsageLog entity.
+// OldCallCount returns the old "call_count" field's value of the UsageLog entity.
 // If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldImageInputTokens(ctx context.Context) (v int64, err error) {
+func (m *UsageLogMutation) OldCallCount(ctx context.Context) (v int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldImageInputTokens is only allowed on UpdateOne operations")
+		return v, errors.New("OldCallCount is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldImageInputTokens requires an ID field in the mutation")
+		return v, errors.New("OldCallCount requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldImageInputTokens: %w", err)
+		return v, fmt.Errorf("querying old value for OldCallCount: %w", err)
 	}
-	return oldValue.ImageInputTokens, nil
+	return oldValue.CallCount, nil
 }
 
-// AddImageInputTokens adds i to the "image_input_tokens" field.
-func (m *UsageLogMutation) AddImageInputTokens(i int64) {
-	if m.addimage_input_tokens != nil {
-		*m.addimage_input_tokens += i
+// AddCallCount adds i to the "call_count" field.
+func (m *UsageLogMutation) AddCallCount(i int64) {
+	if m.addcall_count != nil {
+		*m.addcall_count += i
 	} else {
-		m.addimage_input_tokens = &i
+		m.addcall_count = &i
 	}
 }
 
-// AddedImageInputTokens returns the value that was added to the "image_input_tokens" field in this mutation.
-func (m *UsageLogMutation) AddedImageInputTokens() (r int64, exists bool) {
-	v := m.addimage_input_tokens
+// AddedCallCount returns the value that was added to the "call_count" field in this mutation.
+func (m *UsageLogMutation) AddedCallCount() (r int64, exists bool) {
+	v := m.addcall_count
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetImageInputTokens resets all changes to the "image_input_tokens" field.
-func (m *UsageLogMutation) ResetImageInputTokens() {
-	m.image_input_tokens = nil
-	m.addimage_input_tokens = nil
+// ResetCallCount resets all changes to the "call_count" field.
+func (m *UsageLogMutation) ResetCallCount() {
+	m.call_count = nil
+	m.addcall_count = nil
 }
 
-// SetImageOutputTokens sets the "image_output_tokens" field.
-func (m *UsageLogMutation) SetImageOutputTokens(i int64) {
-	m.image_output_tokens = &i
-	m.addimage_output_tokens = nil
+// SetPricePerCallMillis sets the "price_per_call_millis" field.
+func (m *UsageLogMutation) SetPricePerCallMillis(i int64) {
+	m.price_per_call_millis = &i
+	m.addprice_per_call_millis = nil
 }
 
-// ImageOutputTokens returns the value of the "image_output_tokens" field in the mutation.
-func (m *UsageLogMutation) ImageOutputTokens() (r int64, exists bool) {
-	v := m.image_output_tokens
+// PricePerCallMillis returns the value of the "price_per_call_millis" field in the mutation.
+func (m *UsageLogMutation) PricePerCallMillis() (r int64, exists bool) {
+	v := m.price_per_call_millis
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldImageOutputTokens returns the old "image_output_tokens" field's value of the UsageLog entity.
+// OldPricePerCallMillis returns the old "price_per_call_millis" field's value of the UsageLog entity.
 // If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldImageOutputTokens(ctx context.Context) (v int64, err error) {
+func (m *UsageLogMutation) OldPricePerCallMillis(ctx context.Context) (v *int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldImageOutputTokens is only allowed on UpdateOne operations")
+		return v, errors.New("OldPricePerCallMillis is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldImageOutputTokens requires an ID field in the mutation")
+		return v, errors.New("OldPricePerCallMillis requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldImageOutputTokens: %w", err)
+		return v, fmt.Errorf("querying old value for OldPricePerCallMillis: %w", err)
 	}
-	return oldValue.ImageOutputTokens, nil
+	return oldValue.PricePerCallMillis, nil
 }
 
-// AddImageOutputTokens adds i to the "image_output_tokens" field.
-func (m *UsageLogMutation) AddImageOutputTokens(i int64) {
-	if m.addimage_output_tokens != nil {
-		*m.addimage_output_tokens += i
+// AddPricePerCallMillis adds i to the "price_per_call_millis" field.
+func (m *UsageLogMutation) AddPricePerCallMillis(i int64) {
+	if m.addprice_per_call_millis != nil {
+		*m.addprice_per_call_millis += i
 	} else {
-		m.addimage_output_tokens = &i
+		m.addprice_per_call_millis = &i
 	}
 }
 
-// AddedImageOutputTokens returns the value that was added to the "image_output_tokens" field in this mutation.
-func (m *UsageLogMutation) AddedImageOutputTokens() (r int64, exists bool) {
-	v := m.addimage_output_tokens
+// AddedPricePerCallMillis returns the value that was added to the "price_per_call_millis" field in this mutation.
+func (m *UsageLogMutation) AddedPricePerCallMillis() (r int64, exists bool) {
+	v := m.addprice_per_call_millis
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetImageOutputTokens resets all changes to the "image_output_tokens" field.
-func (m *UsageLogMutation) ResetImageOutputTokens() {
-	m.image_output_tokens = nil
-	m.addimage_output_tokens = nil
+// ClearPricePerCallMillis clears the value of the "price_per_call_millis" field.
+func (m *UsageLogMutation) ClearPricePerCallMillis() {
+	m.price_per_call_millis = nil
+	m.addprice_per_call_millis = nil
+	m.clearedFields[usagelog.FieldPricePerCallMillis] = struct{}{}
 }
 
-// SetImageCount sets the "image_count" field.
-func (m *UsageLogMutation) SetImageCount(i int64) {
-	m.image_count = &i
-	m.addimage_count = nil
-}
-
-// ImageCount returns the value of the "image_count" field in the mutation.
-func (m *UsageLogMutation) ImageCount() (r int64, exists bool) {
-	v := m.image_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldImageCount returns the old "image_count" field's value of the UsageLog entity.
-// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldImageCount(ctx context.Context) (v int64, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldImageCount is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldImageCount requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldImageCount: %w", err)
-	}
-	return oldValue.ImageCount, nil
-}
-
-// AddImageCount adds i to the "image_count" field.
-func (m *UsageLogMutation) AddImageCount(i int64) {
-	if m.addimage_count != nil {
-		*m.addimage_count += i
-	} else {
-		m.addimage_count = &i
-	}
-}
-
-// AddedImageCount returns the value that was added to the "image_count" field in this mutation.
-func (m *UsageLogMutation) AddedImageCount() (r int64, exists bool) {
-	v := m.addimage_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetImageCount resets all changes to the "image_count" field.
-func (m *UsageLogMutation) ResetImageCount() {
-	m.image_count = nil
-	m.addimage_count = nil
-}
-
-// SetPriceImageInputMillis sets the "price_image_input_millis" field.
-func (m *UsageLogMutation) SetPriceImageInputMillis(i int64) {
-	m.price_image_input_millis = &i
-	m.addprice_image_input_millis = nil
-}
-
-// PriceImageInputMillis returns the value of the "price_image_input_millis" field in the mutation.
-func (m *UsageLogMutation) PriceImageInputMillis() (r int64, exists bool) {
-	v := m.price_image_input_millis
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPriceImageInputMillis returns the old "price_image_input_millis" field's value of the UsageLog entity.
-// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldPriceImageInputMillis(ctx context.Context) (v *int64, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPriceImageInputMillis is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPriceImageInputMillis requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPriceImageInputMillis: %w", err)
-	}
-	return oldValue.PriceImageInputMillis, nil
-}
-
-// AddPriceImageInputMillis adds i to the "price_image_input_millis" field.
-func (m *UsageLogMutation) AddPriceImageInputMillis(i int64) {
-	if m.addprice_image_input_millis != nil {
-		*m.addprice_image_input_millis += i
-	} else {
-		m.addprice_image_input_millis = &i
-	}
-}
-
-// AddedPriceImageInputMillis returns the value that was added to the "price_image_input_millis" field in this mutation.
-func (m *UsageLogMutation) AddedPriceImageInputMillis() (r int64, exists bool) {
-	v := m.addprice_image_input_millis
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ClearPriceImageInputMillis clears the value of the "price_image_input_millis" field.
-func (m *UsageLogMutation) ClearPriceImageInputMillis() {
-	m.price_image_input_millis = nil
-	m.addprice_image_input_millis = nil
-	m.clearedFields[usagelog.FieldPriceImageInputMillis] = struct{}{}
-}
-
-// PriceImageInputMillisCleared returns if the "price_image_input_millis" field was cleared in this mutation.
-func (m *UsageLogMutation) PriceImageInputMillisCleared() bool {
-	_, ok := m.clearedFields[usagelog.FieldPriceImageInputMillis]
+// PricePerCallMillisCleared returns if the "price_per_call_millis" field was cleared in this mutation.
+func (m *UsageLogMutation) PricePerCallMillisCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldPricePerCallMillis]
 	return ok
 }
 
-// ResetPriceImageInputMillis resets all changes to the "price_image_input_millis" field.
-func (m *UsageLogMutation) ResetPriceImageInputMillis() {
-	m.price_image_input_millis = nil
-	m.addprice_image_input_millis = nil
-	delete(m.clearedFields, usagelog.FieldPriceImageInputMillis)
-}
-
-// SetPriceImageOutputMillis sets the "price_image_output_millis" field.
-func (m *UsageLogMutation) SetPriceImageOutputMillis(i int64) {
-	m.price_image_output_millis = &i
-	m.addprice_image_output_millis = nil
-}
-
-// PriceImageOutputMillis returns the value of the "price_image_output_millis" field in the mutation.
-func (m *UsageLogMutation) PriceImageOutputMillis() (r int64, exists bool) {
-	v := m.price_image_output_millis
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPriceImageOutputMillis returns the old "price_image_output_millis" field's value of the UsageLog entity.
-// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldPriceImageOutputMillis(ctx context.Context) (v *int64, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPriceImageOutputMillis is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPriceImageOutputMillis requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPriceImageOutputMillis: %w", err)
-	}
-	return oldValue.PriceImageOutputMillis, nil
-}
-
-// AddPriceImageOutputMillis adds i to the "price_image_output_millis" field.
-func (m *UsageLogMutation) AddPriceImageOutputMillis(i int64) {
-	if m.addprice_image_output_millis != nil {
-		*m.addprice_image_output_millis += i
-	} else {
-		m.addprice_image_output_millis = &i
-	}
-}
-
-// AddedPriceImageOutputMillis returns the value that was added to the "price_image_output_millis" field in this mutation.
-func (m *UsageLogMutation) AddedPriceImageOutputMillis() (r int64, exists bool) {
-	v := m.addprice_image_output_millis
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ClearPriceImageOutputMillis clears the value of the "price_image_output_millis" field.
-func (m *UsageLogMutation) ClearPriceImageOutputMillis() {
-	m.price_image_output_millis = nil
-	m.addprice_image_output_millis = nil
-	m.clearedFields[usagelog.FieldPriceImageOutputMillis] = struct{}{}
-}
-
-// PriceImageOutputMillisCleared returns if the "price_image_output_millis" field was cleared in this mutation.
-func (m *UsageLogMutation) PriceImageOutputMillisCleared() bool {
-	_, ok := m.clearedFields[usagelog.FieldPriceImageOutputMillis]
-	return ok
-}
-
-// ResetPriceImageOutputMillis resets all changes to the "price_image_output_millis" field.
-func (m *UsageLogMutation) ResetPriceImageOutputMillis() {
-	m.price_image_output_millis = nil
-	m.addprice_image_output_millis = nil
-	delete(m.clearedFields, usagelog.FieldPriceImageOutputMillis)
-}
-
-// SetPricePerImageMillis sets the "price_per_image_millis" field.
-func (m *UsageLogMutation) SetPricePerImageMillis(i int64) {
-	m.price_per_image_millis = &i
-	m.addprice_per_image_millis = nil
-}
-
-// PricePerImageMillis returns the value of the "price_per_image_millis" field in the mutation.
-func (m *UsageLogMutation) PricePerImageMillis() (r int64, exists bool) {
-	v := m.price_per_image_millis
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPricePerImageMillis returns the old "price_per_image_millis" field's value of the UsageLog entity.
-// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageLogMutation) OldPricePerImageMillis(ctx context.Context) (v *int64, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPricePerImageMillis is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPricePerImageMillis requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPricePerImageMillis: %w", err)
-	}
-	return oldValue.PricePerImageMillis, nil
-}
-
-// AddPricePerImageMillis adds i to the "price_per_image_millis" field.
-func (m *UsageLogMutation) AddPricePerImageMillis(i int64) {
-	if m.addprice_per_image_millis != nil {
-		*m.addprice_per_image_millis += i
-	} else {
-		m.addprice_per_image_millis = &i
-	}
-}
-
-// AddedPricePerImageMillis returns the value that was added to the "price_per_image_millis" field in this mutation.
-func (m *UsageLogMutation) AddedPricePerImageMillis() (r int64, exists bool) {
-	v := m.addprice_per_image_millis
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ClearPricePerImageMillis clears the value of the "price_per_image_millis" field.
-func (m *UsageLogMutation) ClearPricePerImageMillis() {
-	m.price_per_image_millis = nil
-	m.addprice_per_image_millis = nil
-	m.clearedFields[usagelog.FieldPricePerImageMillis] = struct{}{}
-}
-
-// PricePerImageMillisCleared returns if the "price_per_image_millis" field was cleared in this mutation.
-func (m *UsageLogMutation) PricePerImageMillisCleared() bool {
-	_, ok := m.clearedFields[usagelog.FieldPricePerImageMillis]
-	return ok
-}
-
-// ResetPricePerImageMillis resets all changes to the "price_per_image_millis" field.
-func (m *UsageLogMutation) ResetPricePerImageMillis() {
-	m.price_per_image_millis = nil
-	m.addprice_per_image_millis = nil
-	delete(m.clearedFields, usagelog.FieldPricePerImageMillis)
+// ResetPricePerCallMillis resets all changes to the "price_per_call_millis" field.
+func (m *UsageLogMutation) ResetPricePerCallMillis() {
+	m.price_per_call_millis = nil
+	m.addprice_per_call_millis = nil
+	delete(m.clearedFields, usagelog.FieldPricePerCallMillis)
 }
 
 // SetCost sets the "cost" field.
@@ -19515,7 +19255,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 32)
+	fields := make([]string, 0, 28)
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
 	}
@@ -19579,23 +19319,11 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.price_cache_creation_millis != nil {
 		fields = append(fields, usagelog.FieldPriceCacheCreationMillis)
 	}
-	if m.image_input_tokens != nil {
-		fields = append(fields, usagelog.FieldImageInputTokens)
+	if m.call_count != nil {
+		fields = append(fields, usagelog.FieldCallCount)
 	}
-	if m.image_output_tokens != nil {
-		fields = append(fields, usagelog.FieldImageOutputTokens)
-	}
-	if m.image_count != nil {
-		fields = append(fields, usagelog.FieldImageCount)
-	}
-	if m.price_image_input_millis != nil {
-		fields = append(fields, usagelog.FieldPriceImageInputMillis)
-	}
-	if m.price_image_output_millis != nil {
-		fields = append(fields, usagelog.FieldPriceImageOutputMillis)
-	}
-	if m.price_per_image_millis != nil {
-		fields = append(fields, usagelog.FieldPricePerImageMillis)
+	if m.price_per_call_millis != nil {
+		fields = append(fields, usagelog.FieldPricePerCallMillis)
 	}
 	if m.cost != nil {
 		fields = append(fields, usagelog.FieldCost)
@@ -19662,18 +19390,10 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.CacheCreationTokens()
 	case usagelog.FieldPriceCacheCreationMillis:
 		return m.PriceCacheCreationMillis()
-	case usagelog.FieldImageInputTokens:
-		return m.ImageInputTokens()
-	case usagelog.FieldImageOutputTokens:
-		return m.ImageOutputTokens()
-	case usagelog.FieldImageCount:
-		return m.ImageCount()
-	case usagelog.FieldPriceImageInputMillis:
-		return m.PriceImageInputMillis()
-	case usagelog.FieldPriceImageOutputMillis:
-		return m.PriceImageOutputMillis()
-	case usagelog.FieldPricePerImageMillis:
-		return m.PricePerImageMillis()
+	case usagelog.FieldCallCount:
+		return m.CallCount()
+	case usagelog.FieldPricePerCallMillis:
+		return m.PricePerCallMillis()
 	case usagelog.FieldCost:
 		return m.Cost()
 	case usagelog.FieldBillingTier:
@@ -19735,18 +19455,10 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldCacheCreationTokens(ctx)
 	case usagelog.FieldPriceCacheCreationMillis:
 		return m.OldPriceCacheCreationMillis(ctx)
-	case usagelog.FieldImageInputTokens:
-		return m.OldImageInputTokens(ctx)
-	case usagelog.FieldImageOutputTokens:
-		return m.OldImageOutputTokens(ctx)
-	case usagelog.FieldImageCount:
-		return m.OldImageCount(ctx)
-	case usagelog.FieldPriceImageInputMillis:
-		return m.OldPriceImageInputMillis(ctx)
-	case usagelog.FieldPriceImageOutputMillis:
-		return m.OldPriceImageOutputMillis(ctx)
-	case usagelog.FieldPricePerImageMillis:
-		return m.OldPricePerImageMillis(ctx)
+	case usagelog.FieldCallCount:
+		return m.OldCallCount(ctx)
+	case usagelog.FieldPricePerCallMillis:
+		return m.OldPricePerCallMillis(ctx)
 	case usagelog.FieldCost:
 		return m.OldCost(ctx)
 	case usagelog.FieldBillingTier:
@@ -19913,47 +19625,19 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPriceCacheCreationMillis(v)
 		return nil
-	case usagelog.FieldImageInputTokens:
+	case usagelog.FieldCallCount:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetImageInputTokens(v)
+		m.SetCallCount(v)
 		return nil
-	case usagelog.FieldImageOutputTokens:
+	case usagelog.FieldPricePerCallMillis:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetImageOutputTokens(v)
-		return nil
-	case usagelog.FieldImageCount:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetImageCount(v)
-		return nil
-	case usagelog.FieldPriceImageInputMillis:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPriceImageInputMillis(v)
-		return nil
-	case usagelog.FieldPriceImageOutputMillis:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPriceImageOutputMillis(v)
-		return nil
-	case usagelog.FieldPricePerImageMillis:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPricePerImageMillis(v)
+		m.SetPricePerCallMillis(v)
 		return nil
 	case usagelog.FieldCost:
 		v, ok := value.(int64)
@@ -20046,23 +19730,11 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addprice_cache_creation_millis != nil {
 		fields = append(fields, usagelog.FieldPriceCacheCreationMillis)
 	}
-	if m.addimage_input_tokens != nil {
-		fields = append(fields, usagelog.FieldImageInputTokens)
+	if m.addcall_count != nil {
+		fields = append(fields, usagelog.FieldCallCount)
 	}
-	if m.addimage_output_tokens != nil {
-		fields = append(fields, usagelog.FieldImageOutputTokens)
-	}
-	if m.addimage_count != nil {
-		fields = append(fields, usagelog.FieldImageCount)
-	}
-	if m.addprice_image_input_millis != nil {
-		fields = append(fields, usagelog.FieldPriceImageInputMillis)
-	}
-	if m.addprice_image_output_millis != nil {
-		fields = append(fields, usagelog.FieldPriceImageOutputMillis)
-	}
-	if m.addprice_per_image_millis != nil {
-		fields = append(fields, usagelog.FieldPricePerImageMillis)
+	if m.addprice_per_call_millis != nil {
+		fields = append(fields, usagelog.FieldPricePerCallMillis)
 	}
 	if m.addcost != nil {
 		fields = append(fields, usagelog.FieldCost)
@@ -20107,18 +19779,10 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedCacheCreationTokens()
 	case usagelog.FieldPriceCacheCreationMillis:
 		return m.AddedPriceCacheCreationMillis()
-	case usagelog.FieldImageInputTokens:
-		return m.AddedImageInputTokens()
-	case usagelog.FieldImageOutputTokens:
-		return m.AddedImageOutputTokens()
-	case usagelog.FieldImageCount:
-		return m.AddedImageCount()
-	case usagelog.FieldPriceImageInputMillis:
-		return m.AddedPriceImageInputMillis()
-	case usagelog.FieldPriceImageOutputMillis:
-		return m.AddedPriceImageOutputMillis()
-	case usagelog.FieldPricePerImageMillis:
-		return m.AddedPricePerImageMillis()
+	case usagelog.FieldCallCount:
+		return m.AddedCallCount()
+	case usagelog.FieldPricePerCallMillis:
+		return m.AddedPricePerCallMillis()
 	case usagelog.FieldCost:
 		return m.AddedCost()
 	}
@@ -20242,47 +19906,19 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddPriceCacheCreationMillis(v)
 		return nil
-	case usagelog.FieldImageInputTokens:
+	case usagelog.FieldCallCount:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddImageInputTokens(v)
+		m.AddCallCount(v)
 		return nil
-	case usagelog.FieldImageOutputTokens:
+	case usagelog.FieldPricePerCallMillis:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddImageOutputTokens(v)
-		return nil
-	case usagelog.FieldImageCount:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddImageCount(v)
-		return nil
-	case usagelog.FieldPriceImageInputMillis:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddPriceImageInputMillis(v)
-		return nil
-	case usagelog.FieldPriceImageOutputMillis:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddPriceImageOutputMillis(v)
-		return nil
-	case usagelog.FieldPricePerImageMillis:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddPricePerImageMillis(v)
+		m.AddPricePerCallMillis(v)
 		return nil
 	case usagelog.FieldCost:
 		v, ok := value.(int64)
@@ -20332,14 +19968,8 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldPriceCacheCreationMillis) {
 		fields = append(fields, usagelog.FieldPriceCacheCreationMillis)
 	}
-	if m.FieldCleared(usagelog.FieldPriceImageInputMillis) {
-		fields = append(fields, usagelog.FieldPriceImageInputMillis)
-	}
-	if m.FieldCleared(usagelog.FieldPriceImageOutputMillis) {
-		fields = append(fields, usagelog.FieldPriceImageOutputMillis)
-	}
-	if m.FieldCleared(usagelog.FieldPricePerImageMillis) {
-		fields = append(fields, usagelog.FieldPricePerImageMillis)
+	if m.FieldCleared(usagelog.FieldPricePerCallMillis) {
+		fields = append(fields, usagelog.FieldPricePerCallMillis)
 	}
 	if m.FieldCleared(usagelog.FieldBillingTier) {
 		fields = append(fields, usagelog.FieldBillingTier)
@@ -20391,14 +20021,8 @@ func (m *UsageLogMutation) ClearField(name string) error {
 	case usagelog.FieldPriceCacheCreationMillis:
 		m.ClearPriceCacheCreationMillis()
 		return nil
-	case usagelog.FieldPriceImageInputMillis:
-		m.ClearPriceImageInputMillis()
-		return nil
-	case usagelog.FieldPriceImageOutputMillis:
-		m.ClearPriceImageOutputMillis()
-		return nil
-	case usagelog.FieldPricePerImageMillis:
-		m.ClearPricePerImageMillis()
+	case usagelog.FieldPricePerCallMillis:
+		m.ClearPricePerCallMillis()
 		return nil
 	case usagelog.FieldBillingTier:
 		m.ClearBillingTier()
@@ -20474,23 +20098,11 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldPriceCacheCreationMillis:
 		m.ResetPriceCacheCreationMillis()
 		return nil
-	case usagelog.FieldImageInputTokens:
-		m.ResetImageInputTokens()
+	case usagelog.FieldCallCount:
+		m.ResetCallCount()
 		return nil
-	case usagelog.FieldImageOutputTokens:
-		m.ResetImageOutputTokens()
-		return nil
-	case usagelog.FieldImageCount:
-		m.ResetImageCount()
-		return nil
-	case usagelog.FieldPriceImageInputMillis:
-		m.ResetPriceImageInputMillis()
-		return nil
-	case usagelog.FieldPriceImageOutputMillis:
-		m.ResetPriceImageOutputMillis()
-		return nil
-	case usagelog.FieldPricePerImageMillis:
-		m.ResetPricePerImageMillis()
+	case usagelog.FieldPricePerCallMillis:
+		m.ResetPricePerCallMillis()
 		return nil
 	case usagelog.FieldCost:
 		m.ResetCost()

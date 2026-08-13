@@ -56,18 +56,10 @@ const (
 	FieldCacheCreationTokens = "cache_creation_tokens"
 	// FieldPriceCacheCreationMillis holds the string denoting the price_cache_creation_millis field in the database.
 	FieldPriceCacheCreationMillis = "price_cache_creation_millis"
-	// FieldImageInputTokens holds the string denoting the image_input_tokens field in the database.
-	FieldImageInputTokens = "image_input_tokens"
-	// FieldImageOutputTokens holds the string denoting the image_output_tokens field in the database.
-	FieldImageOutputTokens = "image_output_tokens"
-	// FieldImageCount holds the string denoting the image_count field in the database.
-	FieldImageCount = "image_count"
-	// FieldPriceImageInputMillis holds the string denoting the price_image_input_millis field in the database.
-	FieldPriceImageInputMillis = "price_image_input_millis"
-	// FieldPriceImageOutputMillis holds the string denoting the price_image_output_millis field in the database.
-	FieldPriceImageOutputMillis = "price_image_output_millis"
-	// FieldPricePerImageMillis holds the string denoting the price_per_image_millis field in the database.
-	FieldPricePerImageMillis = "price_per_image_millis"
+	// FieldCallCount holds the string denoting the call_count field in the database.
+	FieldCallCount = "call_count"
+	// FieldPricePerCallMillis holds the string denoting the price_per_call_millis field in the database.
+	FieldPricePerCallMillis = "price_per_call_millis"
 	// FieldCost holds the string denoting the cost field in the database.
 	FieldCost = "cost"
 	// FieldBillingTier holds the string denoting the billing_tier field in the database.
@@ -106,12 +98,8 @@ var Columns = []string{
 	FieldPriceCacheReadMillis,
 	FieldCacheCreationTokens,
 	FieldPriceCacheCreationMillis,
-	FieldImageInputTokens,
-	FieldImageOutputTokens,
-	FieldImageCount,
-	FieldPriceImageInputMillis,
-	FieldPriceImageOutputMillis,
-	FieldPricePerImageMillis,
+	FieldCallCount,
+	FieldPricePerCallMillis,
 	FieldCost,
 	FieldBillingTier,
 	FieldAboveHit,
@@ -146,12 +134,8 @@ var (
 	DefaultCacheReadTokens int64
 	// DefaultCacheCreationTokens holds the default value on creation for the "cache_creation_tokens" field.
 	DefaultCacheCreationTokens int64
-	// DefaultImageInputTokens holds the default value on creation for the "image_input_tokens" field.
-	DefaultImageInputTokens int64
-	// DefaultImageOutputTokens holds the default value on creation for the "image_output_tokens" field.
-	DefaultImageOutputTokens int64
-	// DefaultImageCount holds the default value on creation for the "image_count" field.
-	DefaultImageCount int64
+	// DefaultCallCount holds the default value on creation for the "call_count" field.
+	DefaultCallCount int64
 	// DefaultCost holds the default value on creation for the "cost" field.
 	DefaultCost int64
 	// DefaultAboveHit holds the default value on creation for the "above_hit" field.
@@ -172,6 +156,7 @@ const (
 	FormatOpenaiResponsesWs Format = "openai-responses-ws"
 	FormatAnthropic         Format = "anthropic"
 	FormatOpenaiImages      Format = "openai-images"
+	FormatOpenaiSearch      Format = "openai-search"
 )
 
 func (f Format) String() string {
@@ -181,7 +166,7 @@ func (f Format) String() string {
 // FormatValidator is a validator for the "format" field enum values. It is called by the builders before save.
 func FormatValidator(f Format) error {
 	switch f {
-	case FormatOpenaiChat, FormatOpenaiResponses, FormatOpenaiResponsesWs, FormatAnthropic, FormatOpenaiImages:
+	case FormatOpenaiChat, FormatOpenaiResponses, FormatOpenaiResponsesWs, FormatAnthropic, FormatOpenaiImages, FormatOpenaiSearch:
 		return nil
 	default:
 		return fmt.Errorf("usagelog: invalid enum value for format field: %q", f)
@@ -301,34 +286,14 @@ func ByPriceCacheCreationMillis(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPriceCacheCreationMillis, opts...).ToFunc()
 }
 
-// ByImageInputTokens orders the results by the image_input_tokens field.
-func ByImageInputTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldImageInputTokens, opts...).ToFunc()
+// ByCallCount orders the results by the call_count field.
+func ByCallCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCallCount, opts...).ToFunc()
 }
 
-// ByImageOutputTokens orders the results by the image_output_tokens field.
-func ByImageOutputTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldImageOutputTokens, opts...).ToFunc()
-}
-
-// ByImageCount orders the results by the image_count field.
-func ByImageCount(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldImageCount, opts...).ToFunc()
-}
-
-// ByPriceImageInputMillis orders the results by the price_image_input_millis field.
-func ByPriceImageInputMillis(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPriceImageInputMillis, opts...).ToFunc()
-}
-
-// ByPriceImageOutputMillis orders the results by the price_image_output_millis field.
-func ByPriceImageOutputMillis(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPriceImageOutputMillis, opts...).ToFunc()
-}
-
-// ByPricePerImageMillis orders the results by the price_per_image_millis field.
-func ByPricePerImageMillis(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPricePerImageMillis, opts...).ToFunc()
+// ByPricePerCallMillis orders the results by the price_per_call_millis field.
+func ByPricePerCallMillis(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPricePerCallMillis, opts...).ToFunc()
 }
 
 // ByCost orders the results by the cost field.

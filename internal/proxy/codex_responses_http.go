@@ -99,12 +99,12 @@ func (p *Proxy) nonstreamCodexResponses(ctx context.Context, w http.ResponseWrit
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp.Raw)
 	it, ot, tt, cr, cc := responsesTopLevelUsage(resp.Raw)
-	var img int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
+	var img int64 // resp 检测功能调用计数（spec §6 旁路；respImageDetectOn 门控）——落 CallCount
 	if respImageDetectOn(sel) {
 		img = respImageCountBody(resp.Raw)
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 	return http.StatusOK, nil, true, nil
 }
 
@@ -137,7 +137,7 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 	}
 	var (
 		it, ot, tt, cr, cc int64
-		img                int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
+		img                int64 // resp 检测功能调用计数（spec §6 旁路；respImageDetectOn 门控）——落 CallCount
 		usageTaken         bool  // 首个 completed 帧已取（usage 只读一次）
 		framesWritten      bool  // 首帧已写出（头已提交；首帧前失败 → HTTP 状态可用）
 		ttft               *int64
@@ -174,7 +174,7 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 		// 客户端断开：上游已消费请求（成功），仍须记录用量（成功请求丢日志防
 		// 线——caller_responses.go:99-104 语义）；按 abort 收尾不 MarkResult。
 		if r.Context().Err() != nil {
-			p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+			p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 			return 0, nil, true, nil
 		}
 		// 首帧前信封错误（4xx 透传 / 429/5xx failover——typed 分支
@@ -185,7 +185,7 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 		}
 		// 上游停滞/错误（流中止）：200 已写出——recordStreamAbort + ResultError
 		//（caller_responses.go:106-108 同语义）。
-		p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, err)
+		p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, err)
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 		return 0, nil, true, nil
 	}
@@ -205,11 +205,11 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 		framesWritten = true
 	}
 	if err := writeCodexSSEFrame(w, sseDonePayload); err != nil {
-		p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+		p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 		return 0, nil, true, nil
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+	p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 	return http.StatusOK, nil, true, nil
 }
 

@@ -29,8 +29,8 @@ import (
 // 行/批（26 列最坏界 × 2000 = 52,000 参数 < 65,535；生产 19 列 38,000）——
 // 单事务 10k 行往返 20 → 5 次（往返实测 0.3ms/次，本地净省 ~4.5ms/事务 ~2%，
 // 负载/远端 DB 上按延迟放大）；服务器侧逐行插入耗时持平（~6.6µs/行）。
-// Task C 扩列后最坏界 32 列 × 2000 = 64,000 参数 < 65,535（仍安全，常量不动；
-// 生产 25 列 50,000）。
+// 统一计费模型重构（spec 2026-08-13）删 6 加 2 后最坏界 28 列 × 2000 =
+// 56,000 参数 < 65,535（仍安全，常量不动；生产 28 列 56,000）。
 // 仅 ent CreateBulk 回落路径（pool == nil）使用；pgx COPY 路径无参数上限，
 // 整事务一次 COPY 不涉及本常量。
 const usageLogBatchSize = 2000
@@ -360,10 +360,11 @@ func (x *pgxDeductTx) QueryRowScan(ctx context.Context, query string, args []any
 	return x.tx.QueryRow(ctx, query, args...).Scan(dest...)
 }
 
-// usageLogCopyColumns COPY 列清单 = buildUsageLogCreate 设置的列集合（32 列
+// usageLogCopyColumns COPY 列清单 = buildUsageLogCreate 设置的列集合（28 列
 // 全列显式列出——未设置的可选列传 NULL，与 ent 省略列（→NULL）等价；列序
 // 与 usage_logs 分区表列定义一致，5 索引兼容）。COPY 无 65535 参数上限，
-// 整事务一次 COPY（无分片）。
+// 整事务一次 COPY（无分片）。统一计费模型（spec 2026-08-13）：原图片 6 列
+// （image tokens/count + 3 价格快照）已删，加 call_count/price_per_call_millis。
 var usageLogCopyColumns = []string{
 	usagelog.FieldRequestID, usagelog.FieldGroupID, usagelog.FieldAccountID,
 	usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID,
@@ -372,18 +373,16 @@ var usageLogCopyColumns = []string{
 	usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens,
 	usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens,
 	usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens,
-	usagelog.FieldPriceCacheCreationMillis, usagelog.FieldImageInputTokens,
-	usagelog.FieldImageOutputTokens, usagelog.FieldImageCount,
-	usagelog.FieldPriceImageInputMillis, usagelog.FieldPriceImageOutputMillis,
-	usagelog.FieldPricePerImageMillis, usagelog.FieldCost, usagelog.FieldBillingTier,
+	usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCallCount,
+	usagelog.FieldPricePerCallMillis, usagelog.FieldCost, usagelog.FieldBillingTier,
 	usagelog.FieldAboveHit, usagelog.FieldOverdraft, usagelog.FieldCreatedAt,
 }
 
 // usageLogRowValues 单行 COPY 值（与 buildUsageLogCreate 的 Set 条件一一对应：
-// 可选列 >0/非空/非 nil 才赋值，否则 NULL）。
+// 可选列 >0/非空/非 nil 才赋值，否则 NULL；call_count 恒落（NOT NULL DEFAULT 0））。
 func usageLogRowValues(l *domain.UsageLog) []any {
 	var groupID, accountID, templateID, userID, keyID, mappedModel, billingTier any
-	var ttft, priceIn, priceOut, priceCR, priceCC, priceImgIn, priceImgOut, pricePerImg any
+	var ttft, priceIn, priceOut, priceCR, priceCC, pricePerCall any
 	if l.GroupID > 0 {
 		groupID = l.GroupID
 	}
@@ -420,22 +419,15 @@ func usageLogRowValues(l *domain.UsageLog) []any {
 	if l.PriceCacheCreationMillis != nil {
 		priceCC = *l.PriceCacheCreationMillis
 	}
-	if l.PriceImageInputMillis != nil {
-		priceImgIn = *l.PriceImageInputMillis
-	}
-	if l.PriceImageOutputMillis != nil {
-		priceImgOut = *l.PriceImageOutputMillis
-	}
-	if l.PricePerImageMillis != nil {
-		pricePerImg = *l.PricePerImageMillis
+	if l.PricePerCallMillis != nil {
+		pricePerCall = *l.PricePerCallMillis
 	}
 	return []any{
 		l.RequestID, groupID, accountID, templateID, userID, keyID,
 		l.Model, mappedModel, string(l.Format), string(l.ErrorType), l.LatencyMS, ttft,
 		l.InputTokens, priceIn, l.OutputTokens, priceOut, l.TotalTokens,
 		l.CacheReadTokens, priceCR, l.CacheCreationTokens, priceCC,
-		l.ImageInputTokens, l.ImageOutputTokens, l.ImageCount,
-		priceImgIn, priceImgOut, pricePerImg,
+		l.CallCount, pricePerCall,
 		l.Cost, billingTier, l.AboveHit, l.Overdraft, l.CreatedAt,
 	}
 }

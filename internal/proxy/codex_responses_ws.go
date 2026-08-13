@@ -257,7 +257,7 @@ func (p *Proxy) relayCodexWS(client *websocket.Conn, up *codexsdk.Client, r *htt
 	endCh := make(chan struct{}, 3)
 	var (
 		it, ot, tt, cr, cc        int64
-		img                       int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
+		img                       int64 // resp 检测功能调用计数（spec §6 旁路；respImageDetectOn 门控）——落 CallCount
 		ttft                      *int64
 		wg                        sync.WaitGroup
 		endMu                     sync.Mutex
@@ -387,7 +387,7 @@ func (p *Proxy) relayCodexWS(client *websocket.Conn, up *codexsdk.Client, r *htt
 	// 分类与关闭传播（与 relayResponsesWS 同款——relayClassify 纯函数复用）：
 	// ① 上游正常关闭（1000/1001）→ 成功 ② 客户端断开 → abort ③ 上游错误/失
 	// 联 → recordStreamAbort + ResultError。记录先行、关闭帧后发（记录不丢语义）。
-	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}
+	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}
 	logCtx := relayCtx
 	if ttft != nil {
 		logCtx = context.WithValue(relayCtx, ctxKeyTTFT{}, ttft)

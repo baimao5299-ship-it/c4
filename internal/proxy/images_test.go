@@ -311,18 +311,18 @@ func TestImagesPureImageModelNotKilledByChatPrecheck(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
-	require.Equal(t, int64(2), store.logs[0].ImageCount, "直连路径张数 = data 长")
+	require.Equal(t, int64(2), store.logs[0].CallCount, "直连路径张数 = data 长（入 call_count）")
 	require.Equal(t, int64(2*5400), store.logs[0].Cost, "直连路径 ImageCost per-image 分量（5400 毫分/张 × 2）")
 	require.Equal(t, "auto", store.logs[0].BillingTier, "有价行 → service_tier 归一化照常（不 no_price）")
 	require.Nil(t, store.logs[0].PriceInputMillis, "images 日志不落 chat 价快照列（nil）")
-	require.NotNil(t, store.logs[0].PricePerImageMillis, "有张数 → per-image 价格快照落列")
-	require.Equal(t, int64(5400), *store.logs[0].PricePerImageMillis)
+	require.NotNil(t, store.logs[0].PricePerCallMillis, "有张数 → per-image 价格快照落列")
+	require.Equal(t, int64(5400), *store.logs[0].PricePerCallMillis)
 }
 
 // TestImagesDirectUsageExtractionBilling T2 P3-4 直连路径 usage 提取断言：api_key
 // 直连 /v1/images/generations（Task B 路径）计费含 image 分量——上游响应带
 // 嵌套 usage image_tokens（与 codexTestImageResponse 同 wire 形态）→
-// ImageCount = data 长 + ImageInput/OutputTokens = image_tokens + ImageCost
+// CallCount = data 长 + ImageInput/OutputTokens = image_tokens（并入 in/out）+ ImageCost
 // 落账（与 codexImagesCaller 同口径——同一 ImageUsageFromResponse 纯函数，
 // 断言字段与 TestImagesCodexGenerationsOK 逐项对齐）。直连路径零改写不在此
 // 测（TestImagesGenerationsJSONDirect 已钉原样透传）。
@@ -354,13 +354,13 @@ func TestImagesDirectUsageExtractionBilling(t *testing.T) {
 	require.Len(t, store.logs, 1)
 	l := store.logs[0]
 	require.Equal(t, domain.FormatOpenAIImages, l.Format)
-	require.Equal(t, int64(2), l.ImageCount, "张数 = data 长（与 codex 路径同口径）")
-	require.Equal(t, int64(1), l.ImageInputTokens, "usage image_tokens 输入（与 codex 路径同口径）")
-	require.Equal(t, int64(2), l.ImageOutputTokens, "usage image_tokens 输出（与 codex 路径同口径）")
+	require.Equal(t, int64(2), l.CallCount, "张数 = data 长（与 codex 路径同口径）")
+	require.Equal(t, int64(1), l.InputTokens, "usage image_tokens 输入（与 codex 路径同口径）")
+	require.Equal(t, int64(2), l.OutputTokens, "usage image_tokens 输出（与 codex 路径同口径）")
 	require.Equal(t, int64(3), l.TotalTokens, "TotalTokens = image tokens 之和（张数不入）")
 	require.Equal(t, int64(2*5400), l.Cost, "ImageCost per-image 分量（5400 毫分/张 × 2）")
-	require.NotNil(t, l.PricePerImageMillis, "per-image 价格快照落列")
-	require.Equal(t, int64(5400), *l.PricePerImageMillis)
+	require.NotNil(t, l.PricePerCallMillis, "per-image 价格快照落列")
+	require.Equal(t, int64(5400), *l.PricePerCallMillis)
 }
 
 // TestImagesNoImagePriceWhenImagePricesNil bill 装配但 ImagePrices 未注入（未
@@ -452,13 +452,13 @@ func TestImagesStreamDirectBilling(t *testing.T) {
 	l := store.logs[0]
 	require.Equal(t, domain.FormatOpenAIImages, l.Format)
 	require.Equal(t, domain.ErrNone, l.ErrorType)
-	require.Equal(t, int64(2), l.ImageCount, "count = completed 帧数累积（partial/DONE 不计）")
-	require.Equal(t, int64(2000), l.ImageInputTokens, "usage 取末个 completed 帧（覆盖语义）")
-	require.Equal(t, int64(8000), l.ImageOutputTokens)
+	require.Equal(t, int64(2), l.CallCount, "count = completed 帧数累积（partial/DONE 不计）")
+	require.Equal(t, int64(2000), l.InputTokens, "usage 取末个 completed 帧（覆盖语义）")
+	require.Equal(t, int64(8000), l.OutputTokens)
 	require.Equal(t, int64(10000), l.TotalTokens, "tt = image tokens 之和（张数不入）")
 	require.Equal(t, int64(2*5400), l.Cost, "per-image 分量照算（修复前恒 0——整单免费）")
-	require.NotNil(t, l.PricePerImageMillis)
-	require.Equal(t, int64(5400), *l.PricePerImageMillis)
+	require.NotNil(t, l.PricePerCallMillis)
+	require.Equal(t, int64(5400), *l.PricePerCallMillis)
 }
 
 // TestImagesCodexNotIntegrated501 codex 分流骨架：codex-oauth 模板在 images

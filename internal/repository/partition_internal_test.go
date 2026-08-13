@@ -52,6 +52,14 @@ func TestUsageLogAlignColumnsMatchCreateDDL(t *testing.T) {
 	require.Equal(t, source, align, "补列 ALTER 与事实源列集合一致")
 	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
 	require.Contains(t, source, "price_input_millis", "对齐锚必须覆盖 P1 缺列")
+	// 统一计费模型（spec 2026-08-13）：删 6 加 2——新列锚 + 旧列取反断言
+	//（任何同步点残留图片 6 列即红）。
+	require.Contains(t, source, "call_count", "对齐锚必须覆盖 call_count 新列")
+	require.Contains(t, source, "price_per_call_millis", "对齐锚必须覆盖 price_per_call_millis 新列")
+	for _, old := range []string{"image_input_tokens", "image_output_tokens", "image_count",
+		"price_image_input_millis", "price_image_output_millis", "price_per_image_millis"} {
+		require.NotContains(t, source, old, "删 6 列：%s 不得残留", old)
+	}
 }
 
 // TestErrLogAlignColumnsMatchCreateDDL err_logs 对齐锚（架构审查 S2——P1 同型
