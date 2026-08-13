@@ -35,7 +35,6 @@ func (UsageStat) Fields() []ent.Field {
 
 func (UsageStat) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("bucket_time"),
 		// /user/stats 查询形态：user_id EQ + bucket_time 范围（ScanStats）。
 		// user_id 在复合唯一中居第 5 列，范围扫描逐行过滤低效，此前缀索引
 		// 精确匹配（分区表侧 DDL 见 repository/partition.go usageStatsIndexDDLs）。

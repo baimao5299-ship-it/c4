@@ -31,9 +31,11 @@ type fakePartitionManager struct {
 	sdrops    []time.Time // usage_stats cutoff 参数
 	snows     []time.Time // usage_stats ensure 的 now 参数
 	sensures  []time.Time // usage_stats ensure 的 until 参数
+	rdeletes  []time.Time // redemption_uses 批删 cutoff 参数（F3-2）
 	dropErr   error       // usage_logs drop 失败注入
 	edropErr  error       // err_logs drop 失败注入（失败隔离断言）
 	sdropErr  error       // usage_stats drop 失败注入（失败隔离断言）
+	rdelErr   error       // redemption_uses 批删失败注入（失败隔离断言）
 	ensureErr error
 }
 
@@ -80,6 +82,13 @@ func (f *fakePartitionManager) EnsureUsageStatsPartitions(ctx context.Context, n
 	f.snows = append(f.snows, now)
 	f.sensures = append(f.sensures, until)
 	return f.ensureErr
+}
+
+func (f *fakePartitionManager) DeleteRedemptionUsesBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rdeletes = append(f.rdeletes, cutoff)
+	return 0, f.rdelErr
 }
 
 func (f *fakePartitionManager) counts() (int, int) {
@@ -248,4 +257,55 @@ func TestRetentionWorkerStartTwiceFails(t *testing.T) {
 	defer cancel()
 	require.NoError(t, w.Start(ctx))
 	require.Error(t, w.Start(ctx))
+}
+
+// TestRetentionWorkerDeletesRedemptionUses F3-2：redemption_uses 批删并入周期
+// 任务——每轮巡检都调 DeleteRedemptionUsesBefore，cutoff = now - 90 天（TTL
+// 定死，非配置项）。
+func TestRetentionWorkerDeletesRedemptionUses(t *testing.T) {
+	pm := &fakePartitionManager{}
+	w := NewRetention(RetentionConfig{LogRetentionDays: 30, TickerInterval: 20 * time.Millisecond}, pm, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, w.Start(ctx))
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		pm.mu.Lock()
+		n := len(pm.rdeletes)
+		pm.mu.Unlock()
+		if n >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	require.NoError(t, w.Close(ctx))
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	require.GreaterOrEqual(t, len(pm.rdeletes), 2, "每轮巡检都执行 redemption_uses 批删")
+	// cutoff 语义：now - 90 天（日粒度，容忍 ±1 天边界）
+	now := time.Now().UTC()
+	cut := now.AddDate(0, 0, -redemptionUseRetentionDays).Truncate(24 * time.Hour)
+	got := pm.rdeletes[0].UTC().Truncate(24 * time.Hour)
+	require.True(t, cut.Equal(got) || cut.Add(-24*time.Hour).Equal(got) || cut.Add(24*time.Hour).Equal(got),
+		"redemption_uses cutoff = now-90d（TTL 定死），got=%v want≈%v", pm.rdeletes[0], cut)
+}
+
+// TestRetentionWorkerRedemptionDeleteFailureIsolated F3-2：批删失败不连带分区
+// 三表（逐表错误隔离同语义——C32 纪律），下轮重试。
+func TestRetentionWorkerRedemptionDeleteFailureIsolated(t *testing.T) {
+	pm := &fakePartitionManager{rdelErr: errBoom}
+	w := NewRetention(RetentionConfig{LogRetentionDays: 30, ErrLogRetentionDays: 7, StatsRetentionDays: 180, TickerInterval: 20 * time.Millisecond}, pm, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, w.Start(ctx))
+	waitCounts(t, pm, 2, 2) // 分区三表 drop/ensure 不受批删失败影响
+	cancel()
+	require.NoError(t, w.Close(ctx))
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	require.GreaterOrEqual(t, len(pm.rdeletes), 2, "批删失败仍每轮重试")
+	require.Len(t, pm.edrops, len(pm.drops), "err_logs 不受 redemption_uses 批删失败影响")
+	require.Len(t, pm.sdrops, len(pm.drops), "usage_stats 不受 redemption_uses 批删失败影响")
 }

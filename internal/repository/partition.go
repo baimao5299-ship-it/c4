@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -234,9 +235,10 @@ var usageStatsCreateDDL = partitionedCreateDDL("usage_stats", "bucket_time", usa
 // usageStatsIndexDDLs 对齐 ent schema Indexes（同名同列；分区表父表索引为分区
 // 索引，子分区自动继承）。唯一索引含分区键 bucket_time（分区表硬约束：唯一
 // 索引必须含分区键；顺带即 Upsert 的 ON CONFLICT 目标列序——batched COPY
-// 两阶段 merge 在分区表上行为不变）。
+// 两阶段 merge 在分区表上行为不变）。bucket_time 独立索引为纯写放大无查询受
+// 益（(user_id, bucket_time) 复合索引已覆盖 user_id 前缀查询面），F3-1 已删
+// （p2-18 P2-B 建议删 + 用户裁决 2026-08-13 取删）。
 var usageStatsIndexDDLs = []string{
-	`CREATE INDEX usagestat_bucket_time ON usage_stats (bucket_time)`,
 	`CREATE UNIQUE INDEX usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error ON usage_stats (bucket_time, group_id, account_id, template_id, user_id, model, is_error)`,
 	`CREATE INDEX usagestat_user_id_bucket_time ON usage_stats (user_id, bucket_time)`,
 }
@@ -540,6 +542,31 @@ func (r *PartitionRepo) DropErrLogPartitionsBefore(ctx context.Context, cutoff t
 // O(1)——替代逐行 DELETE 方案；cutoff 由 usage.StatsRetentionDays 推导）。
 func (r *PartitionRepo) DropUsageStatsPartitionsBefore(ctx context.Context, cutoff time.Time) (int, error) {
 	return r.DropTablePartitionsBefore(ctx, "usage_stats", cutoff)
+}
+
+// redemptionUsesDeleteBatchLimit redemption_uses 每轮批删上限（F3-2 批删有界：
+// 普通表无分区可 DROP，不能对齐分区表 O(1) DROP 形态——有界 DELETE 防长事务
+// 持锁；低频表单轮即清，超大批多轮收敛）。
+const redemptionUsesDeleteBatchLimit = 5000
+
+// DeleteRedemptionUsesBefore redemption_uses 有界批删（F3-2，retention worker
+// 周期任务调用；TTL 定死 90 天，cutoff = now - 90 天由调用方推导）：
+//   - 普通表无分区可 DROP → 走 DELETE 批删路径（与三张分区表 O(1) DROP 并存，
+//     均为 retention worker 周期面内的清理手段）；
+//   - 每轮至多删 redemptionUsesDeleteBatchLimit 行（子查询 LIMIT 有界；DELETE
+//     按 id 升序取超窗行——收敛确定，无游标/页码，多轮各自重新取最小 id）；
+//   - 返回本轮实际删除行数（0 = 已收敛，幂等）。
+func (r *PartitionRepo) DeleteRedemptionUsesBefore(ctx context.Context, cutoff time.Time) (int, error) {
+	var res sql.Result
+	query := `DELETE FROM redemption_uses WHERE id IN (SELECT id FROM redemption_uses WHERE created_at < $1 ORDER BY id LIMIT ` + strconv.Itoa(redemptionUsesDeleteBatchLimit) + `)`
+	if err := r.driver.Exec(ctx, query, []any{cutoff}, &res); err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 // migrateHookExcludesPartitioned 让 ent migrate 跳过分区表（usage_logs +

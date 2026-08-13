@@ -561,11 +561,6 @@ var (
 		PrimaryKey: []*schema.Column{UsageStatsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "usagestat_bucket_time",
-				Unique:  false,
-				Columns: []*schema.Column{UsageStatsColumns[1]},
-			},
-			{
 				Name:    "usagestat_user_id_bucket_time",
 				Unique:  false,
 				Columns: []*schema.Column{UsageStatsColumns[5], UsageStatsColumns[1]},
