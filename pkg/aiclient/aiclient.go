@@ -116,6 +116,14 @@ func (f *Factory) ResponseStreamRaw(ctx context.Context, templateID int64, baseU
 	return f.rawPost(ctx, templateID, baseURL, "responses", "Bearer "+key, body)
 }
 
+// SearchRaw codex search 端点直连透传（spec 2026-08-13：api_key/responses-
+// special 静态路径——Bearer upstream key 直连上游，复用既有静态 key 通道零新
+// 机制）。URL 派生 = 裸根 + /v1/alpha/search（openaiBaseURL 约定——与 responses
+// 端点 base/v1/responses 尾段 → /alpha/search 派生同语义，见 parseFullURL）。
+func (f *Factory) SearchRaw(ctx context.Context, templateID int64, baseURL, key string, body []byte) (*http.Response, error) {
+	return f.rawPost(ctx, templateID, baseURL, "alpha/search", "Bearer "+key, body)
+}
+
 func (f *Factory) AnthMessageStreamRaw(ctx context.Context, templateID int64, baseURL, key string, body []byte) (*http.Response, error) {
 	return f.rawPost(ctx, templateID, baseURL, "v1/messages", key, body)
 }
