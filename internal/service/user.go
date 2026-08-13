@@ -58,7 +58,9 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 		Balance:        s.settingInt("default_user_balance"),
 	})
 	if err != nil {
-		return nil, err
+		// 并发重复邮箱：双过 pre-check 后一者撞 DB 唯一冲突 → repo 已映射
+		// ErrConflict → 这里映射 409（不映射 → 裸错 500）。
+		return nil, mapRepoErr(err)
 	}
 	if temp := s.settingInt("default_user_temp_balance"); temp > 0 {
 		expiresAt := time.Now().AddDate(0, 0, int(s.settingInt("default_user_temp_balance_ttl_days")))

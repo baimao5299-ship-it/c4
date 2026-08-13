@@ -37,5 +37,8 @@ func (RedemptionUse) Edges() []ent.Edge {
 func (RedemptionUse) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("code_id", "user_id").Unique(),
+		// user_id 前缀索引：ListUsesByUser + Count 按 user 过滤免 (code_id,user_id)
+		// 复合索引无法覆盖的 user_id 前缀双扫（写低频，写放大可忽略）。
+		index.Fields("user_id"),
 	}
 }
