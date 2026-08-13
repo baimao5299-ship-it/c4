@@ -501,6 +501,63 @@ func TestCodexResponsesAdapterMissing(t *testing.T) {
 	require.Equal(t, http.StatusNotImplemented, store.logs[0].StatusCode)
 }
 
+// TestCodexResponsesStreamEnvelope403PreFrame 首帧前 4xx 信封（P1 修复回归：
+// 头延至首个 fn 调用）：流式上游 403 → 客户端 403 + 原文案（非 200 空流 + 裸
+// 错误体）；无 [DONE] 无 SSE 帧；Err4xx 记录；不转移。
+func TestCodexResponsesStreamEnvelope403PreFrame(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{status: 403, body: `{"detail":"Forbidden"}`})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","stream":true,"input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode, "首帧前 4xx 信封 → HTTP 状态透传（非 200 空流）")
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"), "透传走 JSON 信封（非 text/event-stream）")
+	require.Equal(t, `{"detail":"Forbidden"}`, string(b), "上游原文案透传")
+	require.NotContains(t, string(b), "[DONE]", "信封失败无 [DONE]")
+	require.NotContains(t, string(b), "data:", "信封失败无 SSE 帧")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.Err4xx, store.logs[0].ErrorType, "4xx 走 err_logs 分表")
+	require.Equal(t, http.StatusForbidden, store.logs[0].StatusCode)
+	require.Equal(t, 1, upc.callsN(), "4xx 确定性拒绝不转移")
+}
+
+// TestCodexResponsesStreamFailoverExhausted 流式 failover 耗尽（P1 修复回归）：
+// 上游恒 5xx → 客户端 502 JSON 信封（writeErr——非裸写进 SSE 体）；无 [DONE]
+// 无 SSE 帧；Err5xx 记录。
+func TestCodexResponsesStreamFailoverExhausted(t *testing.T) {
+	up, _ := newCodexHTTPUpstream(t, codexHTTPStep{status: 500, body: `{"error":{"message":"upstream exploded"}}`})
+	defer up.Close()
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-1")},
+		up.URL, nil, nil, store)
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","stream":true,"input":"hi"}`)
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusBadGateway, resp.StatusCode, "耗尽 → 502（非 200 SSE 空流）")
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"), "502 走 JSON 信封（非 text/event-stream）")
+	require.Contains(t, string(b), "all upstream attempts failed")
+	require.NotContains(t, string(b), "data:", "502 不进 SSE 体")
+	require.NotContains(t, string(b), "[DONE]", "耗尽无 [DONE]")
+	waitStoreLogs(t, store, 1)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, domain.Err5xx, store.logs[0].ErrorType, "耗尽记 Err5xx")
+	require.Equal(t, http.StatusInternalServerError, store.logs[0].StatusCode, "耗尽记录 StatusCode = 最后一次尝试码（500——与既有耗尽路径语义一致；HTTP 面 502 由 writeErr 承担）")
+}
+
 // --- 流式收尾双分支（直接调用——编排级 failover 循环外的流中止语义） ---
 
 // frameFailWriter 第 failFrom 次 Write 起失败（首帧写成功、后续帧写失败的流

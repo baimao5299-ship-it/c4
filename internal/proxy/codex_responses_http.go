@@ -109,12 +109,16 @@ func (p *Proxy) nonstreamCodexResponses(ctx context.Context, w http.ResponseWrit
 // （含 [DONE] 与 EOF 统一）后**自行补发** `data: [DONE]\n\n` + flush（客户端等
 // 终止标记挂死防线）；上游错误不补发 [DONE]（信封/failover 分类）。
 //
+// **头延至首个 fn 调用内**（评审 P1 修复：SDK 调用前提交 200 会把首帧前 4xx
+// 信封错误吞成"200 空成功流"——上游 403 → 客户端 200 + 裸错误体 + 无 [DONE]；
+// 同根因致流式 failover 耗尽把 502 JSON 裸写进 SSE 体）。首帧前失败 → 头未
+// 提交，HTTP 状态可用 → (code, body, false) 交 failover 循环正常分类（4xx 透
+// 传 / 429/5xx 转移 / 耗尽 502——typed 分支 ResponseStreamRaw 非 200 同语义）。
+//
 // 断开/超时收尾镜像 caller_responses.go:92-101 双分支：客户端断开
 // （r.Context().Err() != nil）→ 不 MarkResult（finish 200 ErrAbort——上游已消
-// 费请求，token 取断前已收 usage 帧）；上游超时/错误 → recordStreamAbort 语
-// 义 + MarkResult(ResultError)。首帧前信封错误（未写出任何帧）→ 返回
-// (code, body, false) 由 failover 循环分类（4xx 透传 / 429/5xx 转移——typed
-// 分支 ResponseStreamRaw 非 200 同语义）。
+// 费请求，token 取断前已收 usage 帧）；上游超时/错误（帧已写出，200 已定型）
+// → recordStreamAbort 语义 + MarkResult(ResultError)。
 //
 // usage 嗅探（P1-1）：fn 内 gjson type 精确判定 + 顶层解析（取首个命中帧——
 // completed 终态恒唯一，usage 只读一次）。
@@ -125,21 +129,23 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 	if err != nil {
 		return 0, nil, false, err // 本地 JSON 错误（防御——同非流式）
 	}
-	// 头三件套 + WriteHeader(200) 显式（SDK 载荷直写无 sserelay 首帧隐式写头
-	// ——P2-1 帧规格）。
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
 	var (
 		it, ot, tt, cr, cc int64
 		img                int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
 		usageTaken         bool  // 首个 completed 帧已取（usage 只读一次）
-		framesWritten      bool  // 已写出首帧（首帧前信封错误 → 透传不转移）
+		framesWritten      bool  // 首帧已写出（头已提交；首帧前失败 → HTTP 状态可用）
 		ttft               *int64
 	)
 	err = p.codex.StreamResponses(ctx, cred, streamBody, func(raw []byte) error {
-		framesWritten = true
+		if !framesWritten {
+			// 首事件发头（P2-1 帧规格：三件套 + WriteHeader(200) 显式——SDK 载荷
+			// 直写无 sserelay 首帧隐式写头；延至此处保证首帧前失败不吞状态码）。
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("X-Accel-Buffering", "no")
+			w.WriteHeader(http.StatusOK)
+			framesWritten = true
+		}
 		if !usageTaken {
 			// 热路径：gjson type 精确判定（防正文含子串帧冻结——P1-1）+ 顶层
 			// usage 解析；首个命中后跳过（终态事件唯一）。
@@ -183,6 +189,15 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 	}
 	// 流正常结束（SDK 已消费 [DONE]/EOF）：补发 data: [DONE]\n\n + flush。
 	// 补发失败 = 客户端断开 → 按 abort 收尾（上游已正常完成——usage 照记）。
+	// 零帧防御（病态上游仅发 [DONE]——fn 从未调用、头未提交）：此刻才提交头，
+	// [DONE] 是首个写出字节。
+	if !framesWritten {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+		framesWritten = true
+	}
 	if err := writeCodexSSEFrame(w, sseDonePayload); err != nil {
 		p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
 		return 0, nil, true, nil
