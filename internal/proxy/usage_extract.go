@@ -151,8 +151,10 @@ func respImageDetectOn(sel *scheduler.Selection) bool {
 }
 
 // respImageCount 族：数 response 对象的 image_generation_call item（spec §6）。
-// 两种输入形态（输出定位路径不同）各一个入口，共享计数核心 countImageItems——
-// 调用方按形态直选（不做"先试 A 再回退 B"的双扫描）：
+// 计数值 = 功能调用计数（统一计费模型 spec 2026-08-13：落 CallCount——
+// 图片生成每张一次功能调用；search 端点接入后另计）。两种输入形态（输出定位
+// 路径不同）各一个入口，共享计数核心 countImageItems——调用方按形态直选
+// （不做"先试 A 再回退 B"的双扫描）：
 //   - respImageCountCompleted：completed 帧/事件（response.output 信封——
 //     流式 Observer 与 resp-ws relay sniff 同族）
 //   - respImageCountBody：非流式响应体（output 顶层，SDK RawJSON）

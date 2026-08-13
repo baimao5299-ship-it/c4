@@ -36,8 +36,8 @@ type imageStreamGenerator func(ctx context.Context, cred *domain.AccountCredenti
 //     （keepalive 后不 Flush = 假免疫）
 //   - keepalive 事件 → SSE 注释行 ": ping"（透传）
 //   - image_generation.completed 事件 → SSE 帧（b64_json + usage——usage 仅
-//     末事件携带；字段映射 = ImageUsage JSON tag 直透）；image_count 计数
-//     （每张图一个）
+//     末事件携带；字段映射 = ImageUsage JSON tag 直透）；completed 计数
+//     （call_count，每张图一个）
 //   - 未知事件类型跳过（SDK 合成流不产出，防御）
 //
 // 错误与计费（对齐 recordStreamAbort 既有语义 + abort 双分支镜像
@@ -53,9 +53,10 @@ type imageStreamGenerator func(ctx context.Context, cred *domain.AccountCredenti
 //     张落账
 //
 // 计费口径（与 T2 非流式同口径——ImageCost + GetImagePrice 快照）：流终按已
-// 收集张数落账；usage 取末事件（completed 携带）；image token 分量入
-// ImageInput/OutputTokens、张数入 ImageCount、TotalTokens = image tokens 之
-// 和（张数不入 TotalTokens——评审 P3-6）；text token 分量恒 0。
+// 收集张数落账；usage 取末事件（completed 携带）；image token 分量并入
+// Input/OutputTokens、张数入 CallCount、TotalTokens = image tokens 之和（张数
+// 不入 TotalTokens——评审 P3-6；统一计费模型 spec 2026-08-13）；text token
+// 分量恒 0。
 func (p *Proxy) streamImageGeneration(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, cred *domain.AccountCredential, params *domain.ImageGenParams, gen imageStreamGenerator) (int, []byte, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.cfg.UpstreamStreamTimeout)
 	defer cancel()
@@ -106,7 +107,7 @@ func (p *Proxy) streamImageGeneration(ctx context.Context, w http.ResponseWriter
 		ii, io = usage.InputImageTokens, usage.OutputImageTokens
 	}
 	// 已收集张数/usage 落账元组：tt = image tokens 之和（张数不入 TotalTokens）。
-	u := usageTuple{ii: ii, io: io, tt: ii + io, img: count}
+	u := usageTuple{ii: ii, io: io, tt: ii + io, calls: count}
 
 	if genErr != nil {
 		if !headersSent {

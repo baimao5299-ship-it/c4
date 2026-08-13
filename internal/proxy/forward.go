@@ -193,13 +193,15 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 		l.PriceCacheCreationMillis = pr.CacheCreationPricePerMillion
 	}
 	l.Cost, l.AboveHit = billing.Cost(pr, billing.NormalizeTier(l.BillingTier), l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
-	// resp/resp-ws 响应检测 image 计费旁路（spec §6；检测挂点产出 ImageCount）：
+	// resp/resp-ws 响应检测 image 计费旁路（spec §6；检测挂点产出 CallCount）：
 	// count > 0 → 按 model 查 GetImagePrice——缺价 → no_price 标记整单不计费
 	// （响应已产生无法 402，对齐上方 chat 缺价同语义：审计留痕不按 0 计价）；
 	// 有价 → ImageCost 聚合进 Cost（仅 per-image 分量——responses 路径无
-	// image_tokens，image token 恒 0）。P3-9：行存在但 per-image 价 nil → 图
-	// 分量 0（出图免费，chat 分量照常——ImageCost nil 分量回退 0 语义）。
-	if l.ImageCount > 0 {
+	// image_tokens，image token 恒 0）+ per-image 价快照落 PricePerCallMillis
+	// （统一计费模型 spec 2026-08-13：call_count × price_per_call_millis → cost）。
+	// P3-9：行存在但 per-image 价 nil → 图分量 0（出图免费，chat 分量照常——
+	// ImageCost nil 分量回退 0 语义）。
+	if l.CallCount > 0 {
 		ip, err := p.bill.Prices.GetImagePrice(model)
 		if err != nil || ip == nil {
 			if p.log != nil {
@@ -209,7 +211,10 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 			l.Cost, l.AboveHit = 0, false // no_price 整单不计费（图像未计费不按 0 计价）
 			return
 		}
-		l.Cost += billing.ImageCost(ip, 0, 0, l.ImageCount) // image token 恒 0（responses 路径无 image_tokens，V1-V3 实证）
+		if ip.OutputCostPerImageMilli != nil {
+			l.PricePerCallMillis = ip.OutputCostPerImageMilli
+		}
+		l.Cost += billing.ImageCost(ip, 0, 0, l.CallCount) // image token 恒 0（responses 路径无 image_tokens，V1-V3 实证）
 	}
 	// 价格倍率（T3.5，用户拍板）：整单 × 有效倍率（万分数；用户覆盖组——
 	// 用户已设置 → 用户值，否则组倍率，均缺 ×1）。m==10000 恒等短路零开销；
@@ -223,6 +228,10 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 // BillingTier="no_price" + cost 0（运行时防御，审计留痕不按 0 计价）。价格
 // 快照列仅在分量 >0 且模型有价（非 nil）时落（nil = 无该分量语义）；倍率
 // 同 chat 路径整单施加（fast/组倍率——ImageCost 本身不含倍率）。
+// 统一计费模型（spec 2026-08-13）落账迁移：image token 已并入 Input/Output
+// Tokens（images 格式 text 分量恒 0 → 两列即 image tokens——ImageCost 口径不
+// 变）；per-image 价快照迁移为 PricePerCallMillis（毫分/张）；原 image token
+// 单价快照两列已删不再落账。
 func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 	model := l.MappedModel
 	if model == "" {
@@ -239,16 +248,10 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 		l.BillingTier = "no_price"
 		return
 	}
-	if l.ImageInputTokens > 0 && ip.InputImageTokenPricePerMillion != nil {
-		l.PriceImageInputMillis = ip.InputImageTokenPricePerMillion
+	if l.CallCount > 0 && ip.OutputCostPerImageMilli != nil {
+		l.PricePerCallMillis = ip.OutputCostPerImageMilli
 	}
-	if l.ImageOutputTokens > 0 && ip.OutputImageTokenPricePerMillion != nil {
-		l.PriceImageOutputMillis = ip.OutputImageTokenPricePerMillion
-	}
-	if l.ImageCount > 0 && ip.OutputCostPerImageMilli != nil {
-		l.PricePerImageMillis = ip.OutputCostPerImageMilli
-	}
-	l.Cost = billing.ImageCost(ip, l.ImageInputTokens, l.ImageOutputTokens, l.ImageCount)
+	l.Cost = billing.ImageCost(ip, l.InputTokens, l.OutputTokens, l.CallCount)
 	l.Cost = applyMultiplier(l.Cost, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
 }
 
@@ -256,17 +259,18 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 // Model = 客户端请求模型（reqModel），MappedModel = 映射后实际模型
 // （usedModel 与请求模型不同才写入，否则空 = 未映射）。u 传值（GC 削减 P6：
 // 指针逃逸 1 alloc；零值 = 无用量）。
+// 统一计费模型（spec 2026-08-13）：image token 分量（ii/io，images 格式专用，
+// resp 路径恒 0）并入 Input/OutputTokens（TotalTokens 口径不变）；功能调用
+// 计数（calls = 图片张数：resp 检测旁路计数 Task D 先行 / images 格式直连与
+// codex 路径 data 数组长 / 流式 completed 事件数）落 CallCount（不入 TotalTokens）。
 func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, u usageTuple, start time.Time) *domain.UsageLog {
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
 		LatencyMS:   time.Since(start).Milliseconds(),
-		InputTokens: u.it, OutputTokens: u.ot, TotalTokens: u.tt,
+		InputTokens: u.it + u.ii, OutputTokens: u.ot + u.io, TotalTokens: u.tt,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
-		// 图片生成分量：img = 张数（resp 检测旁路计数 Task D 先行 / images 格式
-		// 直连与 codex 路径 data 数组长 / 流式 completed 事件数）；ii/io = image
-		// token 分量（images 格式专用，resp 路径恒 0——V1-V3 实证无 image_tokens）。
-		ImageCount: u.img, ImageInputTokens: u.ii, ImageOutputTokens: u.io,
+		CallCount: u.calls,
 		CreatedAt: time.Now(),
 	}
 }
@@ -476,12 +480,15 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 type usageTuple struct {
 	it, ot, tt int64
 	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
-	img        int64 // 图片张数（resp 检测旁路 spec §6 / images 格式直连与 codex 路径 data 长 / 流式 completed 事件数；零值 = 无图）
+	// 功能调用计数（统一计费模型 spec 2026-08-13；当前唯一生产者 = 图片张数：
+	// resp 检测旁路 spec §6 / images 格式直连与 codex 路径 data 长 / 流式
+	// completed 事件数；search 端点接入后 = 1）。落 CallCount，不入 TotalTokens。
+	calls int64
 	// 图片生成分量（images 格式）：ii/io = image token 分量
 	// （input/output_tokens_details.image_tokens）；text token 分量恒 0——
 	// images 请求只计 image 分量。tt 含 image tokens 不含张数（评审 P3-6
 	// quota 口径：张数不入 TotalTokens）。resp 检测路径 ii/io 恒 0（V1-V3
-	// 实证 responses 路径无 image_tokens）。
+	// 实证 responses 路径无 image_tokens）。ii/io 由 buildLog 并入 in/out。
 	ii, io int64
 }
 

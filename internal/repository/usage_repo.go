@@ -51,9 +51,11 @@ func (r *UsageRepo) InsertBatch(ctx context.Context, logs []*domain.UsageLog) er
 // 时间/价格快照列（nil = NULL 落库，SQL 不写该列）：TTFTMS 首 token 时间毫秒
 // （非流式/失败路径 nil）；Price*Millis 每 M token 毫分单价快照（未计费路径
 // /无该分量 nil）。
-// 图片生成分量（spec §4.2）：Image*Tokens/ImageCount 直接落（0 默认）；
-// PriceImageInput/OutputMillis 毫分/1M image tokens、PricePerImageMillis
-// **毫分/张**（例外单位，per-image 计费不走 /1e6 除法）——均 nil = NULL 落库。
+// 统一计费模型功能调用分量（spec 2026-08-13）：CallCount 直接落（0 默认——
+// 图片生成 = 张数、search = 1）；PricePerCallMillis **毫分/单元**（search 每次
+// /图片每张，例外单位——per-call 计费不走 /1e6 除法，同原 price_per_image
+// _millis 语义）——nil = NULL 落库。原图片 6 列已删：image token 并入
+// InputTokens/OutputTokens（TotalTokens 口径不变）。
 // 用户裁决（err_logs 分表）：StatusCode/ErrorMessage 为域内瞬态审计字段
 // （err_logs 承载），不再写 usage_logs（该两列已从表移除——瘦身）。
 func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCreate {
@@ -68,9 +70,7 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 		SetTotalTokens(l.TotalTokens).
 		SetCacheReadTokens(l.CacheReadTokens).
 		SetCacheCreationTokens(l.CacheCreationTokens).
-		SetImageInputTokens(l.ImageInputTokens).
-		SetImageOutputTokens(l.ImageOutputTokens).
-		SetImageCount(l.ImageCount).
+		SetCallCount(l.CallCount).
 		SetCost(l.Cost).
 		SetAboveHit(l.AboveHit).
 		SetOverdraft(l.Overdraft).
@@ -111,14 +111,8 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	if l.PriceCacheCreationMillis != nil {
 		c = c.SetPriceCacheCreationMillis(*l.PriceCacheCreationMillis)
 	}
-	if l.PriceImageInputMillis != nil {
-		c = c.SetPriceImageInputMillis(*l.PriceImageInputMillis)
-	}
-	if l.PriceImageOutputMillis != nil {
-		c = c.SetPriceImageOutputMillis(*l.PriceImageOutputMillis)
-	}
-	if l.PricePerImageMillis != nil {
-		c = c.SetPricePerImageMillis(*l.PricePerImageMillis)
+	if l.PricePerCallMillis != nil {
+		c = c.SetPricePerCallMillis(*l.PricePerCallMillis)
 	}
 	return c
 }
@@ -183,12 +177,8 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 			PriceCacheReadMillis:     row.PriceCacheReadMillis,
 			CacheCreationTokens:      row.CacheCreationTokens,
 			PriceCacheCreationMillis: row.PriceCacheCreationMillis,
-			ImageInputTokens:         row.ImageInputTokens,
-			ImageOutputTokens:        row.ImageOutputTokens,
-			ImageCount:               row.ImageCount,
-			PriceImageInputMillis:    row.PriceImageInputMillis,
-			PriceImageOutputMillis:   row.PriceImageOutputMillis,
-			PricePerImageMillis:      row.PricePerImageMillis,
+			CallCount:                row.CallCount,
+			PricePerCallMillis:       row.PricePerCallMillis,
 			Cost:                     row.Cost,
 			AboveHit:                 row.AboveHit,
 			Overdraft:                row.Overdraft,

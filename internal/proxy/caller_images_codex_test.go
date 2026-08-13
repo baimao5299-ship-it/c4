@@ -213,7 +213,7 @@ func newTestCodexProxy(t *testing.T, credType credential.Type, accounts map[int6
 
 // TestImagesCodexGenerationsOK codex-oauth 非流式生图全链路（200 真实生成
 // 形态）：适配层 SDK 直连 mock 上游（模板 base 派生 generations 端点）→ 客户
-// 端 wire 转发（data 长 + 嵌套 usage）+ 计费口径统一（ImageCount 张数 /
+// 端 wire 转发（data 长 + 嵌套 usage）+ 计费口径统一（CallCount 张数 /
 // ImageInput/OutputTokens image tokens / ImageCost per-image 分量）。
 func TestImagesCodexGenerationsOK(t *testing.T) {
 	up, c := newCodexImageUpstream(t, codexUpStep{status: 200, body: codexTestImageResponse})
@@ -250,13 +250,13 @@ func TestImagesCodexGenerationsOK(t *testing.T) {
 	require.Len(t, store.logs, 1)
 	l := store.logs[0]
 	require.Equal(t, domain.FormatOpenAIImages, l.Format)
-	require.Equal(t, int64(2), l.ImageCount, "张数 = data 长")
-	require.Equal(t, int64(1), l.ImageInputTokens, "usage image_tokens 输入")
-	require.Equal(t, int64(2), l.ImageOutputTokens, "usage image_tokens 输出")
+	require.Equal(t, int64(2), l.CallCount, "张数 = data 长（入 call_count）")
+	require.Equal(t, int64(1), l.InputTokens, "usage image_tokens 输入（并入 input_tokens）")
+	require.Equal(t, int64(2), l.OutputTokens, "usage image_tokens 输出（并入 output_tokens）")
 	require.Equal(t, int64(3), l.TotalTokens, "TotalTokens = image tokens 之和（张数不入）")
 	require.Equal(t, int64(2*5400), l.Cost, "ImageCost per-image 分量（5400 毫分/张 × 2）")
-	require.NotNil(t, l.PricePerImageMillis, "per-image 价格快照落列")
-	require.Equal(t, int64(5400), *l.PricePerImageMillis)
+	require.NotNil(t, l.PricePerCallMillis, "per-image 价格快照落列")
+	require.Equal(t, int64(5400), *l.PricePerCallMillis)
 	// 无失效上报
 	require.Zero(t, recorderCalls(recorder), "成功路径零上报")
 }
@@ -482,11 +482,11 @@ func TestImagesCodexStreamSSE(t *testing.T) {
 	l := store.logs[0]
 	require.Equal(t, http.StatusOK, l.StatusCode)
 	require.Equal(t, domain.ErrNone, l.ErrorType)
-	require.Equal(t, int64(2), l.ImageCount, "流终张数 = completed 数")
-	require.Equal(t, int64(1), l.ImageInputTokens, "usage 平铺 image tokens 落账")
-	require.Equal(t, int64(2), l.ImageOutputTokens)
+	require.Equal(t, int64(2), l.CallCount, "流终张数 = completed 数（入 call_count）")
+	require.Equal(t, int64(1), l.InputTokens, "usage 平铺 image tokens 落账（并入 in）")
+	require.Equal(t, int64(2), l.OutputTokens)
 	require.Equal(t, int64(3), l.TotalTokens, "tt = image tokens 之和（张数不入）")
-	require.Equal(t, int64(5400), *l.PricePerImageMillis, "per-image 快照列")
+	require.Equal(t, int64(5400), *l.PricePerCallMillis, "per-image 快照列")
 	require.Equal(t, int64(10800), l.Cost, "2 张 × 5400 ×1 倍率")
 	require.Equal(t, "auto", l.BillingTier, "有价行 → 归一化照常")
 }

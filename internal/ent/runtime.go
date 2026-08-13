@@ -258,32 +258,24 @@ func init() {
 	usagelogDescCacheCreationTokens := usagelogFields[20].Descriptor()
 	// usagelog.DefaultCacheCreationTokens holds the default value on creation for the cache_creation_tokens field.
 	usagelog.DefaultCacheCreationTokens = usagelogDescCacheCreationTokens.Default.(int64)
-	// usagelogDescImageInputTokens is the schema descriptor for image_input_tokens field.
-	usagelogDescImageInputTokens := usagelogFields[22].Descriptor()
-	// usagelog.DefaultImageInputTokens holds the default value on creation for the image_input_tokens field.
-	usagelog.DefaultImageInputTokens = usagelogDescImageInputTokens.Default.(int64)
-	// usagelogDescImageOutputTokens is the schema descriptor for image_output_tokens field.
-	usagelogDescImageOutputTokens := usagelogFields[23].Descriptor()
-	// usagelog.DefaultImageOutputTokens holds the default value on creation for the image_output_tokens field.
-	usagelog.DefaultImageOutputTokens = usagelogDescImageOutputTokens.Default.(int64)
-	// usagelogDescImageCount is the schema descriptor for image_count field.
-	usagelogDescImageCount := usagelogFields[24].Descriptor()
-	// usagelog.DefaultImageCount holds the default value on creation for the image_count field.
-	usagelog.DefaultImageCount = usagelogDescImageCount.Default.(int64)
+	// usagelogDescCallCount is the schema descriptor for call_count field.
+	usagelogDescCallCount := usagelogFields[22].Descriptor()
+	// usagelog.DefaultCallCount holds the default value on creation for the call_count field.
+	usagelog.DefaultCallCount = usagelogDescCallCount.Default.(int64)
 	// usagelogDescCost is the schema descriptor for cost field.
-	usagelogDescCost := usagelogFields[28].Descriptor()
+	usagelogDescCost := usagelogFields[24].Descriptor()
 	// usagelog.DefaultCost holds the default value on creation for the cost field.
 	usagelog.DefaultCost = usagelogDescCost.Default.(int64)
 	// usagelogDescAboveHit is the schema descriptor for above_hit field.
-	usagelogDescAboveHit := usagelogFields[30].Descriptor()
+	usagelogDescAboveHit := usagelogFields[26].Descriptor()
 	// usagelog.DefaultAboveHit holds the default value on creation for the above_hit field.
 	usagelog.DefaultAboveHit = usagelogDescAboveHit.Default.(bool)
 	// usagelogDescOverdraft is the schema descriptor for overdraft field.
-	usagelogDescOverdraft := usagelogFields[31].Descriptor()
+	usagelogDescOverdraft := usagelogFields[27].Descriptor()
 	// usagelog.DefaultOverdraft holds the default value on creation for the overdraft field.
 	usagelog.DefaultOverdraft = usagelogDescOverdraft.Default.(bool)
 	// usagelogDescCreatedAt is the schema descriptor for created_at field.
-	usagelogDescCreatedAt := usagelogFields[32].Descriptor()
+	usagelogDescCreatedAt := usagelogFields[28].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
 	usagestatFields := schema.UsageStat{}.Fields()

@@ -230,19 +230,20 @@ func TestProxyResponsesImageDetectNonStream(t *testing.T) {
 	tokenOnly := map[string]*domain.ImagePrice{"gpt-4o": respImagePriceRow(i64p(800000), i64p(3000000), nil)}
 
 	tests := []struct {
-		name      string
-		typ       credential.Type
-		strip     bool
-		im        map[string]*domain.ImagePrice
-		wantCount int64
-		wantCost  int64
-		wantTier  string // 空 = 不断言
+		name        string
+		typ         credential.Type
+		strip       bool
+		im          map[string]*domain.ImagePrice
+		wantCount   int64
+		wantCost    int64
+		wantPerCall *int64 // 统一计费模型：有按单元价分量时落 price_per_call_millis 快照
+		wantTier    string // 空 = 不断言
 	}{
-		{"有价：ImageCost 聚合（2 张 × 5400 + chat 130）", credential.TypeResponsesSpecial, false, withPerImage, 2, 10930, ""},
-		{"缺图价：no_price 整单不计费", credential.TypeResponsesSpecial, false, nil, 2, 0, "no_price"},
-		{"P3-9：per-image nil → 图分量 0（chat 照常）", credential.TypeResponsesSpecial, false, tokenOnly, 2, 130, ""},
-		{"api_key 永不检测", credential.TypeAPIKey, false, withPerImage, 0, 130, ""},
-		{"strip 开 → 不检测", credential.TypeResponsesSpecial, true, withPerImage, 0, 130, ""},
+		{"有价：ImageCost 聚合（2 张 × 5400 + chat 130）", credential.TypeResponsesSpecial, false, withPerImage, 2, 10930, i64p(5400), ""},
+		{"缺图价：no_price 整单不计费", credential.TypeResponsesSpecial, false, nil, 2, 0, nil, "no_price"},
+		{"P3-9：per-image nil → 图分量 0（chat 照常）", credential.TypeResponsesSpecial, false, tokenOnly, 2, 130, nil, ""},
+		{"api_key 永不检测", credential.TypeAPIKey, false, withPerImage, 0, 130, nil, ""},
+		{"strip 开 → 不检测", credential.TypeResponsesSpecial, true, withPerImage, 0, 130, nil, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -271,8 +272,14 @@ func TestProxyResponsesImageDetectNonStream(t *testing.T) {
 			defer store.mu.Unlock()
 			require.Len(t, store.logs, 1)
 			lg := store.logs[0]
-			require.Equal(t, tt.wantCount, lg.ImageCount, "检测计数")
+			require.Equal(t, tt.wantCount, lg.CallCount, "检测计数（入 call_count）")
 			require.Equal(t, tt.wantCost, lg.Cost, "cost（chat 分量 + image 分量聚合）")
+			if tt.wantPerCall != nil {
+				require.NotNil(t, lg.PricePerCallMillis, "有按单元价 → price_per_call_millis 快照落列")
+				require.Equal(t, *tt.wantPerCall, *lg.PricePerCallMillis)
+			} else {
+				require.Nil(t, lg.PricePerCallMillis, "无按单元价分量 → nil")
+			}
 			if tt.wantTier != "" {
 				require.Equal(t, tt.wantTier, lg.BillingTier, "no_price 标记")
 			} else {
@@ -315,7 +322,7 @@ func TestProxyResponsesImageDetectMultiplier(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
-	require.Equal(t, int64(2), store.logs[0].ImageCount)
+	require.Equal(t, int64(2), store.logs[0].CallCount)
 	require.Equal(t, int64(16395), store.logs[0].Cost, "(130 + 2×5400) × 1.5 = 16395——倍率整单作用于含 image 分量的 cost")
 }
 
@@ -365,7 +372,7 @@ func TestProxyResponsesImageDetectStream(t *testing.T) {
 			store.mu.Lock()
 			defer store.mu.Unlock()
 			require.Len(t, store.logs, 1)
-			require.Equal(t, tt.wantCount, store.logs[0].ImageCount)
+			require.Equal(t, tt.wantCount, store.logs[0].CallCount)
 			require.Equal(t, tt.wantCost, store.logs[0].Cost)
 		})
 	}
@@ -454,7 +461,7 @@ func TestResponsesWSImageDetect(t *testing.T) {
 			store.mu.Lock()
 			defer store.mu.Unlock()
 			require.Len(t, store.logs, 1)
-			require.Equal(t, tt.wantCount, store.logs[0].ImageCount)
+			require.Equal(t, tt.wantCount, store.logs[0].CallCount)
 			require.Equal(t, tt.wantCost, store.logs[0].Cost)
 		})
 	}
@@ -519,6 +526,6 @@ func TestResponsesWSCodexTypeZeroCount(t *testing.T) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
-	require.Equal(t, int64(0), store.logs[0].ImageCount, "codex 类型响应无图片 item → 恒 0 计数（客户端本地执行）")
+	require.Equal(t, int64(0), store.logs[0].CallCount, "codex 类型响应无图片 item → 恒 0 计数（客户端本地执行）")
 	require.Equal(t, int64(130), store.logs[0].Cost, "无图 → 只计 chat 分量")
 }

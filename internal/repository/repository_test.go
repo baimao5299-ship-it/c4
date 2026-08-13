@@ -538,51 +538,51 @@ func TestLogsAndStats(t *testing.T) {
 	tr := newRepos(t)
 
 	// InsertBatch -> 批量 INSERT ... RETURNING id（sqlgraph 批量创建列按名字母序：
-	// above_hit, account_id, cache_creation_tokens, cache_read_tokens, cost, ...,
-	// format, group_id, image_count, image_input_tokens, image_output_tokens,
-	// input_tokens, ..., output_tokens, overdraft, price_cache_creation_millis,
-	// price_cache_read_millis, price_input_millis, price_output_millis, ...,
-	// total_tokens, ttft_ms；billing_tier 未设置不落列保持 NULL；l2 新列未设置
-	// → 该行 NULL（图片价格三列 nil → 该行省略不落列；image token/count 三列
-	// 恒设 0 落列）。status_code 已从 usage_logs 移除（分表设计瘦身，错误审计列
-	// 归 err_logs）——InsertBatch 不再携带该列）
+	// above_hit, account_id, cache_creation_tokens, cache_read_tokens, call_count,
+	// cost, ..., format, group_id, input_tokens, ..., output_tokens, overdraft,
+	// price_cache_creation_millis, price_cache_read_millis, price_input_millis,
+	// price_output_millis, ..., total_tokens, ttft_ms；billing_tier 未设置不落列
+	// 保持 NULL；price_per_call_millis nil → 该行省略不落列（call_count 恒设 0
+	// 落列）。统一计费模型（spec 2026-08-13）：原图片 6 列已删——image token
+	// 并入 input/output_tokens，per-image 价迁移为 price_per_call_millis）。
+	// status_code 已从 usage_logs 移除（分表设计瘦身，错误审计列归 err_logs）
+	// ——InsertBatch 不再携带该列）
 	tr.pool.ExpectQuery(q(`INSERT INTO "usage_logs"`)).
-		WithArgs(false, int64(2), int64(2), int64(4), int64(0), pgxmock.AnyArg(), "none",
-			usagelog.Format("openai-chat"), int64(1), int64(0), int64(0), int64(0), int64(0),
+		WithArgs(false, int64(2), int64(2), int64(4), int64(0), int64(0), pgxmock.AnyArg(), "none",
+			usagelog.Format("openai-chat"), int64(1), int64(0),
 			int64(10), "m", int64(0), false,
 			int64(5678), int64(1234), int64(1e7), int64(2e7), "r1",
 			int64(3), int64(100), int64(88),
-			false, int64(2), int64(3), int64(5), int64(0), pgxmock.AnyArg(), "5xx",
-			usagelog.Format("openai-chat"), int64(1), int64(0), int64(0), int64(0), int64(0),
+			false, int64(2), int64(3), int64(5), int64(0), int64(0), pgxmock.AnyArg(), "5xx",
+			usagelog.Format("openai-chat"), int64(1), int64(0),
 			int64(20), "m", int64(0), false,
 			"r2", int64(3), int64(0)).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(1)).AddRow(int64(2)))
 
 	// Log Query -> SELECT（keyset 游标：去 Count，LIMIT limit+1 探测——契约
 	// 2026-08-11；TTFT 列按 schema 序在 latency_ms 后；价格四列各紧邻其
-	// tokens 列；图片 6 列（image_input/output_tokens、image_count + 3 价格
-	// 快照）在 price_cache_creation_millis 与 cost 之间（schema 序）；计费四列
-	// cost/billing_tier/above_hit/overdraft 在 price_per_image_millis 与
-	// created_at 之间）
+	// tokens 列；统一计费模型两列（call_count + price_per_call_millis）在
+	// price_cache_creation_millis 与 cost 之间（schema 序——原图片 6 列已删）；
+	// 计费四列 cost/billing_tier/above_hit/overdraft 在 price_per_call_millis
+	// 与 created_at 之间）
 	tr.pool.ExpectQuery(q(`FROM "usage_logs"`)).
 		WithArgs(int64(1)).
 		WillReturnRows(pgxmock.NewRows([]string{"id", "request_id", "group_id", "account_id", "template_id",
 			"model", "mapped_model", "format", "error_type", "latency_ms",
 			"ttft_ms", "input_tokens", "price_input_millis", "output_tokens", "price_output_millis",
 			"total_tokens", "cache_read_tokens", "price_cache_read_millis", "cache_creation_tokens",
-			"price_cache_creation_millis", "image_input_tokens", "image_output_tokens", "image_count",
-			"price_image_input_millis", "price_image_output_millis", "price_per_image_millis",
+			"price_cache_creation_millis", "call_count", "price_per_call_millis",
 			"cost", "billing_tier", "above_hit", "overdraft", "created_at"}).
 			AddRow(int64(1), "r1", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				"none", int64(10), int64(88), int64(0), int64(1e7), int64(0), int64(2e7),
 				int64(100), int64(4), int64(1234), int64(2), int64(5678),
-				int64(0), int64(0), int64(0), sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
+				int64(0), sql.NullInt64{},
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).
 			AddRow(int64(2), "r2", int64(1), int64(2), int64(3), "m", "", "openai-chat",
 				"5xx", int64(20), sql.NullInt64{}, int64(0), sql.NullInt64{}, int64(0), sql.NullInt64{},
 				int64(0), int64(5), sql.NullInt64{}, int64(3), sql.NullInt64{},
-				int64(0), int64(0), int64(0), sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
+				int64(0), sql.NullInt64{},
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
@@ -622,6 +622,8 @@ func TestLogsAndStats(t *testing.T) {
 	require.Equal(t, int64(2e7), *rows[0].PriceOutputMillis, "price_output_millis round-trip")
 	require.Equal(t, int64(1234), *rows[0].PriceCacheReadMillis, "price_cache_read_millis round-trip")
 	require.Equal(t, int64(5678), *rows[0].PriceCacheCreationMillis, "price_cache_creation_millis round-trip")
+	require.Zero(t, rows[0].CallCount, "call_count round-trip（chat 无功能调用）")
+	require.Nil(t, rows[0].PricePerCallMillis, "price_per_call_millis round-trip（未设置 → NULL）")
 	require.Nil(t, rows[1].TTFTMS, "未设置 ttft_ms → NULL")
 	require.Nil(t, rows[1].PriceInputMillis, "未设置 price_input_millis → NULL")
 	require.Nil(t, rows[1].PriceOutputMillis, "未设置 price_output_millis → NULL")

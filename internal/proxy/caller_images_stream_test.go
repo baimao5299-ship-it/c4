@@ -169,25 +169,21 @@ func TestStreamImagePassthrough(t *testing.T) {
 		rec.Body.String())
 	require.True(t, rec.Flushed, "每事件后 Flush")
 
-	// 流终计费（与 T2 同口径）：image_count=2、image token 取末事件、价格快照、
+	// 流终计费（与 T2 同口径）：call_count=2、image token 取末事件、价格快照、
 	// ImageCost（100×800000/1e6 + 50×3000000/1e6 + 2×5400 = 11030）；text 分量
-	// 恒 0；TotalTokens 含 image tokens 不含张数。
+	// 恒 0；TotalTokens 含 image tokens 不含张数。统一计费模型（spec 2026-08-13）：
+	// image token 并入 in/out、张数入 call_count、每张价入 price_per_call_millis
+	//（原图片 6 专列已删——image token 单价快照不再落账）。
 	l := collectImageLogs(t, p, store)
 	require.Equal(t, domain.FormatOpenAIImages, l.Format)
 	require.Equal(t, domain.ErrNone, l.ErrorType)
-	require.Equal(t, int64(2), l.ImageCount)
-	require.Equal(t, int64(100), l.ImageInputTokens)
-	require.Equal(t, int64(50), l.ImageOutputTokens)
-	require.Zero(t, l.InputTokens, "images 请求 text token 分量恒 0")
-	require.Zero(t, l.OutputTokens)
-	require.Equal(t, int64(150), l.TotalTokens, "image tokens 入 TotalTokens")
-	require.NotNil(t, l.PriceImageInputMillis)
-	require.Equal(t, int64(800000), *l.PriceImageInputMillis)
-	require.NotNil(t, l.PriceImageOutputMillis)
-	require.Equal(t, int64(3000000), *l.PriceImageOutputMillis)
-	require.NotNil(t, l.PricePerImageMillis)
-	require.Equal(t, int64(5400), *l.PricePerImageMillis)
-	require.Equal(t, int64(11030), l.Cost, "100×800000/1e6 + 50×3000000/1e6 + 2×5400")
+	require.Equal(t, int64(2), l.CallCount)
+	require.Equal(t, int64(100), l.InputTokens, "image input tokens 并入 input_tokens")
+	require.Equal(t, int64(50), l.OutputTokens, "image output tokens 并入 output_tokens")
+	require.Equal(t, int64(150), l.TotalTokens, "image tokens 入 TotalTokens（口径不变）")
+	require.NotNil(t, l.PricePerCallMillis)
+	require.Equal(t, int64(5400), *l.PricePerCallMillis)
+	require.Equal(t, int64(11030), l.Cost, "100×800000/1e6 + 50×3000000/1e6 + 2×5400（ImageCost 口径不变）")
 }
 
 // TestStreamImageUsageOnlyLastCompleted usage 仅末事件携带：多张图时计费取
@@ -204,9 +200,9 @@ func TestStreamImageUsageOnlyLastCompleted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, code)
 	l := collectImageLogs(t, p, store)
-	require.Equal(t, int64(2), l.ImageCount)
-	require.Equal(t, int64(3), l.ImageInputTokens, "usage 取末事件")
-	require.Equal(t, int64(2), l.ImageOutputTokens)
+	require.Equal(t, int64(2), l.CallCount)
+	require.Equal(t, int64(3), l.InputTokens, "usage 取末事件（并入 input_tokens）")
+	require.Equal(t, int64(2), l.OutputTokens)
 }
 
 // TestStreamImageZeroImagesSuccess 0 图成功边界（P3-3）：SDK Data 空 → 无任何
@@ -220,10 +216,10 @@ func TestStreamImageZeroImagesSuccess(t *testing.T) {
 	require.True(t, handled)
 	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"), "0 图成功也发 SSE 响应头（200 收尾）")
 	l := collectImageLogs(t, p, store)
-	require.Equal(t, int64(0), l.ImageCount)
+	require.Equal(t, int64(0), l.CallCount)
 	require.Zero(t, l.Cost)
 	require.Equal(t, domain.ErrNone, l.ErrorType)
-	require.Nil(t, l.PricePerImageMillis, "0 张无 per-image 价快照")
+	require.Nil(t, l.PricePerCallMillis, "0 张无 per-image 价快照")
 }
 
 // TestStreamImagePreHeaderError 首事件前失败：响应头未发 → 错误原样透传
@@ -261,7 +257,7 @@ func TestStreamImagePostHeaderError(t *testing.T) {
 	// 计费走 recordStreamAbort：已收集 1 张照常落账（200 + abort 语义）。
 	l := collectImageLogs(t, p, store)
 	require.Equal(t, domain.ErrAbort, l.ErrorType)
-	require.Equal(t, int64(1), l.ImageCount)
+	require.Equal(t, int64(1), l.CallCount)
 	require.Equal(t, int64(5400), l.Cost, "1 张 per-image 计费")
 	p.sched.FlushRules() // MarkResult 异步投递：断言前排空
 	ri, ok := p.sched.Runtime(1)
@@ -281,7 +277,7 @@ func TestStreamImageAbortNoCompleted(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "event: error", "已发响应头后失败 → error 帧")
 	l := collectImageLogs(t, p, store)
 	require.Equal(t, domain.ErrAbort, l.ErrorType)
-	require.Zero(t, l.ImageCount, "无 completed → 0 张落账")
+	require.Zero(t, l.CallCount, "无 completed → 0 张落账")
 }
 
 // TestStreamImageClientDisconnect 客户端断开（abort 双分支 1）：已收集张数照常
@@ -306,7 +302,7 @@ func TestStreamImageClientDisconnect(t *testing.T) {
 	require.True(t, handled)
 	l := collectImageLogs(t, p, store)
 	require.Equal(t, domain.ErrAbort, l.ErrorType)
-	require.Equal(t, int64(1), l.ImageCount, "客户端断开已收集张数照常落账")
+	require.Equal(t, int64(1), l.CallCount, "客户端断开已收集张数照常落账")
 	require.Equal(t, int64(5400), l.Cost)
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
@@ -351,7 +347,7 @@ func TestStreamImageUnknownEventSkipped(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "partial_image", "未知事件不写帧")
 	require.Equal(t, 1, strings.Count(rec.Body.String(), "event: image_generation.completed"))
 	l := collectImageLogs(t, p, store)
-	require.Equal(t, int64(1), l.ImageCount, "partial_image 不计费不计数")
+	require.Equal(t, int64(1), l.CallCount, "partial_image 不计费不计数")
 }
 
 // TestStreamImageUnknownEventWarns 未知事件类型 → Warn（A-P2-10 静默面收敛）：
@@ -377,7 +373,7 @@ func TestStreamImageUnknownEventWarns(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	require.NotContains(t, rec.Body.String(), "partial_image", "未知事件不写帧")
 	l := collectImageLogs(t, p, store)
-	require.Equal(t, int64(1), l.ImageCount, "未知事件不计费不计数")
+	require.Equal(t, int64(1), l.CallCount, "未知事件不计费不计数")
 	data, err := os.ReadFile(logOut)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "image stream: unknown event type skipped", "未知事件必须 Warn（不静默吞）")
@@ -406,7 +402,7 @@ func TestStreamImageBillingNoPrice(t *testing.T) {
 	l := collectImageLogs(t, p, store)
 	require.Equal(t, "no_price", l.BillingTier)
 	require.Zero(t, l.Cost)
-	require.Equal(t, int64(1), l.ImageCount, "无价仍记张数（审计留痕）")
+	require.Equal(t, int64(1), l.CallCount, "无价仍记张数（审计留痕）")
 }
 
 // TestStreamImageGroupMultiplier 组倍率作用于含 image 分量 cost（整单 ×

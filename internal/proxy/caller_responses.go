@@ -70,7 +70,7 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
 		var it, ot, tt, cr, cc int64
-		var img int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
+		var img int64 // resp 检测功能调用计数（spec §6 旁路；respImageDetectOn 门控）——落 CallCount
 		// TTFT 采集（首 token 时间毫秒）：首个 SSE 帧（任意事件）到达时间——
 		// Observer 在帧原样写出后回调，与客户端感知首 chunk 最接近；单帧旁路
 		// 零成本（time.Now 一次 + 毫秒换算）。首帧后写入 ctx（logWithCtx 读取）；
@@ -109,15 +109,15 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort，
 				// token 取断前已收到的 usage 帧（无则 0）。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, err)
 			p.sched.MarkResult(sel.AccountID, scheduler.ResultError, nil, statusOf(err), err.Error())
 			return 0, nil, true, nil
 		}
 		p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -145,7 +145,7 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 	var it, ot, tt, cr, cc int64
-	var img int64 // resp 检测 image_count（spec §6 旁路；respImageDetectOn 门控）
+	var img int64 // resp 检测功能调用计数（spec §6 旁路；respImageDetectOn 门控）——落 CallCount
 	if resp.JSON.Usage.Valid() {
 		// 非流式：cr 直读 SDK 结构体、cc 走 RawJSON() gjson 聚合
 		// （Responses 无 cache_creation 对象，恒 0 预期——M4）。
@@ -158,6 +158,6 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		img = respImageCountBody([]byte(resp.RawJSON()))
 	}
 	p.sched.MarkResult(sel.AccountID, scheduler.ResultOK, nil, http.StatusOK, "")
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, img: img}, start)))
+	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 	return 200, nil, true, nil
 }

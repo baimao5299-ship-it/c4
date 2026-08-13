@@ -20,9 +20,9 @@ import (
 // 对字符串型结果会物化 Str 分配 32B，故 type 走字节扫描）。负/异常输入恒
 // 返回零值（不 panic 不阻塞采集，对齐 chat 提取路径的缺失→0 语义）。
 
-// ImageUsageFromResponse 非流式 images 响应用量提取：image_count = 响应
-// data 数组长度（每张图一个元素）；image_input/output_tokens =
-// usage.input/output_tokens_details.image_tokens（**usage 可选**——"For
+// ImageUsageFromResponse 非流式 images 响应用量提取：imageCount = 响应
+// data 数组长度（每张图一个元素——落账 call_count）；image_input/output_tokens
+// = usage.input/output_tokens_details.image_tokens（**usage 可选**——"For
 // gpt-image-1 only"：缺失 → 0，per-image 按张数照算）。
 func ImageUsageFromResponse(data []byte) (imageInputTokens, imageOutputTokens, imageCount int64) {
 	return gjson.GetBytes(data, "usage.input_tokens_details.image_tokens").Int(),
@@ -61,7 +61,7 @@ func eventTypeIs(data []byte, want string) bool {
 // A-P2-10）→ completed=true（每完成一张一个事件），并返回该事件携带的
 // usage image tokens（input/output_tokens_details.image_tokens；事件无
 // usage → 0）；其余事件（partial_image 等）→ completed=false 不计费不计数。
-// 流终计费：调用方按 completed 累加张数（image_count），usage 取**末次**
+// 流终计费：调用方按 completed 累加张数（落账 call_count），usage 取**末次**
 // completed 事件的 tokens；流中途失败/ErrAbort → 已收集 usage 照常计费。
 func ImageStreamEvent(data []byte) (completed bool, imageInputTokens, imageOutputTokens int64) {
 	if !(eventTypeIs(data, string(domain.ImageStreamEventCompleted)) || eventTypeIs(data, string(domain.ImageStreamEventEditCompleted))) {

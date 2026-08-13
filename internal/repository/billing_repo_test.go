@@ -31,11 +31,12 @@ func logFor(userID int64, requestID string) *domain.UsageLog {
 
 // fullLogFor 填满全部可选列的计费日志（#37 P2 回归锚）：21 列 × 4000 行 =
 // 84,000 参数，单批 CreateBulk 必超 PG 65535 上限（logFor 仅 16 列 × 4000 =
-// 64,000 不触发；26 列可写列最坏界 65535/26 ≈ 2520 行即超限——压测实证生产
-// 批次 19 列 × ~3448 行即超限报错）。Task C 扩列后 32 列可写列最坏界
-// 65535/32 ≈ 2047 行（2000 行/批仍安全——见 usageLogBatchSize 注释）。
-// 图片 6 列（spec §4.2）也全填——双路径等价测试（TestPGDeductCopyPathEquivalent）
-// 逐字段对比即覆盖新列。
+// 64,000 不触发；28 列可写列最坏界 65535/28 ≈ 2340 行即超限——压测实证生产
+// 批次 19 列 × ~3448 行即超限报错；统一计费模型重构删 6 加 2 后 28 列——
+// 2000 行/批仍安全，见 usageLogBatchSize 注释）。
+// 功能调用分量（统一计费模型 spec 2026-08-13）也全填：CallCount/PricePerCall
+// Millis（毫分/单元——原图片 6 列已删，image token 并入 in/out）——双路径
+// 等价测试（TestPGDeductCopyPathEquivalent）逐字段对比即覆盖新列。
 func fullLogFor(userID int64, requestID string) *domain.UsageLog {
 	l := logFor(userID, requestID)
 	l.GroupID = 1
@@ -45,12 +46,8 @@ func fullLogFor(userID int64, requestID string) *domain.UsageLog {
 	l.MappedModel = "gpt-4o-mapped"
 	l.CacheReadTokens = 1
 	l.CacheCreationTokens = 2
-	l.ImageInputTokens = 5
-	l.ImageOutputTokens = 6
-	l.ImageCount = 2
-	l.PriceImageInputMillis = int64Ptr(800_000) // 毫分/1M image tokens
-	l.PriceImageOutputMillis = int64Ptr(3_000_000)
-	l.PricePerImageMillis = int64Ptr(5_400) // 毫分/张（例外单位）
+	l.CallCount = 2
+	l.PricePerCallMillis = int64Ptr(5_400) // 毫分/单元（例外单位——per-call 不走 /1e6）
 	msg := "err:" + requestID
 	l.ErrorMessage = &msg
 	return l
