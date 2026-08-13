@@ -123,6 +123,9 @@ func validateAccountExt(e *domain.AccountExt) error {
 		if e.OAuthToken != nil || e.OAuthRefreshToken != nil || e.OAuthExpiresAt != nil {
 			return ErrInvalidInput
 		}
+		if e.PATKey == nil {
+			return ErrInvalidInput // pat 组最小完整性（B1-4：与 oauth 分支对称——空 key 写成功即死账号）
+		}
 	}
 	return nil
 }
@@ -143,9 +146,12 @@ func (s *Service) GetAccountExt(ctx context.Context, accountID int64) (*domain.A
 //   - thread==session：只给其一 → 自动补齐恒等；成对显式冲突 → ErrInvalidInput；
 //   - window 恒 {thread}:0（零透传）：只给 window → 剥尾段反推 thread；
 //     显式 window ≠ {thread}:0 → ErrInvalidInput（window 永不落库为其它值）。
+//   - 存量行（cur 非 nil）上只给 window：反推 ≠ 存量 thread → ErrInvalidInput
+//     （B1-3 方向 2——派生值不得冒充显式值改身份：window-only 只允许与存量
+//     一致的无操作轮换；无存量行才允许自由反推）。
 //
 // 缺失字段保持 nil——由调用方沿用存量/自动生成后兜底派生 window。
-func normalizeCodexIdentity(e *domain.AccountExt) error {
+func normalizeCodexIdentity(e *domain.AccountExt, cur *domain.AccountExt) error {
 	// window 只给 → 反推 thread（{thread}:{n} 形状，剥最后 :段）
 	if e.WindowID != nil && e.ThreadID == nil {
 		w := *e.WindowID
@@ -154,6 +160,9 @@ func normalizeCodexIdentity(e *domain.AccountExt) error {
 			return ErrInvalidInput // 形状非法：必须 {thread}:{n}
 		}
 		t := w[:i]
+		if cur != nil && cur.ThreadID != nil && t != *cur.ThreadID {
+			return ErrInvalidInput // 存量行 window-only：反推 ≠ 存量 → 400
+		}
 		e.ThreadID = &t
 	}
 	// thread==session 恒等：只给其一 → 补齐；成对显式冲突 → 拒绝
@@ -173,15 +182,13 @@ func normalizeCodexIdentity(e *domain.AccountExt) error {
 }
 
 // fillIdentityDefaults 缺省身份沿用（持久复用）：installation 空 → 取存量；
-// email/session/thread nil → 取存量。window 不沿用——恒 {thread}:0 派生（thread
-// 定后由调用方兜底派生）。调用方保证 cur 为存量行（已有行 carry-forward 或
-// 首写冲突赢者）。
+// session/thread nil → 取存量。window 不沿用——恒 {thread}:0 派生（thread
+// 定后由调用方兜底派生）。email 不在 fill 列表（B1-5：未提供 → NULL 清空，
+// 兑现"全列更新含 NULL 清空"契约）。调用方保证 cur 为存量行（已有行
+// carry-forward 或首写冲突赢者）。
 func fillIdentityDefaults(e *domain.AccountExt, cur *domain.AccountExt) {
 	if e.InstallationID == "" {
 		e.InstallationID = cur.InstallationID
-	}
-	if e.Email == nil {
-		e.Email = cur.Email
 	}
 	if e.SessionID == nil {
 		e.SessionID = cur.SessionID
@@ -195,12 +202,18 @@ func fillIdentityDefaults(e *domain.AccountExt, cur *domain.AccountExt) {
 // 类型一致性：ext 行 credential_type 必须与父行（账号所属模板）的
 // credential_type 一致（账号无独立类型列，类型继承自模板）——不一致 → 400。
 // 身份恒等式（thread==session、window={thread}:0 零透传）：显式部分提供自动
-// 补齐（normalizeCodexIdentity）；成对冲突 → 400。
-// 身份四元组 + email 自动管理：无存量行 → NewCodexIdentity() 生成四元组并
-// 经 TryInsert（ON CONFLICT DO NOTHING 先写者胜）原子首写——并发双导入同一
-// 账号不覆盖不报错，冲突方回读赢者沿用其身份后走普通 upsert 写令牌；后续
-// 写入缺省 → 沿用存量（持久复用，账号存在期间稳定）；调用方显式提供 → 采用。
-// 列组约束（oauth/pat）校验后落库。W1 不接线失效/发布。
+// 补齐（normalizeCodexIdentity）；成对冲突 → 400；存量行上 window-only 反推
+// ≠ 存量 thread → 400（B1-3 方向 2：派生值不得冒充显式值改身份）。
+// 身份四元组自动管理：无存量行 → NewCodexIdentity() 生成四元组并经
+// TryInsert（ON CONFLICT DO NOTHING 先写者胜）原子首写——并发双导入同一账号
+// 不覆盖不报错，冲突方完全采用赢者身份后走普通 upsert 写令牌（B1-3 方向 3：
+// 显式身份只在首写成功路径生效）；后续写入缺省 → 沿用存量（持久复用，账号
+// 存在期间稳定）；调用方显式提供 → 采用。email 不在缺省沿用面——未提供 →
+// NULL 清空（B1-5 契约）。
+// 校验先于落库（B1-2）：window 派生 + 列组校验在 TryInsert 之前——被拒凭据
+// 零残留（400 前不写库；含 NULL window 问题同步消除）；终校验保留（冲突路径
+// 重改 e 后，早校验覆盖不到）。
+// W1 不接线失效/发布。
 func (s *Service) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*domain.AccountExt, error) {
 	acc, err := s.store.GetAccount(ctx, e.AccountID)
 	if err != nil {
@@ -215,15 +228,16 @@ func (s *Service) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*
 		return nil, ErrInvalidInput // 父行（模板）类型与 ext 行类型必须一致
 	}
 	orig := *e // 首写冲突回退用（丢弃本请求生成的未用身份，回到显式输入）
-	if err := normalizeCodexIdentity(e); err != nil {
-		return nil, err
-	}
 	cur, err := s.store.GetAccountExt(ctx, e.AccountID)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return nil, mapRepoErr(err) // 非缺行错误原样上抛（不误判为首次写入）
 	}
+	// 先取存量行再归一（B1-3 方向 2）：存量行上 window-only 反推 ≠ 存量 → 400
+	if err := normalizeCodexIdentity(e, cur); err != nil {
+		return nil, err
+	}
 	if err == nil {
-		// 已有行：身份字段/email 缺省 → 沿用存量（持久复用；window 兜底派生）
+		// 已有行：身份字段缺省 → 沿用存量（持久复用；window 兜底派生）
 		fillIdentityDefaults(e, cur)
 	} else {
 		// 无存量行：installation 缺省自动生成；会话三元组全缺省 → 自动生成
@@ -236,8 +250,19 @@ func (s *Service) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*
 			e.ThreadID = &id.ThreadID
 			e.WindowID = &id.WindowID
 		}
+		// window 恒 {thread}:0——thread 定后兜底派生（永不沿用旧 window）
+		if e.ThreadID != nil && e.WindowID == nil {
+			w := *e.ThreadID + ":0"
+			e.WindowID = &w
+		}
+		// 校验先于首写落库（B1-2）：自动生成值恒合法，早校验只命中列组违规
+		// （与已存在行校验语义无差异）——被拒凭据零残留
+		if err := validateAccountExt(e); err != nil {
+			return nil, err
+		}
 		// 首写原子性：ON CONFLICT DO NOTHING 先写者胜——冲突（并发已首写）
-		// → 回读赢者，沿用其身份，再走下方普通 upsert（令牌按本次请求写）
+		// → 回读赢者完全采用其身份（B1-3 方向 3：显式身份只在首写成功路径
+		// 生效——败者派生值不得覆盖赢者，最终身份确定）
 		inserted, err := s.store.TryInsertAccountExt(ctx, e)
 		if err != nil {
 			return nil, mapRepoErr(err)
@@ -248,10 +273,13 @@ func (s *Service) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*
 				return nil, mapRepoErr(gerr)
 			}
 			*e = orig
-			if err := normalizeCodexIdentity(e); err != nil {
-				return nil, err
+			e.InstallationID = winner.InstallationID
+			e.SessionID = winner.SessionID
+			e.ThreadID = winner.ThreadID
+			e.WindowID = winner.WindowID
+			if e.Email == nil {
+				e.Email = winner.Email // 未提供 email → 沿用赢者（管理标识随首写者）
 			}
-			fillIdentityDefaults(e, winner)
 		}
 	}
 	// window 恒 {thread}:0——thread 定后兜底派生（永不沿用旧 window）
@@ -259,6 +287,7 @@ func (s *Service) UpsertAccountExt(ctx context.Context, e *domain.AccountExt) (*
 		w := *e.ThreadID + ":0"
 		e.WindowID = &w
 	}
+	// 终校验（B1-2：冲突路径重改 e 后，早校验覆盖不到）——校验失败不落库
 	if err := validateAccountExt(e); err != nil {
 		return nil, err
 	}

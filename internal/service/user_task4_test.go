@@ -6,11 +6,13 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // newTask4Svc 构造带 fakeKeyRegistrar 的 Service（key 增量注册可断言）。
@@ -135,6 +137,69 @@ func TestKeyUpdateFields(t *testing.T) {
 	require.Equal(t, domain.KeyStatusDisabled, updated.Status)
 	require.Equal(t, int64(1000), updated.Quota)
 	require.Greater(t, len(keys.upserted), 1, "更新后必须增量注册")
+}
+
+// getUserFailStore fakeStore 包装：注入 GetUser 失败（B1-1 测试——写前预取
+// 失败必须发生在写库前，零破坏）。
+type getUserFailStore struct {
+	*fakeStore
+	failGetUser bool
+}
+
+func (f *getUserFailStore) GetUser(ctx context.Context, id int64) (*domain.User, error) {
+	if f.failGetUser {
+		return nil, fmt.Errorf("injected GetUser failure")
+	}
+	return f.fakeStore.GetUser(ctx, id)
+}
+
+// TestCreateKeyGetUserFailureNoWrite B1-1：GetUser 失败注入 → CreateKey 在写库
+// 前终止——零落库、零注册（写后注册不可失败；失败绝不反转调用方）。
+func TestCreateKeyGetUserFailureNoWrite(t *testing.T) {
+	fs := &getUserFailStore{fakeStore: newFakeStore()}
+	keys := &fakeKeyRegistrar{}
+	svc := &Service{store: fs, inv: &invRecorder{}, keys: keys, log: nil}
+	ctx := context.Background()
+
+	user, err := fs.CreateUser(ctx, &domain.User{Email: "u@example.com", Role: domain.RoleUser, Status: domain.UserStatusActive})
+	require.NoError(t, err)
+	g, err := fs.CreateGroup(ctx, &domain.Group{Name: "g", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+
+	fs.failGetUser = true
+	_, _, err = svc.CreateKey(ctx, user.ID, "k", g.ID, 0, 0)
+	require.Error(t, err, "GetUser 失败 → CreateKey 必须报错（写前预取终止）")
+	rows, _, err := fs.ListKeysByUser(ctx, user.ID, repository.ListQuery{})
+	require.NoError(t, err)
+	require.Empty(t, rows, "被拒创建零残留（GetUser 失败发生在写库前）")
+	require.Empty(t, keys.upserted, "失败注入下不得注册任何 key")
+}
+
+// TestRotateKeyGetUserFailureNoDestruction B1-1：GetUser 失败注入 → RotateKey
+// 在写库前终止——DB 行未轮换、旧 hash 未失效、注册面零变化（修复前：先
+// Delete 后 upsert 失败 → DB 已轮换只留新 hash、新 raw 蒸发 → 永久死亡）。
+func TestRotateKeyGetUserFailureNoDestruction(t *testing.T) {
+	fs := &getUserFailStore{fakeStore: newFakeStore()}
+	keys := &fakeKeyRegistrar{}
+	svc := &Service{store: fs, inv: &invRecorder{}, keys: keys, log: nil}
+	ctx := context.Background()
+
+	user, err := fs.CreateUser(ctx, &domain.User{Email: "u@example.com", Role: domain.RoleUser, Status: domain.UserStatusActive})
+	require.NoError(t, err)
+	g, err := fs.CreateGroup(ctx, &domain.Group{Name: "g", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	k, _, err := svc.CreateKey(ctx, user.ID, "k", g.ID, 0, 0)
+	require.NoError(t, err)
+	before := k.KeyHash
+
+	fs.failGetUser = true
+	_, _, err = svc.RotateKey(ctx, user.ID, k.ID)
+	require.Error(t, err, "GetUser 失败 → RotateKey 必须报错（写前预取终止）")
+	got, err := fs.GetKey(ctx, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, before, got.KeyHash, "DB 行未轮换（轮换零发生）")
+	require.Empty(t, keys.deleted, "旧 hash 未失效（Delete 未发生）")
+	require.Empty(t, keys.upserted[1:], "新 hash 未注册")
 }
 
 // TestSetGroupAssignments 替换语义：差集授予/撤销；非法/重复/缺失校验。
