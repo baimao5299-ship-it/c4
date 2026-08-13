@@ -70,6 +70,40 @@ func responsesCompletedUsage(data []byte) (it, ot, tt, cr, cc int64) {
 			gjson.GetBytes(data, "response.usage.cache_creation.ephemeral_1h_input_tokens").Int()
 }
 
+// --- codex resp 顶层 usage 解析（P1-1——T6：SDK 路径的 usage 形状为顶层） ---
+// codex SSE data 载荷 usage 在**顶层**（{"type":"response.completed","response":
+// {id,object,status},"usage":{...}}——codex-sdk responses.go:90-93 顶层读取实证）；
+// 合成体（codex-sdk responses.go:113-119 responsesComposite：id/object/status/
+// output/usage）无 type 字段但 usage 同样顶层。既有 sniffResponsesCompleted
+//（"type":"response.completed" 子串预筛 + response.usage.* 前缀——WS 帧形状）
+// 对两路径均不适用（预筛命中但读 0 / 预筛恒不命中——静默归零）——本族是 WS
+// 形状之外的独立路径族（流式 completed 帧 / 合成体共用同一顶层 helper）。
+
+// responsesTopLevelUsage 顶层 usage → 五计数元组（流式 completed 帧与合成体
+// 共用）：input/output/total + input_tokens_details.cached_tokens +
+// cache_creation ephemeral 双桶聚合（与 cacheCreationFromRaw 同口径）。
+func responsesTopLevelUsage(data []byte) (it, ot, tt, cr, cc int64) {
+	return gjson.GetBytes(data, "usage.input_tokens").Int(),
+		gjson.GetBytes(data, "usage.output_tokens").Int(),
+		gjson.GetBytes(data, "usage.total_tokens").Int(),
+		gjson.GetBytes(data, "usage.input_tokens_details.cached_tokens").Int(),
+		gjson.GetBytes(data, "usage.cache_creation.ephemeral_5m_input_tokens").Int() +
+			gjson.GetBytes(data, "usage.cache_creation.ephemeral_1h_input_tokens").Int()
+}
+
+// sniffResponsesCompletedTop 流式 fn 热路径嗅探（P1-1）：gjson **type 精确判
+// 定** "type"=="response.completed"（SDK 交付载荷无 event: 行——正文含该子串
+// 的消息帧不冻结；WS 路径 bytes.Contains 预筛形状不适用）+ 顶层 usage 解析。
+// 真实上游 response.completed 恒唯一（终态事件）——调用方取首个命中帧后跳过
+// 后续解析（usage 只读一次；"最后帧覆盖"语义由终态唯一性等价保证）。
+func sniffResponsesCompletedTop(data []byte) (usageTuple, bool) {
+	if gjson.GetBytes(data, "type").String() != "response.completed" {
+		return usageTuple{}, false
+	}
+	it, ot, tt, cr, cc := responsesTopLevelUsage(data)
+	return usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, true
+}
+
 // chatUsageFromResponse 非流式 chat 响应用量：cr 直读 SDK 结构体字段
 // （PromptTokensDetails.CachedTokens，v1.12.0 有该字段）；cc 从 RawJSON()
 // （SDK 保留的上游原始字节）gjson 聚合——SDK 不解析 cache_creation 对象
