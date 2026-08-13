@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/is7qin/c3api/internal/invalidate"
 	"github.com/is7qin/c3api/internal/notify"
@@ -27,7 +28,8 @@ func (a schedGroupPub) PublishGroups(ctx context.Context, gids []int64) {
 // 给 invalidate 去抖器的 Mark 方法（本地/远端变更共享同一去抖窗口，天然合并
 // 去重——设计文档 §2.3）；settings 变更例外——同步 ReloadSettings 后再经快照
 // 注册表按 scope 精确重载（#36：N 变更/auth 预算即时生效，时序见 Apply）；
-// FullRefresh 经注册表全量刷新（启动/断线重连兜底，R8）。
+// FullRefresh 经注册表全量刷新（监听器连接成功兜底，R8；首连跳过见
+// FullRefresh 注释——E2 启动双刷）。
 //
 // 放装配侧（cmd/server）而非 notify 包：notify 不 import invalidate/service
 // 是 T1 设计约束（避免依赖环），适配只能在依赖两者的最外层做。
@@ -36,6 +38,15 @@ type dispatcher struct {
 	svc       invalidate.SettingsReloader // *service.Service（ReloadSettings：Apply settings 分支同步刷新 + FullRefresh）
 	snapshots *snapshot.Registry          // 五路快照注册表（NOTIFY scope 分发 + 断线重连全量刷新）
 	log       *logx.Logger                // nil = 静默（测试）
+	// bootLoaded 启动首刷全成功标志（E2 启动双刷）：main 在注册表 ReloadAll
+	// 返回空 map（全部成功）后置位、wm.StartAll 之前（程序序保证监听器首连必
+	// 见标志）；FullRefresh 首个调用（= 监听器首连）CAS 消费——命中则跳过五路
+	// ReloadAll（单实例健康启动下第二遍纯冗余：大表启动 DB 负载/就绪延迟约
+	// 翻倍），仅补 ReloadSettings（svc 不在注册表内，保持既有语义）。未置位
+	// （首刷部分失败 → 首连仍全量，兜底收敛不破坏）或已消费（断线重连 → 恒
+	// 全量刷新）均走全量路径。多实例 pre-LISTEN 漏窗 ≤30s sched 同步 / 60s
+	// auth-sync 兜底收敛，可接受。
+	bootLoaded atomic.Bool
 }
 
 // Apply 处理一条 NOTIFY 变更：按映射表转去抖器 Mark（设计文档 §2.2/§2.3）。
@@ -112,12 +123,22 @@ func (d *dispatcher) reloadScopes(ctx context.Context, scopes ...string) {
 	}
 }
 
-// FullRefresh 启动首连 / 断线重连全量本地刷新（设计文档 §2.3 / R8）：注册表
-// ReloadAll（auth + scheduler + rules + pricing + balances）覆盖断连期间
-// NOTIFY 丢失，另重载 settings 快照（svc——不在注册表内，保持既有语义）。
-// 各步独立尽力执行，返回首个错误（listener 侧 Warn）。与 main 启动序
-// （registry.ReloadAll）幂等重复无害（重连路径是本方法唯一入口）。
+// FullRefresh 监听器每次连接成功（启动首连 / 断线重连）时的本地刷新（设计
+// 文档 §2.3 / R8）：注册表 ReloadAll（auth + scheduler + rules + pricing +
+// balances）覆盖断连期间 NOTIFY 丢失，另重载 settings 快照（svc——不在注册
+// 表内，保持既有语义）。各步独立尽力执行，返回首个错误（listener 侧 Warn）。
+// 调用方无需区分首连/重连——是否跳过由本方法裁决（E2 启动双刷）：main 启动
+// 首刷全成功置位 bootLoaded 后，首个调用（= 首连）CAS 消费即跳过五路
+// ReloadAll、仅补 ReloadSettings——单实例健康启动下第二遍纯冗余（大表启动
+// DB 负载/就绪延迟约翻倍）；多实例 pre-LISTEN 漏窗 ≤30s sched 同步 / 60s
+// auth-sync 兜底收敛，可接受。标志未置（首刷部分失败）或已消费（断线重连）
+// → 恒全量刷新不变。
 func (d *dispatcher) FullRefresh(ctx context.Context) error {
+	if d.bootLoaded.CompareAndSwap(true, false) {
+		// 首连 + 启动首刷全成功：五路 ReloadAll 已在 main 启动序全部成功执行，
+		// 重复为纯冗余——跳过，仅补 ReloadSettings（svc 不在注册表内）。
+		return d.svc.ReloadSettings(ctx)
+	}
 	var firstErr error
 	record := func(err error) {
 		if err != nil && firstErr == nil {
