@@ -46,7 +46,7 @@ func TestPasswordLenLimit(t *testing.T) {
 	require.ErrorIs(t, ValidatePasswordLen(string(long)), ErrPasswordTooLong, "73 字节拒绝")
 }
 
-// --- JWT（HS256；TTL 15min；密钥强制在 config 层） ---
+// --- JWT（HS256；TTL 24h；密钥强制在 config 层） ---
 
 func TestJWTIssueVerify(t *testing.T) {
 	iss := NewIssuer("test-secret")
@@ -66,6 +66,7 @@ func TestJWTWrongSecretRejected(t *testing.T) {
 	require.NoError(t, err)
 	_, err = NewIssuer("secret-b").Verify(token)
 	require.Error(t, err, "错误密钥必须拒绝")
+	require.NotErrorIs(t, err, ErrTokenExpired, "非过期错误不得误分类为过期")
 }
 
 func TestJWTExpiredRejected(t *testing.T) {
@@ -74,6 +75,9 @@ func TestJWTExpiredRejected(t *testing.T) {
 	require.NoError(t, err)
 	_, err = NewIssuer("s").Verify(token)
 	require.Error(t, err, "过期 token 必须拒绝")
+	// B2-2：过期分类归本包哨兵，同时保留 jwt/v5 原始链（errors.Is 双命中）
+	require.ErrorIs(t, err, ErrTokenExpired, "过期错误必须命中本包哨兵")
+	require.ErrorIs(t, err, jwt.ErrTokenExpired, "%w 保留 jwt/v5 原始链")
 }
 
 func TestJWTTamperedRejected(t *testing.T) {
@@ -155,15 +159,26 @@ func TestRequireJWTRejects(t *testing.T) {
 		rec := doReq(t, mw, token)
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
+	// B2-1 fail-closed：快照缺失（启动首刷失败/Reload 失败/NOTIFY 丢失）→
+	// 401 拒绝，不放行（对照 /admin 面已 fail-closed）
+	t.Run("snapshot missing", func(t *testing.T) {
+		rec := doReq(t, RequireJWT(iss, fakeUserStatus{}), token)
+		require.Equal(t, http.StatusUnauthorized, rec.Code, "快照缺失必须拒绝而非放行")
+	})
 }
 
 func TestRequireRole(t *testing.T) {
 	iss := NewIssuer("s")
 	token, _ := iss.Issue(7, "u@example.com", string(domain.RoleUser))
 	adminToken, _ := iss.Issue(8, "a@example.com", string(domain.RolePlatformAdmin))
+	// 快照含两用户（active）——fail-closed 下快照缺失 401，本测试聚焦
+	// RequireRole 角色声明而非快照路径（快照缺失用例见 TestRequireJWTRejects）
 	mw := func(next http.Handler) http.Handler {
 		// 链序：RequireJWT（验证 + claims 入 ctx）→ RequireRole（角色声明）
-		return RequireJWT(iss, fakeUserStatus{})(RequireRole(domain.RolePlatformAdmin)(next))
+		return RequireJWT(iss, fakeUserStatus{statuses: map[int64]domain.UserStatus{
+			7: domain.UserStatusActive,
+			8: domain.UserStatusActive,
+		}})(RequireRole(domain.RolePlatformAdmin)(next))
 	}
 	rec := doReq(t, mw, token)
 	require.Equal(t, http.StatusForbidden, rec.Code, "user 角色访问 platform 端点 → 403")
