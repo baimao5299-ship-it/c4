@@ -150,6 +150,10 @@ func main() {
 		IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
 		DialTimeout:         cfg.Upstream.DialTimeout,
 		ForceHTTP2:          cfg.Upstream.ForceHTTP2,
+		// Proxy 显式直连（C2-1 防劫持）：HTTP_PROXY 环境变量不再静默改道
+		// 上游请求（含 x-api-key/Authorization 凭据，WS 升级大概率失败）；
+		// 压测行为不随部署环境漂移。
+		Proxy: nil,
 	})
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
@@ -300,6 +304,9 @@ func main() {
 		IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
 		DialTimeout:         cfg.Upstream.DialTimeout,
 		ForceHTTP2:          cfg.Upstream.ForceHTTP2,
+		// Proxy 显式直连（C2-1，与网关既有 client 同纪律）：SDK 上游请求
+		// 不走环境代理——凭据与 WS 升级不受 HTTP_PROXY 静默改道。
+		Proxy: nil,
 	}))
 	// T5 §1 轮转回写面装配：WithOnTokenRotated → account_ext 部分更新 upsert
 	//（oauth_token + oauth_refresh_token + oauth_expires_at 保旧）+ 失效调度器
