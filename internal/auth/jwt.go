@@ -6,6 +6,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -36,7 +37,7 @@ type Issuer struct {
 	ttl    time.Duration
 }
 
-// NewIssuer 构造签发器（TTL = DefaultTTL 15min）。
+// NewIssuer 构造签发器（TTL = DefaultTTL 24h）。
 func NewIssuer(secret string) *Issuer {
 	return &Issuer{secret: []byte(secret), ttl: DefaultTTL}
 }
@@ -66,6 +67,12 @@ func (i *Issuer) Verify(token string) (*Claims, error) {
 		return i.secret, nil
 	})
 	if err != nil {
+		// 过期分类归本包哨兵（%w 双保留 jwt/v5 原始链：errors.Is 命中
+		// auth.ErrTokenExpired 与 jwt.ErrTokenExpired 皆可）——错误分类
+		// 归属收归本包，不外包给调用方。
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, fmt.Errorf("%w: %w", ErrTokenExpired, err)
+		}
 		return nil, err
 	}
 	claims, ok := parsed.Claims.(*Claims)

@@ -3,7 +3,7 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 // Package auth 承载用户认证体系：bcrypt 密码哈希（与 sub2api 同参数）、
-// JWT 签发/验证（HS256，TTL 15min）与 RBAC 中间件（/user 组 RequireJWT +
+// JWT 签发/验证（HS256，TTL 24h）与 RBAC 中间件（/user 组 RequireJWT +
 // 快照用户状态校验；/admin = 静态 token OR platform_admin JWT）。
 package auth
 

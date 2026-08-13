@@ -28,7 +28,8 @@ type UserStatusLoader interface {
 // Auth 鉴权快照：key_hash → KeyMeta（含归属用户门禁字段）+ 用户状态表 +
 // 两级并发/额度内存计数（gate）。热路径零 DB、零 per-request 锁（RWMutex
 // 读多写少，规格 §10.3）。用户状态变更（禁用/并发/额度调整）走 invalidate
-// 回调 → Reload 全量刷新（评审 I-2），JWT 15min 短时效兜底。
+// 回调 → Reload 全量刷新（评审 I-2），JWT 24h 长时效仅作快照失效后的
+// 最终兜底。
 type Auth struct {
 	loader KeyLoader
 	users  UserStatusLoader

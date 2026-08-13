@@ -28,7 +28,8 @@ func ClaimsFrom(ctx context.Context) (*Claims, bool) {
 }
 
 // RequireJWT /user 组中间件：验证 Bearer JWT + 内存快照用户状态校验。
-// 用户禁用 → 立即拒绝（快照刷新走 invalidate）；JWT 15min 短时效兜底。
+// 用户禁用 → 立即拒绝（快照刷新走 invalidate）；JWT 24h 长时效仅作快照
+// 失效后的最终兜底（评审定夺②，用户决策 2026-08-11）。
 func RequireJWT(iss *Issuer, users UserStatusProvider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,8 +43,14 @@ func RequireJWT(iss *Issuer, users UserStatusProvider) func(http.Handler) http.H
 				writeUnauthorized(w)
 				return
 			}
-			// 快照用户状态校验：禁用即拒（无需等 JWT 过期）
-			if st, ok := users.UserStatus(claims.UserID); ok && st != domain.UserStatusActive {
+			// 快照用户状态校验：禁用即拒（无需等 JWT 过期）；快照缺失
+			// （启动首刷失败 / Reload 失败保留旧快照 / NOTIFY 丢失）同样拒绝
+			// ——fail-closed，与 /admin 面（internal/server/ops.go adminAuth）
+			// 及 Balances.BalanceOf 缺失 → 402 纪律一致。行为变化注记：启动
+			// 首刷失败（DB 挂）时 /user 全拒——/user 端点 DB-backed 反正 500，
+			// 实际影响≈0。
+			st, ok := users.UserStatus(claims.UserID)
+			if !ok || st != domain.UserStatusActive {
 				writeUnauthorized(w)
 				return
 			}
