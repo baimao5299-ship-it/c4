@@ -13,7 +13,7 @@ type FlusherStats struct {
 	PendingLogs      int64 `json:"pending_logs"`       // 尚未落库的计费日志条数
 	PendingWaterline int64 `json:"pending_waterline"`  // 水线（包级 var 直读）
 	Warned           bool  `json:"warned"`             // 水线告警边沿是否置位
-	LastFlushUnixMs  int64 `json:"last_flush_unix_ms"` // 最近一次实际 flush 完成时刻（0 = 尚未 flush）
+	LastFlushUnixMs  int64 `json:"last_flush_unix_ms"` // 最近一次成功落库时刻（0 = 尚未成功落库；空 flush/全失败不推进，G2-4）
 }
 
 // Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。

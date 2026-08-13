@@ -36,7 +36,9 @@ type FlushConfig struct {
 // pendingWaterline pending 日志条数水线：超过 → Warn（可观测，非反压——Record
 // 永不阻塞，pending 内存即唯一积压面）。按聚合日志条数计（评审 C-1：429 风暴
 // 24.5k 日志/s 才是无界增长场景；按去重用户数计 ≤1M 用户不可达恒不告警）。
-// var（非 const）：测试注入小阈值，默认 1M 不变，后续可配置化。
+// var（非 const）：测试注入小阈值，默认 1M 不变，后续可配置化。G2-5（可选，
+// spec 2026-08-13）注释声明：Stats() 直读包级 var 存在理论竞态（测试注入写入
+// vs 并发采集读）——运行期恒只读，实测无害，原子化属行为微调不默认实施。
 var pendingWaterline int64 = 1_000_000
 
 // maxUsageLogsPerTx 单用户单事务日志行数上限（P2，压测 2026-08-11 修复）：
@@ -114,8 +116,9 @@ type Flusher struct {
 	pending  map[int64]*flusherPending
 	pendingN atomic.Int64 // pending 日志条数（水线观测；换批/回灌同步增减）
 	warned   atomic.Bool  // 水线越过告警边沿（回落复位，避免重复刷屏）
-	// lastFlush 最近一次实际 flush 周期完成时刻（UnixMilli；0 = 尚未 flush——
-	// 空 pending 的早退路径不记，观测"flusher 最近何时真正落过库"）。
+	// lastFlush 最近一次**成功落库**时刻（UnixMilli；0 = 尚未成功落库——空
+	// pending 早退与全失败（回灌/截断）不推进，观测"flusher 最近何时成功落过
+	// 库"，G2-4）。
 	lastFlush atomic.Int64
 	flushMu   sync.Mutex // 单 flush 入口串行：ticker/ctx.Done/Close 三处触发互斥；在途批次即其持有者
 	started   atomic.Bool
@@ -445,8 +448,15 @@ func (f *Flusher) flushCtx(ctx context.Context) int64 {
 		}(si, shard)
 	}
 	wg.Wait()
-	f.lastFlush.Store(time.Now().UnixMilli())
-	return drained.Load()
+	// G2-4（spec 2026-08-13）：lastFlush 语义 = 最近一次**成功落库**时刻——全失败
+	// （回灌/截断，drained==0）不推进（旧实现无条件 Store，监控误判落库健康）；
+	// 部分成功（drained>0，含幂等冲突按成功路径）推进。空 pending 早退路径（上方
+	// return 0）同样不推进（0 = 尚未成功落库）。
+	n := drained.Load()
+	if n > 0 {
+		f.lastFlush.Store(time.Now().UnixMilli())
+	}
+	return n
 }
 
 // refill 失败回灌：该 user 的 cost+logs 合并回当前 pending（锁内 append——flush

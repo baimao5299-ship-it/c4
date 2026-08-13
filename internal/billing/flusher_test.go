@@ -1061,3 +1061,43 @@ func TestFlusherUniqueConflictTreatedAsSuccess(t *testing.T) {
 		})
 	}
 }
+
+// TestFlusherLastFlushNotAdvancingOnFailure G2-4（spec 2026-08-13）：lastFlush
+// 语义"成功落库时刻"——全失败 flush 不推进（旧实现无条件 Store，失败也推进，
+// 监控误判落库健康）；成功落库（含部分成功）才推进。
+func TestFlusherLastFlushNotAdvancingOnFailure(t *testing.T) {
+	t.Run("all fail does not advance", func(t *testing.T) {
+		writer := &fakeDeductWriter{fails: map[int64]int{1: 4}}
+		f := newTestFlusher(writer)
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 100})
+
+		// 4 轮全失败（< maxLogFlushFailures 止损阈值）：回灌重试，lastFlush 恒 0
+		for i := 0; i < 4; i++ {
+			f.flush()
+			require.Zero(t, f.lastFlush.Load(), "第 %d 轮全失败 flush 不得推进 lastFlush", i+1)
+			require.Equal(t, int64(1), f.pendingN.Load(), "失败回灌不丢（日志条数）")
+		}
+		require.Equal(t, 4, f.failCounts[0], "4 次连续失败计数")
+
+		// 成功落库 → 推进
+		f.flush()
+		require.Greater(t, f.lastFlush.Load(), int64(0), "成功落库推进 lastFlush")
+		require.Zero(t, f.pendingCount(), "成功排空")
+	})
+
+	t.Run("partial success advances", func(t *testing.T) {
+		// 2 worker 分片：两用户各自独立 shard（同 user 恒同桶），成功/失败并行
+		// 确定（1 worker 时 map 迭代序随机——user2 先失败会把 user1 一并回灌）。
+		writer := &fakeDeductWriter{fails: map[int64]int{2: 1}}
+		f := newTestFlusherWorkers(writer, 2)
+		f.Record(&domain.UsageLog{UserID: 1, Cost: 100})
+		f.Record(&domain.UsageLog{UserID: 2, Cost: 100})
+
+		f.flush() // user2 失败回灌；user1 成功落库 → 推进（确有日志落库）
+		require.Greater(t, f.lastFlush.Load(), int64(0), "部分成功（≥1 chunk 落库）推进 lastFlush")
+		require.Equal(t, 1, f.pendingCount(), "user2 失败回灌待重试")
+
+		require.NoError(t, f.Close(context.Background()), "重试排空成功")
+		require.Zero(t, f.pendingCount())
+	})
+}
