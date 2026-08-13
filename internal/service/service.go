@@ -189,7 +189,6 @@ type PricingStore interface {
 	UpsertFunctionManual(ctx context.Context, m *repository.FunctionPriceManual) (*domain.FunctionPrice, error)
 	DeleteFunctionManual(ctx context.Context, model string) error
 	ListFunctionPrice(ctx context.Context, q repository.ListQuery, source *domain.PricingSource, provider, model string) ([]*domain.FunctionPrice, int64, error)
-	GetFunctionPrice(ctx context.Context, model string) (*domain.FunctionPrice, error)
 }
 
 type LogStore interface {

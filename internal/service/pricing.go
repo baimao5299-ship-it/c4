@@ -140,7 +140,7 @@ func (s *Service) ServiceTierPolicy(tier billing.Tier) billing.TierPolicyMode {
 	}
 }
 
-// UpsertManualPricing 手动设价（管理端 PUT /admin/pricing/{model}）：校验 + 落库
+// UpsertManualPricing 手动设价（管理端 PUT /admin/pricing?model=X）：校验 + 落库
 // （upsert 强制 source=manual，可接管 litellm 行）+ 成功后重载快照（读路径
 // 即时生效）。PricingManual 可选字段（nil = 清空）校验语义：非 nil 且 < 0 →
 // 400（与主价一致）；FastMultiplier 万分数 0 < m ≤ 100000（×1.0..×10.0，评审
@@ -191,7 +191,7 @@ func (s *Service) UpsertManualPricing(ctx context.Context, m *repository.Pricing
 	return p, nil
 }
 
-// DeleteManualPricing 删除手动价（管理端 DELETE /admin/pricing/{model}）：仅
+// DeleteManualPricing 删除手动价（管理端 DELETE /admin/pricing?model=X）：仅
 // source=manual 行可删（litellm 行 → ErrConflict；仓库语义）；成功后重载快照
 // ——该 model 从快照消失（缺失窗口内 GetPrice → ErrNotFound，下轮拉取补回）。
 func (s *Service) DeleteManualPricing(ctx context.Context, model string) error {

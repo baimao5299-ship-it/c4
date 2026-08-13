@@ -243,27 +243,6 @@ func TestListFunctionPrice(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput, "非法 sort → 400")
 }
 
-// TestFunctionPriceRow 管理端单行查询（DB 直读）：命中返回；缺失 → ErrNotFound
-// （快照读的 codex-search 默认兜底不在此面出现）。
-func TestFunctionPriceRow(t *testing.T) {
-	fs := newFakeStore()
-	_, err := fs.UpsertFunctionFromLiteLLM(context.Background(), []*domain.FunctionPrice{
-		functionLitellmRow("search-alpha", 10),
-	})
-	require.NoError(t, err)
-	svc := newFunctionPricingSvc(t, fs)
-	ctx := context.Background()
-
-	p, err := svc.GetFunctionPriceRow(ctx, "search-alpha")
-	require.NoError(t, err)
-	require.Equal(t, int64(10), *p.PricePerCall)
-
-	_, err = svc.GetFunctionPriceRow(ctx, domain.CodexSearchModel)
-	require.ErrorIs(t, err, ErrNotFound, "表行缺失 → 404（无兜底行）")
-	_, err = svc.GetFunctionPriceRow(ctx, "missing")
-	require.ErrorIs(t, err, ErrNotFound)
-}
-
 // TestSyncPricingNowFunctionLine 手动 sync 三线：function 行独立落库 + function
 // 快照重载 + 统计返回（FunctionRows/FunctionUpdated）。
 func TestSyncPricingNowFunctionLine(t *testing.T) {

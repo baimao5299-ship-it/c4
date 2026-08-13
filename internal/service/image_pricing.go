@@ -98,7 +98,7 @@ func (s *Service) GetImagePrice(model string) (*domain.ImagePrice, error) {
 	return nil, fmt.Errorf("%w: model=%q（无图片价格数据：请管理端设价或等待 litellm 同步）", ErrNotFound, model)
 }
 
-// UpsertManualImagePrice 手动设图价格（管理端 PUT /admin/image-price/{model}）：
+// UpsertManualImagePrice 手动设图价格（管理端 PUT /admin/image-price?model=X）：
 // 校验（model 非空；三分量全 nil → 400——行有效性 = 至少一价非 nil；非 nil 且
 // < 0 → 400）+ 落库（upsert 强制 source=manual，可接管 litellm 行）+ 成功后
 // 重载快照（读路径即时生效）。ImagePriceManual 单位：token 价毫分/1M、
@@ -136,7 +136,7 @@ func (s *Service) UpsertManualImagePrice(ctx context.Context, m *repository.Imag
 	return p, nil
 }
 
-// DeleteManualImagePrice 删除手动图价格（管理端 DELETE /admin/image-price/{model}）：
+// DeleteManualImagePrice 删除手动图价格（管理端 DELETE /admin/image-price?model=X）：
 // 仅 source=manual 行可删（litellm 行 → ErrConflict；仓库语义）；成功后重载
 // 快照——该 model 从快照消失（缺失窗口内 GetImagePrice → ErrNotFound，
 // 下轮拉取补回）。

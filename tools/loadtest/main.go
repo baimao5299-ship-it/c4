@@ -34,6 +34,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	_ "net/http/pprof"
 	"os"
 	"strings"
@@ -509,7 +510,7 @@ func newFillRequest(client *http.Client, rng *rand.Rand) (req *http.Request, pre
 		}), ""
 	case "pricing":
 		// PUT 幂等 upsert：同模型重复设价 = 覆盖更新，不撞唯一键
-		return mk(http.MethodPut, "/admin/pricing/"+fillModels[rng.IntN(len(fillModels))], map[string]any{
+		return mk(http.MethodPut, "/admin/pricing?model="+url.QueryEscape(fillModels[rng.IntN(len(fillModels))]), map[string]any{
 			"prompt_price_per_million":     250000 + rng.Int64N(250000),
 			"completion_price_per_million": 1000000 + rng.Int64N(1000000),
 		}), ""
