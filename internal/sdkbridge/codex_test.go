@@ -6,6 +6,7 @@ package sdkbridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -580,4 +582,256 @@ func TestCodexIncompleteNotReportedTwice(t *testing.T) {
 		require.Error(t, err)
 	}
 	require.Len(t, handler.snapshot(), 3, "每次构造失败都上报（下游 HandleFailure 幂等；摘除后不再调度）")
+}
+
+// ---------------------------------------------------------------------------
+// T4 §2/§5：Dial 面（resp-ws 接线——错误契约/轮转；伪装选项由网关侧组装，
+// 本文件测适配层 Dial 的凭据→Auth 缓存 + 错误翻译）
+// ---------------------------------------------------------------------------
+
+// codexWSUpstream Dial 面 mock WS 上游（/v1/responses 升级状态按序弹出，
+// 耗尽重复最后一步）+ 握手头观测 + 帧回声（成功升级后每帧回
+// {"type":"echo","payload":<原帧>}——Dial 返回后客户端收发断言）。
+type codexWSUpstream struct {
+	mu       sync.Mutex
+	upgrades int
+	headers  []http.Header
+	frames   []string
+	steps    []int
+	last     int
+}
+
+func newCodexWSUpstream(t *testing.T, steps ...int) (*httptest.Server, *codexWSUpstream) {
+	t.Helper()
+	u := &codexWSUpstream{last: 200}
+	if len(steps) > 0 {
+		u.steps = steps
+		u.last = steps[len(steps)-1]
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(404)
+			return
+		}
+		u.mu.Lock()
+		u.upgrades++
+		u.headers = append(u.headers, r.Header.Clone())
+		status := u.last
+		if len(u.steps) > 0 {
+			status = u.steps[0]
+			u.steps = u.steps[1:]
+			u.last = status
+		}
+		u.mu.Unlock()
+		if status != 200 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"message":"upstream rejected"}}`))
+			return
+		}
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			CompressionMode: websocket.CompressionContextTakeover,
+		})
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			typ, msg, err := c.Read(context.Background())
+			if err != nil {
+				return
+			}
+			u.mu.Lock()
+			u.frames = append(u.frames, string(msg))
+			u.mu.Unlock()
+			payload, err := json.Marshal(map[string]any{"type": "echo", "payload": string(msg)})
+			if err != nil {
+				return
+			}
+			if err := c.Write(context.Background(), typ, payload); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, u
+}
+
+func (u *codexWSUpstream) upgradesN() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.upgrades
+}
+
+func (u *codexWSUpstream) header(i int) http.Header {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.headers[i]
+}
+
+// dialCred 构造带完整 responses 端点 BaseURL 的测试凭据。
+func dialCred(accountID int64, baseURL string) *domain.AccountCredential {
+	exp := time.Now().Add(time.Hour)
+	return &domain.AccountCredential{
+		AccountID: accountID, OAuthToken: "at-old", OAuthRefreshToken: "rt-1", OAuthExpiresAt: &exp,
+		BaseURL: baseURL + "/v1/responses",
+	}
+}
+
+// TestCodexDialPATSuccess PAT 凭据 Dial 成功：升级头带 Bearer pat；连接建
+// 立后 Send/Recv 帧回声往返（帧透传面）。
+func TestCodexDialPATSuccess(t *testing.T) {
+	srv, up := newCodexWSUpstream(t, 200)
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-1", BaseURL: srv.URL + "/v1/responses"}
+	c, err := a.Dial(context.Background(), cred, codexsdk.WithPingInterval(0), codexsdk.WithPayloadFiltering(false))
+	require.NoError(t, err)
+	require.NoError(t, c.Send(context.Background(), []byte(`{"type":"response.create","model":"gpt-4o","input":"hi"}`)))
+	f, err := c.Recv(context.Background())
+	require.NoError(t, err)
+	// 回声 payload 为 JSON 转义字符串（内嵌原帧 + SDK 注入的 client_metadata）
+	var echo struct {
+		Type    string `json:"type"`
+		Payload string `json:"payload"`
+	}
+	require.NoError(t, json.Unmarshal(f, &echo))
+	require.Equal(t, "echo", echo.Type)
+	require.Contains(t, echo.Payload, `"input":"hi"`, "原帧内容原样透传")
+	require.Contains(t, echo.Payload, `"client_metadata"`, "伪装注入照常（关闭过滤与注入独立）")
+	c.CloseNow()
+	require.Equal(t, 1, up.upgradesN())
+	require.Equal(t, "Bearer pat-1", up.header(0).Get("Authorization"))
+}
+
+// TestCodexDialErrorEnvelope PAT 401 → 信封（DialError → EnvelopeError：
+// StatusCode/Unwrap 链——PAT 不轮转 Refreshed 恒 false）。
+func TestCodexDialErrorEnvelope(t *testing.T) {
+	srv, _ := newCodexWSUpstream(t, 401)
+	a := NewCodex(nil)
+	cred := &domain.AccountCredential{AccountID: 9, PATKey: "pat-1", BaseURL: srv.URL + "/v1/responses"}
+	_, err := a.Dial(context.Background(), cred)
+	require.Error(t, err)
+	var env *EnvelopeError
+	require.True(t, errors.As(err, &env), "DialError 必须信封包装：%v", err)
+	require.Equal(t, 401, env.StatusCode())
+	require.False(t, env.Refreshed, "PAT 不轮转 → Refreshed 恒 false")
+	var de *codexsdk.DialError
+	require.True(t, errors.As(err, &de), "Unwrap 链保留 DialError（errors.As 穿透）")
+	require.False(t, de.Refreshed)
+}
+
+// TestCodexDialOAuthRotationSuccess oauth 401 轮转成功（升级 401 → 单飞
+// refresh → 自动重连一次 200）：新 at 生效（升级头断言）+ 连接可用。
+func TestCodexDialOAuthRotationSuccess(t *testing.T) {
+	srv, up := newCodexWSUpstream(t, 401, 200)
+	newCodexMockRefresh(t, codexUpstreamStep{status: 200, body: `{"access_token":"at-new","refresh_token":"rt-new"}`})
+	a := NewCodex(nil)
+	cred := dialCred(7, srv.URL)
+	c, err := a.Dial(context.Background(), cred, codexsdk.WithPingInterval(0))
+	require.NoError(t, err)
+	require.NoError(t, c.Send(context.Background(), []byte(`{"type":"response.create","model":"gpt-4o"}`)))
+	_, err = c.Recv(context.Background())
+	require.NoError(t, err)
+	c.CloseNow()
+	require.Equal(t, 2, up.upgradesN(), "401 非判死 → SDK 单飞 refresh 后自动重连一次")
+	require.Equal(t, "Bearer at-old", up.header(0).Get("Authorization"))
+	require.Equal(t, "Bearer at-new", up.header(1).Get("Authorization"), "轮转后新 at 生效")
+}
+
+// TestCodexDialOAuthRefreshedEnvelope 轮转重连仍 401 → DialError.Refreshed
+// 保留进信封（网关避免双份刷新）：401 + Refreshed=true；refresh 恰一次。
+func TestCodexDialOAuthRefreshedEnvelope(t *testing.T) {
+	srv, up := newCodexWSUpstream(t, 401, 401)
+	rm := newCodexMockRefresh(t, codexUpstreamStep{status: 200, body: `{"access_token":"at-new","refresh_token":"rt-new"}`})
+	a := NewCodex(nil)
+	cred := dialCred(7, srv.URL)
+	_, err := a.Dial(context.Background(), cred)
+	require.Error(t, err)
+	var env *EnvelopeError
+	require.True(t, errors.As(err, &env))
+	require.Equal(t, 401, env.StatusCode())
+	require.True(t, env.Refreshed, "已轮转重连一次仍失败 → Refreshed=true")
+	require.Equal(t, 2, up.upgradesN())
+	require.Equal(t, 1, rm.callsN(), "refresh 恰一次（单飞；网关不再二次刷新）")
+}
+
+// TestCodexDialRefreshFatalBare refresh 判死（401 invalid_grant）→ 裸
+// RefreshOAuthError 透传不包 DialError：IsFatal=true + 统一回调单次上报
+// （回调路径与 errors.As 路径双源去重）。
+func TestCodexDialRefreshFatalBare(t *testing.T) {
+	srv, up := newCodexWSUpstream(t, 401)
+	newCodexMockRefresh(t, codexUpstreamStep{status: 401, body: `{"error":"invalid_grant"}`})
+	handler := &recordingHandler{}
+	a := NewCodex(handler.add)
+	cred := dialCred(7, srv.URL)
+	_, err := a.Dial(context.Background(), cred)
+	require.Error(t, err)
+	var re *codexsdk.RefreshOAuthError
+	require.True(t, errors.As(err, &re), "refresh 失败裸错误必须透传（不包 DialError）：%v", err)
+	require.True(t, IsFatal(err), "RefreshOAuthError 在 fatal 集")
+	require.Len(t, handler.snapshot(), 1, "双源去重：单次上报")
+	require.Equal(t, 1, up.upgradesN(), "refresh 失败不重连")
+}
+
+// TestCodexDialRefreshErrorBare refresh 可重试类（500 耗尽 3 次）→ 裸
+// RefreshError：IsFatal=false + 不上报（网关正常 failover）。
+func TestCodexDialRefreshErrorBare(t *testing.T) {
+	srv, up := newCodexWSUpstream(t, 401)
+	rm := newCodexMockRefresh(t) // 默认 500 重复
+	handler := &recordingHandler{}
+	a := NewCodex(handler.add)
+	cred := dialCred(7, srv.URL)
+	_, err := a.Dial(context.Background(), cred)
+	require.Error(t, err)
+	var fe *codexsdk.RefreshError
+	require.True(t, errors.As(err, &fe), "RefreshError 裸透传：%v", err)
+	require.Equal(t, 3, fe.Attempts, "退避耗尽 maxAttempts=3")
+	require.False(t, IsFatal(err), "RefreshError 不在 fatal 集（可重试）")
+	require.Len(t, handler.snapshot(), 0, "可重试类不上报")
+	require.Equal(t, 3, rm.callsN())
+	require.Equal(t, 1, up.upgradesN())
+}
+
+// TestCodexIsFatal fatal 集判定（T4 §5 网关消费面）：五类 + 信封穿透 +
+// RefreshError/普通错误不在集。
+func TestCodexIsFatal(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"refresh oauth", &codexsdk.RefreshOAuthError{Code: "invalid_grant"}, true},
+		{"permanently revoked", &codexsdk.AuthPermanentlyRevokedError{Code: "token_invalidated"}, true},
+		{"account disabled", &codexsdk.AccountDisabledError{StatusCode: 402, Detail: "deactivated_workspace"}, true},
+		{"callback delivery", &codexsdk.CallbackDeliveryError{Attempts: 3, Err: errors.New("cb")}, true},
+		{"refresh retryable", &codexsdk.RefreshError{Attempts: 3, Err: errors.New("net")}, false},
+		{"plain", errors.New("plain"), false},
+		{"nil", nil, false},
+		{"fatal through envelope", NewEnvelopeError(0, "", &codexsdk.RefreshOAuthError{Code: "invalid_grant"}), true},
+		{"refresh through envelope", NewEnvelopeError(0, "", &codexsdk.RefreshError{Attempts: 3, Err: errors.New("net")}), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, IsFatal(tc.err))
+		})
+	}
+}
+
+// TestCodexDialAuthCacheReuse 同账号连续 Dial：条目复用（Auth 账号级 at 缓
+// 存跨 Dial 保持——第二次 Dial 不触发 refresh，升级仍带初始 at）。
+func TestCodexDialAuthCacheReuse(t *testing.T) {
+	srv, up := newCodexWSUpstream(t, 200, 200)
+	rm := newCodexMockRefresh(t, codexUpstreamStep{status: 200, body: `{"access_token":"at-new","refresh_token":"rt-new"}`})
+	a := NewCodex(nil)
+	cred := dialCred(7, srv.URL)
+	c1, err := a.Dial(context.Background(), cred, codexsdk.WithPingInterval(0))
+	require.NoError(t, err)
+	c1.CloseNow()
+	c2, err := a.Dial(context.Background(), cred, codexsdk.WithPingInterval(0))
+	require.NoError(t, err)
+	c2.CloseNow()
+	require.Same(t, a.entries[7].auth, a.entries[7].auth, "条目同账号复用")
+	require.Equal(t, 2, up.upgradesN())
+	require.Equal(t, 0, rm.callsN(), "at 缓存保持 → 第二次 Dial 零 refresh")
+	require.Equal(t, "Bearer at-old", up.header(1).Get("Authorization"), "同一 Auth 的 at 缓存跨 Dial 生效")
 }

@@ -1086,7 +1086,7 @@ func newSchedWithPub(t *testing.T, m *memLoader, gp GroupChangePublisher) *Sched
 }
 
 // TestProcessWritePublishesGroupChange #14 T3a：状态回写成功后发布组级 NOTIFY
-//（受影响组，去重合并；一次回写批次一条 NOTIFY——R3，设计文档 §1.3/§5 #6）。
+// （受影响组，去重合并；一次回写批次一条 NOTIFY——R3，设计文档 §1.3/§5 #6）。
 func TestProcessWritePublishesGroupChange(t *testing.T) {
 	tplx := tpl(1, domain.FormatOpenAIChat, []string{"m"})
 	m := newMemLoader(map[int64][]*domain.Account{10: {acc(1, tplx, 4), acc(2, tplx, 4)}})
@@ -1180,4 +1180,81 @@ func TestProcessWriteConcurrentInvalidateGroupRace(t *testing.T) {
 		}
 	}()
 	<-done
+}
+
+// --- T4 §3：快照 Ext eager-load + 热路径零 DB（Selection 扩展路线断言） ---
+
+// countingLoader 计数 Loader 包装（热路径零 DB 断言：Select/MarkResult/
+// Release 期间不得触达加载器）。
+type countingLoader struct {
+	mu    sync.Mutex
+	inner Loader
+	loads int
+}
+
+func (c *countingLoader) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
+	c.mu.Lock()
+	c.loads++
+	c.mu.Unlock()
+	return c.inner.LoadGroupsAccounts(ctx)
+}
+
+func (c *countingLoader) LoadGroupAccounts(ctx context.Context, id int64) ([]*domain.Account, error) {
+	c.mu.Lock()
+	c.loads++
+	c.mu.Unlock()
+	return c.inner.LoadGroupAccounts(ctx, id)
+}
+
+func (c *countingLoader) UpdateAccountStatus(ctx context.Context, id int64, s domain.AccountStatus, cooldown *time.Time, e *string, w *int) error {
+	return c.inner.UpdateAccountStatus(ctx, id, s, cooldown, e, w)
+}
+
+func (c *countingLoader) loadsN() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.loads
+}
+
+// TestSelectCarriesAccountExt 账号 ext 快照 → Selection.Ext（T4 P3-4 定死路线：
+// accountSnapshot 携带 Ext，热路径零 DB 数据源——codex relay 凭据线读此）。
+func TestSelectCarriesAccountExt(t *testing.T) {
+	ext := &domain.AccountExt{
+		AccountID: 7, CredentialType: credential.TypeCodexOAuth,
+		InstallationID: "inst-1", SessionID: intPtrStr("s1"), ThreadID: intPtrStr("t1"),
+	}
+	// tpl() 硬编码 api_key 类型——codex 类型模板手动构造
+	tpl := &domain.Template{ID: 1, BaseURL: "https://u/v1", CredentialType: credential.TypeCodexOAuth,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIResponsesWS}, Models: []string{"gpt-4o"}}
+	a := acc(7, tpl, 4)
+	a.Ext = ext
+	s := newTestScheduler(t, []*domain.Account{a})
+	sel, err := s.Select(10, domain.FormatOpenAIResponsesWS, "gpt-4o")
+	require.NoError(t, err)
+	require.Same(t, ext, sel.Ext, "Selection.Ext = 快照账号 Ext（指针复制零拷贝）")
+	require.Equal(t, credential.TypeCodexOAuth, sel.CredentialType)
+	s.Release(sel.AccountID)
+	s.MarkResult(sel.AccountID, ResultOK, nil, 200, "")
+}
+
+func intPtrStr(s string) *string { return &s }
+
+// TestRequestPathZeroLoaderCalls 热路径零 DB：加载只发生在快照加载期
+// （InvalidateAllSync），Select/MarkResult/Release 请求期零加载器触达。
+func TestRequestPathZeroLoaderCalls(t *testing.T) {
+	tpl := tpl(1, domain.FormatOpenAIResponsesWS, []string{"gpt-4o"})
+	inner := newMemLoader(map[int64][]*domain.Account{10: {acc(7, tpl, 4)}})
+	cl := &countingLoader{inner: inner}
+	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	s := New(testCfg(), cl, re, nil)
+	require.NoError(t, s.reload(context.Background()))
+	before := cl.loadsN()
+	for i := 0; i < 50; i++ {
+		sel, err := s.Select(10, domain.FormatOpenAIResponsesWS, "gpt-4o")
+		require.NoError(t, err)
+		s.Release(sel.AccountID)
+		s.MarkResult(sel.AccountID, ResultOK, nil, 200, "")
+	}
+	require.Equal(t, before, cl.loadsN(), "请求期（Select/MarkResult/Release）零加载器触达——热路径零 DB")
 }

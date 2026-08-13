@@ -461,30 +461,50 @@ func TestResponsesWSImageDetect(t *testing.T) {
 }
 
 // codex 类型恒 0 计数分层标注（V1-V3 实证：chatgpt.com 上游图片生成 = 客户端
-// 本地执行——响应无图片 item → 检测计数 0；旁路无效但无害）。
+// 本地执行——响应无图片 item → 检测计数 0；旁路无效但无害）。T4 起 codex 类
+// 型走 SDK Dial 路径（T2 的 credentialFor + 静态 provider 方法已随
+// codexKeyProvider 移除——快照派生 cred 直供适配层）。
 func TestResponsesWSCodexTypeZeroCount(t *testing.T) {
 	i64p := func(v int64) *int64 { return &v }
-	up := fakeResponsesWSImages(t, `[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"web_search","arguments":"{}","result":"x"}]`)
+	// SDK 路径 mock 上游（Accept-only）：fakeResponsesWSImages 校验
+	// "Bearer sk-upstream"（aiclient 形态）——SDK Dial 注入的是账号 PAT，需
+	// 独立上游；completed 帧 output 含 function_call 工具 item（无图片 item——
+	// V1-V3 实证 chatgpt.com 上游图片生成 = 客户端本地执行）。
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(404)
+			return
+		}
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		typ, _, err := c.Read(context.Background())
+		if err != nil {
+			return
+		}
+		frame := `{"type":"response.completed","response":{"id":"rsp_ws_img","status":"completed","model":"gpt-4o","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"web_search","arguments":"{}","result":"x"}],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}}`
+		if err := c.Write(context.Background(), typ, []byte(frame)); err != nil {
+			return
+		}
+		_ = c.Close(websocket.StatusNormalClosure, "")
+	}))
 	defer up.Close()
 	store := &captureLogStore{}
-	tpl := &domain.Template{
-		ID: 1, Name: "t", BaseURL: up.URL,
-		CredentialType:   credential.TypeCodexPAT,
-		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIResponsesWS},
-		Models:           []string{"gpt-4o"},
-	}
+	pat := "pat-1"
 	prices := &fakePriceLookup{
 		m:  map[string]*domain.Pricing{"gpt-4o": proxyPricing()},
 		im: map[string]*domain.ImagePrice{"gpt-4o": respImagePriceRow(nil, nil, i64p(5400))},
 	}
-	p := newTestProxyTplTimeoutLogs(t, tpl, 1, true, 30*time.Second, store, &BillingHooks{
-		Prices:   prices,
-		Balances: billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
-	})
-	// 测试代理的 credential 注册表只注册 api_key/responses-special——codex-pat
-	// 需显式注册静态 Key provider（真实装配由 codex SDK 凭据提供；测试只验证
-	// 检测旁路分层，凭据形态不参与）。
-	p.creds.Register(codexKeyProvider{typ: credential.TypeCodexPAT})
+	// SDK 路径（newTestCodexWSProxy）：模板 BaseURL = mock 上游根，账号 ext 快
+	// 照承载 PAT（relay 线凭据——不经 credential 注册表）。
+	p, _ := newTestCodexWSProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: {AccountID: 10, CredentialType: credential.TypeCodexPAT, InstallationID: "i", PATKey: &pat}},
+		up.URL, &BillingHooks{
+			Prices:   prices,
+			Balances: billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
+		}, store)
 	srv := httptest.NewServer(http.HandlerFunc(p.HandleResponsesWS))
 	defer srv.Close()
 
@@ -495,22 +515,10 @@ func TestResponsesWSCodexTypeZeroCount(t *testing.T) {
 	readResponsesWSClose(t, c, websocket.StatusNormalClosure)
 
 	require.NoError(t, p.rec.Close(context.Background()))
+	waitStoreLogs(t, store, 1)
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Equal(t, int64(0), store.logs[0].ImageCount, "codex 类型响应无图片 item → 恒 0 计数（客户端本地执行）")
 	require.Equal(t, int64(130), store.logs[0].Cost, "无图 → 只计 chat 分量")
-}
-
-// codexKeyProvider 测试用 codex 类型静态 Key provider（注册表测试注册——
-// 真实 codex 类型凭据走 SDK 提供方，非本测试关注面）。
-type codexKeyProvider struct{ typ credential.Type }
-
-func (p codexKeyProvider) Type() credential.Type { return p.typ }
-
-func (p codexKeyProvider) Credential(_ context.Context, in credential.CredentialInput) (string, error) {
-	if in.Type != p.typ {
-		return "", fmt.Errorf("unsupported type %q", in.Type)
-	}
-	return in.APIKey, nil
 }

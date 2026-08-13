@@ -73,6 +73,9 @@ type Proxy struct {
 	// fatal 统一回调全在适配层；main 装配 SetCodex 注入，nil = 未装配 → codex
 	// 类型 501 显式拒绝——防 nil 误走凭据缺失 502）。
 	codex *sdkbridge.Codex
+	// wsHeartbeatInterval resp-ws 心跳间隔 seam（T4：测试缩短 200ms 验证心跳节
+	// 奏；默认 responsesWSHeartbeatInterval——New 构造，生产路径不变）。
+	wsHeartbeatInterval time.Duration
 }
 
 // New 构造代理。creds 为凭据注册表（评审 M2：直接参数注入，编译期强制；
@@ -83,6 +86,7 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 	p := &Proxy{
 		cfg: cfg, sched: sched, creds: creds, rec: rec, clients: clients, auth: auth,
 		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log, bill: bill, errlog: errlog,
+		wsHeartbeatInterval: responsesWSHeartbeatInterval,
 	}
 	// 注册表：每格式一 caller，New 时一次性构造（per-request 零分配）。
 	// 新格式（Gemini/Grok/ollama 等）= 1 个 caller 文件 + 此处一行注册。

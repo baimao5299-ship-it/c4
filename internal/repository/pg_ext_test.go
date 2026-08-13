@@ -154,7 +154,7 @@ func TestAccountExtPG(t *testing.T) {
 		saved, err := repos.AccountExts.UpsertAccountExt(ctx, &domain.AccountExt{
 			AccountID: acc.ID, CredentialType: credential.TypeCodexPAT,
 			InstallationID: iid, PATKey: strPtrPG("pat"),
-			Email: strPtrPG("pat@example.com"),
+			Email:     strPtrPG("pat@example.com"),
 			SessionID: strPtrPG("s1"), ThreadID: strPtrPG("t1"), WindowID: strPtrPG("t1:0"),
 		})
 		require.NoError(t, err)
@@ -324,4 +324,82 @@ func TestGroupProtocolConvertPG(t *testing.T) {
 	got, err = repos.Groups.GetGroup(ctx, g.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.ProtocolConvertRespToMess, got.ProtocolConvert)
+}
+
+// ---------------------------------------------------------------------------
+// T4 §3：账号 ext → 调度器快照 eager-load（Selection 扩展路线——热路径零 DB
+// 的数据源；与 pg_strip_test.go 的 template_ext 快照合并同构）
+// ---------------------------------------------------------------------------
+
+// snapshotExtOf 从 LoadGroupsAccounts 全量快照取账号的 Ext。
+func snapshotExtOf(t *testing.T, repos *repository.Repository, groupID, accountID int64) *domain.AccountExt {
+	t.Helper()
+	m, err := repos.Groups.LoadGroupsAccounts(context.Background())
+	require.NoError(t, err)
+	for _, a := range m[groupID] {
+		if a.ID == accountID {
+			return a.Ext
+		}
+	}
+	t.Fatalf("快照必须含账号 %d（组 %d）", accountID, groupID)
+	return nil
+}
+
+// TestPGAccountExtSnapshotLoad account_ext → 调度器快照 Account.Ext 合并：
+// 全量（LoadGroupsAccounts）与组级（LoadGroupAccounts）两条数据源一致；无
+// ext 行 → nil；ext 更新后重载反映新值（配置经快照重载生效，请求期零 DB）。
+func TestPGAccountExtSnapshotLoad(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	tpl := seedPGTemplate(t, repos)
+	g := seedPGGroup(t, repos, "g")
+	acc := seedPGAccount(t, repos, tpl.ID, "a1")
+	require.NoError(t, repos.Accounts.SetAccountGroups(ctx, acc.ID, []int64{g.ID}))
+
+	const iid = "11111111-2222-3333-4444-555555555555"
+	sess, thread, win := "s1", "t1", "t1:0"
+
+	t.Run("no ext row is nil", func(t *testing.T) {
+		require.Nil(t, snapshotExtOf(t, repos, g.ID, acc.ID), "无 ext 行 → Ext nil")
+		members, err := repos.Groups.LoadGroupAccounts(ctx, g.ID)
+		require.NoError(t, err)
+		require.Len(t, members, 1)
+		require.Nil(t, members[0].Ext, "组级重载数据源同语义")
+	})
+
+	t.Run("ext merged into snapshot", func(t *testing.T) {
+		exp := time.Now().Add(time.Hour).UTC().Truncate(time.Microsecond)
+		_, err := repos.AccountExts.UpsertAccountExt(ctx, &domain.AccountExt{
+			AccountID: acc.ID, CredentialType: credential.TypeCodexOAuth,
+			InstallationID: iid, Email: strPtrPG("user@example.com"),
+			SessionID: strPtrPG(sess), ThreadID: strPtrPG(thread), WindowID: strPtrPG(win),
+			OAuthToken: strPtrPG("at"), OAuthRefreshToken: strPtrPG("rt"), OAuthExpiresAt: &exp,
+		})
+		require.NoError(t, err)
+		got := snapshotExtOf(t, repos, g.ID, acc.ID)
+		require.NotNil(t, got, "ext 行必须合并进全量快照")
+		require.Equal(t, credential.TypeCodexOAuth, got.CredentialType)
+		require.Equal(t, iid, got.InstallationID, "身份四元组落快照")
+		require.Equal(t, sess, *got.SessionID)
+		require.Equal(t, thread, *got.ThreadID)
+		require.Equal(t, win, *got.WindowID)
+		require.Equal(t, "at", *got.OAuthToken, "凭据材料落快照（热路径零 DB 数据源）")
+		require.Equal(t, "rt", *got.OAuthRefreshToken)
+		require.True(t, exp.Equal(*got.OAuthExpiresAt))
+		members, err := repos.Groups.LoadGroupAccounts(ctx, g.ID)
+		require.NoError(t, err)
+		require.Equal(t, "at", *members[0].Ext.OAuthToken, "组级重载数据源同语义")
+	})
+
+	t.Run("ext update reflected after reload", func(t *testing.T) {
+		_, err := repos.AccountExts.UpsertAccountExt(ctx, &domain.AccountExt{
+			AccountID: acc.ID, CredentialType: credential.TypeCodexPAT,
+			InstallationID: iid, PATKey: strPtrPG("pat-new"),
+		})
+		require.NoError(t, err)
+		got := snapshotExtOf(t, repos, g.ID, acc.ID)
+		require.Equal(t, credential.TypeCodexPAT, got.CredentialType)
+		require.Equal(t, "pat-new", *got.PATKey, "ext 更新后重载快照反映新值")
+		require.Nil(t, got.OAuthToken, "类型切换 oauth 列组清空同语义")
+	})
 }
