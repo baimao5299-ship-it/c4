@@ -439,3 +439,50 @@ func TestDispatcherFullRefresh(t *testing.T) {
 		require.Equal(t, 1, settings.calls())
 	})
 }
+
+// TestDispatcherFullRefreshFirstConnectSkip E2 启动双刷（E-P2-4）：main 启动
+// 首刷全成功（ReloadAll 返回空 map）置位 bootLoaded → 首连 FullRefresh 跳过
+// 五路 ReloadAll（健康启动下第二遍纯冗余消除，ReloadAll 至多一次）、仅补
+// ReloadSettings；断线重连（第二次调用）恒全量刷新不变。
+func TestDispatcherFullRefreshFirstConnectSkip(t *testing.T) {
+	rg := newTestDispatcher(t)
+	// 模拟 main 启动序：注册表 ReloadAll 首刷（全部成功）→ 置位跳过标志。
+	require.Empty(t, rg.d.snapshots.ReloadAll(context.Background()))
+	rg.d.bootLoaded.Store(true)
+
+	// 首连：跳过五路 ReloadAll（快照不再重载），仅补 ReloadSettings。
+	require.NoError(t, rg.d.FullRefresh(context.Background()))
+	require.Equal(t, 1, rg.snapAuth.calls(), "首连跳过注册表 ReloadAll（auth 仅首刷那一次）")
+	require.Equal(t, 1, rg.snapSched.calls())
+	require.Equal(t, 1, rg.snapRules.calls())
+	require.Equal(t, 1, rg.snapBal.calls())
+	require.Equal(t, 1, rg.settings.calls(), "首连仍补 ReloadSettings（svc 不在注册表内，保持既有语义）")
+
+	// 断线重连：恒全量刷新（标志已消费，不再跳过）。
+	require.NoError(t, rg.d.FullRefresh(context.Background()))
+	require.Equal(t, 2, rg.snapAuth.calls())
+	require.Equal(t, 2, rg.snapSched.calls())
+	require.Equal(t, 2, rg.snapRules.calls())
+	require.Equal(t, 2, rg.snapBal.calls())
+	require.Equal(t, 2, rg.settings.calls())
+}
+
+// TestDispatcherFullRefreshBootFailedFallback 首刷部分失败（main 不置位标志）→
+// 首连仍全量刷新（兜底收敛不破坏——DB 故障时快照由 listener FullRefresh 补齐）；
+// 断线重连仍全量。
+func TestDispatcherFullRefreshBootFailedFallback(t *testing.T) {
+	rg := newTestDispatcher(t)
+	// bootLoaded 零值 = 未置位（模拟 ReloadAll 返回错误，main 不置位）。
+	require.NoError(t, rg.d.FullRefresh(context.Background()))
+	require.Equal(t, 1, rg.snapAuth.calls())
+	require.Equal(t, 1, rg.snapSched.calls())
+	require.Equal(t, 1, rg.snapRules.calls())
+	require.Equal(t, 1, rg.snapBal.calls())
+	require.Equal(t, 1, rg.settings.calls())
+
+	// 断线重连仍全量。
+	require.NoError(t, rg.d.FullRefresh(context.Background()))
+	require.Equal(t, 2, rg.snapAuth.calls())
+	require.Equal(t, 2, rg.snapSched.calls())
+	require.Equal(t, 2, rg.settings.calls())
+}

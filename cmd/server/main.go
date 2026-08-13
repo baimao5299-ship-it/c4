@@ -389,8 +389,19 @@ func main() {
 	// sched.InvalidateAllSync fatalf + auth/billBalances 构造时加载：scheduler
 	// 首刷在此完成（Select 在 nil 快照上 panic 的窗口随单一入口消灭），规则
 	// 空表种子亦在此写入（失败降级 Warn——注册表 Status 可观测）。
-	for name, err := range snapReg.ReloadAll(ctx) {
+	errs := snapReg.ReloadAll(ctx)
+	for name, err := range errs {
 		log.Warn("snapshot initial reload failed", logx.String("snapshot", name), logx.Error(err))
+	}
+	// E2（E-P2-4 启动双刷）：ReloadAll 返回空 map = 全部成功（snapshot.go 契约
+	// ——成功者不出现）→ 置位首连跳过标志（dispatcher.bootLoaded，wm.StartAll
+	// 之前——程序序保证监听器首连必见标志）：首连的 FullRefresh CAS 消费后跳过
+	// 五路 ReloadAll（单实例健康启动下第二遍纯冗余，大表启动 DB 负载/就绪延迟
+	// 约翻倍）、仅补 ReloadSettings；多实例 pre-LISTEN 漏窗 ≤30s sched 同步 /
+	// 60s auth-sync 兜底收敛，可接受。部分失败不置位 → 首连仍全量（兜底收敛
+	// 不破坏）。
+	if len(errs) == 0 {
+		disp.bootLoaded.Store(true)
 	}
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。

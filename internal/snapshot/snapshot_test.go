@@ -160,6 +160,33 @@ func TestReloadByScope(t *testing.T) {
 	require.Equal(t, 2, a.calls(), "未命中不触发")
 }
 
+// TestReloadEmptyScopesNoLock 空 scopes 前置 return（评审 P3-C）：不取
+// execMu——并发触发 ReloadAll 阻塞中（execMu 被持有）时 Reload() 立即返回
+// （修复前排队等触发完成，零状态读取无此必要）。
+func TestReloadEmptyScopesNoLock(t *testing.T) {
+	reg := New()
+	gate := make(chan struct{})
+	a := newRec("a")
+	a.block = gate
+	require.NoError(t, reg.Register(a))
+	require.NoError(t, reg.Register(newRec("b")))
+
+	done := make(chan struct{})
+	go func() {
+		reg.ReloadAll(context.Background())
+		close(done)
+	}()
+	// 等 a 进入 Reload（阻塞中）——ReloadAll 已持 execMu。
+	require.Eventually(t, func() bool { return a.calls() == 1 }, time.Second, time.Millisecond)
+
+	start := time.Now()
+	require.Empty(t, reg.Reload(context.Background()))
+	require.Less(t, time.Since(start), 200*time.Millisecond, "空 scopes 前置 return：不等待 execMu（零状态读取）")
+
+	close(gate)
+	require.Empty(t, <-done)
+}
+
 // TestReloadScopeErrors scope 分发同样错误独立收集。
 func TestReloadScopeErrors(t *testing.T) {
 	reg := New()
