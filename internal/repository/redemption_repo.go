@@ -51,7 +51,7 @@ func (r *RedemptionRepo) CreateCodes(ctx context.Context, codes []*domain.Redemp
 	created, err := r.client.RedemptionCode.CreateBulk(builders...).Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
-			return fmt.Errorf("%w: code 唯一冲突（批量插入全败）", ErrConflict)
+			return fmt.Errorf("%w: code unique conflict (batch insert all failed)", ErrConflict)
 		}
 		return err
 	}

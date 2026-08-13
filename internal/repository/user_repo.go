@@ -206,7 +206,7 @@ func (r *UserRepo) UpdateUser(ctx context.Context, p *UserPatch) (*domain.User, 
 		if _, err := r.client.User.Get(ctx, p.ID); err != nil {
 			return nil, errMissingID(err, p.ID)
 		}
-		return nil, fmt.Errorf("%w: id=%d balance/max_concurrency 期间有并发变更", ErrConflict, p.ID)
+		return nil, fmt.Errorf("%w: id=%d balance/max_concurrency changed concurrently", ErrConflict, p.ID)
 	}
 	row, err := r.client.User.Get(ctx, p.ID)
 	if err != nil {

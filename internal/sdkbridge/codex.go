@@ -325,7 +325,7 @@ func (a *Codex) buildAuth(cred *domain.AccountCredential, e *codexEntry) (codexs
 
 // errCredentialIncomplete 凭据不完整（P2-3 构造前校验——oauth 类型缺
 // refresh_token；按失效处理上报——账号凭据不完整，不 panic）。
-var errCredentialIncomplete = errors.New("codexsdk: 凭据不完整（oauth 缺 refresh_token，账号需重新导入）")
+var errCredentialIncomplete = errors.New("codexsdk: credentials incomplete (oauth missing refresh_token, account needs re-import)")
 
 // atUsable 初始 at 预置判定（过期判定在网关侧构造前）：at 非空且未过期（nil
 // 过期时刻 = 未知 → 视为可用，401 自愈兜底）。
