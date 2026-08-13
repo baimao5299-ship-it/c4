@@ -116,6 +116,22 @@ var (
 			},
 		},
 	}
+	// FunctionPricesColumns holds the columns for the "function_prices" table.
+	FunctionPricesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "model", Type: field.TypeString, Unique: true},
+		{Name: "price_per_call", Type: field.TypeInt64, Nullable: true},
+		{Name: "raw", Type: field.TypeJSON, Nullable: true},
+		{Name: "source", Type: field.TypeEnum, Enums: []string{"litellm", "manual"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// FunctionPricesTable holds the schema information for the "function_prices" table.
+	FunctionPricesTable = &schema.Table{
+		Name:       "function_prices",
+		Columns:    FunctionPricesColumns,
+		PrimaryKey: []*schema.Column{FunctionPricesColumns[0]},
+	}
 	// GroupsColumns holds the columns for the "groups" table.
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -608,6 +624,7 @@ var (
 		AccountsTable,
 		AccountExtsTable,
 		ErrLogsTable,
+		FunctionPricesTable,
 		GroupsTable,
 		GroupAssignmentsTable,
 		ImagePricesTable,

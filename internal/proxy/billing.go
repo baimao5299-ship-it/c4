@@ -28,10 +28,18 @@ type ImagePriceLookup interface {
 	GetImagePrice(model string) (*domain.ImagePrice, error)
 }
 
+// FunctionPriceLookup 按单元计费功能类价格快照读取（service.Service 实现，
+// 零 DB 快照读）：search 等 per-unit 端点计费价。语义（价格表三件套裁决）：
+// 查无 + model == codex-search → 返回默认价行（$0.01/次常量兜底，防御语义）；
+// 查无其他 → 错误（计费方拒绝计费而非按 0 计价）。
+type FunctionPriceLookup interface {
+	GetFunctionPrice(model string) (*domain.FunctionPrice, error)
+}
+
 // BillingHooks 计费钩子（proxy.New 参数；nil = 计费全关：不查价、不记
 // BillingTier、不处理 service_tier 转发策略、不做余额预检）。
 // T3 填满（中间态清理终点）：Balances/Flusher 为真实类型直接接线，无 nil
-// 容忍分支——装配方（main）保证 bill 非 nil 时五字段齐备（计费开关 =
+// 容忍分支——装配方（main）保证 bill 非 nil 时六字段齐备（计费开关 =
 // config.Billing.Enabled，与 hooks 装配同一判定）。
 type BillingHooks struct {
 	Prices   PriceLookup
@@ -40,6 +48,9 @@ type BillingHooks struct {
 	// ImagePrices 图片价格快照（Task B：images 端点预检专用；nil = 未装配
 	// ——images 端点缺价预检跳过，等价计费全关）。
 	ImagePrices ImagePriceLookup
+	// FunctionPrices 按单元价快照（价格表三件套：search 等 per-unit 端点计费
+	// 用；nil = 未装配——按单元计费端点缺价预检跳过，等价计费全关）。
+	FunctionPrices FunctionPriceLookup
 	// TierPolicy 读取 service_tier 转发策略（nil = 恒透传）：priority/flex/fast
 	// 分别按 settings service_tier_policy_priority / service_tier_policy_flex /
 	// service_tier_policy_fast 快照取值（装配方注入闭包，零 DB）。

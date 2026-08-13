@@ -7,6 +7,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/errlog"
+	"github.com/is7qin/c3api/internal/ent/functionprice"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
 	"github.com/is7qin/c3api/internal/ent/imageprice"
@@ -70,6 +71,18 @@ func init() {
 	errlogDescCreatedAt := errlogFields[14].Descriptor()
 	// errlog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	errlog.DefaultCreatedAt = errlogDescCreatedAt.Default.(func() time.Time)
+	functionpriceFields := schema.FunctionPrice{}.Fields()
+	_ = functionpriceFields
+	// functionpriceDescCreatedAt is the schema descriptor for created_at field.
+	functionpriceDescCreatedAt := functionpriceFields[5].Descriptor()
+	// functionprice.DefaultCreatedAt holds the default value on creation for the created_at field.
+	functionprice.DefaultCreatedAt = functionpriceDescCreatedAt.Default.(func() time.Time)
+	// functionpriceDescUpdatedAt is the schema descriptor for updated_at field.
+	functionpriceDescUpdatedAt := functionpriceFields[6].Descriptor()
+	// functionprice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	functionprice.DefaultUpdatedAt = functionpriceDescUpdatedAt.Default.(func() time.Time)
+	// functionprice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	functionprice.UpdateDefaultUpdatedAt = functionpriceDescUpdatedAt.UpdateDefault.(func() time.Time)
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
 	// groupDescPriceMultiplier is the schema descriptor for price_multiplier field.

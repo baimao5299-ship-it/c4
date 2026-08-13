@@ -12,6 +12,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/ent"
 	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/functionprice"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/imageprice"
 	"github.com/is7qin/c3api/internal/ent/key"
@@ -106,5 +107,9 @@ var (
 	imagePriceSortFields = map[string]string{
 		"id": imageprice.FieldID, "model": imageprice.FieldModel,
 		"updated_at": imageprice.FieldUpdatedAt,
+	}
+	functionPriceSortFields = map[string]string{
+		"id": functionprice.FieldID, "model": functionprice.FieldModel,
+		"updated_at": functionprice.FieldUpdatedAt,
 	}
 )

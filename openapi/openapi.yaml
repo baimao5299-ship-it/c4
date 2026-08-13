@@ -807,6 +807,74 @@ paths:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
         default:
           $ref: '#/components/responses/Error'
+  # --- 按单元计费功能类价格（tag: pricing；价格表三件套——search 起，audio/video
+  # 等未来 per-unit 端点复用；对齐 image_price 形态） ---
+  # 注意 chi 路径顺序：/function-prices/{model} 与 /image-price/{model} 同规则
+  # （生成器按 spec 顺序注册；无子路径冲突）。
+  /function-prices:
+    get:
+      operationId: GetFunctionPrices
+      tags: [pricing]
+      summary: 按单元计费功能类价格列表（分页/筛选/排序；sort 白名单 model/updated_at）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
+        - { name: source, in: query, schema: { type: string, enum: [litellm, manual] } }
+        - { name: model, in: query, schema: { type: string, description: 模型/功能标识模糊搜索（大小写不敏感；含 codex-search） } }
+        - { name: sort, in: query, schema: { type: string, description: sort 白名单：model/updated_at } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 按单元价列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FunctionPriceListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /function-prices/{model}:
+    parameters:
+      - { name: model, in: path, required: true, schema: { type: string, description: 模型/功能标识（如 codex-search） } }
+    get:
+      operationId: GetFunctionPricesModel
+      tags: [pricing]
+      summary: 按 model 取单行（缺失 → 404；codex-search 种子行/默认兜底价见快照读）
+      responses:
+        '200':
+          description: 单行
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FunctionPrice' }
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: PutFunctionPricesModel
+      tags: [pricing]
+      summary: 手动设按单元价（price_per_call USD/次 必填 ≥0；×1e5 存储毫分/次；upsert 强制 source=manual，可接管 litellm 行——codex-search 价可改）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FunctionPriceUpsert' }
+      responses:
+        '200':
+          description: 设价后的按单元价行
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FunctionPrice' }
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: DeleteFunctionPricesModel
+      tags: [pricing]
+      summary: 删除手动按单元价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回；codex-search 种子行重启补回）
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   # --- /user 面（tag: user；生成到 internal/handler/user 独立 ServerInterface） ---
   /user/auth/register:
     post:
@@ -1943,10 +2011,12 @@ components:
       required: [rows, skipped, updated]
       properties:
         rows: { type: integer, description: 拉取到的有效模型行数 }
-        skipped: { type: integer, description: 解析时跳过的非法条目数（文本价与 image 价均无效，计一次） }
+        skipped: { type: integer, description: 解析时跳过的非法条目数（文本价、image 价与 function 价均无效，计一次） }
         updated: { type: integer, description: 文本价 upsert 落库数（manual 行不计） }
         image_rows: { type: integer, description: 拉取到的有效 image 价行数（Task A 双线） }
         image_updated: { type: integer, description: image 价 upsert 落库数（manual 行不计） }
+        function_rows: { type: integer, description: 拉取到的有效按单元价行数（价格表三件套） }
+        function_updated: { type: integer, description: 按单元价 upsert 落库数（manual 行不计） }
     ImagePrice:
       type: object
       required: [Model, Source, CreatedAt, UpdatedAt]
@@ -1972,6 +2042,27 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/ImagePrice' }
+    FunctionPrice:
+      type: object
+      required: [Model, Source, CreatedAt, UpdatedAt]
+      properties:
+        Model: { type: string, description: 模型/功能标识（litellm search 模型名 或 codex-search 固定标识） }
+        PricePerCall: { type: number, format: double, nullable: true, description: 按单元价（USD/次——litellm 原生口径 input_cost_per_query；内部存储毫分/次，×1e5 换算，1 USD = 100,000 毫分，**与 token 价不同换算系**，计费不走 /1e6 除法）；null = 无按单元价 }
+        Source: { $ref: '#/components/schemas/PricingSource' }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    FunctionPriceUpsert:
+      type: object
+      properties:
+        price_per_call: { type: number, format: double, minimum: 0, nullable: true, description: 按单元价（USD/次；API 边界 ×1e5 → 毫分/次）；必填且 ≥0——缺省/null → 400（service 行有效性校验：按单元价非 nil；0 = 按次免费） }
+    FunctionPriceListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/FunctionPrice' }
     RedeemRequest:
       type: object
       required: [code]

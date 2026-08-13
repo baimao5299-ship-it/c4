@@ -18,6 +18,8 @@ type Tx struct {
 	AccountExt *AccountExtClient
 	// ErrLog is the client for interacting with the ErrLog builders.
 	ErrLog *ErrLogClient
+	// FunctionPrice is the client for interacting with the FunctionPrice builders.
+	FunctionPrice *FunctionPriceClient
 	// Group is the client for interacting with the Group builders.
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
@@ -182,6 +184,7 @@ func (tx *Tx) init() {
 	tx.Account = NewAccountClient(tx.config)
 	tx.AccountExt = NewAccountExtClient(tx.config)
 	tx.ErrLog = NewErrLogClient(tx.config)
+	tx.FunctionPrice = NewFunctionPriceClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.GroupAssignment = NewGroupAssignmentClient(tx.config)
 	tx.ImagePrice = NewImagePriceClient(tx.config)

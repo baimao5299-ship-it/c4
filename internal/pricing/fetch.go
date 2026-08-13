@@ -36,11 +36,12 @@ type Fetcher interface {
 
 // FetchResult 一次拉取的解析结果。
 type FetchResult struct {
-	Rows      []*domain.Pricing    // 数值有效的模型价格行（source=litellm；有文本价）
-	ImageRows []*domain.ImagePrice // image 价行（source=litellm；任一 image 价分量有效）
-	// Skipped 无效条目跳过数（字段类型非法 / 文本价与 image 价均无效——判定
-	// 含 image 分量；同一条目文本价与 image 价独立判定，互不干扰，只产生任一
-	// 行即不计 skip）。
+	Rows         []*domain.Pricing       // 数值有效的模型价格行（source=litellm；有文本价）
+	ImageRows    []*domain.ImagePrice    // image 价行（source=litellm；任一 image 价分量有效）
+	FunctionRows []*domain.FunctionPrice // 按单元计费功能类价行（source=litellm；search mode 且带 per-query 价）
+	// Skipped 无效条目跳过数（字段类型非法 / 文本价、image 价与 function 价
+	// 均无效——判定含 image/function 分量；同一条目三线独立判定，互不干扰，
+	// 只产生任一行即不计 skip）。
 	Skipped int
 }
 
@@ -119,6 +120,10 @@ type litellmEntry struct {
 	InputCostPerImageToken  *float64 `json:"input_cost_per_image_token"`
 	OutputCostPerImageToken *float64 `json:"output_cost_per_image_token"`
 	OutputCostPerImage      *float64 `json:"output_cost_per_image"`
+	// 按单元计费功能类价字段（Task 价格表三件套）：input_cost_per_query 为
+	// USD/query（×1e5 → 毫分/次——与 token 价不同换算系、不同单位，计费不走
+	// /1e6 除法；search 计费每次查询按次计价）。
+	InputCostPerQuery *float64 `json:"input_cost_per_query"`
 }
 
 // providerSpecificEntry litellm provider_specific_entry（供应商专有倍率）。
@@ -131,13 +136,21 @@ type providerSpecificEntry struct {
 // Parse 解析 litellm 价格表 JSON：顶层 map model_name → 行。换算：per-token USD
 // × 1e11 四舍五入取整 → 毫分/1M tokens（1 USD = 100,000 毫分 = 10⁻⁵ USD 精度；
 // ×1e6 tokens × 1e5 毫分）；per-image USD × 1e5 → 毫分/张（toMilliCentsPerImage，
+// 与 token 价不同换算系）；per-query USD × 1e5 → 毫分/次（toMilliCentsPerCall，
 // 与 token 价不同换算系）。
-// **mode 分流（用户裁决 2026-08-12，pricings 与 image_price 统一同一套）**：
-// mode == "chat" 仅入 pricings（非 chat 模型如 embedding/audio/rerank 带 token
-// 价也不收）；mode == "image_generation" 仅入 image_price；其余 mode 与 mode
-// 缺失两表都不收（宁漏勿错，手动设价可补）；两表按 mode 互斥。mode 命中后
-// 文本价与 image 价独立判定：同一条目可同时产出 pricings 行与 image_price 行，
-// 互不干扰；两类均无效（或字段类型非法）→ 整条目跳过（Skipped++，计一次）。
+// **mode 分流（用户裁决 2026-08-13，按消费面收）**：
+//   - mode ∈ {"chat", "responses"} → 仅入 pricings（responses 端点计费走
+//     GetPrice；completion 不收——网关无 /v1/completions 消费端点，宁漏勿错 +
+//     手动设价可补；其余 mode（embedding/realtime/audio/moderation/rerank/ocr/
+//     video/vector_store）不收——无消费面，未来端点加时按消费面扩展）
+//   - mode ∈ {"image_generation", "image_edit"} → 仅入 image_price（edits
+//     端点计费走 GetImagePrice）
+//   - mode == "search" → 仅入 function_price（parseFunctionEntry 判定）
+//   - 其余 mode 与 mode 缺失三表都不收（宁漏勿错，手动设价可补）
+//
+// 三表按 mode 互斥（同一 mode 只命中一表；litellm 实测 entry 单 mode 单一）。
+// mode 命中后文本价、image 价与 function 价独立判定：同一条目只产出命中表的
+// 行，互不干扰；三类均无效（或字段类型非法）→ 整条目跳过（Skipped++，计一次）。
 // 只保留数值有效行：价格存在、有限且 > 0（NaN/缺失/非正数 → 该分量无效）；
 // max_tokens/cache 价/元数据非法或缺失 → nil（unknown），不参与有效性判定；
 // raw 对通过判定的行无条件保存（整个原始条目 JSON 完整镜像，含未映射字段，
@@ -150,8 +163,9 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 		return nil, fmt.Errorf("pricing: parse price table: %w", err)
 	}
 	res := &FetchResult{
-		Rows:      make([]*domain.Pricing, 0, len(raw)),
-		ImageRows: make([]*domain.ImagePrice, 0, len(raw)),
+		Rows:         make([]*domain.Pricing, 0, len(raw)),
+		ImageRows:    make([]*domain.ImagePrice, 0, len(raw)),
+		FunctionRows: make([]*domain.FunctionPrice, 0, len(raw)),
 	}
 	for model, entry := range raw {
 		valid := false
@@ -161,6 +175,10 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 		}
 		if img, ok := parseImageEntry(model, entry); ok {
 			res.ImageRows = append(res.ImageRows, img)
+			valid = true
+		}
+		if fn, ok := parseFunctionEntry(model, entry); ok {
+			res.FunctionRows = append(res.FunctionRows, fn)
 			valid = true
 		}
 		if !valid {
@@ -175,13 +193,16 @@ func parseEntry(model string, raw json.RawMessage, log *logx.Logger) (*domain.Pr
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return nil, err // 字段类型非法（如价格为字符串）→ 整行跳过
 	}
-	// 用户裁决 2026-08-12（pricings 与 image_price 统一同一套 mode 分流）：
-	// 仅 mode == "chat" 入 pricings——embedding/audio/rerank 等带 token 价也
-	// 不再收（现状靠"有 token 价"隐式收会混入 embedding 模型）；mode 缺失 →
-	// 跳过（宁漏勿错，手动设价可补）。image_generation 模型仅入 image_price
-	// （parseImageEntry 判定），两表按 mode 互斥。
-	if e.Mode == nil || *e.Mode != "chat" {
-		return nil, errors.New("pricing: non-chat mode or missing mode")
+	// 用户裁决 2026-08-13（按消费面收）：mode ∈ {"chat", "responses"} 入
+	// pricings——chat 与 responses 端点计费均走 GetPrice；completion 不收
+	// （网关无 /v1/completions 消费端点，宁漏勿错 + 手动设价可补）；其余 mode
+	// （embedding/realtime/audio/moderation/rerank/ocr/video/vector_store）不收
+	// （无消费面——未来端点加时按消费面扩展）；mode 缺失 → 跳过（宁漏勿错，
+	// 手动设价可补）。image_generation/image_edit 模型仅入 image_price
+	// （parseImageEntry 判定），search 模型仅入 function_price
+	// （parseFunctionEntry 判定），三表按 mode 互斥。
+	if e.Mode == nil || (*e.Mode != "chat" && *e.Mode != "responses") {
+		return nil, errors.New("pricing: non-chat/responses mode or missing mode")
 	}
 	if !validCost(e.InputCostPerToken) || !validCost(e.OutputCostPerToken) {
 		return nil, errors.New("pricing: missing or non-positive cost")
@@ -416,13 +437,15 @@ func toMilliCentsPerMillion(perTokenUSD float64) int64 {
 	return int64(math.Round(perTokenUSD * 1e11))
 }
 
-// parseImageEntry 独立解析 image 价行（用户裁决 2026-08-12：**按 mode 切分**——
-// 仅 mode == "image_generation" 的条目进入 image_price 判定；chat/embedding/
-// audio 等非生图模型即使带 *_cost_per_image_token 也是多模态视觉 token 价，
-// 非生图价，一律不收——防 gpt-4o 等混入 image_price 表误放行 images 402 预检；
-// mode 缺失 → 跳过（宁漏勿错，手动设价可补））。mode 命中后：任一 image 价
-// 分量有效（存在、有限、> 0——validCost 同款）→ 产出 image_price 行；全无效
-// → ok=false（不碰 pricings 行有效性）。换算：token 价 ×1e11
+// parseImageEntry 独立解析 image 价行（用户裁决 2026-08-13：**按消费面切分**——
+// mode ∈ {"image_generation", "image_edit"} 的条目进入 image_price 判定
+// （image_edit 为 edits 端点消费面，计费走 GetImagePrice——2026-08-12 只收
+// image_generation 漏收 edits 模型 31 个 → 402 误拒，本次修正）；chat/
+// embedding/audio 等非生图模型即使带 *_cost_per_image_token 也是多模态视觉
+// token 价，非生图价，一律不收——防 gpt-4o 等混入 image_price 表误放行 images
+// 402 预检；mode 缺失 → 跳过（宁漏勿错，手动设价可补））。mode 命中后：任一
+// image 价分量有效（存在、有限、> 0——validCost 同款）→ 产出 image_price 行；
+// 全无效 → ok=false（不碰 pricings 行有效性）。换算：token 价 ×1e11
 // （toMilliCentsPerMillion 复用，毫分/1M image tokens）；per-image ×1e5
 // （toMilliCentsPerImage，毫分/张——禁混用 toMilliCentsPerMillion，错 6 个
 // 数量级）。raw 完整镜像原样保存。
@@ -431,8 +454,8 @@ func parseImageEntry(model string, raw json.RawMessage) (*domain.ImagePrice, boo
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return nil, false // 字段类型非法 → 整行无效（与 parseEntry 同语义）
 	}
-	if e.Mode == nil || *e.Mode != "image_generation" {
-		return nil, false // 非生图模型/缺失 → 跳过（宁漏勿错）
+	if e.Mode == nil || (*e.Mode != "image_generation" && *e.Mode != "image_edit") {
+		return nil, false // 非生图/编辑模型、缺失 → 跳过（宁漏勿错）
 	}
 	if !validCost(e.InputCostPerImageToken) && !validCost(e.OutputCostPerImageToken) &&
 		!validCost(e.OutputCostPerImage) {
@@ -458,11 +481,47 @@ func parseImageEntry(model string, raw json.RawMessage) (*domain.ImagePrice, boo
 	return p, true
 }
 
+// parseFunctionEntry 独立解析按单元计费功能类价行（用户裁决 2026-08-13：**按
+// 消费面切分**——mode == "search" 的条目进入 function_price 判定；其余 mode
+// 不收（audio/video 等未来 per-unit 端点加时按各自 mode 扩展一行——表结构已
+// 兼容）；mode 缺失 → 跳过（宁漏勿错，手动设价可补））。mode 命中后：
+// input_cost_per_query 有效（存在、有限、> 0——validCost 同款）→ 产出
+// function_price 行（PricePerCall = USD/次 ×1e5 毫分/次，toMilliCentsPerCall）；
+// 无 per-query 价或非正 → 无效跳过（宁漏勿错——litellm search 模型 18 个中
+// 仅带 query 价的收）。不碰 pricings/image_price 行有效性。raw 完整镜像原样保存。
+func parseFunctionEntry(model string, raw json.RawMessage) (*domain.FunctionPrice, bool) {
+	var e litellmEntry
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return nil, false // 字段类型非法 → 整行无效（与 parseEntry 同语义）
+	}
+	if e.Mode == nil || *e.Mode != "search" {
+		return nil, false // 非 search 模式/缺失 → 跳过（宁漏勿错）
+	}
+	if !validCost(e.InputCostPerQuery) {
+		return nil, false // 无 per-query 价或非正 → 跳过（宁漏勿错）
+	}
+	v := toMilliCentsPerCall(*e.InputCostPerQuery)
+	return &domain.FunctionPrice{
+		Model:        model,
+		PricePerCall: &v,
+		Source:       domain.PricingSourceLitellm,
+		// raw 完整镜像：整个原始条目原样保存（含未映射字段；manual 行恒为 nil）。
+		Raw: raw,
+	}, true
+}
+
 // toMilliCentsPerImage 毫分/张 = per-image USD × 1e5（浮点运算后四舍五入取整；
 // 1 USD = 100,000 毫分——与 token 价的 ×1e11 不同换算系：per-image 按张 flat，
 // 计费（billing.ImageCost）不走 /1e6 除法，禁止与 toMilliCentsPerMillion 混用）。
 func toMilliCentsPerImage(perImageUSD float64) int64 {
 	return int64(math.Round(perImageUSD * 1e5))
+}
+
+// toMilliCentsPerCall 毫分/次 = per-query USD × 1e5（浮点运算后四舍五入取整；
+// 1 USD = 100,000 毫分——与 token 价的 ×1e11 不同换算系：per-call 按次 flat，
+// 计费（后续 search 计费面）不走 /1e6 除法，禁止与 toMilliCentsPerMillion 混用）。
+func toMilliCentsPerCall(perQueryUSD float64) int64 {
+	return int64(math.Round(perQueryUSD * 1e5))
 }
 
 // windowTokens 上下文窗口：非法/非正 → 0（调用方转 nil）。

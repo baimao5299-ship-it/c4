@@ -45,6 +45,18 @@ func (f ErrLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ErrLogMutation", m)
 }
 
+// The FunctionPriceFunc type is an adapter to allow the use of ordinary
+// function as FunctionPrice mutator.
+type FunctionPriceFunc func(context.Context, *ent.FunctionPriceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f FunctionPriceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.FunctionPriceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.FunctionPriceMutation", m)
+}
+
 // The GroupFunc type is an adapter to allow the use of ordinary
 // function as Group mutator.
 type GroupFunc func(context.Context, *ent.GroupMutation) (ent.Value, error)
