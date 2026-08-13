@@ -127,6 +127,13 @@
     "newTitle": "新建模板",
     "dialogDesc": "base_url 需为上游根地址（不含 /v1——/v1 由协议按格式自动拼接）",
     "credentialTypeLabel": "凭据类型",
+    "credentialType": {
+      "api_key": "API Key",
+      "responses-special": "Responses 专属",
+      "codex-oauth": "Codex OAuth",
+      "codex-pat": "Codex PAT"
+    },
+    "ecoFormatHint": "生态类型只支持 OpenAI Responses / Responses (WS) 格式",
     "nameLabel": "名称",
     "namePlaceholder": "如 openai-main",
     "supportedFormatsLabel": "支持的请求格式",
@@ -147,7 +154,19 @@
     "noResultsTitle": "无匹配模板",
     "noResultsDesc": "调整筛选条件后重试",
     "deleteTitle": "删除模板",
-    "deleteDesc": "确认删除模板「{{name}}」？绑定该模板的账号将无法使用。"
+    "deleteDesc": "确认删除模板「{{name}}」？绑定该模板的账号将无法使用。",
+    "ext": {
+      "button": "扩展配置",
+      "title": "扩展配置 · 模板 #{{id}}",
+      "desc": "生态类型模板的级联能力配置；账号凭据在账号的扩展配置中设置",
+      "credentialType": "号池类型",
+      "stripImageTools": "剥离图像 tool（strip_image_tools）",
+      "stripImageToolsHint": "开启后剥离该模板账号响应中的图像 tool；未配置 = 关闭",
+      "stripImageToolsUnset": "未配置（关闭）",
+      "clear": "清除配置",
+      "saveSuccess": "扩展配置已保存",
+      "loadFailed": "读取扩展配置失败：{{message}}"
+    }
   },
   "accounts": {
     "title": "账号",
@@ -193,7 +212,28 @@
     "loadGroupsFailed": "读取当前分组失败，已禁用保存",
     "batchGroupLabel": "分组",
     "batchGroupHint": "替换所选账号的原有分组——未选中的分组将被移除。",
-    "clearGroups": "清空分组"
+    "clearGroups": "清空分组",
+    "ext": {
+      "button": "扩展配置",
+      "title": "扩展配置 · 账号 #{{id}}",
+      "desc": "codex 生态账号的类型化凭据与身份；身份字段只读",
+      "credentialType": "号池类型",
+      "oauthToken": "OAuth 访问令牌",
+      "oauthTokenRequired": "oauth 类型必须填写访问令牌",
+      "oauthRefreshToken": "OAuth 刷新令牌",
+      "oauthExpiresAt": "访问令牌过期时间",
+      "patKey": "PAT 密钥",
+      "email": "登录邮箱（管理标识）",
+      "emailPlaceholder": "选填",
+      "installationId": "installation_id",
+      "sessionId": "session_id",
+      "threadId": "thread_id",
+      "windowId": "window_id",
+      "identityNote": "身份四元组：首次写入自动生成、恒定不变——只读展示",
+      "credHint": "该模板为 codex 生态类型：账号凭据在「扩展配置」中设置",
+      "saveSuccess": "扩展配置已保存",
+      "loadFailed": "读取扩展配置失败：{{message}}"
+    }
   },
   "users": {
     "title": "用户",
@@ -258,12 +298,28 @@
       "name": "名称",
       "visibility": "可见性",
       "priceMultiplier": "价格倍率",
+      "protocolConvert": "协议转换",
       "createdAt": "创建时间",
       "actions": "操作"
     },
     "createdSuccess": "分组已创建",
     "newTitle": "新建分组",
     "newDesc": "设置名称与可见性；价格倍率可在编辑中调整",
+    "protocolConvertLabel": "协议转换",
+    "protocolConvert": {
+      "off": "关闭",
+      "chat_to_resp": "Chat → Responses",
+      "mess_to_resp": "Messages → Responses",
+      "resp_to_mess": "Responses → Messages",
+      "chat_to_mess": "Chat → Messages"
+    },
+    "protocolConvertShort": {
+      "off": "off",
+      "chat_to_resp": "chat→resp",
+      "mess_to_resp": "mess→resp",
+      "resp_to_mess": "resp→mess",
+      "chat_to_mess": "chat→mess"
+    },
     "nameLabel": "名称",
     "namePlaceholder": "如 prod-web",
     "visibilityLabel": "可见性",
@@ -311,11 +367,16 @@
   "logs": {
     "title": "日志",
     "subtitle": "按条件查询用量日志",
+    "tab": {
+      "usage": "用量日志",
+      "errors": "错误日志"
+    },
     "filter": {
       "groupId": "分组 ID",
       "accountId": "账号 ID",
       "model": "模型",
       "errorType": "错误类型",
+      "statusCode": "状态码",
       "all": "全部",
       "reset": "重置"
     },
@@ -327,6 +388,8 @@
       "model": "模型",
       "format": "格式",
       "errorType": "错误类型",
+      "statusCode": "状态码",
+      "errorMessage": "错误信息",
       "cost": "费用",
       "billingTier": "计费档",
       "aboveHit": "超档",
@@ -354,7 +417,9 @@
       "total": "共 {{total}} 条",
       "page": "第 {{page}} / {{pages}} 页",
       "prev": "上一页",
-      "next": "下一页"
+      "next": "下一页",
+      "latest": "回到最新",
+      "pageOnly": "第 {{page}} 页"
     },
     "emptyTitle": "暂无日志",
     "emptyDesc": "调整过滤条件后重试",
@@ -682,7 +747,47 @@
     "deleteDesc": "确认删除「{{model}}」的手动价格？删除后将恢复自动同步维护。",
     "deleteConfirm": "确认删除",
     "saved": "价格已保存",
-    "deleted": "价格已删除"
+    "deleted": "价格已删除",
+    "tabs": {
+      "text": "文本价格",
+      "image": "图片价格",
+      "function": "按次价格"
+    },
+    "syncDoneImage": "图片价：读取 {{image_rows}} 行，更新 {{image_updated}} 行",
+    "syncDoneFunction": "按次价：读取 {{function_rows}} 行，更新 {{function_updated}} 行",
+    "deleteLitellmHint": "自动同步维护的行不可删除",
+    "image": {
+      "new": "手动设图片价",
+      "filterEmpty": "没有符合条件的图片价格",
+      "emptyTitle": "暂无图片价格",
+      "emptyDesc": "先同步官方价格表，或手动为模型设图片价格",
+      "table": {
+        "inputToken": "输入 token 价",
+        "outputToken": "输出 token 价",
+        "perImage": "每张价"
+      },
+      "dialogDesc": "单位：image token 价 = USD/image token，每张价 = USD/张；三分量至少填一个，留空的分量保存后清空",
+      "inputTokenLabel": "输入 image token 价（USD/image token）",
+      "outputTokenLabel": "输出 image token 价（USD/image token）",
+      "perImageLabel": "每张价（USD/张）",
+      "formInvalid": "三分量至少填一个（输入/输出 image token 价、每张价）；各分量须为非负数值",
+      "newTitle": "手动设图片价格",
+      "editTitle": "编辑图片价格 · {{model}}"
+    },
+    "function": {
+      "new": "手动设按次价",
+      "filterEmpty": "没有符合条件的按次价格",
+      "emptyTitle": "暂无按次价格",
+      "emptyDesc": "先同步官方价格表，或手动为模型设按次价格",
+      "table": {
+        "price": "单价"
+      },
+      "dialogDesc": "单位：USD/次；0 = 按次免费",
+      "priceLabel": "按次价（USD/次）",
+      "formInvalid": "按次价（price_per_call）为必填且须 ≥ 0",
+      "newTitle": "手动设按次价格",
+      "editTitle": "编辑按次价格 · {{model}}"
+    }
   },
   "settings": {
     "title": "系统设置",
@@ -810,11 +915,16 @@
     "logs": {
       "title": "日志",
       "subtitle": "我的用量日志",
+      "tab": {
+        "usage": "用量日志",
+        "errors": "错误日志"
+      },
       "filter": {
         "groupId": "分组 ID",
         "accountId": "账号 ID",
         "model": "模型",
         "errorType": "错误类型",
+        "statusCode": "状态码",
         "all": "全部",
         "reset": "重置"
       },
@@ -822,13 +932,21 @@
         "createdAt": "时间",
         "model": "模型",
         "errorType": "错误类型",
+        "statusCode": "状态码",
+        "errorMessage": "错误信息",
+        "billingTier": "计费档",
         "inputTokens": "输入 Token",
         "outputTokens": "输出 Token",
         "latency": "延迟",
         "cost": "费用"
       },
       "emptyTitle": "暂无日志",
-      "emptyDesc": "调整过滤条件后重试"
+      "emptyDesc": "调整过滤条件后重试",
+      "pagination": {
+        "next": "下一页",
+        "latest": "回到最新",
+        "pageOnly": "第 {{page}} 页"
+      }
     },
     "stats": {
       "title": "统计",

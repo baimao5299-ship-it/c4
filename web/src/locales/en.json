@@ -127,6 +127,13 @@
     "newTitle": "New template",
     "dialogDesc": "base_url must be the upstream root (no /v1 — the /v1 path is added per protocol)",
     "credentialTypeLabel": "Credential type",
+    "credentialType": {
+      "api_key": "API Key",
+      "responses-special": "Responses Special",
+      "codex-oauth": "Codex OAuth",
+      "codex-pat": "Codex PAT"
+    },
+    "ecoFormatHint": "Ecosystem types support only OpenAI Responses / Responses (WS) formats",
     "nameLabel": "Name",
     "namePlaceholder": "e.g. openai-main",
     "supportedFormatsLabel": "Supported request formats",
@@ -147,7 +154,19 @@
     "noResultsTitle": "No matching templates",
     "noResultsDesc": "Adjust the filters and try again",
     "deleteTitle": "Delete template",
-    "deleteDesc": "Delete template \"{{name}}\"? Accounts bound to this template will stop working."
+    "deleteDesc": "Delete template \"{{name}}\"? Accounts bound to this template will stop working.",
+    "ext": {
+      "button": "Extensions",
+      "title": "Extensions · template #{{id}}",
+      "desc": "Cascade capabilities for ecosystem templates; account credentials are set in the account's extensions",
+      "credentialType": "Credential type",
+      "stripImageTools": "Strip image tools (strip_image_tools)",
+      "stripImageToolsHint": "Strips image tools from this template's account responses; unset = off",
+      "stripImageToolsUnset": "Not configured (off)",
+      "clear": "Clear",
+      "saveSuccess": "Extensions saved",
+      "loadFailed": "Failed to load extensions: {{message}}"
+    }
   },
   "accounts": {
     "title": "Accounts",
@@ -193,7 +212,28 @@
     "loadGroupsFailed": "Failed to load current groups — saving is disabled",
     "batchGroupLabel": "Groups",
     "batchGroupHint": "Replaces the selected accounts' current groups — groups you don't select are removed.",
-    "clearGroups": "Clear all groups"
+    "clearGroups": "Clear all groups",
+    "ext": {
+      "button": "Extensions",
+      "title": "Extensions · account #{{id}}",
+      "desc": "Typed credentials & identity for codex ecosystem accounts; identity fields are read-only",
+      "credentialType": "Credential type",
+      "oauthToken": "OAuth access token",
+      "oauthTokenRequired": "OAuth type requires an access token",
+      "oauthRefreshToken": "OAuth refresh token",
+      "oauthExpiresAt": "Access token expiry",
+      "patKey": "PAT key",
+      "email": "Login email (management label)",
+      "emailPlaceholder": "optional",
+      "installationId": "installation_id",
+      "sessionId": "session_id",
+      "threadId": "thread_id",
+      "windowId": "window_id",
+      "identityNote": "Identity quartet: auto-generated on first write, immutable — read-only",
+      "credHint": "This template is a codex ecosystem type: account credentials are set in Extensions",
+      "saveSuccess": "Extensions saved",
+      "loadFailed": "Failed to load extensions: {{message}}"
+    }
   },
   "users": {
     "title": "Users",
@@ -258,6 +298,7 @@
       "name": "Name",
       "visibility": "Visibility",
       "priceMultiplier": "Price multiplier",
+      "protocolConvert": "Protocol conversion",
       "createdAt": "Created at",
       "actions": "Actions"
     },
@@ -311,11 +352,16 @@
   "logs": {
     "title": "Logs",
     "subtitle": "Query usage logs with filters",
+    "tab": {
+      "usage": "Usage logs",
+      "errors": "Error logs"
+    },
     "filter": {
       "groupId": "Group ID",
       "accountId": "Account ID",
       "model": "Model",
       "errorType": "Error type",
+      "statusCode": "Status code",
       "all": "All",
       "reset": "Reset"
     },
@@ -327,6 +373,8 @@
       "model": "Model",
       "format": "Format",
       "errorType": "Error type",
+      "statusCode": "Status code",
+      "errorMessage": "Error message",
       "cost": "Cost",
       "billingTier": "Billing tier",
       "aboveHit": "Over limit",
@@ -354,7 +402,9 @@
       "total": "{{total}} entries",
       "page": "Page {{page}} / {{pages}}",
       "prev": "Prev",
-      "next": "Next"
+      "next": "Next",
+      "latest": "Latest",
+      "pageOnly": "Page {{page}}"
     },
     "emptyTitle": "No logs",
     "emptyDesc": "Adjust the filters and try again",
@@ -682,7 +732,47 @@
     "deleteDesc": "Delete the manual price for \"{{model}}\"? Auto sync will take over afterwards.",
     "deleteConfirm": "Delete",
     "saved": "Price saved",
-    "deleted": "Price deleted"
+    "deleted": "Price deleted",
+    "tabs": {
+      "text": "Text pricing",
+      "image": "Image pricing",
+      "function": "Per-call pricing"
+    },
+    "syncDoneImage": "Image: {{image_rows}} rows read, {{image_updated}} updated",
+    "syncDoneFunction": "Per-call: {{function_rows}} rows read, {{function_updated}} updated",
+    "deleteLitellmHint": "Auto-synced rows cannot be deleted",
+    "image": {
+      "new": "Set manual image price",
+      "filterEmpty": "No image pricing matches the filters",
+      "emptyTitle": "No image pricing data",
+      "emptyDesc": "Sync the official price list, or set a manual image price",
+      "table": {
+        "inputToken": "Input token",
+        "outputToken": "Output token",
+        "perImage": "Per image"
+      },
+      "dialogDesc": "Units: image token prices = USD per image token, per-image price = USD per image; fill at least one component, blank components are cleared on save",
+      "inputTokenLabel": "Input image token price (USD/image token)",
+      "outputTokenLabel": "Output image token price (USD/image token)",
+      "perImageLabel": "Price per image (USD/image)",
+      "formInvalid": "Fill at least one component (input/output image token price, per-image price); each value must be a non-negative number",
+      "newTitle": "Set manual image price",
+      "editTitle": "Edit image price · {{model}}"
+    },
+    "function": {
+      "new": "Set manual per-call price",
+      "filterEmpty": "No per-call pricing matches the filters",
+      "emptyTitle": "No per-call pricing data",
+      "emptyDesc": "Sync the official price list, or set a manual per-call price",
+      "table": {
+        "price": "Unit price"
+      },
+      "dialogDesc": "Unit: USD per call; 0 = free per call",
+      "priceLabel": "Price per call (USD/call)",
+      "formInvalid": "Price per call is required and must be ≥ 0",
+      "newTitle": "Set manual per-call price",
+      "editTitle": "Edit per-call price · {{model}}"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -810,11 +900,16 @@
     "logs": {
       "title": "Logs",
       "subtitle": "My usage logs",
+      "tab": {
+        "usage": "Usage logs",
+        "errors": "Error logs"
+      },
       "filter": {
         "groupId": "Group ID",
         "accountId": "Account ID",
         "model": "Model",
         "errorType": "Error type",
+        "statusCode": "Status code",
         "all": "All",
         "reset": "Reset"
       },
@@ -822,13 +917,21 @@
         "createdAt": "Time",
         "model": "Model",
         "errorType": "Error type",
+        "statusCode": "Status code",
+        "errorMessage": "Error message",
+        "billingTier": "Billing tier",
         "inputTokens": "Input tokens",
         "outputTokens": "Output tokens",
         "latency": "Latency",
         "cost": "Cost"
       },
       "emptyTitle": "No logs",
-      "emptyDesc": "Adjust the filters and try again"
+      "emptyDesc": "Adjust the filters and try again",
+      "pagination": {
+        "next": "Next",
+        "latest": "Latest",
+        "pageOnly": "Page {{page}}"
+      }
     },
     "stats": {
       "title": "Stats",
