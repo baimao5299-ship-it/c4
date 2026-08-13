@@ -132,7 +132,7 @@ func collectImageLogs(t *testing.T, p *Proxy, store *captureLogStore) *domain.Us
 
 // TestStreamImagePassthrough 事件序列透传：keepalive → ": ping" 注释行；
 // completed 每张图一个 SSE 帧（b64_json 各自）；usage 仅末事件携带且 JSON
-// tag 直透；首事件即发响应头 + 每事件 Flush；流终计费落账（image_count 数
+// tag 直透；首事件即发响应头 + 每事件 Flush；流终计费落账（call_count 数
 // completed、usage 取末事件、ImageCost + 价格快照）。
 func TestStreamImagePassthrough(t *testing.T) {
 	p, store := newImageStreamTestProxy(t, nil)

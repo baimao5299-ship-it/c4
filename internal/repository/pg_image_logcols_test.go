@@ -127,8 +127,9 @@ func TestUsageLogCallColumnsExistPG(t *testing.T) {
 // imageLogFor 图片计费日志（统一计费模型 spec 2026-08-13 实参形态）：image
 // token 并入 Input/OutputTokens（TotalTokens 含之）、张数入 CallCount、每张价
 // 入 PricePerCallMillis（毫分/张，例外单位）。gpt-image-2 官方价形态
-// 800,000/3,000,000 毫分 1M + aiml 5,400 毫分/张；Cost = ImageCost 口径：
-// 5000×800000/1e6 + 20000×3000000/1e6 + 2×5400 = 74800。
+// 800,000/3,000,000 毫分 1M + aiml 5,400 毫分/张——按 ImageCost 口径计
+// 5000×800000/1e6 + 20000×3000000/1e6 + 2×5400 = 74800（仅描述价格形态；
+// Cost 字段不在此设，沿用 logFor 的 130，消费断言只钉列值与价快照）。
 func imageLogFor(userID int64, requestID string) *domain.UsageLog {
 	l := logFor(userID, requestID)
 	l.Format = domain.FormatOpenAIImages
