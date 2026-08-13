@@ -11,6 +11,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
@@ -96,6 +97,11 @@ func (r *UserRepo) CreateUser(ctx context.Context, u *domain.User) (*domain.User
 		SetBalance(u.Balance).
 		Save(ctx)
 	if err != nil {
+		// email 唯一冲突（并发注册双过 pre-check → 一者撞 23505）→ ErrConflict
+		// （service 映射 409；不映射 → 裸 PG 错误 → 500）。
+		if sqlgraph.IsUniqueConstraintError(err) {
+			return nil, fmt.Errorf("%w: email=%q", ErrConflict, u.Email)
+		}
 		return nil, err
 	}
 	return toDomainUser(row), nil

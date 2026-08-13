@@ -330,6 +330,11 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{RedemptionUsesColumns[5], RedemptionUsesColumns[1]},
 			},
+			{
+				Name:    "redemptionuse_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{RedemptionUsesColumns[1]},
+			},
 		},
 	}
 	// RulesColumns holds the columns for the "rules" table.

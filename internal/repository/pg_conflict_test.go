@@ -6,6 +6,8 @@ package repository_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -94,5 +96,51 @@ func TestUniqueConflictPG(t *testing.T) {
 		})
 		require.ErrorIs(t, err, repository.ErrConflict, "key_hash 唯一 → ErrConflict（防御）")
 		require.Contains(t, err.Error(), "key_hash", "冲突详情标识冲突列")
+	})
+
+	t.Run("user create email conflict", func(t *testing.T) {
+		_, err := repos.Users.CreateUser(ctx, &domain.User{
+			Email: "dup@example.com", PasswordHash: "h1",
+			Role: domain.RoleUser, Status: domain.UserStatusActive,
+		})
+		require.NoError(t, err)
+		_, err = repos.Users.CreateUser(ctx, &domain.User{
+			Email: "dup@example.com", PasswordHash: "h2",
+			Role: domain.RoleUser, Status: domain.UserStatusActive,
+		})
+		require.ErrorIs(t, err, repository.ErrConflict, "重复 email → ErrConflict（409 语义）")
+		require.Contains(t, err.Error(), `email="dup@example.com"`, "冲突详情含 email")
+	})
+
+	t.Run("user create email conflict concurrent", func(t *testing.T) {
+		// 两 goroutine 同 email 并发插入（模拟注册双过 pre-check 后一者撞
+		// 23505）：恰一个成功、一个 ErrConflict——绝不裸透传 PG 错误（500）。
+		email := "race@example.com"
+		results := make([]error, 2)
+		var wg sync.WaitGroup
+		for i := range results {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				_, err := repos.Users.CreateUser(ctx, &domain.User{
+					Email: email, PasswordHash: "h",
+					Role: domain.RoleUser, Status: domain.UserStatusActive,
+				})
+				results[i] = err
+			}(i)
+		}
+		wg.Wait()
+		ok := 0
+		for _, err := range results {
+			switch {
+			case err == nil:
+				ok++
+			case errors.Is(err, repository.ErrConflict):
+				// 并发落败方 → 409 语义
+			default:
+				t.Fatalf("unexpected error type: %v", err)
+			}
+		}
+		require.Equal(t, 1, ok, "恰一个成功（另一并发者 409）")
 	})
 }
