@@ -32,18 +32,24 @@ export interface AccountListParams extends ListParams {
 }
 export type GroupListParams = ListParams
 
-// —— 用户端日志/统计查询参数 ——
-export interface UserLogParams {
+// —— 日志/统计查询参数（usage/err 游标分页；from/to 必填）——
+export interface UsageLogParams {
   limit?: number
-  offset?: number
+  cursor?: number
   group_id?: number
   account_id?: number
+  user_id?: number
   model?: string
-  status_code?: number
   error_type?: string
-  from?: string
-  to?: string
+  from: string
+  to: string
 }
+export interface ErrLogParams extends UsageLogParams {
+  status_code?: number
+}
+// 用户端无 user_id 过滤（服务端强制本人）
+export type MyUsageLogParams = Omit<UsageLogParams, 'user_id'>
+export type MyErrLogParams = Omit<ErrLogParams, 'user_id'>
 export interface UserStatParams {
   from?: string
   to?: string
@@ -99,6 +105,8 @@ export class ApiClient {
   deleteTemplate = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/templates/${id}`, { method: 'DELETE' })
   deleteTemplatesBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/templates/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   updateTemplatesBatch = (ids: number[], fields: components['schemas']['TemplatePatch']) => this.request<components['schemas']['BatchUpdateResponse']>('/templates/batch-update', { method: 'POST', body: JSON.stringify({ ids, fields }) })
+  getTemplateExt = (id: number) => this.request<components['schemas']['TemplateExt']>(`/templates/${id}/ext`)
+  putTemplateExt = (id: number, b: components['schemas']['TemplateExt']) => this.request<components['schemas']['TemplateExt']>(`/templates/${id}/ext`, { method: 'PUT', body: JSON.stringify(b) })
   // —— 账号 ——
   listAccounts = (p?: AccountListParams) => this.request<components['schemas']['AccountListResponse']>('/accounts', { params: toQuery(p) })
   createAccount = (b: components['schemas']['AccountCreate']) => this.request<components['schemas']['Account']>('/accounts', { method: 'POST', body: JSON.stringify(b) })
@@ -114,6 +122,8 @@ export class ApiClient {
   deleteGroupsBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/groups/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   updateGroupsBatch = (ids: number[], fields: components['schemas']['GroupPatch']) => this.request<components['schemas']['BatchUpdateResponse']>('/groups/batch-update', { method: 'POST', body: JSON.stringify({ ids, fields }) })
   getAccountGroups = (id: number) => this.request<components['schemas']['AccountGroupsResponse']>(`/accounts/${id}/groups`)
+  getAccountExt = (id: number) => this.request<components['schemas']['AccountExt']>(`/accounts/${id}/ext`)
+  putAccountExt = (id: number, b: components['schemas']['AccountExt']) => this.request<components['schemas']['AccountExt']>(`/accounts/${id}/ext`, { method: 'PUT', body: JSON.stringify(b) })
   // —— 规则 ——
   listRules = (p?: { enabled?: boolean }) => this.request<components['schemas']['RuleListResponse']>('/rules', { params: toQuery(p) })
   createRule = (b: components['schemas']['RuleCreate']) => this.request<components['schemas']['Rule']>('/rules', { method: 'POST', body: JSON.stringify(b) })
@@ -121,12 +131,8 @@ export class ApiClient {
   deleteRule = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/rules/${id}`, { method: 'DELETE' })
   deleteRulesBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/rules/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   // —— 日志 / 统计 ——
-  getLogs = (params: Record<string, string | number | undefined>) => {
-    const qs = new URLSearchParams()
-    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, String(v))
-    const s = qs.toString()
-    return this.request<components['schemas']['LogsResponse']>(`/logs${s ? `?${s}` : ''}`)
-  }
+  getUsageLogs = (p: UsageLogParams) => this.request<components['schemas']['LogsResponse']>('/usage_logs', { params: toQuery(p) })
+  getErrLogs = (p: ErrLogParams) => this.request<components['schemas']['ErrLogsResponse']>('/err_logs', { params: toQuery(p) })
   getStats = (params: Record<string, string | number | undefined>) => {
     const qs = new URLSearchParams()
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, String(v))
@@ -155,6 +161,15 @@ export class ApiClient {
   syncPricing = () => this.request<components['schemas']['PricingSyncResponse']>('/pricing/sync', { method: 'POST' })
   upsertPricing = (model: string, b: components['schemas']['PricingUpsert']) => this.request<components['schemas']['Pricing']>(`/pricing/${model}`, { method: 'PUT', body: JSON.stringify(b) })
   deletePricing = (model: string) => this.request<components['schemas']['DeletedResponse']>(`/pricing/${model}`, { method: 'DELETE' })
+  // —— 图片价格（Task A 数据面计费来源）——
+  getImagePrices = (p?: { page?: number; page_size?: number; source?: string; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['ImagePriceListResponse']>('/image-price', { params: toQuery(p) })
+  putImagePrice = (model: string, b: components['schemas']['ImagePriceUpsert']) => this.request<components['schemas']['ImagePrice']>(`/image-price/${model}`, { method: 'PUT', body: JSON.stringify(b) })
+  deleteImagePrice = (model: string) => this.request<components['schemas']['DeletedResponse']>(`/image-price/${model}`, { method: 'DELETE' })
+  // —— 按单元功能价（search 起，per-unit 端点复用）——
+  getFunctionPrices = (p?: { page?: number; page_size?: number; source?: string; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['FunctionPriceListResponse']>('/function-prices', { params: toQuery(p) })
+  getFunctionPrice = (model: string) => this.request<components['schemas']['FunctionPrice']>(`/function-prices/${model}`)
+  putFunctionPrice = (model: string, b: components['schemas']['FunctionPriceUpsert']) => this.request<components['schemas']['FunctionPrice']>(`/function-prices/${model}`, { method: 'PUT', body: JSON.stringify(b) })
+  deleteFunctionPrice = (model: string) => this.request<components['schemas']['DeletedResponse']>(`/function-prices/${model}`, { method: 'DELETE' })
   // —— 用户端（userApi 专属；token 用 userAuth）——
   register = (b: components['schemas']['UserAuthRegister']) => this.request<components['schemas']['UserAuthResponse']>('/auth/register', { method: 'POST', body: JSON.stringify(b) })
   login = (b: components['schemas']['UserAuthLogin']) => this.request<components['schemas']['UserAuthResponse']>('/auth/login', { method: 'POST', body: JSON.stringify(b) })
@@ -165,7 +180,8 @@ export class ApiClient {
   updateUserKey = (id: number, b: components['schemas']['KeyUpdate']) => this.request<components['schemas']['Key']>(`/keys/${id}`, { method: 'PUT', body: JSON.stringify(b) })
   deleteUserKey = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/keys/${id}`, { method: 'DELETE' })
   rotateUserKey = (id: number) => this.request<components['schemas']['KeyWithSecret']>(`/keys/${id}/rotate`, { method: 'POST' })
-  getUserLogs = (params?: UserLogParams) => this.request<components['schemas']['LogsResponse']>('/logs', { params: toQuery(params) })
+  getMyUsageLogs = (p: MyUsageLogParams) => this.request<components['schemas']['LogsResponse']>('/usage_logs', { params: toQuery(p) })
+  getMyErrLogs = (p: MyErrLogParams) => this.request<components['schemas']['ErrLogsResponse']>('/err_logs', { params: toQuery(p) })
   getUserStats = (params?: UserStatParams) => this.request<components['schemas']['StatBucket'][]>('/stats', { params: toQuery(params) })
   redeem = (code: string) => this.request<components['schemas']['RedeemResponse']>('/redemptions', { method: 'POST', body: JSON.stringify({ code }) })
   listUserRedemptions = (p?: { page?: number; page_size?: number; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['RedemptionRecordListResponse']>('/redemptions', { params: toQuery(p) })
