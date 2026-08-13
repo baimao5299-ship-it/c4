@@ -6,10 +6,14 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/usage"
@@ -58,10 +62,18 @@ const maxUsageLogsPerTx = 10_000
 var backlogDrainBudget = 500 * time.Millisecond
 
 // flusherPending 单用户聚合条目（userID → cost 总额 + 明细日志，同事务落库）。
+// 不变式：cost == Σ logs[i].Cost（Record/refill 同步累加，拆块按 1c 逐条累加
+// 保和）——chunk.cost 恒等于该块明细求和（重建"扣费 = 明细求和"不变量）。
 type flusherPending struct {
 	cost int64
 	logs []*domain.UsageLog
 }
+
+// maxLogFlushFailures 毒 chunk 止损阈值（方向 A 批次 1b，A-P2-2）：连续失败
+// ≥ 此数 → 显式丢弃该失败 chunk（Error 日志 + 首行 request_id），不再无限回灌
+// 卡死该用户计费队列（对齐 usage.maxLogFlushFailures 同值同语义——两包各自
+// 声明，止损逻辑分属两处）。var（非 const）：测试注入小阈值。
+var maxLogFlushFailures = 5
 
 // Flusher 计费批量落库（worker.Worker 契约，Name="billing"）。O1 管道化：
 // Record 只做统计聚合（stats.Aggregate——billed 流量进 usagestat 统计面，与
@@ -107,6 +119,12 @@ type Flusher struct {
 	// （Close 内单写者），loop/Close 并发读安全。
 	baseCtx    context.Context
 	baseCancel context.CancelFunc
+	// failCounts 分片级连续 flush 失败计数（毒 chunk 止损，方向 A 批次 1b：
+	// 对齐 usage.go:86-90——chunk 即用户级，分片粒度足够）。DeductAndLog 失败
+	// 路径自增、成功推进复位；仅失败/成功路径写（Record 热路径零触碰）。安全：
+	// flushCtx 由 flushMu 串行，单次调用内每分片恰一个 goroutine 写自己的槽位，
+	// wg.Wait 后才进入下一轮 flush。
+	failCounts []int
 }
 
 func NewFlusher(cfg FlushConfig, writer DeductWriter, stats *usage.Recorder, bal *Balances, log *logx.Logger) *Flusher {
@@ -116,9 +134,10 @@ func NewFlusher(cfg FlushConfig, writer DeductWriter, stats *usage.Recorder, bal
 	}
 	f := &Flusher{
 		cfg: cfg, stats: stats, writer: writer, bal: bal, log: log,
-		workers:  workers,
-		pending:  make(map[int64]*flusherPending),
-		loopDone: make(chan struct{}),
+		workers:    workers,
+		pending:    make(map[int64]*flusherPending),
+		failCounts: make([]int, workers),
+		loopDone:   make(chan struct{}),
 	}
 	f.baseCtx, f.baseCancel = context.WithCancel(context.Background())
 	return f
@@ -146,7 +165,10 @@ func (f *Flusher) loop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			f.flushCtx(ctx) // 退出前最后一次落库尝试（ctx 已取消时即截断放弃——排空由 Close 以 shutdown 预算约束执行）
+			// 最终排空由 Close 以 shutdown 预算 ctx 执行（方向 A 批次 1d，
+			// 对齐 usage.go:297-301）——本 loop ctx 在 SIGTERM 即已取消，此处调
+			// flushCtx 传它会恒截断丢全部明细（全量 swap+refill 白做 + lastFlush
+			// 观测污染）；Close 持预算 ctx 才能"正常完整刷 / 到期截断"两全。
 			return
 		case <-flushT.C:
 			f.flush()
@@ -288,16 +310,17 @@ func (f *Flusher) flushCtx(ctx context.Context) int64 {
 
 	var wg sync.WaitGroup
 	var drained atomic.Int64
-	for _, shard := range shards {
+	for si, shard := range shards {
 		if len(shard) == 0 {
 			continue
 		}
 		wg.Add(1)
-		go func(s map[int64]*flusherPending) {
+		go func(si int, s map[int64]*flusherPending) {
 			defer wg.Done()
 			for uid, e := range s {
 				if ctx.Err() != nil { // 预算到期：截断，未处理回灌（Close 据此 Warn 后放弃）
 					f.refill(uid, e)
+					delete(s, uid) // 处理完成标记（失败路径按此回灌剩余，防重复）
 					continue
 				}
 				// P2a（压测 2026-08-11 复测修复）：积压用户续传循环。P2 拆
@@ -308,40 +331,96 @@ func (f *Flusher) flushCtx(ctx context.Context) int64 {
 				// 续取（takePending——flush 期间并发 Record/失败回灌的条目
 				// 一并续传），超过 backlogDrainBudget 或 ctx 到期 → 剩余
 				// refill 由下轮 flush/Close 续传（flushMu 持有时间有界，
-				// 其他用户 flush 周期不被长期饿死）。失败 → 本用户本轮
-				// 停止（chunk 已回灌，下轮重试；不无界重试同一块）。每
-				// 事务原子；跨事务部分成功可接受（评审裁决：宁可少记
-				// 不可死锁）——失败仅回灌未提交块，已提交块不重放（不
-				// 重复扣费）。
-				for start := time.Now(); e != nil; e = f.takePending(uid) {
+				// 其他用户 flush 周期不被长期饿死）。每事务原子；跨事务部分
+				// 成功可接受（评审裁决：宁可少记不可死锁）——失败仅回灌未
+				// 提交块，已提交块不重放（不重复扣费）。失败 → 停止本 shard
+				// （对齐 usage.go:367-387；失败块回灌队首 + 其余未处理条目
+				// 回灌，见 refillHead/refillRemaining）。毒 chunk 止损（方向
+				// A 批次 1b，A-P2-2）：失败计数连续 ≥ maxLogFlushFailures →
+				// Error（含 chunk 首行 request_id）+ 弃置该块（不 refill；
+				// 弃置 = 该块用量写销，与"崩溃丢 ≤1 flush 窗口"同语义）+
+				// 其后剩余回灌下轮继续流动。
+				for start := time.Now(); e != nil; {
 					if ctx.Err() != nil || time.Since(start) > backlogDrainBudget {
 						f.refill(uid, e)
 						break
 					}
 					chunk := e
 					if len(e.logs) > maxUsageLogsPerTx {
-						chunk = &flusherPending{
-							cost: e.cost * maxUsageLogsPerTx / int64(len(e.logs)),
-							logs: e.logs[:maxUsageLogsPerTx],
+						// 方向 A 批次 1c（A-P2-1）：chunk.cost 逐条累加明细
+						// 求和（替代比例公式 e.cost * max / len——比例公式与
+						// 明细求和脱钩，整数截断可致 chunk.cost=0/成本错位；
+						// 累加重建"cost = 明细求和"不变量）。O(10k) 仅拆块路径
+						// 执行，热路径零影响；rest.cost = e.cost − chunk.cost
+						// 保和（跨事务总额不变，无资金损失）。
+						logs := e.logs[:maxUsageLogsPerTx]
+						var chunkCost int64
+						for _, l := range logs {
+							chunkCost += l.Cost
 						}
+						chunk = &flusherPending{cost: chunkCost, logs: logs}
 						f.refill(uid, &flusherPending{
-							cost: e.cost - chunk.cost,
+							cost: e.cost - chunkCost,
 							logs: e.logs[maxUsageLogsPerTx:],
 						})
 					}
 					_, bal, err := f.writer.DeductAndLog(ctx, uid, chunk.cost, chunk.logs)
 					if err != nil {
+						if isUniqueLogConflict(err) {
+							// 幂等键冲突（方向 A 批次 1a，A-P2-3）：COMMIT 歧义
+							// 窗口重试撞 usagelog_request_id_created_at——该块已
+							// 由先前成功事务扣费落库（同批事务原子），**按成功
+							// 处理**：不 refill 不扣费（防双扣）、failCounts 不
+							// 增；balanceAfter 未知跳过 Set，靠周期 Reload 收敛
+							// （balances.go:72-103）。
+							if f.failCounts[si] > 0 {
+								f.failCounts[si] = 0
+							}
+							drained.Add(int64(len(chunk.logs)))
+							e = f.takePending(uid)
+							continue
+						}
+						f.failCounts[si]++
+						if f.failCounts[si] >= maxLogFlushFailures {
+							// 毒 chunk 止损（评审 I-3 同款）：连续失败 ≥N 次 →
+							// 显式弃置该块（Error + 首行 request_id），隔离后不
+							// 再回灌——避免单块永久失败（分区缺失/DB 长故障）
+							// 无限卡死该用户计费队列（免费蹭用无界 + 快照陈旧）。
+							if f.log != nil {
+								f.log.Error("billing deduct failed, dropping poison chunk",
+									logx.Error(err), logx.Int64("user_id", uid),
+									logx.Int64("cost", chunk.cost),
+									logx.String("request_id", chunk.logs[0].RequestID),
+									logx.Int("dropped_logs", len(chunk.logs)))
+							}
+							f.failCounts[si] = 0
+							// 毒块弃置（不 refill）；其后剩余已回灌——其余未处理
+							// 条目一并回灌后停止本 shard（不丢）
+							f.refillRemaining(s, uid)
+							return
+						}
 						if f.log != nil {
 							f.log.Warn("billing deduct failed", logx.Int64("user_id", uid), logx.Int64("cost", chunk.cost), logx.Error(err))
 						}
-						f.refill(uid, chunk)
-						break
+						// 失败 chunk 回灌队首 + 其余未处理条目回灌 + 停止本 shard
+						// （对齐 usage.go:367-387：失败即停止——计数不被本 flush
+						// 其余成功块复位打断，否则毒块计数恒被同分片成功用户
+						// 清零，止损永不触发；已处理条目已从 s 删除，不回灌防
+						// 重复扣费）。
+						f.refillHead(uid, chunk)
+						f.refillRemaining(s, uid)
+						return
+					}
+					if f.failCounts[si] > 0 {
+						f.failCounts[si] = 0 // 成功推进复位（仅对曾失败的 shard 写）
 					}
 					f.bal.Set(uid, bal)
 					drained.Add(int64(len(chunk.logs)))
+					e = f.takePending(uid)
 				}
+				delete(s, uid) // 处理完成标记（失败路径按此回灌剩余，防重复）
 			}
-		}(shard)
+		}(si, shard)
 	}
 	wg.Wait()
 	f.lastFlush.Store(time.Now().UnixMilli())
@@ -363,6 +442,40 @@ func (f *Flusher) refill(uid int64, e *flusherPending) {
 	f.pendingN.Add(int64(len(e.logs)))
 }
 
+// refillHead 失败 chunk 回灌**队首**（方向 A 批次 1b 专用；对齐 p2-09 核实的
+// "回灌 chunk 位于该用户队列头部"语义——毒块恒先被重试，失败计数不被打断）：
+// 失败块插在已回灌剩余/新到达日志之前，严格 FIFO（旧日志先重试）。仅失败
+// 路径调用（冷路径，允许一次合并分配）；Record 热路径零触碰。
+func (f *Flusher) refillHead(uid int64, e *flusherPending) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	pe, ok := f.pending[uid]
+	if !ok {
+		pe = &flusherPending{}
+		f.pending[uid] = pe
+	}
+	pe.cost += e.cost
+	merged := make([]*domain.UsageLog, 0, len(e.logs)+len(pe.logs))
+	merged = append(merged, e.logs...)
+	merged = append(merged, pe.logs...)
+	pe.logs = merged
+	f.pendingN.Add(int64(len(e.logs)))
+}
+
+// refillRemaining 失败停止本 shard 时回灌其余未处理条目（不丢）：换批后未处理
+// 条目只在本地 shard map 中，goroutine 返回后无人再持有。已处理条目已由主循环
+// delete 标记（drain 完成/截断回灌均删除），此处仅剩未处理条目 + 当前失败用户
+// （skipUID）——跳过后者（其失败块已 refillHead、拆块剩余已回灌，重复回灌即
+// 重复扣费）。
+func (f *Flusher) refillRemaining(s map[int64]*flusherPending, skipUID int64) {
+	for oid, oe := range s {
+		if oid == skipUID {
+			continue
+		}
+		f.refill(oid, oe)
+	}
+}
+
 // takePending 锁内取走某用户的当前 pending 条目（无则 nil）——P2a 续传循环
 // 用：积压用户逐块提交后立即续取（flush 期间并发 Record 入新 map / 失败回灌
 // 的条目同样被续传），单次 flush 内尽可能多落库。与 refill/Record 同锁，
@@ -377,4 +490,27 @@ func (f *Flusher) takePending(uid int64) *flusherPending {
 	delete(f.pending, uid)
 	f.pendingN.Add(-int64(len(e.logs)))
 	return e
+}
+
+// isUniqueLogConflict 判断 DeductAndLog 错误是否为 usage_logs 幂等键唯一冲突
+// （usagelog_request_id_created_at，方向 A 批次 1a）：COMMIT 歧义窗口（billing
+// repo DeductAndLog 的 tx.Commit 报错但服务端已提交）重试必撞 23505 → 该块已
+// 扣费落库，按成功处理（防双扣）。**识别必须 errors.As / 错误链全文本匹配**
+// （评审 P3-A 铁律：错误经 DeductAndLog 多层返回可能被包装，类型断言即击穿——
+// 识别失败 → refill 重试 → 每轮撞 23505 = 永久毒丸）：
+//   - pgx 路径：*pgconn.PgError Code == 23505（COPY/事务错误原样透传，可能被
+//     fmt.Errorf 包装；errors.As 解包整条链）
+//   - ent 路径：sqlgraph.IsUniqueConstraintError（错误链全文本匹配 "violates
+//     unique constraint"——ent 生成代码把 DB 错误包装进 ConstraintError 并
+//     保持 Unwrap 链，绕包场景同样命中；先例 key_repo.go:44-46 同类判定）
+//
+// 事务内其余语句（temp_balances/users 条件更新）无唯一约束可违反，23505 只可
+// 能来自 usage_logs 唯一索引（request_id 128-bit 随机 hex，碰撞可忽略——
+// spec 1a.3 无合法重复风险已核实）。
+func isUniqueLogConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return sqlgraph.IsUniqueConstraintError(err)
 }

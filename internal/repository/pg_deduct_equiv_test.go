@@ -135,20 +135,29 @@ func TestPGDeductCopyPathEquivalent(t *testing.T) {
 
 	// 输入确定性：基准时间测试级一次性计算，两路径同一次截断值。
 	base := time.Now().Truncate(time.Second)
+	pool := pgTestPool(t)
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
 			stCopy, uidCopy := runDeductScenario(t, sc.name, "copy", reposCopy, base, sc.cost, sc.ghost, sc.seed, sc.logs)
-			stEnt, uidEnt := runDeductScenario(t, sc.name, "ent", reposEnt, base, sc.cost, sc.ghost, sc.seed, sc.logs)
-			require.Equal(t, stEnt, stCopy, "ent 路径与 COPY 路径终态必须逐字段一致")
 			if sc.name == "large batch 4000 rows cross chunks" {
-				// 分区路由逐路径断言：明日分区各 3 行、今日分区各 3997 行。
-				// 分区名由种子基准 base 派生（与插入行同一日期——新 time.Now() 在
-				// UTC 午夜跨日 ~1s 窗口会断言错分区，L-4 flake）。
-				pool := pgTestPool(t)
+				// COPY 路径分区路由断言（清行前）：明日分区 3 行、今日分区 3997
+				// 行。分区名由种子基准 base 派生（与插入行同一日期——新
+				// time.Now() 在 UTC 午夜跨日 ~1s 窗口会断言错分区，L-4 flake）。
 				tomorrow := base.Add(24 * time.Hour).UTC().Format("20060102")
 				require.Equal(t, int64(3), pgCount(t, pool,
 					"SELECT count(*) FROM usage_logs_"+tomorrow+" WHERE user_id = $1", uidCopy),
 					"COPY 路径跨日行落入明日分区")
+			}
+			// 幂等键（方向 A 批次 1a）：两路径同输入（同 request_id + created_at）
+			// 先后落同一 schema，唯一索引拒重——跑完 copy 路径即清其行，再跑
+			// ent 路径。终态对比语义不变：两路径各自独立的行/余额/临时额度采集
+			// 于各自运行时刻。
+			pgExec(t, pool, `DELETE FROM usage_logs WHERE user_id = $1`, uidCopy)
+			stEnt, uidEnt := runDeductScenario(t, sc.name, "ent", reposEnt, base, sc.cost, sc.ghost, sc.seed, sc.logs)
+			require.Equal(t, stEnt, stCopy, "ent 路径与 COPY 路径终态必须逐字段一致")
+			if sc.name == "large batch 4000 rows cross chunks" {
+				// ent 路径分区路由断言（终态对比后；行尚在）
+				tomorrow := base.Add(24 * time.Hour).UTC().Format("20060102")
 				require.Equal(t, int64(3), pgCount(t, pool,
 					"SELECT count(*) FROM usage_logs_"+tomorrow+" WHERE user_id = $1", uidEnt),
 					"ent 路径跨日行落入明日分区")

@@ -82,5 +82,11 @@ func (UsageLog) Indexes() []ent.Index {
 		index.Fields("account_id", "created_at"),
 		index.Fields("user_id", "created_at"),
 		index.Fields("key_id", "created_at"),
+		// 幂等键（方向 A 批次 1a，A-P2-3；双轨声明——分区表 DDL 见
+		// repository/partition.go usageLogIndexDDLs，migrate 经钩子跳过本表）：
+		// request_id 等值 + 分区键 created_at 收尾（分区表唯一索引必须含分区键）。
+		// COMMIT 歧义窗口重试撞 23505 → flusher 按成功处理（防双扣，见
+		// internal/billing/flusher.go isUniqueLogConflict）。
+		index.Fields("request_id", "created_at").Unique(),
 	}
 }
