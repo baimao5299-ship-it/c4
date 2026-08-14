@@ -967,6 +967,7 @@
       "adminSection": "Admin Console",
       "userSection": "User Center",
       "overview": "Overview",
+      "profile": "Profile",
       "keys": "Keys",
       "logs": "Logs",
       "stats": "Stats",
@@ -1140,6 +1141,30 @@
       "requests": "Requests",
       "tokens": "Tokens",
       "cost": "Cost"
+    },
+    "profile": {
+      "title": "Profile",
+      "subtitle": "Account info, temporary balance, and password",
+      "accountTitle": "Account info",
+      "tempTitle": "Temporary balance",
+      "tempAmount": "Amount",
+      "tempExpiresAt": "Expires at",
+      "tempPermanent": "Permanent",
+      "tempNote": "Note",
+      "tempEmpty": "No temporary balance",
+      "pwdTitle": "Change password",
+      "pwdSubtitle": "Your new password takes effect next time you sign in",
+      "oldPassword": "Old password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "oldPasswordWrong": "Old password is incorrect",
+      "newPasswordInvalid": "New password is invalid (must be non-empty and at most 72 bytes)",
+      "pwdMismatch": "The passwords do not match",
+      "pwdRequired": "Old, new, and confirm password are all required",
+      "submit": "Change password",
+      "submitting": "Changing…",
+      "successTitle": "Password changed",
+      "successDesc": "Your new password takes effect next time you sign in"
     }
   }
 }
