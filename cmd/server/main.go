@@ -141,9 +141,17 @@ func main() {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize:          cfg.Usage.BatchSize,
 		FlushInterval:      cfg.Usage.FlushInterval,
-		StatsFlushInterval: cfg.Usage.StatsFlushInterval,
+		StatsFlushInterval: cfg.Usage.StatsFlushInterval, // quota 回写 cadence（统计 flush 删除后语义沿用）
 		Workers:            cfg.Usage.FlushWorkers,
-	}, repos.Usages, repos.Stats, log)
+	}, repos.Usages, log)
+	// 离线聚合 worker（spec 2026-08-14 使用量统计离线聚合化）：独立 goroutine
+	// 每周期从 usage_logs/err_logs 重建 usage_stats（两范围 + 三查询 + 单事务
+	// DELETE+INSERT+watermark，见 usage/stats_agg.go）；0 = 禁用聚合（Start
+	// 直接返回，等价不装配）。quota 回写在线保留（Recorder flushQuota），不随
+	// 统计离线化搬移。
+	statsAgg := usage.NewStatsAgg(usage.StatsAggConfig{
+		Interval: cfg.Usage.StatsAggInterval,
+	}, repos.Stats, log)
 	// errlog worker（分表设计）：错误明细落盘通道——与计费 flusher 完全解耦
 	// （独立有界队列 + 背压采样丢弃 + 独立排空）；落盘 err_logs（瘦表审计）。
 	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{
@@ -374,7 +382,7 @@ func main() {
 	// 具体引用，断言实现 handler.StatsProvider 的入列；快照注册表状态单独
 	// 经 Status 直出）。WithOps 注入，路由由契约 chi-server 生成。
 	var opsWorkers []handler.StatsProvider
-	for _, w := range []worker.Worker{inv, sched, ruleEngine, rec, errlogW, pricingSync, retention, listener, authSync} {
+	for _, w := range []worker.Worker{inv, sched, ruleEngine, rec, errlogW, pricingSync, retention, statsAgg, listener, authSync} {
 		if s, ok := w.(handler.StatsProvider); ok {
 			opsWorkers = append(opsWorkers, s)
 		} else {
@@ -393,8 +401,8 @@ func main() {
 	// 直读；未装配 nil → 端点空/零值）经 OpsOptions 注入——不改 service.New
 	// 签名（main.go:376-390 注入先例）。
 	h := handler.New(svc, handler.OpsOptions{
-		Workers:   opsWorkers,
-		Snapshots: func() []handler.SnapshotState { return snapshotStates(snapReg.Status()) },
+		Workers:       opsWorkers,
+		Snapshots:     func() []handler.SnapshotState { return snapshotStates(snapReg.Status()) },
 		InFlightUsers: auth.InFlightUsers,
 		BillingAlerts: func() handler.BillingAlerts {
 			if billFlusher == nil {
@@ -449,7 +457,7 @@ func main() {
 	// 统一 worker 管理：顺序启动（scheduler 先、usage 后）、反向排空
 	// （usage 先排明细 → rule 先关排空事件（scheduler 已停投）→ scheduler 后排空回写）。
 	wm := worker.New(log)
-	wm.Register(inv, sched, ruleEngine, rec, errlogW, pricingSync, retention) // invalidate 去抖器执行 goroutine（单 goroutine 串行）；errlog 错误明细排空在 rec 之后注册 → 反向排空先于 rec；retention 顺序无依赖（DROP/预建均幂等）
+	wm.Register(inv, sched, ruleEngine, rec, errlogW, pricingSync, retention, statsAgg) // invalidate 去抖器执行 goroutine（单 goroutine 串行）；errlog 错误明细排空在 rec 之后注册 → 反向排空先于 rec；retention/stats-agg 顺序无依赖（覆盖语义幂等，停摆窗口由追赶上限收敛）
 	if billFlusher != nil {
 		// 计费 flusher 注册在 listener/auth-sync 之前（评审 I-1）：反向排空时它
 		// 是最后一个产生计费流量的 worker（扣费 + 计费日志全量落库）；其后注册

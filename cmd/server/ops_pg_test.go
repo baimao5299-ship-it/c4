@@ -68,7 +68,7 @@ func newOpsPGRepos(t *testing.T) (*repository.Repository, *pgxpool.Pool) {
 	t.Cleanup(func() { _ = db.Close() })
 	_, err = db.ExecContext(ctx, `DROP SCHEMA IF EXISTS `+opsTestSchema+` CASCADE; CREATE SCHEMA `+opsTestSchema+`;`)
 	require.NoError(t, err)
-	repos, err := repository.New(entsql.OpenDB(dialect.Postgres, db), true)
+	repos, err := repository.NewWithPG(ctx, entsql.OpenDB(dialect.Postgres, db), true, pool)
 	require.NoError(t, err)
 	return repos, pool
 }
@@ -130,10 +130,11 @@ func TestOpsWorkersPG(t *testing.T) {
 	svc := service.New(repos, sched, service.NopInvalidator{}, nil, ruleEngine, auth, nil)
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour,
-	}, repos.Usages, repos.Stats, nil)
+	}, repos.Usages, nil)
 	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{
 		QueueSize: 100, ExemptQueueSize: 100, BatchSize: 10, FlushInterval: 20 * time.Millisecond,
 	}, repos.ErrLogs, nil)
+	statsAgg := usage.NewStatsAgg(usage.StatsAggConfig{Interval: 20 * time.Millisecond, Lag: 50 * time.Millisecond}, repos.Stats, nil)
 	retention := usage.NewRetention(usage.RetentionConfig{
 		LogRetentionDays: 1, ErrLogRetentionDays: 0, StatsRetentionDays: 0, TickerInterval: time.Hour,
 	}, repos, nil)
@@ -185,7 +186,7 @@ func TestOpsWorkersPG(t *testing.T) {
 
 	// --- 4) /admin/ops/workers 端点：typed struct 断言 + 指标与真实状态一致 ---
 	// （用户裁决并入管理面：路由由契约 chi-server 生成，走 /admin 组鉴权）
-	opsWorkers := []handler.StatsProvider{ruleEngine, sched, rec, errlogW, retention}
+	opsWorkers := []handler.StatsProvider{ruleEngine, sched, rec, errlogW, retention, statsAgg}
 	ah := handler.New(nil, handler.OpsOptions{
 		Workers:   opsWorkers,
 		Snapshots: func() []handler.SnapshotState { return snapshotStates(reg.Status()) },
@@ -201,6 +202,26 @@ func TestOpsWorkersPG(t *testing.T) {
 	srv.Handler().ServeHTTP(recw, req)
 	require.Equal(t, http.StatusUnauthorized, recw.Code, "非 admin 401")
 
+	// stats-agg：启动即聚合（首轮初始化 watermark + 空窗口聚合）。观测与真实
+	// 一致性比对需确定性：GET 前 cancel 停摆 + 表值冻结（20ms 周期不停则 GET
+	// 快照与读表间可能推进一轮），再 GET → 响应值 == 表值。
+	saggCtx, cancelStatsAgg := context.WithCancel(context.Background())
+	t.Cleanup(cancelStatsAgg)
+	require.NoError(t, statsAgg.Start(saggCtx))
+	require.Eventually(t, func() bool {
+		return statsAgg.Stats().(usage.StatsAggWorkerStats).WatermarkUnixMs > 0
+	}, 3*time.Second, 10*time.Millisecond, "首轮聚合完成（watermark 初始化+推进）")
+	cancelStatsAgg()
+	require.Eventually(t, func() bool {
+		wm1, err1 := repos.Stats.LoadStatsAggWatermark(ctx)
+		time.Sleep(50 * time.Millisecond)
+		wm2, err2 := repos.Stats.LoadStatsAggWatermark(ctx)
+		return err1 == nil && err2 == nil && wm1.Equal(wm2)
+	}, 3*time.Second, 20*time.Millisecond, "worker 已停摆（watermark 冻结）")
+	wm, err := repos.Stats.LoadStatsAggWatermark(ctx)
+	require.NoError(t, err)
+	require.False(t, wm.IsZero(), "watermark 已初始化（首轮聚合推进）")
+
 	// admin → 200 + typed struct 解码断言。
 	req = httptest.NewRequest(http.MethodGet, "/admin/ops/workers", nil)
 	req.Header.Set("Authorization", "Bearer tok")
@@ -209,19 +230,23 @@ func TestOpsWorkersPG(t *testing.T) {
 	require.Equal(t, http.StatusOK, recw.Code)
 	var resp handler.WorkersResponse
 	require.NoError(t, json.Unmarshal(recw.Body.Bytes(), &resp))
-	require.Len(t, resp.Workers, 5)
+	require.Len(t, resp.Workers, 6)
 
 	got := map[string]map[string]any{}
 	for _, w := range resp.Workers {
 		got[w.Name] = w.Stats.(map[string]any)
 	}
 	require.Equal(t, float64(5), got["usage"]["pending_logs"], "usage pending 与真实一致")
-	require.Equal(t, float64(1), got["usage"]["stat_buckets_created"], "统计桶累计创建数（只增不减）")
 	require.Equal(t, float64(2), got["errlog"]["inserted"], "errlog 落盘计数与真实一致")
 	require.NotZero(t, got["retention"]["last_patrol_unix_ms"], "retention 巡检时刻已记")
 	require.Equal(t, float64(1), got["retention"]["last_dropped_log_partitions"], "DROP 分区数")
 	require.GreaterOrEqual(t, got["scheduler"]["writeback_cap"].(float64), float64(4096))
 	require.NotZero(t, got["rule-engine"]["queue_cap"].(float64))
+	// stats-agg 观测（spec 2026-08-14 §6）：watermark 与 stats_agg_watermark
+	// 表真实值一致（停摆冻结后 GET 的快照值 == 读表值——见上文前置比对）；
+	// 上轮耗时已观测（首轮聚合完成必有耗时）。
+	require.Equal(t, float64(wm.UnixMilli()), got["stats-agg"]["watermark_unix_ms"], "watermark 观测 = stats_agg_watermark 表真实值")
+	require.Positive(t, got["stats-agg"]["last_duration_ms"].(float64), "上轮耗时已观测")
 
 	// 快照区 Status 同步：5 条、全部已首刷、无错误。
 	require.Len(t, resp.Snapshots, 5)

@@ -96,8 +96,11 @@ type UsageConfig struct {
 	BatchSize          int           `koanf:"batch_size"`
 	FlushInterval      time.Duration `koanf:"flush_interval"`
 	LogRetentionDays   int           `koanf:"log_retention_days"`
-	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"`
-	FlushWorkers       int           `koanf:"flush_workers"` // flush 并行 worker 数（O1 管道化分片并行；明细/统计/额度共用）
+	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"` // quota 回写 cadence（spec 2026-08-14：统计 flush 删除后仅驱动额度）
+	FlushWorkers       int           `koanf:"flush_workers"`        // flush 并行 worker 数（O1 管道化分片并行；明细/额度共用）
+	// StatsAggInterval 离线聚合周期（spec 2026-08-14：使用量统计离线聚合化——
+	// 独立 worker 每周期从 DB 重建 usage_stats；默认 5m；0 = 禁用聚合）。
+	StatsAggInterval time.Duration `koanf:"stats_agg_interval"`
 	// err_logs 错误审计明细（分表设计）：有界队列 + 背压采样丢弃（风暴不淹没
 	// DB 不爆内存；DB 写速率上界 = ErrLogBatchSize/ErrLogFlushInterval）。
 	ErrLogQueueSize     int           `koanf:"errlog_queue_size"`     // 队列容量（默认 4096）
@@ -122,17 +125,17 @@ type BillingConfig struct {
 
 func defaults() *Config {
 	return &Config{
-		Server:    ServerConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 1 << 20},
-		Log:       LogConfig{Level: "warn", Output: "stdout"},
+		Server: ServerConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 1 << 20},
+		Log:    LogConfig{Level: "warn", Output: "stdout"},
 		// #17：10→20（billing 8 worker + stats 8 worker + 余量；统计 COPY 批量写已改毫秒级短事务）。
 		// 连接参数（lock_timeout=5s 会话级 + 计费 per-query 10s 超时 + MaxConnLifetime=30m，
 		// F-P2-4 计费路径防卡死）由 OpenPG/DeductAndLog 统一补，DSN 无需手工写（用户显式
 		// 配置同名参数时尊重不覆盖；statement_timeout 不设会话级——副作用核实见 f1-impl-report.md）。
-		DB: DBConfig{MaxConns: 20},
+		DB:        DBConfig{MaxConns: 20},
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, SyncInterval: 30 * time.Second},
-		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 8, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
+		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 8, StatsAggInterval: 5 * time.Minute, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
 		Billing:   BillingConfig{Enabled: false, FlushInterval: 1 * time.Second, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 8},
 	}
 }
@@ -197,18 +200,25 @@ func Load(path string) (*Config, error) {
 // 范围外）。
 func validate(c *Config) error {
 	for _, d := range []struct {
-		path  string
-		value time.Duration
+		path      string
+		value     time.Duration
+		allowZero bool // 0 = 合法语义（禁用以外的 duration 字段）
 	}{
-		{"proxy.upstream_timeout", c.Proxy.UpstreamTimeout},
-		{"proxy.upstream_stream_timeout", c.Proxy.UpstreamStreamTimeout},
-		{"scheduler.sync_interval", c.Scheduler.SyncInterval},
-		{"usage.flush_interval", c.Usage.FlushInterval},
-		{"usage.stats_flush_interval", c.Usage.StatsFlushInterval},
-		{"usage.errlog_flush_interval", c.Usage.ErrLogFlushInterval},
-		{"billing.flush_interval", c.Billing.FlushInterval},
-		{"billing.balance_refresh_interval", c.Billing.BalanceRefreshInterval},
+		{"proxy.upstream_timeout", c.Proxy.UpstreamTimeout, false},
+		{"proxy.upstream_stream_timeout", c.Proxy.UpstreamStreamTimeout, false},
+		{"scheduler.sync_interval", c.Scheduler.SyncInterval, false},
+		{"usage.flush_interval", c.Usage.FlushInterval, false},
+		{"usage.stats_flush_interval", c.Usage.StatsFlushInterval, false},
+		{"usage.errlog_flush_interval", c.Usage.ErrLogFlushInterval, false},
+		// stats_agg_interval：0 = 禁用聚合（合法语义）；非 0 必须 ≥1ms（防 ticker
+		// panic 面——裸数字 500 → 500ns 合法值域外）。
+		{"usage.stats_agg_interval", c.Usage.StatsAggInterval, true},
+		{"billing.flush_interval", c.Billing.FlushInterval, false},
+		{"billing.balance_refresh_interval", c.Billing.BalanceRefreshInterval, false},
 	} {
+		if d.allowZero && d.value == 0 {
+			continue
+		}
 		if d.value < time.Millisecond {
 			return fmt.Errorf("%s must be >= 1ms (got %s)", d.path, d.value)
 		}
