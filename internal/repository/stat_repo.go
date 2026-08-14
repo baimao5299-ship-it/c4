@@ -18,6 +18,8 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/template"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
 )
 
@@ -302,6 +304,139 @@ func statColValue(b *domain.StatBucket, col string) any {
 		return b.TotalLatencyMS
 	}
 	panic("stat repo: unknown column " + col)
+}
+
+// —— /admin/overview 聚合面（spec 2026-08-14；SQL 侧 GROUP BY——F-P2-2 形态：
+// 服务端分组返回日桶，不拉全行客户端聚合——720 万行/30 天客户端解码不可行） ——
+
+// StatSummary 区间聚合单行（summary"今日"区间；SQL 侧单行 sum）。
+type StatSummary struct {
+	Requests        int64
+	Errors          int64
+	InputTokens     int64
+	OutputTokens    int64
+	TotalTokens     int64
+	CacheReadTokens int64
+	Cost            int64 // 毫分
+}
+
+// StatDayAgg 单日聚合行（trend 日桶；date = UTC 日界）。
+type StatDayAgg struct {
+	Date     time.Time
+	Requests int64
+	Errors   int64
+	Tokens   int64
+	Cost     int64 // 毫分
+}
+
+// statSummarySQL 区间聚合单行（overview summary：今日区间 [from, to) 的
+// 测量列全量 sum；groupID > 0 时追加组过滤）。sum(bigint) → numeric，显式
+// ::bigint 回落（pgx 扫描 int64 不受 numeric 精度语义干扰）；空区间各列为
+// NULL → COALESCE 归零（summary 恒为全量结构，字段不因无数据缺席）。
+var statSummarySQL = `SELECT COALESCE(sum(request_count), 0)::bigint,
+	COALESCE(sum(error_count), 0)::bigint,
+	COALESCE(sum(input_tokens), 0)::bigint,
+	COALESCE(sum(output_tokens), 0)::bigint,
+	COALESCE(sum(total_tokens), 0)::bigint,
+	COALESCE(sum(cache_read_tokens), 0)::bigint,
+	COALESCE(sum(cost), 0)::bigint
+FROM "usage_stats" WHERE "bucket_time" >= $1 AND "bucket_time" < $2`
+
+// statTrendSQL 日桶聚合（overview trend：近 N 天日桶；SQL 侧 GROUP BY
+// date_trunc('day', bucket_time)——usage_stats 分区键，range 毫秒级）。
+// sum(bigint) → numeric，显式 ::bigint 回落（同 statSummarySQL）。WHERE 后
+// 可追加组过滤（占位 $3），GROUP BY/ORDER BY 尾段单独常量（statTrendTailSQL）
+// ——过滤条件必须插在 GROUP BY 之前。
+// 日界固定 UTC（评审 P2-1）：date_trunc('day', timestamptz) 按会话 TimeZone
+// 截断——非 UTC 会话下日桶边界与 summary 的 Go 侧 UTC 区间错位。先
+// AT TIME ZONE 'UTC' 取 UTC 墙钟再截断、再转回 timestamptz（会话无关）。
+var statTrendSQL = `SELECT date_trunc('day', "bucket_time" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
+	COALESCE(sum(request_count), 0)::bigint,
+	COALESCE(sum(error_count), 0)::bigint,
+	COALESCE(sum(total_tokens), 0)::bigint,
+	COALESCE(sum(cost), 0)::bigint
+FROM "usage_stats" WHERE "bucket_time" >= $1 AND "bucket_time" < $2`
+
+// statTrendTailSQL 日桶聚合尾段（GROUP BY 1 ORDER BY 1——组过滤拼接后追加）。
+var statTrendTailSQL = ` GROUP BY 1 ORDER BY 1`
+
+// SummarizeStats 区间聚合单行（SQL 侧 sum；overview summary——今日汇总同查
+// 形态：单行不拉行）。groupID > 0 = 按组过滤（0 = 全局）。pool 未注入
+// （非 NewWithPG 构造）→ 显式错误（同 Upsert 纪律，不静默降级）。
+func (r *StatRepo) SummarizeStats(ctx context.Context, from, to time.Time, groupID int64) (*StatSummary, error) {
+	if r.pool == nil {
+		return nil, fmt.Errorf("stat repo: pgx pool not configured (repository.NewWithPG); cannot aggregate overview summary")
+	}
+	sql := statSummarySQL
+	args := []any{from, to}
+	if groupID > 0 {
+		sql += ` AND "group_id" = $3`
+		args = append(args, groupID)
+	}
+	s := &StatSummary{}
+	err := r.pool.QueryRow(ctx, sql, args...).Scan(
+		&s.Requests, &s.Errors, &s.InputTokens, &s.OutputTokens,
+		&s.TotalTokens, &s.CacheReadTokens, &s.Cost)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// ScanStatsDays 日桶聚合（SQL 侧 GROUP BY date_trunc('day', bucket_time)；
+// overview trend——服务端分组，不拉全行客户端聚合）。groupID > 0 = 按组
+// 过滤（0 = 全局）。
+func (r *StatRepo) ScanStatsDays(ctx context.Context, from, to time.Time, groupID int64) ([]*StatDayAgg, error) {
+	if r.pool == nil {
+		return nil, fmt.Errorf("stat repo: pgx pool not configured (repository.NewWithPG); cannot aggregate overview trend")
+	}
+	sql := statTrendSQL
+	args := []any{from, to}
+	if groupID > 0 {
+		sql += ` AND "group_id" = $3` // 组过滤插在 GROUP BY 之前（见 statTrendTailSQL）
+		args = append(args, groupID)
+	}
+	sql += statTrendTailSQL
+	rows, err := r.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*StatDayAgg{}
+	for rows.Next() {
+		d := &StatDayAgg{}
+		if err := rows.Scan(&d.Date, &d.Requests, &d.Errors, &d.Tokens, &d.Cost); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// OverviewResourceCounts 资源计数（overview resources：templates/groups/users
+// 冷面 count；模板/分组排除软删——与列表端点口径一致）。单方法聚合三表计数
+// （overview 一站式便捷面；ent client 查询，不走 pool）。
+type OverviewResourceCounts struct {
+	Templates int
+	Groups    int
+	Users     int
+}
+
+// CountOverviewResources 三表资源计数（overview resources 段）。
+func (r *StatRepo) CountOverviewResources(ctx context.Context) (*OverviewResourceCounts, error) {
+	tpls, err := r.client.Template.Query().Where(template.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := r.client.Group.Query().Where(group.DeletedAtIsNil()).Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+	users, err := r.client.User.Query().Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &OverviewResourceCounts{Templates: tpls, Groups: groups, Users: users}, nil
 }
 
 // Scan 拉取时间范围内的原始小时桶（日聚合在 service 层做，规避方言差异）。

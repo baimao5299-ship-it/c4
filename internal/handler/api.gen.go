@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for AccountExtCredentialType.
@@ -668,6 +669,95 @@ type LogsResponse struct {
 	Rows       []UsageLog `json:"rows"`
 }
 
+// OverviewAccounts 账号健康分布 + 并发水位（调度器快照同源——与账号列表运行时视图一致）
+type OverviewAccounts struct {
+	N429   int `json:"429"`
+	Active int `json:"active"`
+
+	// Concurrency 在途并发合计
+	Concurrency int64 `json:"concurrency"`
+	Disabled    int   `json:"disabled"`
+
+	// MaxConcurrency 并发上限合计（水位 = concurrency / max_concurrency）
+	MaxConcurrency int `json:"max_concurrency"`
+	Unhealthy      int `json:"unhealthy"`
+}
+
+// OverviewAlerts 告警面（billing flusher 水线状态；注入面读取，未装配 = 全零）
+type OverviewAlerts struct {
+	// BillingPending 尚未落库的计费日志条数
+	BillingPending int64 `json:"billing_pending"`
+
+	// BillingPendingWaterline 水线（包级常量直读）
+	BillingPendingWaterline int64 `json:"billing_pending_waterline"`
+
+	// BillingWarned 水线告警边沿是否置位
+	BillingWarned bool `json:"billing_warned"`
+}
+
+// OverviewErrTop 账号维度错误率 Top5（调度器 EWMA err_rate 降序；name = 账号名）
+type OverviewErrTop struct {
+	ErrCount int     `json:"err_count"`
+	ErrRate  float64 `json:"err_rate"`
+
+	// Name 账号名（非模型名——账号维度）
+	Name string `json:"name"`
+}
+
+// OverviewResources 资源计数（冷面 count；模板/分组排除软删）
+type OverviewResources struct {
+	Groups    int `json:"groups"`
+	Templates int `json:"templates"`
+	Users     int `json:"users"`
+}
+
+// OverviewResponse defines model for OverviewResponse.
+type OverviewResponse struct {
+	// Accounts 账号健康分布 + 并发水位（调度器快照同源——与账号列表运行时视图一致）
+	Accounts OverviewAccounts `json:"accounts"`
+
+	// Alerts 告警面（billing flusher 水线状态；注入面读取，未装配 = 全零）
+	Alerts OverviewAlerts   `json:"alerts"`
+	ErrTop []OverviewErrTop `json:"err_top"`
+
+	// Resources 资源计数（冷面 count；模板/分组排除软删）
+	Resources OverviewResources `json:"resources"`
+
+	// Summary 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD）
+	Summary OverviewSummary `json:"summary"`
+	Trend   []OverviewTrend `json:"trend"`
+}
+
+// OverviewSummary 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD）
+type OverviewSummary struct {
+	CacheReadTokens int64 `json:"cache_read_tokens"`
+
+	// CostUsd 今日成本（USD，毫分 /1e5——与价格 API 口径一致）
+	CostUsd float64 `json:"cost_usd"`
+
+	// ErrRate 错误率（errors / requests；无请求 = 0）
+	ErrRate      float64 `json:"err_rate"`
+	Errors       int64   `json:"errors"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	Requests     int64   `json:"requests"`
+	TotalTokens  int64   `json:"total_tokens"`
+}
+
+// OverviewTrend 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日）
+type OverviewTrend struct {
+	// CostUsd 当日成本（USD，毫分 /1e5）
+	CostUsd float64 `json:"cost_usd"`
+
+	// Date 日桶（UTC）
+	Date     openapi_types.Date `json:"date"`
+	Errors   int64              `json:"errors"`
+	Requests int64              `json:"requests"`
+
+	// Tokens 当日总 token（usage_stats total_tokens 列聚合）
+	Tokens int64 `json:"tokens"`
+}
+
 // Pricing defines model for Pricing.
 type Pricing struct {
 	AboveCacheCreationPricePerMillion     *float64 `json:"AboveCacheCreationPricePerMillion"`
@@ -1167,6 +1257,23 @@ type UserUpdate struct {
 	Status         *UserStatus `json:"status,omitempty"`
 }
 
+// UsersTopEntry 实时在途并发条目（users 表无 name 列——仅 email）
+type UsersTopEntry struct {
+	// Concurrency 在途请求数
+	Concurrency int64 `json:"concurrency"`
+
+	// Email 邮箱（TopN user_id 一次 IN 查询回填；缺失 = 空串）
+	Email  string `json:"email"`
+	UserId int64  `json:"user_id"`
+}
+
+// UsersTopResponse 实时并发排行（本实例视角；TopN + other 归并）
+type UsersTopResponse struct {
+	// OtherConcurrency 其余在途用户合计（TopN 之外；非伪用户条目）
+	OtherConcurrency int64           `json:"other_concurrency"`
+	Users            []UsersTopEntry `json:"users"`
+}
+
 // WorkerStatus defines model for WorkerStatus.
 type WorkerStatus struct {
 	Name string `json:"name"`
@@ -1279,6 +1386,12 @@ type PutImagePriceModelParams struct {
 	Model string `form:"model" json:"model"`
 }
 
+// GetAdminOverviewParams defines parameters for GetAdminOverview.
+type GetAdminOverviewParams struct {
+	Days    *int   `form:"days,omitempty" json:"days,omitempty"`
+	GroupId *int64 `form:"group_id,omitempty" json:"group_id,omitempty"`
+}
+
 // DeletePricingModelParams defines parameters for DeletePricingModel.
 type DeletePricingModelParams struct {
 	Model string `form:"model" json:"model"`
@@ -1380,6 +1493,11 @@ type GetUsersParams struct {
 
 // GetUsersParamsOrder defines parameters for GetUsers.
 type GetUsersParamsOrder string
+
+// GetAdminUsersTopParams defines parameters for GetAdminUsersTop.
+type GetAdminUsersTopParams struct {
+	Top *int `form:"top,omitempty" json:"top,omitempty"`
+}
 
 // PostAccountsJSONRequestBody defines body for PostAccounts for application/json ContentType.
 type PostAccountsJSONRequestBody = AccountCreate
@@ -1548,6 +1666,9 @@ type ServerInterface interface {
 	// 运维观测（worker 状态 + 快照注册表）
 	// (GET /ops/workers)
 	GetOpsWorkers(w http.ResponseWriter, r *http.Request)
+	// 管理端总览（summary USD + trend 日桶 + 账号健康 + 资源 + err_top + 计费告警）
+	// (GET /overview)
+	GetAdminOverview(w http.ResponseWriter, r *http.Request, params GetAdminOverviewParams)
 	// 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
 	// (DELETE /pricing)
 	DeletePricingModel(w http.ResponseWriter, r *http.Request, params DeletePricingModelParams)
@@ -1635,6 +1756,9 @@ type ServerInterface interface {
 	// 创建用户（platform_admin 专属；email 唯一/格式、密码 ≤72 字节）
 	// (POST /users)
 	PostUsers(w http.ResponseWriter, r *http.Request)
+	// 实时在途并发排行 TopN（本实例视角）
+	// (GET /users-top)
+	GetAdminUsersTop(w http.ResponseWriter, r *http.Request, params GetAdminUsersTopParams)
 	// 更新用户（role/status/max_concurrency/balance；变更即时生效——Auth 快照刷新）
 	// (PUT /users/{id})
 	PutUsersId(w http.ResponseWriter, r *http.Request, id int64)
@@ -1806,6 +1930,12 @@ func (_ Unimplemented) GetOpsWorkers(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 管理端总览（summary USD + trend 日桶 + 账号健康 + 资源 + err_top + 计费告警）
+// (GET /overview)
+func (_ Unimplemented) GetAdminOverview(w http.ResponseWriter, r *http.Request, params GetAdminOverviewParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
 // (DELETE /pricing)
 func (_ Unimplemented) DeletePricingModel(w http.ResponseWriter, r *http.Request, params DeletePricingModelParams) {
@@ -1974,6 +2104,12 @@ func (_ Unimplemented) GetUsers(w http.ResponseWriter, r *http.Request, params G
 // 创建用户（platform_admin 专属；email 唯一/格式、密码 ≤72 字节）
 // (POST /users)
 func (_ Unimplemented) PostUsers(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 实时在途并发排行 TopN（本实例视角）
+// (GET /users-top)
+func (_ Unimplemented) GetAdminUsersTop(w http.ResponseWriter, r *http.Request, params GetAdminUsersTopParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2910,6 +3046,41 @@ func (siw *ServerInterfaceWrapper) GetOpsWorkers(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetAdminOverview operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAdminOverviewParams
+
+	// ------------- Optional query parameter "days" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "days", r.URL.Query(), &params.Days)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "days", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminOverview(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeletePricingModel operation middleware
 func (siw *ServerInterfaceWrapper) DeletePricingModel(w http.ResponseWriter, r *http.Request) {
 
@@ -3824,6 +3995,33 @@ func (siw *ServerInterfaceWrapper) PostUsers(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetAdminUsersTop operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminUsersTop(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAdminUsersTopParams
+
+	// ------------- Optional query parameter "top" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "top", r.URL.Query(), &params.Top)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "top", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminUsersTop(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PutUsersId operation middleware
 func (siw *ServerInterfaceWrapper) PutUsersId(w http.ResponseWriter, r *http.Request) {
 
@@ -4094,6 +4292,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/ops/workers", wrapper.GetOpsWorkers)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/overview", wrapper.GetAdminOverview)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/pricing", wrapper.DeletePricingModel)
 	})
 	r.Group(func(r chi.Router) {
@@ -4179,6 +4380,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/users", wrapper.PostUsers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/users-top", wrapper.GetAdminUsersTop)
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/users/{id}", wrapper.PutUsersId)

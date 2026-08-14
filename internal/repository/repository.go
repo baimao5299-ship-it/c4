@@ -330,6 +330,11 @@ func (r *Repository) CreateTempBalance(ctx context.Context, userID int64, amount
 	return r.Users.CreateTempBalance(ctx, userID, amount, expiresAt, note)
 }
 
+// ListUserEmails 批量取邮箱（/admin/users-top TopN 回填；id IN 一次查询）。
+func (r *Repository) ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error) {
+	return r.Users.ListUserEmails(ctx, ids)
+}
+
 // --- 客户端 key（Phase 3a） ---
 
 func (r *Repository) CreateKey(ctx context.Context, k *domain.Key) (*domain.Key, error) {
@@ -446,6 +451,20 @@ func (r *Repository) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain
 
 func (r *Repository) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBucket, error) {
 	return r.Stats.ScanStats(ctx, q)
+}
+
+// --- /admin/overview 聚合面（spec 2026-08-14；SQL 侧聚合 + 冷面计数） ---
+
+func (r *Repository) SummarizeStats(ctx context.Context, from, to time.Time, groupID int64) (*StatSummary, error) {
+	return r.Stats.SummarizeStats(ctx, from, to, groupID)
+}
+
+func (r *Repository) ScanStatsDays(ctx context.Context, from, to time.Time, groupID int64) ([]*StatDayAgg, error) {
+	return r.Stats.ScanStatsDays(ctx, from, to, groupID)
+}
+
+func (r *Repository) CountOverviewResources(ctx context.Context) (*OverviewResourceCounts, error) {
+	return r.Stats.CountOverviewResources(ctx)
 }
 
 // --- 兑换码（Phase 5 计费前基础设施） ---

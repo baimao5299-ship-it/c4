@@ -65,6 +65,8 @@ type UserStore interface {
 	// CreateTempBalance 创建临时额度行（注册赠品、兑换码兑换等；user_id 外键必
 	// 存在）。expiresAt/note 为 nil 时不落该列（nil = 永久；兑换码路径必非零）。
 	CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error
+	// ListUserEmails 批量取邮箱（/admin/users-top TopN 回填；id IN 一次查询）。
+	ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error)
 }
 
 // SettingStore 类型化配置持久化（Phase 3a）。
@@ -198,6 +200,11 @@ type LogStore interface {
 
 type StatStore interface {
 	ScanStats(ctx context.Context, q repository.StatQuery) ([]*domain.StatBucket, error)
+	// /admin/overview 聚合面（spec 2026-08-14）：SQL 侧聚合（F-P2-2 形态——
+	// 服务端 GROUP BY 返回日桶，不拉全行客户端聚合）。
+	SummarizeStats(ctx context.Context, from, to time.Time, groupID int64) (*repository.StatSummary, error)
+	ScanStatsDays(ctx context.Context, from, to time.Time, groupID int64) ([]*repository.StatDayAgg, error)
+	CountOverviewResources(ctx context.Context) (*repository.OverviewResourceCounts, error)
 }
 
 // Invalidator 管理面变更的去抖定向失效回调（O2 接线矩阵，评审 M-1）：
@@ -243,9 +250,11 @@ type Publisher interface {
 	Publish(ctx context.Context, ch notify.Change) error
 }
 
-// RuntimeProvider 由 scheduler 实现，供账号运行时视图。
+// RuntimeProvider 由 scheduler 实现，供账号运行时视图（Runtimes = overview
+// 聚合面：账号健康分布/并发水位/err_top 与列表运行时视图同源）。
 type RuntimeProvider interface {
 	Runtime(accountID int64) (scheduler.RuntimeInfo, bool)
+	Runtimes() []scheduler.AccountRuntime
 }
 
 // KeyRegistrar 由 proxy.Auth 实现，供客户端 key 变更时增量刷新鉴权快照。
