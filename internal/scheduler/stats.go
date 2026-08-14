@@ -15,7 +15,7 @@ type SchedulerStats struct {
 	WritebackCap      int `json:"writeback_cap"`      // 队列容量（满 → 丢弃 DB 回写，内存已生效）
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (s *Scheduler) Stats() any {
 	return SchedulerStats{
 		PendingWritebacks: len(s.writeCh),

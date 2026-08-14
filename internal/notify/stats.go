@@ -12,7 +12,7 @@ type ListenerStats struct {
 	Running bool `json:"running"` // 监听循环存活（Start 置位、run 退出复位；原子读零锁）
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (l *Listener) Stats() any {
 	return ListenerStats{Running: l.running.Load()}
 }

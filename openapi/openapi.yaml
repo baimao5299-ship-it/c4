@@ -15,6 +15,7 @@ tags:
   - name: stats
   - name: redemptions
   - name: pricing
+  - name: ops
 paths:
   /templates:
     post:
@@ -1282,6 +1283,22 @@ paths:
                 items: { $ref: '#/components/schemas/StatBucket' }
         default:
           $ref: '#/components/responses/Error'
+  # 运维观测面（/admin/ops/workers，用户裁决并入管理面）：路由由 oapi-codegen
+  # chi-server 生成（BaseURL /admin 拼接），鉴权走 /admin 组 adminAuth；类型在
+  # 契约（handler/api.gen.go + 前端 schema.d.ts 同源）。
+  /ops/workers:
+    get:
+      operationId: GetOpsWorkers
+      tags: [ops]
+      summary: 运维观测（worker 状态 + 快照注册表）
+      responses:
+        '200':
+          description: 运维观测快照（各 worker 原子读计数器；stats 异构）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkersResponse' }
+        default:
+          $ref: '#/components/responses/Error'
 components:
   responses:
     Error:
@@ -2178,3 +2195,65 @@ components:
         CacheCreationTokens: { type: integer, format: int64 }
         Cost: { type: integer, format: int64, description: 计费成本（毫分，1 USD = 100,000 毫分；计费预聚合，花费统计不扫明细） }
         TotalLatencyMS: { type: integer, format: int64 }
+    # 运维观测（/admin/ops/workers）：WorkerStatus/SnapshotState/WorkersResponse
+    # 类型由本契约生成（ops tag → handler/api.gen.go + 前端 schema.d.ts），
+    # handler/ops.go 唯一实现；字段清单见 WorkerStatus.stats.description。
+    WorkerStatus:
+      type: object
+      required: [name, stats]
+      properties:
+        name: { type: string }
+        # stats 为异构动态观测字段（9 个 worker 各形态不同，原子读计数器 +
+        # channel 长度快照）——契约层面声明为自由 schema（任意对象），后端
+        # 直出原类型（any），不做 struct→map 转换。
+        #
+        # 字段清单（消费方唯一依据；与各 worker Stats() 实现同步维护——改
+        # Stats() 字段必须同步本清单，同步义务钉在 handler/ops.go 接口注释）：
+        #   json 小写键；*_unix_ms = 毫秒时间戳，0 = 从未触发；running = 循环
+        #   存活；计数均为原子读零锁快照。
+        #   invalidate（去抖器）: dirty bool（有待执行重载）, dirty_kinds string
+        #     （脏位名逗号分隔；空 = 组级定向）, dirty_groups int（组级定向账号数）,
+        #     window_ms int（去抖窗口）
+        #   scheduler: pending_writebacks int（待回写 DB 状态队列积压）,
+        #     writeback_cap int（队列容量；满 → 丢弃 DB 回写）
+        #   rule-engine: queued int（事件队列积压）, queue_cap int（容量/丢弃阈值）,
+        #     dropped int64（队列满丢弃累计）, drop_warn_threshold int64（丢弃告警阈值）
+        #   usage: pending_logs int64（未落库明细条数）, stat_buckets_created int64
+        #     （统计桶累计创建，只增不减）, pending_waterline int64（水线）,
+        #     warned bool（水线告警边沿）
+        #   errlog: queued int（双队列积压总和）, queue_cap int（拒绝队列容量）,
+        #     exempt_queue_cap int（豁免队列容量）, dropped_reject int64（拒绝行丢弃累计）,
+        #     dropped_exempt int64（双轨行丢弃累计）, inserted int64（成功落盘累计）,
+        #     warned_reject bool, warned_exempt bool（丢弃告警边沿）
+        #   pricing-sync: running bool, last_sync_unix_ms int64（最近 fetch 尝试时刻）
+        #   retention: last_patrol_unix_ms int64（最近巡检完成时刻）,
+        #     last_dropped_log_partitions int64, last_dropped_errlog_partitions int64,
+        #     last_dropped_stats_partitions int64（最近成功轮 DROP 分区数；失败轮保留上轮）,
+        #     log_retention_days int, errlog_retention_days int, stats_retention_days int
+        #   notify: running bool
+        #   auth-sync: running bool, last_reload_unix_ms int64（最近成功 Reload 时刻）,
+        #     failures int64（Reload 失败累计）, last_failure_unix_ms int64（最近失败时刻）
+        stats:
+          description: 各 worker 异构观测字段；完整字段清单见本 schema 上方 yaml 注释（与各 worker Stats() 实现同步维护）
+    SnapshotState:
+      type: object
+      required: [name, last_reload]
+      properties:
+        name: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+          description: 声明的变更 scope；null = 纯启动/状态快照
+        last_reload: { type: string, format: date-time }
+        last_error: { type: string, description: 最近一次 reload 错误文本；缺省 = 成功 }
+    WorkersResponse:
+      type: object
+      required: [workers, snapshots, generated_at]
+      properties:
+        workers:
+          type: array
+          items: { $ref: '#/components/schemas/WorkerStatus' }
+        snapshots:
+          type: array
+          items: { $ref: '#/components/schemas/SnapshotState' }
+        generated_at: { type: string, format: date-time }

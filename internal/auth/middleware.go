@@ -45,7 +45,7 @@ func RequireJWT(iss *Issuer, users UserStatusProvider) func(http.Handler) http.H
 			}
 			// 快照用户状态校验：禁用即拒（无需等 JWT 过期）；快照缺失
 			// （启动首刷失败 / Reload 失败保留旧快照 / NOTIFY 丢失）同样拒绝
-			// ——fail-closed，与 /admin 面（internal/server/ops.go adminAuth）
+			// ——fail-closed，与 /admin 面（internal/server/middleware.go adminAuth）
 			// 及 Balances.BalanceOf 缺失 → 402 纪律一致。行为变化注记：启动
 			// 首刷失败（DB 挂）时 /user 全拒——/user 端点 DB-backed 反正 500，
 			// 实际影响≈0。

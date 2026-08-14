@@ -16,7 +16,7 @@ type RecorderStats struct {
 	Warned           bool  `json:"warned"`               // 水线告警边沿是否置位
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (r *Recorder) Stats() any {
 	return RecorderStats{
 		PendingLogs:      r.pendingN.Load(),
@@ -38,7 +38,7 @@ type ErrLogWorkerStats struct {
 	WarnedExempt   bool  `json:"warned_exempt"`    // 双轨丢弃告警边沿
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (w *ErrLogWorker) Stats() any {
 	return ErrLogWorkerStats{
 		Queued:         w.Queued(),
@@ -63,7 +63,7 @@ type RetentionWorkerStats struct {
 	StatsRetentionDays          int   `json:"stats_retention_days"`
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (w *RetentionWorker) Stats() any {
 	return RetentionWorkerStats{
 		LastPatrolUnixMs:            w.lastPatrol.Load(),

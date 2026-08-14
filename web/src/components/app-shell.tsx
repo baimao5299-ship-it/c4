@@ -4,7 +4,7 @@
 
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound } from 'lucide-react'
+import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -47,6 +47,7 @@ const adminNav = [
   { to: '/app/redemption-codes', key: 'nav.redemptions', icon: Ticket },
   { to: '/app/pricing', key: 'nav.pricing', icon: Coins },
   { to: '/app/settings', key: 'nav.settings', icon: Settings },
+  { to: '/app/ops', key: 'nav.ops', icon: Cpu },
 ]
 
 const LANGS: { code: AppLang; label: string }[] = [

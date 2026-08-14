@@ -16,7 +16,7 @@ type RuleEngineStats struct {
 	DropWarnThreshold int64 `json:"drop_warn_threshold"` // 丢弃告警阈值（包级 var 直读）
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (e *RuleEngine) Stats() any {
 	return RuleEngineStats{
 		Queued:            len(e.ch),

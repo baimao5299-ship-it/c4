@@ -19,11 +19,18 @@ import (
 // AdminAPI 以避免与生成的 Handler 函数重名。
 type AdminAPI struct {
 	svc *service.Service
+	ops OpsOptions // 运维观测装配（GetOpsWorkers 用；变参注入，零值 = 端点返回空）
 }
 
 // New 构造契约处理器（路由由 HandlerWithOptions 生成）。
-func New(svc *service.Service) *AdminAPI {
-	return &AdminAPI{svc: svc}
+// ops 变参：GetOpsWorkers 的 worker 引用在组合根（cmd/server/main.go）持有，
+// 由装配面注入；缺省零值 = 端点返回空（测试/无运维装配场景零改动）。
+func New(svc *service.Service, ops ...OpsOptions) *AdminAPI {
+	var o OpsOptions
+	if len(ops) > 0 {
+		o = ops[0]
+	}
+	return &AdminAPI{svc: svc, ops: o}
 }
 
 // Router 返回带 /admin 前缀的 chi 路由（替代原 Routes/RoutesMux）。

@@ -34,6 +34,7 @@ import (
 	"github.com/is7qin/c3api/internal/billing"
 	"github.com/is7qin/c3api/internal/credential"
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/handler"
 	"github.com/is7qin/c3api/internal/proxy"
 	"github.com/is7qin/c3api/internal/repository"
 	"github.com/is7qin/c3api/internal/rule"
@@ -182,27 +183,31 @@ func TestOpsWorkersPG(t *testing.T) {
 	rst := retention.Stats().(usage.RetentionWorkerStats)
 	require.Equal(t, int64(1), rst.LastDroppedLogPartitions, "DROP 分区数与真实一致")
 
-	// --- 4) /ops/workers 端点：typed struct 断言 + 指标与真实状态一致 ---
-	opsWorkers := []server.StatsProvider{ruleEngine, sched, rec, errlogW, retention}
+	// --- 4) /admin/ops/workers 端点：typed struct 断言 + 指标与真实状态一致 ---
+	// （用户裁决并入管理面：路由由契约 chi-server 生成，走 /admin 组鉴权）
+	opsWorkers := []handler.StatsProvider{ruleEngine, sched, rec, errlogW, retention}
+	ah := handler.New(nil, handler.OpsOptions{
+		Workers:   opsWorkers,
+		Snapshots: func() []handler.SnapshotState { return snapshotStates(reg.Status()) },
+	})
 	srv := server.NewServer(server.Options{
 		AdminToken:   "tok",
-		OpsWorkers:   opsWorkers,
-		OpsSnapshots: func() []server.SnapshotState { return snapshotStates(reg.Status()) },
+		AdminHandler: ah.Router(),
 	})
 
 	// 非 admin → 401。
-	req := httptest.NewRequest(http.MethodGet, "/ops/workers", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/ops/workers", nil)
 	recw := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(recw, req)
 	require.Equal(t, http.StatusUnauthorized, recw.Code, "非 admin 401")
 
 	// admin → 200 + typed struct 解码断言。
-	req = httptest.NewRequest(http.MethodGet, "/ops/workers", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/ops/workers", nil)
 	req.Header.Set("Authorization", "Bearer tok")
 	recw = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(recw, req)
 	require.Equal(t, http.StatusOK, recw.Code)
-	var resp server.WorkersResponse
+	var resp handler.WorkersResponse
 	require.NoError(t, json.Unmarshal(recw.Body.Bytes(), &resp))
 	require.Len(t, resp.Workers, 5)
 

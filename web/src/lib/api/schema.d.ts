@@ -816,6 +816,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ops/workers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 运维观测（worker 状态 + 快照注册表） */
+        get: operations["GetOpsWorkers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1886,6 +1903,26 @@ export interface components {
             Cost?: number;
             /** Format: int64 */
             TotalLatencyMS?: number;
+        };
+        WorkerStatus: {
+            name: string;
+            /** @description 各 worker 异构观测字段；完整字段清单见本 schema 上方 yaml 注释（与各 worker Stats() 实现同步维护） */
+            stats: unknown;
+        };
+        SnapshotState: {
+            name: string;
+            /** @description 声明的变更 scope；null = 纯启动/状态快照 */
+            scopes?: string[];
+            /** Format: date-time */
+            last_reload: string;
+            /** @description 最近一次 reload 错误文本；缺省 = 成功 */
+            last_error?: string;
+        };
+        WorkersResponse: {
+            workers: components["schemas"]["WorkerStatus"][];
+            snapshots: components["schemas"]["SnapshotState"][];
+            /** Format: date-time */
+            generated_at: string;
         };
     };
     responses: {
@@ -3755,6 +3792,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatBucket"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetOpsWorkers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 运维观测快照（各 worker 原子读计数器；stats 异构） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkersResponse"];
                 };
             };
             default: components["responses"]["Error"];

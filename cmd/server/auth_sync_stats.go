@@ -15,7 +15,8 @@ type authSyncStats struct {
 	LastFailureUnixMs int64 `json:"last_failure_unix_ms"` // 最近一次失败时刻（0 = 从未失败；B4-2 新增）
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；
+// 装配链路见 internal/handler/ops.go 文件头）。
 func (w *authSync) Stats() any {
 	return authSyncStats{
 		Running:           w.running.Load(),

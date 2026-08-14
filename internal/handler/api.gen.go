@@ -942,6 +942,17 @@ type SettingUpdate struct {
 	Value string `json:"value"`
 }
 
+// SnapshotState defines model for SnapshotState.
+type SnapshotState struct {
+	// LastError 最近一次 reload 错误文本；缺省 = 成功
+	LastError  *string   `json:"last_error,omitempty"`
+	LastReload time.Time `json:"last_reload"`
+	Name       string    `json:"name"`
+
+	// Scopes 声明的变更 scope；null = 纯启动/状态快照
+	Scopes *[]string `json:"scopes,omitempty"`
+}
+
 // StatBucket defines model for StatBucket.
 type StatBucket struct {
 	AccountID           *int64     `json:"AccountID,omitempty"`
@@ -1154,6 +1165,21 @@ type UserUpdate struct {
 	MaxConcurrency *int        `json:"max_concurrency,omitempty"`
 	Role           *UserRole   `json:"role,omitempty"`
 	Status         *UserStatus `json:"status,omitempty"`
+}
+
+// WorkerStatus defines model for WorkerStatus.
+type WorkerStatus struct {
+	Name string `json:"name"`
+
+	// Stats 各 worker 异构观测字段；完整字段清单见本 schema 上方 yaml 注释（与各 worker Stats() 实现同步维护）
+	Stats interface{} `json:"stats"`
+}
+
+// WorkersResponse defines model for WorkersResponse.
+type WorkersResponse struct {
+	GeneratedAt time.Time       `json:"generated_at"`
+	Snapshots   []SnapshotState `json:"snapshots"`
+	Workers     []WorkerStatus  `json:"workers"`
 }
 
 // Error defines model for Error.
@@ -1519,6 +1545,9 @@ type ServerInterface interface {
 	// 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行）
 	// (PUT /image-price)
 	PutImagePriceModel(w http.ResponseWriter, r *http.Request, params PutImagePriceModelParams)
+	// 运维观测（worker 状态 + 快照注册表）
+	// (GET /ops/workers)
+	GetOpsWorkers(w http.ResponseWriter, r *http.Request)
 	// 删除手动价（litellm 行 → 409；不存在 → 404；删除后下轮拉取补回）
 	// (DELETE /pricing)
 	DeletePricingModel(w http.ResponseWriter, r *http.Request, params DeletePricingModelParams)
@@ -1768,6 +1797,12 @@ func (_ Unimplemented) GetImagePrice(w http.ResponseWriter, r *http.Request, par
 // 手动设图片价格（三分量全可选；至少一个非 null——否则 400；upsert 强制 source=manual，可接管 litellm 行）
 // (PUT /image-price)
 func (_ Unimplemented) PutImagePriceModel(w http.ResponseWriter, r *http.Request, params PutImagePriceModelParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 运维观测（worker 状态 + 快照注册表）
+// (GET /ops/workers)
+func (_ Unimplemented) GetOpsWorkers(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2852,6 +2887,20 @@ func (siw *ServerInterfaceWrapper) PutImagePriceModel(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutImagePriceModel(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOpsWorkers operation middleware
+func (siw *ServerInterfaceWrapper) GetOpsWorkers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOpsWorkers(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4040,6 +4089,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/image-price", wrapper.PutImagePriceModel)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/ops/workers", wrapper.GetOpsWorkers)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/pricing", wrapper.DeletePricingModel)

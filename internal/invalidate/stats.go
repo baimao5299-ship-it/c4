@@ -19,7 +19,7 @@ type DebouncerStats struct {
 	WindowMs    int64  `json:"window_ms"`    // 去抖窗口
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (d *Debouncer) Stats() any {
 	var dirty bool
 	var kinds string

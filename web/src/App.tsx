@@ -29,6 +29,7 @@ import Rules from '@/pages/rules'
 import RedemptionCodes from '@/pages/redemption-codes'
 import PricingPage from '@/pages/pricing'
 import SettingsPage from '@/pages/settings'
+import Ops from '@/pages/ops'
 
 // 唯一登录态 userAuth：管理端 api 与用户端 userApi 同源取 token，
 // platform_admin 的 JWT 同样通过 /admin 后端鉴权（middleware 已支持）。
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
           { path: 'redemption-codes', element: <RedemptionCodes /> },
           { path: 'pricing', element: <PricingPage /> },
           { path: 'settings', element: <SettingsPage /> },
+          { path: 'ops', element: <Ops /> },
         ],
       },
       {

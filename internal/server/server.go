@@ -31,10 +31,6 @@ type Options struct {
 	AIHandler         http.Handler // proxy 三个端点
 	WebFS             fs.FS        // 前端构建产物（nil = 不挂静态资源）
 	Logger            *logx.Logger
-	// OpsWorkers/OpsSnapshots GET /ops/workers 装配（spec 2026-08-11）：
-	// OpsWorkers 非空才挂路由；与 /admin 同鉴权中间件（adminAuth）。
-	OpsWorkers   []StatsProvider
-	OpsSnapshots func() []SnapshotState
 }
 
 type Server struct {
@@ -70,18 +66,15 @@ func NewServer(opts Options) *Server {
 	})
 
 	r.Group(func(r chi.Router) {
-		// /admin 与 /ops 共用管理面鉴权（adminAuth，定义见 ops.go）：
-		// 静态 admin token OR platform_admin JWT（两个都过才拒）。
+		// 管理面鉴权（adminAuth，定义见 middleware.go）：静态 admin token OR
+		// platform_admin JWT（两个都过才拒）。/admin/ops/workers 运维观测在
+		// AdminHandler 内（生成路由），同组鉴权。
 		r.Use(adminAuth(opts))
 		if opts.AdminHandler != nil {
 			// 用 Handle 而非 Mount：chi v5.3.1 对同一 pattern 重复 Mount 会 panic，
 			// 且 AI 组已挂 Mount("/", ...)。Handle 不剥离前缀，AdminHandler
 			// （HandlerWithOptions BaseURL="/admin"）按完整路径 /admin/* 匹配。
 			r.Handle("/admin/*", opts.AdminHandler)
-		}
-		if len(opts.OpsWorkers) > 0 {
-			ops := NewOpsHandler(OpsOptions{Workers: opts.OpsWorkers, Snapshots: opts.OpsSnapshots})
-			r.Get("/ops/workers", ops.ServeHTTP)
 		}
 	})
 
@@ -118,7 +111,7 @@ func NewServer(opts Options) *Server {
 		})
 		// SPA fallback：非 API/静态路径回 index.html
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/user") || strings.HasPrefix(r.URL.Path, "/v1") || strings.HasPrefix(r.URL.Path, "/ops") || r.URL.Path == "/healthz" {
+			if strings.HasPrefix(r.URL.Path, "/admin") || strings.HasPrefix(r.URL.Path, "/user") || strings.HasPrefix(r.URL.Path, "/v1") || r.URL.Path == "/healthz" {
 				http.NotFound(w, r)
 				return
 			}

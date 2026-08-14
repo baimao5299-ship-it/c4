@@ -8,10 +8,10 @@ import (
 	"context"
 
 	"github.com/is7qin/c3api/internal/billing"
+	"github.com/is7qin/c3api/internal/handler"
 	"github.com/is7qin/c3api/internal/proxy"
 	"github.com/is7qin/c3api/internal/rule"
 	"github.com/is7qin/c3api/internal/scheduler"
-	"github.com/is7qin/c3api/internal/server"
 	"github.com/is7qin/c3api/internal/service"
 	"github.com/is7qin/c3api/internal/snapshot"
 )
@@ -70,14 +70,21 @@ func (s pricingSnapshot) Reload(ctx context.Context) error {
 	return s.svc.ReloadFunctionPricingCtx(ctx)
 }
 
-// snapshotStates 注册表状态 → /ops/workers 响应映射（LastError error 接口
-// JSON 不可用 → 字符串；snapshot.Status 值拷贝，调用方安全持有）。
-func snapshotStates(st []snapshot.Status) []server.SnapshotState {
-	out := make([]server.SnapshotState, 0, len(st))
+// snapshotStates 注册表状态 → /admin/ops/workers 响应映射（LastError error
+// 接口 JSON 不可用 → 字符串；snapshot.Status 值拷贝，调用方安全持有）。
+func snapshotStates(st []snapshot.Status) []handler.SnapshotState {
+	out := make([]handler.SnapshotState, 0, len(st))
 	for _, s := range st {
-		ss := server.SnapshotState{Name: s.Name, Scopes: s.Scopes, LastReload: s.LastReload}
+		ss := handler.SnapshotState{Name: s.Name, LastReload: s.LastReload}
+		// 契约类型（handler/api.gen.go 生成）Scopes 为 *[]string：nil scope
+		// 保持省略（纯启动/状态快照），非 nil 取副本地址（s 为 range 值拷贝，
+		// 每次迭代独立变量，取址安全）。
+		if s.Scopes != nil {
+			ss.Scopes = &s.Scopes
+		}
 		if s.LastError != nil {
-			ss.LastError = s.LastError.Error()
+			e := s.LastError.Error()
+			ss.LastError = &e
 		}
 		out = append(out, ss)
 	}

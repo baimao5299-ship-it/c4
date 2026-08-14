@@ -171,6 +171,8 @@ export class ApiClient {
   getFunctionPrices = (p?: { page?: number; page_size?: number; source?: string; provider?: components['schemas']['Provider']; model?: string; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['FunctionPriceListResponse']>('/function-prices', { params: toQuery(p) })
   putFunctionPrice = (model: string, b: components['schemas']['FunctionPriceUpsert']) => this.request<components['schemas']['FunctionPrice']>('/function-prices', { method: 'PUT', params: toQuery({ model }), body: JSON.stringify(b) })
   deleteFunctionPrice = (model: string) => this.request<components['schemas']['DeletedResponse']>('/function-prices', { method: 'DELETE', params: toQuery({ model }) })
+  // —— 运维观测（/admin/ops/workers；管理端专属，契约 ops tag 生成类型）——
+  getOpsWorkers = () => this.request<components['schemas']['WorkersResponse']>('/ops/workers')
   // —— 用户端（userApi 专属；token 用 userAuth）——
   register = (b: components['schemas']['UserAuthRegister']) => this.request<components['schemas']['UserAuthResponse']>('/auth/register', { method: 'POST', body: JSON.stringify(b) })
   login = (b: components['schemas']['UserAuthLogin']) => this.request<components['schemas']['UserAuthResponse']>('/auth/login', { method: 'POST', body: JSON.stringify(b) })

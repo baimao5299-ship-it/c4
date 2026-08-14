@@ -365,29 +365,33 @@ func main() {
 		},
 		Log: log,
 	})
-	h := handler.New(svc)
 	aiRouter := proxy.AIRouter(px)
 	iss := jwtauth.NewIssuer(cfg.Auth.JWTSecret)
 	userHandler := userapi.Router(svc, iss, auth)
 
-	// /ops/workers 可观测面（spec 2026-08-11）：独立 Stats 契约不改
-	// worker.Worker——装配侧类型断言聚合（各模块已持具体引用，断言实现
-	// server.StatsProvider 的入列；快照注册表状态单独经 Status 直出）。
-	var opsWorkers []server.StatsProvider
+	// /admin/ops/workers 运维观测（spec 2026-08-11，用户裁决并入管理面）：
+	// 独立 Stats 契约不改 worker.Worker——装配侧类型断言聚合（各模块已持
+	// 具体引用，断言实现 handler.StatsProvider 的入列；快照注册表状态单独
+	// 经 Status 直出）。WithOps 注入，路由由契约 chi-server 生成。
+	var opsWorkers []handler.StatsProvider
 	for _, w := range []worker.Worker{inv, sched, ruleEngine, rec, errlogW, pricingSync, retention, listener, authSync} {
-		if s, ok := w.(server.StatsProvider); ok {
+		if s, ok := w.(handler.StatsProvider); ok {
 			opsWorkers = append(opsWorkers, s)
 		} else {
 			// G2-3（spec 2026-08-13）：断言失败 Warn 一次——StatsProvider 是约定
 			// 非强制，新 worker 忘实现时 /ops/workers 静默缺项，启动期提示（非
 			// 错误：无 Stats 的 worker 合法）。
-			log.Warn("worker does not implement StatsProvider, missing from /ops/workers",
+			log.Warn("worker does not implement StatsProvider, missing from /admin/ops/workers",
 				logx.String("worker", w.Name()))
 		}
 	}
 	if billFlusher != nil {
 		opsWorkers = append(opsWorkers, billFlusher)
 	}
+	h := handler.New(svc, handler.OpsOptions{
+		Workers:   opsWorkers,
+		Snapshots: func() []handler.SnapshotState { return snapshotStates(snapReg.Status()) },
+	})
 
 	srv := server.NewServer(server.Options{
 		AdminToken:        cfg.Admin.Token,
@@ -401,8 +405,6 @@ func main() {
 		AIHandler:         aiRouter,
 		WebFS:             webUI(),
 		Logger:            log,
-		OpsWorkers:        opsWorkers,
-		OpsSnapshots:      func() []server.SnapshotState { return snapshotStates(snapReg.Status()) },
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

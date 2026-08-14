@@ -13,7 +13,7 @@ type SyncWorkerStats struct {
 	LastSyncUnixMs int64 `json:"last_sync_unix_ms"` // 最近一次 fetch 尝试时刻（fetch 失败也算尝试；0 = 尚未尝试）
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (w *SyncWorker) Stats() any {
 	return SyncWorkerStats{
 		Running:        w.running.Load(),

@@ -16,7 +16,7 @@ type FlusherStats struct {
 	LastFlushUnixMs  int64 `json:"last_flush_unix_ms"` // 最近一次成功落库时刻（0 = 尚未成功落库；空 flush/全失败不推进，G2-4）
 }
 
-// Stats 满足 server.StatsProvider（独立于 worker.Worker 契约）。
+// Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (f *Flusher) Stats() any {
 	return FlusherStats{
 		PendingLogs:      f.pendingN.Load(),

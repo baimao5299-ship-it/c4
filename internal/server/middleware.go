@@ -11,11 +11,13 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/pkg/logx"
 )
 
@@ -28,6 +30,40 @@ type adminUserIDKey struct{}
 func UserIDFromContext(ctx context.Context) (int64, bool) {
 	id, ok := ctx.Value(adminUserIDKey{}).(int64)
 	return id, ok
+}
+
+// adminAuth 管理面鉴权（/admin 组，含 /admin/ops/workers 运维观测）= 静态
+// admin token OR platform_admin JWT（两个都过才拒）。JWT 路径同样做快照用户
+// 状态校验（禁用即拒；评审定夺②）。
+func adminAuth(opts Options) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			authz := req.Header.Get("Authorization")
+			if authz == "Bearer "+opts.AdminToken {
+				// 静态 admin token 路径不注入 UserID（决策 5：handler 读到 0 = 系统）
+				next.ServeHTTP(w, req)
+				return
+			}
+			if opts.JWTIssuer != nil && strings.HasPrefix(authz, "Bearer ") {
+				claims, err := opts.JWTIssuer.Verify(strings.TrimPrefix(authz, "Bearer "))
+				if err == nil && claims.Role == string(domain.RolePlatformAdmin) {
+					active := false
+					if opts.UserStatus == nil {
+						active = true
+					} else if st, ok := opts.UserStatus.UserStatus(claims.UserID); ok && st == domain.UserStatusActive {
+						active = true
+					}
+					if active {
+						// JWT 路径注入 claims.UserID（兑换码 created_by 用，决策 5）
+						ctx := context.WithValue(req.Context(), adminUserIDKey{}, claims.UserID)
+						next.ServeHTTP(w, req.WithContext(ctx))
+						return
+					}
+				}
+			}
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		})
+	}
 }
 
 type inflightCounter struct{ v atomic.Int64 }
