@@ -23,6 +23,8 @@ export interface BucketRow {
   CallCount: number // 按次调用（图片生成张数、search 次数）
   InputTokens: number
   OutputTokens: number
+  CacheReadTokens: number
+  CacheCreationTokens: number
   TotalTokens: number
   Cost: number // USD（API 边界已 /1e5）
   TTFTCount: number // 加权 avg 分母（Σcount）
@@ -46,7 +48,8 @@ export function mergeBuckets(rows: StatBucket[], granularity: Granularity): Buck
         label: granularity === 'hour'
           ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
           : `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
-        RequestCount: 0, ErrorCount: 0, CallCount: 0, InputTokens: 0, OutputTokens: 0, TotalTokens: 0,
+        RequestCount: 0, ErrorCount: 0, CallCount: 0, InputTokens: 0, OutputTokens: 0,
+        CacheReadTokens: 0, CacheCreationTokens: 0, TotalTokens: 0,
         Cost: 0, TTFTCount: 0, TTFTAvgMS: 0, TTFTMaxMS: 0, TTFTP50MS: 0, TTFTP95MS: 0, TTFTP99MS: 0,
       }
       map.set(r.BucketTime, b)
@@ -60,6 +63,8 @@ export function mergeBuckets(rows: StatBucket[], granularity: Granularity): Buck
     b.CallCount += r.CallCount ?? 0
     b.InputTokens += r.InputTokens ?? 0
     b.OutputTokens += r.OutputTokens ?? 0
+    b.CacheReadTokens += r.CacheReadTokens ?? 0
+    b.CacheCreationTokens += r.CacheCreationTokens ?? 0
     b.TotalTokens += r.TotalTokens ?? 0
     b.Cost += r.Cost ?? 0
     b.TTFTCount += r.TTFTCount ?? 0

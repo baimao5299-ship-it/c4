@@ -6,10 +6,10 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, XAxis, YAxis } from 'recharts'
 import { api } from '@/App'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { DateRangePicker } from '@/components/date-range-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -53,15 +53,33 @@ export default function Stats() {
   // TTFT 范围汇总（同 mergeBuckets 合并语义：avg 加权、pN 取请求量最大桶近似）。
   const ttft = useMemo(() => summarizeTTFT(rows), [rows])
 
-  // 主题色走 --chart-* 变量（ChartStyle 注入 --color-requests / --color-tokens）。
+  // 主题色走 --chart-* 变量（ChartStyle 注入 --color-*）；requests 柱图用 chart-1，
+  // tokens 堆叠面积四序列 + 命中率线用 chart-1..5（spec 2026-08-14）。
   const chartConfig = {
     requests: { label: t('stats.metricRequests'), color: 'var(--chart-1)' },
-    tokens: { label: t('stats.metricTokens'), color: 'var(--chart-2)' },
+    input: { label: t('stats.chart.seriesInput'), color: 'var(--chart-1)' },
+    cacheRead: { label: t('stats.chart.seriesCacheRead'), color: 'var(--chart-2)' },
+    output: { label: t('stats.chart.seriesOutput'), color: 'var(--chart-3)' },
+    cacheWrite: { label: t('stats.chart.seriesCacheWrite'), color: 'var(--chart-4)' },
+    hitRate: { label: t('stats.chart.seriesHitRate'), color: 'var(--chart-5)' },
   } satisfies ChartConfig
 
-  // 图表只消费 label + 指标值两列，dataKey 与 chartConfig 键对齐（官方示例写法）。
+  // 图表只消费 label + 指标值列，dataKey 与 chartConfig 键对齐（官方示例写法）。
+  // 读缓存命中率（spec 2026-08-14 钉死）：CacheRead / (CacheRead + Input)，两者均 0 → 0%。
   const chartData = useMemo(
-    () => rows.map(r => ({ label: r.label, requests: r.RequestCount, tokens: r.TotalTokens })),
+    () => rows.map(r => {
+      const cacheRead = r.CacheReadTokens
+      const input = r.InputTokens
+      return {
+        label: r.label,
+        requests: r.RequestCount,
+        input,
+        cacheRead,
+        output: r.OutputTokens,
+        cacheWrite: r.CacheCreationTokens,
+        hitRate: cacheRead + input > 0 ? (cacheRead / (cacheRead + input)) * 100 : 0,
+      }
+    }),
     [rows]
   )
 
@@ -134,18 +152,53 @@ export default function Stats() {
                   <Bar dataKey="requests" fill="var(--color-requests)" radius={4} />
                 </BarChart>
               ) : (
-                <AreaChart accessibilityLayer data={chartData}>
-                  <defs>
-                    <linearGradient id="fillTokens" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-tokens)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.1} />
-                    </linearGradient>
-                  </defs>
+                // Token 构成堆叠面积（spec 2026-08-14）：输入侧相邻（Input 底 → CacheRead）、
+                // 输出次之、CacheWrite 顶；仅视觉比较，不声称与 TotalTokens 的算术关系。
+                // 读缓存命中率 = CacheRead / (CacheRead + Input)，右轴 [0,100]%，独立线非堆叠。
+                <AreaChart accessibilityLayer data={chartData} margin={{ left: 0, right: 8 }}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="label" tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
-                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Area dataKey="tokens" type="natural" fill="url(#fillTokens)" stroke="var(--color-tokens)" strokeWidth={2} />
+                  <YAxis yAxisId="left" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={[0, 100]}
+                    tickFormatter={(v: number) => `${v}%`}
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    fontSize={12}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        formatter={(value, name, item) => (
+                          <>
+                            <div
+                              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                              style={{ backgroundColor: item?.color }}
+                            />
+                            <div className="flex flex-1 items-center justify-between leading-none">
+                              <span className="text-muted-foreground">
+                                {chartConfig[String(name) as keyof typeof chartConfig]?.label ?? String(name)}
+                              </span>
+                              <span className="font-mono font-medium text-foreground tabular-nums">
+                                {name === 'hitRate'
+                                  ? `${Number(value).toFixed(1)}%`
+                                  : Number(value).toLocaleString()}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      />
+                    }
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Area yAxisId="left" dataKey="input" type="natural" stackId="tokens" fill="var(--color-input)" stroke="var(--color-input)" strokeWidth={2} />
+                  <Area yAxisId="left" dataKey="cacheRead" type="natural" stackId="tokens" fill="var(--color-cacheRead)" stroke="var(--color-cacheRead)" strokeWidth={2} />
+                  <Area yAxisId="left" dataKey="output" type="natural" stackId="tokens" fill="var(--color-output)" stroke="var(--color-output)" strokeWidth={2} />
+                  <Area yAxisId="left" dataKey="cacheWrite" type="natural" stackId="tokens" fill="var(--color-cacheWrite)" stroke="var(--color-cacheWrite)" strokeWidth={2} />
+                  <Line yAxisId="right" dataKey="hitRate" type="natural" stroke="var(--color-hitRate)" strokeWidth={2} dot={false} />
                 </AreaChart>
               )}
             </ChartContainer>
@@ -190,6 +243,8 @@ export default function Stats() {
                 <TableHead className="text-right">{t('stats.table.calls')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.promptTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.completionTokens')}</TableHead>
+                <TableHead className="text-right">{t('stats.table.cacheReadTokens')}</TableHead>
+                <TableHead className="text-right">{t('stats.table.cacheCreationTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.totalTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.cost')}</TableHead>
               </TableRow>
@@ -198,7 +253,7 @@ export default function Stats() {
               {isLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 8 }).map((_, j) => (
+                      {Array.from({ length: 10 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4" /></TableCell>
                       ))}
                     </TableRow>
@@ -206,7 +261,7 @@ export default function Stats() {
                 : rows.length === 0
                   ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
+                      <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
                     </TableRow>
                   )
                   : rows.map(r => (
@@ -217,6 +272,8 @@ export default function Stats() {
                       <TableCell className="text-right tabular-nums">{r.CallCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.InputTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.OutputTokens}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.CacheReadTokens}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.CacheCreationTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.TotalTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{`$${r.Cost.toFixed(4)}`}</TableCell>
                     </TableRow>

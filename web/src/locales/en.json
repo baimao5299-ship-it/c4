@@ -228,6 +228,7 @@
     "maxLabel": "Max concurrency",
     "deleteTitle": "Delete account",
     "deleteDesc": "Delete account \"{{name}}\"? The account will be unbound from all groups.",
+    "saveSuccess": "Account saved",
     "filterStatus": "Filter status",
     "filterTemplate": "Filter template",
     "allTemplates": "All templates",
@@ -495,7 +496,14 @@
     "metricRequests": "Requests",
     "metricTokens": "Tokens",
     "chartRequestsTitle": "Requests trend",
-    "chartTokensTitle": "Tokens trend",
+    "chartTokensTitle": "Token breakdown",
+    "chart": {
+      "seriesInput": "Input",
+      "seriesOutput": "Output",
+      "seriesCacheRead": "Cache read",
+      "seriesCacheWrite": "Cache write",
+      "seriesHitRate": "Cache hit rate"
+    },
     "chartDesc": "Aggregated by time bucket; bar height scaled to the maximum",
     "table": {
       "time": "Time",
@@ -503,6 +511,8 @@
       "errors": "Errors",
       "promptTokens": "PT",
       "completionTokens": "CT",
+      "cacheReadTokens": "Cache read",
+      "cacheCreationTokens": "Cache write",
       "totalTokens": "TT",
       "calls": "Calls",
       "cost": "Cost (USD)"
@@ -926,7 +936,11 @@
       "stats_retention_days": "Stats retention (days)",
       "last_reload_unix_ms": "Last reload",
       "failures": "Failures",
-      "last_failure_unix_ms": "Last failure"
+      "last_failure_unix_ms": "Last failure",
+      "watermark_unix_ms": "Watermark",
+      "last_buckets": "Last buckets",
+      "last_rows": "Last rows",
+      "last_duration_ms": "Last duration (ms)"
     }
   },
   "user": {
@@ -1054,7 +1068,14 @@
       "metricRequests": "Requests",
       "metricTokens": "Tokens",
       "chartRequestsTitle": "Requests trend",
-      "chartTokensTitle": "Tokens trend",
+      "chartTokensTitle": "Token breakdown",
+      "chart": {
+        "seriesInput": "Input",
+        "seriesOutput": "Output",
+        "seriesCacheRead": "Cache read",
+        "seriesCacheWrite": "Cache write",
+        "seriesHitRate": "Cache hit rate"
+      },
       "chartDesc": "Aggregated by time bucket; bar height scaled to the maximum",
       "table": {
         "time": "Time",
@@ -1062,6 +1083,8 @@
         "errors": "Errors",
         "promptTokens": "PT",
         "completionTokens": "CT",
+        "cacheReadTokens": "Cache read",
+        "cacheCreationTokens": "Cache write",
         "totalTokens": "TT",
         "calls": "Calls",
         "cost": "Cost (USD)"
