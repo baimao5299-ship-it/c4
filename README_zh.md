@@ -17,16 +17,16 @@
 
 </div>
 
-**c3api** 是自托管的 AI 网关，用一个统一入口对接多个上游供应商。它原生支持三种主流请求格式——OpenAI Responses API（含 WebSocket 变体）、Anthropic Messages API、OpenAI Chat Completions API——并映射到所配置的上游账号，提供模型路由、配额、用量计费与内嵌管理台。
+**c3api** 是自托管的 AI 网关，用一个统一入口对接多个上游供应商。它原生支持六种请求格式——OpenAI Responses API（含 WebSocket 变体）、Anthropic Messages API、OpenAI Chat Completions API、OpenAI Images API、Codex 网页搜索与 OpenAI 兼容模型列表——并映射到所配置的上游账号，提供模型路由、配额、用量计费与内嵌管理台。
 
 ## 特性
 
 | | |
 |---|---|
-| **三格式一网关** | OpenAI Responses API（REST + WebSocket）、Anthropic Messages API、OpenAI Chat Completions API——各自独立的上游编排与协议转换 |
+| **六格式一网关** | OpenAI Responses API（REST + WebSocket）、Anthropic Messages API、OpenAI Chat Completions API、OpenAI Images API、Codex 网页搜索与 OpenAI 兼容模型列表——各自独立的上游编排与协议转换 |
 | **模板与账号管理** | 模型模板、上游账号、分组、凭证，以及按模板的格式/模型白名单 |
 | **管理台** | React 前端内嵌进二进制（`/admin`），另有 OpenAPI 契约定义的管理 API |
-| **计费与用量** | 用户余额预检扣费、FEFO 临时额度、litellm 价格同步的按模型计费、按日分区的用量日志与统计 |
+| **计费与用量** | 用户余额预检扣费、FEFO 临时额度、litellm 价格同步的按模型计费、按日分区的用量日志与统计——计费默认开启（`config.example.toml` billing.enabled=true） |
 | **规则引擎** | 可自定义的路由、限流与 429/错误退避规则，内置调度器 |
 | **多实例就绪** | 状态全在 PostgreSQL，`NOTIFY` 跨实例失效广播，水平扩容零配置 |
 | **单二进制** | Go 二进制内嵌前端，非 root 容器镜像，即插即用部署 |
@@ -40,6 +40,8 @@
 | Anthropic Messages API | `POST /v1/messages` | Anthropic Messages（REST + SSE） |
 | OpenAI Chat Completions API | `POST /v1/chat/completions` | OpenAI Chat Completions（REST + SSE） |
 | OpenAI Images API | `POST /v1/images/generations` / `POST /v1/images/edits` | OpenAI Images（JSON + multipart，REST + SSE） |
+| Codex 网页搜索 | `POST /v1/alpha/search` | Codex SDK Search（仅 Codex 客户端） |
+| OpenAI 模型列表 | `GET /v1/models` | 调度器内存快照（零 DB） |
 
 ## 快速开始
 
@@ -66,7 +68,7 @@ go run ./cmd/server -config config.toml
 cd web && pnpm install && pnpm run dev
 ```
 
-任意兼容 OpenAI/Anthropic 的 SDK 指向网关地址即可——请求格式由路径决定，一个 base URL 同时服务三种 API。
+任意兼容 OpenAI/Anthropic 的 SDK 指向网关地址即可——请求格式由路径决定，一个 base URL 同时服务六种请求格式。
 
 ## 架构
 
@@ -80,8 +82,11 @@ cd web && pnpm install && pnpm run dev
                     │  │ proxy：鉴权 → 门禁 →      │  │
                     │  │         选号 → 转发       │  │
                     │  └──────────┬──────────────┘  │
-                    │  常驻 worker：billing / usage │
-                    │  / errlog / scheduler / notify│
+                    │   workers：billing / usage /  │
+                    │   errlog / scheduler / notify │
+                    │   retention / stats-agg /     │
+                    │   pricing-sync / rule-engine  │
+                    │   auth-sync / invalidate      │
                     └──────────────┼────────────────┘
                                    ▼
                         PostgreSQL 18（状态 + NOTIFY）
@@ -89,7 +94,7 @@ cd web && pnpm install && pnpm run dev
 
 - **单二进制**：前端经 `go:embed` 内嵌，运行时 = 一个 `server` 进程 + 挂载的配置文件。
 - **网关无状态、状态在 DB**：共享状态全部在 PostgreSQL，实例间经 `c3api_invalidate` 通道 `NOTIFY` 协调——加实例即扩容。
-- **常驻 worker**：计费扣减、用量/统计落库、错误审计、分区保留、价格同步与规则调度均为长驻 worker，支持优雅停机排空。
+- **常驻 worker**：计费扣减、用量/统计落库、错误审计、分区保留、离线聚合、价格同步与规则调度均为长驻 worker，支持优雅停机排空。
 
 ## 配置
 

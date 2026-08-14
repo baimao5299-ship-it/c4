@@ -1,32 +1,28 @@
-# React + TypeScript + Vite
+# c3api 前端（web/）
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+c3api 网关管理台前端，构建产物经 `go:embed` 打进 Go 二进制。
 
-Currently, two official plugins are available:
+## 技术栈
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+React + TypeScript + Vite + shadcn/ui + Tailwind CSS。
 
-## React Compiler
+## 契约生成
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+pnpm gen:api
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+`openapi-typescript` 从 `openapi/openapi.yaml` 生成类型到 `src/lib/api/schema.d.ts`，**修改 OpenAPI 契约后必须重跑**。
+
+## 开发
+
+```bash
+pnpm install   # 本机需 hoisted linker：pnpm install --config.node-linker=hoisted
+pnpm run dev   # Vite dev server：:5173，/admin 代理到网关 :18080
+```
+
+## 构建
+
+```bash
+pnpm run build   # tsc -b && vite build，产物 dist/ 经 Go go:embed 打进二进制
+```
