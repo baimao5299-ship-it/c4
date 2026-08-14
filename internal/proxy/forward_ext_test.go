@@ -207,7 +207,7 @@ func newTestProxyFormatLogs(t *testing.T, upstream string, format domain.Request
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, logs, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey("gk-1"): activeKey(1, 1, 10),

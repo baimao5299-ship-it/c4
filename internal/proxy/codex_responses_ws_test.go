@@ -221,7 +221,7 @@ func newTestCodexWSProxy(t *testing.T, credType credential.Type, accounts map[in
 	}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, logs, nil)
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,

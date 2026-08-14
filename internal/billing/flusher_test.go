@@ -165,7 +165,7 @@ func newTestFlusher(writer DeductWriter) *Flusher {
 func newTestFlusherWorkers(writer DeductWriter, workers int) *Flusher {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, noopLogInserter{}, nil)
 	bal := NewBalances(fakeBalLoader{m: map[int64]int64{1: 1000, 2: 1000}}, nil)
 	return NewFlusher(FlushConfig{
@@ -387,7 +387,7 @@ func TestFlusherBilledAddsQuota(t *testing.T) {
 	q := &captureQuotaWriter{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, noopLogInserter{}, nil)
 	rec.SetQuotaWriter(q)
 	bal := NewBalances(fakeBalLoader{m: map[int64]int64{1: 1000}}, nil)

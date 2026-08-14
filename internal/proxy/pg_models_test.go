@@ -157,7 +157,7 @@ func newPGModelsTestProxy(t *testing.T, sched *scheduler.Scheduler, auth *Auth, 
 	}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, noopLogStore{}, nil)
 	hc := &http.Client{Transport: http.DefaultTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{

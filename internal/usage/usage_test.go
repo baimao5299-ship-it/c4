@@ -64,7 +64,7 @@ func testCfg() UsageConfig {
 	return UsageConfig{
 		BatchSize:          2,
 		FlushInterval:      50 * time.Millisecond,
-		StatsFlushInterval: 30 * time.Millisecond,
+		QuotaFlushInterval: 30 * time.Millisecond,
 	}
 }
 

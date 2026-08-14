@@ -259,7 +259,7 @@ db = { dsn = "%s", max_conns = 10 }
 proxy = { max_body_size = 4194304, max_inflight = 50000, upstream_timeout = "120s", upstream_stream_timeout = "30m", failover_attempts = 2, usage_capture = true }
 upstream = { max_idle_conns = 64, max_idle_conns_per_host = 16, idle_conn_timeout = "90s", dial_timeout = "10s", force_http2 = false }
 scheduler = { default_max_concurrency = 8, sync_interval = "10s" }
-usage = { batch_size = 500, flush_interval = "300ms", log_retention_days = 2, stats_flush_interval = "5s" }
+usage = { batch_size = 500, flush_interval = "300ms", log_retention_days = 2, quota_flush_interval = "5s" }
 billing = { enabled = true, flush_interval = "300ms", balance_refresh_interval = "500ms" }
 `, serverAddr, adminToken, jwtSecret, dsn)
 	cfgPath := filepath.Join(env.tmp, "config.toml")

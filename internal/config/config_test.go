@@ -79,7 +79,7 @@ func TestLoadRejectsNonPositiveDurations(t *testing.T) {
 		{"proxy.upstream_stream_timeout"},
 		{"scheduler.sync_interval"},
 		{"usage.flush_interval"},
-		{"usage.stats_flush_interval"},
+		{"usage.quota_flush_interval"},
 		{"usage.errlog_flush_interval"},
 		{"billing.flush_interval"},
 		{"billing.balance_refresh_interval"},

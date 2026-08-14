@@ -141,7 +141,7 @@ func main() {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize:          cfg.Usage.BatchSize,
 		FlushInterval:      cfg.Usage.FlushInterval,
-		StatsFlushInterval: cfg.Usage.StatsFlushInterval, // quota 回写 cadence（统计 flush 删除后语义沿用）
+		QuotaFlushInterval: cfg.Usage.QuotaFlushInterval, // quota 增量批量回写 cadence
 		Workers:            cfg.Usage.FlushWorkers,
 	}, repos.Usages, log)
 	// 离线聚合 worker（spec 2026-08-14 使用量统计离线聚合化）：独立 goroutine

@@ -667,7 +667,7 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 			store := &captureLogStore{}
 			rec := usage.New(usage.UsageConfig{
 				BatchSize: 100, FlushInterval: time.Hour,
-				StatsFlushInterval: time.Hour,
+				QuotaFlushInterval: time.Hour,
 			}, store, nil)
 			require.NoError(t, c.bal.Reload(context.Background()), "快照加载（余额 0 / 空表）")
 			writer := &fakeDeductWriter{}
@@ -707,7 +707,7 @@ func TestProxyBillingRoutesToFlusher(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 50000}}, nil)
@@ -776,7 +776,7 @@ func TestProxyBillingMultiplierAssignment(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
@@ -821,7 +821,7 @@ func newTestProxyBillingKeys(t *testing.T, keys map[string]domain.KeyMeta, accs 
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, logs, nil)
 	auth := NewAuth(noopKeyLoader{keys: keys}, noopUserLoader{}, nil)
 	require.NoError(t, auth.Reload(context.Background())) // 构造不再自载——测试显式首刷（快照注册表单一入口）
@@ -863,7 +863,7 @@ func TestProxyBillingMultiplierPerGroup(t *testing.T) {
 	// 组 10：gk-1 → assignment ×2 → 130×2 = 260
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	w1 := &fakeDeductWriter{}
 	f1 := billing.NewFlusher(billing.FlushConfig{
@@ -911,7 +911,7 @@ func TestProxyBillingMultiplierGroup(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
@@ -945,7 +945,7 @@ func TestProxyBillingFreeUserPasses(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
@@ -983,7 +983,7 @@ func TestProxyBillingFreeGroupPasses(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
@@ -1019,7 +1019,7 @@ func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	// 余额快照为空（用户 1 不在快照）+ 组免费（gk-1 → groupID 10）。
@@ -1056,7 +1056,7 @@ func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
 	store := &captureLogStore{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, store, nil)
 	writer := &fakeDeductWriter{}
 	loader := &fakeBalanceLoader{m: map[int64]int64{}} // 用户 1 尚未创建

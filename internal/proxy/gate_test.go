@@ -387,7 +387,7 @@ func TestGateReclaimDBErrorAllowAndRetry(t *testing.T) {
 }
 
 // #37 P1 核心回归（镜像压测场景）：N=2 单 key quota=20000，fake 复核读固定
-// quota_used=3000（DB 滞后——usage.Recorder 每 stats_flush_interval 批写一次，
+// quota_used=3000（DB 滞后——usage.Recorder 每 quota_flush_interval 批写一次，
 // 两次回写间复核读到的 DB 值恒定）。修复前：每次复核重新分配 ceil(remaining/N)
 // → 复核循环无限续额（压测实证超跑 14 倍 ≈283,740 token）。修复后：复核认领
 // 扣除本地未反映消耗（unreported = consumed - 上次复核基线）→ 多次复核后总

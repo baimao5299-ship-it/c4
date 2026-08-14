@@ -256,7 +256,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 	t.Helper()
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, logs, nil)
 	return newTestProxyTplTimeoutRec(t, tpl, accountID, usageCapture, streamTimeout, rec, bill, errLogStoreFrom(logs))
 }

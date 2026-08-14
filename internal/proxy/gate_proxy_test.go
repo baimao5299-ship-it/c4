@@ -147,7 +147,7 @@ func TestProxyRejectionStormNoPending(t *testing.T) {
 		store := &captureLogStore{}
 		rec := usage.New(usage.UsageConfig{
 			BatchSize: 100, FlushInterval: time.Hour,
-			StatsFlushInterval: time.Hour,
+			QuotaFlushInterval: time.Hour,
 		}, store, nil)
 		bal := billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 50000}}, nil)
 		require.NoError(t, bal.Reload(context.Background()))

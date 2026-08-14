@@ -22,7 +22,7 @@ import (
 // --- Recorder ---
 
 func TestRecorderStats(t *testing.T) {
-	r := New(UsageConfig{BatchSize: 10, FlushInterval: time.Hour, StatsFlushInterval: time.Hour},
+	r := New(UsageConfig{BatchSize: 10, FlushInterval: time.Hour, QuotaFlushInterval: time.Hour},
 		&memLogStore{}, nil)
 	base := time.Now().UTC().Truncate(time.Hour)
 
