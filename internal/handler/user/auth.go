@@ -52,6 +52,23 @@ func (h *UserAPI) GetUserAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAPIUser(u))
 }
 
+// PostUserAuthChangePassword 修改密码：旧密码校验复用登录语义（失败 401 同
+// 登录文案防枚举）+ 新密码非空/≤72 字节（非法 400）→ bcrypt 重哈希落库。
+// **不撤销既有 JWT**（无状态 token 无撤销机制——新密码下次登录生效，
+// ServerInterface）。
+func (h *UserAPI) PostUserAuthChangePassword(w http.ResponseWriter, r *http.Request) {
+	var in UserAuthChangePassword
+	if err := decode(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if err := h.svc.ChangePassword(r.Context(), currentUserID(r), in.OldPassword, in.NewPassword); err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ChangePasswordResponse{Updated: true})
+}
+
 func (h *UserAPI) writeAuthResponse(w http.ResponseWriter, u *domain.User) {
 	token, err := h.iss.Issue(u.ID, u.Email, string(u.Role))
 	if err != nil {
