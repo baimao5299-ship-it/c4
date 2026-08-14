@@ -352,10 +352,12 @@ export default function Logs() {
                 {tab === 'errors' && isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
                 {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
                 {tab === 'errors' && isColVisible('errorMessage') && <Th>{t('logs.table.errorMessage')}</Th>}
-                {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
-                {tab === 'errors' && isColVisible('billingTier') && <Th>{t('logs.table.billingTier')}</Th>}
+                {/* 表头顺序与单元格渲染一致（usage: tokens→cost→latency；errors: latency→billingTier）——
+                    Token/费用曾按用户要求移到耗时前，表头漏同步导致错位 */}
                 {tab === 'usage' && isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
                 {tab === 'usage' && isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
+                {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
+                {tab === 'errors' && isColVisible('billingTier') && <Th>{t('logs.table.billingTier')}</Th>}
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
