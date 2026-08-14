@@ -192,6 +192,8 @@ export class ApiClient {
   getUserStats = (params?: UserStatParams) => this.request<components['schemas']['StatBucket'][]>('/stats', { params: toQuery(params) })
   redeem = (code: string) => this.request<components['schemas']['RedeemResponse']>('/redemptions', { method: 'POST', body: JSON.stringify({ code }) })
   listUserRedemptions = (p?: { page?: number; page_size?: number; sort?: string; order?: 'asc' | 'desc' }) => this.request<components['schemas']['RedemptionRecordListResponse']>('/redemptions', { params: toQuery(p) })
+  getTempBalances = () => this.request<components['schemas']['TempBalancesResponse']>('/temp-balances')
+  changePassword = (b: components['schemas']['UserAuthChangePassword']) => this.request<components['schemas']['ChangePasswordResponse']>('/auth/change-password', { method: 'POST', body: JSON.stringify(b) })
 }
 
 export class ApiUnauthorized extends Error {
