@@ -28,7 +28,6 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
-	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/repository"
 )
 
@@ -287,43 +286,6 @@ func TestEntMigrateSecondRunPG(t *testing.T) {
 		"失败模式 = atlas 规划期拒绝分区键 diff（实测文案，稳定断言）")
 }
 
-// TestUsageLogPartitionUpgradePG 存量升级路径（该删删语义）：旧版本普通表
-// （无钩子 migrate 建表）→ 新代码 bootstrap DROP 重建分区表，存量明细丢弃
-// （DB 可重建，用户决策 2026-08-09）。
-func TestUsageLogPartitionUpgradePG(t *testing.T) {
-	ctx := context.Background()
-	db := pgTestDB(t)
-	_, err := db.ExecContext(ctx, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`)
-	require.NoError(t, err)
-
-	// 旧版本形态：无钩子 ent migrate → 普通表 + ent 大序列
-	oldClient := ent.NewClient(ent.Driver(entsql.OpenDB(dialect.Postgres, db)))
-	require.NoError(t, oldClient.Schema.Create(ctx))
-	oldRow, err := oldClient.UsageLog.Create().
-		SetRequestID("legacy").SetModel("m").SetFormat(usagelog.Format("openai-chat")).
-		SetCreatedAt(time.Now()).Save(ctx)
-	require.NoError(t, err)
-	require.Greater(t, oldRow.ID, int64(0), "普通表 id 由序列生成")
-
-	// 新代码启动：migrate（钩子跳过）→ bootstrap 检测未分区 → DROP 重建
-	repos, err := repository.New(entsql.OpenDB(dialect.Postgres, db), true)
-	require.NoError(t, err)
-	require.NoError(t, repos.EnsureUsageLogPartitioned(ctx, time.Now()))
-	parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
-	require.NoError(t, err)
-	require.True(t, parted, "普通表被重建为分区表")
-	rows, err := repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
-	require.NoError(t, err)
-	require.Empty(t, rows, "该删删：存量普通表明细丢弃")
-
-	// 重建后插入路由正常（序列续用不冲突）
-	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{usageLogFor("post-upgrade", time.Now().UTC())}))
-	rows, err = repos.QueryUsages(ctx, repository.UsageQuery{Limit: 100})
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, "post-upgrade", rows[0].RequestID)
-}
-
 // TestUsageLogPartitionConcurrentBootstrapPG 多实例并发 bootstrap（评审 I-1）：
 // 两实例同时启动（barrier 对齐，双方都通过 is-partitioned=false 判定）→
 // CREATE TABLE/索引/日分区撞名 42P07 → 容忍后幂等收敛，双方都不 fatal；收敛
@@ -370,72 +332,6 @@ func TestUsageLogPartitionConcurrentBootstrapPG(t *testing.T) {
 		require.Len(t, rows, 1, "收敛后插入路由正常")
 		require.Equal(t, "concurrent", rows[0].RequestID)
 	}
-}
-
-// priceLogFor 带全部 5 新列（ttft/price 快照）的计费日志（P1 schema 对齐回归
-// 断言用：这 5 列正是旧库分区表缺失导致 billing 42703 的列）。
-func priceLogFor(userID int64, requestID string) *domain.UsageLog {
-	l := usageLogFor(requestID, time.Now().UTC())
-	l.UserID = userID
-	l.Cost = 130
-	l.TTFTMS = ptr(int64(120))
-	l.PriceInputMillis = ptr(int64(250))
-	l.PriceOutputMillis = ptr(int64(750))
-	l.PriceCacheReadMillis = ptr(int64(125))
-	l.PriceCacheCreationMillis = ptr(int64(250))
-	return l
-}
-
-func ptr[T any](v T) *T { return &v }
-
-// TestUsageLogPartitionSchemaAlignPG P1（压测 2026-08-11 修复回归）：存量分区
-// 表 schema 漂移——旧库分区表缺 price 快照/ttft 5 列（ent migrate 跳过该表、
-// bootstrap 幂等从不 ALTER 补列）→ 新二进制连旧库 billing 全量 42703。修复：
-// bootstrap 幂等补列（父表 + 全部分区），补列后 billing 含新列全量落库成功。
-func TestUsageLogPartitionSchemaAlignPG(t *testing.T) {
-	repos := newPGRepos(t)
-	ctx := context.Background()
-	pool := pgTestPool(t)
-	u := seedPGUser(t, repos, "align@example.com")
-	require.NoError(t, repos.UpdateUserBalance(ctx, u.ID, 1_000_000))
-
-	// 模拟旧 schema：DROP 5 新列（父表 DROP 自动传播全部分区，PG12+）
-	dropCols := []string{"ttft_ms", "price_input_millis", "price_output_millis",
-		"price_cache_read_millis", "price_cache_creation_millis"}
-	for _, col := range dropCols {
-		pgExec(t, pool, `ALTER TABLE usage_logs DROP COLUMN `+col)
-	}
-	// 旧 schema 下 billing 必失败（复现压测 42703 列不存在）
-	_, _, err := repos.DeductAndLog(ctx, u.ID, 130, []*domain.UsageLog{priceLogFor(u.ID, "drift-before")})
-	require.Error(t, err, "缺列时 billing INSERT 必失败（42703 列不存在）")
-	require.Contains(t, err.Error(), "does not exist")
-
-	// 新二进制启动：bootstrap 幂等补列（不重建、数据保留、分区结构不变）
-	require.NoError(t, repos.EnsureUsageLogPartitioned(ctx, time.Now()))
-	parted, err := repos.Partitions.IsUsageLogPartitioned(ctx)
-	require.NoError(t, err)
-	require.True(t, parted, "补列不得改变分区结构")
-	for _, col := range dropCols {
-		var n int
-		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'usage_logs' AND column_name = $1`, col).Scan(&n))
-		require.Equal(t, 1, n, "父表补列 %s", col)
-	}
-	for _, part := range pgPartitionNames(t, pool) {
-		for _, col := range dropCols {
-			var n int
-			require.NoError(t, pool.QueryRow(ctx,
-				`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2`, part, col).Scan(&n))
-			require.Equal(t, 1, n, "分区 %s 补列 %s", part, col)
-		}
-	}
-
-	// 补列后 billing 含 5 新列全量落库成功
-	od, bal, err := repos.DeductAndLog(ctx, u.ID, 130, []*domain.UsageLog{priceLogFor(u.ID, "drift-after")})
-	require.NoError(t, err)
-	require.False(t, od)
-	require.Equal(t, int64(999_870), bal, "扣 130 毫分（日志含 5 新列落库）")
-	require.Equal(t, int64(1), countLogs(t, repos, u.ID))
 }
 
 // mustISODate 把 YYYYMMDD 转 ISO 日期（分区边界构造用）。

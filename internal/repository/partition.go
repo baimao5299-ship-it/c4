@@ -85,28 +85,13 @@ func partitionedCreateDDL(table, partitionCol string, columnDefs []string) strin
 		") PARTITION BY RANGE (" + partitionCol + ")"
 }
 
-// alignColumnDDLs 存量分区表幂等补列 ALTER（由列定义事实源生成——全列 ADD
-// COLUMN IF NOT EXISTS；已存在列 no-op，缺失列补齐）。P1（压测 2026-08-11
-// 修复）：price 快照列/ttft_ms 合入后创建的旧分区表缺列——ent migrate 经钩子
-// 跳过分区表（diff 规划期必失败）、bootstrap 幂等（已分区 → 仅补分区）从不
-// ALTER 补列 → 新二进制连旧库 INSERT 即 42703 列不存在、写路径全停。PG12+
-// 父表 ALTER 自动传播到全部分区（无需逐分区 ALTER）。
-func alignColumnDDLs(table string, columnDefs []string) []string {
-	ddls := make([]string, 0, len(columnDefs))
-	for _, col := range columnDefs {
-		ddls = append(ddls, "ALTER TABLE "+table+" ADD COLUMN IF NOT EXISTS "+col)
-	}
-	return ddls
-}
-
-// usageLogColumnDefs usage_logs 分区表列定义（单一事实源，评审 I-1 双向锚）：
-// 静态建表 DDL 与幂等补列 ALTER 均由本列表生成——列集合双向相等，任一侧被绕过/
-// 手改立即被 TestUsageLogAlignColumnsMatchCreateDDL 捕获（防"向静态 DDL 加列忘加
-// align"这一 P1 同型复发，含类型漂移——列定义字符串整体生成）。列定义与 ent
-// schema 完全一致，仅主键与 id 生成方式不同（见 partitionedCreateDDL 注释）。
-// 用户裁决（err_logs 分表）：usage_logs 瘦身去 2 留 1——status_code 与
-// error_message 列移除（错误审计由 err_logs 承载，见 errLogColumnDefs）；残留
-// 列存量库不 DROP（bootstrap 只加不减幂等），新库重建生效。
+// usageLogColumnDefs usage_logs 分区表列定义（单一事实源，评审 I-1 锚）：
+// 建表 DDL 由本列表生成（partitionedCreateDDL）——列集合一致性由
+// TestUsageLogColumnDefsMatchCreateDDL 锚定（防"向静态 DDL 加列忘加事实源"
+// 漂移，含类型漂移——列定义字符串整体生成）。列定义与 ent schema 完全一致，
+// 仅主键与 id 生成方式不同（见 partitionedCreateDDL 注释）。用户裁决
+// （err_logs 分表）：usage_logs 瘦身去 2 留 1——status_code 与 error_message
+// 列移除（错误审计由 err_logs 承载，见 errLogColumnDefs）。
 var usageLogColumnDefs = []string{
 	`id bigint NOT NULL DEFAULT nextval('usage_logs_id_seq'::regclass)`,
 	`request_id varchar NOT NULL`,
@@ -151,11 +136,8 @@ var usageLogCreateDDL = partitionedCreateDDL("usage_logs", "created_at", usageLo
 // 分区索引，子分区自动继承）。唯一索引含分区键 created_at（分区表硬约束，
 // 见本文件头注释）：request_id 幂等键（方向 A 批次 1a，A-P2-3）——COMMIT
 // 歧义窗口重试撞 23505 由 flusher 按成功处理（防双扣，见
-// internal/billing/flusher.go isUniqueLogConflict）。**部署注意**：本 DDL
-// 仅在未分区 DROP 重建路径执行（ensureTablePartitioned 的 !parted 分支），
-// 存量已分区库升级后须运维手动执行一次
-// `CREATE UNIQUE INDEX IF NOT EXISTS usagelog_request_id_created_at ON
-// usage_logs (request_id, created_at)`（与方向 F usage_stats 部署注意同构）。
+// internal/billing/flusher.go isUniqueLogConflict）。索引随 bootstrap 重建
+// 路径必建（全新安装恒齐，无手动补建面）。
 var usageLogIndexDDLs = []string{
 	`CREATE INDEX usagelog_created_at ON usage_logs (created_at)`,
 	`CREATE INDEX usagelog_group_id_created_at ON usage_logs (group_id, created_at)`,
@@ -165,13 +147,11 @@ var usageLogIndexDDLs = []string{
 	`CREATE UNIQUE INDEX usagelog_request_id_created_at ON usage_logs (request_id, created_at)`,
 }
 
-var usageLogAlignColumnDDLs = alignColumnDDLs("usage_logs", usageLogColumnDefs)
-
 // errLogColumnDefs err_logs 分区表列定义（单一事实源，与 ent schema 完全一致，
-// 对齐锚 TestErrLogAlignColumnsMatchCreateDDL 双向断言）：错误审计瘦表——无
-// token/价格列；status_code/error_message（usage_logs 瘦身去掉的排障列）+ 审计
-// 归属（group/account/template/user/key）+ billing_tier（评审 I-3：tier reject
-// 的 tier 维度审计保留）。
+// 锚测试 TestErrLogColumnDefsMatchCreateDDL 断言列集合一致）：错误审计瘦表——
+// 无 token/价格列；status_code/error_message（usage_logs 瘦身去掉的排障列）+
+// 审计归属（group/account/template/user/key）+ billing_tier（评审 I-3：tier
+// reject 的 tier 维度审计保留）。
 var errLogColumnDefs = []string{
 	`id bigint NOT NULL DEFAULT nextval('err_logs_id_seq'::regclass)`,
 	`request_id varchar NOT NULL`,
@@ -182,7 +162,7 @@ var errLogColumnDefs = []string{
 	`key_id bigint NULL`,
 	`model varchar NOT NULL DEFAULT ''`,
 	`format varchar NOT NULL`,
-	`status_code bigint NOT NULL DEFAULT 0`,
+	`status_code integer NOT NULL DEFAULT 0`,
 	`error_type varchar NOT NULL DEFAULT 'none'`,
 	`error_message varchar NULL`,
 	`latency_ms bigint NOT NULL DEFAULT 0`,
@@ -201,8 +181,6 @@ var errLogIndexDDLs = []string{
 	`CREATE INDEX errlog_user_id_created_at ON err_logs (user_id, created_at)`,
 }
 
-var errLogAlignColumnDDLs = alignColumnDDLs("err_logs", errLogColumnDefs)
-
 // usageStatsColumnDefs usage_stats 分区表列定义（单一事实源；spec 2026-08-14
 // 离线聚合化重建：total_latency_ms 删除 + call_count（按次调用）+ TTFT 四列
 // （ttft_total_ms/ttft_count/ttft_max_ms/ttft_hist bigint[10] 直方图）。列定义与
@@ -210,12 +188,8 @@ var errLogAlignColumnDDLs = alignColumnDDLs("err_logs", errLogColumnDefs)
 // 是 JSON 语义，无法扫描 PG 数组），数组列 carve-out 不进 ent schema（评审
 // P1-1），ScanStats 改 pgx 直查扫描 []int64。分区键 bucket_time（小时桶聚合
 // 24 桶/区）。id 走 usage_stats_id_seq（ent bigserial 同款语义——INSERT 不带 id
-// 列走 DEFAULT nextval；该表由 ent migrate 建过普通表后 bootstrap DROP 重建
-// 分区表，不向后兼容）。
-// **部署注意（评审 P2-2）**：存量分区库不升级——align 补列对 usage_stats 已
-// 删除（见 usageStatsAlignColumnDDLs 注释），bootstrap 静默成功但旧 schema 残留
-// → 离线聚合 worker 的 DELETE/INSERT 与查询面全 42703（total_latency_ms 残留 +
-// 新列缺失）——**存量库必须重建**（新库 DDL 唯一真相，零迁移逻辑）。
+// 列走 DEFAULT nextval；该表经 bootstrap 建表（表不存在则建，全新安装唯一路
+// 径），零迁移逻辑。
 var usageStatsColumnDefs = []string{
 	`id bigint NOT NULL DEFAULT nextval('usage_stats_id_seq'::regclass)`,
 	`bucket_time timestamptz NOT NULL`,
@@ -260,13 +234,6 @@ var usageStatsIndexDDLs = []string{
 	`CREATE UNIQUE INDEX usagestat_bucket_time_group_id_account_id_template_id_user_id_model_is_error ON usage_stats (bucket_time, group_id, account_id, template_id, user_id, model, is_error)`,
 	`CREATE INDEX usagestat_user_id_bucket_time ON usage_stats (user_id, bucket_time)`,
 }
-
-// usageStatsAlignColumnDDLs usage_stats 幂等补列 ALTER——**有意为空**（评审
-// P2-2）：旧 schema（total_latency_ms 残留 + 无 TTFT 列）与新 DDL 是结构断裂
-// （表重建语义，非补列可修），align 静默补列只会造出半升级混合表掩盖部署失误；
-// 存量分区库必须重建（部署注意见 usageStatsColumnDefs）。usage_logs/err_logs
-// 的 align 补列路径保留（2026-08-11 P1 修复机制——列增量演进，兼容补列）。
-var usageStatsAlignColumnDDLs []string
 
 // IsTablePartitioned 查 pg_partitioned_table（pg_class.relkind='p'）判断指定
 // 表是否已是分区表（bootstrap 幂等判定）。
@@ -343,7 +310,7 @@ func isDuplicateObject(err error) bool {
 // 并发 bootstrap 的 **stale-DROP 窗口**专用（评审 I-1 已接受的窗口，见
 // ensureTablePartitioned 注释）——实例基于过期的"未分区"判定执行 DROP TABLE
 // IF EXISTS，可能误删对方刚建的表（含 OWNED BY 级联的序列）；被删侧后续步骤
-// 短暂撞 42P01：OWNED BY/索引/对齐/分区引用缺失的表、CREATE TABLE 引用被级联
+// 短暂撞 42P01：OWNED BY/索引/分区引用缺失的表、CREATE TABLE 引用被级联
 // 删掉的序列。容忍后由"最后执行 DROP 的实例"补建收敛（其 CREATE 必然成功且
 // 无后续 DROP，表最终存在，所有权/索引/分区随之落位）。单实例下 42P01 属配
 // 置错误——容忍后由后续 INSERT 显式失败兜底（与撞名容忍同哲学：不阻塞启动、
@@ -376,33 +343,19 @@ func (r *PartitionRepo) execDDLTolerateRace(ctx context.Context, query string) e
 	return nil
 }
 
-// alignTableColumns 幂等补列（ADD COLUMN IF NOT EXISTS）：存量分区表路径按
-// 静态 DDL 全列对齐（缺失列补齐——P1 修复；新建/已有列 no-op；父表 ALTER
-// 自动传播全部分区，PG12+）。多实例并发安全：ADD COLUMN 在父表上
-// AccessExclusive 锁串行，IF NOT EXISTS 幂等收敛；stale-DROP 窗口内父表短暂
-// 缺失 → 42P01 容忍（后建者的对齐覆盖——收敛语义见 isMissingObject）。
-func (r *PartitionRepo) alignTableColumns(ctx context.Context, table string, alignDDLs []string) error {
-	for _, ddl := range alignDDLs {
-		if err := r.execDDLTolerateRace(ctx, ddl); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ensureTablePartitioned bootstrap（幂等，main 装配在 ent migrate 之后调用）：
-// 指定表已是分区表 → 仅确保 当日→明日 分区存在后返回；未分区（含 ent migrate
-// 之前按旧 schema 建的普通表）→ DROP 重建分区表 + 序列 + 索引 + 预建分区。
-// 该删删语义（用户决策 2026-08-09）：不向后兼容，存量普通表数据直接丢弃
-// （DB 可重建；明细流水，无外键引用）。
+// bootstrap 即建表路径（全新安装唯一）——ent migrate 经钩子整表过滤三张分区
+// 表（migrateHookExcludesPartitioned），分区表仅由本函数创建：未分区 → DROP
+// TABLE（IF EXISTS 恒 no-op）+ 重建分区表/序列/索引 + 预建分区（表结构终态由
+// 列事实源定义）；已是分区表 → 仅确保 当日→明日 分区存在后返回。
 //
-// 多实例语义（评审 I-1）：两实例同时启动/升级时，"是否已分区"判定与 CREATE
-// 之间另一实例可能已建对象——所有 CREATE 步骤（分区表/索引/日分区）对撞名类
-// 错误（42P07/42710/23505）容忍后继续，双方幂等收敛。DROP 为 IF EXISTS 不报
-// 错；理论窗口下并发实例的 DROP 误删对方刚建的分区表时（stale-DROP 窗口），
-// 被删侧 OWNED BY/索引/对齐/分区短暂撞 42P01——同样容忍（isBootstrapRaceError
-// 完整覆盖），由"最后执行 DROP 的实例"补建，最终状态一致（对象集合收敛）。
-func (r *PartitionRepo) ensureTablePartitioned(ctx context.Context, table, partitionCol string, columnDefs, indexDDLs, alignDDLs []string, now time.Time) error {
+// 多实例语义（评审 I-1）：两实例同时启动时，"是否已分区"判定与 CREATE 之间
+// 另一实例可能已建对象——所有 CREATE 步骤（分区表/索引/日分区）对撞名类错误
+// （42P07/42710/23505）容忍后继续，双方幂等收敛。DROP 为 IF EXISTS 不报错；
+// 理论窗口下并发实例的 DROP 误删对方刚建的分区表时（stale-DROP 窗口），被删
+// 侧 OWNED BY/索引/分区短暂撞 42P01——同样容忍（isBootstrapRaceError 完整覆
+// 盖），由"最后执行 DROP 的实例"补建，最终状态一致（对象集合收敛）。
+func (r *PartitionRepo) ensureTablePartitioned(ctx context.Context, table, partitionCol string, columnDefs, indexDDLs []string, now time.Time) error {
 	parted, err := r.IsTablePartitioned(ctx, table)
 	if err != nil {
 		return err
@@ -432,25 +385,19 @@ func (r *PartitionRepo) ensureTablePartitioned(ctx context.Context, table, parti
 			}
 		}
 	}
-	// P1（压测 2026-08-11）：存量分区表 schema 对齐——旧库已建分区表时 bootstrap
-	// 从不 ALTER 补列（幂等仅补分区）→ 新二进制连旧库 INSERT 42703 全量失败。
-	// 幂等 ADD COLUMN IF NOT EXISTS 按静态 DDL 全列对齐（新建路径全 no-op）。
-	if err := r.alignTableColumns(ctx, table, alignDDLs); err != nil {
-		return fmt.Errorf("align %s columns: %w", table, err)
-	}
 	return r.EnsureTablePartitions(ctx, table, now, now.AddDate(0, 0, 1))
 }
 
 // EnsureUsageLogPartitioned usage_logs 分区 bootstrap（既有 API，见
 // ensureTablePartitioned；分区键 created_at）。
 func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.Time) error {
-	return r.ensureTablePartitioned(ctx, "usage_logs", "created_at", usageLogColumnDefs, usageLogIndexDDLs, usageLogAlignColumnDDLs, now)
+	return r.ensureTablePartitioned(ctx, "usage_logs", "created_at", usageLogColumnDefs, usageLogIndexDDLs, now)
 }
 
 // EnsureErrLogPartitioned err_logs 分区 bootstrap（同路线复用：独立列事实源 +
 // 独立序列 err_logs_id_seq + 独立保留期；分区键 created_at）。
 func (r *PartitionRepo) EnsureErrLogPartitioned(ctx context.Context, now time.Time) error {
-	return r.ensureTablePartitioned(ctx, "err_logs", "created_at", errLogColumnDefs, errLogIndexDDLs, errLogAlignColumnDDLs, now)
+	return r.ensureTablePartitioned(ctx, "err_logs", "created_at", errLogColumnDefs, errLogIndexDDLs, now)
 }
 
 // statsAggWatermarkDDL 离线聚合 watermark 单行表（spec 2026-08-14：settings
@@ -467,15 +414,15 @@ var statsAggWatermarkDDL = `CREATE TABLE IF NOT EXISTS stats_agg_watermark (
 )`
 
 // EnsureUsageStatsPartitioned usage_stats 分区 bootstrap（用户裁决 2026-08-11：
-// 三表统一分区机制；分区键 bucket_time——小时桶聚合 24 桶/日分区）。迁移语义
-// 与明细两表一致（该删删：存量普通表 DROP 重建分区表，聚合可重建）。同步骤
-// 建 stats_agg_watermark 单行表（离线聚合 worker 的 watermark 存储；撞名类
-// 竞态容忍——多实例并发 bootstrap 收敛语义同 ensureTablePartitioned）。
+// 三表统一分区机制；分区键 bucket_time——小时桶聚合 24 桶/日分区；建表语义同
+// ensureTablePartitioned）。同步骤建 stats_agg_watermark 单行表（离线聚合
+// worker 的 watermark 存储；撞名类竞态容忍——多实例并发 bootstrap 收敛语义同
+// ensureTablePartitioned）。
 func (r *PartitionRepo) EnsureUsageStatsPartitioned(ctx context.Context, now time.Time) error {
 	if err := r.execDDLTolerateRace(ctx, statsAggWatermarkDDL); err != nil {
 		return fmt.Errorf("create stats_agg_watermark: %w", err)
 	}
-	return r.ensureTablePartitioned(ctx, "usage_stats", "bucket_time", usageStatsColumnDefs, usageStatsIndexDDLs, usageStatsAlignColumnDDLs, now)
+	return r.ensureTablePartitioned(ctx, "usage_stats", "bucket_time", usageStatsColumnDefs, usageStatsIndexDDLs, now)
 }
 
 // EnsureTablePartitions 确保 [trunc(now), trunc(until)] 每日分区存在
