@@ -17,16 +17,16 @@
 
 </div>
 
-**c3api** is a self-hosted AI gateway that fronts multiple upstream providers with one unified entry point. It speaks all three major request formats — OpenAI Responses API (including its WebSocket variant), Anthropic Messages API, and OpenAI Chat Completions API — and maps them onto your configured upstream accounts with model routing, quotas, usage accounting, and an embedded admin console.
+**c3api** is a self-hosted AI gateway that fronts multiple upstream providers with one unified entry point. It speaks all six request formats — OpenAI Responses API (including its WebSocket variant), Anthropic Messages API, OpenAI Chat Completions API, OpenAI Images API, Codex web search, and an OpenAI-compatible model list — and maps them onto your configured upstream accounts with model routing, quotas, usage accounting, and an embedded admin console.
 
 ## Features
 
 | | |
 |---|---|
-| **Three formats, one gateway** | OpenAI Responses API (REST + WebSocket), Anthropic Messages API, OpenAI Chat Completions API — each with its own upstream orchestration and protocol conversion |
+| **Six formats, one gateway** | OpenAI Responses API (REST + WebSocket), Anthropic Messages API, OpenAI Chat Completions API, OpenAI Images API, Codex web search, and the OpenAI-compatible model list — each with its own upstream orchestration and protocol conversion |
 | **Template & account management** | Model templates, upstream accounts, groups, credentials, and per-template format/model allowlists |
 | **Admin console** | React web UI embedded in the binary (`/admin`), plus a full OpenAPI-defined admin API |
-| **Billing & usage** | Per-user balance with pre-check deductions, FEFO temporary quotas, per-model pricing synced from litellm, daily-partitioned usage logs and statistics |
+| **Billing & usage** | Per-user balance with pre-check deductions, FEFO temporary quotas, per-model pricing synced from litellm, daily-partitioned usage logs and statistics — billing is enabled by default (`config.example.toml` billing.enabled=true) |
 | **Rules engine** | Customizable routing, rate limiting, and 429/error backoff rules with a built-in scheduler |
 | **Multi-instance ready** | PostgreSQL-based state, `NOTIFY`-based cross-instance invalidation, zero-config horizontal scaling |
 | **Single binary** | Go binary with embedded frontend, non-root Docker image, drop-in deployment |
@@ -40,6 +40,8 @@
 | Anthropic Messages API | `POST /v1/messages` | Anthropic Messages (REST + SSE) |
 | OpenAI Chat Completions API | `POST /v1/chat/completions` | OpenAI Chat Completions (REST + SSE) |
 | OpenAI Images API | `POST /v1/images/generations` / `POST /v1/images/edits` | OpenAI Images (JSON + multipart, REST + SSE) |
+| Codex web search | `POST /v1/alpha/search` | Codex SDK Search (Codex client only) |
+| OpenAI model list | `GET /v1/models` | In-memory scheduler snapshot (zero DB) |
 
 ## Quick Start
 
@@ -67,7 +69,7 @@ go run ./cmd/server -config config.toml
 cd web && pnpm install && pnpm run dev
 ```
 
-Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request format is selected by path, so a single base URL serves all three APIs.
+Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request format is selected by path, so a single base URL serves all six request formats.
 
 ## Architecture
 
@@ -83,6 +85,9 @@ Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request for
                     │  └──────────┬──────────────┘  │
                     │   workers: billing / usage /  │
                     │   errlog / scheduler / notify │
+                    │   retention / stats-agg /     │
+                    │   pricing-sync / rule-engine  │
+                    │   auth-sync / invalidate      │
                     └──────────────┼────────────────┘
                                    ▼
                          PostgreSQL 18 (state + NOTIFY)
@@ -90,7 +95,7 @@ Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request for
 
 - **Single binary**: the frontend is built and embedded via `go:embed`, so the runtime is one `server` process plus a mounted config file.
 - **Stateless gateway, stateful DB**: all shared state lives in PostgreSQL; instances coordinate through `NOTIFY` on the `c3api_invalidate` channel — scale horizontally by just adding instances.
-- **Persistent workers**: billing deduction, usage/statistics flushing, error-log auditing, partition retention, price sync, and the rule scheduler run as long-lived workers with graceful shutdown draining.
+- **Persistent workers**: billing deduction, usage/statistics flushing, error-log auditing, partition retention, offline stats aggregation, price sync, and the rule scheduler run as long-lived workers with graceful shutdown draining.
 
 ## Configuration
 
