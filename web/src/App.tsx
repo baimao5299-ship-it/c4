@@ -17,6 +17,7 @@ import UserKeys from '@/pages/user/keys'
 import UserLogs from '@/pages/user/logs'
 import UserStats from '@/pages/user/stats'
 import UserRedemptions from '@/pages/user/redemptions'
+import UserProfile from '@/pages/user/profile'
 import Forbidden from '@/pages/forbidden'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
         path: 'user',
         children: [
           { index: true, element: <UserOverview /> },
+          { path: 'profile', element: <UserProfile /> },
           { path: 'keys', element: <UserKeys /> },
           { path: 'logs', element: <UserLogs /> },
           { path: 'stats', element: <UserStats /> },

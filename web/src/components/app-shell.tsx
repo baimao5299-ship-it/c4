@@ -4,7 +4,7 @@
 
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu } from 'lucide-react'
+import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, CircleUser } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -28,6 +28,7 @@ import AppSidebar from '@/components/app-sidebar'
 // 用户中心菜单组
 const userNav = [
   { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
+  { to: '/user/profile', key: 'user.nav.profile', icon: CircleUser, end: false },
   { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
   { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
   { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
