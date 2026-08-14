@@ -1069,24 +1069,48 @@ type SnapshotState struct {
 	Scopes *[]string `json:"scopes,omitempty"`
 }
 
-// StatBucket defines model for StatBucket.
+// StatBucket 统计桶（rewrite spec 2026-08-14 契约更新：Cost 毫分 → USD /1e5 破坏性变更；TotalLatencyMS 随列删除；TTFT pN 服务端直方图插值——直方图不可前端反算）
 type StatBucket struct {
 	AccountID           *int64     `json:"AccountID,omitempty"`
 	BucketTime          *time.Time `json:"BucketTime,omitempty"`
 	CacheCreationTokens *int64     `json:"CacheCreationTokens,omitempty"`
 	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
 
-	// Cost 计费成本（毫分，1 USD = 100
-	Cost         *int64  `json:"Cost,omitempty"`
-	ErrorCount   *int64  `json:"ErrorCount,omitempty"`
-	GroupID      *int64  `json:"GroupID,omitempty"`
-	InputTokens  *int64  `json:"InputTokens,omitempty"`
-	IsError      *bool   `json:"IsError,omitempty"`
-	Model        *string `json:"Model,omitempty"`
-	OutputTokens *int64  `json:"OutputTokens,omitempty"`
-	RequestCount *int64  `json:"RequestCount,omitempty"`
-	TemplateID   *int64  `json:"TemplateID,omitempty"`
-	TotalTokens  *int64  `json:"TotalTokens,omitempty"`
+	// CallCount 按次调用：图片生成张数、search 次数（不入 TotalTokens）
+	CallCount *int64 `json:"CallCount,omitempty"`
+
+	// Cost 成本 USD（毫分 /1e5，与价格 API/overview 口径一致；破坏性变更）
+	Cost         *float64 `json:"Cost,omitempty"`
+	ErrorCount   *int64   `json:"ErrorCount,omitempty"`
+	GroupID      *int64   `json:"GroupID,omitempty"`
+	InputTokens  *int64   `json:"InputTokens,omitempty"`
+	IsError      *bool    `json:"IsError,omitempty"`
+	Model        *string  `json:"Model,omitempty"`
+	OutputTokens *int64   `json:"OutputTokens,omitempty"`
+	RequestCount *int64   `json:"RequestCount,omitempty"`
+
+	// TTFTAvgMS 首 token 平均毫秒（sum/count，无样本 = 0）
+	TTFTAvgMS *float64 `json:"TTFTAvgMS,omitempty"`
+
+	// TTFTCount 首 token 样本数（pN/加权 avg 分母——前端跨行合并必需）
+	TTFTCount *int64 `json:"TTFTCount,omitempty"`
+
+	// TTFTMaxMS 首 token 最大毫秒（无样本 = 0）
+	TTFTMaxMS *int64 `json:"TTFTMaxMS,omitempty"`
+
+	// TTFTP50MS 首 token 分位毫秒（直方图插值 nearest-rank + 桶内线性插值；顶桶 12800+ 回落 12800；无样本 = 0）
+	TTFTP50MS *int64 `json:"TTFTP50MS,omitempty"`
+
+	// TTFTP90MS 同 TTFTP50MS（p90）
+	TTFTP90MS *int64 `json:"TTFTP90MS,omitempty"`
+
+	// TTFTP95MS 同 TTFTP50MS（p95）
+	TTFTP95MS *int64 `json:"TTFTP95MS,omitempty"`
+
+	// TTFTP99MS 同 TTFTP50MS（p99）
+	TTFTP99MS   *int64 `json:"TTFTP99MS,omitempty"`
+	TemplateID  *int64 `json:"TemplateID,omitempty"`
+	TotalTokens *int64 `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`
@@ -1475,6 +1499,7 @@ type GetStatsParams struct {
 	Granularity *GetStatsParamsGranularity `form:"granularity,omitempty" json:"granularity,omitempty"`
 	GroupId     *int64                     `form:"group_id,omitempty" json:"group_id,omitempty"`
 	AccountId   *int64                     `form:"account_id,omitempty" json:"account_id,omitempty"`
+	TemplateId  *int64                     `form:"template_id,omitempty" json:"template_id,omitempty"`
 	UserId      *int64                     `form:"user_id,omitempty" json:"user_id,omitempty"`
 	Model       *string                    `form:"model,omitempty" json:"model,omitempty"`
 }
@@ -3586,6 +3611,14 @@ func (siw *ServerInterfaceWrapper) GetStats(w http.ResponseWriter, r *http.Reque
 	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "template_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "template_id", r.URL.Query(), &params.TemplateId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "template_id", Err: err})
 		return
 	}
 

@@ -1915,6 +1915,7 @@ export interface components {
              */
             next_cursor: number | null;
         };
+        /** @description 统计桶（rewrite spec 2026-08-14 契约更新：Cost 毫分 → USD /1e5 破坏性变更；TotalLatencyMS 随列删除；TTFT pN 服务端直方图插值——直方图不可前端反算） */
         StatBucket: {
             /** Format: date-time */
             BucketTime?: string;
@@ -1946,10 +1947,50 @@ export interface components {
             /** Format: int64 */
             CacheCreationTokens?: number;
             /**
-             * Format: int64
-             * @description 计费成本（毫分，1 USD = 100
+             * Format: double
+             * @description 成本 USD（毫分 /1e5，与价格 API/overview 口径一致；破坏性变更）
              */
             Cost?: number;
+            /**
+             * Format: int64
+             * @description 按次调用：图片生成张数、search 次数（不入 TotalTokens）
+             */
+            CallCount?: number;
+            /**
+             * Format: int64
+             * @description 首 token 样本数（pN/加权 avg 分母——前端跨行合并必需）
+             */
+            TTFTCount?: number;
+            /**
+             * Format: double
+             * @description 首 token 平均毫秒（sum/count，无样本 = 0）
+             */
+            TTFTAvgMS?: number;
+            /**
+             * Format: int64
+             * @description 首 token 最大毫秒（无样本 = 0）
+             */
+            TTFTMaxMS?: number;
+            /**
+             * Format: int64
+             * @description 首 token 分位毫秒（直方图插值 nearest-rank + 桶内线性插值；顶桶 12800+ 回落 12800；无样本 = 0）
+             */
+            TTFTP50MS?: number;
+            /**
+             * Format: int64
+             * @description 同 TTFTP50MS（p90）
+             */
+            TTFTP90MS?: number;
+            /**
+             * Format: int64
+             * @description 同 TTFTP50MS（p95）
+             */
+            TTFTP95MS?: number;
+            /**
+             * Format: int64
+             * @description 同 TTFTP50MS（p99）
+             */
+            TTFTP99MS?: number;
         };
         WorkerStatus: {
             name: string;
@@ -3725,6 +3766,7 @@ export interface operations {
                 granularity?: "hour" | "day";
                 group_id?: number;
                 account_id?: number;
+                template_id?: number;
                 model?: string;
             };
             header?: never;
@@ -3988,6 +4030,7 @@ export interface operations {
                 granularity?: "hour" | "day";
                 group_id?: number;
                 account_id?: number;
+                template_id?: number;
                 user_id?: number;
                 model?: string;
             };

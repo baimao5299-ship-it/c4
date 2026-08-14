@@ -1087,6 +1087,7 @@ paths:
         - { name: granularity, in: query, schema: { type: string, enum: [hour, day], default: day } }
         - { name: group_id, in: query, schema: { type: integer, format: int64 } }
         - { name: account_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: template_id, in: query, schema: { type: integer, format: int64 } }
         - { name: model, in: query, schema: { type: string } }
       responses:
         '200':
@@ -1271,6 +1272,7 @@ paths:
         - { name: granularity, in: query, schema: { type: string, enum: [hour, day], default: day } }
         - { name: group_id, in: query, schema: { type: integer, format: int64 } }
         - { name: account_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: template_id, in: query, schema: { type: integer, format: int64 } }
         - { name: user_id, in: query, schema: { type: integer, format: int64, description: 按用户过滤（admin 看全部） } }
         - { name: model, in: query, schema: { type: string } }
       responses:
@@ -2226,6 +2228,7 @@ components:
         next_cursor: { type: integer, format: int64, nullable: true, description: 下一页游标（本页最后一条 id）；null = 无更多行 }
     StatBucket:
       type: object
+      description: 统计桶（rewrite spec 2026-08-14 契约更新：Cost 毫分 → USD /1e5 破坏性变更；TotalLatencyMS 随列删除；TTFT pN 服务端直方图插值——直方图不可前端反算）
       properties:
         BucketTime: { type: string, format: date-time }
         GroupID: { type: integer, format: int64 }
@@ -2241,7 +2244,15 @@ components:
         TotalTokens: { type: integer, format: int64 }
         CacheReadTokens: { type: integer, format: int64 }
         CacheCreationTokens: { type: integer, format: int64 }
-        Cost: { type: integer, format: int64, description: 计费成本（毫分，1 USD = 100,000 毫分；计费预聚合，花费统计不扫明细） }
+        Cost: { type: number, format: double, description: 成本 USD（毫分 /1e5，与价格 API/overview 口径一致；破坏性变更） }
+        CallCount: { type: integer, format: int64, description: 按次调用：图片生成张数、search 次数（不入 TotalTokens） }
+        TTFTCount: { type: integer, format: int64, description: 首 token 样本数（pN/加权 avg 分母——前端跨行合并必需） }
+        TTFTAvgMS: { type: number, format: double, description: 首 token 平均毫秒（sum/count，无样本 = 0） }
+        TTFTMaxMS: { type: integer, format: int64, description: 首 token 最大毫秒（无样本 = 0） }
+        TTFTP50MS: { type: integer, format: int64, description: 首 token 分位毫秒（直方图插值 nearest-rank + 桶内线性插值；顶桶 12800+ 回落 12800；无样本 = 0） }
+        TTFTP90MS: { type: integer, format: int64, description: 同 TTFTP50MS（p90） }
+        TTFTP95MS: { type: integer, format: int64, description: 同 TTFTP50MS（p95） }
+        TTFTP99MS: { type: integer, format: int64, description: 同 TTFTP50MS（p99） }
     # 运维观测（/admin/ops/workers）：WorkerStatus/SnapshotState/WorkersResponse
     # 类型由本契约生成（ops tag → handler/api.gen.go + 前端 schema.d.ts），
     # handler/ops.go 唯一实现；字段清单见 WorkerStatus.stats.description。
