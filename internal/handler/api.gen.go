@@ -264,6 +264,12 @@ const (
 	Hour GetStatsParamsGranularity = "hour"
 )
 
+// Defines values for GetTempBalancesParamsOrder.
+const (
+	GetTempBalancesParamsOrderAsc  GetTempBalancesParamsOrder = "asc"
+	GetTempBalancesParamsOrderDesc GetTempBalancesParamsOrder = "desc"
+)
+
 // Defines values for GetTemplatesParamsOrder.
 const (
 	GetTemplatesParamsOrderAsc  GetTemplatesParamsOrder = "asc"
@@ -272,8 +278,8 @@ const (
 
 // Defines values for GetUsersParamsOrder.
 const (
-	GetUsersParamsOrderAsc  GetUsersParamsOrder = "asc"
-	GetUsersParamsOrderDesc GetUsersParamsOrder = "desc"
+	Asc  GetUsersParamsOrder = "asc"
+	Desc GetUsersParamsOrder = "desc"
 )
 
 // Account defines model for Account.
@@ -402,6 +408,25 @@ type AccountView struct {
 	Concurrency    *int64         `json:"concurrency,omitempty"`
 	ErrCount       *int           `json:"err_count,omitempty"`
 	ErrRate        *float64       `json:"err_rate,omitempty"`
+}
+
+// AdminTempBalanceRow defines model for AdminTempBalanceRow.
+type AdminTempBalanceRow struct {
+	// AmountUsd 金额 USD（毫分 /1e5；1 USD = 100
+	AmountUsd float64   `json:"amount_usd"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// ExpiresAt 到期时间；null = 永久额度
+	ExpiresAt *time.Time `json:"expires_at"`
+	Id        int64      `json:"id"`
+	Note      *string    `json:"note"`
+	UserId    int64      `json:"user_id"`
+}
+
+// AdminTempBalancesResponse defines model for AdminTempBalancesResponse.
+type AdminTempBalancesResponse struct {
+	Rows  []AdminTempBalanceRow `json:"rows"`
+	Total int64                 `json:"total"`
 }
 
 // BatchDeactivateRequest defines model for BatchDeactivateRequest.
@@ -1507,6 +1532,18 @@ type GetStatsParams struct {
 // GetStatsParamsGranularity defines parameters for GetStats.
 type GetStatsParamsGranularity string
 
+// GetTempBalancesParams defines parameters for GetTempBalances.
+type GetTempBalancesParams struct {
+	Page     *int                        `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                        `form:"page_size,omitempty" json:"page_size,omitempty"`
+	UserId   *int64                      `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Sort     *string                     `form:"sort,omitempty" json:"sort,omitempty"`
+	Order    *GetTempBalancesParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetTempBalancesParamsOrder defines parameters for GetTempBalances.
+type GetTempBalancesParamsOrder string
+
 // GetTemplatesParams defines parameters for GetTemplates.
 type GetTemplatesParams struct {
 	Limit  *int                     `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1770,6 +1807,9 @@ type ServerInterface interface {
 	// 用量统计聚合
 	// (GET /stats)
 	GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams)
+	// 临时额度列表（platform_admin 专属；全量视角含过期/用尽/负扣减行；user_id 筛选；sort 白名单 expires_at/amount/created_at，默认 expires_at asc——FEFO 同序）
+	// (GET /temp-balances)
+	GetTempBalances(w http.ResponseWriter, r *http.Request, params GetTempBalancesParams)
 	// 模板列表（分页/筛选/排序）
 	// (GET /templates)
 	GetTemplates(w http.ResponseWriter, r *http.Request, params GetTemplatesParams)
@@ -2085,6 +2125,12 @@ func (_ Unimplemented) PutAdminSettings(w http.ResponseWriter, r *http.Request) 
 // 用量统计聚合
 // (GET /stats)
 func (_ Unimplemented) GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 临时额度列表（platform_admin 专属；全量视角含过期/用尽/负扣减行；user_id 筛选；sort 白名单 expires_at/amount/created_at，默认 expires_at asc——FEFO 同序）
+// (GET /temp-balances)
+func (_ Unimplemented) GetTempBalances(w http.ResponseWriter, r *http.Request, params GetTempBalancesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3649,6 +3695,65 @@ func (siw *ServerInterfaceWrapper) GetStats(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// GetTempBalances operation middleware
+func (siw *ServerInterfaceWrapper) GetTempBalances(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetTempBalancesParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTempBalances(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTemplates operation middleware
 func (siw *ServerInterfaceWrapper) GetTemplates(w http.ResponseWriter, r *http.Request) {
 
@@ -4402,6 +4507,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/stats", wrapper.GetStats)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/temp-balances", wrapper.GetTempBalances)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/templates", wrapper.GetTemplates)

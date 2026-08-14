@@ -330,6 +330,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/temp-balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 临时额度列表（platform_admin 专属；全量视角含过期/用尽/负扣减行；user_id 筛选；sort 白名单 expires_at/amount/created_at，默认 expires_at asc——FEFO 同序） */
+        get: operations["GetTempBalances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups/{id}/assignments": {
         parameters: {
             query?: never;
@@ -566,6 +583,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/user/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效） */
+        post: operations["PostUserAuthChangePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/user/groups": {
         parameters: {
             query?: never;
@@ -704,6 +738,23 @@ export interface paths {
         put?: never;
         /** 兑换码（400 invalid code：不存在/失效/过期/用尽，统一不泄露细节；409 already redeemed 重复兑换） */
         post: operations["PostUserRedemptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/user/temp-balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的临时额度（仅有效额度：未过期且正余额，用尽/过期隐藏；expires_at 升序 FEFO 同序、永久最后；强制 user_id = 当前用户，无 user_id 参数防越权） */
+        get: operations["GetUserTempBalances"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1174,6 +1225,14 @@ export interface components {
             email: string;
             password: string;
         };
+        UserAuthChangePassword: {
+            old_password: string;
+            /** @description 非空且 ≤72 字节（bcrypt 截断限制），非法 400 */
+            new_password: string;
+        };
+        ChangePasswordResponse: {
+            updated: boolean;
+        };
         UserAuthResponse: {
             token: string;
             user: components["schemas"]["User"];
@@ -1441,6 +1500,54 @@ export interface components {
             /** Format: int64 */
             total: number;
             rows: components["schemas"]["RedemptionRecord"][];
+        };
+        TempBalanceRow: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: double
+             * @description 金额 USD（毫分 /1e5；1 USD = 100
+             */
+            amount_usd: number;
+            /**
+             * Format: date-time
+             * @description 到期时间；null = 永久额度
+             */
+            expires_at: string | null;
+            /** @description 固定系统备注（signup bonus / redemption code），无敏感信息 */
+            note: string | null;
+        };
+        TempBalancesResponse: {
+            /**
+             * Format: double
+             * @description 有效额度合计 USD（毫分 Σ /1e5；0 = 无有效额度）
+             */
+            total_usd: number;
+            rows: components["schemas"]["TempBalanceRow"][];
+        };
+        AdminTempBalanceRow: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            user_id: number;
+            /**
+             * Format: double
+             * @description 金额 USD（毫分 /1e5；1 USD = 100
+             */
+            amount_usd: number;
+            /**
+             * Format: date-time
+             * @description 到期时间；null = 永久额度
+             */
+            expires_at: string | null;
+            note: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminTempBalancesResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["AdminTempBalanceRow"][];
         };
         GenerateRequest: {
             type: components["schemas"]["RedemptionType"];
@@ -2975,6 +3082,33 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetTempBalances: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                user_id?: number;
+                sort?: string;
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 临时额度列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTempBalancesResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetGroupsIdAssignments: {
         parameters: {
             query?: never;
@@ -3528,6 +3662,31 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    PostUserAuthChangePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAuthChangePassword"];
+            };
+        };
+        responses: {
+            /** @description 修改成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangePasswordResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetUserGroups: {
         parameters: {
             query?: never;
@@ -3833,6 +3992,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RedeemResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserTempBalances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 有效临时额度列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TempBalancesResponse"];
                 };
             };
             default: components["responses"]["Error"];

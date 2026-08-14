@@ -93,6 +93,11 @@ const (
 	Hour GetUserStatsParamsGranularity = "hour"
 )
 
+// ChangePasswordResponse defines model for ChangePasswordResponse.
+type ChangePasswordResponse struct {
+	Updated bool `json:"updated"`
+}
+
 // DeletedResponse defines model for DeletedResponse.
 type DeletedResponse struct {
 	Deleted bool `json:"deleted"`
@@ -338,6 +343,27 @@ type StatBucket struct {
 	UserID *int64 `json:"UserID,omitempty"`
 }
 
+// TempBalanceRow defines model for TempBalanceRow.
+type TempBalanceRow struct {
+	// AmountUsd 金额 USD（毫分 /1e5；1 USD = 100
+	AmountUsd float64 `json:"amount_usd"`
+
+	// ExpiresAt 到期时间；null = 永久额度
+	ExpiresAt *time.Time `json:"expires_at"`
+	Id        int64      `json:"id"`
+
+	// Note 固定系统备注（signup bonus / redemption code），无敏感信息
+	Note *string `json:"note"`
+}
+
+// TempBalancesResponse defines model for TempBalancesResponse.
+type TempBalancesResponse struct {
+	Rows []TempBalanceRow `json:"rows"`
+
+	// TotalUsd 有效额度合计 USD（毫分 Σ /1e5；0 = 无有效额度）
+	TotalUsd float64 `json:"total_usd"`
+}
+
 // UsageLog defines model for UsageLog.
 type UsageLog struct {
 	// AboveHit 任一分量超 above 阈值命中分段
@@ -401,6 +427,13 @@ type User struct {
 	Role           *UserRole   `json:"Role,omitempty"`
 	Status         *UserStatus `json:"Status,omitempty"`
 	UpdatedAt      *time.Time  `json:"UpdatedAt,omitempty"`
+}
+
+// UserAuthChangePassword defines model for UserAuthChangePassword.
+type UserAuthChangePassword struct {
+	// NewPassword 非空且 ≤72 字节（bcrypt 截断限制），非法 400
+	NewPassword string `json:"new_password"`
+	OldPassword string `json:"old_password"`
 }
 
 // UserAuthLogin defines model for UserAuthLogin.
@@ -492,6 +525,9 @@ type GetUserUsageLogsParams struct {
 	To        time.Time `form:"to" json:"to"`
 }
 
+// PostUserAuthChangePasswordJSONRequestBody defines body for PostUserAuthChangePassword for application/json ContentType.
+type PostUserAuthChangePasswordJSONRequestBody = UserAuthChangePassword
+
 // PostUserAuthLoginJSONRequestBody defines body for PostUserAuthLogin for application/json ContentType.
 type PostUserAuthLoginJSONRequestBody = UserAuthLogin
 
@@ -509,6 +545,9 @@ type PostUserRedemptionsJSONRequestBody = RedeemRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效）
+	// (POST /user/auth/change-password)
+	PostUserAuthChangePassword(w http.ResponseWriter, r *http.Request)
 	// 登录（bcrypt 校验 → JWT）
 	// (POST /user/auth/login)
 	PostUserAuthLogin(w http.ResponseWriter, r *http.Request)
@@ -551,6 +590,9 @@ type ServerInterface interface {
 	// 我的用量统计（强制 user_id = 当前用户）
 	// (GET /user/stats)
 	GetUserStats(w http.ResponseWriter, r *http.Request, params GetUserStatsParams)
+	// 我的临时额度（仅有效额度：未过期且正余额，用尽/过期隐藏；expires_at 升序 FEFO 同序、永久最后；强制 user_id = 当前用户，无 user_id 参数防越权）
+	// (GET /user/temp-balances)
+	GetUserTempBalances(w http.ResponseWriter, r *http.Request)
 	// 我的用量明细（usage_logs 纯计费明细；强制 user_id = 当前用户，防越权；error_type 值域 none/abort）
 	// (GET /user/usage_logs)
 	GetUserUsageLogs(w http.ResponseWriter, r *http.Request, params GetUserUsageLogsParams)
@@ -559,6 +601,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效）
+// (POST /user/auth/change-password)
+func (_ Unimplemented) PostUserAuthChangePassword(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // 登录（bcrypt 校验 → JWT）
 // (POST /user/auth/login)
@@ -644,6 +692,12 @@ func (_ Unimplemented) GetUserStats(w http.ResponseWriter, r *http.Request, para
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 我的临时额度（仅有效额度：未过期且正余额，用尽/过期隐藏；expires_at 升序 FEFO 同序、永久最后；强制 user_id = 当前用户，无 user_id 参数防越权）
+// (GET /user/temp-balances)
+func (_ Unimplemented) GetUserTempBalances(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // 我的用量明细（usage_logs 纯计费明细；强制 user_id = 当前用户，防越权；error_type 值域 none/abort）
 // (GET /user/usage_logs)
 func (_ Unimplemented) GetUserUsageLogs(w http.ResponseWriter, r *http.Request, params GetUserUsageLogsParams) {
@@ -658,6 +712,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// PostUserAuthChangePassword operation middleware
+func (siw *ServerInterfaceWrapper) PostUserAuthChangePassword(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUserAuthChangePassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // PostUserAuthLogin operation middleware
 func (siw *ServerInterfaceWrapper) PostUserAuthLogin(w http.ResponseWriter, r *http.Request) {
@@ -1133,6 +1201,20 @@ func (siw *ServerInterfaceWrapper) GetUserStats(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetUserTempBalances operation middleware
+func (siw *ServerInterfaceWrapper) GetUserTempBalances(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserTempBalances(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserUsageLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetUserUsageLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -1344,6 +1426,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/user/auth/change-password", wrapper.PostUserAuthChangePassword)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/user/auth/login", wrapper.PostUserAuthLogin)
 	})
 	r.Group(func(r chi.Router) {
@@ -1384,6 +1469,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/user/stats", wrapper.GetUserStats)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/user/temp-balances", wrapper.GetUserTempBalances)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/user/usage_logs", wrapper.GetUserUsageLogs)

@@ -525,6 +525,25 @@ paths:
               schema: { $ref: '#/components/schemas/UserGroupsResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /temp-balances:
+    get:
+      operationId: GetTempBalances
+      tags: [users]
+      summary: 临时额度列表（platform_admin 专属；全量视角含过期/用尽/负扣减行；user_id 筛选；sort 白名单 expires_at/amount/created_at，默认 expires_at asc——FEFO 同序）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1, description: 页码（1-based） } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64, description: 按用户筛选；缺省 = 全部用户 } }
+        - { name: sort, in: query, schema: { type: string, description: sort 白名单：expires_at/amount/created_at（缺省 expires_at） } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 临时额度列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminTempBalancesResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /groups/{id}/assignments:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -919,6 +938,24 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         default:
           $ref: '#/components/responses/Error'
+  /user/auth/change-password:
+    post:
+      operationId: PostUserAuthChangePassword
+      tags: [user]
+      summary: 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserAuthChangePassword' }
+      responses:
+        '200':
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangePasswordResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   # --- /user 面业务（tag: user；JWT 保护——Router 中间件，仅本人数据） ---
   # 注意 chi 路径顺序：/user/keys 必须先于 /user/keys/{id} 注册（生成器按 spec 顺序）。
   /user/groups:
@@ -1132,6 +1169,19 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RedemptionRecordListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /user/temp-balances:
+    get:
+      operationId: GetUserTempBalances
+      tags: [user]
+      summary: 我的临时额度（仅有效额度：未过期且正余额，用尽/过期隐藏；expires_at 升序 FEFO 同序、永久最后；强制 user_id = 当前用户，无 user_id 参数防越权）
+      responses:
+        '200':
+          description: 有效临时额度列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TempBalancesResponse' }
         default:
           $ref: '#/components/responses/Error'
   # 注意 chi 路径顺序：/rules 必须先于 /rules/{id} 注册（生成器按 spec 顺序注册）。
@@ -1679,6 +1729,17 @@ components:
       properties:
         email: { type: string }
         password: { type: string }
+    UserAuthChangePassword:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password: { type: string }
+        new_password: { type: string, description: 非空且 ≤72 字节（bcrypt 截断限制），非法 400 }
+    ChangePasswordResponse:
+      type: object
+      required: [updated]
+      properties:
+        updated: { type: boolean }
     UserAuthResponse:
       type: object
       required: [token, user]
@@ -1959,6 +2020,43 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/RedemptionRecord' }
+    # --- 临时额度（/user/temp-balances + /admin/temp-balances，spec 2026-08-15） ---
+    # 用户侧仅有效额度（amount > 0 且未过期，FEFO 同序）；管理侧全量视角。
+    # amount_usd = 毫分 /1e5（API 边界换算，内部存储恒毫分）。
+    TempBalanceRow:
+      type: object
+      required: [id, amount_usd, expires_at, note]
+      properties:
+        id: { type: integer, format: int64 }
+        amount_usd: { type: number, format: double, description: 金额 USD（毫分 /1e5；1 USD = 100,000 毫分） }
+        expires_at: { type: string, format: date-time, nullable: true, description: 到期时间；null = 永久额度 }
+        note: { type: string, nullable: true, description: 固定系统备注（signup bonus / redemption code），无敏感信息 }
+    TempBalancesResponse:
+      type: object
+      required: [total_usd, rows]
+      properties:
+        total_usd: { type: number, format: double, description: 有效额度合计 USD（毫分 Σ /1e5；0 = 无有效额度） }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/TempBalanceRow' }
+    AdminTempBalanceRow:
+      type: object
+      required: [id, user_id, amount_usd, expires_at, note, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        amount_usd: { type: number, format: double, description: 金额 USD（毫分 /1e5；1 USD = 100,000 毫分） }
+        expires_at: { type: string, format: date-time, nullable: true, description: 到期时间；null = 永久额度 }
+        note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    AdminTempBalancesResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/AdminTempBalanceRow' }
     GenerateRequest:
       type: object
       required: [type, value]
