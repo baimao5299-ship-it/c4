@@ -23,12 +23,13 @@ import (
 )
 
 type StatQuery struct {
-	GroupID   int64
-	AccountID int64
-	UserID    int64 // 0 = 不过滤（/user/stats 强制 = 自己）
-	Model     string
-	From      time.Time
-	To        time.Time
+	GroupID    int64
+	AccountID  int64
+	TemplateID int64 // 0 = 不过滤（rewrite spec 依赖契约：/stats 端点补 template_id 参数接线）
+	UserID     int64 // 0 = 不过滤（/user/stats 强制 = 自己）
+	Model      string
+	From       time.Time
+	To         time.Time
 }
 
 // StatRepo 统计仓库（spec 2026-08-14 离线聚合化）：查询面（ScanStats/
@@ -673,6 +674,7 @@ func (r *StatRepo) ScanStats(ctx context.Context, q StatQuery) ([]*domain.StatBu
 	}{
 		{`"group_id" = $`, q.GroupID, q.GroupID > 0},
 		{`"account_id" = $`, q.AccountID, q.AccountID > 0},
+		{`"template_id" = $`, q.TemplateID, q.TemplateID > 0},
 		{`"user_id" = $`, q.UserID, q.UserID > 0},
 		{`"model" = $`, q.Model, q.Model != ""},
 	} {

@@ -455,10 +455,22 @@ func TestPGStatsScanStatsCarveOut(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Len(t, got[0].TTFTHist, 10, "pgx 直查扫描 bigint[]（ent 无法扫描）")
-	// 过滤面（group_id/user_id/model）仍生效
+	// 过滤面（group_id/template_id/user_id/model）仍生效（评审 Important-1：
+	// template_id 过滤依赖契约——rewrite spec /stats 端点接线）
 	got, err = repos.Stats.ScanStats(ctx, repository.StatQuery{From: bucket, To: bucket.Add(time.Hour), GroupID: 2})
 	require.NoError(t, err)
 	require.Empty(t, got, "group 过滤生效")
+	got, err = repos.Stats.ScanStats(ctx, repository.StatQuery{From: bucket, To: bucket.Add(time.Hour), TemplateID: 1})
+	require.NoError(t, err)
+	require.Empty(t, got, "template 过滤生效（行 template_id=0 ≠ 1）")
+	// template_id 正向命中：同维度列再种一行 template_id=5 → 过滤只回该行
+	require.NoError(t, repos.Stats.AggregateRange(ctx, bucket, bucket.Add(time.Hour), bucket.Add(20*time.Minute),
+		[]*domain.StatBucket{{BucketTime: bucket, GroupID: 1, TemplateID: 5, UserID: 42, Model: "m",
+			RequestCount: 7, TTFTHist: make([]int64, 10)}}))
+	got, err = repos.Stats.ScanStats(ctx, repository.StatQuery{From: bucket, To: bucket.Add(time.Hour), TemplateID: 5})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, int64(7), got[0].RequestCount, "template 过滤命中行")
 }
 
 // TestPGStatsSummarizeNoData 空区间：summary 全零 + 空直方图（无 42703/扫描
