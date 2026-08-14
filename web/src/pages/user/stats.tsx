@@ -40,7 +40,7 @@ export default function UserStats() {
   const [range, setRange] = useState(defaultRange)
   // 用户端默认按日聚合（与管理端默认 hour 区分）。
   const [granularity, setGranularity] = useState<Granularity>('day')
-  const [metric, setMetric] = useState<Metric>('requests')
+  const [metric, setMetric] = useState<Metric>('tokens')
 
   const params = useMemo(
     () => ({ from: toRFC3339(range.from), to: toRFC3339(range.to), granularity }),

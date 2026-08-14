@@ -39,7 +39,7 @@ export default function Stats() {
   const { t } = useTranslation()
   const [range, setRange] = useState(defaultRange)
   const [granularity, setGranularity] = useState<Granularity>('hour')
-  const [metric, setMetric] = useState<Metric>('requests')
+  const [metric, setMetric] = useState<Metric>('tokens')
 
   const params = useMemo(
     () => ({ from: toRFC3339(range.from), to: toRFC3339(range.to), granularity }),
