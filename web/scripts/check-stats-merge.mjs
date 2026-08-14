@@ -2,8 +2,9 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
-// mergeBuckets/summarizeTTFT 语义断言（rewrite spec 2026-08-14 评审 P1）：
-// 跨维度行按 BucketTime 合并的 avg 加权 / max 取大 / pN 近似数值断言。
+// mergeBuckets/summarizeTTFT 语义断言（rewrite spec 2026-08-14 评审 P1；
+// cache 字段求和断言 2026-08-14 图表增强 spec §5）：
+// 跨维度行按 BucketTime 合并的 avg 加权 / max 取大 / pN 近似 / cache 求和数值断言。
 // 直跑 TS 源码（node ≥23.6 type stripping；模块为纯函数 + import type，
 // 运行期无别名解析）。用法：node scripts/check-stats-merge.mjs
 import assert from 'node:assert/strict'
@@ -18,6 +19,8 @@ const rows = [
     CallCount: 2,
     InputTokens: 10,
     OutputTokens: 20,
+    CacheReadTokens: 12,
+    CacheCreationTokens: 3,
     TotalTokens: 30,
     Cost: 1.5,
     TTFTCount: 4,
@@ -33,6 +36,8 @@ const rows = [
     CallCount: 3,
     InputTokens: 40,
     OutputTokens: 50,
+    CacheReadTokens: 18,
+    CacheCreationTokens: 7,
     TotalTokens: 90,
     Cost: 2.5,
     TTFTCount: 6,
@@ -54,6 +59,8 @@ assert.equal(merged[0].label, `${String(localH).padStart(2, '0')}:00`, 'hour 粒
 const m = merged[0]
 assert.equal(m.RequestCount, 15)
 assert.equal(m.CallCount, 5, 'call_count 求和')
+assert.equal(m.CacheReadTokens, 30, 'cache read 求和')
+assert.equal(m.CacheCreationTokens, 10, 'cache write 求和')
 assert.equal(m.Cost, 4.0, 'Cost USD 求和')
 assert.equal(m.TTFTCount, 10, 'TTFTCount 求和（加权分母）')
 assert.equal(m.TTFTAvgMS, 160, 'avg = Σ(avg×count)/Σcount = (100×4+200×6)/10')
@@ -66,6 +73,8 @@ assert.equal(empty.TTFTAvgMS, 0, '无样本 → avg 0')
 assert.equal(empty.TTFTP95MS, 0, '无样本 → pN 0')
 assert.equal(empty.TTFTMaxMS, 0, '无样本 → max 0')
 assert.equal(empty.TTFTCount, 0)
+assert.equal(empty.CacheReadTokens, 0, '无 cache 字段 → 0')
+assert.equal(empty.CacheCreationTokens, 0, '无 cache 字段 → 0')
 
 // —— 请求量并列：取先到的维度行 ——
 const tie = mergeBuckets([

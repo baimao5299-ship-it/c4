@@ -228,6 +228,7 @@
     "maxLabel": "最大并发",
     "deleteTitle": "删除账号",
     "deleteDesc": "确认删除账号「{{name}}」？删除后该账号从所有分组解绑。",
+    "saveSuccess": "账号已保存",
     "filterStatus": "状态筛选",
     "filterTemplate": "模板筛选",
     "allTemplates": "全部模板",
@@ -495,7 +496,14 @@
     "metricRequests": "请求数",
     "metricTokens": "Tokens",
     "chartRequestsTitle": "请求数趋势",
-    "chartTokensTitle": "Tokens 趋势",
+    "chartTokensTitle": "Token 构成",
+    "chart": {
+      "seriesInput": "输入 Token",
+      "seriesOutput": "输出 Token",
+      "seriesCacheRead": "读缓存",
+      "seriesCacheWrite": "写缓存",
+      "seriesHitRate": "读缓存命中率"
+    },
     "chartDesc": "按时间桶聚合，柱高按最大值缩放",
     "table": {
       "time": "时间",
@@ -503,6 +511,8 @@
       "errors": "错误数",
       "promptTokens": "PT",
       "completionTokens": "CT",
+      "cacheReadTokens": "缓存读",
+      "cacheCreationTokens": "缓存写",
       "totalTokens": "TT",
       "calls": "调用次数",
       "cost": "费用 (USD)"
@@ -926,7 +936,11 @@
       "stats_retention_days": "统计保留 (天)",
       "last_reload_unix_ms": "最近重载",
       "failures": "失败累计",
-      "last_failure_unix_ms": "最近失败"
+      "last_failure_unix_ms": "最近失败",
+      "watermark_unix_ms": "水位位置",
+      "last_buckets": "上轮桶数",
+      "last_rows": "上轮明细行数",
+      "last_duration_ms": "上轮耗时 (ms)"
     }
   },
   "user": {
@@ -1054,7 +1068,14 @@
       "metricRequests": "请求数",
       "metricTokens": "Tokens",
       "chartRequestsTitle": "请求数趋势",
-      "chartTokensTitle": "Tokens 趋势",
+      "chartTokensTitle": "Token 构成",
+      "chart": {
+        "seriesInput": "输入 Token",
+        "seriesOutput": "输出 Token",
+        "seriesCacheRead": "读缓存",
+        "seriesCacheWrite": "写缓存",
+        "seriesHitRate": "读缓存命中率"
+      },
       "chartDesc": "按时间桶聚合，柱高按最大值缩放",
       "table": {
         "time": "时间",
@@ -1062,6 +1083,8 @@
         "errors": "错误数",
         "promptTokens": "PT",
         "completionTokens": "CT",
+        "cacheReadTokens": "缓存读",
+        "cacheCreationTokens": "缓存写",
         "totalTokens": "TT",
         "calls": "调用次数",
         "cost": "费用 (USD)"
