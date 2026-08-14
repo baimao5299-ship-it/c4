@@ -53,9 +53,16 @@ const rows = [
 
 const merged = mergeBuckets(rows, 'hour')
 assert.equal(merged.length, 2, '两个时间桶')
-// 标签按本地时区生成（既有约定）；10:00Z 的本地小时随机器时区
-const localH = new Date('2026-08-14T10:00:00Z').getHours()
-assert.equal(merged[0].label, `${String(localH).padStart(2, '0')}:00`, 'hour 粒度标签')
+// 标签按本地时区生成（既有约定）；10:00Z 的本地小时随机器时区。
+// 2026-08-14：label 唯一化（加日期前缀）——recharts category 轴 domain 按
+// label 去重，纯时分跨天重复致 tooltip 索引在 0-5 循环（点线错位）。
+const localD = new Date('2026-08-14T10:00:00Z')
+const localH = localD.getHours()
+assert.equal(
+  merged[0].label,
+  `${String(localD.getMonth() + 1).padStart(2, '0')}-${String(localD.getDate()).padStart(2, '0')} ${String(localH).padStart(2, '0')}:00`,
+  'hour 粒度标签（含日期前缀，跨桶唯一）'
+)
 const m = merged[0]
 assert.equal(m.RequestCount, 15)
 assert.equal(m.CallCount, 5, 'call_count 求和')

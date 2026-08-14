@@ -40,6 +40,16 @@ export default function Stats() {
   const [range, setRange] = useState(defaultRange)
   const [granularity, setGranularity] = useState<Granularity>('hour')
   const [metric, setMetric] = useState<Metric>('tokens')
+  // 图例点击开关序列（2026-08-14：ChartLegendContent 增强 onItemClick/hiddenKeys）。
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const toggleSeries = (key: string) => {
+    setHidden(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const params = useMemo(
     () => ({ from: toRFC3339(range.from), to: toRFC3339(range.to), granularity }),
@@ -146,18 +156,18 @@ export default function Stats() {
               {metric === 'requests' ? (
                 <BarChart accessibilityLayer data={chartData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
+                  <XAxis dataKey="label" tickCount={chartData.length} tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
                   <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar dataKey="requests" fill="var(--color-requests)" radius={4} />
                 </BarChart>
               ) : (
-                // Token 构成堆叠面积（spec 2026-08-14）：输入侧相邻（Input 底 → CacheRead）、
-                // 输出次之、CacheWrite 顶；仅视觉比较，不声称与 TotalTokens 的算术关系。
-                // 读缓存命中率 = CacheRead / (CacheRead + Input)，右轴 [0,100]%，独立线非堆叠。
+                // Token 构成独立面积（用户裁决 2026-08-14：取消堆叠——四序列各自
+                // 从 0 基线起画，直接比较绝对高度；fillOpacity 防重叠遮挡，描边区分。
+                // 读缓存命中率 = CacheRead / (CacheRead + Input)，右轴 [0,100]%，虚线。
                 <AreaChart accessibilityLayer data={chartData} margin={{ left: 0, right: 8 }}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
+                  <XAxis dataKey="label" tickCount={chartData.length} tickLine={false} tickMargin={10} axisLine={false} fontSize={12} />
                   <YAxis yAxisId="left" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
                   <YAxis
                     yAxisId="right"
@@ -193,12 +203,12 @@ export default function Stats() {
                       />
                     }
                   />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Area yAxisId="left" dataKey="input" type="natural" stackId="tokens" fill="var(--color-input)" stroke="var(--color-input)" strokeWidth={2} />
-                  <Area yAxisId="left" dataKey="cacheRead" type="natural" stackId="tokens" fill="var(--color-cacheRead)" stroke="var(--color-cacheRead)" strokeWidth={2} />
-                  <Area yAxisId="left" dataKey="output" type="natural" stackId="tokens" fill="var(--color-output)" stroke="var(--color-output)" strokeWidth={2} />
-                  <Area yAxisId="left" dataKey="cacheWrite" type="natural" stackId="tokens" fill="var(--color-cacheWrite)" stroke="var(--color-cacheWrite)" strokeWidth={2} />
-                  <Line yAxisId="right" dataKey="hitRate" type="natural" stroke="var(--color-hitRate)" strokeWidth={2} dot={false} />
+                  <ChartLegend content={<ChartLegendContent onItemClick={toggleSeries} hiddenKeys={hidden} />} />
+                  <Area yAxisId="left" dataKey="input" type="natural" fill="var(--color-input)" fillOpacity={0.2} stroke="var(--color-input)" strokeWidth={2} hide={hidden.has('input')} />
+                  <Area yAxisId="left" dataKey="cacheRead" type="natural" fill="var(--color-cacheRead)" fillOpacity={0.2} stroke="var(--color-cacheRead)" strokeWidth={2} hide={hidden.has('cacheRead')} />
+                  <Area yAxisId="left" dataKey="output" type="natural" fill="var(--color-output)" fillOpacity={0.2} stroke="var(--color-output)" strokeWidth={2} hide={hidden.has('output')} />
+                  <Area yAxisId="left" dataKey="cacheWrite" type="natural" fill="var(--color-cacheWrite)" fillOpacity={0.2} stroke="var(--color-cacheWrite)" strokeWidth={2} hide={hidden.has('cacheWrite')} />
+                  <Line yAxisId="right" dataKey="hitRate" type="natural" stroke="var(--color-hitRate)" strokeWidth={2} dot={false} strokeDasharray="6 3" hide={hidden.has('hitRate')} />
                 </AreaChart>
               )}
             </ChartContainer>

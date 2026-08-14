@@ -45,8 +45,11 @@ export function mergeBuckets(rows: StatBucket[], granularity: Granularity): Buck
       const d = new Date(r.BucketTime)
       b = {
         time: r.BucketTime,
+        // label 必须跨桶唯一：recharts category 轴 domain 按 label 值去重，
+        // 纯时分（"04:00"×5 天重复）→ domain 6-7 个 → tooltip 索引在 0-5 循环
+        // （"点位置一直在前面循环"——2026-08-14 修复）；hour 粒度加日期前缀。
         label: granularity === 'hour'
-          ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+          ? `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
           : `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
         RequestCount: 0, ErrorCount: 0, CallCount: 0, InputTokens: 0, OutputTokens: 0,
         CacheReadTokens: 0, CacheCreationTokens: 0, TotalTokens: 0,
@@ -89,6 +92,8 @@ export function mergeBuckets(rows: StatBucket[], granularity: Granularity): Buck
 
 // TTFT 卡范围汇总（rewrite spec 2026-08-14：按 mergeBuckets 同款合并语义——
 // avg = Σ(avg×count)/Σcount 加权、pN = 取请求量最大桶的 pN 近似；无样本 = 0）。
+// avg 除完 Math.round 收敛整数毫秒（用户裁决 2026-08-14 后端同口径：加权除法
+// 裸浮点——425.22351959966636，换时间范围即现；p95/p99 源为整数，无需收敛）。
 export function summarizeTTFT(rows: BucketRow[]): { avg: number; p95: number; p99: number } {
   let count = 0
   let avg = 0
@@ -105,7 +110,7 @@ export function summarizeTTFT(rows: BucketRow[]): { avg: number; p95: number; p9
     }
   }
   if (count > 0) {
-    avg = avg / count
+    avg = Math.round(avg / count)
   } else {
     avg = 0
   }

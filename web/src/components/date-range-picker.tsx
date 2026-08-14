@@ -47,17 +47,24 @@ export function DateRangePicker({
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  // draft：日历交互中间态（第一次点击 from 已定、to 未定——受控 selected 需
+  // 表达"未完成"，否则补 to=from 会令第二次点击被视为新范围起点，两日范围
+  // 永远选不出——2026-08-14 修复）；range 完成提交后清空。
+  const [draft, setDraft] = useState<DateRange | undefined>(undefined)
 
   const selected: DateRange | undefined =
-    value.from && value.to
+    draft ??
+    (value.from && value.to
       ? { from: new Date(`${value.from.slice(0, 10)}T00:00:00`), to: new Date(`${value.to.slice(0, 10)}T00:00:00`) }
-      : undefined
+      : undefined)
 
-  // 日历选范围：日期替换 + 保留两端原时间（无则 00:00）；选单天 → from=to。
+  // 日历选范围：日期替换 + 保留两端原时间（无则 00:00）；range 未完成（无 to）
+  // 仅推进 draft，提交（有 to）才 onChange。
   const onSelect = (r: DateRange | undefined) => {
-    if (!r?.from) return
-    const toDate = r.to ?? r.from
-    onChange({ from: withTime(localDateStr(r.from), timeOf(value.from)), to: withTime(localDateStr(toDate), timeOf(value.to)) })
+    setDraft(r)
+    if (!r?.from || !r.to) return
+    onChange({ from: withTime(localDateStr(r.from), timeOf(value.from)), to: withTime(localDateStr(r.to), timeOf(value.to)) })
+    setDraft(undefined)
   }
 
   // 时间变更：只动对应端，日期沿用当前值（无日期则用 from 的日期或今天）。

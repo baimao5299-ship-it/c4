@@ -371,10 +371,12 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 // Cost 毫分 → USD（/1e5，对齐 overview 先例 millisToUSD——内部层毫分不动）；
 // TTFT 六指标在 convert 边界算定——avg = sum/count（无样本 0）、pN = 直方图
 // 插值（复用 repository.TTFTPercentileMS，与 overview 同一实现）。
+// 毫秒值输出前 math.Round 收敛整数（用户裁决 2026-08-14：除法/插值裸浮点
+// 直出 → 前端显示 335.12241653418124；毫秒语义整数即可，契约 number 不变）。
 func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	var ttftAvg float64
 	if b.TTFTCount > 0 {
-		ttftAvg = float64(b.TTFTTotalMS) / float64(b.TTFTCount)
+		ttftAvg = math.Round(float64(b.TTFTTotalMS) / float64(b.TTFTCount))
 	}
 	return StatBucket{
 		BucketTime:          &b.BucketTime,
