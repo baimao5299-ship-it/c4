@@ -25,7 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/components/key-box'
-import { formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
+import { formatDateTime, toRFC3339 } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type RedemptionCode = components['schemas']['RedemptionCode']
@@ -36,10 +36,10 @@ type GenerateRequest = components['schemas']['GenerateRequest']
 const TYPES: RedemptionType[] = ['balance', 'concurrency', 'temp_balance']
 const STATUSES: RedemptionStatus[] = ['active', 'disabled']
 
-// 面值展示：balance/temp_balance → USD（毫分 /100000，复用 formatCost）；
-// concurrency → 并发数直出。
+// 面值展示（2026-08-15 对齐修复）：Value = API 边界已换算的 USD——直接显示，
+// 勿再 /1e5（此前误用 formatCost（毫分输入）→ 5.0 显示成 $0.00005）；concurrency → 并发数直出。
 function formatValue(c: { Type: RedemptionType; Value: number }): string {
-  return c.Type === 'concurrency' ? String(c.Value) : formatCost(c.Value)
+  return c.Type === 'concurrency' ? String(c.Value) : `$${c.Value.toFixed(2)}`
 }
 
 // 状态徽章：active 绿点 / disabled 灰点（与 StatusBadge 同风格；状态类型为
@@ -55,8 +55,10 @@ function CodeStatusBadge({ status }: { status: RedemptionStatus }) {
   )
 }
 
-// 生成表单态。value 最小单位：balance/temp_balance 为毫分，concurrency 为并发数；
-// 日期字段为 DateTimePicker 值（'YYYY-MM-DDTHH:mm'，与 datetime-local 同格式），提交时 toRFC3339 转 RFC3339。
+// 生成表单态。value 口径 = openapi GenerateRequest（2026-08-15 对齐修复）：
+// balance/temp_balance 按 USD 输入（1 USD = 100,000 毫分，可小数）；concurrency
+// 为并发数（正整数）。日期字段为 DateTimePicker 值（'YYYY-MM-DDTHH:mm'，
+// 与 datetime-local 同格式），提交时 toRFC3339 转 RFC3339。
 interface GenForm {
   type: RedemptionType
   value: string
@@ -208,7 +210,7 @@ export default function RedemptionCodes() {
     const maxUses = genForm.max_uses === '' ? 1 : Number(genForm.max_uses)
     if (
       !(value > 0) ||
-      !Number.isInteger(value) || // 毫分/并发数均为整数
+      (genForm.type === 'concurrency' && !Number.isInteger(value)) || // USD 面值可小数；并发数必须整数
       !Number.isInteger(count) || count < 1 || count > 1000 ||
       !Number.isInteger(maxUses) || maxUses < 1 ||
       (genForm.type === 'temp_balance' && !genForm.resource_expires_at)

@@ -710,7 +710,7 @@
     "generateDesc": "Type and value are required; temp balance codes must specify a resource expiry",
     "typeLabel": "Type",
     "valueLabel": "Value",
-    "valueHintBalance": "Milli-cents (1 USD = 100,000 milli-cents)",
+    "valueHintBalance": "USD (1 USD = 100,000 milli-cents)",
     "valueHintConcurrency": "Concurrency (positive integer)",
     "remarkLabel": "Remark",
     "remarkPlaceholder": "Optional, e.g. summer promo",

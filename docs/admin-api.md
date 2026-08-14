@@ -438,6 +438,7 @@
 
 - `POST /user/auth/register` / `POST /user/auth/login`：注册（受 `signup_enabled` 设置）与登录，返回 JWT + 用户对象（`Balance` 同样 USD float64）。
 - `GET /user/auth/me`：当前用户信息。
+- `GET /user/stats`：我的用量统计（强制 `user_id` = 当前用户，防越权；字段与 `/admin/stats` 同契约，见「查询用量统计」章节）。
 - 兑换码（`/user/redemptions`）：`balance` / `temp_balance` 类型向毫分余额/临时额度充值，见「兑换码 Redemption Codes」章节。
 
 ### 价格倍率语义（计费生效）
@@ -533,13 +534,15 @@
 
 ### 查询用量统计
 
-`GET /admin/stats?from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z&granularity=day&group_id=1&account_id=2&model=gpt-4o`
+`GET /admin/stats?from=2026-08-06T00:00:00Z&to=2026-08-06T23:59:59Z&granularity=day&group_id=1&account_id=2&model=gpt-4o`（管理侧，可 `user_id` 过滤）
+
+`GET /user/stats?...`（用户侧，强制 `user_id` = 当前用户，`user_id` 过滤参数无效——防越权）
 
 | 查询参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `from` / `to` | RFC3339 | 近 24 小时 | 时间范围 |
 | `granularity` | `hour` / `day` | `day` | 聚合粒度（`day` 为 UTC 日对齐，`hour` 为 UTC 小时对齐） |
-| `group_id` / `account_id` / `model` | int / int / string | — | 维度过滤 |
+| `group_id` / `account_id` / `template_id` / `user_id`(仅 `/admin/stats`) / `model` | int / int / int / int / string | — | 维度过滤 |
 
 响应 `200`：统计行数组（按粒度对齐的桶）：
 
@@ -557,13 +560,106 @@
     "InputTokens": 1000,
     "OutputTokens": 2000,
     "TotalTokens": 3000,
-    "Cost": 50000,
-    "TotalLatencyMS": 12500
+    "CacheReadTokens": 100,
+    "CacheCreationTokens": 0,
+    "Cost": 0.5,
+    "CallCount": 12,
+    "TTFTCount": 90,
+    "TTFTAvgMS": 620.5,
+    "TTFTMaxMS": 3800,
+    "TTFTP50MS": 500,
+    "TTFTP90MS": 1500,
+    "TTFTP95MS": 2100,
+    "TTFTP99MS": 3400
   }
 ]
 ```
 
-> `Cost`（int64 毫分）为计费成本**预聚合**（billing flusher 与 usage 统计同管线累加，花费统计不扫明细）。统计由用量管线异步预聚合（批量 upsert），查询结果可能有秒级延迟。
+字段说明：
+
+- `Cost`（float64 **USD**）= 内部毫分 /1e5，与价格 API、`/admin/overview` 口径一致（破坏性变更：旧版为毫分 int64）
+- `CallCount` = 按次调用计数（图片生成张数 / search 次数；**不入** `TotalTokens`）
+- `TTFT*` = 首 token 时间（毫秒）统计，**仅含首 token 流式请求**（非流式/失败/无首 token 行不计）：`TTFTCount` 样本数（pN/加权 avg 分母）、`TTFTAvgMS` = ΣTTFT/样本数、`TTFTMaxMS` 最大值、`TTFTP50/P90/P95/P99MS` = 直方图插值分位数（nearest-rank + 桶内线性插值；顶桶 `[12800ms, ∞)` 回落 12800；无样本全 0）
+- 前端跨行合并语义：avg 加权（`Σ(avg×count)/Σcount`）、max 取最大、**pN 取请求量最大维度行的近似值**（分位数不可跨行合并）
+- 统计由**离线聚合 worker** 每 5 分钟从 `usage_logs`/`err_logs` 重算落盘（watermark + 覆盖语义），查询结果可能有 ≤5 分钟延迟；错误桶 = abort 行（usage_logs 全字段）+ 纯错误行（err_logs count 语义，tokens/cost/TTFT 恒 0）；拒绝行（限流）随 err_logs 采样——风暴时错误计数可能低估
+
+---
+
+## 管理端总览
+
+### 总览聚合
+
+`GET /admin/overview?days=7&group_id=1`——dashboard 主数据一站式聚合
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `days` | int | 7 | 趋势天数（含今日；上限 30） |
+| `group_id` | int | — | 按组过滤聚合（summary/trend；缺省全局） |
+
+响应 `200`（`OverviewResponse`）：
+
+```json
+{
+  "summary": {
+    "requests": 12345, "errors": 234, "err_rate": 0.019,
+    "cost_usd": 1.23456, "call_count": 12,
+    "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+    "cache_read_tokens": 0, "cache_creation_tokens": 0,
+    "ttft_avg_ms": 620.5, "ttft_max_ms": 3800,
+    "ttft_p50_ms": 500, "ttft_p90_ms": 1500, "ttft_p95_ms": 2100, "ttft_p99_ms": 3400
+  },
+  "trend": [
+    { "date": "2026-08-14", "requests": 2345, "errors": 45, "cost_usd": 0.23456,
+      "tokens": 99999, "call_count": 3,
+      "ttft_avg_ms": 610.2, "ttft_max_ms": 3500,
+      "ttft_p50_ms": 490, "ttft_p90_ms": 1400, "ttft_p95_ms": 2000, "ttft_p99_ms": 3200 }
+  ],
+  "accounts": { "active": 12, "unhealthy": 1, "429": 0, "disabled": 2,
+                "concurrency": 3, "max_concurrency": 40 },
+  "resources": { "templates": 8, "groups": 4, "users": 15 },
+  "err_top": [ { "name": "account-01", "err_rate": 0.05, "err_count": 12 } ],
+  "alerts": { "billing_pending": 123, "billing_pending_waterline": 50000, "billing_warned": false }
+}
+```
+
+- `summary`：今日汇总（UTC 日界），`cost_usd` 为 USD（毫分 /1e5），`ttft_*` 口径同 `/admin/stats`
+- `trend`：近 N 天日桶（SQL 侧按日聚合；`tokens` = input+output+cache 合并）
+- `accounts`：账号健康分布 + 并发水位（**调度器快照同源**——与账号列表运行时视图一致；运行时状态只在内存，DB 无第二份）
+- `err_top`：账号维度错误率 Top5（调度器 EWMA，`name` = 账号名）
+- `alerts`：billing flusher 水线状态
+- 聚合结果内部 TTL 30s 缓存（键含 `days`/`group_id` 与 UTC 日界）；统计本身为离线聚合产物（≤5 分钟陈旧）
+
+### 实时并发排行
+
+`GET /admin/users-top?top=20`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `top` | int | 20 | TopN（上限 100） |
+
+响应 `200`：
+
+```json
+{
+  "users": [ { "user_id": 3, "email": "alice@x.com", "concurrency": 12 } ],
+  "other_concurrency": 45
+}
+```
+
+- 实时在途并发降序 TopN + `other_concurrency`（其余在途用户合计）
+- 数据源 = 门禁并发快照（`Auth.InFlightUsers` 只读访问器，零锁）；内部 TTL 2s
+- **本实例视角**：多实例部署下各实例独立计数，展示为当前实例视图
+
+### 运维观测
+
+`GET /ops/workers`——worker 运行状态（billing / invalidate / notify / pricing / retention / usage / **stats-agg** 等，各 worker `Stats()` 原样输出）。`stats-agg`（离线聚合 worker）四字段：
+
+| 字段 | 说明 |
+|---|---|
+| `watermark_unix_ms` | 聚合水位（毫秒；0 = 未初始化/首轮未完成） |
+| `last_buckets` | 上轮写入桶数（失败轮保留上轮值） |
+| `last_rows` | 上轮消费明细行数（三查询合计） |
+| `last_duration_ms` | 上轮耗时（毫秒） |
 
 ---
 
@@ -851,6 +947,7 @@
 | `page` | int | 1 | 页码，**1-based**；缺省或 `< 1` 按 1（不报错） |
 | `page_size` | int | 20 | 每页行数；越界（`< 1` 或 `> 100`）→ `400` |
 | `source` | string | — | 筛选枚举：`litellm` / `manual`；非法 → `400` |
+| `provider` | string | — | 厂商等值筛选（取值 = `litellm_provider` 字符串；主流集合见 openapi `Provider` enum——23 家厂商，前端下拉框消费；**DB 筛选为自由字符串**，新厂商不受 enum 限制；manual 行恒 nil——筛 manual 行不命中） |
 | `model` | string | — | 模型名模糊搜索（大小写不敏感） |
 | `sort` | string | `id` | 白名单：`model` / `updated_at`（空或缺省 → 实际按 `id` 排）；非法 → `400` |
 | `order` | string | `desc` | `asc` / `desc`（空或缺省 → `desc`）；其他值 → `400` |
@@ -926,6 +1023,48 @@
 | `500` | 落库失败（DB 等） |
 
 手动 sync 与 cron 可并发（幂等 upsert，最坏浪费一次 fetch，无额外冲突处理）。
+
+### 图片价格 Image Price
+
+`image_price` 表（生图模型价格；`image_price`/`function_price`/`pricing` 三件套同形态——列表分页/筛选/排序、PUT/DELETE 的 `model` 走 query 参数（模型名可含 `/`，路径参数单段匹配会拆段 404，故不入路径）、upsert 强制 `source=manual` 可接管 litellm 行）。
+
+`GET /admin/image-price`
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `page` / `page_size` / `source` / `provider` / `model` / `sort` / `order` | — | — | 与价格列表同形态（`sort` 白名单 `model` / `updated_at`；`provider` 等值筛选，manual 行恒 nil） |
+
+响应行：
+
+| 字段 | 说明 |
+|---|---|
+| `Model` | 模型名（与 `pricings.model` 同口径） |
+| `InputImageTokenPricePerMillion` / `OutputImageTokenPricePerMillion` | image token 输入/输出价（**USD per 1M image tokens**——per-million 口径，与 `pricings` 字段语义一致；内部毫分/1M，×1e5 换算） |
+| `OutputCostPerImage` | 每张图价（**USD/张** flat；与 token 价同换算系数但单位语义独立——计费不走 /1e6 除法） |
+| `Provider` | litellm_provider（litellm 行才有；manual 行 nil） |
+| `Source` / `CreatedAt` / `UpdatedAt` | 来源（`litellm` / `manual`）与时间 |
+
+`PUT /admin/image-price?model={model}`：请求体 `{"input_image_token_price_per_million": ..., "output_image_token_price_per_million": ..., "output_cost_per_image": ...}`——三分量全可选但**至少一个非 null**（否则 400）；全量替换（缺省/null = 清空该分量）；upsert 接管 litellm 行（同 pricing 语义）。
+
+`DELETE /admin/image-price?model={model}`：仅 `source=manual` 行可删（`200 {"deleted": true}`；litellm 行 `409`；不存在 `404`——同 pricing 语义）。
+
+### 功能价格 Function Price
+
+`function_price` 表（按单元计费功能类——search 起，audio/video 等未来 per-unit 端点复用；对齐 `image_price` 形态）。
+
+`GET /admin/function-prices`——参数与响应形态同图片价格列表（`model` 为模型/功能标识模糊搜索，**含 `codex-search`**）。
+
+响应行：
+
+| 字段 | 说明 |
+|---|---|
+| `Model` | 模型/功能标识（litellm search 模型名 或 `codex-search` 固定标识） |
+| `PricePerCall` | 按单元价（**USD/次**——litellm 原生口径 `input_cost_per_query`；内部毫分/次，×1e5 换算，**与 token 价不同换算系**，计费不走 /1e6 除法） |
+| `Provider` | litellm_provider（litellm 行才有；manual 行 nil） |
+
+`PUT /admin/function-prices?model={model}`：请求体 `{"price_per_call": ...}`——**必填且 ≥0**（缺省/null → 400；0 = 按次免费）。
+
+`DELETE /admin/function-prices?model={model}`：仅 manual 行可删（同 pricing 语义）。
 
 ### 相关 settings（PUT /admin/settings）
 

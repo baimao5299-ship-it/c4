@@ -219,7 +219,7 @@ pkg 职责边界：
 | worker | Name | 类型 | 节奏/背压 | 排空/停机语义 |
 |---|---|---|---|---|
 | billing.Flusher | "billing"（`internal/billing/flusher.go:118`） | ticker 批量 | `flush_interval`（1s）+ `balance_refresh_interval`（10s）；无 channel，pending map 锁内归并，`Record` 永不阻塞（`internal/billing/flusher.go:152-169`）；水线 1M 行 Warn | Close：等在途批次（flushMu）→ 预算内排空循环，超时 Cancel baseCtx 截断 Warn（`internal/billing/flusher.go:181-226`）；O1 复测教训：Background ctx 会拖死停机 |
-| usage.Recorder | "usage"（`internal/usage/usage.go:146`） | 双 loop（明细 + 统计） | `flush_interval` 500ms / `stats_flush_interval` 10s；swap 换批 + 按 userID 分片 N worker（`internal/usage/usage.go:316-392`）；毒丸行止损 `maxLogFlushFailures=5`（`internal/usage/usage.go:363-375`）；同 flushMu 与统计 flush 互斥（评审 I-1 耦合注记） | 同 Flusher 模式：等在途 → 预算排空 → 截断 Warn（`internal/usage/usage.go:576-629`） |
+| usage.Recorder | "usage"（`internal/usage/usage.go:146`） | 双 loop（明细 + 统计） | `flush_interval` 500ms / `quota_flush_interval` 10s；swap 换批 + 按 userID 分片 N worker（`internal/usage/usage.go:316-392`）；毒丸行止损 `maxLogFlushFailures=5`（`internal/usage/usage.go:363-375`）；同 flushMu 与统计 flush 互斥（评审 I-1 耦合注记） | 同 Flusher 模式：等在途 → 预算排空 → 截断 Warn（`internal/usage/usage.go:576-629`） |
 | usage.ErrLogWorker | "errlog"（`internal/usage/errlog.go:105`） | 双队列 + ticker | 有界队列（reject 4096 / exempt 1024）+ select-default 非阻塞投递（满→丢弃计数，`internal/usage/errlog.go:152-171`）；豁免队列恒落盘；单批 500 行 / 500ms，单批超时 5s 失败即丢弃（`internal/usage/errlog.go:47-49,184-190`） | Close：置位 closed（无尾窗口静默丢）→ 等 loop → 预算内排空，超时截断并入丢弃计数（`internal/usage/errlog.go:236-287`） |
 | usage.RetentionWorker | "retention"（`internal/usage/retention.go:65`） | ticker 1h | 三表独立 cutoff 各自 DROP + 预建当日/明日；逐表错误隔离（`internal/usage/retention.go:97-148`） | 无排空需求（DROP/预建均幂等），Close 直接 nil（`internal/usage/retention.go:151`） |
 | scheduler | "scheduler"（`internal/scheduler/scheduler.go:117`） | syncLoop + writebackLoop 双 goroutine（`internal/scheduler/scheduler.go:120-127`） | sync `sync_interval` 30s；writeCh 有界 4096 满则丢弃 DB 回写（`internal/scheduler/scheduler.go:660-666`，内存状态已生效） | Close 排空 writeCh 剩余回写，预算超时 Warn 丢（`internal/scheduler/scheduler.go:131-152`） |
@@ -295,7 +295,7 @@ flowchart LR
 | `[upstream]` | httpx.TransportConfig | 连接池参数（max_idle_conns 8192 / per_host 2048 / force_http2） |
 | `[limit]` | fixedWindowLimiter | group_key_rpm（0 = 关）；**cooldown_429/backoff_* 已移除**（配置含这些键将启动失败，规则引擎接管） |
 | `[scheduler]` | scheduler.Config | default_max_concurrency/sync_interval |
-| `[usage]` | usage.Recorder + ErrLogWorker + RetentionWorker | batch_size/flush_interval/log_retention_days=30/stats_flush_interval/flush_workers=8；errlog_queue_size=4096/errlog_batch_size=500/errlog_flush_interval=500ms/errlog_retention_days=7/stats_retention_days=180 |
+| `[usage]` | usage.Recorder + ErrLogWorker + RetentionWorker | batch_size/flush_interval/log_retention_days=30/quota_flush_interval/flush_workers=8；errlog_queue_size=4096/errlog_batch_size=500/errlog_flush_interval=500ms/errlog_retention_days=7/stats_retention_days=180 |
 | `[billing]` | billing.NewFlusher + BillingHooks | enabled（默认关 opt-in）/flush_interval=1s/balance_refresh_interval=10s/flush_workers=8 |
 
 - 必填校验（`internal/config/config.go` Load 末尾 validate）：admin.token、auth.jwt_secret、db.dsn 缺失/占位符即 fatal（占位符精确匹配拒绝：change-me/change-me-too/dev-admin-token/dev-jwt-secret-for-local）。

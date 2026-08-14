@@ -710,7 +710,7 @@
     "generateDesc": "类型与面值必填；临时余额码必须指定资源到期时间",
     "typeLabel": "类型",
     "valueLabel": "面值",
-    "valueHintBalance": "毫分（1 USD = 100,000 毫分）",
+    "valueHintBalance": "USD（1 USD = 100,000 毫分）",
     "valueHintConcurrency": "并发数（正整数）",
     "remarkLabel": "备注",
     "remarkPlaceholder": "可选，如：618 活动",

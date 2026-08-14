@@ -4,8 +4,9 @@
 
 // 用户端兑换页：顶部兑换区（redeem → 成功展示 applied 回执），
 // 下方兑换记录表（page/page_size 1-based 分页）。视觉对齐管理端 redemption-codes
-// 卡片结构 + fadeUp 动画。单位语义：applied.value / Value 为毫分（formatCost 换算 USD）；
-// concurrency 类型为并发数直出；temp_balance 到期时间用 resource_expires_at（RFC3339 → 本地时间）。
+// 卡片结构 + fadeUp 动画。单位语义（2026-08-15 对齐修复）：applied.value / Value =
+// API 边界已换算的 USD（直接显示，勿再 /1e5）；concurrency 类型为并发数直出；
+// temp_balance 到期时间用 resource_expires_at（RFC3339 → 本地时间）。
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
@@ -21,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from '@/components/ui/toast'
-import { formatCost, formatDateTime } from '@/components/fmt'
+import { formatDateTime } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type RedemptionType = components['schemas']['RedemptionType']
@@ -32,10 +33,10 @@ const fadeUp = {
   animate: { opacity: 1, y: 0 },
 }
 
-// 面值展示（与管理端 redemption-codes 同规则）：balance/temp_balance → USD（毫分 /100000，
-// 复用 formatCost）；concurrency → 并发数直出。
+// 面值展示（与管理端 redemption-codes 同规则，2026-08-15 对齐修复）：Value 已换算
+// USD——直接显示（勿再 /1e5）；concurrency → 并发数直出。
 function formatValue(type: RedemptionType, value: number): string {
-  return type === 'concurrency' ? String(value) : formatCost(value)
+  return type === 'concurrency' ? String(value) : `$${value.toFixed(2)}`
 }
 
 // applied 回执差异化文案：balance → 余额 +USD；concurrency → 并发上限 +N；
@@ -44,7 +45,7 @@ function appliedText(a: Applied, t: TFunction): string {
   if (a.type === 'concurrency') {
     return t('user.redemptions.successConcurrency', { value: a.value })
   }
-  const value = formatCost(a.value)
+  const value = formatValue(a.type, a.value)
   if (a.type === 'balance') return t('user.redemptions.successBalance', { value })
   return `${t('user.redemptions.successTempBalance', { value })} · ${t('user.redemptions.successExpiresAt', {
     time: a.resource_expires_at ? formatDateTime(a.resource_expires_at) : '—',
