@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: c3api_test
+          POSTGRES_PASSWORD: c3api
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: vet
+        run: go vet ./...
+      - name: build
+        run: go build ./...
+      - name: test
+        env:
+          TEST_DATABASE_URL: "postgres://postgres:c3api@localhost:5432/c3api_test?sslmode=disable"
+        run: go test -count=1 ./...
+        timeout-minutes: 30
+
+  contract-gen:
+    name: contract-gen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go generate (handler + ent)
+        run: go generate ./internal/handler/ ./internal/ent/
+      - name: no drift in api.gen.go / ent generated code
+        run: git diff --exit-code
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+      - name: gen:api
+        run: pnpm gen:api
+        working-directory: web
+      - name: no drift in schema.d.ts
+        run: git diff --exit-code
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+      - name: build
+        run: pnpm run build
+        working-directory: web
