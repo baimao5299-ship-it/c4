@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Ban, CircleCheck, UserCog, Filter, UsersRound, X } from 'lucide-react'
+import { Plus, Pencil, Ban, CircleCheck, UserCog, Filter, UsersRound, X, Coins } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiUnauthorized } from '@/lib/api/client'
@@ -25,7 +25,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
-import { formatDateTime } from '@/components/fmt'
+import { formatDateTime, formatUSD } from '@/components/fmt'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
@@ -188,6 +188,19 @@ export default function Users() {
     setForm(toForm(u))
     setDialogOpen(true)
   }
+
+  // —— 临时额度查看（行按钮 → 弹窗；全量视角，前端过滤有效行算合计）——
+  const [tempUser, setTempUser] = useState<User | null>(null)
+  const tempBalancesQ = useQuery({
+    queryKey: ['admin', 'temp-balances', tempUser?.ID],
+    queryFn: () => api.getAdminTempBalances({ user_id: tempUser!.ID!, page_size: 100 }),
+    enabled: tempUser != null,
+  })
+  const tempRows = tempBalancesQ.data?.rows ?? []
+  // 有效合计：仅未过期（expires_at null = 永久）且正余额行——与 /user/temp-balances 同口径
+  const tempActiveTotal = tempRows
+    .filter((r) => r.amount_usd > 0 && (r.expires_at == null || new Date(r.expires_at) > new Date()))
+    .reduce((s, r) => s + r.amount_usd, 0)
 
   const save = useMutation({
     mutationFn: (f: UserForm) =>
@@ -395,6 +408,7 @@ export default function Users() {
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(u.CreatedAt)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon-sm" title={t('users.tempBalances.button')} onClick={() => setTempUser(u)}><Coins /></Button>
                         <Button variant="ghost" size="icon-sm" title={t('users.groups.button')} onClick={() => openGroups(u)}><UsersRound /></Button>
                         <Button
                           variant="ghost"
@@ -490,6 +504,51 @@ export default function Users() {
               {save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 临时额度查看：有效合计 + 全量列表（管理视角含过期/用尽） —— */}
+      <Dialog open={!!tempUser} onOpenChange={o => { if (!o) { setTempUser(null) } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('users.tempBalances.title', { name: tempUser?.Email })}</DialogTitle>
+            <DialogDescription>{t('users.tempBalances.desc')}</DialogDescription>
+            <p className="text-sm font-medium">{t('users.tempBalances.total', { amount: formatUSD(tempActiveTotal) })}</p>
+          </DialogHeader>
+          {tempBalancesQ.isLoading ? (
+            <div className="space-y-1.5">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9" />)}
+            </div>
+          ) : tempBalancesQ.isError ? (
+            <p className="text-sm text-destructive">{t('common.loadFailed', { message: (tempBalancesQ.error as Error).message })}</p>
+          ) : tempRows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">{t('users.tempBalances.empty')}</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-right">{t('users.tempBalances.amount')}</TableHead>
+                    <TableHead>{t('users.tempBalances.expiresAt')}</TableHead>
+                    <TableHead>{t('users.tempBalances.note')}</TableHead>
+                    <TableHead>{t('users.tempBalances.createdAt')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tempRows.map(r => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-right tabular-nums">{formatUSD(r.amount_usd)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {r.expires_at == null ? t('user.profile.tempPermanent') : formatDateTime(r.expires_at)}
+                      </TableCell>
+                      <TableCell className="max-w-40 truncate text-xs text-muted-foreground">{r.note ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(r.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

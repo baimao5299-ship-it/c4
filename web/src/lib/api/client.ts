@@ -177,6 +177,9 @@ export class ApiClient {
   getUsersTop = (p?: { top?: number }) => this.request<components['schemas']['UsersTopResponse']>('/users-top', { params: toQuery(p) })
   // —— 运维观测（/admin/ops/workers；管理端专属，契约 ops tag 生成类型）——
   getOpsWorkers = () => this.request<components['schemas']['WorkersResponse']>('/ops/workers')
+  // 管理侧临时额度全量分页（/admin/temp-balances；/app/users 查看入口消费）
+  getAdminTempBalances = (p?: { page?: number; page_size?: number; user_id?: number; sort?: string; order?: 'asc' | 'desc' }) =>
+    this.request<components['schemas']['AdminTempBalancesResponse']>('/temp-balances', { params: toQuery(p) })
   // —— 用户端（userApi 专属；token 用 userAuth）——
   register = (b: components['schemas']['UserAuthRegister']) => this.request<components['schemas']['UserAuthResponse']>('/auth/register', { method: 'POST', body: JSON.stringify(b) })
   login = (b: components['schemas']['UserAuthLogin']) => this.request<components['schemas']['UserAuthResponse']>('/auth/login', { method: 'POST', body: JSON.stringify(b) })

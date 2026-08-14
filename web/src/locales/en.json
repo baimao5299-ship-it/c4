@@ -273,6 +273,17 @@
   "users": {
     "title": "Users",
     "subtitle": "Platform users & quotas; balance in USD",
+    "tempBalances": {
+      "button": "View temporary balance",
+      "title": "Temporary balance — {{name}}",
+      "desc": "All entries including expired or exhausted (management view)",
+      "total": "Active total: {{amount}}",
+      "empty": "No temporary balance",
+      "amount": "Amount",
+      "expiresAt": "Expires at",
+      "note": "Note",
+      "createdAt": "Created"
+    },
     "new": "New user",
     "searchEmail": "Search email",
     "emptyTitle": "No users yet",

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { api } from '@/App'
+import { fmtTTFT } from '@/lib/stats-merge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -173,7 +174,7 @@ export default function Dashboard() {
                   <CardHeader>
                     <CardDescription>{t(labelKey)}</CardDescription>
                     <CardTitle className="text-2xl font-semibold tabular-nums">
-                      {value > 0 ? `${value} ms` : '—'}
+                      {fmtTTFT(value)}
                     </CardTitle>
                   </CardHeader>
                 </Card>
