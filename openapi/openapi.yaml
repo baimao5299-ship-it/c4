@@ -2242,7 +2242,6 @@ components:
         CacheReadTokens: { type: integer, format: int64 }
         CacheCreationTokens: { type: integer, format: int64 }
         Cost: { type: integer, format: int64, description: 计费成本（毫分，1 USD = 100,000 毫分；计费预聚合，花费统计不扫明细） }
-        TotalLatencyMS: { type: integer, format: int64 }
     # 运维观测（/admin/ops/workers）：WorkerStatus/SnapshotState/WorkersResponse
     # 类型由本契约生成（ops tag → handler/api.gen.go + 前端 schema.d.ts），
     # handler/ops.go 唯一实现；字段清单见 WorkerStatus.stats.description。
@@ -2266,9 +2265,13 @@ components:
         #     writeback_cap int（队列容量；满 → 丢弃 DB 回写）
         #   rule-engine: queued int（事件队列积压）, queue_cap int（容量/丢弃阈值）,
         #     dropped int64（队列满丢弃累计）, drop_warn_threshold int64（丢弃告警阈值）
-        #   usage: pending_logs int64（未落库明细条数）, stat_buckets_created int64
-        #     （统计桶累计创建，只增不减）, pending_waterline int64（水线）,
-        #     warned bool（水线告警边沿）
+        #   usage: pending_logs int64（未落库明细条数）, pending_waterline int64
+        #     （水线）, warned bool（水线告警边沿）——spec 2026-08-14：统计桶机制
+        #     整体删除，stat_buckets_created 随之消失
+        #   stats-agg（离线聚合 worker，spec 2026-08-14）: watermark_unix_ms int64
+        #     （watermark 位置毫秒；0 = 尚未推进）, last_buckets int64（上轮写入
+        #     桶数）, last_rows int64（上轮消费明细行数）, last_duration_ms int64
+        #     （上轮耗时毫秒）——失败轮保留上轮值（对齐 retention 观测纪律）
         #   errlog: queued int（双队列积压总和）, queue_cap int（拒绝队列容量）,
         #     exempt_queue_cap int（豁免队列容量）, dropped_reject int64（拒绝行丢弃累计）,
         #     dropped_exempt int64（双轨行丢弃累计）, inserted int64（成功落盘累计）,
@@ -2308,8 +2311,8 @@ components:
     # 管理端总览（spec 2026-08-14）：OverviewResponse 各段类型。
     OverviewSummary:
       type: object
-      required: [requests, errors, err_rate, cost_usd, input_tokens, output_tokens, total_tokens, cache_read_tokens]
-      description: 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD）
+      required: [requests, errors, err_rate, cost_usd, input_tokens, output_tokens, total_tokens, cache_read_tokens, call_count, ttft_avg_ms, ttft_max_ms, ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms]
+      description: 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD；TTFT 指标仅含首 token 流式请求样本，无样本 = 0）
       properties:
         requests: { type: integer, format: int64 }
         errors: { type: integer, format: int64 }
@@ -2319,16 +2322,30 @@ components:
         output_tokens: { type: integer, format: int64 }
         total_tokens: { type: integer, format: int64 }
         cache_read_tokens: { type: integer, format: int64 }
+        call_count: { type: integer, format: int64, description: 按次调用（图片生成 = 张数、search = 1；usage_logs call_count 离线聚合 sum） }
+        ttft_avg_ms: { type: number, format: double, description: TTFT 均值（ttft_total_ms / ttft_count，查询侧 Go 除） }
+        ttft_max_ms: { type: integer, format: int64, description: TTFT 最大值 }
+        ttft_p50_ms: { type: integer, format: int64, description: TTFT p50（直方图桶内线性插值，nearest-rank；顶桶回落 12800） }
+        ttft_p90_ms: { type: integer, format: int64 }
+        ttft_p95_ms: { type: integer, format: int64 }
+        ttft_p99_ms: { type: integer, format: int64 }
     OverviewTrend:
       type: object
-      required: [date, requests, errors, cost_usd, tokens]
-      description: 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日）
+      required: [date, requests, errors, cost_usd, tokens, call_count, ttft_avg_ms, ttft_max_ms, ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms]
+      description: 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日；TTFT 指标仅含首 token 流式请求样本，无样本 = 0）
       properties:
         date: { type: string, format: date, description: 日桶（UTC） }
         requests: { type: integer, format: int64 }
         errors: { type: integer, format: int64 }
         cost_usd: { type: number, format: double, description: 当日成本（USD，毫分 /1e5） }
         tokens: { type: integer, format: int64, description: 当日总 token（usage_stats total_tokens 列聚合） }
+        call_count: { type: integer, format: int64, description: 按次调用（图片生成 = 张数、search = 1） }
+        ttft_avg_ms: { type: number, format: double, description: 当日 TTFT 均值（查询侧 Go 除） }
+        ttft_max_ms: { type: integer, format: int64 }
+        ttft_p50_ms: { type: integer, format: int64 }
+        ttft_p90_ms: { type: integer, format: int64 }
+        ttft_p95_ms: { type: integer, format: int64 }
+        ttft_p99_ms: { type: integer, format: int64 }
     OverviewAccounts:
       type: object
       required: [active, unhealthy, "429", disabled, concurrency, max_concurrency]

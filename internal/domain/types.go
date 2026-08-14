@@ -223,14 +223,14 @@ type Account struct {
 	// 裁决 2026-08-14）：nil = 继承模板 base_url；非空 = 覆盖模板值（api_key/
 	// responses-special 静态透传的兜底——模板留空则账号级可补）。DB 恒
 	// nil|非空两种形态（create 路径空串归一 nil、批量 "" 落 NULL）。
-	BaseURL    *string
-	UpstreamKey string
-	Status      AccountStatus
-	CooldownUntil *time.Time
-	Weight        int
+	BaseURL        *string
+	UpstreamKey    string
+	Status         AccountStatus
+	CooldownUntil  *time.Time
+	Weight         int
 	MaxConcurrency int
-	LastError     *string
-	LastUsedAt    *time.Time
+	LastError      *string
+	LastUsedAt     *time.Time
 	// FailedAt SDK 上报的运行时失效时刻（account.failed_at 列，SDK 接入 T1——
 	// 用户裁决 2026-08-13：仅此一列；失效原因复用既有 LastError，两原因字段
 	// 并存会漂移）：nil = 未失效；非 nil = 账号级终止（凭据永久失效/上游封禁/
@@ -427,9 +427,9 @@ type KeyMeta struct {
 // 统一计费模型（spec 2026-08-13）：功能调用分量 = CallCount（图片生成 = 张数
 // data 长/completed 事件数、search = 1）+ PricePerCallMillis 按单元价快照
 // （毫分/单元——search 每次 / 图片每张）。**call_count 不入 TotalTokens**
-// （功能调用非 token——对齐原 image_count 语义；统计 sum(call_count) = 功能
-// 调用量）；StatBucket 不聚合 call_count（统计桶保持 token 口径）。图片生成
-// image token 已并入 InputTokens/OutputTokens（原 image_input/output_tokens 六
+// （功能调用非 token——对齐原 image_count 语义；离线聚合 sum(call_count) = 功能
+// 调用量，进 StatBucket.CallCount——spec 2026-08-14 用户裁决按次调用入桶与展示）。
+// 图片生成 image token 已并入 InputTokens/OutputTokens（原 image_input/output_tokens 六
 // 列删除——image token 价快照列随之删除，cost 口径不变：ImageCost 仍按
 // 张数 × 每张价 + image token 价计算）。
 type UsageLog struct {
@@ -466,6 +466,13 @@ type UsageLog struct {
 	CreatedAt                time.Time
 }
 
+// StatBucket 小时统计桶（usage_stats 行；离线聚合 worker 的 INSERT 行形态）。
+// 请求路径零统计计算（spec 2026-08-14）：usage_stats 只由离线聚合 worker 写入
+// （DELETE+INSERT 覆盖语义）——total_latency_ms 已删除（延迟列出局）；TTFT 由
+// ttft_total_ms/ttft_count/ttft_max_ms/ttft_hist 四列承载（avg 在查询侧 Go 除；
+// ttft_hist 10 档直方图见 stat_repo.go ttftHistBounds）。ttft_hist 为 PG bigint[]
+// 数组列——ent 无数组类型（field.Ints 是 JSON 语义），不进 ent schema（carve-out，
+// 评审 P1-1；ScanStats 改 pgx 直查扫描）。
 type StatBucket struct {
 	BucketTime          time.Time // 对齐到小时（UTC）
 	GroupID             int64     // 0 = 无
@@ -479,10 +486,14 @@ type StatBucket struct {
 	InputTokens         int64
 	OutputTokens        int64
 	TotalTokens         int64
-	CacheReadTokens     int64 // 缓存读取 token
-	CacheCreationTokens int64 // 缓存写入 token
-	Cost                int64 // 毫分（计费预聚合，花费统计不扫明细）
-	TotalLatencyMS      int64
+	CacheReadTokens     int64   // 缓存读取 token
+	CacheCreationTokens int64   // 缓存写入 token
+	Cost                int64   // 毫分（计费预聚合，花费统计不扫明细）
+	CallCount           int64   // 按次调用：图片生成 = 张数、search = 1（离线聚合 sum(call_count) 直取）
+	TTFTTotalMS         int64   // TTFT sum（avg = 查询侧 Go 除 TTFTCount）
+	TTFTCount           int64   // TTFT 样本数（仅首 token 流式请求；abort 行含 TTFT 也计入其桶）
+	TTFTMaxMS           int64   // TTFT max
+	TTFTHist            []int64 // TTFT 直方图 10 档（len = 10；SQL 侧 count(*) FILTER 生成）
 }
 
 // —— 规则引擎（可编排状态管理） ——

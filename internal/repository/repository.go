@@ -58,8 +58,9 @@ func New(drv dialect.Driver, migrate bool) (*Repository, error) {
 	return NewWithPG(context.Background(), drv, migrate, nil)
 }
 
-// NewWithPG 同 New，附加 pgx 连接池（Stats.Upsert COPY 两阶段专用：生产
-// main.go 传 OpenPG 池；池与 ent driver 同 DSN 共享连接上限 max_conns）。
+// NewWithPG 同 New，附加 pgx 连接池（Stats 聚合 SQL 直查直写 + advisory lock
+// 专用连接：生产 main.go 传 OpenPG 池；池与 ent driver 同 DSN 共享连接上限
+// max_conns）。
 // ctx 供 migrate（ent Schema.Create）使用——生产 main 传 startupCtx
 // （30s 预算，超时 fatal 文案 "db bootstrap timed out after 30s" 可归因）。
 func NewWithPG(ctx context.Context, drv dialect.Driver, migrate bool, pool *pgxpool.Pool) (*Repository, error) {
@@ -78,9 +79,10 @@ func NewWithPG(ctx context.Context, drv dialect.Driver, migrate bool, pool *pgxp
 
 // newRepository 用给定 client/driver 构建全量仓库（New/NewWithPG/WithTx 复用
 // 同一构造函数；WithTx 注入 tx client + 事务驱动，fn 内所有方法调用都走 tx ——
-// 评审 I-1）。pool 进 Stats（Upsert COPY 自 Acquire 独立连接，不进事务）与
-// Billing（热点修复 A 扩：DeductAndLog pgx 直连 + COPY 路径；WithTx 传 nil →
-// 事务内回落 ent 路径，见 billing_repo.go）。
+// 评审 I-1）。pool 进 Stats（离线聚合 SQL 直查直写自 Acquire 独立连接，不进
+// 事务；advisory lock 专用连接持锁整周期——池连接复用即丢锁）与 Billing（热点
+// 修复 A 扩：DeductAndLog pgx 直连 + COPY 路径；WithTx 传 nil → 事务内回落
+// ent 路径，见 billing_repo.go）。
 func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
 	accounts := &AccountRepo{client: client}
 	return &Repository{

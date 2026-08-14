@@ -73,7 +73,19 @@ func overviewBucket(bt time.Time, groupID int64, req, errs, in, out, total, cach
 		Model: "gpt-4o", IsError: false,
 		RequestCount: req, ErrorCount: errs, InputTokens: in, OutputTokens: out,
 		TotalTokens: total, CacheReadTokens: cache, CacheCreationTokens: 0,
-		Cost: cost, TotalLatencyMS: 0,
+		Cost: cost,
+	}
+}
+
+// overviewSeedBuckets 逐桶 AggregateRange 种子（spec 2026-08-14 覆盖语义单写
+// 者：usage_stats 只由聚合写入面落盘，旧 Upsert 已删）：DELETE 范围 = 单桶小时
+// 区间，watermark 推进 bt+30m——等价旧一次性种子语义。
+func overviewSeedBuckets(t *testing.T, repos *repository.Repository, buckets ...*domain.StatBucket) {
+	t.Helper()
+	for _, b := range buckets {
+		require.NoError(t, repos.Stats.AggregateRange(context.Background(),
+			b.BucketTime, b.BucketTime.Add(time.Hour), b.BucketTime.Add(30*time.Minute),
+			[]*domain.StatBucket{b}))
 	}
 }
 
@@ -152,13 +164,26 @@ func TestPGOverviewSummaryAndTrend(t *testing.T) {
 	day0 := now.Truncate(24 * time.Hour)
 	repos := overviewPGTestDB(t, day0.Add(-3*24*time.Hour), day0.Add(24*time.Hour))
 	ctx := context.Background()
-	// 今日 2 桶（03:00 / 05:00 UTC）+ 前两日各 1 桶（已知值断言聚合）
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
-		overviewBucket(day0.Add(3*time.Hour), 7, 10, 2, 100, 50, 150, 20, 100_000),   // $1.00
-		overviewBucket(day0.Add(5*time.Hour), 7, 5, 1, 50, 25, 75, 10, 50_000),       // $0.50
+	// 今日 2 桶（03:00 / 05:00 UTC）+ 前两日各 1 桶（已知值断言聚合）。TTFT/
+	// call_count：今日两桶各带 5 次调用 TTFT——合并直方图 {3,5,2,0,…} N=10：
+	// avg=(250+450)/10=70、max=200、p50: rank5 → 桶1 内 50+2/5×50=70、
+	// p90: rank9 → 桶2 内 100+1/2×100=150、p95/p99: rank10 → 200
+	b1 := overviewBucket(day0.Add(3*time.Hour), 7, 10, 2, 100, 50, 150, 20, 100_000) // $1.00
+	b1.CallCount = 5
+	b1.TTFTTotalMS = 250
+	b1.TTFTCount = 5
+	b1.TTFTMaxMS = 120
+	b1.TTFTHist = []int64{3, 2, 0, 0, 0, 0, 0, 0, 0, 0}
+	b2 := overviewBucket(day0.Add(5*time.Hour), 7, 5, 1, 50, 25, 75, 10, 50_000) // $0.50
+	b2.CallCount = 5
+	b2.TTFTTotalMS = 450
+	b2.TTFTCount = 5
+	b2.TTFTMaxMS = 200
+	b2.TTFTHist = []int64{0, 3, 2, 0, 0, 0, 0, 0, 0, 0}
+	overviewSeedBuckets(t, repos, b1, b2,
 		overviewBucket(day0.Add(-21*time.Hour), 7, 20, 3, 200, 100, 300, 0, 200_000), // $2.00
 		overviewBucket(day0.Add(-45*time.Hour), 7, 30, 0, 300, 150, 450, 0, 300_000), // $3.00
-	}))
+	)
 	// 资源计数种子：1 模板 + 1 组 + 2 用户（软删模板不计）
 	_, err := repos.Client.Template.Create().SetName("t1").SetBaseURL("https://upstream.example").
 		SetSupportedFormats([]string{"openai-chat"}).SetModels([]string{"gpt-4o"}).
@@ -192,6 +217,15 @@ func TestPGOverviewSummaryAndTrend(t *testing.T) {
 	require.Equal(t, int64(75), resp.Summary.OutputTokens)
 	require.Equal(t, int64(225), resp.Summary.TotalTokens)
 	require.Equal(t, int64(30), resp.Summary.CacheReadTokens)
+	// TTFT/call_count（spec 2026-08-14 §5）：均值查询侧 Go 除；分位 = 直方图
+	// 桶内线性插值（nearest-rank）
+	require.Equal(t, int64(10), resp.Summary.CallCount, "call_count = 按次调用合计")
+	require.InDelta(t, 70.0, resp.Summary.TtftAvgMs, 1e-9, "(250+450)/10")
+	require.Equal(t, int64(200), resp.Summary.TtftMaxMs)
+	require.Equal(t, int64(70), resp.Summary.TtftP50Ms)
+	require.Equal(t, int64(150), resp.Summary.TtftP90Ms)
+	require.Equal(t, int64(200), resp.Summary.TtftP95Ms)
+	require.Equal(t, int64(200), resp.Summary.TtftP99Ms)
 
 	// trend：3 个日桶（含今日），升序，值 = 各日聚合（Date 类型序列化 YYYY-MM-DD）
 	require.Len(t, resp.Trend, 3)
@@ -200,6 +234,8 @@ func TestPGOverviewSummaryAndTrend(t *testing.T) {
 	require.Equal(t, int64(0), resp.Trend[0].Errors)
 	require.InDelta(t, 3.0, resp.Trend[0].CostUsd, 1e-9)
 	require.Equal(t, int64(450), resp.Trend[0].Tokens)
+	require.Zero(t, resp.Trend[0].CallCount, "无 TTFT 数据日 call_count 0")
+	require.Zero(t, resp.Trend[0].TtftAvgMs)
 	require.Equal(t, day0.Add(-1*24*time.Hour).Format("2006-01-02"), resp.Trend[1].Date.Format("2006-01-02"))
 	require.Equal(t, int64(20), resp.Trend[1].Requests)
 	require.Equal(t, int64(3), resp.Trend[1].Errors)
@@ -208,6 +244,8 @@ func TestPGOverviewSummaryAndTrend(t *testing.T) {
 	require.Equal(t, int64(15), resp.Trend[2].Requests)
 	require.InDelta(t, 1.5, resp.Trend[2].CostUsd, 1e-9)
 	require.Equal(t, int64(225), resp.Trend[2].Tokens)
+	require.Equal(t, int64(10), resp.Trend[2].CallCount, "今日趋势 call_count")
+	require.InDelta(t, 70.0, resp.Trend[2].TtftAvgMs, 1e-9)
 
 	// accounts：调度器快照分布 + 水位（concurrency / max_concurrency 合计）
 	require.Equal(t, 1, resp.Accounts.Active)
@@ -240,12 +278,11 @@ func TestPGOverviewTrendDaysParamAndClamp(t *testing.T) {
 	now := time.Now().UTC()
 	day0 := now.Truncate(24 * time.Hour)
 	repos := overviewPGTestDB(t, day0.Add(-3*24*time.Hour), day0.Add(24*time.Hour))
-	ctx := context.Background()
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
+	overviewSeedBuckets(t, repos,
 		overviewBucket(day0.Add(3*time.Hour), 7, 10, 2, 100, 50, 150, 20, 100_000),
 		overviewBucket(day0.Add(-21*time.Hour), 7, 20, 3, 200, 100, 300, 0, 200_000),
 		overviewBucket(day0.Add(-45*time.Hour), 7, 30, 0, 300, 150, 450, 0, 300_000),
-	}))
+	)
 	_, router := overviewPGRouter(t, repos, stubSched{}, OpsOptions{})
 
 	// 缺省 days=7 → 3 桶全含
@@ -276,12 +313,11 @@ func TestPGOverviewGroupFilter(t *testing.T) {
 	now := time.Now().UTC()
 	day0 := now.Truncate(24 * time.Hour)
 	repos := overviewPGTestDB(t, day0.Add(-24*time.Hour), day0.Add(24*time.Hour))
-	ctx := context.Background()
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
+	overviewSeedBuckets(t, repos,
 		overviewBucket(day0.Add(3*time.Hour), 7, 10, 1, 100, 50, 150, 0, 100_000),
 		overviewBucket(day0.Add(4*time.Hour), 8, 99, 9, 990, 990, 1980, 0, 900_000),
 		overviewBucket(day0.Add(-21*time.Hour), 8, 5, 0, 50, 50, 100, 0, 50_000),
-	}))
+	)
 	_, router := overviewPGRouter(t, repos, stubSched{}, OpsOptions{})
 
 	// 全局：今日 = 10+99
@@ -315,10 +351,9 @@ func TestPGOverviewCacheHit(t *testing.T) {
 	now := time.Now().UTC()
 	day0 := now.Truncate(24 * time.Hour)
 	repos := overviewPGTestDB(t, day0.Add(-24*time.Hour), day0.Add(24*time.Hour))
-	ctx := context.Background()
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
+	overviewSeedBuckets(t, repos,
 		overviewBucket(day0.Add(3*time.Hour), 7, 10, 1, 100, 50, 150, 0, 100_000),
-	}))
+	)
 	cnt := &countingStore{Store: repos}
 	_, router := overviewPGRouter(t, cnt, stubSched{}, OpsOptions{})
 
@@ -346,10 +381,9 @@ func TestPGOverviewCacheDayRollover(t *testing.T) {
 	now := time.Now().UTC()
 	day0 := now.Truncate(24 * time.Hour)
 	repos := overviewPGTestDB(t, day0.Add(-24*time.Hour), day0.Add(48*time.Hour))
-	ctx := context.Background()
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
+	overviewSeedBuckets(t, repos,
 		overviewBucket(day0.Add(3*time.Hour), 7, 10, 1, 100, 50, 150, 0, 100_000),
-	}))
+	)
 	cnt := &countingStore{Store: repos}
 	h, router := overviewPGRouter(t, cnt, stubSched{}, OpsOptions{})
 
@@ -449,10 +483,10 @@ func TestPGOverviewTrendUTCDayBoundary(t *testing.T) {
 	day0 := now.Truncate(24 * time.Hour)
 	repos := overviewPGTestDB(t, day0.Add(-24*time.Hour), day0.Add(24*time.Hour))
 	ctx := context.Background()
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
+	overviewSeedBuckets(t, repos,
 		overviewBucket(day0.Add(-30*time.Minute), 7, 3, 0, 30, 15, 45, 0, 30_000), // UTC 前一日 23:30
 		overviewBucket(day0.Add(30*time.Minute), 7, 5, 1, 50, 25, 75, 0, 50_000),  // UTC 今日 00:30
-	}))
+	)
 
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if strings.Contains(dsn, "?") {

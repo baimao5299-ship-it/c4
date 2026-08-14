@@ -299,17 +299,16 @@ type StatBucket struct {
 	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
 
 	// Cost 计费成本（毫分，1 USD = 100
-	Cost           *int64  `json:"Cost,omitempty"`
-	ErrorCount     *int64  `json:"ErrorCount,omitempty"`
-	GroupID        *int64  `json:"GroupID,omitempty"`
-	InputTokens    *int64  `json:"InputTokens,omitempty"`
-	IsError        *bool   `json:"IsError,omitempty"`
-	Model          *string `json:"Model,omitempty"`
-	OutputTokens   *int64  `json:"OutputTokens,omitempty"`
-	RequestCount   *int64  `json:"RequestCount,omitempty"`
-	TemplateID     *int64  `json:"TemplateID,omitempty"`
-	TotalLatencyMS *int64  `json:"TotalLatencyMS,omitempty"`
-	TotalTokens    *int64  `json:"TotalTokens,omitempty"`
+	Cost         *int64  `json:"Cost,omitempty"`
+	ErrorCount   *int64  `json:"ErrorCount,omitempty"`
+	GroupID      *int64  `json:"GroupID,omitempty"`
+	InputTokens  *int64  `json:"InputTokens,omitempty"`
+	IsError      *bool   `json:"IsError,omitempty"`
+	Model        *string `json:"Model,omitempty"`
+	OutputTokens *int64  `json:"OutputTokens,omitempty"`
+	RequestCount *int64  `json:"RequestCount,omitempty"`
+	TemplateID   *int64  `json:"TemplateID,omitempty"`
+	TotalTokens  *int64  `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`

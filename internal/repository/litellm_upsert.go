@@ -6,8 +6,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // 本文件承载 litellm 拉取批量 upsert 的共享机制（评审修复：pricing 与
@@ -84,6 +87,13 @@ func litellmUpsertBatches(ctx context.Context, total int, logPrefix string, opts
 		totalRows += n
 	}
 	return totalRows, firstErr
+}
+
+// isDeadlock 判断死锁错误（SQLSTATE 40P01）：并发批量 upsert 同批目标行锁
+// 顺序交错（#37 P3/P3'）。pgx 原样透传 pgconn.PgError，errors.As 解包。
+func isDeadlock(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "40P01"
 }
 
 // litellmExecBatchWithRetry 单批 upsert + 40P01 死锁重试（#37 P3' 同款

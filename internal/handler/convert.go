@@ -72,10 +72,10 @@ func toAPIAccount(a *domain.Account) Account {
 func toAPIAccountView(v *service.AccountView) AccountView {
 	base := toAPIAccount(v.Account)
 	return AccountView{
-		ID:             base.ID,
-		Name:           base.Name,
-		TemplateID:     base.TemplateID,
-		Template:       base.Template,
+		ID:         base.ID,
+		Name:       base.Name,
+		TemplateID: base.TemplateID,
+		Template:   base.Template,
 		// BaseURL 平铺逐字段拷贝（C3——缺则列表/编辑回显恒缺，前端保存静默清空）
 		BaseURL:        base.BaseURL,
 		UpstreamKey:    base.UpstreamKey,
@@ -366,7 +366,9 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 	return e
 }
 
-// toAPIStatBucket 统计桶领域对象 → 契约类型。
+// toAPIStatBucket 统计桶领域对象 → 契约类型（spec 2026-08-14 编译面最小清理：
+// total_latency_ms 已从链路删除——列随 usage_stats 表重建消失；响应结构删字段，
+// 不做任何重写，重写另开 task）。
 func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	return StatBucket{
 		BucketTime:          &b.BucketTime,
@@ -384,7 +386,6 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		CacheReadTokens:     &b.CacheReadTokens,
 		CacheCreationTokens: &b.CacheCreationTokens,
 		Cost:                &b.Cost,
-		TotalLatencyMS:      &b.TotalLatencyMS,
 	}
 }
 

@@ -723,14 +723,17 @@ type OverviewResponse struct {
 	// Resources 资源计数（冷面 count；模板/分组排除软删）
 	Resources OverviewResources `json:"resources"`
 
-	// Summary 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD）
+	// Summary 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD；TTFT 指标仅含首 token 流式请求样本，无样本 = 0）
 	Summary OverviewSummary `json:"summary"`
 	Trend   []OverviewTrend `json:"trend"`
 }
 
-// OverviewSummary 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD）
+// OverviewSummary 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD；TTFT 指标仅含首 token 流式请求样本，无样本 = 0）
 type OverviewSummary struct {
 	CacheReadTokens int64 `json:"cache_read_tokens"`
+
+	// CallCount 按次调用（图片生成 = 张数、search = 1；usage_logs call_count 离线聚合 sum）
+	CallCount int64 `json:"call_count"`
 
 	// CostUsd 今日成本（USD，毫分 /1e5——与价格 API 口径一致）
 	CostUsd float64 `json:"cost_usd"`
@@ -742,10 +745,25 @@ type OverviewSummary struct {
 	OutputTokens int64   `json:"output_tokens"`
 	Requests     int64   `json:"requests"`
 	TotalTokens  int64   `json:"total_tokens"`
+
+	// TtftAvgMs TTFT 均值（ttft_total_ms / ttft_count，查询侧 Go 除）
+	TtftAvgMs float64 `json:"ttft_avg_ms"`
+
+	// TtftMaxMs TTFT 最大值
+	TtftMaxMs int64 `json:"ttft_max_ms"`
+
+	// TtftP50Ms TTFT p50（直方图桶内线性插值，nearest-rank；顶桶回落 12800）
+	TtftP50Ms int64 `json:"ttft_p50_ms"`
+	TtftP90Ms int64 `json:"ttft_p90_ms"`
+	TtftP95Ms int64 `json:"ttft_p95_ms"`
+	TtftP99Ms int64 `json:"ttft_p99_ms"`
 }
 
-// OverviewTrend 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日）
+// OverviewTrend 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日；TTFT 指标仅含首 token 流式请求样本，无样本 = 0）
 type OverviewTrend struct {
+	// CallCount 按次调用（图片生成 = 张数、search = 1）
+	CallCount int64 `json:"call_count"`
+
 	// CostUsd 当日成本（USD，毫分 /1e5）
 	CostUsd float64 `json:"cost_usd"`
 
@@ -756,6 +774,14 @@ type OverviewTrend struct {
 
 	// Tokens 当日总 token（usage_stats total_tokens 列聚合）
 	Tokens int64 `json:"tokens"`
+
+	// TtftAvgMs 当日 TTFT 均值（查询侧 Go 除）
+	TtftAvgMs float64 `json:"ttft_avg_ms"`
+	TtftMaxMs int64   `json:"ttft_max_ms"`
+	TtftP50Ms int64   `json:"ttft_p50_ms"`
+	TtftP90Ms int64   `json:"ttft_p90_ms"`
+	TtftP95Ms int64   `json:"ttft_p95_ms"`
+	TtftP99Ms int64   `json:"ttft_p99_ms"`
 }
 
 // Pricing defines model for Pricing.
@@ -1051,17 +1077,16 @@ type StatBucket struct {
 	CacheReadTokens     *int64     `json:"CacheReadTokens,omitempty"`
 
 	// Cost 计费成本（毫分，1 USD = 100
-	Cost           *int64  `json:"Cost,omitempty"`
-	ErrorCount     *int64  `json:"ErrorCount,omitempty"`
-	GroupID        *int64  `json:"GroupID,omitempty"`
-	InputTokens    *int64  `json:"InputTokens,omitempty"`
-	IsError        *bool   `json:"IsError,omitempty"`
-	Model          *string `json:"Model,omitempty"`
-	OutputTokens   *int64  `json:"OutputTokens,omitempty"`
-	RequestCount   *int64  `json:"RequestCount,omitempty"`
-	TemplateID     *int64  `json:"TemplateID,omitempty"`
-	TotalLatencyMS *int64  `json:"TotalLatencyMS,omitempty"`
-	TotalTokens    *int64  `json:"TotalTokens,omitempty"`
+	Cost         *int64  `json:"Cost,omitempty"`
+	ErrorCount   *int64  `json:"ErrorCount,omitempty"`
+	GroupID      *int64  `json:"GroupID,omitempty"`
+	InputTokens  *int64  `json:"InputTokens,omitempty"`
+	IsError      *bool   `json:"IsError,omitempty"`
+	Model        *string `json:"Model,omitempty"`
+	OutputTokens *int64  `json:"OutputTokens,omitempty"`
+	RequestCount *int64  `json:"RequestCount,omitempty"`
+	TemplateID   *int64  `json:"TemplateID,omitempty"`
+	TotalTokens  *int64  `json:"TotalTokens,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`

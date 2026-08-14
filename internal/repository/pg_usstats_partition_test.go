@@ -6,13 +6,14 @@ package repository_test
 
 // usage_stats 分区化（用户裁决 2026-08-11：PG DELETE 不释放空间，180 天保留
 // 清理必须分区 DROP O(1)——替代逐行 DELETE 方案）真实 PG 测试：bootstrap 幂等
-// / 分区键（bucket_time）upsert 路由 + 冲突累加 / 180 天 cutoff DROP 边界 /
-// 并发 bootstrap 幂等。
+// / 分区键（bucket_time）覆盖写入路由（spec 2026-08-14：Upsert 累加语义已由
+// AggregateRange 覆盖语义替代，单写者） / 180 天 cutoff DROP 边界 / 并发
+// bootstrap 幂等。
 //
 // 基座约定同 pg_partition_test.go：newPGRepos 每测试 DROP SCHEMA 重建 + migrate
 //（钩子跳过三表）+ 分区 bootstrap（EnsureUsageLogPartitioned +
-// EnsureErrLogPartitioned + EnsureUsageStatsPartitioned）。本包 PG 测试串行
-//（无 t.Parallel），无表级冲突。
+// EnsureErrLogPartitioned + EnsureUsageStatsPartitioned——后者同步骤建
+// stats_agg_watermark 单行表）。本包 PG 测试串行（无 t.Parallel），无表级冲突。
 
 import (
 	"context"
@@ -27,15 +28,23 @@ import (
 	"github.com/is7qin/c3api/internal/repository"
 )
 
-// statBucketFor 构造小时桶（bucket_time 为分区键；维度列非零——唯一索引键）。
+// statBucketFor 构造小时桶（bucket_time 为分区键；维度列非零——唯一索引键；
+// TTFTHist 零值直方图——INSERT 列）。
 func statBucketFor(at time.Time, req int64) *domain.StatBucket {
 	return &domain.StatBucket{
 		BucketTime: at, GroupID: 3, AccountID: 0, TemplateID: 0, UserID: 9,
 		Model: "gpt-4o", IsError: false,
 		RequestCount: req, ErrorCount: 0, InputTokens: 0, OutputTokens: 0,
 		TotalTokens: 10 * req, CacheReadTokens: 0, CacheCreationTokens: 0,
-		Cost: 0, TotalLatencyMS: 0,
+		Cost: 0, TTFTHist: make([]int64, 10),
 	}
+}
+
+// writeRange 覆盖写入 [from, to)（DELETE + INSERT + watermark 推进；delFrom 与
+// bucket 同小时对齐）。
+func writeRange(t *testing.T, repos *repository.Repository, from, to time.Time, buckets ...*domain.StatBucket) {
+	t.Helper()
+	require.NoError(t, repos.Stats.AggregateRange(context.Background(), from, to, to.Add(-time.Minute), buckets))
 }
 
 // pgUsageStatsPartitionNames 当前 usage_stats 分区名列表（pgPartitionNames
@@ -60,7 +69,7 @@ func pgUsageStatsPartitionNames(t *testing.T, pool *pgxpool.Pool) []string {
 
 // TestUsageStatsPartitionBootstrapPG usage_stats bootstrap 幂等 + 分区表结构：
 // 二次 bootstrap 不重建（数据保留），预建当日/明日分区（bucket_time 日界）+
-// 唯一索引（ON CONFLICT 目标，含分区键）。
+// 唯一索引 + stats_agg_watermark 单行表齐备。
 func TestUsageStatsPartitionBootstrapPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()
@@ -70,10 +79,17 @@ func TestUsageStatsPartitionBootstrapPG(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, parted, "migrate 后 bootstrap 必须建 usage_stats 分区表")
 
-	// 数据保留验证幂等：upsert 一桶 → 二次 bootstrap → 桶仍在、仍分区
+	// watermark 单行表（离线聚合 worker 依赖；spec 2026-08-14 §3）：bootstrap
+	// 只建表不初始化（worker 首轮 now−滞后初始化，ON CONFLICT DO NOTHING）
+	var wmRows int64
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM stats_agg_watermark`).Scan(&wmRows)
+	require.NoError(t, err)
+	require.Zero(t, wmRows, "bootstrap 建表不初始化")
+
+	// 数据保留验证幂等：覆盖写入一桶 → 二次 bootstrap → 桶仍在、仍分区
 	now := time.Now().UTC()
 	bucket := now.Truncate(time.Hour)
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{statBucketFor(bucket, 1)}))
+	writeRange(t, repos, bucket, bucket.Add(time.Hour), statBucketFor(bucket, 1))
 	require.NoError(t, repos.EnsureUsageStatsPartitioned(ctx, time.Now()))
 	parted, err = repos.Partitions.IsUsageStatsPartitioned(ctx)
 	require.NoError(t, err)
@@ -94,10 +110,10 @@ func TestUsageStatsPartitionBootstrapPG(t *testing.T) {
 	require.Equal(t, int64(2), n, "bootstrap 建齐两枚索引（唯一索引 ON CONFLICT 目标 + user_id 前缀索引）")
 }
 
-// TestUsageStatsPartitionUpsertRoutingPG 分区键 upsert 正确（用户裁决要求）：
-// 跨日两桶 Upsert → 按 bucket_time 路由到各自日分区；同分区同 key 二次 Upsert
-// → ON CONFLICT DO UPDATE 累加（分区表上行为不变，单行不重复）。
-func TestUsageStatsPartitionUpsertRoutingPG(t *testing.T) {
+// TestUsageStatsPartitionRoutingPG 分区键覆盖写入路由正确（用户裁决要求）：
+// 跨日两桶 AggregateRange → 按 bucket_time 路由到各自日分区；同分区同 key 二次
+// 覆盖写入 → DELETE+INSERT 覆盖（不新增行不累加——覆盖语义替代旧 upsert 累加）。
+func TestUsageStatsPartitionRoutingPG(t *testing.T) {
 	repos := newPGRepos(t)
 	ctx := context.Background()
 	pool := pgTestPool(t)
@@ -110,23 +126,21 @@ func TestUsageStatsPartitionUpsertRoutingPG(t *testing.T) {
 	// 跨日两桶（分区键 = bucket_time：A 区 1 桶 + B 区 1 桶）
 	bucketA := dayA.Add(10 * time.Hour)
 	bucketB := dayB.Add(2 * time.Hour)
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
-		statBucketFor(bucketA, 1),
-		statBucketFor(bucketB, 1),
-	}))
+	writeRange(t, repos, bucketA, bucketB.Add(time.Hour),
+		statBucketFor(bucketA, 1), statBucketFor(bucketB, 1))
 
 	// 路由正确：各自日分区恰好一行
 	require.Equal(t, int64(1), pgCount(t, pool, `SELECT COUNT(*) FROM usage_stats_`+dayA.Format("20060102")))
 	require.Equal(t, int64(1), pgCount(t, pool, `SELECT COUNT(*) FROM usage_stats_`+dayB.Format("20060102")))
 
-	// 同分区同 key 二次 Upsert → 冲突累加（测量列），不新增行
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{statBucketFor(bucketA, 2)}))
-	require.Equal(t, int64(1), pgCount(t, pool, `SELECT COUNT(*) FROM usage_stats_`+dayA.Format("20060102")), "分区表上冲突累加不重复计")
+	// 同分区同 key 二次覆盖写入 → DELETE+INSERT 覆盖（不新增行、不累加——覆盖语义）
+	writeRange(t, repos, bucketA, bucketA.Add(time.Hour), statBucketFor(bucketA, 2))
+	require.Equal(t, int64(1), pgCount(t, pool, `SELECT COUNT(*) FROM usage_stats_`+dayA.Format("20060102")), "覆盖语义不重复计")
 	var req int64
 	err := pool.QueryRow(ctx, `SELECT request_count FROM usage_stats_`+dayA.Format("20060102")+` WHERE group_id = 3 AND user_id = 9`).Scan(&req)
 	require.NoError(t, err)
-	require.Equal(t, int64(3), req, "测量列冲突累加（1+2）——分区表上 upsert 行为不变")
-	// 另一日分区不受影响
+	require.Equal(t, int64(2), req, "重跑同范围覆盖为新值（1 → 2，非累加 3）")
+	// 另一日分区不受影响（DELETE 范围仅 A 区小时桶）
 	require.Equal(t, int64(1), pgCount(t, pool, `SELECT COUNT(*) FROM usage_stats_`+dayB.Format("20060102")))
 }
 
@@ -142,7 +156,7 @@ func TestUsageStatsPartitionRetentionPG(t *testing.T) {
 	old := now.Truncate(24*time.Hour).AddDate(0, 0, -181)
 	require.NoError(t, repos.EnsureUsageStatsPartitions(ctx, old, old))
 	oldBucket := old.Add(12 * time.Hour)
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{statBucketFor(oldBucket, 1)}))
+	writeRange(t, repos, oldBucket, oldBucket.Add(time.Hour), statBucketFor(oldBucket, 1))
 
 	// 180 天保留：cutoff = now-180d → 181 天前分区该删（DROP O(1)）
 	n, err := repos.DropUsageStatsPartitionsBefore(ctx, now.AddDate(0, 0, -180))
@@ -157,7 +171,7 @@ func TestUsageStatsPartitionRetentionPG(t *testing.T) {
 	require.Contains(t, pgUsageStatsPartitionNames(t, pool), "usage_stats_"+day.AddDate(0, 0, 1).Format("20060102"))
 
 	// 近期桶不受影响：预置当日桶 → DROP 后仍在
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{statBucketFor(day.Add(3*time.Hour), 5)}))
+	writeRange(t, repos, day.Add(3*time.Hour), day.Add(4*time.Hour), statBucketFor(day.Add(3*time.Hour), 5))
 	n, err = repos.DropUsageStatsPartitionsBefore(ctx, now.AddDate(0, 0, -180))
 	require.NoError(t, err)
 	require.Zero(t, n, "无过期分区可删（幂等）")
@@ -191,6 +205,7 @@ func TestUsageStatsPartitionConcurrentBootstrapPG(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, parted)
 	// 二次（串行）幂等：数据保留
-	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{statBucketFor(time.Now().UTC().Truncate(time.Hour), 1)}))
+	bucket := time.Now().UTC().Truncate(time.Hour)
+	writeRange(t, repos, bucket, bucket.Add(time.Hour), statBucketFor(bucket, 1))
 	require.NoError(t, repos.EnsureUsageStatsPartitioned(ctx, time.Now()))
 }

@@ -44,7 +44,7 @@ func (s *Service) QueryStats(ctx context.Context, q repository.StatQuery, granul
 		m.CacheReadTokens += b.CacheReadTokens
 		m.CacheCreationTokens += b.CacheCreationTokens
 		m.Cost += b.Cost
-		m.TotalLatencyMS += b.TotalLatencyMS
+		m.CallCount += b.CallCount // 按次调用（spec 2026-08-14：入桶与展示）
 	}
 	out := make([]*domain.StatBucket, 0, len(merged))
 	for _, m := range merged {

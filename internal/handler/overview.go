@@ -47,7 +47,8 @@ func (h *AdminAPI) GetAdminOverview(w http.ResponseWriter, r *http.Request, para
 }
 
 // overviewResponse 服务端聚合结果 → 契约类型（cost 毫分 /1e5 → USD——API
-// 边界换算，内部毫分不动；err_rate = errors/requests，无请求 = 0）。
+// 边界换算，内部毫分不动；err_rate = errors/requests，无请求 = 0；TTFT 指标 =
+// 查询侧 Go 除/直方图插值——SQL 只 sum/count/max，spec 2026-08-14 §4）。
 func overviewResponse(d *service.OverviewData, alerts func() BillingAlerts) OverviewResponse {
 	summary := OverviewSummary{
 		Requests:        d.Summary.Requests,
@@ -58,15 +59,29 @@ func overviewResponse(d *service.OverviewData, alerts func() BillingAlerts) Over
 		OutputTokens:    d.Summary.OutputTokens,
 		TotalTokens:     d.Summary.TotalTokens,
 		CacheReadTokens: d.Summary.CacheReadTokens,
+		CallCount:       d.Summary.CallCount,
+		TtftAvgMs:       d.Summary.TTFTAvgMS(),
+		TtftMaxMs:       d.Summary.TTFTMaxMS,
+		TtftP50Ms:       d.Summary.TTFTPercentileMS(0.50),
+		TtftP90Ms:       d.Summary.TTFTPercentileMS(0.90),
+		TtftP95Ms:       d.Summary.TTFTPercentileMS(0.95),
+		TtftP99Ms:       d.Summary.TTFTPercentileMS(0.99),
 	}
 	trend := make([]OverviewTrend, 0, len(d.Trend))
 	for _, t := range d.Trend {
 		trend = append(trend, OverviewTrend{
-			Date:     openapiDate(t.Date),
-			Requests: t.Requests,
-			Errors:   t.Errors,
-			CostUsd:  millisToUSD(t.Cost),
-			Tokens:   t.Tokens,
+			Date:      openapiDate(t.Date),
+			Requests:  t.Requests,
+			Errors:    t.Errors,
+			CostUsd:   millisToUSD(t.Cost),
+			Tokens:    t.Tokens,
+			CallCount: t.CallCount,
+			TtftAvgMs: t.TTFTAvgMS(),
+			TtftMaxMs: t.TTFTMaxMS,
+			TtftP50Ms: t.TTFTPercentileMS(0.50),
+			TtftP90Ms: t.TTFTPercentileMS(0.90),
+			TtftP95Ms: t.TTFTPercentileMS(0.95),
+			TtftP99Ms: t.TTFTPercentileMS(0.99),
 		})
 	}
 	errTop := make([]OverviewErrTop, 0, len(d.ErrTop))

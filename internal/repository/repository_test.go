@@ -586,13 +586,13 @@ func TestLogsAndStats(t *testing.T) {
 				int64(0), "", false, false,
 				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
 
-	// Stats Upsert 已改 COPY 两阶段（#17），需要 pgx 原生连接池（NewWithPG
-	// 注入）：pgxmock 的 Acquire 未实现（无法 mock COPY）→ New 未注入池时
-	// Upsert 返回显式错误，不静默降级。COPY 语义覆盖在真实 PG
-	// （pg_stat_test.go TestPGStatUpsertConflictAccumulates / TestPGStatUpsertCopyBulk）。
+	// Stats 离线聚合写入（AggregateRange）需要 pgx 原生连接池（NewWithPG 注入）：
+	// pgxmock 的 Acquire 未实现（无法 mock 事务 SQL）→ New 未注入池时返回显式
+	// 错误，不静默降级。离线聚合语义覆盖在真实 PG
+	// （pg_stat_test.go TestPGStatsAggregateRangeInsert / LoadAggRange 等价套件）。
 	bucket := time.Now().Truncate(time.Hour)
-	require.Error(t, tr.repos.Stats.Upsert(ctx(), []*domain.StatBucket{
-		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, TotalLatencyMS: 30, CacheReadTokens: 4, CacheCreationTokens: 2},
+	require.Error(t, tr.repos.Stats.AggregateRange(ctx(), bucket, bucket.Add(time.Hour), bucket.Add(30*time.Minute), []*domain.StatBucket{
+		{BucketTime: bucket, GroupID: 1, Model: "m", RequestCount: 2, ErrorCount: 1, TotalTokens: 100, CacheReadTokens: 4, CacheCreationTokens: 2},
 	}), "未注入 pgx 池（New）→ 显式错误")
 
 	logs := []*domain.UsageLog{
@@ -629,24 +629,11 @@ func TestLogsAndStats(t *testing.T) {
 	require.Nil(t, rows[1].PriceOutputMillis, "未设置 price_output_millis → NULL")
 	require.Nil(t, rows[1].PriceCacheReadMillis, "未设置 price_cache_read_millis → NULL")
 	require.Nil(t, rows[1].PriceCacheCreationMillis, "未设置 price_cache_creation_millis → NULL")
-	// Stats Scan（测试未过滤 group_id，仅 bucket_time 范围两个参数）
-	tr.pool.ExpectQuery(q(`FROM "usage_stats"`)).
-		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "bucket_time", "group_id", "account_id", "template_id",
-			"model", "is_error", "request_count", "error_count", "input_tokens",
-			"output_tokens", "total_tokens", "cache_read_tokens", "cache_creation_tokens",
-			"cost", "total_latency_ms", "updated_at"}).
-			AddRow(int64(1), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), int64(1), int64(0), int64(0),
-				"m", false, int64(5), int64(1), int64(0), int64(0), int64(300), int64(10), int64(5), int64(0), int64(30),
-				time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
-	scanned, err := tr.repos.Stats.ScanStats(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
-	require.NoError(t, err)
-	require.Len(t, scanned, 1)
-	require.Equal(t, int64(5), scanned[0].RequestCount, "upsert accumulates")
-	require.Equal(t, int64(300), scanned[0].TotalTokens)
-	require.Equal(t, int64(10), scanned[0].CacheReadTokens, "cache read accumulates")
-	require.Equal(t, int64(5), scanned[0].CacheCreationTokens, "cache creation accumulates")
-	require.Equal(t, int64(0), scanned[0].Cost, "cost accumulates")
+	// Stats Scan 走 pgx 直查（ent carve-out——ttft_hist 数组列 ent 无类型）：
+	// pgxmock 的 Acquire 未实现 → New 未注入池时返回显式错误，不静默降级。
+	// 真实查询语义在 PG 套件（TestPGStatsScanStatsCarveOut 全字段回读）。
+	_, err = tr.repos.Stats.ScanStats(ctx(), repository.StatQuery{From: bucket, To: bucket.Add(time.Hour)})
+	require.Error(t, err, "未注入 pgx 池（New）→ 显式错误")
 	tr.expectDone(t)
 }
 

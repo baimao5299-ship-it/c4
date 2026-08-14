@@ -133,7 +133,8 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 	return e
 }
 
-// toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats）。
+// toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats；spec 2026-08-14
+// 编译面最小清理——total_latency_ms 删除，不做任何重写，重写另开 task）。
 func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 	return StatBucket{
 		BucketTime:          &b.BucketTime,
@@ -151,6 +152,5 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		CacheReadTokens:     &b.CacheReadTokens,
 		CacheCreationTokens: &b.CacheCreationTokens,
 		Cost:                &b.Cost,
-		TotalLatencyMS:      &b.TotalLatencyMS,
 	}
 }
