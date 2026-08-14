@@ -36,14 +36,14 @@
     "system": "System"
   },
   "status": {
+    "429": "Rate limited",
     "active": "Available",
     "unhealthy": "Unhealthy",
-    "429": "Rate limited",
     "disabled": "Disabled"
   },
   "errorType": {
-    "none": "OK",
     "429": "Rate limited 429",
+    "none": "OK",
     "4xx": "4xx error",
     "5xx": "5xx error",
     "network": "Network error",
@@ -84,13 +84,22 @@
     "loadFailedTitle": "Failed to load data",
     "summaryCards": {
       "requests": "Requests today",
+      "callCount": "Calls today",
       "cost": "Cost today (USD)",
       "tokens": "Tokens today"
     },
+    "ttft": {
+      "avg": "TTFT avg",
+      "p50": "TTFT p50",
+      "p90": "TTFT p90",
+      "p95": "TTFT p95",
+      "p99": "TTFT p99",
+      "max": "TTFT max"
+    },
     "statusCards": {
+      "429": "Rate limited by upstream",
       "active": "Serving normally",
       "unhealthy": "Upstream error",
-      "429": "Rate limited by upstream",
       "disabled": "Manually disabled"
     },
     "totalCards": {
@@ -494,8 +503,7 @@
       "errors": "Errors",
       "promptTokens": "PT",
       "completionTokens": "CT",
-      "totalTokens": "TT",
-      "avgLatency": "Avg latency"
+      "totalTokens": "TT"
     },
     "emptyTitle": "No statistics in this range",
     "emptyDesc": "Adjust the time range or granularity and try again"
@@ -571,8 +579,8 @@
     "enabledLabel": "Enabled",
     "any": "Any",
     "kind": {
-      "ok": "OK",
       "429": "429",
+      "ok": "OK",
       "error": "Error"
     },
     "whenTitle": "Match (when)",
@@ -1045,8 +1053,7 @@
         "errors": "Errors",
         "promptTokens": "PT",
         "completionTokens": "CT",
-        "totalTokens": "TT",
-        "avgLatency": "Avg latency"
+        "totalTokens": "TT"
       },
       "emptyTitle": "No statistics in this range",
       "emptyDesc": "Adjust the time range or granularity and try again"

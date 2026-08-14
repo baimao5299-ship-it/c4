@@ -36,6 +36,8 @@ function defaultRange() {
 
 // 后端按 (bucket_time, group, account, template, model, is_error) 返回多行，
 // 同一时间桶可能有多行 → 前端按 BucketTime 合并求和（图表与表格共用）。
+// spec 2026-08-14 编译面最小清理：total_latency_ms 已从链路删除（展示项移除，
+// 不做任何重写——重写另开 task）。
 interface BucketRow {
   time: string
   label: string
@@ -44,7 +46,6 @@ interface BucketRow {
   InputTokens: number
   OutputTokens: number
   TotalTokens: number
-  TotalLatencyMS: number
 }
 
 function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[] {
@@ -59,7 +60,7 @@ function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[]
         label: granularity === 'hour'
           ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
           : `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
-        RequestCount: 0, ErrorCount: 0, InputTokens: 0, OutputTokens: 0, TotalTokens: 0, TotalLatencyMS: 0,
+        RequestCount: 0, ErrorCount: 0, InputTokens: 0, OutputTokens: 0, TotalTokens: 0,
       }
       map.set(r.BucketTime, b)
     }
@@ -68,7 +69,6 @@ function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[]
     b.InputTokens += r.InputTokens ?? 0
     b.OutputTokens += r.OutputTokens ?? 0
     b.TotalTokens += r.TotalTokens ?? 0
-    b.TotalLatencyMS += r.TotalLatencyMS ?? 0
   }
   return [...map.values()].sort((a, b) => a.time.localeCompare(b.time))
 }
@@ -88,9 +88,6 @@ export default function Stats() {
     queryFn: () => api.getStats(params),
   })
   const rows = useMemo(() => mergeBuckets(data ?? [], granularity), [data, granularity])
-
-  const avgLatency = (r: BucketRow) =>
-    r.RequestCount > 0 ? `${Math.round(r.TotalLatencyMS / r.RequestCount)} ms` : '—'
 
   // 主题色走 --chart-* 变量（ChartStyle 注入 --color-requests / --color-tokens）。
   const chartConfig = {
@@ -206,14 +203,13 @@ export default function Stats() {
                 <TableHead className="text-right">{t('stats.table.promptTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.completionTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.totalTokens')}</TableHead>
-                <TableHead className="text-right">{t('stats.table.avgLatency')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
               {isLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 7 }).map((_, j) => (
+                      {Array.from({ length: 6 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4" /></TableCell>
                       ))}
                     </TableRow>
@@ -221,7 +217,7 @@ export default function Stats() {
                 : rows.length === 0
                   ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
+                      <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
                     </TableRow>
                   )
                   : rows.map(r => (
@@ -232,7 +228,6 @@ export default function Stats() {
                       <TableCell className="text-right tabular-nums">{r.InputTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.OutputTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.TotalTokens}</TableCell>
-                      <TableCell className="text-right tabular-nums">{avgLatency(r)}</TableCell>
                     </TableRow>
                   ))}
             </TableBody>

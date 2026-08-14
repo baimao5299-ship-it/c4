@@ -89,11 +89,24 @@ export default function Dashboard() {
     { key: 'disabled', icon: PowerOff, descKey: 'dashboard.statusCards.disabled' },
   ]
 
-  // 今日汇总卡（USD 口径——API 边界已 /1e5 换算）。
+  // 今日汇总卡（USD 口径——API 边界已 /1e5 换算；spec 2026-08-14：call_count
+  // 按次调用与 requests 并列——图片生成 = 张数、search = 1）。
   const summaryCards = [
     { key: 'requests', icon: Activity, labelKey: 'dashboard.summaryCards.requests', value: ov?.summary.requests ?? 0 },
+    { key: 'callCount', icon: Boxes, labelKey: 'dashboard.summaryCards.callCount', value: ov?.summary.call_count ?? 0 },
     { key: 'cost', icon: Coins, labelKey: 'dashboard.summaryCards.cost', value: `$${(ov?.summary.cost_usd ?? 0).toFixed(4)}` },
     { key: 'tokens', icon: Zap, labelKey: 'dashboard.summaryCards.tokens', value: ov?.summary.total_tokens ?? 0 },
+  ] as const
+
+  // TTFT 指标（今日汇总；仅含首 token 流式请求样本——无样本 = 0；avg 查询侧
+  // Go 除，分位直方图插值）。
+  const ttftMetrics = [
+    { key: 'avg', labelKey: 'dashboard.ttft.avg', value: ov?.summary.ttft_avg_ms ?? 0 },
+    { key: 'p50', labelKey: 'dashboard.ttft.p50', value: ov?.summary.ttft_p50_ms ?? 0 },
+    { key: 'p90', labelKey: 'dashboard.ttft.p90', value: ov?.summary.ttft_p90_ms ?? 0 },
+    { key: 'p95', labelKey: 'dashboard.ttft.p95', value: ov?.summary.ttft_p95_ms ?? 0 },
+    { key: 'p99', labelKey: 'dashboard.ttft.p99', value: ov?.summary.ttft_p99_ms ?? 0 },
+    { key: 'max', labelKey: 'dashboard.ttft.max', value: ov?.summary.ttft_max_ms ?? 0 },
   ] as const
 
   // 资源计数（服务端 count；模板/分组排除软删）。
@@ -127,8 +140,8 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          {/* 今日汇总卡（summary：请求/费用/token——今日 UTC 日界） */}
-          <div className={`${cardGrid} sm:grid-cols-3`}>
+          {/* 今日汇总卡（summary：请求/按次调用/费用/token——今日 UTC 日界） */}
+          <div className={`${cardGrid} sm:grid-cols-2 xl:grid-cols-4`}>
             {summaryCards.map(({ key, labelKey, value, icon: Icon }, i) => (
               <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: i * 0.06 }}>
                 <Card className="@container/card h-full">
@@ -138,6 +151,22 @@ export default function Dashboard() {
                     </CardDescription>
                     <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
                       {value}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* TTFT 指标卡（今日汇总；仅含首 token 流式请求样本——无样本 = 0） */}
+          <div className={`${cardGrid} sm:grid-cols-3 xl:grid-cols-6`}>
+            {ttftMetrics.map(({ key, labelKey, value }, i) => (
+              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: 0.12 + i * 0.05 }}>
+                <Card className="h-full">
+                  <CardHeader>
+                    <CardDescription>{t(labelKey)}</CardDescription>
+                    <CardTitle className="text-2xl font-semibold tabular-nums">
+                      {value > 0 ? `${value} ms` : '—'}
                     </CardTitle>
                   </CardHeader>
                 </Card>

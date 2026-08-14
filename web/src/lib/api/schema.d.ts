@@ -1950,8 +1950,6 @@ export interface components {
              * @description 计费成本（毫分，1 USD = 100
              */
             Cost?: number;
-            /** Format: int64 */
-            TotalLatencyMS?: number;
         };
         WorkerStatus: {
             name: string;
@@ -1973,7 +1971,7 @@ export interface components {
             /** Format: date-time */
             generated_at: string;
         };
-        /** @description 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD） */
+        /** @description 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD；TTFT 指标仅含首 token 流式请求样本，无样本 = 0） */
         OverviewSummary: {
             /** Format: int64 */
             requests: number;
@@ -1997,8 +1995,34 @@ export interface components {
             total_tokens: number;
             /** Format: int64 */
             cache_read_tokens: number;
+            /**
+             * Format: int64
+             * @description 按次调用（图片生成 = 张数、search = 1；usage_logs call_count 离线聚合 sum）
+             */
+            call_count: number;
+            /**
+             * Format: double
+             * @description TTFT 均值（ttft_total_ms / ttft_count，查询侧 Go 除）
+             */
+            ttft_avg_ms: number;
+            /**
+             * Format: int64
+             * @description TTFT 最大值
+             */
+            ttft_max_ms: number;
+            /**
+             * Format: int64
+             * @description TTFT p50（直方图桶内线性插值，nearest-rank；顶桶回落 12800）
+             */
+            ttft_p50_ms: number;
+            /** Format: int64 */
+            ttft_p90_ms: number;
+            /** Format: int64 */
+            ttft_p95_ms: number;
+            /** Format: int64 */
+            ttft_p99_ms: number;
         };
-        /** @description 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日） */
+        /** @description 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日；TTFT 指标仅含首 token 流式请求样本，无样本 = 0） */
         OverviewTrend: {
             /**
              * Format: date
@@ -2019,6 +2043,26 @@ export interface components {
              * @description 当日总 token（usage_stats total_tokens 列聚合）
              */
             tokens: number;
+            /**
+             * Format: int64
+             * @description 按次调用（图片生成 = 张数、search = 1）
+             */
+            call_count: number;
+            /**
+             * Format: double
+             * @description 当日 TTFT 均值（查询侧 Go 除）
+             */
+            ttft_avg_ms: number;
+            /** Format: int64 */
+            ttft_max_ms: number;
+            /** Format: int64 */
+            ttft_p50_ms: number;
+            /** Format: int64 */
+            ttft_p90_ms: number;
+            /** Format: int64 */
+            ttft_p95_ms: number;
+            /** Format: int64 */
+            ttft_p99_ms: number;
         };
         /** @description 账号健康分布 + 并发水位（调度器快照同源——与账号列表运行时视图一致） */
         OverviewAccounts: {

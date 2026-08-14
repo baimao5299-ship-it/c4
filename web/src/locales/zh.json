@@ -36,14 +36,14 @@
     "system": "跟随系统"
   },
   "status": {
+    "429": "限流中",
     "active": "可用",
     "unhealthy": "不健康",
-    "429": "限流中",
     "disabled": "已禁用"
   },
   "errorType": {
-    "none": "正常",
     "429": "限流 429",
+    "none": "正常",
     "4xx": "4xx 错误",
     "5xx": "5xx 错误",
     "network": "网络错误",
@@ -84,13 +84,22 @@
     "loadFailedTitle": "数据加载失败",
     "summaryCards": {
       "requests": "今日请求",
+      "callCount": "今日调用",
       "cost": "今日费用 (USD)",
       "tokens": "今日 Token"
     },
+    "ttft": {
+      "avg": "TTFT 均值",
+      "p50": "TTFT p50",
+      "p90": "TTFT p90",
+      "p95": "TTFT p95",
+      "p99": "TTFT p99",
+      "max": "TTFT 最大"
+    },
     "statusCards": {
+      "429": "被上游限流",
       "active": "正常服务",
       "unhealthy": "上游异常",
-      "429": "被上游限流",
       "disabled": "手动停用"
     },
     "totalCards": {
@@ -494,8 +503,7 @@
       "errors": "错误数",
       "promptTokens": "PT",
       "completionTokens": "CT",
-      "totalTokens": "TT",
-      "avgLatency": "平均延迟"
+      "totalTokens": "TT"
     },
     "emptyTitle": "该时间范围内暂无统计数据",
     "emptyDesc": "调整时间范围或粒度后重试"
@@ -571,8 +579,8 @@
     "enabledLabel": "启用",
     "any": "不限",
     "kind": {
-      "ok": "成功",
       "429": "429",
+      "ok": "成功",
       "error": "错误"
     },
     "whenTitle": "匹配条件（when）",
@@ -1045,8 +1053,7 @@
         "errors": "错误数",
         "promptTokens": "PT",
         "completionTokens": "CT",
-        "totalTokens": "TT",
-        "avgLatency": "平均延迟"
+        "totalTokens": "TT"
       },
       "emptyTitle": "该时间范围内暂无统计数据",
       "emptyDesc": "调整时间范围或粒度后重试"
