@@ -72,6 +72,26 @@ func (r *UserRepo) UpdateUserMaxConcurrency(ctx context.Context, userID int64, v
 	return nil
 }
 
+// ListUserEmails 批量取邮箱（/admin/users-top TopN 回填；id IN 一次查询——
+// 防逐 id N+1）。缺失 id 不在 map（调用方按需兜底空串）；空 ids → nil map。
+func (r *UserRepo) ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.client.User.Query().
+		Where(user.IDIn(ids...)).
+		Select(user.FieldID, user.FieldEmail).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(rows))
+	for _, u := range rows {
+		out[u.ID] = u.Email
+	}
+	return out, nil
+}
+
 // CreateTempBalance 创建临时额度行（注册赠品、兑换码兑换等）：每笔独立行、
 // 独立到期（多笔不同到期共存，Phase 5 FEFO 扣费）。user_id 外键必存在
 // （服务层先 CreateUser 拿到 id）。expiresAt/note 为 nil 时不落该列（nil = 永久）；

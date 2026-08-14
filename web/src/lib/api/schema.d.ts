@@ -816,6 +816,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 管理端总览（summary USD + trend 日桶 + 账号健康 + 资源 + err_top + 计费告警）
+         * @description 一站式聚合端点（dashboard 主数据；聚合结果内部 TTL 30s 缓存，键含
+         *     days/group_id 与 UTC 日界——跨午夜滚转）。summary = 今日汇总（UTC 日界，
+         *     cost 毫分 /1e5 → USD，与价格 API 口径一致）；trend = 近 N 天日桶
+         *     （SQL 侧 GROUP BY date_trunc('day', bucket_time)，days 上限 30）；
+         *     accounts = 账号健康分布 + 并发水位（调度器快照同源）；err_top = 账号
+         *     维度 err_rate Top5（调度器 EWMA，name = 账号名）；alerts = billing
+         *     flusher 水线状态（注入面读取）。
+         */
+        get: operations["GetAdminOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users-top": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 实时在途并发排行 TopN（本实例视角）
+         * @description 实时并发排行：读门禁快照在途计数（Auth.InFlightUsers 只读访问器——
+         *     零锁零热路径），过滤 0 → 降序 → TopN + other 归并（其余在途用户合计，
+         *     非伪用户条目）；email = TopN user_id 一次 IN 查询回填。内部 TTL 2s 缓存
+         *     （top 并入缓存键）。多实例部署下为**本实例**在途并发（各实例独立计数）。
+         */
+        get: operations["GetAdminUsersTop"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ops/workers": {
         parameters: {
             query?: never;
@@ -1923,6 +1972,125 @@ export interface components {
             snapshots: components["schemas"]["SnapshotState"][];
             /** Format: date-time */
             generated_at: string;
+        };
+        /** @description 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD） */
+        OverviewSummary: {
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            errors: number;
+            /**
+             * Format: double
+             * @description 错误率（errors / requests；无请求 = 0）
+             */
+            err_rate: number;
+            /**
+             * Format: double
+             * @description 今日成本（USD，毫分 /1e5——与价格 API 口径一致）
+             */
+            cost_usd: number;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            total_tokens: number;
+            /** Format: int64 */
+            cache_read_tokens: number;
+        };
+        /** @description 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日） */
+        OverviewTrend: {
+            /**
+             * Format: date
+             * @description 日桶（UTC）
+             */
+            date: string;
+            /** Format: int64 */
+            requests: number;
+            /** Format: int64 */
+            errors: number;
+            /**
+             * Format: double
+             * @description 当日成本（USD，毫分 /1e5）
+             */
+            cost_usd: number;
+            /**
+             * Format: int64
+             * @description 当日总 token（usage_stats total_tokens 列聚合）
+             */
+            tokens: number;
+        };
+        /** @description 账号健康分布 + 并发水位（调度器快照同源——与账号列表运行时视图一致） */
+        OverviewAccounts: {
+            429: number;
+            active: number;
+            unhealthy: number;
+            disabled: number;
+            /**
+             * Format: int64
+             * @description 在途并发合计
+             */
+            concurrency: number;
+            /** @description 并发上限合计（水位 = concurrency / max_concurrency） */
+            max_concurrency: number;
+        };
+        /** @description 资源计数（冷面 count；模板/分组排除软删） */
+        OverviewResources: {
+            templates: number;
+            groups: number;
+            users: number;
+        };
+        /** @description 账号维度错误率 Top5（调度器 EWMA err_rate 降序；name = 账号名） */
+        OverviewErrTop: {
+            /** @description 账号名（非模型名——账号维度） */
+            name: string;
+            /** Format: double */
+            err_rate: number;
+            err_count: number;
+        };
+        /** @description 告警面（billing flusher 水线状态；注入面读取，未装配 = 全零） */
+        OverviewAlerts: {
+            /**
+             * Format: int64
+             * @description 尚未落库的计费日志条数
+             */
+            billing_pending: number;
+            /**
+             * Format: int64
+             * @description 水线（包级常量直读）
+             */
+            billing_pending_waterline: number;
+            /** @description 水线告警边沿是否置位 */
+            billing_warned: boolean;
+        };
+        OverviewResponse: {
+            summary: components["schemas"]["OverviewSummary"];
+            trend: components["schemas"]["OverviewTrend"][];
+            accounts: components["schemas"]["OverviewAccounts"];
+            resources: components["schemas"]["OverviewResources"];
+            err_top: components["schemas"]["OverviewErrTop"][];
+            alerts: components["schemas"]["OverviewAlerts"];
+        };
+        /** @description 实时在途并发条目（users 表无 name 列——仅 email） */
+        UsersTopEntry: {
+            /** Format: int64 */
+            user_id: number;
+            /** @description 邮箱（TopN user_id 一次 IN 查询回填；缺失 = 空串） */
+            email: string;
+            /**
+             * Format: int64
+             * @description 在途请求数
+             */
+            concurrency: number;
+        };
+        /** @description 实时并发排行（本实例视角；TopN + other 归并） */
+        UsersTopResponse: {
+            users: components["schemas"]["UsersTopEntry"][];
+            /**
+             * Format: int64
+             * @description 其余在途用户合计（TopN 之外；非伪用户条目）
+             */
+            other_concurrency: number;
         };
     };
     responses: {
@@ -3792,6 +3960,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatBucket"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetAdminOverview: {
+        parameters: {
+            query?: {
+                days?: number;
+                group_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 总览聚合（summary/trend/accounts/resources/err_top/alerts） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetAdminUsersTop: {
+        parameters: {
+            query?: {
+                top?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 实时在途并发 TopN + other 归并 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsersTopResponse"];
                 };
             };
             default: components["responses"]["Error"];

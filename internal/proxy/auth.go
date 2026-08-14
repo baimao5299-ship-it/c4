@@ -183,3 +183,19 @@ func (a *Auth) QuotaExhausted(meta domain.KeyMeta) bool {
 func (a *Auth) DeductQuota(keyID, tokens int64) {
 	a.gate.deductQuota(keyID, tokens)
 }
+
+// InFlightUsers 门禁在途并发只读快照（/admin/users-top 端点用；spec 2026-08-14
+// P2-3：gateSnapshot.users 未导出，经本访问器只读暴露）：gateSnapshot 整体
+// 原子换入换出（reload/upsert 重建，不可变），store.Load() 零锁取当前引用后
+// 遍历 + 原子读各计数器 → map[int64]int64 拷贝（含 0——过滤由调用方做）。
+// 冷面调用（管理端聚合，不涉请求热路径）；多实例部署下为本实例在途计数。
+func (a *Auth) InFlightUsers() map[int64]int64 {
+	snap := a.gate.store.Load()
+	out := make(map[int64]int64, len(snap.users))
+	for uid, c := range snap.users {
+		if c != nil {
+			out[uid] = c.Load()
+		}
+	}
+	return out
+}

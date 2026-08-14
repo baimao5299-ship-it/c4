@@ -549,6 +549,43 @@ func (s *Scheduler) Runtime(accountID int64) (RuntimeInfo, bool) {
 	}, true
 }
 
+// AccountRuntime 账号运行时视图（/admin/overview 聚合专用；含账号名——err_top
+// 为账号维度，name = 账号名）。与 RuntimeInfo 同源（快照 EWMA/并发原子读），
+// 仅多带聚合所需字段。
+type AccountRuntime struct {
+	AccountID      int64
+	Name           string
+	Status         domain.AccountStatus
+	MaxConcurrency int
+	Concurrency    int64
+	ErrRate        float64
+	ErrCount       int
+}
+
+// Runtimes 全部账号运行时快照（overview 聚合面：账号健康分布/并发水位/err_top
+// 与账号列表运行时视图同源）。遍历 byID 快照 map（整体原子换入不可变）零锁；
+// 冷面调用（管理端聚合 + TTL 缓存摊薄），不涉请求热路径。快照未加载 → nil。
+func (s *Scheduler) Runtimes() []AccountRuntime {
+	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
+	if !ok {
+		return nil
+	}
+	out := make([]AccountRuntime, 0, len(byID))
+	for id, a := range byID {
+		st := a.statePtr()
+		out = append(out, AccountRuntime{
+			AccountID:      id,
+			Name:           a.acc.Name,
+			Status:         st.status,
+			MaxConcurrency: a.acc.MaxConcurrency,
+			Concurrency:    a.concurrency.Load(),
+			ErrRate:        float64(a.errRate.Load()) / errRateScale,
+			ErrCount:       st.errCount,
+		})
+	}
+	return out
+}
+
 // Release 释放并发槽（请求结束必须调用，含流式断开）。断言 ok 防御性守卫
 // （快照未加载时请求路径不可达——Release 恒在 Select 成功之后，而 Select 在
 // 快照未加载时已返回错误；守卫防未来调用序变化时 panic）。

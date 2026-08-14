@@ -4,7 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Activity, AlertTriangle, Gauge, PowerOff, Boxes, FolderOpen, Users } from 'lucide-react'
+import { Activity, AlertTriangle, Boxes, Coins, FolderOpen, Gauge, PowerOff, Users, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
@@ -25,45 +25,61 @@ const fadeUp = {
 // 统计卡 grid 的官方 dashboard-01 处理：浅色卡片带顶部 primary 微渐变 + 细阴影，深色回退纯 card。
 const cardGrid = 'grid grid-cols-1 gap-5 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs dark:*:data-[slot=card]:bg-card'
 
-// errTop 柱图数据行。
+// errTop 柱图数据行（账号维度——name = 账号名）。
 type ErrRow = { name: string; err_rate: number; err_count: number }
+
+// trend 日桶行（date = UTC 日 YYYY-MM-DD）。
+type TrendRow = { date: string; requests: number; cost_usd: number; errors: number; tokens: number }
 
 export default function Dashboard() {
   const { t } = useTranslation()
-  // 账号运行时视图 10s 轮询；模板/分组仅加载一次（数量统计）。
-  const accountsQ = useQuery({ queryKey: ['accounts'], queryFn: () => api.listAccounts(), refetchInterval: 10_000 })
-  const templatesQ = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates() })
-  const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups() })
+  // 总览聚合面 30s 轮询（服务端 TTL 30s 缓存）+ 实时并发排行 10s 轮询（服务端
+  // TTL 2s 缓存）——两端点轮询频率各自独立（spec 2026-08-14 §3）。
+  const overviewQ = useQuery({ queryKey: ['overview'], queryFn: () => api.getOverview(), refetchInterval: 30_000 })
+  const usersTopQ = useQuery({ queryKey: ['users-top'], queryFn: () => api.getUsersTop(), refetchInterval: 10_000 })
 
-  const accounts = accountsQ.data?.rows ?? []
+  const ov = overviewQ.data
+  const accounts = ov?.accounts
   const statusCounts = {
-    active: accounts.filter(a => a.Status === 'active').length,
-    unhealthy: accounts.filter(a => a.Status === 'unhealthy').length,
-    '429': accounts.filter(a => a.Status === '429').length,
-    disabled: accounts.filter(a => a.Status === 'disabled').length,
+    active: accounts?.active ?? 0,
+    unhealthy: accounts?.unhealthy ?? 0,
+    '429': accounts?.['429'] ?? 0,
+    disabled: accounts?.disabled ?? 0,
   } as const
 
-  // 并发水位：concurrency 求和 / max_concurrency 求和。
-  const totalCur = accounts.reduce((s, a) => s + (a.concurrency ?? 0), 0)
-  const totalMax = accounts.reduce((s, a) => s + (a.MaxConcurrency ?? 0), 0)
+  // 并发水位：concurrency / max_concurrency 合计（服务端聚合）。
+  const totalCur = accounts?.concurrency ?? 0
+  const totalMax = accounts?.max_concurrency ?? 0
   const water = totalMax > 0 ? Math.min(totalCur / totalMax, 1) : 0
 
-  // err_rate Top 5：err_rate > 0 降序。
-  const errTop = accounts
-    .filter(a => (a.err_rate ?? 0) > 0)
-    .sort((x, y) => (y.err_rate ?? 0) - (x.err_rate ?? 0))
-    .slice(0, 5)
-  const errData: ErrRow[] = errTop.map(a => ({
-    name: a.Name ?? '—',
-    err_rate: a.err_rate ?? 0,
-    err_count: a.err_count ?? 0,
+  // err_rate Top 5（账号维度，服务端排序）。
+  const errData: ErrRow[] = (ov?.err_top ?? []).map(e => ({
+    name: e.name,
+    err_rate: e.err_rate,
+    err_count: e.err_count,
   }))
 
-  const loading = accountsQ.isLoading || templatesQ.isLoading || groupsQ.isLoading
+  // 近 N 天日桶（趋势图；X 轴 MM-DD，tooltip 带费用/错误/token）。
+  const trend: TrendRow[] = (ov?.trend ?? []).map(d => ({
+    date: d.date,
+    requests: d.requests,
+    cost_usd: d.cost_usd,
+    errors: d.errors,
+    tokens: d.tokens,
+  }))
 
-  // 图表配置（ChartContainer 注入 --color-err_rate，随主题翻转）。
-  const chartConfig = {
+  // 实时并发排行（本实例视角）+ other 归并。
+  const usersTop = usersTopQ.data?.users ?? []
+  const otherConc = usersTopQ.data?.other_concurrency ?? 0
+
+  const loading = overviewQ.isLoading
+
+  // 图表配置（ChartContainer 注入 --color-*，随主题翻转）。
+  const errChartConfig = {
     err_rate: { label: t('dashboard.tableErrRate'), color: 'var(--primary)' },
+  } satisfies ChartConfig
+  const trendChartConfig = {
+    requests: { label: t('dashboard.tableRequests'), color: 'var(--primary)' },
   } satisfies ChartConfig
 
   const statusCards: { key: keyof typeof statusCounts; icon: typeof Activity; descKey: string }[] = [
@@ -73,17 +89,25 @@ export default function Dashboard() {
     { key: 'disabled', icon: PowerOff, descKey: 'dashboard.statusCards.disabled' },
   ]
 
-  const totalCards = [
-    { key: 'accounts', labelKey: 'dashboard.totalCards.accounts', value: accounts.length, icon: Users },
-    { key: 'templates', labelKey: 'dashboard.totalCards.templates', value: templatesQ.data?.rows.length ?? 0, icon: Boxes },
-    { key: 'groups', labelKey: 'dashboard.totalCards.groups', value: groupsQ.data?.rows.length ?? 0, icon: FolderOpen },
+  // 今日汇总卡（USD 口径——API 边界已 /1e5 换算）。
+  const summaryCards = [
+    { key: 'requests', icon: Activity, labelKey: 'dashboard.summaryCards.requests', value: ov?.summary.requests ?? 0 },
+    { key: 'cost', icon: Coins, labelKey: 'dashboard.summaryCards.cost', value: `$${(ov?.summary.cost_usd ?? 0).toFixed(4)}` },
+    { key: 'tokens', icon: Zap, labelKey: 'dashboard.summaryCards.tokens', value: ov?.summary.total_tokens ?? 0 },
   ] as const
 
-  if (accountsQ.isError) {
+  // 资源计数（服务端 count；模板/分组排除软删）。
+  const totalCards = [
+    { key: 'templates', labelKey: 'dashboard.totalCards.templates', value: ov?.resources.templates ?? 0, icon: Boxes },
+    { key: 'groups', labelKey: 'dashboard.totalCards.groups', value: ov?.resources.groups ?? 0, icon: FolderOpen },
+    { key: 'users', labelKey: 'dashboard.totalCards.users', value: ov?.resources.users ?? 0, icon: Users },
+  ] as const
+
+  if (overviewQ.isError) {
     return (
       <Alert variant="destructive">
         <AlertTitle>{t('dashboard.loadFailedTitle')}</AlertTitle>
-        <AlertDescription>{(accountsQ.error as Error).message}</AlertDescription>
+        <AlertDescription>{(overviewQ.error as Error).message}</AlertDescription>
       </Alert>
     )
   }
@@ -103,10 +127,28 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          {/* 今日汇总卡（summary：请求/费用/token——今日 UTC 日界） */}
+          <div className={`${cardGrid} sm:grid-cols-3`}>
+            {summaryCards.map(({ key, labelKey, value, icon: Icon }, i) => (
+              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: i * 0.06 }}>
+                <Card className="@container/card h-full">
+                  <CardHeader>
+                    <CardDescription className="flex items-center gap-1.5">
+                      <Icon className="size-4" /> {t(labelKey)}
+                    </CardDescription>
+                    <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+                      {value}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
           {/* 状态计数卡片（dashboard-01 section-cards 结构：描述 + 大数字 + 状态徽章） */}
           <div className={`${cardGrid} sm:grid-cols-2 xl:grid-cols-4`}>
             {statusCards.map(({ key, icon: Icon, descKey }, i) => (
-              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: i * 0.06 }}>
+              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: 0.18 + i * 0.06 }}>
                 <Card className="@container/card h-full">
                   <CardHeader>
                     <CardDescription className="flex items-center gap-1.5">
@@ -127,7 +169,7 @@ export default function Dashboard() {
           {/* 资源总数卡片（同款结构，无徽章位） */}
           <div className={`${cardGrid} sm:grid-cols-3`}>
             {totalCards.map(({ key, labelKey, value, icon: Icon }, i) => (
-              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: 0.26 + i * 0.06 }}>
+              <motion.div key={key} {...fadeUp} transition={{ duration: 0.25, delay: 0.42 + i * 0.06 }}>
                 <Card className="@container/card h-full">
                   <CardHeader>
                     <CardDescription className="flex items-center gap-1.5">
@@ -143,8 +185,140 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+            {/* 趋势柱图（日桶请求量；tooltip 带费用/错误/token） */}
+            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.6 }} className="xl:col-span-2">
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle>{t('dashboard.trendTitle')}</CardTitle>
+                  <CardDescription>{t('dashboard.trendDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+                  {trend.length === 0 ? (
+                    <p className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+                      {t('dashboard.trendEmpty')}
+                    </p>
+                  ) : (
+                    <ChartContainer config={trendChartConfig} className="aspect-auto h-[320px] w-full">
+                      <BarChart accessibilityLayer data={trend} margin={{ left: 0, right: 8 }}>
+                        <defs>
+                          <linearGradient id="c3api-trendbar-fill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="var(--color-requests)" stopOpacity={0.9} />
+                            <stop offset="100%" stopColor="var(--color-requests)" stopOpacity={0.35} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="date"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          interval={0}
+                          tickFormatter={(v: string) => v.slice(5)}
+                        />
+                        <YAxis width={44} tickLine={false} axisLine={false} />
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent
+                              indicator="dot"
+                              labelFormatter={(label, payload) => {
+                                const row = payload?.[0]?.payload as TrendRow | undefined
+                                return row?.date ?? String(label ?? '')
+                              }}
+                              formatter={(value, _name, item) => {
+                                const row = item?.payload as TrendRow | undefined
+                                return (
+                                  <>
+                                    <span className="text-muted-foreground">{t('dashboard.tableRequests')}</span>
+                                    <span className="font-mono font-medium text-foreground tabular-nums">
+                                      {Number(value).toLocaleString()}
+                                    </span>
+                                    {row && (
+                                      <>
+                                        <span className="flex w-full justify-between text-muted-foreground">
+                                          <span>{t('dashboard.tableCost')}</span>
+                                          <span className="font-mono font-medium text-foreground tabular-nums">
+                                            ${row.cost_usd.toFixed(4)}
+                                          </span>
+                                        </span>
+                                        <span className="flex w-full justify-between text-muted-foreground">
+                                          <span>{t('dashboard.tableErrors')}</span>
+                                          <span className="font-mono font-medium text-foreground tabular-nums">
+                                            {row.errors}
+                                          </span>
+                                        </span>
+                                        <span className="flex w-full justify-between text-muted-foreground">
+                                          <span>{t('dashboard.tableTokens')}</span>
+                                          <span className="font-mono font-medium text-foreground tabular-nums">
+                                            {row.tokens.toLocaleString()}
+                                          </span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </>
+                                )
+                              }}
+                            />
+                          }
+                        />
+                        <Bar dataKey="requests" fill="url(#c3api-trendbar-fill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                      </BarChart>
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* 实时并发排行（本实例视角；TopN + other 归并） */}
+            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.66 }}>
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle>{t('dashboard.usersTopTitle')}</CardTitle>
+                  <CardDescription>{t('dashboard.usersTopDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {usersTop.length === 0 ? (
+                    <p className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+                      {t('dashboard.usersTopEmpty')}
+                    </p>
+                  ) : (
+                    <div className="overflow-hidden rounded-lg border">
+                      <Table>
+                        <TableHeader className="bg-muted">
+                          <TableRow>
+                            <TableHead className="w-10">#</TableHead>
+                            <TableHead>{t('dashboard.tableUser')}</TableHead>
+                            <TableHead className="text-right">{t('dashboard.tableConcurrency')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {usersTop.map((u, i) => (
+                            <TableRow key={u.user_id}>
+                              <TableCell className="text-muted-foreground tabular-nums">{i + 1}</TableCell>
+                              <TableCell className="max-w-40 truncate" title={u.email}>
+                                {truncate(u.email, 20)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">{u.concurrency}</TableCell>
+                            </TableRow>
+                          ))}
+                          {otherConc > 0 && (
+                            <TableRow>
+                              <TableCell className="text-muted-foreground">…</TableCell>
+                              <TableCell className="text-muted-foreground">{t('dashboard.otherRow')}</TableCell>
+                              <TableCell className="text-right tabular-nums text-muted-foreground">{otherConc}</TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
             {/* err_rate Top 5 柱图（单序列，颜色走语义 primary，深浅色自适应） */}
-            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.44 }} className="xl:col-span-2">
+            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.72 }} className="xl:col-span-2">
               <Card className="h-full">
                 <CardHeader>
                   <CardTitle>{t('dashboard.errTopTitle')}</CardTitle>
@@ -156,7 +330,7 @@ export default function Dashboard() {
                       {t('dashboard.errTopEmpty')}
                     </p>
                   ) : (
-                    <ChartContainer config={chartConfig} className="aspect-auto h-[320px] w-full">
+                    <ChartContainer config={errChartConfig} className="aspect-auto h-[320px] w-full">
                       <BarChart accessibilityLayer data={errData} margin={{ left: 0, right: 8 }}>
                         <defs>
                           <linearGradient id="c3api-errbar-fill" x1="0" y1="0" x2="0" y2="1">
@@ -218,7 +392,7 @@ export default function Dashboard() {
             </motion.div>
 
             {/* 并发水位（聚合标量：单值进度条） */}
-            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.5 }}>
+            <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.78 }}>
               <Card className="h-full">
                 <CardHeader>
                   <CardTitle>{t('dashboard.waterTitle')}</CardTitle>
@@ -242,14 +416,14 @@ export default function Dashboard() {
           </div>
 
           {/* 最近错误账号明细（dashboard-01 data-table 容器样式：圆角边框 + muted 表头） */}
-          <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.56 }}>
+          <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.84 }}>
             <Card>
               <CardHeader>
                 <CardTitle>{t('dashboard.errTopDetailTitle')}</CardTitle>
                 <CardDescription>{t('dashboard.errTopDetailDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
-                {errTop.length === 0 ? (
+                {errData.length === 0 ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">{t('dashboard.errTopEmpty')}</p>
                 ) : (
                   <div className="overflow-hidden rounded-lg border">
@@ -262,13 +436,13 @@ export default function Dashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {errTop.map(a => (
-                          <TableRow key={a.ID}>
-                            <TableCell className="max-w-40 truncate" title={a.Name}>{truncate(a.Name, 14)}</TableCell>
+                        {errData.map(a => (
+                          <TableRow key={a.name}>
+                            <TableCell className="max-w-40 truncate" title={a.name}>{truncate(a.name, 14)}</TableCell>
                             <TableCell className="text-right">
                               <Badge variant="destructive">{formatPercent(a.err_rate)}</Badge>
                             </TableCell>
-                            <TableCell className="text-right tabular-nums">{a.err_count ?? 0}</TableCell>
+                            <TableCell className="text-right tabular-nums">{a.err_count}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

@@ -494,6 +494,83 @@ func (f *fakeStore) ScanStats(ctx context.Context, q repository.StatQuery) ([]*d
 	return out, nil
 }
 
+// --- /admin/overview 聚合面（与真实 StatRepo 同语义：区间 + 组过滤；毫分原样） ---
+
+func (f *fakeStore) SummarizeStats(ctx context.Context, from, to time.Time, groupID int64) (*repository.StatSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s := &repository.StatSummary{}
+	for _, b := range f.stats {
+		if b.BucketTime.Before(from) || !b.BucketTime.Before(to) {
+			continue
+		}
+		if groupID > 0 && b.GroupID != groupID {
+			continue
+		}
+		s.Requests += b.RequestCount
+		s.Errors += b.ErrorCount
+		s.InputTokens += b.InputTokens
+		s.OutputTokens += b.OutputTokens
+		s.TotalTokens += b.TotalTokens
+		s.CacheReadTokens += b.CacheReadTokens
+		s.Cost += b.Cost
+	}
+	return s, nil
+}
+
+func (f *fakeStore) ScanStatsDays(ctx context.Context, from, to time.Time, groupID int64) ([]*repository.StatDayAgg, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	day := map[string]*repository.StatDayAgg{}
+	var order []string
+	for _, b := range f.stats {
+		if b.BucketTime.Before(from) || !b.BucketTime.Before(to) {
+			continue
+		}
+		if groupID > 0 && b.GroupID != groupID {
+			continue
+		}
+		k := b.BucketTime.UTC().Truncate(24 * time.Hour).Format("2006-01-02")
+		a, ok := day[k]
+		if !ok {
+			a = &repository.StatDayAgg{Date: b.BucketTime.UTC().Truncate(24 * time.Hour)}
+			day[k] = a
+			order = append(order, k)
+		}
+		a.Requests += b.RequestCount
+		a.Errors += b.ErrorCount
+		a.Tokens += b.TotalTokens
+		a.Cost += b.Cost
+	}
+	out := make([]*repository.StatDayAgg, 0, len(day))
+	for _, k := range order {
+		out = append(out, day[k])
+	}
+	return out, nil
+}
+
+func (f *fakeStore) CountOverviewResources(ctx context.Context) (*repository.OverviewResourceCounts, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return &repository.OverviewResourceCounts{
+		Templates: len(f.tpls),
+		Groups:    len(f.groups),
+		Users:     len(f.users),
+	}, nil
+}
+
+func (f *fakeStore) ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if u, ok := f.users[id]; ok {
+			out[id] = u.Email
+		}
+	}
+	return out, nil
+}
+
 // --- 规则（RuleStore）：priority/name 唯一冲突模拟真实 repo 的 ErrConflict ---
 
 func (f *fakeStore) ListRules(ctx context.Context, enabled *bool) ([]domain.Rule, error) {

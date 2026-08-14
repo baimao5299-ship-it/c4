@@ -27,6 +27,7 @@ type fakeSched struct{}
 func (fakeSched) Runtime(id int64) (scheduler.RuntimeInfo, bool) {
 	return scheduler.RuntimeInfo{Status: domain.StatusActive}, true
 }
+func (fakeSched) Runtimes() []scheduler.AccountRuntime { return nil }
 
 type fakeKeys struct{ upserted, deleted []string }
 

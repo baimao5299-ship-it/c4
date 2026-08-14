@@ -1283,6 +1283,54 @@ paths:
                 items: { $ref: '#/components/schemas/StatBucket' }
         default:
           $ref: '#/components/responses/Error'
+  # 管理端总览（spec 2026-08-14，用户裁决）：聚合面与实时面拆两个端点——
+  # overview（一站式聚合，TTL 30s 缓存）+ users-top（实时并发排行，TTL 2s）。
+  # 全冷面（聚合查询 + 门禁快照遍历）；既有端点（GetStats/GetUsageLogs/账号
+  # list）保留不动——overview 是聚合便捷面。
+  /overview:
+    get:
+      operationId: GetAdminOverview
+      tags: [stats]
+      summary: 管理端总览（summary USD + trend 日桶 + 账号健康 + 资源 + err_top + 计费告警）
+      description: |
+        一站式聚合端点（dashboard 主数据；聚合结果内部 TTL 30s 缓存，键含
+        days/group_id 与 UTC 日界——跨午夜滚转）。summary = 今日汇总（UTC 日界，
+        cost 毫分 /1e5 → USD，与价格 API 口径一致）；trend = 近 N 天日桶
+        （SQL 侧 GROUP BY date_trunc('day', bucket_time)，days 上限 30）；
+        accounts = 账号健康分布 + 并发水位（调度器快照同源）；err_top = 账号
+        维度 err_rate Top5（调度器 EWMA，name = 账号名）；alerts = billing
+        flusher 水线状态（注入面读取）。
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 30, default: 7, description: 趋势天数（含今日；缺省 7，上限 30） } }
+        - { name: group_id, in: query, schema: { type: integer, format: int64, description: 按组过滤聚合（summary/trend；缺省全局） } }
+      responses:
+        '200':
+          description: 总览聚合（summary/trend/accounts/resources/err_top/alerts）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OverviewResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /users-top:
+    get:
+      operationId: GetAdminUsersTop
+      tags: [stats]
+      summary: 实时在途并发排行 TopN（本实例视角）
+      description: |
+        实时并发排行：读门禁快照在途计数（Auth.InFlightUsers 只读访问器——
+        零锁零热路径），过滤 0 → 降序 → TopN + other 归并（其余在途用户合计，
+        非伪用户条目）；email = TopN user_id 一次 IN 查询回填。内部 TTL 2s 缓存
+        （top 并入缓存键）。多实例部署下为**本实例**在途并发（各实例独立计数）。
+      parameters:
+        - { name: top, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20, description: 排行条数（缺省 20，上限 100） } }
+      responses:
+        '200':
+          description: 实时在途并发 TopN + other 归并
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsersTopResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   # 运维观测面（/admin/ops/workers，用户裁决并入管理面）：路由由 oapi-codegen
   # chi-server 生成（BaseURL /admin 拼接），鉴权走 /admin 组 adminAuth；类型在
   # 契约（handler/api.gen.go + 前端 schema.d.ts 同源）。
@@ -2257,3 +2305,93 @@ components:
           type: array
           items: { $ref: '#/components/schemas/SnapshotState' }
         generated_at: { type: string, format: date-time }
+    # 管理端总览（spec 2026-08-14）：OverviewResponse 各段类型。
+    OverviewSummary:
+      type: object
+      required: [requests, errors, err_rate, cost_usd, input_tokens, output_tokens, total_tokens, cache_read_tokens]
+      description: 今日汇总（UTC 日界；cost_usd = 毫分 /1e5 → USD）
+      properties:
+        requests: { type: integer, format: int64 }
+        errors: { type: integer, format: int64 }
+        err_rate: { type: number, format: double, description: 错误率（errors / requests；无请求 = 0） }
+        cost_usd: { type: number, format: double, description: 今日成本（USD，毫分 /1e5——与价格 API 口径一致） }
+        input_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        total_tokens: { type: integer, format: int64 }
+        cache_read_tokens: { type: integer, format: int64 }
+    OverviewTrend:
+      type: object
+      required: [date, requests, errors, cost_usd, tokens]
+      description: 近 N 天日桶（SQL 侧 GROUP BY date_trunc('day', bucket_time)；UTC 日）
+      properties:
+        date: { type: string, format: date, description: 日桶（UTC） }
+        requests: { type: integer, format: int64 }
+        errors: { type: integer, format: int64 }
+        cost_usd: { type: number, format: double, description: 当日成本（USD，毫分 /1e5） }
+        tokens: { type: integer, format: int64, description: 当日总 token（usage_stats total_tokens 列聚合） }
+    OverviewAccounts:
+      type: object
+      required: [active, unhealthy, "429", disabled, concurrency, max_concurrency]
+      description: 账号健康分布 + 并发水位（调度器快照同源——与账号列表运行时视图一致）
+      properties:
+        active: { type: integer }
+        unhealthy: { type: integer }
+        "429": { type: integer }
+        disabled: { type: integer }
+        concurrency: { type: integer, format: int64, description: 在途并发合计 }
+        max_concurrency: { type: integer, description: 并发上限合计（水位 = concurrency / max_concurrency） }
+    OverviewResources:
+      type: object
+      required: [templates, groups, users]
+      description: 资源计数（冷面 count；模板/分组排除软删）
+      properties:
+        templates: { type: integer }
+        groups: { type: integer }
+        users: { type: integer }
+    OverviewErrTop:
+      type: object
+      required: [name, err_rate, err_count]
+      description: 账号维度错误率 Top5（调度器 EWMA err_rate 降序；name = 账号名）
+      properties:
+        name: { type: string, description: 账号名（非模型名——账号维度） }
+        err_rate: { type: number, format: double }
+        err_count: { type: integer }
+    OverviewAlerts:
+      type: object
+      required: [billing_pending, billing_pending_waterline, billing_warned]
+      description: 告警面（billing flusher 水线状态；注入面读取，未装配 = 全零）
+      properties:
+        billing_pending: { type: integer, format: int64, description: 尚未落库的计费日志条数 }
+        billing_pending_waterline: { type: integer, format: int64, description: 水线（包级常量直读） }
+        billing_warned: { type: boolean, description: 水线告警边沿是否置位 }
+    OverviewResponse:
+      type: object
+      required: [summary, trend, accounts, resources, err_top, alerts]
+      properties:
+        summary: { $ref: '#/components/schemas/OverviewSummary' }
+        trend:
+          type: array
+          items: { $ref: '#/components/schemas/OverviewTrend' }
+        accounts: { $ref: '#/components/schemas/OverviewAccounts' }
+        resources: { $ref: '#/components/schemas/OverviewResources' }
+        err_top:
+          type: array
+          items: { $ref: '#/components/schemas/OverviewErrTop' }
+        alerts: { $ref: '#/components/schemas/OverviewAlerts' }
+    UsersTopEntry:
+      type: object
+      required: [user_id, email, concurrency]
+      description: 实时在途并发条目（users 表无 name 列——仅 email）
+      properties:
+        user_id: { type: integer, format: int64 }
+        email: { type: string, description: 邮箱（TopN user_id 一次 IN 查询回填；缺失 = 空串） }
+        concurrency: { type: integer, format: int64, description: 在途请求数 }
+    UsersTopResponse:
+      type: object
+      required: [users, other_concurrency]
+      description: 实时并发排行（本实例视角；TopN + other 归并）
+      properties:
+        users:
+          type: array
+          items: { $ref: '#/components/schemas/UsersTopEntry' }
+        other_concurrency: { type: integer, format: int64, description: 其余在途用户合计（TopN 之外；非伪用户条目） }

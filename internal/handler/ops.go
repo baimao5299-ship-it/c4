@@ -39,6 +39,22 @@ type StatsProvider interface {
 type OpsOptions struct {
 	Workers   []StatsProvider
 	Snapshots func() []SnapshotState // nil = 快照区返回空
+	// InFlightUsers 实时在途并发快照提供面（/admin/users-top；实现 =
+	// proxy.Auth.InFlightUsers——门禁快照只读访问器，零锁冷面。nil = 未装配 →
+	// 端点返回空列表）。
+	InFlightUsers func() map[int64]int64
+	// BillingAlerts 计费告警面（/admin/overview alerts 段；实现 = billing
+	// flusher 直读 PendingLogs/PendingWaterline/Warned。nil = 未装配 →
+	// alerts 全零）。
+	BillingAlerts func() BillingAlerts
+}
+
+// BillingAlerts overview.alerts 数据（毫分水位原样输出——pending_waterline
+// 为 billing 包级水线常量直读；warned = 水线告警边沿是否置位）。
+type BillingAlerts struct {
+	Pending          int64
+	PendingWaterline int64
+	Warned           bool
 }
 
 // GetOpsWorkers 契约实现（api.gen.go ServerInterface）：按需组装，无缓存。
