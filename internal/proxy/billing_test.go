@@ -603,20 +603,6 @@ func (f fakeBalanceLoader) LoadAssignmentMultipliers(ctx context.Context) (map[b
 	return f.am, nil
 }
 
-// captureStatUpserter 记录 Upsert 的统计桶（P2a：拒绝路径统计聚合断言用——
-// 本地预用量拒绝不产生明细但保留 usagestat 计数）。
-type captureStatUpserter struct {
-	mu      sync.Mutex
-	buckets []*domain.StatBucket
-}
-
-func (s *captureStatUpserter) Upsert(ctx context.Context, b []*domain.StatBucket) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.buckets = append(s.buckets, b...)
-	return nil
-}
-
 // fakeDeductWriter 记录 DeductAndLog 调用（T3 billed 路由断言）。
 type fakeDeductWriter struct {
 	mu    sync.Mutex
@@ -656,8 +642,9 @@ func newTestProxyBillingT3Logs(t *testing.T, upstream string, prices *fakePriceL
 // TestProxyBillingInsufficientBalance402 余额预检（评审 I-1 无槽位问题）：
 // 快照 ≤0 或缺失 → 402 + 上游零命中，预检在 Acquire 前不占用并发槽。P2a
 // 源头修复：本地预用量拒绝不产生 usage_logs 明细/pending（balance 烧穿后的
-// 402 风暴与 429 同路径，明细即无界积压源）；统计聚合保留（usagestat 计数
-// 不丢），billed flusher 零调用。
+// 402 风暴与 429 同路径，明细即无界积压源）；billed flusher 零调用（spec
+// 2026-08-14：请求路径零统计——拒绝路径统计计数交由离线聚合 worker 兜底，
+// 不再请求路径即时聚合）。
 func TestProxyBillingInsufficientBalance402(t *testing.T) {
 	cases := []struct {
 		name string
@@ -678,11 +665,10 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 			}))
 			defer up.Close()
 			store := &captureLogStore{}
-			stats := &captureStatUpserter{}
 			rec := usage.New(usage.UsageConfig{
 				BatchSize: 100, FlushInterval: time.Hour,
 				StatsFlushInterval: time.Hour,
-			}, store, stats, nil)
+			}, store, nil)
 			require.NoError(t, c.bal.Reload(context.Background()), "快照加载（余额 0 / 空表）")
 			writer := &fakeDeductWriter{}
 			f := billing.NewFlusher(billing.FlushConfig{
@@ -707,13 +693,7 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 			writer.mu.Lock()
 			require.Empty(t, writer.calls, "预用量拒绝不进 billed flusher（无扣费无计费日志）")
 			writer.mu.Unlock()
-			require.NoError(t, rec.Close(context.Background()), "Recorder 手动 flush 统计面")
-			stats.mu.Lock()
-			defer stats.mu.Unlock()
-			require.Len(t, stats.buckets, 1, "拒绝仍聚合统计（usagestat 计数不丢）")
-			require.Equal(t, int64(1), stats.buckets[0].RequestCount)
-			require.Equal(t, int64(1), stats.buckets[0].ErrorCount, "429/402 拒绝计错误")
-			require.Zero(t, stats.buckets[0].Cost, "预检拒绝 cost 0")
+			require.NoError(t, rec.Close(context.Background()), "Recorder 手动 flush")
 		})
 	}
 }
@@ -728,7 +708,7 @@ func TestProxyBillingRoutesToFlusher(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 50000}}, nil)
 	require.NoError(t, bal.Reload(context.Background()), "快照加载（余额 50000）")
@@ -797,7 +777,7 @@ func TestProxyBillingMultiplierAssignment(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
 		m:  map[int64]int64{1: 50000},
@@ -842,7 +822,7 @@ func newTestProxyBillingKeys(t *testing.T, keys map[string]domain.KeyMeta, accs 
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, logs, noopStatStore{}, nil)
+	}, logs, nil)
 	auth := NewAuth(noopKeyLoader{keys: keys}, noopUserLoader{}, nil)
 	require.NoError(t, auth.Reload(context.Background())) // 构造不再自载——测试显式首刷（快照注册表单一入口）
 	hc := &http.Client{Transport: http.DefaultTransport}
@@ -884,7 +864,7 @@ func TestProxyBillingMultiplierPerGroup(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	w1 := &fakeDeductWriter{}
 	f1 := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
@@ -932,7 +912,7 @@ func TestProxyBillingMultiplierGroup(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
 		m: map[int64]int64{1: 50000}, gm: map[int64]int{10: 15000}, // gk-1 → groupID 10
@@ -966,7 +946,7 @@ func TestProxyBillingFreeUserPasses(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
 		m:  map[int64]int64{1: 0},
@@ -1004,7 +984,7 @@ func TestProxyBillingFreeGroupPasses(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	bal := billing.NewBalances(fakeBalanceLoader{
 		m: map[int64]int64{1: 0}, gm: map[int64]int{10: 0}, // gk-1 → groupID 10；组免费
@@ -1040,7 +1020,7 @@ func TestProxyBillingFreeGroupSnapshotMissing(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	// 余额快照为空（用户 1 不在快照）+ 组免费（gk-1 → groupID 10）。
 	bal := billing.NewBalances(fakeBalanceLoader{
@@ -1077,7 +1057,7 @@ func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, store, noopStatStore{}, nil)
+	}, store, nil)
 	writer := &fakeDeductWriter{}
 	loader := &fakeBalanceLoader{m: map[int64]int64{}} // 用户 1 尚未创建
 	bal := billing.NewBalances(loader, nil)

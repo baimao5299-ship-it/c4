@@ -149,10 +149,6 @@ type noopLogStore struct{}
 
 func (noopLogStore) InsertBatch(ctx context.Context, l []*domain.UsageLog) error { return nil }
 
-type noopStatStore struct{}
-
-func (noopStatStore) Upsert(ctx context.Context, b []*domain.StatBucket) error { return nil }
-
 type noopLoader struct{ accs map[int64][]*domain.Account }
 
 func (n noopLoader) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain.Account, error) {
@@ -261,7 +257,7 @@ func newTestProxyTplTimeoutLogs(t *testing.T, tpl *domain.Template, accountID in
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, logs, noopStatStore{}, nil)
+	}, logs, nil)
 	return newTestProxyTplTimeoutRec(t, tpl, accountID, usageCapture, streamTimeout, rec, bill, errLogStoreFrom(logs))
 }
 

@@ -182,7 +182,7 @@ func newTestCodexProxy(t *testing.T, credType credential.Type, accounts map[int6
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, logs, noopStatStore{}, nil)
+	}, logs, nil)
 	cfg := Config{
 		MaxBodySize: 1 << 20, FailoverAttempts: 2,
 		UpstreamTimeout:       5 * time.Second,
@@ -508,7 +508,7 @@ func TestImagesCodexAdapterMissing501(t *testing.T) {
 		ID: 10, TemplateID: tpl.ID, Template: tpl, UpstreamKey: "",
 		Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4, Ext: codexOAuthExt(10, "at-10", "rt-10"),
 	}}}
-	rec := usage.New(usage.UsageConfig{BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour}, store, noopStatStore{}, nil)
+	rec := usage.New(usage.UsageConfig{BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour}, store, nil)
 	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
 	require.NoError(t, re.Reload(context.Background()))
 	sched := scheduler.New(scheduler.Config{DefaultMaxConcurrency: 4, SyncInterval: time.Hour}, noopLoader{accs: accs}, re, nil)
@@ -691,7 +691,7 @@ func TestImagesCodexMixedGroupFailoverReset(t *testing.T) {
 			Status: domain.StatusActive, Weight: 100, MaxConcurrency: 4,
 		},
 	}}
-	rec := usage.New(usage.UsageConfig{BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour}, &captureLogStore{}, noopStatStore{}, nil)
+	rec := usage.New(usage.UsageConfig{BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour}, &captureLogStore{}, nil)
 	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
 	require.NoError(t, re.Reload(context.Background()))
 	sched := scheduler.New(scheduler.Config{DefaultMaxConcurrency: 4, SyncInterval: time.Hour}, noopLoader{accs: accs}, re, nil)

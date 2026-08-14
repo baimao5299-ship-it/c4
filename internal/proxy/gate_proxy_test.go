@@ -101,8 +101,9 @@ func TestProxyConcurrencyLimit429(t *testing.T) {
 // TestProxyRejectionStormNoPending P2a 源头修复（压测 2026-08-11 复测）：本地
 // 预用量拒绝（并发超限 429 等）不产生 usage_logs 明细/pending——单 key 限流
 // 161k req/s 的拒绝风暴（实证 60s → 9.8M pending 行 / RSS 7.5GB，全部漏斗到
-// 单用户 billed flusher）不再无界积压；统计聚合保留（usagestat 计数不丢）。
-// billing on/off 双形态（on 形态修复前 429 与成功请求同走 billed flusher）。
+// 单用户 billed flusher）不再无界积压；拒绝统计计数由离线聚合 worker 兜底
+// （spec 2026-08-14 请求路径零统计）。billing on/off 双形态（on 形态修复前
+// 429 与成功请求同走 billed flusher）。
 func TestProxyRejectionStormNoPending(t *testing.T) {
 	t.Run("billing off", func(t *testing.T) {
 		up, release := blockingUpstream(t)
@@ -144,11 +145,10 @@ func TestProxyRejectionStormNoPending(t *testing.T) {
 		up, release := blockingUpstream(t)
 		defer up.Close()
 		store := &captureLogStore{}
-		stats := &captureStatUpserter{}
 		rec := usage.New(usage.UsageConfig{
 			BatchSize: 100, FlushInterval: time.Hour,
 			StatsFlushInterval: time.Hour,
-		}, store, stats, nil)
+		}, store, nil)
 		bal := billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{1: 50000}}, nil)
 		require.NoError(t, bal.Reload(context.Background()))
 		writer := &fakeDeductWriter{}
@@ -180,15 +180,6 @@ func TestProxyRejectionStormNoPending(t *testing.T) {
 		require.Len(t, writer.calls, 1, "仅成功请求进 billed flusher（429 风暴零记录——修复前 9.8M 行实证）")
 		writer.mu.Unlock()
 		require.NoError(t, rec.Close(context.Background()))
-		stats.mu.Lock()
-		defer stats.mu.Unlock()
-		var reqs, errs int64
-		for _, b := range stats.buckets {
-			reqs += b.RequestCount
-			errs += b.ErrorCount
-		}
-		require.Equal(t, int64(storm+1), reqs, "拒绝仍聚合统计（usagestat 计数不丢）")
-		require.Equal(t, int64(storm), errs, "429 拒绝计错误")
 	})
 }
 

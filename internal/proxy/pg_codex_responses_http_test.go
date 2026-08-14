@@ -109,7 +109,7 @@ func TestCodexResponsesHTTPBillingPG(t *testing.T) {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, noopLogStore{}, noopStatStore{}, nil)
+	}, noopLogStore{}, nil)
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, repos.Billing, rec, bal, nil)

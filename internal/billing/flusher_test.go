@@ -166,7 +166,7 @@ func newTestFlusherWorkers(writer DeductWriter, workers int) *Flusher {
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, noopLogInserter{}, noopStatUpserter{}, nil)
+	}, noopLogInserter{}, nil)
 	bal := NewBalances(fakeBalLoader{m: map[int64]int64{1: 1000, 2: 1000}}, nil)
 	return NewFlusher(FlushConfig{
 		FlushInterval:          time.Hour,
@@ -378,38 +378,52 @@ func TestFlusherParallelWorkers(t *testing.T) {
 	require.Equal(t, 4, writer.max, "4 worker 并行（分片）")
 }
 
-// TestFlusherBilledAggregatesStats 评审 M-3：billed 日志经 stats.Aggregate 进
-// usagestat 统计面（每日志恰好一个写者——Flusher.Record 即统计写者）。
-func TestFlusherBilledAggregatesStats(t *testing.T) {
+// TestFlusherBilledAddsQuota 评审 M-3 更新（spec 2026-08-14 评审 P1-C）：billed
+// 日志经 stats.AddQuota 并入 Recorder 同一 quotaUsed map——统计聚合已删除（
+// billed 行落库 usage_logs 后由离线聚合 worker 重建），额度两路闭环（billed/
+// 非 billed）在此钉死。
+func TestFlusherBilledAddsQuota(t *testing.T) {
 	writer := &fakeDeductWriter{}
-	stats := &captureStatUpserter{}
+	q := &captureQuotaWriter{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, noopLogInserter{}, stats, nil)
+	}, noopLogInserter{}, nil)
+	rec.SetQuotaWriter(q)
 	bal := NewBalances(fakeBalLoader{m: map[int64]int64{1: 1000}}, nil)
 	f := NewFlusher(FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,
 	}, writer, rec, bal, nil)
 
 	f.Record(&domain.UsageLog{
-		UserID: 1, GroupID: 10, Model: "gpt-4o",
-		InputTokens: 3, OutputTokens: 5, Cost: 130,
+		UserID: 1, GroupID: 10, Model: "gpt-4o", KeyID: 42,
+		InputTokens: 3, OutputTokens: 5, TotalTokens: 8, Cost: 130,
 		CreatedAt: time.Now(),
 	})
 	require.NoError(t, f.Close(context.Background()))
-	require.NoError(t, rec.Close(context.Background()), "Recorder 手动 flush 统计面（未 Start）")
+	require.NoError(t, rec.Close(context.Background()), "Recorder 手动 flush 额度面（未 Start）")
 
-	stats.mu.Lock()
-	defer stats.mu.Unlock()
-	require.Len(t, stats.buckets, 1, "billed 日志进 StatBucket（评审 M-3）")
-	b := stats.buckets[0]
-	require.Equal(t, int64(1), b.RequestCount)
-	require.Equal(t, int64(130), b.Cost)
-	require.Equal(t, int64(3), b.InputTokens)
-	require.Equal(t, int64(5), b.OutputTokens)
-	require.Equal(t, "gpt-4o", b.Model)
-	require.Equal(t, int64(1), b.UserID)
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	require.Equal(t, 1, q.n, "billed 行额度一次批量回写")
+	require.Contains(t, q.calls, int64(42008), "billed 行 TotalTokens 并入 quotaUsed（评审 P1-C 闭环）")
+}
+
+// captureQuotaWriter 记录 AddQuotaUsed 调用（P1-C billed 额度闭环断言）。
+type captureQuotaWriter struct {
+	mu    sync.Mutex
+	n     int
+	calls []int64 // 编码 = key*1000+delta
+}
+
+func (q *captureQuotaWriter) AddQuotaUsed(ctx context.Context, deltas map[int64]int64) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.n++
+	for k, d := range deltas {
+		q.calls = append(q.calls, k*1000+d)
+	}
+	return nil
 }
 
 // newTestLogger warn 级文件 logger（Warn 断言用；Windows 上 zap 句柄不释放，
@@ -453,9 +467,9 @@ func TestFlusherCloseTruncatesOnBudget(t *testing.T) {
 // TestFlusherCloseWaitsInflight O2 停机修复核心（复测根因 1）：ticker 批次已
 // 在途（baseCtx、pending 已 swap、flushMu 被占）时 Close 必须先等其结束——
 // 否则 drain 循环见 pendingCount()==0 静默提前返回，在途批次无界运行：
-// - 预算内完成：Close 实际等待（不提前返回），完整排空，无截断 Warn；
-// - 预算到期：Cancel baseCtx → 在途 DeductAndLog 快速失败（未落库、回灌不
-//   丢）→ 截断 Warn（flushed/remaining 条数）+ 快速退出（不等其自然完成）。
+//   - 预算内完成：Close 实际等待（不提前返回），完整排空，无截断 Warn；
+//   - 预算到期：Cancel baseCtx → 在途 DeductAndLog 快速失败（未落库、回灌不
+//     丢）→ 截断 Warn（flushed/remaining 条数）+ 快速退出（不等其自然完成）。
 func TestFlusherCloseWaitsInflight(t *testing.T) {
 	t.Run("waits within budget", func(t *testing.T) {
 		writer := &ctxWriter{latency: 500 * time.Millisecond, started: make(chan struct{})}

@@ -353,8 +353,7 @@ func (p *Proxy) recordRejected(ctx context.Context, reqID string, groupID, accou
 		m := domain.TruncateErrMsg(msg)
 		l.ErrorMessage = &m
 	}
-	p.rec.Aggregate(l)      // 统计双轨（usagestat is_error/error_count 照旧）
-	p.enqueueRejectedErr(l) // 明细双轨（err_logs 普通队列：风暴采样丢弃面）
+	p.enqueueRejectedErr(l) // 明细（err_logs 普通队列：风暴采样丢弃面）
 }
 
 // enqueueRejectedErr 拒绝行投递（架构审查 B2：拒绝类行走普通队列——风暴采样
@@ -379,24 +378,22 @@ func (p *Proxy) recordLog(l *domain.UsageLog) {
 // 路径语义（error_type）**判定，与 cost 无关——cost>0 判定会漏掉免费分组
 // （倍率 0 的成功行）与 0 token 成功行（空响应））：
 //   - usage_logs = 放行路径明细：error_type ∈ {none（成功，含 cost=0 免费组/
-//     空响应）, abort（半异常计费）}——billed → Flusher（统计聚合 + 扣费 +
-//     落库，每日志恰好一个写者），非 billed → rec.Record；4xx/5xx/network
-//     （上游透传/耗尽失败行）**不写 usage_logs**（失败明细归 err_logs，P2a
-//     拒绝风暴教训同族）
+//     空响应）, abort（半异常计费）}——billed → Flusher（扣费 + 落库，每日志
+//     恰好一个写者），非 billed → rec.Record；4xx/5xx/network（上游透传/耗尽
+//     失败行）**不写 usage_logs**（失败明细归 err_logs，P2a 拒绝风暴教训同族）
 //   - err_logs = 全部错误明细（error_type != none）：4xx/5xx（上游透传/耗尽）
 //   - abort 双轨（豁免队列恒落盘——架构审查 B2）；拒绝行走 recordRejected
 //     的采样队列，不经本路由
-//   - usagestat = 聚合统计：计数全保留（is_error/error_count）——放行路径行由
-//     Flusher.Record/rec.Record 内部聚合，失败行由 rec.Aggregate 聚合（每日志
-//     恰好一个统计写者，不重复计数）
+//   - usage_stats = 离线聚合（spec 2026-08-14）：请求路径零统计计算/投递——
+//     放行行（none/abort）由离线 worker 从 usage_logs 重建（全字段含 TTFT/
+//     call_count）；纯错误行（4xx/5xx/network）从 err_logs 重建（count 语义）；
+//     拒绝行随 err_logs 采样丢样（口径注释见 recordRejected）
 func (p *Proxy) routeLog(l *domain.UsageLog) {
 	billable := l.ErrorType == domain.ErrNone || l.ErrorType == domain.ErrAbort // 放行路径
 	if p.shouldBill(l) && billable {
-		p.bill.Flusher.Record(l) // 计费明细（聚合 + 扣费 + usage_logs）
+		p.bill.Flusher.Record(l) // 计费明细（扣费 + usage_logs；额度经 AddQuota）
 	} else if billable {
-		p.rec.Record(l) // 非 billed 放行行（usage_logs + 统计）
-	} else {
-		p.rec.Aggregate(l) // 失败行：只聚合统计（不入 usage_logs）
+		p.rec.Record(l) // 非 billed 放行行（usage_logs + quota 累加）
 	}
 	if l.ErrorType != domain.ErrNone {
 		p.enqueueErrLog(l) // 全部错误明细 → err_logs（豁免通道）

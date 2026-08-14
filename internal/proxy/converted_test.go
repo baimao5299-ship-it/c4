@@ -152,7 +152,7 @@ func newConvertedTestProxy(t *testing.T, upstream string, tplFormats []domain.Re
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour,
-	}, noopLogStore{}, noopStatStore{}, nil)
+	}, noopLogStore{}, nil)
 	key := activeKey(1, 1, 10)
 	key.ProtocolConvert = pc
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{

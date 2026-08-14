@@ -23,10 +23,9 @@ import (
 
 func TestRecorderStats(t *testing.T) {
 	r := New(UsageConfig{BatchSize: 10, FlushInterval: time.Hour, StatsFlushInterval: time.Hour},
-		&memLogStore{}, &memStatStore{}, nil)
+		&memLogStore{}, nil)
 	base := time.Now().UTC().Truncate(time.Hour)
 
-	// 同桶 3 条 + 异桶 2 条：pending 累计 5，桶数 2（同桶合并）。
 	rec := func(uid int64, rid string) {
 		r.Record(&domain.UsageLog{RequestID: rid, UserID: uid, Model: "m",
 			Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: base})
@@ -37,19 +36,12 @@ func TestRecorderStats(t *testing.T) {
 	rec(2, "d")
 	rec(2, "e")
 
-	st := r.Stats().(RecorderStats) // typed struct 断言
+	st := r.Stats().(RecorderStats) // typed struct 断言（spec 2026-08-14：统计桶
+	// 机制整体删除——StatBuckets 字段随之消失，仅存明细/水线观测）
 	require.Equal(t, int64(5), st.PendingLogs, "pending 与 Record 累计一致")
-	require.Equal(t, int64(2), st.StatBuckets, "同桶合并后累计创建桶数 = 2")
 	require.Equal(t, pendingWaterline, st.PendingWaterline, "水线包级 var 直读")
 	require.False(t, st.Warned)
 	require.Equal(t, 5, r.Pending(), "既有 accessor 同步一致")
-
-	// Aggregate 路径（billed 统计面）：只进桶不进 pending。
-	r.Aggregate(&domain.UsageLog{RequestID: "f", UserID: 3, Model: "m",
-		Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: base})
-	st = r.Stats().(RecorderStats)
-	require.Equal(t, int64(5), st.PendingLogs, "Aggregate 不进 pending")
-	require.Equal(t, int64(3), st.StatBuckets, "Aggregate 新桶也计入累计")
 }
 
 // --- ErrLogWorker ---

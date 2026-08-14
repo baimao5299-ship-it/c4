@@ -164,7 +164,7 @@ func newPGImagesTestProxy(t *testing.T, sched *scheduler.Scheduler, groupID int6
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
 		StatsFlushInterval: time.Hour,
-	}, noopLogStore{}, noopStatStore{}, nil)
+	}, noopLogStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey(keyForGroup(groupID)): activeKey(1, 1, groupID),
 	}}, noopUserLoader{}, nil)

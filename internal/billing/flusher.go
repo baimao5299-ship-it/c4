@@ -85,10 +85,12 @@ var maxLogFlushFailures = 5
 var inflightAbandonGrace = 500 * time.Millisecond
 
 // Flusher 计费批量落库（worker.Worker 契约，Name="billing"）。O1 管道化：
-// Record 只做统计聚合（stats.Aggregate——billed 流量进 usagestat 统计面，与
-// 非 billed 一视同仁，每日志恰好一个写者）+ 短锁归并 pending map（userID →
-// cost+logs），O(1) 摊还，**永不阻塞**（无 channel——此前有界 channel cap
-// 16384 饱和阻塞在 proxy.finish() 内是压测 3.75k/s 塌陷根因）。flush 单入口
+// Record 只做额度累加（stats.AddQuota——billed 流量经方法并入 Recorder 同一
+// quotaUsed map，spec 2026-08-14 评审 P1-C：billed/非 billed 两路闭环；统计
+// 面已离线化——billed 行落库 usage_logs 后由离线聚合 worker 重建）+ 短锁归并
+// pending map（userID → cost+logs），O(1) 摊还，**永不阻塞**（无 channel——
+// 此前有界 channel cap 16384 饱和阻塞在 proxy.finish() 内是压测 3.75k/s 塌陷
+// 根因）。flush 单入口
 // 串行（flushMu：ticker/ctx.Done/Close 三处触发共用，杜绝并发换批）：锁内
 // swap 整个 pending（换新 map，flush 期间新日志进新 map 零阻塞）→ 批按
 // userID 分片（同 user 恒同桶 → 实例内串行；FEFO 行锁跨实例安全不变）→
@@ -188,11 +190,13 @@ func (f *Flusher) loop(ctx context.Context) {
 	}
 }
 
-// Record 记录一条计费日志（proxy shouldBill 路由的 billed 路径）：统计聚合 +
-// 短锁归并 pending map。O1 管道化：无 channel，**永不阻塞**（HTTP 层过载保护
-// 不再依赖反压——pending 内存由水线 Warn 观测，崩溃丢 ≤1 flush 窗口语义不变）。
+// Record 记录一条计费日志（proxy shouldBill 路由的 billed 路径）：额度累加
+// （AddQuota 并入 Recorder 同一 quotaUsed map——统计聚合已删除，spec 2026-08-14
+// 请求路径零统计计算）+ 短锁归并 pending map。O1 管道化：无 channel，
+// **永不阻塞**（HTTP 层过载保护不再依赖反压——pending 内存由水线 Warn 观测，
+// 崩溃丢 ≤1 flush 窗口语义不变）。
 func (f *Flusher) Record(l *domain.UsageLog) {
-	f.stats.Aggregate(l)
+	f.stats.AddQuota(l.KeyID, l.TotalTokens)
 	f.mu.Lock()
 	e, ok := f.pending[l.UserID]
 	if !ok {

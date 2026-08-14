@@ -8,19 +8,18 @@ package usage
 // 接口——装配侧类型断言聚合（main.go），响应 typed struct 非 map。
 // 采集纪律：原子读既有计数器 + len(channel)（零锁零分配，O(1)）。
 
-// RecorderStats usage 明细/统计聚合 worker 状态。
+// RecorderStats usage 明细/额度 worker 状态（spec 2026-08-14：统计桶机制整体
+// 删除——stat_buckets_created 观测随之消失）。
 type RecorderStats struct {
-	PendingLogs      int64 `json:"pending_logs"`         // 尚未落库的明细条数
-	StatBuckets      int64 `json:"stat_buckets_created"` // 统计桶累计创建数（只增不减——flush 换批不复位；字段名标注累计语义）
-	PendingWaterline int64 `json:"pending_waterline"`    // 水线（包级 var 直读）
-	Warned           bool  `json:"warned"`               // 水线告警边沿是否置位
+	PendingLogs      int64 `json:"pending_logs"`      // 尚未落库的明细条数
+	PendingWaterline int64 `json:"pending_waterline"` // 水线（包级 var 直读）
+	Warned           bool  `json:"warned"`            // 水线告警边沿是否置位
 }
 
 // Stats 满足 handler.StatsProvider（独立于 worker.Worker 契约；装配链路见 internal/handler/ops.go 文件头）。
 func (r *Recorder) Stats() any {
 	return RecorderStats{
 		PendingLogs:      r.pendingN.Load(),
-		StatBuckets:      r.bucketN.Load(),
 		PendingWaterline: pendingWaterline,
 		Warned:           r.warned.Load(),
 	}
