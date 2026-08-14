@@ -81,17 +81,21 @@ func TestErrLogAlignColumnsMatchCreateDDL(t *testing.T) {
 
 // TestUsageStatsAlignColumnsMatchCreateDDL usage_stats 对齐锚（用户裁决
 // 2026-08-11 三表统一分区机制——usageStatsColumnDefs 第三列事实源，建表 DDL
-// 与幂等补列 ALTER 双向相等；防 P1 同型复发）。
+// 与幂等补列 ALTER 双向相等；防 P1 同型复发）→ spec 2026-08-14 表重建：
+// 存量库必须重建（DDL 变更大：删 total_latency_ms、加 call_count/ttft_* 六列 +
+// bigint[] 数组列），幂等补列 ALTER 机制随之删除——align 集合必须恒空（防
+// 复活回归），建表 DDL 仍与事实源双向相等。
 func TestUsageStatsAlignColumnsMatchCreateDDL(t *testing.T) {
 	source := ddlColumnNames(strings.Join(usageStatsColumnDefs, "\n"))
 	create := ddlColumnNames(usageStatsCreateDDL)
-	align := ddlColumnNames(usageStatsAlignColumnDDLs...)
 	require.NotEmpty(t, source, "事实源列集合非空")
 	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
-	require.Equal(t, source, align, "补列 ALTER 与事实源列集合一致")
-	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
+	require.Empty(t, usageStatsAlignColumnDDLs, "usage_stats 不做幂等补列（表重建，存量库必须重建）")
 	require.Contains(t, source, "bucket_time", "对齐锚必须覆盖分区键 bucket_time")
 	require.Contains(t, source, "cost", "对齐锚必须覆盖计费预聚合列")
+	require.Contains(t, source, "call_count", "表重建必须含按次调用列")
+	require.Contains(t, source, "ttft_hist", "表重建必须含 TTFT 直方图数组列（ent carve-out）")
+	require.NotContains(t, source, "total_latency_ms", "表重建删除总延迟列（TTFT 直方图替代）")
 }
 
 // TestIsBootstrapRaceErrorCodeSet 并发 bootstrap 容忍码集锚：撞名

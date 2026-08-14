@@ -47,8 +47,14 @@ type UsageStat struct {
 	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
 	// Cost holds the value of the "cost" field.
 	Cost int64 `json:"cost,omitempty"`
-	// TotalLatencyMs holds the value of the "total_latency_ms" field.
-	TotalLatencyMs int64 `json:"total_latency_ms,omitempty"`
+	// CallCount holds the value of the "call_count" field.
+	CallCount int64 `json:"call_count,omitempty"`
+	// TtftTotalMs holds the value of the "ttft_total_ms" field.
+	TtftTotalMs int64 `json:"ttft_total_ms,omitempty"`
+	// TtftCount holds the value of the "ttft_count" field.
+	TtftCount int64 `json:"ttft_count,omitempty"`
+	// TtftMaxMs holds the value of the "ttft_max_ms" field.
+	TtftMaxMs int64 `json:"ttft_max_ms,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt    time.Time `json:"updated_at,omitempty"`
 	selectValues sql.SelectValues
@@ -61,7 +67,7 @@ func (*UsageStat) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case usagestat.FieldIsError:
 			values[i] = new(sql.NullBool)
-		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldInputTokens, usagestat.FieldOutputTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldCost, usagestat.FieldTotalLatencyMs:
+		case usagestat.FieldID, usagestat.FieldGroupID, usagestat.FieldAccountID, usagestat.FieldTemplateID, usagestat.FieldUserID, usagestat.FieldRequestCount, usagestat.FieldErrorCount, usagestat.FieldInputTokens, usagestat.FieldOutputTokens, usagestat.FieldTotalTokens, usagestat.FieldCacheReadTokens, usagestat.FieldCacheCreationTokens, usagestat.FieldCost, usagestat.FieldCallCount, usagestat.FieldTtftTotalMs, usagestat.FieldTtftCount, usagestat.FieldTtftMaxMs:
 			values[i] = new(sql.NullInt64)
 		case usagestat.FieldModel:
 			values[i] = new(sql.NullString)
@@ -178,11 +184,29 @@ func (_m *UsageStat) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Cost = value.Int64
 			}
-		case usagestat.FieldTotalLatencyMs:
+		case usagestat.FieldCallCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field total_latency_ms", values[i])
+				return fmt.Errorf("unexpected type %T for field call_count", values[i])
 			} else if value.Valid {
-				_m.TotalLatencyMs = value.Int64
+				_m.CallCount = value.Int64
+			}
+		case usagestat.FieldTtftTotalMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field ttft_total_ms", values[i])
+			} else if value.Valid {
+				_m.TtftTotalMs = value.Int64
+			}
+		case usagestat.FieldTtftCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field ttft_count", values[i])
+			} else if value.Valid {
+				_m.TtftCount = value.Int64
+			}
+		case usagestat.FieldTtftMaxMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field ttft_max_ms", values[i])
+			} else if value.Valid {
+				_m.TtftMaxMs = value.Int64
 			}
 		case usagestat.FieldUpdatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -271,8 +295,17 @@ func (_m *UsageStat) String() string {
 	builder.WriteString("cost=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Cost))
 	builder.WriteString(", ")
-	builder.WriteString("total_latency_ms=")
-	builder.WriteString(fmt.Sprintf("%v", _m.TotalLatencyMs))
+	builder.WriteString("call_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CallCount))
+	builder.WriteString(", ")
+	builder.WriteString("ttft_total_ms=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TtftTotalMs))
+	builder.WriteString(", ")
+	builder.WriteString("ttft_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TtftCount))
+	builder.WriteString(", ")
+	builder.WriteString("ttft_max_ms=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TtftMaxMs))
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))

@@ -203,12 +203,19 @@ var errLogIndexDDLs = []string{
 
 var errLogAlignColumnDDLs = alignColumnDDLs("err_logs", errLogColumnDefs)
 
-// usageStatsColumnDefs usage_stats 分区表列定义（单一事实源；用户裁决
-// 2026-08-11：usage_stats 与明细两表统一分区机制——PG DELETE 不释放空间，
-// 180 天保留清理必须 DROP 分区 O(1)）。列定义与 ent schema 完全一致；分区键
-// bucket_time（小时桶聚合 24 桶/区）。id 走 usage_stats_id_seq（ent bigserial
-// 同款语义——Upsert 不带 id 列走 DEFAULT nextval；该表由 ent migrate 建过普通
-// 表后 bootstrap DROP 重建分区表，不向后兼容，存量聚合丢弃可重建）。
+// usageStatsColumnDefs usage_stats 分区表列定义（单一事实源；spec 2026-08-14
+// 离线聚合化重建：total_latency_ms 删除 + call_count（按次调用）+ TTFT 四列
+// （ttft_total_ms/ttft_count/ttft_max_ms/ttft_hist bigint[10] 直方图）。列定义与
+// ent schema 一致**除 ttft_hist**——PG bigint[] 数组列 ent 无类型（field.Ints 等
+// 是 JSON 语义，无法扫描 PG 数组），数组列 carve-out 不进 ent schema（评审
+// P1-1），ScanStats 改 pgx 直查扫描 []int64。分区键 bucket_time（小时桶聚合
+// 24 桶/区）。id 走 usage_stats_id_seq（ent bigserial 同款语义——INSERT 不带 id
+// 列走 DEFAULT nextval；该表由 ent migrate 建过普通表后 bootstrap DROP 重建
+// 分区表，不向后兼容）。
+// **部署注意（评审 P2-2）**：存量分区库不升级——align 补列对 usage_stats 已
+// 删除（见 usageStatsAlignColumnDDLs 注释），bootstrap 静默成功但旧 schema 残留
+// → 离线聚合 worker 的 DELETE/INSERT 与查询面全 42703（total_latency_ms 残留 +
+// 新列缺失）——**存量库必须重建**（新库 DDL 唯一真相，零迁移逻辑）。
 var usageStatsColumnDefs = []string{
 	`id bigint NOT NULL DEFAULT nextval('usage_stats_id_seq'::regclass)`,
 	`bucket_time timestamptz NOT NULL`,
@@ -226,7 +233,18 @@ var usageStatsColumnDefs = []string{
 	`cache_read_tokens bigint NOT NULL DEFAULT 0`,
 	`cache_creation_tokens bigint NOT NULL DEFAULT 0`,
 	`cost bigint NOT NULL DEFAULT 0`,
-	`total_latency_ms bigint NOT NULL DEFAULT 0`,
+	// 按次调用（用户裁决 2026-08-14）：图片生成 = 张数、search = 1；离线聚合
+	// sum(call_count) 直取（usage_logs 明细已有 CallCount——图片 6 专列删后的
+	// 统一计费模型分量，spec 2026-08-13）。
+	`call_count bigint NOT NULL DEFAULT 0`,
+	`ttft_total_ms bigint NOT NULL DEFAULT 0`,
+	`ttft_count bigint NOT NULL DEFAULT 0`,
+	`ttft_max_ms bigint NOT NULL DEFAULT 0`,
+	// TTFT 直方图 10 档（spec 2026-08-14）：[0,50) [50,100) [100,200) [200,400)
+	// [400,800) [800,1600) [1600,3200) [3200,6400) [6400,12800) [12800,∞)——
+	// SQL 侧 count(*) FILTER 逐档计数（PG 原生，零自定义聚合）；查询侧 Go
+	// 逐元素合并 + 桶内线性插值（顶桶回落下界 12800，见 stat_repo.go）。
+	`ttft_hist bigint[] NOT NULL DEFAULT '{0,0,0,0,0,0,0,0,0,0}'`,
 	`updated_at timestamptz NOT NULL`,
 }
 
@@ -243,7 +261,12 @@ var usageStatsIndexDDLs = []string{
 	`CREATE INDEX usagestat_user_id_bucket_time ON usage_stats (user_id, bucket_time)`,
 }
 
-var usageStatsAlignColumnDDLs = alignColumnDDLs("usage_stats", usageStatsColumnDefs)
+// usageStatsAlignColumnDDLs usage_stats 幂等补列 ALTER——**有意为空**（评审
+// P2-2）：旧 schema（total_latency_ms 残留 + 无 TTFT 列）与新 DDL 是结构断裂
+// （表重建语义，非补列可修），align 静默补列只会造出半升级混合表掩盖部署失误；
+// 存量分区库必须重建（部署注意见 usageStatsColumnDefs）。usage_logs/err_logs
+// 的 align 补列路径保留（2026-08-11 P1 修复机制——列增量演进，兼容补列）。
+var usageStatsAlignColumnDDLs []string
 
 // IsTablePartitioned 查 pg_partitioned_table（pg_class.relkind='p'）判断指定
 // 表是否已是分区表（bootstrap 幂等判定）。
@@ -430,10 +453,28 @@ func (r *PartitionRepo) EnsureErrLogPartitioned(ctx context.Context, now time.Ti
 	return r.ensureTablePartitioned(ctx, "err_logs", "created_at", errLogColumnDefs, errLogIndexDDLs, errLogAlignColumnDDLs, now)
 }
 
+// statsAggWatermarkDDL 离线聚合 watermark 单行表（spec 2026-08-14：settings
+// key-value 形态——单行恒 id=1，CHECK 约束钉死单行；worker 每周期读聚合位置、
+// 推进与 DELETE+INSERT 同事务（崩溃回滚 → 游标不动 → 重算恢复不双计）。
+// 全新库初始化 = now − 滞后（防首跑扫全史 + DELETE 撞 retention 已 DROP 分区），
+// ON CONFLICT DO NOTHING 容忍多实例并发初始化。单行表无分区需求（恒 1 行，
+// 不参与保留清理）。IF NOT EXISTS 幂等（bootstrap 重复执行无副作用）。
+var statsAggWatermarkDDL = `CREATE TABLE IF NOT EXISTS stats_agg_watermark (
+	id bigint NOT NULL,
+	watermark timestamptz NOT NULL,
+	PRIMARY KEY (id),
+	CONSTRAINT stats_agg_watermark_single CHECK (id = 1)
+)`
+
 // EnsureUsageStatsPartitioned usage_stats 分区 bootstrap（用户裁决 2026-08-11：
 // 三表统一分区机制；分区键 bucket_time——小时桶聚合 24 桶/日分区）。迁移语义
-// 与明细两表一致（该删删：存量普通表 DROP 重建分区表，聚合可重建）。
+// 与明细两表一致（该删删：存量普通表 DROP 重建分区表，聚合可重建）。同步骤
+// 建 stats_agg_watermark 单行表（离线聚合 worker 的 watermark 存储；撞名类
+// 竞态容忍——多实例并发 bootstrap 收敛语义同 ensureTablePartitioned）。
 func (r *PartitionRepo) EnsureUsageStatsPartitioned(ctx context.Context, now time.Time) error {
+	if err := r.execDDLTolerateRace(ctx, statsAggWatermarkDDL); err != nil {
+		return fmt.Errorf("create stats_agg_watermark: %w", err)
+	}
 	return r.ensureTablePartitioned(ctx, "usage_stats", "bucket_time", usageStatsColumnDefs, usageStatsIndexDDLs, usageStatsAlignColumnDDLs, now)
 }
 

@@ -349,12 +349,24 @@ func init() {
 	usagestatDescCost := usagestatFields[15].Descriptor()
 	// usagestat.DefaultCost holds the default value on creation for the cost field.
 	usagestat.DefaultCost = usagestatDescCost.Default.(int64)
-	// usagestatDescTotalLatencyMs is the schema descriptor for total_latency_ms field.
-	usagestatDescTotalLatencyMs := usagestatFields[16].Descriptor()
-	// usagestat.DefaultTotalLatencyMs holds the default value on creation for the total_latency_ms field.
-	usagestat.DefaultTotalLatencyMs = usagestatDescTotalLatencyMs.Default.(int64)
+	// usagestatDescCallCount is the schema descriptor for call_count field.
+	usagestatDescCallCount := usagestatFields[16].Descriptor()
+	// usagestat.DefaultCallCount holds the default value on creation for the call_count field.
+	usagestat.DefaultCallCount = usagestatDescCallCount.Default.(int64)
+	// usagestatDescTtftTotalMs is the schema descriptor for ttft_total_ms field.
+	usagestatDescTtftTotalMs := usagestatFields[17].Descriptor()
+	// usagestat.DefaultTtftTotalMs holds the default value on creation for the ttft_total_ms field.
+	usagestat.DefaultTtftTotalMs = usagestatDescTtftTotalMs.Default.(int64)
+	// usagestatDescTtftCount is the schema descriptor for ttft_count field.
+	usagestatDescTtftCount := usagestatFields[18].Descriptor()
+	// usagestat.DefaultTtftCount holds the default value on creation for the ttft_count field.
+	usagestat.DefaultTtftCount = usagestatDescTtftCount.Default.(int64)
+	// usagestatDescTtftMaxMs is the schema descriptor for ttft_max_ms field.
+	usagestatDescTtftMaxMs := usagestatFields[19].Descriptor()
+	// usagestat.DefaultTtftMaxMs holds the default value on creation for the ttft_max_ms field.
+	usagestat.DefaultTtftMaxMs = usagestatDescTtftMaxMs.Default.(int64)
 	// usagestatDescUpdatedAt is the schema descriptor for updated_at field.
-	usagestatDescUpdatedAt := usagestatFields[17].Descriptor()
+	usagestatDescUpdatedAt := usagestatFields[20].Descriptor()
 	// usagestat.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	usagestat.DefaultUpdatedAt = usagestatDescUpdatedAt.Default.(func() time.Time)
 	// usagestat.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -28,7 +28,15 @@ func (UsageStat) Fields() []ent.Field {
 		field.Int64("cache_read_tokens").Default(0),
 		field.Int64("cache_creation_tokens").Default(0),
 		field.Int64("cost").Default(0), // 毫分（1 USD = 100,000 毫分）；计费预聚合，花费统计不扫明细
-		field.Int64("total_latency_ms").Default(0),
+		// 按次调用（用户裁决 2026-08-14）：图片生成 = 张数、search = 1
+		field.Int64("call_count").Default(0),
+		// TTFT 三标量列（spec 2026-08-14）：avg 查询侧 Go 除（ttft_total/ttft_count）
+		field.Int64("ttft_total_ms").Default(0),
+		field.Int64("ttft_count").Default(0),
+		field.Int64("ttft_max_ms").Default(0),
+		// 注：ttft_hist bigint[10] 数组列 carve-out 不进 ent schema（ent 无 PG
+		// 数组类型；field.Ints 等是 JSON 语义）——列定义唯一事实源在
+		// repository/partition.go usageStatsColumnDefs，ScanStats 改 pgx 直查。
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}
 }

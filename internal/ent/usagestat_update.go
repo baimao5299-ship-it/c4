@@ -322,24 +322,87 @@ func (_u *UsageStatUpdate) AddCost(v int64) *UsageStatUpdate {
 	return _u
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (_u *UsageStatUpdate) SetTotalLatencyMs(v int64) *UsageStatUpdate {
-	_u.mutation.ResetTotalLatencyMs()
-	_u.mutation.SetTotalLatencyMs(v)
+// SetCallCount sets the "call_count" field.
+func (_u *UsageStatUpdate) SetCallCount(v int64) *UsageStatUpdate {
+	_u.mutation.ResetCallCount()
+	_u.mutation.SetCallCount(v)
 	return _u
 }
 
-// SetNillableTotalLatencyMs sets the "total_latency_ms" field if the given value is not nil.
-func (_u *UsageStatUpdate) SetNillableTotalLatencyMs(v *int64) *UsageStatUpdate {
+// SetNillableCallCount sets the "call_count" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableCallCount(v *int64) *UsageStatUpdate {
 	if v != nil {
-		_u.SetTotalLatencyMs(*v)
+		_u.SetCallCount(*v)
 	}
 	return _u
 }
 
-// AddTotalLatencyMs adds value to the "total_latency_ms" field.
-func (_u *UsageStatUpdate) AddTotalLatencyMs(v int64) *UsageStatUpdate {
-	_u.mutation.AddTotalLatencyMs(v)
+// AddCallCount adds value to the "call_count" field.
+func (_u *UsageStatUpdate) AddCallCount(v int64) *UsageStatUpdate {
+	_u.mutation.AddCallCount(v)
+	return _u
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (_u *UsageStatUpdate) SetTtftTotalMs(v int64) *UsageStatUpdate {
+	_u.mutation.ResetTtftTotalMs()
+	_u.mutation.SetTtftTotalMs(v)
+	return _u
+}
+
+// SetNillableTtftTotalMs sets the "ttft_total_ms" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableTtftTotalMs(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetTtftTotalMs(*v)
+	}
+	return _u
+}
+
+// AddTtftTotalMs adds value to the "ttft_total_ms" field.
+func (_u *UsageStatUpdate) AddTtftTotalMs(v int64) *UsageStatUpdate {
+	_u.mutation.AddTtftTotalMs(v)
+	return _u
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (_u *UsageStatUpdate) SetTtftCount(v int64) *UsageStatUpdate {
+	_u.mutation.ResetTtftCount()
+	_u.mutation.SetTtftCount(v)
+	return _u
+}
+
+// SetNillableTtftCount sets the "ttft_count" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableTtftCount(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetTtftCount(*v)
+	}
+	return _u
+}
+
+// AddTtftCount adds value to the "ttft_count" field.
+func (_u *UsageStatUpdate) AddTtftCount(v int64) *UsageStatUpdate {
+	_u.mutation.AddTtftCount(v)
+	return _u
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (_u *UsageStatUpdate) SetTtftMaxMs(v int64) *UsageStatUpdate {
+	_u.mutation.ResetTtftMaxMs()
+	_u.mutation.SetTtftMaxMs(v)
+	return _u
+}
+
+// SetNillableTtftMaxMs sets the "ttft_max_ms" field if the given value is not nil.
+func (_u *UsageStatUpdate) SetNillableTtftMaxMs(v *int64) *UsageStatUpdate {
+	if v != nil {
+		_u.SetTtftMaxMs(*v)
+	}
+	return _u
+}
+
+// AddTtftMaxMs adds value to the "ttft_max_ms" field.
+func (_u *UsageStatUpdate) AddTtftMaxMs(v int64) *UsageStatUpdate {
+	_u.mutation.AddTtftMaxMs(v)
 	return _u
 }
 
@@ -480,11 +543,29 @@ func (_u *UsageStatUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedCost(); ok {
 		_spec.AddField(usagestat.FieldCost, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.TotalLatencyMs(); ok {
-		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
+	if value, ok := _u.mutation.CallCount(); ok {
+		_spec.SetField(usagestat.FieldCallCount, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedTotalLatencyMs(); ok {
-		_spec.AddField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedCallCount(); ok {
+		_spec.AddField(usagestat.FieldCallCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TtftTotalMs(); ok {
+		_spec.SetField(usagestat.FieldTtftTotalMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftTotalMs(); ok {
+		_spec.AddField(usagestat.FieldTtftTotalMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TtftCount(); ok {
+		_spec.SetField(usagestat.FieldTtftCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftCount(); ok {
+		_spec.AddField(usagestat.FieldTtftCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TtftMaxMs(); ok {
+		_spec.SetField(usagestat.FieldTtftMaxMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftMaxMs(); ok {
+		_spec.AddField(usagestat.FieldTtftMaxMs, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(usagestat.FieldUpdatedAt, field.TypeTime, value)
@@ -803,24 +884,87 @@ func (_u *UsageStatUpdateOne) AddCost(v int64) *UsageStatUpdateOne {
 	return _u
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (_u *UsageStatUpdateOne) SetTotalLatencyMs(v int64) *UsageStatUpdateOne {
-	_u.mutation.ResetTotalLatencyMs()
-	_u.mutation.SetTotalLatencyMs(v)
+// SetCallCount sets the "call_count" field.
+func (_u *UsageStatUpdateOne) SetCallCount(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetCallCount()
+	_u.mutation.SetCallCount(v)
 	return _u
 }
 
-// SetNillableTotalLatencyMs sets the "total_latency_ms" field if the given value is not nil.
-func (_u *UsageStatUpdateOne) SetNillableTotalLatencyMs(v *int64) *UsageStatUpdateOne {
+// SetNillableCallCount sets the "call_count" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableCallCount(v *int64) *UsageStatUpdateOne {
 	if v != nil {
-		_u.SetTotalLatencyMs(*v)
+		_u.SetCallCount(*v)
 	}
 	return _u
 }
 
-// AddTotalLatencyMs adds value to the "total_latency_ms" field.
-func (_u *UsageStatUpdateOne) AddTotalLatencyMs(v int64) *UsageStatUpdateOne {
-	_u.mutation.AddTotalLatencyMs(v)
+// AddCallCount adds value to the "call_count" field.
+func (_u *UsageStatUpdateOne) AddCallCount(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddCallCount(v)
+	return _u
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (_u *UsageStatUpdateOne) SetTtftTotalMs(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetTtftTotalMs()
+	_u.mutation.SetTtftTotalMs(v)
+	return _u
+}
+
+// SetNillableTtftTotalMs sets the "ttft_total_ms" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableTtftTotalMs(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetTtftTotalMs(*v)
+	}
+	return _u
+}
+
+// AddTtftTotalMs adds value to the "ttft_total_ms" field.
+func (_u *UsageStatUpdateOne) AddTtftTotalMs(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddTtftTotalMs(v)
+	return _u
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (_u *UsageStatUpdateOne) SetTtftCount(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetTtftCount()
+	_u.mutation.SetTtftCount(v)
+	return _u
+}
+
+// SetNillableTtftCount sets the "ttft_count" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableTtftCount(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetTtftCount(*v)
+	}
+	return _u
+}
+
+// AddTtftCount adds value to the "ttft_count" field.
+func (_u *UsageStatUpdateOne) AddTtftCount(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddTtftCount(v)
+	return _u
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (_u *UsageStatUpdateOne) SetTtftMaxMs(v int64) *UsageStatUpdateOne {
+	_u.mutation.ResetTtftMaxMs()
+	_u.mutation.SetTtftMaxMs(v)
+	return _u
+}
+
+// SetNillableTtftMaxMs sets the "ttft_max_ms" field if the given value is not nil.
+func (_u *UsageStatUpdateOne) SetNillableTtftMaxMs(v *int64) *UsageStatUpdateOne {
+	if v != nil {
+		_u.SetTtftMaxMs(*v)
+	}
+	return _u
+}
+
+// AddTtftMaxMs adds value to the "ttft_max_ms" field.
+func (_u *UsageStatUpdateOne) AddTtftMaxMs(v int64) *UsageStatUpdateOne {
+	_u.mutation.AddTtftMaxMs(v)
 	return _u
 }
 
@@ -991,11 +1135,29 @@ func (_u *UsageStatUpdateOne) sqlSave(ctx context.Context) (_node *UsageStat, er
 	if value, ok := _u.mutation.AddedCost(); ok {
 		_spec.AddField(usagestat.FieldCost, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.TotalLatencyMs(); ok {
-		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
+	if value, ok := _u.mutation.CallCount(); ok {
+		_spec.SetField(usagestat.FieldCallCount, field.TypeInt64, value)
 	}
-	if value, ok := _u.mutation.AddedTotalLatencyMs(); ok {
-		_spec.AddField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
+	if value, ok := _u.mutation.AddedCallCount(); ok {
+		_spec.AddField(usagestat.FieldCallCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TtftTotalMs(); ok {
+		_spec.SetField(usagestat.FieldTtftTotalMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftTotalMs(); ok {
+		_spec.AddField(usagestat.FieldTtftTotalMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TtftCount(); ok {
+		_spec.SetField(usagestat.FieldTtftCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftCount(); ok {
+		_spec.AddField(usagestat.FieldTtftCount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.TtftMaxMs(); ok {
+		_spec.SetField(usagestat.FieldTtftMaxMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedTtftMaxMs(); ok {
+		_spec.AddField(usagestat.FieldTtftMaxMs, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(usagestat.FieldUpdatedAt, field.TypeTime, value)

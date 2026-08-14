@@ -43,8 +43,14 @@ const (
 	FieldCacheCreationTokens = "cache_creation_tokens"
 	// FieldCost holds the string denoting the cost field in the database.
 	FieldCost = "cost"
-	// FieldTotalLatencyMs holds the string denoting the total_latency_ms field in the database.
-	FieldTotalLatencyMs = "total_latency_ms"
+	// FieldCallCount holds the string denoting the call_count field in the database.
+	FieldCallCount = "call_count"
+	// FieldTtftTotalMs holds the string denoting the ttft_total_ms field in the database.
+	FieldTtftTotalMs = "ttft_total_ms"
+	// FieldTtftCount holds the string denoting the ttft_count field in the database.
+	FieldTtftCount = "ttft_count"
+	// FieldTtftMaxMs holds the string denoting the ttft_max_ms field in the database.
+	FieldTtftMaxMs = "ttft_max_ms"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// Table holds the table name of the usagestat in the database.
@@ -69,7 +75,10 @@ var Columns = []string{
 	FieldCacheReadTokens,
 	FieldCacheCreationTokens,
 	FieldCost,
-	FieldTotalLatencyMs,
+	FieldCallCount,
+	FieldTtftTotalMs,
+	FieldTtftCount,
+	FieldTtftMaxMs,
 	FieldUpdatedAt,
 }
 
@@ -112,8 +121,14 @@ var (
 	DefaultCacheCreationTokens int64
 	// DefaultCost holds the default value on creation for the "cost" field.
 	DefaultCost int64
-	// DefaultTotalLatencyMs holds the default value on creation for the "total_latency_ms" field.
-	DefaultTotalLatencyMs int64
+	// DefaultCallCount holds the default value on creation for the "call_count" field.
+	DefaultCallCount int64
+	// DefaultTtftTotalMs holds the default value on creation for the "ttft_total_ms" field.
+	DefaultTtftTotalMs int64
+	// DefaultTtftCount holds the default value on creation for the "ttft_count" field.
+	DefaultTtftCount int64
+	// DefaultTtftMaxMs holds the default value on creation for the "ttft_max_ms" field.
+	DefaultTtftMaxMs int64
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
@@ -203,9 +218,24 @@ func ByCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCost, opts...).ToFunc()
 }
 
-// ByTotalLatencyMs orders the results by the total_latency_ms field.
-func ByTotalLatencyMs(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTotalLatencyMs, opts...).ToFunc()
+// ByCallCount orders the results by the call_count field.
+func ByCallCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCallCount, opts...).ToFunc()
+}
+
+// ByTtftTotalMs orders the results by the ttft_total_ms field.
+func ByTtftTotalMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTtftTotalMs, opts...).ToFunc()
+}
+
+// ByTtftCount orders the results by the ttft_count field.
+func ByTtftCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTtftCount, opts...).ToFunc()
+}
+
+// ByTtftMaxMs orders the results by the ttft_max_ms field.
+func ByTtftMaxMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTtftMaxMs, opts...).ToFunc()
 }
 
 // ByUpdatedAt orders the results by the updated_at field.

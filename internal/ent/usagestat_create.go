@@ -224,16 +224,58 @@ func (_c *UsageStatCreate) SetNillableCost(v *int64) *UsageStatCreate {
 	return _c
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (_c *UsageStatCreate) SetTotalLatencyMs(v int64) *UsageStatCreate {
-	_c.mutation.SetTotalLatencyMs(v)
+// SetCallCount sets the "call_count" field.
+func (_c *UsageStatCreate) SetCallCount(v int64) *UsageStatCreate {
+	_c.mutation.SetCallCount(v)
 	return _c
 }
 
-// SetNillableTotalLatencyMs sets the "total_latency_ms" field if the given value is not nil.
-func (_c *UsageStatCreate) SetNillableTotalLatencyMs(v *int64) *UsageStatCreate {
+// SetNillableCallCount sets the "call_count" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableCallCount(v *int64) *UsageStatCreate {
 	if v != nil {
-		_c.SetTotalLatencyMs(*v)
+		_c.SetCallCount(*v)
+	}
+	return _c
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (_c *UsageStatCreate) SetTtftTotalMs(v int64) *UsageStatCreate {
+	_c.mutation.SetTtftTotalMs(v)
+	return _c
+}
+
+// SetNillableTtftTotalMs sets the "ttft_total_ms" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableTtftTotalMs(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetTtftTotalMs(*v)
+	}
+	return _c
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (_c *UsageStatCreate) SetTtftCount(v int64) *UsageStatCreate {
+	_c.mutation.SetTtftCount(v)
+	return _c
+}
+
+// SetNillableTtftCount sets the "ttft_count" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableTtftCount(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetTtftCount(*v)
+	}
+	return _c
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (_c *UsageStatCreate) SetTtftMaxMs(v int64) *UsageStatCreate {
+	_c.mutation.SetTtftMaxMs(v)
+	return _c
+}
+
+// SetNillableTtftMaxMs sets the "ttft_max_ms" field if the given value is not nil.
+func (_c *UsageStatCreate) SetNillableTtftMaxMs(v *int64) *UsageStatCreate {
+	if v != nil {
+		_c.SetTtftMaxMs(*v)
 	}
 	return _c
 }
@@ -349,9 +391,21 @@ func (_c *UsageStatCreate) defaults() {
 		v := usagestat.DefaultCost
 		_c.mutation.SetCost(v)
 	}
-	if _, ok := _c.mutation.TotalLatencyMs(); !ok {
-		v := usagestat.DefaultTotalLatencyMs
-		_c.mutation.SetTotalLatencyMs(v)
+	if _, ok := _c.mutation.CallCount(); !ok {
+		v := usagestat.DefaultCallCount
+		_c.mutation.SetCallCount(v)
+	}
+	if _, ok := _c.mutation.TtftTotalMs(); !ok {
+		v := usagestat.DefaultTtftTotalMs
+		_c.mutation.SetTtftTotalMs(v)
+	}
+	if _, ok := _c.mutation.TtftCount(); !ok {
+		v := usagestat.DefaultTtftCount
+		_c.mutation.SetTtftCount(v)
+	}
+	if _, ok := _c.mutation.TtftMaxMs(); !ok {
+		v := usagestat.DefaultTtftMaxMs
+		_c.mutation.SetTtftMaxMs(v)
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := usagestat.DefaultUpdatedAt()
@@ -406,8 +460,17 @@ func (_c *UsageStatCreate) check() error {
 	if _, ok := _c.mutation.Cost(); !ok {
 		return &ValidationError{Name: "cost", err: errors.New(`ent: missing required field "UsageStat.cost"`)}
 	}
-	if _, ok := _c.mutation.TotalLatencyMs(); !ok {
-		return &ValidationError{Name: "total_latency_ms", err: errors.New(`ent: missing required field "UsageStat.total_latency_ms"`)}
+	if _, ok := _c.mutation.CallCount(); !ok {
+		return &ValidationError{Name: "call_count", err: errors.New(`ent: missing required field "UsageStat.call_count"`)}
+	}
+	if _, ok := _c.mutation.TtftTotalMs(); !ok {
+		return &ValidationError{Name: "ttft_total_ms", err: errors.New(`ent: missing required field "UsageStat.ttft_total_ms"`)}
+	}
+	if _, ok := _c.mutation.TtftCount(); !ok {
+		return &ValidationError{Name: "ttft_count", err: errors.New(`ent: missing required field "UsageStat.ttft_count"`)}
+	}
+	if _, ok := _c.mutation.TtftMaxMs(); !ok {
+		return &ValidationError{Name: "ttft_max_ms", err: errors.New(`ent: missing required field "UsageStat.ttft_max_ms"`)}
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "UsageStat.updated_at"`)}
@@ -505,9 +568,21 @@ func (_c *UsageStatCreate) createSpec() (*UsageStat, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagestat.FieldCost, field.TypeInt64, value)
 		_node.Cost = value
 	}
-	if value, ok := _c.mutation.TotalLatencyMs(); ok {
-		_spec.SetField(usagestat.FieldTotalLatencyMs, field.TypeInt64, value)
-		_node.TotalLatencyMs = value
+	if value, ok := _c.mutation.CallCount(); ok {
+		_spec.SetField(usagestat.FieldCallCount, field.TypeInt64, value)
+		_node.CallCount = value
+	}
+	if value, ok := _c.mutation.TtftTotalMs(); ok {
+		_spec.SetField(usagestat.FieldTtftTotalMs, field.TypeInt64, value)
+		_node.TtftTotalMs = value
+	}
+	if value, ok := _c.mutation.TtftCount(); ok {
+		_spec.SetField(usagestat.FieldTtftCount, field.TypeInt64, value)
+		_node.TtftCount = value
+	}
+	if value, ok := _c.mutation.TtftMaxMs(); ok {
+		_spec.SetField(usagestat.FieldTtftMaxMs, field.TypeInt64, value)
+		_node.TtftMaxMs = value
 	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(usagestat.FieldUpdatedAt, field.TypeTime, value)
@@ -817,21 +892,75 @@ func (u *UsageStatUpsert) AddCost(v int64) *UsageStatUpsert {
 	return u
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (u *UsageStatUpsert) SetTotalLatencyMs(v int64) *UsageStatUpsert {
-	u.Set(usagestat.FieldTotalLatencyMs, v)
+// SetCallCount sets the "call_count" field.
+func (u *UsageStatUpsert) SetCallCount(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldCallCount, v)
 	return u
 }
 
-// UpdateTotalLatencyMs sets the "total_latency_ms" field to the value that was provided on create.
-func (u *UsageStatUpsert) UpdateTotalLatencyMs() *UsageStatUpsert {
-	u.SetExcluded(usagestat.FieldTotalLatencyMs)
+// UpdateCallCount sets the "call_count" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateCallCount() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldCallCount)
 	return u
 }
 
-// AddTotalLatencyMs adds v to the "total_latency_ms" field.
-func (u *UsageStatUpsert) AddTotalLatencyMs(v int64) *UsageStatUpsert {
-	u.Add(usagestat.FieldTotalLatencyMs, v)
+// AddCallCount adds v to the "call_count" field.
+func (u *UsageStatUpsert) AddCallCount(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldCallCount, v)
+	return u
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (u *UsageStatUpsert) SetTtftTotalMs(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldTtftTotalMs, v)
+	return u
+}
+
+// UpdateTtftTotalMs sets the "ttft_total_ms" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateTtftTotalMs() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldTtftTotalMs)
+	return u
+}
+
+// AddTtftTotalMs adds v to the "ttft_total_ms" field.
+func (u *UsageStatUpsert) AddTtftTotalMs(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldTtftTotalMs, v)
+	return u
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (u *UsageStatUpsert) SetTtftCount(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldTtftCount, v)
+	return u
+}
+
+// UpdateTtftCount sets the "ttft_count" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateTtftCount() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldTtftCount)
+	return u
+}
+
+// AddTtftCount adds v to the "ttft_count" field.
+func (u *UsageStatUpsert) AddTtftCount(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldTtftCount, v)
+	return u
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (u *UsageStatUpsert) SetTtftMaxMs(v int64) *UsageStatUpsert {
+	u.Set(usagestat.FieldTtftMaxMs, v)
+	return u
+}
+
+// UpdateTtftMaxMs sets the "ttft_max_ms" field to the value that was provided on create.
+func (u *UsageStatUpsert) UpdateTtftMaxMs() *UsageStatUpsert {
+	u.SetExcluded(usagestat.FieldTtftMaxMs)
+	return u
+}
+
+// AddTtftMaxMs adds v to the "ttft_max_ms" field.
+func (u *UsageStatUpsert) AddTtftMaxMs(v int64) *UsageStatUpsert {
+	u.Add(usagestat.FieldTtftMaxMs, v)
 	return u
 }
 
@@ -1189,24 +1318,87 @@ func (u *UsageStatUpsertOne) UpdateCost() *UsageStatUpsertOne {
 	})
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (u *UsageStatUpsertOne) SetTotalLatencyMs(v int64) *UsageStatUpsertOne {
+// SetCallCount sets the "call_count" field.
+func (u *UsageStatUpsertOne) SetCallCount(v int64) *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.SetTotalLatencyMs(v)
+		s.SetCallCount(v)
 	})
 }
 
-// AddTotalLatencyMs adds v to the "total_latency_ms" field.
-func (u *UsageStatUpsertOne) AddTotalLatencyMs(v int64) *UsageStatUpsertOne {
+// AddCallCount adds v to the "call_count" field.
+func (u *UsageStatUpsertOne) AddCallCount(v int64) *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.AddTotalLatencyMs(v)
+		s.AddCallCount(v)
 	})
 }
 
-// UpdateTotalLatencyMs sets the "total_latency_ms" field to the value that was provided on create.
-func (u *UsageStatUpsertOne) UpdateTotalLatencyMs() *UsageStatUpsertOne {
+// UpdateCallCount sets the "call_count" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateCallCount() *UsageStatUpsertOne {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.UpdateTotalLatencyMs()
+		s.UpdateCallCount()
+	})
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (u *UsageStatUpsertOne) SetTtftTotalMs(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTtftTotalMs(v)
+	})
+}
+
+// AddTtftTotalMs adds v to the "ttft_total_ms" field.
+func (u *UsageStatUpsertOne) AddTtftTotalMs(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTtftTotalMs(v)
+	})
+}
+
+// UpdateTtftTotalMs sets the "ttft_total_ms" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateTtftTotalMs() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTtftTotalMs()
+	})
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (u *UsageStatUpsertOne) SetTtftCount(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTtftCount(v)
+	})
+}
+
+// AddTtftCount adds v to the "ttft_count" field.
+func (u *UsageStatUpsertOne) AddTtftCount(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTtftCount(v)
+	})
+}
+
+// UpdateTtftCount sets the "ttft_count" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateTtftCount() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTtftCount()
+	})
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (u *UsageStatUpsertOne) SetTtftMaxMs(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTtftMaxMs(v)
+	})
+}
+
+// AddTtftMaxMs adds v to the "ttft_max_ms" field.
+func (u *UsageStatUpsertOne) AddTtftMaxMs(v int64) *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTtftMaxMs(v)
+	})
+}
+
+// UpdateTtftMaxMs sets the "ttft_max_ms" field to the value that was provided on create.
+func (u *UsageStatUpsertOne) UpdateTtftMaxMs() *UsageStatUpsertOne {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTtftMaxMs()
 	})
 }
 
@@ -1732,24 +1924,87 @@ func (u *UsageStatUpsertBulk) UpdateCost() *UsageStatUpsertBulk {
 	})
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (u *UsageStatUpsertBulk) SetTotalLatencyMs(v int64) *UsageStatUpsertBulk {
+// SetCallCount sets the "call_count" field.
+func (u *UsageStatUpsertBulk) SetCallCount(v int64) *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.SetTotalLatencyMs(v)
+		s.SetCallCount(v)
 	})
 }
 
-// AddTotalLatencyMs adds v to the "total_latency_ms" field.
-func (u *UsageStatUpsertBulk) AddTotalLatencyMs(v int64) *UsageStatUpsertBulk {
+// AddCallCount adds v to the "call_count" field.
+func (u *UsageStatUpsertBulk) AddCallCount(v int64) *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.AddTotalLatencyMs(v)
+		s.AddCallCount(v)
 	})
 }
 
-// UpdateTotalLatencyMs sets the "total_latency_ms" field to the value that was provided on create.
-func (u *UsageStatUpsertBulk) UpdateTotalLatencyMs() *UsageStatUpsertBulk {
+// UpdateCallCount sets the "call_count" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateCallCount() *UsageStatUpsertBulk {
 	return u.Update(func(s *UsageStatUpsert) {
-		s.UpdateTotalLatencyMs()
+		s.UpdateCallCount()
+	})
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (u *UsageStatUpsertBulk) SetTtftTotalMs(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTtftTotalMs(v)
+	})
+}
+
+// AddTtftTotalMs adds v to the "ttft_total_ms" field.
+func (u *UsageStatUpsertBulk) AddTtftTotalMs(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTtftTotalMs(v)
+	})
+}
+
+// UpdateTtftTotalMs sets the "ttft_total_ms" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateTtftTotalMs() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTtftTotalMs()
+	})
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (u *UsageStatUpsertBulk) SetTtftCount(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTtftCount(v)
+	})
+}
+
+// AddTtftCount adds v to the "ttft_count" field.
+func (u *UsageStatUpsertBulk) AddTtftCount(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTtftCount(v)
+	})
+}
+
+// UpdateTtftCount sets the "ttft_count" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateTtftCount() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTtftCount()
+	})
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (u *UsageStatUpsertBulk) SetTtftMaxMs(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.SetTtftMaxMs(v)
+	})
+}
+
+// AddTtftMaxMs adds v to the "ttft_max_ms" field.
+func (u *UsageStatUpsertBulk) AddTtftMaxMs(v int64) *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.AddTtftMaxMs(v)
+	})
+}
+
+// UpdateTtftMaxMs sets the "ttft_max_ms" field to the value that was provided on create.
+func (u *UsageStatUpsertBulk) UpdateTtftMaxMs() *UsageStatUpsertBulk {
+	return u.Update(func(s *UsageStatUpsert) {
+		s.UpdateTtftMaxMs()
 	})
 }
 

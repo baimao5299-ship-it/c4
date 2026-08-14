@@ -129,9 +129,24 @@ func Cost(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldEQ(FieldCost, v))
 }
 
-// TotalLatencyMs applies equality check predicate on the "total_latency_ms" field. It's identical to TotalLatencyMsEQ.
-func TotalLatencyMs(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldEQ(FieldTotalLatencyMs, v))
+// CallCount applies equality check predicate on the "call_count" field. It's identical to CallCountEQ.
+func CallCount(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldCallCount, v))
+}
+
+// TtftTotalMs applies equality check predicate on the "ttft_total_ms" field. It's identical to TtftTotalMsEQ.
+func TtftTotalMs(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldTtftTotalMs, v))
+}
+
+// TtftCount applies equality check predicate on the "ttft_count" field. It's identical to TtftCountEQ.
+func TtftCount(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldTtftCount, v))
+}
+
+// TtftMaxMs applies equality check predicate on the "ttft_max_ms" field. It's identical to TtftMaxMsEQ.
+func TtftMaxMs(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldTtftMaxMs, v))
 }
 
 // UpdatedAt applies equality check predicate on the "updated_at" field. It's identical to UpdatedAtEQ.
@@ -734,44 +749,164 @@ func CostLTE(v int64) predicate.UsageStat {
 	return predicate.UsageStat(sql.FieldLTE(FieldCost, v))
 }
 
-// TotalLatencyMsEQ applies the EQ predicate on the "total_latency_ms" field.
-func TotalLatencyMsEQ(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldEQ(FieldTotalLatencyMs, v))
+// CallCountEQ applies the EQ predicate on the "call_count" field.
+func CallCountEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldCallCount, v))
 }
 
-// TotalLatencyMsNEQ applies the NEQ predicate on the "total_latency_ms" field.
-func TotalLatencyMsNEQ(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldNEQ(FieldTotalLatencyMs, v))
+// CallCountNEQ applies the NEQ predicate on the "call_count" field.
+func CallCountNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldCallCount, v))
 }
 
-// TotalLatencyMsIn applies the In predicate on the "total_latency_ms" field.
-func TotalLatencyMsIn(vs ...int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldIn(FieldTotalLatencyMs, vs...))
+// CallCountIn applies the In predicate on the "call_count" field.
+func CallCountIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldCallCount, vs...))
 }
 
-// TotalLatencyMsNotIn applies the NotIn predicate on the "total_latency_ms" field.
-func TotalLatencyMsNotIn(vs ...int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldNotIn(FieldTotalLatencyMs, vs...))
+// CallCountNotIn applies the NotIn predicate on the "call_count" field.
+func CallCountNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldCallCount, vs...))
 }
 
-// TotalLatencyMsGT applies the GT predicate on the "total_latency_ms" field.
-func TotalLatencyMsGT(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldGT(FieldTotalLatencyMs, v))
+// CallCountGT applies the GT predicate on the "call_count" field.
+func CallCountGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldCallCount, v))
 }
 
-// TotalLatencyMsGTE applies the GTE predicate on the "total_latency_ms" field.
-func TotalLatencyMsGTE(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldGTE(FieldTotalLatencyMs, v))
+// CallCountGTE applies the GTE predicate on the "call_count" field.
+func CallCountGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldCallCount, v))
 }
 
-// TotalLatencyMsLT applies the LT predicate on the "total_latency_ms" field.
-func TotalLatencyMsLT(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldLT(FieldTotalLatencyMs, v))
+// CallCountLT applies the LT predicate on the "call_count" field.
+func CallCountLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldCallCount, v))
 }
 
-// TotalLatencyMsLTE applies the LTE predicate on the "total_latency_ms" field.
-func TotalLatencyMsLTE(v int64) predicate.UsageStat {
-	return predicate.UsageStat(sql.FieldLTE(FieldTotalLatencyMs, v))
+// CallCountLTE applies the LTE predicate on the "call_count" field.
+func CallCountLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldCallCount, v))
+}
+
+// TtftTotalMsEQ applies the EQ predicate on the "ttft_total_ms" field.
+func TtftTotalMsEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldTtftTotalMs, v))
+}
+
+// TtftTotalMsNEQ applies the NEQ predicate on the "ttft_total_ms" field.
+func TtftTotalMsNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldTtftTotalMs, v))
+}
+
+// TtftTotalMsIn applies the In predicate on the "ttft_total_ms" field.
+func TtftTotalMsIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldTtftTotalMs, vs...))
+}
+
+// TtftTotalMsNotIn applies the NotIn predicate on the "ttft_total_ms" field.
+func TtftTotalMsNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldTtftTotalMs, vs...))
+}
+
+// TtftTotalMsGT applies the GT predicate on the "ttft_total_ms" field.
+func TtftTotalMsGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldTtftTotalMs, v))
+}
+
+// TtftTotalMsGTE applies the GTE predicate on the "ttft_total_ms" field.
+func TtftTotalMsGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldTtftTotalMs, v))
+}
+
+// TtftTotalMsLT applies the LT predicate on the "ttft_total_ms" field.
+func TtftTotalMsLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldTtftTotalMs, v))
+}
+
+// TtftTotalMsLTE applies the LTE predicate on the "ttft_total_ms" field.
+func TtftTotalMsLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldTtftTotalMs, v))
+}
+
+// TtftCountEQ applies the EQ predicate on the "ttft_count" field.
+func TtftCountEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldTtftCount, v))
+}
+
+// TtftCountNEQ applies the NEQ predicate on the "ttft_count" field.
+func TtftCountNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldTtftCount, v))
+}
+
+// TtftCountIn applies the In predicate on the "ttft_count" field.
+func TtftCountIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldTtftCount, vs...))
+}
+
+// TtftCountNotIn applies the NotIn predicate on the "ttft_count" field.
+func TtftCountNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldTtftCount, vs...))
+}
+
+// TtftCountGT applies the GT predicate on the "ttft_count" field.
+func TtftCountGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldTtftCount, v))
+}
+
+// TtftCountGTE applies the GTE predicate on the "ttft_count" field.
+func TtftCountGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldTtftCount, v))
+}
+
+// TtftCountLT applies the LT predicate on the "ttft_count" field.
+func TtftCountLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldTtftCount, v))
+}
+
+// TtftCountLTE applies the LTE predicate on the "ttft_count" field.
+func TtftCountLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldTtftCount, v))
+}
+
+// TtftMaxMsEQ applies the EQ predicate on the "ttft_max_ms" field.
+func TtftMaxMsEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldEQ(FieldTtftMaxMs, v))
+}
+
+// TtftMaxMsNEQ applies the NEQ predicate on the "ttft_max_ms" field.
+func TtftMaxMsNEQ(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNEQ(FieldTtftMaxMs, v))
+}
+
+// TtftMaxMsIn applies the In predicate on the "ttft_max_ms" field.
+func TtftMaxMsIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldIn(FieldTtftMaxMs, vs...))
+}
+
+// TtftMaxMsNotIn applies the NotIn predicate on the "ttft_max_ms" field.
+func TtftMaxMsNotIn(vs ...int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldNotIn(FieldTtftMaxMs, vs...))
+}
+
+// TtftMaxMsGT applies the GT predicate on the "ttft_max_ms" field.
+func TtftMaxMsGT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGT(FieldTtftMaxMs, v))
+}
+
+// TtftMaxMsGTE applies the GTE predicate on the "ttft_max_ms" field.
+func TtftMaxMsGTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldGTE(FieldTtftMaxMs, v))
+}
+
+// TtftMaxMsLT applies the LT predicate on the "ttft_max_ms" field.
+func TtftMaxMsLT(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLT(FieldTtftMaxMs, v))
+}
+
+// TtftMaxMsLTE applies the LTE predicate on the "ttft_max_ms" field.
+func TtftMaxMsLTE(v int64) predicate.UsageStat {
+	return predicate.UsageStat(sql.FieldLTE(FieldTtftMaxMs, v))
 }
 
 // UpdatedAtEQ applies the EQ predicate on the "updated_at" field.

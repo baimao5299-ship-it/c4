@@ -554,7 +554,10 @@ var (
 		{Name: "cache_read_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "cache_creation_tokens", Type: field.TypeInt64, Default: 0},
 		{Name: "cost", Type: field.TypeInt64, Default: 0},
-		{Name: "total_latency_ms", Type: field.TypeInt64, Default: 0},
+		{Name: "call_count", Type: field.TypeInt64, Default: 0},
+		{Name: "ttft_total_ms", Type: field.TypeInt64, Default: 0},
+		{Name: "ttft_count", Type: field.TypeInt64, Default: 0},
+		{Name: "ttft_max_ms", Type: field.TypeInt64, Default: 0},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
 	// UsageStatsTable holds the schema information for the "usage_stats" table.

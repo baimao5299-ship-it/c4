@@ -20423,8 +20423,14 @@ type UsageStatMutation struct {
 	addcache_creation_tokens *int64
 	cost                     *int64
 	addcost                  *int64
-	total_latency_ms         *int64
-	addtotal_latency_ms      *int64
+	call_count               *int64
+	addcall_count            *int64
+	ttft_total_ms            *int64
+	addttft_total_ms         *int64
+	ttft_count               *int64
+	addttft_count            *int64
+	ttft_max_ms              *int64
+	addttft_max_ms           *int64
 	updated_at               *time.Time
 	clearedFields            map[string]struct{}
 	done                     bool
@@ -21316,60 +21322,228 @@ func (m *UsageStatMutation) ResetCost() {
 	m.addcost = nil
 }
 
-// SetTotalLatencyMs sets the "total_latency_ms" field.
-func (m *UsageStatMutation) SetTotalLatencyMs(i int64) {
-	m.total_latency_ms = &i
-	m.addtotal_latency_ms = nil
+// SetCallCount sets the "call_count" field.
+func (m *UsageStatMutation) SetCallCount(i int64) {
+	m.call_count = &i
+	m.addcall_count = nil
 }
 
-// TotalLatencyMs returns the value of the "total_latency_ms" field in the mutation.
-func (m *UsageStatMutation) TotalLatencyMs() (r int64, exists bool) {
-	v := m.total_latency_ms
+// CallCount returns the value of the "call_count" field in the mutation.
+func (m *UsageStatMutation) CallCount() (r int64, exists bool) {
+	v := m.call_count
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldTotalLatencyMs returns the old "total_latency_ms" field's value of the UsageStat entity.
+// OldCallCount returns the old "call_count" field's value of the UsageStat entity.
 // If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageStatMutation) OldTotalLatencyMs(ctx context.Context) (v int64, err error) {
+func (m *UsageStatMutation) OldCallCount(ctx context.Context) (v int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTotalLatencyMs is only allowed on UpdateOne operations")
+		return v, errors.New("OldCallCount is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTotalLatencyMs requires an ID field in the mutation")
+		return v, errors.New("OldCallCount requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTotalLatencyMs: %w", err)
+		return v, fmt.Errorf("querying old value for OldCallCount: %w", err)
 	}
-	return oldValue.TotalLatencyMs, nil
+	return oldValue.CallCount, nil
 }
 
-// AddTotalLatencyMs adds i to the "total_latency_ms" field.
-func (m *UsageStatMutation) AddTotalLatencyMs(i int64) {
-	if m.addtotal_latency_ms != nil {
-		*m.addtotal_latency_ms += i
+// AddCallCount adds i to the "call_count" field.
+func (m *UsageStatMutation) AddCallCount(i int64) {
+	if m.addcall_count != nil {
+		*m.addcall_count += i
 	} else {
-		m.addtotal_latency_ms = &i
+		m.addcall_count = &i
 	}
 }
 
-// AddedTotalLatencyMs returns the value that was added to the "total_latency_ms" field in this mutation.
-func (m *UsageStatMutation) AddedTotalLatencyMs() (r int64, exists bool) {
-	v := m.addtotal_latency_ms
+// AddedCallCount returns the value that was added to the "call_count" field in this mutation.
+func (m *UsageStatMutation) AddedCallCount() (r int64, exists bool) {
+	v := m.addcall_count
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ResetTotalLatencyMs resets all changes to the "total_latency_ms" field.
-func (m *UsageStatMutation) ResetTotalLatencyMs() {
-	m.total_latency_ms = nil
-	m.addtotal_latency_ms = nil
+// ResetCallCount resets all changes to the "call_count" field.
+func (m *UsageStatMutation) ResetCallCount() {
+	m.call_count = nil
+	m.addcall_count = nil
+}
+
+// SetTtftTotalMs sets the "ttft_total_ms" field.
+func (m *UsageStatMutation) SetTtftTotalMs(i int64) {
+	m.ttft_total_ms = &i
+	m.addttft_total_ms = nil
+}
+
+// TtftTotalMs returns the value of the "ttft_total_ms" field in the mutation.
+func (m *UsageStatMutation) TtftTotalMs() (r int64, exists bool) {
+	v := m.ttft_total_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTtftTotalMs returns the old "ttft_total_ms" field's value of the UsageStat entity.
+// If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageStatMutation) OldTtftTotalMs(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTtftTotalMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTtftTotalMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTtftTotalMs: %w", err)
+	}
+	return oldValue.TtftTotalMs, nil
+}
+
+// AddTtftTotalMs adds i to the "ttft_total_ms" field.
+func (m *UsageStatMutation) AddTtftTotalMs(i int64) {
+	if m.addttft_total_ms != nil {
+		*m.addttft_total_ms += i
+	} else {
+		m.addttft_total_ms = &i
+	}
+}
+
+// AddedTtftTotalMs returns the value that was added to the "ttft_total_ms" field in this mutation.
+func (m *UsageStatMutation) AddedTtftTotalMs() (r int64, exists bool) {
+	v := m.addttft_total_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTtftTotalMs resets all changes to the "ttft_total_ms" field.
+func (m *UsageStatMutation) ResetTtftTotalMs() {
+	m.ttft_total_ms = nil
+	m.addttft_total_ms = nil
+}
+
+// SetTtftCount sets the "ttft_count" field.
+func (m *UsageStatMutation) SetTtftCount(i int64) {
+	m.ttft_count = &i
+	m.addttft_count = nil
+}
+
+// TtftCount returns the value of the "ttft_count" field in the mutation.
+func (m *UsageStatMutation) TtftCount() (r int64, exists bool) {
+	v := m.ttft_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTtftCount returns the old "ttft_count" field's value of the UsageStat entity.
+// If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageStatMutation) OldTtftCount(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTtftCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTtftCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTtftCount: %w", err)
+	}
+	return oldValue.TtftCount, nil
+}
+
+// AddTtftCount adds i to the "ttft_count" field.
+func (m *UsageStatMutation) AddTtftCount(i int64) {
+	if m.addttft_count != nil {
+		*m.addttft_count += i
+	} else {
+		m.addttft_count = &i
+	}
+}
+
+// AddedTtftCount returns the value that was added to the "ttft_count" field in this mutation.
+func (m *UsageStatMutation) AddedTtftCount() (r int64, exists bool) {
+	v := m.addttft_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTtftCount resets all changes to the "ttft_count" field.
+func (m *UsageStatMutation) ResetTtftCount() {
+	m.ttft_count = nil
+	m.addttft_count = nil
+}
+
+// SetTtftMaxMs sets the "ttft_max_ms" field.
+func (m *UsageStatMutation) SetTtftMaxMs(i int64) {
+	m.ttft_max_ms = &i
+	m.addttft_max_ms = nil
+}
+
+// TtftMaxMs returns the value of the "ttft_max_ms" field in the mutation.
+func (m *UsageStatMutation) TtftMaxMs() (r int64, exists bool) {
+	v := m.ttft_max_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTtftMaxMs returns the old "ttft_max_ms" field's value of the UsageStat entity.
+// If the UsageStat object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageStatMutation) OldTtftMaxMs(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTtftMaxMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTtftMaxMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTtftMaxMs: %w", err)
+	}
+	return oldValue.TtftMaxMs, nil
+}
+
+// AddTtftMaxMs adds i to the "ttft_max_ms" field.
+func (m *UsageStatMutation) AddTtftMaxMs(i int64) {
+	if m.addttft_max_ms != nil {
+		*m.addttft_max_ms += i
+	} else {
+		m.addttft_max_ms = &i
+	}
+}
+
+// AddedTtftMaxMs returns the value that was added to the "ttft_max_ms" field in this mutation.
+func (m *UsageStatMutation) AddedTtftMaxMs() (r int64, exists bool) {
+	v := m.addttft_max_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTtftMaxMs resets all changes to the "ttft_max_ms" field.
+func (m *UsageStatMutation) ResetTtftMaxMs() {
+	m.ttft_max_ms = nil
+	m.addttft_max_ms = nil
 }
 
 // SetUpdatedAt sets the "updated_at" field.
@@ -21442,7 +21616,7 @@ func (m *UsageStatMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageStatMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 20)
 	if m.bucket_time != nil {
 		fields = append(fields, usagestat.FieldBucketTime)
 	}
@@ -21488,8 +21662,17 @@ func (m *UsageStatMutation) Fields() []string {
 	if m.cost != nil {
 		fields = append(fields, usagestat.FieldCost)
 	}
-	if m.total_latency_ms != nil {
-		fields = append(fields, usagestat.FieldTotalLatencyMs)
+	if m.call_count != nil {
+		fields = append(fields, usagestat.FieldCallCount)
+	}
+	if m.ttft_total_ms != nil {
+		fields = append(fields, usagestat.FieldTtftTotalMs)
+	}
+	if m.ttft_count != nil {
+		fields = append(fields, usagestat.FieldTtftCount)
+	}
+	if m.ttft_max_ms != nil {
+		fields = append(fields, usagestat.FieldTtftMaxMs)
 	}
 	if m.updated_at != nil {
 		fields = append(fields, usagestat.FieldUpdatedAt)
@@ -21532,8 +21715,14 @@ func (m *UsageStatMutation) Field(name string) (ent.Value, bool) {
 		return m.CacheCreationTokens()
 	case usagestat.FieldCost:
 		return m.Cost()
-	case usagestat.FieldTotalLatencyMs:
-		return m.TotalLatencyMs()
+	case usagestat.FieldCallCount:
+		return m.CallCount()
+	case usagestat.FieldTtftTotalMs:
+		return m.TtftTotalMs()
+	case usagestat.FieldTtftCount:
+		return m.TtftCount()
+	case usagestat.FieldTtftMaxMs:
+		return m.TtftMaxMs()
 	case usagestat.FieldUpdatedAt:
 		return m.UpdatedAt()
 	}
@@ -21575,8 +21764,14 @@ func (m *UsageStatMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldCacheCreationTokens(ctx)
 	case usagestat.FieldCost:
 		return m.OldCost(ctx)
-	case usagestat.FieldTotalLatencyMs:
-		return m.OldTotalLatencyMs(ctx)
+	case usagestat.FieldCallCount:
+		return m.OldCallCount(ctx)
+	case usagestat.FieldTtftTotalMs:
+		return m.OldTtftTotalMs(ctx)
+	case usagestat.FieldTtftCount:
+		return m.OldTtftCount(ctx)
+	case usagestat.FieldTtftMaxMs:
+		return m.OldTtftMaxMs(ctx)
 	case usagestat.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
 	}
@@ -21693,12 +21888,33 @@ func (m *UsageStatMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCost(v)
 		return nil
-	case usagestat.FieldTotalLatencyMs:
+	case usagestat.FieldCallCount:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetTotalLatencyMs(v)
+		m.SetCallCount(v)
+		return nil
+	case usagestat.FieldTtftTotalMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTtftTotalMs(v)
+		return nil
+	case usagestat.FieldTtftCount:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTtftCount(v)
+		return nil
+	case usagestat.FieldTtftMaxMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTtftMaxMs(v)
 		return nil
 	case usagestat.FieldUpdatedAt:
 		v, ok := value.(time.Time)
@@ -21751,8 +21967,17 @@ func (m *UsageStatMutation) AddedFields() []string {
 	if m.addcost != nil {
 		fields = append(fields, usagestat.FieldCost)
 	}
-	if m.addtotal_latency_ms != nil {
-		fields = append(fields, usagestat.FieldTotalLatencyMs)
+	if m.addcall_count != nil {
+		fields = append(fields, usagestat.FieldCallCount)
+	}
+	if m.addttft_total_ms != nil {
+		fields = append(fields, usagestat.FieldTtftTotalMs)
+	}
+	if m.addttft_count != nil {
+		fields = append(fields, usagestat.FieldTtftCount)
+	}
+	if m.addttft_max_ms != nil {
+		fields = append(fields, usagestat.FieldTtftMaxMs)
 	}
 	return fields
 }
@@ -21786,8 +22011,14 @@ func (m *UsageStatMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedCacheCreationTokens()
 	case usagestat.FieldCost:
 		return m.AddedCost()
-	case usagestat.FieldTotalLatencyMs:
-		return m.AddedTotalLatencyMs()
+	case usagestat.FieldCallCount:
+		return m.AddedCallCount()
+	case usagestat.FieldTtftTotalMs:
+		return m.AddedTtftTotalMs()
+	case usagestat.FieldTtftCount:
+		return m.AddedTtftCount()
+	case usagestat.FieldTtftMaxMs:
+		return m.AddedTtftMaxMs()
 	}
 	return nil, false
 }
@@ -21881,12 +22112,33 @@ func (m *UsageStatMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddCost(v)
 		return nil
-	case usagestat.FieldTotalLatencyMs:
+	case usagestat.FieldCallCount:
 		v, ok := value.(int64)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddTotalLatencyMs(v)
+		m.AddCallCount(v)
+		return nil
+	case usagestat.FieldTtftTotalMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTtftTotalMs(v)
+		return nil
+	case usagestat.FieldTtftCount:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTtftCount(v)
+		return nil
+	case usagestat.FieldTtftMaxMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTtftMaxMs(v)
 		return nil
 	}
 	return fmt.Errorf("unknown UsageStat numeric field %s", name)
@@ -21960,8 +22212,17 @@ func (m *UsageStatMutation) ResetField(name string) error {
 	case usagestat.FieldCost:
 		m.ResetCost()
 		return nil
-	case usagestat.FieldTotalLatencyMs:
-		m.ResetTotalLatencyMs()
+	case usagestat.FieldCallCount:
+		m.ResetCallCount()
+		return nil
+	case usagestat.FieldTtftTotalMs:
+		m.ResetTtftTotalMs()
+		return nil
+	case usagestat.FieldTtftCount:
+		m.ResetTtftCount()
+		return nil
+	case usagestat.FieldTtftMaxMs:
+		m.ResetTtftMaxMs()
 		return nil
 	case usagestat.FieldUpdatedAt:
 		m.ResetUpdatedAt()
