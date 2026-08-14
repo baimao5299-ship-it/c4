@@ -37,8 +37,13 @@ usage = {
   # usagelog 按日分区保留天数（Phase 5 T4.5）：保留期外分区由 retention worker
   # DROP TABLE O(1) 清理（默认 30 天 = 30 个日分区）；<= 0 = 不删除。
   log_retention_days = 30,
+  # quota 回写 cadence（spec 2026-08-14：统计 flush 删除后仅驱动额度增量回写）。
   stats_flush_interval = "10s",
-  # flush_workers：明细/统计/额度 flush 并行 worker 数（默认 8——多角度压测
+  # 离线聚合周期（spec 2026-08-14 使用量统计离线聚合化）：独立 worker 每周期
+  # 从 usage_logs/err_logs 重建 usage_stats（两范围 + 三查询 + 单事务
+  # DELETE+INSERT+watermark）；0 = 禁用聚合。统计分钟级陈旧（接受）。
+  stats_agg_interval = "5m",
+  # flush_workers：明细/额度 flush 并行 worker 数（默认 8——多角度压测
   # C 项实证 2026-08-12：多用户水线告警清零、pending 斜率降 25-40%、QPS/CPU
   # 零回退；每 worker 一笔批量 SQL，受 DB 连接池余量 db.max_conns 约束；
   # 同 key 恒同 worker，分片确定性）。
