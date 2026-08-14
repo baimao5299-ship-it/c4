@@ -27,6 +27,9 @@ func (h *UserAPI) GetUserStats(w http.ResponseWriter, r *http.Request, params Ge
 	if params.AccountId != nil {
 		sq.AccountID = *params.AccountId
 	}
+	if params.TemplateId != nil {
+		sq.TemplateID = *params.TemplateId
+	}
 	if params.Model != nil {
 		sq.Model = *params.Model
 	}

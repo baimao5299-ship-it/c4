@@ -27,6 +27,9 @@ func (h *AdminAPI) GetStats(w http.ResponseWriter, r *http.Request, params GetSt
 	if params.AccountId != nil {
 		sq.AccountID = *params.AccountId
 	}
+	if params.TemplateId != nil {
+		sq.TemplateID = *params.TemplateId
+	}
 	if params.UserId != nil {
 		sq.UserID = *params.UserId
 	}

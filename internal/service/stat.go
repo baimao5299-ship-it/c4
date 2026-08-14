@@ -45,6 +45,24 @@ func (s *Service) QueryStats(ctx context.Context, q repository.StatQuery, granul
 		m.CacheCreationTokens += b.CacheCreationTokens
 		m.Cost += b.Cost
 		m.CallCount += b.CallCount // 按次调用（spec 2026-08-14：入桶与展示）
+		// TTFT 四字段日合并（rewrite spec 2026-08-14 前置清单②）：total/count
+		// 求和、max 取大、直方图逐元素加（与 repository.mergeHist 同语义——
+		// 行数 ≤ 24h × 维度，元素级加法 O(10) 无性能面）。
+		m.TTFTTotalMS += b.TTFTTotalMS
+		m.TTFTCount += b.TTFTCount
+		if b.TTFTMaxMS > m.TTFTMaxMS {
+			m.TTFTMaxMS = b.TTFTMaxMS
+		}
+		if len(b.TTFTHist) > 0 {
+			if m.TTFTHist == nil {
+				m.TTFTHist = make([]int64, len(b.TTFTHist))
+			}
+			for i, c := range b.TTFTHist {
+				if i < len(m.TTFTHist) {
+					m.TTFTHist[i] += c
+				}
+			}
+		}
 	}
 	out := make([]*domain.StatBucket, 0, len(merged))
 	for _, m := range merged {

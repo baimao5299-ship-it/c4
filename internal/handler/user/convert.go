@@ -6,6 +6,7 @@ package user
 
 import (
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/repository"
 )
 
 // redemptionValueToAPI 毫分存储 → 契约面值（与 /admin 兑换码同规则）：
@@ -133,9 +134,16 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 	return e
 }
 
-// toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats；spec 2026-08-14
-// 编译面最小清理——total_latency_ms 删除，不做任何重写，重写另开 task）。
+// toAPIStatBucket 统计桶领域对象 → 契约类型（/user/stats；rewrite spec
+// 2026-08-14 端点重写：Cost 毫分 → USD（/1e5，与 /admin 同口径——本包
+// 兑换码换算同款系数）；TTFT 六指标在 convert 边界算定——avg = sum/count
+// （无样本 0）、pN = 直方图插值（复用 repository.TTFTPercentileMS，与
+// overview /admin/stats 同一实现）。
 func toAPIStatBucket(b *domain.StatBucket) StatBucket {
+	var ttftAvg float64
+	if b.TTFTCount > 0 {
+		ttftAvg = float64(b.TTFTTotalMS) / float64(b.TTFTCount)
+	}
 	return StatBucket{
 		BucketTime:          &b.BucketTime,
 		GroupID:             &b.GroupID,
@@ -151,6 +159,14 @@ func toAPIStatBucket(b *domain.StatBucket) StatBucket {
 		TotalTokens:         &b.TotalTokens,
 		CacheReadTokens:     &b.CacheReadTokens,
 		CacheCreationTokens: &b.CacheCreationTokens,
-		Cost:                &b.Cost,
+		Cost:                ptr(float64(b.Cost) / 1e5),
+		CallCount:           &b.CallCount,
+		TTFTCount:           &b.TTFTCount,
+		TTFTAvgMS:           ptr(ttftAvg),
+		TTFTMaxMS:           &b.TTFTMaxMS,
+		TTFTP50MS:           ptr(repository.TTFTPercentileMS(b.TTFTHist, b.TTFTCount, 0.50)),
+		TTFTP90MS:           ptr(repository.TTFTPercentileMS(b.TTFTHist, b.TTFTCount, 0.90)),
+		TTFTP95MS:           ptr(repository.TTFTPercentileMS(b.TTFTHist, b.TTFTCount, 0.95)),
+		TTFTP99MS:           ptr(repository.TTFTPercentileMS(b.TTFTHist, b.TTFTCount, 0.99)),
 	}
 }

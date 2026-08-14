@@ -77,11 +77,13 @@ func mergeHist(dst, src []int64) {
 	}
 }
 
-// ttftPercentileMS 直方图桶内线性插值（spec 2026-08-14 §1 公式钉死）：
+// TTFTPercentileMS 直方图桶内线性插值（spec 2026-08-14 §1 公式钉死；rewrite
+// spec 2026-08-14 插值复用契约：/stats + /user/stats 端点经本导出函数共用——
+// overview 查询与端点插值同一实现，无第二份逻辑）：
 // low + (rank − cumBelow) / bucketCount × width；rank = ceil(p × N)（nearest-
 // rank）；落在顶桶 [12800, ∞) → 返回下界 12800（**顶桶不可插值**——无上界，
 // 注释标注；返回下界是保守下限口径）。无样本（N = 0）→ 0。
-func ttftPercentileMS(hist []int64, n int64, p float64) int64 {
+func TTFTPercentileMS(hist []int64, n int64, p float64) int64 {
 	if n <= 0 {
 		return 0
 	}
@@ -125,7 +127,7 @@ func (s *StatSummary) TTFTAvgMS() float64 {
 
 // TTFTPercentileMS p 分位（nearest-rank + 桶内线性插值；无样本 → 0）。
 func (s *StatSummary) TTFTPercentileMS(p float64) int64 {
-	return ttftPercentileMS(s.TTFTHist, s.TTFTCount, p)
+	return TTFTPercentileMS(s.TTFTHist, s.TTFTCount, p)
 }
 
 // TTFTAvgMS StatDayAgg 版（同上；日桶无样本 → 0）。
@@ -138,7 +140,7 @@ func (d *StatDayAgg) TTFTAvgMS() float64 {
 
 // TTFTPercentileMS StatDayAgg 版（同上）。
 func (d *StatDayAgg) TTFTPercentileMS(p float64) int64 {
-	return ttftPercentileMS(d.TTFTHist, d.TTFTCount, p)
+	return TTFTPercentileMS(d.TTFTHist, d.TTFTCount, p)
 }
 
 // aggDimCols 三查询共享维度列前缀（重算范围 [from,to) 占位 $1/$2；usage_logs/
