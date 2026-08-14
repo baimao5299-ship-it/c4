@@ -332,6 +332,16 @@ func (r *Repository) CreateTempBalance(ctx context.Context, userID int64, amount
 	return r.Users.CreateTempBalance(ctx, userID, amount, expiresAt, note)
 }
 
+// ListUserTempBalances 用户侧有效临时额度（UserRepo 扩展方法）。
+func (r *Repository) ListUserTempBalances(ctx context.Context, userID int64) ([]*domain.TempBalance, error) {
+	return r.Users.ListUserTempBalances(ctx, userID)
+}
+
+// ListTempBalances 管理侧临时额度全量列表（UserRepo 扩展方法）。
+func (r *Repository) ListTempBalances(ctx context.Context, q ListQuery, userID int64) ([]*domain.TempBalance, int64, error) {
+	return r.Users.ListTempBalances(ctx, q, userID)
+}
+
 // ListUserEmails 批量取邮箱（/admin/users-top TopN 回填；id IN 一次查询）。
 func (r *Repository) ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error) {
 	return r.Users.ListUserEmails(ctx, ids)

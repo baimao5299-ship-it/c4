@@ -869,6 +869,17 @@ func (f *fakeStore) CreateTempBalance(ctx context.Context, userID int64, amount 
 	return nil
 }
 
+// ListUserTempBalances 用户侧有效临时额度（编译兜底：fake 不持久化 temps，
+// 恒空——临时额度行为断言走真实 PG 测试）。
+func (f *fakeStore) ListUserTempBalances(ctx context.Context, userID int64) ([]*domain.TempBalance, error) {
+	return nil, nil
+}
+
+// ListTempBalances 管理侧全量临时额度（编译兜底：同 ListUserTempBalances）。
+func (f *fakeStore) ListTempBalances(ctx context.Context, q repository.ListQuery, userID int64) ([]*domain.TempBalance, int64, error) {
+	return nil, 0, nil
+}
+
 func (f *fakeStore) GetSetting(ctx context.Context, key string) (*domain.Setting, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -65,6 +65,13 @@ type UserStore interface {
 	// CreateTempBalance 创建临时额度行（注册赠品、兑换码兑换等；user_id 外键必
 	// 存在）。expiresAt/note 为 nil 时不落该列（nil = 永久；兑换码路径必非零）。
 	CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error
+	// ListUserTempBalances 用户侧有效临时额度（/user/temp-balances：amount > 0
+	// 且未过期，expires_at 升序——PG ASC 默认 NULLS LAST，永久最后，与
+	// fefoSelectSQL 扣费顺序同源）。
+	ListUserTempBalances(ctx context.Context, userID int64) ([]*domain.TempBalance, error)
+	// ListTempBalances 管理侧全量临时额度（/admin/temp-balances：含过期/用尽/
+	// 负扣减行——全量视角；userID 0 = 全部；sort 白名单 + 分页）。
+	ListTempBalances(ctx context.Context, q repository.ListQuery, userID int64) ([]*domain.TempBalance, int64, error)
 	// ListUserEmails 批量取邮箱（/admin/users-top TopN 回填；id IN 一次查询）。
 	ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error)
 }
@@ -445,6 +452,8 @@ var listSortFields = map[string][]string{
 	"redemption_codes": {"id", "code", "type", "value", "max_uses", "used_count", "status", "created_by", "created_at", "updated_at"},
 	// 与 repo 层 redemptionUseSortFields 白名单一致（双保险；/user/redemptions）。
 	"redemption_uses": {"id", "code_id", "user_id", "value", "created_at"},
+	// 与 repo 层 tempBalanceSortFields 白名单一致（双保险；/admin/temp-balances）。
+	"temp_balances": {"expires_at", "amount", "created_at"},
 	// 与 repo 层 pricingSortFields 白名单一致（双保险；/admin/pricing）。
 	"pricing": {"model", "updated_at"},
 	// 与 repo 层 imagePriceSortFields 白名单一致（双保险；/admin/image-price）。

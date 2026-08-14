@@ -15,6 +15,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/user"
 )
 
@@ -105,6 +106,75 @@ func (r *UserRepo) CreateTempBalance(ctx context.Context, userID int64, amount i
 		SetNillableNote(note).
 		Save(ctx)
 	return err
+}
+
+// ListUserTempBalances 用户侧有效临时额度（/user/temp-balances）：amount > 0
+// AND (expires_at IS NULL OR expires_at > now) ORDER BY expires_at ASC——PG
+// ASC 默认 NULLS LAST（永久最后），与 billing_repo.go fefoSelectSQL 语义逐条件
+// 一致（同源排序：扣费顺序 = 展示顺序，用户可见"哪个先过期"）。
+func (r *UserRepo) ListUserTempBalances(ctx context.Context, userID int64) ([]*domain.TempBalance, error) {
+	rows, err := r.client.TempBalance.Query().
+		Where(tempbalance.And(
+			tempbalance.UserIDEQ(userID),
+			tempbalance.AmountGT(0),
+			tempbalance.Or(tempbalance.ExpiresAtIsNil(), tempbalance.ExpiresAtGT(time.Now())),
+		)).
+		Order(tempbalance.ByExpiresAt()).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.TempBalance, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toDomainTempBalance(row))
+	}
+	return out, nil
+}
+
+// ListTempBalances 管理侧临时额度全量列表（/admin/temp-balances）：无有效过滤
+// （含过期/用尽/负扣减行——管理需要历史与状态全量视角，与用户侧"仅有效额度"
+// 分明）；userID > 0 时按用户筛选（0 = 全部）；sort 白名单（expires_at/
+// amount/created_at，非法 → ErrInvalidSort）+ order；分页 total 与行集同条件。
+func (r *UserRepo) ListTempBalances(ctx context.Context, q ListQuery, userID int64) ([]*domain.TempBalance, int64, error) {
+	pred := r.client.TempBalance.Query()
+	if userID > 0 {
+		pred = pred.Where(tempbalance.UserIDEQ(userID))
+	}
+	total, err := pred.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	order, err := q.sortOrder(tempBalanceSortFields)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]*domain.TempBalance, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toDomainTempBalance(row))
+	}
+	return out, int64(total), nil
+}
+
+// toDomainTempBalance ent 行 → 领域对象（只读查询面）。
+func toDomainTempBalance(row *ent.TempBalance) *domain.TempBalance {
+	return &domain.TempBalance{
+		ID:        row.ID,
+		UserID:    row.UserID,
+		Amount:    row.Amount,
+		ExpiresAt: row.ExpiresAt,
+		Note:      row.Note,
+		CreatedAt: row.CreatedAt,
+	}
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {

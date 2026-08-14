@@ -19,6 +19,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/pricing"
 	"github.com/is7qin/c3api/internal/ent/redemptioncode"
 	"github.com/is7qin/c3api/internal/ent/redemptionuse"
+	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/template"
 	"github.com/is7qin/c3api/internal/ent/user"
 )
@@ -99,6 +100,13 @@ var (
 		"id": redemptionuse.FieldID, "code_id": redemptionuse.FieldCodeID,
 		"user_id": redemptionuse.FieldUserID, "value": redemptionuse.FieldValue,
 		"created_at": redemptionuse.FieldCreatedAt,
+	}
+	// tempBalanceSortFields /admin/temp-balances sort 白名单（spec 2026-08-15：
+	// 仅 expires_at/amount/created_at 三键——默认 expires_at asc 由 handler 显式
+	// 设置，不走 sortOrder 的 id 缺省）。
+	tempBalanceSortFields = map[string]string{
+		"expires_at": tempbalance.FieldExpiresAt, "amount": tempbalance.FieldAmount,
+		"created_at": tempbalance.FieldCreatedAt,
 	}
 	pricingSortFields = map[string]string{
 		"id": pricing.FieldID, "model": pricing.FieldModel,

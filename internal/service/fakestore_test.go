@@ -780,6 +780,39 @@ func (f *fakeStore) CreateTempBalance(ctx context.Context, userID int64, amount 
 	return nil
 }
 
+// ListUserTempBalances 用户侧有效临时额度（编译兜底：按有效过滤语义模拟——
+// amount > 0 且未过期；ID/CreatedAt 恒 0，fake 行无该字段）。
+func (f *fakeStore) ListUserTempBalances(ctx context.Context, userID int64) ([]*domain.TempBalance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.TempBalance
+	for _, tb := range f.tempBalances {
+		if tb.UserID != userID || tb.Amount <= 0 {
+			continue
+		}
+		if tb.ExpiresAt != nil && !tb.ExpiresAt.After(time.Now()) {
+			continue
+		}
+		out = append(out, &domain.TempBalance{UserID: tb.UserID, Amount: tb.Amount, ExpiresAt: tb.ExpiresAt, Note: tb.Note})
+	}
+	return out, nil
+}
+
+// ListTempBalances 管理侧全量临时额度（编译兜底：全量视角 + userID 筛选；
+// fake 不做排序/分页语义）。
+func (f *fakeStore) ListTempBalances(ctx context.Context, q repository.ListQuery, userID int64) ([]*domain.TempBalance, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.TempBalance
+	for _, tb := range f.tempBalances {
+		if userID > 0 && tb.UserID != userID {
+			continue
+		}
+		out = append(out, &domain.TempBalance{UserID: tb.UserID, Amount: tb.Amount, ExpiresAt: tb.ExpiresAt, Note: tb.Note})
+	}
+	return out, int64(len(out)), nil
+}
+
 func (f *fakeStore) GetSetting(ctx context.Context, key string) (*domain.Setting, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
