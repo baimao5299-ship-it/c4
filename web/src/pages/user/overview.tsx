@@ -15,7 +15,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatCost, formatDateTime } from '@/components/fmt'
+import { formatDateTime, formatUSD } from '@/components/fmt'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -43,7 +43,7 @@ export default function UserOverview() {
     queryFn: () => userApi.getUserStats({ from, to, granularity: 'day' }),
   })
 
-  // 最近 7 天汇总：请求数 / 总 token / 成本（Cost 毫分 → formatCost）
+  // 最近 7 天汇总：请求数 / 总 token / 成本（/user/stats 的 Cost 已 USD → formatUSD）
   const buckets = statsQ.data ?? []
   const totalReq = buckets.reduce((s, b) => s + (b.RequestCount ?? 0), 0)
   const totalTokens = buckets.reduce((s, b) => s + (b.TotalTokens ?? 0), 0)
@@ -150,7 +150,7 @@ export default function UserOverview() {
                       <div className="text-xs text-muted-foreground">{t('user.overview.tokens')}</div>
                     </div>
                     <div>
-                      <div className="text-lg font-semibold tabular-nums">{formatCost(totalCost)}</div>
+                      <div className="text-lg font-semibold tabular-nums">{formatUSD(totalCost)}</div>
                       <div className="text-xs text-muted-foreground">{t('user.overview.cost')}</div>
                     </div>
                   </div>

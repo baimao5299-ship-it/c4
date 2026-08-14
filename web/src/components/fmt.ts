@@ -63,6 +63,13 @@ export function formatCost(c?: number | null): string {
   return usdText(c) ?? '—'
 }
 
+// USD 金额直接展示（API 已换算的统计面值，如 /stats、/overview 的 Cost/cost_usd）：
+// $3.2500；空值或 0 显示 —。与 formatCost（毫分语义）并存——两单位各有明确消费面。
+export function formatUSD(c?: number | null): string {
+  if (c == null || c <= 0) return '—'
+  return `$${c.toFixed(4)}`
+}
+
 // 每百万 token 价格：USD/1M tokens 正常值直接展示（API 边界已换算，内部存储毫分），
 // 如 3.5 → $3.5000/M；空值显示 —（0 = 免费价，照常展示 $0.0000/M）。
 export function formatPricePerMillion(c?: number | null): string {
