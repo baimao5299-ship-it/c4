@@ -414,5 +414,6 @@ func TestLogsStatsBillingFields(t *testing.T) {
 	var buckets []StatBucket
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &buckets))
 	require.Len(t, buckets, 1)
-	require.Equal(t, int64(500), *buckets[0].Cost, "stat bucket cost 回显")
+	// rewrite spec 2026-08-14 破坏性变更：/stats Cost 毫分 → USD（/1e5）
+	require.InDelta(t, 0.005, *buckets[0].Cost, 1e-9, "stat bucket cost USD 口径（500 毫分 /1e5）")
 }
