@@ -1,6 +1,6 @@
 # Admin API 文档
 
-管理端 API（配置模板 / 账号 / 分组 / 兑换码 / 模型价格 / 日志 / 统计）。与 AI 推理请求（`/v1/*`，模型请求）相对，本组接口为网关管理面，不对上游转发。
+管理端 API（配置模板 / 账号 / 分组 / 兑换码 / 模型价格 / 日志 / 统计 / 临时额度）。与 AI 推理请求（`/v1/*`，模型请求）相对，本组接口为网关管理面，不对上游转发。
 
 ## 通用约定
 
@@ -438,8 +438,39 @@
 
 - `POST /user/auth/register` / `POST /user/auth/login`：注册（受 `signup_enabled` 设置）与登录，返回 JWT + 用户对象（`Balance` 同样 USD float64）。
 - `GET /user/auth/me`：当前用户信息。
+- `POST /user/auth/change-password`：修改密码（旧密码校验复用登录语义——失败 `401` 同登录文案防枚举；新密码非空且 ≤72 字节，非法 `400`；**不撤销既有 JWT**，新密码下次登录生效），见下方「用户面：修改密码」。
 - `GET /user/stats`：我的用量统计（强制 `user_id` = 当前用户，防越权；字段与 `/admin/stats` 同契约，见「查询用量统计」章节）。
+- `GET /user/temp-balances`：我的临时额度（仅有效额度：未过期且正余额，`expires_at` 升序 FEFO 同序、永久最后；`total_usd` 合计 USD），见「临时额度 Temp Balances」章节。
 - 兑换码（`/user/redemptions`）：`balance` / `temp_balance` 类型向毫分余额/临时额度充值，见「兑换码 Redemption Codes」章节。
+
+### 用户面：修改密码
+
+`POST /user/auth/change-password`（JWT 鉴权）
+
+请求体：
+
+```json
+{
+  "old_password": "current-pass",
+  "new_password": "new-pass"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `old_password` | string | ✅ | 旧密码；校验复用登录语义（bcrypt + 用户状态 `active`），失败 `401` 且文案与登录一致（防枚举探测） |
+| `new_password` | string | ✅ | 新密码：非空且 ≤72 字节（bcrypt 截断限制，注册/建用户同款校验）；非法 → `400`（新密码校验前置，不触达旧密码判定） |
+
+响应 `200`：`{"updated": true}`（bcrypt 重哈希落库）。
+
+| 状态码 | 场景 |
+|---|---|
+| `200` | 修改成功 |
+| `400` | 请求体非法 / 新密码为空或超 72 字节 |
+| `401` | 无 / 非法 JWT（中间件拦截）；旧密码错误或用户非 `active`（**与登录同文案**，防枚举） |
+| `404` | 用户不存在 |
+
+> **不撤销既有 JWT**：无状态 token 无撤销机制——修改成功后已签发的 token 仍有效，新密码**下次登录**生效。
 
 ### 价格倍率语义（计费生效）
 
@@ -450,6 +481,71 @@
 3. 两者均未设置 → ×1 原价。
 
 `0` = **免费**（cost = 0 不扣费；请求仍须有价格，否则 402）；上限 `100000` = ×10。倍率预检：免费用户/组余额为 0 不 402。
+
+---
+
+## 临时额度 Temp Balances
+
+临时额度（`temp_balances` 表）是与 `users.balance` 分离的**限时消费额度**：扣费先扣临时额度（FEFO——最早到期先扣，永久最后），剩余再扣余额（见「计费 Billing」章节）。来源两路：注册赠金（`signup bonus`，受 `default_user_temp_balance` / `default_user_temp_balance_ttl_days` 设置）与兑换码（`redemption code`，`type=temp_balance`）。金额内部恒为**毫分整数**存储，API 边界统一换算 USD float64（`毫分 / 1e5`，1 USD = 100,000 毫分）——与 `users.balance` 同构。两个视角分明：**管理面全量**（含过期/用尽/负扣减行），**用户面仅有效额度**。
+
+### 管理面：临时额度列表
+
+`GET /admin/temp-balances`（platform_admin 专属）
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `page` | int | 1 | 页码，**1-based**；缺省或 `< 1` 按 1（不报错） |
+| `page_size` | int | 20 | 每页行数；越界（`< 1` 或 `> 1000`）→ `400` |
+| `user_id` | int | — | 按用户筛选；缺省 = 全部用户 |
+| `sort` | string | `expires_at` | 白名单：`expires_at` / `amount` / `created_at`；非法 → `400` |
+| `order` | string | `asc` | `asc` / `desc`；其他值 → `400` |
+
+默认排序 `expires_at asc`（**FEFO 同序**——与扣费顺序一致；管理列表惯例默认 `desc`，本端点显式归一为 `asc`）。**全量视角**：无有效过滤——含过期 / 用尽 / 负扣减行（与用户侧"仅有效额度"分明，管理需要历史与状态全量视角）。
+
+响应 `200`：
+
+```json
+{
+  "total": 2,
+  "rows": [
+    { "id": 1, "user_id": 7, "amount_usd": 1.5, "expires_at": "2026-09-14T10:00:00Z", "note": "signup bonus", "created_at": "2026-08-15T10:00:00Z" },
+    { "id": 2, "user_id": 7, "amount_usd": 5, "expires_at": null, "note": "redemption code", "created_at": "2026-08-15T11:00:00Z" }
+  ]
+}
+```
+
+`amount_usd` 为 USD float64（内部毫分 /1e5）；`expires_at` 为 `null` = **永久额度**；`note` 为固定系统备注（`signup bonus` / `redemption code`），无敏感信息。
+
+| 状态码 | 场景 |
+|---|---|
+| `200` | 分页列表（增强分页范式，与兑换码/模型价格同款） |
+| `400` | 非法 `sort` / `order` / `page_size` 越界 |
+| `401` | admin token 缺失或错误；普通 `user` 角色 JWT 访问 |
+
+### 用户面：我的临时额度
+
+`GET /user/temp-balances`（JWT 鉴权）
+
+**强制只返回当前 JWT 用户本人的额度**——无 `user_id` 参数（对齐 `/user/stats` 模式防越权）。仅**有效额度**：`amount > 0` 且未过期（`expires_at` 为 `null` 的永久额度恒有效）；过期 / 用尽（0 元）/ 负扣减行一律隐藏。排序 `expires_at` 升序（FEFO 同序）、永久额度最后。
+
+响应 `200`：
+
+```json
+{
+  "total_usd": 6.5,
+  "rows": [
+    { "id": 2, "amount_usd": 1.5, "expires_at": "2026-09-14T10:00:00Z", "note": "redemption code" },
+    { "id": 1, "amount_usd": 5, "expires_at": null, "note": "signup bonus" }
+  ]
+}
+```
+
+`total_usd` 为有效额度合计（**毫分 Σ 后一次性 /1e5**——避免逐行浮点累加误差；无有效额度 = `0`）。
+
+| 状态码 | 场景 |
+|---|---|
+| `200` | 有效临时额度列表（`rows` 空数组 = 无有效额度） |
+| `401` | 无 / 非法 JWT |
 
 ---
 
@@ -1111,7 +1207,7 @@ billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "1
 
 ### 扣费与明细
 
-- **临时额度 FEFO**：未过期 `temp_balances` 按 `expires_at` 升序逐行扣至 0（最早到期先扣，永久额度最后），剩余扣 `users.balance`。
+- **临时额度 FEFO**：未过期 `temp_balances` 按 `expires_at` 升序逐行扣至 0（最早到期先扣，永久额度最后），剩余扣 `users.balance`（数据面端点见「临时额度 Temp Balances」章节）。
 - **全毫分直接扣减**：1 USD = 100,000 毫分，cost/balance/temp_balance/兑换码 Value 同单位，无换算无取整。
 - **优雅停机**：SIGTERM → 2s 优雅窗口 → 强断长连接（在途流式按已累积 token 计费）→ 等在途归零 → 排空扣费（计费 flusher 最先排空，日志 cost 不丢）。崩溃丢 ≤ 1 flush 窗口（接受）。
 - 管理面余额 API 均以 USD float64 输入/展示（换算见「用户 Users」章节）。
@@ -1122,7 +1218,7 @@ billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "1
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `fast_multiplier` 越界 / 倍率（组/用户-组专属 `price_multiplier`，正常值 `0`~`10`）越界 / `service_tier_policy_*` 非法值 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
+| `400` | 请求体非法 / 修改密码新密码为空或超 72 字节 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `fast_multiplier` 越界 / 倍率（组/用户-组专属 `price_multiplier`，正常值 `0`~`10`）越界 / `service_tier_policy_*` 非法值 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
 | `401` | admin token 缺失或错误；普通 `user` 角色 JWT 访问 `/admin/*` |
 | `402` | **计费拒绝**（`error_type=billing`）：模型缺价 / 余额快照缺失或 ≤ 0（AI 请求面，非管理面） |
 | `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |
