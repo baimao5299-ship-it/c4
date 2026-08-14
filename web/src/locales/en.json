@@ -938,10 +938,10 @@
         "statusCode": "Status code",
         "errorMessage": "Error message",
         "billingTier": "Billing tier",
-        "inputTokens": "Input tokens",
-        "outputTokens": "Output tokens",
         "latency": "Latency",
-        "cost": "Cost"
+        "cost": "Cost",
+        "format": "Format",
+        "tokens": "Tokens"
       },
       "emptyTitle": "No logs",
       "emptyDesc": "Adjust the filters and try again",

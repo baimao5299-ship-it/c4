@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, FileText, RotateCcw } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronRight, FileText, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { defaultLogRange, formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
 import { userApi } from '@/lib/api/client'
 import type { MyErrLogParams, MyUsageLogParams } from '@/lib/api/client'
@@ -30,6 +31,16 @@ type ErrLog = components['schemas']['ErrLog']
 const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort', 'billing']
 // usage_logs 放行面只有 none/abort 两种错误类型。
 const USAGE_ERROR_TYPES: ErrorType[] = ['none', 'abort']
+
+// 格式标签（管理端 logs.tsx 同款）。
+const FORMAT_LABELS: Record<string, string> = {
+  'openai-chat': 'OpenAI Chat',
+  'openai-responses': 'OpenAI Responses',
+  'openai-responses-ws': 'OpenAI Responses (WS)',
+  'openai-images': 'OpenAI Images',
+  'openai-search': 'OpenAI Search',
+  anthropic: 'Anthropic',
+}
 
 // 与管理端 logs.tsx 同款色板：none 绿 / 4xx 黄 / 5xx、network、abort 红 / 429 橙 / auth、no_account 灰 / billing 紫。
 const ERROR_META: Record<ErrorType, string> = {
@@ -70,6 +81,19 @@ function latencyColor(ms: number): { dot: string; text: string } {
   if (ms < 15000) return { dot: 'bg-orange-500', text: 'text-orange-500' }
   return { dot: 'bg-red-500', text: 'text-red-500' }
 }
+
+// —— 格式化工具（管理端 logs.tsx 同款实现） ——
+// 耗时 ≥1000ms 用 s（一位小数），否则 ms。
+const fmtDuration = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
+// 单价：毫分/M → USD/M（API 边界换算 1 USD = 100,000 毫分）。
+const fmtPricePerM = (millis: number): string => {
+  const usd = millis / 1e5
+  if (usd >= 1) return `$${usd.toFixed(4)}/M`
+  if (usd >= 0.001) return `$${usd.toFixed(4)}/M`
+  return `$${usd.toPrecision(2)}/M`
+}
+// token 缩写：≥1000 用 K（1.2K/27.5K），否则原样。
+const fmtTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
 
 const LIMITS = [10, 20, 50, 100, 200]
 // base-ui Select 不接受空串值，用哨兵表示「全部」。
@@ -239,18 +263,19 @@ export default function UserLogs() {
         <Card className="overflow-hidden">
           <Table containerClassName="max-h-[calc(100vh-16rem)] overflow-y-auto">
             <TableHeader>
+              {/* 列顺序与管理端 logs.tsx 对齐：model→format→statusCode(errors)→errorType→
+                  errorMessage(errors)→Token(usage)→费用(usage)→耗时→计费档(errors) */}
               <TableRow>
                 <Th>{t('user.logs.table.createdAt')}</Th>
                 <Th>{t('user.logs.table.model')}</Th>
-                <Th>{t('user.logs.table.errorType')}</Th>
+                <Th>{t('user.logs.table.format')}</Th>
                 {tab === 'errors' && <Th className="text-right">{t('user.logs.table.statusCode')}</Th>}
+                <Th>{t('user.logs.table.errorType')}</Th>
                 {tab === 'errors' && <Th>{t('user.logs.table.errorMessage')}</Th>}
-                {tab === 'errors' && <Th className="text-right">{t('user.logs.table.latency')}</Th>}
-                {tab === 'errors' && <Th>{t('user.logs.table.billingTier')}</Th>}
-                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.inputTokens')}</Th>}
-                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.outputTokens')}</Th>}
-                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.latency')}</Th>}
+                {tab === 'usage' && <Th className="text-right">{t('user.logs.table.tokens')}</Th>}
                 {tab === 'usage' && <Th className="text-right">{t('user.logs.table.cost')}</Th>}
+                <Th className="text-right">{t('user.logs.table.latency')}</Th>
+                {tab === 'errors' && <Th>{t('user.logs.table.billingTier')}</Th>}
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
@@ -267,20 +292,92 @@ export default function UserLogs() {
                       )}
                     </div>
                   </TableCell>
+                  <TableCell>
+                    {l.Format ? <Badge variant="outline">{FORMAT_LABELS[l.Format]}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
                   <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
-                  {/* token 数字直显（千分位，无缩写）：0/空显示 — */}
+                  {/* token 合并列（管理端同款）：↓输入 ↑输出 + cache 第二行 + ⓘ 悬停大卡 */}
                   <TableCell className="text-right font-medium tabular-nums">
-                    {l.InputTokens ? l.InputTokens.toLocaleString() : <span className="text-xs text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    {l.OutputTokens ? l.OutputTokens.toLocaleString() : <span className="text-xs text-muted-foreground">—</span>}
-                  </TableCell>
-                  {/* 延迟：健康色点 + 着色数字（<1s 绿 / <5s 黄 / <15s 橙 / 红），时长 ms */}
-                  <TableCell className="text-right tabular-nums">
-                    {l.LatencyMS != null ? (
+                    {l.InputTokens || l.OutputTokens || l.CacheReadTokens || l.CacheCreationTokens ? (
                       <span className="inline-flex items-center justify-end gap-1.5">
-                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
-                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
+                        <span className="space-y-0.5 text-xs text-right">
+                          <span className="inline-flex items-center gap-2 text-muted-foreground">
+                            <span className="inline-flex items-center gap-0.5">
+                              <ArrowDown className="size-3" />{fmtTokens(l.InputTokens ?? 0)}
+                            </span>
+                            <span className="inline-flex items-center gap-0.5">
+                              <ArrowUp className="size-3" />{fmtTokens(l.OutputTokens ?? 0)}
+                            </span>
+                          </span>
+                          {l.CacheReadTokens || l.CacheCreationTokens ? (
+                            <div className="text-right">
+                              {l.CacheReadTokens ? <span className="text-blue-500/70">{t('logs.tokens.read')} {fmtTokens(l.CacheReadTokens)}</span> : null}
+                              {l.CacheReadTokens && l.CacheCreationTokens ? <span className="mx-1 text-muted-foreground/40">·</span> : null}
+                              {l.CacheCreationTokens ? <span className="text-amber-500/70">{t('logs.tokens.write')} {fmtTokens(l.CacheCreationTokens)}</span> : null}
+                            </div>
+                          ) : null}
+                        </span>
+                        <Tooltip>
+                          <TooltipTrigger delay={0} render={<span className="inline-flex -m-1 size-4 shrink-0 cursor-help items-center justify-center rounded-full bg-muted p-1 text-muted-foreground text-[10px] leading-none" />}>
+                            i
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs border bg-popover p-0 text-popover-foreground shadow-lg">
+                            <div className="space-y-1.5 p-3 text-xs">
+                              <div className="flex items-center justify-between gap-6">
+                                <span className="text-muted-foreground">{t('logs.tokens.input')}</span>
+                                <span className="flex items-baseline gap-2">
+                                  <span className="font-medium tabular-nums">{(l.InputTokens ?? 0).toLocaleString()}</span>
+                                  {l.PriceInputMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceInputMillis)}</span>}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-6">
+                                <span className="text-muted-foreground">{t('logs.tokens.output')}</span>
+                                <span className="flex items-baseline gap-2">
+                                  <span className="font-medium tabular-nums">{(l.OutputTokens ?? 0).toLocaleString()}</span>
+                                  {l.PriceOutputMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceOutputMillis)}</span>}
+                                </span>
+                              </div>
+                              {l.CacheReadTokens ? (
+                                <div className="flex items-center justify-between gap-6">
+                                  <span className="text-muted-foreground">{t('logs.tokens.cacheRead')}</span>
+                                  <span className="flex items-baseline gap-2">
+                                    <span className="font-medium tabular-nums">{l.CacheReadTokens.toLocaleString()}</span>
+                                    {l.PriceCacheReadMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceCacheReadMillis)}</span>}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {l.CacheCreationTokens ? (
+                                <div className="flex items-center justify-between gap-6">
+                                  <span className="text-muted-foreground">{t('logs.tokens.cacheWrite')}</span>
+                                  <span className="flex items-baseline gap-2">
+                                    <span className="font-medium tabular-nums">{l.CacheCreationTokens.toLocaleString()}</span>
+                                    {l.PriceCacheCreationMillis != null && <span className="text-[11px] tabular-nums text-muted-foreground">{fmtPricePerM(l.PriceCacheCreationMillis)}</span>}
+                                  </span>
+                                </div>
+                              ) : null}
+                              <div className="flex items-center justify-between gap-6 border-t pt-1.5">
+                                <span className="text-muted-foreground">{t('logs.tokens.total')}</span>
+                                <span className="font-semibold tabular-nums">
+                                  {((l.InputTokens ?? 0) + (l.OutputTokens ?? 0) + (l.CacheReadTokens ?? 0) + (l.CacheCreationTokens ?? 0)).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-6 border-t pt-1.5">
+                                <span className="text-muted-foreground">{t('logs.table.billingTier')}</span>
+                                {l.BillingTier ? (
+                                  <Badge variant="outline">{l.BillingTier}</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </div>
+                              {(l.AboveHit || l.Overdraft) && (
+                                <div className="flex items-center justify-end gap-1">
+                                  {l.AboveHit && <Badge className="bg-sky-500/10 text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">{t('logs.table.aboveHit')}</Badge>}
+                                  {l.Overdraft && <Badge className="bg-rose-500/10 text-rose-600 dark:bg-rose-400/10 dark:text-rose-400">{t('logs.table.overdraft')}</Badge>}
+                                </div>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
@@ -288,6 +385,22 @@ export default function UserLogs() {
                   </TableCell>
                   {/* 计费列：Cost 毫分 → USD（0/空显示 —） */}
                   <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>
+                  {/* 耗时列（管理端同款）：上行 TTFT（色点按 ttft 着色 + ≥1000ms 用 s）+ 下行总耗时；ttft 无值只显示总耗时 */}
+                  <TableCell className="text-right tabular-nums">
+                    {l.TTFTMS != null ? (
+                      <div className="space-y-0.5 text-right text-xs">
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <span className={cn('size-2 rounded-full', latencyColor(l.TTFTMS).dot)} />
+                          <span className="text-muted-foreground">{t('logs.latency.ttft')} {fmtDuration(l.TTFTMS)}</span>
+                        </div>
+                        <div className="text-muted-foreground/60">{t('logs.latency.total')} {fmtDuration(l.LatencyMS ?? 0)}</div>
+                      </div>
+                    ) : l.LatencyMS != null ? (
+                      <span className="text-muted-foreground">{fmtDuration(l.LatencyMS)}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                 </TableRow>
                 ))
                 : (rows as ErrLog[]).map(l => (
@@ -297,11 +410,14 @@ export default function UserLogs() {
                   <TableCell>
                     <div className="max-w-40 truncate text-xs font-medium" title={l.Model}>{l.Model ?? '—'}</div>
                   </TableCell>
-                  <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
+                  <TableCell>
+                    {l.Format ? <Badge variant="outline">{FORMAT_LABELS[l.Format] ?? l.Format}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
                   {/* 状态码：0 = 连接级错误（无 HTTP 码）显示 — */}
                   <TableCell className="text-right tabular-nums">
                     {l.StatusCode ? <Badge variant="outline">{l.StatusCode}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
+                  <TableCell><ErrorTypeBadge type={l.ErrorType} /></TableCell>
                   {/* 错误信息：max-w truncate + title 悬停全文（域内已截断 500 字符） */}
                   <TableCell className="max-w-72">
                     {l.ErrorMessage ? (
@@ -310,12 +426,12 @@ export default function UserLogs() {
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  {/* 延迟：错误面无 TTFT，仅总耗时（健康色点 + 着色数字），时长 ms */}
+                  {/* 延迟：错误面无 TTFT，仅总耗时（管理端同款：健康色点 + fmtDuration ≥1000ms 用 s） */}
                   <TableCell className="text-right tabular-nums">
                     {l.LatencyMS != null ? (
                       <span className="inline-flex items-center justify-end gap-1.5">
                         <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS).dot)} />
-                        <span className={latencyColor(l.LatencyMS).text}>{l.LatencyMS} ms</span>
+                        <span className="text-xs text-muted-foreground">{fmtDuration(l.LatencyMS)}</span>
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>

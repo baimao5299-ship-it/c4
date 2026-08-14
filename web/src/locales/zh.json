@@ -938,10 +938,10 @@
         "statusCode": "状态码",
         "errorMessage": "错误信息",
         "billingTier": "计费档",
-        "inputTokens": "输入 Token",
-        "outputTokens": "输出 Token",
         "latency": "延迟",
-        "cost": "费用"
+        "cost": "费用",
+        "format": "格式",
+        "tokens": "Token"
       },
       "emptyTitle": "暂无日志",
       "emptyDesc": "调整过滤条件后重试",
