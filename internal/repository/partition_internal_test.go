@@ -4,10 +4,11 @@
 
 package repository
 
-// P1（压测 2026-08-11 修复）对齐锚（评审 I-1 双向化）：静态建表 DDL 与幂等补列
-// ALTER 的列集合必须双向相等——单向断言（align⊆create）防不住"未来向静态 DDL
-// 加列忘加 align"这一 P1 同型复发模式。两处均由 usageLogColumnDefs 单一事实源
-// 生成（结构性无漂移），本断言兜底任一侧被绕过/手改。
+// 列事实源锚（align 补列机制删除后保留的防漂移职责，评审 I-1）：建表 DDL 与
+// 列定义事实源（usageLogColumnDefs/errLogColumnDefs/usageStatsColumnDefs）的
+// 列集合必须一致——任一同步点被绕过/手改立即被本文件锚测试捕获（防"向静态
+// DDL 加列忘加事实源"漂移，含类型漂移——列定义字符串整体生成）。列集合的
+// 在场/取反断言是列集合演化的自动化防线。
 
 import (
 	"errors"
@@ -43,56 +44,47 @@ func ddlColumnNames(ddls ...string) []string {
 	return names
 }
 
-func TestUsageLogAlignColumnsMatchCreateDDL(t *testing.T) {
+func TestUsageLogColumnDefsMatchCreateDDL(t *testing.T) {
 	source := ddlColumnNames(strings.Join(usageLogColumnDefs, "\n"))
 	create := ddlColumnNames(usageLogCreateDDL)
-	align := ddlColumnNames(usageLogAlignColumnDDLs...)
 	require.NotEmpty(t, source, "事实源列集合非空")
 	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
-	require.Equal(t, source, align, "补列 ALTER 与事实源列集合一致")
-	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
-	require.Contains(t, source, "price_input_millis", "对齐锚必须覆盖 P1 缺列")
+	require.Contains(t, source, "price_input_millis", "锚必须覆盖 P1 缺列（快照列）")
 	// 统一计费模型（spec 2026-08-13）：删 6 加 2——新列锚 + 旧列取反断言
 	//（任何同步点残留图片 6 列即红）。
-	require.Contains(t, source, "call_count", "对齐锚必须覆盖 call_count 新列")
-	require.Contains(t, source, "price_per_call_millis", "对齐锚必须覆盖 price_per_call_millis 新列")
+	require.Contains(t, source, "call_count", "锚必须覆盖 call_count 新列")
+	require.Contains(t, source, "price_per_call_millis", "锚必须覆盖 price_per_call_millis 新列")
 	for _, old := range []string{"image_input_tokens", "image_output_tokens", "image_count",
 		"price_image_input_millis", "price_image_output_millis", "price_per_image_millis"} {
 		require.NotContains(t, source, old, "删 6 列：%s 不得残留", old)
 	}
 }
 
-// TestErrLogAlignColumnsMatchCreateDDL err_logs 对齐锚（架构审查 S2——P1 同型
-// 复发防线：errLogColumnDefs 是第二列事实源，建表 DDL 与幂等补列 ALTER 双向
-// 相等；防"向静态 DDL 加列忘加 align"）。
-func TestErrLogAlignColumnsMatchCreateDDL(t *testing.T) {
+// TestErrLogColumnDefsMatchCreateDDL err_logs 列事实源锚（架构审查 S2——
+// errLogColumnDefs 是第二列事实源，建表 DDL 与事实源列集合一致；防"向静态
+// DDL 加列忘加事实源"）。
+func TestErrLogColumnDefsMatchCreateDDL(t *testing.T) {
 	source := ddlColumnNames(strings.Join(errLogColumnDefs, "\n"))
 	create := ddlColumnNames(errLogCreateDDL)
-	align := ddlColumnNames(errLogAlignColumnDDLs...)
 	require.NotEmpty(t, source, "事实源列集合非空")
 	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
-	require.Equal(t, source, align, "补列 ALTER 与事实源列集合一致")
-	require.Equal(t, create, align, "建表 DDL 列集合 == 补列 ALTER 列集合（双向相等）")
-	require.Contains(t, source, "error_message", "对齐锚必须覆盖 err_logs 错误审计列")
-	require.Contains(t, source, "billing_tier", "对齐锚必须覆盖 I-3 tier 审计列")
+	require.Contains(t, source, "error_message", "锚必须覆盖 err_logs 错误审计列")
+	require.Contains(t, source, "billing_tier", "锚必须覆盖 I-3 tier 审计列")
 	require.NotContains(t, source, "cost", "err_logs 瘦表无计费列")
 	require.NotContains(t, source, "input_tokens", "err_logs 瘦表无 token 列")
 }
 
-// TestUsageStatsAlignColumnsMatchCreateDDL usage_stats 对齐锚（用户裁决
+// TestUsageStatsColumnDefsMatchCreateDDL usage_stats 列事实源锚（用户裁决
 // 2026-08-11 三表统一分区机制——usageStatsColumnDefs 第三列事实源，建表 DDL
-// 与幂等补列 ALTER 双向相等；防 P1 同型复发）→ spec 2026-08-14 表重建：
-// 存量库必须重建（DDL 变更大：删 total_latency_ms、加 call_count/ttft_* 六列 +
-// bigint[] 数组列），幂等补列 ALTER 机制随之删除——align 集合必须恒空（防
-// 复活回归），建表 DDL 仍与事实源双向相等。
-func TestUsageStatsAlignColumnsMatchCreateDDL(t *testing.T) {
+// 与事实源列集合一致；防 P1 同型复发）→ spec 2026-08-14 表重建：删
+// total_latency_ms、加 call_count/ttft_* 六列 + bigint[] 数组列。
+func TestUsageStatsColumnDefsMatchCreateDDL(t *testing.T) {
 	source := ddlColumnNames(strings.Join(usageStatsColumnDefs, "\n"))
 	create := ddlColumnNames(usageStatsCreateDDL)
 	require.NotEmpty(t, source, "事实源列集合非空")
 	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
-	require.Empty(t, usageStatsAlignColumnDDLs, "usage_stats 不做幂等补列（表重建，存量库必须重建）")
-	require.Contains(t, source, "bucket_time", "对齐锚必须覆盖分区键 bucket_time")
-	require.Contains(t, source, "cost", "对齐锚必须覆盖计费预聚合列")
+	require.Contains(t, source, "bucket_time", "锚必须覆盖分区键 bucket_time")
+	require.Contains(t, source, "cost", "锚必须覆盖计费预聚合列")
 	require.Contains(t, source, "call_count", "表重建必须含按次调用列")
 	require.Contains(t, source, "ttft_hist", "表重建必须含 TTFT 直方图数组列（ent carve-out）")
 	require.NotContains(t, source, "total_latency_ms", "表重建删除总延迟列（TTFT 直方图替代）")
@@ -113,7 +105,7 @@ func TestIsBootstrapRaceErrorCodeSet(t *testing.T) {
 	require.True(t, isDuplicateObject(pgErr("42710")), "CREATE TABLE 撞隐式复合类型 42710")
 	require.True(t, isDuplicateObject(pgErr("23505")), "CREATE SEQUENCE 并发 23505")
 	// 缺失集（stale-DROP 窗口）
-	require.True(t, isMissingObject(pgErr("42P01")), "OWNED BY/索引/对齐/分区引用缺失的表或序列 42P01")
+	require.True(t, isMissingObject(pgErr("42P01")), "OWNED BY/索引/分区引用缺失的表或序列 42P01")
 	require.False(t, isMissingObject(pgErr("42P07")), "撞名非缺失不得归入 42P01 集")
 	// 组合判定
 	require.True(t, isBootstrapRaceError(pgErr("42P07")), "撞名 → bootstrap 竞态")
