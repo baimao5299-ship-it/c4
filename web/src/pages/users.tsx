@@ -193,7 +193,8 @@ export default function Users() {
   const [tempUser, setTempUser] = useState<User | null>(null)
   const tempBalancesQ = useQuery({
     queryKey: ['admin', 'temp-balances', tempUser?.ID],
-    queryFn: () => api.getAdminTempBalances({ user_id: tempUser!.ID!, page_size: 100 }),
+    // page_size 取后端上限 1000 拉全量（额度行通常个位数——避免截断致合计少算，评审 I-1）
+    queryFn: () => api.getAdminTempBalances({ user_id: tempUser!.ID!, page_size: 1000 }),
     enabled: tempUser != null,
   })
   const tempRows = tempBalancesQ.data?.rows ?? []
@@ -513,7 +514,10 @@ export default function Users() {
           <DialogHeader>
             <DialogTitle>{t('users.tempBalances.title', { name: tempUser?.Email })}</DialogTitle>
             <DialogDescription>{t('users.tempBalances.desc')}</DialogDescription>
-            <p className="text-sm font-medium">{t('users.tempBalances.total', { amount: formatUSD(tempActiveTotal) })}</p>
+            {/* 空态不渲染合计（评审 M-1——对齐 profile 参考形态） */}
+            {tempRows.length > 0 && (
+              <p className="text-sm font-medium">{t('users.tempBalances.total', { amount: formatUSD(tempActiveTotal) })}</p>
+            )}
           </DialogHeader>
           {tempBalancesQ.isLoading ? (
             <div className="space-y-1.5">
@@ -541,7 +545,7 @@ export default function Users() {
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                         {r.expires_at == null ? t('user.profile.tempPermanent') : formatDateTime(r.expires_at)}
                       </TableCell>
-                      <TableCell className="max-w-40 truncate text-xs text-muted-foreground">{r.note ?? '—'}</TableCell>
+                      <TableCell className="max-w-40 truncate text-xs text-muted-foreground" title={r.note ?? undefined}>{r.note ?? '—'}</TableCell>
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(r.created_at)}</TableCell>
                     </TableRow>
                   ))}
