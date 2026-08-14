@@ -215,17 +215,22 @@ func (t *Template) Serves(m string) bool {
 }
 
 type Account struct {
-	ID             int64
-	Name           string
-	TemplateID     int64
-	Template       *Template
-	UpstreamKey    string
-	Status         AccountStatus
-	CooldownUntil  *time.Time
-	Weight         int
+	ID         int64
+	Name       string
+	TemplateID int64
+	Template   *Template
+	// BaseURL 账号级 base_url 覆盖（路由属性，列位于 upstream_key 前——用户
+	// 裁决 2026-08-14）：nil = 继承模板 base_url；非空 = 覆盖模板值（api_key/
+	// responses-special 静态透传的兜底——模板留空则账号级可补）。DB 恒
+	// nil|非空两种形态（create 路径空串归一 nil、批量 "" 落 NULL）。
+	BaseURL    *string
+	UpstreamKey string
+	Status      AccountStatus
+	CooldownUntil *time.Time
+	Weight        int
 	MaxConcurrency int
-	LastError      *string
-	LastUsedAt     *time.Time
+	LastError     *string
+	LastUsedAt    *time.Time
 	// FailedAt SDK 上报的运行时失效时刻（account.failed_at 列，SDK 接入 T1——
 	// 用户裁决 2026-08-13：仅此一列；失效原因复用既有 LastError，两原因字段
 	// 并存会漂移）：nil = 未失效；非 nil = 账号级终止（凭据永久失效/上游封禁/

@@ -111,6 +111,7 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 	}
 	d := &domain.Account{
 		ID: a.ID, Name: a.Name, TemplateID: a.TemplateID, Template: tpl,
+		BaseURL:       a.BaseURL, // 账号级覆盖（nil = 继承模板；快照装配指针拷贝零分配）
 		UpstreamKey:   a.UpstreamKey,
 		Status:        domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,

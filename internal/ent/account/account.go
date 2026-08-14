@@ -19,6 +19,8 @@ const (
 	FieldName = "name"
 	// FieldTemplateID holds the string denoting the template_id field in the database.
 	FieldTemplateID = "template_id"
+	// FieldBaseURL holds the string denoting the base_url field in the database.
+	FieldBaseURL = "base_url"
 	// FieldUpstreamKey holds the string denoting the upstream_key field in the database.
 	FieldUpstreamKey = "upstream_key"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -75,6 +77,7 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldTemplateID,
+	FieldBaseURL,
 	FieldUpstreamKey,
 	FieldStatus,
 	FieldCooldownUntil,
@@ -161,6 +164,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByTemplateID orders the results by the template_id field.
 func ByTemplateID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTemplateID, opts...).ToFunc()
+}
+
+// ByBaseURL orders the results by the base_url field.
+func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
 }
 
 // ByUpstreamKey orders the results by the upstream_key field.

@@ -58,6 +58,7 @@ const STATUSES: AccountStatus[] = ['active', 'unhealthy', '429', 'disabled']
 interface FormState {
   name: string
   template_id: string // Select 值统一用字符串，提交时转 number
+  base_url: string // 账号级覆盖（'' = 继承模板）
   upstream_key: string
   status: AccountStatus
   weight: string
@@ -75,6 +76,7 @@ interface FormState {
 const emptyForm = (): FormState => ({
   name: '',
   template_id: '',
+  base_url: '',
   upstream_key: '',
   status: 'active',
   weight: '0',
@@ -91,6 +93,7 @@ function toForm(a: AccountView): FormState {
   return {
     name: a.Name ?? '',
     template_id: String(a.TemplateID ?? ''),
+    base_url: a.BaseURL ?? '', // 编辑回显（C3：toAPIAccountView 平铺携带，否则保存静默清空）
     upstream_key: a.UpstreamKey ?? '',
     status: a.Status ?? 'active',
     weight: String(a.Weight ?? 0),
@@ -113,6 +116,8 @@ function toBody(f: FormState, editing: boolean): AccountCreate {
   const body: AccountCreate = {
     name: f.name.trim(),
     template_id: Number(f.template_id),
+    // 空串归一 null（create/update 路径 ""/null/缺省统一 = 继承模板）
+    base_url: f.base_url.trim() || null,
     upstream_key: f.upstream_key,
     status: f.status,
     weight: f.weight === '' ? 0 : Number(f.weight),
@@ -144,10 +149,12 @@ function GroupMultiSelect({ groups, value, onChange, disabled }: {
 }
 
 // 禁用/启用 quick action：取当前对象重建请求体 + status 翻转。
+// base_url 从 AccountView 取（C3——缺则 toggle PUT 全量替换静默清空）。
 function toggleBody(a: AccountView, next: AccountStatus): AccountCreate {
   return {
     name: a.Name ?? '',
     template_id: a.TemplateID ?? 0,
+    base_url: a.BaseURL ?? null,
     upstream_key: a.UpstreamKey ?? '',
     status: next,
     weight: a.Weight ?? 0,
@@ -159,23 +166,27 @@ function toggleBody(a: AccountView, next: AccountStatus): AccountCreate {
 interface BatchForm {
   name: string
   upstream_key: string
+  base_url: string
   status: BatchStatus
   weight: string
   max_concurrency: string
   template_id: string
   group_ids: string[]
   clearGroups: boolean // 评审 I-2：勾选发送 group_ids: [] 并禁用分组多选
+  clearBaseURL: boolean // C1 三态哨兵（对齐 clearGroups 先例）：勾选发送 base_url: "" = 清空；未勾选且输入非空 → 该值；未勾选且空 → 不变
 }
 
 const emptyBatchForm = (): BatchForm => ({
   name: '',
   upstream_key: '',
+  base_url: '',
   status: 'all',
   weight: '',
   max_concurrency: '',
   template_id: 'all',
   group_ids: [],
   clearGroups: false,
+  clearBaseURL: false,
 })
 
 export default function Accounts() {
@@ -307,6 +318,10 @@ export default function Accounts() {
     const fields: AccountPatch = {}
     if (batchForm.name.trim()) fields.name = batchForm.name.trim()
     if (batchForm.upstream_key) fields.upstream_key = batchForm.upstream_key
+    // base_url 批量三态（C1）：勾选清空 → "" = 清空（回继承模板）；
+    // 未勾选且输入非空 → 落值；未勾选且空 → 不变（不发送）
+    if (batchForm.clearBaseURL) fields.base_url = ''
+    else if (batchForm.base_url.trim()) fields.base_url = batchForm.base_url.trim()
     if (batchForm.status !== 'all') fields.status = batchForm.status
     if (batchForm.weight !== '') fields.weight = Number(batchForm.weight)
     if (batchForm.max_concurrency !== '') fields.max_concurrency = Number(batchForm.max_concurrency)
@@ -783,6 +798,18 @@ export default function Accounts() {
                 <Input id="acc-key" type="password" value={form.upstream_key} placeholder="sk-..." onChange={e => setForm(f => ({ ...f, upstream_key: e.target.value }))} />
               </div>
             )}
+            {/* 账号级 base_url 覆盖（所有凭据类型显示——codex 可覆盖 SDK 默认端点；
+                api_key/responses-special 为模板留空时的兜底）；留空 = 继承模板 */}
+            <div className="space-y-1.5">
+              <Label htmlFor="acc-base-url">Base URL</Label>
+              <Input
+                id="acc-base-url"
+                value={form.base_url}
+                placeholder="https://..."
+                onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">{t('accounts.baseUrlHint')}</p>
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>{t('accounts.statusLabel')}</Label>
@@ -879,6 +906,20 @@ export default function Accounts() {
             <div className="space-y-1.5">
               <Label htmlFor="ba-key">Upstream Key</Label>
               <Input id="ba-key" type="password" value={batchForm.upstream_key} placeholder="sk-..." onChange={e => setBatchForm(f => ({ ...f, upstream_key: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ba-base-url">Base URL</Label>
+              <Input
+                id="ba-base-url"
+                value={batchForm.base_url}
+                placeholder="https://..."
+                onChange={e => setBatchForm(f => ({ ...f, base_url: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">{t('accounts.batchBaseUrlHint')}</p>
+              <label className="flex cursor-pointer items-center gap-2.5 py-0.5">
+                <Checkbox checked={batchForm.clearBaseURL} onCheckedChange={c => setBatchForm(f => ({ ...f, clearBaseURL: c === true }))} />
+                <span className="text-sm">{t('accounts.clearBaseUrl')}</span>
+              </label>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

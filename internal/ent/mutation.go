@@ -71,6 +71,7 @@ type AccountMutation struct {
 	typ                string
 	id                 *int64
 	name               *string
+	base_url           *string
 	upstream_key       *string
 	status             *account.Status
 	cooldown_until     *time.Time
@@ -272,6 +273,55 @@ func (m *AccountMutation) OldTemplateID(ctx context.Context) (v int64, err error
 // ResetTemplateID resets all changes to the "template_id" field.
 func (m *AccountMutation) ResetTemplateID() {
 	m.template = nil
+}
+
+// SetBaseURL sets the "base_url" field.
+func (m *AccountMutation) SetBaseURL(s string) {
+	m.base_url = &s
+}
+
+// BaseURL returns the value of the "base_url" field in the mutation.
+func (m *AccountMutation) BaseURL() (r string, exists bool) {
+	v := m.base_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBaseURL returns the old "base_url" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldBaseURL(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBaseURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBaseURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBaseURL: %w", err)
+	}
+	return oldValue.BaseURL, nil
+}
+
+// ClearBaseURL clears the value of the "base_url" field.
+func (m *AccountMutation) ClearBaseURL() {
+	m.base_url = nil
+	m.clearedFields[account.FieldBaseURL] = struct{}{}
+}
+
+// BaseURLCleared returns if the "base_url" field was cleared in this mutation.
+func (m *AccountMutation) BaseURLCleared() bool {
+	_, ok := m.clearedFields[account.FieldBaseURL]
+	return ok
+}
+
+// ResetBaseURL resets all changes to the "base_url" field.
+func (m *AccountMutation) ResetBaseURL() {
+	m.base_url = nil
+	delete(m.clearedFields, account.FieldBaseURL)
 }
 
 // SetUpstreamKey sets the "upstream_key" field.
@@ -944,12 +994,15 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.name != nil {
 		fields = append(fields, account.FieldName)
 	}
 	if m.template != nil {
 		fields = append(fields, account.FieldTemplateID)
+	}
+	if m.base_url != nil {
+		fields = append(fields, account.FieldBaseURL)
 	}
 	if m.upstream_key != nil {
 		fields = append(fields, account.FieldUpstreamKey)
@@ -996,6 +1049,8 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case account.FieldTemplateID:
 		return m.TemplateID()
+	case account.FieldBaseURL:
+		return m.BaseURL()
 	case account.FieldUpstreamKey:
 		return m.UpstreamKey()
 	case account.FieldStatus:
@@ -1031,6 +1086,8 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldName(ctx)
 	case account.FieldTemplateID:
 		return m.OldTemplateID(ctx)
+	case account.FieldBaseURL:
+		return m.OldBaseURL(ctx)
 	case account.FieldUpstreamKey:
 		return m.OldUpstreamKey(ctx)
 	case account.FieldStatus:
@@ -1075,6 +1132,13 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTemplateID(v)
+		return nil
+	case account.FieldBaseURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBaseURL(v)
 		return nil
 	case account.FieldUpstreamKey:
 		v, ok := value.(string)
@@ -1210,6 +1274,9 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *AccountMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(account.FieldBaseURL) {
+		fields = append(fields, account.FieldBaseURL)
+	}
 	if m.FieldCleared(account.FieldCooldownUntil) {
 		fields = append(fields, account.FieldCooldownUntil)
 	}
@@ -1239,6 +1306,9 @@ func (m *AccountMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *AccountMutation) ClearField(name string) error {
 	switch name {
+	case account.FieldBaseURL:
+		m.ClearBaseURL()
+		return nil
 	case account.FieldCooldownUntil:
 		m.ClearCooldownUntil()
 		return nil
@@ -1267,6 +1337,9 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldTemplateID:
 		m.ResetTemplateID()
+		return nil
+	case account.FieldBaseURL:
+		m.ResetBaseURL()
 		return nil
 	case account.FieldUpstreamKey:
 		m.ResetUpstreamKey()

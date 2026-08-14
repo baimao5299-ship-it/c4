@@ -79,9 +79,16 @@ func (s *Scheduler) pickFrom(ws *weightedSeq, format domain.RequestFormat, model
 			st2 := *st
 			st2.lastUsedAt = &used
 			a.state.Store(&st2)
+			// 优先级账号级 > 模板级：仅 nil 检查 + 字符串比较（零分配——
+			// 用户裁决 2026-08-14 热路径约束）；baseURL 局部变量为值拷贝
+			//（与现 BaseURL: a.tpl.BaseURL 同成本）。
+			baseURL := a.tpl.BaseURL
+			if a.acc.BaseURL != nil && *a.acc.BaseURL != "" {
+				baseURL = *a.acc.BaseURL
+			}
 			return &Selection{
 				AccountID: a.acc.ID, TemplateID: a.tpl.ID,
-				BaseURL: a.tpl.BaseURL, Format: format,
+				BaseURL: baseURL, Format: format,
 				UpstreamKey: a.acc.UpstreamKey, CredentialType: a.tpl.CredentialType, Model: mapped,
 				StripImageTools: a.tpl.StripImageTools, // W4：模板快照布尔复制（热路径零 DB）
 				Ext:             a.acc.Ext,             // T2：账号扩展快照（codex 路由派生 AccountCredential；指针复制零拷贝）

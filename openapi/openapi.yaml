@@ -1368,6 +1368,10 @@ components:
       properties:
         name: { type: string }
         template_id: { type: integer, format: int64 }
+        # 账号级 base_url 覆盖（路由属性，位于 upstream_key 前——用户裁决
+        # 2026-08-14）：非空 = 覆盖模板 base_url；""/null/缺省统一 = 继承模板
+        # （create 路径空串归一 nil，与批量三态语义分写）。
+        base_url: { type: string, nullable: true, description: "账号级覆盖（可选）：非空优先于模板 base_url；null = 继承模板" }
         # upstream_key：api_key/responses-special 模板必填（静态透传上游 key）；
         # codex-oauth/codex-pat 模板可选（凭据走 account_ext——创建后经
         # /accounts/{id}/ext 配置；service 按模板类型校验）。
@@ -1386,6 +1390,8 @@ components:
         Name: { type: string }
         TemplateID: { type: integer, format: int64 }
         Template: { $ref: '#/components/schemas/Template' }
+        # 账号级 base_url 覆盖（路由属性，位于 upstream_key 前）：null = 继承模板
+        BaseURL: { type: string, nullable: true, description: "账号级覆盖：非空优先于模板 base_url；null = 继承模板" }
         UpstreamKey: { type: string }
         Status: { $ref: '#/components/schemas/AccountStatus' }
         CooldownUntil: { type: string, format: date-time, nullable: true }
@@ -1771,6 +1777,8 @@ components:
       properties:
         name: { type: string }
         template_id: { type: integer, format: int64 }
+        # 批量三态定死（评审 C1）："" = 清空（落 NULL = 继承模板）；null/缺省 = 不变
+        base_url: { type: string, nullable: true, description: "批量三态：空串 = 清空（回继承模板）；null/缺省 = 不变；非空 = 落值" }
         upstream_key: { type: string }
         status: { type: string, enum: [active, unhealthy, "429", disabled] }
         weight: { type: integer }

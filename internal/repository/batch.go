@@ -40,6 +40,9 @@ type AccountPatch struct {
 	Name           *string
 	TemplateID     *int64
 	UpstreamKey    *string
+	// BaseURL 批量三态（C1 定死）：nil = 不变；&"" = 清空（落 NULL = 继承
+	// 模板）；&非空 = 落值。
+	BaseURL        *string
 	Status         *domain.AccountStatus
 	Weight         *int
 	MaxConcurrency *int
@@ -187,6 +190,14 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 		}
 		if p.UpstreamKey != nil {
 			u = u.SetUpstreamKey(*p.UpstreamKey)
+		}
+		if p.BaseURL != nil {
+			// 批量三态（C1）："" = 清空（落 NULL = 继承模板）；非空 = 落值。
+			if *p.BaseURL == "" {
+				u = u.ClearBaseURL()
+			} else {
+				u = u.SetBaseURL(*p.BaseURL)
+			}
 		}
 		if p.Status != nil {
 			u = u.SetStatus(account.Status(*p.Status))
