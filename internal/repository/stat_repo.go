@@ -117,12 +117,13 @@ func TTFTPercentileMS(hist []int64, n int64, p float64) int64 {
 }
 
 // TTFTAvgMS TTFT 均值（查询侧 Go 除——SQL 只 sum/count/max，spec P3 措辞）；
-// 无样本 → 0。
+// 无样本 → 0。除法后 math.Round 收敛整数毫秒（用户裁决 2026-08-14：裸浮点
+// 直出——dashboard 显示 322.96317829457365；毫秒语义整数，契约 number 不变）。
 func (s *StatSummary) TTFTAvgMS() float64 {
 	if s.TTFTCount <= 0 {
 		return 0
 	}
-	return float64(s.TTFTTotalMS) / float64(s.TTFTCount)
+	return math.Round(float64(s.TTFTTotalMS) / float64(s.TTFTCount))
 }
 
 // TTFTPercentileMS p 分位（nearest-rank + 桶内线性插值；无样本 → 0）。
@@ -130,12 +131,12 @@ func (s *StatSummary) TTFTPercentileMS(p float64) int64 {
 	return TTFTPercentileMS(s.TTFTHist, s.TTFTCount, p)
 }
 
-// TTFTAvgMS StatDayAgg 版（同上；日桶无样本 → 0）。
+// TTFTAvgMS StatDayAgg 版（同上；日桶无样本 → 0；同款 math.Round 收敛）。
 func (d *StatDayAgg) TTFTAvgMS() float64 {
 	if d.TTFTCount <= 0 {
 		return 0
 	}
-	return float64(d.TTFTTotalMS) / float64(d.TTFTCount)
+	return math.Round(float64(d.TTFTTotalMS) / float64(d.TTFTCount))
 }
 
 // TTFTPercentileMS StatDayAgg 版（同上）。

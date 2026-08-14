@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDateTime, toRFC3339 } from '@/components/fmt'
-import { mergeBuckets, summarizeTTFT, type Granularity } from '@/lib/stats-merge'
+import { fmtTTFT, mergeBuckets, summarizeTTFT, type Granularity } from '@/lib/stats-merge'
 
 type Metric = 'requests' | 'tokens'
 
@@ -232,7 +232,7 @@ export default function Stats() {
             ].map(({ key, labelKey, value }) => (
               <div key={key}>
                 <div className="text-sm text-muted-foreground">{t(labelKey)}</div>
-                <div className="text-2xl font-semibold tabular-nums">{value > 0 ? `${value} ms` : '—'}</div>
+                <div className="text-2xl font-semibold tabular-nums">{fmtTTFT(value)}</div>
               </div>
             ))}
           </div>

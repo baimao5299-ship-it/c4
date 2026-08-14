@@ -90,6 +90,12 @@ export function mergeBuckets(rows: StatBucket[], granularity: Granularity): Buck
   return out.sort((a, b) => a.time.localeCompare(b.time))
 }
 
+// TTFT 显示格式化（用户裁决 2026-08-14）：≥1000ms 转秒（2 位小数）；无样本 → '—'。
+export function fmtTTFT(value: number): string {
+  if (value <= 0) return '—'
+  return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${value} ms`
+}
+
 // TTFT 卡范围汇总（rewrite spec 2026-08-14：按 mergeBuckets 同款合并语义——
 // avg = Σ(avg×count)/Σcount 加权、pN = 取请求量最大桶的 pN 近似；无样本 = 0）。
 // avg 除完 Math.round 收敛整数毫秒（用户裁决 2026-08-14 后端同口径：加权除法

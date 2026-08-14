@@ -31,6 +31,13 @@ type ErrRow = { name: string; err_rate: number; err_count: number }
 // trend 日桶行（date = UTC 日 YYYY-MM-DD）。
 type TrendRow = { date: string; requests: number; cost_usd: number; errors: number; tokens: number }
 
+// 大数紧凑格式（用户裁决 2026-08-14）：≥1e9 → X.XX B、≥1e6 → X.XX M，否则千分位。
+function formatCompact(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)} M`
+  return n.toLocaleString()
+}
+
 export default function Dashboard() {
   const { t } = useTranslation()
   // 总览聚合面 30s 轮询（服务端 TTL 30s 缓存）+ 实时并发排行 10s 轮询（服务端
@@ -95,7 +102,7 @@ export default function Dashboard() {
     { key: 'requests', icon: Activity, labelKey: 'dashboard.summaryCards.requests', value: ov?.summary.requests ?? 0 },
     { key: 'callCount', icon: Boxes, labelKey: 'dashboard.summaryCards.callCount', value: ov?.summary.call_count ?? 0 },
     { key: 'cost', icon: Coins, labelKey: 'dashboard.summaryCards.cost', value: `$${(ov?.summary.cost_usd ?? 0).toFixed(4)}` },
-    { key: 'tokens', icon: Zap, labelKey: 'dashboard.summaryCards.tokens', value: ov?.summary.total_tokens ?? 0 },
+    { key: 'tokens', icon: Zap, labelKey: 'dashboard.summaryCards.tokens', value: formatCompact(ov?.summary.total_tokens ?? 0) },
   ] as const
 
   // TTFT 指标（今日汇总；仅含首 token 流式请求样本——无样本 = 0；avg 查询侧
