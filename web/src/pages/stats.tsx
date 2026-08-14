@@ -16,14 +16,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDateTime, toRFC3339 } from '@/components/fmt'
-import type { components } from '@/lib/api/schema'
+import { mergeBuckets, summarizeTTFT, type Granularity } from '@/lib/stats-merge'
 
-type StatBucket = components['schemas']['StatBucket']
-
-type Granularity = 'hour' | 'day'
 type Metric = 'requests' | 'tokens'
-
-const pad2 = (n: number) => String(n).padStart(2, '0')
 
 // 默认近 24h（组件挂载时固定一次，避免渲染期时间漂移）。
 function defaultRange() {
@@ -34,44 +29,11 @@ function defaultRange() {
   return { from: local(from), to: local(to) }
 }
 
-// 后端按 (bucket_time, group, account, template, model, is_error) 返回多行，
-// 同一时间桶可能有多行 → 前端按 BucketTime 合并求和（图表与表格共用）。
-// spec 2026-08-14 编译面最小清理：total_latency_ms 已从链路删除（展示项移除，
-// 不做任何重写——重写另开 task）。
-interface BucketRow {
-  time: string
-  label: string
-  RequestCount: number
-  ErrorCount: number
-  InputTokens: number
-  OutputTokens: number
-  TotalTokens: number
-}
+const pad2 = (n: number) => String(n).padStart(2, '0')
 
-function mergeBuckets(rows: StatBucket[], granularity: Granularity): BucketRow[] {
-  const map = new Map<string, BucketRow>()
-  for (const r of rows) {
-    if (!r.BucketTime) continue
-    let b = map.get(r.BucketTime)
-    if (!b) {
-      const d = new Date(r.BucketTime)
-      b = {
-        time: r.BucketTime,
-        label: granularity === 'hour'
-          ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-          : `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
-        RequestCount: 0, ErrorCount: 0, InputTokens: 0, OutputTokens: 0, TotalTokens: 0,
-      }
-      map.set(r.BucketTime, b)
-    }
-    b.RequestCount += r.RequestCount ?? 0
-    b.ErrorCount += r.ErrorCount ?? 0
-    b.InputTokens += r.InputTokens ?? 0
-    b.OutputTokens += r.OutputTokens ?? 0
-    b.TotalTokens += r.TotalTokens ?? 0
-  }
-  return [...map.values()].sort((a, b) => a.time.localeCompare(b.time))
-}
+// 后端按 (bucket_time, group, account, template, model, is_error) 返回多行，
+// 同一时间桶可能有多行 → 前端按 BucketTime 合并求和（图表与表格共用；
+// TTFT 合并语义见 stats-merge.ts——rewrite spec 2026-08-14 评审 P1）。
 
 export default function Stats() {
   const { t } = useTranslation()
@@ -88,6 +50,8 @@ export default function Stats() {
     queryFn: () => api.getStats(params),
   })
   const rows = useMemo(() => mergeBuckets(data ?? [], granularity), [data, granularity])
+  // TTFT 范围汇总（同 mergeBuckets 合并语义：avg 加权、pN 取请求量最大桶近似）。
+  const ttft = useMemo(() => summarizeTTFT(rows), [rows])
 
   // 主题色走 --chart-* 变量（ChartStyle 注入 --color-requests / --color-tokens）。
   const chartConfig = {
@@ -189,6 +153,29 @@ export default function Stats() {
         </CardContent>
       </Card>
 
+      {/* TTFT 卡（rewrite spec 2026-08-14：range 汇总——avg = Σ(avg×count)/Σcount
+          加权、p95/p99 取请求量最大桶的 pN 近似；无样本 = 0） */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('stats.ttft.title')}</CardTitle>
+          <CardDescription>{t('stats.ttft.desc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { key: 'avg', labelKey: 'stats.ttft.avg', value: ttft.avg },
+              { key: 'p95', labelKey: 'stats.ttft.p95', value: ttft.p95 },
+              { key: 'p99', labelKey: 'stats.ttft.p99', value: ttft.p99 },
+            ].map(({ key, labelKey, value }) => (
+              <div key={key}>
+                <div className="text-sm text-muted-foreground">{t(labelKey)}</div>
+                <div className="text-2xl font-semibold tabular-nums">{value > 0 ? `${value} ms` : '—'}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 明细表 */}
       <Card className="overflow-hidden">
         {isError ? (
@@ -200,16 +187,18 @@ export default function Stats() {
                 <TableHead>{t('stats.table.time')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.requests')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.errors')}</TableHead>
+                <TableHead className="text-right">{t('stats.table.calls')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.promptTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.completionTokens')}</TableHead>
                 <TableHead className="text-right">{t('stats.table.totalTokens')}</TableHead>
+                <TableHead className="text-right">{t('stats.table.cost')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
               {isLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: 6 }).map((_, j) => (
+                      {Array.from({ length: 8 }).map((_, j) => (
                         <TableCell key={j}><Skeleton className="h-4" /></TableCell>
                       ))}
                     </TableRow>
@@ -217,7 +206,7 @@ export default function Stats() {
                 : rows.length === 0
                   ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
+                      <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">{t('stats.emptyTitle')}</TableCell>
                     </TableRow>
                   )
                   : rows.map(r => (
@@ -225,9 +214,11 @@ export default function Stats() {
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">{formatDateTime(r.time)}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.RequestCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.ErrorCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.CallCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.InputTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.OutputTokens}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.TotalTokens}</TableCell>
+                      <TableCell className="text-right tabular-nums">{`$${r.Cost.toFixed(4)}`}</TableCell>
                     </TableRow>
                   ))}
             </TableBody>

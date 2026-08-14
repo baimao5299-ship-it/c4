@@ -503,10 +503,19 @@
       "errors": "错误数",
       "promptTokens": "PT",
       "completionTokens": "CT",
-      "totalTokens": "TT"
+      "totalTokens": "TT",
+      "calls": "调用次数",
+      "cost": "费用 (USD)"
     },
     "emptyTitle": "该时间范围内暂无统计数据",
-    "emptyDesc": "调整时间范围或粒度后重试"
+    "emptyDesc": "调整时间范围或粒度后重试",
+    "ttft": {
+      "title": "TTFT（首 token 时延）",
+      "desc": "首 token 时延（仅首 token 流式请求）；无样本 = 0",
+      "avg": "均值",
+      "p95": "P95",
+      "p99": "P99"
+    }
   },
   "calendar": {
     "day": {
@@ -1053,10 +1062,19 @@
         "errors": "错误数",
         "promptTokens": "PT",
         "completionTokens": "CT",
-        "totalTokens": "TT"
+        "totalTokens": "TT",
+        "calls": "调用次数",
+        "cost": "费用 (USD)"
       },
       "emptyTitle": "该时间范围内暂无统计数据",
-      "emptyDesc": "调整时间范围或粒度后重试"
+      "emptyDesc": "调整时间范围或粒度后重试",
+      "ttft": {
+        "title": "TTFT（首 token 时延）",
+        "desc": "首 token 时延（仅首 token 流式请求）；无样本 = 0",
+        "avg": "均值",
+        "p95": "P95",
+        "p99": "P99"
+      }
     },
     "redemptions": {
       "title": "兑换",

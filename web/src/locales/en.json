@@ -503,10 +503,19 @@
       "errors": "Errors",
       "promptTokens": "PT",
       "completionTokens": "CT",
-      "totalTokens": "TT"
+      "totalTokens": "TT",
+      "calls": "Calls",
+      "cost": "Cost (USD)"
     },
     "emptyTitle": "No statistics in this range",
-    "emptyDesc": "Adjust the time range or granularity and try again"
+    "emptyDesc": "Adjust the time range or granularity and try again",
+    "ttft": {
+      "title": "TTFT (time to first token)",
+      "desc": "First token latency (streaming requests only); no samples = 0",
+      "avg": "Avg",
+      "p95": "P95",
+      "p99": "P99"
+    }
   },
   "calendar": {
     "day": {
@@ -1053,10 +1062,19 @@
         "errors": "Errors",
         "promptTokens": "PT",
         "completionTokens": "CT",
-        "totalTokens": "TT"
+        "totalTokens": "TT",
+        "calls": "Calls",
+        "cost": "Cost (USD)"
       },
       "emptyTitle": "No statistics in this range",
-      "emptyDesc": "Adjust the time range or granularity and try again"
+      "emptyDesc": "Adjust the time range or granularity and try again",
+      "ttft": {
+        "title": "TTFT (time to first token)",
+        "desc": "First token latency (streaming requests only); no samples = 0",
+        "avg": "Avg",
+        "p95": "P95",
+        "p99": "P99"
+      }
     },
     "redemptions": {
       "title": "Redeem",
