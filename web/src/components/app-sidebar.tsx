@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronsUpDown, LogOut, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, CircleUser, LogOut, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { userAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
@@ -99,6 +99,12 @@ export default function AppSidebar({ navs, userEmail }: { navs: NavGroup[]; user
               </span>
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{userEmail ?? ''}</span>
             </div>
+            <DropdownMenuSeparator />
+            {/* 个人中心入口在底部用户卡内（用户裁决 2026-08-15——不放侧边栏导航）；
+                登出独立成组（分隔线隔开——参考 ui 仓库 nav-user 形态） */}
+            <DropdownMenuItem onClick={() => navTo('/user/profile')}>
+              <CircleUser /> {t('user.nav.profile')}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={logout}>
               <LogOut /> {t('common.logout')}
