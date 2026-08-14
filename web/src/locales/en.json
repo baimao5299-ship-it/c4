@@ -80,8 +80,13 @@
   },
   "dashboard": {
     "title": "Overview",
-    "subtitle": "Account runtime view auto-refreshes every 10 seconds",
+    "subtitle": "Aggregated overview refreshes every 30s; live concurrency every 10s",
     "loadFailedTitle": "Failed to load data",
+    "summaryCards": {
+      "requests": "Requests today",
+      "cost": "Cost today (USD)",
+      "tokens": "Tokens today"
+    },
     "statusCards": {
       "active": "Serving normally",
       "unhealthy": "Upstream error",
@@ -89,21 +94,35 @@
       "disabled": "Manually disabled"
     },
     "totalCards": {
-      "accounts": "Total accounts",
       "templates": "Total templates",
-      "groups": "Total groups"
+      "groups": "Total groups",
+      "users": "Total users"
     },
     "waterTitle": "Concurrency level",
     "waterDesc": "Current concurrency {{cur}} / total limit {{max}}",
     "waterValue": "Level {{percent}}",
     "waterWarning": "— near the limit, consider scaling up",
     "resourcesTitle": "Resource totals",
+    "trendTitle": "Traffic trend",
+    "trendDesc": "Requests per day (UTC), last 7 days",
+    "trendEmpty": "No usage in this period",
+    "usersTopTitle": "Live concurrency top",
+    "usersTopDesc": "In-flight requests per user, refreshes every 10s (this instance)",
+    "usersTopEmpty": "No in-flight requests",
+    "usersTopLoadFailed": "Failed to load live concurrency",
+    "otherRow": "Other users",
     "errTopTitle": "Top 5 error rates",
     "errTopDesc": "Accounts with the highest err_rate",
     "errTopEmpty": "No accounts with error rate above 0",
     "errTopDetailTitle": "Error account details",
     "errTopDetailDesc": "Accounts with error rate above 0, sorted descending",
     "tableAccount": "Account",
+    "tableUser": "User",
+    "tableConcurrency": "In-flight",
+    "tableRequests": "Requests",
+    "tableErrors": "Errors",
+    "tableTokens": "Tokens",
+    "tableCost": "Cost (USD)",
     "tableErrRate": "Error rate",
     "tableErrCount": "Errors"
   },

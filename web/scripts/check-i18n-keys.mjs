@@ -9,7 +9,7 @@ const flat = (o, p = '', r = {}) => {
   return r
 }
 const keys = new Set(Object.keys(flat(zh)))
-const files = ['src/pages/logs.tsx', 'src/pages/user/logs.tsx', 'src/pages/pricing.tsx', 'src/pages/templates.tsx', 'src/pages/accounts.tsx', 'src/pages/groups.tsx']
+const files = ['src/pages/dashboard.tsx', 'src/pages/logs.tsx', 'src/pages/user/logs.tsx', 'src/pages/pricing.tsx', 'src/pages/templates.tsx', 'src/pages/accounts.tsx', 'src/pages/groups.tsx']
 const re = /t\(['"`]([^'"`]+)['"`]/g
 const missing = new Set()
 for (const f of files) {

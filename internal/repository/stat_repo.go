@@ -347,7 +347,10 @@ FROM "usage_stats" WHERE "bucket_time" >= $1 AND "bucket_time" < $2`
 // sum(bigint) → numeric，显式 ::bigint 回落（同 statSummarySQL）。WHERE 后
 // 可追加组过滤（占位 $3），GROUP BY/ORDER BY 尾段单独常量（statTrendTailSQL）
 // ——过滤条件必须插在 GROUP BY 之前。
-var statTrendSQL = `SELECT date_trunc('day', "bucket_time"),
+// 日界固定 UTC（评审 P2-1）：date_trunc('day', timestamptz) 按会话 TimeZone
+// 截断——非 UTC 会话下日桶边界与 summary 的 Go 侧 UTC 区间错位。先
+// AT TIME ZONE 'UTC' 取 UTC 墙钟再截断、再转回 timestamptz（会话无关）。
+var statTrendSQL = `SELECT date_trunc('day', "bucket_time" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
 	COALESCE(sum(request_count), 0)::bigint,
 	COALESCE(sum(error_count), 0)::bigint,
 	COALESCE(sum(total_tokens), 0)::bigint,

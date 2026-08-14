@@ -276,7 +276,12 @@ export default function Dashboard() {
                   <CardDescription>{t('dashboard.usersTopDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {usersTop.length === 0 ? (
+                  {usersTopQ.isError ? (
+                    <Alert variant="destructive">
+                      <AlertTitle>{t('dashboard.usersTopLoadFailed')}</AlertTitle>
+                      <AlertDescription>{(usersTopQ.error as Error).message}</AlertDescription>
+                    </Alert>
+                  ) : usersTop.length === 0 ? (
                     <p className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
                       {t('dashboard.usersTopEmpty')}
                     </p>

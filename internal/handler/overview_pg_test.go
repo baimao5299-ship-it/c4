@@ -437,3 +437,50 @@ func TestPGUsersTopCacheHitAndEmpty(t *testing.T) {
 	require.Empty(t, resp.Users)
 	require.Equal(t, int64(0), resp.OtherConcurrency)
 }
+
+// TestPGOverviewTrendUTCDayBoundary 非 UTC 会话日界回归（评审 P2-1）：trend
+// 日桶必须按 UTC 日界分组（与 summary 的 Go 侧 UTC 区间一致）。bug 形态：
+// date_trunc('day', timestamptz) 按会话 TimeZone 截断——America/New_York
+// （UTC-4/5）会话下 UTC 00:30 的桶会落入前一日桶（date 标签偏移一天）。
+// 用独立 NY 会话池构造第二仓库跑真实趋势 SQL；先断言会话 TZ 生效（防
+// options 参数静默失效 → 测试真空退化）。
+func TestPGOverviewTrendUTCDayBoundary(t *testing.T) {
+	now := time.Now().UTC()
+	day0 := now.Truncate(24 * time.Hour)
+	repos := overviewPGTestDB(t, day0.Add(-24*time.Hour), day0.Add(24*time.Hour))
+	ctx := context.Background()
+	require.NoError(t, repos.Stats.Upsert(ctx, []*domain.StatBucket{
+		overviewBucket(day0.Add(-30*time.Minute), 7, 3, 0, 30, 15, 45, 0, 30_000), // UTC 前一日 23:30
+		overviewBucket(day0.Add(30*time.Minute), 7, 5, 1, 50, 25, 75, 0, 50_000),  // UTC 今日 00:30
+	}))
+
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if strings.Contains(dsn, "?") {
+		dsn += "&search_path=" + handlerOverviewPGTestSchema
+	} else {
+		dsn += "?search_path=" + handlerOverviewPGTestSchema
+	}
+	dsn += "&options=-c%20TimeZone%3DAmerica%2FNew_York"
+	nyPool, err := repository.OpenPG(ctx, dsn, 2)
+	require.NoError(t, err)
+	t.Cleanup(nyPool.Close)
+	conn, err := nyPool.Acquire(ctx)
+	require.NoError(t, err)
+	var tz string
+	require.NoError(t, conn.QueryRow(ctx, `SHOW TimeZone`).Scan(&tz))
+	require.Equal(t, "America/New_York", tz, "会话 TZ 必须生效（否则本测试真空）")
+	conn.Release()
+	nyDB := stdlib.OpenDBFromPool(nyPool)
+	t.Cleanup(func() { _ = nyDB.Close() })
+	nyRepos, err := repository.NewWithPG(t.Context(), entsql.OpenDB(dialect.Postgres, nyDB), false, nyPool)
+	require.NoError(t, err)
+
+	tr, err := nyRepos.Stats.ScanStatsDays(ctx, day0.Add(-24*time.Hour), day0.Add(24*time.Hour), 0)
+	require.NoError(t, err)
+	// 修复前：NY 会话下 UTC 00:30 桶落前一日 → 1 桶且日期错位；修复后 2 桶按 UTC 日界
+	require.Len(t, tr, 2, "NY 会话下仍按 UTC 日界分桶")
+	require.Equal(t, day0.Add(-24*time.Hour).Format("2006-01-02"), tr[0].Date.Format("2006-01-02"))
+	require.Equal(t, int64(3), tr[0].Requests)
+	require.Equal(t, day0.Format("2006-01-02"), tr[1].Date.Format("2006-01-02"))
+	require.Equal(t, int64(5), tr[1].Requests)
+}
