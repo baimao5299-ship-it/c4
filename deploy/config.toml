@@ -38,7 +38,7 @@ usage = {
   # DROP TABLE O(1) 清理（默认 30 天 = 30 个日分区）；<= 0 = 不删除。
   log_retention_days = 30,
   # quota 回写 cadence（spec 2026-08-14：统计 flush 删除后仅驱动额度增量回写）。
-  stats_flush_interval = "10s",
+  quota_flush_interval = "10s",
   # 离线聚合周期（spec 2026-08-14 使用量统计离线聚合化）：独立 worker 每周期
   # 从 usage_logs/err_logs 重建 usage_stats（两范围 + 三查询 + 单事务
   # DELETE+INSERT+watermark）；0 = 禁用聚合。统计分钟级陈旧（接受）。

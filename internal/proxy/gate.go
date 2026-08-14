@@ -62,7 +62,7 @@ type gateSnapshot struct {
 //	          见 billing flusher）
 //
 // 收敛（#37 P1，击穿 §3.2 误差上界的修复）：quota_used 由 usage.Recorder 每
-// stats_flush_interval 批写一次，两次回写间复核读到的 DB 值恒定——若每次复核
+// quota_flush_interval 批写一次，两次回写间复核读到的 DB 值恒定——若每次复核
 // 都重新分配 ceil(remaining/N)，复核循环会无限续额（N=2 压测实证超跑 14 倍）。
 // 复核认领因此扣除本地已消耗但 DB 未反映的部分（unreported，见 reclaim）：
 // 本实例总放行 ≤ quota - used(DB) + 基线差（≤1 个 flush 窗口）≤ quota（评审
@@ -85,7 +85,7 @@ type keyQuota struct {
 	// quotaUsedAtReclaim 复核基准：上次复核/reload 读到的 DB quota_used（全局值，
 	// 含所有实例已回写消耗）。unreported = consumed - quotaUsedAtReclaim 衡量
 	// "本实例已消耗但 DB 未反映"的量——复核认领时从 remaining 扣除，防止 DB 滞后
-	// （usage.Recorder 每 stats_flush_interval 批写）期间复核循环无限续额
+	// （usage.Recorder 每 quota_flush_interval 批写）期间复核循环无限续额
 	// （压测实证：N=2 单 key quota=20000 超跑 14 倍，2026-08-10）。
 	quotaUsedAtReclaim atomic.Int64
 }
@@ -286,7 +286,7 @@ func (g *concurrencyGate) quotaExhausted(meta domain.KeyMeta) bool {
 //
 //	remaining = quota - quota_used(DB 复核读)
 //	unreported = max(0, consumed - quotaUsedAtReclaim)  —— 本地已消耗但 DB
-//	              未反映的量（quota_used 每 stats_flush_interval 批写一次，
+//	              未反映的量（quota_used 每 quota_flush_interval 批写一次，
 //	              两次回写间 DB 值恒定；不扣除则每次复核重新分配 full 份额
 //	              → 复核循环无限续额，压测实证超跑 14 倍）
 //	remaining_eff = remaining - unreported
@@ -344,7 +344,7 @@ func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 	}
 	if remaining := meta.Quota - used; remaining > 0 {
 		// 复核认领扣除本地未反映消耗（#37 P1 收敛修复）：DB quota_used 每
-		// stats_flush_interval 批写一次，两次回写间 used 恒定 → 若不加扣除，
+		// quota_flush_interval 批写一次，两次回写间 used 恒定 → 若不加扣除，
 		// 每次复核重新分配 ceil(remaining/N) → 复核循环无限续额（超跑实证）。
 		// unreported = consumed - 上次复核基线（本地已消耗但 DB 未反映的量）；
 		// remainingEff 扣掉它 → 复核循环收敛（评审 I-1）：每实例独立收敛

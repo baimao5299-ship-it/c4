@@ -151,7 +151,7 @@ func newConvertedTestProxy(t *testing.T, upstream string, tplFormats []domain.Re
 	}, noopLoader{accs: accs}, re, nil)
 	require.NoError(t, sched.InvalidateAllSync())
 	rec := usage.New(usage.UsageConfig{
-		BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour,
+		BatchSize: 100, FlushInterval: time.Hour, QuotaFlushInterval: time.Hour,
 	}, noopLogStore{}, nil)
 	key := activeKey(1, 1, 10)
 	key.ProtocolConvert = pc

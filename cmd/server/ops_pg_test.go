@@ -129,7 +129,7 @@ func TestOpsWorkersPG(t *testing.T) {
 	balances := billing.NewBalances(repos, nil)
 	svc := service.New(repos, sched, service.NopInvalidator{}, nil, ruleEngine, auth, nil)
 	rec := usage.New(usage.UsageConfig{
-		BatchSize: 100, FlushInterval: time.Hour, StatsFlushInterval: time.Hour,
+		BatchSize: 100, FlushInterval: time.Hour, QuotaFlushInterval: time.Hour,
 	}, repos.Usages, nil)
 	errlogW := usage.NewErrLogWorker(usage.ErrLogConfig{
 		QueueSize: 100, ExemptQueueSize: 100, BatchSize: 10, FlushInterval: 20 * time.Millisecond,

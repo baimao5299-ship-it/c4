@@ -133,7 +133,7 @@ func newPGTestProxy(t *testing.T, sched *scheduler.Scheduler, groupID int64) *Pr
 	}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, noopLogStore{}, nil)
 	auth := NewAuth(noopKeyLoader{keys: map[string]domain.KeyMeta{
 		cryptox.HashKey("gk-1"): activeKey(1, 1, groupID),

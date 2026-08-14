@@ -107,7 +107,7 @@ func TestSearchEndpointBillingPG(t *testing.T) {
 	require.NoError(t, bal.Reload(ctx), "余额快照加载")
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, noopLogStore{}, nil)
 	f := billing.NewFlusher(billing.FlushConfig{
 		FlushInterval: time.Hour, BalanceRefreshInterval: time.Hour,

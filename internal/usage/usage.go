@@ -29,7 +29,7 @@ import (
 type UsageConfig struct {
 	BatchSize          int
 	FlushInterval      time.Duration
-	StatsFlushInterval time.Duration // quota 回写 cadence（语义沿用：额度刷新节奏）
+	QuotaFlushInterval time.Duration // quota 增量批量回写 cadence
 	Workers            int           // flush 并行 worker 数（0 = 单 worker；O1 模式分片并行）
 	// StatsAggInterval 离线聚合周期（spec 2026-08-14；config usage.stats_agg_
 	// interval，默认 5m；0 = 禁用聚合——不装配聚合 worker 的等价语义）。
@@ -366,9 +366,9 @@ func (r *Recorder) refillLogs(logs []*domain.UsageLog) {
 
 // quotaFlushLoop quota 专用回写循环（spec 2026-08-14 评审 P1-C：统计 flush 整体
 // 删除后 AddQuotaUsed 唯一调用方消失——Recorder 保留 quota 专用 flush，驱动
-// cadence 复用既有 StatsFlushInterval ticker）。
+// cadence 复用既有 QuotaFlushInterval ticker）。
 func (r *Recorder) quotaFlushLoop(ctx context.Context) {
-	t := time.NewTicker(r.cfg.StatsFlushInterval)
+	t := time.NewTicker(r.cfg.QuotaFlushInterval)
 	defer t.Stop()
 	for {
 		select {

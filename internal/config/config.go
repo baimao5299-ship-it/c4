@@ -96,7 +96,7 @@ type UsageConfig struct {
 	BatchSize          int           `koanf:"batch_size"`
 	FlushInterval      time.Duration `koanf:"flush_interval"`
 	LogRetentionDays   int           `koanf:"log_retention_days"`
-	StatsFlushInterval time.Duration `koanf:"stats_flush_interval"` // quota 回写 cadence（spec 2026-08-14：统计 flush 删除后仅驱动额度）
+	QuotaFlushInterval time.Duration `koanf:"quota_flush_interval"` // quota 增量批量回写 cadence
 	FlushWorkers       int           `koanf:"flush_workers"`        // flush 并行 worker 数（O1 管道化分片并行；明细/额度共用）
 	// StatsAggInterval 离线聚合周期（spec 2026-08-14：使用量统计离线聚合化——
 	// 独立 worker 每周期从 DB 重建 usage_stats；默认 5m；0 = 禁用聚合）。
@@ -135,7 +135,7 @@ func defaults() *Config {
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, SyncInterval: 30 * time.Second},
-		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, StatsFlushInterval: 10 * time.Second, FlushWorkers: 8, StatsAggInterval: 5 * time.Minute, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
+		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, QuotaFlushInterval: 10 * time.Second, FlushWorkers: 8, StatsAggInterval: 5 * time.Minute, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
 		Billing:   BillingConfig{Enabled: false, FlushInterval: 1 * time.Second, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 8},
 	}
 }
@@ -208,7 +208,7 @@ func validate(c *Config) error {
 		{"proxy.upstream_stream_timeout", c.Proxy.UpstreamStreamTimeout, false},
 		{"scheduler.sync_interval", c.Scheduler.SyncInterval, false},
 		{"usage.flush_interval", c.Usage.FlushInterval, false},
-		{"usage.stats_flush_interval", c.Usage.StatsFlushInterval, false},
+		{"usage.quota_flush_interval", c.Usage.QuotaFlushInterval, false},
 		{"usage.errlog_flush_interval", c.Usage.ErrLogFlushInterval, false},
 		// stats_agg_interval：0 = 禁用聚合（合法语义）；非 0 必须 ≥1ms（防 ticker
 		// panic 面——裸数字 500 → 500ns 合法值域外）。

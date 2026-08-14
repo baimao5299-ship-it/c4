@@ -51,7 +51,7 @@ func TestFlusherErrlogWorkerParallelIsolated(t *testing.T) {
 	writer := &fakeDeductWriter{}
 	rec := usage.New(usage.UsageConfig{
 		BatchSize: 100, FlushInterval: time.Hour,
-		StatsFlushInterval: time.Hour,
+		QuotaFlushInterval: time.Hour,
 	}, noopLogInserter{}, nil)
 	bal := NewBalances(fakeBalLoader{m: map[int64]int64{1: 1e9}}, nil)
 	f := NewFlusher(FlushConfig{
