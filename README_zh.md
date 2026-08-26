@@ -17,7 +17,13 @@
 
 </div>
 
-**c3api** 是自托管的 AI 网关，用一个入口接入多个上游供应商。它支持 OpenAI Responses（REST 与 WebSocket）、Anthropic Messages、Chat Completions、Images、Codex 搜索和 OpenAI 兼容模型列表，并把路由、配额、用量计费与管理设置集中到一个地方。
+本项目基于原版 c3api，主要增加了这些实用功能：
+
+- 兼容 Sub2API 的账号导入，支持多文件和 ZIP。
+- 重复账号预检测、导入预览和详细失败原因。
+- 可选的 Sub2 TLS 指纹与收敛设置。
+
+网关核心架构仍沿用原版项目。
 
 当前维护者：[baimao5299-ship-it](https://github.com/baimao5299-ship-it)。
 

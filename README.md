@@ -17,7 +17,13 @@
 
 </div>
 
-**c3api** is a self-hosted AI gateway with one endpoint for multiple upstream providers. It supports OpenAI Responses (REST and WebSocket), Anthropic Messages, Chat Completions, Images, Codex search, and an OpenAI-compatible model list, then applies your routing, quotas, usage accounting, and admin settings in one place.
+This project is based on the original c3api and adds a few practical improvements:
+
+- Sub2API-compatible account import, including multi-file and ZIP import.
+- Duplicate pre-checks, import previews, and detailed failure reasons.
+- Optional Sub2 TLS profile and convergence settings.
+
+The core gateway architecture remains based on the original project.
 
 Maintained by [@baimao5299-ship-it](https://github.com/baimao5299-ship-it).
 
