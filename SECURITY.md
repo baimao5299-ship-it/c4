@@ -8,8 +8,8 @@ c3api is currently in **beta**. There is a single rolling development line: secu
 
 If you find a security issue in c3api, **please do not open a public issue**.
 
-- **Primary channel** — report privately via GitHub Security Advisory (private vulnerability reporting): <https://github.com/is7Qin/c3api/security/advisories/new>
-- **Fallback** — if you cannot use the advisory form, reach the maintainer via GitHub: <https://github.com/is7Qin> (issue or Discussions, mentioning it is security-related).
+- **Primary channel** — report privately via GitHub Security Advisory (private vulnerability reporting): <https://github.com/baimao5299-ship-it/c3api/security/advisories/new>
+- **Fallback** — if you cannot use the advisory form, reach the maintainer via GitHub: <https://github.com/baimao5299-ship-it> (issue or Discussions, mentioning it is security-related).
 
 When reporting, include if possible:
 

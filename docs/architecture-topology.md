@@ -1,4 +1,4 @@
-# github.com/is7qin/c3api 架构拓扑（标准文档）
+# github.com/baimao5299-ship-it/c3api 架构拓扑（标准文档）
 
 > 受众：vibecoding agent（改热路径/加表/加 worker/接线前必读）+ 新贡献者 onboarding。
 > 基准：main HEAD `9391c66`（2026-08-15，数据库残留清理后）。所有代码锚点均基于该 commit 的 worktree 核实。

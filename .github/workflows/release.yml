@@ -43,8 +43,8 @@ jobs:
           cache-to: type=gha, mode=max, scope=c3api-build
           # 版本 tag（如 v0.0.1-beta.1）+ beta 浮动 tag（compose/README 用户拉最新）。
           tags: |
-            ghcr.io/is7qin/c3api:${{ github.ref_name }}
-            ghcr.io/is7qin/c3api:beta
+            ghcr.io/${{ github.repository_owner }}/c3api:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/c3api:beta
           # 版本注入：tag 值写进二进制 version（Dockerfile ARG C3API_VERSION）。
           build-args: |
             C3API_VERSION=${{ github.ref_name }}

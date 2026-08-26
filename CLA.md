@@ -33,4 +33,4 @@ Signing is handled automatically by the CLA Assistant workflow (`.github/workflo
 
 ## Contact
 
-Questions about the CLA or the license scheme — open an issue in the repository: <https://github.com/is7Qin/c3api>.
+Questions about the CLA or the license scheme — open an issue in the repository: <https://github.com/baimao5299-ship-it/c3api>.

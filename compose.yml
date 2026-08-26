@@ -1,4 +1,4 @@
-# github.com/is7qin/c3api 部署编排：单应用容器（内嵌前端）+ PostgreSQL + Redis。
+# github.com/baimao5299-ship-it/c3api 部署编排：单应用容器（内嵌前端）+ PostgreSQL + Redis。
 # volume 全部使用目录挂载（bind mount），数据与配置落盘在宿主，便于备份与升级。
 #
 # 用法（compose 在根目录：自动发现 + 自动加载根目录 .env）：
@@ -7,8 +7,8 @@
 #   # 或临时注入：ADMIN_TOKEN=$(openssl rand -hex 16) AUTH_JWT_SECRET=$(openssl rand -hex 32) \
 #   #   docker compose up -d --build
 #
-# GHCR 快速上手（预构建镜像，release 流水线发布）：docker pull ghcr.io/is7qin/c3api:beta
-#   （:beta 为浮动 tag = 最新 beta；版本固定用 ghcr.io/is7qin/c3api:v0.0.1-beta.1）
+# GHCR 快速上手（预构建镜像，release 流水线发布）：docker pull ghcr.io/baimao5299-ship-it/c3api:beta
+#   （:beta 为浮动 tag = 最新 beta；版本固定用 ghcr.io/baimao5299-ship-it/c3api:v0.0.1-beta.1）
 
 services:
   db:

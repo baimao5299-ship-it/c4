@@ -6,8 +6,8 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-[![Release](https://img.shields.io/github/v/release/is7Qin/c3api?color=2563eb)](https://github.com/is7Qin/c3api/releases)
-[![Stars](https://img.shields.io/github/stars/is7Qin/c3api?color=2563eb)](https://github.com/is7Qin/c3api)
+[![Release](https://img.shields.io/github/v/release/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api/releases)
+[![Stars](https://img.shields.io/github/stars/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later%20%2B%20Commercial-2563eb)](./LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-2563eb)](https://go.dev/)
 
@@ -17,14 +17,16 @@
 
 </div>
 
-**c3api** 是自托管的 AI 网关，用一个统一入口对接多个上游供应商。它原生支持六种请求格式——OpenAI Responses API（含 WebSocket 变体）、Anthropic Messages API、OpenAI Chat Completions API、OpenAI Images API、Codex 网页搜索与 OpenAI 兼容模型列表——并映射到所配置的上游账号，提供模型路由、配额、用量计费与内嵌管理台。
+**c3api** 是自托管的 AI 网关，用一个入口接入多个上游供应商。它支持 OpenAI Responses（REST 与 WebSocket）、Anthropic Messages、Chat Completions、Images、Codex 搜索和 OpenAI 兼容模型列表，并把路由、配额、用量计费与管理设置集中到一个地方。
+
+当前维护者：[baimao5299-ship-it](https://github.com/baimao5299-ship-it)。
 
 ## 状态：Beta
 
-c3api 处于 **beta**：功能齐全，但破坏性变更自由。
+c3api 处于 **beta**。当前 API 已可使用，但 beta 版本之间仍可能调整表结构和配置格式。
 
-- **不向后兼容**——数据库表结构与配置**不向后兼容**，且**不提供迁移路径**。
-- **升级 = 全新建**——从早期版本升级需全新创建数据库、从零核对配置。
+- **暂不提供自动迁移**——beta 版本之间不保证数据库表结构和配置兼容。
+- **升级按全新部署处理**——先创建新数据库并重新核对配置，再切换流量。
 - 发布说明见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 特性
@@ -53,30 +55,23 @@ c3api 处于 **beta**：功能齐全，但破坏性变更自由。
 
 ## 快速开始
 
-### 方式 A：Docker Compose（推荐）
-
-**跑预构建镜像（pull）**——生产推荐：删除 `compose.yml` 里的 `build:` 块后 `up` 直接运行拉取的镜像：
+### Docker Compose（推荐）
 
 ```bash
-cp .env.example .env        # 填写 AUTH_JWT_SECRET（ADMIN_TOKEN 可选——见下文）
-docker compose pull
-docker compose up -d
-```
-
-**自建镜像（build）**——compose 本地构建（`image` 与 `build` 并存时 `build` 优先）：
-
-```bash
-cp .env.example .env        # 填写 AUTH_JWT_SECRET（ADMIN_TOKEN 可选——见下文）
+cp .env.example .env
+# 在 .env 中填写 AUTH_JWT_SECRET（ADMIN_TOKEN 可选）。
 docker compose up -d --build
 ```
+
+这会在本地构建镜像，并一起启动 PostgreSQL、Redis 和 c3api。若要使用预构建镜像，先从 `compose.yml` 删除 `build:` 段，再运行 `docker compose pull` 和 `docker compose up -d`。
 
 网关监听 `http://127.0.0.1:18080`——管理台 `/app`，用户台 `/user`，健康检查 `/healthz`。
 
 **首个 admin 用户（bootstrap）**——新库上第一个注册的用户自动成为 `platform_admin`，启动后即可登录管理台（`/app`）；之后的注册都是普通 `user` 角色。
 
-预构建镜像发布在 GHCR（`ghcr.io/is7qin/c3api`）：`:beta` 跟随最新 beta 版本，另有版本固定 tag（如 `:v0.0.1-beta.1`）。单独拉取：`docker pull ghcr.io/is7qin/c3api:beta`。
+预构建镜像发布在 GHCR（`ghcr.io/baimao5299-ship-it/c3api`）：`:beta` 跟随最新 beta 版本，也提供固定版本 tag。单独拉取：`docker pull ghcr.io/baimao5299-ship-it/c3api:beta`。
 
-### 方式 B：本地开发
+### 本地开发
 
 ```bash
 # 0. 注入本地开发密钥（config.toml 留空值；占位符如 change-me 会被 Load 拒绝）
@@ -91,12 +86,6 @@ cd web && pnpm install && pnpm run dev
 ```
 
 任意兼容 OpenAI/Anthropic 的 SDK 指向网关地址即可——请求格式由路径决定，一个 base URL 同时服务六种请求格式。
-
-## 赞助
-
-| 赞助方 | 简介 |
-| --- | --- |
-| [**ForZTN**](https://sponsorship.forztn.com/github.com/is7Qin/c3api) | VPC 架构 IDC 云面板 · 网络/VM 交易所 |
 
 ## 架构
 
@@ -154,7 +143,7 @@ cd web && pnpm install && pnpm run dev
 
 完整配置项（server / log / admin / auth / db / redis / proxy / upstream / limit / scheduler / usage / billing）见 `config.example.toml`。
 
-- **仅全新部署（不适配迁移）**——表结构与配置跨版本不向后兼容：升级即全新创建数据库、从零重核对配置（见上方"状态：Beta"说明）。
+- **beta 升级按全新部署处理**——表结构与配置可能随版本调整，升级前请新建实例并重新核对配置（见上方"状态：Beta"说明）。
 - **纯 env 部署**（如 K8s）：传 `-config ""` 完全跳过配置文件——flag 默认 config.toml，无文件即启动失败。
 - **配置仅启动时读取**，变更需滚动重启（无热更新）。
 - **非法配置启动即报错**（含字段名）：duration/间隔 ≤0 或 <1ms、未知键（拼写错误/已移除旧键）、必填密钥缺失、占位符（change-me、dev-admin-token 等）一律拒绝。
@@ -167,7 +156,7 @@ cd web && pnpm install && pnpm run dev
 
 ## 许可
 
-c3api 以 **GNU AGPL v3.0-or-later**（`LICENSE`）开源——可自由使用、修改与部署，**包括商用与托管服务**，唯一义务是修改以相同条款回馈社区，**无需购买**。
+c3api 以 **GNU AGPL v3.0-or-later**（`LICENSE`）开源——可自由使用、修改与部署，**包括商用与托管服务**，前提是遵守所运行版本的许可证条款。**符合 AGPL 的部署无需购买授权。**
 
 需要**闭源部署**（豁免部署上的 AGPL 义务）？可获取商业授权（`LICENSE.commercial`）——付费获得对部署的 AGPL 义务豁免。
 
@@ -175,7 +164,7 @@ c3api 以 **GNU AGPL v3.0-or-later**（`LICENSE`）开源——可自由使用�
 
 ## 联系
 
-- GitHub：[is7Qin/c3api](https://github.com/is7Qin/c3api)
+- GitHub：[baimao5299-ship-it/c3api](https://github.com/baimao5299-ship-it/c3api)
 - 问题：欢迎通过 GitHub issue 提交 bug、咨询或功能建议
 - 安全：漏洞请经 [SECURITY.md](./SECURITY.md) 私有报告
 - 发布说明：[CHANGELOG.md](./CHANGELOG.md)

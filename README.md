@@ -6,8 +6,8 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-[![Release](https://img.shields.io/github/v/release/is7Qin/c3api?color=2563eb)](https://github.com/is7Qin/c3api/releases)
-[![Stars](https://img.shields.io/github/stars/is7Qin/c3api?color=2563eb)](https://github.com/is7Qin/c3api)
+[![Release](https://img.shields.io/github/v/release/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api/releases)
+[![Stars](https://img.shields.io/github/stars/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later%20%2B%20Commercial-2563eb)](./LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-2563eb)](https://go.dev/)
 
@@ -17,14 +17,16 @@
 
 </div>
 
-**c3api** is a self-hosted AI gateway that fronts multiple upstream providers with one unified entry point. It speaks all six request formats — OpenAI Responses API (including its WebSocket variant), Anthropic Messages API, OpenAI Chat Completions API, OpenAI Images API, Codex web search, and an OpenAI-compatible model list — and maps them onto your configured upstream accounts with model routing, quotas, usage accounting, and an embedded admin console.
+**c3api** is a self-hosted AI gateway with one endpoint for multiple upstream providers. It supports OpenAI Responses (REST and WebSocket), Anthropic Messages, Chat Completions, Images, Codex search, and an OpenAI-compatible model list, then applies your routing, quotas, usage accounting, and admin settings in one place.
+
+Maintained by [@baimao5299-ship-it](https://github.com/baimao5299-ship-it).
 
 ## Status: Beta
 
-c3api is in **beta**: feature-complete, but breaking changes are free to happen.
+c3api is in **beta**. The current API is usable, but the schema and configuration may still change between beta releases.
 
-- **Not backward-compatible** — database schemas and configuration are **not** backward-compatible across versions, and **no migration path** is provided.
-- **Upgrade = fresh setup** — upgrading from an earlier version means provisioning a brand-new database and re-checking your configuration from scratch.
+- **No automatic migration yet** — database schemas and configuration are not guaranteed to stay compatible between beta releases.
+- **Plan upgrades as a fresh deployment** — provision a new database and re-check the configuration before switching traffic.
 - See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 ## Features
@@ -53,30 +55,23 @@ c3api is in **beta**: feature-complete, but breaking changes are free to happen.
 
 ## Quick Start
 
-### Option A: Docker Compose (recommended)
-
-**Run the prebuilt image (pull)** — for production, remove the `build:` block in `compose.yml` so `up` runs the pulled image instead of building:
+### Docker Compose (recommended)
 
 ```bash
-cp .env.example .env        # fill in AUTH_JWT_SECRET (ADMIN_TOKEN optional — see below)
-docker compose pull
-docker compose up -d
-```
-
-**Self-build** — compose builds the image locally (`image` and `build` coexist, `build` wins):
-
-```bash
-cp .env.example .env        # fill in AUTH_JWT_SECRET (ADMIN_TOKEN optional — see below)
+cp .env.example .env
+# Set AUTH_JWT_SECRET in .env (ADMIN_TOKEN is optional).
 docker compose up -d --build
 ```
+
+This builds the image locally and starts PostgreSQL, Redis, and c3api together. To use a published image instead, remove the `build:` block from `compose.yml`, then run `docker compose pull` followed by `docker compose up -d`.
 
 The gateway listens on `http://127.0.0.1:18080` — admin console at `/app`, user console at `/user`, health check at `/healthz`.
 
 **First admin user (bootstrap)** — the first user to register on a fresh database automatically becomes a `platform_admin` and can sign into the admin console (`/app`) right after startup; later signups get the regular `user` role.
 
-Prebuilt images are published to GHCR (`ghcr.io/is7qin/c3api`): `:beta` tracks the latest beta release, and version-pinned tags such as `:v0.0.1-beta.1` are also available. Pull standalone: `docker pull ghcr.io/is7qin/c3api:beta`.
+Prebuilt images are published to GHCR (`ghcr.io/baimao5299-ship-it/c3api`): `:beta` tracks the latest beta release, and version-pinned tags are also available. Pull standalone with `docker pull ghcr.io/baimao5299-ship-it/c3api:beta`.
 
-### Option B: Local development
+### Local development
 
 ```bash
 # 0. Inject local dev secrets once (config.toml keeps empty values; placeholder
@@ -92,12 +87,6 @@ cd web && pnpm install && pnpm run dev
 ```
 
 Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request format is selected by path, so a single base URL serves all six request formats.
-
-## Sponsors
-
-| Sponsor | About |
-| --- | --- |
-| [**ForZTN**](https://sponsorship.forztn.com/github.com/is7Qin/c3api) | Next-gen VPC-based IDC cloud panel · network/VM exchange |
 
 ## Architecture
 
@@ -157,7 +146,7 @@ The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_
 
 See `config.example.toml` for the full schema (server, log, admin, auth, db, redis, proxy, upstream, limit, scheduler, usage, billing).
 
-- **Fresh setup only (no migration path)** — schemas and configuration are not backward-compatible between versions: an upgrade means a brand-new database and a re-checked configuration (see [Status: Beta](#status-beta)).
+- **Fresh setup for beta upgrades** — schemas and configuration may change between releases, so deploy a new instance and re-check the configuration before upgrading (see [Status: Beta](#status-beta)).
 - **Env-only deployments** (e.g. K8s): pass `-config ""` to skip the config file entirely — the flag defaults to `config.toml`, and a missing file is a startup error.
 - **Config is read once at startup** — changes require a rolling restart (no hot reload).
 - **Invalid config fails fast at startup** with the offending key: non-positive durations/intervals, unknown keys (typos, removed legacy keys), missing required secrets, and placeholder values (`change-me`, `dev-admin-token`, …) are all rejected.
@@ -185,7 +174,7 @@ GOMEMLIMIT=17179869184
 
 ## License
 
-c3api is open source under the **GNU AGPL v3.0-or-later** (`LICENSE`) — free to use, modify, and deploy, **including for commercial and hosted services**, with the single obligation that modifications are contributed back under the same terms. **No purchase is required.**
+c3api is open source under the **GNU AGPL v3.0-or-later** (`LICENSE`) — you may use, modify, and deploy it, including for commercial and hosted services, as long as you follow the license terms for the version you run. **No purchase is required for an AGPL-compliant deployment.**
 
 Need **closed-source deployment** (exempt from the AGPL obligations on your deployment)? A commercial license (`LICENSE.commercial`) is available — it waives the AGPL obligations for your deployment.
 
@@ -193,7 +182,7 @@ External code contributions require a CLA (contributor license agreement) so tha
 
 ## Contact
 
-- GitHub: [is7Qin/c3api](https://github.com/is7Qin/c3api)
+- GitHub: [baimao5299-ship-it/c3api](https://github.com/baimao5299-ship-it/c3api)
 - Issues: open a GitHub issue for bugs, questions, or feature requests
 - Security: report vulnerabilities via [SECURITY.md](./SECURITY.md) (private report)
 - Changelog: [CHANGELOG.md](./CHANGELOG.md)
