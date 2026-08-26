@@ -46,6 +46,18 @@ func TestTransportProxyDefaultsToDirect(t *testing.T) {
 	require.Nil(t, tr.Proxy, "默认直连：不得隐式装配 http.ProxyFromEnvironment")
 }
 
+func TestTransportTLSConvergenceDisabledKeepsStandardTLS(t *testing.T) {
+	tr := NewTransport(TransportConfig{ForceHTTP2: true})
+	require.Nil(t, tr.DialTLSContext)
+	require.True(t, tr.ForceAttemptHTTP2)
+}
+
+func TestTransportTLSConvergenceUsesSub2Profile(t *testing.T) {
+	tr := NewTransport(TransportConfig{ForceHTTP2: true, TLSConvergence: true})
+	require.NotNil(t, tr.DialTLSContext)
+	require.False(t, tr.ForceAttemptHTTP2, "Sub2 Node.js profile only advertises HTTP/1.1")
+}
+
 // TestTransportNilProxyIgnoresEnv C2-1 Proxy=nil 直连：即便 HTTP_PROXY 环境变量
 // 指向代理，上游请求仍直连目标（代理零命中），行为不随部署环境漂移。
 func TestTransportNilProxyIgnoresEnv(t *testing.T) {

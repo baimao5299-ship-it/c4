@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -352,6 +353,10 @@ type Service struct {
 	mailEnqueue    func(MailSendTask) error
 	tzLoc          *time.Location
 	log            *logx.Logger
+	codexTLSMu               sync.Mutex
+	codexTLSConvergenceApply func(bool)
+	codexTLSConvergenceReady bool
+	codexTLSConvergenceValue bool
 }
 
 func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publisher, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {

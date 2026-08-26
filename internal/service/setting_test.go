@@ -53,6 +53,24 @@ func TestUpdateSettingNumberNoMax(t *testing.T) {
 	require.NoError(t, err, "Max nil（无上界）→ 不越界")
 }
 
+func TestCodexTLSConvergenceSettingAppliesOnlyOnChange(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	svc.reloadSettings(ctx)
+
+	var applied []bool
+	svc.SetCodexTLSConvergenceApply(func(enabled bool) { applied = append(applied, enabled) })
+	require.Equal(t, []bool{false}, applied, "default state is applied when the transport hook is installed")
+
+	_, err := svc.UpdateSetting(ctx, "codex_tls_convergence_enabled", "true")
+	require.NoError(t, err)
+	require.Equal(t, []bool{false, true}, applied)
+
+	require.NoError(t, svc.ReloadSettings(ctx))
+	require.Equal(t, []bool{false, true}, applied, "unrelated settings reloads do not rebuild the transport")
+}
+
 // TestServiceTierPolicyKeysDerived P3-7：serviceTierPolicyKeys 从注册表
 // PolicyValues 枚举域派生（消双处同步）——注册表是唯一事实源，派生表与注册表
 // 一一对应（无残留手写 key）。

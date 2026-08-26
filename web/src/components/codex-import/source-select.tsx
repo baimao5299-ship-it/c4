@@ -7,7 +7,7 @@ import type { SourceId } from '@/lib/codex-import/adapters'
 
 const sources: { id: SourceId; labelKey: string; ready: boolean }[] = [
   { id: 'cpa', labelKey: 'cpa', ready: true }, { id: 'c3api', labelKey: 'c3api', ready: false },
-  { id: 'sub2api', labelKey: 'sub2api', ready: false }, { id: 'cockpit', labelKey: 'cockpit', ready: false },
+  { id: 'sub2api', labelKey: 'sub2api', ready: true }, { id: 'cockpit', labelKey: 'cockpit', ready: false },
   { id: '9router', labelKey: '9router', ready: false }, { id: 'codex', labelKey: 'codex', ready: false },
   { id: 'axonhub', labelKey: 'axonhub', ready: false }, { id: 'codex-manager', labelKey: 'codex-manager', ready: false },
 ]

@@ -30,6 +30,7 @@ upstream = {
   idle_conn_timeout = "90s",
   dial_timeout = "10s",
   force_http2 = true,
+  tls_convergence_enabled = false,
 }
 limit = { group_key_rpm = 0 }
 # cooldown_429 / backoff_base / backoff_max 已移除（不向后兼容）——配置含这些

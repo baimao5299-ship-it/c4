@@ -44,10 +44,9 @@ services:
     # 镜像双形态（REL spec 2026-08-15）：本地开发/自建用 build（下方 build 块；
     # compose 语义 image+build 并存时 build 优先）；生产用 pull——删除 build 块、
     # 保留 image 即直接跑 GHCR 预构建镜像（docker compose pull && up -d）。
-    image: ghcr.io/is7qin/c3api:beta
+    image: c3api-local:dev
     build:
       context: .
-      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       db:
@@ -78,7 +77,7 @@ services:
       # 目录挂载：配置只读注入（改配置重启即生效，不用重建镜像）。
       # 生产配置模板在 deploy/config.toml（挂载源与 compose 分离——根目录
       # config.toml 是本地开发配置，两者语义不同不混淆）
-      - ./deploy/config.toml:/app/config.toml:ro
+      - ./deploy/config.local.toml:/app/config.toml:ro
     healthcheck:
       # /healthz 为无鉴权存活端点（internal/server/server.go）；基镜像 alpine:3.20
       # 自带 busybox wget（无 curl），非 root 用户可执行。

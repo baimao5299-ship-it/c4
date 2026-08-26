@@ -237,7 +237,7 @@
         "chooseFile": "Choose file",
         "chooseFolder": "Choose folder",
         "dropActive": "Drop to import",
-        "fileDropDescCpa": "Supports .json / .txt / .at_txt · single file ≤5 MB · drag files or folders",
+         "fileDropDescCpa": "Supports .json / .txt / .at_txt / .zip · single file ≤5 MB · drag files or folders",
         "folderHint": "Folder upload only for CPA"
       },
       "templateLabel": "Destination template *",
@@ -272,15 +272,15 @@
         "input": "Input & destination",
         "preview": "Preview & import"
       },
-      "stepDesc": {
+       "stepDesc": {
         "kind": "Each type maps to a backend endpoint; templates are filtered by type",
-        "source": "Only CPA is ready; other sources are placeholders",
+         "source": "CPA and Sub2API are ready; other sources are placeholders",
         "input": "File and paste share the same parse; closing clears the content",
         "preview": "Only valid rows are sent, 100 per batch sequentially"
       },
-      "kindDesc": {
+       "kindDesc": {
         "oauth": "Has access_token + refresh_token, expires normalized to RFC3339",
-        "pat": "Extracts Bearer from headers.authorization, falls back to access_token"
+         "pat": "Extracts Bearer from headers.authorization or PAT fields; OAuth tokens are never used as PAT"
       },
       "interface": {
         "oauth": "Endpoint: batch-import-codex-oauth",
@@ -295,14 +295,15 @@
       "fileDropDesc": "Supports .json / .txt / .at_txt · max 5 MB",
       "selected": "Selected",
       "pastePlaceholder": "Paste JSON / JSONL / single object\ne.g. {\"email\":\"a@b.com\",\"account_id\":\"id-1\",\"access_token\":\"ey...\"}",
-      "pasteHint2": "BOM stripped · 300ms debounce · skips empty lines · JSON.parse only",
+       "pasteHint2": "BOM stripped · 300ms debounce · supports JSON / JSONL / consecutive JSON / raw tokens",
       "folderOnlyCpa": "Folder upload only for CPA",
       "filesCount": "{{count}} files",
       "previewEmpty": "No preview data; go back to add input",
-      "stats": {
-        "valid": "Valid",
-        "invalid": "Invalid",
-        "total": "Total"
+       "stats": {
+         "valid": "Valid",
+         "invalid": "Invalid",
+         "duplicate": "Duplicates",
+         "total": "Total"
       },
       "next": {
         "source": "Next",
@@ -1122,6 +1123,7 @@
       "defaults": "New user defaults",
       "pricingSync": "Price sync",
       "tierPolicy": "Service tier policy",
+      "codex": "Codex connection",
       "mail": "Mail"
     },
     "labels": {
@@ -1135,6 +1137,7 @@
       "service_tier_policy_priority": "Priority tier field policy",
       "service_tier_policy_flex": "Flex tier field policy",
       "service_tier_policy_fast": "Fast tier field policy",
+      "codex_tls_convergence_enabled": "TLS convergence",
       "mail.enabled": "Enable mail",
       "mail.register_verification": "Require email verification",
       "mail.smtp_host": "SMTP host",
@@ -1155,6 +1158,7 @@
       "service_tier_policy_priority": "How the priority tier field is handled when forwarding requests",
       "service_tier_policy_flex": "How the flex tier field is handled when forwarding requests",
       "service_tier_policy_fast": "How the fast tier field is handled when forwarding requests",
+      "codex_tls_convergence_enabled": "Only changes the upstream TLS handshake for Codex accounts. New requests use the new setting; in-flight requests finish normally.",
       "mail.enabled": "When disabled, registration passes and forgot-password no-ops",
       "mail.register_verification": "When enabled registration requires a code (requires mail enabled + host/from)",
       "mail.smtp_host": "SMTP host",
@@ -1532,4 +1536,3 @@
     "backHome": "Back to Home"
   }
 }
-

@@ -116,7 +116,30 @@ func (s *Service) ReloadSettings(ctx context.Context) error {
 		m[st.Key] = st
 	}
 	s.settings.Store(&m)
+	s.applyCodexTLSConvergence()
 	return nil
+}
+
+func (s *Service) SetCodexTLSConvergenceApply(apply func(bool)) {
+	s.codexTLSMu.Lock()
+	s.codexTLSConvergenceApply = apply
+	s.codexTLSConvergenceReady = false
+	s.codexTLSMu.Unlock()
+	s.applyCodexTLSConvergence()
+}
+
+func (s *Service) applyCodexTLSConvergence() {
+	desired := s.settingValue("codex_tls_convergence_enabled") == "true"
+	s.codexTLSMu.Lock()
+	apply := s.codexTLSConvergenceApply
+	if apply == nil || (s.codexTLSConvergenceReady && s.codexTLSConvergenceValue == desired) {
+		s.codexTLSMu.Unlock()
+		return
+	}
+	s.codexTLSConvergenceReady = true
+	s.codexTLSConvergenceValue = desired
+	s.codexTLSMu.Unlock()
+	apply(desired)
 }
 
 // reloadSettings 全量重载设置快照（New 初始化 + UpdateSetting 后调用）。

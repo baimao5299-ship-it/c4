@@ -15,6 +15,7 @@ import { PreviewTable } from './preview-table'
 import { ResultView } from './result-view'
 import { getAdapter, type SourceId } from '@/lib/codex-import/adapters'
 import { importSequential } from '@/lib/codex-import/chunk'
+import { IMPORT_DOCUMENT_SEPARATOR, readImportFile } from '@/lib/codex-import/parse'
 import type { CredentialKind, NormalizedRow } from '@/lib/codex-import/normalize'
 import type { components } from '@/lib/api/schema'
 import { api } from '@/App'
@@ -47,8 +48,10 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
   const folderInputRef = useRef<HTMLInputElement>(null)
 
   const availableTemplates = useMemo(() => templates.filter(tp => tp.CredentialType === kind), [templates, kind])
-  const validRows = parseState.rows.filter((row: any) => row.item)
-  const invalidCount = parseState.rows.length - validRows.length
+  const validRows = parseState.rows.filter((row: any) => row.item && !row.error)
+  const invalidCount = parseState.rows.filter(row => !!row.error).length
+  const duplicateCount = parseState.rows.filter(row => row.duplicateOf != null).length
+  const importBlocked = invalidCount > 0
 
   useEffect(() => {
     if (!open) return
@@ -61,11 +64,10 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
     return () => window.clearTimeout(timer)
   }, [rawText, source, kind, tab])
 
-  const handleFiles = async (files: FileList | File[]) => {
+  const handleFiles = async (files: FileList | File[], fromFolder = false) => {
     const list = Array.from(files)
     if (list.length === 0) return
-    // 文件夹仅 CPA
-    if (list.length > 1 && source !== 'cpa') {
+    if (fromFolder && source !== 'cpa') {
       setParseState({ rows: [], parseError: t('accounts.import.folderOnlyCpa') })
       return
     }
@@ -76,16 +78,19 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
       return
     }
     try {
-      const texts = await Promise.all(list.map(f => f.text()))
+      const texts = await Promise.all(list.map(readImportFile))
       // 记录显示名：单文件用文件名，多文件/文件夹显示数量
       const displayName = list.length === 1 ? list[0].name : t('accounts.import.filesCount', { count: list.length })
-      // 多文件合并文本走统一 parse（JSONL 拼接兼容；JSON 数组多文件场景 improbable），
-      // 解析/归一化由 adapter 在预览阶段完成
-      setRawText(texts.join('\n'))
+      setRawText(texts.flat().join(IMPORT_DOCUMENT_SEPARATOR))
       setFileName(displayName)
       setTab('file')
-    } catch {
-      setParseState({ rows: [], parseError: t('common.loadFailed', { message: '' }) })
+    } catch (error) {
+      const code = error instanceof Error ? error.message : ''
+      const message = code === 'fileTooLarge' ? t('accounts.import.input.fileTooLarge')
+        : code === 'zipNoImportFiles' ? '压缩包内没有可导入的 .json、.txt 或 .at_txt 文件'
+          : code === 'zipInvalid' ? '压缩包无法读取或内容不是 UTF-8 文本'
+            : t('common.loadFailed', { message: '' })
+      setParseState({ rows: [], parseError: message })
     }
   }
   const handleDrop = async (e: React.DragEvent) => {
@@ -101,6 +106,11 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
         if (entry) entries.push(entry)
       }
       if (entries.length > 0) {
+        const fromFolder = entries.some(entry => entry.isDirectory)
+        if (fromFolder && source !== 'cpa') {
+          setParseState({ rows: [], parseError: t('accounts.import.folderOnlyCpa') })
+          return
+        }
         // 递归读取文件夹
         const readEntry = async (entry: any): Promise<File[]> => {
           if (entry.isFile) {
@@ -125,7 +135,7 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
         }
         for (const ent of entries) files.push(...await readEntry(ent))
         if (files.length > 0) {
-          await handleFiles(files)
+          await handleFiles(files, fromFolder)
           return
         }
       }
@@ -134,7 +144,10 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
   }
   const canNext = step === 1 ? true : step === 2 ? !!source : step === 3 ? validRows.length > 0 && !!templateId : false
   const doImport = async () => {
-    if (!templateId || validRows.length === 0) return
+    if (!templateId || validRows.length === 0 || importBlocked) {
+      if (importBlocked) setParseState(prev => ({ ...prev, parseError: '存在无效导入项。请按预览中的逐条原因修正后再提交；系统不会静默跳过这些账号。' }))
+      return
+    }
     setIsPending(true); setProgress([0, Math.ceil(validRows.length / 100)])
     try {
       const items = validRows.map((row: any) => row.item)
@@ -229,8 +242,8 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
                       <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="size-4" />{t('accounts.import.input.chooseFile')}</Button>
                       {source === 'cpa' && <Button type="button" variant="outline" size="sm" onClick={() => folderInputRef.current?.click()}><FolderOpen className="size-4" />{t('accounts.import.input.chooseFolder')}</Button>}
                     </div>
-                    <input ref={fileInputRef} type="file" accept=".json,.txt,.at_txt,text/plain,application/json" onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} className="hidden" />
-                    {source === 'cpa' && <input ref={folderInputRef as any} type="file" {...({ webkitdirectory: '', directory: '' } as any)} onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} className="hidden" />}
+                    <input ref={fileInputRef} type="file" accept=".json,.txt,.at_txt,.zip,text/plain,application/json,application/zip" onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} className="hidden" />
+                    {source === 'cpa' && <input ref={folderInputRef as any} type="file" {...({ webkitdirectory: '', directory: '' } as any)} onChange={e => { if (e.target.files?.length) handleFiles(e.target.files, true); e.target.value = '' }} className="hidden" />}
                   </div>
                   {fileName && <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><Files className="size-4 shrink-0" /><span className="truncate">{fileName}</span><Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => { setRawText(''); setFileName(''); setParseState({ rows: [] }) }}>{t('common.cancel')}</Button></div>}
                   {source !== 'cpa' && <p className="text-xs text-muted-foreground">{t('accounts.import.folderOnlyCpa')}</p>}
@@ -245,7 +258,8 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
                 <div className="space-y-2"><Label className="text-sm">{t('accounts.import.groupLabel')}</Label><Select items={Object.fromEntries([['__none', t('accounts.import.groupNone')], ...groups.map(g => [String(g.ID), g.Name ?? `#${g.ID}`])])} value={groupId ? groupId : '__none'} onValueChange={v => setGroupId(v === '__none' ? '' : String(v ?? ''))}><SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none" label={t('accounts.import.groupNone')}>{t('accounts.import.groupNone')}</SelectItem>{groups.map(g => <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? `#${g.ID}`}>{g.Name ?? `#${g.ID}`}</SelectItem>)}</SelectContent></Select></div>
               </div>
               {parseState.parseError && <Alert variant="destructive"><AlertDescription className="text-sm">{parseState.parseError === 'adapterComingSoon' ? t('accounts.import.source.comingSoon') : parseState.parseError}</AlertDescription></Alert>}
-              <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm"><span className="font-medium">{t('accounts.import.stats.valid')} {validRows.length}</span><span className="text-muted-foreground">/</span><span className={invalidCount ? 'font-medium text-destructive' : 'text-muted-foreground'}>{t('accounts.import.stats.invalid')} {invalidCount}</span><span className="text-muted-foreground">/ {t('accounts.import.stats.total')} {parseState.rows.length}</span></div>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm"><span className="font-medium">{t('accounts.import.stats.valid')} {validRows.length}</span><span className="text-muted-foreground">/</span><span className={invalidCount ? 'font-medium text-destructive' : 'text-muted-foreground'}>{t('accounts.import.stats.invalid')} {invalidCount}</span>{duplicateCount > 0 && <><span className="text-muted-foreground">/</span><span className="font-medium text-amber-600 dark:text-amber-400">{t('accounts.import.stats.duplicate')} {duplicateCount}</span></>}<span className="text-muted-foreground">/ {t('accounts.import.stats.total')} {parseState.rows.length}</span></div>
+              {importBlocked && <Alert variant="destructive"><AlertDescription className="text-sm">存在无效导入项。请按下方逐条原因修正后再继续，系统不会静默跳过这些账号。</AlertDescription></Alert>}
               {parseState.rows.length > 0 && <PreviewTable rows={parseState.rows} kind={kind} />}
             </div>}
             {step === 4 && (result ? <ResultView result={result} /> : <div className="space-y-5">
@@ -253,7 +267,8 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
                 <h3 className="text-base font-semibold">{t('accounts.import.step.preview')}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">{t('accounts.import.stepDesc.preview')}</p>
               </div>
-              <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm"><span className="font-medium">{t('accounts.import.stats.valid')} {validRows.length}</span><span className="text-muted-foreground">/</span><span className={invalidCount ? 'font-medium text-destructive' : 'text-muted-foreground'}>{t('accounts.import.stats.invalid')} {invalidCount}</span><span className="text-muted-foreground">/ {t('accounts.import.stats.total')} {parseState.rows.length}</span></div>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm"><span className="font-medium">{t('accounts.import.stats.valid')} {validRows.length}</span><span className="text-muted-foreground">/</span><span className={invalidCount ? 'font-medium text-destructive' : 'text-muted-foreground'}>{t('accounts.import.stats.invalid')} {invalidCount}</span>{duplicateCount > 0 && <><span className="text-muted-foreground">/</span><span className="font-medium text-amber-600 dark:text-amber-400">{t('accounts.import.stats.duplicate')} {duplicateCount}</span></>}<span className="text-muted-foreground">/ {t('accounts.import.stats.total')} {parseState.rows.length}</span></div>
+              {importBlocked && <Alert variant="destructive"><AlertDescription className="text-sm">存在无效导入项。请按下方逐条原因修正后再提交，系统不会静默跳过这些账号。</AlertDescription></Alert>}
               {parseState.rows.length === 0 ? <Alert><AlertDescription>{t('accounts.import.previewEmpty')}</AlertDescription></Alert> : <PreviewTable rows={parseState.rows} kind={kind} />}
             </div>)}
           </div>
@@ -264,7 +279,7 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
         <Button variant="outline" onClick={() => step > 1 ? setStep(step - 1) : close(false)}>{step > 1 ? t('accounts.import.prev') : t('common.cancel')}</Button>
         {step < 3 && <Button onClick={() => setStep(step + 1)} disabled={!canNext}>{t('accounts.import.next.source')}</Button>}
         {step === 3 && <Button onClick={() => setStep(4)} disabled={!canNext}>{t('accounts.import.next.preview')}</Button>}
-        {step === 4 && !result && <Button onClick={doImport} disabled={isPending || validRows.length === 0 || !templateId}>{isPending ? t('accounts.import.sending', { done: progress?.[0] ?? 0, total: progress?.[1] ?? 0 }) : t('accounts.import.importAction', { count: validRows.length })}</Button>}
+        {step === 4 && !result && <Button onClick={doImport} disabled={isPending || validRows.length === 0 || importBlocked || !templateId}>{isPending ? t('accounts.import.sending', { done: progress?.[0] ?? 0, total: progress?.[1] ?? 0 }) : t('accounts.import.importAction', { count: validRows.length })}</Button>}
         {result && <Button onClick={() => close(false)}>{t('accounts.import.done')}</Button>}
       </DialogFooter>
     </DialogContent>

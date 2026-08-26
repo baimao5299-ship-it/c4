@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/is7qin/c3api/pkg/tlsprofile"
 )
 
 type TransportConfig struct {
@@ -20,7 +22,9 @@ type TransportConfig struct {
 	MaxConnsPerHost int
 	IdleConnTimeout time.Duration
 	DialTimeout     time.Duration
-	ForceHTTP2      bool
+	TLSHandshakeTimeout time.Duration
+	ForceHTTP2          bool
+	TLSConvergence      bool
 	// Proxy 上游请求代理函数（nil = 直连，默认）。不再隐式装配
 	// http.ProxyFromEnvironment——HTTP_PROXY 设了会静默改道全部上游请求
 	//（含 x-api-key/Authorization 凭据，WS 升级大概率失败），压测行为随
@@ -29,20 +33,27 @@ type TransportConfig struct {
 }
 
 func NewTransport(cfg TransportConfig) *http.Transport {
-	return &http.Transport{
-		Proxy: cfg.Proxy, // nil = 直连（防环境代理劫持 + 压测确定性）；装配方显式决定
-		DialContext: (&net.Dialer{
-			Timeout:   cfg.DialTimeout,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+	dialer := &net.Dialer{Timeout: cfg.DialTimeout, KeepAlive: 30 * time.Second}
+	handshakeTimeout := cfg.TLSHandshakeTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = 10 * time.Second
+	}
+	transport := &http.Transport{
+		Proxy:                 cfg.Proxy, // nil = 直连（防环境代理劫持 + 压测确定性）；装配方显式决定
+		DialContext:           dialer.DialContext,
 		ForceAttemptHTTP2:     cfg.ForceHTTP2,
 		MaxIdleConns:          cfg.MaxIdleConns,
 		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
 		MaxConnsPerHost:       cfg.MaxConnsPerHost,
 		IdleConnTimeout:       cfg.IdleConnTimeout,
-		TLSHandshakeTimeout:   10 * time.Second,
+		TLSHandshakeTimeout:   handshakeTimeout,
 		ExpectContinueTimeout: time.Second,
 	}
+	if cfg.TLSConvergence {
+		transport.ForceAttemptHTTP2 = false
+		transport.DialTLSContext = tlsprofile.NewSub2Node24DialTLSContext(dialer.DialContext, handshakeTimeout)
+	}
+	return transport
 }
 
 func NewClient(cfg TransportConfig) *http.Client {

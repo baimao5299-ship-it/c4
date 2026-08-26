@@ -7,11 +7,25 @@ tools/*/tmp/
 
 # 部署运行时产物（compose 根目录布局：根目录 .env 自动加载；PG 数据落 deploy/data/pg）
 .env
+.env.*
+!.env.example
 deploy/data/
+
+# 本机首次登录凭据（仅本地留存，禁止进入仓库）
+FIRST-LOGIN.txt
+
+# 本地协作规则，不随公开源码发布
+AGENTS.md
+internal/AGENTS.md
+web/AGENTS.md
 
 # 前端构建产物嵌入目录：仅 .gitkeep 占位入库（go:embed all:dist 需要目录存在）
 cmd/server/dist/*
 !cmd/server/dist/.gitkeep
+
+# 前端本地依赖与构建输出
+web/node_modules/
+web/dist/
 
 .superpowers/
 .claude/
@@ -22,4 +36,3 @@ cmd/server/dist/*
 docs/superpowers/
 docs/review/
 !deploy/config.toml
-

@@ -97,11 +97,12 @@ type ProxyConfig struct {
 }
 
 type UpstreamConfig struct {
-	MaxIdleConns        int           `koanf:"max_idle_conns"`
-	MaxIdleConnsPerHost int           `koanf:"max_idle_conns_per_host"`
-	IdleConnTimeout     time.Duration `koanf:"idle_conn_timeout"`
-	DialTimeout         time.Duration `koanf:"dial_timeout"`
-	ForceHTTP2          bool          `koanf:"force_http2"`
+	MaxIdleConns          int           `koanf:"max_idle_conns"`
+	MaxIdleConnsPerHost   int           `koanf:"max_idle_conns_per_host"`
+	IdleConnTimeout       time.Duration `koanf:"idle_conn_timeout"`
+	DialTimeout           time.Duration `koanf:"dial_timeout"`
+	ForceHTTP2            bool          `koanf:"force_http2"`
+	TLSConvergenceEnabled bool          `koanf:"tls_convergence_enabled"`
 }
 
 type LimitConfig struct {

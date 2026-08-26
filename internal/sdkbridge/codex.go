@@ -43,7 +43,20 @@ type Codex struct {
 // 零影响；nil = SDK 默认（测试形态）。httpx 默认 Proxy=nil 直连（C2-1 防劫持
 // ——环境代理不静默改道 SDK 上游请求，main 装配传 nil 同网关既有 client）。
 func (a *Codex) SetTransport(rt http.RoundTripper) {
+	a.mu.Lock()
+	previous := a.transport
 	a.transport = rt
+	for _, e := range a.entries {
+		e.client = nil
+		e.idSig = ""
+		e.appliedTurnState = ""
+	}
+	a.mu.Unlock()
+	if previous != nil {
+		if closer, ok := previous.(interface{ CloseIdleConnections() }); ok {
+			closer.CloseIdleConnections()
+		}
+	}
 }
 
 // RotationStore 轮转回写落库面（repository.AccountExtRepo 满足；接口化供测试
@@ -124,11 +137,11 @@ func NewCodex(failure FailureHandler) *Codex {
 // 不包装，errors.As 可命中）；RefreshError 可重试不上报。cred.BaseURL = 模板
 // base 派生完整 generations 端点（空 → SDK 内置 DefaultImagesURL）。
 func (a *Codex) GenerateImage(ctx context.Context, cred *domain.AccountCredential, p *domain.ImageGenParams) (*domain.ImageResponse, error) {
-	e, err := a.clientFor(cred, nil, nil, "")
+	e, client, err := a.clientFor(cred, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
-	resp, err := e.client.GenerateImage(ctx, toSDKParams(p))
+	resp, err := client.GenerateImage(ctx, toSDKParams(p))
 	if err != nil {
 		return nil, a.translateError(e, err)
 	}
@@ -143,11 +156,11 @@ func (a *Codex) GenerateImage(ctx context.Context, cred *domain.AccountCredentia
 // 错误翻译同 GenerateImage（translateError——信封/fatal 统一回调/refresh 分
 // 类复用；fn 回调错误经 translateError 原样透传——非 SDK 错误不过滤）。
 func (a *Codex) GenerateImageStream(ctx context.Context, cred *domain.AccountCredential, p *domain.ImageGenParams, fn func(domain.ImageStreamEvent) error) error {
-	e, err := a.clientFor(cred, nil, nil, "")
+	e, client, err := a.clientFor(cred, nil, nil, "")
 	if err != nil {
 		return err
 	}
-	err = e.client.GenerateImageStream(ctx, toSDKParams(p), func(ev codexsdk.ImageStreamEvent) error {
+	err = client.GenerateImageStream(ctx, toSDKParams(p), func(ev codexsdk.ImageStreamEvent) error {
 		// 事件类型显式映射（A-P2-10）：SDK 升级改事件名 → 未知 Warn + 跳过
 		// （不静默透传——未知类型落入网关 default 静默分支则落账 0 张零告警）。
 		t, ok := mapStreamEventType(ev.Type)
@@ -195,11 +208,11 @@ func (a *Codex) Responses(ctx context.Context, cred *domain.AccountCredential, p
 	if ts == "" {
 		ts = a.turnStateOf(cred.AccountID)
 	}
-	e, err := a.clientFor(cred, sess, meta, ts)
+	e, client, err := a.clientFor(cred, sess, meta, ts)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := e.client.Responses(ctx, payload)
+	resp, err := client.Responses(ctx, payload)
 	if err != nil {
 		return nil, a.translateError(e, err)
 	}
@@ -216,11 +229,11 @@ func (a *Codex) Responses(ctx context.Context, cred *domain.AccountCredential, p
 // 头）。错误翻译同 Responses（translateError——信封/fatal 统一回调双源去重/
 // RefreshError 分类复用）。
 func (a *Codex) Search(ctx context.Context, cred *domain.AccountCredential, payload []byte) (*codexsdk.HTTPResponse, error) {
-	e, err := a.clientFor(cred, nil, nil, "")
+	e, client, err := a.clientFor(cred, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
-	resp, err := e.client.Search(ctx, payload)
+	resp, err := client.Search(ctx, payload)
 	if err != nil {
 		return nil, a.translateError(e, err)
 	}
@@ -241,14 +254,14 @@ func (a *Codex) StreamResponses(ctx context.Context, cred *domain.AccountCredent
 	if ts == "" {
 		ts = a.turnStateOf(cred.AccountID)
 	}
-	e, err := a.clientFor(cred, sess, meta, ts)
+	e, client, err := a.clientFor(cred, sess, meta, ts)
 	if err != nil {
 		return err
 	}
-	if err := e.client.Stream(ctx, payload, fn); err != nil {
+	if err := client.Stream(ctx, payload, fn); err != nil {
 		return a.translateError(e, err)
 	}
-	a.captureTurnState(e, e.client.TurnState())
+	a.captureTurnState(e, client.TurnState())
 	return nil
 }
 
@@ -303,17 +316,14 @@ func (a *Codex) entryFor(cred *domain.AccountCredential) (*codexEntry, error) {
 // 据竞争；去掉锁外快路径即消除）。idSig 比对（identitySig）——identity 变化
 // → 重建客户端（与 cred sig 同语义：账号配置变更 → 重建；同 identity 复用连
 // 接池）。
-func (a *Codex) clientFor(cred *domain.AccountCredential, sess *codexsdk.Session, meta *codexsdk.CodexMeta, turnState string) (*codexEntry, error) {
+func (a *Codex) clientFor(cred *domain.AccountCredential, sess *codexsdk.Session, meta *codexsdk.CodexMeta, turnState string) (*codexEntry, *codexsdk.HTTPClient, error) {
 	e, err := a.entryFor(cred)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var opts []codexsdk.Option
 	if cred.BaseURL != "" {
 		opts = append(opts, codexsdk.WithBaseURL(cred.BaseURL))
-	}
-	if a.transport != nil {
-		opts = append(opts, codexsdk.WithTransport(a.transport))
 	}
 	if turnState != "" {
 		opts = append(opts, codexsdk.WithHeader(codexsdk.HeaderTurnState, turnState))
@@ -321,13 +331,16 @@ func (a *Codex) clientFor(cred *domain.AccountCredential, sess *codexsdk.Session
 	opts = append(opts, identityOpts(sess, meta)...)
 	sig := identitySig(sess, meta)
 	a.mu.Lock()
+	if a.transport != nil {
+		opts = append(opts, codexsdk.WithTransport(a.transport))
+	}
 	if e.client == nil || e.idSig != sig || e.appliedTurnState != turnState {
 		e.client = codexsdk.NewHTTPClient(e.auth, opts...)
 		e.idSig = sig
 		e.appliedTurnState = turnState
 	}
 	a.mu.Unlock()
-	return e, nil
+	return e, e.client, nil
 }
 
 // turnStateOf 读账号 held turn-state（HOST-2 生效值判定——客户端未自带时注入
@@ -413,7 +426,7 @@ func (a *Codex) GetUsageSnapshot(ctx context.Context, cred *domain.AccountCreden
 	if s, ok := a.snapshotCachedFor(cred.AccountID); ok {
 		return s, nil
 	}
-	e, err := a.clientFor(cred, nil, nil, "")
+	e, client, err := a.clientFor(cred, nil, nil, "")
 	if err != nil {
 		// 入口错误分类（N2）：oauth 缺 rt 凭据不完整（errCredentialIncomplete）
 		// → 凭据失效语义 ErrAuthExpired（不落 default 归 ErrUpstream）。
@@ -442,7 +455,7 @@ func (a *Codex) GetUsageSnapshot(ctx context.Context, cred *domain.AccountCreden
 	if err := a.snapshotCooldown(e); err != nil {
 		return nil, err
 	}
-	resp, err := e.client.GetUsage(ctx)
+	resp, err := client.GetUsage(ctx)
 	if err != nil {
 		// 取消/超时短路（task review 2026-08-18 Important 1）：ctx 取消 →
 		// 不写失败冷却（误记会锁死该账号 60s——管理面批量拉取切页触发面）、
@@ -629,6 +642,12 @@ func (a *Codex) Dial(ctx context.Context, cred *domain.AccountCredential, opts .
 	// clientFor（HTTP 面）同款：适配层统一应用，调用方不再重复传 WithBaseURL。
 	if cred.BaseURL != "" {
 		opts = append(opts, codexsdk.WithBaseURL(cred.BaseURL))
+	}
+	a.mu.Lock()
+	transport := a.transport
+	a.mu.Unlock()
+	if transport != nil {
+		opts = append(opts, codexsdk.WithTransport(transport))
 	}
 	c, err := codexsdk.Dial(ctx, e.auth, opts...)
 	if err != nil {

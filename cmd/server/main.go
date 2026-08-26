@@ -376,17 +376,24 @@ func main() {
 	// 网关既有 client 同形态（同一 httpx 构造 helper + cfg.Upstream 同源），
 	// MaxConnsPerHost 显式上界对齐 MaxIdleConnsPerHost（防单上游连接失控；
 	// 网关既有 client 不设 = 不限，压测验证形态保持）。
-	codexAdapter.SetTransport(httpx.NewTransport(httpx.TransportConfig{
-		MaxIdleConns:        cfg.Upstream.MaxIdleConns,
-		MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
-		MaxConnsPerHost:     cfg.Upstream.MaxIdleConnsPerHost,
-		IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
-		DialTimeout:         cfg.Upstream.DialTimeout,
-		ForceHTTP2:          cfg.Upstream.ForceHTTP2,
-		// Proxy 显式直连（C2-1，与网关既有 client 同纪律）：SDK 上游请求
-		// 不走环境代理——凭据与 WS 升级不受 HTTP_PROXY 静默改道。
-		Proxy: nil,
-	}))
+	newCodexTransport := func(tlsConvergence bool) *http.Transport {
+		return httpx.NewTransport(httpx.TransportConfig{
+			MaxIdleConns:        cfg.Upstream.MaxIdleConns,
+			MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
+			MaxConnsPerHost:     cfg.Upstream.MaxIdleConnsPerHost,
+			IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
+			DialTimeout:         cfg.Upstream.DialTimeout,
+			ForceHTTP2:          cfg.Upstream.ForceHTTP2,
+			TLSConvergence: tlsConvergence,
+			// Proxy 显式直连（C2-1，与网关既有 client 同纪律）：SDK 上游请求
+			// 不走环境代理——凭据与 WS 升级不受 HTTP_PROXY 静默改道。
+			Proxy: nil,
+		})
+	}
+	codexAdapter.SetTransport(newCodexTransport(cfg.Upstream.TLSConvergenceEnabled))
+	svc.SetCodexTLSConvergenceApply(func(enabled bool) {
+		codexAdapter.SetTransport(newCodexTransport(enabled))
+	})
 	// T5 §1 轮转回写面装配：WithOnTokenRotated → account_ext 部分更新 upsert
 	//（codex_oauth_token + codex_oauth_refresh_token + codex_oauth_expires_at 保旧）+ 失效调度器
 	// AccountExt 内存快照条目（P3-3——下个会话重载新凭据；不重建 Auth 缓存）。

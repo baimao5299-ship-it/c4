@@ -18,6 +18,7 @@ require (
 	github.com/oapi-codegen/runtime v1.1.0
 	github.com/openai/openai-go v1.12.0
 	github.com/pashagolub/pgxmock/v4 v4.9.0
+	github.com/refraction-networking/utls v1.8.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.19.0
 	github.com/tidwall/sjson v1.2.5
@@ -33,7 +34,9 @@ require (
 )
 
 require (
+	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 )

@@ -31,6 +31,7 @@ var DefaultSettings = []Setting{
 		PolicyValues: []string{"passthrough", "strip", "reject"}},
 	{Key: "service_tier_policy_fast", Type: SettingTypeString, Value: "passthrough",
 		PolicyValues: []string{"passthrough", "strip", "reject"}},
+	{Key: "codex_tls_convergence_enabled", Type: SettingTypeSwitch, Value: "false"},
 	// 邮件服务（email service）：全部走运行时设置，非 config.toml。
 	{Key: "mail.enabled", Type: SettingTypeSwitch, Value: "false"},
 	{Key: "mail.register_verification", Type: SettingTypeSwitch, Value: "false"},

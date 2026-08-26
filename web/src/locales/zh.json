@@ -237,7 +237,7 @@
         "chooseFile": "选择文件",
         "chooseFolder": "选择文件夹",
         "dropActive": "松开即可导入",
-        "fileDropDescCpa": "支持 .json / .txt / .at_txt · 单文件 ≤5 MB · 拖拽文件或文件夹",
+         "fileDropDescCpa": "支持 .json / .txt / .at_txt / .zip · 单文件 ≤5 MB · 可拖拽文件或文件夹",
         "folderHint": "文件夹仅支持 CPA 格式"
       },
       "templateLabel": "归属模板 *",
@@ -272,15 +272,15 @@
         "input": "输入与归属",
         "preview": "预览与导入"
       },
-      "stepDesc": {
+       "stepDesc": {
         "kind": "不同类型对应不同后端接口，模板会按类型自动过滤",
-        "source": "仅 CPA 已就绪，其余来源为扩展占位",
+         "source": "CPA 与 Sub2API 已就绪，其余来源为扩展占位",
         "input": "文件与粘贴共用同一解析，关闭弹窗自动清空",
         "preview": "仅发送有效行，分片 100 条顺序提交"
       },
-      "kindDesc": {
+       "kindDesc": {
         "oauth": "包含 access_token + refresh_token，支持过期时间归一化到 RFC3339",
-        "pat": "从 headers.authorization 提取 Bearer，缺省回退 access_token"
+         "pat": "从 headers.authorization 或 PAT 字段提取 Bearer，不会把 OAuth token 当作 PAT"
       },
       "interface": {
         "oauth": "接口：batch-import-codex-oauth",
@@ -295,14 +295,15 @@
       "fileDropDesc": "支持 .json / .txt / .at_txt · 最大 5 MB",
       "selected": "已选择",
       "pastePlaceholder": "粘贴 JSON / JSONL / 单对象\n示例：{\"email\":\"a@b.com\",\"account_id\":\"id-1\",\"access_token\":\"ey...\"}",
-      "pasteHint2": "已自动去除 BOM · 300ms 防抖解析 · 空行跳过 · 仅 JSON.parse",
+       "pasteHint2": "已自动去除 BOM · 300ms 防抖解析 · 支持 JSON / JSONL / 连续 JSON / 裸 token",
       "folderOnlyCpa": "文件夹上传仅支持 CPA 格式",
       "filesCount": "{{count}} 个文件",
       "previewEmpty": "暂无可预览数据，请返回上一步补充输入",
-      "stats": {
-        "valid": "可导入",
-        "invalid": "无效",
-        "total": "总计"
+       "stats": {
+         "valid": "可导入",
+         "invalid": "无效",
+         "duplicate": "重复",
+         "total": "总计"
       },
       "next": {
         "source": "下一步",
@@ -1122,6 +1123,7 @@
       "defaults": "新用户默认资源",
       "pricingSync": "价格同步",
       "tierPolicy": "服务档位策略",
+      "codex": "Codex 连接",
       "mail": "邮件"
     },
     "labels": {
@@ -1135,6 +1137,7 @@
       "service_tier_policy_priority": "优先档字段策略",
       "service_tier_policy_flex": "弹性档字段策略",
       "service_tier_policy_fast": "快速挡位策略",
+      "codex_tls_convergence_enabled": "TLS 收敛",
       "mail.enabled": "启用邮件服务",
       "mail.register_verification": "注册邮箱验证",
       "mail.smtp_host": "SMTP 主机",
@@ -1155,6 +1158,7 @@
       "service_tier_policy_priority": "优先档字段在转发请求时的处理方式",
       "service_tier_policy_flex": "弹性档字段在转发请求时的处理方式",
       "service_tier_policy_fast": "快速挡位（fast）请求转发时字段的处理方式",
+      "codex_tls_convergence_enabled": "仅影响 Codex 账号的上游 TLS 握手；切换后只影响新请求，正在进行的请求会继续完成。",
       "mail.enabled": "关闭时注册直通、忘记密码空转",
       "mail.register_verification": "开启后注册需验证码（需先启用邮件并配置 host/from）",
       "mail.smtp_host": "SMTP 服务器主机名",
@@ -1532,4 +1536,3 @@
     "backHome": "返回首页"
   }
 }
-

@@ -217,6 +217,33 @@ func TestCodexConversions(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+type idleClosingTransport struct {
+	closed atomic.Int32
+}
+
+func (t *idleClosingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("not used")
+}
+
+func (t *idleClosingTransport) CloseIdleConnections() {
+	t.closed.Add(1)
+}
+
+func TestSetTransportDrainsOnlyOldIdlePool(t *testing.T) {
+	adapter := NewCodex(nil)
+	first := &idleClosingTransport{}
+	second := &idleClosingTransport{}
+	adapter.SetTransport(first)
+	adapter.entries[1] = &codexEntry{idSig: "old", appliedTurnState: "turn"}
+
+	adapter.SetTransport(second)
+	require.Equal(t, int32(1), first.closed.Load())
+	require.Zero(t, second.closed.Load())
+	require.Same(t, second, adapter.transport)
+	require.Empty(t, adapter.entries[1].idSig)
+	require.Empty(t, adapter.entries[1].appliedTurnState)
+}
+
 func jsonGetInt(t *testing.T, b []byte, path string) int64 {
 	t.Helper()
 	return gjson.GetBytes(b, path).Int()
