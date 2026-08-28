@@ -10,6 +10,13 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.7] - 2026-08-29
+
+### Fixed
+
+- Synchronized generated OpenAPI clients with the pinned `oapi-codegen` v2.4.1 toolchain so the contract-generation CI check is reproducible.
+- Trimmed the Docker build context to exclude local research, logs, profiling data, and verification artifacts.
+
 ## [v0.0.1-beta.6] - 2026-08-29
 
 ### Added
