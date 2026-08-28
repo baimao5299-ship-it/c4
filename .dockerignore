@@ -3,8 +3,12 @@
 .claude
 .superpowers
 docs
+research
+artifacts
 *.exe
 *.exe~
+*.log
+*.pprof
 server.exe
 config.toml
 web/node_modules
