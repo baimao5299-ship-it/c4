@@ -32,6 +32,10 @@ var DefaultSettings = []Setting{
 	{Key: "service_tier_policy_fast", Type: SettingTypeString, Value: "passthrough",
 		PolicyValues: []string{"passthrough", "strip", "reject"}},
 	{Key: "codex_tls_convergence_enabled", Type: SettingTypeSwitch, Value: "false"},
+	// upstream_proxy_url controls the live outbound route. "inherit" keeps the
+	// startup config value; an empty value selects direct mode. The transport
+	// layer validates and probes a new URL before replacing the active route.
+	{Key: "upstream_proxy_url", Type: SettingTypeString, Value: "inherit"},
 	// 邮件服务（email service）：全部走运行时设置，非 config.toml。
 	{Key: "mail.enabled", Type: SettingTypeSwitch, Value: "false"},
 	{Key: "mail.register_verification", Type: SettingTypeSwitch, Value: "false"},

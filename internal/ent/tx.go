@@ -24,6 +24,8 @@ type Tx struct {
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
 	GroupAssignment *GroupAssignmentClient
+	// GroupUpstream is the client for interacting with the GroupUpstream builders.
+	GroupUpstream *GroupUpstreamClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
 	// PriceEntry is the client for interacting with the PriceEntry builders.
@@ -44,6 +46,8 @@ type Tx struct {
 	Template *TemplateClient
 	// TemplateExt is the client for interacting with the TemplateExt builders.
 	TemplateExt *TemplateExtClient
+	// Upstream is the client for interacting with the Upstream builders.
+	Upstream *UpstreamClient
 	// UsageEntityStat is the client for interacting with the UsageEntityStat builders.
 	UsageEntityStat *UsageEntityStatClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -189,6 +193,7 @@ func (tx *Tx) init() {
 	tx.ErrLog = NewErrLogClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.GroupAssignment = NewGroupAssignmentClient(tx.config)
+	tx.GroupUpstream = NewGroupUpstreamClient(tx.config)
 	tx.Key = NewKeyClient(tx.config)
 	tx.PriceEntry = NewPriceEntryClient(tx.config)
 	tx.PriceVariant = NewPriceVariantClient(tx.config)
@@ -199,6 +204,7 @@ func (tx *Tx) init() {
 	tx.TempBalance = NewTempBalanceClient(tx.config)
 	tx.Template = NewTemplateClient(tx.config)
 	tx.TemplateExt = NewTemplateExtClient(tx.config)
+	tx.Upstream = NewUpstreamClient(tx.config)
 	tx.UsageEntityStat = NewUsageEntityStatClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.UsageStat = NewUsageStatClient(tx.config)

@@ -577,6 +577,96 @@ func TestCloseAbandonsInflightOnTimeout(t *testing.T) {
 	require.Contains(t, string(b), `"level":"warn"`)
 }
 
+// TestFlushLogsReturnsWhenInsertIgnoresCancellation guards the direct flush
+// path as well as Close: a broken persistence driver must not pin flushMu after
+// its caller's context is canceled. The underlying call is intentionally left
+// blocked, matching a process that is already shutting down.
+func TestFlushLogsReturnsWhenInsertIgnoresCancellation(t *testing.T) {
+	ls := &ignoreCtxLogStore{started: make(chan struct{})}
+	r := New(UsageConfig{BatchSize: 10}, ls, nil)
+	r.Record(&domain.UsageLog{RequestID: "flush-cancel", UserID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: time.Now()})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		r.flushLogs(ctx)
+		close(done)
+	}()
+	<-ls.started
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("flushLogs remained blocked after context cancellation")
+	}
+}
+
+type delayedResultLogStore struct {
+	started chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	calls   int
+}
+
+func (m *delayedResultLogStore) InsertBatch(_ context.Context, _ []*domain.UsageLog) error {
+	m.mu.Lock()
+	m.calls++
+	call := m.calls
+	m.mu.Unlock()
+	if call == 1 {
+		close(m.started)
+		<-m.release
+	}
+	return nil
+}
+
+func (m *delayedResultLogStore) callCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls
+}
+
+// TestCanceledFlushDoesNotResubmitUnknownBatch ensures a driver call that
+// outlives cancellation cannot be picked up by the next flush while its commit
+// outcome is still unknown.
+func TestCanceledFlushDoesNotResubmitUnknownBatch(t *testing.T) {
+	ls := &delayedResultLogStore{started: make(chan struct{}), release: make(chan struct{})}
+	r := New(UsageConfig{BatchSize: 10}, ls, nil)
+	r.Record(&domain.UsageLog{RequestID: "unknown-outcome", UserID: 1, Model: "m", Format: domain.FormatOpenAIChat, StatusCode: 200, ErrorType: domain.ErrNone, CreatedAt: time.Now()})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		r.flushLogs(ctx)
+		close(done)
+	}()
+	<-ls.started
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("flushLogs remained blocked after context cancellation")
+	}
+	require.Equal(t, 1, r.Pending(), "unknown batch remains visible for shutdown accounting")
+	require.Zero(t, r.flushLogs(context.Background()), "in-flight batch is skipped by the next flush")
+	require.Equal(t, 1, ls.callCount(), "unknown batch is not submitted twice")
+	close(ls.release)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(500 * time.Millisecond)
+	defer timer.Stop()
+waitForRemoval:
+	for {
+		select {
+		case <-ticker.C:
+			if r.Pending() == 0 {
+				break waitForRemoval
+			}
+		case <-timer.C:
+			t.Fatal("late success did not clear retained batch")
+		}
+	}
+	require.Zero(t, r.Pending(), "late success removes only the retained batch")
+}
+
 // TestRecordDuringFlushNotBlocked flush 在途（DB 阻塞）时 Record 必须立即返回
 // （旧实现 channel 被消费但 pending 换批后仍可能饱和——无界 pending 下永无
 // 阻塞点）。

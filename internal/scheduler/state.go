@@ -33,6 +33,11 @@ type snapshotStatic struct {
 	tpl      *domain.Template
 	gid      int64   // 所属组（权重动作重建路由用；多组账号 = 首个出现组）
 	groupIDs []int64 // 账号所属全部分组（多组账号共享实例的跨组引用集；组级重载时其它组引用替换依据）
+	// upstreamEnabled is the effective availability of an explicit upstream
+	// binding. Unbound accounts remain available; a missing, deleted, or
+	// disabled upstream is kept in the snapshot for observability but skipped
+	// by selection until the next upstream reload.
+	upstreamEnabled bool
 }
 
 type accountSnapshot struct {
@@ -42,7 +47,12 @@ type accountSnapshot struct {
 	static      atomic.Pointer[snapshotStatic]
 	concurrency atomic.Int64
 	errRate     atomic.Uint64 // 定点
-	state       atomic.Pointer[accState]
+	// retry429Streak tracks consecutive 429 results before the asynchronous
+	// rule worker applies the state transition. Keeping it on the account
+	// snapshot makes the fallback backoff deterministic even when several
+	// responses arrive before the worker drains its queue.
+	retry429Streak atomic.Uint32
+	state          atomic.Pointer[accState]
 }
 
 func (a *accountSnapshot) statePtr() *accState {
@@ -120,17 +130,31 @@ func gcdInt(a, b int) int {
 }
 
 type groupSnapshot struct {
-	accounts []*accountSnapshot
-	routes   map[routeKey]*route
+	accounts       []*accountSnapshot
+	routes         map[routeKey]*route
+	routingMode    domain.GroupRoutingMode
+	allowedModels  []string
+	upstreams      []*upstreamSnapshot
+	upstreamRoutes map[routeKey]*upstreamRoute
 }
 
 // snapshotStore 整体换入换出（atomic.Value），重建不阻塞请求路径。
 type snapshotStore struct {
-	groups atomic.Value // map[int64]*groupSnapshot
-	byID   atomic.Value // map[int64]*accountSnapshot
+	groups    atomic.Value // map[int64]*groupSnapshot
+	byID      atomic.Value // map[int64]*accountSnapshot
+	upstreams atomic.Value // map[int64]*upstreamSnapshot
 }
 
 func (s *snapshotStore) store(groups map[int64]*groupSnapshot, byID map[int64]*accountSnapshot) {
+	ups, _ := s.upstreams.Load().(map[int64]*upstreamSnapshot)
+	s.storeWithUpstreams(groups, byID, ups)
+}
+
+func (s *snapshotStore) storeWithUpstreams(groups map[int64]*groupSnapshot, byID map[int64]*accountSnapshot, ups map[int64]*upstreamSnapshot) {
 	s.groups.Store(groups)
 	s.byID.Store(byID)
+	if ups == nil {
+		ups = map[int64]*upstreamSnapshot{}
+	}
+	s.upstreams.Store(ups)
 }

@@ -26,12 +26,14 @@ export function PagePagination({
   page,
   onPageChange,
   onPageSizeChange,
+  pageSizes = PAGE_SIZES,
 }: {
   total: number
   pageSize: number
   page: number // 1-based
   onPageChange: (page: number) => void
   onPageSizeChange: (size: number) => void
+  pageSizes?: readonly number[]
 }) {
   const { t } = useTranslation()
   const [jumpTo, setJumpTo] = useState('')
@@ -55,7 +57,7 @@ export function PagePagination({
           {t('list.pageInfo', { page, totalPages, total })}
         </span>
         <Select
-          items={Object.fromEntries(PAGE_SIZES.map(n => [String(n), String(n)]))}
+          items={Object.fromEntries(pageSizes.map(n => [String(n), String(n)]))}
           value={String(pageSize)}
           onValueChange={v => onPageSizeChange(Number(v))}
         >
@@ -64,7 +66,7 @@ export function PagePagination({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {PAGE_SIZES.map(n => (
+            {pageSizes.map(n => (
               <SelectItem key={n} value={String(n)} label={String(n)}>{n}</SelectItem>
             ))}
           </SelectContent>

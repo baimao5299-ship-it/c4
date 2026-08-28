@@ -87,8 +87,8 @@ func (s UserStatus) Valid() bool {
 // adminAuth 不再单独信任 claims.Role；token_version 为 JWT 撤销比对源，
 // spec 2026-08-25-jwt-password-revocation）。
 type UserSnapshot struct {
-	Status        UserStatus
-	Role          Role
+	Status       UserStatus
+	Role         Role
 	TokenVersion int64 // 签发时 Claims.Ver 与此不等 → 401（改密撤销）
 }
 
@@ -122,6 +122,34 @@ func (v GroupVisibility) Valid() bool {
 		return true
 	}
 	return false
+}
+
+// GroupRoutingMode controls which kind of target a group scheduler selects.
+// Accounts is the legacy mode and remains the default for existing groups;
+// upstreams selects members from the group's upstream membership relation.
+type GroupRoutingMode string
+
+const (
+	GroupRoutingModeAccounts  GroupRoutingMode = "accounts"
+	GroupRoutingModeUpstreams GroupRoutingMode = "upstreams"
+)
+
+func (m GroupRoutingMode) Valid() bool {
+	switch m {
+	case GroupRoutingModeAccounts, GroupRoutingModeUpstreams:
+		return true
+	default:
+		return false
+	}
+}
+
+// EffectiveRoutingMode preserves the account-pool behavior for legacy rows
+// that predate routing_mode or were assembled without a mode in memory.
+func (g *Group) EffectiveRoutingMode() GroupRoutingMode {
+	if g == nil || g.RoutingMode == "" {
+		return GroupRoutingModeAccounts
+	}
+	return g.RoutingMode
 }
 
 // SettingType settings 值类型。
@@ -239,7 +267,15 @@ type Account struct {
 	// 裁决 2026-08-14）：nil = 继承模板 base_url；非空 = 覆盖模板值（api_key/
 	// responses-special 静态透传的兜底——模板留空则账号级可补）。DB 恒
 	// nil|非空两种形态（create 路径空串归一 nil、批量 "" 落 NULL）。
-	BaseURL        *string
+	BaseURL *string
+	// UpstreamID is an explicit operator binding. A bound account keeps its own
+	// credential, while the scheduler resolves its endpoint from this upstream.
+	// nil preserves the existing account/template endpoint behavior.
+	UpstreamID *int64
+	// Upstream is populated by the scheduler loader when the optional binding is
+	// eager-loaded. It is intentionally absent on ordinary account CRUD reads;
+	// the hot path uses it only to resolve the bound endpoint and enabled state.
+	Upstream       *Upstream
 	UpstreamKey    string
 	Status         AccountStatus
 	CooldownUntil  *time.Time
@@ -267,6 +303,121 @@ type Account struct {
 	// 同款快照合并先例，sdk-wiring T4 P3-4 定死路线；T2 起 codex 路由按 Ext
 	// 派生 AccountCredential）。其余路径（管理面账号 CRUD 等）无 ext 边 → nil。
 	Ext *AccountExt
+}
+
+// Upstream is an operator-facing inventory entry for a relay/provider endpoint.
+// It is intentionally separate from Account: accounts remain the routing source
+// of truth, while this record provides cost, balance and probe visibility without
+// changing the hot path. UpstreamKey is write-only at the API boundary.
+type Upstream struct {
+	ID          int64
+	Name        string
+	BaseURL     string
+	UpstreamKey *string
+	// Models is the last successfully read /v1/models catalogue. A nil or
+	// unchecked catalogue is intentionally treated as unknown by upstream-pool
+	// routing; it must not silently mean "all models".
+	Models          []string
+	ModelsCheckedAt *time.Time
+	ModelsError     *string
+	// ClearUpstreamKey is a transient update instruction. It allows an operator
+	// to move an endpoint without replaying a stored key to the new host. It is
+	// never persisted or exposed by the management API.
+	ClearUpstreamKey  bool
+	ExpectedUpdatedAt *time.Time
+	// ResetTelemetry is a transient update instruction. It is never persisted:
+	// changing the endpoint or credential makes prior health and balance data
+	// belong to a different connection, so the repository clears that data in
+	// the same update that saves the new configuration.
+	ResetTelemetry bool
+	MultiplierBP   int
+	Enabled        bool
+	Note           *string
+	// Balance configuration opts an upstream into the generic JSON reader. It is
+	// only queried when an operator explicitly refreshes the balance.
+	BalanceEndpoint     string
+	BalanceMethod       string
+	BalanceAuth         string
+	BalancePath         string
+	BalanceCurrencyPath string
+	BalanceAmount       *string
+	BalanceCurrency     *string
+	BalanceStatus       string
+	BalanceCheckedAt    *time.Time
+	RequestCount        int64
+	SuccessCount        int64
+	FailureCount        int64
+	LatencyTotalMS      int64
+	LatencyMaxMS        int64
+	LastCheckedAt       *time.Time
+	LastSuccessAt       *time.Time
+	LastFailureAt       *time.Time
+	LastError           *string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DeletedAt           *time.Time
+}
+
+// GroupUpstream is the per-group routing policy and runtime state for an
+// upstream.  Keeping these fields on the relation lets the same upstream be
+// assigned to multiple groups with independent weights, limits and cooldowns.
+type GroupUpstream struct {
+	ID             int64
+	GroupID        int64
+	UpstreamID     int64
+	Upstream       *Upstream
+	Weight         int
+	Priority       int
+	MaxConcurrency int
+	Enabled        bool
+	CooldownUntil  *time.Time
+	FailureStreak  int
+	LastError      *string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+const (
+	UpstreamBalanceFresh        = "fresh"
+	UpstreamBalanceStale        = "stale"
+	UpstreamBalanceUnavailable  = "unavailable"
+	UpstreamBalanceUnconfigured = "unconfigured"
+)
+
+// Stability returns a bounded score/rating derived only from completed probes.
+// Unknown is explicit when no probe has run; a missing check is never treated as
+// a healthy zero-error endpoint.
+func (u *Upstream) Stability() (score int, rating string, averageLatencyMS int64) {
+	if u == nil || u.RequestCount <= 0 {
+		return 0, "unknown", 0
+	}
+	if u.LatencyTotalMS > 0 {
+		averageLatencyMS = u.LatencyTotalMS / u.RequestCount
+	}
+	rate := float64(u.SuccessCount) / float64(u.RequestCount)
+	score = int(rate * 100)
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	// One or two manual probes demonstrate reachability only. Do not present
+	// that as a stability grade until a small sample exists.
+	if u.RequestCount < 3 {
+		return score, "unknown", averageLatencyMS
+	}
+	switch {
+	case score >= 99 && averageLatencyMS <= 800:
+		rating = "excellent"
+	case score >= 97 && averageLatencyMS <= 1500:
+		rating = "good"
+	case score >= 90 && averageLatencyMS <= 3000:
+		rating = "fair"
+	default:
+		rating = "poor"
+	}
+	return score, rating, averageLatencyMS
 }
 
 // TemplateExt 模板类型化扩展配置（template_ext 子表，1:1）：credential_type
@@ -315,7 +466,8 @@ type AccountExt struct {
 }
 
 // CodexOAuthImportItem 批量导入 codex-oauth 单行（Task B——组合幂等键
-// codex_email + codex_account_id；token+refresh 成对必填；expires_at 可选
+// codex_email + codex_account_id；access token 必填、refresh token 可选（兼容
+// Sub2 accessToken-only 导入）；expires_at 可选
 // 原始 RFC3339 字符串（service 逐行解析——格式错误 → 行级 failed 非整批
 // 400；nil = 过期未知 → 401 自愈）；max_concurrency/weight 配置面——nil =
 // 缺省 25/100（导入面裁决覆盖账号表默认 8））。
@@ -429,32 +581,45 @@ type Group struct {
 	ID         int64
 	Name       string
 	Visibility GroupVisibility
+	// RoutingMode selects the scheduler source. Empty values are treated as the
+	// legacy accounts mode by read paths; writes should persist an explicit mode.
+	RoutingMode GroupRoutingMode
 	// PriceMultiplier 万分数（T3.5 价格倍率）：组默认 10000 = ×1；0 = 免费。
 	// 写路径语义：Create 缺省（nil，service 归一为 10000）恒写入；Update 恒写入
 	// （PUT 全量替换）。API 边界（handler/convert.go）与正常值 float64 换算
 	// （1.5 ↔ 15000）。
 	PriceMultiplier int
-	// ProtocolConverts 分组级协议转换方向集合（只补差，W5 消费；多方向并存按
+	// ProtocolConverts 分组级协议转换方向集合（只补差，W5 消费；auto 表示自动
+	// 协商，优先原生协议后按固定顺序尝试转换；多方向并存按
 	// 客户端格式命中——chat 请求走 chat_to_*、anthropic 请求走 mess_to_resp、
 	// resp 请求走 resp_to_mess）：空集合 = off = 不转换（off 不进数组）。
 	// 写路径语义：Create 缺省（handler 归一为空数组）恒写入；Update 恒写入
 	// （service 校验集合——非法方向/重复方向/同客户端格式多方向 400；显式
 	// 空数组 = 清空）。
 	ProtocolConverts []ProtocolConvert
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
+	// AllowedModels is the optional group-level model allowlist used by upstream
+	// routing. An empty list means the intersection of each member's capabilities.
+	AllowedModels []string
+	// UpstreamMembers is populated by an upstream-pool snapshot loader. Ordinary
+	// group CRUD reads may leave it nil.
+	UpstreamMembers []*GroupUpstream
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
 }
 
 // ProtocolConvert 分组级协议转换方向枚举（补差语义：模板已支持客户端协议 →
 // 直接转发零转换；转换仅在协议不匹配时发生）。方向 = 客户端协议 → 模板协议；
-// off（不转换）不在枚举内——空集合表达（数组元素 ∈ 4 方向；集合校验在
+// auto 为自动协商模式；off（不转换）不在枚举内——空集合表达（数组元素 ∈ 4 方向；集合校验在
 // service 层——非法方向/重复/同客户端格式多方向 400）。
 type ProtocolConvert string
 
 const (
 	// ProtocolConvertOff 不转换（空数组语义；不进方向数组，service 归一剔除）。
 	ProtocolConvertOff ProtocolConvert = "off"
+	// ProtocolConvertAuto 自动协商：优先使用客户端与上游的原生协议，
+	// 原生协议没有可用路由时按固定优先级选择可转换协议。
+	ProtocolConvertAuto ProtocolConvert = "auto"
 	// ProtocolConvertChatToResp 客户端 chat → 模板 resp 协议。
 	ProtocolConvertChatToResp ProtocolConvert = "chat_to_resp"
 	// ProtocolConvertMessToResp 客户端 messages（anthropic）→ 模板 resp 协议。
@@ -467,7 +632,7 @@ const (
 
 func (p ProtocolConvert) Valid() bool {
 	switch p {
-	case ProtocolConvertChatToResp, ProtocolConvertMessToResp,
+	case ProtocolConvertAuto, ProtocolConvertChatToResp, ProtocolConvertMessToResp,
 		ProtocolConvertRespToMess, ProtocolConvertChatToMess:
 		return true
 	}

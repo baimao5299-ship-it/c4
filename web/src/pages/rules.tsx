@@ -214,7 +214,7 @@ interface TemplatePreset {
   then: ThenForm
 }
 const TEMPLATES: TemplatePreset[] = [
-  { id: 'cooldown429', when: { kind: '429' }, then: { status: '429', cooldown: '30s', weight: '', responseCode: '', customMessage: '' } },
+  { id: 'cooldown429', when: { kind: '429' }, then: { status: '429', cooldown: '2s', weight: '', responseCode: '', customMessage: '' } },
   { id: '5xxBackoff', when: { kind: '5xx' }, then: { status: 'unhealthy', cooldown: '5s', weight: '', responseCode: '', customMessage: '' } },
   { id: 'escalate', when: { kind: '429', window_seconds: 60, count_429_ge: 3 }, then: { status: '429', cooldown: '5m', weight: '', responseCode: '', customMessage: '' } },
   { id: 'recover', when: { kind: 'ok' }, then: { status: 'active', cooldown: '', weight: '', responseCode: '', customMessage: '' } },

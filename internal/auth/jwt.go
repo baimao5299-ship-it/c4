@@ -70,8 +70,10 @@ func (i *Issuer) Issue(userID int64, email, role string, ver int64) (string, err
 // 均返回错误（区分过期以便调用方选择文案）。
 func (i *Issuer) Verify(token string) (*Claims, error) {
 	parsed, err := jwt.ParseWithClaims(token, &Claims{}, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken // 算法替换防护（HS 族以外的算法拒绝）
+		// 签发端固定 HS256；验证端也必须固定同一算法，不能仅按 HMAC
+		// 接受 HS384/HS512，避免算法降级或配置漂移扩大信任边界。
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, ErrInvalidToken
 		}
 		return i.secret, nil
 	})

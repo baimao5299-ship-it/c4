@@ -6,10 +6,10 @@ import type { CredentialKind } from '@/lib/codex-import/normalize'
 import type { SourceId } from '@/lib/codex-import/adapters'
 
 const sources: { id: SourceId; labelKey: string; ready: boolean }[] = [
-  { id: 'cpa', labelKey: 'cpa', ready: true }, { id: 'c3api', labelKey: 'c3api', ready: false },
-  { id: 'sub2api', labelKey: 'sub2api', ready: true }, { id: 'cockpit', labelKey: 'cockpit', ready: false },
-  { id: '9router', labelKey: '9router', ready: false }, { id: 'codex', labelKey: 'codex', ready: false },
-  { id: 'axonhub', labelKey: 'axonhub', ready: false }, { id: 'codex-manager', labelKey: 'codex-manager', ready: false },
+  { id: 'cpa', labelKey: 'cpa', ready: true }, { id: 'c3api', labelKey: 'c3api', ready: true },
+  { id: 'sub2api', labelKey: 'sub2api', ready: true }, { id: 'cockpit', labelKey: 'cockpit', ready: true },
+  { id: '9router', labelKey: '9router', ready: true }, { id: 'codex', labelKey: 'codex', ready: true },
+  { id: 'axonhub', labelKey: 'axonhub', ready: true }, { id: 'codex-manager', labelKey: 'codex-manager', ready: true },
 ]
 
 export function SourceSelect({ value, kind, onChange }: { value: SourceId; kind: CredentialKind; onChange: (id: SourceId) => void }) {

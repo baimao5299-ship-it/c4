@@ -131,7 +131,8 @@ func ratioPass(numerator, total int, totalGE *int, ratio float64) bool {
 }
 
 // Apply 解析 then 动作：cooldownUntil = OccurredAt + 解析后的 cooldown；
-// cooldown 未配但事件带 ResetAt 时用 ResetAt（M2 残留：resetAt 语义保留）。
+// 429 事件若带有 provider ResetAt，则取本地规则和 provider 要求中的较晚者，
+// 避免固定规则把账号过早放回轮转。非 429 保留原有 ResetAt 兜底语义。
 // Status 为 nil 返回 nil 状态 = 只改权重（或只改冷却）。
 func Apply(t domain.RuleThen, ev Event) (*domain.AccountStatus, *time.Time, *int) {
 	var cd *time.Time
@@ -140,8 +141,12 @@ func Apply(t domain.RuleThen, ev Event) (*domain.AccountStatus, *time.Time, *int
 			c := ev.OccurredAt.Add(d)
 			cd = &c
 		}
-	} else if ev.ResetAt != nil {
-		cd = ev.ResetAt
+	}
+	if ev.ResetAt != nil && (t.Cooldown == nil || (ev.Kind == Kind429 && cd != nil && ev.ResetAt.After(*cd))) {
+		if cd == nil || ev.ResetAt.After(*cd) {
+			v := *ev.ResetAt
+			cd = &v
+		}
 	}
 	return t.Status, cd, t.Weight
 }

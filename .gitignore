@@ -5,6 +5,12 @@ bin/
 *.log
 tools/*/tmp/
 
+# Local verification output (binaries, screenshots, logs and reports).
+artifacts/
+
+# Local browser screenshots used for visual QA; they can contain test identities.
+research/visual-qa-upstreams/
+
 # 部署运行时产物（compose 根目录布局：根目录 .env 自动加载；PG 数据落 deploy/data/pg）
 .env
 .env.*

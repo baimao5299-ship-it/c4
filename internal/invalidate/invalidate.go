@@ -241,6 +241,17 @@ func (d *Debouncer) Accounts(gids []int64, keyChanged bool) {
 	}
 }
 
+// Groups invalidates routing snapshots for groups whose routing mode, model
+// allowlist, or upstream membership changed. It is kept separate from the
+// legacy Invalidator interface so older integrations can continue using the
+// account/template callbacks while production gets immediate group reloads.
+func (d *Debouncer) Groups(gids []int64) {
+	if len(gids) == 0 {
+		return
+	}
+	d.mark(0, gids)
+}
+
 // Name 满足 worker.Worker 契约。
 func (d *Debouncer) Name() string { return "invalidate" }
 

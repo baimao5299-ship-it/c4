@@ -1,8 +1,8 @@
 <div align="center">
 
-# ⚡ c3api
+# ⚡ C4
 
-**轻量 AI 网关**——一个入口统一接入 OpenAI Responses API、Anthropic Messages API 与 OpenAI Chat Completions API，内置管理台、用量统计与计费。
+**C4 轻量 AI 网关**——一个入口统一接入 OpenAI Responses API、Anthropic Messages API 与 OpenAI Chat Completions API，内置管理台、用量统计与计费。
 
 [English](./README.md) | [中文](./README_zh.md)
 
@@ -17,11 +17,13 @@
 
 </div>
 
-本项目基于原版 c3api，主要增加了这些实用功能：
+C4 基于 c3api，主要增加了这些实用功能：
 
 - 兼容 Sub2API 的账号导入，支持多文件和 ZIP。
 - 重复账号预检测、导入预览和详细失败原因。
 - 可选的 Sub2 TLS 指纹与收敛设置。
+- 故障切换按请求排除已失败账号，避免规则异步期间重复发送。
+- 可扩展的供应商余额适配器，明确区分未配置、过期和真实余额。
 
 网关核心架构仍沿用原版项目。
 
@@ -29,7 +31,11 @@
 
 ## 状态：Beta
 
-c3api 处于 **beta**。当前 API 已可使用，但 beta 版本之间仍可能调整表结构和配置格式。
+C4 处于 **beta**。当前 API 已可使用，但 beta 版本之间仍可能调整表结构和配置格式。
+
+### 兼容说明
+
+产品名称为 **C4**。为兼容已有部署，Go 模块路径（`github.com/is7qin/c3api`）、可执行文件/容器名称、API 路径以及 `C3API_*` 环境变量保持不变。
 
 - **暂不提供自动迁移**——beta 版本之间不保证数据库表结构和配置兼容。
 - **升级按全新部署处理**——先创建新数据库并重新核对配置，再切换流量。
@@ -39,7 +45,7 @@ c3api 处于 **beta**。当前 API 已可使用，但 beta 版本之间仍可能
 
 | | |
 |---|---|
-| **六格式一网关** | OpenAI Responses API（REST + WebSocket）、Anthropic Messages API、OpenAI Chat Completions API、OpenAI Images API、Codex 网页搜索与 OpenAI 兼容模型列表——各自独立的上游编排与协议转换 |
+| **六格式一网关** | OpenAI Responses API（REST + WebSocket）、Anthropic Messages API、OpenAI Chat Completions API、OpenAI Images API、Codex 网页搜索与 OpenAI 兼容模型列表——各自独立的上游编排，分组支持自动协议协商 |
 | **模板与账号管理** | 模型模板、上游账号、分组、凭证，以及按模板的格式/模型白名单 |
 | **管理台** | React 前端内嵌进二进制（`/app`），另有 OpenAPI 契约定义的管理 API（`/api/admin`） |
 | **计费与用量** | 用户余额预检扣费、FEFO 临时额度、litellm 价格同步的按模型计费、按日分区的用量日志与统计——计费默认开启（`config.example.toml` billing.enabled=true） |
@@ -147,16 +153,19 @@ cd web && pnpm install && pnpm run dev
 | `C3API_DB_DSN` | PostgreSQL 连接串 |
 | `C3API_REDIS_ADDR` | Redis 地址（必填；如 `127.0.0.1:6379`——实例发现、短时效验证码等易失状态） |
 
-完整配置项（server / log / admin / auth / db / redis / proxy / upstream / limit / scheduler / usage / billing）见 `config.example.toml`。
+完整配置项（server / log / admin / auth / db / redis / proxy / upstream / limit / scheduler / usage / billing）见 `config.example.toml`。启动代理通过 `upstream.proxy_url` 指定：留空直连，支持 `http://`、`https://` 和 `socks5h://`；不会读取系统 `HTTP_PROXY`，代理失败也不会偷偷改走直连。运行中可在管理台“设置 → 网络代理”修改 `upstream_proxy_url`：`inherit` 沿用启动值，`direct` 直连，或填写新端口；系统先检查新链路，成功后无缝切换，在途请求不受影响。容器使用宿主机代理时填写 `http://host.docker.internal:端口`。
+
+- **中转余额查询**：在 `billing.balance_adapters."模板ID"` 下配置 JSON 余额接口（`provider`、`endpoint`、`auth`、`balance_path`）。账号页按需读取并缓存；未配置、暂不可用、使用旧结果和真实余额分开显示，查询失败不会显示成 0。点击“刷新余额”会对当前账号强制清缓存后查询上游，普通读取仍使用缓存。
+- **中转站池导入**：账号页可粘贴多行 `地址 | Key | 名称 | 权重 | 最大并发` 或 JSON/JSONL，预览会拦截重复、无效和超限行，不会静默跳过。
 
 - **beta 升级按全新部署处理**——表结构与配置可能随版本调整，升级前请新建实例并重新核对配置（见上方"状态：Beta"说明）。
 - **纯 env 部署**（如 K8s）：传 `-config ""` 完全跳过配置文件——flag 默认 config.toml，无文件即启动失败。
-- **配置仅启动时读取**，变更需滚动重启（无热更新）。
+- **大部分配置仅启动时读取**；上游代理可通过管理台运行时切换，无需重启。
 - **非法配置启动即报错**（含字段名）：duration/间隔 ≤0 或 <1ms、未知键（拼写错误/已移除旧键）、必填密钥缺失、占位符（change-me、dev-admin-token 等）一律拒绝。
 
 ## 部署
 
-- `compose.yml` — 生产编排：`db`（postgres:18-alpine，数据挂载在 `deploy/data/pg`）+ `redis`（redis:8-alpine，易失状态（协调 + 短时效验证码）——不持久化）+ `app`（单容器，非 root、配置只读挂载自 `deploy/config.toml`、健康检查）。
+- `compose.yml` — 生产编排：`db`（postgres:18-alpine，数据挂载在 `deploy/data/pg`）+ `redis`（redis:8-alpine，易失状态（协调 + 短时效验证码）——不持久化）+ `app`（单容器，非 root、配置只读挂载自 `deploy/config.local.toml`、健康检查）。`deploy/config.toml` 仍作为需要显式选择时的生产配置模板。
 - `Dockerfile` — 三阶段构建（node → go → alpine），产出内嵌 UI 的静态单二进制。
 - **双必需依赖**：PostgreSQL 18（全部持久状态，唯一真相源）+ Redis 8（可丢的易失状态——实例发现心跳与短时效邮箱验证码；永不作为缓存层）。二者均为启动强制项；勿配 `allkeys-lru` 等淘汰策略——验证码被淘汰仅致用户重发，无害但应避免。
 

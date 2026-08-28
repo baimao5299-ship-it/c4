@@ -12,14 +12,23 @@ import (
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
 	"github.com/is7qin/c3api/internal/ent/account"
+	"github.com/is7qin/c3api/internal/ent/group"
 )
 
-type AccountRepo struct{ client *ent.Client }
+type AccountRepo struct {
+	client   *ent.Client
+	rowLocks bool
+}
 
 func (r *AccountRepo) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
-	row, err := r.client.Account.Create().
+	q := r.client.Account.Create()
+	if a.Status != "" {
+		q = q.SetStatus(account.Status(a.Status))
+	}
+	row, err := q.
 		SetName(a.Name).SetTemplateID(a.TemplateID).
 		SetNillableBaseURL(a.BaseURL). // 账号级 base_url（nil = 继承模板）
+		SetNillableUpstreamID(a.UpstreamID).
 		SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
 		Save(ctx)
@@ -95,7 +104,7 @@ func toAccountStatusList(list []string) ([]account.Status, error) {
 }
 
 func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account, cooldownUntil *time.Time) (*domain.Account, error) {
-	u := r.client.Account.UpdateOneID(a.ID).
+	u := r.client.Account.UpdateOneID(a.ID).Where(account.DeletedAtIsNil()).
 		SetName(a.Name).SetTemplateID(a.TemplateID).
 		SetUpstreamKey(a.UpstreamKey).
 		SetWeight(a.Weight).SetMaxConcurrency(a.MaxConcurrency).
@@ -108,6 +117,13 @@ func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account, cool
 	} else {
 		u = u.ClearBaseURL()
 	}
+	// Full update semantics mirror base_url: nil means the account is
+	// unbound, while a non-nil id points at the managed upstream inventory row.
+	if a.UpstreamID != nil {
+		u = u.SetUpstreamID(*a.UpstreamID)
+	} else {
+		u = u.ClearUpstreamID()
+	}
 	if a.Status == domain.StatusActive {
 		// T5 失效恢复（管理面，P2-2 定死方案 b）：status→active 隐含清
 		// failed_at + last_error（恢复动作 = 状态切换，不做 openapi 字段扩展；
@@ -119,7 +135,7 @@ func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account, cool
 	}
 	row, err := u.Save(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errMissingID(err, a.ID)
 	}
 	return toDomainAccount(row), nil
 }
@@ -128,7 +144,7 @@ func (r *AccountRepo) UpdateAccount(ctx context.Context, a *domain.Account, cool
 // deleted_at IS NULL 过滤，GET 单个仍可查已删项）。bulk Update（无 re-SELECT）
 // 单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
-	n, err := r.client.Account.Update().Where(account.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	n, err := r.client.Account.Update().Where(account.IDEQ(id), account.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 	if err != nil {
 		return err
 	}
@@ -142,16 +158,42 @@ func (r *AccountRepo) DeleteAccount(ctx context.Context, id int64) error {
 // 空数组 = 清空）。组 id 先做存在性校验（缺失 → ErrNotFound 含 id）；
 // 账号缺 id → ErrNotFound（errMissingID）。
 func (r *AccountRepo) SetAccountGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	// Preserve the existing fast validation query and error shape. The
+	// transaction below repeats the check through row locks when enabled, which
+	// closes the delete/attach race without changing lightweight integrations.
 	if len(groupIDs) > 0 {
 		if err := checkGroupExist(ctx, r.client.Group.Query, groupIDs); err != nil {
 			return err
 		}
 	}
-	_, err := r.client.Account.UpdateOneID(accountID).
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := lockLiveGroups(ctx, r.rowLocks, tx.Group.Query, groupIDs); err != nil {
+		return err
+	}
+	if err := lockLiveAccounts(ctx, r.rowLocks, tx.Account.Query, []int64{accountID}); err != nil {
+		return err
+	}
+	_, err = tx.Account.UpdateOneID(accountID).Where(account.DeletedAtIsNil()).
 		ClearGroups().
 		AddGroupIDs(groupIDs...).
 		Save(ctx)
-	return errMissingID(err, accountID)
+	if err != nil {
+		return errMissingID(err, accountID)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // GetAccountGroups 读取账号的全部分组 id（编辑回显专用端点数据源；
@@ -160,8 +202,9 @@ func (r *AccountRepo) SetAccountGroups(ctx context.Context, accountID int64, gro
 // 本方法对不存在账号返回空集而非错误。
 func (r *AccountRepo) GetAccountGroups(ctx context.Context, accountID int64) ([]int64, error) {
 	return r.client.Account.Query().
-		Where(account.ID(accountID)).
+		Where(account.ID(accountID), account.DeletedAtIsNil()).
 		QueryGroups().
+		Where(group.DeletedAtIsNil()).
 		IDs(ctx)
 }
 
@@ -171,7 +214,10 @@ func (r *AccountRepo) GetAccountGroups(ctx context.Context, accountID int64) ([]
 // 同处扩展 failed_at 一并清除；调度器在账号失效后快照为 disabled，规则
 // apply/MarkResult 防复活守卫拦截 active 回写，此处清除不会误伤在途失效）。
 func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error {
-	u := r.client.Account.UpdateOneID(id).SetStatus(account.Status(status))
+	// Scheduler writebacks can race a management delete. A soft-deleted account
+	// must remain an audit snapshot; ignore that stale runtime update rather than
+	// mutating its status/cooldown after it left the routing pool.
+	u := r.client.Account.UpdateOneID(id).Where(account.DeletedAtIsNil()).SetStatus(account.Status(status))
 	if cooldownUntil != nil {
 		u = u.SetCooldownUntil(*cooldownUntil)
 	} else {
@@ -189,6 +235,12 @@ func (r *AccountRepo) UpdateAccountStatus(ctx context.Context, id int64, status 
 		u = u.SetWeight(*weight)
 	}
 	_, err := u.Save(ctx)
+	// UpdateOneID reports a not-found error when the row is missing or already
+	// soft-deleted. Runtime writeback is intentionally best-effort, so suppress
+	// that stale result while preserving real database errors.
+	if ent.IsNotFound(err) {
+		return nil
+	}
 	return err
 }
 

@@ -34,6 +34,7 @@ const GROUPS: { id: string; keys: string[] }[] = [
   { id: 'pricingSync', keys: ['price_source_url', 'price_sync_cron'] },
   { id: 'tierPolicy', keys: ['service_tier_policy_priority', 'service_tier_policy_flex', 'service_tier_policy_fast'] },
   { id: 'codex', keys: ['codex_tls_convergence_enabled'] },
+  { id: 'network', keys: ['upstream_proxy_url'] },
   { id: 'mail', keys: ['mail.enabled', 'mail.register_verification', 'mail.smtp_host', 'mail.smtp_port', 'mail.smtp_username', 'mail.smtp_password', 'mail.from_address', 'mail.tls'] },
 ]
 const GROUPED_KEYS = new Set(GROUPS.flatMap(g => g.keys))

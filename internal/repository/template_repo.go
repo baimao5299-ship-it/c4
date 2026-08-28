@@ -16,7 +16,10 @@ import (
 	"github.com/is7qin/c3api/internal/ent/template"
 )
 
-type TemplateRepo struct{ client *ent.Client }
+type TemplateRepo struct {
+	client   *ent.Client
+	rowLocks bool
+}
 
 func (r *TemplateRepo) CreateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
 	row, err := r.client.Template.Create().
@@ -92,7 +95,7 @@ func (r *TemplateRepo) ListTemplates(ctx context.Context, q ListQuery) ([]*domai
 }
 
 func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (*domain.Template, error) {
-	row, err := r.client.Template.UpdateOneID(t.ID).
+	row, err := r.client.Template.UpdateOneID(t.ID).Where(template.DeletedAtIsNil()).
 		SetName(t.Name).SetBaseURL(t.BaseURL).
 		// 全字段 Set（含 credential_type）：空串兜底在 service 层（M-1）
 		SetCredentialType(string(t.CredentialType)).
@@ -102,6 +105,9 @@ func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (
 		SetModelMapping(t.ModelMapping).
 		Save(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: id=%d missing", ErrNotFound, t.ID)
+		}
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: name=%q", ErrConflict, t.Name)
 		}
@@ -114,7 +120,7 @@ func (r *TemplateRepo) UpdateTemplate(ctx context.Context, t *domain.Template) (
 // deleted_at IS NULL 过滤，GET 单个仍可查已删项）。bulk Update（无 re-SELECT）
 // 单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *TemplateRepo) DeleteTemplate(ctx context.Context, id int64) error {
-	n, err := r.client.Template.Update().Where(template.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	n, err := r.client.Template.Update().Where(template.IDEQ(id), template.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 	if err != nil {
 		return err
 	}

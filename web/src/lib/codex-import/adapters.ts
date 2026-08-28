@@ -14,11 +14,33 @@ const cpa: ImportAdapter = { id: 'cpa', credentialKinds: supported, parse: (text
   if (parsed.error) return { rows: [], parseError: parsed.error }
   return { rows: markDuplicateRows(parsed.rows.map((raw, index) => normalizeRow(raw, kind, index))) }
 } }
-const stub = (id: SourceId): ImportAdapter => ({ id, credentialKinds: supported, parse: () => ({ rows: [], parseError: 'adapterComingSoon' }) })
 const sub2api: ImportAdapter = { id: 'sub2api', credentialKinds: supported, parse: (text, kind) => {
   const parsed = parseSub2API(text, kind)
   return { ...parsed, rows: markDuplicateRows(parsed.rows) }
 } }
-export const adapters: Record<SourceId, ImportAdapter> = { cpa, c3api: stub('c3api'), sub2api, cockpit: stub('cockpit'), '9router': stub('9router'), codex: stub('codex'), axonhub: stub('axonhub'), 'codex-manager': stub('codex-manager') }
+
+// These tools export the same JSON/JSONL credential shapes as Sub2 (flat rows,
+// nested credentials/tokens, or an accounts/items/results wrapper). Reusing the
+// hardened Sub2 parser keeps aliases and validation in one place while still
+// requiring the operator to choose the destination credential type explicitly.
+const compatible = (id: SourceId): ImportAdapter => ({
+  id,
+  credentialKinds: supported,
+  parse: (text, kind) => {
+    const parsed = parseSub2API(text, kind)
+    return { ...parsed, rows: markDuplicateRows(parsed.rows) }
+  },
+})
+
+export const adapters: Record<SourceId, ImportAdapter> = {
+  cpa,
+  c3api: compatible('c3api'),
+  sub2api,
+  cockpit: compatible('cockpit'),
+  '9router': compatible('9router'),
+  codex: compatible('codex'),
+  axonhub: compatible('axonhub'),
+  'codex-manager': compatible('codex-manager'),
+}
 export function getAdapter(id: SourceId) { return adapters[id] }
 export type ImportItem = components['schemas']['CodexOAuthImportItem'] | components['schemas']['CodexPATImportItem']

@@ -18,6 +18,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/priceentry"
 	"github.com/is7qin/c3api/internal/ent/pricevariant"
@@ -28,6 +29,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/template"
 	"github.com/is7qin/c3api/internal/ent/templateext"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 	"github.com/is7qin/c3api/internal/ent/usageentitystat"
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
@@ -98,6 +100,7 @@ func checkColumn(t, c string) error {
 			errlog.Table:          errlog.ValidColumn,
 			group.Table:           group.ValidColumn,
 			groupassignment.Table: groupassignment.ValidColumn,
+			groupupstream.Table:   groupupstream.ValidColumn,
 			key.Table:             key.ValidColumn,
 			priceentry.Table:      priceentry.ValidColumn,
 			pricevariant.Table:    pricevariant.ValidColumn,
@@ -108,6 +111,7 @@ func checkColumn(t, c string) error {
 			tempbalance.Table:     tempbalance.ValidColumn,
 			template.Table:        template.ValidColumn,
 			templateext.Table:     templateext.ValidColumn,
+			upstream.Table:        upstream.ValidColumn,
 			usageentitystat.Table: usageentitystat.ValidColumn,
 			usagelog.Table:        usagelog.ValidColumn,
 			usagestat.Table:       usagestat.ValidColumn,

@@ -51,7 +51,8 @@ func TestFactoryByTMergePreservesSiblingFields(t *testing.T) {
 	require.NotNil(t, c2)
 
 	snap := f.cc.Load()
-	tc := snap.byT[tpl.ID]
+	key := clientKey{templateID: tpl.ID, baseURL: tpl.BaseURL}
+	tc := snap.byT[key]
 	require.NotNil(t, tc)
 	require.NotNil(t, tc.chat, "responses 构建不得抹掉已建的 chat")
 	require.NotNil(t, tc.responses)
@@ -60,7 +61,7 @@ func TestFactoryByTMergePreservesSiblingFields(t *testing.T) {
 	require.NotNil(t, c3)
 
 	snap = f.cc.Load()
-	tc = snap.byT[tpl.ID]
+	tc = snap.byT[key]
 	require.NotNil(t, tc.chat)
 	require.NotNil(t, tc.responses)
 	require.NotNil(t, tc.anthropic)
@@ -68,6 +69,38 @@ func TestFactoryByTMergePreservesSiblingFields(t *testing.T) {
 	// 稳定命中：再取同指针
 	require.Same(t, c1, f.chat(tpl))
 	require.Same(t, c3, f.anthropic(tpl))
+}
+
+func TestFactoryClientCacheSeparatesBaseURLs(t *testing.T) {
+	f := NewFactory(&http.Client{}, Config{})
+	first := &domain.Template{ID: 7, BaseURL: "https://relay-one.example.com"}
+	second := &domain.Template{ID: 7, BaseURL: "https://relay-two.example.com"}
+
+	chatOne := f.chat(first)
+	chatTwo := f.chat(second)
+	require.NotSame(t, chatOne, chatTwo, "same template on two upstreams must not share an SDK client")
+	require.Same(t, chatOne, f.chat(first))
+	require.Same(t, chatTwo, f.chat(second))
+
+	responsesOne := f.responses(first)
+	responsesTwo := f.responses(second)
+	require.NotSame(t, responsesOne, responsesTwo)
+	anthropicOne := f.anthropic(first)
+	anthropicTwo := f.anthropic(second)
+	require.NotSame(t, anthropicOne, anthropicTwo)
+
+	snap := f.cc.Load()
+	require.Len(t, snap.byT, 2, "each endpoint keeps an independent three-format client set")
+	for _, key := range []clientKey{
+		{templateID: first.ID, baseURL: first.BaseURL},
+		{templateID: second.ID, baseURL: second.BaseURL},
+	} {
+		tc := snap.byT[key]
+		require.NotNil(t, tc)
+		require.NotNil(t, tc.chat)
+		require.NotNil(t, tc.responses)
+		require.NotNil(t, tc.anthropic)
+	}
 }
 
 // TestFactoryConcurrentBuildAndInvalidate 并发锤：多模板 × 三格式懒构建 +
@@ -121,7 +154,8 @@ func TestFactoryConcurrentBuildAndInvalidate(t *testing.T) {
 		require.NotNil(t, f.responses(tpl))
 		require.NotNil(t, f.anthropic(tpl))
 		snap := f.cc.Load()
-		tc := snap.byT[tpl.ID]
+		key := clientKey{templateID: tpl.ID, baseURL: tpl.BaseURL}
+		tc := snap.byT[key]
 		require.NotNil(t, tc)
 		require.NotNil(t, tc.chat)
 		require.NotNil(t, tc.responses)

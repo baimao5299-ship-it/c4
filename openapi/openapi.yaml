@@ -7,6 +7,7 @@ servers:
   - url: /api/admin
 tags:
   - name: templates
+  - name: upstreams
   - name: accounts
   - name: groups
   - name: keys
@@ -218,6 +219,22 @@ paths:
               schema: { $ref: '#/components/schemas/AccountsUsageResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /accounts/balances:
+    get:
+      operationId: GetAccountsBalances
+      tags: [accounts]
+      summary: 按需查询账号对应中转站余额（未配置适配器时返回 unconfigured）
+      parameters:
+        - { name: account_ids, in: query, required: true, schema: { type: string, description: "逗号分隔正整数账号 id（1-100 条；重复 id 自动去重）" } }
+        - { name: refresh, in: query, schema: { type: boolean, default: false, description: "为 true 时先清除这些账号的余额缓存，再查询上游" } }
+      responses:
+        '200':
+          description: 供应商余额快照（不返回账号密钥或上游原始错误）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountsBalancesResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /accounts/batch-delete:
     post:
       operationId: PostAccountsBatchDelete
@@ -396,6 +413,188 @@ paths:
               schema: { $ref: '#/components/schemas/AccountExt' }
         default:
           $ref: '#/components/responses/Error'
+  /upstreams:
+    get:
+      operationId: GetUpstreams
+      tags: [upstreams]
+      summary: 上游清单（分页、倍率、余额与稳定性）
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, disabled] } }
+        - { name: sort, in: query, schema: { type: string, enum: [id, name, base_url, multiplier_bp, request_count, success_count, failure_count, last_checked_at, created_at, updated_at] } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 上游清单
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: PostUpstreams
+      tags: [upstreams]
+      summary: 新增上游
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpstreamCreate' }
+      responses:
+        '200':
+          description: 新增后的上游
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Upstream' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: GetUpstreamsId
+      tags: [upstreams]
+      responses:
+        '200':
+          description: 上游详情（不含密钥）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Upstream' }
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: PutUpstreamsId
+      tags: [upstreams]
+      summary: 更新上游（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpstreamCreate' }
+      responses:
+        '200':
+          description: 更新后的上游
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Upstream' }
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: DeleteUpstreamsId
+      tags: [upstreams]
+      responses:
+        '200':
+          description: 删除结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedResponse' }
+        default:
+         $ref: '#/components/responses/Error'
+  /upstreams/models:
+    post:
+      operationId: PostUpstreamsModels
+      tags: [upstreams]
+      summary: 新增上游前读取 Key 实际支持的模型
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpstreamModelsPreview' }
+      responses:
+        '200':
+          description: 模型读取结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamModelsResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/{id}/models:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: GetUpstreamsIdModels
+      tags: [upstreams]
+      summary: 读取已保存上游 Key 实际支持的模型
+      responses:
+        '200':
+          description: 模型读取结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamModelsResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/{id}/probe:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: PostUpstreamsIdProbe
+      tags: [upstreams]
+      summary: 直接探测上游 /v1/models（仅记录健康结果，不改变账号状态）
+      responses:
+        '200':
+          description: 探测结果与更新后的稳定性快照
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamProbeResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: PostUpstreamsIdTest
+      tags: [upstreams]
+      summary: 向上游发送一次 hi 请求并返回耗时与结果
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpstreamTestBody' }
+      responses:
+        '200':
+          description: hi 请求测试结果与更新后的稳定性快照
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamProbeResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/{id}/status:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    patch:
+      operationId: PatchUpstreamsIdStatus
+      tags: [upstreams]
+      summary: 仅更新上游清单的启用状态（不覆盖其他设置）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpstreamStatusUpdate' }
+      responses:
+        '200':
+          description: 更新后的上游
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Upstream' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/{id}/balance:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: PostUpstreamsIdBalance
+      tags: [upstreams]
+      summary: 刷新上游余额快照（未配置余额接口时返回 unconfigured）
+      responses:
+        '200':
+          description: 余额状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamProbeResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /groups:
     post:
       operationId: PostGroups
@@ -485,6 +684,7 @@ paths:
     put:
       operationId: PutGroupsId
       tags: [groups]
+      summary: 更新分组；携带 upstream_members 时与分组策略同事务替换
       requestBody:
         required: true
         content:
@@ -507,6 +707,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeletedResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+  /groups/{id}/upstreams:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: GetGroupsIdUpstreams
+      tags: [groups]
+      summary: 读取分组的上游成员与调度参数
+      responses:
+        '200':
+          description: 分组上游成员
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupUpstreamsResponse' }
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: PutGroupsIdUpstreams
+      tags: [groups]
+      summary: 原子替换分组上游成员
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupUpstreamsUpdate' }
+      responses:
+        '200':
+          description: 替换后的分组上游成员
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupUpstreamsResponse' }
         default:
           $ref: '#/components/responses/Error'
   /users:
@@ -1107,7 +1339,7 @@ paths:
     get:
       operationId: GetUserGroups
       tags: [user]
-      summary: 可选组列表（public 全部 + 已授予 private；只读，key 创建时选组）
+      summary: 可选组列表（public 全部 + 已授予 private；无可用路由的 upstreams 组不返回）
       responses:
         '200':
           description: 分组列表
@@ -1140,7 +1372,7 @@ paths:
     post:
       operationId: PostUserKeys
       tags: [user]
-      summary: 创建 key（组可选性校验：public 或已授予 private；明文长期回显）
+      summary: 创建 key（校验分组权限和 upstreams 组持久路由可用性；明文长期回显）
       requestBody:
         required: true
         content:
@@ -1636,6 +1868,107 @@ components:
       required: [error]
       properties:
         error: { type: string }
+    UpstreamCreate:
+      type: object
+      required: [name, base_url]
+      additionalProperties: false
+      description: 上游管理表单；只需名称、端点、Key 和成本倍率；upstream_key 仅写入，响应永不返回；模型读取会保存最近一次有界能力快照供分组调度校验；余额查询会按供应商和常见中转站接口自动识别，旧的 balance_* 字段仅用于兼容已有配置
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        base_url: { type: string, minLength: 1, description: 裸根地址，不要填写 /v1 }
+        upstream_key: { type: string, writeOnly: true }
+        clear_upstream_key: { type: boolean, default: false, writeOnly: true, description: 清除已保存的上游密钥；不能与 upstream_key 同时提交 }
+        expected_updated_at: { type: string, format: date-time, writeOnly: true, description: 编辑时携带上次读取的 UpdatedAt；旧版本保存返回 409，避免覆盖新设置 }
+        multiplier_bp: { type: integer, minimum: 0, maximum: 1000000, default: 10000, description: 价格倍率 ×10000 保存 }
+        enabled: { type: boolean, default: true }
+        status: { type: string, enum: [active, disabled] }
+        note: { type: string, maxLength: 2000 }
+        balance_endpoint: { type: string, maxLength: 2048, description: 兼容字段；留空时自动按供应商和常见中转站接口查询余额 }
+        balance_method: { type: string, enum: [GET, POST], default: GET, description: 兼容字段；自动查询使用 GET }
+        balance_auth: { type: string, enum: [none, bearer, api_key], default: bearer, description: 兼容字段；自动查询使用上游 Key }
+        balance_path: { type: string, maxLength: 500, description: 兼容字段；自动查询会识别常见 balance、quota、credits 等字段 }
+        balance_currency_path: { type: string, maxLength: 500, description: 可选币种在 JSON 中的点路径 }
+    Upstream:
+      type: object
+      required: [ID, Name, BaseURL, MultiplierBP, Enabled, Status, BalanceEndpoint, BalanceMethod, BalanceAuth, BalancePath, BalanceCurrencyPath, BalanceConfigured, BalanceStatus, RequestCount, SuccessCount, FailureCount, LatencyTotalMS, LatencyMaxMS]
+      properties:
+        ID: { type: integer, format: int64 }
+        Name: { type: string }
+        BaseURL: { type: string }
+        MultiplierBP: { type: integer, description: 价格倍率 ×10000 }
+        Multiplier: { type: number, format: double, description: 价格倍率的易读值 }
+        Enabled: { type: boolean }
+        Status: { type: string, enum: [active, disabled] }
+        CredentialConfigured: { type: boolean, description: 是否已保存密钥，不返回密钥内容 }
+        Note: { type: string, nullable: true }
+        BalanceEndpoint: { type: string, description: 已保存的余额接口地址，不含密钥 }
+        BalanceMethod: { type: string, enum: [GET, POST] }
+        BalanceAuth: { type: string, enum: [none, bearer, api_key] }
+        BalancePath: { type: string }
+        BalanceCurrencyPath: { type: string }
+        BalanceConfigured: { type: boolean, description: 是否已配置可读取的余额接口 }
+        BalanceAmount: { type: string, nullable: true }
+        BalanceCurrency: { type: string, nullable: true }
+        BalanceStatus: { type: string, enum: [fresh, stale, unavailable, unconfigured] }
+        BalanceCheckedAt: { type: string, format: date-time, nullable: true }
+        RequestCount: { type: integer, format: int64 }
+        SuccessCount: { type: integer, format: int64 }
+        FailureCount: { type: integer, format: int64 }
+        LatencyTotalMS: { type: integer, format: int64 }
+        LatencyMaxMS: { type: integer, format: int64 }
+        AverageLatencyMS: { type: integer, format: int64, nullable: true }
+        StabilityScore: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        StabilityRating: { type: string, enum: [excellent, good, fair, poor, unknown] }
+        LastCheckedAt: { type: string, format: date-time, nullable: true }
+        LastSuccessAt: { type: string, format: date-time, nullable: true }
+        LastFailureAt: { type: string, format: date-time, nullable: true }
+        LastError: { type: string, nullable: true }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    UpstreamListResponse:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer, format: int64 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Upstream' }
+    UpstreamStatusUpdate:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean, description: 更新上游启用状态；已绑定账号会立即从调度快照中排除或恢复 }
+    UpstreamProbeResponse:
+      type: object
+      required: [ok, latency_ms, upstream]
+      properties:
+        ok: { type: boolean }
+        latency_ms: { type: integer, format: int64 }
+        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, unconfigured, superseded, model_unavailable] }
+        upstream: { $ref: '#/components/schemas/Upstream' }
+    UpstreamModelsPreview:
+      type: object
+      required: [base_url]
+      additionalProperties: false
+      properties:
+        base_url: { type: string, minLength: 1, description: 裸根地址，不要填写 /v1 }
+        upstream_key: { type: string, writeOnly: true }
+    UpstreamModelsResponse:
+      type: object
+      required: [ok, models]
+      properties:
+        ok: { type: boolean }
+        models:
+          type: array
+          maxItems: 200
+          items: { type: string }
+        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, model_unavailable] }
+    UpstreamTestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        model: { type: string, maxLength: 200, description: 必须来自上游当前 /v1/models 列表；省略时使用列表第一项 }
     DeletedResponse:
       type: object
       required: [deleted]
@@ -1713,6 +2046,8 @@ components:
         # 2026-08-14）：非空 = 覆盖模板 base_url；""/null/缺省统一 = 继承模板
         # （create 路径空串归一 nil，与批量三态语义分写）。
         base_url: { type: string, nullable: true, description: "账号级覆盖（可选）：非空优先于模板 base_url；null = 继承模板" }
+        # 绑定到上游清单；缺省/null = 使用模板或账号自身 base_url
+        upstream_id: { type: integer, format: int64, nullable: true, description: "可选：绑定上游清单；null = 不绑定" }
         # upstream_key：api_key/responses-special 模板必填（静态透传上游 key）；
         # codex-oauth/codex-pat 模板可选（凭据走 account_ext——创建后经
         # /accounts/{id}/ext 配置；service 按模板类型校验）。
@@ -1733,6 +2068,7 @@ components:
         Template: { $ref: '#/components/schemas/Template' }
         # 账号级 base_url 覆盖（路由属性，位于 upstream_key 前）：null = 继承模板
         BaseURL: { type: string, nullable: true, description: "账号级覆盖：非空优先于模板 base_url；null = 继承模板" }
+        UpstreamID: { type: integer, format: int64, nullable: true, description: "绑定的上游清单 ID；null = 未绑定" }
         UpstreamKey: { type: string }
         Status: { $ref: '#/components/schemas/AccountStatus' }
         CooldownUntil: { type: string, format: date-time, nullable: true }
@@ -1815,6 +2151,32 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/AccountUsageItem' }
+    ProviderBalanceSnapshot:
+      type: object
+      required: [account_id, status, low]
+      description: 供应商余额按需快照；unconfigured 不等于余额为 0
+      properties:
+        account_id: { type: integer, format: int64 }
+        provider: { type: string, nullable: true }
+        status: { type: string, enum: [fresh, stale, unavailable, unconfigured] }
+        amount: { type: string, nullable: true, description: 金额字符串，保留供应商精度 }
+        currency: { type: string, nullable: true }
+        low: { type: boolean }
+        checked_at: { type: string, format: date-time, nullable: true }
+        attempted_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        stale_until: { type: string, format: date-time, nullable: true }
+        error_code:
+          type: string
+          nullable: true
+          enum: [no_endpoint, upstream, auth, rate_limited, invalid_value, context_canceled, timeout]
+    AccountsBalancesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderBalanceSnapshot' }
     TemplateExt:
       type: object
       required: [credential_type]
@@ -1858,13 +2220,13 @@ components:
         window_id: { type: string, nullable: true, description: "身份：会话级派生 {thread_id}:0（导入时生成后恒定不变——恒 0，无透传无解析；上游不校验 n；响应 nil → null）" }
     CodexOAuthImportItem:
       type: object
-      required: [codex_email, codex_account_id, codex_oauth_token, codex_oauth_refresh_token]
-      description: 批量导入 codex-oauth 单行（组合幂等键 codex_email + codex_account_id；token+refresh 成对必填）
+      required: [codex_email, codex_account_id, codex_oauth_token]
+      description: 批量导入 codex-oauth 单行（组合幂等键 codex_email + codex_account_id；access token 必填，refresh token 可选）
       properties:
         codex_email: { type: string, description: "组合幂等键①：codex 账号登录邮箱（必填；格式非法 → 行级 failed）" }
         codex_account_id: { type: string, description: "组合幂等键②：上游账号/空间标识（必填）" }
-        codex_oauth_token: { type: string, description: "凭据：oauth 访问令牌（必填；与 refresh 成对）" }
-        codex_oauth_refresh_token: { type: string, description: "凭据：oauth 刷新令牌（必填；与 token 成对）" }
+        codex_oauth_token: { type: string, description: "凭据：oauth 访问令牌（必填）" }
+        codex_oauth_refresh_token: { type: string, description: "凭据：oauth 刷新令牌（可选；Sub2 accessToken-only 导入可留空）" }
         # 原始字符串（非 format: date-time）——解析失败须行级 failed（行级错误
         # 归 failed 不整批 400）；nil = 过期未知 → 401 自愈。
         codex_oauth_expires_at: { type: string, description: "凭据：oauth 访问令牌过期时间（可选；RFC3339 格式——解析失败 → 行级 failed）" }
@@ -1950,8 +2312,8 @@ components:
       enum: [public, private]
     GroupProtocolConvert:
       type: string
-      enum: [chat_to_resp, mess_to_resp, resp_to_mess, chat_to_mess]
-      description: 分组级协议转换方向（只补差，W5 网关 internal/protoconv 消费）：chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
+      enum: [auto, chat_to_resp, mess_to_resp, resp_to_mess, chat_to_mess]
+      description: 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
     GroupAssignmentsBody:
       type: object
       required: [user_ids]
@@ -2204,11 +2566,22 @@ components:
       properties:
         name: { type: string }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
+        routing_mode: { $ref: '#/components/schemas/GroupRoutingMode' }
+        allowed_models:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集
+        upstream_members:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GroupUpstreamInput' }
+          description: 上游池成员。POST 在 routing_mode=upstreams 时与分组策略同事务创建；PUT 携带时与分组策略同事务替换，切回 accounts 时传空数组可清理旧成员
         price_multiplier: { type: number, format: double, minimum: 0, maximum: 10, nullable: true, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0） }
         protocol_convert:
           type: array
           items: { $ref: '#/components/schemas/GroupProtocolConvert' }
-          description: 协议转换方向集合（多方向并存，按客户端格式命中——chat 请求走 chat_to_*、anthropic 请求走 mess_to_resp、resp 请求走 resp_to_mess）。空数组/缺省 = off = 不转换；同客户端格式多方向（chat_to_resp 与 chat_to_mess 并存）→ 400。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向
+          description: 协议转换模式。默认推荐 [auto]，优先原生协议并在缺少原生路由时自动选择转换；也可传单个或多个手动方向。空数组/缺省 = off = 不转换；auto 必须单独出现。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向
     RuleCreate:
       type: object
       required: [name, priority]
@@ -2321,14 +2694,68 @@ components:
         ID: { type: integer, format: int64 }
         Name: { type: string }
         Visibility: { $ref: '#/components/schemas/GroupVisibility' }
+        RoutingMode: { $ref: '#/components/schemas/GroupRoutingMode' }
         PriceMultiplier: { type: number, format: double, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5） }
+        AllowedModels:
+          type: array
+          items: { type: string }
         ProtocolConvert:
           type: array
           items: { $ref: '#/components/schemas/GroupProtocolConvert' }
-          description: 协议转换方向集合（空数组 = off = 不转换；多方向按客户端格式命中）
+          description: 协议转换模式（auto = 自动协商；空数组 = off = 不转换；手动方向按客户端格式命中）
         CreatedAt: { type: string, format: date-time }
         UpdatedAt: { type: string, format: date-time }
         DeletedAt: { type: string, format: date-time, nullable: true, description: 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项） }
+    GroupRoutingMode:
+      type: string
+      enum: [accounts, upstreams]
+      description: accounts 使用现有账号池；upstreams 使用本组上游成员
+    GroupUpstreamInput:
+      type: object
+      required: [upstream_id]
+      properties:
+        upstream_id: { type: integer, format: int64, minimum: 1 }
+        priority: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+        weight: { type: integer, minimum: 1, maximum: 10000, default: 100 }
+        max_concurrency: { type: integer, minimum: 1, maximum: 100000, default: 8 }
+        enabled: { type: boolean, default: true }
+    GroupUpstream:
+      type: object
+      required: [ID, GroupID, UpstreamID, Weight, Priority, MaxConcurrency, Enabled, FailureStreak, CreatedAt, UpdatedAt]
+      properties:
+        ID: { type: integer, format: int64 }
+        GroupID: { type: integer, format: int64 }
+        UpstreamID: { type: integer, format: int64 }
+        Upstream: { $ref: '#/components/schemas/Upstream' }
+        Weight: { type: integer }
+        Priority: { type: integer }
+        MaxConcurrency: { type: integer }
+        Enabled: { type: boolean }
+        CooldownUntil: { type: string, format: date-time, nullable: true }
+        FailureStreak: { type: integer }
+        LastError: { type: string, nullable: true }
+        CreatedAt: { type: string, format: date-time }
+        UpdatedAt: { type: string, format: date-time }
+    GroupUpstreamsUpdate:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/GroupUpstreamInput' }
+    GroupUpstreamsResponse:
+      type: object
+      required: [group_id, routing_mode, allowed_models, members]
+      properties:
+        group_id: { type: integer, format: int64 }
+        routing_mode: { $ref: '#/components/schemas/GroupRoutingMode' }
+        allowed_models:
+          type: array
+          items: { type: string }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/GroupUpstream' }
     AccountGroupsResponse:
       type: object
       required: [group_ids]
@@ -2383,6 +2810,8 @@ components:
         template_id: { type: integer, format: int64 }
         # 批量三态定死（评审 C1）："" = 清空（落 NULL = 继承模板）；null/缺省 = 不变
         base_url: { type: string, nullable: true, description: "批量三态：空串 = 清空（回继承模板）；null/缺省 = 不变；非空 = 落值" }
+        # 批量三态：缺省/null = 不变；0 = 清除绑定；正数 = 绑定上游清单
+        upstream_id: { type: integer, format: int64, nullable: true, description: "批量绑定上游：null/缺省不变，0 清除，正数绑定" }
         upstream_key: { type: string }
         status: { type: string, enum: [active, unhealthy, "429", disabled] }
         weight: { type: integer }

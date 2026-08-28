@@ -21,6 +21,8 @@ const (
 	FieldTemplateID = "template_id"
 	// FieldBaseURL holds the string denoting the base_url field in the database.
 	FieldBaseURL = "base_url"
+	// FieldUpstreamID holds the string denoting the upstream_id field in the database.
+	FieldUpstreamID = "upstream_id"
 	// FieldUpstreamKey holds the string denoting the upstream_key field in the database.
 	FieldUpstreamKey = "upstream_key"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -45,6 +47,8 @@ const (
 	FieldCreatedAt = "created_at"
 	// EdgeTemplate holds the string denoting the template edge name in mutations.
 	EdgeTemplate = "template"
+	// EdgeUpstream holds the string denoting the upstream edge name in mutations.
+	EdgeUpstream = "upstream"
 	// EdgeGroups holds the string denoting the groups edge name in mutations.
 	EdgeGroups = "groups"
 	// EdgeExt holds the string denoting the ext edge name in mutations.
@@ -58,6 +62,13 @@ const (
 	TemplateInverseTable = "templates"
 	// TemplateColumn is the table column denoting the template relation/edge.
 	TemplateColumn = "template_id"
+	// UpstreamTable is the table that holds the upstream relation/edge.
+	UpstreamTable = "accounts"
+	// UpstreamInverseTable is the table name for the Upstream entity.
+	// It exists in this package in order to avoid circular dependency with the "upstream" package.
+	UpstreamInverseTable = "upstreams"
+	// UpstreamColumn is the table column denoting the upstream relation/edge.
+	UpstreamColumn = "upstream_id"
 	// GroupsTable is the table that holds the groups relation/edge. The primary key declared below.
 	GroupsTable = "account_groups"
 	// GroupsInverseTable is the table name for the Group entity.
@@ -78,6 +89,7 @@ var Columns = []string{
 	FieldName,
 	FieldTemplateID,
 	FieldBaseURL,
+	FieldUpstreamID,
 	FieldUpstreamKey,
 	FieldStatus,
 	FieldCooldownUntil,
@@ -171,6 +183,11 @@ func ByBaseURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBaseURL, opts...).ToFunc()
 }
 
+// ByUpstreamID orders the results by the upstream_id field.
+func ByUpstreamID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamID, opts...).ToFunc()
+}
+
 // ByUpstreamKey orders the results by the upstream_key field.
 func ByUpstreamKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpstreamKey, opts...).ToFunc()
@@ -233,6 +250,13 @@ func ByTemplateField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// ByUpstreamField orders the results by upstream field.
+func ByUpstreamField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUpstreamStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByGroupsCount orders the results by groups count.
 func ByGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -265,6 +289,13 @@ func newTemplateStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(TemplateInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, TemplateTable, TemplateColumn),
+	)
+}
+func newUpstreamStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UpstreamInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, UpstreamTable, UpstreamColumn),
 	)
 }
 func newGroupsStep() *sqlgraph.Step {

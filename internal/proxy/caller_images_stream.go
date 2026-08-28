@@ -125,11 +125,11 @@ func (p *Proxy) streamImageGeneration(ctx context.Context, w http.ResponseWriter
 		// 释放槽位 + 已收集张数照常计费、不 MarkResult（无法转移）；上游错误 →
 		// recordStreamAbort + 连接级/5xx 分流。
 		if r.Context().Err() != nil {
-			p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, http.StatusOK, domain.ErrAbort, u, start)))
+			p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, http.StatusOK, domain.ErrAbort, u, start)))
 			return 0, nil, true, nil
 		}
 		p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, u, genErr)
-		p.sched.MarkResult(sel.AccountID, scheduler.RuleKindOf(statusOf(genErr)), nil, statusOf(genErr), genErr.Error(), sel.Model)
+		p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(genErr)), nil, statusOf(genErr), genErr.Error(), sel.Model)
 		return 0, nil, true, nil
 	}
 
@@ -139,8 +139,8 @@ func (p *Proxy) streamImageGeneration(ctx context.Context, w http.ResponseWriter
 		writeSSEHeaders(w)
 		flushWriter(w)
 	}
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, http.StatusOK, domain.ErrNone, u, start)))
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, http.StatusOK, domain.ErrNone, u, start)))
 	return http.StatusOK, nil, true, nil
 }
 

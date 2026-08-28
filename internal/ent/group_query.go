@@ -15,6 +15,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/predicate"
 )
@@ -22,13 +23,14 @@ import (
 // GroupQuery is the builder for querying Group entities.
 type GroupQuery struct {
 	config
-	ctx             *QueryContext
-	order           []group.OrderOption
-	inters          []Interceptor
-	predicates      []predicate.Group
-	withAccounts    *AccountQuery
-	withKeys        *KeyQuery
-	withAssignments *GroupAssignmentQuery
+	ctx                 *QueryContext
+	order               []group.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.Group
+	withAccounts        *AccountQuery
+	withKeys            *KeyQuery
+	withAssignments     *GroupAssignmentQuery
+	withUpstreamMembers *GroupUpstreamQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -124,6 +126,28 @@ func (_q *GroupQuery) QueryAssignments() *GroupAssignmentQuery {
 			sqlgraph.From(group.Table, group.FieldID, selector),
 			sqlgraph.To(groupassignment.Table, groupassignment.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, group.AssignmentsTable, group.AssignmentsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryUpstreamMembers chains the current query on the "upstream_members" edge.
+func (_q *GroupQuery) QueryUpstreamMembers() *GroupUpstreamQuery {
+	query := (&GroupUpstreamClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(group.Table, group.FieldID, selector),
+			sqlgraph.To(groupupstream.Table, groupupstream.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, group.UpstreamMembersTable, group.UpstreamMembersColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -318,14 +342,15 @@ func (_q *GroupQuery) Clone() *GroupQuery {
 		return nil
 	}
 	return &GroupQuery{
-		config:          _q.config,
-		ctx:             _q.ctx.Clone(),
-		order:           append([]group.OrderOption{}, _q.order...),
-		inters:          append([]Interceptor{}, _q.inters...),
-		predicates:      append([]predicate.Group{}, _q.predicates...),
-		withAccounts:    _q.withAccounts.Clone(),
-		withKeys:        _q.withKeys.Clone(),
-		withAssignments: _q.withAssignments.Clone(),
+		config:              _q.config,
+		ctx:                 _q.ctx.Clone(),
+		order:               append([]group.OrderOption{}, _q.order...),
+		inters:              append([]Interceptor{}, _q.inters...),
+		predicates:          append([]predicate.Group{}, _q.predicates...),
+		withAccounts:        _q.withAccounts.Clone(),
+		withKeys:            _q.withKeys.Clone(),
+		withAssignments:     _q.withAssignments.Clone(),
+		withUpstreamMembers: _q.withUpstreamMembers.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -362,6 +387,17 @@ func (_q *GroupQuery) WithAssignments(opts ...func(*GroupAssignmentQuery)) *Grou
 		opt(query)
 	}
 	_q.withAssignments = query
+	return _q
+}
+
+// WithUpstreamMembers tells the query-builder to eager-load the nodes that are connected to
+// the "upstream_members" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *GroupQuery) WithUpstreamMembers(opts ...func(*GroupUpstreamQuery)) *GroupQuery {
+	query := (&GroupUpstreamClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withUpstreamMembers = query
 	return _q
 }
 
@@ -443,10 +479,11 @@ func (_q *GroupQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Group,
 	var (
 		nodes       = []*Group{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			_q.withAccounts != nil,
 			_q.withKeys != nil,
 			_q.withAssignments != nil,
+			_q.withUpstreamMembers != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -485,6 +522,13 @@ func (_q *GroupQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Group,
 		if err := _q.loadAssignments(ctx, query, nodes,
 			func(n *Group) { n.Edges.Assignments = []*GroupAssignment{} },
 			func(n *Group, e *GroupAssignment) { n.Edges.Assignments = append(n.Edges.Assignments, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withUpstreamMembers; query != nil {
+		if err := _q.loadUpstreamMembers(ctx, query, nodes,
+			func(n *Group) { n.Edges.UpstreamMembers = []*GroupUpstream{} },
+			func(n *Group, e *GroupUpstream) { n.Edges.UpstreamMembers = append(n.Edges.UpstreamMembers, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -597,6 +641,36 @@ func (_q *GroupQuery) loadAssignments(ctx context.Context, query *GroupAssignmen
 	}
 	query.Where(predicate.GroupAssignment(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(group.AssignmentsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.GroupID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "group_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *GroupQuery) loadUpstreamMembers(ctx context.Context, query *GroupUpstreamQuery, nodes []*Group, init func(*Group), assign func(*Group, *GroupUpstream)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Group)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(groupupstream.FieldGroupID)
+	}
+	query.Where(predicate.GroupUpstream(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(group.UpstreamMembersColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

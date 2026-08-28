@@ -32,6 +32,19 @@ export interface AccountListParams extends ListParams {
 }
 export type GroupListParams = ListParams
 
+// 上游清单是独立的管理面资源。响应字段和表单字段直接复用生成的 OpenAPI 类型；
+// 所有敏感凭据均不由列表接口回显，编辑时留空表示沿用现有值。
+export type UpstreamStatus = components['schemas']['Upstream']['Status']
+export interface UpstreamListParams extends ListParams {
+  status?: UpstreamStatus
+}
+export type UpstreamRecord = components['schemas']['Upstream']
+export type UpstreamListResponse = components['schemas']['UpstreamListResponse']
+export type UpstreamCreateInput = components['schemas']['UpstreamCreate']
+export type UpstreamProbeResponse = components['schemas']['UpstreamProbeResponse']
+export type UpstreamModelsResponse = components['schemas']['UpstreamModelsResponse']
+export type UpstreamModelsPreviewInput = components['schemas']['UpstreamModelsPreview']
+
 // —— 日志/统计查询参数（usage/err 游标分页；from/to 必填）——
 export interface UsageLogParams {
   limit?: number
@@ -108,6 +121,17 @@ export class ApiClient {
   updateTemplatesBatch = (ids: number[], fields: components['schemas']['TemplatePatch']) => this.request<components['schemas']['BatchUpdateResponse']>('/templates/batch-update', { method: 'POST', body: JSON.stringify({ ids, fields }) })
   getTemplateExt = (id: number) => this.request<components['schemas']['TemplateExt']>(`/templates/${id}/ext`)
   putTemplateExt = (id: number, b: components['schemas']['TemplateExt']) => this.request<components['schemas']['TemplateExt']>(`/templates/${id}/ext`, { method: 'PUT', body: JSON.stringify(b) })
+  // —— 独立上游清单（成本/稳定性管理面） ——
+  listUpstreams = (p?: UpstreamListParams) => this.request<UpstreamListResponse>('/upstreams', { params: toQuery(p) })
+  createUpstream = (b: UpstreamCreateInput) => this.request<UpstreamRecord>('/upstreams', { method: 'POST', body: JSON.stringify(b) })
+  updateUpstream = (id: number, b: UpstreamCreateInput) => this.request<UpstreamRecord>(`/upstreams/${id}`, { method: 'PUT', body: JSON.stringify(b) })
+  updateUpstreamStatus = (id: number, enabled: boolean) => this.request<UpstreamRecord>(`/upstreams/${id}/status`, { method: 'PATCH', body: JSON.stringify({ enabled }) })
+  deleteUpstream = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/upstreams/${id}`, { method: 'DELETE' })
+  probeUpstream = (id: number) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/probe`, { method: 'POST' })
+  listUpstreamModels = (id: number) => this.request<UpstreamModelsResponse>(`/upstreams/${id}/models`)
+  previewUpstreamModels = (b: UpstreamModelsPreviewInput) => this.request<UpstreamModelsResponse>('/upstreams/models', { method: 'POST', body: JSON.stringify(b) })
+  testUpstream = (id: number, model: string) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/test`, { method: 'POST', body: JSON.stringify({ model }) })
+  refreshUpstreamBalance = (id: number) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/balance`, { method: 'POST' })
   // —— 账号 ——
   listAccounts = (p?: AccountListParams) => this.request<components['schemas']['AccountListResponse']>('/accounts', { params: toQuery(p) })
   createAccount = (b: components['schemas']['AccountCreate']) => this.request<components['schemas']['Account']>('/accounts', { method: 'POST', body: JSON.stringify(b) })
@@ -120,6 +144,8 @@ export class ApiClient {
   listGroups = (p?: GroupListParams) => this.request<components['schemas']['GroupListResponse']>('/groups', { params: toQuery(p) })
   createGroup = (b: components['schemas']['GroupCreate']) => this.request<components['schemas']['Group']>('/groups', { method: 'POST', body: JSON.stringify(b) })
   updateGroup = (id: number, b: components['schemas']['GroupCreate']) => this.request<components['schemas']['Group']>(`/groups/${id}`, { method: 'PUT', body: JSON.stringify(b) })
+  getGroupUpstreams = (id: number) => this.request<components['schemas']['GroupUpstreamsResponse']>(`/groups/${id}/upstreams`)
+  setGroupUpstreams = (id: number, b: components['schemas']['GroupUpstreamsUpdate']) => this.request<components['schemas']['GroupUpstreamsResponse']>(`/groups/${id}/upstreams`, { method: 'PUT', body: JSON.stringify(b) })
   deleteGroup = (id: number) => this.request<components['schemas']['DeletedResponse']>(`/groups/${id}`, { method: 'DELETE' })
   deleteGroupsBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/groups/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   updateGroupsBatch = (ids: number[], fields: components['schemas']['GroupPatch']) => this.request<components['schemas']['BatchUpdateResponse']>('/groups/batch-update', { method: 'POST', body: JSON.stringify({ ids, fields }) })
@@ -131,6 +157,10 @@ export class ApiClient {
   listAccountsUsage = (accountIds: number[], p?: { from?: string; to?: string }) =>
     this.request<components['schemas']['AccountsUsageResponse']>('/accounts/usage', {
       params: toQuery({ account_ids: accountIds.join(','), ...p }),
+    })
+  getAccountsBalances = (accountIds: number[], refresh = false) =>
+    this.request<components['schemas']['AccountsBalancesResponse']>('/accounts/balances', {
+      params: toQuery({ account_ids: accountIds.join(','), refresh: refresh ? true : undefined }),
     })
   // —— codex 凭据批量导入（Task B；行级失败归 failed——HTTP 恒 200）——
   importCodexOauthAccounts = (b: components['schemas']['CodexOAuthImportBody']) => this.request<components['schemas']['ImportResult']>('/accounts/batch-import-codex-oauth', { method: 'POST', body: JSON.stringify(b) })

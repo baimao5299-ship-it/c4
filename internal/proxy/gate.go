@@ -279,12 +279,27 @@ func (g *concurrencyGate) release(meta domain.KeyMeta, level int) {
 	snap := g.store.Load()
 	if level&1 != 0 {
 		if c, ok := snap.users[meta.UserID]; ok && c != nil {
-			c.Add(-1)
+			decNonNegative(c)
 		}
 	}
 	if level&2 != 0 {
 		if c, ok := snap.keys[meta.KeyID]; ok && c != nil {
-			c.Add(-1)
+			decNonNegative(c)
+		}
+	}
+}
+
+// decNonNegative makes release defensive against duplicate terminal callbacks
+// and stale levels crossing a snapshot reload. A failed CAS leaves the counter
+// unchanged instead of allowing a negative in-flight value.
+func decNonNegative(c *atomic.Int64) {
+	for {
+		cur := c.Load()
+		if cur <= 0 {
+			return
+		}
+		if c.CompareAndSwap(cur, cur-1) {
+			return
 		}
 	}
 }

@@ -7,6 +7,8 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -141,6 +143,38 @@ func TestRegisterUserBootstrapFirstAdmin(t *testing.T) {
 	svc = newSnapshotSvc(fs)
 	_, err = svc.RegisterUser(ctx, "err@example.com", "s3cret-pass")
 	require.ErrorIs(t, err, errCountUsersInjected)
+}
+
+func TestRegisterUserConcurrentBootstrapCreatesSingleAdmin(t *testing.T) {
+	fs := newFakeStore()
+	svc := newSnapshotSvc(fs)
+	ctx := context.Background()
+	const n = 8
+	users := make(chan *domain.User, n)
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			u, err := svc.RegisterUser(ctx, fmt.Sprintf("bootstrap-%d@example.com", i), "s3cret-pass")
+			users <- u
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(users)
+	close(errs)
+	admins := 0
+	for u := range users {
+		if u != nil && u.Role == domain.RolePlatformAdmin {
+			admins++
+		}
+	}
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.Equal(t, 1, admins, "并发首注只能产生一个管理员")
 }
 
 // errCountUsersInjected CountUsers 注入错误（bootstrap 错误传播测试）。

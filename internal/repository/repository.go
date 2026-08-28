@@ -8,6 +8,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ type Repository struct {
 	TemplateExts   *TemplateExtRepo   // 模板类型化扩展（template_ext 1:1；W1 数据层，消费接线 W3/W4）
 	AccountExts    *AccountExtRepo    // 账号类型化鉴权扩展（account_ext 1:1；W1 数据层，消费接线 W6）
 	EmailTemplates *EmailTemplateRepo // 邮件模板（email_template；邮件服务）
+	Upstreams      *UpstreamRepo      // 独立上游清单（成本/稳定性管理面）
 	Client         *ent.Client
 	// driver 为原始 dialect.Driver：原子资源方法/条件递增等 raw SQL 走它
 	//（ent v0.14 生成代码无 ExecContext/QueryContext，raw SQL 无客户端入口）；
@@ -84,11 +86,15 @@ func NewWithPG(ctx context.Context, drv dialect.Driver, migrate bool, pool *pgxp
 // ledger-cursor：结算语句 pgx 直连事务 + 游标 advisory lock 专用连接；
 // WithTx 传 nil → 事务内回落 ent 载体，见 billing_settle.go）。
 func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *Repository {
-	accounts := &AccountRepo{client: client}
+	return newRepositoryWithLocks(client, drv, pool, pool != nil)
+}
+
+func newRepositoryWithLocks(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool, rowLocks bool) *Repository {
+	accounts := &AccountRepo{client: client, rowLocks: rowLocks}
 	return &Repository{
-		Templates:      &TemplateRepo{client: client},
+		Templates:      &TemplateRepo{client: client, rowLocks: rowLocks},
 		Accounts:       accounts,
-		Groups:         &GroupRepo{client: client, accounts: accounts, driver: drv},
+		Groups:         &GroupRepo{client: client, accounts: accounts, driver: drv, rowLocks: rowLocks},
 		Users:          &UserRepo{client: client, driver: drv},
 		Keys:           &KeyRepo{client: client, driver: drv},
 		Assignments:    &GroupAssignmentRepo{client: client},
@@ -105,9 +111,88 @@ func newRepository(client *ent.Client, drv dialect.Driver, pool *pgxpool.Pool) *
 		TemplateExts:   &TemplateExtRepo{client: client},
 		AccountExts:    &AccountExtRepo{client: client},
 		EmailTemplates: &EmailTemplateRepo{client: client},
+		Upstreams:      &UpstreamRepo{client: client, driver: drv},
 		Client:         client,
 		driver:         drv,
 	}
+}
+
+// UpstreamStore is kept separate from service.Store so existing test stores
+// and integrations do not need a breaking interface change. The repository
+// implements it, while deployments that do not enable the inventory can
+// report a clear "not configured" error from the service layer.
+type UpstreamStore interface {
+	CreateUpstream(context.Context, *domain.Upstream) (*domain.Upstream, error)
+	GetUpstream(context.Context, int64) (*domain.Upstream, error)
+	ListUpstreams(context.Context, ListQuery) ([]*domain.Upstream, int64, error)
+	UpdateUpstream(context.Context, *domain.Upstream) (*domain.Upstream, error)
+	SetUpstreamEnabled(context.Context, int64, bool) (*domain.Upstream, error)
+	DeleteUpstream(context.Context, int64) error
+	RecordUpstreamProbe(context.Context, *domain.Upstream, bool, int64, *string) (*domain.Upstream, error)
+	RecordUpstreamBalance(context.Context, *domain.Upstream, *string, *string, string, *time.Time) (*domain.Upstream, error)
+}
+
+// UpstreamModelStore persists the last verified model catalogue without
+// widening the legacy upstream management interface.
+type UpstreamModelStore interface {
+	RecordUpstreamModels(context.Context, *domain.Upstream, []string, *string) (*domain.Upstream, error)
+}
+
+// Forward the optional upstream management surface from the aggregate
+// repository. Keeping it out of service.Store preserves existing fakes and
+// integrations while allowing production Service instances to discover it.
+func (r *Repository) CreateUpstream(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
+	return r.Upstreams.CreateUpstream(ctx, u)
+}
+func (r *Repository) GetUpstream(ctx context.Context, id int64) (*domain.Upstream, error) {
+	return r.Upstreams.GetUpstream(ctx, id)
+}
+func (r *Repository) ListUpstreams(ctx context.Context, q ListQuery) ([]*domain.Upstream, int64, error) {
+	return r.Upstreams.ListUpstreams(ctx, q)
+}
+func (r *Repository) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
+	return r.Upstreams.UpdateUpstream(ctx, u)
+}
+func (r *Repository) RecordUpstreamModels(ctx context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
+	return r.Upstreams.RecordUpstreamModels(ctx, expected, models, modelErr)
+}
+func (r *Repository) SetUpstreamEnabled(ctx context.Context, id int64, enabled bool) (*domain.Upstream, error) {
+	return r.Upstreams.SetUpstreamEnabled(ctx, id, enabled)
+}
+func (r *Repository) DeleteUpstream(ctx context.Context, id int64) error {
+	return r.Upstreams.DeleteUpstream(ctx, id)
+}
+func (r *Repository) RecordUpstreamProbe(ctx context.Context, expected *domain.Upstream, success bool, latencyMS int64, probeErr *string) (*domain.Upstream, error) {
+	return r.Upstreams.RecordUpstreamProbe(ctx, expected, success, latencyMS, probeErr)
+}
+func (r *Repository) RecordUpstreamBalance(ctx context.Context, expected *domain.Upstream, amount, currency *string, status string, checkedAt *time.Time) (*domain.Upstream, error) {
+	return r.Upstreams.RecordUpstreamBalance(ctx, expected, amount, currency, status, checkedAt)
+}
+
+// ListGroupUpstreams and SetGroupUpstreams expose the group routing relation
+// through the aggregate repository without widening the legacy Store contract.
+func (r *Repository) ListGroupUpstreams(ctx context.Context, groupID int64) ([]*domain.GroupUpstream, error) {
+	return r.Groups.ListGroupUpstreams(ctx, groupID)
+}
+
+func (r *Repository) SetGroupUpstreams(ctx context.Context, groupID int64, members []*domain.GroupUpstream) error {
+	return r.Groups.SetGroupUpstreams(ctx, groupID, members)
+}
+
+func (r *Repository) CreateGroupWithUpstreams(ctx context.Context, g *domain.Group, members []*domain.GroupUpstream) (*domain.Group, error) {
+	return r.Groups.CreateGroupWithUpstreams(ctx, g, members)
+}
+
+func (r *Repository) UpdateGroupWithUpstreams(ctx context.Context, g *domain.Group, members []*domain.GroupUpstream) (*domain.Group, error) {
+	return r.Groups.UpdateGroupWithUpstreams(ctx, g, members)
+}
+
+func (r *Repository) UpdateGroupUpstreamStatus(ctx context.Context, id int64, endpoint, key string, cooldownUntil *time.Time, failureStreak int, lastError *string) error {
+	return r.Groups.UpdateGroupUpstreamStatus(ctx, id, endpoint, key, cooldownUntil, failureStreak, lastError)
+}
+
+func (r *Repository) LoadGroupsUpstreamConfig(ctx context.Context) (map[int64]*domain.Group, error) {
+	return r.Groups.LoadGroupsUpstreamConfig(ctx)
 }
 
 // --- 事务（评审 I-1 核心） ---
@@ -179,7 +264,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(TxStore) error) error {
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit 成功后 Rollback 返回 ErrTxDone，忽略
 	drv := &txDriver{tx: tx, drv: r.driver}
-	tr := newRepository(ent.NewClient(ent.Driver(drv)), drv, nil) // 事务内不挂 pgx 池：Upsert COPY 自 Acquire 独立连接，不进 tx 面
+	tr := newRepositoryWithLocks(ent.NewClient(ent.Driver(drv)), drv, nil, true) // 事务内不挂 pgx 池：Upsert COPY 自 Acquire 独立连接，不进 tx 面
 	if err := fn(tr); err != nil {
 		return err
 	}
@@ -294,6 +379,17 @@ func (r *Repository) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	return r.Groups.DeleteGroupsBatch(ctx, ids)
 }
 
+// DeleteGroupsBatchWithKeys atomically soft-deletes group keys and groups.
+// The optional service capability keeps legacy lightweight stores source
+// compatible while production avoids the historical key-before-group window.
+func (r *Repository) DeleteGroupsBatchWithKeys(ctx context.Context, ids []int64) ([]string, error) {
+	return r.Groups.DeleteGroupsBatchWithKeys(ctx, ids)
+}
+
+func (r *Repository) DeleteGroupWithKeys(ctx context.Context, id int64) ([]string, error) {
+	return r.Groups.DeleteGroupWithKeys(ctx, id)
+}
+
 func (r *Repository) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupPatch) error {
 	return r.Groups.UpdateGroupsBatch(ctx, ids, p)
 }
@@ -355,6 +451,55 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*domain.
 // CountUsers 用户总数（注册 bootstrap：表空 = 首个注册 = platform_admin）。
 func (r *Repository) CountUsers(ctx context.Context) (int64, error) {
 	return r.Users.CountUsers(ctx)
+}
+
+// signupBootstrapLockKey serializes first-user role assignment across all
+// application instances sharing the same PostgreSQL database. It is an
+// xact-scoped lock, so a crashed registration cannot strand the lock.
+const signupBootstrapLockKey int64 = 0x63336170695f6164
+
+// RegisterFirstUser creates a public registrant in one transaction. The
+// advisory lock is acquired before the count is read, so only the transaction
+// that observes an empty users table receives platform_admin.
+func (r *Repository) RegisterFirstUser(ctx context.Context, u *domain.User) (*domain.User, error) {
+	if u == nil {
+		return nil, fmt.Errorf("nil user")
+	}
+	tx, err := r.driver.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	txDriver := &txDriver{drv: r.driver, tx: tx}
+	txRepo := newRepository(ent.NewClient(ent.Driver(txDriver)), txDriver, nil)
+	var lockResult entsql.Result
+	if err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, []any{signupBootstrapLockKey}, &lockResult); err != nil {
+		return nil, err
+	}
+	n, err := txRepo.Users.CountUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	copyUser := *u
+	if n == 0 {
+		copyUser.Role = domain.RolePlatformAdmin
+	} else {
+		copyUser.Role = domain.RoleUser
+	}
+	created, err := txRepo.Users.CreateUser(ctx, &copyUser)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	committed = true
+	return created, nil
 }
 
 func (r *Repository) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, int64, error) {

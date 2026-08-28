@@ -31,6 +31,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/repository"
 )
@@ -284,6 +285,8 @@ func TestUsageLogCallFormatValidator(t *testing.T) {
 		"ent FormatValidator 必须接受 openai-images（否则 CreateBulk/COPY 双双拒绝）")
 	require.NoError(t, usagelog.FormatValidator(usagelog.FormatOpenaiSearch),
 		"ent FormatValidator 必须接受 openai-search（否则 search 行 COPY 恒失败回灌）")
+	require.NoError(t, errlog.FormatValidator(errlog.FormatOpenaiSearch),
+		"err_logs 必须接受 openai-search（否则搜索错误日志无法写入）")
 	require.Error(t, usagelog.FormatValidator(usagelog.Format("bogus-image-format")),
 		"未知 format 拒绝（非法枚举语义保持）")
 	require.True(t, domain.FormatOpenAIImages.Valid())

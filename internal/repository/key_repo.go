@@ -177,7 +177,7 @@ type KeyPatch struct {
 // UpdateKey 按 patch 更新 name/status/max_concurrency/quota（不写 key_raw——
 // 明文变更仅 CreateKey/RotateKey 路径）；仅 Set 非 nil 列，nil = 该列不动。
 func (r *KeyRepo) UpdateKey(ctx context.Context, p *KeyPatch) (*domain.Key, error) {
-	upd := r.client.Key.UpdateOneID(p.ID)
+	upd := r.client.Key.UpdateOneID(p.ID).Where(key.DeletedAtIsNil())
 	if p.Name != nil {
 		upd.SetName(*p.Name)
 	}
@@ -199,7 +199,7 @@ func (r *KeyRepo) UpdateKey(ctx context.Context, p *KeyPatch) (*domain.Key, erro
 
 // RotateKey 轮换 key：换明文单值（旧明文立即失效，新明文入库）。
 func (r *KeyRepo) RotateKey(ctx context.Context, id int64, newRaw string) (*domain.Key, error) {
-	row, err := r.client.Key.UpdateOneID(id).SetKeyRaw(newRaw).Save(ctx)
+	row, err := r.client.Key.UpdateOneID(id).Where(key.DeletedAtIsNil()).SetKeyRaw(newRaw).Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: key_raw=%q", ErrConflict, newRaw)
@@ -213,7 +213,7 @@ func (r *KeyRepo) RotateKey(ctx context.Context, id int64, newRaw string) (*doma
 // IS NULL 过滤 → 已删 key 鉴权拒绝，GET 单个仍可查已删项）。bulk Update
 // （无 re-SELECT）单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
 func (r *KeyRepo) DeleteKey(ctx context.Context, id int64) error {
-	n, err := r.client.Key.Update().Where(key.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	n, err := r.client.Key.Update().Where(key.IDEQ(id), key.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 	if err != nil {
 		return err
 	}

@@ -100,6 +100,7 @@ const (
 	FormatOpenaiResponses   Format = "openai-responses"
 	FormatOpenaiResponsesWs Format = "openai-responses-ws"
 	FormatOpenaiImages      Format = "openai-images"
+	FormatOpenaiSearch      Format = "openai-search"
 	FormatAnthropic         Format = "anthropic"
 )
 
@@ -110,7 +111,7 @@ func (f Format) String() string {
 // FormatValidator is a validator for the "format" field enum values. It is called by the builders before save.
 func FormatValidator(f Format) error {
 	switch f {
-	case FormatOpenaiChat, FormatOpenaiResponses, FormatOpenaiResponsesWs, FormatOpenaiImages, FormatAnthropic:
+	case FormatOpenaiChat, FormatOpenaiResponses, FormatOpenaiResponsesWs, FormatOpenaiImages, FormatOpenaiSearch, FormatAnthropic:
 		return nil
 	default:
 		return fmt.Errorf("errlog: invalid enum value for format field: %q", f)

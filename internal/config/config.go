@@ -8,11 +8,13 @@ import (
 	"encoding"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // 单二进制内嵌 IANA 库：Alpine 运行镜像不安装 tzdata。
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/is7qin/c3api/pkg/httpx"
 	"github.com/knadh/koanf/parsers/toml/v2"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
@@ -103,6 +105,9 @@ type UpstreamConfig struct {
 	DialTimeout           time.Duration `koanf:"dial_timeout"`
 	ForceHTTP2            bool          `koanf:"force_http2"`
 	TLSConvergenceEnabled bool          `koanf:"tls_convergence_enabled"`
+	// ProxyURL is explicit by design: empty means direct, and HTTP_PROXY/
+	// HTTPS_PROXY are never consulted. socks5h keeps DNS at the proxy.
+	ProxyURL string `koanf:"proxy_url"`
 }
 
 type LimitConfig struct {
@@ -146,6 +151,22 @@ type BillingConfig struct {
 	FlushInterval          time.Duration `koanf:"flush_interval"`           // 计费游标轮询周期（F2 ledger-cursor：每周期取批消费 unbilled 账本）
 	BalanceRefreshInterval time.Duration `koanf:"balance_refresh_interval"` // 余额快照全量刷新周期
 	FlushWorkers           int           `koanf:"flush_workers"`            // 用户组并行消费 worker 数（游标分片并行）
+	// BalanceAdapters 按模板 ID 配置可选的供应商余额查询。未配置的模板
+	// 保持 unconfigured，不会被误报成余额 0。
+	BalanceAdapters map[string]BalanceAdapterConfig `koanf:"balance_adapters"`
+}
+
+// BalanceAdapterConfig 是通用 JSON 余额端点配置。适配器只读取余额，
+// 不参与请求转发；凭据仍来自账号自身的 upstream_key。
+type BalanceAdapterConfig struct {
+	Provider        string        `koanf:"provider"`
+	Endpoint        string        `koanf:"endpoint"`
+	Method          string        `koanf:"method"`
+	Auth            string        `koanf:"auth"`
+	BalancePath     string        `koanf:"balance_path"`
+	CurrencyPath    string        `koanf:"currency_path"`
+	Timeout         time.Duration `koanf:"timeout"`
+	MaxResponseSize int64         `koanf:"max_response_size"`
 }
 
 func defaults() *Config {
@@ -161,7 +182,7 @@ func defaults() *Config {
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, SyncInterval: 30 * time.Second},
 		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, QuotaFlushInterval: 10 * time.Second, FlushWorkers: 8, StatsAggInterval: 5 * time.Minute, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
-		Billing:   BillingConfig{Enabled: true, FlushInterval: 250 * time.Millisecond, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 8},
+		Billing:   BillingConfig{Enabled: true, FlushInterval: 250 * time.Millisecond, BalanceRefreshInterval: 10 * time.Second, FlushWorkers: 8, BalanceAdapters: map[string]BalanceAdapterConfig{}},
 	}
 }
 
@@ -305,6 +326,33 @@ func validate(c *Config) error {
 	if c.Server.TimeZone != "" {
 		if _, err := time.LoadLocation(c.Server.TimeZone); err != nil {
 			return fmt.Errorf("server.time_zone: invalid IANA timezone %q: %w", c.Server.TimeZone, err)
+		}
+	}
+	if strings.TrimSpace(c.Upstream.ProxyURL) != "" {
+		if _, err := httpx.ParseProxy(c.Upstream.ProxyURL); err != nil {
+			return fmt.Errorf("upstream.proxy_url: %w", err)
+		}
+		if c.Upstream.TLSConvergenceEnabled {
+			return fmt.Errorf("upstream.tls_convergence_enabled cannot be combined with upstream.proxy_url")
+		}
+	}
+	for rawID, adapter := range c.Billing.BalanceAdapters {
+		id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+		if err != nil || id <= 0 {
+			return fmt.Errorf("billing.balance_adapters.%q must be a positive template id", rawID)
+		}
+		if adapter.Timeout < 0 {
+			return fmt.Errorf("billing.balance_adapters.%d.timeout must be non-negative", id)
+		}
+		if adapter.MaxResponseSize < 0 {
+			return fmt.Errorf("billing.balance_adapters.%d.max_response_size must be non-negative", id)
+		}
+		auth := strings.ToLower(strings.TrimSpace(adapter.Auth))
+		if auth != "" && auth != "none" && auth != "bearer" && auth != "api_key" {
+			return fmt.Errorf("billing.balance_adapters.%d.auth %q is unsupported", id, adapter.Auth)
+		}
+		if strings.TrimSpace(adapter.Endpoint) != "" && strings.TrimSpace(adapter.Provider) == "" {
+			return fmt.Errorf("billing.balance_adapters.%d.provider is required when endpoint is configured", id)
 		}
 	}
 	return nil

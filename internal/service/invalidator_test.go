@@ -34,6 +34,7 @@ func (r *invRecorder) Templates() { r.record("templates", nil, false) }
 func (r *invRecorder) Multipliers() {
 	r.record("multipliers", nil, false)
 }
+func (r *invRecorder) Groups(gids []int64) { r.record("groups", gids, false) }
 func (r *invRecorder) Accounts(gids []int64, keyChanged bool) {
 	r.record("accounts", gids, keyChanged)
 }
@@ -207,9 +208,11 @@ func TestInvalidatorMatrix(t *testing.T) {
 		g, err := svc.CreateGroup(ctx, "g", domain.GroupVisibilityPublic, nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, 1, rec.countKind("multipliers"), "创建组（倍率设定）→ Multipliers()")
+		beforeGroups := rec.countKind("groups")
 		_, err = svc.UpdateGroup(ctx, &domain.Group{ID: g.ID, Name: "g", PriceMultiplier: 20000, ProtocolConverts: nil})
 		require.NoError(t, err)
 		require.Equal(t, 2, rec.countKind("multipliers"), "更新组倍率 → Multipliers()")
+		require.Equal(t, beforeGroups+1, rec.countKind("groups"), "更新组配置 → 定向刷新组路由")
 		require.NoError(t, svc.DeleteGroup(ctx, g.ID))
 		require.Equal(t, 3, rec.countKind("multipliers"), "删除组 → Multipliers()")
 		require.Zero(t, rec.countKind("users"))
@@ -238,7 +241,7 @@ func TestInvalidatorMatrix(t *testing.T) {
 		require.Equal(t, 1, rec.countKind("users"), "assignment 倍率变更不得触发用户全量 Reload（仅创建用户一次）")
 	})
 
-	t.Run("批量组更新（仅 name/visibility）→ 不触发任何失效", func(t *testing.T) {
+	t.Run("批量组更新（仅 name/visibility）→ 定向刷新组", func(t *testing.T) {
 		fs := newFakeStore()
 		rec := &invRecorder{}
 		svc := &Service{store: fs, inv: rec, log: nil}
@@ -247,6 +250,6 @@ func TestInvalidatorMatrix(t *testing.T) {
 		before := rec.total()
 		name := "renamed"
 		require.NoError(t, svc.UpdateGroupsBatch(ctx, []int64{g.ID}, repository.GroupPatch{Name: &name}))
-		require.Equal(t, before, rec.total(), "GroupPatch 无倍率字段 → 不触发失效（矩阵：仅倍率变更走 Multipliers）")
+		require.Equal(t, before+1, rec.total(), "组配置批量更新 → 定向刷新组路由")
 	})
 }

@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 )
 
 // Account is the model entity for the Account schema.
@@ -24,6 +25,8 @@ type Account struct {
 	TemplateID int64 `json:"template_id,omitempty"`
 	// BaseURL holds the value of the "base_url" field.
 	BaseURL *string `json:"base_url,omitempty"`
+	// UpstreamID holds the value of the "upstream_id" field.
+	UpstreamID *int64 `json:"upstream_id,omitempty"`
 	// UpstreamKey holds the value of the "upstream_key" field.
 	UpstreamKey string `json:"upstream_key,omitempty"`
 	// Status holds the value of the "status" field.
@@ -56,13 +59,15 @@ type Account struct {
 type AccountEdges struct {
 	// Template holds the value of the template edge.
 	Template *Template `json:"template,omitempty"`
+	// Upstream holds the value of the upstream edge.
+	Upstream *Upstream `json:"upstream,omitempty"`
 	// Groups holds the value of the groups edge.
 	Groups []*Group `json:"groups,omitempty"`
 	// Ext holds the value of the ext edge.
 	Ext []*AccountExt `json:"ext,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // TemplateOrErr returns the Template value or an error if the edge
@@ -76,10 +81,21 @@ func (e AccountEdges) TemplateOrErr() (*Template, error) {
 	return nil, &NotLoadedError{edge: "template"}
 }
 
+// UpstreamOrErr returns the Upstream value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AccountEdges) UpstreamOrErr() (*Upstream, error) {
+	if e.Upstream != nil {
+		return e.Upstream, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: upstream.Label}
+	}
+	return nil, &NotLoadedError{edge: "upstream"}
+}
+
 // GroupsOrErr returns the Groups value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) GroupsOrErr() ([]*Group, error) {
-	if e.loadedTypes[1] {
+	if e.loadedTypes[2] {
 		return e.Groups, nil
 	}
 	return nil, &NotLoadedError{edge: "groups"}
@@ -88,7 +104,7 @@ func (e AccountEdges) GroupsOrErr() ([]*Group, error) {
 // ExtOrErr returns the Ext value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) ExtOrErr() ([]*AccountExt, error) {
-	if e.loadedTypes[2] {
+	if e.loadedTypes[3] {
 		return e.Ext, nil
 	}
 	return nil, &NotLoadedError{edge: "ext"}
@@ -99,7 +115,7 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case account.FieldID, account.FieldTemplateID, account.FieldWeight, account.FieldMaxConcurrency:
+		case account.FieldID, account.FieldTemplateID, account.FieldUpstreamID, account.FieldWeight, account.FieldMaxConcurrency:
 			values[i] = new(sql.NullInt64)
 		case account.FieldName, account.FieldBaseURL, account.FieldUpstreamKey, account.FieldStatus, account.FieldLastError:
 			values[i] = new(sql.NullString)
@@ -144,6 +160,13 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.BaseURL = new(string)
 				*_m.BaseURL = value.String
+			}
+		case account.FieldUpstreamID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_id", values[i])
+			} else if value.Valid {
+				_m.UpstreamID = new(int64)
+				*_m.UpstreamID = value.Int64
 			}
 		case account.FieldUpstreamKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -234,6 +257,11 @@ func (_m *Account) QueryTemplate() *TemplateQuery {
 	return NewAccountClient(_m.config).QueryTemplate(_m)
 }
 
+// QueryUpstream queries the "upstream" edge of the Account entity.
+func (_m *Account) QueryUpstream() *UpstreamQuery {
+	return NewAccountClient(_m.config).QueryUpstream(_m)
+}
+
 // QueryGroups queries the "groups" edge of the Account entity.
 func (_m *Account) QueryGroups() *GroupQuery {
 	return NewAccountClient(_m.config).QueryGroups(_m)
@@ -276,6 +304,11 @@ func (_m *Account) String() string {
 	if v := _m.BaseURL; v != nil {
 		builder.WriteString("base_url=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamID; v != nil {
+		builder.WriteString("upstream_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("upstream_key=")

@@ -22,10 +22,14 @@ type Group struct {
 	Name string `json:"name,omitempty"`
 	// Visibility holds the value of the "visibility" field.
 	Visibility group.Visibility `json:"visibility,omitempty"`
+	// RoutingMode holds the value of the "routing_mode" field.
+	RoutingMode group.RoutingMode `json:"routing_mode,omitempty"`
 	// PriceMultiplier holds the value of the "price_multiplier" field.
 	PriceMultiplier int `json:"price_multiplier,omitempty"`
 	// ProtocolConvert holds the value of the "protocol_convert" field.
 	ProtocolConvert []string `json:"protocol_convert,omitempty"`
+	// AllowedModels holds the value of the "allowed_models" field.
+	AllowedModels []string `json:"allowed_models,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// DeletedAt holds the value of the "deleted_at" field.
@@ -46,9 +50,11 @@ type GroupEdges struct {
 	Keys []*Key `json:"keys,omitempty"`
 	// Assignments holds the value of the assignments edge.
 	Assignments []*GroupAssignment `json:"assignments,omitempty"`
+	// UpstreamMembers holds the value of the upstream_members edge.
+	UpstreamMembers []*GroupUpstream `json:"upstream_members,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // AccountsOrErr returns the Accounts value or an error if the edge
@@ -78,16 +84,25 @@ func (e GroupEdges) AssignmentsOrErr() ([]*GroupAssignment, error) {
 	return nil, &NotLoadedError{edge: "assignments"}
 }
 
+// UpstreamMembersOrErr returns the UpstreamMembers value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) UpstreamMembersOrErr() ([]*GroupUpstream, error) {
+	if e.loadedTypes[3] {
+		return e.UpstreamMembers, nil
+	}
+	return nil, &NotLoadedError{edge: "upstream_members"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case group.FieldProtocolConvert:
+		case group.FieldProtocolConvert, group.FieldAllowedModels:
 			values[i] = new([]byte)
 		case group.FieldID, group.FieldPriceMultiplier:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldVisibility:
+		case group.FieldName, group.FieldVisibility, group.FieldRoutingMode:
 			values[i] = new(sql.NullString)
 		case group.FieldUpdatedAt, group.FieldDeletedAt, group.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -124,6 +139,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Visibility = group.Visibility(value.String)
 			}
+		case group.FieldRoutingMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field routing_mode", values[i])
+			} else if value.Valid {
+				_m.RoutingMode = group.RoutingMode(value.String)
+			}
 		case group.FieldPriceMultiplier:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field price_multiplier", values[i])
@@ -136,6 +157,14 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &_m.ProtocolConvert); err != nil {
 					return fmt.Errorf("unmarshal field protocol_convert: %w", err)
+				}
+			}
+		case group.FieldAllowedModels:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field allowed_models", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.AllowedModels); err != nil {
+					return fmt.Errorf("unmarshal field allowed_models: %w", err)
 				}
 			}
 		case group.FieldUpdatedAt:
@@ -185,6 +214,11 @@ func (_m *Group) QueryAssignments() *GroupAssignmentQuery {
 	return NewGroupClient(_m.config).QueryAssignments(_m)
 }
 
+// QueryUpstreamMembers queries the "upstream_members" edge of the Group entity.
+func (_m *Group) QueryUpstreamMembers() *GroupUpstreamQuery {
+	return NewGroupClient(_m.config).QueryUpstreamMembers(_m)
+}
+
 // Update returns a builder for updating this Group.
 // Note that you need to call Group.Unwrap() before calling this method if this Group
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -214,11 +248,17 @@ func (_m *Group) String() string {
 	builder.WriteString("visibility=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
 	builder.WriteString(", ")
+	builder.WriteString("routing_mode=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RoutingMode))
+	builder.WriteString(", ")
 	builder.WriteString("price_multiplier=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PriceMultiplier))
 	builder.WriteString(", ")
 	builder.WriteString("protocol_convert=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ProtocolConvert))
+	builder.WriteString(", ")
+	builder.WriteString("allowed_models=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AllowedModels))
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))

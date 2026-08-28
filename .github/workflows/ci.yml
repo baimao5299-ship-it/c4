@@ -4,6 +4,20 @@ on:
   push:
 
 jobs:
+  race-transport:
+    name: race (live proxy transport)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The proxy switch path is deliberately exercised under the Go race
+      # detector; the service setting test also covers concurrent rollback
+      # ordering without a database dependency.
+      - name: concurrent transport tests
+        run: go test -race -count=1 ./pkg/httpx ./cmd/server ./internal/service
+
   test:
     name: test
     runs-on: ubuntu-latest

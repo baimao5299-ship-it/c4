@@ -260,6 +260,20 @@ func TestGateMissingCounterFailOpen(t *testing.T) {
 	g.release(meta, lvl)
 }
 
+func TestGateReleaseNeverUnderflowsOnDuplicateRelease(t *testing.T) {
+	g := newConcurrencyGate(nil)
+	meta := domain.KeyMeta{KeyID: 1, UserID: 1, UserMaxConc: 2, KeyMaxConc: 2}
+	g.upsert(meta)
+	lvl, ok := g.acquire(meta)
+	require.True(t, ok)
+	g.release(meta, lvl)
+	// A duplicate terminal callback must not create a negative in-flight count.
+	g.release(meta, lvl)
+	snap := g.store.Load()
+	require.Equal(t, int64(0), snap.users[meta.UserID].Load())
+	require.Equal(t, int64(0), snap.keys[meta.KeyID].Load())
+}
+
 // --- 多实例本地预算（#14 T3b §3.2） ---
 
 // fakeInstances 固定 N 的 InstancesProvider 测试桩。

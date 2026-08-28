@@ -679,8 +679,9 @@ func (a *Codex) translateDialError(e *codexEntry, err error) error {
 //     部分更新回写（幂等；回调在 SDK 单飞内串行——同账号并发轮转不重复回写）
 //   - codex-pat：PAT(key, WithPATOnAuthFatal(统一回调))——PAT 致命 401 在 SDK
 //     内分类后同走 OnAuthFatal 禁用链路（毒化 + 单次上报，与 OAuth 双源去重共用）
-//   - 空 rt（oauth 缺 refresh_token）→ 上报失效（凭据不完整）并返回错误，不
-//     panic
+//   - OAuth 只有 access_token（Sub2 session 导出形态）→ 使用 SDK 的静态
+//     OAuth provider，不触发刷新；真正同时缺少 access_token 和 refresh_token
+//     才按凭据不完整处理
 func (a *Codex) buildAuth(cred *domain.AccountCredential, e *codexEntry) (codexsdk.Auth, error) {
 	if cred.PATKey != "" {
 		return codexsdk.PAT(cred.PATKey,
@@ -689,10 +690,19 @@ func (a *Codex) buildAuth(cred *domain.AccountCredential, e *codexEntry) (codexs
 			codexsdk.WithPATOnAuthFatal(func(fatal error) { a.reportFatal(e, fatal) }),
 		), nil
 	}
-	if cred.OAuthRefreshToken == "" {
-		return nil, errCredentialIncomplete // 上报在 clientFor 锁外执行（见 clientFor）
-	}
 	e.expiresAt = cred.OAuthExpiresAt // T5 回写保旧（SDK 回调无 expiry）
+	if cred.OAuthRefreshToken == "" {
+		if cred.OAuthToken == "" {
+			return nil, errCredentialIncomplete // 上报在 clientFor 锁外执行（见 clientFor）
+		}
+		// Sub2 的 session 导出可能只有 access_token。codex-sdk 的低层
+		// OAuth provider 正是为这种外部 token 源提供的：请求时返回当前
+		// token，不伪造 refresh，也不把账号误判成失效账号。
+		token := cred.OAuthToken
+		return codexsdk.OAuth(func(context.Context) (string, error) {
+			return token, nil
+		}), nil
+	}
 	opts := []codexsdk.OAuthOption{
 		// 统一回调装配（T2 §3）：SDK 判死（RT 判死码 / token 端点 401 / 账号
 		// 禁用 / AT 401 判死 / 回调连续失败）→ 双源去重单次上报

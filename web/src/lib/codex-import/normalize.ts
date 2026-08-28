@@ -7,6 +7,13 @@ export type NormalizedRow = { index: number; raw: unknown; item?: OAuthItem | PA
 
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const str = (value: unknown) => typeof value === 'string' ? value.trim() : value == null ? '' : String(value).trim()
+const firstText = (...values: unknown[]) => {
+  for (const value of values) {
+    const normalized = str(value)
+    if (normalized) return normalized
+  }
+  return ''
+}
 
 function timestamp(value: unknown): number | undefined {
   const source = typeof value === 'number' ? value : typeof value === 'string' && /^-?\d+$/.test(value.trim()) ? Number(value.trim()) : undefined
@@ -31,10 +38,14 @@ function validateIdentity(email: string, accountId: string) {
 
 function headerValue(headers: unknown, name: string): string {
   if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return ''
+  let empty = ''
   for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
-    if (key.trim().toLowerCase() === name.toLowerCase()) return str(value)
+    if (key.trim().toLowerCase() !== name.toLowerCase()) continue
+    const normalized = str(value)
+    if (normalized) return normalized
+    empty = normalized
   }
-  return ''
+  return empty
 }
 
 function integer(value: unknown, label: string, min: number): number | undefined {
@@ -49,25 +60,30 @@ export function normalizeRow(raw: unknown, kind: CredentialKind, index: number):
   const obj = raw as Record<string, unknown>
   const sourceError = str(obj.__import_error)
   if (sourceError) return { index, raw, error: sourceError }
-  const email = str(obj.email ?? obj.codex_email)
-  const accountId = str(obj.account_id ?? obj.codex_account_id)
+  // Exports from different tools can contain both aliases; prefer the first
+  // populated value so an empty snake_case field cannot hide a valid camelCase
+  // field (the same rule is used by the Sub2 adapter).
+  const email = firstText(obj.email, obj.codex_email)
+  const accountId = firstText(obj.account_id, obj.codex_account_id)
   const identityError = validateIdentity(email, accountId)
   if (identityError) return { index, raw, error: identityError }
   try {
     const weight = integer(obj.weight, 'weight', 0)
     const concurrency = integer(obj.max_concurrency, 'max_concurrency', 1)
     if (kind === 'codex-oauth') {
-      const token = str(obj.access_token ?? obj.codex_oauth_token)
-      const refresh = str(obj.refresh_token ?? obj.codex_oauth_refresh_token)
-      if (!token || !refresh) return { index, raw, error: 'OAuth access_token 与 refresh_token 必须成对填写' }
-      const item: OAuthItem = { codex_email: email, codex_account_id: accountId, codex_oauth_token: token, codex_oauth_refresh_token: refresh }
-      const expired = normalizeExpired(obj.expired ?? obj.codex_oauth_expires_at)
+      const token = firstText(obj.access_token, obj.codex_oauth_token)
+      const refresh = firstText(obj.refresh_token, obj.codex_oauth_refresh_token)
+      // Sub2 的 session 导出允许 accessToken-only；refresh 缺失时由后端
+      // 保留已有 refresh（更新）或创建无自动续期账号（新建），不能把整行误判为无效。
+      if (!token) return { index, raw, error: 'OAuth access_token 必填' }
+      const item: OAuthItem = { codex_email: email, codex_account_id: accountId, codex_oauth_token: token, ...(refresh ? { codex_oauth_refresh_token: refresh } : {}) }
+      const expired = normalizeExpired(firstText(obj.expired, obj.codex_oauth_expires_at) || undefined)
       if (expired) item.codex_oauth_expires_at = expired
       if (weight != null) item.weight = weight
       if (concurrency != null) item.max_concurrency = concurrency
       return { index, raw, item }
     }
-    const key = (headerValue(obj.headers, 'authorization') || str(obj.codex_pat_key ?? obj.personal_access_token)).replace(/^Bearer\s+/i, '').trim()
+    const key = (headerValue(obj.headers, 'authorization') || firstText(obj.codex_pat_key, obj.personal_access_token)).replace(/^Bearer\s+/i, '').trim()
     if (!key) return { index, raw, error: 'PAT 凭据不能为空；OAuth access_token 不能作为 PAT 导入' }
     const item: PATItem = { codex_email: email, codex_account_id: accountId, codex_pat_key: key }
     if (weight != null) item.weight = weight
@@ -89,7 +105,12 @@ export function markDuplicateRows(rows: NormalizedRow[]): NormalizedRow[] {
     const accountId = str(item.codex_account_id).toLowerCase()
     const email = str(item.codex_email).toLowerCase()
     const credential = str(item.codex_oauth_refresh_token ?? item.codex_oauth_token ?? item.codex_pat_key)
-    const key = accountId ? `account:${accountId}` : email ? `email:${email}` : credential ? `credential:${credential}` : ''
+    // The persisted identity is the composite (codex_email, codex_account_id).
+    // Using account_id alone rejects legitimate accounts that share a workspace
+    // id but belong to different emails.
+    const key = email && accountId
+      ? `identity:${email}\u0000${accountId}`
+      : credential ? `credential:${credential}` : ''
     if (!key) return row
     const first = firstByKey.get(key)
     if (first != null) return { ...row, duplicateOf: first, error: `重复账号：与第 ${first + 1} 行相同` }

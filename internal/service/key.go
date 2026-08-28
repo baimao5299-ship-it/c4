@@ -31,6 +31,9 @@ func (s *Service) CreateKey(ctx context.Context, userID int64, name string, grou
 	if err != nil {
 		return nil, err
 	}
+	if err := s.ensureGroupRoutable(ctx, g); err != nil {
+		return nil, err
+	}
 	// B1-1：用户门禁字段写库前预取（checkGroupEligible 本就在写前做 DB 读，
 	// 前置 GetUser 零成本；返回组顺带预取 ProtocolConverts——A-2 增量注册字段
 	// 同源）——写后 upsertKeyMetaInMemory 不可失败，失败窗口整体消失（新 raw

@@ -15,6 +15,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 )
 
 // AccountCreate is the builder for creating a Account entity.
@@ -47,6 +48,20 @@ func (_c *AccountCreate) SetBaseURL(v string) *AccountCreate {
 func (_c *AccountCreate) SetNillableBaseURL(v *string) *AccountCreate {
 	if v != nil {
 		_c.SetBaseURL(*v)
+	}
+	return _c
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_c *AccountCreate) SetUpstreamID(v int64) *AccountCreate {
+	_c.mutation.SetUpstreamID(v)
+	return _c
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableUpstreamID(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetUpstreamID(*v)
 	}
 	return _c
 }
@@ -206,6 +221,11 @@ func (_c *AccountCreate) SetID(v int64) *AccountCreate {
 // SetTemplate sets the "template" edge to the Template entity.
 func (_c *AccountCreate) SetTemplate(v *Template) *AccountCreate {
 	return _c.SetTemplateID(v.ID)
+}
+
+// SetUpstream sets the "upstream" edge to the Upstream entity.
+func (_c *AccountCreate) SetUpstream(v *Upstream) *AccountCreate {
+	return _c.SetUpstreamID(v.ID)
 }
 
 // AddGroupIDs adds the "groups" edge to the Group entity by IDs.
@@ -431,6 +451,23 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_node.TemplateID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.UpstreamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   account.UpstreamTable,
+			Columns: []string{account.UpstreamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstream.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.UpstreamID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.GroupsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -554,6 +591,24 @@ func (u *AccountUpsert) UpdateBaseURL() *AccountUpsert {
 // ClearBaseURL clears the value of the "base_url" field.
 func (u *AccountUpsert) ClearBaseURL() *AccountUpsert {
 	u.SetNull(account.FieldBaseURL)
+	return u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *AccountUpsert) SetUpstreamID(v int64) *AccountUpsert {
+	u.Set(account.FieldUpstreamID, v)
+	return u
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateUpstreamID() *AccountUpsert {
+	u.SetExcluded(account.FieldUpstreamID)
+	return u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *AccountUpsert) ClearUpstreamID() *AccountUpsert {
+	u.SetNull(account.FieldUpstreamID)
 	return u
 }
 
@@ -825,6 +880,27 @@ func (u *AccountUpsertOne) UpdateBaseURL() *AccountUpsertOne {
 func (u *AccountUpsertOne) ClearBaseURL() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearBaseURL()
+	})
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *AccountUpsertOne) SetUpstreamID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetUpstreamID(v)
+	})
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateUpstreamID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateUpstreamID()
+	})
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *AccountUpsertOne) ClearUpstreamID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearUpstreamID()
 	})
 }
 
@@ -1291,6 +1367,27 @@ func (u *AccountUpsertBulk) UpdateBaseURL() *AccountUpsertBulk {
 func (u *AccountUpsertBulk) ClearBaseURL() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.ClearBaseURL()
+	})
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *AccountUpsertBulk) SetUpstreamID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetUpstreamID(v)
+	})
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateUpstreamID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateUpstreamID()
+	})
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *AccountUpsertBulk) ClearUpstreamID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearUpstreamID()
 	})
 }
 

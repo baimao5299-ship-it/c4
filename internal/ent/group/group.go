@@ -19,10 +19,14 @@ const (
 	FieldName = "name"
 	// FieldVisibility holds the string denoting the visibility field in the database.
 	FieldVisibility = "visibility"
+	// FieldRoutingMode holds the string denoting the routing_mode field in the database.
+	FieldRoutingMode = "routing_mode"
 	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
 	FieldPriceMultiplier = "price_multiplier"
 	// FieldProtocolConvert holds the string denoting the protocol_convert field in the database.
 	FieldProtocolConvert = "protocol_convert"
+	// FieldAllowedModels holds the string denoting the allowed_models field in the database.
+	FieldAllowedModels = "allowed_models"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
@@ -35,6 +39,8 @@ const (
 	EdgeKeys = "keys"
 	// EdgeAssignments holds the string denoting the assignments edge name in mutations.
 	EdgeAssignments = "assignments"
+	// EdgeUpstreamMembers holds the string denoting the upstream_members edge name in mutations.
+	EdgeUpstreamMembers = "upstream_members"
 	// Table holds the table name of the group in the database.
 	Table = "groups"
 	// AccountsTable is the table that holds the accounts relation/edge. The primary key declared below.
@@ -56,6 +62,13 @@ const (
 	AssignmentsInverseTable = "group_assignments"
 	// AssignmentsColumn is the table column denoting the assignments relation/edge.
 	AssignmentsColumn = "group_id"
+	// UpstreamMembersTable is the table that holds the upstream_members relation/edge.
+	UpstreamMembersTable = "group_upstreams"
+	// UpstreamMembersInverseTable is the table name for the GroupUpstream entity.
+	// It exists in this package in order to avoid circular dependency with the "groupupstream" package.
+	UpstreamMembersInverseTable = "group_upstreams"
+	// UpstreamMembersColumn is the table column denoting the upstream_members relation/edge.
+	UpstreamMembersColumn = "group_id"
 )
 
 // Columns holds all SQL columns for group fields.
@@ -63,8 +76,10 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldVisibility,
+	FieldRoutingMode,
 	FieldPriceMultiplier,
 	FieldProtocolConvert,
+	FieldAllowedModels,
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldCreatedAt,
@@ -91,6 +106,8 @@ var (
 	DefaultPriceMultiplier int
 	// DefaultProtocolConvert holds the default value on creation for the "protocol_convert" field.
 	DefaultProtocolConvert []string
+	// DefaultAllowedModels holds the default value on creation for the "allowed_models" field.
+	DefaultAllowedModels []string
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
@@ -125,6 +142,32 @@ func VisibilityValidator(v Visibility) error {
 	}
 }
 
+// RoutingMode defines the type for the "routing_mode" enum field.
+type RoutingMode string
+
+// RoutingModeAccounts is the default value of the RoutingMode enum.
+const DefaultRoutingMode = RoutingModeAccounts
+
+// RoutingMode values.
+const (
+	RoutingModeAccounts  RoutingMode = "accounts"
+	RoutingModeUpstreams RoutingMode = "upstreams"
+)
+
+func (rm RoutingMode) String() string {
+	return string(rm)
+}
+
+// RoutingModeValidator is a validator for the "routing_mode" field enum values. It is called by the builders before save.
+func RoutingModeValidator(rm RoutingMode) error {
+	switch rm {
+	case RoutingModeAccounts, RoutingModeUpstreams:
+		return nil
+	default:
+		return fmt.Errorf("group: invalid enum value for routing_mode field: %q", rm)
+	}
+}
+
 // OrderOption defines the ordering options for the Group queries.
 type OrderOption func(*sql.Selector)
 
@@ -141,6 +184,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByVisibility orders the results by the visibility field.
 func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
+}
+
+// ByRoutingMode orders the results by the routing_mode field.
+func ByRoutingMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRoutingMode, opts...).ToFunc()
 }
 
 // ByPriceMultiplier orders the results by the price_multiplier field.
@@ -204,6 +252,20 @@ func ByAssignments(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAssignmentsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByUpstreamMembersCount orders the results by upstream_members count.
+func ByUpstreamMembersCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newUpstreamMembersStep(), opts...)
+	}
+}
+
+// ByUpstreamMembers orders the results by upstream_members terms.
+func ByUpstreamMembers(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUpstreamMembersStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newAccountsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -223,5 +285,12 @@ func newAssignmentsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AssignmentsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, AssignmentsTable, AssignmentsColumn),
+	)
+}
+func newUpstreamMembersStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UpstreamMembersInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, UpstreamMembersTable, UpstreamMembersColumn),
 	)
 }

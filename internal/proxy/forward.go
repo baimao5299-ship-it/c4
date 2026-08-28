@@ -168,6 +168,15 @@ func (p *Proxy) SetInstancesProvider(inst InstancesProvider) {
 // no-op（恒 0）。落库路由统一走 routeLog（分表原则：不计费不入 usage_logs）。
 func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 	p.sched.Release(accountID)
+	p.finishAfterRelease(l)
+}
+
+func (p *Proxy) finishSelection(sel *scheduler.Selection, l *domain.UsageLog) {
+	p.sched.ReleaseSelection(sel)
+	p.finishAfterRelease(l)
+}
+
+func (p *Proxy) finishAfterRelease(l *domain.UsageLog) {
 	if l != nil {
 		p.applyBilling(l)
 		p.auth.DeductQuota(l.KeyID, l.TotalTokens)
@@ -525,10 +534,17 @@ type usageTuple struct {
 // applyBilling 承担）。groupID 由各 caller 作用域传入（评审 M-1：此前硬编码
 // 0 → 中止路径组倍率查找恒 miss → 组倍率 ≠10000 时计费与正常路径不一致）。
 func (p *Proxy) recordStreamAbort(ctx context.Context, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, u usageTuple, err error) {
+	p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, sel.Format, u, err)
+}
+
+// recordStreamAbortForFormat records the format seen by the client. Converted
+// requests select an upstream format in sel.Format, so callers on that path
+// must pass the original client format explicitly for consistent analytics.
+func (p *Proxy) recordStreamAbortForFormat(ctx context.Context, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, clientFormat domain.RequestFormat, u usageTuple, err error) {
 	if p.log != nil {
 		p.log.Warn("upstream stream aborted", logx.String("request_id", reqID), logx.Error(err))
 	}
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, 200, domain.ErrAbort, u, start)))
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, clientFormat, 200, domain.ErrAbort, u, start)))
 }
 
 func (p *Proxy) handleSelectError(w http.ResponseWriter, err error) {

@@ -24,6 +24,7 @@ import Forbidden from '@/pages/forbidden'
 import NotFound from '@/pages/not-found'
 import Dashboard from '@/pages/dashboard'
 import Templates from '@/pages/templates'
+import Upstreams from '@/pages/upstreams'
 import Accounts from '@/pages/accounts'
 import Users from '@/pages/users'
 import Groups from '@/pages/groups'
@@ -56,6 +57,7 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="/app/dashboard" replace /> },
           { path: 'dashboard', element: <Dashboard /> },
           { path: 'templates', element: <Templates /> },
+          { path: 'upstreams', element: <Upstreams /> },
           { path: 'accounts', element: <Accounts /> },
           { path: 'users', element: <Users /> },
           { path: 'groups', element: <Groups /> },

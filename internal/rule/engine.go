@@ -237,7 +237,7 @@ func (e *RuleEngine) Reload(ctx context.Context) error {
 // seedRules 规则表为空时写入种子规则（fresh setup 哲学，用户裁决；kind=error
 // 旧规则不迁移——管理面重建；指针即意图 ResponseCode/CustomMessage nil=透传）：
 //
-//	seed-429（p10）      kind=429   → status=429 + cooldown 30s + ResponseCode nil(透429) + CustomMessage "rate limited"（码透文不透）
+//	seed-429（p10）      kind=429   → status=429 + cooldown 2s + ResponseCode nil(透429) + CustomMessage "rate limited"（码透文不透）
 //	seed-4xx-400（p15）  kind=4xx + http_status=400 → ResponseCode nil + CustomMessage nil（400 全透；其余 4xx 默认归一 502——无规则即归一；直插 store，其 Then{} 与用户规则 Then{} 全透语义等价）
 //	seed-5xx-503-overload（p16）kind=5xx + http_status=503 + error_message_contains="overload"（小写敏感）→ ResponseCode nil +
 //	                    CustomMessage nil（503 overload 全透——码/文原样过，不惩罚不归一；其余 503 落回 seed-5xx 归一）
@@ -263,7 +263,7 @@ func (e *RuleEngine) seedRules(ctx context.Context) error {
 		{
 			Name: "seed-429", Enabled: true, Priority: 10,
 			When: domain.RuleWhen{Kind: strPtr("429")},
-			Then: domain.RuleThen{Status: statusPtr(domain.Status429), Cooldown: strPtr("30s"), CustomMessage: strPtr("rate limited")},
+			Then: domain.RuleThen{Status: statusPtr(domain.Status429), Cooldown: strPtr("2s"), CustomMessage: strPtr("rate limited")},
 		},
 		{
 			Name: "seed-4xx-400", Enabled: true, Priority: 15,

@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/notify"
@@ -120,5 +121,19 @@ func (s *Service) applyGroupAssignments(ctx context.Context, tx repository.TxSto
 // ListGroupsForUser 用户可选组列表（public 全部 + 已授予 private；/api/user/groups
 // 只读，key 创建时选组）。
 func (s *Service) ListGroupsForUser(ctx context.Context, userID int64) ([]*domain.Group, error) {
-	return s.store.ListGroupsForUser(ctx, userID)
+	groups, err := s.store.ListGroupsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	selectable := make([]*domain.Group, 0, len(groups))
+	for _, group := range groups {
+		if err := s.ensureGroupRoutable(ctx, group); err != nil {
+			if errors.Is(err, ErrGroupUnavailable) {
+				continue
+			}
+			return nil, err
+		}
+		selectable = append(selectable, group)
+	}
+	return selectable, nil
 }

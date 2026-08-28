@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, Users, Ban, CircleCheck, Filter, Settings2, SlidersHorizontal, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, Ban, CircleCheck, Filter, Settings2, SlidersHorizontal, Upload, Layers3, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { ApiError, ApiUnauthorized } from '@/lib/api/client'
@@ -34,6 +34,7 @@ import { fmtTokens, formatPercent, toRFC3339, truncate } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 import { CodexImportDialog } from '@/components/codex-import/import-dialog'
+import { RelayPoolDialog } from '@/components/relay-pool-dialog'
 
 type AccountView = components['schemas']['AccountView']
 type AccountCreate = components['schemas']['AccountCreate']
@@ -52,7 +53,7 @@ const isCodexTemplate = (a: AccountView) =>
 // 视口懒加载块大小 = 批量端点上限（accounts/usage ≤100/次）。
 const USAGE_BLOCK_SIZE = 100
 const ACCOUNTS_HIDDEN_STORAGE_KEY = 'accounts-hidden-columns'
-const ACCOUNTS_HIDDENABLE_COLS = ['name', 'template', 'status', 'weight', 'maxConcurrency', 'curConcurrency', 'errRate', 'errCount', 'lastError', 'usage'] as const
+const ACCOUNTS_HIDDENABLE_COLS = ['name', 'template', 'upstream', 'status', 'weight', 'maxConcurrency', 'curConcurrency', 'errRate', 'errCount', 'lastError', 'usage', 'balance'] as const
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -117,6 +118,8 @@ function UsageCell({ item }: { item?: components['schemas']['AccountUsageItem'] 
   const up = item.upstream
   const pct = up?.rate_limit?.used_percent
   const resetAt = up?.rate_limit?.reset_at
+  const credits = up?.credits?.balance?.trim()
+  const upstreamRemaining = up?.spend_control?.remaining?.trim()
   // reset 剩余时长（列表 10s refetch 刷新，无需定时器）
   const leftMs = resetAt ? new Date(resetAt).getTime() - Date.now() : null
   return (
@@ -137,10 +140,28 @@ function UsageCell({ item }: { item?: components['schemas']['AccountUsageItem'] 
           )}
         </div>
       )}
+      {credits && <div className="whitespace-nowrap tabular-nums text-muted-foreground">{t('accounts.usage.upstreamCredits')}: <span className="font-medium text-foreground">{credits}</span></div>}
+      {upstreamRemaining && <div className="whitespace-nowrap tabular-nums text-muted-foreground">{t('accounts.usage.upstreamRemaining')}: <span className="font-medium text-foreground">{upstreamRemaining}</span></div>}
       {resetAt && leftMs != null && leftMs <= 0 && <div className="whitespace-nowrap text-[11px] text-muted-foreground">{t('accounts.usage.resetSoon')}</div>}
       {item.upstream_error && <div className="whitespace-nowrap text-[11px] text-destructive">{t(`accounts.usage.err.${item.upstream_error}`)}</div>}
     </div>
   )
+}
+
+function BalanceCell({ item, loading }: { item?: components['schemas']['ProviderBalanceSnapshot']; loading?: boolean }) {
+  const { t } = useTranslation()
+  if (loading) return <Skeleton className="mx-auto h-8 w-20" />
+  if (!item) return <span className="text-xs text-muted-foreground">—</span>
+  const amount = item.amount?.trim()
+  const currency = item.currency?.trim()
+  const value = amount ? `${currency ? `${currency} ` : ''}${amount}` : '—'
+  if (item.status === 'fresh') return <span className="whitespace-nowrap text-xs tabular-nums">{value}</span>
+  if (item.status === 'stale') {
+    return <div className="space-y-0.5 text-xs"><div className="whitespace-nowrap tabular-nums">{value}</div><div className="text-amber-600">{t('accounts.balance.stale')}</div></div>
+  }
+  if (item.status === 'unconfigured') return <span className="text-xs text-muted-foreground">{t('accounts.balance.unconfigured')}</span>
+  const code = item.error_code ? t(`accounts.balance.errors.${item.error_code}`, { defaultValue: item.error_code }) : t('accounts.balance.unavailable')
+  return <span className="text-xs text-destructive" title={code}>{code}</span>
 }
 
 // RFC3339（API）→ datetime-local 'YYYY-MM-DDTHH:mm'（本地时区；DateTimePicker 值格式，'' = 未设置）
@@ -159,6 +180,7 @@ interface FormState {
   name: string
   template_id: string // Select 值统一用字符串，提交时转 number
   base_url: string // 账号级覆盖（'' = 继承模板）
+  upstream_id: string // 上游清单绑定（'' = 不绑定）
   upstream_key: string
   status: AccountStatus
   weight: string
@@ -177,6 +199,7 @@ const emptyForm = (): FormState => ({
   name: '',
   template_id: '',
   base_url: '',
+  upstream_id: '',
   upstream_key: '',
   status: 'active',
   weight: '0',
@@ -194,6 +217,7 @@ function toForm(a: AccountView): FormState {
     name: a.Name ?? '',
     template_id: String(a.TemplateID ?? ''),
     base_url: a.BaseURL ?? '', // 编辑回显（C3：toAPIAccountView 平铺携带，否则保存静默清空）
+    upstream_id: a.UpstreamID == null ? '' : String(a.UpstreamID),
     upstream_key: a.UpstreamKey ?? '',
     status: a.Status ?? 'active',
     weight: String(a.Weight ?? 0),
@@ -218,6 +242,7 @@ function toBody(f: FormState, editing: boolean): AccountCreate {
     template_id: Number(f.template_id),
     // 空串归一 null（create/update 路径 ""/null/缺省统一 = 继承模板）
     base_url: f.base_url.trim() || null,
+    upstream_id: f.upstream_id ? Number(f.upstream_id) : null,
     upstream_key: f.upstream_key,
     status: f.status,
     weight: f.weight === '' ? 0 : Number(f.weight),
@@ -257,6 +282,7 @@ function toggleBody(a: AccountView, next: AccountStatus): AccountCreate {
     name: a.Name ?? '',
     template_id: a.TemplateID ?? 0,
     base_url: a.BaseURL ?? null,
+    upstream_id: a.UpstreamID ?? null,
     upstream_key: a.UpstreamKey ?? '',
     status: next,
     weight: a.Weight ?? 0,
@@ -267,6 +293,7 @@ function toggleBody(a: AccountView, next: AccountStatus): AccountCreate {
 // 批量更新表单：空字段 = 不发送（保持原值）。
 interface BatchForm {
   name: string
+  upstream_id: string // unchanged sentinel, 0 = clear, positive id = bind
   upstream_key: string
   base_url: string
   status: BatchStatus
@@ -280,6 +307,7 @@ interface BatchForm {
 
 const emptyBatchForm = (): BatchForm => ({
   name: '',
+  upstream_id: 'unchanged',
   upstream_key: '',
   base_url: '',
   status: 'all',
@@ -325,7 +353,13 @@ export default function Accounts() {
   const templates = templatesQ.data?.rows ?? []
   const groupsQ = useQuery({ queryKey: ['groups'], queryFn: () => api.listGroups({ limit: 100 }) })
   const groups = groupsQ.data?.rows ?? []
-  const rows = data?.rows ?? []
+  // Account binding options come from the same upstream inventory page. Load
+  // disabled entries too so an existing binding can be edited without being
+  // silently cleared; the scheduler still excludes disabled entries.
+  const upstreamsQ = useQuery({ queryKey: ['upstreams', 'account-options'], queryFn: () => api.listUpstreams({ limit: 200 }) })
+  const upstreams = useMemo(() => upstreamsQ.data?.items ?? [], [upstreamsQ.data?.items])
+  const upstreamByID = useMemo(() => new Map(upstreams.map(u => [u.ID, u])), [upstreams])
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows])
 
   // 行勾选（跨页保留，筛选/翻页后清空）——
   const [selected, setSelected] = useState<number[]>([])
@@ -384,6 +418,7 @@ export default function Accounts() {
 
   // 可视行覆盖的账号块（行序 chunk 100；视口外块不请求）
   const visibleBlocks = useMemo(() => {
+    if (visibleRange[1] < visibleRange[0]) return []
     const ids = new Set(rows.slice(Math.max(0, visibleRange[0]), visibleRange[1] + 1).map(r => r.ID!))
     const blocks: typeof rows[] = []
     for (let i = 0; i < rows.length; i += USAGE_BLOCK_SIZE) {
@@ -415,6 +450,47 @@ export default function Accounts() {
     visibleBlocks.forEach((b, idx) => { for (const r of b) m.set(r.ID!, usageQs[idx]?.isPending ?? false) })
     return m
   }, [visibleBlocks, usageQs])
+
+  // 供应商余额按需读取：沿用可视块，默认不轮询；缓存由后端负责新鲜/过期/失败状态。
+  const balanceQs = useQueries({
+    queries: visibleBlocks.map(b => ({
+      queryKey: ['accounts-balance-block', b.map(r => r.ID).join(',')],
+      queryFn: () => api.getAccountsBalances(b.map(r => r.ID!)),
+      enabled: isColVisible('balance') && pageIds.length > 0,
+      staleTime: 5 * 60_000,
+      refetchInterval: false,
+    })),
+  })
+  const balanceById = useMemo(() => {
+    const m = new Map<number, components['schemas']['ProviderBalanceSnapshot']>()
+    balanceQs.forEach(q => q.data?.items?.forEach(i => { if (i.account_id != null) m.set(i.account_id, i) }))
+    return m
+  }, [balanceQs])
+  const balanceLoadingById = useMemo(() => {
+    const m = new Map<number, boolean>()
+    visibleBlocks.forEach((b, idx) => { for (const r of b) m.set(r.ID!, balanceQs[idx]?.isPending ?? false) })
+    return m
+  }, [visibleBlocks, balanceQs])
+  const [balanceRefreshing, setBalanceRefreshing] = useState(false)
+  const forceRefreshBalances = async () => {
+    const blocks = visibleBlocks.length > 0 ? visibleBlocks : (rows.length > 0 ? [rows] : [])
+    if (balanceRefreshing || blocks.length === 0) return
+    setBalanceRefreshing(true)
+    try {
+      await Promise.all(blocks.map(block => {
+        const accountIds = block.map(row => row.ID!)
+        return qc.fetchQuery({
+          queryKey: ['accounts-balance-block', accountIds.join(',')],
+          queryFn: () => api.getAccountsBalances(accountIds, true),
+          staleTime: 0,
+        })
+      }))
+    } catch {
+      toast.add({ title: t('accounts.balance.refreshFailed'), type: 'error' })
+    } finally {
+      setBalanceRefreshing(false)
+    }
+  }
 
   // —— 用量明细弹窗（B-2）：三查询并行——汇总 = usage_logs 实时全窗（无聚合延迟，
   // A/U 准确、含尾窗）；分桶 = stats-agg 离线聚合（watermark 滞后 Lag，末桶为进行中的
@@ -510,6 +586,7 @@ export default function Accounts() {
     mutationFn: (ids: number[]) => api.deleteAccountsBatch(ids),
     onSuccess: (_res, ids) => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['accounts-balance-block'] })
       setSelected([])
       // 当前页被删空时回到最后有效页（templates 同款守卫，不再一律回第 1 页）
       const after = (data?.total ?? 0) - ids.length
@@ -520,6 +597,7 @@ export default function Accounts() {
     mutationFn: (p: { ids: number[]; fields: AccountPatch }) => api.updateAccountsBatch(p.ids, p.fields),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['accounts-balance-block'] })
       setSelected([])
       closeBatchUpdate('submitted')
     },
@@ -528,6 +606,7 @@ export default function Accounts() {
     mutationFn: (ids: number[]) => api.resetAccountsCooldown(ids),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['accounts-balance-block'] })
       setSelected([])
     },
   })
@@ -549,6 +628,7 @@ export default function Accounts() {
   const submitBatchUpdate = () => {
     const fields: AccountPatch = {}
     if (batchForm.name.trim()) fields.name = batchForm.name.trim()
+    if (batchForm.upstream_id !== 'unchanged') fields.upstream_id = Number(batchForm.upstream_id)
     if (batchForm.upstream_key) fields.upstream_key = batchForm.upstream_key
     // base_url 批量三态（C1）：勾选清空 → "" = 清空（回继承模板）；
     // 未勾选且输入非空 → 落值；未勾选且空 → 不变（不发送）
@@ -573,6 +653,7 @@ export default function Accounts() {
   const [form, setForm] = useState<FormState>(emptyForm())
   const [deleting, setDeleting] = useState<AccountView | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [relayPoolOpen, setRelayPoolOpen] = useState(false)
 
   // 编辑回显（评审 I-1 方案 B）：对话框挂载时拉取当前分组；数据未到前禁用
   // 保存与分组多选（防未加载完提交误发 [] 清空）。
@@ -632,35 +713,51 @@ export default function Accounts() {
   const save = useMutation({
     mutationFn: async (f: FormState) => {
       const ct = selTemplate?.CredentialType
-      const id = editing?.ID ?? (await api.createAccount(toBody(f, false))).ID
-      if (editing) await api.updateAccount(id!, toBody(f, true))
-      if (id && (ct === 'codex-oauth' || ct === 'codex-pat')) {
-        const cur = extEcho.data
-        const extBody: AccountExt = {
-          account_id: id,
-          credential_type: ct,
-          codex_email: (f.codex_email?.trim() ?? cur?.codex_email ?? null) as string | null | undefined,
-          ...(ct === 'codex-oauth'
-            ? {
-                codex_oauth_token: f.codex_oauth_token.trim() || null,
-                codex_oauth_refresh_token: f.codex_oauth_refresh_token.trim() || null,
-                codex_oauth_expires_at: toRFC3339(f.codex_oauth_expires_at) ?? null,
-                codex_pat_key: null,
-              }
-            : {
-                codex_pat_key: f.codex_pat_key.trim() || null,
-                codex_oauth_token: null,
-                codex_oauth_refresh_token: null,
-                codex_oauth_expires_at: null,
-              }),
-          // 身份四元组只读：回显原对象防清空（首次写入由 service 自动生成）
-          ...(cur?.codex_identity ? { codex_identity: cur.codex_identity } : {}),
+      let id = editing?.ID
+      let created = false
+      try {
+        if (!id) {
+          id = (await api.createAccount(toBody(f, false))).ID
+          created = true
+        } else {
+          await api.updateAccount(id, toBody(f, true))
         }
-        await api.putAccountExt(id, extBody)
+        if (id && (ct === 'codex-oauth' || ct === 'codex-pat')) {
+          const cur = extEcho.data
+          const extBody: AccountExt = {
+            account_id: id,
+            credential_type: ct,
+            codex_email: (f.codex_email?.trim() ?? cur?.codex_email ?? null) as string | null | undefined,
+            ...(ct === 'codex-oauth'
+              ? {
+                  codex_oauth_token: f.codex_oauth_token.trim() || null,
+                  codex_oauth_refresh_token: f.codex_oauth_refresh_token.trim() || null,
+                  codex_oauth_expires_at: toRFC3339(f.codex_oauth_expires_at) ?? null,
+                  codex_pat_key: null,
+                }
+              : {
+                  codex_pat_key: f.codex_pat_key.trim() || null,
+                  codex_oauth_token: null,
+                  codex_oauth_refresh_token: null,
+                  codex_oauth_expires_at: null,
+                }),
+            // 身份四元组只读：回显原对象防清空（首次写入由 service 自动生成）
+            ...(cur?.codex_identity ? { codex_identity: cur.codex_identity } : {}),
+          }
+          await api.putAccountExt(id, extBody)
+        }
+      } catch (error) {
+        // 创建与 ext 写入跨 HTTP 请求，第二步失败时补偿删除新建账号，
+        // 避免界面显示失败却留下无法使用的孤儿账号。原始错误保持给用户。
+        if (created && id) {
+          try { await api.deleteAccount(id) } catch { /* 保留原始错误 */ }
+        }
+        throw error
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['accounts-balance-block'] })
       setDialogOpen(false)
       toast.add({ title: t('accounts.saveSuccess'), type: 'success' })
     },
@@ -668,12 +765,16 @@ export default function Accounts() {
   const toggle = useMutation({
     mutationFn: (a: AccountView) =>
       api.updateAccount(a.ID!, toggleBody(a, a.Status === 'disabled' ? 'active' : 'disabled')),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['accounts'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['accounts-balance-block'] })
+    },
   })
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteAccount(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['accounts-balance-block'] })
       setDeleting(null)
       // 删除的是当前页最后一行时回退一页（templates 同款「最后有效页」守卫）
       if (rows.length === 1 && offset > 0) setOffset(offset - limit)
@@ -772,12 +873,23 @@ export default function Accounts() {
           <p className="text-sm text-muted-foreground">{t('accounts.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-        <Button variant="outline" onClick={() => setImportOpen(true)} disabled={templates.length === 0} title={templates.length === 0 ? '无可用模板，请先创建 codex-oauth/pat 模板' : undefined}>
-          <Upload /> {t('accounts.import.button')}
-        </Button>
-        <Button onClick={openCreate} disabled={templates.length === 0} title={templates.length === 0 ? t('accounts.noTemplate') : undefined}>
-          <Plus /> {t('accounts.new')}
-        </Button>
+          <Button
+            variant="outline"
+            onClick={() => void forceRefreshBalances()}
+            disabled={balanceRefreshing || rows.length === 0}
+            title={t('accounts.balance.refresh')}
+          >
+            <RefreshCw className={balanceRefreshing ? 'animate-spin' : undefined} /> {t('accounts.balance.refresh')}
+          </Button>
+          <Button variant="outline" onClick={() => setRelayPoolOpen(true)} disabled={templates.every(tp => tp.CredentialType !== 'api_key' && tp.CredentialType !== 'responses-special') || groups.length === 0} title={groups.length === 0 ? t('accounts.relayPool.noGroups') : undefined}>
+            <Layers3 /> {t('accounts.relayPool.button')}
+          </Button>
+          <Button variant="outline" onClick={() => setImportOpen(true)} disabled={templates.length === 0} title={templates.length === 0 ? '无可用模板，请先创建 codex-oauth/pat 模板' : undefined}>
+            <Upload /> {t('accounts.import.button')}
+          </Button>
+          <Button onClick={openCreate} disabled={templates.length === 0} title={templates.length === 0 ? t('accounts.noTemplate') : undefined}>
+            <Plus /> {t('accounts.new')}
+          </Button>
         </div>
       </div>
 
@@ -895,6 +1007,7 @@ export default function Accounts() {
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={t('accounts.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="template_id" label={t('accounts.table.template')} active={activeSort === 'template_id'} order={order} onToggle={onColumnToggle} />
+                  {isColVisible('upstream') && <TableHead>{t('accounts.table.upstream')}</TableHead>}
                   <SortableHeader field="status" label={t('accounts.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="weight" label={t('accounts.table.weight')} active={activeSort === 'weight'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
                   <SortableHeader field="max_concurrency" label={t('accounts.table.maxConcurrency')} active={activeSort === 'max_concurrency'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
@@ -903,6 +1016,7 @@ export default function Accounts() {
                   <TableHead className="text-right">{t('accounts.table.errCount')}</TableHead>
                   <TableHead>{t('accounts.table.lastError')}</TableHead>
                   {isColVisible('usage') && <TableHead className="text-center">{t('accounts.table.usage')}</TableHead>}
+                  {isColVisible('balance') && <TableHead className="text-center">{t('accounts.table.balance')}</TableHead>}
                   <TableHead className="text-right">{t('accounts.table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -915,6 +1029,15 @@ export default function Accounts() {
                     <TableCell className="tabular-nums">{a.ID}</TableCell>
                     <TableCell className="max-w-32 truncate" title={a.Name}>{a.Name}</TableCell>
                     <TableCell className="max-w-32 truncate" title={templateName(a)}>{templateName(a)}</TableCell>
+                    {isColVisible('upstream') && (
+                      <TableCell className="max-w-40">
+                        {a.UpstreamID == null ? <span className="text-xs text-muted-foreground">{t('accounts.upstreamNone')}</span> : (
+                          <span className={cn('block truncate text-xs', upstreamByID.get(a.UpstreamID)?.Status === 'disabled' ? 'text-amber-700 dark:text-amber-400' : 'text-foreground')} title={upstreamByID.get(a.UpstreamID)?.Name ?? `#${a.UpstreamID}`}>
+                            {upstreamByID.get(a.UpstreamID)?.Name ?? `#${a.UpstreamID}`}
+                          </span>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center gap-1.5">
                         <StatusBadge status={a.Status} />
@@ -951,6 +1074,11 @@ export default function Accounts() {
                         ) : (
                           <UsageCell item={usageById.get(a.ID!)} />
                         )}
+                      </TableCell>
+                    )}
+                    {isColVisible('balance') && (
+                      <TableCell className="text-center">
+                        <BalanceCell item={balanceById.get(a.ID!)} loading={balanceLoadingById.get(a.ID!)} />
                       </TableCell>
                     )}
                     <TableCell className="text-right">
@@ -1008,6 +1136,26 @@ export default function Accounts() {
               {selTemplate && CODE_CREDENTIAL_TYPES.includes(selTemplate.CredentialType as typeof CODE_CREDENTIAL_TYPES[number]) && (
                 <p className="text-xs text-muted-foreground">{t('accounts.ext.credHint')}</p>
               )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('accounts.upstreamLabel')}</Label>
+              <Select
+                items={Object.fromEntries([['none', t('accounts.upstreamNone')], ...upstreams.map(u => [String(u.ID), `${u.Name} · ${u.Status === 'disabled' ? t('accounts.upstreamDisabled') : t('accounts.upstreamActive')}`])])}
+                value={form.upstream_id || 'none'}
+                onValueChange={v => setForm(f => ({ ...f, upstream_id: v === 'none' ? '' : String(v) }))}
+              >
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" label={t('accounts.upstreamNone')}>{t('accounts.upstreamNone')}</SelectItem>
+                  {upstreams.map(u => (
+                    <SelectItem key={u.ID} value={String(u.ID)} label={`${u.Name} · ${u.Status === 'disabled' ? t('accounts.upstreamDisabled') : t('accounts.upstreamActive')}`}>
+                      <span className="flex min-w-0 items-center gap-2"><span className="truncate">{u.Name}</span><span className="text-xs text-muted-foreground">#{u.ID} · {u.Status === 'disabled' ? t('accounts.upstreamDisabled') : t('accounts.upstreamActive')}</span></span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('accounts.upstreamHint')}</p>
+              {upstreamsQ.isError && <p className="text-xs text-amber-700 dark:text-amber-400">{t('accounts.upstreamLoadFailed')}</p>}
             </div>
             {/* 凭据字段按模板类型分流：codex-oauth → OAuth 列组；codex-pat → PAT Key；
                 api_key/responses-special → 上游 Key。codex 凭据保存时链式写入 account_ext */}
@@ -1183,6 +1331,26 @@ export default function Accounts() {
             <div className="space-y-1.5">
               <Label htmlFor="ba-name">{t('accounts.nameLabel')}</Label>
               <Input id="ba-name" value={batchForm.name} placeholder={t('accounts.namePlaceholder')} onChange={e => setBatchForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('accounts.upstreamLabel')}</Label>
+              <Select
+                items={Object.fromEntries([['unchanged', t('accounts.upstreamUnchanged')], ['0', t('accounts.upstreamNone')], ...upstreams.map(u => [String(u.ID), `${u.Name} · ${u.Status === 'disabled' ? t('accounts.upstreamDisabled') : t('accounts.upstreamActive')}`])])}
+                value={batchForm.upstream_id}
+                onValueChange={v => setBatchForm(f => ({ ...f, upstream_id: String(v) }))}
+              >
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unchanged" label={t('accounts.upstreamUnchanged')}>{t('accounts.upstreamUnchanged')}</SelectItem>
+                  <SelectItem value="0" label={t('accounts.upstreamNone')}>{t('accounts.upstreamNone')}</SelectItem>
+                  {upstreams.map(u => (
+                    <SelectItem key={u.ID} value={String(u.ID)} label={`${u.Name} · ${u.Status === 'disabled' ? t('accounts.upstreamDisabled') : t('accounts.upstreamActive')}`}>
+                      <span className="flex min-w-0 items-center gap-2"><span className="truncate">{u.Name}</span><span className="text-xs text-muted-foreground">#{u.ID} · {u.Status === 'disabled' ? t('accounts.upstreamDisabled') : t('accounts.upstreamActive')}</span></span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('accounts.upstreamBatchHint')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ba-key">Upstream Key</Label>
@@ -1392,15 +1560,17 @@ export default function Accounts() {
             {detailQ.isError ? (
               <p className="text-sm text-destructive">{t('common.loadFailed', { message: (detailQ.error as Error).message })}</p>
             ) : detailQ.isPending ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <UsageSummary label={t('accounts.usageDetail.rawCost')} value={fmtUsd(detailQ.data?.items?.[0]?.gateway?.raw_cost_usd)} />
                 <UsageSummary label={t('accounts.usageDetail.cost')} value={fmtUsd(detailQ.data?.items?.[0]?.gateway?.cost_usd)} />
                 <UsageSummary label={t('accounts.usageDetail.requests')} value={String(detailQ.data?.items?.[0]?.gateway?.requests ?? 0)} />
                 <UsageSummary label={t('accounts.usageDetail.tokens')} value={fmtTokens(detailQ.data?.items?.[0]?.gateway?.total_tokens ?? 0)} />
+                <UsageSummary label={t('accounts.usageDetail.upstreamCredits')} value={detailQ.data?.items?.[0]?.upstream?.credits?.balance?.trim() || '—'} />
+                <UsageSummary label={t('accounts.usageDetail.upstreamRemaining')} value={detailQ.data?.items?.[0]?.upstream?.spend_control?.remaining?.trim() || '—'} />
               </div>
             )}
             {/* 分桶表：A 列来自 raw_cost_usd（与汇总同口径）；末桶被尾窗行原位替代；
@@ -1473,6 +1643,13 @@ export default function Accounts() {
       <CodexImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
+        templates={templates}
+        groups={groups}
+        onDone={() => qc.invalidateQueries({ queryKey: ['accounts'] })}
+      />
+      <RelayPoolDialog
+        open={relayPoolOpen}
+        onOpenChange={setRelayPoolOpen}
         templates={templates}
         groups={groups}
         onDone={() => qc.invalidateQueries({ queryKey: ['accounts'] })}

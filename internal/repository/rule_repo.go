@@ -63,7 +63,7 @@ func (r *RuleRepo) CreateRule(ctx context.Context, rl domain.Rule) (int64, error
 }
 
 func (r *RuleRepo) UpdateRule(ctx context.Context, rl domain.Rule) error {
-	_, err := r.client.Rule.UpdateOneID(rl.ID).
+	_, err := r.client.Rule.UpdateOneID(rl.ID).Where(rule.DeletedAtIsNil()).
 		SetName(rl.Name).SetEnabled(rl.Enabled).SetPriority(rl.Priority).
 		SetWhen(whenToMap(rl.When)).SetThen(thenToMap(rl.Then)).
 		Save(ctx)
@@ -71,7 +71,7 @@ func (r *RuleRepo) UpdateRule(ctx context.Context, rl domain.Rule) error {
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return fmt.Errorf("%w: priority=%d or name=%q", ErrConflict, rl.Priority, rl.Name)
 		}
-		return err
+		return errMissingID(err, rl.ID)
 	}
 	return nil
 }
@@ -80,7 +80,7 @@ func (r *RuleRepo) UpdateRule(ctx context.Context, rl domain.Rule) error {
 // deleted_at IS NULL 过滤 → 已删规则不加载，GET 单个仍可查已删项）。bulk
 // Update（无 re-SELECT）单语句；0 行命中 = 缺 id → ErrNotFound（同 errMissingID 格式）。
 func (r *RuleRepo) DeleteRule(ctx context.Context, id int64) error {
-	n, err := r.client.Rule.Update().Where(rule.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	n, err := r.client.Rule.Update().Where(rule.IDEQ(id), rule.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (r *RuleRepo) DeleteRulesBatch(ctx context.Context, ids []int64) error {
 	}
 	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id。
 	for _, id := range ids {
-		n, err := tx.Rule.Update().Where(rule.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		n, err := tx.Rule.Update().Where(rule.IDEQ(id), rule.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 		if err != nil {
 			return err
 		}

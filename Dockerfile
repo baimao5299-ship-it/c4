@@ -1,6 +1,6 @@
 # github.com/baimao5299-ship-it/c3api 多阶段构建：前端 dist 内嵌进 Go 二进制（cmd/server/embed.go），
 # 运行时为单二进制 + 挂载 config。
-# 用法：docker compose -f deploy/compose.yml up -d --build
+# 用法：docker compose up -d --build（在仓库根目录执行）
 
 # ---- Stage 1: 前端构建（vite build → dist） ----
 # BUILDPLATFORM：前端构建在**构建机原生**执行（amd64 runner 无 QEMU 模拟）——

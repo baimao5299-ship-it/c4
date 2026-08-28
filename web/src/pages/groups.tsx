@@ -2,7 +2,8 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Plus, Pencil, Trash2, FolderOpen, Filter, UserPlus, X } from 'lucide-react'
@@ -22,28 +23,196 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/components/ui/toast'
 import { formatDateTime } from '@/components/fmt'
 import { cn } from '@/lib/utils'
+import { sortModelsLatestFirst } from '@/lib/model-sort'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
+type GroupRoutingMode = components['schemas']['GroupRoutingMode']
+type GroupUpstreamInput = components['schemas']['GroupUpstreamInput']
+type Upstream = components['schemas']['Upstream']
 type GroupProtocolConvert = components['schemas']['GroupProtocolConvert']
 type GroupAssignmentsBody = components['schemas']['GroupAssignmentsBody']
 
-// 协议转换方向（W5 网关 internal/protoconv 消费）：4 方向可多选，全不勾 = off =
-// 不转换（off 不进数组，空勾选表达）
-const PROTOCOL_CONVERTS: GroupProtocolConvert[] = ['chat_to_resp', 'mess_to_resp', 'resp_to_mess', 'chat_to_mess']
+interface UpstreamMemberDraft {
+  upstream_id: number
+  priority: string
+  weight: string
+  max_concurrency: string
+  enabled: boolean
+}
+
+const defaultUpstreamMember = (upstream_id: number): UpstreamMemberDraft => ({
+  upstream_id,
+  priority: '0',
+  weight: '100',
+  max_concurrency: '8',
+  enabled: true,
+})
+
+const draftFromUpstream = (member: components['schemas']['GroupUpstream']): UpstreamMemberDraft => ({
+  upstream_id: member.UpstreamID,
+  priority: String(member.Priority),
+  weight: String(member.Weight),
+  max_concurrency: String(member.MaxConcurrency),
+  enabled: member.Enabled,
+})
+
+function serializeUpstreamMembers(drafts: UpstreamMemberDraft[]): GroupUpstreamInput[] {
+  return drafts.map(draft => {
+    const priority = Number(draft.priority)
+    const weight = Number(draft.weight)
+    const maxConcurrency = Number(draft.max_concurrency)
+    if (!Number.isInteger(priority) || priority < 0 || priority > 100_000) throw new Error('Priority must be an integer from 0 to 100000')
+    if (!Number.isInteger(weight) || weight < 1 || weight > 10_000) throw new Error('Weight must be an integer from 1 to 10000')
+    if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1 || maxConcurrency > 100_000) throw new Error('Max concurrency must be an integer from 1 to 100000')
+    return { upstream_id: draft.upstream_id, priority, weight, max_concurrency: maxConcurrency, enabled: draft.enabled }
+  })
+}
+
+function UpstreamPoolFields({
+  mode,
+  onModeChange,
+  upstreams,
+  upstreamsLoading,
+  upstreamsError,
+  onRetryUpstreams,
+  members,
+  onToggle,
+  onUpdate,
+  models,
+  modelsLoading,
+  modelsError,
+  configError,
+  allowedModels,
+  onToggleModel,
+  onSelectAllModels,
+}: {
+  mode: GroupRoutingMode
+  onModeChange: (mode: GroupRoutingMode) => void
+  upstreams: Upstream[]
+  upstreamsLoading: boolean
+  upstreamsError: boolean
+  onRetryUpstreams: () => void
+  members: UpstreamMemberDraft[]
+  onToggle: (id: number, checked: boolean) => void
+  onUpdate: (id: number, patch: Partial<UpstreamMemberDraft>) => void
+  models: string[]
+  modelsLoading: boolean
+  modelsError: boolean
+  configError?: boolean
+  allowedModels: string[]
+  onToggleModel: (model: string, checked: boolean) => void
+  onSelectAllModels: () => void
+}) {
+  const { t } = useTranslation()
+  const selected = new Set(members.map(member => member.upstream_id))
+  // Only show models confirmed by the current upstream catalogue. Keeping
+  // stale values visible made it possible to save a model after replacing a
+  // member, even though no selected upstream advertised it anymore.
+  const options = models
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+      <div className="space-y-1.5">
+        <Label>{t('groups.routingModeLabel')}</Label>
+        <Select
+          items={Object.fromEntries((['accounts', 'upstreams'] as GroupRoutingMode[]).map(value => [value, t(`groups.routingModes.${value}`)]))}
+          value={mode}
+          onValueChange={value => onModeChange(value as GroupRoutingMode)}
+        >
+          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="accounts" label={t('groups.routingModes.accounts')}>{t('groups.routingModes.accounts')}</SelectItem>
+            <SelectItem value="upstreams" label={t('groups.routingModes.upstreams')}>{t('groups.routingModes.upstreams')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{t(`groups.routingModeHint.${mode}`)}</p>
+      </div>
+      {mode !== 'upstreams' ? null : (
+        <>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label>{t('groups.upstreamMembersLabel')}</Label>
+              <span className="text-xs text-muted-foreground">{t('groups.upstreamMembersCount', { count: members.length })}</span>
+            </div>
+            {upstreamsLoading ? (
+              <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">{t('groups.loadingUpstreams')}</p>
+            ) : upstreamsError ? (
+              <div className="flex items-center justify-between gap-2 rounded-md border border-dashed border-destructive/50 px-3 py-2 text-sm text-destructive">
+                <span>{t('groups.upstreamsLoadFailed')}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={onRetryUpstreams}>{t('groups.retryUpstreams')}</Button>
+              </div>
+            ) : upstreams.length === 0 ? (
+              <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">{t('groups.noUpstreams')}</p>
+            ) : (
+              <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+                {upstreams.map(upstream => {
+                  const id = upstream.ID!
+                  const member = members.find(item => item.upstream_id === id)
+                  return (
+                    <div key={id} className="space-y-2 rounded-md border bg-background p-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Checkbox checked={selected.has(id)} disabled={!selected.has(id) && upstream.Status !== 'active'} onCheckedChange={checked => onToggle(id, checked === true)} />
+                        <span className="min-w-0 flex-1 truncate font-medium" title={upstream.Name}>{upstream.Name || `#${id}`}</span>
+                        <span className="text-xs text-muted-foreground">#{id}</span>
+                        {upstream.Status !== 'active' && <Badge variant="outline" className="text-xs">{t('groups.upstreamDisabled')}</Badge>}
+                        {member && <Switch checked={member.enabled} onCheckedChange={enabled => onUpdate(id, { enabled })} aria-label={t(member.enabled ? 'groups.disableMember' : 'groups.enableMember')} />}
+                      </div>
+                      {member && (
+                        <div className="grid grid-cols-3 gap-2 pl-6">
+                          <div className="space-y-1"><Label className="text-xs">{t('groups.priorityLabel')}</Label><Input type="number" min={0} max={100000} value={member.priority} onChange={event => onUpdate(id, { priority: event.target.value })} className="h-8" /></div>
+                          <div className="space-y-1"><Label className="text-xs">{t('groups.weightLabel')}</Label><Input type="number" min={1} max={10000} value={member.weight} onChange={event => onUpdate(id, { weight: event.target.value })} className="h-8" /></div>
+                          <div className="space-y-1"><Label className="text-xs">{t('groups.maxConcurrencyLabel')}</Label><Input type="number" min={1} max={100000} value={member.max_concurrency} onChange={event => onUpdate(id, { max_concurrency: event.target.value })} className="h-8" /></div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label>{t('groups.allowedModelsLabel')}</Label>
+              <Button type="button" variant="ghost" size="sm" onClick={onSelectAllModels} disabled={modelsLoading || options.length === 0}>{t('groups.selectAllModels')}</Button>
+            </div>
+            {modelsLoading ? <p className="text-xs text-muted-foreground">{t('groups.loadingModels')}</p> : modelsError ? <p className="text-xs text-amber-700 dark:text-amber-400">{t('groups.modelsReadPartial')}</p> : configError ? <p className="text-xs text-destructive">{t('groups.upstreamConfigReadFailed')}</p> : null}
+            {options.length === 0 ? (
+              <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">{t('groups.noModels')}</p>
+            ) : (
+              <div className="grid max-h-44 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                {options.map(model => (
+                  <label key={model} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
+                    <Checkbox checked={allowedModels.includes(model)} onCheckedChange={checked => onToggleModel(model, checked === true)} />
+                    <span className="truncate font-mono" title={model}>{model}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">{t('groups.allowedModelsHint')}</p>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// 协议转换模式（W5 网关 internal/protoconv 消费）：自动协商或手动方向。
+const PROTOCOL_CONVERTS: GroupProtocolConvert[] = ['auto', 'chat_to_resp', 'mess_to_resp', 'resp_to_mess', 'chat_to_mess']
 
 // 协议转换多选切换：勾选 = 加入方向集合（同方向去重），取消 = 移除。
 const toggleConvert = (on: boolean, v: GroupProtocolConvert, cur: GroupProtocolConvert[]) =>
   on ? (cur.includes(v) ? cur : [...cur, v]) : cur.filter(x => x !== v)
 
-// 协议转换多选 checkbox 组（创建/编辑共用）：4 方向勾选，全不勾 = off。
+// 协议转换选择（创建/编辑共用）：默认自动协商；选择手动方向时仅保留
+// 与客户端协议匹配的方向，避免同一请求出现多个候选。
 function ProtocolConvertCheckboxes({ value, onChange }: {
   value: GroupProtocolConvert[]
   onChange: (v: GroupProtocolConvert[]) => void
@@ -53,7 +222,14 @@ function ProtocolConvertCheckboxes({ value, onChange }: {
     <div className="space-y-1">
       {PROTOCOL_CONVERTS.map(v => (
         <label key={v} className="flex cursor-pointer items-center gap-2.5 rounded-md border px-2 py-1.5 text-sm">
-          <Checkbox checked={value.includes(v)} onCheckedChange={c => onChange(toggleConvert(c === true, v, value))} />
+          <Checkbox checked={value.includes(v)} onCheckedChange={c => {
+            if (v === 'auto') {
+              onChange(c === true ? ['auto'] : [])
+              return
+            }
+            const next = toggleConvert(c === true, v, value.filter(x => x !== 'auto'))
+            onChange(next)
+          }} />
           {t(`groups.protocolConvert.${v}`)}
         </label>
       ))}
@@ -222,6 +398,7 @@ export default function Groups() {
     batchResolve.current = null
   }
   const openBatchRename = () => {
+    batchRename.reset()
     setBatchRenameValue('')
     setBatchRenameErr(null)
     setBatchRenameOpen(true)
@@ -391,21 +568,26 @@ export default function Groups() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createVisibility, setCreateVisibility] = useState<GroupVisibility>('public')
-  const [createProtocols, setCreateProtocols] = useState<GroupProtocolConvert[]>([])
+  const [createProtocols, setCreateProtocols] = useState<GroupProtocolConvert[]>(['auto'])
   const [createMultiplier, setCreateMultiplier] = useState('')
-  const openCreate = () => {
-    setCreateName('')
-    setCreateVisibility('public')
-    setCreateProtocols([])
-    setCreateMultiplier('')
-    setCreateOpen(true)
-  }
+  const [createRoutingMode, setCreateRoutingMode] = useState<GroupRoutingMode>('accounts')
+  const [createAllowedModels, setCreateAllowedModels] = useState<string[]>([])
+  const [createMembers, setCreateMembers] = useState<UpstreamMemberDraft[]>([])
+  const createAutoModelKey = useRef('')
+  // Keep the first upstream catalogue as a useful default, but never replace
+  // a model selection the operator has edited when the pool changes.
+  const createModelsTouched = useRef(false)
   const create = useMutation({
-    mutationFn: (n: string) => {
+    mutationFn: async (n: string) => {
       const body: components['schemas']['GroupCreate'] = {
         name: n,
         visibility: createVisibility,
-        protocol_convert: createProtocols, // 空数组 = off = 不转换
+        routing_mode: createRoutingMode,
+        allowed_models: createAllowedModels,
+        protocol_convert: createProtocols,
+      }
+      if (createRoutingMode === 'upstreams') {
+        body.upstream_members = serializeUpstreamMembers(createMembers)
       }
       const m = normalizeMultiplierInput(createMultiplier, t('groups.multiplierInvalid'))
       if (m !== undefined) body.price_multiplier = m // 正常值直接提交；输入为空则省略键（后端按 ×1）
@@ -413,10 +595,26 @@ export default function Groups() {
     },
     onSuccess: (_g, name) => {
       qc.invalidateQueries({ queryKey: ['groups'] })
+      qc.invalidateQueries({ queryKey: ['group-upstreams'] })
       setCreateOpen(false)
       toast.add({ title: t('groups.createdSuccess'), description: name, type: 'success' })
     },
   })
+  const openCreate = () => {
+    // Reset a previous failed submission so an old error does not look like a
+    // new request failure when the dialog is opened again.
+    create.reset()
+    setCreateName('')
+    setCreateVisibility('public')
+    setCreateProtocols(['auto'])
+    setCreateMultiplier('')
+    setCreateRoutingMode('accounts')
+    setCreateAllowedModels([])
+    setCreateMembers([])
+    createAutoModelKey.current = ''
+    createModelsTouched.current = false
+    setCreateOpen(true)
+  }
   // —— 编辑（name + visibility + protocol_convert 多选；PUT 缺省字段保持原值，
   //      此处总是显式提交——空数组 = 清空既有方向）——
   const [editTarget, setEditTarget] = useState<Group | null>(null)
@@ -425,18 +623,130 @@ export default function Groups() {
   const [editProtocols, setEditProtocols] = useState<GroupProtocolConvert[]>([])
   // 倍率用字符串态：空 = 不修改（PUT 省略键，后端保持原值）
   const [editMultiplier, setEditMultiplier] = useState('')
+  const [editRoutingMode, setEditRoutingMode] = useState<GroupRoutingMode>('accounts')
+  const [editAllowedModels, setEditAllowedModels] = useState<string[]>([])
+  const [editMembers, setEditMembers] = useState<UpstreamMemberDraft[]>([])
+  const editPoolLoadedKey = useRef<string | null>(null)
+  const editAutoModelKey = useRef<string | null>(null)
+  const { data: upstreamRowsData, isLoading: upstreamRowsLoading, isError: upstreamRowsError, refetch: refetchUpstreams } = useQuery({
+    queryKey: ['groups', 'upstream-options'],
+    queryFn: () => api.listUpstreams({ limit: 200, offset: 0 }),
+    enabled: createOpen || editTarget != null,
+    staleTime: 30_000,
+  })
+  const upstreamRows = upstreamRowsData?.items ?? []
+  const editUpstreamConfig = useQuery({
+    queryKey: ['group-upstreams', editTarget?.ID],
+    queryFn: () => api.getGroupUpstreams(editTarget!.ID!),
+    enabled: editTarget?.ID != null,
+    // The edit dialog is a management write surface. Always revalidate on
+    // open so a second admin window cannot overwrite a newer member set from a
+    // still-fresh client cache.
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+  useEffect(() => {
+    const id = editTarget?.ID
+    const config = editUpstreamConfig.data
+    const key = id == null || config == null ? null : `${id}:${editUpstreamConfig.dataUpdatedAt}`
+    if (id == null || config == null || key == null || editPoolLoadedKey.current === key) return
+    // The detail response is fetched on every open and is authoritative. The
+    // list row may come from another window and be stale.
+    setEditRoutingMode(config.routing_mode ?? editTarget.RoutingMode ?? 'accounts')
+    setEditAllowedModels(config.allowed_models ?? editTarget.AllowedModels ?? [])
+    setEditMembers((config.members ?? []).map(draftFromUpstream))
+    editPoolLoadedKey.current = key
+  }, [editTarget, editUpstreamConfig.data, editUpstreamConfig.dataUpdatedAt])
+  const activeMemberIDs = (createOpen ? createMembers : editTarget ? editMembers : []).map(member => member.upstream_id).sort((a, b) => a - b)
+  const activeMemberKey = activeMemberIDs.join(',')
+  const groupModels = useQuery({
+    queryKey: ['group-upstream-models', activeMemberIDs],
+    queryFn: async () => {
+      const responses = await Promise.allSettled(activeMemberIDs.map(id => api.listUpstreamModels(id)))
+      const successful = responses.flatMap(response => response.status === 'fulfilled' && response.value.ok && response.value.models?.length ? [response.value.models] : [])
+      const union = sortModelsLatestFirst(Array.from(new Set(successful.flat())))
+      const allSucceeded = responses.length > 0 && responses.every(response => response.status === 'fulfilled' && response.value.ok && !!response.value.models?.length)
+      const models = allSucceeded && successful.length > 1
+        ? sortModelsLatestFirst(successful[0].filter(model => successful.every(list => list.includes(model))))
+        : union
+      return { models, partial: !allSucceeded }
+    },
+    enabled: (createOpen || editTarget != null) && activeMemberIDs.length > 0,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+  const activeModels = useMemo(() => groupModels.data?.models ?? [], [groupModels.data])
+  const activeModelsPartial = groupModels.data?.partial ?? false
+  useEffect(() => {
+    // A member replacement invalidates any allowlist entry that the fresh
+    // catalogue no longer confirms. The save action stays disabled while the
+    // catalogue is partial, so a transient read failure never clears config.
+    if (!editTarget || editRoutingMode !== 'upstreams' || activeMemberIDs.length === 0 || activeModelsPartial || activeModels.length === 0) return
+    const key = `${editTarget.ID}:${activeMemberKey}`
+    if (editAutoModelKey.current === key) return
+    editAutoModelKey.current = key
+    setEditAllowedModels(current => current.filter(model => activeModels.includes(model)))
+  }, [activeMemberKey, activeMemberIDs.length, activeModels, activeModelsPartial, editRoutingMode, editTarget])
+  useEffect(() => {
+    // A new upstream pool starts with the models that were actually read. This
+    // keeps an empty allowlist intentional (all common models) while avoiding
+    // the dangerous interpretation of an unread/empty catalogue as success.
+    if (!createOpen || createRoutingMode !== 'upstreams' || activeModelsPartial || activeModels.length === 0) return
+    const key = activeMemberKey
+    if (createAutoModelKey.current === key) return
+    createAutoModelKey.current = key
+    setCreateAllowedModels(current => {
+      if (!createModelsTouched.current) return activeModels
+      // A pool edit can remove models that are no longer advertised. Keep
+      // explicit user choices that remain valid instead of silently selecting
+      // newly discovered models.
+      return current.filter(model => activeModels.includes(model))
+    })
+  }, [activeMemberKey, activeModels, activeModelsPartial, createOpen, createRoutingMode])
+  const updateCreateMember = (id: number, patch: Partial<UpstreamMemberDraft>) => setCreateMembers(current => current.map(member => member.upstream_id === id ? { ...member, ...patch } : member))
+  const toggleCreateMember = (id: number, checked: boolean) => setCreateMembers(current => checked ? (current.some(member => member.upstream_id === id) ? current : [...current, defaultUpstreamMember(id)]) : current.filter(member => member.upstream_id !== id))
+  const updateEditMember = (id: number, patch: Partial<UpstreamMemberDraft>) => setEditMembers(current => current.map(member => member.upstream_id === id ? { ...member, ...patch } : member))
+  const toggleEditMember = (id: number, checked: boolean) => setEditMembers(current => checked ? (current.some(member => member.upstream_id === id) ? current : [...current, defaultUpstreamMember(id)]) : current.filter(member => member.upstream_id !== id))
+  const toggleModel = (setter: Dispatch<SetStateAction<string[]>>, model: string, checked: boolean) => setter(current => checked ? (current.includes(model) ? current : [...current, model]) : current.filter(value => value !== model))
+  const selectAllModels = (setter: Dispatch<SetStateAction<string[]>>) => setter(activeModels)
+  const toggleCreateModel = (model: string, checked: boolean) => {
+    createModelsTouched.current = true
+    toggleModel(setCreateAllowedModels, model, checked)
+  }
+  const selectAllCreateModels = () => {
+    createModelsTouched.current = true
+    selectAllModels(setCreateAllowedModels)
+  }
+  const openEdit = (group: Group) => {
+    editPoolLoadedKey.current = null
+    editAutoModelKey.current = null
+    setEditTarget(group)
+    setEditName(group.Name ?? '')
+    setEditVisibility(group.Visibility ?? 'public')
+    setEditRoutingMode(group.RoutingMode ?? 'accounts')
+    setEditAllowedModels(group.AllowedModels ?? [])
+    setEditMembers([])
+    setEditProtocols(group.ProtocolConvert ?? [])
+    setEditMultiplier(group.PriceMultiplier != null ? String(group.PriceMultiplier) : '')
+    rename.reset()
+  }
   // —— 删除 ——
   const [deleting, setDeleting] = useState<Group | null>(null)
 
   const rename = useMutation({
     mutationFn: () => {
-      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility, protocol_convert: editProtocols }
+      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
       const m = normalizeMultiplierInput(editMultiplier, t('groups.multiplierInvalid'))
       if (m !== undefined) body.price_multiplier = m // 正常值直接提交；输入为空则省略键（后端保持原值）
+      // The API commits policy and the complete member set in one database
+      // transaction. An empty array also removes stale members when switching
+      // back to account routing.
+      body.upstream_members = editRoutingMode === 'upstreams' ? serializeUpstreamMembers(editMembers) : []
       return api.updateGroup(editTarget!.ID!, body)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups'] })
+      qc.invalidateQueries({ queryKey: ['group-upstreams'] })
       setEditTarget(null)
     },
   })
@@ -514,6 +824,7 @@ export default function Groups() {
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
                   <TableHead>{t('groups.table.visibility')}</TableHead>
+                  <TableHead>{t('groups.table.routing')}</TableHead>
                   <TableHead>{t('groups.table.priceMultiplier')}</TableHead>
                   <TableHead>{t('groups.table.protocolConvert')}</TableHead>
                   <SortableHeader field="created_at" label={t('groups.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
@@ -529,6 +840,10 @@ export default function Groups() {
                     <TableCell className="tabular-nums">{g.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
                     <TableCell><VisibilityBadge visibility={g.Visibility} /></TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{t(`groups.routingModes.${g.RoutingMode ?? 'accounts'}`)}</Badge>
+                      {g.RoutingMode === 'upstreams' && <div className="mt-1 text-xs text-muted-foreground">{g.AllowedModels?.length ? t('groups.modelCount', { count: g.AllowedModels.length }) : t('groups.autoModels')}</div>}
+                    </TableCell>
                     <TableCell className="tabular-nums">{formatMultiplier(g.PriceMultiplier, t)}</TableCell>
                     <TableCell>
                       {g.ProtocolConvert && g.ProtocolConvert.length > 0 ? (
@@ -545,8 +860,8 @@ export default function Groups() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon-sm" title={t('groups.assignButton')} onClick={() => openAssign(g)}><UserPlus /></Button>
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => { setEditTarget(g); setEditName(g.Name ?? ''); setEditVisibility(g.Visibility ?? 'public'); setEditProtocols(g.ProtocolConvert ?? []); setEditMultiplier(g.PriceMultiplier != null ? String(g.PriceMultiplier) : '') }}><Pencil /></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => setDeleting(g)}><Trash2 /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(g)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(g) }}><Trash2 /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -560,7 +875,7 @@ export default function Groups() {
 
       {/* —— 创建分组：表单（name + visibility）；创建成功仅提示，不再返回 key 明文 —— */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 overflow-y-auto sm:top-1/2 sm:max-w-2xl sm:-translate-y-1/2">
           <DialogHeader>
             <DialogTitle>{t('groups.newTitle')}</DialogTitle>
             <DialogDescription>{t('groups.newDesc')}</DialogDescription>
@@ -573,7 +888,7 @@ export default function Groups() {
                 value={createName}
                 placeholder={t('groups.namePlaceholder')}
                 onChange={e => setCreateName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && !create.isPending) create.mutate(createName.trim()) }}
+                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && createRoutingMode === 'accounts' && !create.isPending) create.mutate(createName.trim()) }}
               />
             </div>
             <div className="space-y-1.5">
@@ -590,6 +905,32 @@ export default function Groups() {
                 </SelectContent>
               </Select>
             </div>
+            <UpstreamPoolFields
+              mode={createRoutingMode}
+              onModeChange={mode => {
+                setCreateRoutingMode(mode)
+                if (mode === 'accounts') {
+                  setCreateMembers([])
+                  setCreateAllowedModels([])
+                  createModelsTouched.current = false
+                  createAutoModelKey.current = ''
+                }
+              }}
+              upstreams={upstreamRows}
+              upstreamsLoading={upstreamRowsLoading}
+              upstreamsError={upstreamRowsError}
+              onRetryUpstreams={() => { void refetchUpstreams() }}
+              members={createMembers}
+              onToggle={toggleCreateMember}
+              onUpdate={updateCreateMember}
+              models={activeModels}
+              modelsLoading={groupModels.isLoading}
+              modelsError={activeModelsPartial}
+              configError={false}
+              allowedModels={createAllowedModels}
+              onToggleModel={toggleCreateModel}
+              onSelectAllModels={selectAllCreateModels}
+            />
             <div className="space-y-1.5">
               <Label>{t('groups.protocolConvertLabel')}</Label>
               <ProtocolConvertCheckboxes value={createProtocols} onChange={setCreateProtocols} />
@@ -606,7 +947,7 @@ export default function Groups() {
                 value={createMultiplier}
                 placeholder="1"
                 onChange={e => setCreateMultiplier(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && !create.isPending) create.mutate(createName.trim()) }}
+                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && createRoutingMode === 'accounts' && !create.isPending) create.mutate(createName.trim()) }}
               />
               <p className="text-xs text-muted-foreground">{t('groups.createMultiplierHint')}</p>
             </div>
@@ -616,7 +957,7 @@ export default function Groups() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={create.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => create.mutate(createName.trim())} disabled={create.isPending || !createName.trim()}>
+            <Button onClick={() => create.mutate(createName.trim())} disabled={create.isPending || !createName.trim() || (createRoutingMode === 'upstreams' && (createMembers.length === 0 || groupModels.isLoading || activeModelsPartial || activeModels.length === 0 || createAllowedModels.length === 0))}>
               {create.isPending ? t('common.creating') : t('common.create')}
             </Button>
           </DialogFooter>
@@ -625,7 +966,7 @@ export default function Groups() {
 
       {/* —— 编辑（name + visibility） —— */}
       <Dialog open={!!editTarget} onOpenChange={o => { if (!o && !rename.isPending) setEditTarget(null) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 overflow-y-auto sm:top-1/2 sm:max-w-2xl sm:-translate-y-1/2">
           <DialogHeader>
             <DialogTitle>{t('groups.editTitle', { id: editTarget?.ID })}</DialogTitle>
           </DialogHeader>
@@ -648,6 +989,24 @@ export default function Groups() {
                 </SelectContent>
               </Select>
             </div>
+            <UpstreamPoolFields
+              mode={editRoutingMode}
+              onModeChange={mode => { setEditRoutingMode(mode); if (mode === 'accounts') { setEditMembers([]); setEditAllowedModels([]) } }}
+              upstreams={upstreamRows}
+              upstreamsLoading={upstreamRowsLoading}
+              upstreamsError={upstreamRowsError}
+              onRetryUpstreams={() => { void refetchUpstreams() }}
+              members={editMembers}
+              onToggle={toggleEditMember}
+              onUpdate={updateEditMember}
+              models={activeModels}
+              modelsLoading={groupModels.isLoading || editUpstreamConfig.isLoading}
+              modelsError={activeModelsPartial}
+              configError={editUpstreamConfig.isError}
+              allowedModels={editAllowedModels}
+              onToggleModel={(model, checked) => toggleModel(setEditAllowedModels, model, checked)}
+              onSelectAllModels={() => selectAllModels(setEditAllowedModels)}
+            />
             <div className="space-y-1.5">
               <Label>{t('groups.protocolConvertLabel')}</Label>
               <ProtocolConvertCheckboxes value={editProtocols} onChange={setEditProtocols} />
@@ -673,7 +1032,7 @@ export default function Groups() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)} disabled={rename.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim()}>
+            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || activeModelsPartial || activeModels.length === 0 || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
               {rename.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
@@ -681,7 +1040,7 @@ export default function Groups() {
       </Dialog>
 
       {/* —— 删除确认（单行） —— */}
-      <Dialog open={!!deleting} onOpenChange={o => { if (!o && !remove.isPending) setDeleting(null) }}>
+      <Dialog open={!!deleting} onOpenChange={o => { if (!o && !remove.isPending) { remove.reset(); setDeleting(null) } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('groups.deleteTitle')}</DialogTitle>
@@ -693,7 +1052,7 @@ export default function Groups() {
             <p className="text-sm text-destructive">{errMsg(remove.error)}</p>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleting(null)} disabled={remove.isPending}>{t('common.cancel')}</Button>
+            <Button variant="outline" onClick={() => { remove.reset(); setDeleting(null) }} disabled={remove.isPending}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID!)} disabled={remove.isPending}>
               {remove.isPending ? t('common.deleting') : t('common.confirmDelete')}
             </Button>

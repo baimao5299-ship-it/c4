@@ -165,6 +165,26 @@ func VisibilityNotIn(vs ...Visibility) predicate.Group {
 	return predicate.Group(sql.FieldNotIn(FieldVisibility, vs...))
 }
 
+// RoutingModeEQ applies the EQ predicate on the "routing_mode" field.
+func RoutingModeEQ(v RoutingMode) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRoutingMode, v))
+}
+
+// RoutingModeNEQ applies the NEQ predicate on the "routing_mode" field.
+func RoutingModeNEQ(v RoutingMode) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldRoutingMode, v))
+}
+
+// RoutingModeIn applies the In predicate on the "routing_mode" field.
+func RoutingModeIn(vs ...RoutingMode) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldRoutingMode, vs...))
+}
+
+// RoutingModeNotIn applies the NotIn predicate on the "routing_mode" field.
+func RoutingModeNotIn(vs ...RoutingMode) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldRoutingMode, vs...))
+}
+
 // PriceMultiplierEQ applies the EQ predicate on the "price_multiplier" field.
 func PriceMultiplierEQ(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPriceMultiplier, v))
@@ -396,6 +416,29 @@ func HasAssignments() predicate.Group {
 func HasAssignmentsWith(preds ...predicate.GroupAssignment) predicate.Group {
 	return predicate.Group(func(s *sql.Selector) {
 		step := newAssignmentsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasUpstreamMembers applies the HasEdge predicate on the "upstream_members" edge.
+func HasUpstreamMembers() predicate.Group {
+	return predicate.Group(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, UpstreamMembersTable, UpstreamMembersColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasUpstreamMembersWith applies the HasEdge predicate on the "upstream_members" edge with a given conditions (other predicates).
+func HasUpstreamMembersWith(preds ...predicate.GroupUpstream) predicate.Group {
+	return predicate.Group(func(s *sql.Selector) {
+		step := newUpstreamMembersStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

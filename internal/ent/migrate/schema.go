@@ -25,6 +25,7 @@ var (
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "template_id", Type: field.TypeInt64},
+		{Name: "upstream_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// AccountsTable holds the schema information for the "accounts" table.
 	AccountsTable = &schema.Table{
@@ -37,6 +38,12 @@ var (
 				Columns:    []*schema.Column{AccountsColumns[14]},
 				RefColumns: []*schema.Column{TemplatesColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "accounts_upstreams_accounts",
+				Columns:    []*schema.Column{AccountsColumns[15]},
+				RefColumns: []*schema.Column{UpstreamsColumns[0]},
+				OnDelete:   schema.SetNull,
 			},
 		},
 	}
@@ -111,7 +118,7 @@ var (
 		{Name: "user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "key_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "model", Type: field.TypeString, Default: ""},
-		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "openai-images", "anthropic"}},
+		{Name: "format", Type: field.TypeEnum, Enums: []string{"openai-chat", "openai-responses", "openai-responses-ws", "openai-images", "openai-search", "anthropic"}},
 		{Name: "status_code", Type: field.TypeInt, Default: 0},
 		{Name: "error_type", Type: field.TypeString, Default: "none"},
 		{Name: "error_message", Type: field.TypeString, Nullable: true},
@@ -147,8 +154,10 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString, Unique: true},
 		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"public", "private"}, Default: "public"},
+		{Name: "routing_mode", Type: field.TypeEnum, Enums: []string{"accounts", "upstreams"}, Default: "accounts"},
 		{Name: "price_multiplier", Type: field.TypeInt, Default: 10000},
 		{Name: "protocol_convert", Type: field.TypeJSON},
+		{Name: "allowed_models", Type: field.TypeJSON, Default: "[]"},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
@@ -191,6 +200,53 @@ var (
 				Name:    "groupassignment_group_id_user_id",
 				Unique:  true,
 				Columns: []*schema.Column{GroupAssignmentsColumns[3], GroupAssignmentsColumns[4]},
+			},
+		},
+	}
+	// GroupUpstreamsColumns holds the columns for the "group_upstreams" table.
+	GroupUpstreamsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "weight", Type: field.TypeInt, Default: 100},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "max_concurrency", Type: field.TypeInt, Default: 8},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "cooldown_until", Type: field.TypeTime, Nullable: true},
+		{Name: "failure_streak", Type: field.TypeInt, Default: 0},
+		{Name: "last_error", Type: field.TypeString, Nullable: true},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "upstream_id", Type: field.TypeInt64},
+	}
+	// GroupUpstreamsTable holds the schema information for the "group_upstreams" table.
+	GroupUpstreamsTable = &schema.Table{
+		Name:       "group_upstreams",
+		Columns:    GroupUpstreamsColumns,
+		PrimaryKey: []*schema.Column{GroupUpstreamsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "group_upstreams_groups_upstream_members",
+				Columns:    []*schema.Column{GroupUpstreamsColumns[10]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "group_upstreams_upstreams_group_members",
+				Columns:    []*schema.Column{GroupUpstreamsColumns[11]},
+				RefColumns: []*schema.Column{UpstreamsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "groupupstream_group_id_upstream_id",
+				Unique:  true,
+				Columns: []*schema.Column{GroupUpstreamsColumns[10], GroupUpstreamsColumns[11]},
+			},
+			{
+				Name:    "groupupstream_group_id_priority_id",
+				Unique:  false,
+				Columns: []*schema.Column{GroupUpstreamsColumns[10], GroupUpstreamsColumns[2], GroupUpstreamsColumns[0]},
 			},
 		},
 	}
@@ -472,6 +528,46 @@ var (
 			},
 		},
 	}
+	// UpstreamsColumns holds the columns for the "upstreams" table.
+	UpstreamsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "name", Type: field.TypeString, Unique: true},
+		{Name: "base_url", Type: field.TypeString},
+		{Name: "upstream_key", Type: field.TypeString, Nullable: true},
+		{Name: "models", Type: field.TypeJSON, Default: "[]"},
+		{Name: "models_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "models_error", Type: field.TypeString, Nullable: true},
+		{Name: "multiplier_bp", Type: field.TypeInt, Default: 10000},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "note", Type: field.TypeString, Nullable: true},
+		{Name: "balance_endpoint", Type: field.TypeString, Default: ""},
+		{Name: "balance_method", Type: field.TypeString, Default: ""},
+		{Name: "balance_auth", Type: field.TypeString, Default: ""},
+		{Name: "balance_path", Type: field.TypeString, Default: ""},
+		{Name: "balance_currency_path", Type: field.TypeString, Default: ""},
+		{Name: "balance_amount", Type: field.TypeString, Nullable: true},
+		{Name: "balance_currency", Type: field.TypeString, Nullable: true},
+		{Name: "balance_status", Type: field.TypeEnum, Enums: []string{"fresh", "stale", "unavailable", "unconfigured"}, Default: "unconfigured"},
+		{Name: "balance_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "request_count", Type: field.TypeInt64, Default: 0},
+		{Name: "success_count", Type: field.TypeInt64, Default: 0},
+		{Name: "failure_count", Type: field.TypeInt64, Default: 0},
+		{Name: "latency_total_ms", Type: field.TypeInt64, Default: 0},
+		{Name: "latency_max_ms", Type: field.TypeInt64, Default: 0},
+		{Name: "last_checked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_success_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_failure_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_error", Type: field.TypeString, Nullable: true},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// UpstreamsTable holds the schema information for the "upstreams" table.
+	UpstreamsTable = &schema.Table{
+		Name:       "upstreams",
+		Columns:    UpstreamsColumns,
+		PrimaryKey: []*schema.Column{UpstreamsColumns[0]},
+	}
 	// UsageEntityStatsColumns holds the columns for the "usage_entity_stats" table.
 	UsageEntityStatsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -671,6 +767,7 @@ var (
 		ErrLogsTable,
 		GroupsTable,
 		GroupAssignmentsTable,
+		GroupUpstreamsTable,
 		KeysTable,
 		PriceEntriesTable,
 		PriceVariantsTable,
@@ -681,6 +778,7 @@ var (
 		TempBalancesTable,
 		TemplatesTable,
 		TemplateExtsTable,
+		UpstreamsTable,
 		UsageEntityStatsTable,
 		UsageLogsTable,
 		UsageStatsTable,
@@ -691,9 +789,12 @@ var (
 
 func init() {
 	AccountsTable.ForeignKeys[0].RefTable = TemplatesTable
+	AccountsTable.ForeignKeys[1].RefTable = UpstreamsTable
 	AccountExtsTable.ForeignKeys[0].RefTable = AccountsTable
 	GroupAssignmentsTable.ForeignKeys[0].RefTable = GroupsTable
 	GroupAssignmentsTable.ForeignKeys[1].RefTable = UsersTable
+	GroupUpstreamsTable.ForeignKeys[0].RefTable = GroupsTable
+	GroupUpstreamsTable.ForeignKeys[1].RefTable = UpstreamsTable
 	KeysTable.ForeignKeys[0].RefTable = GroupsTable
 	KeysTable.ForeignKeys[1].RefTable = UsersTable
 	RedemptionUsesTable.ForeignKeys[0].RefTable = RedemptionCodesTable

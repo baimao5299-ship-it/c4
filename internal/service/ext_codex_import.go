@@ -54,7 +54,7 @@ type codexImportRow struct {
 // ImportCodexOAuthAccounts 批量导入 codex-oauth 凭据（ServerInterface 依赖面）：
 // 模板顶层校验（缺/不存在 → 400/404；**credential_type 必须 == codex-oauth——
 // 错配 → 400 整批拒绝**，防违反 ext 类型 == 模板类型的硬不变量 ext_codex.go:238）；
-// 逐行类型特定校验（必填/成对/expires RFC3339/email 格式——失败 → 行级 failed
+// 逐行类型特定校验（必填/accessToken-only/expires RFC3339/email 格式——失败 → 行级 failed
 // 收集继续）；共享核心落库。
 func (s *Service) ImportCodexOAuthAccounts(ctx context.Context, items []domain.CodexOAuthImportItem, tplID, groupID *int64) (*domain.ImportResult, error) {
 	if err := s.checkCodexImportTemplate(ctx, tplID, credential.TypeCodexOAuth); err != nil {
@@ -107,6 +107,9 @@ func (s *Service) checkCodexImportTemplate(ctx context.Context, tplID *int64, en
 	if err != nil {
 		return mapRepoErr(err) // 模板缺 id → 404
 	}
+	if tpl == nil || tpl.DeletedAt != nil {
+		return ErrNotFound
+	}
 	if tpl.CredentialType != endpointType {
 		return fmt.Errorf("%w: 模板类型不匹配：%s 端点要求 %s 模板（实际 %s）", ErrInvalidInput, endpointType, endpointType, tpl.CredentialType)
 	}
@@ -121,8 +124,8 @@ func codexOAuthRow(index int, it domain.CodexOAuthImportItem) (codexImportRow, e
 	if it.CodexAccountID == "" {
 		return codexImportRow{}, errors.New("codex_account_id 必填")
 	}
-	if it.CodexOAuthToken == "" || it.CodexOAuthRefreshToken == "" {
-		return codexImportRow{}, errors.New("codex_oauth_token 与 codex_oauth_refresh_token 必须成对提供（同空同非空）")
+	if it.CodexOAuthToken == "" {
+		return codexImportRow{}, errors.New("codex_oauth_token 必填")
 	}
 	var expires *time.Time
 	if it.CodexOAuthExpiresAt != nil {
@@ -237,6 +240,9 @@ func (s *Service) importCodexRow(ctx context.Context, row codexImportRow, tplID 
 		if err != nil {
 			return false, 0, err
 		}
+		if acc == nil {
+			return false, 0, ErrNotFound
+		}
 		if acc.DeletedAt != nil {
 			return false, 0, fmt.Errorf("账号已删除（codex_email=%q codex_account_id=%q）——管理面恢复后重新导入", row.email, row.accountID)
 		}
@@ -263,7 +269,9 @@ func (s *Service) importCodexRow(ctx context.Context, row codexImportRow, tplID 
 		}
 		if credType == credential.TypeCodexOAuth {
 			ext.CodexOAuthToken = &row.oauthToken
-			ext.CodexOAuthRefreshToken = &row.oauthRT
+			if row.oauthRT != "" {
+				ext.CodexOAuthRefreshToken = &row.oauthRT
+			}
 			ext.CodexOAuthExpiresAt = row.oauthExpires
 		} else {
 			ext.CodexPATKey = &row.patKey
@@ -291,6 +299,20 @@ func (s *Service) importCodexRow(ctx context.Context, row codexImportRow, tplID 
 // identity/email/并发/权重/归属零触碰）。
 func (s *Service) updateCodexCredentials(ctx context.Context, accountID int64, row codexImportRow, credType credential.Type) error {
 	if credType == credential.TypeCodexOAuth {
+		// Sub2 accessToken-only 导入不应清空已有 refresh_token；同样保留已有
+		// expires_at，避免一次不完整的会话导入破坏自动续期状态。
+		if row.oauthRT == "" || row.oauthExpires == nil {
+			current, err := s.store.GetAccountExt(ctx, accountID)
+			if err != nil {
+				return err
+			}
+			if row.oauthRT == "" && current.CodexOAuthRefreshToken != nil {
+				row.oauthRT = *current.CodexOAuthRefreshToken
+			}
+			if row.oauthExpires == nil {
+				row.oauthExpires = current.CodexOAuthExpiresAt
+			}
+		}
 		return s.store.WriteOAuthRotation(ctx, accountID, row.oauthToken, row.oauthRT, row.oauthExpires)
 	}
 	return s.store.WritePATKey(ctx, accountID, row.patKey)

@@ -24,6 +24,9 @@ type Group func(*sql.Selector)
 // GroupAssignment is the predicate function for groupassignment builders.
 type GroupAssignment func(*sql.Selector)
 
+// GroupUpstream is the predicate function for groupupstream builders.
+type GroupUpstream func(*sql.Selector)
+
 // Key is the predicate function for key builders.
 type Key func(*sql.Selector)
 
@@ -53,6 +56,9 @@ type Template func(*sql.Selector)
 
 // TemplateExt is the predicate function for templateext builders.
 type TemplateExt func(*sql.Selector)
+
+// Upstream is the predicate function for upstream builders.
+type Upstream func(*sql.Selector)
 
 // UsageEntityStat is the predicate function for usageentitystat builders.
 type UsageEntityStat func(*sql.Selector)

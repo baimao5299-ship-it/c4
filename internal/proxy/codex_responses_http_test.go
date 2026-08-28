@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -218,6 +219,42 @@ func postResponses(t *testing.T, srv *httptest.Server, body string) *http.Respon
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	return resp
+}
+
+// redirectRoundTripper keeps the SDK's resolved request path while routing the
+// request to a local fixture. This lets the empty-template test exercise the
+// SDK default endpoint without making a network call.
+type redirectRoundTripper struct{ target *url.URL }
+
+func (rt redirectRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	u := *req.URL
+	u.Scheme = rt.target.Scheme
+	u.Host = rt.target.Host
+	cloned := req.Clone(req.Context())
+	cloned.URL = &u
+	return http.DefaultTransport.RoundTrip(cloned)
+}
+
+func TestCodexResponsesEmptyBaseURLUsesSDKDefault(t *testing.T) {
+	up, upc := newCodexHTTPUpstream(t, codexHTTPStep{
+		status: http.StatusOK,
+		events: []string{t6RespCreated, t6RespItemEv, t6RespDone},
+	})
+	store := &captureLogStore{}
+	p, _ := newTestCodexRespProxy(t, credential.TypeCodexPAT,
+		map[int64]*domain.AccountExt{10: codexPATExt(10, "pat-10")},
+		"", nil, nil, store)
+	target, err := url.Parse(up.URL)
+	require.NoError(t, err)
+	p.codex.SetTransport(redirectRoundTripper{target: target})
+
+	srv := httptest.NewServer(AIRouter(p))
+	defer srv.Close()
+	resp := postResponses(t, srv, `{"model":"gpt-4o","input":"hi"}`)
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "空模板地址必须使用 SDK 默认完整端点")
+	require.Equal(t, 1, upc.callsN(), "默认端点请求必须真正发到上游")
 }
 
 // splitSSEFrames 把 `data: X\n\n` 帧流拆成 X 载荷序列（测试辅助；fixture 内无

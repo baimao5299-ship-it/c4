@@ -25,6 +25,9 @@ upstream = {
   dial_timeout = "10s",
   force_http2 = true,
   tls_convergence_enabled = false,
+  # 留空=直连；按需手动填写固定代理端口，例如
+  # http://host.docker.internal:7897 或 socks5h://host.docker.internal:7898。
+  proxy_url = "",
 }
 limit = { group_key_rpm = 0 }
 # cooldown_429 / backoff_base / backoff_max 已移除（不向后兼容）——配置含这些

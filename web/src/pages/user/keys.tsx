@@ -68,23 +68,55 @@ function KeyCell({ raw }: { raw?: string }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   return (
-    <div className="flex items-center gap-1.5">
-      <code className="font-mono text-sm" title={raw}>{raw ? `${raw.slice(0, 8)}…${raw.slice(-4)}` : '—'}</code>
-      {raw && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title={t('keybox.copy')}
-          onClick={async () => {
-            if (await copyText(raw)) {
-              setCopied(true)
-              setTimeout(() => setCopied(false), 2000)
-            }
-          }}
-        >
-          {copied ? <Check /> : <Copy />}
-        </Button>
-      )}
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        <code className="font-mono text-sm" title={raw}>{raw ? `${raw.slice(0, 8)}…${raw.slice(-4)}` : '—'}</code>
+        {raw && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={t('keybox.copy')}
+            onClick={async () => {
+              if (await copyText(raw)) {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+              }
+            }}
+          >
+            {copied ? <Check /> : <Copy />}
+          </Button>
+        )}
+      </div>
+      <EndpointCell />
+    </div>
+  )
+}
+
+// The gateway endpoint is deployment-local, so it must follow the origin the
+// user is currently viewing instead of being hard-coded to localhost.
+function EndpointCell() {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  const endpoint = typeof window === 'undefined' ? '' : `${window.location.origin}/v1`
+  if (!endpoint) return null
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="shrink-0">{t('user.keys.endpointLabel')}</span>
+      <code className="max-w-48 truncate font-mono" title={endpoint}>{endpoint}</code>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        title={t('user.keys.copyEndpoint')}
+        aria-label={t('user.keys.copyEndpoint')}
+        onClick={async () => {
+          if (await copyText(endpoint)) {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+          }
+        }}
+      >
+        {copied ? <Check /> : <Copy />}
+      </Button>
     </div>
   )
 }
@@ -112,7 +144,7 @@ export default function UserKeys() {
   }, [isLoading, isError, rows.length, offset])
 
   // —— 可选分组（public 全部 + 已授予 private；key 创建时选组） ——
-  const { data: groups } = useQuery({
+  const { data: groups, isLoading: groupsLoading, isError: groupsError, refetch: refetchGroups } = useQuery({
     queryKey: ['user', 'groups'],
     queryFn: () => userApi.listUserGroups(),
     staleTime: 60_000,
@@ -145,6 +177,10 @@ export default function UserKeys() {
     setCreated(null)
     create.reset()
     setCreateOpen(true)
+    // Group visibility and routing membership can change in another admin
+    // window. Revalidate when the dialog opens so a stale option is not shown
+    // for a key that would be rejected immediately afterward.
+    void refetchGroups()
   }
   const updateCreate = (patch: Partial<CreateForm>) => {
     setCreateForm(f => ({ ...f, ...patch }))
@@ -332,7 +368,9 @@ export default function UserKeys() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectableGroups.length === 0 && <p className="text-xs text-muted-foreground">{t('user.keys.groupEmpty')}</p>}
+                  {groupsLoading && <p className="text-xs text-muted-foreground">{t('user.keys.groupLoading')}</p>}
+                  {groupsError && <p className="text-xs text-destructive">{t('user.keys.groupLoadFailed')}</p>}
+                  {!groupsLoading && !groupsError && selectableGroups.length === 0 && <p className="text-xs text-muted-foreground">{t('user.keys.groupEmpty')}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -351,7 +389,7 @@ export default function UserKeys() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={create.isPending}>{t('common.cancel')}</Button>
-                <Button onClick={submitCreate} disabled={create.isPending}>
+                <Button onClick={submitCreate} disabled={create.isPending || groupsLoading || groupsError || selectableGroups.length === 0}>
                   {create.isPending ? t('common.creating') : t('user.keys.new')}
                 </Button>
               </DialogFooter>

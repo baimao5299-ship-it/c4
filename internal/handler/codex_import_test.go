@@ -66,6 +66,18 @@ func TestPostAccountsBatchImportCodexOauthHandler(t *testing.T) {
 		require.Empty(t, out.Failed)
 	})
 
+	t.Run("Sub2 accessToken-only is accepted", func(t *testing.T) {
+		rec := doImport(t, h, http.MethodPost, "/api/admin/accounts/batch-import-codex-oauth", `{
+			"items": [{"codex_email":"h0@example.com","codex_account_id":"h-0",
+				"codex_oauth_token":"at-only"}],
+			"template_id": `+itoa(tplID)+`}`)
+		require.Equal(t, 200, rec.Code, "body: %s", rec.Body.String())
+		var out ImportResult
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+		require.Equal(t, 1, out.Imported)
+		require.Empty(t, out.Failed)
+	})
+
 	t.Run("row level failures still 200 with original index", func(t *testing.T) {
 		rec := doImport(t, h, http.MethodPost, "/api/admin/accounts/batch-import-codex-oauth", `{
 			"items": [

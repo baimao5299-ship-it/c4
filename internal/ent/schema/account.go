@@ -20,6 +20,9 @@ func (Account) Fields() []ent.Field {
 		// 无迁移逻辑——ent auto-migrate 自动加列（accounts 非分区表），无默认值/
 		// 回填：旧行 NULL = 继承模板（旧行为天然成立）。
 		field.String("base_url").Optional().Nillable(),
+		// upstream_id is optional. Existing accounts keep their prior endpoint
+		// behavior until an operator explicitly binds them in the console.
+		field.Int64("upstream_id").Optional().Nillable(),
 		field.String("upstream_key"),
 		field.Enum("status").
 			Values("active", "unhealthy", "429", "disabled").
@@ -46,6 +49,10 @@ func (Account) Edges() []ent.Edge {
 			Field("template_id").
 			Unique().
 			Required(),
+		edge.From("upstream", Upstream.Type).
+			Ref("accounts").
+			Field("upstream_id").
+			Unique(),
 		edge.To("groups", Group.Type),
 		// ext 账号类型化鉴权扩展（1:1；api_key 类型无 ext 行）
 		edge.To("ext", AccountExt.Type),

@@ -136,7 +136,7 @@ func acc(id int64, t *domain.Template, maxConc int) *domain.Account {
 
 func newSched(t *testing.T, m *memLoader) *Scheduler {
 	t.Helper()
-	// 规则引擎：空表 Reload 写种子（429/30s、error/unhealthy/5s、ok/active），
+	// 规则引擎：空表 Reload 写种子（429/2s、error/unhealthy/5s、ok/active），
 	// 行为等价于旧硬编码状态机（Task C 改造后 MarkResult 走规则路径）。
 	re := rule.New(rule.Config{}, &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}, nil)
 	require.NoError(t, re.Reload(context.Background()))
@@ -170,6 +170,29 @@ func TestSelectFormatHardFilter(t *testing.T) {
 	s2 := newSched(t, m2)
 	_, err = s2.Select(10, domain.FormatOpenAIResponses, "gpt-4o")
 	require.ErrorIs(t, err, ErrFormatUnavailable)
+}
+
+func TestReloadSkipsAccountsWithDeletedOrMissingTemplate(t *testing.T) {
+	// Legacy data can retain an account-group edge after its template is
+	// soft-deleted. The scheduler must expose an empty route rather than panic
+	// when the request path reads template fields.
+	missing := &domain.Account{ID: 99, TemplateID: 999, UpstreamKey: "k", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 2}
+	deletedAt := time.Now()
+	deletedTemplate := tpl(100, domain.FormatOpenAIChat, []string{"gpt-5"})
+	deletedTemplate.DeletedAt = &deletedAt
+	deleted := acc(100, deletedTemplate, 2)
+	s := newTestScheduler(t, []*domain.Account{missing, deleted})
+	_, err := s.Select(10, domain.FormatOpenAIChat, "gpt-5")
+	require.ErrorIs(t, err, ErrFormatUnavailable, "a group with no routable accounts must not dereference an invalid template")
+}
+
+func TestSelectSearchFormatHardFilter(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAISearch, []string{"codex-search"})
+	s := newTestScheduler(t, []*domain.Account{acc(1, tplx, 2)})
+	sel, err := s.Select(10, domain.FormatOpenAISearch, "codex-search")
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sel.AccountID)
+	s.ReleaseSelection(sel)
 }
 
 // TestSelectCredentialTypeFromTemplate 钉死：Selection.CredentialType 只来自
@@ -234,7 +257,7 @@ func TestMark429CooldownAndRecover(t *testing.T) {
 	t.Cleanup(cancel)
 	go s.writebackLoop(ctx)
 
-	// 种子规则：429 → status=429 + cooldown 30s（MarkResult 异步投递，flush 同步处理）
+	// 种子规则：429 → status=429 + cooldown 2s（MarkResult 异步投递，flush 同步处理）
 	s.MarkResult(1, rule.Kind429, nil, 0, "", "")
 	s.FlushRules()
 	_, err := s.Select(10, domain.FormatOpenAIChat, "m")
@@ -250,7 +273,7 @@ func TestMark429CooldownAndRecover(t *testing.T) {
 	require.Equal(t, before.CooldownUntil, ri.CooldownUntil, "冷却未过期：cooldownUntil 不变")
 	_, err = s.Select(10, domain.FormatOpenAIChat, "m")
 	require.ErrorIs(t, err, ErrNoAvailable, "冷却未过期：仍不可调度")
-	// 冷却过期后惰性恢复（种子 cooldown 30s > 15s，需推进 35s）
+	// 冷却过期后惰性恢复（种子 cooldown 2s，推进 35s 验证过期）
 	s.timeNow = func() time.Time { return time.Now().Add(35 * time.Second) }
 	sel, err := s.Select(10, domain.FormatOpenAIChat, "m")
 	require.NoError(t, err, "available after cooldown")
@@ -549,6 +572,43 @@ func TestWeightActionRebuildsRoutes(t *testing.T) {
 	}
 	ratio := float64(counts[2]) / float64(counts[1])
 	require.InDelta(t, ratio, 10.0, 0.5, "weight 100:10 → 频率比 ≈ 10:1（路由已按新权重重建）")
+}
+
+// A weight action must rebuild every group that shares the account instance.
+// Rebuilding only the first group leaves other group routes on the old sequence
+// until the periodic scheduler sync, so users assigned to that group observe a
+// stale distribution.
+func TestWeightActionRebuildsAllAccountGroups(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"gpt-4o"})
+	shared := &domain.Account{ID: 1, TemplateID: 1, Template: tplx, UpstreamKey: "k1", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000}
+	other := &domain.Account{ID: 2, TemplateID: 1, Template: tplx, UpstreamKey: "k2", Status: domain.StatusActive, Weight: 100, MaxConcurrency: 1000}
+	m := newMemLoader(map[int64][]*domain.Account{10: {shared}, 20: {shared, other}})
+	rstore := &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}
+	_, err := rstore.CreateRule(context.Background(), domain.Rule{
+		Name: "lower-shared", Enabled: true, Priority: 10,
+		When: domain.RuleWhen{Kind: strPtr("5xx")},
+		Then: domain.RuleThen{Weight: intPtr(10)},
+	})
+	re := rule.New(rule.Config{}, rstore, nil)
+	require.NoError(t, err)
+	require.NoError(t, re.Reload(context.Background()))
+	s := New(testCfg(), m, re, nil)
+	require.NoError(t, s.reload(context.Background()))
+
+	s.MarkResult(shared.ID, rule.Kind5xx, nil, 500, "", "")
+	s.FlushRules()
+	require.Equal(t, 10, reuseByID(s, shared.ID).static.Load().acc.Weight)
+
+	const n = 20_000
+	counts := map[int64]int{}
+	for i := 0; i < n; i++ {
+		sel, err := s.Select(20, domain.FormatOpenAIChat, "gpt-4o")
+		require.NoError(t, err)
+		counts[sel.AccountID]++
+		s.ReleaseSelection(sel)
+	}
+	ratio := float64(counts[other.ID]) / float64(counts[shared.ID])
+	require.InDelta(t, ratio, 10.0, 0.5, "group 20 must use the updated 10:100 weights immediately")
 }
 
 // TestProcessWriteMergeKeepsWeight 回归（评审 I-1）：同账号 weight 写先入队、
@@ -1535,6 +1595,33 @@ func TestSchedulerClassify(t *testing.T) {
 	require.Nil(t, then.ResponseCode)
 	require.Nil(t, then.CustomMessage)
 	require.False(t, pu)
+}
+
+func TestClassifySelectionUsesRequestGroup(t *testing.T) {
+	// The account snapshot intentionally advertises group 10 while the
+	// selection belongs to group 20. This isolates the request scope from the
+	// nondeterministic first group used by the shared account snapshot.
+	group10, group20 := int64(10), int64(20)
+	http429 := 429
+	store := &fakeRuleStore{rules: map[int64]domain.Rule{}, next: 1}
+	_, err := store.CreateRule(context.Background(), domain.Rule{
+		Name: "group20-429", Enabled: true, Priority: 1,
+		When: domain.RuleWhen{Kind: strPtr("429"), GroupID: &group20, HTTPStatus: &http429},
+		Then: domain.RuleThen{Status: statusPtr(domain.StatusUnhealthy), Cooldown: strPtr("2s")},
+	})
+	require.NoError(t, err)
+	re := rule.New(rule.Config{}, store, nil)
+	require.NoError(t, re.Reload(context.Background()))
+	s := New(testCfg(), newMemLoader(nil), re, nil)
+	as := &accountSnapshot{}
+	as.static.Store(&snapshotStatic{acc: domain.Account{ID: 1, TemplateID: 1}, gid: group10, groupIDs: []int64{group10, group20}})
+	as.state.Store(&accState{status: domain.StatusActive})
+	s.store.byID.Store(map[int64]*accountSnapshot{1: as})
+
+	sel := &Selection{TargetKind: TargetKindAccount, AccountID: 1, GroupID: group20}
+	then, punish := s.ClassifySelection(sel, rule.Event{AccountID: 1, Kind: rule.Kind429, HTTPStatus: &http429})
+	require.True(t, punish)
+	require.Equal(t, domain.StatusUnhealthy, *then.Status)
 }
 
 // TestApplyDisabledActionPersistsAcrossReload 规则动作 disabled 必须回写（bug

@@ -19,6 +19,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/redemptionuse"
 	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 	"github.com/is7qin/c3api/internal/ent/user"
 )
 
@@ -111,5 +112,11 @@ var (
 	priceEntrySortFields = map[string]string{
 		"id": priceentry.FieldID, "model": priceentry.FieldModel,
 		"updated_at": priceentry.FieldUpdatedAt,
+	}
+	upstreamSortFields = map[string]string{
+		"id": upstream.FieldID, "name": upstream.FieldName, "base_url": upstream.FieldBaseURL, "multiplier_bp": upstream.FieldMultiplierBp,
+		"request_count": upstream.FieldRequestCount, "success_count": upstream.FieldSuccessCount,
+		"failure_count": upstream.FieldFailureCount, "last_checked_at": upstream.FieldLastCheckedAt,
+		"created_at": upstream.FieldCreatedAt, "updated_at": upstream.FieldUpdatedAt,
 	}
 )

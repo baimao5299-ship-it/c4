@@ -6,6 +6,7 @@
 package httpx
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,9 +20,9 @@ type TransportConfig struct {
 	MaxIdleConnsPerHost int
 	// MaxConnsPerHost 单 host 连接总数上限（含在用+空闲；0 = 不限）。
 	// 网关既有 client 保持 0 不限（压测验证形态）；SDK 适配层装配显式上界。
-	MaxConnsPerHost int
-	IdleConnTimeout time.Duration
-	DialTimeout     time.Duration
+	MaxConnsPerHost     int
+	IdleConnTimeout     time.Duration
+	DialTimeout         time.Duration
 	TLSHandshakeTimeout time.Duration
 	ForceHTTP2          bool
 	TLSConvergence      bool
@@ -30,6 +31,9 @@ type TransportConfig struct {
 	//（含 x-api-key/Authorization 凭据，WS 升级大概率失败），压测行为随
 	// 环境漂移。装配方（main NewClient / SetTransport 两处）显式决定。
 	Proxy func(*http.Request) (*url.URL, error)
+	// DialContext optionally replaces the direct dialer (used by socks5h).
+	// It is deliberately explicit; environment proxy variables are ignored.
+	DialContext func(context.Context, string, string) (net.Conn, error)
 }
 
 func NewTransport(cfg TransportConfig) *http.Transport {
@@ -38,9 +42,13 @@ func NewTransport(cfg TransportConfig) *http.Transport {
 	if handshakeTimeout <= 0 {
 		handshakeTimeout = 10 * time.Second
 	}
+	dialContext := cfg.DialContext
+	if dialContext == nil {
+		dialContext = dialer.DialContext
+	}
 	transport := &http.Transport{
 		Proxy:                 cfg.Proxy, // nil = 直连（防环境代理劫持 + 压测确定性）；装配方显式决定
-		DialContext:           dialer.DialContext,
+		DialContext:           dialContext,
 		ForceAttemptHTTP2:     cfg.ForceHTTP2,
 		MaxIdleConns:          cfg.MaxIdleConns,
 		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
@@ -51,7 +59,7 @@ func NewTransport(cfg TransportConfig) *http.Transport {
 	}
 	if cfg.TLSConvergence {
 		transport.ForceAttemptHTTP2 = false
-		transport.DialTLSContext = tlsprofile.NewSub2Node24DialTLSContext(dialer.DialContext, handshakeTimeout)
+		transport.DialTLSContext = tlsprofile.NewSub2Node24DialTLSContext(dialContext, handshakeTimeout)
 	}
 	return transport
 }

@@ -15,13 +15,20 @@ import { PreviewTable } from './preview-table'
 import { ResultView } from './result-view'
 import { getAdapter, type SourceId } from '@/lib/codex-import/adapters'
 import { importSequential } from '@/lib/codex-import/chunk'
-import { IMPORT_DOCUMENT_SEPARATOR, readImportFile } from '@/lib/codex-import/parse'
+import { IMPORT_DOCUMENT_SEPARATOR, isImportFileName, readImportFile } from '@/lib/codex-import/parse'
 import type { CredentialKind, NormalizedRow } from '@/lib/codex-import/normalize'
 import type { components } from '@/lib/api/schema'
 import { api } from '@/App'
 
 type Template = components['schemas']['Template']
 type Group = components['schemas']['Group']
+
+const MAX_IMPORT_TEXT_BYTES = 5 * 1024 * 1024
+const MAX_IMPORT_FILES = 512
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
 
 export function CodexImportDialog({ open, onOpenChange, templates, groups, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; templates: Template[]; groups: Group[]; onDone: () => void }) {
   const { t } = useTranslation()
@@ -40,12 +47,14 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
   const [templateId, setTemplateId] = useState('')
   const [groupId, setGroupId] = useState('')
   const [parseState, setParseState] = useState<{ rows: NormalizedRow[]; parseError?: string }>({ rows: [] })
+  const [ignoredFileCount, setIgnoredFileCount] = useState(0)
   const [isPending, setIsPending] = useState(false)
   const [progress, setProgress] = useState<[number, number] | null>(null)
   const [result, setResult] = useState<components['schemas']['ImportResult'] | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
+  const inputGenerationRef = useRef(0)
 
   const availableTemplates = useMemo(() => templates.filter(tp => tp.CredentialType === kind), [templates, kind])
   const validRows = parseState.rows.filter((row: any) => row.item && !row.error)
@@ -53,47 +62,81 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
   const duplicateCount = parseState.rows.filter(row => row.duplicateOf != null).length
   const importBlocked = invalidCount > 0
 
+  const resetInputWithError = (message: string) => {
+    setRawText('')
+    setFileName('')
+    setIgnoredFileCount(0)
+    setParseState({ rows: [], parseError: message })
+  }
+
   useEffect(() => {
     if (!open) return
-    setStep(1); setKind('codex-oauth'); setSource('cpa'); setTab('text'); setRawText(''); setFileName(''); setTemplateId(''); setGroupId(''); setParseState({ rows: [] }); setResult(null); setProgress(null)
+    inputGenerationRef.current += 1
+    setStep(1); setKind('codex-oauth'); setSource('cpa'); setTab('text'); setRawText(''); setFileName(''); setTemplateId(''); setGroupId(''); setParseState({ rows: [] }); setResult(null); setProgress(null); setIgnoredFileCount(0)
   }, [open])
-  useEffect(() => { setTemplateId(''); setSource('cpa'); setParseState({ rows: [] }) }, [kind])
+  useEffect(() => { inputGenerationRef.current += 1; setTemplateId(''); setSource('cpa'); setParseState({ rows: [] }) }, [kind])
   useEffect(() => {
-    if (!rawText.trim()) { setParseState({ rows: [] }); return }
+    if (!rawText.trim()) {
+      setParseState(prev => prev.parseError ? prev : { rows: [] })
+      return
+    }
     const timer = window.setTimeout(() => setParseState(getAdapter(source).parse(rawText, kind)), tab === 'text' ? 300 : 0)
     return () => window.clearTimeout(timer)
   }, [rawText, source, kind, tab])
 
   const handleFiles = async (files: FileList | File[], fromFolder = false) => {
-    const list = Array.from(files)
-    if (list.length === 0) return
+    const generation = ++inputGenerationRef.current
+    const isCurrent = () => generation === inputGenerationRef.current
+    const selected = Array.from(files)
+    if (selected.length === 0) return
     if (fromFolder && source !== 'cpa') {
-      setParseState({ rows: [], parseError: t('accounts.import.folderOnlyCpa') })
+      resetInputWithError(t('accounts.import.folderOnlyCpa'))
       return
     }
+    const list = selected.filter(file => isImportFileName(file.name))
+    const ignored = selected.length - list.length
+    if (list.length === 0) {
+      resetInputWithError(t('accounts.import.input.noSupportedFiles'))
+      return
+    }
+    if (list.length > MAX_IMPORT_FILES) {
+      resetInputWithError(t('accounts.import.input.tooManyFiles', { count: MAX_IMPORT_FILES }))
+      return
+    }
+    setIgnoredFileCount(ignored)
     // 5MB 单文件校验在 adapter 预览解析时完成；此处做文件夹总大小校验
     const total = list.reduce((s, f) => s + f.size, 0)
     if (total > 20 * 1024 * 1024) {
-      setParseState({ rows: [], parseError: t('accounts.import.input.fileTooLarge') })
+      resetInputWithError(t('accounts.import.input.fileTooLarge'))
       return
     }
     try {
       const texts = await Promise.all(list.map(readImportFile))
+      if (!isCurrent()) return
+      const combined = texts.flat().join(IMPORT_DOCUMENT_SEPARATOR)
+      if (utf8Bytes(combined) > MAX_IMPORT_TEXT_BYTES * 4) {
+        resetInputWithError(t('accounts.import.input.fileTooLarge'))
+        return
+      }
       // 记录显示名：单文件用文件名，多文件/文件夹显示数量
       const displayName = list.length === 1 ? list[0].name : t('accounts.import.filesCount', { count: list.length })
-      setRawText(texts.flat().join(IMPORT_DOCUMENT_SEPARATOR))
+      setRawText(combined)
       setFileName(displayName)
       setTab('file')
     } catch (error) {
+      if (!isCurrent()) return
       const code = error instanceof Error ? error.message : ''
       const message = code === 'fileTooLarge' ? t('accounts.import.input.fileTooLarge')
-        : code === 'zipNoImportFiles' ? '压缩包内没有可导入的 .json、.txt 或 .at_txt 文件'
+        : code === 'zipNoImportFiles' ? '压缩包内没有可导入的 .json、.jsonl、.ndjson、.txt 或 .at_txt 文件'
           : code === 'zipInvalid' ? '压缩包无法读取或内容不是 UTF-8 文本'
+            : code === 'unsupportedFileType' ? t('accounts.import.input.noSupportedFiles')
             : t('common.loadFailed', { message: '' })
-      setParseState({ rows: [], parseError: message })
+      resetInputWithError(message)
     }
   }
   const handleDrop = async (e: React.DragEvent) => {
+    const generation = ++inputGenerationRef.current
+    const isCurrent = () => generation === inputGenerationRef.current
     e.preventDefault()
     setDragOver(false)
     const files: File[] = []
@@ -108,32 +151,43 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
       if (entries.length > 0) {
         const fromFolder = entries.some(entry => entry.isDirectory)
         if (fromFolder && source !== 'cpa') {
-          setParseState({ rows: [], parseError: t('accounts.import.folderOnlyCpa') })
+          resetInputWithError(t('accounts.import.folderOnlyCpa'))
           return
         }
         // 递归读取文件夹
         const readEntry = async (entry: any): Promise<File[]> => {
           if (entry.isFile) {
-            return await new Promise(res => entry.file((f: File) => res([f])))
+            return await new Promise((resolve, reject) => entry.file((f: File) => resolve([f]), () => reject(new Error('folderReadFailed'))))
           }
           if (entry.isDirectory) {
             if (source !== 'cpa') return []
             const reader = entry.createReader()
             const batch: File[] = []
-            const readBatch = (): Promise<File[]> => new Promise(resolve => {
+            const readBatch = (): Promise<File[]> => new Promise((resolve, reject) => {
               reader.readEntries(async (ents: any[]) => {
-                if (ents.length === 0) resolve(batch)
-                else {
-                  for (const ent of ents) batch.push(...await readEntry(ent))
-                  resolve(await readBatch())
+                try {
+                  if (ents.length === 0) resolve(batch)
+                  else {
+                    for (const ent of ents) batch.push(...await readEntry(ent))
+                    resolve(await readBatch())
+                  }
+                } catch (error) {
+                  reject(error)
                 }
-              })
+              }, reject)
             })
             return await readBatch()
           }
           return []
         }
-        for (const ent of entries) files.push(...await readEntry(ent))
+        try {
+          for (const ent of entries) files.push(...await readEntry(ent))
+        } catch {
+          if (!isCurrent()) return
+          resetInputWithError(t('accounts.import.input.folderReadFailed'))
+          return
+        }
+        if (!isCurrent()) return
         if (files.length > 0) {
           await handleFiles(files, fromFolder)
           return
@@ -235,21 +289,28 @@ export function CodexImportDialog({ open, onOpenChange, templates, groups, onDon
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm font-semibold">{dragOver ? t('accounts.import.input.dropActive') : t('accounts.import.fileDropTitle')}</p>
-                      <p className="text-xs text-muted-foreground">{source === 'cpa' ? t('accounts.import.input.fileDropDescCpa') : t('accounts.import.fileDropDesc')}</p>
+                      <p className="text-xs text-muted-foreground">{source === 'cpa' ? t('accounts.import.input.fileDropDescCpa') : t('accounts.import.input.fileDropDescCompatible')}</p>
                       {source === 'cpa' && <p className="text-[11px] text-muted-foreground">{t('accounts.import.input.folderHint')}</p>}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="size-4" />{t('accounts.import.input.chooseFile')}</Button>
                       {source === 'cpa' && <Button type="button" variant="outline" size="sm" onClick={() => folderInputRef.current?.click()}><FolderOpen className="size-4" />{t('accounts.import.input.chooseFolder')}</Button>}
                     </div>
-                    <input ref={fileInputRef} type="file" accept=".json,.txt,.at_txt,.zip,text/plain,application/json,application/zip" onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} className="hidden" />
+                    <input ref={fileInputRef} type="file" accept=".json,.jsonl,.ndjson,.txt,.at_txt,.zip,text/plain,application/json,application/x-ndjson,application/zip" onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} className="hidden" />
                     {source === 'cpa' && <input ref={folderInputRef as any} type="file" {...({ webkitdirectory: '', directory: '' } as any)} onChange={e => { if (e.target.files?.length) handleFiles(e.target.files, true); e.target.value = '' }} className="hidden" />}
                   </div>
-                  {fileName && <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><Files className="size-4 shrink-0" /><span className="truncate">{fileName}</span><Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => { setRawText(''); setFileName(''); setParseState({ rows: [] }) }}>{t('common.cancel')}</Button></div>}
+                  {fileName && <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><Files className="size-4 shrink-0" /><span className="truncate">{fileName}</span><Button variant="ghost" size="sm" className="ml-auto h-6 px-2" onClick={() => { setRawText(''); setFileName(''); setIgnoredFileCount(0); setParseState({ rows: [] }) }}>{t('common.cancel')}</Button></div>}
+                  {ignoredFileCount > 0 && <Alert className="border-amber-500/30 bg-amber-500/5"><AlertDescription className="text-sm">{t('accounts.import.input.ignoredFiles', { count: ignoredFileCount })}</AlertDescription></Alert>}
                   {source !== 'cpa' && <p className="text-xs text-muted-foreground">{t('accounts.import.folderOnlyCpa')}</p>}
                 </TabsContent>
                 <TabsContent value="text" className="mt-4">
-                  <textarea value={rawText} onChange={e => setRawText(e.target.value)} placeholder={t('accounts.import.pastePlaceholder')} rows={10} className="min-h-[220px] w-full resize-y rounded-lg border border-input bg-background px-4 py-3 font-mono text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20" />
+                  <textarea value={rawText} onChange={e => {
+                    if (utf8Bytes(e.target.value) > MAX_IMPORT_TEXT_BYTES) {
+                      resetInputWithError(t('accounts.import.input.pasteTooLarge'))
+                      return
+                    }
+                    setRawText(e.target.value)
+                  }} placeholder={t('accounts.import.pastePlaceholder')} rows={10} className="min-h-[220px] w-full resize-y rounded-lg border border-input bg-background px-4 py-3 font-mono text-sm leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20" />
                   <p className="mt-2 text-xs text-muted-foreground">{t('accounts.import.pasteHint2')}</p>
                 </TabsContent>
               </Tabs>

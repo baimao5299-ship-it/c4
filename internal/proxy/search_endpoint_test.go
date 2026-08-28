@@ -556,6 +556,21 @@ func TestSearchIndependentSelection(t *testing.T) {
 	require.Len(t, seen, 2, "两次请求各独立选号、命中不同账号（无会话绑定）")
 }
 
+func TestSearchPrefersDedicatedFormat(t *testing.T) {
+	up, upc := newCodexSearchUpstream(t, codexSearchStep{status: 200, body: searchRespRaw})
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyFormatLogs(t, up.URL, domain.FormatOpenAISearch, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/alpha/search", strings.NewReader(searchReqBody))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rec := httptest.NewRecorder()
+	p.HandleSearch(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, 1, upc.callsN())
+	require.NoError(t, p.rec.Close(context.Background()))
+}
+
 // TestSearchFailoverZeroReleasesSlot 防呆（spec 纵深，与 chat 同款）：直构
 // failover_attempts=0（绕过 validate 的 >=1 下限——测试侧 p.cfg 改写等价直构）
 // 时 failover 循环零次执行，首次 Select 已占并发槽——修复前槽永不释放（组内

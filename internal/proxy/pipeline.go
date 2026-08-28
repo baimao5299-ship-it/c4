@@ -171,8 +171,9 @@ func passthroughStatus(then domain.RuleThen, upstream int) int {
 // 仅 ResponseCode==nil 且上游带 Retry-After/X-Retry-After 才透，
 // 否则不透不伪造；429 且无头时 fallback 1
 // （Global Constraints 豁免：当前 hdr 恒 nil 时 fallback 保留）
-// TODO(P22-I1): UpstreamCaller.Call 未回收 resp.Header，当前 chat/search/ws
-// 三实现 hdr 恒 nil，仅 fallback 1 生效；待扩展后透传真实值
+// Raw HTTP callers and SDK API errors now preserve response headers, so a
+// provider Retry-After reaches the client and scheduler. A missing header uses
+// the scheduler's bounded per-account backoff.
 func applyPassthroughHeader(w http.ResponseWriter, then domain.RuleThen, hdr http.Header, status int) {
 	if then.ResponseCode != nil {
 		return // fallback不透头：覆写码时不透头
@@ -204,6 +205,14 @@ func applyPassthroughHeader(w http.ResponseWriter, then domain.RuleThen, hdr htt
 // 原内联管线一致（行为契约：状态码/错误帧/Retry-After/固定文案逐字节不变）。
 func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, selectFormat domain.RequestFormat, reqID string, groupID int64, start time.Time, reqModel string, body []byte, sel *scheduler.Selection, st attemptState, attempt upstreamAttempt, sink pipelineSink, precheck bool) {
 	lastSel := sel
+	// Keep account identity across this request. Rule events are queued
+	// asynchronously, so relying on MarkResult to remove a failed account leaves
+	// a window where Select can hand the same account back to the next attempt.
+	// A small stack-backed slice keeps the common (<=3 attempts) path allocation
+	// free while allowing larger explicitly configured limits to grow normally.
+	var attemptedStorage [8]int64
+	attemptedAccounts := attemptedStorage[:0]
+	attemptedAccounts = append(attemptedAccounts, sel.TargetID)
 	var (
 		lastCode   int
 		lastErrMsg string // 最后一次实际尝试的错误文本（耗尽路径 ErrorMessage 用）
@@ -223,7 +232,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		// 402 误杀，"image 分量定生死"轮不到执行）；其余格式照旧。
 		if precheck {
 			if err := p.precheckPrice(format, sel.Model); err != nil {
-				p.sched.Release(sel.AccountID)
+				p.sched.ReleaseSelection(sel)
 				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
 				sink.writePrecheckRejected(w, st)
 				return
@@ -248,12 +257,13 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 			// 429 分支统一走 Classify（规则表 = 单一决策源）：seed-429 恒命中
 			// （punish=true → 恒投递，现状等价）；规则删改后按声明裁定投递。
 			// Model 口径 = 最终请求模型 sel.Model（映射后，与上游实际模型一致）。
-			_, punish := p.sched.Classify(rule.Event{
+			_, punish := p.sched.ClassifySelection(sel, rule.Event{
 				AccountID: sel.AccountID, Kind: rule.Kind429, HTTPStatus: &code,
 				Model: sel.Model, ErrorMessage: lastErrMsg,
 			})
 			if punish {
-				p.sched.MarkResult(sel.AccountID, rule.Kind429, nil, code, lastErrMsg, sel.Model)
+				resetAt := retryAfterDeadline(time.Now(), lastHdr, callErr)
+				p.sched.MarkSelectionResult(sel, rule.Kind429, resetAt, code, lastErrMsg, sel.Model)
 			}
 		} else if code >= 500 || code == 0 {
 			// 首字节前客户端断连（分类正确性，用户实证：模型思考期取消常见）：
@@ -270,7 +280,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 				l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, statusClientClosedRequest, domain.ErrAbort, usageTuple{}, start))
 				msg := "client closed request before upstream response"
 				l.ErrorMessage = &msg
-				p.finish(sel.AccountID, l)
+				p.finishSelection(sel, l)
 				return
 			}
 			// 5xx：上游 body message（既有语义）。连接级/凭据错（code==0）：
@@ -297,12 +307,12 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 			if code > 0 {
 				hp = &code
 			}
-			_, punish := p.sched.Classify(rule.Event{
+			_, punish := p.sched.ClassifySelection(sel, rule.Event{
 				AccountID: sel.AccountID, Kind: kind, HTTPStatus: hp,
 				Model: sel.Model, ErrorMessage: lastErrMsg,
 			})
 			if punish {
-				p.sched.MarkResult(sel.AccountID, kind, nil, code, lastErrMsg, sel.Model)
+				p.sched.MarkSelectionResult(sel, kind, nil, code, lastErrMsg, sel.Model)
 			}
 		} else {
 			// 4xx 确定性错误（统一公式 status=ResponseCode!=nil?*ResponseCode:code, msg=CustomMessage!=nil?*CustomMessage:respBody）
@@ -314,8 +324,8 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 			if em != "" {
 				l.ErrorMessage = &em
 			}
-			p.finish(sel.AccountID, l)
-			then, punish := p.sched.Classify(rule.Event{
+			p.finishSelection(sel, l)
+			then, punish := p.sched.ClassifySelection(sel, rule.Event{
 				AccountID: sel.AccountID, Kind: rule.Kind4xx, HTTPStatus: &code,
 				Model: sel.Model, ErrorMessage: em,
 			})
@@ -332,27 +342,28 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 				sink.writeUpstreamRejection(w, st, status, respBody)
 			}
 			if punish {
-				p.sched.MarkResult(sel.AccountID, rule.Kind4xx, nil, code, em, sel.Model)
+				p.sched.MarkSelectionResult(sel, rule.Kind4xx, nil, code, em, sel.Model)
 			}
 			return
 		}
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		// 最后一轮不再为不存在的下一次尝试预选：尾部 Select 会抢占并发槽
 		// （CAS 递增、仅 Release 递减、无回收），耗尽时永不释放 → 永久占槽。
 		if i+1 >= p.cfg.FailoverAttempts {
 			break
 		}
 		var selErr error
-		sel, selErr = p.sched.Select(groupID, selectFormat, reqModel)
+		sel, selErr = p.sched.SelectExcluding(groupID, selectFormat, reqModel, attemptedAccounts)
 		if selErr != nil {
 			break
 		}
+		attemptedAccounts = append(attemptedAccounts, sel.TargetID)
 	}
 	// 耗尽：请求已完成（上游消费了请求），以最后一次尝试的结果记一条用量（统一公式 status=ResponseCode!=nil?*ResponseCode:lastCode, msg=CustomMessage!=nil?*CustomMessage:lastBody/lastErrMsg）。
 	// 防呆释放：循环零次执行（failover_attempts=0 直构）时首次 Select 的槽从未
 	// 释放——耗尽路径补 Release；N>=1 时 attempted 恒 true（循环尾已释放，不双释放）。
 	if !attempted {
-		p.sched.Release(lastSel.AccountID)
+		p.sched.ReleaseSelection(lastSel)
 	}
 	et := domain.Err5xx
 	switch {
@@ -374,7 +385,10 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		if lastCode != 0 {
 			hp = &lastCode
 		}
-		then, _ = p.sched.Classify(rule.Event{AccountID: lastSel.AccountID, Kind: kind, HTTPStatus: hp, Model: lastSel.Model, ErrorMessage: lastErrMsg})
+		// The final SelectExcluding may fail and leave sel nil. Classify the
+		// response against the selection that actually produced it so the
+		// request's group-scoped rules remain intact.
+		then, _ = p.sched.ClassifySelection(lastSel, rule.Event{AccountID: lastSel.AccountID, Kind: kind, HTTPStatus: hp, Model: lastSel.Model, ErrorMessage: lastErrMsg})
 	}
 	status := passthroughStatus(then, lastCode)
 	applyPassthroughHeader(w, then, lastHdr, status)

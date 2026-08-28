@@ -31,6 +31,9 @@ upstream = {
   dial_timeout = "10s",
   force_http2 = true,
   tls_convergence_enabled = false,
+  # 留空=直连；手动填写本机代理，例如 http://host.docker.internal:7897
+  # 或 socks5h://host.docker.internal:7898。不会读取 HTTP_PROXY 环境变量。
+  proxy_url = "",
 }
 limit = { group_key_rpm = 0 }
 # cooldown_429 / backoff_base / backoff_max 已移除（不向后兼容）——配置含这些
@@ -77,3 +80,14 @@ usage = {
 # DeductOnlyAndMark 事务，受 DB 连接池余量 db.max_conns 约束；多实例由会话级
 # advisory lock 取批互斥）。
 billing = { enabled = true, flush_interval = "250ms", balance_refresh_interval = "10s", flush_workers = 8 }
+# 可选：按模板 ID 配置供应商余额查询。键是 template_id；不配置的模板
+# 显示“未配置”，不会把未知余额当成 0。相对 endpoint 会拼接账号有效 BaseURL。
+# [billing.balance_adapters."1"]
+# provider = "relay-a"
+# endpoint = "/v1/dashboard/balance"
+# method = "GET"
+# auth = "bearer"                 # none | bearer | api_key
+# balance_path = "data.balance"   # JSON 点路径
+# currency_path = "data.currency"
+# timeout = "8s"
+# max_response_size = 1048576

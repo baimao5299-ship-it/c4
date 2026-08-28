@@ -82,6 +82,23 @@ func TestPGSoftDeleteListFilters(t *testing.T) {
 	require.Empty(t, rules, "已删规则不进列表（规则引擎 Reload 消费同路径）")
 }
 
+func TestPGSoftDeletedTemplateExcludedFromSchedulerSnapshot(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	tpl := seedPGTemplate(t, repos)
+	g := seedPGGroup(t, repos, "sd-template-route-group")
+	acc := seedPGAccount(t, repos, tpl.ID, "sd-template-route-account")
+	require.NoError(t, repos.Accounts.SetAccountGroups(ctx, acc.ID, []int64{g.ID}))
+
+	require.NoError(t, repos.DeleteTemplate(ctx, tpl.ID))
+	snapshot, err := repos.Groups.LoadGroupsAccounts(ctx)
+	require.NoError(t, err)
+	require.Empty(t, snapshot[g.ID], "accounts whose template is soft-deleted must leave scheduler routes")
+	member, err := repos.Groups.LoadGroupAccounts(ctx, g.ID)
+	require.NoError(t, err)
+	require.Empty(t, member, "group-scoped reload must also exclude deleted templates")
+}
+
 // TestPGSoftDeleteUniqueHeld 软删项仍占唯一约束：同名/同明文重建 → ErrConflict
 // （审计优先：唯一检查不加 deleted_at 过滤，与 DB 约束一致；同名重建走运维 SQL）。
 func TestPGSoftDeleteUniqueHeld(t *testing.T) {

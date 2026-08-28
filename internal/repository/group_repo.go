@@ -20,6 +20,9 @@ import (
 	"github.com/is7qin/c3api/internal/ent/accountext"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
+	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 )
 
 // GroupRepo 同时承担调度器 Loader 的账号状态回写（UpdateAccountStatus 委托 AccountRepo，
@@ -27,6 +30,7 @@ import (
 type GroupRepo struct {
 	client   *ent.Client
 	accounts *AccountRepo
+	rowLocks bool
 	// driver 为成员关系全表扫描用（LoadGroupsAccounts；与 user_repo 同构——
 	// 普通 client 与 tx client 均可用）。
 	driver dialect.Driver
@@ -40,13 +44,19 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	// price_multiplier 恒写入（service 层把缺省归一为 10000 = ×1——T3.5 修正：
 	// API 边界 nullable float64 可表达显式 0 = 免费组，repo 不再把 0 当"未指定"
 	// 跳过落列）。DB 默认 10000 为兜底。
+	allowedModels := g.AllowedModels
+	if allowedModels == nil {
+		allowedModels = []string{}
+	}
 	q := r.client.Group.Create().
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
+		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
 		// protocol_convert 恒写入（service 层把缺省归一为空数组；JSON 列自动
 		// 序列化 []string，空数组 = off = 不转换）。
-		SetProtocolConvert(protocolConvertStrings(g.ProtocolConverts))
+		SetProtocolConvert(protocolConvertStrings(g.ProtocolConverts)).
+		SetAllowedModels(allowedModels)
 	row, err := q.Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
@@ -99,32 +109,62 @@ func (r *GroupRepo) ListGroups(ctx context.Context, q ListQuery) ([]*domain.Grou
 func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
 	// price_multiplier 恒写入（PUT 全量替换语义；管理面 PUT 读改写——fetch →
 	// 改 name/visibility → 写回，未触及倍率时携带原值自然保留；显式 0 = 免费组）。
-	row, err := r.client.Group.UpdateOneID(g.ID).
+	allowedModels := g.AllowedModels
+	if allowedModels == nil {
+		allowedModels = []string{}
+	}
+	row, err := r.client.Group.UpdateOneID(g.ID).Where(group.DeletedAtIsNil()).
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
+		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
 		SetProtocolConvert(protocolConvertStrings(g.ProtocolConverts)).
+		SetAllowedModels(allowedModels).
 		Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
 			return nil, fmt.Errorf("%w: name=%q", ErrConflict, g.Name)
 		}
-		return nil, err
+		return nil, errMissingID(err, g.ID)
 	}
 	return toDomainGroup(row), nil
 }
 
 // DeleteGroup 软删除：deleted_at 置值（行保留留审计；调度器快照按
-// deleted_at IS NULL 过滤，GET 单个仍可查已删项）。bulk Update（无 re-SELECT）
-// 单语句；0 行命中 = 缺 id → ErrNotFound（与 errMissingID 同格式）。
+// deleted_at IS NULL 过滤，GET 单个仍可查已删项）。组的上游成员属于运行时
+// 路由配置，不随审计主体保留；在同一事务中清理，避免删除后留下无法恢复的
+// group_upstreams 残留或删除失败时只删掉一半。
 func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
-	n, err := r.client.Group.Update().Where(group.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+	if id <= 0 {
+		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
+	}
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	n, err := tx.Group.Update().Where(group.IDEQ(id), group.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 	}
+	if _, err := tx.GroupUpstream.Delete().Where(groupupstream.GroupIDEQ(id)).Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.GroupAssignment.Delete().Where(groupassignment.GroupIDEQ(id)).Exec(ctx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
 	return nil
 }
 
@@ -162,7 +202,9 @@ func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 	// 表实体数约束——同一小表界，见上方注释）；账号侧 ext 不 eager-load
 	// （FK=account_id 的 IN 参数数受账号规模驱动——触顶约束，见步骤 4）。
 	accs, err := r.client.Account.Query().Where(account.DeletedAtIsNil()).
-		WithTemplate(func(q *ent.TemplateQuery) { q.WithExt() }).All(ctx)
+		WithTemplate(func(q *ent.TemplateQuery) {
+			q.Where(template.DeletedAtIsNil()).WithExt()
+		}).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load groups-accounts (accounts scan): %w", err)
 	}
@@ -175,9 +217,32 @@ func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 		extByAccount[e.AccountID] = e
 	}
 	byID := make(map[int64]*domain.Account, len(accs))
+	// Resolve only upstream rows referenced by these accounts. Deleted rows are
+	// included deliberately so the scheduler can distinguish a disabled/missing
+	// endpoint from an unbound legacy account, while unrelated inventory rows do
+	// not slow every snapshot reload.
+	upstreamIDs := make([]int64, 0)
+	seenUpstreamIDs := make(map[int64]struct{})
+	for _, a := range accs {
+		if a.UpstreamID != nil {
+			if _, ok := seenUpstreamIDs[*a.UpstreamID]; !ok {
+				seenUpstreamIDs[*a.UpstreamID] = struct{}{}
+				upstreamIDs = append(upstreamIDs, *a.UpstreamID)
+			}
+		}
+	}
+	upstreamByID, err := r.loadUpstreamsByIDs(ctx, upstreamIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load groups-accounts (upstream scan): %w", err)
+	}
 	for _, a := range accs {
 		if e := extByAccount[a.ID]; e != nil {
 			a.Edges.Ext = []*ent.AccountExt{e}
+		}
+		if a.UpstreamID != nil {
+			if u := upstreamByID[*a.UpstreamID]; u != nil {
+				a.Edges.Upstream = u
+			}
 		}
 		byID[a.ID] = toDomainAccount(a)
 	}
@@ -218,11 +283,47 @@ func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 	return out, nil
 }
 
+// LoadGroupsUpstreamConfig loads the complete upstream-pool configuration in
+// one bounded relation query. It is an optional scheduler data source; account
+// groups continue to use LoadGroupsAccounts unchanged.
+func (r *GroupRepo) LoadGroupsUpstreamConfig(ctx context.Context) (map[int64]*domain.Group, error) {
+	rows, err := r.client.Group.Query().Where(group.DeletedAtIsNil()).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Load relations without an eager-load predicate over every group id. Ent's
+	// default eager loader emits group_id IN (...), which fails once the live
+	// group count approaches PostgreSQL's 65535 parameter limit.
+	members, err := r.client.GroupUpstream.Query().WithUpstream(func(q *ent.UpstreamQuery) {
+		q.Where(upstream.DeletedAtIsNil())
+	}).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	liveGroups := make(map[int64]*domain.Group, len(rows))
+	out := make(map[int64]*domain.Group, len(rows))
+	for _, row := range rows {
+		g := toDomainGroup(row)
+		g.UpstreamMembers = []*domain.GroupUpstream{}
+		out[g.ID] = g
+		liveGroups[g.ID] = g
+	}
+	for _, member := range members {
+		if member.Edges.Upstream == nil {
+			continue
+		}
+		if g := liveGroups[member.GroupID]; g != nil {
+			g.UpstreamMembers = append(g.UpstreamMembers, toDomainGroupUpstream(member))
+		}
+	}
+	return out, nil
+}
+
 // LoadGroupMultipliers 全量组倍率快照（id → 万分数；groups.price_multiplier
 // NOT NULL 默认 10000——每行都有值；billing.Balances.Reload 调用）。独立方法
 // 不并入 LoadGroupsAccounts（后者是账号路由快照，语义/带宽不同）。
 func (r *GroupRepo) LoadGroupMultipliers(ctx context.Context) (map[int64]int, error) {
-	rows, err := r.client.Group.Query().Select(group.FieldID, group.FieldPriceMultiplier).All(ctx)
+	rows, err := r.client.Group.Query().Where(group.DeletedAtIsNil()).Select(group.FieldID, group.FieldPriceMultiplier).All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +340,7 @@ func (r *GroupRepo) LoadGroupMultipliers(ctx context.Context) (map[int64]int, er
 // 专属倍率按组挂载）。
 func (r *GroupRepo) LoadAssignmentMultipliers(ctx context.Context) (map[billing.AssignmentKey]int, error) {
 	rows, err := r.client.GroupAssignment.Query().
-		Where(groupassignment.PriceMultiplierNotNil()).
+		Where(groupassignment.PriceMultiplierNotNil(), groupassignment.HasGroupWith(group.DeletedAtIsNil())).
 		Select(groupassignment.FieldUserID, groupassignment.FieldGroupID, groupassignment.FieldPriceMultiplier).
 		All(ctx)
 	if err != nil {
@@ -270,14 +371,16 @@ func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*do
 	// WHERE ...)`（子查询非参数列表，语句参数数恒为常量——与上方 EXISTS 谓词
 	// 同界）；account_ext 表按组定向取，不做全表扫描（组级定向重载语义）。
 	accs, err := r.client.Account.Query().
-		Where(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID))).
-		WithTemplate(func(q *ent.TemplateQuery) { q.WithExt() }). // W4：ext 边快照合并 StripImageTools
+		Where(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID), group.DeletedAtIsNil())).
+		WithTemplate(func(q *ent.TemplateQuery) {
+			q.Where(template.DeletedAtIsNil()).WithExt()
+		}). // W4：ext 边快照合并 StripImageTools
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load group accounts (group %d): %w", groupID, err)
 	}
 	exts, err := r.client.AccountExt.Query().
-		Where(accountext.HasAccountWith(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID)))).
+		Where(accountext.HasAccountWith(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID), group.DeletedAtIsNil()))).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load group accounts (account_ext scan, group %d): %w", groupID, err)
@@ -286,12 +389,47 @@ func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*do
 	for _, e := range exts {
 		extByAccount[e.AccountID] = e
 	}
+	upstreamIDs := make([]int64, 0)
+	seenUpstreamIDs := make(map[int64]struct{})
+	for _, a := range accs {
+		if a.UpstreamID != nil {
+			if _, ok := seenUpstreamIDs[*a.UpstreamID]; !ok {
+				seenUpstreamIDs[*a.UpstreamID] = struct{}{}
+				upstreamIDs = append(upstreamIDs, *a.UpstreamID)
+			}
+		}
+	}
+	upstreamByID, err := r.loadUpstreamsByIDs(ctx, upstreamIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load group accounts (upstream scan, group %d): %w", groupID, err)
+	}
 	out := make([]*domain.Account, 0, len(accs))
 	for _, a := range accs {
 		if e := extByAccount[a.ID]; e != nil {
 			a.Edges.Ext = []*ent.AccountExt{e}
 		}
+		if a.UpstreamID != nil {
+			if u := upstreamByID[*a.UpstreamID]; u != nil {
+				a.Edges.Upstream = u
+			}
+		}
 		out = append(out, toDomainAccount(a))
+	}
+	return out, nil
+}
+
+// loadUpstreamsByIDs keeps snapshot reloads below PostgreSQL's bind parameter
+// limit even when every account points at a different managed upstream.
+func (r *GroupRepo) loadUpstreamsByIDs(ctx context.Context, ids []int64) (map[int64]*ent.Upstream, error) {
+	out := make(map[int64]*ent.Upstream, len(ids))
+	for _, chunk := range chunkIDs(ids, inChunkSize) {
+		rows, err := r.client.Upstream.Query().Where(upstream.IDIn(chunk...)).All(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			out[row.ID] = row
+		}
 	}
 	return out, nil
 }

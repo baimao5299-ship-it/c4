@@ -49,6 +49,13 @@ func (s *Service) UpdateTemplate(ctx context.Context, t *domain.Template) (*doma
 	if err := validateTemplate(t); err != nil {
 		return nil, err
 	}
+	current, err := s.store.GetTemplate(ctx, t.ID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if current == nil || current.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
 	updated, err := s.store.UpdateTemplate(ctx, t)
 	if err != nil {
 		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）

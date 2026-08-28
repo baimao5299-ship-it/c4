@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -90,6 +91,14 @@ type UserStore interface {
 	ListTempBalances(ctx context.Context, q repository.ListQuery, userID int64) ([]*domain.TempBalance, int64, error)
 	// ListUserEmails 批量取邮箱（/api/admin/users-top TopN 回填；id IN 一次查询）。
 	ListUserEmails(ctx context.Context, ids []int64) (map[int64]string, error)
+}
+
+// SignupBootstrapStore atomically assigns the platform_admin role to the
+// first public registrant. Production repositories implement this capability
+// with a database transaction lock; lightweight integrations may omit it and
+// retain the legacy in-process bootstrap path.
+type SignupBootstrapStore interface {
+	RegisterFirstUser(context.Context, *domain.User) (*domain.User, error)
 }
 
 // SettingStore 类型化配置持久化（Phase 3a）。
@@ -322,6 +331,16 @@ type KeyRegistrar interface {
 
 type Service struct {
 	store Store
+	// signupMu 串行化本实例的首个公开注册判定（CountUsers + CreateUser），
+	// 防止并发首注在同一进程内同时看到空表而产生多个管理员。多实例部署
+	// 仍需依赖数据库层的 bootstrap 互斥策略。
+	signupMu sync.Mutex
+	// upstreams is an optional management-plane store. Keeping it out of Store
+	// preserves compatibility with existing fakes and integrations; the concrete
+	// repository is detected at construction time.
+	upstreams      UpstreamStore
+	groupUpstreams GroupUpstreamStore
+	groupRouting   GroupRoutingStore
 	// emailCodes 验证码存储（Redis 实现，spec 2026-08-25-emailcode-redis-migration
 	// §2.2）：SetEmailCodeStore 回填（Set* 事后回填惯例），Redis 必选 ⇒ 非 nil。
 	emailCodes EmailCodeStore
@@ -349,18 +368,45 @@ type Service struct {
 	priceFetcher pricing.Fetcher
 	// usageSnapshots codex 额度快照数据源（*sdkbridge.Codex 满足；AccountUsage
 	// 调用——nil = 未装配（测试/单实例），AccountUsage 返回 nil 快照）。
-	usageSnapshots CodexUsageSnapshotter
-	mailEnqueue    func(MailSendTask) error
-	tzLoc          *time.Location
-	log            *logx.Logger
+	usageSnapshots   CodexUsageSnapshotter
+	balanceMu        sync.RWMutex
+	providerBalances ProviderBalanceSnapshotter
+	mailEnqueue      func(MailSendTask) error
+	tzLoc            *time.Location
+	log              *logx.Logger
+	// upstreamHTTPClient is shared with the proxy path so admin probes and
+	// balance checks observe the same explicit proxy/DNS behavior.
+	upstreamHTTPClient *http.Client
+	// upstreamProxyURL is the startup fallback. A persisted
+	// upstream_proxy_url setting can override it at runtime without replacing
+	// the process or interrupting in-flight requests.
+	// upstreamProxyUpdateMu serializes the setting write + transport apply +
+	// rollback sequence. Without it, a failed older update could roll the
+	// database back over a newer update that had already succeeded.
+	upstreamProxyUpdateMu    sync.Mutex
+	upstreamProxyMu          sync.RWMutex
+	upstreamProxyURL         string
+	upstreamProxyApply       func(context.Context, string) error
 	codexTLSMu               sync.Mutex
-	codexTLSConvergenceApply func(bool)
+	codexTLSConvergenceApply func(bool) error
 	codexTLSConvergenceReady bool
 	codexTLSConvergenceValue bool
+	codexTLSInitial          bool
+	codexTLSInitialSet       bool
+	codexTLSExplicit         bool
 }
 
 func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publisher, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {
 	s := &Service{store: store, sched: sched, inv: invalidate, pub: pub, ruleReload: ruleReload, keys: keys, log: log}
+	if u, ok := any(store).(UpstreamStore); ok {
+		s.upstreams = u
+	}
+	if gu, ok := any(store).(GroupUpstreamStore); ok {
+		s.groupUpstreams = gu
+	}
+	if gr, ok := any(store).(GroupRoutingStore); ok {
+		s.groupRouting = gr
+	}
 	// settings 快照构造时首载（注册表不覆盖 settings——NOTIFY 处理路径
 	// ReloadSettings 保持既有行为）；pricing 快照首载统一由快照注册表
 	// ReloadAll 承担（单一启动入口，消灭"构造即载 + 注册表再刷"双重加载）。
@@ -371,6 +417,10 @@ func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publish
 // SetTimeLocation 注入定价时段解释用时区（D-TZ2）：nil = 进程本地（现状），
 // 非 nil = at.In(tzLoc) 后再进 domain.ResolveEntryPrices（零热路径额外 DB/锁）。
 func (s *Service) SetTimeLocation(l *time.Location) { s.tzLoc = l }
+
+// SetUpstreamHTTPClient injects the already-configured upstream transport for
+// management probes. A nil value keeps the direct test/default behavior.
+func (s *Service) SetUpstreamHTTPClient(client *http.Client) { s.upstreamHTTPClient = client }
 
 // SetMailEnqueue 注入邮件入队函数（D-W1异步化：svc 构造后回填 mailW.Enqueue——
 // 循环依赖先例 SetLocalDispatcher；未注入 → SendRegisterCode 退化为 ErrMailNotConfigured）。
@@ -416,12 +466,46 @@ func (s *Service) publish(ctx context.Context, ch notify.Change) {
 	_ = s.pub.Publish(context.WithoutCancel(ctx), ch)
 }
 
+// invalidateUpstreamConfig refreshes the scheduler and client factories after
+// an upstream inventory change.  The existing Templates invalidation is the
+// intentional full-snapshot path: bound accounts may live in any group, and a
+// changed endpoint/key must rebuild cached clients on every instance.
+func (s *Service) invalidateUpstreamConfig(ctx context.Context) {
+	if s != nil && s.inv != nil {
+		s.inv.Templates()
+	}
+	s.publish(ctx, notify.Change{Templates: true, Clients: true})
+}
+
+// invalidateGroups uses the optional group-aware invalidator when available.
+// This keeps routing_mode/model changes within the normal debounce window
+// instead of waiting for the scheduler's periodic safety reload.
+func (s *Service) invalidateGroups(groupIDs ...int64) {
+	if s == nil || s.inv == nil || len(groupIDs) == 0 {
+		return
+	}
+	if g, ok := s.inv.(interface{ Groups([]int64) }); ok {
+		g.Groups(groupIDs)
+	}
+}
+
 // validateBaseURL 校验 base_url：可解析、有 scheme/host，且为裸根（不含尾
 // /v1）。/v1 是协议细节（aiclient 按格式追加；anthropic SDK 自带 v1 前缀，
 // base 含 /v1 会拼出 /v1/v1/messages 404）——约定裸根，防呆拒绝含 /v1。
 func validateBaseURL(base string) error {
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ErrInvalidInput
+	}
+	// Base URLs are used as request roots. Credentials, query strings, and
+	// fragments cannot be carried safely into the generated endpoint path and
+	// make the resulting URL ambiguous, so reject them at the management edge.
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return ErrInvalidInput
+	}
+	if u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return ErrInvalidInput
 	}
 	if strings.HasSuffix(strings.TrimSuffix(base, "/"), "/v1") {
@@ -492,7 +576,18 @@ func validateTemplate(t *domain.Template) error {
 // （api_key/responses-special 必填；codex-oauth/codex-pat 可选——凭据走
 // account_ext，Create/UpdateAccount 处查模板类型）。
 func validateAccount(a *domain.Account) error {
-	if a.Name == "" || a.TemplateID <= 0 {
+	if a == nil || a.Name == "" || a.TemplateID <= 0 {
+		return ErrInvalidInput
+	}
+	// Status is optional on the create/update wire shape. Keep direct service
+	// callers compatible with the database default while still rejecting any
+	// non-empty value outside the supported enum.
+	if a.Status == "" {
+		a.Status = domain.StatusActive
+	}
+	switch a.Status {
+	case domain.StatusActive, domain.StatusUnhealthy, domain.Status429, domain.StatusDisabled:
+	default:
 		return ErrInvalidInput
 	}
 	if a.Weight < 0 {
@@ -529,6 +624,8 @@ var listSortFields = map[string][]string{
 	"temp_balances": {"expires_at", "amount", "created_at"},
 	// 与 repo 层 priceEntrySortFields 白名单一致（双保险；/api/admin/prices）。
 	"price_entries": {"model", "updated_at"},
+	// 与 repo 层 upstreamSortFields 白名单一致（双保险；/api/admin/upstreams）。
+	"upstreams": {"id", "name", "base_url", "multiplier_bp", "request_count", "success_count", "failure_count", "last_checked_at", "created_at", "updated_at"},
 }
 
 // validateListQuery sort/order 白名单校验（非法 → ErrInvalidInput；handler 依赖此 400）。
@@ -604,6 +701,10 @@ func validateAccountPatch(p repository.AccountPatch) error {
 		return ErrInvalidInput
 	}
 	if p.UpstreamKey != nil && *p.UpstreamKey == "" {
+		return ErrInvalidInput
+	}
+	// Batch upstream binding uses zero to clear; negative ids are never valid.
+	if p.UpstreamID != nil && *p.UpstreamID < 0 {
 		return ErrInvalidInput
 	}
 	// 批量 base_url 三态（C1）：空串 = 清空（合法）；非空时复用 validateBaseURL。

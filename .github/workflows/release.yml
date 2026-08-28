@@ -72,6 +72,27 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod # 显式装齐（评审 P3-A：runner 预装 Go 不保证与 go.mod 匹配）
+      # 裸二进制同镜像一样必须携带控制台：cmd/server/embed.go 只嵌入
+      # cmd/server/dist，而该目录在仓库中只有 .gitkeep（构建产物被忽略）。
+      # 先构建 web，再复制到 embed 目录，避免发布出的二进制启动后没有 UI。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build embedded console
+        working-directory: web
+        run: |
+          set -euo pipefail
+          pnpm install --config.node-linker=hoisted --frozen-lockfile
+          pnpm run build
+          rm -rf ../cmd/server/dist
+          mkdir -p ../cmd/server/dist
+          cp -r dist/. ../cmd/server/dist/
+          touch ../cmd/server/dist/.gitkeep
       - name: Build and pack
         env:
           GOOS: ${{ matrix.goos }}

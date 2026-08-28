@@ -593,36 +593,56 @@ func TestImagesCodexJSONEdits(t *testing.T) {
 	require.NoError(t, p.rec.Close(context.Background()))
 }
 
-// TestImagesCodexEmptyRT 凭据不完整（oauth 缺 refresh_token）：P2-3 构造前
-// 校验——上报失效（账号凭据不完整）不 panic；上游零请求；客户端 failover
-// 耗尽 5xx。
+// TestImagesCodexOAuthCredentialShapes OAuth 导入凭据边界：只有 access token
+// 时走静态 OAuth provider；两个 token 都缺失时才按凭据不完整处理。
 func TestImagesCodexEmptyRT(t *testing.T) {
-	up, c := newCodexImageUpstream(t, codexUpStep{status: 200, body: codexTestImageResponse})
-	defer up.Close()
-	at := "at-10"
-	ext := &domain.AccountExt{
-		AccountID: 10, CredentialType: credential.TypeCodexOAuth,
-		CodexIdentity:   &domain.CodexIdentity{InstallationID: "inst-" + strings.Repeat("2", 32)},
-		CodexOAuthToken: &at, // rt 缺失
-	}
-	store := &captureLogStore{}
-	p, recorder := newTestCodexProxy(t, credential.TypeCodexOAuth, map[int64]*domain.AccountExt{10: ext}, up.URL, nil, store)
+	t.Run("access token only", func(t *testing.T) {
+		up, c := newCodexImageUpstream(t, codexUpStep{status: 200, body: codexTestImageResponse})
+		defer up.Close()
+		at := "at-10"
+		ext := &domain.AccountExt{
+			AccountID: 10, CredentialType: credential.TypeCodexOAuth,
+			CodexIdentity:   &domain.CodexIdentity{InstallationID: "inst-" + strings.Repeat("2", 32)},
+			CodexOAuthToken: &at,
+		}
+		store := &captureLogStore{}
+		p, _ := newTestCodexProxy(t, credential.TypeCodexOAuth, map[int64]*domain.AccountExt{10: ext}, up.URL, nil, store)
+		req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
+			`{"model":"gpt-image-2","prompt":"x"}`))
+		req.Header.Set("Authorization", "Bearer ck-1")
+		rec := httptest.NewRecorder()
+		p.HandleImagesGenerations(rec, req)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
-		`{"model":"gpt-image-2","prompt":"x"}`))
-	req.Header.Set("Authorization", "Bearer ck-1")
-	rec := httptest.NewRecorder()
-	p.HandleImagesGenerations(rec, req)
+		require.Equal(t, 200, rec.Code, "access token-only 应直接调用上游（body=%s）", rec.Body.String())
+		require.Equal(t, 1, c.n(), "access token-only 应触达上游一次")
+		require.NoError(t, p.rec.Close(context.Background()))
+	})
 
-	require.Equal(t, 502, rec.Code, "凭据不完整 → 连接级 failover 耗尽（body=%s）", rec.Body.String())
-	require.Zero(t, c.n(), "凭据不完整不触达上游")
-	calls, accountID, _ := recorder.snapshot()
-	require.Equal(t, 1, calls, "空 rt → 失效上报（账号凭据不完整）")
-	require.Equal(t, int64(10), accountID)
-	ri, ok := p.sched.Runtime(10)
-	require.True(t, ok)
-	require.Equal(t, domain.StatusDisabled, ri.Status, "上报 → 调度摘除")
-	require.NoError(t, p.rec.Close(context.Background()))
+	t.Run("both tokens missing", func(t *testing.T) {
+		up, c := newCodexImageUpstream(t, codexUpStep{status: 200, body: codexTestImageResponse})
+		defer up.Close()
+		ext := &domain.AccountExt{
+			AccountID: 10, CredentialType: credential.TypeCodexOAuth,
+			CodexIdentity: &domain.CodexIdentity{InstallationID: "inst-" + strings.Repeat("3", 32)},
+		}
+		store := &captureLogStore{}
+		p, recorder := newTestCodexProxy(t, credential.TypeCodexOAuth, map[int64]*domain.AccountExt{10: ext}, up.URL, nil, store)
+		req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(
+			`{"model":"gpt-image-2","prompt":"x"}`))
+		req.Header.Set("Authorization", "Bearer ck-1")
+		rec := httptest.NewRecorder()
+		p.HandleImagesGenerations(rec, req)
+
+		require.Equal(t, 502, rec.Code, "两个 token 都缺失 → 连接级耗尽（body=%s）", rec.Body.String())
+		require.Zero(t, c.n(), "凭据不完整不触达上游")
+		calls, accountID, _ := recorder.snapshot()
+		require.Equal(t, 1, calls, "凭据不完整应上报一次")
+		require.Equal(t, int64(10), accountID)
+		ri, ok := p.sched.Runtime(10)
+		require.True(t, ok)
+		require.Equal(t, domain.StatusDisabled, ri.Status, "上报 → 调度摘除")
+		require.NoError(t, p.rec.Close(context.Background()))
+	})
 }
 
 // TestImagesCodexParamsLocal400 本地参数拒绝（post-Select）：缺 prompt → 400 +

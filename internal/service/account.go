@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/is7qin/c3api/internal/credential"
@@ -16,12 +17,24 @@ import (
 )
 
 func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+	if a != nil && a.Status == "" {
+		// The persistence schema defaults newly-created accounts to active. Keep
+		// direct service callers consistent with the HTTP create path, which also
+		// supplies active when status is omitted.
+		a.Status = domain.StatusActive
+	}
 	if err := validateAccount(a); err != nil {
+		return nil, err
+	}
+	if err := s.validateBoundUpstream(ctx, a.UpstreamID); err != nil {
 		return nil, err
 	}
 	tpl, err := s.store.GetTemplate(ctx, a.TemplateID)
 	if err != nil {
 		return nil, mapRepoErr(err) // 模板缺 id → 404
+	}
+	if tpl == nil || tpl.DeletedAt != nil {
+		return nil, ErrNotFound
 	}
 	// upstream_key 必填性按模板类型：codex-oauth/codex-pat 凭据走 account_ext
 	// （创建后经 /accounts/{id}/ext 配置），可空；其余类型静态透传必填。
@@ -33,16 +46,26 @@ func (s *Service) CreateAccount(ctx context.Context, a *domain.Account) (*domain
 			return nil, err // 组缺 id → 404
 		}
 	}
-	created, err := s.store.CreateAccount(ctx, a)
-	if err != nil {
-		return nil, err
-	}
-	if a.GroupIDs != nil {
-		// 创建才有 id；替换语义（含空数组 = 清空，对新建账号即无分组）。
-		if err := mapRepoErr(s.store.SetAccountGroups(ctx, created.ID, *a.GroupIDs)); err != nil {
-			return nil, err
+	// 创建账号与初始分组必须同一事务。否则分组绑定失败时账号已经落库，
+	// 导入界面会显示失败但留下半成品，重试还可能制造重复账号。
+	var created *domain.Account
+	if err := s.store.WithTx(ctx, func(tx repository.TxStore) error {
+		var err error
+		created, err = tx.CreateAccount(ctx, a)
+		if err != nil {
+			return err
 		}
+		if a.GroupIDs != nil {
+			// 创建才有 id；替换语义（含空数组 = 清空，对新建账号即无分组）。
+			if err := tx.SetAccountGroups(ctx, created.ID, *a.GroupIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, mapRepoErr(err)
 	}
+	s.invalidateProviderBalance(created.ID)
 	// O2 组级定向：新账号进其分组快照（无分组账号不入任何快照 → 空集 no-op）。
 	s.inv.Accounts(groupsOf(a), false)
 	s.publish(ctx, notify.Change{Groups: groupsOf(a)})
@@ -65,17 +88,41 @@ func (s *Service) ListAccounts(ctx context.Context, q repository.ListQuery) ([]*
 }
 
 func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+	if a == nil {
+		return nil, ErrInvalidInput
+	}
+	current, err := s.store.GetAccount(ctx, a.ID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if current == nil || current.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
+	// Direct service callers historically omitted status on partial updates.
+	// Keep that contract while preserving strict validation for explicit values.
+	if a.Status == "" {
+		a.Status = current.Status
+	}
 	if err := validateAccount(a); err != nil {
 		return nil, err
 	}
-	// upstream_key 清空仅 codex 类型允许（凭据走 account_ext）；只在必要时查
-	// 模板（非空 key 走原路径，零行为变化）。
-	if a.UpstreamKey == "" {
+	if err := s.validateBoundUpstream(ctx, a.UpstreamID); err != nil {
+		return nil, err
+	}
+	// Validate the target template whenever the template changes or the key is
+	// cleared (the latter needs the credential-type rule). A same-template edit
+	// with an existing key keeps the legacy lightweight-store contract and still
+	// relies on the account's persisted FK.
+	if a.TemplateID != current.TemplateID || a.UpstreamKey == "" {
 		tpl, err := s.store.GetTemplate(ctx, a.TemplateID)
 		if err != nil {
 			return nil, mapRepoErr(err)
 		}
-		if tpl.CredentialType != credential.TypeCodexOAuth && tpl.CredentialType != credential.TypeCodexPAT {
+		if tpl == nil || tpl.DeletedAt != nil {
+			return nil, ErrNotFound
+		}
+		// upstream_key 清空仅 codex 类型允许（凭据走 account_ext）。
+		if a.UpstreamKey == "" && tpl.CredentialType != credential.TypeCodexOAuth && tpl.CredentialType != credential.TypeCodexPAT {
 			return nil, ErrInvalidInput
 		}
 	}
@@ -90,23 +137,22 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 	oldGroups, gErr := s.store.GetAccountGroups(ctx, a.ID)
 	keyChanged := false
 	recovered := false // T5 失效恢复审计：此前已失效（failed_at 置位）→ status→active 恢复
-	if cur, err := s.store.GetAccount(ctx, a.ID); err == nil {
-		keyChanged = cur.UpstreamKey != a.UpstreamKey
-		// baseURLChanged 并入 keyChanged（C2——BaseURL 构建时固化在 client 缓存
-		// 键内，非流式路径新值不生效直到失效）：按值判定（M4——nil↔"" 同值，
-		// DB 经 create 归一/批量空串落 NULL 无 "" 形态，误报仅多余失效无害；
-		// 不引入 helper）。复用既有 Accounts(gids, keyChanged) 参数面，
-		// 零新增失效类型/调用点。
-		curB, newB := "", ""
-		if cur.BaseURL != nil {
-			curB = *cur.BaseURL
-		}
-		if a.BaseURL != nil {
-			newB = *a.BaseURL
-		}
-		keyChanged = keyChanged || curB != newB
-		recovered = cur.FailedAt != nil && a.Status == domain.StatusActive
+	keyChanged = current.UpstreamKey != a.UpstreamKey
+	keyChanged = keyChanged || upstreamIDsDiffer(current.UpstreamID, a.UpstreamID)
+	// baseURLChanged 并入 keyChanged（C2——BaseURL 构建时固化在 client 缓存
+	// 键内，非流式路径新值不生效直到失效）：按值判定（M4——nil↔"" 同值，
+	// DB 经 create 归一/批量空串落 NULL 无 "" 形态，误报仅多余失效无害；
+	// 不引入 helper）。复用既有 Accounts(gids, keyChanged) 参数面，
+	// 零新增失效类型/调用点。
+	curB, newB := "", ""
+	if current.BaseURL != nil {
+		curB = *current.BaseURL
 	}
+	if a.BaseURL != nil {
+		newB = *a.BaseURL
+	}
+	keyChanged = keyChanged || curB != newB
+	recovered = current.FailedAt != nil && a.Status == domain.StatusActive
 	var cooldownUntil *time.Time
 	if a.Status == domain.StatusActive {
 		now := time.Now()
@@ -114,8 +160,12 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 	}
 	updated, err := s.store.UpdateAccount(ctx, a, cooldownUntil)
 	if err != nil {
-		return nil, err
+		return nil, mapRepoErr(err)
 	}
+	// Key/base_url/template changes must not leave an old provider balance in the
+	// management cache. The cache key already contains a credential fingerprint;
+	// this explicit invalidation also bounds stale variants immediately.
+	s.invalidateProviderBalance(a.ID)
 	if recovered && s.log != nil {
 		// T5 §4 恢复操作审计（日志面）：status→active 隐含清 failed_at +
 		// last_error（repo 层执行），此处留痕恢复动作。
@@ -150,14 +200,25 @@ func (s *Service) GetAccountGroups(ctx context.Context, id int64) ([]int64, erro
 // checkGroupsExist 校验分组全部存在（缺失 → service.ErrNotFound 含 id）。
 func (s *Service) checkGroupsExist(ctx context.Context, ids []int64) error {
 	for _, id := range ids {
-		if _, err := s.store.GetGroup(ctx, id); err != nil {
+		g, err := s.store.GetGroup(ctx, id)
+		if err != nil {
 			return mapRepoErr(err)
+		}
+		if g == nil || g.DeletedAt != nil {
+			return fmt.Errorf("%w: group id=%d", ErrNotFound, id)
 		}
 	}
 	return nil
 }
 
 func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
+	current, err := s.store.GetAccount(ctx, id)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	if current == nil || current.DeletedAt != nil {
+		return ErrNotFound
+	}
 	// O2：删除前查旧组（删除后快照须移除该账号）。
 	gids, err := s.store.GetAccountGroups(ctx, id)
 	if err != nil && s.log != nil {
@@ -166,6 +227,7 @@ func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
 	if err := mapRepoErr(s.store.DeleteAccount(ctx, id)); err != nil {
 		return err // 404 缺 id（与批量语义对齐）
 	}
+	s.invalidateProviderBalance(id)
 	s.inv.Accounts(gids, false)
 	s.publish(ctx, notify.Change{Groups: gids})
 	return nil
@@ -190,6 +252,9 @@ func (s *Service) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
 	if err := mapRepoErr(s.store.DeleteAccountsBatch(ctx, ids)); err != nil {
 		return err
 	}
+	for _, id := range ids {
+		s.invalidateProviderBalance(id)
+	}
 	s.inv.Accounts(gids, false)
 	s.publish(ctx, notify.Change{Groups: gids})
 	return nil
@@ -201,6 +266,20 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	}
 	if err := validateAccountPatch(p); err != nil {
 		return err
+	}
+	if p.TemplateID != nil {
+		tpl, err := s.store.GetTemplate(ctx, *p.TemplateID)
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		if tpl == nil || tpl.DeletedAt != nil {
+			return ErrNotFound
+		}
+	}
+	if p.UpstreamID != nil && *p.UpstreamID > 0 {
+		if err := s.validateBoundUpstream(ctx, p.UpstreamID); err != nil {
+			return err
+		}
 	}
 	// O2：变更前逐个查旧组 + 替换目标组并集（upstream_key 批量变更 →
 	// clients 失效）。
@@ -225,6 +304,11 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	if err := mapRepoErr(s.store.UpdateAccountsBatch(ctx, ids, p)); err != nil {
 		return err
 	}
+	if p.UpstreamKey != nil || p.BaseURL != nil {
+		for _, id := range ids {
+			s.invalidateProviderBalance(id)
+		}
+	}
 	if p.Status != nil && *p.Status == domain.StatusActive && s.log != nil {
 		// T5 §4 恢复操作审计（批量）：status→active 隐含清 failed_at +
 		// last_error（repo 层执行——批量路径不做逐账号旧值比较，操作级留痕）。
@@ -235,8 +319,9 @@ func (s *Service) UpdateAccountsBatch(ctx context.Context, ids []int64, p reposi
 	// UpstreamKey 就保守标记 clients 失效——clients 失效成本远低于旧 key
 	// 滞留风险（宁可多失效一次）。BaseURL 同此保守失效（C2——含 "" 清空态，
 	// 复用既有 Accounts(gids, keyChanged) 调用面）。
-	s.inv.Accounts(gids, p.UpstreamKey != nil || p.BaseURL != nil)
-	s.publish(ctx, notify.Change{Groups: gids, Clients: p.UpstreamKey != nil || p.BaseURL != nil})
+	clientsChanged := p.UpstreamKey != nil || p.BaseURL != nil || p.UpstreamID != nil
+	s.inv.Accounts(gids, clientsChanged)
+	s.publish(ctx, notify.Change{Groups: gids, Clients: clientsChanged})
 	return nil
 }
 
@@ -274,6 +359,39 @@ func (s *Service) ResetAccountsCooldownBatch(ctx context.Context, ids []int64) (
 	s.inv.Accounts(gids, false)
 	s.publish(ctx, notify.Change{Groups: gids})
 	return len(ids), nil
+}
+
+// validateBoundUpstream checks an explicit account binding at the management
+// boundary.  A deleted or missing inventory row must never be persisted as a
+// binding: it would look valid in the account table but be silently skipped by
+// scheduler selection. Disabled rows are allowed so an operator can stage a
+// binding before enabling the upstream.
+func (s *Service) validateBoundUpstream(ctx context.Context, id *int64) error {
+	if id == nil {
+		return nil
+	}
+	if *id <= 0 {
+		return ErrInvalidInput
+	}
+	store, err := s.upstreamStore()
+	if err != nil {
+		return err
+	}
+	u, err := store.GetUpstream(ctx, *id)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	if u == nil || u.DeletedAt != nil {
+		return fmt.Errorf("%w: upstream id=%d", ErrNotFound, *id)
+	}
+	return nil
+}
+
+func upstreamIDsDiffer(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a != b
+	}
+	return *a != *b
 }
 
 // groupsOf 账号分组 id 列表（nil = 无分组）。

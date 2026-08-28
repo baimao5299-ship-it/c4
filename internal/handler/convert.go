@@ -12,6 +12,7 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/service"
+	"github.com/is7qin/c3api/pkg/httpx"
 )
 
 // 本文件实现领域类型 → 生成的契约类型（api.gen.go）的转换。
@@ -54,6 +55,7 @@ func toAPIAccount(a *domain.Account) Account {
 		TemplateID:     &a.TemplateID,
 		Template:       tpl,
 		BaseURL:        a.BaseURL, // 账号级覆盖（nil = 继承模板）
+		UpstreamID:     a.UpstreamID,
 		UpstreamKey:    &a.UpstreamKey,
 		Status:         &st,
 		CooldownUntil:  a.CooldownUntil,
@@ -80,6 +82,7 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 		Template:   base.Template,
 		// BaseURL 平铺逐字段拷贝（C3——缺则列表/编辑回显恒缺，前端保存静默清空）
 		BaseURL:        base.BaseURL,
+		UpstreamID:     base.UpstreamID,
 		UpstreamKey:    base.UpstreamKey,
 		Status:         ptr(AccountStatus(v.Status)), // A-4：调度器内存权威（快照未加载时 = DB 值，与合并块同构）
 		CooldownUntil:  v.CooldownUntil,              // A-4：同上
@@ -100,6 +103,11 @@ func toAPIAccountView(v *service.AccountView) AccountView {
 // 数组，空集合 = 空数组 = off 回显）。
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
+	routing := GroupRoutingMode(g.EffectiveRoutingMode())
+	allowed := append([]string(nil), g.AllowedModels...)
+	if allowed == nil {
+		allowed = []string{}
+	}
 	converts := make([]GroupProtocolConvert, 0, len(g.ProtocolConverts))
 	for _, pc := range g.ProtocolConverts {
 		converts = append(converts, GroupProtocolConvert(pc))
@@ -108,6 +116,8 @@ func toAPIGroup(g *domain.Group) Group {
 		ID:              &g.ID,
 		Name:            &g.Name,
 		Visibility:      &v,
+		RoutingMode:     &routing,
+		AllowedModels:   &allowed,
 		PriceMultiplier: ptr(multToNormal(g.PriceMultiplier)),
 		ProtocolConvert: &converts,
 		CreatedAt:       &g.CreatedAt,
@@ -378,10 +388,22 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 // toAPISetting 设置领域对象 → 契约类型。
 func toAPISetting(s *domain.Setting) Setting {
 	t := SettingType(s.Type)
+	value := s.Value
+	if s.Key == "mail.smtp_password" && value != "" {
+		value = "********"
+	} else if s.Key == "upstream_proxy_url" {
+		// The runtime accepts socks5h credentials for authenticated local
+		// proxies. Return only scheme/host/port from the admin API.
+		switch value {
+		case "", "inherit", "direct":
+		default:
+			value = httpx.ProxySummary(value)
+		}
+	}
 	return Setting{
 		Key:       &s.Key,
 		Type:      &t,
-		Value:     &s.Value,
+		Value:     &value,
 		UpdatedAt: &s.UpdatedAt,
 	}
 }

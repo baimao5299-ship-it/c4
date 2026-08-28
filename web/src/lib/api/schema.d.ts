@@ -129,6 +129,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/accounts/balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按需查询账号对应中转站余额（未配置适配器时返回 unconfigured） */
+        get: operations["GetAccountsBalances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/accounts/batch-delete": {
         parameters: {
             query?: never;
@@ -271,6 +288,155 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upstreams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 上游清单（分页、倍率、余额与稳定性） */
+        get: operations["GetUpstreams"];
+        put?: never;
+        /** 新增上游 */
+        post: operations["PostUpstreams"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get: operations["GetUpstreamsId"];
+        /** 更新上游（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除） */
+        put: operations["PutUpstreamsId"];
+        post?: never;
+        delete: operations["DeleteUpstreamsId"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 新增上游前读取 Key 实际支持的模型 */
+        post: operations["PostUpstreamsModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 读取已保存上游 Key 实际支持的模型 */
+        get: operations["GetUpstreamsIdModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/{id}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 直接探测上游 /v1/models（仅记录健康结果，不改变账号状态） */
+        post: operations["PostUpstreamsIdProbe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 向上游发送一次 hi 请求并返回耗时与结果 */
+        post: operations["PostUpstreamsIdTest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 仅更新上游清单的启用状态（不覆盖其他设置） */
+        patch: operations["PatchUpstreamsIdStatus"];
+        trace?: never;
+    };
+    "/upstreams/{id}/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 刷新上游余额快照（未配置余额接口时返回 unconfigured） */
+        post: operations["PostUpstreamsIdBalance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups": {
         parameters: {
             query?: never;
@@ -333,9 +499,30 @@ export interface paths {
             cookie?: never;
         };
         get: operations["GetGroupsId"];
+        /** 更新分组；携带 upstream_members 时与分组策略同事务替换 */
         put: operations["PutGroupsId"];
         post?: never;
         delete: operations["DeleteGroupsId"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{id}/upstreams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 读取分组的上游成员与调度参数 */
+        get: operations["GetGroupsIdUpstreams"];
+        /** 原子替换分组上游成员 */
+        put: operations["PutGroupsIdUpstreams"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -793,7 +980,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 可选组列表（public 全部 + 已授予 private；只读，key 创建时选组） */
+        /** 可选组列表（public 全部 + 已授予 private；无可用路由的 upstreams 组不返回） */
         get: operations["GetUserGroups"];
         put?: never;
         post?: never;
@@ -813,7 +1000,7 @@ export interface paths {
         /** 我的 key 列表（分页/排序；key 明文长期可查看/复制） */
         get: operations["GetUserKeys"];
         put?: never;
-        /** 创建 key（组可选性校验：public 或已授予 private；明文长期回显） */
+        /** 创建 key（校验分组权限和 upstreams 组持久路由可用性；明文长期回显） */
         post: operations["PostUserKeys"];
         delete?: never;
         options?: never;
@@ -1194,6 +1381,144 @@ export interface components {
         ErrorResponse: {
             error: string;
         };
+        /** @description 上游管理表单；只需名称、端点、Key 和成本倍率；upstream_key 仅写入，响应永不返回；模型读取会保存最近一次有界能力快照供分组调度校验；余额查询会按供应商和常见中转站接口自动识别，旧的 balance_* 字段仅用于兼容已有配置 */
+        UpstreamCreate: {
+            name: string;
+            /** @description 裸根地址，不要填写 /v1 */
+            base_url: string;
+            upstream_key?: string;
+            /**
+             * @description 清除已保存的上游密钥；不能与 upstream_key 同时提交
+             * @default false
+             */
+            clear_upstream_key: boolean;
+            /**
+             * Format: date-time
+             * @description 编辑时携带上次读取的 UpdatedAt；旧版本保存返回 409，避免覆盖新设置
+             */
+            expected_updated_at?: string;
+            /**
+             * @description 价格倍率 ×10000 保存
+             * @default 10000
+             */
+            multiplier_bp: number;
+            /** @default true */
+            enabled: boolean;
+            /** @enum {string} */
+            status?: "active" | "disabled";
+            note?: string;
+            /** @description 兼容字段；留空时自动按供应商和常见中转站接口查询余额 */
+            balance_endpoint?: string;
+            /**
+             * @description 兼容字段；自动查询使用 GET
+             * @default GET
+             * @enum {string}
+             */
+            balance_method: "GET" | "POST";
+            /**
+             * @description 兼容字段；自动查询使用上游 Key
+             * @default bearer
+             * @enum {string}
+             */
+            balance_auth: "none" | "bearer" | "api_key";
+            /** @description 兼容字段；自动查询会识别常见 balance、quota、credits 等字段 */
+            balance_path?: string;
+            /** @description 可选币种在 JSON 中的点路径 */
+            balance_currency_path?: string;
+        };
+        Upstream: {
+            /** Format: int64 */
+            ID: number;
+            Name: string;
+            BaseURL: string;
+            /** @description 价格倍率 ×10000 */
+            MultiplierBP: number;
+            /**
+             * Format: double
+             * @description 价格倍率的易读值
+             */
+            Multiplier?: number;
+            Enabled: boolean;
+            /** @enum {string} */
+            Status: "active" | "disabled";
+            /** @description 是否已保存密钥，不返回密钥内容 */
+            CredentialConfigured?: boolean;
+            Note?: string | null;
+            /** @description 已保存的余额接口地址，不含密钥 */
+            BalanceEndpoint: string;
+            /** @enum {string} */
+            BalanceMethod: "GET" | "POST";
+            /** @enum {string} */
+            BalanceAuth: "none" | "bearer" | "api_key";
+            BalancePath: string;
+            BalanceCurrencyPath: string;
+            /** @description 是否已配置可读取的余额接口 */
+            BalanceConfigured: boolean;
+            BalanceAmount?: string | null;
+            BalanceCurrency?: string | null;
+            /** @enum {string} */
+            BalanceStatus: "fresh" | "stale" | "unavailable" | "unconfigured";
+            /** Format: date-time */
+            BalanceCheckedAt?: string | null;
+            /** Format: int64 */
+            RequestCount: number;
+            /** Format: int64 */
+            SuccessCount: number;
+            /** Format: int64 */
+            FailureCount: number;
+            /** Format: int64 */
+            LatencyTotalMS: number;
+            /** Format: int64 */
+            LatencyMaxMS: number;
+            /** Format: int64 */
+            AverageLatencyMS?: number | null;
+            StabilityScore?: number | null;
+            /** @enum {string} */
+            StabilityRating?: "excellent" | "good" | "fair" | "poor" | "unknown";
+            /** Format: date-time */
+            LastCheckedAt?: string | null;
+            /** Format: date-time */
+            LastSuccessAt?: string | null;
+            /** Format: date-time */
+            LastFailureAt?: string | null;
+            LastError?: string | null;
+            /** Format: date-time */
+            CreatedAt?: string;
+            /** Format: date-time */
+            UpdatedAt?: string;
+        };
+        UpstreamListResponse: {
+            /** Format: int64 */
+            total: number;
+            items: components["schemas"]["Upstream"][];
+        };
+        UpstreamStatusUpdate: {
+            /** @description 更新上游启用状态；已绑定账号会立即从调度快照中排除或恢复 */
+            enabled: boolean;
+        };
+        UpstreamProbeResponse: {
+            ok: boolean;
+            /** Format: int64 */
+            latency_ms: number;
+            /** @enum {string|null} */
+            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "unconfigured" | "superseded" | "model_unavailable" | null;
+            upstream: components["schemas"]["Upstream"];
+        };
+        UpstreamModelsPreview: {
+            /** @description 裸根地址，不要填写 /v1 */
+            base_url: string;
+            upstream_key?: string;
+        };
+        UpstreamModelsResponse: {
+            ok: boolean;
+            models: string[];
+            /** @enum {string|null} */
+            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "model_unavailable" | null;
+        };
+        UpstreamTestBody: {
+            /** @description 必须来自上游当前 /v1/models 列表；省略时使用列表第一项 */
+            model?: string;
+        };
         DeletedResponse: {
             deleted: boolean;
         };
@@ -1254,6 +1579,11 @@ export interface components {
             template_id: number;
             /** @description 账号级覆盖（可选）：非空优先于模板 base_url；null = 继承模板 */
             base_url?: string | null;
+            /**
+             * Format: int64
+             * @description 可选：绑定上游清单；null = 不绑定
+             */
+            upstream_id?: number | null;
             upstream_key: string;
             status?: components["schemas"]["AccountStatus"];
             weight?: number;
@@ -1269,6 +1599,11 @@ export interface components {
             Template?: components["schemas"]["Template"];
             /** @description 账号级覆盖：非空优先于模板 base_url；null = 继承模板 */
             BaseURL?: string | null;
+            /**
+             * Format: int64
+             * @description 绑定的上游清单 ID；null = 未绑定
+             */
+            UpstreamID?: number | null;
             UpstreamKey?: string;
             Status?: components["schemas"]["AccountStatus"];
             /** Format: date-time */
@@ -1359,6 +1694,31 @@ export interface components {
         AccountsUsageResponse: {
             items: components["schemas"]["AccountUsageItem"][];
         };
+        /** @description 供应商余额按需快照；unconfigured 不等于余额为 0 */
+        ProviderBalanceSnapshot: {
+            /** Format: int64 */
+            account_id: number;
+            provider?: string | null;
+            /** @enum {string} */
+            status: "fresh" | "stale" | "unavailable" | "unconfigured";
+            /** @description 金额字符串，保留供应商精度 */
+            amount?: string | null;
+            currency?: string | null;
+            low: boolean;
+            /** Format: date-time */
+            checked_at?: string | null;
+            /** Format: date-time */
+            attempted_at?: string | null;
+            /** Format: date-time */
+            expires_at?: string | null;
+            /** Format: date-time */
+            stale_until?: string | null;
+            /** @enum {string|null} */
+            error_code?: "no_endpoint" | "upstream" | "auth" | "rate_limited" | "invalid_value" | "context_canceled" | "timeout" | null;
+        };
+        AccountsBalancesResponse: {
+            items: components["schemas"]["ProviderBalanceSnapshot"][];
+        };
         TemplateExt: {
             /** Format: int64 */
             template_id?: number;
@@ -1406,16 +1766,16 @@ export interface components {
             /** @description 身份：会话级派生 {thread_id}:0（导入时生成后恒定不变——恒 0，无透传无解析；上游不校验 n；响应 nil → null） */
             window_id?: string | null;
         };
-        /** @description 批量导入 codex-oauth 单行（组合幂等键 codex_email + codex_account_id；token+refresh 成对必填） */
+        /** @description 批量导入 codex-oauth 单行（组合幂等键 codex_email + codex_account_id；access token 必填，refresh token 可选） */
         CodexOAuthImportItem: {
             /** @description 组合幂等键①：codex 账号登录邮箱（必填；格式非法 → 行级 failed） */
             codex_email: string;
             /** @description 组合幂等键②：上游账号/空间标识（必填） */
             codex_account_id: string;
-            /** @description 凭据：oauth 访问令牌（必填；与 refresh 成对） */
+            /** @description 凭据：oauth 访问令牌（必填） */
             codex_oauth_token: string;
-            /** @description 凭据：oauth 刷新令牌（必填；与 token 成对） */
-            codex_oauth_refresh_token: string;
+            /** @description 凭据：oauth 刷新令牌（可选；Sub2 accessToken-only 导入可留空） */
+            codex_oauth_refresh_token?: string;
             /** @description 凭据：oauth 访问令牌过期时间（可选；RFC3339 格式——解析失败 → 行级 failed） */
             codex_oauth_expires_at?: string;
             /** @description 可选；缺省 25（导入面裁决——非账号表默认 8）；<1 → 归 25 */
@@ -1497,10 +1857,10 @@ export interface components {
         /** @enum {string} */
         GroupVisibility: "public" | "private";
         /**
-         * @description 分组级协议转换方向（只补差，W5 网关 internal/protoconv 消费）：chat_to_resp = 客户端 chat → 模板 resp；mess_to_resp = anthropic messages → resp；resp_to_mess = resp → anthropic messages；chat_to_mess = chat → anthropic messages。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
+         * @description 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
          * @enum {string}
          */
-        GroupProtocolConvert: "chat_to_resp" | "mess_to_resp" | "resp_to_mess" | "chat_to_mess";
+        GroupProtocolConvert: "auto" | "chat_to_resp" | "mess_to_resp" | "resp_to_mess" | "chat_to_mess";
         GroupAssignmentsBody: {
             /** @description 替换语义：完整授予列表（未列出即撤销；空数组 = 清空） */
             user_ids: number[];
@@ -1728,12 +2088,17 @@ export interface components {
         GroupCreate: {
             name: string;
             visibility?: components["schemas"]["GroupVisibility"];
+            routing_mode?: components["schemas"]["GroupRoutingMode"];
+            /** @description 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集 */
+            allowed_models?: string[];
+            /** @description 上游池成员。POST 在 routing_mode=upstreams 时与分组策略同事务创建；PUT 携带时与分组策略同事务替换，切回 accounts 时传空数组可清理旧成员 */
+            upstream_members?: components["schemas"]["GroupUpstreamInput"][];
             /**
              * Format: double
              * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
              */
             price_multiplier?: number | null;
-            /** @description 协议转换方向集合（多方向并存，按客户端格式命中——chat 请求走 chat_to_*、anthropic 请求走 mess_to_resp、resp 请求走 resp_to_mess）。空数组/缺省 = off = 不转换；同客户端格式多方向（chat_to_resp 与 chat_to_mess 并存）→ 400。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向 */
+            /** @description 协议转换模式。默认推荐 [auto]，优先原生协议并在缺少原生路由时自动选择转换；也可传单个或多个手动方向。空数组/缺省 = off = 不转换；auto 必须单独出现。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向 */
             protocol_convert?: components["schemas"]["GroupProtocolConvert"][];
         };
         RuleCreate: {
@@ -1850,12 +2215,14 @@ export interface components {
             ID?: number;
             Name?: string;
             Visibility?: components["schemas"]["GroupVisibility"];
+            RoutingMode?: components["schemas"]["GroupRoutingMode"];
             /**
              * Format: double
              * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
              */
             PriceMultiplier?: number;
-            /** @description 协议转换方向集合（空数组 = off = 不转换；多方向按客户端格式命中） */
+            AllowedModels?: string[];
+            /** @description 协议转换模式（auto = 自动协商；空数组 = off = 不转换；手动方向按客户端格式命中） */
             ProtocolConvert?: components["schemas"]["GroupProtocolConvert"][];
             /** Format: date-time */
             CreatedAt?: string;
@@ -1866,6 +2233,54 @@ export interface components {
              * @description 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
              */
             DeletedAt?: string | null;
+        };
+        /**
+         * @description accounts 使用现有账号池；upstreams 使用本组上游成员
+         * @enum {string}
+         */
+        GroupRoutingMode: "accounts" | "upstreams";
+        GroupUpstreamInput: {
+            /** Format: int64 */
+            upstream_id: number;
+            /** @default 0 */
+            priority: number;
+            /** @default 100 */
+            weight: number;
+            /** @default 8 */
+            max_concurrency: number;
+            /** @default true */
+            enabled: boolean;
+        };
+        GroupUpstream: {
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            GroupID: number;
+            /** Format: int64 */
+            UpstreamID: number;
+            Upstream?: components["schemas"]["Upstream"];
+            Weight: number;
+            Priority: number;
+            MaxConcurrency: number;
+            Enabled: boolean;
+            /** Format: date-time */
+            CooldownUntil?: string | null;
+            FailureStreak: number;
+            LastError?: string | null;
+            /** Format: date-time */
+            CreatedAt: string;
+            /** Format: date-time */
+            UpdatedAt: string;
+        };
+        GroupUpstreamsUpdate: {
+            members: components["schemas"]["GroupUpstreamInput"][];
+        };
+        GroupUpstreamsResponse: {
+            /** Format: int64 */
+            group_id: number;
+            routing_mode: components["schemas"]["GroupRoutingMode"];
+            allowed_models: string[];
+            members: components["schemas"]["GroupUpstream"][];
         };
         AccountGroupsResponse: {
             group_ids: number[];
@@ -1895,6 +2310,11 @@ export interface components {
             template_id?: number;
             /** @description 批量三态：空串 = 清空（回继承模板）；null/缺省 = 不变；非空 = 落值 */
             base_url?: string | null;
+            /**
+             * Format: int64
+             * @description 批量绑定上游：null/缺省不变，0 清除，正数绑定
+             */
+            upstream_id?: number | null;
             upstream_key?: string;
             /** @enum {string} */
             status?: "active" | "unhealthy" | "429" | "disabled";
@@ -3150,6 +3570,30 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetAccountsBalances: {
+        parameters: {
+            query: {
+                account_ids: string;
+                refresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 供应商余额快照（不返回账号密钥或上游原始错误） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountsBalancesResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     PostAccountsBatchDelete: {
         parameters: {
             query?: never;
@@ -3421,6 +3865,280 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    GetUpstreams: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                name?: string;
+                status?: "active" | "disabled";
+                sort?: "id" | "name" | "base_url" | "multiplier_bp" | "request_count" | "success_count" | "failure_count" | "last_checked_at" | "created_at" | "updated_at";
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 上游清单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamListResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpstreamCreate"];
+            };
+        };
+        responses: {
+            /** @description 新增后的上游 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Upstream"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUpstreamsId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 上游详情（不含密钥） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Upstream"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutUpstreamsId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpstreamCreate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的上游 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Upstream"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    DeleteUpstreamsId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreamsModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpstreamModelsPreview"];
+            };
+        };
+        responses: {
+            /** @description 模型读取结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamModelsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUpstreamsIdModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 模型读取结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamModelsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreamsIdProbe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 探测结果与更新后的稳定性快照 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamProbeResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreamsIdTest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpstreamTestBody"];
+            };
+        };
+        responses: {
+            /** @description hi 请求测试结果与更新后的稳定性快照 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamProbeResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PatchUpstreamsIdStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpstreamStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description 更新后的上游 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Upstream"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreamsIdBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 余额状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamProbeResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetGroups: {
         parameters: {
             query?: {
@@ -3591,6 +4309,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetGroupsIdUpstreams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分组上游成员 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupUpstreamsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PutGroupsIdUpstreams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupUpstreamsUpdate"];
+            };
+        };
+        responses: {
+            /** @description 替换后的分组上游成员 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupUpstreamsResponse"];
                 };
             };
             default: components["responses"]["Error"];

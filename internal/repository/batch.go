@@ -16,6 +16,9 @@ import (
 	"github.com/is7qin/c3api/internal/ent"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/group"
+	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
+	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/template"
 )
 
@@ -37,8 +40,11 @@ type TemplatePatch struct {
 }
 
 type AccountPatch struct {
-	Name        *string
-	TemplateID  *int64
+	Name       *string
+	TemplateID *int64
+	// UpstreamID nil = unchanged; non-nil binds to the given upstream id. A
+	// pointer to zero clears the binding, keeping batch updates tri-state.
+	UpstreamID  *int64
 	UpstreamKey *string
 	// BaseURL 批量三态（C1 定死）：nil = 不变；&"" = 清空（落 NULL = 继承
 	// 模板）；&非空 = 落值。
@@ -68,10 +74,13 @@ func (r *TemplateRepo) DeleteTemplatesBatch(ctx context.Context, ids []int64) er
 	if err := checkTemplateExist(ctx, tx.Template.Query, ids); err != nil {
 		return err
 	}
+	if err := lockLiveTemplates(ctx, r.rowLocks, tx.Template.Query, ids); err != nil {
+		return err
+	}
 	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id
 	//（与 errMissingID 同格式，语义同 DeleteOne 时代的 NotFound 映射）。
 	for _, id := range ids {
-		n, err := tx.Template.Update().Where(template.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		n, err := tx.Template.Update().Where(template.IDEQ(id), template.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 		if err != nil {
 			return err
 		}
@@ -91,9 +100,12 @@ func (r *AccountRepo) DeleteAccountsBatch(ctx context.Context, ids []int64) erro
 	if err := checkAccountExist(ctx, tx.Account.Query, ids); err != nil {
 		return err
 	}
+	if err := lockLiveAccounts(ctx, r.rowLocks, tx.Account.Query, ids); err != nil {
+		return err
+	}
 	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id。
 	for _, id := range ids {
-		n, err := tx.Account.Update().Where(account.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		n, err := tx.Account.Update().Where(account.IDEQ(id), account.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 		if err != nil {
 			return err
 		}
@@ -113,17 +125,98 @@ func (r *GroupRepo) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 	if err := checkGroupExist(ctx, tx.Group.Query, ids); err != nil {
 		return err
 	}
+	if err := lockLiveGroups(ctx, r.rowLocks, tx.Group.Query, ids); err != nil {
+		return err
+	}
 	// 逐个软删 UPDATE（无 re-SELECT）；0 行命中 = check→update 竞态窗口缺 id。
+	// 成员关系与父组同事务清理，避免批量删除后留下不可路由的残留池。
 	for _, id := range ids {
-		n, err := tx.Group.Update().Where(group.IDEQ(id)).SetDeletedAt(time.Now()).Save(ctx)
+		n, err := tx.Group.Update().Where(group.IDEQ(id), group.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
 		if err != nil {
 			return err
 		}
 		if n == 0 {
 			return fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
 		}
+		if _, err := tx.GroupUpstream.Delete().Where(groupupstream.GroupIDEQ(id)).Exec(ctx); err != nil {
+			return err
+		}
+		if _, err := tx.GroupAssignment.Delete().Where(groupassignment.GroupIDEQ(id)).Exec(ctx); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
+}
+
+// DeleteGroupsBatchWithKeys keeps group key cleanup and group soft deletion in
+// one database transaction. It returns the raw key values that changed so the
+// service can remove exactly those entries from the in-memory auth snapshot
+// after commit.
+func (r *GroupRepo) DeleteGroupsBatchWithKeys(ctx context.Context, ids []int64) ([]string, error) {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() // nolint:errcheck
+	if err := checkGroupExist(ctx, tx.Group.Query, ids); err != nil {
+		return nil, err
+	}
+	if err := lockLiveGroups(ctx, r.rowLocks, tx.Group.Query, ids); err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		hasAccounts, err := tx.Group.Query().Where(group.IDEQ(id), group.DeletedAtIsNil()).
+			QueryAccounts().Where(account.DeletedAtIsNil()).Exist(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if hasAccounts {
+			return nil, fmt.Errorf("%w: group has accounts", ErrConflict)
+		}
+	}
+	rows, err := tx.Key.Query().Where(key.GroupIDIn(ids...), key.DeletedAtIsNil()).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	raws := make([]string, 0, len(rows))
+	for _, row := range rows {
+		raws = append(raws, row.KeyRaw)
+	}
+	if len(rows) > 0 {
+		n, err := tx.Key.Update().Where(key.GroupIDIn(ids...), key.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if n != len(rows) {
+			return nil, fmt.Errorf("%w: key delete changed %d/%d rows", ErrConflict, n, len(rows))
+		}
+	}
+	for _, id := range ids {
+		n, err := tx.Group.Update().Where(group.IDEQ(id), group.DeletedAtIsNil()).SetDeletedAt(time.Now()).Save(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			return nil, fmt.Errorf("%w: id=%d missing", ErrNotFound, id)
+		}
+		if _, err := tx.GroupUpstream.Delete().Where(groupupstream.GroupIDEQ(id)).Exec(ctx); err != nil {
+			return nil, err
+		}
+		if _, err := tx.GroupAssignment.Delete().Where(groupassignment.GroupIDEQ(id)).Exec(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return raws, nil
+}
+
+// DeleteGroupWithKeys is the single-group form used by the management delete
+// path. Keeping it on the same transaction implementation prevents a failed
+// group delete from leaving its client keys soft-deleted on their own.
+func (r *GroupRepo) DeleteGroupWithKeys(ctx context.Context, id int64) ([]string, error) {
+	return r.DeleteGroupsBatchWithKeys(ctx, []int64{id})
 }
 
 // --- 批量更新（事务，全成或全败；Set 链只按 patch 非 nil 字段） ---
@@ -138,7 +231,7 @@ func (r *TemplateRepo) UpdateTemplatesBatch(ctx context.Context, ids []int64, p 
 		return err
 	}
 	for _, id := range ids {
-		u := tx.Template.UpdateOneID(id)
+		u := tx.Template.UpdateOneID(id).Where(template.DeletedAtIsNil())
 		if p.Name != nil {
 			u = u.SetName(*p.Name)
 		}
@@ -181,14 +274,27 @@ func (r *AccountRepo) UpdateAccountsBatch(ctx context.Context, ids []int64, p Ac
 		if err := checkGroupExist(ctx, tx.Group.Query, *p.GroupIDs); err != nil {
 			return err
 		}
+		if err := lockLiveGroups(ctx, r.rowLocks, tx.Group.Query, *p.GroupIDs); err != nil {
+			return err
+		}
+	}
+	if err := lockLiveAccounts(ctx, r.rowLocks, tx.Account.Query, ids); err != nil {
+		return err
 	}
 	for _, id := range ids {
-		u := tx.Account.UpdateOneID(id)
+		u := tx.Account.UpdateOneID(id).Where(account.DeletedAtIsNil())
 		if p.Name != nil {
 			u = u.SetName(*p.Name)
 		}
 		if p.TemplateID != nil {
 			u = u.SetTemplateID(*p.TemplateID)
+		}
+		if p.UpstreamID != nil {
+			if *p.UpstreamID <= 0 {
+				u = u.ClearUpstreamID()
+			} else {
+				u = u.SetUpstreamID(*p.UpstreamID)
+			}
 		}
 		if p.UpstreamKey != nil {
 			u = u.SetUpstreamKey(*p.UpstreamKey)
@@ -241,7 +347,7 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 		return err
 	}
 	for _, id := range ids {
-		u := tx.Group.UpdateOneID(id)
+		u := tx.Group.UpdateOneID(id).Where(group.DeletedAtIsNil())
 		if p.Name != nil {
 			u = u.SetName(*p.Name)
 		}
@@ -277,19 +383,19 @@ func errMissingID(err error, id int64) error {
 // 自保护不依赖调用方约束）。
 func checkTemplateExist(ctx context.Context, q func() *ent.TemplateQuery, ids []int64) error {
 	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
-		return q().Where(template.IDIn(chunk...)).IDs(ctx)
+		return q().Where(template.IDIn(chunk...), template.DeletedAtIsNil()).IDs(ctx)
 	})
 }
 
 func checkAccountExist(ctx context.Context, q func() *ent.AccountQuery, ids []int64) error {
 	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
-		return q().Where(account.IDIn(chunk...)).IDs(ctx)
+		return q().Where(account.IDIn(chunk...), account.DeletedAtIsNil()).IDs(ctx)
 	})
 }
 
 func checkGroupExist(ctx context.Context, q func() *ent.GroupQuery, ids []int64) error {
 	return checkIDsExist(ids, func(chunk []int64) ([]int64, error) {
-		return q().Where(group.IDIn(chunk...)).IDs(ctx)
+		return q().Where(group.IDIn(chunk...), group.DeletedAtIsNil()).IDs(ctx)
 	})
 }
 

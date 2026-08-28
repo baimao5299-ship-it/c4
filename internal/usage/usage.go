@@ -65,13 +65,17 @@ var pendingWaterline int64 = 1_000_000
 var inflightAbandonGrace = 500 * time.Millisecond
 
 type Recorder struct {
-	cfg       UsageConfig
-	logs      LogInserter
-	quota     QuotaWriter // 可选（nil = 不回写额度）
-	log       *logx.Logger
-	workers   int
-	mu        sync.Mutex // 保护 pending/quotaUsed（Record 与 flush 换批/回灌并发）
-	pending   []*domain.UsageLog
+	cfg     UsageConfig
+	logs    LogInserter
+	quota   QuotaWriter // 可选（nil = 不回写额度）
+	log     *logx.Logger
+	workers int
+	mu      sync.Mutex // 保护 pending/quotaUsed（Record 与 flush 换批/回灌并发）
+	pending []*domain.UsageLog
+	// inflight holds batches whose persistence call outlived its caller's
+	// context. They stay visible in pending for shutdown accounting, but are
+	// excluded from a second InsertBatch until the original result is known.
+	inflight  map[*domain.UsageLog]struct{}
 	quotaUsed map[int64]int64 // key_id → 待回写 token 增量
 	pendingN  atomic.Int64    // pending 明细条数（水线观测 + Close Warn 单位；换批/回灌同步增减）
 	warned    atomic.Bool     // 水线越过告警边沿（回落复位，避免重复刷屏）
@@ -113,6 +117,7 @@ func New(cfg UsageConfig, logs LogInserter, log *logx.Logger) *Recorder {
 		log:        log,
 		workers:    workers,
 		failCounts: make([]int, workers),
+		inflight:   make(map[*domain.UsageLog]struct{}),
 		quotaUsed:  make(map[int64]int64),
 		loopDone:   make(chan struct{}),
 	}
@@ -232,6 +237,21 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 	pend := r.pending
 	r.pending = nil
 	r.pendingN.Add(-int64(len(pend)))
+	// A cancellation-escaped batch is retained in pending for accounting, but
+	// must not be submitted a second time while its original driver call may
+	// still commit. Partition those records out before starting workers.
+	if len(r.inflight) > 0 {
+		active := pend[:0]
+		for _, l := range pend {
+			if _, blocked := r.inflight[l]; blocked {
+				r.pending = append(r.pending, l)
+				r.pendingN.Add(1)
+				continue
+			}
+			active = append(active, l)
+		}
+		pend = active
+	}
 	if r.pendingN.Load() < pendingWaterline {
 		r.warned.Store(false)
 	}
@@ -265,7 +285,30 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 					return
 				}
 				end := min(start+r.cfg.BatchSize, len(s))
-				if err := r.logs.InsertBatch(ctx, s[start:end]); err != nil {
+				batch := s[start:end]
+				// The recorder-owned base context is coordinated by Close: keep
+				// that path's flushMu ownership so Close can distinguish a truly
+				// stuck driver and emit its in-flight abandonment warning. Direct
+				// callers with their own context get the cancellation escape hatch.
+				var err error
+				completed := true
+				var result <-chan error
+				if ctx == r.baseCtx {
+					err = r.logs.InsertBatch(ctx, batch)
+				} else {
+					err, completed, result = r.insertBatch(ctx, batch)
+				}
+				if !completed {
+					// The provider ignored cancellation. Do not block this flush or
+					// retry an outcome that may still commit. Keep the batch pending
+					// for shutdown accounting; a late success removes exactly these
+					// entries, while a late failure leaves them queued for retry.
+					r.retainInflight(batch)
+					go r.removeAfterInsert(result, batch)
+					r.refillLogs(s[end:])
+					return
+				}
+				if err != nil {
 					// 毒丸止损二分隔离（A-P2-8-4）：整 chunk 失败不再直接计数/
 					// 丢弃（旧实现整 chunk 500 行丢弃，单行毒丸连带 499 行；且
 					// 丢弃后立即复位不区分失败原因 → DB 持续故障时每 5 周期丢
@@ -315,6 +358,61 @@ func (r *Recorder) flushLogs(ctx context.Context) int64 {
 	}
 	wg.Wait()
 	return drained.Load()
+}
+
+func (r *Recorder) retainInflight(batch []*domain.UsageLog) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, l := range batch {
+		r.inflight[l] = struct{}{}
+	}
+	r.pending = append(r.pending, batch...)
+	r.pendingN.Add(int64(len(batch)))
+}
+
+// insertBatch runs one persistence call with a cancellation escape hatch. The
+// result channel is buffered so a provider that ignores ctx can finish later
+// without leaving another goroutine blocked on notification. completed=false
+// means the outcome is unknown to the caller; removeAfterInsert retires the
+// retained batch only after a definitive success, while failures stay queued.
+func (r *Recorder) insertBatch(ctx context.Context, batch []*domain.UsageLog) (err error, completed bool, result <-chan error) {
+	ch := make(chan error, 1)
+	go func() { ch <- r.logs.InsertBatch(ctx, batch) }()
+	select {
+	case err := <-ch:
+		return err, true, nil
+	case <-ctx.Done():
+		return ctx.Err(), false, ch
+	}
+}
+
+func (r *Recorder) removeAfterInsert(result <-chan error, batch []*domain.UsageLog) {
+	if result == nil {
+		return
+	}
+	err := <-result
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, l := range batch {
+		delete(r.inflight, l)
+	}
+	if err == nil {
+		remove := make(map[*domain.UsageLog]struct{}, len(batch))
+		for _, log := range batch {
+			remove[log] = struct{}{}
+		}
+		kept := r.pending[:0]
+		for _, log := range r.pending {
+			if _, ok := remove[log]; !ok {
+				kept = append(kept, log)
+			}
+		}
+		removed := len(r.pending) - len(kept)
+		r.pending = kept
+		if removed > 0 {
+			r.pendingN.Add(-int64(removed))
+		}
+	}
 }
 
 // poisonBisect 毒丸止损二分隔离（A-P2-8-4）：chunk 整体 InsertBatch 已失败

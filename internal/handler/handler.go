@@ -7,10 +7,12 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/is7qin/c3api/internal/handler/httpface"
@@ -84,6 +86,59 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
+// decodeOptional is the strict decoder variant used by endpoints whose body
+// is optional. An empty body is treated as an omitted object; non-empty JSON
+// still rejects unknown fields and trailing values.
+func decodeOptional(r *http.Request, v any) error {
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing data after JSON body")
+		}
+		return err
+	}
+	return nil
+}
+
+// decodeWithFields decodes a strict JSON object and also returns the set of
+// top-level fields that were present in the request.  Full account updates use
+// this to distinguish an omitted optional binding (retain the current value)
+// from an explicit null (clear it); a plain pointer cannot represent that
+// distinction after JSON unmarshalling.
+func decodeWithFields(r *http.Request, v any) (map[string]json.RawMessage, error) {
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("unexpected trailing data after JSON body")
+		}
+		return nil, err
+	}
+	fields := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
 // deref 返回指针指向的值；nil 时返回零值。
 func deref[T any](p *T) T {
 	if p == nil {
@@ -104,6 +159,9 @@ func normalizeIDs(ids []int64) ([]int64, error) {
 	seen := make(map[int64]struct{}, len(ids))
 	out := make([]int64, 0, len(ids))
 	for _, id := range ids {
+		if id <= 0 {
+			return nil, errors.New("ids must contain positive integers")
+		}
 		if _, ok := seen[id]; ok {
 			continue
 		}

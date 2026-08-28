@@ -34,8 +34,57 @@ func importFixture(t *testing.T) (*Service, *fakeStore, *invRecorder) {
 	return svc, store, rec
 }
 
+// nilTemplateStore/nilAccountStore model a faulty lightweight repository that
+// returns a nil object without an error. The service must turn that into a
+// controlled not-found result instead of dereferencing the nil pointer.
+type nilTemplateStore struct{ *fakeStore }
+
+func (s nilTemplateStore) GetTemplate(context.Context, int64) (*domain.Template, error) {
+	return nil, nil
+}
+
+type nilAccountStore struct{ *fakeStore }
+
+func (s nilAccountStore) GetAccount(context.Context, int64) (*domain.Account, error) {
+	return nil, nil
+}
+
 func mcPtr(v int) *int { return &v }
 func wPtr(v int) *int  { return &v }
+
+func TestCodexImportNilRepositoryObjectsAreHandled(t *testing.T) {
+	ctx := context.Background()
+	tplID := int64(1)
+
+	t.Run("nil template", func(t *testing.T) {
+		base := newFakeStore()
+		svc := New(nilTemplateStore{fakeStore: base}, nil, &invRecorder{}, nil, nil, nil, nil)
+		_, err := svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+			{CodexEmail: "nil-template@example.com", CodexAccountID: "acct", CodexOAuthToken: "token"},
+		}, &tplID, nil)
+		require.ErrorIs(t, err, ErrNotFound)
+	})
+
+	t.Run("nil account on update", func(t *testing.T) {
+		base := newFakeStore()
+		base.tpls[1] = &domain.Template{ID: 1, Name: "oauth", CredentialType: credential.TypeCodexOAuth}
+		seed := New(base, nil, &invRecorder{}, nil, nil, nil, nil)
+		_, err := seed.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+			{CodexEmail: "nil-account@example.com", CodexAccountID: "acct", CodexOAuthToken: "token"},
+		}, &tplID, nil)
+		require.NoError(t, err)
+
+		svc := New(nilAccountStore{fakeStore: base}, nil, &invRecorder{}, nil, nil, nil, nil)
+		res, err := svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+			{CodexEmail: "nil-account@example.com", CodexAccountID: "acct", CodexOAuthToken: "replacement"},
+		}, &tplID, nil)
+		require.NoError(t, err)
+		require.Equal(t, 0, res.Imported)
+		require.Equal(t, 0, res.Updated)
+		require.Len(t, res.Failed, 1)
+		require.Equal(t, "service: not found", res.Failed[0].Error)
+	})
+}
 
 // TestImportCodexOAuthAccountsIdempotent 幂等矩阵（oauth）：新建 → imported；
 // 同键重导 → updated（凭据更新、身份沿用、并发/权重不动）；不同键共存；批内
@@ -196,7 +245,7 @@ func TestImportCodexPATAccountsIdempotent(t *testing.T) {
 }
 
 // TestImportCodexRowLevelFailures 行级失败：混合批计数正确 + failed index/error；
-// 校验矩阵（必填缺失/成对/expires 格式/email 格式/weight 负值 → 行级 failed）；
+// 校验矩阵（必填缺失/expires 格式/email 格式/weight 负值 → 行级 failed）；
 // group_id 不存在 → 行级 failed（整体回滚无孤儿）。
 func TestImportCodexRowLevelFailures(t *testing.T) {
 	ctx := context.Background()
@@ -211,22 +260,46 @@ func TestImportCodexRowLevelFailures(t *testing.T) {
 				CodexOAuthToken: "at", CodexOAuthRefreshToken: "rt"},
 			{CodexEmail: "ok2@example.com", CodexAccountID: "a3",
 				CodexOAuthToken: "at", CodexOAuthRefreshToken: "rt"},
-			{CodexEmail: "ok3@example.com", CodexAccountID: "a4", // index 3：成对破坏
+			{CodexEmail: "ok3@example.com", CodexAccountID: "a4", // index 3：Sub2 accessToken-only
 				CodexOAuthToken: "at"},
 		}, &tplID, nil)
 		require.NoError(t, err)
-		require.Equal(t, 2, res.Imported)
+		require.Equal(t, 3, res.Imported)
 		require.Equal(t, 0, res.Updated)
-		require.Len(t, res.Failed, 2)
+		require.Len(t, res.Failed, 1)
 		require.Equal(t, 1, res.Failed[0].Index)
 		require.Contains(t, res.Failed[0].Error, "codex_email")
-		require.Equal(t, 3, res.Failed[1].Index)
-		require.Contains(t, res.Failed[1].Error, "成对")
 		// 失败行不落库；成功行落库
 		_, err = store.FindAccountExtByCodexKey(ctx, "bad-email", "a2")
 		require.ErrorIs(t, err, repository.ErrNotFound)
 		_, err = store.FindAccountExtByCodexKey(ctx, "ok2@example.com", "a3")
 		require.NoError(t, err)
+		ext, err := store.FindAccountExtByCodexKey(ctx, "ok3@example.com", "a4")
+		require.NoError(t, err)
+		require.Equal(t, "at", *ext.CodexOAuthToken)
+		require.Nil(t, ext.CodexOAuthRefreshToken, "accessToken-only 新建不写空 refresh_token")
+	})
+
+	t.Run("accessToken-only update preserves refresh and expiry", func(t *testing.T) {
+		exp := time.Now().Add(2 * time.Hour).UTC()
+		expText := exp.Format(time.RFC3339)
+		res, err := svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+			{CodexEmail: "preserve@example.com", CodexAccountID: "preserve",
+				CodexOAuthToken: "old-at", CodexOAuthRefreshToken: "old-rt", CodexOAuthExpiresAt: &expText},
+		}, &tplID, nil)
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Imported)
+		res, err = svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+			{CodexEmail: "preserve@example.com", CodexAccountID: "preserve", CodexOAuthToken: "new-at"},
+		}, &tplID, nil)
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Updated)
+		ext, err := store.FindAccountExtByCodexKey(ctx, "preserve@example.com", "preserve")
+		require.NoError(t, err)
+		require.Equal(t, "new-at", *ext.CodexOAuthToken)
+		require.Equal(t, "old-rt", *ext.CodexOAuthRefreshToken)
+		require.NotNil(t, ext.CodexOAuthExpiresAt)
+		require.WithinDuration(t, exp, *ext.CodexOAuthExpiresAt, time.Second)
 	})
 
 	t.Run("validation matrix", func(t *testing.T) {

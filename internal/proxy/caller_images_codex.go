@@ -58,7 +58,7 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 		if isMultipartForm(contentType) {
 			reqModel = imagesMultipartModel(body, contentType)
 		}
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexImagesNotIntegrated.msg)
 		writeErr(w, errCodexImagesNotIntegrated)
 		return 0, nil, true, nil
@@ -72,7 +72,7 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 		if isMultipartForm(contentType) {
 			reqModel = imagesMultipartModel(body, contentType)
 		}
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start, err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": err.Error()}})
 		return 0, nil, true, nil
@@ -94,7 +94,7 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 	cred2 := domain.CredentialFromExt(sel.Ext)
 	baseURL, err := codexImagesBaseURL(sel.BaseURL)
 	if err != nil {
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusBadRequest, domain.ErrBilling, 0, usageTuple{}, start, err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": err.Error()}})
 		return 0, nil, true, nil
@@ -131,11 +131,11 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(wire)
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
 	// 计费提取：data 长 = 张数 + usage image_tokens → usageTuple → finish 的
 	// applyImageBilling（GetImagePrice → ImageCost，倍率整单施加）。
 	ii, io, count := billing.ImageUsageFromResponse(wire)
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrNone, usageTuple{ii: ii, io: io, tt: ii + io, calls: count}, start)))
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrNone, usageTuple{ii: ii, io: io, tt: ii + io, calls: count}, start)))
 	return http.StatusOK, nil, true, nil
 }
 

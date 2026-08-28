@@ -14,6 +14,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/key"
 )
 
@@ -45,6 +46,20 @@ func (_c *GroupCreate) SetNillableVisibility(v *group.Visibility) *GroupCreate {
 	return _c
 }
 
+// SetRoutingMode sets the "routing_mode" field.
+func (_c *GroupCreate) SetRoutingMode(v group.RoutingMode) *GroupCreate {
+	_c.mutation.SetRoutingMode(v)
+	return _c
+}
+
+// SetNillableRoutingMode sets the "routing_mode" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableRoutingMode(v *group.RoutingMode) *GroupCreate {
+	if v != nil {
+		_c.SetRoutingMode(*v)
+	}
+	return _c
+}
+
 // SetPriceMultiplier sets the "price_multiplier" field.
 func (_c *GroupCreate) SetPriceMultiplier(v int) *GroupCreate {
 	_c.mutation.SetPriceMultiplier(v)
@@ -62,6 +77,12 @@ func (_c *GroupCreate) SetNillablePriceMultiplier(v *int) *GroupCreate {
 // SetProtocolConvert sets the "protocol_convert" field.
 func (_c *GroupCreate) SetProtocolConvert(v []string) *GroupCreate {
 	_c.mutation.SetProtocolConvert(v)
+	return _c
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (_c *GroupCreate) SetAllowedModels(v []string) *GroupCreate {
+	_c.mutation.SetAllowedModels(v)
 	return _c
 }
 
@@ -158,6 +179,21 @@ func (_c *GroupCreate) AddAssignments(v ...*GroupAssignment) *GroupCreate {
 	return _c.AddAssignmentIDs(ids...)
 }
 
+// AddUpstreamMemberIDs adds the "upstream_members" edge to the GroupUpstream entity by IDs.
+func (_c *GroupCreate) AddUpstreamMemberIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddUpstreamMemberIDs(ids...)
+	return _c
+}
+
+// AddUpstreamMembers adds the "upstream_members" edges to the GroupUpstream entity.
+func (_c *GroupCreate) AddUpstreamMembers(v ...*GroupUpstream) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddUpstreamMemberIDs(ids...)
+}
+
 // Mutation returns the GroupMutation object of the builder.
 func (_c *GroupCreate) Mutation() *GroupMutation {
 	return _c.mutation
@@ -197,6 +233,10 @@ func (_c *GroupCreate) defaults() {
 		v := group.DefaultVisibility
 		_c.mutation.SetVisibility(v)
 	}
+	if _, ok := _c.mutation.RoutingMode(); !ok {
+		v := group.DefaultRoutingMode
+		_c.mutation.SetRoutingMode(v)
+	}
 	if _, ok := _c.mutation.PriceMultiplier(); !ok {
 		v := group.DefaultPriceMultiplier
 		_c.mutation.SetPriceMultiplier(v)
@@ -204,6 +244,10 @@ func (_c *GroupCreate) defaults() {
 	if _, ok := _c.mutation.ProtocolConvert(); !ok {
 		v := group.DefaultProtocolConvert
 		_c.mutation.SetProtocolConvert(v)
+	}
+	if _, ok := _c.mutation.AllowedModels(); !ok {
+		v := group.DefaultAllowedModels
+		_c.mutation.SetAllowedModels(v)
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		v := group.DefaultUpdatedAt()
@@ -228,11 +272,22 @@ func (_c *GroupCreate) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.RoutingMode(); !ok {
+		return &ValidationError{Name: "routing_mode", err: errors.New(`ent: missing required field "Group.routing_mode"`)}
+	}
+	if v, ok := _c.mutation.RoutingMode(); ok {
+		if err := group.RoutingModeValidator(v); err != nil {
+			return &ValidationError{Name: "routing_mode", err: fmt.Errorf(`ent: validator failed for field "Group.routing_mode": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.PriceMultiplier(); !ok {
 		return &ValidationError{Name: "price_multiplier", err: errors.New(`ent: missing required field "Group.price_multiplier"`)}
 	}
 	if _, ok := _c.mutation.ProtocolConvert(); !ok {
 		return &ValidationError{Name: "protocol_convert", err: errors.New(`ent: missing required field "Group.protocol_convert"`)}
+	}
+	if _, ok := _c.mutation.AllowedModels(); !ok {
+		return &ValidationError{Name: "allowed_models", err: errors.New(`ent: missing required field "Group.allowed_models"`)}
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Group.updated_at"`)}
@@ -281,6 +336,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 		_node.Visibility = value
 	}
+	if value, ok := _c.mutation.RoutingMode(); ok {
+		_spec.SetField(group.FieldRoutingMode, field.TypeEnum, value)
+		_node.RoutingMode = value
+	}
 	if value, ok := _c.mutation.PriceMultiplier(); ok {
 		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
 		_node.PriceMultiplier = value
@@ -288,6 +347,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ProtocolConvert(); ok {
 		_spec.SetField(group.FieldProtocolConvert, field.TypeJSON, value)
 		_node.ProtocolConvert = value
+	}
+	if value, ok := _c.mutation.AllowedModels(); ok {
+		_spec.SetField(group.FieldAllowedModels, field.TypeJSON, value)
+		_node.AllowedModels = value
 	}
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(group.FieldUpdatedAt, field.TypeTime, value)
@@ -342,6 +405,22 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UpstreamMembersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -425,6 +504,18 @@ func (u *GroupUpsert) UpdateVisibility() *GroupUpsert {
 	return u
 }
 
+// SetRoutingMode sets the "routing_mode" field.
+func (u *GroupUpsert) SetRoutingMode(v group.RoutingMode) *GroupUpsert {
+	u.Set(group.FieldRoutingMode, v)
+	return u
+}
+
+// UpdateRoutingMode sets the "routing_mode" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateRoutingMode() *GroupUpsert {
+	u.SetExcluded(group.FieldRoutingMode)
+	return u
+}
+
 // SetPriceMultiplier sets the "price_multiplier" field.
 func (u *GroupUpsert) SetPriceMultiplier(v int) *GroupUpsert {
 	u.Set(group.FieldPriceMultiplier, v)
@@ -452,6 +543,18 @@ func (u *GroupUpsert) SetProtocolConvert(v []string) *GroupUpsert {
 // UpdateProtocolConvert sets the "protocol_convert" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateProtocolConvert() *GroupUpsert {
 	u.SetExcluded(group.FieldProtocolConvert)
+	return u
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (u *GroupUpsert) SetAllowedModels(v []string) *GroupUpsert {
+	u.Set(group.FieldAllowedModels, v)
+	return u
+}
+
+// UpdateAllowedModels sets the "allowed_models" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateAllowedModels() *GroupUpsert {
+	u.SetExcluded(group.FieldAllowedModels)
 	return u
 }
 
@@ -573,6 +676,20 @@ func (u *GroupUpsertOne) UpdateVisibility() *GroupUpsertOne {
 	})
 }
 
+// SetRoutingMode sets the "routing_mode" field.
+func (u *GroupUpsertOne) SetRoutingMode(v group.RoutingMode) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRoutingMode(v)
+	})
+}
+
+// UpdateRoutingMode sets the "routing_mode" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateRoutingMode() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRoutingMode()
+	})
+}
+
 // SetPriceMultiplier sets the "price_multiplier" field.
 func (u *GroupUpsertOne) SetPriceMultiplier(v int) *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
@@ -605,6 +722,20 @@ func (u *GroupUpsertOne) SetProtocolConvert(v []string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateProtocolConvert() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateProtocolConvert()
+	})
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (u *GroupUpsertOne) SetAllowedModels(v []string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAllowedModels(v)
+	})
+}
+
+// UpdateAllowedModels sets the "allowed_models" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateAllowedModels() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAllowedModels()
 	})
 }
 
@@ -899,6 +1030,20 @@ func (u *GroupUpsertBulk) UpdateVisibility() *GroupUpsertBulk {
 	})
 }
 
+// SetRoutingMode sets the "routing_mode" field.
+func (u *GroupUpsertBulk) SetRoutingMode(v group.RoutingMode) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRoutingMode(v)
+	})
+}
+
+// UpdateRoutingMode sets the "routing_mode" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateRoutingMode() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRoutingMode()
+	})
+}
+
 // SetPriceMultiplier sets the "price_multiplier" field.
 func (u *GroupUpsertBulk) SetPriceMultiplier(v int) *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
@@ -931,6 +1076,20 @@ func (u *GroupUpsertBulk) SetProtocolConvert(v []string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateProtocolConvert() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateProtocolConvert()
+	})
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (u *GroupUpsertBulk) SetAllowedModels(v []string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAllowedModels(v)
+	})
+}
+
+// UpdateAllowedModels sets the "allowed_models" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateAllowedModels() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAllowedModels()
 	})
 }
 

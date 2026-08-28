@@ -9,7 +9,7 @@
 - **Content-Type**：请求体与响应均为 `application/json`（`rotate-key` 等无请求体操作除外）。
 - **错误格式**：非 2xx 响应体为 `{"error": "<消息>"}`。404 的消息含缺失资源 id（如 `service: not found: id=999 missing`），便于定位。
 - **ID**：路径参数 `{id}` 为模板/账号/分组的整数 ID。
-- **更新语义**：`PUT` 为**全量替换**——请求体中的字段整体覆盖，未提供的字段清零（仅提供部分字段的 `PUT` 会把缺失字段重置为空/零值）。批量 `batch-update` 为**部分更新**（只改 `fields` 中提供的字段）。
+- **更新语义**：模板 / 账号 / 分组的 `PUT` 为**全量替换**——请求体中的字段整体覆盖，未提供的字段清零（仅提供部分字段的 `PUT` 会把缺失字段重置为空/零值）。上游 `PUT` 是管理表单语义，省略的启用状态、倍率、Key、备注和只读快照会保留，详见“更新上游”。批量 `batch-update` 为**部分更新**（只改 `fields` 中提供的字段）。
 - **列表响应**：templates / accounts / groups 三个旧端点统一返回 `{"total": <满足筛选的总数>, "rows": [...]}`，支持 `limit` / `offset` 分页、筛选参数与白名单 `sort` / `order` 排序（非法 `sort` / `order` → `400`）。兑换码与模型价格为**增强分页范式**（`page` / `page_size`，1-based），见对应章节。
 
 ## 枚举值
@@ -139,6 +139,203 @@
 
 ---
 
+## 上游 Upstreams
+
+上游是管理面清单，用来登记中转/供应商端点、人工设置参考成本倍率，并查看手动健康检查和余额快照。账号可通过 `upstream_id` 显式绑定到一条清单；绑定后请求端点取上游记录，禁用或删除该记录会从调度快照中摘除绑定账号。未绑定账号仍按模板/账号配置转发。倍率只用于人工成本对比，不改变当前请求计费或日志归因。
+
+### 管理台添加（推荐）
+
+1. 打开管理台左侧的“上游”，点击“新建上游”。
+2. 填写名称和上游根地址，例如 `https://relay.example.com`。地址只填根地址，不要带 `/v1`、查询参数、片段或用户名密码。
+3. 需要管理台代为检查时再填写上游 Key；Key 只写入，不会在列表或编辑接口中回显。编辑时留空表示沿用已有 Key。
+4. 填写成本倍率：`1` 表示原价，`0.15` 表示按原始成本的 15% 记录。倍率只做成本对比，不修改现有账号的计费或流量。
+5. 余额查询使用内置自动识别，直接点击“刷新余额”即可。C3 会优先识别供应商接口，并兼容 CC Switch 常用的 `GET /v1/usage`（`remaining`、`quota.remaining` 或 `balance`）；查不到时明确显示“未配置”，不会把未知余额当成 `0`。旧版本的余额字段仍可兼容，但新建上游不需要填写。
+
+启用/停用、删除会立即从使用该清单的账号绑定和上游池分组快照中摘除目标；已经在处理的请求不受影响。倍率只用于成本展示。要让某个账号实际使用新的地址，仍需在模板/账号配置中单独修改。上游池分组的成员和模型白名单在“分组”页统一配置，完整流程见 `docs/user-and-routing-flow.md`。
+
+### 上游列表
+
+`GET /api/admin/upstreams`
+
+只返回未软删除的记录。响应使用列表统一的 `total` / `items` 结构（`items` 中对象字段为 Go 默认的大写命名）。
+
+| 查询参数 | 类型 | 默认/范围 | 说明 |
+|---|---|---|---|
+| `limit` | int | 20；最大 200 | 超过 200 会裁剪为 200；`≤0` 最终按 20 处理 |
+| `offset` | int | 0 | 小于 0 按 0 处理 |
+| `name` | string | — | 名称不区分大小写的模糊匹配 |
+| `status` | string | — | `active`（`Enabled=true`）或 `disabled`（`Enabled=false`） |
+| `sort` | string | `id` | `id` / `name` / `base_url` / `multiplier_bp` / `request_count` / `success_count` / `failure_count` / `last_checked_at` / `created_at` / `updated_at` |
+| `order` | string | `desc` | `asc` 或 `desc` |
+
+非法排序字段、排序方向或状态会返回 `400`。示例：
+
+```http
+GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&offset=0
+```
+
+```json
+{
+  "total": 1,
+  "items": [
+    {
+      "ID": 1,
+      "Name": "relay-a",
+      "BaseURL": "https://relay.example.com",
+      "MultiplierBP": 12500,
+      "Multiplier": 1.25,
+      "Enabled": true,
+      "Status": "active",
+      "CredentialConfigured": true,
+      "BalanceStatus": "unconfigured",
+      "RequestCount": 3,
+      "SuccessCount": 3,
+      "FailureCount": 0,
+      "LatencyTotalMS": 420,
+      "LatencyMaxMS": 180,
+      "AverageLatencyMS": 140,
+      "StabilityScore": 100,
+      "StabilityRating": "excellent",
+      "LastCheckedAt": "2026-08-27T08:00:00Z",
+      "LastSuccessAt": "2026-08-27T08:00:00Z",
+      "LastFailureAt": null,
+      "LastError": null,
+      "Note": null,
+      "BalanceAmount": null,
+      "BalanceCurrency": null,
+      "BalanceCheckedAt": null,
+      "CreatedAt": "2026-08-27T07:00:00Z",
+      "UpdatedAt": "2026-08-27T08:00:00Z"
+    }
+  ]
+}
+```
+
+### 新增上游
+
+`POST /api/admin/upstreams`
+
+```json
+{
+  "name": "relay-a",
+  "base_url": "https://relay.example.com",
+  "upstream_key": "sk-xxx",
+  "multiplier_bp": 12500,
+  "enabled": true,
+  "note": "主用中转"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | ✅ | 去除首尾空白，长度 1–200；数据库唯一约束覆盖软删除记录，删除后也不能立即复用同名 |
+| `base_url` | string | ✅ | HTTP(S) 裸根地址；末尾 `/` 会去掉，不能含 `/v1`、查询串、片段或账号信息 |
+| `upstream_key` | string | 否 | 仅写入；只用于管理端探测鉴权（`Bearer`），响应永不返回密钥内容 |
+| `multiplier_bp` | int | 否 | 价格倍率 ×10000 保存；`10000` = ×1，范围 0–1000000（即 ×0–×100）；默认 10000 |
+| `enabled` | bool | 否 | 默认 `true`；绑定该上游的账号会随状态变化从调度快照中摘除或恢复 |
+| `status` | string | 否 | `active` / `disabled`，等价于设置 `enabled`；同请求同时给出时 `enabled` 优先 |
+| `note` | string | 否 | 最长 2000 字符 |
+| `balance_endpoint` | string | 否 | 旧配置兼容字段；留空时按供应商和常见中转站接口自动识别 |
+| `balance_method` | string | 否 | 旧配置兼容字段；自动查询使用 `GET` |
+| `balance_auth` | string | 否 | 旧配置兼容字段；自动查询使用保存的 `upstream_key` |
+| `balance_path` | string | 否 | 旧配置兼容字段；自动识别 `remaining`、`quota`、`balance`、`credits` 等字段 |
+| `balance_currency_path` | string | 否 | 旧配置兼容字段；自动查询也识别 `unit` 作为币种 |
+| `clear_upstream_key` | bool | 否 | 编辑时明确清除已保存 Key；不能与非空 `upstream_key` 同时提交 |
+| `expected_updated_at` | RFC3339 时间 | 否 | 编辑时携带上次读取的 `UpdatedAt`。记录已被其他窗口更新时返回 `409`，避免旧表单覆盖新设置 |
+
+成功返回 `200` 和上游对象。名称重复返回 `409`；字段或地址不合法返回 `400`。
+
+### 上游详情
+
+`GET /api/admin/upstreams/{id}`
+
+返回单个未软删除的上游对象，密钥永不回显；已软删除或不存在的 ID 返回 `404`。`CredentialConfigured` 只表示是否保存过非空密钥。对象中的 `Multiplier` 是 `MultiplierBP / 10000` 的易读值，`MultiplierBP` 才是精确存储值。
+
+### 更新上游
+
+`PUT /api/admin/upstreams/{id}`
+
+请求字段与创建相同，`name` 和 `base_url` 仍应提供。管理表单字段缺省时，当前实现保留已有的 `enabled`、`multiplier_bp`、备注、余额快照和探测统计；`upstream_key` 缺省或传空字符串也保留旧密钥。传入 `note:""` 会清除备注并写成数据库 `NULL`。修改余额接口、方法、认证方式或 JSON 路径会清除旧余额快照；修改地址或 Key 会清除旧余额和健康统计。若原记录已有 Key，修改地址时必须填写新 Key，或明确传 `clear_upstream_key=true`。管理台会携带 `expected_updated_at`，若记录在编辑期间被别人保存则返回 `409`，不会写入旧表单。响应为更新后的上游对象（`200`）。
+
+更新时同样执行地址、倍率和名称唯一性校验；不存在或已软删除返回 `404`，名称冲突返回 `409`。
+
+### 启用状态
+
+`PATCH /api/admin/upstreams/{id}/status`
+
+```json
+{ "enabled": true }
+```
+
+只更新独立上游清单的启用状态，不会覆盖地址、Key、倍率、余额读取设置或健康历史，也不会改变账号调度。
+
+### 软删除上游
+
+`DELETE /api/admin/upstreams/{id}`
+
+成功返回 `200`：`{"deleted": true}`。删除只写入 `deleted_at`，列表不再显示；重复删除或不存在返回 `404`。删除不会删除模板/账号，也不会改变现有转发配置。
+
+### 健康探测
+
+`POST /api/admin/upstreams/{id}/probe`
+
+服务端请求 `base_url + "/v1/models"`，超时上限 10 秒；使用启动配置 `upstream.proxy_url` 的显式代理（为空则直连），不会读取 `HTTP_PROXY`，也不会修改账号调度。配置了 `upstream_key` 时发送 `Authorization: Bearer <key>`。任意 `2xx` 视为成功，结果和探测统计一起返回：
+
+```json
+{
+  "ok": true,
+  "latency_ms": 140,
+  "error_code": null,
+  "upstream": { "ID": 1, "RequestCount": 4, "SuccessCount": 4, "FailureCount": 0, "StabilityRating": "excellent" }
+}
+```
+
+网络/超时/取消及非 `2xx` 通常仍返回 `200`，由 `ok=false` 和 `error_code` 表示，并写入一次失败统计；记录不存在返回 `404`，统计落库失败返回管理面错误状态。探测期间若地址或 Key 被修改，旧探测结果不会写回新配置，并返回 `superseded`。
+
+| `error_code` | 含义 |
+|---|---|
+| `auth` | 上游返回 401/403 |
+| `rate_limited` | 上游返回 429 |
+| `upstream` | 上游返回 502/503/504 |
+| `http_error` | 其他非 2xx |
+| `network` | 建连或传输错误 |
+| `timeout` | 10 秒探测超时 |
+| `canceled` | 请求上下文被取消 |
+| `superseded` | 检查期间配置已变化，旧结果已丢弃 |
+
+### 一键发送测试
+
+`POST /api/admin/upstreams/{id}/test`
+
+管理台的发送图标会先读取 `/v1/models` 并弹窗列出该 Key 当前真实支持的模型；确认后执行一次最小化的 `hi` 请求。服务端会再次校验所选模型，优先调用 `/v1/responses`，遇到格式不支持时回退 `/v1/chat/completions`。请求关闭流式输出并限制为 1 个输出 token，服务端只返回 `ok`、`latency_ms` 和受限错误码，不返回上游正文或 Key；测试结果同时计入该上游的健康统计。页面会在完成后提示成功/失败和延迟。模型在两次读取之间失效时返回 `model_unavailable`，不会发送错误模型请求。
+
+### 新增上游前读取模型
+
+`POST /api/admin/upstreams/models`
+
+创建表单提交前会由服务端用待保存的地址和 Key 请求 `/v1/models`。只有读取到至少一个真实模型才继续创建；失败时保留表单并显示认证、限流、网络或超时原因，不写入半成品上游。读取结果为 `{"ok":true,"models":[...]}`，模型最多返回 200 个。
+
+`GET /api/admin/upstreams/{id}/models`
+
+读取已保存上游的实时模型列表，供一键测试选择；失败时仍返回 `200` 和受限 `error_code`，不会泄露上游响应内容。
+
+### 余额刷新
+
+`POST /api/admin/upstreams/{id}/balance`
+
+该端点使用保存的地址和 Key 自动识别余额接口，单次总超时约 12 秒、每个候选接口约 3 秒、最多读取 1 MB JSON；请求使用同一份 `upstream.proxy_url`（为空则直连），不继承系统 `HTTP_PROXY`，也不会改变账号调度。CC Switch 风格的 `/v1/usage` 位于自动候选列表前列；兼容旧配置时仍支持 `GET`/`POST`、认证方式和 JSON 点路径。
+
+没有任何候选接口匹配时返回 `200`、`ok=false`、`error_code="unconfigured"` 和 `BalanceStatus="unconfigured"`。认证失败、限流、超时、非 JSON 或余额不是非负数时返回 `ok=false`；最近 15 分钟内的有效旧快照会标记为 `stale`，更旧或没有旧快照则标记为 `unavailable`。配置在读取期间发生变化时返回 `superseded`，旧结果不会写回。未配置或不可用时，响应和列表都会隐藏旧余额字段，避免把历史金额误当成当前余额。
+
+### 稳定性与余额字段
+
+- `AverageLatencyMS = LatencyTotalMS / RequestCount`（整数除法）；无探测时为 `null`。页面顶部的成功率和平均延迟按本页全部探测样本汇总，不是各上游百分比的简单平均。
+- `StabilityScore = floor(SuccessCount / RequestCount × 100)`，限制在 0–100；无探测时为 `null`，`StabilityRating` 为 `unknown`。
+- 评级阈值：`excellent` = 成功率 ≥99% 且平均延迟 ≤800ms；`good` = ≥97% 且 ≤1500ms；`fair` = ≥90% 且 ≤3000ms；其余为 `poor`。
+- `BalanceStatus` 取 `fresh` / `stale` / `unavailable` / `unconfigured`。`BalanceAmount`、`BalanceCurrency`、`BalanceCheckedAt` 可能为 `null`，不能在 `unconfigured` 或 `unavailable` 状态下当作实时余额使用。管理台余额仅显示两位小数，接口和计费仍保留原始精度。
+
+---
+
 ## 账号 Accounts
 
 账号绑定模板并持有上游 API key，是调度的基本单元。
@@ -195,7 +392,7 @@
 |---|---|---|
 | `active` | 创建/成功请求 | — |
 | `unhealthy` | 上游 5xx / 连接级错误 / 流中断 | 指数退避冷却（5s×2ⁿ，上限 5min）后自动恢复 |
-| `429` | 上游 429 | 固定冷却（默认 30s）后自动恢复 |
+| `429` | 上游 429 | 按 `Retry-After` 等待；缺失时按账号独立 2/4/8… 秒递增（上限 10 分钟）后自动恢复 |
 | `disabled` | 管理端手动设置；或 SDK 凭据判死（codex-oauth/codex-pat 账号，`failed_at` 落库 + 调度摘除） | 手动改回（`PUT`） |
 
 > `unhealthy` / `429` 为**健康轴**（自动退避），`disabled` 为**启用轴**（手动）。管理端 `PUT` 设 `disabled` 后，在途请求完成不会覆盖回写（防复活守卫）。
@@ -240,6 +437,12 @@
 | `err_rate` | 错误率 EWMA（0.0–1.0，定点 1e6 缩放后输出） |
 | `err_count` | 连续错误计数（决定退避指数） |
 
+### 中转余额查询
+
+`GET /api/admin/accounts/balances?account_ids=1,2&refresh=true`
+
+按账号模板配置的余额适配器读取上游余额。`refresh=true` 只对本次账号清理服务端余额缓存后再查询上游；省略时使用缓存。响应会区分 `fresh`、`stale`、`unavailable` 和 `unconfigured`，查询失败不会伪装成余额 `0`，也不会返回账号密钥或上游原始错误。
+
 ### 账号批量操作
 
 `POST /api/admin/accounts/batch-delete`
@@ -279,22 +482,36 @@
 
 ## 分组 Groups
 
-分组持有客户端 key（`ck-` 前缀），N:M 绑定账号。AI 请求以分组 key 鉴权，请求在组内账号中调度。
+分组持有客户端 key（`ck-` 前缀）。默认使用账号池调度；也可以切换为上游池，直接在多个已登记上游之间调度。AI 请求以分组 key 鉴权。
 
 ### 创建分组
 
 `POST /api/admin/groups`
 
 ```json
-{ "name": "bench", "price_multiplier": 2.0 }
+{
+  "name": "bench",
+  "visibility": "public",
+  "routing_mode": "upstreams",
+  "allowed_models": ["gpt-5", "gpt-5-mini"],
+  "price_multiplier": 2.0,
+  "upstream_members": [
+    { "upstream_id": 12, "priority": 0, "weight": 100, "max_concurrency": 8, "enabled": true },
+    { "upstream_id": 15, "priority": 1, "weight": 50, "max_concurrency": 4, "enabled": true }
+  ]
+}
 ```
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `name` | string | ✅ | 分组名（唯一） |
+| `visibility` | `public` / `private` | 否 | public 所有用户可选；private 仅授予用户可选 |
+| `routing_mode` | `accounts` / `upstreams` | 否 | 缺省 `accounts`；`upstreams` 时从该组上游成员调度 |
+| `allowed_models` | string[] | 否 | 上游池的模型白名单；空数组表示不额外限制（建议在管理台读取模型后勾选） |
+| `upstream_members` | object[] | 上游池必填 | 上游池成员及其优先级、权重、并发上限；和分组策略在同一事务提交。账号池不要传此字段 |
 | `price_multiplier` | number / null | 否 | **价格倍率**（正常值：`1` = ×1、`0` = 免费、上限 `10` = ×10；API 边界与万分数换算——内部存储恒万分数）。缺省/`null` = 不设置（×1）；**显式 `0` = 免费组（创建路径即可设置，T3.5 修正）**。超界 → `400` |
 
-响应 `200`：创建后的分组对象：
+上游池创建时，成员、模型白名单、可见性和倍率会一次性校验并提交；任一上游不存在、模型为空、重复成员或数据库写入失败，整个创建回滚，不会留下空分组。响应 `200`：创建后的分组对象：
 
 ```json
 {
@@ -314,6 +531,8 @@
 | `ID` | int64 | 分组 id |
 | `Name` | string | 分组名 |
 | `Visibility` | `public` / `private` | public 全部用户可选；private 仅授予用户（`/api/admin/groups/{id}/assignments`） |
+| `RoutingMode` | `accounts` / `upstreams` | 调度来源；旧分组均为 `accounts` |
+| `AllowedModels` | string[] | 上游池开放的模型；空数组表示不额外限制 |
 | `PriceMultiplier` | number（float64） | **价格倍率**（正常值，见上）；计费按 `用户-组专属倍率 ?? 组倍率 ?? ×1` 生效（见「价格倍率语义」章节） |
 
 ### 分组列表
@@ -354,10 +573,14 @@
 | `PUT /api/admin/groups/{id}` | 全量更新分组（`name` / `visibility` / `price_multiplier`） | `200`：更新后分组对象；`price_multiplier` 缺省 = 保持原值、显式提供（含 `0` = 免费）即写入 |
 | `DELETE /api/admin/groups/{id}` | 删除（先删注册 key 再删 DB） | `200`：`{"deleted": true}`；`404` 资源不存在（消息含缺失 id） |
 | `PUT /api/admin/groups/{id}/assignments` | 设置组的授予用户（替换语义）+ 用户-组专属倍率 | `200`：`{"user_ids": [...], "multipliers": {...}}`；见下方 |
+| `GET /api/admin/groups/{id}/upstreams` | 读取上游池成员、路由模式和模型白名单 | `200`：`{"group_id": id, "routing_mode": "upstreams", "allowed_models": [...], "members": [...]}` |
+| `PUT /api/admin/groups/{id}/upstreams` | 原子替换上游成员集合 | 请求体 `{"members":[{"upstream_id":1,"priority":0,"weight":100,"max_concurrency":8,"enabled":true}]}`；空数组清空成员 |
 | `PUT /api/admin/groups/{id}/accounts` | 绑定账号集合 | 请求体 `{"account_ids": [1, 2, 3]}`；`200`：`{"updated": true}` |
 | `POST /api/admin/groups/{id}/rotate-key` | 轮换分组 key | `200`：`{"key": "ck-<新明文>"}`（旧 key 立即失效） |
 
 > `setGroupAccounts` 为**全量替换**绑定关系（传空数组清空）。变更即时触发调度器快照重建（invalidate）。
+
+上游池成员使用数字越小越优先；同一优先级内按 `weight` 加权轮询，当前层全部冷却、停用或达到并发上限时才进入下一层。成员替换在单事务内完成，失败不会留下半组配置。
 
 ### 设置组授予用户 + 用户-组专属倍率
 
@@ -488,7 +711,7 @@
 - `GET /api/admin/mail/templates`：列出全部用途模板（缺行自动合成内置默认，恒返回 register_code/reset_code 两条）。
 - `PUT /api/admin/mail/templates/{purpose}`：body `{subject, body_text}`；`body_text` 置空 = 删行还原内置默认。非法 purpose → 非 200。
 
-SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置键 `mail.*`，经通用 `GET|PUT /api/admin/settings` 读写（`smtp_password` 明文回读，沿用 `upstream_key` 先例；前端以密码框呈现）。
+SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置键 `mail.*`，经通用 `GET|PUT /api/admin/settings` 读写。`smtp_password` 在 GET 响应中显示为 `********`；原样提交该掩码会保留已存密码，输入新值才会替换（前端以密码框呈现）。
 
 ### 价格倍率语义（计费生效）
 
@@ -812,7 +1035,7 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 | `cooldown` | string | 冷却时长（`time.ParseDuration` 可解析且 >0，如 `"30s"`、`"5h"`） |
 | `weight` | int | 权重（0-100，变更立即重建该组选号序列） |
 
-种子规则（规则表为空时启动自动写入）：`kind=429 → status=429 + cooldown 30s`（priority 10）、`kind=4xx + http_status=400 → transmit`（priority 15，400 透传原文）、`kind=5xx → status=unhealthy + cooldown 10m`（priority 20）、`kind=network → status=unhealthy + cooldown 5s`（priority 25，连接级独立冷却）、`kind=ok → status=active`（priority 30，无冷却）。删除全部规则后，下次引擎重载（任意规则 CRUD 或重启）会自动重新播种——规则表不会保持真空。
+种子规则（规则表为空时启动自动写入）：`kind=429 → status=429 + cooldown 2s`（priority 10；运行时优先采用上游 `Retry-After`，缺失时按账号独立 2/4/8… 秒递增，最多 10 分钟）、`kind=4xx + http_status=400 → transmit`（priority 15，400 透传原文）、`kind=5xx → status=unhealthy + cooldown 10m`（priority 20）、`kind=network → status=unhealthy + cooldown 5s`（priority 25，连接级独立冷却）、`kind=ok → status=active`（priority 30，无冷却）。删除全部规则后，下次引擎重载（任意规则 CRUD 或重启）会自动重新播种——规则表不会保持真空。
 
 ### 事件模型与匹配语义
 
@@ -1097,6 +1320,8 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 | `service_tier_policy_priority` | `passthrough` | 请求 `service_tier=priority` 的**转发策略**：`passthrough` / `strip` / `reject` |
 | `service_tier_policy_flex` | `passthrough` | 同上，作用于 `service_tier=flex` 请求 |
 | `service_tier_policy_fast` | `passthrough` | 同上，作用于 `service_tier=fast` 请求（Anthropic Fast Mode） |
+| `codex_tls_convergence_enabled` | `false` | Codex TLS 收敛开关；首次启动沿用 `upstream.tls_convergence_enabled`，管理员明确保存后以运行时设置为准；不能与代理同时启用。 |
+| `upstream_proxy_url` | `inherit` | 运行时代理：`inherit` 沿用启动配置，`direct` 或空值直连，也可填写 `http://`、`https://`、`socks5h://` 地址（SOCKS5 可带认证信息）。系统先做连通性检查，成功后才原子切换；失败保留旧代理并返回 `400`。GET 响应会隐藏代理 URL 中的用户信息。 |
 
 > 策略仅影响**转发体**；计费读取不受影响（剥离/拒绝路径照常按 priority/flex/fast 档计价）。`auto`/空/未知 tier 恒透传。非法值（非三值）→ `400`。
 

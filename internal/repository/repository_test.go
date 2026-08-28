@@ -286,7 +286,8 @@ func TestAccountAndGroup(t *testing.T) {
 	// price_multiplier 恒写入——T3.5 修正：service 归一缺省为 10000，显式 0 = 免费组；
 	// protocol_convert 恒写入——JSON 数组列：空数组 = off（service 归一缺省）
 	tr.pool.ExpectQuery(q(`INSERT INTO "groups"`)).
-		WithArgs("g1", group.VisibilityPublic, pgxmock.AnyArg(), json.RawMessage(`[]`), pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WithArgs("g1", group.VisibilityPublic, group.RoutingModeAccounts, pgxmock.AnyArg(),
+			json.RawMessage(`[]`), json.RawMessage(`[]`), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 
 	// SetAccountGroups -> checkGroupExist 预校验（SELECT groups）+ 自动 Tx（M2M
@@ -451,9 +452,11 @@ func TestDeleteAccountMissing(t *testing.T) {
 
 func TestDeleteGroupMissing(t *testing.T) {
 	tr := newRepos(t)
+	tr.pool.ExpectBegin()
 	tr.pool.ExpectExec(q(`UPDATE "groups" SET`)).
 		WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg(), int64(999)).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	tr.pool.ExpectRollback()
 	err := tr.repos.Groups.DeleteGroup(ctx(), 999)
 	require.ErrorIs(t, err, repository.ErrNotFound)
 	require.Contains(t, err.Error(), "id=999 missing")

@@ -518,26 +518,43 @@ func TestCodexRefreshErrorNotReported(t *testing.T) {
 	require.Empty(t, handler.snapshot(), "RefreshError 可重试类不上报")
 }
 
-// TestCodexEmptyRefreshTokenNoPanic P2-3 空 rt 防护：oauth 凭据缺 refresh_token
-// → 按失效处理上报（账号凭据不完整）不 panic（OAuthWithRotation 空 rt 构造
-// panic 被构造前校验拦截）。
-func TestCodexEmptyRefreshTokenNoPanic(t *testing.T) {
-	handler := &recordingHandler{}
-	a := NewCodex(handler.add)
-	cred := &domain.AccountCredential{AccountID: 7, OAuthToken: "at-1"} // rt 缺失
+// TestCodexOAuthWithoutRefreshToken Sub2 session 导出可只有 access_token：
+// 适配层使用 SDK 的静态 OAuth provider 直接请求；真正同时缺少 access/refresh
+// 才按凭据不完整处理，且不触发 OAuthWithRotation 的空 refresh panic。
+func TestCodexOAuthWithoutRefreshToken(t *testing.T) {
+	t.Run("access token only uses static provider", func(t *testing.T) {
+		up, capture := newCodexUpstream(t, codexUpstreamStep{status: 200, body: okImageResponse})
+		a := NewCodex(nil)
+		cred := &domain.AccountCredential{AccountID: 7, OAuthToken: "at-1", BaseURL: up.URL + "/images/generations"}
 
-	require.NotPanics(t, func() {
-		_, err := a.GenerateImage(context.Background(), cred, &domain.ImageGenParams{Model: "gpt-image-2", Prompt: "cat"})
-		require.Error(t, err)
-		require.ErrorIs(t, err, errCredentialIncomplete)
+		require.NotPanics(t, func() {
+			_, err := a.GenerateImage(context.Background(), cred, &domain.ImageGenParams{Model: "gpt-image-2", Prompt: "cat"})
+			require.NoError(t, err)
+		})
+		require.Equal(t, "Bearer at-1", capture.auth(0), "access_token-only 直接注入静态 OAuth token")
+		a.mu.Lock()
+		require.Len(t, a.entries, 1, "access_token-only 账号进入缓存")
+		a.mu.Unlock()
 	})
-	calls := handler.snapshot()
-	require.Len(t, calls, 1, "空 rt → 失效上报一次")
-	require.Equal(t, int64(7), calls[0].accountID)
-	require.ErrorIs(t, calls[0].fatal, errCredentialIncomplete)
-	a.mu.Lock()
-	require.Len(t, a.entries, 0, "构造失败不入缓存")
-	a.mu.Unlock()
+
+	t.Run("both tokens missing reports incomplete", func(t *testing.T) {
+		handler := &recordingHandler{}
+		a := NewCodex(handler.add)
+		cred := &domain.AccountCredential{AccountID: 8}
+
+		require.NotPanics(t, func() {
+			_, err := a.GenerateImage(context.Background(), cred, &domain.ImageGenParams{Model: "gpt-image-2", Prompt: "cat"})
+			require.Error(t, err)
+			require.ErrorIs(t, err, errCredentialIncomplete)
+		})
+		calls := handler.snapshot()
+		require.Len(t, calls, 1, "OAuth 两个 token 都缺失 → 失效上报一次")
+		require.Equal(t, int64(8), calls[0].accountID)
+		require.ErrorIs(t, calls[0].fatal, errCredentialIncomplete)
+		a.mu.Lock()
+		require.Len(t, a.entries, 0, "构造失败不入缓存")
+		a.mu.Unlock()
+	})
 }
 
 // TestCodexInitialATPreset 过期判定在网关侧构造前：未过期 at → 预置初始 at

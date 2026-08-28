@@ -17,6 +17,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/predicate"
 	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 )
 
 // AccountQuery is the builder for querying Account entities.
@@ -27,6 +28,7 @@ type AccountQuery struct {
 	inters       []Interceptor
 	predicates   []predicate.Account
 	withTemplate *TemplateQuery
+	withUpstream *UpstreamQuery
 	withGroups   *GroupQuery
 	withExt      *AccountExtQuery
 	// intermediate query (i.e. traversal path).
@@ -80,6 +82,28 @@ func (_q *AccountQuery) QueryTemplate() *TemplateQuery {
 			sqlgraph.From(account.Table, account.FieldID, selector),
 			sqlgraph.To(template.Table, template.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, account.TemplateTable, account.TemplateColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryUpstream chains the current query on the "upstream" edge.
+func (_q *AccountQuery) QueryUpstream() *UpstreamQuery {
+	query := (&UpstreamClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, selector),
+			sqlgraph.To(upstream.Table, upstream.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, account.UpstreamTable, account.UpstreamColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -324,6 +348,7 @@ func (_q *AccountQuery) Clone() *AccountQuery {
 		inters:       append([]Interceptor{}, _q.inters...),
 		predicates:   append([]predicate.Account{}, _q.predicates...),
 		withTemplate: _q.withTemplate.Clone(),
+		withUpstream: _q.withUpstream.Clone(),
 		withGroups:   _q.withGroups.Clone(),
 		withExt:      _q.withExt.Clone(),
 		// clone intermediate query.
@@ -340,6 +365,17 @@ func (_q *AccountQuery) WithTemplate(opts ...func(*TemplateQuery)) *AccountQuery
 		opt(query)
 	}
 	_q.withTemplate = query
+	return _q
+}
+
+// WithUpstream tells the query-builder to eager-load the nodes that are connected to
+// the "upstream" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AccountQuery) WithUpstream(opts ...func(*UpstreamQuery)) *AccountQuery {
+	query := (&UpstreamClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withUpstream = query
 	return _q
 }
 
@@ -443,8 +479,9 @@ func (_q *AccountQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Acco
 	var (
 		nodes       = []*Account{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			_q.withTemplate != nil,
+			_q.withUpstream != nil,
 			_q.withGroups != nil,
 			_q.withExt != nil,
 		}
@@ -470,6 +507,12 @@ func (_q *AccountQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Acco
 	if query := _q.withTemplate; query != nil {
 		if err := _q.loadTemplate(ctx, query, nodes, nil,
 			func(n *Account, e *Template) { n.Edges.Template = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withUpstream; query != nil {
+		if err := _q.loadUpstream(ctx, query, nodes, nil,
+			func(n *Account, e *Upstream) { n.Edges.Upstream = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -512,6 +555,38 @@ func (_q *AccountQuery) loadTemplate(ctx context.Context, query *TemplateQuery, 
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "template_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *AccountQuery) loadUpstream(ctx context.Context, query *UpstreamQuery, nodes []*Account, init func(*Account), assign func(*Account, *Upstream)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*Account)
+	for i := range nodes {
+		if nodes[i].UpstreamID == nil {
+			continue
+		}
+		fk := *nodes[i].UpstreamID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(upstream.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "upstream_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -638,6 +713,9 @@ func (_q *AccountQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withTemplate != nil {
 			_spec.Node.AddColumnOnce(account.FieldTemplateID)
+		}
+		if _q.withUpstream != nil {
+			_spec.Node.AddColumnOnce(account.FieldUpstreamID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

@@ -363,11 +363,11 @@ func TestApply(t *testing.T) {
 	resetAt := at(90)
 	ev := Event{AccountID: 1, Kind: Kind429, OccurredAt: at(10), ResetAt: &resetAt}
 
-	// cooldown = OccurredAt + 30s
+	// provider ResetAt wins when it asks for a longer wait than the local rule.
 	st, cd, w := Apply(domain.RuleThen{Status: statusPtr(domain.Status429), Cooldown: strPtr("30s")}, ev)
 	require.NotNil(t, st)
 	require.Equal(t, domain.Status429, *st)
-	require.Equal(t, at(40), *cd)
+	require.Equal(t, at(90), *cd)
 	require.Nil(t, w)
 
 	// cooldown 未配 + ResetAt 非 nil → ResetAt（M2 残留语义）
@@ -375,9 +375,9 @@ func TestApply(t *testing.T) {
 	require.Equal(t, domain.StatusActive, *st)
 	require.Equal(t, at(90), *cd)
 
-	// cooldown 优先于 ResetAt
+	// a shorter local cooldown never overrides a longer provider deadline
 	_, cd, _ = Apply(domain.RuleThen{Cooldown: strPtr("5s")}, ev)
-	require.Equal(t, at(15), *cd)
+	require.Equal(t, at(90), *cd)
 
 	// 只改权重：status nil；无 cooldown 时 ResetAt 兜底（M2 残留语义）
 	st, cd, w = Apply(domain.RuleThen{Weight: &weight}, ev)
@@ -422,7 +422,7 @@ func TestSeedRules(t *testing.T) {
 	e := New(Config{}, st, nil)
 	require.NoError(t, e.Reload(context.Background()))
 
-	// 种子 6 条（fresh setup 哲学，指针即意图）：429/30s+nil/rate limited、4xx+400/nil/nil 全透、5xx+503+overload 全透、
+	// 种子 6 条（fresh setup 哲学，指针即意图）：429/2s+nil/rate limited、4xx+400/nil/nil 全透、5xx+503+overload 全透、
 	// 5xx/unhealthy/10m+502/generic、network/unhealthy/5s+502/generic、ok/active，priority 10/15/16/20/25/30
 	require.Equal(t, int64(6), mustCountAny(t, st))
 	require.True(t, e.NeedsOKEvents()) // 种子含 kind=ok 恢复规则（C1）
@@ -435,7 +435,7 @@ func TestSeedRules(t *testing.T) {
 	})
 	require.Equal(t, "429", *rules[0].When.Kind)
 	require.Equal(t, domain.Status429, *rules[0].Then.Status)
-	require.Equal(t, "30s", *rules[0].Then.Cooldown)
+	require.Equal(t, "2s", *rules[0].Then.Cooldown)
 	require.Nil(t, rules[0].Then.ResponseCode, "seed-429 码透传 nil")
 	require.NotNil(t, rules[0].Then.CustomMessage)
 	require.Equal(t, "rate limited", *rules[0].Then.CustomMessage, "seed-429 文不透 rate limited")

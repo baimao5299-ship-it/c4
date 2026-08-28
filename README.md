@@ -1,8 +1,8 @@
 <div align="center">
 
-# ⚡ c3api
+# ⚡ C4
 
-**A lightweight AI gateway** — one entry point for the OpenAI Responses API, the Anthropic Messages API, and the OpenAI Chat Completions API, with a built-in admin console, usage tracking, and billing.
+**C4 is a lightweight AI gateway** — one entry point for the OpenAI Responses API, the Anthropic Messages API, and the OpenAI Chat Completions API, with a built-in admin console, usage tracking, and billing.
 
 [English](./README.md) | [中文](./README_zh.md)
 
@@ -17,11 +17,13 @@
 
 </div>
 
-This project is based on the original c3api and adds a few practical improvements:
+This C4 release is based on c3api and adds a few practical improvements:
 
 - Sub2API-compatible account import, including multi-file and ZIP import.
 - Duplicate pre-checks, import previews, and detailed failure reasons.
 - Optional Sub2 TLS profile and convergence settings.
+- Per-request failover exclusion so a failed account is not retried before async rules settle.
+- Extensible provider-balance adapters with explicit unconfigured and stale states.
 
 The core gateway architecture remains based on the original project.
 
@@ -29,7 +31,11 @@ Maintained by [@baimao5299-ship-it](https://github.com/baimao5299-ship-it).
 
 ## Status: Beta
 
-c3api is in **beta**. The current API is usable, but the schema and configuration may still change between beta releases.
+C4 is in **beta**. The current API is usable, but the schema and configuration may still change between beta releases.
+
+### Compatibility
+
+The public product name is **C4**. The Go module path (`github.com/is7qin/c3api`), executable/container names, API paths, and `C3API_*` environment variables remain unchanged for compatibility with existing deployments.
 
 - **No automatic migration yet** — database schemas and configuration are not guaranteed to stay compatible between beta releases.
 - **Plan upgrades as a fresh deployment** — provision a new database and re-check the configuration before switching traffic.
@@ -150,16 +156,19 @@ The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_
 | `C3API_REDIS_ADDR` | Redis address (required; e.g. `127.0.0.1:6379` — instance discovery, short-lived verification codes and other ephemeral state) |
 | `C3API_SERVER_TIME_ZONE` | Deployment timezone for pricing time/day-of-week conditions (IANA name, e.g. `Asia/Shanghai`; empty = process local) |
 
-See `config.example.toml` for the full schema (server, log, admin, auth, db, redis, proxy, upstream, limit, scheduler, usage, billing).
+See `config.example.toml` for the full schema (server, log, admin, auth, db, redis, proxy, upstream, limit, scheduler, usage, billing). Set `upstream.proxy_url` at startup when needed (`http://`, `https://`, or `socks5h://`); empty means direct and system `HTTP_PROXY` is ignored. While running, use Settings -> Network proxy and update `upstream_proxy_url`: `inherit` keeps the startup value, `direct` bypasses it, and a new URL is connectivity-checked before an atomic switch. In-flight requests finish on the old route, so changing a local proxy does not require a restart.
+
+- **Relay balance checks**: configure a JSON balance endpoint under `billing.balance_adapters."template-id"` (`provider`, `endpoint`, `auth`, and `balance_path`). The accounts page reads balances on demand and caches them; unconfigured, unavailable, stale, and real values remain distinct, so a failed probe is never shown as zero. The “Refresh balances” action explicitly clears the selected cache entries before querying upstream; normal reads remain cached.
+- **Relay pool import**: the accounts page accepts newline-delimited `URL | key | name | weight | max concurrency` or JSON/JSONL input, previews duplicates/invalid/over-limit rows, and never silently skips an invalid row.
 
 - **Fresh setup for beta upgrades** — schemas and configuration may change between releases, so deploy a new instance and re-check the configuration before upgrading (see [Status: Beta](#status-beta)).
 - **Env-only deployments** (e.g. K8s): pass `-config ""` to skip the config file entirely — the flag defaults to `config.toml`, and a missing file is a startup error.
-- **Config is read once at startup** — changes require a rolling restart (no hot reload).
+- **Most config is read once at startup**; the upstream proxy can be switched from the admin settings without a restart.
 - **Invalid config fails fast at startup** with the offending key: non-positive durations/intervals, unknown keys (typos, removed legacy keys), missing required secrets, and placeholder values (`change-me`, `dev-admin-token`, …) are all rejected.
 
 ## Deployment
 
-- `compose.yml` — production stack: one `db` (postgres:18-alpine, bind-mounted data under `deploy/data/pg`) + one `redis` (redis:8-alpine, ephemeral coordination + short-lived verification codes — no persistence) + one `app` container (non-root, read-only config mount from `deploy/config.toml`, healthcheck).
+- `compose.yml` — production stack: one `db` (postgres:18-alpine, bind-mounted data under `deploy/data/pg`) + one `redis` (redis:8-alpine, ephemeral coordination + short-lived verification codes — no persistence) + one `app` container (non-root, read-only config mount from `deploy/config.local.toml`, healthcheck). `deploy/config.toml` remains the production template for deployments that choose it explicitly.
 - `Dockerfile` — three-stage build (node → go → alpine), producing a single static binary with the UI embedded.
 - **Dual required dependencies**: PostgreSQL 18 (all durable state, source of record) + Redis 8 (ephemeral coordination + short-lived email verification codes — instance discovery heartbeats and verification codes; never a cache layer). Both are startup-mandatory. Do not set an eviction policy (`allkeys-lru` etc.) for this instance: an evicted code is benign (the user just re-requests one), but keep it out of the configuration.
 

@@ -16,6 +16,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/predicate"
 	"github.com/is7qin/c3api/internal/ent/template"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 )
 
 // AccountUpdate is the builder for updating Account entities.
@@ -76,6 +77,26 @@ func (_u *AccountUpdate) SetNillableBaseURL(v *string) *AccountUpdate {
 // ClearBaseURL clears the value of the "base_url" field.
 func (_u *AccountUpdate) ClearBaseURL() *AccountUpdate {
 	_u.mutation.ClearBaseURL()
+	return _u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_u *AccountUpdate) SetUpstreamID(v int64) *AccountUpdate {
+	_u.mutation.SetUpstreamID(v)
+	return _u
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_u *AccountUpdate) SetNillableUpstreamID(v *int64) *AccountUpdate {
+	if v != nil {
+		_u.SetUpstreamID(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (_u *AccountUpdate) ClearUpstreamID() *AccountUpdate {
+	_u.mutation.ClearUpstreamID()
 	return _u
 }
 
@@ -274,6 +295,11 @@ func (_u *AccountUpdate) SetTemplate(v *Template) *AccountUpdate {
 	return _u.SetTemplateID(v.ID)
 }
 
+// SetUpstream sets the "upstream" edge to the Upstream entity.
+func (_u *AccountUpdate) SetUpstream(v *Upstream) *AccountUpdate {
+	return _u.SetUpstreamID(v.ID)
+}
+
 // AddGroupIDs adds the "groups" edge to the Group entity by IDs.
 func (_u *AccountUpdate) AddGroupIDs(ids ...int64) *AccountUpdate {
 	_u.mutation.AddGroupIDs(ids...)
@@ -312,6 +338,12 @@ func (_u *AccountUpdate) Mutation() *AccountMutation {
 // ClearTemplate clears the "template" edge to the Template entity.
 func (_u *AccountUpdate) ClearTemplate() *AccountUpdate {
 	_u.mutation.ClearTemplate()
+	return _u
+}
+
+// ClearUpstream clears the "upstream" edge to the Upstream entity.
+func (_u *AccountUpdate) ClearUpstream() *AccountUpdate {
+	_u.mutation.ClearUpstream()
 	return _u
 }
 
@@ -510,6 +542,35 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.UpstreamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   account.UpstreamTable,
+			Columns: []string{account.UpstreamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstream.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpstreamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   account.UpstreamTable,
+			Columns: []string{account.UpstreamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstream.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.GroupsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -665,6 +726,26 @@ func (_u *AccountUpdateOne) SetNillableBaseURL(v *string) *AccountUpdateOne {
 // ClearBaseURL clears the value of the "base_url" field.
 func (_u *AccountUpdateOne) ClearBaseURL() *AccountUpdateOne {
 	_u.mutation.ClearBaseURL()
+	return _u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_u *AccountUpdateOne) SetUpstreamID(v int64) *AccountUpdateOne {
+	_u.mutation.SetUpstreamID(v)
+	return _u
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableUpstreamID(v *int64) *AccountUpdateOne {
+	if v != nil {
+		_u.SetUpstreamID(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (_u *AccountUpdateOne) ClearUpstreamID() *AccountUpdateOne {
+	_u.mutation.ClearUpstreamID()
 	return _u
 }
 
@@ -863,6 +944,11 @@ func (_u *AccountUpdateOne) SetTemplate(v *Template) *AccountUpdateOne {
 	return _u.SetTemplateID(v.ID)
 }
 
+// SetUpstream sets the "upstream" edge to the Upstream entity.
+func (_u *AccountUpdateOne) SetUpstream(v *Upstream) *AccountUpdateOne {
+	return _u.SetUpstreamID(v.ID)
+}
+
 // AddGroupIDs adds the "groups" edge to the Group entity by IDs.
 func (_u *AccountUpdateOne) AddGroupIDs(ids ...int64) *AccountUpdateOne {
 	_u.mutation.AddGroupIDs(ids...)
@@ -901,6 +987,12 @@ func (_u *AccountUpdateOne) Mutation() *AccountMutation {
 // ClearTemplate clears the "template" edge to the Template entity.
 func (_u *AccountUpdateOne) ClearTemplate() *AccountUpdateOne {
 	_u.mutation.ClearTemplate()
+	return _u
+}
+
+// ClearUpstream clears the "upstream" edge to the Upstream entity.
+func (_u *AccountUpdateOne) ClearUpstream() *AccountUpdateOne {
+	_u.mutation.ClearUpstream()
 	return _u
 }
 
@@ -1122,6 +1214,35 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(template.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpstreamCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   account.UpstreamTable,
+			Columns: []string{account.UpstreamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstream.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpstreamIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   account.UpstreamTable,
+			Columns: []string{account.UpstreamColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstream.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

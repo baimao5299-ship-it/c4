@@ -42,7 +42,57 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 			pcs = append(pcs, domain.ProtocolConvert(pc))
 		}
 	}
-	g, err := h.svc.CreateGroup(r.Context(), in.Name, visibility, mult, pcs)
+	routingMode := domain.GroupRoutingModeAccounts
+	if in.RoutingMode != nil {
+		routingMode = domain.GroupRoutingMode(*in.RoutingMode)
+	}
+	allowedModels := []string(nil)
+	if in.AllowedModels != nil {
+		allowedModels = append([]string(nil), (*in.AllowedModels)...)
+	}
+	if routingMode != domain.GroupRoutingModeUpstreams && in.UpstreamMembers != nil && len(*in.UpstreamMembers) > 0 {
+		httpface.WriteErr(w, http.StatusBadRequest, "upstream_members requires routing_mode=upstreams")
+		return
+	}
+	if routingMode == domain.GroupRoutingModeUpstreams && in.UpstreamMembers != nil {
+		members := make([]*domain.GroupUpstream, 0, len(*in.UpstreamMembers))
+		for _, item := range *in.UpstreamMembers {
+			enabled := true
+			if item.Enabled != nil {
+				enabled = *item.Enabled
+			}
+			weight, priority, maxConcurrency := 100, 0, 8
+			if item.Weight != nil {
+				weight = *item.Weight
+			}
+			if item.Priority != nil {
+				priority = *item.Priority
+			}
+			if item.MaxConcurrency != nil {
+				maxConcurrency = *item.MaxConcurrency
+			}
+			members = append(members, &domain.GroupUpstream{
+				UpstreamID: item.UpstreamId, Weight: weight, Priority: priority,
+				MaxConcurrency: maxConcurrency, Enabled: enabled,
+			})
+		}
+		g := &domain.Group{
+			Name: in.Name, Visibility: visibility, RoutingMode: routingMode,
+			AllowedModels: allowedModels, PriceMultiplier: 10000,
+			ProtocolConverts: pcs,
+		}
+		if mult != nil {
+			g.PriceMultiplier = *mult
+		}
+		created, createErr := h.svc.CreateUpstreamGroup(r.Context(), g, members)
+		if createErr != nil {
+			httpface.WriteServiceErr(w, createErr)
+			return
+		}
+		httpface.WriteJSON(w, http.StatusOK, toAPIGroup(created))
+		return
+	}
+	g, err := h.svc.CreateGroupWithRouting(r.Context(), in.Name, visibility, mult, pcs, routingMode, allowedModels)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return
@@ -112,6 +162,59 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 		for _, pc := range *in.ProtocolConvert {
 			g.ProtocolConverts = append(g.ProtocolConverts, domain.ProtocolConvert(pc))
 		}
+	}
+	if in.RoutingMode != nil {
+		g.RoutingMode = domain.GroupRoutingMode(*in.RoutingMode)
+	}
+	if in.AllowedModels != nil {
+		g.AllowedModels = append([]string(nil), (*in.AllowedModels)...)
+	}
+	if in.UpstreamMembers != nil {
+		if g.EffectiveRoutingMode() != domain.GroupRoutingModeUpstreams && len(*in.UpstreamMembers) > 0 {
+			httpface.WriteErr(w, http.StatusBadRequest, "upstream_members requires routing_mode=upstreams")
+			return
+		}
+		members := make([]*domain.GroupUpstream, 0, len(*in.UpstreamMembers))
+		for _, item := range *in.UpstreamMembers {
+			enabled := true
+			if item.Enabled != nil {
+				enabled = *item.Enabled
+			}
+			weight, priority, maxConcurrency := 100, 0, 8
+			if item.Weight != nil {
+				weight = *item.Weight
+			}
+			if item.Priority != nil {
+				priority = *item.Priority
+			}
+			if item.MaxConcurrency != nil {
+				maxConcurrency = *item.MaxConcurrency
+			}
+			members = append(members, &domain.GroupUpstream{
+				UpstreamID: item.UpstreamId, Weight: weight, Priority: priority,
+				MaxConcurrency: maxConcurrency, Enabled: enabled,
+			})
+		}
+		updated, updateErr := h.svc.UpdateGroupWithUpstreams(r.Context(), g, members)
+		if updateErr != nil {
+			httpface.WriteServiceErr(w, updateErr)
+			return
+		}
+		httpface.WriteJSON(w, http.StatusOK, toAPIGroup(updated))
+		return
+	}
+	// Switching an upstream-routed group back to account routing must remove
+	// the old relation rows even when the client omits upstream_members. Keep
+	// the policy and relation replacement atomic so a subsequent switch back
+	// cannot resurrect stale members.
+	if in.RoutingMode != nil && g.EffectiveRoutingMode() == domain.GroupRoutingModeAccounts {
+		updated, updateErr := h.svc.UpdateGroupWithUpstreams(r.Context(), g, nil)
+		if updateErr != nil {
+			httpface.WriteServiceErr(w, updateErr)
+			return
+		}
+		httpface.WriteJSON(w, http.StatusOK, toAPIGroup(updated))
+		return
 	}
 	updated, err := h.svc.UpdateGroup(r.Context(), g)
 	if err != nil {

@@ -6,14 +6,19 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/notify"
+	"github.com/is7qin/c3api/pkg/httpx"
 	"github.com/is7qin/c3api/pkg/logx"
 )
+
+const redactedSMTPPassword = "********"
 
 // GetSettings 全部设置（默认值 + DB 覆盖；/api/admin/settings GET）。
 func (s *Service) GetSettings(ctx context.Context) ([]*domain.Setting, error) {
@@ -40,6 +45,21 @@ var serviceTierPolicyKeys = func() map[string][]string {
 // 注册等读路径即时生效；本地直连分发器按 scope 精确重载（#36 auth gate 预算
 // 按新 N 即时重算）+ NOTIFY 广播其余实例。
 func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain.Setting, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// GET /api/admin/settings returns masked secrets. Submitting the unchanged
+	// mask must preserve the stored value; an explicit new value still replaces
+	// it normally.
+	if key == "mail.smtp_password" && value == redactedSMTPPassword && s.settingValue(key) != "" {
+		value = s.settingValue(key)
+	}
+	if key == "upstream_proxy_url" {
+		previous := s.settingValue(key)
+		if previous != "" && httpx.ProxySummary(previous) == value && previous != value {
+			value = previous
+		}
+	}
 	def := domain.DefaultSetting(key)
 	if def == nil {
 		return nil, ErrInvalidInput
@@ -80,11 +100,90 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 			return nil, ErrInvalidInput
 		}
 	}
+	proxyUpdate := key == "upstream_proxy_url"
+	tlsUpdate := key == "codex_tls_convergence_enabled"
+	runtimeUpdate := proxyUpdate || tlsUpdate
+	runtimeLockHeld := runtimeUpdate
+	if runtimeLockHeld {
+		s.upstreamProxyUpdateMu.Lock()
+	}
+	proxyUnlock := func() {
+		if runtimeLockHeld {
+			s.upstreamProxyUpdateMu.Unlock()
+			runtimeLockHeld = false
+		}
+	}
+	defer proxyUnlock()
+	previousValue := ""
+	previousTLSExplicit := false
+	if runtimeUpdate {
+		// Keep the persisted value (inherit/direct/URL), not only its effective
+		// URL. Rolling back the effective URL would silently turn an `inherit`
+		// setting into a pinned port after one failed switch. TLS uses the same
+		// runtime-apply transaction so a rejected combination never remains in
+		// the database while the old transport is still active.
+		previousValue = s.settingValue(key)
+		if previousValue == "" && proxyUpdate {
+			previousValue = "inherit"
+		}
+		if tlsUpdate {
+			s.codexTLSMu.Lock()
+			previousTLSExplicit = s.codexTLSExplicit
+			s.codexTLSExplicit = true
+			s.codexTLSMu.Unlock()
+		}
+	}
 	set, err := s.store.SetSetting(ctx, key, def.Type, value)
 	if err != nil {
+		if tlsUpdate {
+			s.codexTLSMu.Lock()
+			s.codexTLSExplicit = previousTLSExplicit
+			s.codexTLSMu.Unlock()
+		}
 		return nil, err
 	}
-	s.reloadSettings(ctx)
+	reload := func(reloadCtx context.Context) error {
+		if runtimeLockHeld {
+			return s.reloadSettingsLocked(reloadCtx)
+		}
+		return s.ReloadSettings(reloadCtx)
+	}
+	if err := reload(ctx); err != nil {
+		// A runtime route/TLS change is committed only when its transport hook
+		// accepts it. If parsing, probing, or compatibility validation fails,
+		// restore the previous setting so the database and active route stay
+		// aligned.
+		if runtimeUpdate {
+			rollback := previousValue
+			// The admin request may already be canceled when the runtime apply
+			// fails. Keep rollback independent of that request, but bounded so a
+			// stalled database cannot leave the update goroutine blocked forever.
+			rollbackCtx, rollbackCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			var rollbackErrs []error
+			if _, rollbackErr := s.store.SetSetting(rollbackCtx, key, def.Type, rollback); rollbackErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Errorf("persist previous setting: %w", rollbackErr))
+			}
+			if reloadErr := s.reloadSettingsLocked(rollbackCtx); reloadErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Errorf("reload previous setting: %w", reloadErr))
+			}
+			rollbackCancel()
+			if tlsUpdate {
+				s.codexTLSMu.Lock()
+				s.codexTLSExplicit = previousTLSExplicit
+				s.codexTLSMu.Unlock()
+			}
+			if len(rollbackErrs) > 0 {
+				return nil, fmt.Errorf("%w: %w (rollback: %v)", ErrInvalidInput, err, errors.Join(rollbackErrs...))
+			}
+		}
+		if runtimeUpdate {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		}
+		return nil, err
+	}
+	// Do not hold the proxy update lock while the local dispatcher performs its
+	// synchronous settings refresh; that callback calls ReloadSettings itself.
+	proxyUnlock()
 	// #36 本地实例即时重算（R2 M-1）：自播 NOTIFY 被 Listener Src 跳过，本地
 	// settings 变更必须直连分发器——与远端 NOTIFY 同路径（Apply：同步
 	// ReloadSettings + 注册表 ScopeSettings 精确重载 auth，gate 预算按新 N
@@ -107,6 +206,15 @@ func (s *Service) UpdateSetting(ctx context.Context, key, value string) (*domain
 // 实例重载）。与 UpdateSetting 内部路径同实现（reloadSettings 复用）；失败
 // 返回错误由调用方（去抖器 reloadAll）Warn。
 func (s *Service) ReloadSettings(ctx context.Context) error {
+	s.upstreamProxyUpdateMu.Lock()
+	defer s.upstreamProxyUpdateMu.Unlock()
+	return s.reloadSettingsLocked(ctx)
+}
+
+// reloadSettingsLocked refreshes the settings snapshot and applies runtime
+// settings. Callers must hold upstreamProxyUpdateMu when concurrent proxy
+// updates must be serialized with this reload.
+func (s *Service) reloadSettingsLocked(ctx context.Context) error {
 	rows, err := s.store.GetAllSettings(ctx)
 	if err != nil {
 		return err
@@ -116,30 +224,109 @@ func (s *Service) ReloadSettings(ctx context.Context) error {
 		m[st.Key] = st
 	}
 	s.settings.Store(&m)
-	s.applyCodexTLSConvergence()
-	return nil
+	proxyErr := s.applyUpstreamProxy(ctx)
+	tlsErr := s.applyCodexTLSConvergence()
+	if proxyErr != nil {
+		return proxyErr
+	}
+	return tlsErr
 }
 
-func (s *Service) SetCodexTLSConvergenceApply(apply func(bool)) {
+// SetInitialUpstreamProxyURL records the process-start fallback used when the
+// persisted setting is "inherit". It does not touch the active transport.
+func (s *Service) SetInitialUpstreamProxyURL(raw string) {
+	s.upstreamProxyMu.Lock()
+	s.upstreamProxyURL = raw
+	s.upstreamProxyMu.Unlock()
+}
+
+// SetUpstreamProxyApply installs the live transport switch hook. The hook is
+// called outside the service lock and must only publish a fully constructed
+// route after it has passed its own connectivity check.
+func (s *Service) SetUpstreamProxyApply(apply func(context.Context, string) error) {
+	s.upstreamProxyMu.Lock()
+	s.upstreamProxyApply = apply
+	s.upstreamProxyMu.Unlock()
+}
+
+// UpstreamProxyURL returns the effective runtime URL without exposing any
+// credentials. "inherit" means the immutable startup config; "direct" and an
+// empty value mean direct mode.
+func (s *Service) UpstreamProxyURL() string {
+	raw := s.settingValue("upstream_proxy_url")
+	s.upstreamProxyMu.RLock()
+	initial := s.upstreamProxyURL
+	s.upstreamProxyMu.RUnlock()
+	if raw == "" || raw == "inherit" {
+		return initial
+	}
+	if raw == "direct" {
+		return ""
+	}
+	return raw
+}
+
+// ApplyUpstreamProxy applies the effective setting immediately. It is used by
+// the composition root after the runtime switch hook is installed so a saved
+// override is honored on startup without probing the configured fallback twice.
+func (s *Service) ApplyUpstreamProxy(ctx context.Context) error {
+	return s.applyUpstreamProxy(ctx)
+}
+
+func (s *Service) applyUpstreamProxy(ctx context.Context) error {
+	s.upstreamProxyMu.RLock()
+	apply := s.upstreamProxyApply
+	s.upstreamProxyMu.RUnlock()
+	if apply == nil {
+		return nil
+	}
+	return apply(ctx, s.UpstreamProxyURL())
+}
+
+func (s *Service) SetCodexTLSConvergenceApply(apply func(bool) error) error {
 	s.codexTLSMu.Lock()
 	s.codexTLSConvergenceApply = apply
 	s.codexTLSConvergenceReady = false
 	s.codexTLSMu.Unlock()
-	s.applyCodexTLSConvergence()
+	return s.applyCodexTLSConvergence()
 }
 
-func (s *Service) applyCodexTLSConvergence() {
-	desired := s.settingValue("codex_tls_convergence_enabled") == "true"
+// SetInitialCodexTLSConvergence records the process-start default. A persisted
+// runtime setting with a real timestamp overrides it; an absent/default row
+// keeps the startup configuration until an administrator explicitly changes it.
+func (s *Service) SetInitialCodexTLSConvergence(enabled bool) {
 	s.codexTLSMu.Lock()
+	s.codexTLSInitial = enabled
+	s.codexTLSInitialSet = true
+	s.codexTLSMu.Unlock()
+}
+
+func (s *Service) applyCodexTLSConvergence() error {
+	s.codexTLSMu.Lock()
+	defer s.codexTLSMu.Unlock()
+	desired := false
+	if settings := s.settings.Load(); settings != nil {
+		if st, ok := (*settings)["codex_tls_convergence_enabled"]; ok {
+			desired = st.Value == "true"
+			if s.codexTLSInitialSet && !s.codexTLSExplicit && st.UpdatedAt.IsZero() {
+				desired = s.codexTLSInitial
+			}
+		} else if s.codexTLSInitialSet && !s.codexTLSExplicit {
+			desired = s.codexTLSInitial
+		}
+	} else if s.codexTLSInitialSet && !s.codexTLSExplicit {
+		desired = s.codexTLSInitial
+	}
 	apply := s.codexTLSConvergenceApply
 	if apply == nil || (s.codexTLSConvergenceReady && s.codexTLSConvergenceValue == desired) {
-		s.codexTLSMu.Unlock()
-		return
+		return nil
+	}
+	if err := apply(desired); err != nil {
+		return err
 	}
 	s.codexTLSConvergenceReady = true
 	s.codexTLSConvergenceValue = desired
-	s.codexTLSMu.Unlock()
-	apply(desired)
+	return nil
 }
 
 // reloadSettings 全量重载设置快照（New 初始化 + UpdateSetting 后调用）。

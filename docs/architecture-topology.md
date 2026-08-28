@@ -127,7 +127,7 @@ flowchart LR
 - **配额**：`quotaExhausted`（`internal/proxy/gate.go:267-319`）本地预算两原子读；耗尽才触发 DB 复核认领（`internal/proxy/gate.go:320-374`，慢路径单飞 + 10s 失败退避）；复核公式 `budget = consumed + ceil(remaining_eff/N)`（#37 P1 收敛修正，防复核无限续额）。
 - **余额预检**（`internal/proxy/caller.go:140-147`）：BillingCapture 门控快照读零 DB（滞后 ≤ balance_refresh_interval）；快照缺失/<0 且非免费组 → 402（余额 0 放行——临时额度由 FEFO 扣费消化）；免费组（EffectiveMultiplier==0）放行。
 - **并发门禁**：user → key 两级 CAS（`internal/proxy/gate.go:219-244`），key 失败回滚 user 计数；跨 reload 在途值继承。
-- **限流**：`internal/proxy/limit.go:39-56` 固定窗口 `ceil(group_key_rpm/N)`；`cooldown_429/backoff_*` 已移除（2026-08-13 用户裁决：配置含这些键将启动失败）——429 冷却与错误退避由规则引擎（种子 + `/api/admin/rules` 自定义）接管。
+- **限流**：`internal/proxy/limit.go:39-56` 固定窗口 `ceil(group_key_rpm/N)`；`cooldown_429/backoff_*` 已移除（2026-08-13 用户裁决：配置含这些键将启动失败）——429 冷却与错误退避由规则引擎接管，并优先尊重上游 `Retry-After`，无头时使用账号独立指数退避（2s 起、10m 封顶）。
 - **选号**：`internal/scheduler/selection.go:17` tier1（模型硬白名单 Serves）→ tier2（仅全模型账号）→ 默认桶（仅全模型账号）；预生成加权轮询序列（零热路径计算）；协议转换只补差（`internal/proxy/caller.go:41-61` convertedRoute，off 零开销）。
 - **缺价预检**：failover 循环内每轮 `caller.go:288-293` + `precheckPrice :438-451`——images 查 image_price、其余查 pricings，缺价 402 释放槽。
 - **codex 分流**（`caller.go:303-309`）：按 `sel.CredentialType` 换 codexImagesCaller（:320-321 codex 类型跳单字符串凭据走 sel.Ext → AccountCredential 直供适配层）。
@@ -136,7 +136,7 @@ flowchart LR
 
 **热路径纪律**（改这里先读）：
 1. 热路径**零 DB、零 per-request 锁**（`internal/proxy/forward.go:1-3` 包注释）；所有快照读 = 内存原子（atomic.Pointer / RWMutex 读锁 / CAS）。
-2. **开关关闭 = 快照读 + 分支**：`protocol_convert=off` 不触达 protoconv（`internal/proxy/caller.go:244-249`）、`strip_image_tools` 关 = 布尔读 + 分支（`internal/scheduler/selection.go:93`）、billing off = `shouldBill` 恒 false（`internal/proxy/forward.go:150-157`）。
+2. **协议转换按模式运行**：`protocol_convert=auto` 先走原生格式，缺少可用原生路由时按固定优先级转为 Responses/Messages；空数组仍是 `off`，不触达 protoconv。`strip_image_tools` 关 = 布尔读 + 分支（`internal/scheduler/selection.go:93`）、billing off = `shouldBill` 恒 false（`internal/proxy/forward.go:150-157`）。
 3. **开关开启 = bytes.Contains 预筛零解析**：W4 图像 tool 剥离 `internal/proxy/strip_image.go` 预筛（无 "image" 子串零解析，压测 ~1.5% QPS 差异）；W5 转换走 gjson 预筛 + Raw 零拷贝（`internal/protoconv/jsraw.go:1-9`）。
 4. **永不阻塞投递**：usage.Record（`internal/usage/usage.go:154`）、billing Flusher.Record（`internal/billing/flusher.go:198`）均为无 channel 的锁内归并；errlog 投递 select-default 非阻塞丢弃（`internal/usage/errlog.go:147,161`）。
 
@@ -156,7 +156,7 @@ flowchart LR
 pkg 职责边界：
 - `pkg/aiclient`（`pkg/aiclient/aiclient.go:5-22`）：**openai/anthropic 官方 SDK 客户端懒构建工厂**——鉴权头注入（格式决定头名：openai → `Authorization: Bearer`、anthropic → `x-api-key`）+ typed 面非流式超时（UpstreamTimeout，:28-30）；**非唯一引用点**——proxy 各 caller 直接 import openai-go/anthropic-sdk 类型（`caller_chat.go:14`、`caller_anthropic.go:14`、`caller_responses.go:15`、`caller_converted.go:16-17`），第三 SDK codex-sdk 经 sdkbridge 适配。
 - `internal/sdkbridge`（`internal/sdkbridge/codex.go:16`）：**codex-sdk 唯一适配层**——GenerateImage/GenerateImageStream/Responses/StreamResponses/Search/Dial（T2-T6）+ 凭据派生 clientFor + 失效回调 + T5 轮转回写 WriteOAuthRotation；codex 非流式超时各自包 ctx WithTimeout（`codex_responses_http.go:92`、`caller_images_codex.go:111`——HTTPClient.Timeout 不可用，流式/非流式四方法共享，`forward.go:36` 注释）。
-- `pkg/httpx`：共享 `http.Transport`（连接池参数：max_idle_conns 8192、per_host 2048、force_http2、idle_conn_timeout 90s、dial_timeout 10s，`config.example.toml:20-26`）；openai-go/anthropic-sdk 共用同一 `*http.Client`（`cmd/server/main.go:175-189`）；**codex SDK 另有独立 transport**（`main.go:332-342`：httpx 网关同形态 + MaxConnsPerHost 显式上界，补压测修复 MaxIdleConnsPerHost=2 连接风暴）；**httpx.Proxy 默认 nil 直连**（`pkg/httpx/httpx.go:24-28,33`——不再隐式 ProxyFromEnvironment 防 HTTP_PROXY 静默改道）。
+- `pkg/httpx`：共享 `http.Transport`（连接池参数：max_idle_conns 8192、per_host 2048、force_http2、idle_conn_timeout 90s、dial_timeout 10s，`config.example.toml:20-26`）；openai-go/anthropic-sdk 共用同一 `*http.Client`（`cmd/server/main.go:175-189`）；**codex SDK 另有独立 transport**（`main.go:332-342`：httpx 网关同形态 + MaxConnsPerHost 显式上界，补压测修复 MaxIdleConnsPerHost=2 连接风暴）；`upstream.proxy_url` 为空时直连，填写 `http/https/socks5h` 时业务、Codex、上游探测和余额读取统一走显式代理；`HTTP_PROXY` 不会被隐式读取。
 - `pkg/sserelay`：字节级 SSE relay——增量读帧原样转发 + 自适应批量 Flush + Observer 旁路（仅 usage 提取，不参与转发决策；`pkg/sserelay/relay.go:5-8`）+ EOF 末帧 flush + deadline watcher + normalize 错误分类 + relayBufio 池 + **Mapper 挂载**（W5 转换，`relay.go:57-62`，Observer 仍见原始帧）。
 - 凭据抽象 `internal/credential`：Provider 只返回凭据值，不感知请求格式（`internal/credential/credential.go:7-11` 正交原则）；未知类型显式报错不静默 fallback（`internal/proxy/forward.go:681-687` credentialFor）；**codex 复合凭据不进注册表**——走 `sel.Ext` → AccountCredential 直供适配层（`caller.go:310-321` 注释，单字符串表达不了）。
 
@@ -164,7 +164,7 @@ pkg 职责边界：
 
 ## 5. 协议转换层（internal/protoconv）
 
-- 边界（`internal/protoconv/protoconv.go:5-13` 包注释）：**纯标准库**（encoding/json），与 OpenAI/Anthropic SDK 零耦合；按 `groups.protocol_convert` 快照值分派（off 不经过本包——热路径分支在 proxy 判定）；WS 帧流转换不做（resp-ws 1:1 透传）。
+- 边界（`internal/protoconv/protoconv.go:5-13` 包注释）：**纯标准库**（encoding/json），与 OpenAI/Anthropic SDK 零耦合；按 `groups.protocol_convert` 快照值分派（auto 由 proxy 按路由可用性选择方向，off 不经过本包）；WS 帧流转换不做（resp-ws 1:1 透传）。
 - 四方向（`internal/protoconv/protoconv.go:27-54`）：`ConvertRequest`（chat→resp / mess→resp / resp→mess / chat→mess）+ `ConvertResponse`（非流式）；`NewStreamMapper`（流式 SSE 事件映射，`internal/protoconv/protoconv.go:60-62`）；四方向常量在 `domain/types.go:310-323`。
 - **字节级纪律**（`internal/protoconv/jsraw.go:20-25`）：gjson 预筛（`gjsonKeyEq` 长度校验 + 逐字节比较零分配）→ `gjson.Result.Raw` 零拷贝切片直接拼入输出 → 单缓冲复用（`StreamMapper` 的 buf/dbuf，`internal/protoconv/protoconv.go:94-107`；帧返回后下一帧覆盖，调用方不得跨帧保留）；chat→resp 方向字节级组装，其余方向 map 组装（`EncodeFrame`）。
 - 缺名帧处理（P3 教训）：无 `event:` 名帧从 data 的 `type` 字段推断（`internal/protoconv/protoconv.go:167-175` `inferEventName`，Map 内分派 :116-125），无法推断原样透传。

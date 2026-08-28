@@ -53,7 +53,7 @@ func (p *Proxy) callCodexResponses(ctx context.Context, w http.ResponseWriter, r
 	reqModel := gjson.GetBytes(body, "model").String()
 	if p.codex == nil {
 		// 适配层未装配（SetCodex 未调用）：显式 501（防 nil 误走凭据缺失 502）。
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexResponsesNotIntegrated.msg)
 		writeErr(w, errCodexResponsesNotIntegrated)
 		return 0, nil, true, nil
@@ -68,11 +68,13 @@ func (p *Proxy) callCodexResponses(ctx context.Context, w http.ResponseWriter, r
 	// 结构 oauth_token+refresh_token+expires_at+pat+accountID，单字符串契约表
 	// 达不了；注册表未注册 codex 类型，见 codex_responses_ws.go 注释）。
 	cred := domain.CredentialFromExt(sel.Ext)
-	full, err := p.clients.ResponsesWSURL(sel.TemplateID, sel.BaseURL)
-	if err != nil {
-		return 0, nil, false, err
+	if sel.BaseURL != "" {
+		full, err := p.clients.ResponsesWSURL(sel.TemplateID, sel.BaseURL)
+		if err != nil {
+			return 0, nil, false, err
+		}
+		cred.BaseURL = full
 	}
-	cred.BaseURL = full
 	if stream {
 		return p.streamCodexResponses(ctx, w, r, reqID, groupID, start, sel, reqModel, &cred, body)
 	}
@@ -170,8 +172,8 @@ func (p *Proxy) nonstreamCodexResponses(ctx context.Context, w http.ResponseWrit
 	if respImageDetectOn(sel) {
 		img = respImageCountBody(resp.Raw)
 	}
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 	return http.StatusOK, nil, true, nil
 }
 
@@ -250,7 +252,7 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 		// 客户端断开：上游已消费请求（成功），仍须记录用量（成功请求丢日志防
 		// 线——caller_responses.go:99-104 语义）；按 abort 收尾不 MarkResult。
 		if r.Context().Err() != nil {
-			p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
+			p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 			return 0, nil, true, nil
 		}
 		// 首帧前信封错误（4xx 透传 / 429/5xx failover——typed 分支
@@ -262,7 +264,7 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 		// 上游停滞/错误（流中止）：200 已写出——recordStreamAbort + 连接级/5xx 分流
 		//（caller_responses.go:106-108 同语义）。
 		p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, err)
-		p.sched.MarkResult(sel.AccountID, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
+		p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 		return 0, nil, true, nil
 	}
 	// 轮结束清除（HOST-2）：流正常结束且收到 completed 终态（usageTaken）且无
@@ -287,11 +289,11 @@ func (p *Proxy) streamCodexResponses(ctx context.Context, w http.ResponseWriter,
 		framesWritten = true
 	}
 	if err := writeCodexSSEFrame(w, sseDonePayload); err != nil {
-		p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
+		p.finishSelection(sel, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 		return 0, nil, true, nil
 	}
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finish(sel.AccountID, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.finishSelection(sel, logWithCtx(logCtx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusOK, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc, calls: img}, start)))
 	return http.StatusOK, nil, true, nil
 }
 

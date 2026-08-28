@@ -38,7 +38,7 @@ func TestPassthrough429CodeBodySplit(t *testing.T) {
 	require.Equal(t, 429, rec.Code, "429 码透")
 	require.Contains(t, rec.Body.String(), "rate limited", "429 文不透 → 自定义文案")
 	require.NotContains(t, rec.Body.String(), "upstream 429 detail")
-	require.Equal(t, "1", rec.Header().Get("Retry-After"), "ResponseCode nil 且上游带 Retry-After → 透头（fallback 1，因 chatAttempt 未透传真实头值，仍满足 ResponseCode nil 透头语义）")
+	require.Equal(t, "5", rec.Header().Get("Retry-After"), "ResponseCode nil 时透传上游 Retry-After")
 }
 
 // TestPassthrough400Full 400 全透：seed-400 nil/nil → 400 + 原文

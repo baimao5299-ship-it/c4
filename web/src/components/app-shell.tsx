@@ -4,7 +4,7 @@
 
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu } from 'lucide-react'
+import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -42,6 +42,7 @@ const userNav = [
 // （兑换码/计费）→ 系统域（设置/运维）。平铺不拆子分组标题。
 const adminNav = [
   { to: '/app/dashboard', key: 'nav.overview', icon: LayoutDashboard },
+  { to: '/app/upstreams', key: 'nav.upstreams', icon: Server },
   { to: '/app/templates', key: 'nav.templates', icon: Boxes },
   { to: '/app/accounts', key: 'nav.accounts', icon: Users },
   { to: '/app/rules', key: 'nav.rules', icon: ScrollText },
@@ -131,7 +132,7 @@ export default function AppShell() {
                   <Menu />
                   <span className="sr-only">{t('common.appTitle')}</span>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60 rounded-[14px] border-[rgba(19,45,83,0.18)] bg-[color:var(--glass-card-light)] p-2 shadow-lg backdrop-blur-xl dark:border-[rgba(148,180,220,0.32)] dark:bg-[color:var(--glass-card-dark)] dark:backdrop-blur-[var(--glass-blur)]">
+                <DropdownMenuContent align="end" className="w-60 rounded-[14px] border-[rgba(19,45,83,0.18)] bg-[rgb(250_252_255)] p-2 shadow-lg backdrop-blur-xl dark:border-[rgba(148,180,220,0.32)] dark:bg-[rgb(30_35_43)] dark:backdrop-blur-[var(--glass-blur)]">
                   {navs.map((group, groupIndex) => (
                     <DropdownMenuGroup key={group.titleKey ?? group.items[0]?.to}>
                       {groupIndex > 0 && <DropdownMenuSeparator />}

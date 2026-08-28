@@ -81,11 +81,13 @@ func (p *Proxy) dialCodexWS(r *http.Request, sel *scheduler.Selection) (*codexsd
 		return nil, errCodexExtMissing
 	}
 	cred := domain.CredentialFromExt(sel.Ext)
-	full, err := p.clients.ResponsesWSURL(sel.TemplateID, sel.BaseURL)
-	if err != nil {
-		return nil, err
+	if sel.BaseURL != "" {
+		full, err := p.clients.ResponsesWSURL(sel.TemplateID, sel.BaseURL)
+		if err != nil {
+			return nil, err
+		}
+		cred.BaseURL = full
 	}
-	cred.BaseURL = full
 	sess, meta := codexIdentityFromExt(sel.Ext)
 	opts := []codexsdk.Option{
 		codexsdk.WithPayloadFiltering(false), // P2-A：帧透传 1:1（白名单过滤剥合法键）
@@ -122,7 +124,7 @@ func (p *Proxy) dialCodexWS(r *http.Request, sel *scheduler.Selection) (*codexsd
 //     → RuleKindOf(code) 转移（正常 failover）
 func (p *Proxy) handleCodexDialError(r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, client *websocket.Conn, dialErr error) (stop bool, lastCode int, lastErrMsg string) {
 	if errors.Is(dialErr, errCodexWSNotIntegrated) {
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponsesWS, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexWSNotIntegrated.Error())
 		wsWriteError(client, errCodexWSNotIntegrated.Error())
 		return true, 0, ""
@@ -131,7 +133,7 @@ func (p *Proxy) handleCodexDialError(r *http.Request, reqID string, groupID int6
 		msg := domain.TruncateErrMsg(dialErr.Error())
 		l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, sel.Format, 0, domain.ErrNetwork, usageTuple{}, start))
 		l.ErrorMessage = &msg
-		p.finish(sel.AccountID, l)
+		p.finishSelection(sel, l)
 		// fatal 用户帧固定文案（不泄 SDK 内部机制串）；:125-127 已落盘 dialErr
 		// 原文——落盘是唯一留痕。
 		wsWriteError(client, codexAuthFailedMsg)
@@ -148,12 +150,12 @@ func (p *Proxy) handleCodexDialError(r *http.Request, reqID string, groupID int6
 		if em != "" {
 			l.ErrorMessage = &em
 		}
-		p.finish(sel.AccountID, l)
+		p.finishSelection(sel, l)
 		// R-1 规则驱动（与 REST 4xx 同公式）：Classify(Kind4xx) → punish 投递 → UnifiedMessage/passthrough 帧。
 		// WS 无 HTTP 状态码，ResponseCode 维度自然无效，仅 CustomMessage 生效；DialError Refreshed=true 无特殊处理。
-		then, punish := p.sched.Classify(rule.Event{AccountID: sel.AccountID, Kind: rule.Kind4xx, HTTPStatus: &code, Model: sel.Model, ErrorMessage: em})
+		then, punish := p.sched.ClassifySelection(sel, rule.Event{AccountID: sel.AccountID, Kind: rule.Kind4xx, HTTPStatus: &code, Model: sel.Model, ErrorMessage: em})
 		if punish {
-			p.sched.MarkResult(sel.AccountID, rule.Kind4xx, nil, code, em, sel.Model)
+			p.sched.MarkSelectionResult(sel, rule.Kind4xx, nil, code, em, sel.Model)
 		}
 		if customMsg, isCustom := rule.UnifiedMessage(then, em); isCustom {
 			wsWriteError(client, customMsg)

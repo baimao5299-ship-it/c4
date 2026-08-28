@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to c3api are documented in this file.
+All notable changes to C4 are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versioning follows the policy below.
 
@@ -9,6 +9,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each release). The first beta is `v0.0.1-beta.1`; concrete numbers for later releases are decided at tag time.
 
 ## [Unreleased]
+
+## [v0.0.1-beta.6] - 2026-08-29
+
+### Added
+
+- **C4 brand release**: the public product name is now C4 while the c3api module path, API paths, executable/container names, and `C3API_*` environment variables remain compatible.
+- Runtime upstream proxy switching now validates the candidate route before an atomic gateway/Codex swap; failed switches leave the active route untouched.
+- Startup dependency retries cover transient PostgreSQL and Redis readiness failures without changing the running route.
+- Upstream pools support bounded model discovery, balance snapshots, health probes, per-request failover exclusion, and atomic group membership replacement.
+- Account imports accept multi-file and ZIP input with duplicate detection, strict row validation, bounded archive expansion, and row-level failure details.
+
+### Fixed
+
+- Prevented stale proxy probes and asynchronous account results from overwriting newer runtime state.
+- Preserved write-only credentials and balance snapshots across partial upstream edits while rejecting unsafe endpoint/key changes.
+- Added CI race coverage for transport switching and kept generated OpenAPI/Ent/client artifacts reproducible.
 
 ## [v0.0.1-beta.5] - 2026-08-26
 

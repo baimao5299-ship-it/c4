@@ -141,6 +141,36 @@ func TestPGLoadAssignmentMultipliers(t *testing.T) {
 	require.Equal(t, 20000, mults[billing.AssignmentKey{UserID: u1.ID, GroupID: g2.ID}], "其他组不受影响")
 }
 
+func TestPGDeletedGroupsExcludedFromBillingMultipliers(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	g, err := repos.Groups.CreateGroup(ctx, &domain.Group{
+		Name: "deleted-mult-group", Visibility: domain.GroupVisibilityPublic, PriceMultiplier: 25000,
+	})
+	require.NoError(t, err)
+	u := seedPGUser(t, repos, "deleted-mult-user@example.com")
+	require.NoError(t, repos.GrantGroup(ctx, g.ID, u.ID))
+	require.NoError(t, repos.SetAssignmentMultiplier(ctx, g.ID, u.ID, intPtr(30000)))
+
+	groups, err := repos.Groups.LoadGroupMultipliers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 25000, groups[g.ID])
+	assignments, err := repos.Groups.LoadAssignmentMultipliers(ctx)
+	require.NoError(t, err)
+	_, ok := assignments[billing.AssignmentKey{UserID: u.ID, GroupID: g.ID}]
+	require.True(t, ok)
+
+	require.NoError(t, repos.Groups.DeleteGroup(ctx, g.ID))
+	groups, err = repos.Groups.LoadGroupMultipliers(ctx)
+	require.NoError(t, err)
+	_, ok = groups[g.ID]
+	require.False(t, ok, "soft-deleted group must not affect billing multiplier snapshot")
+	assignments, err = repos.Groups.LoadAssignmentMultipliers(ctx)
+	require.NoError(t, err)
+	_, ok = assignments[billing.AssignmentKey{UserID: u.ID, GroupID: g.ID}]
+	require.False(t, ok, "assignments belonging to a deleted group must not affect billing")
+}
+
 // TestPGLoadBalances LoadBalances（T3.5 修正后仅余额——用户倍率按组挂载，
 // 由 LoadAssignmentMultipliers 单独加载）。
 func TestPGLoadBalances(t *testing.T) {

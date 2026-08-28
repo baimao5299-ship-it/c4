@@ -172,6 +172,44 @@ func TestSendRegisterCodeRateLimit429(t *testing.T) {
 	require.ErrorIs(t, err, ErrTooManyRequests)
 }
 
+func TestSendRegisterCodeMailUnavailableDoesNotPersistOrRateLimit(t *testing.T) {
+	fs := newFakeStore()
+	svc := newMailService(t, fs)
+	setMailSettings(t, fs, svc, map[string]string{
+		"signup_enabled": "true", "mail.enabled": "true", "mail.register_verification": "true",
+	})
+	ctx := context.Background()
+	err := svc.SendRegisterCode(ctx, "mail-missing@example.com")
+	require.ErrorIs(t, err, ErrMailNotConfigured)
+	row, getErr := fs.GetEmailCode(ctx, "mail-missing@example.com", string(domain.EmailCodeRegister))
+	require.NoError(t, getErr)
+	require.Nil(t, row, "邮件未配置时不得持久化验证码")
+	// 修复配置后应可立即重试，不应被前一次失败卡在 60 秒限频内。
+	stub := startTestSTUB(t)
+	_, port := stubAddr(stub)
+	setMailSettings(t, fs, svc, map[string]string{
+		"mail.smtp_host": "127.0.0.1", "mail.smtp_port": port,
+		"mail.from_address": "noreply@example.com", "mail.tls": "none",
+	})
+	require.NoError(t, svc.SendRegisterCode(ctx, "mail-missing@example.com"))
+}
+
+func TestSendRegisterCodeEnqueueFailureRollsBack(t *testing.T) {
+	fs := newFakeStore()
+	svc := newMailService(t, fs)
+	setMailSettings(t, fs, svc, map[string]string{
+		"signup_enabled": "true", "mail.enabled": "true", "mail.register_verification": "true",
+		"mail.smtp_host": "127.0.0.1", "mail.smtp_port": "2525", "mail.from_address": "noreply@example.com", "mail.tls": "none",
+	})
+	svc.SetMailEnqueue(func(MailSendTask) error { return errors.New("queue unavailable") })
+	ctx := context.Background()
+	err := svc.SendRegisterCode(ctx, "queue-fail@example.com")
+	require.Error(t, err)
+	row, getErr := fs.GetEmailCode(ctx, "queue-fail@example.com", string(domain.EmailCodeRegister))
+	require.NoError(t, getErr)
+	require.Nil(t, row, "入队失败时不得留下无效验证码")
+}
+
 func TestSendRegisterCodeDuplicateSuppress(t *testing.T) {
 	fs := newFakeStore()
 	svc := newMailService(t, fs)

@@ -52,28 +52,35 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 	if err != nil {
 		return nil, err
 	}
-	// 首个注册用户 bootstrap（方案 A，spec 2026-08-15）：users 表空时第一个
-	// 注册用户 = platform_admin（管理面无需静态 token 即可登录）；一旦有人
-	// 注册（n > 0），后续注册恒为普通 user——无需额外机制。
-	// 竞态：表空并发双注册在 READ COMMITTED 下两个 count 均见 0 → 双 admin；
-	// 不引入锁——增量后果 = 抢注窗口从"严格先到"放宽为"同刻并发"（bootstrap
-	// 秒级窗口 + 毫秒竞速才触发，多出的非预期 admin 账号可删）。
-	n, err := s.store.CountUsers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	role := domain.RoleUser
-	if n == 0 {
-		role = domain.RolePlatformAdmin
-	}
+	// CountUsers 与 CreateUser 必须在同一实例内串行，确保只有第一个
+	// 成功注册者获得 platform_admin 角色. Production repositories additionally
+	// hold a database transaction lock so this remains true across instances.
+	s.signupMu.Lock()
+	defer s.signupMu.Unlock()
 	// 新用户初始资源：仅公开注册路径套默认；管理面 CreateUser 显式传值
 	// （用户拍板，0 就是 0）。
-	created, err := s.store.CreateUser(ctx, &domain.User{
+	newUser := &domain.User{
 		Email: email, PasswordHash: hash,
-		Role: role, Status: domain.UserStatusActive,
+		Role: domain.RoleUser, Status: domain.UserStatusActive,
 		MaxConcurrency: int(s.settingInt("default_user_max_concurrency")),
 		Balance:        s.settingInt("default_user_balance"),
-	})
+	}
+	var created *domain.User
+	if bootstrap, ok := s.store.(SignupBootstrapStore); ok {
+		// The repository rechecks the user count while holding a transaction
+		// advisory lock, closing the cross-instance first-admin race.
+		created, err = bootstrap.RegisterFirstUser(ctx, newUser)
+	} else {
+		// Compatibility path for stores that predate the optional capability.
+		n, countErr := s.store.CountUsers(ctx)
+		if countErr != nil {
+			return nil, countErr
+		}
+		if n == 0 {
+			newUser.Role = domain.RolePlatformAdmin
+		}
+		created, err = s.store.CreateUser(ctx, newUser)
+	}
 	if err != nil {
 		// 并发重复邮箱：双过 pre-check 后一者撞 DB 唯一冲突 → repo 已映射
 		// ErrConflict → 这里映射 409（不映射 → 裸错 500）。

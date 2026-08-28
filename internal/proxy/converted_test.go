@@ -396,6 +396,25 @@ func TestConvertedOff(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code, "off：无 chat 路由 → 404（现状语义）")
 }
 
+// Automatic negotiation keeps the client-facing protocol stable while choosing
+// a configured upstream protocol only when the native route is unavailable.
+func TestConvertedAutoNegotiation(t *testing.T) {
+	up := &capturedUpstream{}
+	srv := up.srv(t)
+	defer srv.Close()
+	p := newConvertedTestProxy(t, srv.URL, []domain.RequestFormat{domain.FormatOpenAIResponses}, []domain.ProtocolConvert{domain.ProtocolConvertAuto})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	path, body, _ := up.last(t)
+	require.Equal(t, "/v1/responses", path)
+	require.NotNil(t, body["input"])
+	require.NotContains(t, rec.Body.String(), "protocol conversion failed")
+}
+
 // TestConvertedDirectionMismatch 组配置转换方向与请求格式不匹配 → 不转换
 // （resp 请求不受 chat_to_resp 配置影响，无路由 404）。
 func TestConvertedDirectionMismatch(t *testing.T) {

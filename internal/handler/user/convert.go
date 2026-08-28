@@ -43,10 +43,17 @@ func toAPIUser(u *domain.User) User {
 // 万分数 → 正常值 float64，API 边界换算）。
 func toAPIGroup(g *domain.Group) Group {
 	v := GroupVisibility(g.Visibility)
+	routing := GroupRoutingMode(g.EffectiveRoutingMode())
+	allowed := append([]string(nil), g.AllowedModels...)
+	if allowed == nil {
+		allowed = []string{}
+	}
 	return Group{
 		ID:              &g.ID,
 		Name:            &g.Name,
 		Visibility:      &v,
+		RoutingMode:     &routing,
+		AllowedModels:   &allowed,
 		PriceMultiplier: ptr(float64(g.PriceMultiplier) / 10000.0),
 		CreatedAt:       &g.CreatedAt,
 		UpdatedAt:       &g.UpdatedAt,

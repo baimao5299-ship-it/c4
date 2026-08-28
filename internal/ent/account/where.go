@@ -70,6 +70,11 @@ func BaseURL(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldBaseURL, v))
 }
 
+// UpstreamID applies equality check predicate on the "upstream_id" field. It's identical to UpstreamIDEQ.
+func UpstreamID(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldUpstreamID, v))
+}
+
 // UpstreamKey applies equality check predicate on the "upstream_key" field. It's identical to UpstreamKeyEQ.
 func UpstreamKey(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldUpstreamKey, v))
@@ -278,6 +283,36 @@ func BaseURLEqualFold(v string) predicate.Account {
 // BaseURLContainsFold applies the ContainsFold predicate on the "base_url" field.
 func BaseURLContainsFold(v string) predicate.Account {
 	return predicate.Account(sql.FieldContainsFold(FieldBaseURL, v))
+}
+
+// UpstreamIDEQ applies the EQ predicate on the "upstream_id" field.
+func UpstreamIDEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldUpstreamID, v))
+}
+
+// UpstreamIDNEQ applies the NEQ predicate on the "upstream_id" field.
+func UpstreamIDNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldUpstreamID, v))
+}
+
+// UpstreamIDIn applies the In predicate on the "upstream_id" field.
+func UpstreamIDIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldUpstreamID, vs...))
+}
+
+// UpstreamIDNotIn applies the NotIn predicate on the "upstream_id" field.
+func UpstreamIDNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldUpstreamID, vs...))
+}
+
+// UpstreamIDIsNil applies the IsNil predicate on the "upstream_id" field.
+func UpstreamIDIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldUpstreamID))
+}
+
+// UpstreamIDNotNil applies the NotNil predicate on the "upstream_id" field.
+func UpstreamIDNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldUpstreamID))
 }
 
 // UpstreamKeyEQ applies the EQ predicate on the "upstream_key" field.
@@ -815,6 +850,29 @@ func HasTemplate() predicate.Account {
 func HasTemplateWith(preds ...predicate.Template) predicate.Account {
 	return predicate.Account(func(s *sql.Selector) {
 		step := newTemplateStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasUpstream applies the HasEdge predicate on the "upstream" edge.
+func HasUpstream() predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, UpstreamTable, UpstreamColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasUpstreamWith applies the HasEdge predicate on the "upstream" edge with a given conditions (other predicates).
+func HasUpstreamWith(preds ...predicate.Upstream) predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := newUpstreamStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

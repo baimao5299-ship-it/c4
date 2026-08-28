@@ -19,10 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
-	"github.com/jackc/pgx/v5/stdlib"
-
 	jwtauth "github.com/is7qin/c3api/internal/auth"
 	"github.com/is7qin/c3api/internal/billing"
 	"github.com/is7qin/c3api/internal/config"
@@ -34,7 +30,6 @@ import (
 	"github.com/is7qin/c3api/internal/notify"
 	"github.com/is7qin/c3api/internal/pricing"
 	"github.com/is7qin/c3api/internal/proxy"
-	"github.com/is7qin/c3api/internal/repository"
 	"github.com/is7qin/c3api/internal/rule"
 	"github.com/is7qin/c3api/internal/scheduler"
 	"github.com/is7qin/c3api/internal/sdkbridge"
@@ -55,6 +50,11 @@ import (
 // "dev"。查询方式：c3api -version——不带入 /healthz（无鉴权端点保持最小面）。
 var version = "dev"
 
+// snapshotInitialReloadBudget bounds the first in-memory snapshot fill after
+// dependencies are ready. A slow query must not prevent the HTTP listener from
+// starting indefinitely; the registered workers will retry/reconcile later.
+const snapshotInitialReloadBudget = 15 * time.Second
+
 func main() {
 	cfgPath := flag.String("config", "config.toml", "path to TOML config")
 	pprofAddr := flag.String("pprof", "", "listen addr for /debug/pprof (heap/goroutine profile under load)")
@@ -74,6 +74,34 @@ func main() {
 		wd, _ := os.Getwd()
 		fatalf("config: %v (path: %s, cwd: %s)", err, *cfgPath, wd)
 	}
+	proxyFuncs, err := httpx.ParseProxyWithTimeout(cfg.Upstream.ProxyURL, cfg.Upstream.DialTimeout)
+	if err != nil {
+		fatalf("upstream.proxy_url: %v", err)
+	}
+	// Keep one stable indirection for every non-Codex HTTP caller. Runtime proxy
+	// changes swap the underlying transport atomically, so existing clients and
+	// in-flight requests do not need to be recreated.
+	buildGatewayTransport := func(funcs httpx.ProxyFuncs) http.RoundTripper {
+		return httpx.NewTransport(httpx.TransportConfig{
+			MaxIdleConns:        cfg.Upstream.MaxIdleConns,
+			MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
+			IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
+			DialTimeout:         cfg.Upstream.DialTimeout,
+			ForceHTTP2:          cfg.Upstream.ForceHTTP2,
+			Proxy:               funcs.Proxy,
+			DialContext:         funcs.DialContext,
+		})
+	}
+	gatewayTransport, err := httpx.NewSwitchableTransport(buildGatewayTransport(proxyFuncs))
+	if err != nil {
+		fatalf("upstream transport: %v", err)
+	}
+	// codex-sdk's OAuth refresh endpoint uses http.DefaultClient rather than
+	// its per-account client. Always install the same explicit transport used by
+	// the gateway: a configured proxy is shared, while an empty proxy_url is
+	// deterministic direct mode and cannot inherit HTTP_PROXY/HTTPS_PROXY from
+	// the host environment.
+	http.DefaultClient.Transport = gatewayTransport
 	log, err := logx.New(cfg.Log.Level, cfg.Log.Output)
 	if err != nil {
 		fatalf("logger: %v", err)
@@ -92,56 +120,25 @@ func main() {
 	// 必填校验（admin.token/auth.jwt_secret/db.dsn/redis.addr）已内聚到 config.Load，
 	// 此处只做错误处理。
 
-	// Redis 必选依赖（foundation spec 2026-08-25-redis-foundation-design §2.3）：
-	// config.Load 之后立即构造（addr 缺失已在 Load fatal；Ping 失败此处 fatal——
-	// 无"未启用"分支，消费方零 nil 容忍）。全仓唯一构造点 redisx.Open；运行期
-	// 连接丢失 ≠ 启动失败（连接池自带重连，降级语义由 discovery 定义）。
-	rdb, err := redisx.Open(redisx.Options{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB})
-	if err != nil {
-		fatalf("redis: %v", err)
-	}
-
-	// 启动期 DB 操作统一 30s 预算（OpenPG + ent migrate + 三分区 bootstrap）：
-	// 超时/失败经 fatalDB 明确文案（"db bootstrap timed out after 30s" 可归因）。
-	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 30*time.Second)
+	// 启动期依赖统一 30s 预算。数据库/Redis 自身重启时先短暂不可达，
+	// 在此等待比让 compose 反复重启应用更稳定，也不会改变运行期路由。
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), startupDependencyBudget)
 	defer cancelStartup()
 
-	pool, err := repository.OpenPG(startupCtx, cfg.DB.DSN, int32(cfg.DB.MaxConns))
+	// Redis 必选依赖（foundation spec 2026-08-25-redis-foundation-design §2.3）：
+	// Ping 失败仅对连接/readiness 类错误重试；凭据或配置错误仍立即失败。
+	rdb, err := openRedisWithRetry(startupCtx, cfg.Redis)
 	if err != nil {
-		fatalDB("db", err)
+		fatalStartup("redis", err)
+	}
+
+	// 启动期 DB 操作统一 30s 预算（连接/readiness + ent migrate + 分区 bootstrap）。
+	// 失败尝试会关闭连接池；成功后只保留正式池。
+	pool, repos, dbStep, err := bootstrapDatabase(startupCtx, cfg)
+	if err != nil {
+		fatalDB(dbStep, err)
 	}
 	defer pool.Close()
-	// ent v0.14.6 的 entsql.OpenDB 只接受 *sql.DB：pgxpool 经 pgx/stdlib 桥接（用户决策 2026-08-05）
-	db := stdlib.OpenDBFromPool(pool)
-	drv := entsql.OpenDB(dialect.Postgres, db)
-	repos, err := repository.NewWithPG(startupCtx, drv, true, pool) // pool 供 Stats.Upsert COPY 两阶段批量写（#17）与 Billing 结算语句直连事务 + 会话锁专用连接（F2 ledger-cursor）
-	if err != nil {
-		fatalDB("migrate", err)
-	}
-	// usage_logs/err_logs/usage_stats 分区 bootstrap（Phase 5 T4.5 + 分表设计 +
-	// 用户裁决 2026-08-11 三表统一分区机制）：ent migrate 已跳过三表
-	// （migrateHookExcludesPartitioned——atlas 对分区表 diff 规划期必失败，实测
-	// 结论见 internal/repository/partition.go），此处独占建分区表 + 预建当日/明日
-	// 分区 + 索引；幂等（已分区 → 仅补齐分区），失败即 fatal（明细/审计/统计表
-	// 不可缺）。
-	if err := repos.EnsureUsageLogPartitioned(startupCtx, time.Now()); err != nil {
-		fatalDB("usagelog partition bootstrap", err)
-	}
-	if err := repos.EnsureErrLogPartitioned(startupCtx, time.Now()); err != nil {
-		fatalDB("err_logs partition bootstrap", err)
-	}
-	if err := repos.EnsureUsageStatsPartitioned(startupCtx, time.Now()); err != nil {
-		fatalDB("usage_stats partition bootstrap", err)
-	}
-	if err := repos.EnsureUsageEntityStatsPartitioned(startupCtx, time.Now()); err != nil {
-		fatalDB("usage_entity_stats partition bootstrap", err)
-	}
-	if err := repos.EnsurePriceVariantsEffectCheck(startupCtx); err != nil {
-		fatalDB("price_variants effect check bootstrap", err)
-	}
-	if err := repos.EnsureCodexSearchSeed(startupCtx); err != nil {
-		fatalDB("codex-search price seed bootstrap", err)
-	}
 	// #14 T3a：NOTIFY 发布器（多实例广播，设计文档 §2）。实例 ID = hostname-pid-
 	// nonce（config 无实例字段，最小方案；B4-1/p2-05：容器化多实例同 hostname、
 	// pid namespace 各自 pid 1 → 纯 hostname-pid 互相碰撞 → 互把对方 NOTIFY 当
@@ -203,17 +200,7 @@ func main() {
 
 	auth := proxy.NewAuth(repos.Keys, repos.Users, log)
 	rec.SetQuotaWriter(repos.Keys) // 额度扣减批量回写（Recorder 节奏）
-	hc := httpx.NewClient(httpx.TransportConfig{
-		MaxIdleConns:        cfg.Upstream.MaxIdleConns,
-		MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
-		IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
-		DialTimeout:         cfg.Upstream.DialTimeout,
-		ForceHTTP2:          cfg.Upstream.ForceHTTP2,
-		// Proxy 显式直连（C2-1 防劫持）：HTTP_PROXY 环境变量不再静默改道
-		// 上游请求（含 x-api-key/Authorization 凭据，WS 升级大概率失败）；
-		// 压测行为不随部署环境漂移。
-		Proxy: nil,
-	})
+	hc := &http.Client{Transport: gatewayTransport}
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
 		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
@@ -270,6 +257,9 @@ func main() {
 	// ruleReload 独立于 invalidate：规则 CRUD 后全量重载（重载会重置窗口计数，
 	// 不能随模板/账号/分组等任意资源变更触发）。
 	svc := service.New(repos, sched, inv, pub, ruleEngine, auth, log)
+	// 管理面上游探测/余额查询复用同一 transport，避免“业务请求走代理、
+	// 控制台检测直连”的错误结论。
+	svc.SetUpstreamHTTPClient(hc)
 	var svcLoc *time.Location
 	if cfg.Server.TimeZone != "" {
 		l, err := time.LoadLocation(cfg.Server.TimeZone)
@@ -376,7 +366,7 @@ func main() {
 	// 网关既有 client 同形态（同一 httpx 构造 helper + cfg.Upstream 同源），
 	// MaxConnsPerHost 显式上界对齐 MaxIdleConnsPerHost（防单上游连接失控；
 	// 网关既有 client 不设 = 不限，压测验证形态保持）。
-	newCodexTransport := func(tlsConvergence bool) *http.Transport {
+	buildCodexTransport := func(funcs httpx.ProxyFuncs, tlsConvergence bool) http.RoundTripper {
 		return httpx.NewTransport(httpx.TransportConfig{
 			MaxIdleConns:        cfg.Upstream.MaxIdleConns,
 			MaxIdleConnsPerHost: cfg.Upstream.MaxIdleConnsPerHost,
@@ -384,16 +374,47 @@ func main() {
 			IdleConnTimeout:     cfg.Upstream.IdleConnTimeout,
 			DialTimeout:         cfg.Upstream.DialTimeout,
 			ForceHTTP2:          cfg.Upstream.ForceHTTP2,
-			TLSConvergence: tlsConvergence,
-			// Proxy 显式直连（C2-1，与网关既有 client 同纪律）：SDK 上游请求
-			// 不走环境代理——凭据与 WS 升级不受 HTTP_PROXY 静默改道。
-			Proxy: nil,
+			TLSConvergence:      tlsConvergence,
+			Proxy:               funcs.Proxy,
+			DialContext:         funcs.DialContext,
 		})
 	}
-	codexAdapter.SetTransport(newCodexTransport(cfg.Upstream.TLSConvergenceEnabled))
-	svc.SetCodexTLSConvergenceApply(func(enabled bool) {
-		codexAdapter.SetTransport(newCodexTransport(enabled))
-	})
+	codexTransport, err := httpx.NewSwitchableTransport(buildCodexTransport(proxyFuncs, cfg.Upstream.TLSConvergenceEnabled))
+	if err != nil {
+		fatalf("codex upstream transport: %v", err)
+	}
+	proxyRuntime := newProxyTransportRuntime(
+		cfg.Upstream, cfg.Upstream.ProxyURL, proxyFuncs, gatewayTransport, codexTransport,
+		buildGatewayTransport, buildCodexTransport,
+	)
+	// proxyRuntime may replace the startup wrappers with a pair-backed view so
+	// gateway and Codex routes publish atomically. Install those stable views
+	// before accepting requests.
+	gatewayTransport = proxyRuntime.GatewayTransport()
+	codexTransport = proxyRuntime.CodexTransport()
+	// hc is shared by the gateway factory and management probes; update the
+	// existing client object rather than only the local transport variable.
+	hc.Transport = gatewayTransport
+	http.DefaultClient.Transport = gatewayTransport
+	codexAdapter.SetTransport(codexTransport)
+	svc.SetInitialUpstreamProxyURL(cfg.Upstream.ProxyURL)
+	svc.SetInitialCodexTLSConvergence(cfg.Upstream.TLSConvergenceEnabled)
+	svc.SetUpstreamProxyApply(proxyRuntime.Apply)
+	if err := svc.SetCodexTLSConvergenceApply(proxyRuntime.SetTLS); err != nil {
+		fatalf("codex TLS convergence: %v", err)
+	}
+	// A persisted runtime override is applied after its hook is installed. Keep
+	// the configured startup route if no override exists; a bad saved override
+	// is logged and leaves the known-good route active.
+	if svc.UpstreamProxyURL() != cfg.Upstream.ProxyURL {
+		if err := svc.ApplyUpstreamProxy(context.Background()); err != nil {
+			log.Warn("saved upstream proxy override rejected; keeping startup route", logx.Error(err))
+		}
+	}
+	// Startup health is observational only: it runs after any persisted
+	// override is applied, never changes the selected route, and is bounded so
+	// a dead proxy cannot delay server readiness.
+	proxyRuntime.StartStartupProbe(context.Background(), log)
 	// T5 §1 轮转回写面装配：WithOnTokenRotated → account_ext 部分更新 upsert
 	//（codex_oauth_token + codex_oauth_refresh_token + codex_oauth_expires_at 保旧）+ 失效调度器
 	// AccountExt 内存快照条目（P3-3——下个会话重载新凭据；不重建 Auth 缓存）。
@@ -406,6 +427,21 @@ func main() {
 	// Task 3 codex 额度快照装配：svc.AccountUsage → sdkbridge.GetUsageSnapshot
 	//（TTL 缓存/有界并发/失败冷却全在适配层——service 纯编排零基础设施）。
 	svc.SetUsageSnapshotter(codexAdapter)
+	// Provider balance reads are on-demand only. No adapter is bound by default,
+	// so ordinary deployments report "unconfigured" instead of probing arbitrary
+	// relay endpoints or treating a missing balance API as zero.
+	balanceAdapters, err := configuredBalanceAdapters(cfg.Billing.BalanceAdapters, hc)
+	if err != nil {
+		fatalf("provider balance adapters: %v", err)
+	}
+	providerBalanceCache, err := billing.NewBalanceCache(billing.BalanceCacheConfig{
+		TTL: 5 * time.Minute, StaleIfError: 10 * time.Minute, FailureCooldown: 30 * time.Second,
+		MaxEntries: 4096,
+	})
+	if err != nil {
+		fatalf("provider balance cache: %v", err)
+	}
+	svc.SetProviderBalanceSnapshotter(billing.NewAccountBalanceReader(repos, providerBalanceCache, balanceAdapters))
 	// 多实例集群 N 注入（#14 T3b → discovery 接管，consumer spec §2.2）：gate 预算
 	// ceil(剩余/N) + limit RPM ceil(rpm/N)。N = Redis 心跳活体数（disco 实时读
 	// atomic），gate/limit 在每次预算分配时现读 provider（gate.go:106-121），
@@ -470,6 +506,10 @@ func main() {
 	// consecutive_errors——Redis 故障冻结期在运维面可见（instances 停走 +
 	// consecutive_errors 增长）。
 	opsWorkers = append(opsWorkers, disco)
+	// Proxy runtime health is exposed beside worker/snapshot state. The initial
+	// check is asynchronous, so operators can distinguish checking from healthy
+	// or unhealthy without treating a live HTTP server as an upstream guarantee.
+	opsWorkers = append(opsWorkers, proxyRuntime)
 	// conc-sync ×2 协调面观测（spec conc-sync-ops-stats）：fail-open 静默退化的
 	// 唯一可见痕迹——视图冻结时 last_tick_ok 翻 false、consecutive_errors 增长。
 	opsWorkers = append(opsWorkers, concSync, accConcSync)
@@ -517,7 +557,9 @@ func main() {
 	// sched.InvalidateAllSync fatalf + auth/billBalances 构造时加载：scheduler
 	// 首刷在此完成（Select 在 nil 快照上 panic 的窗口随单一入口消灭），规则
 	// 空表种子亦在此写入（失败降级 Warn——注册表 Status 可观测）。
-	errs := snapReg.ReloadAll(ctx)
+	snapshotCtx, cancelSnapshot := context.WithTimeout(ctx, snapshotInitialReloadBudget)
+	errs := snapReg.ReloadAll(snapshotCtx)
+	cancelSnapshot()
 	for name, err := range errs {
 		log.Warn("snapshot initial reload failed", logx.String("snapshot", name), logx.Error(err))
 	}
@@ -632,6 +674,15 @@ func main() {
 	_ = log.Sync()
 }
 
+func installDefaultHTTPTransport(cfg config.UpstreamConfig, proxyFuncs httpx.ProxyFuncs) {
+	http.DefaultClient.Transport = httpx.NewTransport(httpx.TransportConfig{
+		DialTimeout: cfg.DialTimeout,
+		ForceHTTP2:  cfg.ForceHTTP2,
+		Proxy:       proxyFuncs.Proxy,
+		DialContext: proxyFuncs.DialContext,
+	})
+}
+
 // instanceSrc 生成实例 ID（NOTIFY Src）：hostname-pid-nonce。B4-1（p2-05）：
 // 容器化多实例同 hostname、pid namespace 各自 pid 1 → 纯 hostname-pid 碰撞 →
 // 互把对方 NOTIFY 当自播跳过 → 失效静默全灭；crypto/rand 随机 nonce 保证跨
@@ -662,6 +713,13 @@ func waitForInflight(px *proxy.Proxy, ctx context.Context, log *logx.Logger) {
 func fatalDB(step string, err error) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		fatalf("db bootstrap timed out after 30s (%s): %v", step, err)
+	}
+	fatalf("%s: %v", step, err)
+}
+
+func fatalStartup(step string, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		fatalf("startup dependency timed out after 30s (%s): %v", step, err)
 	}
 	fatalf("%s: %v", step, err)
 }

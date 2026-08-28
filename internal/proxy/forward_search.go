@@ -7,6 +7,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -85,9 +86,15 @@ func (p *Proxy) HandleSearch(w http.ResponseWriter, r *http.Request) {
 	// 上游契约必填 id/model，缺失由上游 4xx 兜底，网关零新增校验）。
 	reqModel := gjson.GetBytes(body, "model").String()
 
-	// 选号：复用主流 resp 路由面（openai-responses 格式——四类型全可达；
-	// search 无独立路由，独立选号无会话绑定）。
-	sel, err := p.sched.Select(groupID, domain.FormatOpenAIResponses, reqModel)
+	// Prefer the dedicated search pool. Existing deployments historically used
+	// the responses pool for this endpoint, so fall back only when no search
+	// route is configured; a configured but exhausted search pool stays isolated.
+	routeFormat := domain.FormatOpenAISearch
+	sel, err := p.sched.Select(groupID, routeFormat, reqModel)
+	if errors.Is(err, scheduler.ErrFormatUnavailable) {
+		routeFormat = domain.FormatOpenAIResponses
+		sel, err = p.sched.Select(groupID, routeFormat, reqModel)
+	}
 	if err != nil {
 		p.handleSelectError(w, err)
 		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", domain.FormatOpenAISearch, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start, selectErrorMessage(err))
@@ -97,7 +104,7 @@ func (p *Proxy) HandleSearch(w http.ResponseWriter, r *http.Request) {
 	// failover 循环（共享骨架，见 pipeline.go）：precheck=false（search 无缺价
 	// 预检——现状语义显式关，不给 search 新增 402）；尾部 Select 走主流 resp
 	// 路由面（openai-responses）；耗尽 Retry-After 分支由 httpSink 判 lastCode。
-	p.failoverLoop(w, r, domain.FormatOpenAISearch, domain.FormatOpenAIResponses, reqID, groupID, start, reqModel, body, sel,
+	p.failoverLoop(w, r, domain.FormatOpenAISearch, routeFormat, reqID, groupID, start, reqModel, body, sel,
 		attemptState{}, p.searchAttempt, p.httpSink, false)
 }
 
@@ -115,9 +122,6 @@ func (p *Proxy) HandleSearch(w http.ResponseWriter, r *http.Request) {
 type searchAttempt struct{ p *Proxy }
 
 func (a *searchAttempt) call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, body []byte, st attemptState) (int, []byte, http.Header, bool, error) {
-	// TODO(P22-I1): 当前 hdr 恒 nil（UpstreamCaller.Call 未回收 resp.Header），
-	// 仅 fallback 1 生效；待扩展 Header 透传后替换为真实透传
-	// （Global Constraints 豁免 fallback 保留）
 	var (
 		code     int
 		respBody []byte
@@ -140,7 +144,7 @@ func (a *searchAttempt) call(ctx context.Context, w http.ResponseWriter, r *http
 				logx.Error(callErr))
 		}
 	}
-	return code, respBody, nil, handled, callErr
+	return code, respBody, responseHeadersFromError(callErr), handled, callErr
 }
 
 // callCodexSearch codex-oauth/codex-pat 类型 search 调用（SDK 路径）：凭据线
@@ -159,7 +163,7 @@ func (a *searchAttempt) call(ctx context.Context, w http.ResponseWriter, r *http
 func (p *Proxy) callCodexSearch(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, body []byte) (int, []byte, bool, error) {
 	if p.codex == nil {
 		// 适配层未装配（SetCodex 未调用）：显式 501（防 nil 误走凭据缺失 502）。
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAISearch, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexSearchNotIntegrated.msg)
 		writeErr(w, errCodexSearchNotIntegrated)
 		return 0, nil, true, nil
@@ -174,11 +178,13 @@ func (p *Proxy) callCodexSearch(ctx context.Context, w http.ResponseWriter, r *h
 	// responses 完整端点（SDK Search 方法内按其尾段派生 /alpha/search——网关
 	// 零拼装）。
 	cred := domain.CredentialFromExt(sel.Ext)
-	full, err := p.clients.ResponsesWSURL(sel.TemplateID, sel.BaseURL)
-	if err != nil {
-		return 0, nil, false, err
+	if sel.BaseURL != "" {
+		full, err := p.clients.ResponsesWSURL(sel.TemplateID, sel.BaseURL)
+		if err != nil {
+			return 0, nil, false, err
+		}
+		cred.BaseURL = full
 	}
-	cred.BaseURL = full
 	// 非流式超时（同 nonstreamCodexResponses 语义）：HTTPClient.Timeout 不可用
 	// ——TCP 黑洞读停滞 → 超时触发 → 连接级错误转移（failover 可转移）。
 	ctx, cancel := context.WithTimeout(ctx, p.cfg.UpstreamTimeout)
@@ -194,8 +200,8 @@ func (p *Proxy) callCodexSearch(ctx context.Context, w http.ResponseWriter, r *h
 	_, _ = w.Write(resp.Raw)
 	// 2xx → 按次计费落账（call_count=1；price_per_call/cost 由 applyBilling
 	// search 分支按 PriceResolver call 档（codex-search）结算——无 token 分量）。
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAISearch, http.StatusOK, domain.ErrNone, usageTuple{calls: 1}, start)))
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAISearch, http.StatusOK, domain.ErrNone, usageTuple{calls: 1}, start)))
 	return http.StatusOK, nil, true, nil
 }
 
@@ -223,8 +229,9 @@ func (p *Proxy) callStaticSearch(ctx context.Context, w http.ResponseWriter, r *
 	}
 	if resp.StatusCode != http.StatusOK {
 		rb := readUpstreamBody(resp)
+		hdr := cloneResponseHeaders(resp.Header)
 		resp.Body.Close()
-		return resp.StatusCode, rb, false, nil
+		return resp.StatusCode, rb, false, &responseHeadersError{header: hdr}
 	}
 	data, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
@@ -236,7 +243,7 @@ func (p *Proxy) callStaticSearch(ctx context.Context, w http.ResponseWriter, r *
 	_, _ = w.Write(data)
 	// 2xx → 按次计费落账（call_count=1；与 codex 路径同款——applyBilling
 	// search 分支结算）。
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAISearch, http.StatusOK, domain.ErrNone, usageTuple{calls: 1}, start)))
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAISearch, http.StatusOK, domain.ErrNone, usageTuple{calls: 1}, start)))
 	return http.StatusOK, nil, true, nil
 }

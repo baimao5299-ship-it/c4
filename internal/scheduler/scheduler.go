@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,8 +55,35 @@ type Loader interface {
 	UpdateAccountStatus(ctx context.Context, accountID int64, status domain.AccountStatus, cooldownUntil *time.Time, lastError *string, weight *int) error
 }
 
+// UpstreamPoolLoader is an optional extension implemented by the repository.
+// Keeping it separate preserves compatibility with small account-only stores.
+type UpstreamPoolLoader interface {
+	LoadGroupsUpstreamConfig(context.Context) (map[int64]*domain.Group, error)
+}
+
+// UpstreamStateWriter is an optional persistence hook for the member-local
+// breaker. Keeping it separate from Loader preserves lightweight integrations;
+// production repositories implement it so a restart does not immediately
+// retry a member that was just cooled down.
+type UpstreamStateWriter interface {
+	UpdateGroupUpstreamStatus(context.Context, int64, string, string, *time.Time, int, *string) error
+}
+
+type TargetKind string
+
+const (
+	TargetKindAccount        TargetKind = "account"
+	TargetKindUpstreamMember TargetKind = "upstream_member"
+)
+
 type Selection struct {
-	AccountID      int64
+	TargetKind TargetKind
+	TargetID   int64
+	AccountID  int64
+	// GroupID is the group that admitted this request. An account may belong
+	// to several groups, so result/rule events must use the request scope rather
+	// than the first group encountered while building the shared account view.
+	GroupID        int64
 	TemplateID     int64
 	BaseURL        string
 	Format         domain.RequestFormat
@@ -69,6 +97,19 @@ type Selection struct {
 	// 定死路线 Selection 扩展，不做侧缓存）；codex 类型非 nil——codex 路由
 	// 按 Ext 派生 AccountCredential（T2 起）；api_key/responses-special 恒 nil。
 	Ext *domain.AccountExt
+	// upstreamRef keeps the exact snapshot that acquired the slot. A reload may
+	// retire that member before the request completes; retaining the pointer lets
+	// release and result accounting settle the retired slot instead of leaking it.
+	upstreamRef *upstreamSnapshot
+	// accountRef mirrors upstreamRef for account selections. A group update may
+	// remove an account from the last group while its request is still in flight;
+	// retaining the acquiring snapshot lets ReleaseSelection settle that retired
+	// slot even after byID no longer indexes the account.
+	accountRef *accountSnapshot
+	// released makes terminal cleanup idempotent. Failover and cancellation
+	// paths converge from several callbacks; a duplicate release must never
+	// decrement a slot acquired by a later request.
+	released atomic.Bool
 }
 
 type RuntimeInfo struct {
@@ -79,12 +120,29 @@ type RuntimeInfo struct {
 	ErrCount      int
 }
 
+const (
+	// retry429Base is the first local backoff when an upstream omits
+	// Retry-After. The delay doubles per consecutive 429 and is capped so a
+	// transient burst cannot permanently remove an account from rotation.
+	retry429Base = 2 * time.Second
+	retry429Max  = 10 * time.Minute
+)
+
 type statusWrite struct {
 	id       int64
 	status   domain.AccountStatus
 	cooldown *time.Time
 	lastErr  *string
 	weight   *int // 权重动作随状态同批回写（nil = 不动 weight）
+}
+
+type upstreamStatusWrite struct {
+	id       int64
+	endpoint string
+	key      string
+	cooldown *time.Time
+	streak   int
+	lastErr  *string
 }
 
 type Scheduler struct {
@@ -99,22 +157,29 @@ type Scheduler struct {
 	concView atomic.Pointer[clusterView]
 	// instN 集群实例数 N 提供者（装配期 SetInstancesProvider 注入；nil → N=1，
 	// 见 concsync.go instancesN）。与 proxy.InstancesProvider 同名异包自持。
-	instN     atomic.Pointer[InstancesProvider]
-	reloadMu  sync.Mutex // 重建互斥（低频，不占热路径）
-	writeCh   chan statusWrite
-	timeNow   func() time.Time
-	startOnce atomic.Bool
+	instN           atomic.Pointer[InstancesProvider]
+	reloadMu        sync.Mutex // 重建互斥（低频，不占热路径）
+	writeCh         chan statusWrite
+	upstreamWriteCh chan upstreamStatusWrite
+	upstreamWriter  UpstreamStateWriter
+	timeNow         func() time.Time
+	startOnce       atomic.Bool
 }
 
 // New 构造调度器并注册规则引擎的 apply 回调（动作应用 = 快照/EWMA/回写，见 apply）。
 // ruleEngine 必须非 nil（状态管理唯一路径；main 在 Start 前显式 Reload）。
 func New(cfg Config, loader Loader, ruleEngine *rule.RuleEngine, log *logx.Logger) *Scheduler {
 	s := &Scheduler{
-		cfg:     cfg,
-		loader:  loader,
-		rule:    ruleEngine,
-		log:     log,
-		writeCh: make(chan statusWrite, 4096),
+		cfg:             cfg,
+		loader:          loader,
+		rule:            ruleEngine,
+		log:             log,
+		writeCh:         make(chan statusWrite, 4096),
+		upstreamWriteCh: make(chan upstreamStatusWrite, 4096),
+		upstreamWriter: func() UpstreamStateWriter {
+			w, _ := loader.(UpstreamStateWriter)
+			return w
+		}(),
 		timeNow: time.Now,
 	}
 	ruleEngine.SetApply(s.apply)
@@ -131,6 +196,9 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	}
 	worker.GoLoop(ctx, "scheduler-sync", s.log, s.syncLoop)
 	worker.GoLoop(ctx, "scheduler-writeback", s.log, s.writebackLoop)
+	if s.upstreamWriter != nil {
+		worker.GoLoop(ctx, "scheduler-upstream-writeback", s.log, s.upstreamWritebackLoop)
+	}
 	return nil
 }
 
@@ -149,6 +217,27 @@ func (s *Scheduler) Close(ctx context.Context) error {
 			}
 		}
 	})
+	if s.upstreamWriter != nil {
+		doneUpstream := make(chan struct{})
+		worker.GoRecover("scheduler-upstream-close", s.log, func() {
+			for {
+				select {
+				case w := <-s.upstreamWriteCh:
+					s.processUpstreamWrites(w)
+				default:
+					close(doneUpstream)
+					return
+				}
+			}
+		})
+		select {
+		case <-doneUpstream:
+		case <-ctx.Done():
+			if s.log != nil {
+				s.log.Warn("scheduler upstream close timeout, dropping pending writebacks")
+			}
+		}
+	}
 	select {
 	case <-done:
 	case <-ctx.Done():
@@ -157,6 +246,41 @@ func (s *Scheduler) Close(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Scheduler) upstreamWritebackLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case w := <-s.upstreamWriteCh:
+			s.processUpstreamWrites(w)
+		}
+	}
+}
+
+func (s *Scheduler) processUpstreamWrites(first upstreamStatusWrite) {
+	latest := map[int64]upstreamStatusWrite{first.id: first}
+	for {
+		select {
+		case next := <-s.upstreamWriteCh:
+			latest[next.id] = next
+		default:
+			for _, write := range latest {
+				s.processUpstreamWrite(write)
+			}
+			return
+		}
+	}
+}
+
+func (s *Scheduler) processUpstreamWrite(w upstreamStatusWrite) {
+	if s.upstreamWriter == nil || w.id <= 0 {
+		return
+	}
+	if err := s.upstreamWriter.UpdateGroupUpstreamStatus(context.Background(), w.id, w.endpoint, w.key, w.cooldown, w.streak, w.lastErr); err != nil && s.log != nil {
+		s.log.Warn("upstream status writeback failed", logx.Int64("group_upstream_id", w.id), logx.Error(err))
+	}
 }
 
 func (s *Scheduler) syncLoop(ctx context.Context) {
@@ -260,6 +384,15 @@ func (s *Scheduler) reload(ctx context.Context) error {
 	// buildSnapshots）。reload 持 reloadMu，读取安全；首刷（store 未装载）为 nil。
 	oldByID, _ := s.store.byID.Load().(map[int64]*accountSnapshot)
 	groups, byID := buildSnapshots(m, s.cfg.DefaultMaxConcurrency, oldByID)
+	upstreams := make(map[int64]*upstreamSnapshot)
+	if loader, ok := s.loader.(UpstreamPoolLoader); ok {
+		configs, loadErr := loader.LoadGroupsUpstreamConfig(ctx)
+		if loadErr != nil {
+			return loadErr
+		}
+		oldUpstreams, _ := s.store.upstreams.Load().(map[int64]*upstreamSnapshot)
+		upstreams = buildUpstreamSnapshots(groups, configs, oldUpstreams)
+	}
 	// 在途并发继承（O-2 修订）：复用后保留账号的 oa == as（同一实例指针），
 	// Store/Load 是自赋值 no-op——原子连续性天然保证（指针不变、计数不归零，
 	// 顺带消除旧继承的 Load-Store 间隙窗口）；新账号（旧 map 无）计数自 0 起，
@@ -269,7 +402,7 @@ func (s *Scheduler) reload(ctx context.Context) error {
 			as.concurrency.Store(oa.concurrency.Load())
 		}
 	}
-	s.store.store(groups, byID)
+	s.store.storeWithUpstreams(groups, byID, upstreams)
 	return nil
 }
 
@@ -291,11 +424,8 @@ func (s *Scheduler) reload(ctx context.Context) error {
 //
 // 新账号（oldByID 无）→ 新建（含 state 初始化与钳制，现状逻辑）。
 //
-// 已知竞态（评审 M-3，明示接受）：pickFrom 对 state 是盲写 Store（selection.go:85，
-// 热路径零锁刻意取舍）——本分支的 DB 权威 Store 若落在 pickFrom 的 statePtr()
-// （selection.go:66）与 state.Store(&st2)（:85）之间，pickFrom 用重建前的陈旧副本
-// 覆盖 DB 同步值（内存时间回退），≤30s 下次重建自愈——窗口指令级、不碰热路径
-// 的代价，接受。
+// 选号后的 lastUsedAt 通过 CAS 写回（selection.go:markLastUsed），因此规则线程
+// 在选号期间发布的冷却、状态和错误字段会被保留，不会被陈旧快照覆盖。
 //
 // 静态字段发布纪律（评审 Critical 修复）：acc/tpl/gid/groupIDs 一律经
 // snapshotStatic 视图 + atomic.Pointer 整体替换（copy-modify-Store）——复用分支
@@ -307,6 +437,14 @@ func buildSnapshots(m map[int64][]*domain.Account, defaultMax int, oldByID map[i
 	for gid, accs := range m {
 		gs := &groupSnapshot{}
 		for _, a := range accs {
+			// A template can be soft-deleted while legacy accounts still
+			// reference it. Repository loaders normally filter that edge, but
+			// keep the scheduler boundary defensive: an account without a live
+			// template is not routable and must never reach pickFrom, where the
+			// template snapshot is required for format/model selection.
+			if a == nil || a.Template == nil || a.Template.DeletedAt != nil {
+				continue
+			}
 			as, ok := byID[a.ID]
 			if !ok {
 				// 静态字段视图构建（复用/新建共用）：acc 整结构覆盖（含
@@ -315,7 +453,7 @@ func buildSnapshots(m map[int64][]*domain.Account, defaultMax int, oldByID map[i
 				// 永久不可选）+ groupIDs 首次出现重置（评审 M-1，不得 append
 				// 旧值：账号从某组移除后旧 gid 残留 → processWrite 发布过期组、
 				// InvalidateGroup otherGids 推导错误）。
-				av := &snapshotStatic{acc: *a, tpl: a.Template, gid: gid, groupIDs: []int64{gid}}
+				av := effectiveStatic(a, gid)
 				if a.MaxConcurrency <= 0 {
 					av.acc.MaxConcurrency = defaultMax
 				}
@@ -366,6 +504,35 @@ func buildSnapshots(m map[int64][]*domain.Account, defaultMax int, oldByID map[i
 	return groups, byID
 }
 
+// effectiveStatic resolves the endpoint portion of an optional account
+// binding once per snapshot generation. The account credential remains the
+// primary key (accounts may use a distinct key per tenant); when it is empty,
+// the managed upstream key is a useful compatibility fallback. A disabled or
+// missing upstream never silently falls back to the template endpoint.
+func effectiveStatic(a *domain.Account, gid int64) *snapshotStatic {
+	av := &snapshotStatic{acc: *a, tpl: a.Template, gid: gid, groupIDs: []int64{gid}, upstreamEnabled: true}
+	if a.UpstreamID == nil {
+		return av
+	}
+	u := a.Upstream
+	if u == nil || u.DeletedAt != nil || !u.Enabled {
+		av.upstreamEnabled = false
+		return av
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(u.BaseURL), "/")
+	if baseURL == "" {
+		av.upstreamEnabled = false
+		return av
+	}
+	// A binding selects the managed endpoint. Do not retain an account-level
+	// base_url override when an explicit upstream is active.
+	av.acc.BaseURL = &baseURL
+	if strings.TrimSpace(av.acc.UpstreamKey) == "" && u.UpstreamKey != nil {
+		av.acc.UpstreamKey = strings.TrimSpace(*u.UpstreamKey)
+	}
+	return av
+}
+
 // modelSet 组内所有账号模板的可服务模型并集（桶 key 的模型空间）。
 // 重建路径调用（buildSnapshots/rebuildGroupLocked 均在 reloadMu 内），静态字段
 // 经视图读取（评审 Critical 修复后实例不再保留裸字段）。
@@ -410,7 +577,7 @@ func modelSet(accs []*accountSnapshot) map[string]struct{} {
 // 映射目标（上游模型名）不复查（pickFrom 内映射）。
 func buildRoutes(accs []*accountSnapshot) map[routeKey]*route {
 	routes := make(map[routeKey]*route)
-	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatOpenAIResponsesWS, domain.FormatOpenAIImages, domain.FormatAnthropic}
+	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatOpenAIResponsesWS, domain.FormatOpenAIImages, domain.FormatOpenAISearch, domain.FormatAnthropic}
 	for model := range modelSet(accs) {
 		for _, format := range formats {
 			var t1, t2 []*accountSnapshot
@@ -477,11 +644,45 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 		}
 		return
 	}
-	m, byID := s.store.groups.Load().(map[int64]*groupSnapshot), s.store.byID.Load().(map[int64]*accountSnapshot)
+	// An invalidation can arrive before the first successful scheduler reload
+	// (for example, a NOTIFY delivered during startup). Treat the absent maps as
+	// empty snapshots instead of panicking on a direct type assertion; the fresh
+	// group load below can still establish the first usable snapshot.
+	m, _ := s.store.groups.Load().(map[int64]*groupSnapshot)
+	if m == nil {
+		m = make(map[int64]*groupSnapshot)
+	}
+	byID, _ := s.store.byID.Load().(map[int64]*accountSnapshot)
+	if byID == nil {
+		byID = make(map[int64]*accountSnapshot)
+	}
+	// buildSnapshots reuses accountSnapshot instances and publishes a fresh
+	// static view. Capture group membership before that call; otherwise a
+	// targeted reload temporarily overwrites a shared instance's groupIDs with
+	// [groupID], making other-group references disappear until the next full
+	// reload.
+	oldGroupIDs := make(map[int64][]int64, len(byID))
+	for id, as := range byID {
+		if st := as.static.Load(); st != nil {
+			oldGroupIDs[id] = append([]int64(nil), st.groupIDs...)
+		}
+	}
 	// byID 兼作复用查询源（oldByID）：组级重载同样复用旧实例——errRate/errCount
 	// 跨组级 NOTIFY 重载保留（A-2 M-4），静态字段 DB 权威同步。持 reloadMu 读取安全。
 	gs, _ := buildSnapshots(map[int64][]*domain.Account{groupID: accs}, s.cfg.DefaultMaxConcurrency, byID)
 	newAccs := gs[groupID].accounts
+	// Restore the complete membership set on every account in the reloaded
+	// group before deriving cross-group references below. The target group is
+	// authoritative from the fresh loader result; other groups come from the
+	// captured pre-reload view and are retained until their own reload.
+	for _, ns := range newAccs {
+		st := ns.static.Load()
+		ids := append([]int64{groupID}, oldGroupIDs[st.acc.ID]...)
+		ids = uniqueGroupIDs(ids)
+		next := *st
+		next.groupIDs = ids
+		ns.static.Store(&next)
+	}
 	// 直接复用 buildSnapshots 产出的快照：accounts 与 routes 一并生效，
 	// 避免组级重载后 routes 为 nil（Select 预生成路径断裂）。
 	newM := make(map[int64]*groupSnapshot, len(m))
@@ -508,10 +709,11 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 			if _, stillIn := newIDs[ost.acc.ID]; stillIn {
 				continue
 			}
+			previous := oldGroupIDs[ost.acc.ID]
 			// 视图 copy-modify-Store：removeGid 就地改写切片（out := gids[:0]），
 			// 必须先复制再摘除，不得动已发布视图的 backing array。
 			ns := *ost
-			ns.groupIDs = removeGid(append([]int64(nil), ost.groupIDs...), groupID)
+			ns.groupIDs = removeGid(append([]int64(nil), previous...), groupID)
 			os.static.Store(&ns)
 			if len(ns.groupIDs) == 0 {
 				delete(newByID, ost.acc.ID)
@@ -535,7 +737,7 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 			// 实例），Store/Load 是自赋值 no-op——原子连续性天然保证（指针不变、
 			// 计数不归零），保留循环以显式表达纪律；新账号（旧 map 无）计数自 0 起。
 			ns.concurrency.Store(oa.concurrency.Load())
-			for _, g := range oa.static.Load().groupIDs {
+			for _, g := range oldGroupIDs[nst.acc.ID] {
 				if g != groupID {
 					otherGids = append(otherGids, g)
 				}
@@ -573,7 +775,24 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 		}
 		newM[og] = &groupSnapshot{accounts: repl, routes: buildRoutes(repl)}
 	}
-	s.store.store(newM, newByID)
+	// Prepare the optional upstream snapshot before publishing the account view.
+	// If the relation read fails, keep the previous generation intact; publishing
+	// the freshly-built account group first would replace an upstream group's
+	// routing fields with zero values and cause an avoidable outage.
+	if loader, ok := s.loader.(UpstreamPoolLoader); ok {
+		configs, err := loader.LoadGroupsUpstreamConfig(context.Background())
+		if err != nil {
+			if s.log != nil {
+				s.log.Warn("upstream pool reload failed", logx.Int64("group_id", groupID), logx.Error(err))
+			}
+			return
+		}
+		oldUpstreams, _ := s.store.upstreams.Load().(map[int64]*upstreamSnapshot)
+		upstreams := buildUpstreamSnapshots(newM, configs, oldUpstreams)
+		s.store.storeWithUpstreams(newM, newByID, upstreams)
+	} else {
+		s.store.store(newM, newByID)
+	}
 }
 
 // InvalidateAccount 单账号快照失效（SDK 接入 T5 §1 P3-3——轮转回写后同步
@@ -616,6 +835,26 @@ func removeGid(gids []int64, gid int64) []int64 {
 		if g != gid {
 			out = append(out, g)
 		}
+	}
+	return out
+}
+
+// uniqueGroupIDs preserves the first-seen order while removing duplicate group
+// ids.  Group order is not semantically significant to routing, but retaining
+// it keeps snapshots deterministic and avoids needless atomic view churn when
+// a targeted reload sees a group already present in the membership list.
+func uniqueGroupIDs(ids []int64) []int64 {
+	if len(ids) < 2 {
+		return ids
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
 	return out
 }
@@ -704,7 +943,16 @@ func (s *Scheduler) Release(accountID int64) {
 		return
 	}
 	if a, ok := byID[accountID]; ok {
-		a.concurrency.Add(-1)
+		// Release is intentionally idempotent at the slot counter boundary.
+		// Multiple terminal paths can converge during cancellation/failover;
+		// never let a duplicate release drive the snapshot negative and make
+		// subsequent selections appear to have capacity they do not own.
+		for {
+			cur := a.concurrency.Load()
+			if cur <= 0 || a.concurrency.CompareAndSwap(cur, cur-1) {
+				break
+			}
+		}
 	}
 }
 
@@ -713,6 +961,13 @@ func (s *Scheduler) Release(accountID int64) {
 // kind 直接收 rule.Kind（单一 kind 概念——scheduler 不再有第二套枚举；连接级/
 // 5xx 分流由调用点 RuleKindOf 完成）。
 func (s *Scheduler) MarkResult(accountID int64, kind rule.Kind, resetAt *time.Time, httpStatus int, errMsg string, model string) {
+	s.markResult(accountID, 0, kind, resetAt, httpStatus, errMsg, model)
+}
+
+// markResult is the request-scoped variant used by Selection callbacks. A
+// zero group keeps the legacy direct-call behavior and derives the group's
+// value from the snapshot for callers that do not have a Selection.
+func (s *Scheduler) markResult(accountID, requestGroupID int64, kind rule.Kind, resetAt *time.Time, httpStatus int, errMsg string, model string) {
 	// 断言 ok 防御性守卫（同 Release：MarkResult 恒在 Select 成功之后，快照未
 	// 加载时请求路径不可达；防未来调用序变化时 panic）。
 	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
@@ -730,6 +985,17 @@ func (s *Scheduler) MarkResult(accountID int64, kind rule.Kind, resetAt *time.Ti
 	if a.statePtr().status == domain.StatusDisabled {
 		return
 	}
+	// MarkResult is called synchronously from the request path while rule
+	// application is asynchronous. Track the 429 streak here so concurrent
+	// responses cannot all receive the initial 2s fallback. A successful or
+	// non-429 result starts a fresh streak.
+	now := s.timeNow()
+	if kind == rule.Kind429 {
+		streak := a.retry429Streak.Add(1)
+		resetAt = retry429Deadline(now, streak, resetAt)
+	} else {
+		a.retry429Streak.Store(0)
+	}
 	// 条件投递（C1）：规则表无 kind=nil/ok 规则时 ok 事件不投递
 	// （无恢复规则时成功结果不影响任何状态，省队列与处理开销）。
 	if kind == rule.KindOK && !s.rule.NeedsOKEvents() {
@@ -740,10 +1006,14 @@ func (s *Scheduler) MarkResult(accountID int64, kind rule.Kind, resetAt *time.Ti
 		hp = &httpStatus
 	}
 	av := a.static.Load() // 静态字段视图一次取用（评审 Critical 修复）
+	groupID := av.gid
+	if requestGroupID > 0 {
+		groupID = requestGroupID
+	}
 	ev := rule.Event{
 		AccountID:    accountID,
 		TemplateID:   av.acc.TemplateID,
-		GroupID:      groupIDPtr(av.gid),
+		GroupID:      groupIDPtr(groupID),
 		Kind:         kind,
 		HTTPStatus:   hp,
 		Model:        model,
@@ -752,6 +1022,34 @@ func (s *Scheduler) MarkResult(accountID int64, kind rule.Kind, resetAt *time.Ti
 		OccurredAt:   s.timeNow(),
 	}
 	s.rule.Enqueue(ev)
+}
+
+// retry429Deadline returns the effective account cooldown. A provider supplied
+// deadline wins over the local fallback, while absurd/past values are bounded
+// to keep one malformed response from freezing an account indefinitely.
+func retry429Deadline(now time.Time, streak uint32, provider *time.Time) *time.Time {
+	max := now.Add(retry429Max)
+	if provider != nil && provider.After(now) {
+		if provider.After(max) {
+			v := max
+			return &v
+		}
+		v := *provider
+		return &v
+	}
+	if streak == 0 {
+		streak = 1
+	}
+	shift := streak - 1
+	if shift > 18 { // 2s<<18 is already above the cap.
+		shift = 18
+	}
+	d := retry429Base << shift
+	if d > retry429Max {
+		d = retry429Max
+	}
+	v := now.Add(d)
+	return &v
 }
 
 // FailAccount 账号失效摘除（SDK 接入 T1——统一失效回调处理链第二步，
@@ -822,6 +1120,13 @@ func RuleKindOf(httpStatus int) rule.Kind {
 // 快照未加载/账号快照外 → (domain.RuleThen{}, false)
 // （对齐 MarkResult 早退语义——请求路径不可达；本地拒绝不进本机制）。
 func (s *Scheduler) Classify(ev rule.Event) (then domain.RuleThen, punish bool) {
+	return s.classify(ev, 0)
+}
+
+// classify enriches an event with the template and request group associated
+// with the selected account. requestGroupID is supplied by Selection callbacks;
+// direct callers retain the legacy snapshot-derived group behavior.
+func (s *Scheduler) classify(ev rule.Event, requestGroupID int64) (then domain.RuleThen, punish bool) {
 	byID, ok := s.store.byID.Load().(map[int64]*accountSnapshot)
 	if !ok {
 		return domain.RuleThen{}, false
@@ -832,7 +1137,11 @@ func (s *Scheduler) Classify(ev rule.Event) (then domain.RuleThen, punish bool) 
 	}
 	av := a.static.Load() // 静态字段视图一次取用（评审 Critical 修复）
 	ev.TemplateID = av.acc.TemplateID
-	ev.GroupID = groupIDPtr(av.gid)
+	if requestGroupID > 0 {
+		ev.GroupID = groupIDPtr(requestGroupID)
+	} else {
+		ev.GroupID = groupIDPtr(av.gid)
+	}
 	return s.rule.Classify(ev)
 }
 
@@ -949,12 +1258,9 @@ func (s *Scheduler) apply(aid int64, st *domain.AccountStatus, cooldownUntil *ti
 		nv := *av
 		nv.acc.Weight = *weight
 		a.static.Store(&nv)
-		// weightedSeq 是预生成缓存：权重变更必须重建该组路由序列，
-		// 否则选号仍按旧权重（I1）。
-		// 评审 I-2：多组账号共享实例只重建首个组（nv.gid）的路由——其它组的
-		// 路由保留旧权重序列，经 ≤30s 全量同步 / 账号变更组级重载自愈，
-		// 非回归（预生成序列的固有折衷：热路径零计算，代价是弱一致性窗口）。
-		s.rebuildGroupLocked(nv.gid)
+		// weightedSeq 是预生成缓存：权重变更必须重建账号所属的每个组，
+		// 否则多组账号在其它组仍沿用旧权重，直到周期同步才生效。
+		s.rebuildGroupsLocked(nv.groupIDs)
 		s.reloadMu.Unlock()
 	}
 	// 回写前复查 disabled（防 active 回写覆盖 FailAccount 并发置位）——仅对
@@ -991,17 +1297,40 @@ func (s *Scheduler) rebuildGroup(groupID int64) {
 // 换入快照（原子替换，避免与 Select 读端并发修改同一 groupSnapshot 的数据
 // 竞争）。byID 不变（同一批 accountSnapshot 指针）。
 func (s *Scheduler) rebuildGroupLocked(groupID int64) {
-	m := s.store.groups.Load().(map[int64]*groupSnapshot)
-	gs, ok := m[groupID]
-	if !ok {
+	s.rebuildGroupsLocked([]int64{groupID})
+}
+
+// rebuildGroupsLocked rebuilds account routes for a set of groups and publishes
+// one complete map. Each group is copied before routes are replaced so an
+// upstream-routed group retains routingMode, allowedModels, and upstreamRoutes.
+func (s *Scheduler) rebuildGroupsLocked(groupIDs []int64) {
+	m, ok := s.store.groups.Load().(map[int64]*groupSnapshot)
+	if !ok || len(groupIDs) == 0 {
 		return
 	}
 	newM := make(map[int64]*groupSnapshot, len(m))
 	for k, v := range m {
 		newM[k] = v
 	}
-	newM[groupID] = &groupSnapshot{accounts: gs.accounts, routes: buildRoutes(gs.accounts)}
-	s.store.store(newM, s.store.byID.Load().(map[int64]*accountSnapshot))
+	seen := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, exists := seen[groupID]; exists {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		gs, exists := m[groupID]
+		if !exists || gs == nil {
+			continue
+		}
+		cp := *gs
+		cp.routes = buildRoutes(gs.accounts)
+		newM[groupID] = &cp
+	}
+	byID, _ := s.store.byID.Load().(map[int64]*accountSnapshot)
+	s.store.store(newM, byID)
 }
 
 func (s *Scheduler) enqueueWrite(id int64, st accState, weight *int) {

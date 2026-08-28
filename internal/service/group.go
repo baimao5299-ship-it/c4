@@ -7,6 +7,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/notify"
@@ -21,34 +23,65 @@ import (
 // 同客户端格式多方向 → 400。创建后 Multipliers()：新组倍率须即刻进余额倍率
 // 快照（缺失 = ×1 计费窗口，评审 M-1 组倍率矩阵——组创建即倍率设定）。
 func (s *Service) CreateGroup(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert) (*domain.Group, error) {
-	if name == "" {
+	return s.CreateGroupWithRouting(ctx, name, visibility, priceMultiplier, protocolConverts, domain.GroupRoutingModeAccounts, nil)
+}
+
+// CreateGroupWithRouting creates a group and persists the selected routing
+// source. The legacy CreateGroup entry point delegates here with accounts mode
+// so existing callers keep their behavior.
+func (s *Service) CreateGroupWithRouting(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
+	g, err := normalizeGroupInput(name, visibility, priceMultiplier, protocolConverts, routingMode, allowedModels)
+	if err != nil {
+		return nil, err
+	}
+	// A group created through this endpoint has no member payload. Do not let
+	// an upstream-routed group become live with an empty pool; the UI uses an
+	// account-mode compatibility create, writes members, then switches mode.
+	if g.RoutingMode == domain.GroupRoutingModeUpstreams {
+		return nil, fmt.Errorf("%w: upstream groups require at least one member", ErrInvalidInput)
+	}
+	created, err := s.store.CreateGroup(ctx, g)
+	if err != nil {
+		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
+	}
+	s.inv.Multipliers()
+	s.invalidateGroups(created.ID)
+	s.publish(ctx, notify.Change{Multipliers: true})
+	if s.log != nil {
+		s.log.Info("group created", logx.Int64("id", created.ID), logx.String("name", name))
+	}
+	return created, nil
+}
+
+func normalizeGroupInput(name string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
+	if strings.TrimSpace(name) == "" {
 		return nil, ErrInvalidInput
 	}
 	if !visibility.Valid() {
-		visibility = domain.GroupVisibilityPublic
+		return nil, ErrInvalidInput
 	}
 	converts, err := normalizeProtocolConverts(protocolConverts)
 	if err != nil {
 		return nil, err
 	}
-	mult := 10000 // 缺省 → ×1（与 DB 默认同值，恒写入）
+	mult := 10000
 	if priceMultiplier != nil {
 		if *priceMultiplier < 0 || *priceMultiplier > 100000 {
 			return nil, ErrInvalidInput
 		}
 		mult = *priceMultiplier
 	}
-	g := &domain.Group{Name: name, Visibility: visibility, PriceMultiplier: mult, ProtocolConverts: converts}
-	created, err := s.store.CreateGroup(ctx, g)
+	if routingMode == "" {
+		routingMode = domain.GroupRoutingModeAccounts
+	}
+	if !routingMode.Valid() {
+		return nil, ErrInvalidInput
+	}
+	models, err := normalizeAllowedModels(allowedModels)
 	if err != nil {
-		return nil, mapRepoErr(err) // name 唯一冲突 → ErrConflict（409）
+		return nil, err
 	}
-	s.inv.Multipliers()
-	s.publish(ctx, notify.Change{Multipliers: true})
-	if s.log != nil {
-		s.log.Info("group created", logx.Int64("id", created.ID), logx.String("name", name))
-	}
-	return created, nil
+	return &domain.Group{Name: strings.TrimSpace(name), Visibility: visibility, RoutingMode: routingMode, AllowedModels: models, PriceMultiplier: mult, ProtocolConverts: converts}, nil
 }
 
 func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
@@ -81,7 +114,23 @@ func (s *Service) ListGroups(ctx context.Context, q repository.ListQuery) ([]*do
 }
 
 func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
-	if g.Name == "" {
+	if g == nil || g.Name == "" {
+		return nil, ErrInvalidInput
+	}
+	current, err := s.store.GetGroup(ctx, g.ID)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	if current == nil || current.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
+	// Keep the service-level partial-update contract used by existing callers:
+	// an omitted visibility inherits the persisted value. Explicit unknown
+	// values remain rejected below.
+	if g.Visibility == "" {
+		g.Visibility = current.Visibility
+	}
+	if !g.Visibility.Valid() {
 		return nil, ErrInvalidInput
 	}
 	if g.PriceMultiplier < 0 || g.PriceMultiplier > 100000 {
@@ -94,6 +143,30 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	// 副本写入：归一结果落在副本上，不原地改调用方入参（当前无实际影响，防未来踩坑）
 	cp := *g
 	cp.ProtocolConverts = converts
+	cp.RoutingMode = g.EffectiveRoutingMode()
+	if !cp.RoutingMode.Valid() {
+		return nil, ErrInvalidInput
+	}
+	if cp.RoutingMode == domain.GroupRoutingModeUpstreams {
+		store, err := s.groupUpstreamStore()
+		if err != nil {
+			return nil, err
+		}
+		members, err := store.ListGroupUpstreams(ctx, cp.ID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		if len(members) == 0 {
+			return nil, fmt.Errorf("%w: upstream groups require at least one member", ErrInvalidInput)
+		}
+	}
+	cp.AllowedModels, err = normalizeAllowedModels(g.AllowedModels)
+	if err != nil {
+		return nil, err
+	}
+	if cp.RoutingMode == domain.GroupRoutingModeUpstreams && len(cp.AllowedModels) == 0 {
+		return nil, fmt.Errorf("%w: upstream groups require at least one allowed model", ErrInvalidInput)
+	}
 	updated, err := s.store.UpdateGroup(ctx, &cp)
 	if err != nil {
 		return nil, mapRepoErr(err) // 改名撞已有 name → ErrConflict（409）
@@ -104,8 +177,31 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	// 即时收敛（A-2 姊妹路径；CreateGroup 不加——组创建时无 key，Keys reload
 	// 空转，组创建后建 key 的即时性由 A-2 增量注册保证）。
 	s.inv.Multipliers()
-	s.publish(ctx, notify.Change{Multipliers: true, Keys: true})
+	s.invalidateGroups(updated.ID)
+	s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: []int64{updated.ID}})
 	return updated, nil
+}
+
+func normalizeAllowedModels(models []string) ([]string, error) {
+	if len(models) > 200 {
+		return nil, ErrInvalidInput
+	}
+	out := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, raw := range models {
+		model := strings.TrimSpace(raw)
+		if model == "" || len(model) > 200 {
+			return nil, ErrInvalidInput
+		}
+		if _, ok := seen[model]; ok {
+			return nil, ErrInvalidInput
+		}
+		seen[model] = struct{}{}
+		out = append(out, model)
+	}
+	// Stable ordering keeps snapshots and audit responses deterministic.
+	slices.Sort(out)
+	return out, nil
 }
 
 // DeleteGroup 删除组：删组前校验组内账号（含账号 → 409 "group has accounts"，
@@ -114,11 +210,35 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 // 非同一事务——组删除失败时 key 已删，重试删除即可（key 被删组未删的中间态
 // 不提供服务——Auth 快照已移除）。
 func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
-	if _, err := s.store.GetGroup(ctx, id); err != nil {
+	g, err := s.store.GetGroup(ctx, id)
+	if err != nil {
 		return mapRepoErr(err)
+	}
+	if g == nil || g.DeletedAt != nil {
+		return ErrNotFound
 	}
 	if err := s.checkGroupEmpty(ctx, id); err != nil {
 		return err
+	}
+	// Production repositories expose a combined transaction for a single group,
+	// so a concurrent account/key change cannot leave keys deleted while the
+	// parent group remains live. Lightweight stores keep the legacy path below.
+	if atomic, ok := s.store.(interface {
+		DeleteGroupWithKeys(context.Context, int64) ([]string, error)
+	}); ok {
+		raws, err := atomic.DeleteGroupWithKeys(ctx, id)
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		if s.keys != nil {
+			for _, raw := range raws {
+				s.keys.Delete(raw)
+			}
+		}
+		s.inv.Multipliers()
+		s.invalidateGroups(id)
+		s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: []int64{id}})
+		return nil
 	}
 	raws, err := s.store.DeleteKeysByGroup(ctx, id)
 	if err != nil {
@@ -138,7 +258,8 @@ func (s *Service) DeleteGroup(ctx context.Context, id int64) error {
 	// Keys：组删除经 Auth.Delete 移除组内全部 key——其余实例快照需全量覆盖
 	// （key CRUD 缺口同语义），与 Multipliers 合并同一条 NOTIFY。
 	s.inv.Multipliers()
-	s.publish(ctx, notify.Change{Multipliers: true, Keys: true})
+	s.invalidateGroups(id)
+	s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: []int64{id}})
 	return nil
 }
 
@@ -172,6 +293,26 @@ func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 			return err
 		}
 	}
+	// Production repositories expose a combined transaction that soft-deletes
+	// keys and groups together. Keep the legacy sequence for lightweight stores
+	// used by integrations/tests that do not implement the optional capability.
+	if atomic, ok := s.store.(interface {
+		DeleteGroupsBatchWithKeys(context.Context, []int64) ([]string, error)
+	}); ok {
+		raws, err := atomic.DeleteGroupsBatchWithKeys(ctx, ids)
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		if s.keys != nil {
+			for _, raw := range raws {
+				s.keys.Delete(raw)
+			}
+		}
+		s.inv.Multipliers()
+		s.invalidateGroups(ids...)
+		s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: ids})
+		return nil
+	}
 	for _, id := range ids {
 		raws, err := s.store.DeleteKeysByGroup(ctx, id)
 		if err != nil {
@@ -187,12 +328,13 @@ func (s *Service) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 		return err // 事务回滚；key 已删但 DB 未删——与单删同性质（软删 key 不可重载复活，失败须重试收敛终态）
 	}
 	s.inv.Multipliers()
-	s.publish(ctx, notify.Change{Multipliers: true, Keys: true}) // 组删除同删组内 key（Auth.Delete）→ keys 覆盖
+	s.invalidateGroups(ids...)
+	s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: ids}) // 组删除同删组内 key（Auth.Delete）→ keys 覆盖
 	return nil
 }
 
 // UpdateGroupsBatch 批量更新组（仅 name/visibility——GroupPatch 无倍率字段，
-// 不触发任何快照重载；倍率批量变更走单组 UpdateGroup）。
+// 仍定向刷新受影响组，避免名称/可见性变更留下旧的可选组快照）。
 func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p repository.GroupPatch) error {
 	if err := validateIDs(ids); err != nil {
 		return err
@@ -203,7 +345,12 @@ func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposito
 	if p.Visibility != nil && !p.Visibility.Valid() {
 		return ErrInvalidInput
 	}
-	return mapRepoErr(s.store.UpdateGroupsBatch(ctx, ids, p))
+	if err := mapRepoErr(s.store.UpdateGroupsBatch(ctx, ids, p)); err != nil {
+		return err
+	}
+	s.invalidateGroups(ids...)
+	s.publish(ctx, notify.Change{Groups: ids})
+	return nil
 }
 
 // normalizeProtocolConverts 校验并归一协议转换方向集合（Create/Update 共用）：
@@ -211,6 +358,15 @@ func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposito
 // 400；同客户端格式多方向（chat_to_resp 与 chat_to_mess 并存——路由按客户端
 // 格式命中，语义歧义）→ 400。返回去重后的集合（顺序 = 输入遍历序）。
 func normalizeProtocolConverts(pcs []domain.ProtocolConvert) ([]domain.ProtocolConvert, error) {
+	// auto is a mode, not another fallback direction. Keeping it exclusive makes
+	// routing deterministic and prevents a manual list from being silently
+	// ignored when an operator meant to opt into automatic negotiation.
+	if slices.Contains(pcs, domain.ProtocolConvertAuto) {
+		if len(pcs) != 1 {
+			return nil, ErrInvalidInput
+		}
+		return []domain.ProtocolConvert{domain.ProtocolConvertAuto}, nil
+	}
 	seen := make(map[domain.ProtocolConvert]struct{}, len(pcs))
 	out := make([]domain.ProtocolConvert, 0, len(pcs))
 	for _, pc := range pcs {

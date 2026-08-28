@@ -386,12 +386,12 @@ func TestCodexUsageSnapshotHTTP401Classification(t *testing.T) {
 	})
 }
 
-// TestCodexUsageSnapshotEntryErrAuthExpired 入口错误分类（N2）：oauth 缺 rt
-// （errCredentialIncomplete——凭据不完整）→ ErrAuthExpired（不落 default 归
-// ErrUpstream）。
+// TestCodexUsageSnapshotEntryErrAuthExpired 入口错误分类（N2）：OAuth 同时缺少
+// access/refresh（errCredentialIncomplete——凭据不完整）→ ErrAuthExpired（不落
+// default 归 ErrUpstream）。access_token-only 由静态 provider 正常进入上游面。
 func TestCodexUsageSnapshotEntryErrAuthExpired(t *testing.T) {
 	a := NewCodex(nil)
-	cred := &domain.AccountCredential{AccountID: 7, OAuthToken: "at"} // 无 rt 无 PAT
+	cred := &domain.AccountCredential{AccountID: 7} // 无 access/refresh 无 PAT
 	_, err := a.GetUsageSnapshot(context.Background(), cred)
 	require.ErrorIs(t, err, ErrAuthExpired, "oauth 缺 rt 凭据 → ErrAuthExpired（入口错误分类）")
 }

@@ -281,6 +281,43 @@ func TestCreateAccountGroups(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestAccountRelationsRejectSoftDeletedParents(t *testing.T) {
+	fs := newFakeStore()
+	svc := &Service{store: fs, inv: NopInvalidator{}}
+	ctx := context.Background()
+	tpl := seedTemplate(t, svc, "soft-parent-template")
+	g, err := svc.CreateGroup(ctx, "soft-parent-group", domain.GroupVisibilityPublic, nil, nil)
+	require.NoError(t, err)
+
+	deletedAt := time.Now()
+	fs.tpls[tpl.ID].DeletedAt = &deletedAt
+	_, err = svc.CreateAccount(ctx, &domain.Account{Name: "tpl-deleted", TemplateID: tpl.ID, UpstreamKey: "sk"})
+	require.ErrorIs(t, err, ErrNotFound, "账号不能绑定已软删除模板")
+
+	// Restore the template and soft-delete only the group for the second check.
+	fs.tpls[tpl.ID].DeletedAt = nil
+	fs.groups[g.ID].DeletedAt = &deletedAt
+	_, err = svc.CreateAccount(ctx, &domain.Account{
+		Name: "group-deleted", TemplateID: tpl.ID, UpstreamKey: "sk",
+		GroupIDs: &[]int64{g.ID},
+	})
+	require.ErrorIs(t, err, ErrNotFound, "账号不能绑定已软删除分组")
+}
+
+func TestBatchAccountUpdateRejectsSoftDeletedTemplate(t *testing.T) {
+	fs := newFakeStore()
+	svc := &Service{store: fs, inv: NopInvalidator{}}
+	ctx := context.Background()
+	tpl := seedTemplate(t, svc, "batch-template")
+	acc := seedAccount(t, svc, tpl.ID, "batch-account")
+	deletedAt := time.Now()
+	fs.tpls[tpl.ID].DeletedAt = &deletedAt
+
+	newTemplate := tpl.ID
+	err := svc.UpdateAccountsBatch(ctx, []int64{acc.ID}, repository.AccountPatch{TemplateID: &newTemplate})
+	require.ErrorIs(t, err, ErrNotFound, "批量更新不能选择已软删除模板")
+}
+
 // TestBatchUpdateAccountsGroupIDs 批量 group_ids：替换生效 + lastPatch 记录
 // （M3）+ 校验（长度/去重/元素 <= 0 → ErrInvalidInput，nil/空数组合法）。
 func TestBatchUpdateAccountsGroupIDs(t *testing.T) {
@@ -427,8 +464,8 @@ func TestBatchUpdateGroups(t *testing.T) {
 	name := "renamed"
 	before := rec.total()
 	require.NoError(t, svc.UpdateGroupsBatch(ctx, []int64{g.ID}, repository.GroupPatch{Name: &name}))
-	// O2 矩阵：GroupPatch 无 price_multiplier 字段 → 组名/可见性不触发任何快照重载。
-	require.Equal(t, before, rec.total(), "批量组更新（仅 name）不 invalidate（倍率未变）")
+	// 组配置变化也需要定向刷新，确保可见性与路由快照及时收敛。
+	require.Equal(t, before+1, rec.total(), "批量组更新（仅 name）定向刷新组")
 	got, err := svc.GetGroup(ctx, g.ID)
 	require.NoError(t, err)
 	require.Equal(t, "renamed", got.Name)

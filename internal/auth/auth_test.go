@@ -96,6 +96,19 @@ func TestJWTAlgorithmConfusionRejected(t *testing.T) {
 	require.Error(t, err, "alg=none 必须拒绝")
 }
 
+func TestJWTNonHS256Rejected(t *testing.T) {
+	claims := Claims{
+		UserID: 1,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS384, claims).SignedString([]byte("s"))
+	require.NoError(t, err)
+	_, err = NewIssuer("s").Verify(token)
+	require.Error(t, err, "HS384 不得被固定 HS256 的验证器接受")
+}
+
 // --- RequireJWT 中间件 ---
 
 type fakeUserStatus struct{ snapshots map[int64]domain.UserSnapshot }

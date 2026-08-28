@@ -15,6 +15,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/predicate"
 )
@@ -60,6 +61,20 @@ func (_u *GroupUpdate) SetNillableVisibility(v *group.Visibility) *GroupUpdate {
 	return _u
 }
 
+// SetRoutingMode sets the "routing_mode" field.
+func (_u *GroupUpdate) SetRoutingMode(v group.RoutingMode) *GroupUpdate {
+	_u.mutation.SetRoutingMode(v)
+	return _u
+}
+
+// SetNillableRoutingMode sets the "routing_mode" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableRoutingMode(v *group.RoutingMode) *GroupUpdate {
+	if v != nil {
+		_u.SetRoutingMode(*v)
+	}
+	return _u
+}
+
 // SetPriceMultiplier sets the "price_multiplier" field.
 func (_u *GroupUpdate) SetPriceMultiplier(v int) *GroupUpdate {
 	_u.mutation.ResetPriceMultiplier()
@@ -90,6 +105,18 @@ func (_u *GroupUpdate) SetProtocolConvert(v []string) *GroupUpdate {
 // AppendProtocolConvert appends value to the "protocol_convert" field.
 func (_u *GroupUpdate) AppendProtocolConvert(v []string) *GroupUpdate {
 	_u.mutation.AppendProtocolConvert(v)
+	return _u
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (_u *GroupUpdate) SetAllowedModels(v []string) *GroupUpdate {
+	_u.mutation.SetAllowedModels(v)
+	return _u
+}
+
+// AppendAllowedModels appends value to the "allowed_models" field.
+func (_u *GroupUpdate) AppendAllowedModels(v []string) *GroupUpdate {
+	_u.mutation.AppendAllowedModels(v)
 	return _u
 }
 
@@ -178,6 +205,21 @@ func (_u *GroupUpdate) AddAssignments(v ...*GroupAssignment) *GroupUpdate {
 	return _u.AddAssignmentIDs(ids...)
 }
 
+// AddUpstreamMemberIDs adds the "upstream_members" edge to the GroupUpstream entity by IDs.
+func (_u *GroupUpdate) AddUpstreamMemberIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddUpstreamMemberIDs(ids...)
+	return _u
+}
+
+// AddUpstreamMembers adds the "upstream_members" edges to the GroupUpstream entity.
+func (_u *GroupUpdate) AddUpstreamMembers(v ...*GroupUpstream) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddUpstreamMemberIDs(ids...)
+}
+
 // Mutation returns the GroupMutation object of the builder.
 func (_u *GroupUpdate) Mutation() *GroupMutation {
 	return _u.mutation
@@ -246,6 +288,27 @@ func (_u *GroupUpdate) RemoveAssignments(v ...*GroupAssignment) *GroupUpdate {
 	return _u.RemoveAssignmentIDs(ids...)
 }
 
+// ClearUpstreamMembers clears all "upstream_members" edges to the GroupUpstream entity.
+func (_u *GroupUpdate) ClearUpstreamMembers() *GroupUpdate {
+	_u.mutation.ClearUpstreamMembers()
+	return _u
+}
+
+// RemoveUpstreamMemberIDs removes the "upstream_members" edge to GroupUpstream entities by IDs.
+func (_u *GroupUpdate) RemoveUpstreamMemberIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemoveUpstreamMemberIDs(ids...)
+	return _u
+}
+
+// RemoveUpstreamMembers removes "upstream_members" edges to GroupUpstream entities.
+func (_u *GroupUpdate) RemoveUpstreamMembers(v ...*GroupUpstream) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveUpstreamMemberIDs(ids...)
+}
+
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (_u *GroupUpdate) Save(ctx context.Context) (int, error) {
 	_u.defaults()
@@ -289,6 +352,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RoutingMode(); ok {
+		if err := group.RoutingModeValidator(v); err != nil {
+			return &ValidationError{Name: "routing_mode", err: fmt.Errorf(`ent: validator failed for field "Group.routing_mode": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -310,6 +378,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 	}
+	if value, ok := _u.mutation.RoutingMode(); ok {
+		_spec.SetField(group.FieldRoutingMode, field.TypeEnum, value)
+	}
 	if value, ok := _u.mutation.PriceMultiplier(); ok {
 		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
 	}
@@ -322,6 +393,14 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AppendedProtocolConvert(); ok {
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, group.FieldProtocolConvert, value)
+		})
+	}
+	if value, ok := _u.mutation.AllowedModels(); ok {
+		_spec.SetField(group.FieldAllowedModels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedAllowedModels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldAllowedModels, value)
 		})
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
@@ -471,6 +550,51 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.UpstreamMembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedUpstreamMembersIDs(); len(nodes) > 0 && !_u.mutation.UpstreamMembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpstreamMembersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{group.Label}
@@ -519,6 +643,20 @@ func (_u *GroupUpdateOne) SetNillableVisibility(v *group.Visibility) *GroupUpdat
 	return _u
 }
 
+// SetRoutingMode sets the "routing_mode" field.
+func (_u *GroupUpdateOne) SetRoutingMode(v group.RoutingMode) *GroupUpdateOne {
+	_u.mutation.SetRoutingMode(v)
+	return _u
+}
+
+// SetNillableRoutingMode sets the "routing_mode" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableRoutingMode(v *group.RoutingMode) *GroupUpdateOne {
+	if v != nil {
+		_u.SetRoutingMode(*v)
+	}
+	return _u
+}
+
 // SetPriceMultiplier sets the "price_multiplier" field.
 func (_u *GroupUpdateOne) SetPriceMultiplier(v int) *GroupUpdateOne {
 	_u.mutation.ResetPriceMultiplier()
@@ -549,6 +687,18 @@ func (_u *GroupUpdateOne) SetProtocolConvert(v []string) *GroupUpdateOne {
 // AppendProtocolConvert appends value to the "protocol_convert" field.
 func (_u *GroupUpdateOne) AppendProtocolConvert(v []string) *GroupUpdateOne {
 	_u.mutation.AppendProtocolConvert(v)
+	return _u
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (_u *GroupUpdateOne) SetAllowedModels(v []string) *GroupUpdateOne {
+	_u.mutation.SetAllowedModels(v)
+	return _u
+}
+
+// AppendAllowedModels appends value to the "allowed_models" field.
+func (_u *GroupUpdateOne) AppendAllowedModels(v []string) *GroupUpdateOne {
+	_u.mutation.AppendAllowedModels(v)
 	return _u
 }
 
@@ -637,6 +787,21 @@ func (_u *GroupUpdateOne) AddAssignments(v ...*GroupAssignment) *GroupUpdateOne 
 	return _u.AddAssignmentIDs(ids...)
 }
 
+// AddUpstreamMemberIDs adds the "upstream_members" edge to the GroupUpstream entity by IDs.
+func (_u *GroupUpdateOne) AddUpstreamMemberIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddUpstreamMemberIDs(ids...)
+	return _u
+}
+
+// AddUpstreamMembers adds the "upstream_members" edges to the GroupUpstream entity.
+func (_u *GroupUpdateOne) AddUpstreamMembers(v ...*GroupUpstream) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddUpstreamMemberIDs(ids...)
+}
+
 // Mutation returns the GroupMutation object of the builder.
 func (_u *GroupUpdateOne) Mutation() *GroupMutation {
 	return _u.mutation
@@ -705,6 +870,27 @@ func (_u *GroupUpdateOne) RemoveAssignments(v ...*GroupAssignment) *GroupUpdateO
 	return _u.RemoveAssignmentIDs(ids...)
 }
 
+// ClearUpstreamMembers clears all "upstream_members" edges to the GroupUpstream entity.
+func (_u *GroupUpdateOne) ClearUpstreamMembers() *GroupUpdateOne {
+	_u.mutation.ClearUpstreamMembers()
+	return _u
+}
+
+// RemoveUpstreamMemberIDs removes the "upstream_members" edge to GroupUpstream entities by IDs.
+func (_u *GroupUpdateOne) RemoveUpstreamMemberIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemoveUpstreamMemberIDs(ids...)
+	return _u
+}
+
+// RemoveUpstreamMembers removes "upstream_members" edges to GroupUpstream entities.
+func (_u *GroupUpdateOne) RemoveUpstreamMembers(v ...*GroupUpstream) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveUpstreamMemberIDs(ids...)
+}
+
 // Where appends a list predicates to the GroupUpdate builder.
 func (_u *GroupUpdateOne) Where(ps ...predicate.Group) *GroupUpdateOne {
 	_u.mutation.Where(ps...)
@@ -761,6 +947,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RoutingMode(); ok {
+		if err := group.RoutingModeValidator(v); err != nil {
+			return &ValidationError{Name: "routing_mode", err: fmt.Errorf(`ent: validator failed for field "Group.routing_mode": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -799,6 +990,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 	}
+	if value, ok := _u.mutation.RoutingMode(); ok {
+		_spec.SetField(group.FieldRoutingMode, field.TypeEnum, value)
+	}
 	if value, ok := _u.mutation.PriceMultiplier(); ok {
 		_spec.SetField(group.FieldPriceMultiplier, field.TypeInt, value)
 	}
@@ -811,6 +1005,14 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.AppendedProtocolConvert(); ok {
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, group.FieldProtocolConvert, value)
+		})
+	}
+	if value, ok := _u.mutation.AllowedModels(); ok {
+		_spec.SetField(group.FieldAllowedModels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedAllowedModels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldAllowedModels, value)
 		})
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
@@ -953,6 +1155,51 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(groupassignment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpstreamMembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedUpstreamMembersIDs(); len(nodes) > 0 && !_u.mutation.UpstreamMembersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpstreamMembersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.UpstreamMembersTable,
+			Columns: []string{group.UpstreamMembersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(groupupstream.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

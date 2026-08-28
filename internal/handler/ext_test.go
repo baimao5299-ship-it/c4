@@ -247,6 +247,13 @@ func TestGroupProtocolConvertAPI(t *testing.T) {
 	rec = do(http.MethodPost, "/api/admin/groups",
 		`{"name":"g-clash","protocol_convert":["chat_to_resp","chat_to_mess"]}`)
 	require.Equal(t, 400, rec.Code, "同客户端格式多方向必须 400: %s", rec.Body.String())
+
+	// 自动协商模式可通过管理 API 持久化并回显。
+	rec = do(http.MethodPost, "/api/admin/groups",
+		`{"name":"g-auto","protocol_convert":["auto"]}`)
+	require.Equal(t, 200, rec.Code, "auto protocol mode: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
+	require.Equal(t, []GroupProtocolConvert{GroupProtocolConvert("auto")}, *g.ProtocolConvert)
 }
 
 func itoa64(i int64) string {

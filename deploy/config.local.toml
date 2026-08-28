@@ -5,7 +5,9 @@ auth = { jwt_secret = "" }
 db = { dsn = "postgres://user:pass@localhost:5432/c3api?sslmode=disable", max_conns = 20 }
 redis = { addr = "127.0.0.1:6379", password = "", db = 0 }
 proxy = { max_body_size = 4194304, max_inflight = 50000, upstream_timeout = "120s", upstream_stream_timeout = "30m", failover_attempts = 3, usage_capture = true }
-upstream = { max_idle_conns = 8192, max_idle_conns_per_host = 2048, idle_conn_timeout = "90s", dial_timeout = "10s", force_http2 = true, tls_convergence_enabled = false }
+# Leave empty for direct egress. Set this explicitly when the deployment needs a
+# proxy, for example http://host.docker.internal:7897 or socks5h://host.docker.internal:7898.
+upstream = { max_idle_conns = 8192, max_idle_conns_per_host = 2048, idle_conn_timeout = "90s", dial_timeout = "10s", force_http2 = true, tls_convergence_enabled = false, proxy_url = "" }
 limit = { group_key_rpm = 0 }
 scheduler = { default_max_concurrency = 8, sync_interval = "30s" }
 usage = { batch_size = 500, flush_interval = "500ms", log_retention_days = 30, quota_flush_interval = "10s", stats_agg_interval = "5m", flush_workers = 8 }

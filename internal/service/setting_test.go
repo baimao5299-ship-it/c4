@@ -6,7 +6,9 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -60,7 +62,10 @@ func TestCodexTLSConvergenceSettingAppliesOnlyOnChange(t *testing.T) {
 	svc.reloadSettings(ctx)
 
 	var applied []bool
-	svc.SetCodexTLSConvergenceApply(func(enabled bool) { applied = append(applied, enabled) })
+	require.NoError(t, svc.SetCodexTLSConvergenceApply(func(enabled bool) error {
+		applied = append(applied, enabled)
+		return nil
+	}))
 	require.Equal(t, []bool{false}, applied, "default state is applied when the transport hook is installed")
 
 	_, err := svc.UpdateSetting(ctx, "codex_tls_convergence_enabled", "true")
@@ -69,6 +74,194 @@ func TestCodexTLSConvergenceSettingAppliesOnlyOnChange(t *testing.T) {
 
 	require.NoError(t, svc.ReloadSettings(ctx))
 	require.Equal(t, []bool{false, true}, applied, "unrelated settings reloads do not rebuild the transport")
+}
+
+func TestCodexTLSConvergenceUsesStartupDefaultUntilExplicitOverride(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	svc.reloadSettings(ctx)
+	svc.SetInitialCodexTLSConvergence(true)
+	var applied []bool
+	require.NoError(t, svc.SetCodexTLSConvergenceApply(func(enabled bool) error {
+		applied = append(applied, enabled)
+		return nil
+	}))
+	require.Equal(t, []bool{true}, applied)
+
+	_, err := svc.UpdateSetting(ctx, "codex_tls_convergence_enabled", "false")
+	require.NoError(t, err)
+	require.Equal(t, []bool{true, false}, applied)
+}
+
+func TestCodexTLSConvergenceHonorsPersistedFalseOverStartupDefault(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	_, err := fs.SetSetting(ctx, "codex_tls_convergence_enabled", domain.SettingTypeSwitch, "false")
+	require.NoError(t, err)
+	// The real repository stamps persisted rows. The fake store keeps the
+	// explicit marker here so this test exercises the production distinction.
+	fs.settings["codex_tls_convergence_enabled"].UpdatedAt = time.Now()
+	svc := &Service{store: fs, log: nil}
+	svc.reloadSettings(ctx)
+	svc.SetInitialCodexTLSConvergence(true)
+	var applied []bool
+	require.NoError(t, svc.SetCodexTLSConvergenceApply(func(enabled bool) error {
+		applied = append(applied, enabled)
+		return nil
+	}))
+	require.Equal(t, []bool{false}, applied)
+}
+
+func TestCodexTLSConvergenceSettingRollsBackWhenRuntimeRejects(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	svc.reloadSettings(ctx)
+	require.NoError(t, svc.SetCodexTLSConvergenceApply(func(enabled bool) error {
+		if enabled {
+			return context.DeadlineExceeded
+		}
+		return nil
+	}))
+
+	_, err := svc.UpdateSetting(ctx, "codex_tls_convergence_enabled", "true")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	saved, err := fs.GetSetting(ctx, "codex_tls_convergence_enabled")
+	require.NoError(t, err)
+	require.Equal(t, "false", saved.Value)
+	require.Equal(t, "false", svc.settingValue("codex_tls_convergence_enabled"))
+}
+
+func TestUpstreamProxySettingUsesStartupFallbackAndLiveOverride(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	svc.SetInitialUpstreamProxyURL("http://fixture:7892")
+	var applied []string
+	svc.SetUpstreamProxyApply(func(_ context.Context, raw string) error {
+		applied = append(applied, raw)
+		return nil
+	})
+	svc.reloadSettings(ctx)
+	require.Equal(t, []string{"http://fixture:7892"}, applied, "inherit uses startup route")
+
+	_, err := svc.UpdateSetting(ctx, "upstream_proxy_url", "http://fixture:7897")
+	require.NoError(t, err)
+	require.Equal(t, "http://fixture:7897", svc.UpstreamProxyURL())
+	require.Equal(t, []string{"http://fixture:7892", "http://fixture:7897"}, applied)
+
+	_, err = svc.UpdateSetting(ctx, "upstream_proxy_url", "direct")
+	require.NoError(t, err)
+	require.Empty(t, svc.UpstreamProxyURL())
+	require.Equal(t, []string{"http://fixture:7892", "http://fixture:7897", ""}, applied)
+}
+
+func TestUpstreamProxySettingRollsBackWhenTransportRejects(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	svc.SetInitialUpstreamProxyURL("http://fixture:7892")
+	svc.SetUpstreamProxyApply(func(_ context.Context, raw string) error {
+		if raw == "http://fixture:bad" {
+			return context.DeadlineExceeded
+		}
+		return nil
+	})
+	svc.reloadSettings(ctx)
+	_, err := svc.UpdateSetting(ctx, "upstream_proxy_url", "http://fixture:bad")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, "http://fixture:7892", svc.UpstreamProxyURL(), "failed switch restores prior route")
+	saved, err := fs.GetSetting(ctx, "upstream_proxy_url")
+	require.NoError(t, err)
+	require.Equal(t, "inherit", saved.Value, "failed switch preserves inherit instead of pinning the old port")
+}
+
+func TestSensitiveSettingMasksCanBeSubmittedWithoutOverwriting(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	_, err := fs.SetSetting(ctx, "mail.smtp_password", domain.SettingTypeString, "smtp-secret")
+	require.NoError(t, err)
+	svc.reloadSettings(ctx)
+	_, err = svc.UpdateSetting(ctx, "mail.smtp_password", "********")
+	require.NoError(t, err)
+	saved, err := fs.GetSetting(ctx, "mail.smtp_password")
+	require.NoError(t, err)
+	require.Equal(t, "smtp-secret", saved.Value)
+}
+
+func TestMaskedProxySettingPreservesAuthenticatedRoute(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	_, err := fs.SetSetting(ctx, "upstream_proxy_url", domain.SettingTypeString, "socks5h://user:pass@fixture:7897")
+	require.NoError(t, err)
+	svc.SetUpstreamProxyApply(func(_ context.Context, raw string) error {
+		require.Equal(t, "socks5h://user:pass@fixture:7897", raw)
+		return nil
+	})
+	svc.reloadSettings(ctx)
+	_, err = svc.UpdateSetting(ctx, "upstream_proxy_url", "socks5h://fixture:7897")
+	require.NoError(t, err)
+	saved, err := fs.GetSetting(ctx, "upstream_proxy_url")
+	require.NoError(t, err)
+	require.Equal(t, "socks5h://user:pass@fixture:7897", saved.Value)
+}
+
+func TestUpstreamProxyConcurrentUpdatesSerializeRollback(t *testing.T) {
+	ctx := context.Background()
+	fs := newFakeStore()
+	svc := &Service{store: fs, log: nil}
+	svc.SetInitialUpstreamProxyURL("http://fixture:7892")
+	// Seed the settings snapshot before installing the blocking hook. The
+	// initial inherit route must not participate in the test interleaving.
+	svc.reloadSettings(ctx)
+
+	badEntered := make(chan struct{})
+	releaseBad := make(chan struct{})
+	goodApplied := make(chan struct{})
+	var badOnce, goodOnce sync.Once
+	svc.SetUpstreamProxyApply(func(_ context.Context, raw string) error {
+		switch raw {
+		case "http://fixture:bad":
+			badOnce.Do(func() { close(badEntered) })
+			<-releaseBad
+			return context.DeadlineExceeded
+		case "http://fixture:good":
+			goodOnce.Do(func() { close(goodApplied) })
+		}
+		return nil
+	})
+
+	badDone := make(chan error, 1)
+	go func() {
+		_, err := svc.UpdateSetting(ctx, "upstream_proxy_url", "http://fixture:bad")
+		badDone <- err
+	}()
+	<-badEntered
+
+	goodDone := make(chan error, 1)
+	go func() {
+		_, err := svc.UpdateSetting(ctx, "upstream_proxy_url", "http://fixture:good")
+		goodDone <- err
+	}()
+
+	// The second update must remain behind the first update's probe and
+	// rollback. This watchdog is a scheduling check, not a sleep-based race.
+	select {
+	case <-goodApplied:
+		t.Fatal("new proxy applied before the failed update completed")
+	case <-time.After(250 * time.Millisecond):
+	}
+	close(releaseBad)
+
+	require.ErrorIs(t, <-badDone, context.DeadlineExceeded)
+	require.NoError(t, <-goodDone)
+	require.Equal(t, "http://fixture:good", svc.UpstreamProxyURL())
+	saved, err := fs.GetSetting(ctx, "upstream_proxy_url")
+	require.NoError(t, err)
+	require.Equal(t, "http://fixture:good", saved.Value)
 }
 
 // TestServiceTierPolicyKeysDerived P3-7：serviceTierPolicyKeys 从注册表

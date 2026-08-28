@@ -34,7 +34,7 @@ func (h *AdminAPI) PostAccountsBatchImportCodexOauth(w http.ResponseWriter, r *h
 			CodexEmail:             it.CodexEmail,
 			CodexAccountID:         it.CodexAccountId,
 			CodexOAuthToken:        it.CodexOauthToken,
-			CodexOAuthRefreshToken: it.CodexOauthRefreshToken,
+			CodexOAuthRefreshToken: optionalString(it.CodexOauthRefreshToken),
 			CodexOAuthExpiresAt:    it.CodexOauthExpiresAt,
 			MaxConcurrency:         it.MaxConcurrency,
 			Weight:                 it.Weight,
@@ -46,6 +46,13 @@ func (h *AdminAPI) PostAccountsBatchImportCodexOauth(w http.ResponseWriter, r *h
 		return
 	}
 	httpface.WriteJSON(w, http.StatusOK, toAPIImportResult(res))
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // PostAccountsBatchImportCodexPat 批量导入 codex-pat 凭据（ServerInterface；

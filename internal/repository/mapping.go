@@ -15,7 +15,7 @@ func toDomainUser(u *ent.User) *domain.User {
 	return &domain.User{
 		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash,
 		Role: domain.Role(u.Role), Status: domain.UserStatus(u.Status),
-		TokenVersion: u.TokenVersion,
+		TokenVersion:   u.TokenVersion,
 		MaxConcurrency: u.MaxConcurrency, Balance: u.Balance,
 		CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
 	}
@@ -34,10 +34,29 @@ func toDomainKey(k *ent.Key) *domain.Key {
 func toDomainGroup(g *ent.Group) *domain.Group {
 	return &domain.Group{
 		ID: g.ID, Name: g.Name, Visibility: domain.GroupVisibility(g.Visibility),
+		RoutingMode:      domain.GroupRoutingMode(g.RoutingMode),
 		PriceMultiplier:  g.PriceMultiplier,
 		ProtocolConverts: toDomainProtocolConverts(g.ProtocolConvert),
+		AllowedModels:    append([]string(nil), g.AllowedModels...),
 		CreatedAt:        g.CreatedAt, UpdatedAt: g.UpdatedAt, DeletedAt: g.DeletedAt,
 	}
+}
+
+func toDomainGroupUpstream(m *ent.GroupUpstream) *domain.GroupUpstream {
+	if m == nil {
+		return nil
+	}
+	out := &domain.GroupUpstream{
+		ID: m.ID, GroupID: m.GroupID, UpstreamID: m.UpstreamID,
+		Weight: m.Weight, Priority: m.Priority, MaxConcurrency: m.MaxConcurrency,
+		Enabled: m.Enabled, CooldownUntil: m.CooldownUntil,
+		FailureStreak: m.FailureStreak, LastError: m.LastError,
+		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+	}
+	if m.Edges.Upstream != nil {
+		out.Upstream = toDomainUpstream(m.Edges.Upstream)
+	}
+	return out
 }
 
 // toDomainProtocolConverts ent JSON 数组（[]string）→ domain 协议转换方向集合
@@ -132,6 +151,29 @@ func toDomainTemplate(t *ent.Template) *domain.Template {
 	return d
 }
 
+func toDomainUpstream(u *ent.Upstream) *domain.Upstream {
+	if u == nil {
+		return nil
+	}
+	return &domain.Upstream{
+		ID: u.ID, Name: u.Name, BaseURL: u.BaseURL, UpstreamKey: u.UpstreamKey,
+		Models: append([]string(nil), u.Models...), ModelsCheckedAt: u.ModelsCheckedAt,
+		ModelsError:  u.ModelsError,
+		MultiplierBP: u.MultiplierBp, Enabled: u.Enabled, Note: u.Note,
+		BalanceEndpoint: u.BalanceEndpoint, BalanceMethod: u.BalanceMethod,
+		BalanceAuth: u.BalanceAuth, BalancePath: u.BalancePath,
+		BalanceCurrencyPath: u.BalanceCurrencyPath,
+		BalanceAmount:       u.BalanceAmount, BalanceCurrency: u.BalanceCurrency,
+		BalanceStatus: string(u.BalanceStatus), BalanceCheckedAt: u.BalanceCheckedAt,
+		RequestCount: u.RequestCount, SuccessCount: u.SuccessCount,
+		FailureCount: u.FailureCount, LatencyTotalMS: u.LatencyTotalMs,
+		LatencyMaxMS: u.LatencyMaxMs, LastCheckedAt: u.LastCheckedAt,
+		LastSuccessAt: u.LastSuccessAt, LastFailureAt: u.LastFailureAt,
+		LastError: u.LastError, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
+		DeletedAt: u.DeletedAt,
+	}
+}
+
 func toDomainAccount(a *ent.Account) *domain.Account {
 	var tpl *domain.Template
 	if a.Edges.Template != nil {
@@ -140,12 +182,16 @@ func toDomainAccount(a *ent.Account) *domain.Account {
 	d := &domain.Account{
 		ID: a.ID, Name: a.Name, TemplateID: a.TemplateID, Template: tpl,
 		BaseURL:       a.BaseURL, // 账号级覆盖（nil = 继承模板；快照装配指针拷贝零分配）
+		UpstreamID:    a.UpstreamID,
 		UpstreamKey:   a.UpstreamKey,
 		Status:        domain.AccountStatus(a.Status),
 		CooldownUntil: a.CooldownUntil, Weight: a.Weight, MaxConcurrency: a.MaxConcurrency,
 		LastError: a.LastError, LastUsedAt: a.LastUsedAt,
 		FailedAt:  a.FailedAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, DeletedAt: a.DeletedAt,
+	}
+	if a.Edges.Upstream != nil {
+		d.Upstream = toDomainUpstream(a.Edges.Upstream)
 	}
 	// Ext 快照合并：仅调度器快照加载（LoadGroupsAccounts / LoadGroupAccounts
 	// ——全表/子查询扫描后内存装配 Edges.Ext）会带 account_ext 边；其余路径

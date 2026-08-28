@@ -21,6 +21,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/errlog"
 	"github.com/is7qin/c3api/internal/ent/group"
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
+	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/key"
 	"github.com/is7qin/c3api/internal/ent/priceentry"
 	"github.com/is7qin/c3api/internal/ent/pricevariant"
@@ -31,6 +32,7 @@ import (
 	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/template"
 	"github.com/is7qin/c3api/internal/ent/templateext"
+	"github.com/is7qin/c3api/internal/ent/upstream"
 	"github.com/is7qin/c3api/internal/ent/usageentitystat"
 	"github.com/is7qin/c3api/internal/ent/usagelog"
 	"github.com/is7qin/c3api/internal/ent/usagestat"
@@ -54,6 +56,8 @@ type Client struct {
 	Group *GroupClient
 	// GroupAssignment is the client for interacting with the GroupAssignment builders.
 	GroupAssignment *GroupAssignmentClient
+	// GroupUpstream is the client for interacting with the GroupUpstream builders.
+	GroupUpstream *GroupUpstreamClient
 	// Key is the client for interacting with the Key builders.
 	Key *KeyClient
 	// PriceEntry is the client for interacting with the PriceEntry builders.
@@ -74,6 +78,8 @@ type Client struct {
 	Template *TemplateClient
 	// TemplateExt is the client for interacting with the TemplateExt builders.
 	TemplateExt *TemplateExtClient
+	// Upstream is the client for interacting with the Upstream builders.
+	Upstream *UpstreamClient
 	// UsageEntityStat is the client for interacting with the UsageEntityStat builders.
 	UsageEntityStat *UsageEntityStatClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -99,6 +105,7 @@ func (c *Client) init() {
 	c.ErrLog = NewErrLogClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.GroupAssignment = NewGroupAssignmentClient(c.config)
+	c.GroupUpstream = NewGroupUpstreamClient(c.config)
 	c.Key = NewKeyClient(c.config)
 	c.PriceEntry = NewPriceEntryClient(c.config)
 	c.PriceVariant = NewPriceVariantClient(c.config)
@@ -109,6 +116,7 @@ func (c *Client) init() {
 	c.TempBalance = NewTempBalanceClient(c.config)
 	c.Template = NewTemplateClient(c.config)
 	c.TemplateExt = NewTemplateExtClient(c.config)
+	c.Upstream = NewUpstreamClient(c.config)
 	c.UsageEntityStat = NewUsageEntityStatClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.UsageStat = NewUsageStatClient(c.config)
@@ -211,6 +219,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ErrLog:          NewErrLogClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
+		GroupUpstream:   NewGroupUpstreamClient(cfg),
 		Key:             NewKeyClient(cfg),
 		PriceEntry:      NewPriceEntryClient(cfg),
 		PriceVariant:    NewPriceVariantClient(cfg),
@@ -221,6 +230,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		TempBalance:     NewTempBalanceClient(cfg),
 		Template:        NewTemplateClient(cfg),
 		TemplateExt:     NewTemplateExtClient(cfg),
+		Upstream:        NewUpstreamClient(cfg),
 		UsageEntityStat: NewUsageEntityStatClient(cfg),
 		UsageLog:        NewUsageLogClient(cfg),
 		UsageStat:       NewUsageStatClient(cfg),
@@ -250,6 +260,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ErrLog:          NewErrLogClient(cfg),
 		Group:           NewGroupClient(cfg),
 		GroupAssignment: NewGroupAssignmentClient(cfg),
+		GroupUpstream:   NewGroupUpstreamClient(cfg),
 		Key:             NewKeyClient(cfg),
 		PriceEntry:      NewPriceEntryClient(cfg),
 		PriceVariant:    NewPriceVariantClient(cfg),
@@ -260,6 +271,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		TempBalance:     NewTempBalanceClient(cfg),
 		Template:        NewTemplateClient(cfg),
 		TemplateExt:     NewTemplateExtClient(cfg),
+		Upstream:        NewUpstreamClient(cfg),
 		UsageEntityStat: NewUsageEntityStatClient(cfg),
 		UsageLog:        NewUsageLogClient(cfg),
 		UsageStat:       NewUsageStatClient(cfg),
@@ -294,9 +306,9 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.Account, c.AccountExt, c.EmailTemplate, c.ErrLog, c.Group, c.GroupAssignment,
-		c.Key, c.PriceEntry, c.PriceVariant, c.RedemptionCode, c.RedemptionUse, c.Rule,
-		c.Setting, c.TempBalance, c.Template, c.TemplateExt, c.UsageEntityStat,
-		c.UsageLog, c.UsageStat, c.User,
+		c.GroupUpstream, c.Key, c.PriceEntry, c.PriceVariant, c.RedemptionCode,
+		c.RedemptionUse, c.Rule, c.Setting, c.TempBalance, c.Template, c.TemplateExt,
+		c.Upstream, c.UsageEntityStat, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -307,9 +319,9 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.Account, c.AccountExt, c.EmailTemplate, c.ErrLog, c.Group, c.GroupAssignment,
-		c.Key, c.PriceEntry, c.PriceVariant, c.RedemptionCode, c.RedemptionUse, c.Rule,
-		c.Setting, c.TempBalance, c.Template, c.TemplateExt, c.UsageEntityStat,
-		c.UsageLog, c.UsageStat, c.User,
+		c.GroupUpstream, c.Key, c.PriceEntry, c.PriceVariant, c.RedemptionCode,
+		c.RedemptionUse, c.Rule, c.Setting, c.TempBalance, c.Template, c.TemplateExt,
+		c.Upstream, c.UsageEntityStat, c.UsageLog, c.UsageStat, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -330,6 +342,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Group.mutate(ctx, m)
 	case *GroupAssignmentMutation:
 		return c.GroupAssignment.mutate(ctx, m)
+	case *GroupUpstreamMutation:
+		return c.GroupUpstream.mutate(ctx, m)
 	case *KeyMutation:
 		return c.Key.mutate(ctx, m)
 	case *PriceEntryMutation:
@@ -350,6 +364,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Template.mutate(ctx, m)
 	case *TemplateExtMutation:
 		return c.TemplateExt.mutate(ctx, m)
+	case *UpstreamMutation:
+		return c.Upstream.mutate(ctx, m)
 	case *UsageEntityStatMutation:
 		return c.UsageEntityStat.mutate(ctx, m)
 	case *UsageLogMutation:
@@ -480,6 +496,22 @@ func (c *AccountClient) QueryTemplate(_m *Account) *TemplateQuery {
 			sqlgraph.From(account.Table, account.FieldID, id),
 			sqlgraph.To(template.Table, template.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, account.TemplateTable, account.TemplateColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUpstream queries the upstream edge of a Account.
+func (c *AccountClient) QueryUpstream(_m *Account) *UpstreamQuery {
+	query := (&UpstreamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(account.Table, account.FieldID, id),
+			sqlgraph.To(upstream.Table, upstream.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, account.UpstreamTable, account.UpstreamColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -1115,6 +1147,22 @@ func (c *GroupClient) QueryAssignments(_m *Group) *GroupAssignmentQuery {
 	return query
 }
 
+// QueryUpstreamMembers queries the upstream_members edge of a Group.
+func (c *GroupClient) QueryUpstreamMembers(_m *Group) *GroupUpstreamQuery {
+	query := (&GroupUpstreamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(group.Table, group.FieldID, id),
+			sqlgraph.To(groupupstream.Table, groupupstream.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, group.UpstreamMembersTable, group.UpstreamMembersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *GroupClient) Hooks() []Hook {
 	return c.hooks.Group
@@ -1302,6 +1350,171 @@ func (c *GroupAssignmentClient) mutate(ctx context.Context, m *GroupAssignmentMu
 		return (&GroupAssignmentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown GroupAssignment mutation op: %q", m.Op())
+	}
+}
+
+// GroupUpstreamClient is a client for the GroupUpstream schema.
+type GroupUpstreamClient struct {
+	config
+}
+
+// NewGroupUpstreamClient returns a client for the GroupUpstream from the given config.
+func NewGroupUpstreamClient(c config) *GroupUpstreamClient {
+	return &GroupUpstreamClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `groupupstream.Hooks(f(g(h())))`.
+func (c *GroupUpstreamClient) Use(hooks ...Hook) {
+	c.hooks.GroupUpstream = append(c.hooks.GroupUpstream, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `groupupstream.Intercept(f(g(h())))`.
+func (c *GroupUpstreamClient) Intercept(interceptors ...Interceptor) {
+	c.inters.GroupUpstream = append(c.inters.GroupUpstream, interceptors...)
+}
+
+// Create returns a builder for creating a GroupUpstream entity.
+func (c *GroupUpstreamClient) Create() *GroupUpstreamCreate {
+	mutation := newGroupUpstreamMutation(c.config, OpCreate)
+	return &GroupUpstreamCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of GroupUpstream entities.
+func (c *GroupUpstreamClient) CreateBulk(builders ...*GroupUpstreamCreate) *GroupUpstreamCreateBulk {
+	return &GroupUpstreamCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *GroupUpstreamClient) MapCreateBulk(slice any, setFunc func(*GroupUpstreamCreate, int)) *GroupUpstreamCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &GroupUpstreamCreateBulk{err: fmt.Errorf("calling to GroupUpstreamClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*GroupUpstreamCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &GroupUpstreamCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for GroupUpstream.
+func (c *GroupUpstreamClient) Update() *GroupUpstreamUpdate {
+	mutation := newGroupUpstreamMutation(c.config, OpUpdate)
+	return &GroupUpstreamUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *GroupUpstreamClient) UpdateOne(_m *GroupUpstream) *GroupUpstreamUpdateOne {
+	mutation := newGroupUpstreamMutation(c.config, OpUpdateOne, withGroupUpstream(_m))
+	return &GroupUpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *GroupUpstreamClient) UpdateOneID(id int64) *GroupUpstreamUpdateOne {
+	mutation := newGroupUpstreamMutation(c.config, OpUpdateOne, withGroupUpstreamID(id))
+	return &GroupUpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for GroupUpstream.
+func (c *GroupUpstreamClient) Delete() *GroupUpstreamDelete {
+	mutation := newGroupUpstreamMutation(c.config, OpDelete)
+	return &GroupUpstreamDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *GroupUpstreamClient) DeleteOne(_m *GroupUpstream) *GroupUpstreamDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *GroupUpstreamClient) DeleteOneID(id int64) *GroupUpstreamDeleteOne {
+	builder := c.Delete().Where(groupupstream.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &GroupUpstreamDeleteOne{builder}
+}
+
+// Query returns a query builder for GroupUpstream.
+func (c *GroupUpstreamClient) Query() *GroupUpstreamQuery {
+	return &GroupUpstreamQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeGroupUpstream},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a GroupUpstream entity by its id.
+func (c *GroupUpstreamClient) Get(ctx context.Context, id int64) (*GroupUpstream, error) {
+	return c.Query().Where(groupupstream.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *GroupUpstreamClient) GetX(ctx context.Context, id int64) *GroupUpstream {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryGroup queries the group edge of a GroupUpstream.
+func (c *GroupUpstreamClient) QueryGroup(_m *GroupUpstream) *GroupQuery {
+	query := (&GroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(groupupstream.Table, groupupstream.FieldID, id),
+			sqlgraph.To(group.Table, group.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, groupupstream.GroupTable, groupupstream.GroupColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUpstream queries the upstream edge of a GroupUpstream.
+func (c *GroupUpstreamClient) QueryUpstream(_m *GroupUpstream) *UpstreamQuery {
+	query := (&UpstreamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(groupupstream.Table, groupupstream.FieldID, id),
+			sqlgraph.To(upstream.Table, upstream.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, groupupstream.UpstreamTable, groupupstream.UpstreamColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *GroupUpstreamClient) Hooks() []Hook {
+	return c.hooks.GroupUpstream
+}
+
+// Interceptors returns the client interceptors.
+func (c *GroupUpstreamClient) Interceptors() []Interceptor {
+	return c.inters.GroupUpstream
+}
+
+func (c *GroupUpstreamClient) mutate(ctx context.Context, m *GroupUpstreamMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&GroupUpstreamCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&GroupUpstreamUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&GroupUpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&GroupUpstreamDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown GroupUpstream mutation op: %q", m.Op())
 	}
 }
 
@@ -2763,6 +2976,171 @@ func (c *TemplateExtClient) mutate(ctx context.Context, m *TemplateExtMutation) 
 	}
 }
 
+// UpstreamClient is a client for the Upstream schema.
+type UpstreamClient struct {
+	config
+}
+
+// NewUpstreamClient returns a client for the Upstream from the given config.
+func NewUpstreamClient(c config) *UpstreamClient {
+	return &UpstreamClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `upstream.Hooks(f(g(h())))`.
+func (c *UpstreamClient) Use(hooks ...Hook) {
+	c.hooks.Upstream = append(c.hooks.Upstream, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `upstream.Intercept(f(g(h())))`.
+func (c *UpstreamClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Upstream = append(c.inters.Upstream, interceptors...)
+}
+
+// Create returns a builder for creating a Upstream entity.
+func (c *UpstreamClient) Create() *UpstreamCreate {
+	mutation := newUpstreamMutation(c.config, OpCreate)
+	return &UpstreamCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Upstream entities.
+func (c *UpstreamClient) CreateBulk(builders ...*UpstreamCreate) *UpstreamCreateBulk {
+	return &UpstreamCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UpstreamClient) MapCreateBulk(slice any, setFunc func(*UpstreamCreate, int)) *UpstreamCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UpstreamCreateBulk{err: fmt.Errorf("calling to UpstreamClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UpstreamCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UpstreamCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Upstream.
+func (c *UpstreamClient) Update() *UpstreamUpdate {
+	mutation := newUpstreamMutation(c.config, OpUpdate)
+	return &UpstreamUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UpstreamClient) UpdateOne(_m *Upstream) *UpstreamUpdateOne {
+	mutation := newUpstreamMutation(c.config, OpUpdateOne, withUpstream(_m))
+	return &UpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UpstreamClient) UpdateOneID(id int64) *UpstreamUpdateOne {
+	mutation := newUpstreamMutation(c.config, OpUpdateOne, withUpstreamID(id))
+	return &UpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Upstream.
+func (c *UpstreamClient) Delete() *UpstreamDelete {
+	mutation := newUpstreamMutation(c.config, OpDelete)
+	return &UpstreamDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UpstreamClient) DeleteOne(_m *Upstream) *UpstreamDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UpstreamClient) DeleteOneID(id int64) *UpstreamDeleteOne {
+	builder := c.Delete().Where(upstream.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UpstreamDeleteOne{builder}
+}
+
+// Query returns a query builder for Upstream.
+func (c *UpstreamClient) Query() *UpstreamQuery {
+	return &UpstreamQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUpstream},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Upstream entity by its id.
+func (c *UpstreamClient) Get(ctx context.Context, id int64) (*Upstream, error) {
+	return c.Query().Where(upstream.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UpstreamClient) GetX(ctx context.Context, id int64) *Upstream {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryAccounts queries the accounts edge of a Upstream.
+func (c *UpstreamClient) QueryAccounts(_m *Upstream) *AccountQuery {
+	query := (&AccountClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(upstream.Table, upstream.FieldID, id),
+			sqlgraph.To(account.Table, account.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, upstream.AccountsTable, upstream.AccountsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGroupMembers queries the group_members edge of a Upstream.
+func (c *UpstreamClient) QueryGroupMembers(_m *Upstream) *GroupUpstreamQuery {
+	query := (&GroupUpstreamClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(upstream.Table, upstream.FieldID, id),
+			sqlgraph.To(groupupstream.Table, groupupstream.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, upstream.GroupMembersTable, upstream.GroupMembersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UpstreamClient) Hooks() []Hook {
+	return c.hooks.Upstream
+}
+
+// Interceptors returns the client interceptors.
+func (c *UpstreamClient) Interceptors() []Interceptor {
+	return c.inters.Upstream
+}
+
+func (c *UpstreamClient) mutate(ctx context.Context, m *UpstreamMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UpstreamCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UpstreamUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UpstreamUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UpstreamDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Upstream mutation op: %q", m.Op())
+	}
+}
+
 // UsageEntityStatClient is a client for the UsageEntityStat schema.
 type UsageEntityStatClient struct {
 	config
@@ -3346,15 +3724,15 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Account, AccountExt, EmailTemplate, ErrLog, Group, GroupAssignment, Key,
-		PriceEntry, PriceVariant, RedemptionCode, RedemptionUse, Rule, Setting,
-		TempBalance, Template, TemplateExt, UsageEntityStat, UsageLog, UsageStat,
-		User []ent.Hook
+		Account, AccountExt, EmailTemplate, ErrLog, Group, GroupAssignment,
+		GroupUpstream, Key, PriceEntry, PriceVariant, RedemptionCode, RedemptionUse,
+		Rule, Setting, TempBalance, Template, TemplateExt, Upstream, UsageEntityStat,
+		UsageLog, UsageStat, User []ent.Hook
 	}
 	inters struct {
-		Account, AccountExt, EmailTemplate, ErrLog, Group, GroupAssignment, Key,
-		PriceEntry, PriceVariant, RedemptionCode, RedemptionUse, Rule, Setting,
-		TempBalance, Template, TemplateExt, UsageEntityStat, UsageLog, UsageStat,
-		User []ent.Interceptor
+		Account, AccountExt, EmailTemplate, ErrLog, Group, GroupAssignment,
+		GroupUpstream, Key, PriceEntry, PriceVariant, RedemptionCode, RedemptionUse,
+		Rule, Setting, TempBalance, Template, TemplateExt, Upstream, UsageEntityStat,
+		UsageLog, UsageStat, User []ent.Interceptor
 	}
 )

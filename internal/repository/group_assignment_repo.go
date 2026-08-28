@@ -42,7 +42,11 @@ func (r *GroupAssignmentRepo) Revoke(ctx context.Context, groupID, userID int64)
 // 再 SetMultiplier）；缺失 → ErrNotFound。
 func (r *GroupAssignmentRepo) SetMultiplier(ctx context.Context, groupID, userID int64, m *int) error {
 	q := r.client.GroupAssignment.Update().
-		Where(groupassignment.GroupIDEQ(groupID), groupassignment.UserIDEQ(userID))
+		Where(
+			groupassignment.GroupIDEQ(groupID),
+			groupassignment.UserIDEQ(userID),
+			groupassignment.HasGroupWith(group.DeletedAtIsNil()),
+		)
 	if m == nil {
 		q = q.ClearPriceMultiplier()
 	} else {
@@ -60,7 +64,7 @@ func (r *GroupAssignmentRepo) SetMultiplier(ctx context.Context, groupID, userID
 
 func (r *GroupAssignmentRepo) ListByUser(ctx context.Context, userID int64) ([]*domain.GroupAssignment, error) {
 	rows, err := r.client.GroupAssignment.Query().
-		Where(groupassignment.UserIDEQ(userID)).
+		Where(groupassignment.UserIDEQ(userID), groupassignment.HasGroupWith(group.DeletedAtIsNil())).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -74,7 +78,7 @@ func (r *GroupAssignmentRepo) ListByUser(ctx context.Context, userID int64) ([]*
 
 func (r *GroupAssignmentRepo) ListByGroup(ctx context.Context, groupID int64) ([]*domain.GroupAssignment, error) {
 	rows, err := r.client.GroupAssignment.Query().
-		Where(groupassignment.GroupIDEQ(groupID)).
+		Where(groupassignment.GroupIDEQ(groupID), groupassignment.HasGroupWith(group.DeletedAtIsNil())).
 		All(ctx)
 	if err != nil {
 		return nil, err

@@ -45,15 +45,14 @@ func (s *Service) SendRegisterCode(ctx context.Context, email string) error {
 	if err != nil {
 		return err
 	}
+	// 发送条件必须在写入验证码前确认；否则 SMTP 未配置时会留下无效
+	// 验证码，并让用户在下一次尝试时被错误限频。
+	if _, _, _, _, _, _, ok := s.mailConfig(); !ok || s.mailEnqueue == nil {
+		return ErrMailNotConfigured
+	}
 	expires := time.Now().Add(domain.EmailCodeTTL)
 	if _, err := s.emailCodes.UpsertEmailCode(ctx, email, string(domain.EmailCodeRegister), sha, expires); err != nil {
 		return err
-	}
-	if _, _, _, _, _, _, ok := s.mailConfig(); !ok {
-		return ErrMailNotConfigured
-	}
-	if s.mailEnqueue == nil {
-		return ErrMailNotConfigured
 	}
 	if err := s.mailEnqueue(MailSendTask{
 		To:      email,
@@ -63,6 +62,10 @@ func (s *Service) SendRegisterCode(ctx context.Context, email string) error {
 	}); err != nil {
 		if s.log != nil {
 			s.log.Error("register code enqueue failed", logx.String("email", email), logx.Error(err))
+		}
+		// 仅回滚仍属于本次发送的记录，避免覆盖并发请求刚写入的新验证码。
+		if row, getErr := s.emailCodes.GetEmailCode(ctx, email, string(domain.EmailCodeRegister)); getErr == nil && row != nil && row.CodeSHA256 == sha {
+			_ = s.emailCodes.DeleteEmailCode(ctx, email, string(domain.EmailCodeRegister))
 		}
 		return err
 	}
@@ -98,19 +101,23 @@ func (s *Service) SendForgotPasswordCode(ctx context.Context, email string) erro
 		return nil
 	}
 	expires := time.Now().Add(domain.EmailCodeTTL)
+	// 找回密码接口对外恒定返回成功，但内部也不应在邮件不可用时写入
+	// 一个用户永远收不到的验证码。
+	if _, _, _, _, _, _, ok := s.mailConfig(); !ok || s.mailEnqueue == nil {
+		return nil
+	}
 	if _, err := s.emailCodes.UpsertEmailCode(ctx, email, string(domain.EmailCodeReset), sha, expires); err != nil {
 		return nil
 	}
-	if _, _, _, _, _, _, ok := s.mailConfig(); !ok {
-		return nil
-	}
-	if s.mailEnqueue != nil {
-		_ = s.mailEnqueue(MailSendTask{
-			To:      email,
-			Purpose: domain.EmailTemplateResetCode,
-			Code:    plain,
-			TTLMin:  int(domain.EmailCodeTTL / time.Minute),
-		})
+	if err := s.mailEnqueue(MailSendTask{
+		To:      email,
+		Purpose: domain.EmailTemplateResetCode,
+		Code:    plain,
+		TTLMin:  int(domain.EmailCodeTTL / time.Minute),
+	}); err != nil {
+		if row, getErr := s.emailCodes.GetEmailCode(ctx, email, string(domain.EmailCodeReset)); getErr == nil && row != nil && row.CodeSHA256 == sha {
+			_ = s.emailCodes.DeleteEmailCode(ctx, email, string(domain.EmailCodeReset))
+		}
 	}
 	return nil
 }

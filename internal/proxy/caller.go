@@ -14,6 +14,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,6 +64,35 @@ func convertedRoute(converts []domain.ProtocolConvert, client domain.RequestForm
 		}
 	}
 	return "", "", false
+}
+
+// conversionCandidates returns deterministic protocol fallbacks. Automatic
+// negotiation deliberately prefers Responses for chat and Anthropic Messages
+// for Responses requests, matching the converters that preserve the richest
+// request/stream semantics. WebSocket, images and search have no safe
+// conversion path and therefore return no candidates.
+func conversionCandidates(converts []domain.ProtocolConvert, client domain.RequestFormat) []domain.ProtocolConvert {
+	auto := false
+	manual := make([]domain.ProtocolConvert, 0, len(converts))
+	for _, pc := range converts {
+		if pc == domain.ProtocolConvertAuto {
+			auto = true
+			continue
+		}
+		manual = append(manual, pc)
+	}
+	if auto {
+		switch client {
+		case domain.FormatOpenAIChat:
+			return []domain.ProtocolConvert{domain.ProtocolConvertChatToResp, domain.ProtocolConvertChatToMess}
+		case domain.FormatAnthropic:
+			return []domain.ProtocolConvert{domain.ProtocolConvertMessToResp}
+		case domain.FormatOpenAIResponses:
+			return []domain.ProtocolConvert{domain.ProtocolConvertRespToMess}
+		}
+		return nil
+	}
+	return manual
 }
 
 // newReqID 生成 32 位 hex 请求 ID（仅日志关联键，DB 无格式约束；math/rand/v2
@@ -230,22 +260,42 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		// 了转换方向 → 客户端协议 → 转换 → 模板协议路由（配置方向即声明
 		// fallback 意图）。off（默认）→ 上面的 errors.Is 分支零开销（errors.Is
 		// 自身零分配）。ErrGroupNotFound（组不存在）仍不转换 → 404 直返。
-		if tgt, conv, ok := convertedRoute(rm.meta.ProtocolConverts, format); ok {
-			if sel2, err2 := p.sched.Select(groupID, tgt, reqModel); err2 == nil {
-				cb, cerr := protoconv.ConvertRequest(body, conv)
-				if cerr != nil {
-					// 本地拒绝：目标 Select 已占并发槽，必须释放（与 caller 本地
-					// 400 的 Release-only 语义一致），否则槽位永久泄漏。
-					p.sched.Release(sel2.AccountID)
-					writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: protocol conversion failed: " + cerr.Error()}})
-					return
-				}
-				sel = sel2
-				err = nil
-				route = forwardRoute{format: tgt, caller: p.convCallers[conv], body: cb}
-			} else {
-				err = err2
+		candidates := conversionCandidates(rm.meta.ProtocolConverts, format)
+		autoNegotiation := slices.Contains(rm.meta.ProtocolConverts, domain.ProtocolConvertAuto)
+		var conversionErr error
+		for _, conv := range candidates {
+			tgt, _, ok := convertedRoute([]domain.ProtocolConvert{conv}, format)
+			if !ok {
+				continue
 			}
+			sel2, err2 := p.sched.Select(groupID, tgt, reqModel)
+			if err2 != nil {
+				// An unavailable fallback is expected during negotiation; try the
+				// next fixed-priority protocol before returning the original error.
+				if !autoNegotiation {
+					err = err2
+					break
+				}
+				continue
+			}
+			cb, cerr := protoconv.ConvertRequest(body, conv)
+			if cerr != nil {
+				p.sched.ReleaseSelection(sel2)
+				if autoNegotiation {
+					conversionErr = cerr
+					continue
+				}
+				writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: protocol conversion failed: " + cerr.Error()}})
+				return
+			}
+			sel = sel2
+			err = nil
+			route = forwardRoute{format: tgt, caller: p.convCallers[conv], body: cb}
+			break
+		}
+		if err != nil && autoNegotiation && conversionErr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: protocol conversion failed: " + conversionErr.Error()}})
+			return
 		}
 	}
 	if err != nil {
@@ -272,8 +322,8 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 type chatAttempt struct{ p *Proxy }
 
 func (a *chatAttempt) call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, reqModel string, body []byte, st attemptState) (int, []byte, http.Header, bool, error) {
-	// TODO(P22-I1): 当前 hdr 恒 nil（UpstreamCaller.Call 未回收 resp.Header），
-	// 仅 fallback 1 生效；待扩展 Header 透传后替换为真实透传
+	// Preserve response headers from SDK errors and raw HTTP callers so the
+	// failover loop can honor Retry-After for 429 responses.
 	// （Global Constraints 豁免 fallback 保留）
 	// codex 分流落位（T2 §2，B 的 501 骨架）：images 端点 codex-oauth/
 	// codex-pat 模板选号命中 → codexImagesCaller（GenerateImage 非流式 /
@@ -336,7 +386,7 @@ func (a *chatAttempt) call(ctx context.Context, w http.ResponseWriter, r *http.R
 			l := logWithCtx(ctx, a.p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, st.format, http.StatusBadRequest, domain.Err4xx, usageTuple{}, start))
 			em := domain.TruncateErrMsg(sdkErr)
 			l.ErrorMessage = &em
-			a.p.finish(sel.AccountID, l)
+			a.p.finishSelection(sel, l)
 			// message 用 SDK 原文不加前缀（"streaming is required..." 已
 			// 自明，避免措辞重复）；type 与 4xx 分支通用回退同款（可选）。
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
@@ -345,7 +395,7 @@ func (a *chatAttempt) call(ctx context.Context, w http.ResponseWriter, r *http.R
 			return 0, nil, nil, true, nil
 		}
 	}
-	return code, respBody, nil, handled, callErr
+	return code, respBody, responseHeadersFromError(callErr), handled, callErr
 }
 
 // precheckPrice 缺价预检（统一 PriceEntry resolver，零 DB）。

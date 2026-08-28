@@ -46,3 +46,32 @@ func TestGroupModels(t *testing.T) {
 	_, ok = s.GroupModels(999)
 	require.False(t, ok, "组不存在 → false")
 }
+
+func TestGroupModelsUpstreamPool(t *testing.T) {
+	member := testGroupUpstream(1, 101, 1, 0, 4)
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{
+		30: testUpstreamGroup(30, member),
+	})
+
+	models, ok := s.GroupModels(30)
+	require.True(t, ok, "上游池组存在时应返回模型列表")
+	require.Equal(t, []string{"gpt-5"}, models, "上游池模型来自 upstreamRoutes，而不是账号池 routes")
+}
+
+func TestUpstreamModelCapabilitiesFilterRoutes(t *testing.T) {
+	a := testGroupUpstream(1, 101, 1, 0, 4)
+	b := testGroupUpstream(2, 102, 1, 0, 4)
+	a.Upstream.Models = []string{"gpt-5", "o3"}
+	b.Upstream.Models = []string{"gpt-5"}
+
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{
+		31: {ID: 31, Name: "capabilities", RoutingMode: domain.GroupRoutingModeUpstreams, UpstreamMembers: []*domain.GroupUpstream{a, b}},
+	})
+
+	models, ok := s.GroupModels(31)
+	require.True(t, ok)
+	require.Equal(t, []string{"gpt-5"}, models, "空白名单只公开所有成员共同确认的模型")
+
+	_, err := s.Select(31, domain.FormatOpenAIChat, "o3")
+	require.ErrorIs(t, err, ErrFormatUnavailable, "不在共同能力集中的模型不得创建路由")
+}

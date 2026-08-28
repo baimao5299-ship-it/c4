@@ -17,12 +17,21 @@ import (
 // accountFromBody 生成类型 body → 领域对象（create/update 共用；GroupIDs
 // nil = 不设置/不变，非 nil = 替换语义含空数组清空）。
 func accountFromBody(in AccountCreate) *domain.Account {
+	status := domain.StatusActive
+	if in.Status != nil {
+		status = domain.AccountStatus(*in.Status)
+	}
+	weight := 100
+	if in.Weight != nil {
+		weight = *in.Weight
+	}
 	a := &domain.Account{
 		Name:           in.Name,
 		TemplateID:     in.TemplateId,
+		UpstreamID:     in.UpstreamId,
 		UpstreamKey:    in.UpstreamKey,
-		Status:         domain.AccountStatus(deref(in.Status)),
-		Weight:         deref(in.Weight),
+		Status:         status,
+		Weight:         weight,
 		MaxConcurrency: deref(in.MaxConcurrency),
 		GroupIDs:       in.GroupIds,
 	}
@@ -118,12 +127,45 @@ func (h *AdminAPI) GetAccountsIdGroups(w http.ResponseWriter, r *http.Request, i
 // 空数组 = 清空）。
 func (h *AdminAPI) PutAccountsId(w http.ResponseWriter, r *http.Request, id int64) {
 	var in AccountCreate
-	if err := decode(r, &in); err != nil {
+	fields, err := decodeWithFields(r, &in)
+	if err != nil {
 		httpface.WriteErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
 	acc := accountFromBody(in)
 	acc.ID = id
+	current, getErr := h.svc.GetAccount(r.Context(), id)
+	if getErr != nil {
+		httpface.WriteServiceErr(w, getErr)
+		return
+	}
+	// Optional fields omitted by API clients retain their current values. This
+	// keeps a narrow edit from silently resetting scheduler state or limits while
+	// still allowing explicit zero values where the contract permits them.
+	if in.Status == nil {
+		acc.Status = current.Status
+	}
+	if in.Weight == nil {
+		acc.Weight = current.Weight
+	}
+	if in.MaxConcurrency == nil {
+		acc.MaxConcurrency = current.MaxConcurrency
+	}
+	// PUT is full replacement for fields that are present, but omitted optional
+	// upstream_id keeps the existing binding so older clients do not silently
+	// detach accounts. An explicit JSON null remains a clear operation.
+	if _, present := fields["upstream_id"]; !present {
+		acc.UpstreamID = current.UpstreamID
+	}
+	// An omitted base_url is also a partial-update omission. Preserve the
+	// existing account override; an explicit null or empty string still clears
+	// it through accountFromBody's nil value.
+	if _, present := fields["base_url"]; !present {
+		if current.BaseURL != nil {
+			baseURL := *current.BaseURL
+			acc.BaseURL = &baseURL
+		}
+	}
 	updated, err := h.svc.UpdateAccount(r.Context(), acc)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
@@ -219,6 +261,7 @@ func accountPatchFromBody(f *AccountPatch) (repository.AccountPatch, error) {
 	p := repository.AccountPatch{
 		Name:           f.Name,
 		TemplateID:     f.TemplateId,
+		UpstreamID:     f.UpstreamId,
 		UpstreamKey:    f.UpstreamKey,
 		BaseURL:        f.BaseUrl, // 透传不归一：批量 "" = 清空语义（与 create 路径归一语义分写）
 		Status:         (*domain.AccountStatus)(f.Status),
@@ -226,7 +269,7 @@ func accountPatchFromBody(f *AccountPatch) (repository.AccountPatch, error) {
 		MaxConcurrency: f.MaxConcurrency,
 		GroupIDs:       f.GroupIds,
 	}
-	if p.Name == nil && p.TemplateID == nil && p.UpstreamKey == nil &&
+	if p.Name == nil && p.TemplateID == nil && p.UpstreamID == nil && p.UpstreamKey == nil &&
 		p.BaseURL == nil && p.Status == nil && p.Weight == nil &&
 		p.MaxConcurrency == nil && p.GroupIDs == nil {
 		return repository.AccountPatch{}, errors.New("fields must contain at least one field")

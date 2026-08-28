@@ -81,6 +81,18 @@ func (f GroupAssignmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupAssignmentMutation", m)
 }
 
+// The GroupUpstreamFunc type is an adapter to allow the use of ordinary
+// function as GroupUpstream mutator.
+type GroupUpstreamFunc func(context.Context, *ent.GroupUpstreamMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f GroupUpstreamFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.GroupUpstreamMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.GroupUpstreamMutation", m)
+}
+
 // The KeyFunc type is an adapter to allow the use of ordinary
 // function as Key mutator.
 type KeyFunc func(context.Context, *ent.KeyMutation) (ent.Value, error)
@@ -199,6 +211,18 @@ func (f TemplateExtFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TemplateExtMutation", m)
+}
+
+// The UpstreamFunc type is an adapter to allow the use of ordinary
+// function as Upstream mutator.
+type UpstreamFunc func(context.Context, *ent.UpstreamMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UpstreamFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UpstreamMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UpstreamMutation", m)
 }
 
 // The UsageEntityStatFunc type is an adapter to allow the use of ordinary

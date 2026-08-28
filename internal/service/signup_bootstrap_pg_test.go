@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -68,4 +69,56 @@ func TestRegisterUserBootstrapFirstAdminPG(t *testing.T) {
 	second, err := svc.RegisterUser(ctx, "second@example.com", "s3cret-pass")
 	require.NoError(t, err)
 	require.Equal(t, domain.RoleUser, second.Role, "非空表注册恒为普通 user")
+}
+
+func TestRegisterUserBootstrapFirstAdminAcrossInstancesPG(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping real-PostgreSQL test")
+	}
+	if strings.Contains(dsn, "?") {
+		dsn += "&search_path=" + serviceBootstrapPGTestSchema + "_race"
+	} else {
+		dsn += "?search_path=" + serviceBootstrapPGTestSchema + "_race"
+	}
+	ctx := context.Background()
+	pool, err := repository.OpenPG(ctx, dsn, 8)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	_, err = db.ExecContext(ctx, `DROP SCHEMA IF EXISTS `+serviceBootstrapPGTestSchema+`_race CASCADE; CREATE SCHEMA `+serviceBootstrapPGTestSchema+`_race;`)
+	require.NoError(t, err)
+	repos, err := repository.NewWithPG(t.Context(), entsql.OpenDB(dialect.Postgres, db), true, pool)
+	require.NoError(t, err)
+	svc1 := New(repos, nil, NopInvalidator{}, nil, nil, nil, nil)
+	svc2 := New(repos, nil, NopInvalidator{}, nil, nil, nil, nil)
+	start := make(chan struct{})
+	results := make(chan *domain.User, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for i, svc := range []*Service{svc1, svc2} {
+		wg.Add(1)
+		go func(i int, svc *Service) {
+			defer wg.Done()
+			<-start
+			u, err := svc.RegisterUser(ctx, "race-"+string(rune('a'+i))+"@example.com", "s3cret-pass")
+			results <- u
+			errs <- err
+		}(i, svc)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	admins := 0
+	for u := range results {
+		if u.Role == domain.RolePlatformAdmin {
+			admins++
+		}
+	}
+	require.Equal(t, 1, admins, "跨实例并发首次注册只能产生一个管理员")
 }

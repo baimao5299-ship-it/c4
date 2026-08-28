@@ -51,8 +51,9 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		}
 		if resp.StatusCode != http.StatusOK {
 			rb := readUpstreamBody(resp)
+			hdr := cloneResponseHeaders(resp.Header)
 			resp.Body.Close()
-			return resp.StatusCode, rb, false, nil
+			return resp.StatusCode, rb, false, &responseHeadersError{header: hdr}
 		}
 		// SSE 响应头与旧 sseWriter 一致（relay 只转发字节，不代设头）
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -94,15 +95,15 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 			if errors.Is(err, context.Canceled) {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
 			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, err)
-			p.sched.MarkResult(sel.AccountID, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
+			p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 			return 0, nil, true, nil
 		}
-		p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-		p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+		p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil
 	}
 
@@ -112,7 +113,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		// 本地 400、不记日志（评审 I-1 附加缺口）。Select 已占并发槽，必须
 		// 释放（Release-only；finish(nil) 等价，直接 Release 更显式）。
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
-		p.sched.Release(sel.AccountID)
+		p.sched.ReleaseSelection(sel)
 		return 400, nil, true, nil
 	}
 	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
@@ -136,7 +137,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		// （评审 I-1 方案——结构体 marshal 自证不可用）。
 		it, ot, tt, cr, cc = chatUsageFromResponse(resp.Usage)
 	}
-	p.sched.MarkResult(sel.AccountID, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finish(sel.AccountID, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 	return 200, nil, true, nil
 }

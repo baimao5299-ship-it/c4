@@ -48,13 +48,22 @@ type Factory struct {
 
 // clientCache 不可变快照。gen 为失效代号：构建者捕获 gen 后在锁外构建，CAS
 // 存回时 gen 已变（InvalidateAll 发生）即弃件重建——等价于旧互斥锁的全序
-// 语义。byT 的客户端把 base_url 烤进构造参数而键只有模板 ID，无 gen 校验会
-// 产生"失效后陈旧客户端复活"；urls 是键的纯函数本无此害，统一用 gen 省一套
-// 心智模型。
+// 语义。byT 的客户端把 base_url 烤进构造参数，因此键必须同时包含模板 ID
+// 和实际 base_url：同一模板可以显式绑定多个上游，若只按模板 ID 缓存，后续
+// 账号会复用首个上游的客户端并把请求发错地址。无 gen 校验会产生"失效后陈旧
+// 客户端复活"；urls 是键的纯函数本无此害，统一用 gen 省一套心智模型。
 type clientCache struct {
 	gen  int64
-	byT  map[int64]*TemplateClients
+	byT  map[clientKey]*TemplateClients
 	urls map[urlKey]*url.URL
+}
+
+// clientKey identifies the endpoint baked into an SDK client. The template id
+// alone is insufficient because account-level and managed-upstream bindings
+// can route one template to different base URLs concurrently.
+type clientKey struct {
+	templateID int64
+	baseURL    string
 }
 
 // urlKey 完整 URL 缓存键：模板 ID + base_url 快照 + 格式路径。
@@ -81,7 +90,7 @@ func NewFactory(hc *http.Client, cfg Config) *Factory {
 	f := &Factory{hc: hc, cfg: cfg}
 	f.cc.Store(&clientCache{
 		gen:  0,
-		byT:  make(map[int64]*TemplateClients),
+		byT:  make(map[clientKey]*TemplateClients),
 		urls: make(map[urlKey]*url.URL),
 	})
 	return f
@@ -94,7 +103,7 @@ func (f *Factory) InvalidateAll() {
 		cur := f.cc.Load()
 		if f.cc.CompareAndSwap(cur, &clientCache{
 			gen:  cur.gen + 1,
-			byT:  make(map[int64]*TemplateClients),
+			byT:  make(map[clientKey]*TemplateClients),
 			urls: make(map[urlKey]*url.URL),
 		}) {
 			return
@@ -273,9 +282,10 @@ func (f *Factory) rawPostCT(ctx context.Context, templateID int64, baseURL, path
 // gen 变化（并发 InvalidateAll）即弃件重试——构建无 I/O，重复构建无害。
 
 func (f *Factory) chat(tpl *domain.Template) *openai.Client {
+	key := clientKey{templateID: tpl.ID, baseURL: tpl.BaseURL}
 	for {
 		cur := f.cc.Load()
-		tc := cur.byT[tpl.ID]
+		tc := cur.byT[key]
 		if tc != nil && tc.chat != nil {
 			return tc.chat
 		}
@@ -293,7 +303,7 @@ func (f *Factory) chat(tpl *domain.Template) *openai.Client {
 			*merged = *tc
 		}
 		merged.chat = &c
-		nm := cloneByT(cur.byT, tpl.ID, merged)
+		nm := cloneByT(cur.byT, key, merged)
 		if f.cc.CompareAndSwap(cur, &clientCache{gen: cur.gen, byT: nm, urls: cur.urls}) {
 			return &c
 		}
@@ -301,9 +311,10 @@ func (f *Factory) chat(tpl *domain.Template) *openai.Client {
 }
 
 func (f *Factory) responses(tpl *domain.Template) *openai.Client {
+	key := clientKey{templateID: tpl.ID, baseURL: tpl.BaseURL}
 	for {
 		cur := f.cc.Load()
-		tc := cur.byT[tpl.ID]
+		tc := cur.byT[key]
 		if tc != nil && tc.responses != nil {
 			return tc.responses
 		}
@@ -317,7 +328,7 @@ func (f *Factory) responses(tpl *domain.Template) *openai.Client {
 			*merged = *tc
 		}
 		merged.responses = &c
-		nm := cloneByT(cur.byT, tpl.ID, merged)
+		nm := cloneByT(cur.byT, key, merged)
 		if f.cc.CompareAndSwap(cur, &clientCache{gen: cur.gen, byT: nm, urls: cur.urls}) {
 			return &c
 		}
@@ -325,9 +336,10 @@ func (f *Factory) responses(tpl *domain.Template) *openai.Client {
 }
 
 func (f *Factory) anthropic(tpl *domain.Template) *anthropic.Client {
+	key := clientKey{templateID: tpl.ID, baseURL: tpl.BaseURL}
 	for {
 		cur := f.cc.Load()
-		tc := cur.byT[tpl.ID]
+		tc := cur.byT[key]
 		if tc != nil && tc.anthropic != nil {
 			return tc.anthropic
 		}
@@ -341,20 +353,20 @@ func (f *Factory) anthropic(tpl *domain.Template) *anthropic.Client {
 			*merged = *tc
 		}
 		merged.anthropic = &c
-		nm := cloneByT(cur.byT, tpl.ID, merged)
+		nm := cloneByT(cur.byT, key, merged)
 		if f.cc.CompareAndSwap(cur, &clientCache{gen: cur.gen, byT: nm, urls: cur.urls}) {
 			return &c
 		}
 	}
 }
 
-// cloneByT 复制客户端快照并写入 id 条目（调用方负责字段级合并——三字段独立
-// 懒构建，后写者必须保留先写者的字段）。
-func cloneByT(m map[int64]*TemplateClients, id int64, add *TemplateClients) map[int64]*TemplateClients {
-	nm := make(map[int64]*TemplateClients, len(m)+1)
+// cloneByT 复制客户端快照并写入 endpoint 条目（调用方负责字段级合并——三
+// 字段独立懒构建，后写者必须保留先写者的字段）。
+func cloneByT(m map[clientKey]*TemplateClients, key clientKey, add *TemplateClients) map[clientKey]*TemplateClients {
+	nm := make(map[clientKey]*TemplateClients, len(m)+1)
 	for kk, vv := range m {
 		nm[kk] = vv
 	}
-	nm[id] = add
+	nm[key] = add
 	return nm
 }

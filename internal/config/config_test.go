@@ -45,9 +45,31 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, "test-admin-token", c.Admin.Token)
 	require.Equal(t, 30*time.Second, c.Scheduler.SyncInterval)
 	require.True(t, c.Billing.Enabled, "计费默认开（全链默认开启）")
+	require.Empty(t, c.Upstream.ProxyURL, "未配置代理时保持直连")
 	require.Equal(t, 250*time.Millisecond, c.Billing.FlushInterval, "F2 游标轮询默认 250ms（spec-f2-ledger-cursor）")
 	require.Equal(t, 10*time.Second, c.Billing.BalanceRefreshInterval)
 	require.Equal(t, 8, c.Billing.FlushWorkers, "flush 并行 worker 默认 8（O1）")
+}
+
+func TestLoadValidatesExplicitUpstreamProxy(t *testing.T) {
+	setenvRequired(t)
+	for _, proxy := range []string{"http://127.0.0.1:7897", "https://127.0.0.1:7897", "socks5h://127.0.0.1:7898"} {
+		t.Run(proxy, func(t *testing.T) {
+			c, err := Load(writeConfig(t, fmt.Sprintf("upstream = { proxy_url = %q }", proxy)))
+			require.NoError(t, err)
+			require.Equal(t, proxy, c.Upstream.ProxyURL)
+		})
+	}
+	for _, proxy := range []string{"socks5://127.0.0.1:7898", "ftp://127.0.0.1:21", "http://127.0.0.1"} {
+		t.Run("reject-"+proxy, func(t *testing.T) {
+			_, err := Load(writeConfig(t, fmt.Sprintf("upstream = { proxy_url = %q }", proxy)))
+			require.Error(t, err)
+			require.ErrorContains(t, err, "upstream.proxy_url")
+		})
+	}
+	_, err := Load(writeConfig(t, `upstream = { proxy_url = "http://127.0.0.1:7897", tls_convergence_enabled = true }`))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot be combined")
 }
 
 // TestEnvOverlay 改造后保持通过：env 叠加 + duration 解析回归（原只设
@@ -338,4 +360,42 @@ func TestLoadRedisConfig(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorContains(t, err, "tls")
 	})
+}
+
+func TestLoadBalanceAdapterConfig(t *testing.T) {
+	setenvRequired(t)
+	c, err := Load(writeConfig(t, `[billing.balance_adapters."7"]
+provider = "relay-a"
+endpoint = "/v1/balance"
+method = "GET"
+auth = "bearer"
+balance_path = "data.balance"
+currency_path = "data.currency"
+timeout = "8s"
+max_response_size = 2048
+`))
+	require.NoError(t, err)
+	entry, ok := c.Billing.BalanceAdapters["7"]
+	require.True(t, ok)
+	require.Equal(t, "relay-a", entry.Provider)
+	require.Equal(t, "/v1/balance", entry.Endpoint)
+	require.Equal(t, 8*time.Second, entry.Timeout)
+	require.Equal(t, int64(2048), entry.MaxResponseSize)
+}
+
+func TestLoadRejectsInvalidBalanceAdapterConfig(t *testing.T) {
+	setenvRequired(t)
+	_, err := Load(writeConfig(t, `[billing.balance_adapters."x"]
+provider = "relay"
+endpoint = "https://relay.example/balance"
+auth = "cookie"
+`))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "balance_adapters")
+
+	_, err = Load(writeConfig(t, `[billing.balance_adapters."7"]
+endpoint = "https://relay.example/balance"
+`))
+	require.Error(t, err)
+	require.ErrorContains(t, err, "provider is required")
 }
