@@ -958,7 +958,7 @@ type Group struct {
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
 	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
 
-	// ProtocolConvert 协议转换方向集合（空数组 = off = 不转换；多方向按客户端格式命中）
+	// ProtocolConvert 协议转换模式（auto = 自动协商；空数组 = off = 不转换；手动方向按客户端格式命中）
 	ProtocolConvert *[]GroupProtocolConvert `json:"ProtocolConvert,omitempty"`
 
 	// RoutingMode accounts 使用现有账号池；upstreams 使用本组上游成员
