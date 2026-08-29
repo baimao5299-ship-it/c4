@@ -216,7 +216,14 @@ export default function Users() {
   const toggleStatus = useMutation({
     mutationFn: (u: User) =>
       api.updateUser(u.ID!, { status: u.Status === 'disabled' ? 'active' : 'disabled' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: async (_updated, user) => {
+      await qc.invalidateQueries({ queryKey: ['users'] })
+      toast.add({ title: user.Status === 'disabled' ? t('users.unbanSuccess') : t('users.banSuccess'), type: 'success' })
+    },
+    onError: error => {
+      const message = error instanceof ApiUnauthorized ? null : (error as Error)?.message
+      if (message) toast.add({ title: message, type: 'error' })
+    },
   })
 
   const [balanceTarget, setBalanceTarget] = useState<User | null>(null)
@@ -433,6 +440,7 @@ export default function Users() {
                           variant="ghost"
                           size="icon-sm"
                           title={u.Status === 'disabled' ? t('users.enable') : t('users.disable')}
+                          aria-label={u.Status === 'disabled' ? t('users.enable') : t('users.disable')}
                           onClick={() => toggleStatus.mutate(u)}
                           disabled={toggleStatus.isPending}
                         >
