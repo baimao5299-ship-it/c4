@@ -1568,10 +1568,10 @@
       "overview": "Overview",
       "models": "Model plaza",
       "profile": "Profile",
-      "keys": "Keys",
-      "logs": "Logs",
+      "keys": "My keys",
+      "logs": "Usage logs",
       "stats": "Stats",
-      "redemptions": "Redeem"
+      "redemptions": "Top up"
     },
     "common": {
       "loading": "Loading…",

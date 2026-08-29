@@ -1568,10 +1568,10 @@
       "overview": "总览",
       "models": "模型广场",
       "profile": "个人中心",
-      "keys": "Keys",
-      "logs": "日志",
+      "keys": "我的密钥",
+      "logs": "消费日志",
       "stats": "统计",
-      "redemptions": "兑换"
+      "redemptions": "充值"
     },
     "common": {
       "loading": "加载中…",
