@@ -4,9 +4,9 @@
 # 覆盖服务器上的其他 Compose 项目，也不会把密钥放在命令行参数中。
 #
 # 预览：
-#   .\scripts\deploy.ps1 -Server 203.0.113.10 -User root -Domain api.example.com
+#   .\scripts\deploy.ps1 -Server 23.251.32.239 -User root -RemoteDir /www/c4 -Domain qingyutian.duckdns.org
 # 执行：
-#   .\scripts\deploy.ps1 -Server 203.0.113.10 -User root -Domain api.example.com -Apply
+#   .\scripts\deploy.ps1 -Server 23.251.32.239 -User root -RemoteDir /www/c4 -Domain qingyutian.duckdns.org -Apply
 
 [CmdletBinding()]
 param(
@@ -22,7 +22,7 @@ param(
   [int]$SshPort = 22,
 
   [ValidatePattern('^/[A-Za-z0-9._/-]+$')]
-  [string]$RemoteDir = '/opt/c4',
+  [string]$RemoteDir = '/www/c4',
 
   [ValidateRange(1024, 65535)]
   [int]$AppPort = 18080,
@@ -91,7 +91,7 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bundle)) { throw '生成部署包�
 $target = "$User@$Server"
 $cardStoreLine = if ($CardStoreUrl) { "if ! grep -q '^VITE_CARD_STORE_URL=' '$RemoteDir/.env'; then printf 'VITE_CARD_STORE_URL=%s\n' '$CardStoreUrl' >> '$RemoteDir/.env'; fi" } else { ':' }
 $appNameLine = if ($AppName) { "if ! grep -q '^VITE_APP_NAME=' '$RemoteDir/.env'; then printf 'VITE_APP_NAME=%s\n' '$AppName' >> '$RemoteDir/.env'; fi" } else { ':' }
-$pgDataDir = "$RemoteDir/data/pg"
+$pgDataDir = "$RemoteDir/deploy/data/pg"
 $remote = @'
 set -eu
 command -v docker >/dev/null || { echo '服务器缺少 docker' >&2; exit 2; }
