@@ -215,6 +215,15 @@ html[data-glass] [data-glass-fluid-canvas] {
   to { opacity: 1; }
 }
 
+@keyframes card-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[card-flow_12s_ease-in-out_infinite\] { animation: none; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

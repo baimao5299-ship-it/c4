@@ -138,6 +138,13 @@ func TestUserLoginDisabled(t *testing.T) {
 	require.NoError(t, err)
 	rec = do(http.MethodPost, "/api/user/auth/login", `{"email":"d@example.com","password":"s3cret-pass"}`, "")
 	require.Equal(t, http.StatusUnauthorized, rec.Code, "disabled login: %s", rec.Body.String())
+	require.Equal(t, "{\"code\":\"user_disabled\",\"contact\":\"QQ 2965798547\",\"error\":\"账号已被封禁，请联系 QQ 2965798547 处理\"}\n", rec.Body.String())
+
+	// Wrong password must retain the generic response and must not reveal that
+	// the account exists or is disabled.
+	rec = do(http.MethodPost, "/api/user/auth/login", `{"email":"d@example.com","password":"wrong"}`, "")
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, "{\"error\":\"service: invalid email or password\"}\n", rec.Body.String())
 
 	// 禁用用户的既有 JWT → me 401（快照校验；ver 0 = 注册时默认版本）
 	token, err := iss.Issue(u.ID, u.Email, string(u.Role), u.TokenVersion)

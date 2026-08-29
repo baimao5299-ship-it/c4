@@ -18,6 +18,12 @@ import (
 	serviceerr "github.com/is7qin/c3api/internal/service/errors"
 )
 
+const (
+	userDisabledCode    = "user_disabled"
+	userDisabledMessage = "账号已被封禁，请联系 QQ 2965798547 处理"
+	userDisabledContact = "QQ 2965798547"
+)
+
 // WriteJSON 写 JSON 响应（Content-Type application/json + encoder 编码，
 // 含尾换行——与各包历史副本逐字节一致）。
 func WriteJSON(w http.ResponseWriter, status int, v any) {
@@ -29,6 +35,17 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 // WriteErr 写 {"error": msg} JSON 信封。
 func WriteErr(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, map[string]any{"error": msg})
+}
+
+// WriteUserDisabled writes the stable machine-readable response used when a
+// user is administratively banned. The status is supplied by the caller:
+// login and bearer middleware both use 401 so clients clear their session.
+func WriteUserDisabled(w http.ResponseWriter, status int) {
+	WriteJSON(w, status, map[string]any{
+		"error":   userDisabledMessage,
+		"code":    userDisabledCode,
+		"contact": userDisabledContact,
+	})
 }
 
 // ClampLimit 分页 limit 统一钳制（上限 200，与 /usage_logs 同语义）：超限
@@ -54,6 +71,8 @@ func WriteServiceErr(w http.ResponseWriter, err error) {
 		WriteErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, serviceerr.ErrInvalidCredentials):
 		WriteErr(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, serviceerr.ErrUserDisabled):
+		WriteUserDisabled(w, http.StatusUnauthorized)
 	case errors.Is(err, serviceerr.ErrSignupDisabled):
 		WriteErr(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, serviceerr.ErrTooManyRequests):

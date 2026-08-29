@@ -17,8 +17,12 @@ var (
 	ErrInvalidInput       = errors.New("service: invalid input")
 	ErrConflict           = errors.New("service: conflict")
 	ErrInvalidCredentials = errors.New("service: invalid email or password")
-	ErrSignupDisabled     = errors.New("service: signup disabled")
-	ErrTooManyRequests    = errors.New("service: too many requests")
-	ErrMailNotConfigured  = errors.New("service: mail not configured")
-	ErrMailQueueFull      = errors.New("service: mail queue full")
+	// ErrUserDisabled is returned only after the supplied password is valid. It
+	// lets the HTTP boundary explain an administrative ban without exposing
+	// account state to invalid-credential probes.
+	ErrUserDisabled      = errors.New("service: user disabled")
+	ErrSignupDisabled    = errors.New("service: signup disabled")
+	ErrTooManyRequests   = errors.New("service: too many requests")
+	ErrMailNotConfigured = errors.New("service: mail not configured")
+	ErrMailQueueFull     = errors.New("service: mail queue full")
 )

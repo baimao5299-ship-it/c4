@@ -4,7 +4,7 @@
 
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu, Activity } from 'lucide-react'
+import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu, Activity, BookOpen } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -31,6 +31,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 // 用户中心菜单组（个人中心入口在底部用户卡内——用户裁决 2026-08-15，不放导航）
 const userNav = [
   { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
+  { to: '/user/tutorial', key: 'user.nav.tutorial', icon: BookOpen, end: false },
   { to: '/user/models', key: 'user.nav.models', icon: Activity, end: false },
   { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
   { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
@@ -39,7 +40,7 @@ const userNav = [
 ]
 
 // 手机底栏只保留用户完成一次调用所需的五个入口；统计仍可从顶部菜单进入。
-const mobileUserNav = [userNav[0], userNav[1], userNav[2], userNav[3], userNav[5]]
+const mobileUserNav = [userNav[0], userNav[1], userNav[2], userNav[3], userNav[6]]
 
 // platform_admin 专属的管理端菜单组（排序 = 功能边界，2026-08-15 用户裁决）：
 // 概览独立首位 → 代理配置域（模板/账户/规则——上游资源与转发策略）→ 客户域

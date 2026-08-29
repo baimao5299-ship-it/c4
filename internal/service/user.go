@@ -23,6 +23,7 @@ import (
 // re-export 保持既有引用同一实例语义。
 var (
 	ErrInvalidCredentials = serviceerr.ErrInvalidCredentials
+	ErrUserDisabled       = serviceerr.ErrUserDisabled
 	ErrSignupDisabled     = serviceerr.ErrSignupDisabled
 )
 
@@ -117,8 +118,8 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 	return created, nil
 }
 
-// LoginUser 登录校验：email → bcrypt 校验 → 状态检查（禁用与口令错误同
-// 文案 401，防枚举）。
+// LoginUser 登录校验：email → bcrypt 校验 → 状态检查。禁用状态只在口令
+// 校验成功后返回，避免用登录接口枚举账号状态。
 func (s *Service) LoginUser(ctx context.Context, email, password string) (*domain.User, error) {
 	u, err := s.store.GetUserByEmail(ctx, email)
 	if err != nil {
@@ -128,7 +129,7 @@ func (s *Service) LoginUser(ctx context.Context, email, password string) (*domai
 		return nil, ErrInvalidCredentials
 	}
 	if u.Status != domain.UserStatusActive {
-		return nil, ErrInvalidCredentials
+		return nil, ErrUserDisabled
 	}
 	return u, nil
 }

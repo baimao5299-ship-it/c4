@@ -3,7 +3,7 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { KeyRound, LogIn } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ModeToggle } from '@/components/mode-toggle'
-import { adminApi, ApiError, userApi } from '@/lib/api/client'
+import { adminApi, ApiError, ApiUnauthorized, userApi } from '@/lib/api/client'
 import { userAuth } from '@/lib/auth'
 import { setLang, type AppLang } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -31,7 +31,8 @@ export default function UserLogin() {
   const [password, setPassword] = useState('')
   const [adminToken, setAdminToken] = useState('')
   const [authMode, setAuthMode] = useState<'user' | 'admin'>('user')
-  const [err, setErr] = useState('')
+  const location = useLocation()
+  const [err, setErr] = useState(() => (location.state as { authMessage?: string } | null)?.authMessage ?? '')
   const [loading, setLoading] = useState(false)
   const nav = useNavigate()
 
@@ -47,7 +48,7 @@ export default function UserLogin() {
       nav('/user')
     } catch (e) {
       // 服务端 error 字段直接展示；网络异常等统一兜底文案
-      setErr(e instanceof ApiError ? e.message : t('user.auth.errorGeneric'))
+      setErr(e instanceof ApiUnauthorized || e instanceof ApiError ? e.message : t('user.auth.errorGeneric'))
     } finally {
       setLoading(false)
     }

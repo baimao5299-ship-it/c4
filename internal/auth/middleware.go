@@ -70,7 +70,15 @@ func RequireJWT(iss *Issuer, users UserStatusProvider) func(http.Handler) http.H
 			// claims.Ver ≠ 快照版本 → 401（改密/重置密码后该用户全部既有 JWT
 			// 立即失效；与 status 同款 fail-closed 语义——快照缺失本就拒绝）。
 			sn, ok := users.UserSnapshot(claims.UserID)
-			if !ok || sn.Status != domain.UserStatusActive || sn.TokenVersion != claims.Ver {
+			if !ok {
+				writeUnauthorized(w)
+				return
+			}
+			if sn.Status == domain.UserStatusDisabled {
+				httpface.WriteUserDisabled(w, http.StatusUnauthorized)
+				return
+			}
+			if sn.Status != domain.UserStatusActive || sn.TokenVersion != claims.Ver {
 				writeUnauthorized(w)
 				return
 			}

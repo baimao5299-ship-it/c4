@@ -537,8 +537,14 @@
         "timeout": "Query timed out"
       }
     },
-    "enable": "Enable",
-    "disable": "Disable",
+    "enable": "Unban account",
+    "disable": "Ban account",
+    "addBalance": "Add balance",
+    "addBalanceDesc": "Add balance for {{email}} without replacing the current amount",
+    "balanceAmount": "Amount (USD)",
+    "addBalanceConfirm": "Add balance",
+    "balanceAdded": "Balance added",
+    "balanceInvalid": "Enter an amount greater than 0",
     "editTitle": "Edit account #{{id}}",
     "newTitle": "New account",
     "dialogDesc": "upstream_key is the API key of the upstream vendor",
@@ -1582,7 +1588,8 @@
       "keys": "My keys",
       "logs": "Usage logs",
       "stats": "Stats",
-      "redemptions": "Top up"
+      "redemptions": "Top up",
+      "tutorial": "Tutorial"
     },
     "common": {
       "loading": "Loading…",
@@ -1637,6 +1644,7 @@
       "secretHint": "View and copy it anytime from the key list",
       "endpointLabel": "Endpoint",
       "copyEndpoint": "Copy endpoint",
+      "copied": "Copied",
       "formInvalid": "Check the form: name and group are required; numbers must be non-negative integers"
     },
     "logs": {
@@ -1762,6 +1770,7 @@
       "title": "Overview",
       "subtitle": "Your balance, concurrency limit, and recent usage",
       "balanceTitle": "Account balance",
+      "balanceHint": "Available for public group calls; top-ups apply immediately",
       "maxConcurrency": "Max concurrency",
       "createdAt": "Registered at",
       "unlimited": "Unlimited",

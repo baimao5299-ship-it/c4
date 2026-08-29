@@ -49,6 +49,7 @@ func TestWriteServiceErr(t *testing.T) {
 		{"invalid input", serviceerr.ErrInvalidInput, http.StatusBadRequest, "{\"error\":\"service: invalid input\"}\n"},
 		{"conflict", serviceerr.ErrConflict, http.StatusConflict, "{\"error\":\"service: conflict\"}\n"},
 		{"invalid credentials", serviceerr.ErrInvalidCredentials, http.StatusUnauthorized, "{\"error\":\"service: invalid email or password\"}\n"},
+		{"user disabled", serviceerr.ErrUserDisabled, http.StatusUnauthorized, "{\"code\":\"user_disabled\",\"contact\":\"QQ 2965798547\",\"error\":\"账号已被封禁，请联系 QQ 2965798547 处理\"}\n"},
 		{"signup disabled", serviceerr.ErrSignupDisabled, http.StatusForbidden, "{\"error\":\"service: signup disabled\"}\n"},
 		{"default internal error", errors.New("boom"), http.StatusInternalServerError, "{\"error\":\"internal error\"}\n"},
 	}

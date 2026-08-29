@@ -23,6 +23,7 @@ const UserKeys = lazy(() => import('@/pages/user/keys'))
 const UserLogs = lazy(() => import('@/pages/user/logs'))
 const UserStats = lazy(() => import('@/pages/user/stats'))
 const UserRedemptions = lazy(() => import('@/pages/user/redemptions'))
+const UserTutorial = lazy(() => import('@/pages/user/tutorial'))
 const UserProfile = lazy(() => import('@/pages/user/profile'))
 const Forbidden = lazy(() => import('@/pages/forbidden'))
 const NotFound = lazy(() => import('@/pages/not-found'))
@@ -97,6 +98,7 @@ const router = createBrowserRouter([
           { path: 'logs', element: routeElement(UserLogs) },
           { path: 'stats', element: routeElement(UserStats) },
           { path: 'redemptions', element: routeElement(UserRedemptions) },
+          { path: 'tutorial', element: routeElement(UserTutorial) },
         ],
       },
     ],
@@ -130,7 +132,7 @@ function RequireUser() {
 const handleAuthError = (err: unknown) => {
   if (err instanceof ApiUnauthorized) {
     userAuth.clear()
-    router.navigate('/user/login')
+    router.navigate('/user/login', { state: err.code === 'user_disabled' ? { authMessage: err.message } : undefined })
   }
 }
 

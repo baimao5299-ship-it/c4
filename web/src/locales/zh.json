@@ -537,8 +537,14 @@
         "timeout": "查询超时"
       }
     },
-    "enable": "启用",
-    "disable": "禁用",
+    "enable": "解除封禁",
+    "disable": "封禁账号",
+    "addBalance": "增加余额",
+    "addBalanceDesc": "给用户「{{email}}」增加余额（当前余额不会被覆盖）",
+    "balanceAmount": "增加金额 (USD)",
+    "addBalanceConfirm": "确认增加",
+    "balanceAdded": "余额已增加",
+    "balanceInvalid": "请输入大于 0 的金额",
     "editTitle": "编辑账号 #{{id}}",
     "newTitle": "新建账号",
     "dialogDesc": "upstream_key 为上游厂商的 API 密钥",
@@ -1582,7 +1588,8 @@
       "keys": "我的密钥",
       "logs": "消费日志",
       "stats": "统计",
-      "redemptions": "充值"
+      "redemptions": "充值",
+      "tutorial": "使用教程"
     },
     "common": {
       "loading": "加载中…",
@@ -1637,6 +1644,7 @@
       "secretHint": "可随时在 Key 列表查看与复制",
       "endpointLabel": "端点",
       "copyEndpoint": "复制端点",
+      "copied": "已复制",
       "formInvalid": "请检查表单：名称与分组必填，数字须为非负整数"
     },
     "logs": {
@@ -1762,6 +1770,7 @@
       "title": "总览",
       "subtitle": "账户余额、并发上限与近期用量",
       "balanceTitle": "账户余额",
+      "balanceHint": "可用于公开分组调用，充值后立即生效",
       "maxConcurrency": "并发上限",
       "createdAt": "注册时间",
       "unlimited": "不限",

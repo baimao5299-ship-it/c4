@@ -124,7 +124,11 @@ export class ApiClient {
     const qs = params ?? ''
     const url = `${this.base}${path}${qs ? (qs.startsWith('?') ? qs : `?${qs}`) : ''}`
     const res = await fetch(url, { ...rest, headers })
-    if (res.status === 401) throw new ApiUnauthorized()
+    if (res.status === 401) {
+      const body = await res.json().catch(() => null) as { code?: unknown; contact?: unknown; error?: unknown } | null
+      const message = errorMessage(body, 'unauthorized')
+      throw new ApiUnauthorized(message, typeof body?.code === 'string' ? body.code : undefined)
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => null)
       throw new ApiError(res.status, errorMessage(body, `HTTP ${res.status}`))
@@ -273,7 +277,12 @@ export class ApiClient {
 }
 
 export class ApiUnauthorized extends Error {
-  constructor() { super('unauthorized'); this.name = 'ApiUnauthorized' }
+  code?: string
+  constructor(message = 'unauthorized', code?: string) {
+    super(message)
+    this.name = 'ApiUnauthorized'
+    this.code = code
+  }
 }
 
 // 用户端实例：base '/api/user'，Authorization 走 userAuth（c3api_user_token）。

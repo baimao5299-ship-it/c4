@@ -219,6 +219,22 @@ export default function Users() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   })
 
+  const [balanceTarget, setBalanceTarget] = useState<User | null>(null)
+  const [balanceAmount, setBalanceAmount] = useState('')
+  const addBalance = useMutation({
+    mutationFn: async () => {
+      const amount = Number(balanceAmount)
+      if (!balanceTarget || !Number.isFinite(amount) || amount <= 0) throw new Error(t('users.balanceInvalid'))
+      return api.updateUser(balanceTarget.ID!, { balance: (balanceTarget.Balance ?? 0) + amount })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      toast.add({ title: t('users.balanceAdded'), type: 'success' })
+      setBalanceTarget(null)
+      setBalanceAmount('')
+    },
+  })
+
   // —— 分组管理（替换语义：勾选 = 授予，未勾选 = 撤销）——
   const [groupsTarget, setGroupsTarget] = useState<User | null>(null)
   const [groupsChecked, setGroupsChecked] = useState<number[]>([])
@@ -411,6 +427,7 @@ export default function Users() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon-sm" title={t('users.tempBalances.button')} onClick={() => setTempUser(u)}><Coins /></Button>
+                        <Button variant="ghost" size="icon-sm" title={t('users.addBalance')} aria-label={t('users.addBalance')} onClick={() => { setBalanceTarget(u); setBalanceAmount(''); addBalance.reset() }}><Plus /></Button>
                         <Button variant="ghost" size="icon-sm" title={t('users.groups.button')} onClick={() => openGroups(u)}><UsersRound /></Button>
                         <Button
                           variant="ghost"
@@ -506,6 +523,15 @@ export default function Users() {
               {save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={balanceTarget != null} onOpenChange={open => { if (!open && !addBalance.isPending) setBalanceTarget(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{t('users.addBalance')}</DialogTitle><DialogDescription>{t('users.addBalanceDesc', { email: balanceTarget?.Email })}</DialogDescription></DialogHeader>
+          <div className="space-y-1.5"><Label htmlFor="add-balance-amount">{t('users.balanceAmount')}</Label><Input id="add-balance-amount" type="number" min="0.01" step="0.01" value={balanceAmount} onChange={e => setBalanceAmount(e.target.value)} placeholder="10.00" autoFocus /></div>
+          {addBalance.isError && <p className="text-sm text-destructive">{(addBalance.error as Error).message}</p>}
+          <DialogFooter><Button variant="outline" onClick={() => setBalanceTarget(null)} disabled={addBalance.isPending}>{t('common.cancel')}</Button><Button onClick={() => addBalance.mutate()} disabled={addBalance.isPending || !(Number(balanceAmount) > 0)}>{addBalance.isPending ? t('common.saving') : t('users.addBalanceConfirm')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

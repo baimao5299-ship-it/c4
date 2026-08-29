@@ -136,6 +136,14 @@ export default function UserKeys() {
     queryFn: () => userApi.listUserKeys({ limit, offset }),
   })
   const rows = data?.rows ?? []
+  const endpoint = typeof window === 'undefined' ? '' : `${window.location.origin}/v1`
+  const [endpointCopied, setEndpointCopied] = useState(false)
+  const copyEndpoint = async () => {
+    if (endpoint && await copyText(endpoint)) {
+      setEndpointCopied(true)
+      window.setTimeout(() => setEndpointCopied(false), 1800)
+    }
+  }
 
   // 每页条数变化 → 重置 offset。
   const changeLimit = (l: number) => { setLimit(l); setOffset(0) }
@@ -275,6 +283,16 @@ export default function UserKeys() {
         </div>
         <Button onClick={openCreate}><Plus /> {t('user.keys.new')}</Button>
       </div>
+
+      <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-[16px] border border-primary/30 bg-[linear-gradient(120deg,rgba(0,113,227,0.17),rgba(41,151,255,0.05))] p-4 shadow-sm sm:p-5" aria-labelledby="gateway-endpoint">
+        <p id="gateway-endpoint" className="text-sm font-semibold text-primary">{t('user.keys.endpointLabel')}</p>
+        <div className="mt-2 flex min-h-14 items-center gap-2 rounded-xl border border-primary/25 bg-background/80 p-2 pl-3">
+          <code className="min-w-0 flex-1 break-all font-mono text-sm font-semibold sm:text-base">{endpoint || '—'}</code>
+          <Button type="button" size="lg" className="min-h-11 shrink-0 px-3" onClick={() => { void copyEndpoint() }} disabled={!endpoint} aria-label={endpointCopied ? t('user.keys.copied') : t('user.keys.copyEndpoint')}>
+            {endpointCopied ? <Check /> : <Copy />}<span className="hidden sm:inline">{endpointCopied ? t('user.keys.copied') : t('user.keys.copyEndpoint')}</span>
+          </Button>
+        </div>
+      </motion.section>
 
       {isError ? (
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>

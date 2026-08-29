@@ -65,7 +65,7 @@ export default function UserRedemptions() {
     queryFn: () => userApi.listUserRedemptions({ page, page_size: pageSize }),
   })
   const rows = data?.rows ?? []
-  const cardStoreURL = import.meta.env.VITE_CARD_STORE_URL?.trim() || ''
+  const cardStoreURL = import.meta.env.VITE_CARD_STORE_URL?.trim() || 'https://catfk.com/shop/KPHP1N61/c60y6l'
 
   // 末页死胡同守卫：非首页的当前页数据被清空（如兑换后 total 变化）时回退到第 1 页；
   // 页 1 本身为空（列表真正为空）时无需回退，不会成环。
@@ -167,7 +167,7 @@ export default function UserRedemptions() {
       </motion.div>
 
       <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.05 }}>
-        <Card>
+        <Card className="overflow-hidden border-blue-300/40 bg-[linear-gradient(120deg,rgba(0,113,227,0.14),rgba(41,151,255,0.05),rgba(0,180,255,0.14))] bg-[length:220%_220%] animate-[card-flow_12s_ease-in-out_infinite] dark:border-blue-400/30 dark:bg-[linear-gradient(120deg,rgba(0,80,180,0.3),rgba(0,140,255,0.08),rgba(0,80,180,0.3))]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ShoppingBag className="size-5 text-primary" />{t('user.redemptions.storeTitle')}</CardTitle>
             <CardDescription>{t('user.redemptions.storeDesc')}</CardDescription>

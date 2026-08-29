@@ -202,6 +202,7 @@ func TestRequireJWTRejects(t *testing.T) {
 		mw := RequireJWT(iss, fakeUserStatus{snapshots: map[int64]domain.UserSnapshot{7: {Status: domain.UserStatusDisabled}}})
 		rec := doReq(t, mw, token)
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Equal(t, "{\"code\":\"user_disabled\",\"contact\":\"QQ 2965798547\",\"error\":\"账号已被封禁，请联系 QQ 2965798547 处理\"}\n", rec.Body.String())
 	})
 	// B2-1 fail-closed：快照缺失（启动首刷失败/Reload 失败/NOTIFY 丢失）→
 	// 401 拒绝，不放行（对照 /admin 面已 fail-closed）
