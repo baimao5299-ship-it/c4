@@ -8,6 +8,7 @@ import { UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ModeToggle } from '@/components/mode-toggle'
 import { ApiError, userApi } from '@/lib/api/client'
@@ -60,14 +61,16 @@ export default function UserRegister() {
       <div className="absolute right-4 top-4 flex items-center gap-2"><ModeToggle /><div className="inline-flex items-center gap-1 rounded-md border bg-background p-0.5">{LANGS.map(({ code: c, label }) => <Button key={c} size="sm" variant="ghost" className={cn('h-7 min-w-9 px-2', lang === c && 'bg-secondary text-secondary-foreground')} onClick={() => setLang(c)}>{label}</Button>)}</div></div>
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <Card className="w-[min(calc(100vw-2rem),24rem)]"><CardHeader><CardTitle className="flex items-center gap-2"><UserPlus className="h-5 w-5" /> {t('user.register.title')}</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">{t('user.register.subtitle')}</p>
-            <Input type="email" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} disabled={step==='code'} />
-            <Input type="password" placeholder={t('user.auth.password')} value={password} onChange={e => { setPassword(e.target.value); setErr('') }} disabled={step==='code'} />
-            <Input type="password" placeholder={t('user.auth.confirmPassword')} value={confirm} onChange={e => { setConfirm(e.target.value); setErr('') }} disabled={step==='code'} />
-            {step==='code' && <div className="flex gap-2"><Input placeholder={t('user.register.codePlaceholder')} value={code} onChange={e => setCode(e.target.value)} /><Button variant="outline" disabled={countdown>0} onClick={resend}>{countdown>0 ? `${countdown}s` : t('user.register.resend')}</Button></div>}
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            <Button className="w-full" disabled={loading} onClick={submit}>{step==='code' ? t('user.register.verifyButton') : t('user.auth.registerButton')}</Button>
+          <CardContent>
+            <form className="space-y-3" onSubmit={event => { event.preventDefault(); void submit() }}>
+              <p className="text-sm text-muted-foreground">{t('user.register.subtitle')}</p>
+              <div className="space-y-1.5"><Label htmlFor="register-email">{t('user.auth.email')}</Label><Input id="register-email" type="email" autoComplete="email" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} disabled={step==='code'} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /></div>
+              <div className="space-y-1.5"><Label htmlFor="register-password">{t('user.auth.password')}</Label><Input id="register-password" type="password" autoComplete="new-password" placeholder={t('user.auth.password')} value={password} onChange={e => { setPassword(e.target.value); setErr('') }} disabled={step==='code'} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /></div>
+              <div className="space-y-1.5"><Label htmlFor="register-confirm">{t('user.auth.confirmPassword')}</Label><Input id="register-confirm" type="password" autoComplete="new-password" placeholder={t('user.auth.confirmPassword')} value={confirm} onChange={e => { setConfirm(e.target.value); setErr('') }} disabled={step==='code'} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /></div>
+              {step==='code' && <div className="space-y-1.5"><Label htmlFor="register-code">{t('user.register.codePlaceholder')}</Label><div className="flex gap-2"><Input id="register-code" inputMode="numeric" autoComplete="one-time-code" placeholder={t('user.register.codePlaceholder')} value={code} onChange={e => { setCode(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'register-error' : undefined} /><Button type="button" variant="outline" disabled={countdown>0 || loading} onClick={() => { void resend() }}>{countdown>0 ? `${countdown}s` : t('user.register.resend')}</Button></div></div>}
+              {err && <p id="register-error" role="alert" className="text-sm text-destructive">{err}</p>}
+              <Button type="submit" className="w-full" disabled={loading}>{step==='code' ? t('user.register.verifyButton') : t('user.auth.registerButton')}</Button>
+            </form>
             <Link to="/user/login" className="block text-center text-sm text-muted-foreground hover:text-foreground">{t('user.auth.loginLink')}</Link>
           </CardContent>
         </Card>

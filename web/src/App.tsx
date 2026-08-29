@@ -3,6 +3,7 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MotionConfig } from 'framer-motion'
 import { Outlet, RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom'
 import { ApiClient, ApiUnauthorized } from '@/lib/api/client'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -125,7 +126,9 @@ export default function App() {
         <FluidCanvas />
       </div>
       <QueryClientProvider client={qc}>
-        <RouterProvider router={router} />
+        <MotionConfig reducedMotion="user">
+          <RouterProvider router={router} />
+        </MotionConfig>
       </QueryClientProvider>
       <Toaster />
     </ThemeProvider>

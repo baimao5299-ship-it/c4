@@ -168,7 +168,7 @@ export default function AppShell() {
               </div>
             </div>
           </header>
-          <div data-od-id="app-shell-content" className="@container/main flex flex-col bg-transparent px-4 pb-24 pt-7 lg:px-8 lg:pb-8 lg:pt-9">
+          <div data-od-id="app-shell-content" className="@container/main flex flex-col bg-transparent px-4 pb-24 pt-7 md:pb-8 lg:px-8 lg:pt-9">
             <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 md:gap-6">
               <motion.div key={location.pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                 <Outlet />
@@ -177,7 +177,7 @@ export default function AppShell() {
           </div>
         </ScrollArea>
         {/* 手机端把最高频的五个动作固定在拇指可达区域；桌面端继续使用完整侧栏。 */}
-        <nav
+        {location.pathname.startsWith('/user') && <nav
           data-od-id="app-shell-mobile-bottom-nav"
           aria-label={t('user.nav.userSection')}
           className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[rgba(19,45,83,0.2)] bg-[rgb(248_251_255_/_88%)] px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_28px_rgba(19,45,83,0.12)] backdrop-blur-xl dark:border-white/15 dark:bg-[rgb(20_26_35_/_90%)] md:hidden"
@@ -196,7 +196,7 @@ export default function AppShell() {
               <span className="max-w-full truncate">{t(key)}</span>
             </NavLink>
           ))}
-        </nav>
+        </nav>}
       </main>
     </div>
   )

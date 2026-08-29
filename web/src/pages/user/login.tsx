@@ -9,6 +9,7 @@ import { LogIn } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ModeToggle } from '@/components/mode-toggle'
 import { ApiError, userApi } from '@/lib/api/client'
@@ -70,12 +71,14 @@ export default function UserLogin() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <Card className="w-[min(calc(100vw-2rem),24rem)]">
           <CardHeader><CardTitle className="flex items-center gap-2"><LogIn className="h-5 w-5" /> {t('user.auth.title')}</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">{t('user.auth.subtitle')}</p>
-            <Input type="email" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} />
-            <Input type="password" placeholder={t('user.auth.password')} value={password} onChange={e => { setPassword(e.target.value); setErr('') }} onKeyDown={e => { if (e.key === 'Enter') submit() }} />
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            <Button className="w-full" disabled={loading} onClick={submit}>{t('user.auth.loginButton')}</Button>
+          <CardContent>
+            <form className="space-y-3" onSubmit={event => { event.preventDefault(); void submit() }}>
+              <p className="text-sm text-muted-foreground">{t('user.auth.subtitle')}</p>
+              <div className="space-y-1.5"><Label htmlFor="login-email">{t('user.auth.email')}</Label><Input id="login-email" type="email" autoComplete="email" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'login-error' : undefined} /></div>
+              <div className="space-y-1.5"><Label htmlFor="login-password">{t('user.auth.password')}</Label><Input id="login-password" type="password" autoComplete="current-password" placeholder={t('user.auth.password')} value={password} onChange={e => { setPassword(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'login-error' : undefined} /></div>
+              {err && <p id="login-error" role="alert" className="text-sm text-destructive">{err}</p>}
+              <Button type="submit" className="w-full" disabled={loading}>{t('user.auth.loginButton')}</Button>
+            </form>
             <Link to="/user/forgot-password" className="block text-center text-sm text-muted-foreground transition-colors hover:text-foreground">{t('user.auth.forgotPasswordLink')}</Link>
             <Link to="/user/register" className="block text-center text-sm text-muted-foreground transition-colors hover:text-foreground">
               {t('user.auth.registerLink')}

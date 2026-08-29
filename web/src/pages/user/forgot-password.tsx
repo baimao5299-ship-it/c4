@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from 'react-i18next'
 import { ApiError, userApi } from '@/lib/api/client'
@@ -30,21 +31,23 @@ export default function ForgotPassword() {
   }
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-muted via-background to-background">
-      <Card className="w-96"><CardHeader><CardTitle>{t('user.forgot.title')}</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {step==='email' ? <>
-            <Input placeholder={t('user.auth.email')} value={email} onChange={e=>setEmail(e.target.value)} />
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            {msg && <p className="text-sm text-green-600">{msg}</p>}
-            <Button className="w-full" disabled={loading} onClick={requestCode}>{t('user.forgot.sendCode')}</Button>
-          </> : <>
-            <Input placeholder={t('user.forgot.codePlaceholder')} value={code} onChange={e=>setCode(e.target.value)} />
-            <Input type="password" placeholder={t('user.forgot.newPassword')} value={newPassword} onChange={e=>setNewPassword(e.target.value)} />
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            {msg && <p className="text-sm text-green-600">{msg}</p>}
-            <Button className="w-full" disabled={loading} onClick={reset}>{t('user.forgot.resetButton')}</Button>
-            <Button variant="outline" className="w-full" onClick={()=>setStep('email')}>{t('common.back')}</Button>
-          </>}
+      <Card className="w-[min(calc(100vw-2rem),24rem)]"><CardHeader><CardTitle>{t('user.forgot.title')}</CardTitle></CardHeader>
+        <CardContent>
+          <form className="space-y-3" onSubmit={event => { event.preventDefault(); void (step === 'email' ? requestCode() : reset()) }}>
+            {step==='email' ? <>
+              <div className="space-y-1.5"><Label htmlFor="forgot-email">{t('user.auth.email')}</Label><Input id="forgot-email" type="email" autoComplete="email" placeholder={t('user.auth.email')} value={email} onChange={e=>{ setEmail(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'forgot-error' : undefined} /></div>
+              {err && <p id="forgot-error" role="alert" className="text-sm text-destructive">{err}</p>}
+              {msg && <p role="status" className="text-sm text-green-600">{msg}</p>}
+              <Button type="submit" className="w-full" disabled={loading}>{t('user.forgot.sendCode')}</Button>
+            </> : <>
+              <div className="space-y-1.5"><Label htmlFor="forgot-code">{t('user.forgot.codePlaceholder')}</Label><Input id="forgot-code" inputMode="numeric" autoComplete="one-time-code" placeholder={t('user.forgot.codePlaceholder')} value={code} onChange={e=>{ setCode(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'forgot-error' : undefined} /></div>
+              <div className="space-y-1.5"><Label htmlFor="forgot-password">{t('user.forgot.newPassword')}</Label><Input id="forgot-password" type="password" autoComplete="new-password" placeholder={t('user.forgot.newPassword')} value={newPassword} onChange={e=>{ setNewPassword(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'forgot-error' : undefined} /></div>
+              {err && <p id="forgot-error" role="alert" className="text-sm text-destructive">{err}</p>}
+              {msg && <p role="status" className="text-sm text-green-600">{msg}</p>}
+              <Button type="submit" className="w-full" disabled={loading}>{t('user.forgot.resetButton')}</Button>
+              <Button type="button" variant="outline" className="w-full" onClick={()=>setStep('email')}>{t('common.back')}</Button>
+            </>}
+          </form>
           <Link to="/user/login" className="block text-center text-sm text-muted-foreground hover:text-foreground">{t('user.auth.loginLink')}</Link>
         </CardContent>
       </Card>

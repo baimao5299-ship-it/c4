@@ -1756,13 +1756,21 @@
       "tokens": "Tokens",
       "cost": "Cost",
       "tutorialTitle": "Getting started",
-      "tutorialIntro": "Complete these four steps to go from sign-up to your first call. Everything works on mobile. ",
+      "tutorialIntro": "Follow these five steps from sign-up to your first call. Copy the endpoint and key directly on mobile.",
       "startSetup": "Create a key",
       "endpointHint": "After creating a key, copy the endpoint and secret from My Keys. Use OpenAI-compatible mode in your client and choose a model shown in the model plaza.",
       "step1": { "title": "Sign up and sign in", "desc": "Create an account with your email and sign in. If email verification is enabled, enter the code you receive before continuing." },
       "step2": { "title": "Create an API key", "desc": "Open My Keys, choose New Key, select a public group or one granted by the administrator, then set optional concurrency and cumulative token limits." },
-      "step3": { "title": "Configure your client", "desc": "Copy the key and endpoint into your client. The endpoint is the current site origin plus /v1, for example https://qingyutian.duckdns.org/v1. Do not add /v1 twice." },
-      "step4": { "title": "Check status and redeem", "desc": "Use Model plaza for calls, latency, and error rate; Usage logs for each request; Redeem for balance, concurrency, or temporary credits." }
+      "step3": { "title": "Configure your client", "desc": "Copy the key and endpoint into your client. The endpoint is the address shown on this page plus /v1; choose OpenAI-compatible mode and do not add /v1 twice." },
+      "step4": { "title": "Check models and usage", "desc": "Choose a stable or unsampled model in Model plaza. After calling it, review calls, average latency, and error rate over the last 24 hours. Usage logs show each request's model, tokens, cost, latency, and error reason." },
+      "step5": { "title": "Redeem and handle failures", "desc": "Open Redeem and paste multiple codes separated by newlines, spaces, or commas. Each code gets its own result; successful balance, concurrency, or temporary credits take effect immediately, while failed items include a reason." },
+      "quickActionsTitle": "Quick access",
+      "quickKeysTitle": "My keys",
+      "quickKeysDesc": "Create, copy, or rotate an API key",
+      "quickLogsTitle": "Usage logs",
+      "quickLogsDesc": "Review requests, tokens, cost, and errors",
+      "quickRedeemTitle": "Redeem",
+      "quickRedeemDesc": "Paste multiple codes to top up at once"
     },
     "models": {
       "title": "Model plaza",
@@ -1783,6 +1791,7 @@
       "loadFailed": "Model status could not be loaded. Refresh in a moment.",
       "emptyTitle": "No models to show yet",
       "emptyDesc": "No model groups are available to your account, or no selectable group is configured yet.",
+      "dataCapped": "High request volume: the latest 5,000 records were loaded; error rate and latency use those samples.",
       "disclaimer": "Status reflects only groups visible to this account and samples from the last 24 hours. Models without samples stay marked as No sample."
     },
     "profile": {

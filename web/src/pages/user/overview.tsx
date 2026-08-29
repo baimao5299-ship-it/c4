@@ -8,7 +8,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { BarChart3, CalendarDays, KeyRound, Wallet, Zap, BookOpen, Copy, ArrowRight } from 'lucide-react'
+import { BarChart3, CalendarDays, FileText, KeyRound, Ticket, Wallet, Zap, BookOpen, Copy, ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -29,6 +29,7 @@ const cardGrid = 'grid grid-cols-1 gap-5 *:data-[slot=card]:bg-linear-to-t *:dat
 
 export default function UserOverview() {
   const { t } = useTranslation()
+  const apiEndpoint = `${window.location.origin}/v1`
 
   // 近 7 天窗口（挂载时固定，避免 queryKey 每次渲染变化导致无限 refetch）
   const [from, to] = useMemo(() => {
@@ -77,19 +78,38 @@ export default function UserOverview() {
             <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">{t('user.overview.tutorialTitle')}</h2><Link className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline" to="/user/keys">{t('user.overview.startSetup')}<ArrowRight className="size-4" /></Link></div>
             <p className="mt-1 text-sm text-muted-foreground">{t('user.overview.tutorialIntro')}</p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {(['step1', 'step2', 'step3', 'step4'] as const).map((step, index) => (
-                <details key={step} className="group rounded-xl border border-border/70 bg-card/60 p-3 open:bg-card">
+              {(['step1', 'step2', 'step3', 'step4', 'step5'] as const).map((step, index) => (
+                <details key={step} open={index === 0} className="group rounded-xl border border-border/70 bg-card/60 p-3 open:bg-card">
                   <summary className="cursor-pointer list-none text-sm font-medium"><span className="mr-2 inline-flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs text-primary">{index + 1}</span>{t(`user.overview.${step}.title`)}</summary>
                   <p className="mt-2 pl-7 text-xs leading-5 text-muted-foreground">{t(`user.overview.${step}.desc`)}</p>
                 </details>
               ))}
             </div>
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-background/60 p-3 text-xs text-muted-foreground"><Copy className="mt-0.5 size-4 shrink-0" /><span>{t('user.overview.endpointHint')}</span></div>
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-background/60 p-3 text-xs text-muted-foreground"><Copy className="mt-0.5 size-4 shrink-0" /><span>{t('user.overview.endpointHint')} <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-foreground">{apiEndpoint}</code></span></div>
           </div>
         </div>
       </motion.section>
 
       <UserModels compact />
+
+      <section aria-labelledby="user-quick-actions" className="space-y-3">
+        <h2 id="user-quick-actions" className="text-lg font-semibold">{t('user.overview.quickActionsTitle')}</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { to: '/user/keys', icon: KeyRound, title: t('user.overview.quickKeysTitle'), desc: t('user.overview.quickKeysDesc') },
+            { to: '/user/logs', icon: FileText, title: t('user.overview.quickLogsTitle'), desc: t('user.overview.quickLogsDesc') },
+            { to: '/user/redemptions', icon: Ticket, title: t('user.overview.quickRedeemTitle'), desc: t('user.overview.quickRedeemDesc') },
+          ].map(({ to, icon: Icon, title, desc }, index) => (
+            <motion.div key={to} {...fadeUp} transition={{ duration: 0.25, delay: index * 0.05 }}>
+              <Link to={to} className="group flex min-h-20 items-center gap-3 rounded-xl border border-border/70 bg-card/60 p-4 transition-[background-color,border-color,box-shadow] duration-200 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="size-5" /></span>
+                <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{desc}</span></span>
+                <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5" />
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+      </section>
 
       {loading ? (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">

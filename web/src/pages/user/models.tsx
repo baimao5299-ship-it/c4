@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, ArrowRight, CircleAlert, CircleCheck, Clock3, RefreshCw, Sparkles } from 'lucide-react'
@@ -20,14 +20,41 @@ type ModelMetric = {
   groups: string[]
 }
 
-const windowRange = () => {
-  const to = new Date()
+type MetricRow = {
+  Model?: unknown
+  RequestID?: unknown
+  ErrorType?: unknown
+  LatencyMS?: unknown
+  CreatedAt?: unknown
+}
+
+const windowRange = (anchor = new Date()) => {
+  const to = anchor
   const from = new Date(to.getTime() - 24 * 60 * 60 * 1000)
   return { from: from.toISOString(), to: to.toISOString() }
 }
 
-function buildMetrics(groups: Awaited<ReturnType<typeof userApi.listUserGroups>>, usageRows: any[], errorRows: any[]): ModelMetric[] {
+type CursorPage<Row> = { rows?: Row[]; next_cursor?: number | null }
+
+// The API uses an ID cursor rather than offset pagination. Keep the plaza
+// complete for busy accounts while bounding refresh work to a predictable
+// amount (25 pages x 200 rows per table).
+async function fetchCursorPages<Row>(fetchPage: (cursor?: number) => Promise<CursorPage<Row>>, maxPages = 25) {
+  const rows: Row[] = []
+  let cursor: number | undefined
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await fetchPage(cursor)
+    rows.push(...(result.rows ?? []))
+    const next = result.next_cursor ?? undefined
+    if (!next || next === cursor) return { rows, truncated: false }
+    cursor = next
+  }
+  return { rows, truncated: true }
+}
+
+function buildMetrics(groups: Awaited<ReturnType<typeof userApi.listUserGroups>>, usageRows: MetricRow[], errorRows: MetricRow[]): ModelMetric[] {
   const byModel = new Map<string, { requests: number; errors: number; latencyTotal: number; lastAt: string | null; groups: Set<string> }>()
+  const seenErrorKeys = new Set<string>()
   const ensure = (raw: unknown) => {
     const model = String(raw ?? '').trim()
     if (!model) return null
@@ -48,12 +75,28 @@ function buildMetrics(groups: Awaited<ReturnType<typeof userApi.listUserGroups>>
     metric.latencyTotal += Math.max(0, Number(row.LatencyMS ?? 0) || 0)
     const at = row.CreatedAt ? String(row.CreatedAt) : null
     if (at && (!metric.lastAt || at > metric.lastAt)) metric.lastAt = at
-    if (row.ErrorType && row.ErrorType !== 'none') metric.errors += 1
+    if (row.ErrorType && row.ErrorType !== 'none') {
+      const requestID = String(row.RequestID ?? '').trim()
+      const errorKey = requestID ? `${requestID}\u0000${String(row.Model ?? '').trim()}` : ''
+      // An abort is intentionally present in both usage_logs and err_logs.
+      // Count each request once, including duplicate rows from a retried read.
+      if (!errorKey || !seenErrorKeys.has(errorKey)) {
+        metric.errors += 1
+        if (errorKey) seenErrorKeys.add(errorKey)
+      }
+    }
   }
   for (const row of errorRows ?? []) {
     const metric = ensure(row.Model)
     if (!metric) continue
+    if (row.ErrorType === 'none') continue
+    // abort/failover rows are intentionally mirrored into both tables. Count
+    // one request once so the plaza never inflates an error rate.
+    const requestID = String(row.RequestID ?? '').trim()
+    const errorKey = requestID ? `${requestID}\u0000${String(row.Model ?? '').trim()}` : ''
+    if (errorKey && seenErrorKeys.has(errorKey)) continue
     metric.errors += 1
+    if (errorKey) seenErrorKeys.add(errorKey)
     const at = row.CreatedAt ? String(row.CreatedAt) : null
     if (at && (!metric.lastAt || at > metric.lastAt)) metric.lastAt = at
   }
@@ -104,22 +147,28 @@ function ModelCard({ metric, t }: { metric: ModelMetric; t: (key: string, option
 
 export default function UserModels({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation()
-  const range = useMemo(windowRange, [])
+  const [rangeAnchor, setRangeAnchor] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setRangeAnchor(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const range = useMemo(() => windowRange(new Date(rangeAnchor)), [rangeAnchor])
   const groupsQ = useQuery({ queryKey: ['user', 'groups'], queryFn: () => userApi.listUserGroups(), staleTime: 60_000 })
   const usageQ = useQuery({
     queryKey: ['user', 'model-usage', range],
-    queryFn: () => userApi.getMyUsageLogs({ ...range, limit: 200 }),
+    queryFn: () => fetchCursorPages(cursor => userApi.getMyUsageLogs({ ...range, limit: 200, cursor })),
     refetchInterval: 30_000,
   })
   const errorsQ = useQuery({
     queryKey: ['user', 'model-errors', range],
-    queryFn: () => userApi.getMyErrLogs({ ...range, limit: 200 }),
+    queryFn: () => fetchCursorPages(cursor => userApi.getMyErrLogs({ ...range, limit: 200, cursor })),
     refetchInterval: 30_000,
   })
   const metrics = useMemo(() => buildMetrics(groupsQ.data ?? [], usageQ.data?.rows ?? [], errorsQ.data?.rows ?? []), [groupsQ.data, usageQ.data, errorsQ.data])
   const visible = compact ? metrics.slice(0, 6) : metrics
   const loading = groupsQ.isLoading || usageQ.isLoading || errorsQ.isLoading
   const failed = groupsQ.isError || usageQ.isError || errorsQ.isError
+  const truncated = Boolean(usageQ.data?.truncated || errorsQ.data?.truncated)
   const stableCount = metrics.filter(metric => statusFor(metric, t).label === t('user.models.status.stable')).length
   const avgLatency = metrics.filter(metric => metric.requests && metric.latencyTotal).reduce((sum, metric) => sum + metric.latencyTotal / metric.requests, 0) / Math.max(1, metrics.filter(metric => metric.requests && metric.latencyTotal).length)
 
@@ -148,6 +197,7 @@ export default function UserModels({ compact = false }: { compact?: boolean }) {
       ) : visible.length === 0 ? (
         <Card><CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground"><Activity className="size-10" /><p className="font-medium">{t('user.models.emptyTitle')}</p><p className="max-w-md text-sm">{t('user.models.emptyDesc')}</p></CardContent></Card>
       ) : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map(metric => <ModelCard key={metric.model} metric={metric} t={t} />)}</div>}
+      {!compact && truncated && <p className="rounded-lg border border-amber-300/60 bg-amber-50/70 p-3 text-xs text-amber-800 dark:border-amber-400/30 dark:bg-amber-950/20 dark:text-amber-200">{t('user.models.dataCapped')}</p>}
       {!compact && <p className="text-xs text-muted-foreground">{t('user.models.disclaimer')}</p>}
     </section>
   )
