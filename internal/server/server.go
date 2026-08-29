@@ -116,6 +116,9 @@ func NewServer(opts Options) *Server {
 		// favicon 位于 dist 根（index.html 引用 /favicon.svg），不走 SPA fallback，
 		// 否则会返回 index.html（content-type text/html，浏览器拒绝渲染）。
 		r.Handle("/favicon.svg", http.FileServerFS(web))
+		// Brand avatar is a Vite public asset. Keep root-level exposure explicit
+		// instead of enabling a browsable catch-all for embedded files.
+		r.Handle("/qingyutian-avatar.png", http.FileServerFS(web))
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			index, err := fs.ReadFile(opts.WebFS, "index.html")
 			if err != nil {

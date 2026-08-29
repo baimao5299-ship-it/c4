@@ -189,9 +189,10 @@ func TestFaviconServedFromWebFS(t *testing.T) {
 // 被遍历暴露）。
 func TestAssetsNoDirectoryListing(t *testing.T) {
 	fsys := fstest.MapFS{
-		"index.html":    &fstest.MapFile{Data: []byte(`<html></html>`)},
-		"assets":        &fstest.MapFile{Mode: fs.ModeDir},
-		"assets/app.js": &fstest.MapFile{Data: []byte(`console.log(1)`)},
+		"index.html":            &fstest.MapFile{Data: []byte(`<html></html>`)},
+		"qingyutian-avatar.png": &fstest.MapFile{Data: []byte("png")},
+		"assets":                &fstest.MapFile{Mode: fs.ModeDir},
+		"assets/app.js":         &fstest.MapFile{Data: []byte(`console.log(1)`)},
 	}
 	s := NewServer(Options{AdminToken: "tok", WebFS: fsys})
 
@@ -205,6 +206,12 @@ func TestAssetsNoDirectoryListing(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code, "文件请求不受影响")
 	require.Contains(t, rec.Body.String(), "console.log(1)")
+
+	req = httptest.NewRequest(http.MethodGet, "/qingyutian-avatar.png", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "品牌头像应可访问")
+	require.Equal(t, "png", rec.Body.String())
 }
 
 // 规格 §10.6：全局在途上限，超限立即 429 + Retry-After: 1。
