@@ -9,13 +9,13 @@ C4 的 Compose 默认只绑定 `127.0.0.1`。公网用户应通过 HTTPS 反向�
 在本机 PowerShell 7（命令名 `pwsh`）中预览：
 
 ```powershell
-pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -RemoteDir /srv/c4 -Domain app.example.com -AppName C4
+pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -IdentityFile .\keys\c4-server-ed25519 -RemoteDir /srv/c4 -Domain app.example.com -AppName C4
 ```
 
 确认服务器地址、SSH 用户、端口和本机 SSH 登录无误后执行：
 
 ```powershell
-pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -RemoteDir /srv/c4 -Domain app.example.com -AppName C4 -Apply
+pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -IdentityFile .\keys\c4-server-ed25519 -RemoteDir /srv/c4 -Domain app.example.com -AppName C4 -Apply
 ```
 
 脚本会：

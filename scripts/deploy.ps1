@@ -4,9 +4,9 @@
 # 覆盖服务器上的其他 Compose 项目，也不会把密钥放在命令行参数中。
 #
 # 预览：
-#   pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -RemoteDir /srv/c4 -Domain app.example.com
+#   pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -IdentityFile .\keys\c4-server-ed25519 -RemoteDir /srv/c4 -Domain app.example.com
 # 执行：
-#   pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -RemoteDir /srv/c4 -Domain app.example.com -Apply
+#   pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -IdentityFile .\keys\c4-server-ed25519 -RemoteDir /srv/c4 -Domain app.example.com -Apply
 # Beta 版本默认要求新目录/新数据库；仅在已核对 schema 兼容性后显式传
 # -ReuseDatabase 复用已有数据库。
 
@@ -22,6 +22,8 @@ param(
 
   [ValidateRange(1, 65535)]
   [int]$SshPort = 22,
+
+  [string]$IdentityFile = '',
 
   [ValidatePattern('^/[A-Za-z0-9._/-]+$')]
   [string]$RemoteDir = '/srv/c4',
@@ -43,6 +45,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+
+$identityPath = ''
+if ($IdentityFile) {
+  $identityPath = (Resolve-Path -LiteralPath $IdentityFile -ErrorAction Stop).Path
+  if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf)) {
+    throw "IdentityFile 不是文件：$IdentityFile"
+  }
+}
 
 # RemoteDir is interpolated into the quoted remote shell script below.  The
 # character allow-list prevents shell metacharacters, but it still permits
@@ -78,6 +88,7 @@ Write-Host "目标:  $User@$Server`:$SshPort"
 Write-Host "目录:  $RemoteDir"
 Write-Host "端口:  127.0.0.1`:$AppPort"
 if ($Domain) { Write-Host "域名:  $Domain (仅生成 Caddy 片段，不自动改 DNS)" }
+if ($identityPath) { Write-Host "密钥:  $identityPath" }
 if ($ReuseDatabase) { Write-Warning '已显式允许复用已有数据库；仅用于已核对 schema 兼容性的版本。' }
 if ($CardStoreUrl -and ($CardStoreUrl -match "['`r`n]" -or $CardStoreUrl -notmatch '^https?://')) {
   throw 'CardStoreUrl 必须是 http(s) URL，且不能包含单引号或换行。'
@@ -239,6 +250,7 @@ $sshOptions = @(
   # Accept a host key only on first use; a changed key still fails closed.
   '-o', 'StrictHostKeyChecking=accept-new'
 )
+if ($identityPath) { $sshOptions = @('-i', $identityPath) + $sshOptions }
 & ssh -p $SshPort @sshOptions $target "mkdir -p '$RemoteDir'"
 if ($LASTEXITCODE -ne 0) { throw 'SSH 连接或远端目录创建失败。' }
 & scp -P $SshPort @sshOptions $bundle "$target`:$RemoteDir/c4-$sha.tar.gz"
