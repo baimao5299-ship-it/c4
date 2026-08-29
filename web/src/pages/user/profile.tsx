@@ -166,7 +166,7 @@ export default function UserProfile() {
         </motion.div>
       </div>
 
-      {/* 修改密码表单（提交成功清空 + toast；JWT 不撤销——新密码下次登录生效） */}
+      {/* 修改密码表单（提交成功清空 + toast；token_version 递增会立即撤销旧 JWT） */}
       <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.12 }}>
         <Card className="max-w-xl">
           <CardHeader>

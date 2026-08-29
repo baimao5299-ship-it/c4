@@ -3,7 +3,8 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 // Package verification 邮箱验证码的 Redis 存储（spec 2026-08-25-emailcode-redis-migration
-// §2）：一个 (purpose,email) 一个 HASH，四命令直映 service.EmailCodeStore，零 Lua。
+// §2）：一个 (purpose,email) 一个 HASH。读写方法保持旧存储契约，验证消费另提供
+// 原子 Redis 脚本，避免并发请求重复使用同一验证码。
 //
 //	key    c3api:emailcode:<purpose>:<email>
 //	fields code_sha256 / attempts / updated_at(unixmilli)
@@ -24,8 +25,7 @@ import (
 	"github.com/is7qin/c3api/internal/domain"
 )
 
-// Store 验证码存储：实现 service.EmailCodeStore 四方法（语义与 PG 版逐条对齐，
-// spec §2 映射表）。
+// Store 验证码存储：实现 service.EmailCodeStore；另外实现可选的原子消费接口。
 type Store struct {
 	client *redis.Client
 }
@@ -123,4 +123,90 @@ func (s *Store) DeleteEmailCode(ctx context.Context, email, purpose string) erro
 		return fmt.Errorf("verification: del %s: %w", key(purpose, email), err)
 	}
 	return nil
+}
+
+var consumeScript = redis.NewScript(`
+local k = KEYS[1]
+local ttl = redis.call("PTTL", k)
+if ttl <= 0 then
+  return 0
+end
+local stored = redis.call("HGET", k, "code_sha256")
+local attempts = tonumber(redis.call("HGET", k, "attempts") or "0")
+local max_attempts = tonumber(ARGV[2])
+if not stored then
+  return 0
+end
+if attempts >= max_attempts then
+  return 2
+end
+if stored ~= ARGV[1] then
+  attempts = redis.call("HINCRBY", k, "attempts", 1)
+  if attempts >= max_attempts then
+    return 2
+  end
+  return 1
+end
+redis.call("DEL", k)
+return 3
+`)
+
+var reserveScript = redis.NewScript(`
+local k = KEYS[1]
+local ttl = redis.call("PTTL", k)
+if ttl > 0 then
+  return 0
+end
+-- Remove a stale key without TTL before creating the new reservation.
+if ttl == -1 then
+  redis.call("DEL", k)
+end
+redis.call("HSET", k,
+  "code_sha256", ARGV[1],
+  "attempts", 0,
+  "updated_at", ARGV[3])
+redis.call("PEXPIREAT", k, ARGV[2])
+return 1
+`)
+
+// TryReserveEmailCode writes a fresh code only when no live code is present.
+// The existence check, write and expiry are one Redis operation, so concurrent
+// requests cannot both pass the public resend throttle.
+func (s *Store) TryReserveEmailCode(ctx context.Context, email, purpose, codeSHA256 string, expiresAt time.Time) (bool, error) {
+	result, err := reserveScript.Run(ctx, s.client, []string{key(purpose, email)}, codeSHA256, expiresAt.UnixMilli(), time.Now().UnixMilli()).Int()
+	if err != nil {
+		return false, fmt.Errorf("verification: reserve %s: %w", key(purpose, email), err)
+	}
+	if result == 1 {
+		return true, nil
+	}
+	if result == 0 {
+		return false, nil
+	}
+	return false, fmt.Errorf("verification: reserve %s returned unknown status %d", key(purpose, email), result)
+}
+
+// ConsumeEmailCode validates and consumes one code atomically. The script
+// treats missing, expired and malformed-without-hash keys as invalid and never
+// creates an orphan key while incrementing attempts.
+func (s *Store) ConsumeEmailCode(ctx context.Context, email, purpose, codeSHA256 string, maxAttempts int) (domain.EmailCodeConsumeStatus, error) {
+	if maxAttempts < 1 {
+		return domain.EmailCodeConsumeMissing, fmt.Errorf("verification: max attempts must be positive")
+	}
+	result, err := consumeScript.Run(ctx, s.client, []string{key(purpose, email)}, codeSHA256, maxAttempts).Int()
+	if err != nil {
+		return domain.EmailCodeConsumeMissing, fmt.Errorf("verification: consume %s: %w", key(purpose, email), err)
+	}
+	switch result {
+	case 0:
+		return domain.EmailCodeConsumeMissing, nil
+	case 1:
+		return domain.EmailCodeConsumeMismatch, nil
+	case 2:
+		return domain.EmailCodeConsumeAttemptsExceeded, nil
+	case 3:
+		return domain.EmailCodeConsumeSuccess, nil
+	default:
+		return domain.EmailCodeConsumeMissing, fmt.Errorf("verification: consume %s returned unknown status %d", key(purpose, email), result)
+	}
 }

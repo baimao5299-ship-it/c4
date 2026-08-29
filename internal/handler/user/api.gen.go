@@ -75,6 +75,13 @@ const (
 	Sketch StatTTFTSummarySource = "sketch"
 )
 
+// Defines values for UserChannelMetricStatus.
+const (
+	Degraded UserChannelMetricStatus = "degraded"
+	NoData   UserChannelMetricStatus = "no_data"
+	Stable   UserChannelMetricStatus = "stable"
+)
+
 // Defines values for UserRole.
 const (
 	UserRolePlatformAdmin UserRole = "platform_admin"
@@ -371,6 +378,30 @@ type UserAuthResponse struct {
 	User  User   `json:"user"`
 }
 
+// UserChannelMetric defines model for UserChannelMetric.
+type UserChannelMetric struct {
+	AllowedModels    []string                `json:"AllowedModels"`
+	AverageLatencyMS int64                   `json:"AverageLatencyMS"`
+	ErrorCount       int64                   `json:"ErrorCount"`
+	GroupID          int64                   `json:"GroupID"`
+	LastCalledAt     *time.Time              `json:"LastCalledAt"`
+	Name             string                  `json:"Name"`
+	PriceMultiplier  float64                 `json:"PriceMultiplier"`
+	RequestCount     int64                   `json:"RequestCount"`
+	Status           UserChannelMetricStatus `json:"Status"`
+	SuccessRate      float64                 `json:"SuccessRate"`
+}
+
+// UserChannelMetricStatus defines model for UserChannelMetric.Status.
+type UserChannelMetricStatus string
+
+// UserChannelMonitorResponse defines model for UserChannelMonitorResponse.
+type UserChannelMonitorResponse struct {
+	Rows       []UserChannelMetric `json:"rows"`
+	WindowFrom time.Time           `json:"window_from"`
+	WindowTo   time.Time           `json:"window_to"`
+}
+
 // UserErrLog 用户面错误明细（= ErrLog 删 AccountID/TemplateID——用户无上游账号拓扑概念）
 type UserErrLog struct {
 	// BillingTier 计费档位（service_tier 归一化：priority/flex/fast/auto）；null = 未计费路径
@@ -479,6 +510,12 @@ type UserUsageLog struct {
 // Error defines model for Error.
 type Error = ErrorResponse
 
+// GetUserChannelMonitorParams defines parameters for GetUserChannelMonitor.
+type GetUserChannelMonitorParams struct {
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+	To   *time.Time `form:"to,omitempty" json:"to,omitempty"`
+}
+
 // GetUserErrLogsParams defines parameters for GetUserErrLogs.
 type GetUserErrLogsParams struct {
 	Limit      *int           `form:"limit,omitempty" json:"limit,omitempty"`
@@ -576,7 +613,7 @@ type PostUserRedemptionsJSONRequestBody = RedeemRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效）
+	// 修改密码（旧密码校验复用登录语义；新密码非空且 ≤72 字节；成功后立即撤销该用户既有 JWT）
 	// (POST /api/user/auth/change-password)
 	PostUserAuthChangePassword(w http.ResponseWriter, r *http.Request)
 	// 忘记密码发码（恒 200 {sent:true}，反枚举——无论账号是否存在或邮件是否启用）
@@ -594,9 +631,12 @@ type ServerInterface interface {
 	// 发送注册验证码（signup_enabled  gate 403；已注册静默抑制仍 200；限频 429）
 	// (POST /api/user/auth/register-code)
 	PostUserAuthRegisterCode(w http.ResponseWriter, r *http.Request)
-	// 重置密码（验证码校验→更新密码；不撤销既有 JWT）
+	// 重置密码（验证码校验→更新密码；成功后立即撤销该用户既有 JWT）
 	// (POST /api/user/auth/reset-password)
 	PostUserAuthResetPassword(w http.ResponseWriter, r *http.Request)
+	// 公开渠道监控（仅公开且未删除的分组；按请求 ID 去重）
+	// (GET /api/user/channel-monitor)
+	GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, params GetUserChannelMonitorParams)
 	// 我的错误明细（err_logs 完整错误面：拒绝 + 异常双轨；强制 user_id = 当前用户，防越权）
 	// (GET /api/user/err_logs)
 	GetUserErrLogs(w http.ResponseWriter, r *http.Request, params GetUserErrLogsParams)
@@ -645,7 +685,7 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
-// 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效）
+// 修改密码（旧密码校验复用登录语义；新密码非空且 ≤72 字节；成功后立即撤销该用户既有 JWT）
 // (POST /api/user/auth/change-password)
 func (_ Unimplemented) PostUserAuthChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -681,9 +721,15 @@ func (_ Unimplemented) PostUserAuthRegisterCode(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 重置密码（验证码校验→更新密码；不撤销既有 JWT）
+// 重置密码（验证码校验→更新密码；成功后立即撤销该用户既有 JWT）
 // (POST /api/user/auth/reset-password)
 func (_ Unimplemented) PostUserAuthResetPassword(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 公开渠道监控（仅公开且未删除的分组；按请求 ID 去重）
+// (GET /api/user/channel-monitor)
+func (_ Unimplemented) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, params GetUserChannelMonitorParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -869,6 +915,41 @@ func (siw *ServerInterfaceWrapper) PostUserAuthResetPassword(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostUserAuthResetPassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserChannelMonitor operation middleware
+func (siw *ServerInterfaceWrapper) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUserChannelMonitorParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserChannelMonitor(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1617,6 +1698,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/user/auth/reset-password", wrapper.PostUserAuthResetPassword)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/user/channel-monitor", wrapper.GetUserChannelMonitor)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/user/err_logs", wrapper.GetUserErrLogs)

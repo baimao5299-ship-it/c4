@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { CircleCheck, Ticket, LoaderCircle } from 'lucide-react'
+import { CircleCheck, ExternalLink, Ticket, LoaderCircle, ShoppingBag } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { ApiError, userApi } from '@/lib/api/client'
@@ -65,6 +65,7 @@ export default function UserRedemptions() {
     queryFn: () => userApi.listUserRedemptions({ page, page_size: pageSize }),
   })
   const rows = data?.rows ?? []
+  const cardStoreURL = import.meta.env.VITE_CARD_STORE_URL?.trim() || ''
 
   // 末页死胡同守卫：非首页的当前页数据被清空（如兑换后 total 变化）时回退到第 1 页；
   // 页 1 本身为空（列表真正为空）时无需回退，不会成环。
@@ -159,6 +160,24 @@ export default function UserRedemptions() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div {...fadeUp} transition={{ duration: 0.25, delay: 0.05 }}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ShoppingBag className="size-5 text-primary" />{t('user.redemptions.storeTitle')}</CardTitle>
+            <CardDescription>{t('user.redemptions.storeDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {cardStoreURL ? <Button render={<a href={cardStoreURL} target="_blank" rel="noreferrer" />}><ExternalLink />{t('user.redemptions.storeOpen')}</Button> : <p className="text-sm text-muted-foreground">{t('user.redemptions.storeNotConfigured')}</p>}
+            <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
+              <p className="text-sm font-medium">{t('user.redemptions.storeGuideTitle')}</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
+                {(['step1', 'step2', 'step3', 'step4', 'step5'] as const).map(step => <li key={step}>{t(`user.redemptions.storeGuide.${step}`)}</li>)}
+              </ol>
+            </div>
           </CardContent>
         </Card>
       </motion.div>

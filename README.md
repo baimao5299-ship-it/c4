@@ -6,8 +6,8 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-[![Release](https://img.shields.io/github/v/release/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api/releases)
-[![Stars](https://img.shields.io/github/stars/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api)
+[![Release](https://img.shields.io/github/v/release/baimao5299-ship-it/c4?color=2563eb)](https://github.com/baimao5299-ship-it/c4/releases)
+[![Stars](https://img.shields.io/github/stars/baimao5299-ship-it/c4?color=2563eb)](https://github.com/baimao5299-ship-it/c4)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later%20%2B%20Commercial-2563eb)](./LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-2563eb)](https://go.dev/)
 
@@ -17,7 +17,7 @@
 
 </div>
 
-This C4 release is based on c3api and adds a few practical improvements:
+This C4 release builds on the original gateway and adds a few practical improvements:
 
 - Sub2API-compatible account import, including multi-file and ZIP import.
 - Duplicate pre-checks, import previews, and detailed failure reasons.
@@ -71,17 +71,17 @@ The public product name is **C4**. The Go module path (`github.com/is7qin/c3api`
 
 ```bash
 cp .env.example .env
-# Set AUTH_JWT_SECRET in .env (ADMIN_TOKEN is optional).
+# Set AUTH_JWT_SECRET, POSTGRES_PASSWORD, and ADMIN_TOKEN in .env.
 docker compose up -d --build
 ```
 
-This builds the image locally and starts PostgreSQL, Redis, and c3api together. To use a published image instead, remove the `build:` block from `compose.yml`, then run `docker compose pull` followed by `docker compose up -d`.
+This builds the image locally and starts PostgreSQL, Redis, and the C4 gateway together. To use a published image instead, remove the `build:` block from `compose.yml`, then run `docker compose pull` followed by `docker compose up -d`.
 
 The gateway listens on `http://127.0.0.1:18080` — admin console at `/app`, user console at `/user`, health check at `/healthz`.
 
-**First admin user (bootstrap)** — the first user to register on a fresh database automatically becomes a `platform_admin` and can sign into the admin console (`/app`) right after startup; later signups get the regular `user` role.
+**Initial administration** — Compose requires a static `ADMIN_TOKEN` and binds the gateway to localhost by default. Public registrations are regular `user` accounts; use the token for initial administration, then place the gateway behind an HTTPS reverse proxy when exposing it to other machines.
 
-Prebuilt images are published to GHCR (`ghcr.io/baimao5299-ship-it/c3api`): `:beta` tracks the latest beta release, and version-pinned tags are also available. Pull standalone with `docker pull ghcr.io/baimao5299-ship-it/c3api:beta`.
+Prebuilt images are published to GHCR (`ghcr.io/baimao5299-ship-it/c4`): `:beta` tracks the latest beta release, and version-pinned tags are also available. Pull standalone with `docker pull ghcr.io/baimao5299-ship-it/c4:beta`. The legacy `c3api` image tags are published in parallel for existing deployments.
 
 ### Local development
 
@@ -104,7 +104,7 @@ Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request for
 
 ```
                     ┌───────────────────────────────┐
- OpenAI SDK / curl ─▶│   c3api gateway (1 binary)    │
+ OpenAI SDK / curl ─▶│   C4 gateway (1 binary)       │
  Anthropic SDK ─────▶│  ┌─────────────────────────┐  │
  Codex client ──────▶│  │ chi router              │  │──▶ OpenAI upstream (REST + SSE)
    Browser (SPA) ───▶│  │ /healthz /api/admin /api/user + SPA / /user /app │  │──▶ Anthropic upstream (REST + SSE)
@@ -150,8 +150,13 @@ The gateway loads `config.toml` (see `config.example.toml`), overlaid by `C3API_
 
 | Variable | Description |
 |---|---|
-| `C3API_ADMIN_TOKEN` | Admin API token (optional; leave empty to disable static-token auth — `/api/admin` then accepts `platform_admin` JWTs only) |
+| `C3API_ADMIN_TOKEN` | Admin API token (required by the Compose template; direct deployments may leave it empty only when a trusted `platform_admin` bootstrap path is explicitly configured) |
 | `C3API_AUTH_JWT_SECRET` | JWT signing secret for user auth (required; stable across restarts and instances) |
+| `C3API_AUTH_ALLOW_FIRST_USER_ADMIN` | Allow the first public registration to become `platform_admin`; default `false` for new deployments |
+| `C3API_AUTH_LOGIN_RATE_PER_MINUTE` | Per-instance login requests per source IP (default `20`) |
+| `C3API_AUTH_REGISTER_RATE_PER_MINUTE` | Per-instance registration requests per source IP (default `5`) |
+| `C3API_AUTH_CODE_RATE_PER_MINUTE` | Per-instance verification-code requests per source IP (default `3`) |
+| `C3API_AUTH_RESET_RATE_PER_MINUTE` | Per-instance password-reset requests per source IP (default `5`) |
 | `C3API_DB_DSN` | PostgreSQL DSN |
 | `C3API_REDIS_ADDR` | Redis address (required; e.g. `127.0.0.1:6379` — instance discovery, short-lived verification codes and other ephemeral state) |
 | `C3API_SERVER_TIME_ZONE` | Deployment timezone for pricing time/day-of-week conditions (IANA name, e.g. `Asia/Shanghai`; empty = process local) |
@@ -165,6 +170,7 @@ See `config.example.toml` for the full schema (server, log, admin, auth, db, red
 - **Env-only deployments** (e.g. K8s): pass `-config ""` to skip the config file entirely — the flag defaults to `config.toml`, and a missing file is a startup error.
 - **Most config is read once at startup**; the upstream proxy can be switched from the admin settings without a restart.
 - **Invalid config fails fast at startup** with the offending key: non-positive durations/intervals, unknown keys (typos, removed legacy keys), missing required secrets, and placeholder values (`change-me`, `dev-admin-token`, …) are all rejected.
+- **Public authentication guard**: login, registration, verification-code, and reset endpoints use bounded per-instance source-IP limits. When running multiple replicas, enforce an equivalent limit at the trusted edge as well.
 
 ## Deployment
 
@@ -189,7 +195,7 @@ GOMEMLIMIT=17179869184
 
 ## License
 
-c3api is open source under the **GNU AGPL v3.0-or-later** (`LICENSE`) — you may use, modify, and deploy it, including for commercial and hosted services, as long as you follow the license terms for the version you run. **No purchase is required for an AGPL-compliant deployment.**
+C4 is open source under the **GNU AGPL v3.0-or-later** (`LICENSE`) — you may use, modify, and deploy it, including for commercial and hosted services, as long as you follow the license terms for the version you run. **No purchase is required for an AGPL-compliant deployment.**
 
 Need **closed-source deployment** (exempt from the AGPL obligations on your deployment)? A commercial license (`LICENSE.commercial`) is available — it waives the AGPL obligations for your deployment.
 
@@ -197,7 +203,7 @@ External code contributions require a CLA (contributor license agreement) so tha
 
 ## Contact
 
-- GitHub: [baimao5299-ship-it/c3api](https://github.com/baimao5299-ship-it/c3api)
+- GitHub: [baimao5299-ship-it/c4](https://github.com/baimao5299-ship-it/c4)
 - Issues: open a GitHub issue for bugs, questions, or feature requests
 - Security: report vulnerabilities via [SECURITY.md](./SECURITY.md) (private report)
 - Changelog: [CHANGELOG.md](./CHANGELOG.md)

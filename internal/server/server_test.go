@@ -37,9 +37,10 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, 200, resp.StatusCode)
 	var body map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	require.Contains(t, body, "inflight")
-	require.Contains(t, body, "goroutines")
-	require.Contains(t, body, "heap")
+	require.Equal(t, "ok", body["status"])
+	require.NotContains(t, body, "inflight")
+	require.NotContains(t, body, "goroutines")
+	require.NotContains(t, body, "heap")
 }
 
 func TestUnknownPath404(t *testing.T) {

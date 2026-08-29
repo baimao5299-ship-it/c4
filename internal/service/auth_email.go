@@ -51,8 +51,12 @@ func (s *Service) SendRegisterCode(ctx context.Context, email string) error {
 		return ErrMailNotConfigured
 	}
 	expires := time.Now().Add(domain.EmailCodeTTL)
-	if _, err := s.emailCodes.UpsertEmailCode(ctx, email, string(domain.EmailCodeRegister), sha, expires); err != nil {
+	reserved, err := s.reserveEmailCode(ctx, email, string(domain.EmailCodeRegister), sha, expires)
+	if err != nil {
 		return err
+	}
+	if !reserved {
+		return ErrTooManyRequests
 	}
 	if err := s.mailEnqueue(MailSendTask{
 		To:      email,
@@ -106,7 +110,8 @@ func (s *Service) SendForgotPasswordCode(ctx context.Context, email string) erro
 	if _, _, _, _, _, _, ok := s.mailConfig(); !ok || s.mailEnqueue == nil {
 		return nil
 	}
-	if _, err := s.emailCodes.UpsertEmailCode(ctx, email, string(domain.EmailCodeReset), sha, expires); err != nil {
+	reserved, err := s.reserveEmailCode(ctx, email, string(domain.EmailCodeReset), sha, expires)
+	if err != nil || !reserved {
 		return nil
 	}
 	if err := s.mailEnqueue(MailSendTask{
@@ -122,8 +127,33 @@ func (s *Service) SendForgotPasswordCode(ctx context.Context, email string) erro
 	return nil
 }
 
+func (s *Service) reserveEmailCode(ctx context.Context, email, purpose, sha string, expiresAt time.Time) (bool, error) {
+	if reservoir, ok := s.emailCodes.(EmailCodeReservoir); ok {
+		return reservoir.TryReserveEmailCode(ctx, email, purpose, sha, expiresAt)
+	}
+	_, err := s.emailCodes.UpsertEmailCode(ctx, email, purpose, sha, expiresAt)
+	return err == nil, err
+}
+
 // verifyAndConsume 校验并消费验证码（原子：校验失败递增 attempts，成功删除）。
 func (s *Service) verifyAndConsume(ctx context.Context, email, purpose, plain string) error {
+	if consumer, ok := s.emailCodes.(EmailCodeConsumer); ok {
+		status, err := consumer.ConsumeEmailCode(ctx, email, purpose, hashCode(plain), domain.EmailCodeMaxAttempts)
+		if err != nil {
+			return err
+		}
+		switch status {
+		case domain.EmailCodeConsumeSuccess:
+			return nil
+		case domain.EmailCodeConsumeAttemptsExceeded:
+			return fmt.Errorf("%w: too many attempts", ErrInvalidInput)
+		case domain.EmailCodeConsumeMismatch:
+			return fmt.Errorf("%w: code mismatch", ErrInvalidInput)
+		default:
+			return fmt.Errorf("%w: code invalid", ErrInvalidInput)
+		}
+	}
+
 	row, err := s.emailCodes.GetEmailCode(ctx, email, purpose)
 	if err != nil {
 		return err

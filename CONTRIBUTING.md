@@ -1,4 +1,4 @@
-# Contributing to c3api
+# Contributing to C4
 
 Thanks for considering a contribution! This project follows an **issue-first workflow**: open a GitHub issue to discuss bugs and features **before** writing code — especially for features, discuss the design first.
 
@@ -35,7 +35,7 @@ Before changing code, read the discipline checklist in [docs/architecture-topolo
 
 ## License and CLA
 
-c3api is dual-licensed (AGPL-3.0-or-later + commercial). External code contributions require a CLA so they can be merged under this scheme:
+C4 is dual-licensed (AGPL-3.0-or-later + commercial). External code contributions require a CLA so they can be merged under this scheme:
 
 - Read [CLA.md](./CLA.md) for the contribution terms.
 - Signing is **automated** by the CLA Assistant workflow (`.github/workflows/cla.yml`): on your first pull request the bot will comment with the sign phrase — reply with that phrase in a comment to sign. You sign **once**, and it applies to all your future contributions. Signatures are recorded on the `cla-signatures` branch.

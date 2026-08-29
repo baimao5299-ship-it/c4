@@ -37,6 +37,7 @@ jobs:
           cache-from: type=gha, scope=c3api-alpha-build
           cache-to: type=gha, mode=max, scope=c3api-alpha-build
           tags: |
+            ghcr.io/${{ github.repository_owner }}/c4:alpha
             ghcr.io/${{ github.repository_owner }}/c3api:alpha
           build-args: |
             C3API_VERSION=alpha-${{ github.sha }}

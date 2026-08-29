@@ -68,6 +68,18 @@ type EmailCode struct {
 	UpdatedAt  time.Time
 }
 
+// EmailCodeConsumeStatus is the result of an atomic verification-code
+// validation/consume operation. Keeping the result in the domain package lets
+// Redis-backed stores implement the operation without importing service.
+type EmailCodeConsumeStatus uint8
+
+const (
+	EmailCodeConsumeMissing EmailCodeConsumeStatus = iota
+	EmailCodeConsumeMismatch
+	EmailCodeConsumeAttemptsExceeded
+	EmailCodeConsumeSuccess
+)
+
 // 邮件验证码常量（spec R-3）。
 const (
 	EmailCodeTTL         = 10 * time.Minute
@@ -77,7 +89,7 @@ const (
 )
 
 // AppName 模板变量 app_name 常量。
-const AppName = "c3api"
+const AppName = "C4"
 
 // DefaultEmailTemplate 编译内置英文默认模板（占位符 {{code}}/{{ttl_minutes}}/{{app_name}}；
 // 开源项目默认英文，管理台可按语言自定义覆盖）。

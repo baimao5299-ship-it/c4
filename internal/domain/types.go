@@ -851,6 +851,18 @@ type StatBucket struct {
 	TTFTHist            []int64 // TTFT 直方图 10 档（len = 10；SQL 侧 count(*) FILTER 生成）
 }
 
+// PublicChannelStat is the privacy-safe aggregate used by the user-facing
+// channel monitor. It contains only group-level counters; request bodies,
+// users, keys and upstream credentials never cross this boundary.
+type PublicChannelStat struct {
+	GroupID            int64
+	RequestCount       int64
+	ErrorCount         int64
+	LatencyTotalMS     int64
+	LatencySampleCount int64
+	LastCalledAt       *time.Time
+}
+
 // EntityStatBucket 实体小时卷积桶（usage_entity_stats 行语义）。
 type EntityStatBucket struct {
 	BucketTime          time.Time

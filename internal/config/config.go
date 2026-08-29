@@ -55,7 +55,12 @@ type AdminConfig struct {
 // AuthConfig JWT 密钥：强制（C3API_AUTH_JWT_SECRET），缺失启动失败——
 // 随机生成 = 重启全失效 + 多实例不一致（评审定夺①）。
 type AuthConfig struct {
-	JWTSecret string `koanf:"jwt_secret"`
+	JWTSecret             string `koanf:"jwt_secret"`
+	AllowFirstUserAdmin   bool   `koanf:"allow_first_user_admin"`
+	LoginRatePerMinute    int    `koanf:"login_rate_per_minute"`
+	RegisterRatePerMinute int    `koanf:"register_rate_per_minute"`
+	CodeRatePerMinute     int    `koanf:"code_rate_per_minute"`
+	ResetRatePerMinute    int    `koanf:"reset_rate_per_minute"`
 }
 
 // DBConfig 数据库连接。DSN 无需手工写 lock_timeout——OpenPG 统一补丁
@@ -177,6 +182,7 @@ func defaults() *Config {
 		// 连接参数（lock_timeout=5s 会话级 + 计费结算 per-tx 10s 超时 + MaxConnLifetime=30m，
 		// F-P2-4 计费路径防卡死）由 OpenPG/SettleBalance·SettleFefo 统一补，DSN 无需手工写（用户
 		// 显式配置同名参数时尊重不覆盖；statement_timeout 不设会话级——副作用核实见 f1-impl-report.md）。
+		Auth:      AuthConfig{AllowFirstUserAdmin: false, LoginRatePerMinute: 20, RegisterRatePerMinute: 5, CodeRatePerMinute: 3, ResetRatePerMinute: 5},
 		DB:        DBConfig{MaxConns: 20},
 		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
@@ -287,6 +293,19 @@ func validate(c *Config) error {
 		// proxy.max_body_size：n<1 经 MaxBytesReader 归一 0 → 全量非空请求 413
 		// （internal/proxy/caller.go 用法；spec 2026-08-17 补下限，启动即拒绝）。
 		{"proxy.max_body_size", int(c.Proxy.MaxBodySize)},
+	} {
+		if n.value < 1 {
+			return fmt.Errorf("%s must be >= 1 (got %d)", n.path, n.value)
+		}
+	}
+	for _, n := range []struct {
+		path  string
+		value int
+	}{
+		{"auth.login_rate_per_minute", c.Auth.LoginRatePerMinute},
+		{"auth.register_rate_per_minute", c.Auth.RegisterRatePerMinute},
+		{"auth.code_rate_per_minute", c.Auth.CodeRatePerMinute},
+		{"auth.reset_rate_per_minute", c.Auth.ResetRatePerMinute},
 	} {
 		if n.value < 1 {
 			return fmt.Errorf("%s must be >= 1 (got %d)", n.path, n.value)

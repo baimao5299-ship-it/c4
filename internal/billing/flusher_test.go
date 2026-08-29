@@ -53,15 +53,15 @@ type fakeTemp struct {
 // （FEFO 车道谓词与消耗），failLeft 注入语句级结构错误（整语句失败形态），
 // failMark 注入标记面故障。全部方法持锁——-race 下安全。
 type fakeLedgerStore struct {
-	mu          sync.Mutex
-	rows        map[int64]*fakeLedgerRow
-	balances    map[int64]int64
-	temps       map[int64][]fakeTemp
-	tempSeq     int64
-	failLeft    map[int64]int
-	failMark    bool // MarkBilledBulk 恒失败（整库故障注入）
-	lockOK      bool // false → AcquireBillingLock 报错
-	lockHeld    bool // 已持有 → ok=false（互斥面）
+	mu        sync.Mutex
+	rows      map[int64]*fakeLedgerRow
+	balances  map[int64]int64
+	temps     map[int64][]fakeTemp
+	tempSeq   int64
+	failLeft  map[int64]int
+	failMark  bool // MarkBilledBulk 恒失败（整库故障注入）
+	lockOK    bool // false → AcquireBillingLock 报错
+	lockHeld  bool // 已持有 → ok=false（互斥面）
 	fetches   int
 	lagProbes int
 	laneCalls []laneCall

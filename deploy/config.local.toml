@@ -1,7 +1,7 @@
 server = { addr = ":18080", read_header_timeout = "10s", max_header_bytes = 1048576, time_zone = "" }
 log = { level = "warn", output = "stdout" }
 admin = { token = "" }
-auth = { jwt_secret = "" }
+auth = { jwt_secret = "", allow_first_user_admin = false, login_rate_per_minute = 20, register_rate_per_minute = 5, code_rate_per_minute = 3, reset_rate_per_minute = 5 }
 db = { dsn = "postgres://user:pass@localhost:5432/c3api?sslmode=disable", max_conns = 20 }
 redis = { addr = "127.0.0.1:6379", password = "", db = 0 }
 proxy = { max_body_size = 4194304, max_inflight = 50000, upstream_timeout = "120s", upstream_stream_timeout = "30m", failover_attempts = 3, usage_capture = true }

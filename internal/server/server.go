@@ -11,7 +11,6 @@ package server
 import (
 	"io/fs"
 	"net/http"
-	"runtime"
 	"strings"
 	"time"
 
@@ -62,13 +61,11 @@ func NewServer(opts Options) *Server {
 	r.Use(recoverer(opts.Logger))
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		var ms runtime.MemStats
-		runtime.ReadMemStats(&ms)
-		httpface.WriteJSON(w, http.StatusOK, map[string]any{
-			"inflight":   s.inflight.Load(),
-			"goroutines": runtime.NumGoroutine(),
-			"heap":       ms.HeapAlloc,
-		})
+		// Keep this endpoint suitable for load balancers and container
+		// healthchecks without exposing process telemetry to unauthenticated
+		// callers. Detailed counters remain available under the admin ops API.
+		w.Header().Set("Cache-Control", "no-store")
+		httpface.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	r.Group(func(r chi.Router) {

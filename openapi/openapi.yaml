@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: github.com/is7qin/c3api Admin API
+  title: C4 Admin API
   version: 1.0.0
   description: '管理端 API（模板/账号/分组/规则/日志/统计）。认证：Authorization: Bearer <admin_token>。'
 servers:
@@ -1265,7 +1265,7 @@ paths:
     post:
       operationId: PostUserAuthChangePassword
       tags: [user]
-      summary: 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效）
+      summary: 修改密码（旧密码校验复用登录语义；新密码非空且 ≤72 字节；成功后立即撤销该用户既有 JWT）
       requestBody:
         required: true
         content:
@@ -1319,7 +1319,7 @@ paths:
     post:
       operationId: PostUserAuthResetPassword
       tags: [user]
-      summary: 重置密码（验证码校验→更新密码；不撤销既有 JWT）
+      summary: 重置密码（验证码校验→更新密码；成功后立即撤销该用户既有 JWT）
       requestBody:
         required: true
         content:
@@ -1348,6 +1348,22 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Group' }
+        default:
+          $ref: '#/components/responses/Error'
+  /api/user/channel-monitor:
+    get:
+      operationId: GetUserChannelMonitor
+      tags: [user]
+      summary: 公开渠道监控（仅公开且未删除的分组；按请求 ID 去重）
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time, description: 起始时间；省略时为最近 24 小时 } }
+        - { name: to, in: query, schema: { type: string, format: date-time, description: 结束时间；省略时为当前时间 } }
+      responses:
+        '200':
+          description: 公开分组最近调用汇总
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserChannelMonitorResponse' }
         default:
           $ref: '#/components/responses/Error'
   /api/user/keys:
@@ -2376,6 +2392,31 @@ components:
             format: double
             nullable: true
           description: 该用户当前各授予组的专属价格倍率（正常值；null/缺省 = 未设置 → 用组倍率）
+    UserChannelMonitorResponse:
+      type: object
+      required: [window_from, window_to, rows]
+      properties:
+        window_from: { type: string, format: date-time }
+        window_to: { type: string, format: date-time }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/UserChannelMetric' }
+    UserChannelMetric:
+      type: object
+      required: [GroupID, Name, AllowedModels, PriceMultiplier, RequestCount, ErrorCount, AverageLatencyMS, SuccessRate, Status]
+      properties:
+        GroupID: { type: integer, format: int64 }
+        Name: { type: string }
+        AllowedModels:
+          type: array
+          items: { type: string }
+        PriceMultiplier: { type: number, format: double, minimum: 0 }
+        RequestCount: { type: integer, format: int64, minimum: 0 }
+        ErrorCount: { type: integer, format: int64, minimum: 0 }
+        AverageLatencyMS: { type: integer, format: int64, minimum: 0 }
+        SuccessRate: { type: number, format: double, minimum: 0, maximum: 100 }
+        LastCalledAt: { type: string, format: date-time, nullable: true }
+        Status: { type: string, enum: [stable, degraded, no_data] }
     KeyStatus:
       type: string
       enum: [active, disabled]

@@ -21,7 +21,7 @@ import (
 // /api/user 前缀，故无独立 BaseURL，HandlerWithOptions 直接使用 spec 路径。
 // rules 为规则引擎（/api/user/err_logs 行级脱敏用；main 装配注入——非 New，
 // 测试构造零回归；nil = 不脱敏）。
-func Router(svc *service.Service, iss *auth.Issuer, users auth.UserStatusProvider, rules *rule.RuleEngine) http.Handler {
+func Router(svc *service.Service, iss *auth.Issuer, users auth.UserStatusProvider, rules *rule.RuleEngine, configuredLimits ...AuthRateLimits) http.Handler {
 	publicPaths := map[string]bool{
 		"/api/user/auth/register":        true,
 		"/api/user/auth/login":           true,
@@ -32,6 +32,10 @@ func Router(svc *service.Service, iss *auth.Issuer, users auth.UserStatusProvide
 	api := New(svc, iss)
 	api.rules = rules
 	r := chi.NewRouter()
+	var limits AuthRateLimits
+	if len(configuredLimits) > 0 {
+		limits = configuredLimits[0]
+	}
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if publicPaths[req.URL.Path] {
@@ -41,6 +45,7 @@ func Router(svc *service.Service, iss *auth.Issuer, users auth.UserStatusProvide
 			auth.RequireJWT(iss, users)(next).ServeHTTP(w, req)
 		})
 	})
+	r.Use(func(next http.Handler) http.Handler { return withAuthRateLimit(next, limits) })
 	// BaseRouter 传入带中间件的路由（否则 HandlerWithOptions 内部新建裸路由，
 	// 公开/受保护分流失效）。
 	return HandlerWithOptions(api, ChiServerOptions{

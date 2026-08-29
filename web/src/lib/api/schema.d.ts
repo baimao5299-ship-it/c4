@@ -914,7 +914,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 修改密码（旧密码校验复用登录语义——失败 401 同登录文案防枚举；新密码非空且 ≤72 字节，非法 400；不撤销既有 JWT，新密码下次登录生效） */
+        /** 修改密码（旧密码校验复用登录语义；新密码非空且 ≤72 字节；成功后立即撤销该用户既有 JWT） */
         post: operations["PostUserAuthChangePassword"];
         delete?: never;
         options?: never;
@@ -965,7 +965,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 重置密码（验证码校验→更新密码；不撤销既有 JWT） */
+        /** 重置密码（验证码校验→更新密码；成功后立即撤销该用户既有 JWT） */
         post: operations["PostUserAuthResetPassword"];
         delete?: never;
         options?: never;
@@ -982,6 +982,23 @@ export interface paths {
         };
         /** 可选组列表（public 全部 + 已授予 private；无可用路由的 upstreams 组不返回） */
         get: operations["GetUserGroups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/channel-monitor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 公开渠道监控（仅公开且未删除的分组；按请求 ID 去重） */
+        get: operations["GetUserChannelMonitor"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1890,6 +1907,33 @@ export interface components {
             multipliers?: {
                 [key: string]: number | null;
             };
+        };
+        UserChannelMonitorResponse: {
+            /** Format: date-time */
+            window_from: string;
+            /** Format: date-time */
+            window_to: string;
+            rows: components["schemas"]["UserChannelMetric"][];
+        };
+        UserChannelMetric: {
+            /** Format: int64 */
+            GroupID: number;
+            Name: string;
+            AllowedModels: string[];
+            /** Format: double */
+            PriceMultiplier: number;
+            /** Format: int64 */
+            RequestCount: number;
+            /** Format: int64 */
+            ErrorCount: number;
+            /** Format: int64 */
+            AverageLatencyMS: number;
+            /** Format: double */
+            SuccessRate: number;
+            /** Format: date-time */
+            LastCalledAt?: string | null;
+            /** @enum {string} */
+            Status: "stable" | "degraded" | "no_data";
         };
         /** @enum {string} */
         KeyStatus: "active" | "disabled";
@@ -5229,6 +5273,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Group"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUserChannelMonitor: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 公开分组最近调用汇总 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserChannelMonitorResponse"];
                 };
             };
             default: components["responses"]["Error"];

@@ -75,6 +75,7 @@ function KeyCell({ raw }: { raw?: string }) {
           <Button
             variant="ghost"
             size="icon-sm"
+            className="size-11"
             title={t('keybox.copy')}
             onClick={async () => {
               if (await copyText(raw)) {
@@ -106,6 +107,7 @@ function EndpointCell() {
       <Button
         variant="ghost"
         size="icon-xs"
+        className="size-11"
         title={t('user.keys.copyEndpoint')}
         aria-label={t('user.keys.copyEndpoint')}
         onClick={async () => {

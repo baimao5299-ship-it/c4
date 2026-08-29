@@ -222,6 +222,22 @@ type EmailCodeStore interface {
 	DeleteEmailCode(ctx context.Context, email, purpose string) error
 }
 
+// EmailCodeConsumer is the optional atomic fast path used by production
+// stores. Implementations validate the hash, enforce the attempt limit and
+// consume the code in one operation, eliminating a read/delete race. Legacy
+// test doubles and integrations can keep implementing EmailCodeStore only.
+type EmailCodeConsumer interface {
+	ConsumeEmailCode(ctx context.Context, email, purpose, codeSHA256 string, maxAttempts int) (domain.EmailCodeConsumeStatus, error)
+}
+
+// EmailCodeReservoir is an optional atomic write path for public code
+// issuance. It succeeds only when no live code exists for the same address
+// and purpose, closing the concurrent-send window around the 60-second rate
+// check. Legacy stores continue to use UpsertEmailCode.
+type EmailCodeReservoir interface {
+	TryReserveEmailCode(ctx context.Context, email, purpose, codeSHA256 string, expiresAt time.Time) (bool, error)
+}
+
 // RedemptionStore 兑换码 + 兑换审计持久化（Phase 5 计费前基础设施）。
 // 兑换事务编排（Redeem）经 Store.WithTx 以 repository.TxStore 面访问。
 type RedemptionStore interface {
@@ -335,6 +351,11 @@ type Service struct {
 	// 防止并发首注在同一进程内同时看到空表而产生多个管理员。多实例部署
 	// 仍需依赖数据库层的 bootstrap 互斥策略。
 	signupMu sync.Mutex
+	// allowFirstUserAdmin nil means legacy compatibility (true). The
+	// production composition root sets an explicit value from config, where the
+	// hardened default is false. A pointer distinguishes an omitted setting from
+	// an intentional false value in direct Service literals used by integrations.
+	allowFirstUserAdmin *bool
 	// upstreams is an optional management-plane store. Keeping it out of Store
 	// preserves compatibility with existing fakes and integrations; the concrete
 	// repository is detected at construction time.
@@ -413,6 +434,12 @@ func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publish
 	s.reloadSettings(context.Background())
 	return s
 }
+
+// SetAllowFirstUserAdmin controls whether a public registration may bootstrap
+// the platform_admin role. New deployments should keep this false and use the
+// static admin token for initial access; the Service.New default preserves old
+// in-process integration behavior.
+func (s *Service) SetAllowFirstUserAdmin(allow bool) { s.allowFirstUserAdmin = &allow }
 
 // SetTimeLocation 注入定价时段解释用时区（D-TZ2）：nil = 进程本地（现状），
 // 非 nil = at.In(tzLoc) 后再进 domain.ResolveEntryPrices（零热路径额外 DB/锁）。

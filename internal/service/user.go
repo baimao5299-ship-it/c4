@@ -66,19 +66,30 @@ func (s *Service) RegisterUser(ctx context.Context, email, password string) (*do
 		Balance:        s.settingInt("default_user_balance"),
 	}
 	var created *domain.User
-	if bootstrap, ok := s.store.(SignupBootstrapStore); ok {
-		// The repository rechecks the user count while holding a transaction
-		// advisory lock, closing the cross-instance first-admin race.
-		created, err = bootstrap.RegisterFirstUser(ctx, newUser)
+	allowFirstUserAdmin := true
+	if s.allowFirstUserAdmin != nil {
+		allowFirstUserAdmin = *s.allowFirstUserAdmin
+	}
+	if allowFirstUserAdmin {
+		if bootstrap, ok := s.store.(SignupBootstrapStore); ok {
+			// The repository rechecks the user count while holding a transaction
+			// advisory lock, closing the cross-instance first-admin race.
+			created, err = bootstrap.RegisterFirstUser(ctx, newUser)
+		} else {
+			// Compatibility path for stores that predate the optional capability.
+			n, countErr := s.store.CountUsers(ctx)
+			if countErr != nil {
+				return nil, countErr
+			}
+			if n == 0 {
+				newUser.Role = domain.RolePlatformAdmin
+			}
+			created, err = s.store.CreateUser(ctx, newUser)
+		}
 	} else {
-		// Compatibility path for stores that predate the optional capability.
-		n, countErr := s.store.CountUsers(ctx)
-		if countErr != nil {
-			return nil, countErr
-		}
-		if n == 0 {
-			newUser.Role = domain.RolePlatformAdmin
-		}
+		// Hardened deployments bootstrap administration through the configured
+		// static token; public registration remains available but never grants
+		// platform_admin, even when the table is empty.
 		created, err = s.store.CreateUser(ctx, newUser)
 	}
 	if err != nil {

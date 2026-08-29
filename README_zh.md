@@ -6,8 +6,8 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-[![Release](https://img.shields.io/github/v/release/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api/releases)
-[![Stars](https://img.shields.io/github/stars/baimao5299-ship-it/c3api?color=2563eb)](https://github.com/baimao5299-ship-it/c3api)
+[![Release](https://img.shields.io/github/v/release/baimao5299-ship-it/c4?color=2563eb)](https://github.com/baimao5299-ship-it/c4/releases)
+[![Stars](https://img.shields.io/github/stars/baimao5299-ship-it/c4?color=2563eb)](https://github.com/baimao5299-ship-it/c4)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later%20%2B%20Commercial-2563eb)](./LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-2563eb)](https://go.dev/)
 
@@ -17,7 +17,7 @@
 
 </div>
 
-C4 基于 c3api，主要增加了这些实用功能：
+C4 在原网关基础上主要增加了这些实用功能：
 
 - 兼容 Sub2API 的账号导入，支持多文件和 ZIP。
 - 重复账号预检测、导入预览和详细失败原因。
@@ -71,17 +71,17 @@ C4 处于 **beta**。当前 API 已可使用，但 beta 版本之间仍可能调
 
 ```bash
 cp .env.example .env
-# 在 .env 中填写 AUTH_JWT_SECRET（ADMIN_TOKEN 可选）。
+# 在 .env 中填写 AUTH_JWT_SECRET、POSTGRES_PASSWORD 和 ADMIN_TOKEN。
 docker compose up -d --build
 ```
 
-这会在本地构建镜像，并一起启动 PostgreSQL、Redis 和 c3api。若要使用预构建镜像，先从 `compose.yml` 删除 `build:` 段，再运行 `docker compose pull` 和 `docker compose up -d`。
+这会在本地构建镜像，并一起启动 PostgreSQL、Redis 和 C4 网关。若要使用预构建镜像，先从 `compose.yml` 删除 `build:` 段，再运行 `docker compose pull` 和 `docker compose up -d`。
 
 网关监听 `http://127.0.0.1:18080`——管理台 `/app`，用户台 `/user`，健康检查 `/healthz`。
 
-**首个 admin 用户（bootstrap）**——新库上第一个注册的用户自动成为 `platform_admin`，启动后即可登录管理台（`/app`）；之后的注册都是普通 `user` 角色。
+**初始管理**——Compose 要求设置静态 `ADMIN_TOKEN`，并默认只绑定本机。公开注册始终是普通 `user`；要对其他机器开放，应放在 HTTPS 反向代理之后。
 
-预构建镜像发布在 GHCR（`ghcr.io/baimao5299-ship-it/c3api`）：`:beta` 跟随最新 beta 版本，也提供固定版本 tag。单独拉取：`docker pull ghcr.io/baimao5299-ship-it/c3api:beta`。
+预构建镜像发布在 GHCR（`ghcr.io/baimao5299-ship-it/c4`）：`:beta` 跟随最新 beta 版本，也提供固定版本 tag。单独拉取：`docker pull ghcr.io/baimao5299-ship-it/c4:beta`。为兼容已有部署，旧的 `c3api` 镜像标签会同步发布。
 
 ### 本地开发
 
@@ -103,7 +103,7 @@ cd web && pnpm install && pnpm run dev
 
 ```
                     ┌───────────────────────────────┐
- OpenAI SDK / curl ─▶│   c3api 网关（单二进制）        │
+ OpenAI SDK / curl ─▶│   C4 网关（单二进制）           │
  Anthropic SDK ─────▶│  ┌─────────────────────────┐  │
  Codex 客户端 ──────▶│  │ chi 路由                │  │──▶ OpenAI 上游（REST + SSE）
    浏览器（SPA） ───▶│  │ /healthz /api/admin /api/user + SPA / /user /app │  │──▶ Anthropic 上游（REST + SSE）
@@ -148,8 +148,13 @@ cd web && pnpm install && pnpm run dev
 
 | 变量 | 说明 |
 |---|---|
-| `C3API_ADMIN_TOKEN` | 管理端 token（可选；留空 = 不启用静态 token 鉴权，`/api/admin` 仅接受 `platform_admin` JWT） |
+| `C3API_ADMIN_TOKEN` | 管理端 token（Compose 模板必填；直接部署只有在明确配置可信 bootstrap 时才可留空） |
 | `C3API_AUTH_JWT_SECRET` | 用户鉴权 JWT 密钥（必填；跨重启与多实例须稳定） |
+| `C3API_AUTH_ALLOW_FIRST_USER_ADMIN` | 是否允许首个公开注册用户成为 `platform_admin`；新部署默认 `false` |
+| `C3API_AUTH_LOGIN_RATE_PER_MINUTE` | 每实例按来源 IP 的登录次数上限（默认 `20`） |
+| `C3API_AUTH_REGISTER_RATE_PER_MINUTE` | 每实例按来源 IP 的注册次数上限（默认 `5`） |
+| `C3API_AUTH_CODE_RATE_PER_MINUTE` | 每实例按来源 IP 的验证码请求上限（默认 `3`） |
+| `C3API_AUTH_RESET_RATE_PER_MINUTE` | 每实例按来源 IP 的重置密码请求上限（默认 `5`） |
 | `C3API_DB_DSN` | PostgreSQL 连接串 |
 | `C3API_REDIS_ADDR` | Redis 地址（必填；如 `127.0.0.1:6379`——实例发现、短时效验证码等易失状态） |
 
@@ -162,6 +167,7 @@ cd web && pnpm install && pnpm run dev
 - **纯 env 部署**（如 K8s）：传 `-config ""` 完全跳过配置文件——flag 默认 config.toml，无文件即启动失败。
 - **大部分配置仅启动时读取**；上游代理可通过管理台运行时切换，无需重启。
 - **非法配置启动即报错**（含字段名）：duration/间隔 ≤0 或 <1ms、未知键（拼写错误/已移除旧键）、必填密钥缺失、占位符（change-me、dev-admin-token 等）一律拒绝。
+- **公开鉴权保护**：登录、注册、验证码和重置接口按实例、来源 IP 限流。多副本部署还应在可信边缘网关配置同等限流。
 
 ## 部署
 
@@ -171,7 +177,7 @@ cd web && pnpm install && pnpm run dev
 
 ## 许可
 
-c3api 以 **GNU AGPL v3.0-or-later**（`LICENSE`）开源——可自由使用、修改与部署，**包括商用与托管服务**，前提是遵守所运行版本的许可证条款。**符合 AGPL 的部署无需购买授权。**
+C4 以 **GNU AGPL v3.0-or-later**（`LICENSE`）开源——可自由使用、修改与部署，**包括商用与托管服务**，前提是遵守所运行版本的许可证条款。**符合 AGPL 的部署无需购买授权。**
 
 需要**闭源部署**（豁免部署上的 AGPL 义务）？可获取商业授权（`LICENSE.commercial`）——付费获得对部署的 AGPL 义务豁免。
 
@@ -179,7 +185,7 @@ c3api 以 **GNU AGPL v3.0-or-later**（`LICENSE`）开源——可自由使用�
 
 ## 联系
 
-- GitHub：[baimao5299-ship-it/c3api](https://github.com/baimao5299-ship-it/c3api)
+- GitHub：[baimao5299-ship-it/c4](https://github.com/baimao5299-ship-it/c4)
 - 问题：欢迎通过 GitHub issue 提交 bug、咨询或功能建议
 - 安全：漏洞请经 [SECURITY.md](./SECURITY.md) 私有报告
 - 发布说明：[CHANGELOG.md](./CHANGELOG.md)

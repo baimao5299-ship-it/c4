@@ -16,6 +16,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -63,7 +64,7 @@ func main() {
 
 	// -version 纯打印退出：不加载配置/不连 DB，任何环境（含容器外裸二进制）可查。
 	if *showVersion {
-		fmt.Printf("c3api %s\n", version)
+		fmt.Printf("C4 %s\n", version)
 		return
 	}
 
@@ -110,12 +111,14 @@ func main() {
 	// 失败零日志零观测。goroutine 在 logx.New 之后启动：闭包捕获 log 恒非 nil
 	// （若保留原位置，端口占用等启动期失败时 log 尚 nil，Warn 判空即被丢弃，
 	// 观测仍缺失）；失败 Warn 不 fatal（pprof 非关键面，服务照常启动）。
-	if *pprofAddr != "" {
+	if *pprofAddr != "" && isLoopbackListenAddr(*pprofAddr) {
 		go func() {
 			if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
 				log.Warn("pprof server failed", logx.Error(err))
 			}
 		}() // net/http/pprof 自动挂载
+	} else if *pprofAddr != "" {
+		log.Warn("pprof disabled: listen address must be loopback", logx.String("addr", *pprofAddr))
 	}
 	// 必填校验（admin.token/auth.jwt_secret/db.dsn/redis.addr）已内聚到 config.Load，
 	// 此处只做错误处理。
@@ -481,7 +484,13 @@ func main() {
 	})
 	aiRouter := proxy.AIRouter(px)
 	iss := jwtauth.NewIssuer(cfg.Auth.JWTSecret)
-	userHandler := userapi.Router(svc, iss, auth, ruleEngine)
+	svc.SetAllowFirstUserAdmin(cfg.Auth.AllowFirstUserAdmin)
+	userHandler := userapi.Router(svc, iss, auth, ruleEngine, userapi.AuthRateLimits{
+		LoginPerMinute:    cfg.Auth.LoginRatePerMinute,
+		RegisterPerMinute: cfg.Auth.RegisterRatePerMinute,
+		CodePerMinute:     cfg.Auth.CodeRatePerMinute,
+		ResetPerMinute:    cfg.Auth.ResetRatePerMinute,
+	})
 
 	// /api/admin/ops/workers 运维观测（spec 2026-08-11，用户裁决并入管理面）：
 	// 独立 Stats 契约不改 worker.Worker——装配侧类型断言聚合（各模块已持
@@ -672,6 +681,21 @@ func main() {
 	}
 	log.Info("shutdown complete")
 	_ = log.Sync()
+}
+
+// isLoopbackListenAddr keeps the optional unauthenticated pprof surface local
+// to the host. An empty host (":6060") means all interfaces and is rejected.
+func isLoopbackListenAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func installDefaultHTTPTransport(cfg config.UpstreamConfig, proxyFuncs httpx.ProxyFuncs) {

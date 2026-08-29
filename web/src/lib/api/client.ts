@@ -71,6 +71,10 @@ export interface UserStatParams {
   granularity?: 'hour' | 'day'
   model?: string
 }
+export interface UserChannelMonitorParams {
+  from?: string
+  to?: string
+}
 
 // 过滤 undefined/null/空串，返回 '' 或 '?k=v&...' 查询串。
 export function toQuery(p?: object): string {
@@ -228,6 +232,7 @@ export class ApiClient {
   login = (b: components['schemas']['UserAuthLogin']) => this.request<components['schemas']['UserAuthResponse']>('/auth/login', { method: 'POST', body: JSON.stringify(b) })
   me = () => this.request<components['schemas']['User']>('/auth/me')
   listUserGroups = () => this.request<components['schemas']['Group'][]>('/groups')
+  getChannelMonitor = (p?: UserChannelMonitorParams) => this.request<components['schemas']['UserChannelMonitorResponse']>('/channel-monitor', { params: toQuery(p) })
   listUserKeys = (p?: ListParams) => this.request<components['schemas']['KeyListResponse']>('/keys', { params: toQuery(p) })
   createUserKey = (b: components['schemas']['KeyCreate']) => this.request<components['schemas']['Key']>('/keys', { method: 'POST', body: JSON.stringify(b) })
   updateUserKey = (id: number, b: components['schemas']['KeyUpdate']) => this.request<components['schemas']['Key']>(`/keys/${id}`, { method: 'PUT', body: JSON.stringify(b) })

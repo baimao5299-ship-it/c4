@@ -659,12 +659,12 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 
 ### 用户面
 
-- `POST /user/auth/register` / `POST /user/auth/login`：注册（受 `signup_enabled` 设置；开启注册邮箱验证后还需先经 `/user/auth/register-code` 获取并携带 `code` 字段）与登录，返回 JWT + 用户对象（`Balance` 同样 USD float64）。
+- `POST /user/auth/register` / `POST /user/auth/login`：注册（受 `signup_enabled` 设置；开启注册邮箱验证后还需先经 `/user/auth/register-code` 获取并携带 `code` 字段）与登录，返回 JWT + 用户对象（`Balance` 同样 USD float64）。公开鉴权接口按来源 IP 限流。
 - `GET /user/auth/me`：当前用户信息。
-- `POST /user/auth/change-password`：修改密码（旧密码校验复用登录语义——失败 `401` 同登录文案防枚举；新密码非空且 ≤72 字节，非法 `400`；**不撤销既有 JWT**，新密码下次登录生效），见下方「用户面：修改密码」。
+- `POST /user/auth/change-password`：修改密码（旧密码校验复用登录语义——失败 `401` 同登录文案防枚举；新密码非空且 ≤72 字节，非法 `400`；成功后立即撤销该用户既有 JWT），见下方「用户面：修改密码」。
 - `POST /user/auth/register-code`：发送注册验证码（受 `mail.register_verification` + `signup_enabled` 双闸；未开验证 → `400` 哨兵文案；同邮箱 `60s` 限频 → `429`；已注册邮箱静默抑制发送仍返回 `{sent:true}`——防枚举）。响应恒 `{"sent":true}`。
 - `POST /user/auth/forgot-password`：忘记密码发码。**恒 `200 {"sent":true}` 同形响应（防枚举）**——无论账号是否存在、邮件是否启用；实际发送条件 = `mail.enabled` 且账号存在且未限频。
-- `POST /user/auth/reset-password {email, code, new_password}`：凭邮件验证码重置密码（码一次性、10 分钟有效、5 次尝试上限后须重新请求；新密码校验前置）；**不撤销既有 JWT**（同修改密码语义），新密码下次登录生效。
+- `POST /user/auth/reset-password {email, code, new_password}`：凭邮件验证码重置密码（码一次性、10 分钟有效、5 次尝试上限后须重新请求；新密码校验前置）；成功后立即撤销该用户既有 JWT。
 - `GET /user/stats`：我的用量统计（强制 `user_id` = 当前用户，防越权；字段与 `/api/admin/stats` 同契约，见「查询用量统计」章节）。
 - `GET /user/temp-balances`：我的临时额度（仅有效额度：未过期且正余额，`expires_at` 升序 FEFO 同序、永久最后；`total_usd` 合计 USD），见「临时额度 Temp Balances」章节。
 - 兑换码（`/user/redemptions`）：`balance` / `temp_balance` 类型向毫分余额/临时额度充值，见「兑换码 Redemption Codes」章节。
@@ -696,14 +696,14 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 | `401` | 无 / 非法 JWT（中间件拦截）；旧密码错误或用户非 `active`（**与登录同文案**，防枚举） |
 | `404` | 用户不存在 |
 
-> **不撤销既有 JWT**：无状态 token 无撤销机制——修改成功后已签发的 token 仍有效，新密码**下次登录**生效。
+> **立即撤销既有 JWT**：修改密码后 `token_version` 原子递增，已签发的 token 会被快照校验拒绝；用户需要用新密码重新登录。
 
 ### 用户面：邮箱验证与密码重置（邮件服务）
 
 邮件功能由运行时设置 `mail.*` 驱动（管理台「设置 → 邮件」页签配置：SMTP 主机/端口/账号/密码/发件人/TLS 策略），**`mail.enabled=false` 时零行为**——注册直通、忘记密码空转。
 
-- **注册验证码**：开启 `mail.register_verification` 后，注册须先调 `/user/auth/register-code` 获取 6 位码（10 分钟有效、5 次尝试上限、同邮箱 60s 限频），注册请求携带 `code` 字段；验证通过方建号。首个完成验证的注册者成为 `platform_admin`。
-- **密码重置**：忘记密码 → `/user/auth/forgot-password` 发码 → `/user/auth/reset-password` 凭码改密。码消费原子（防双花），重置后旧 JWT 存活至自然过期（≤24h）。
+- **注册验证码**：开启 `mail.register_verification` 后，注册须先调 `/user/auth/register-code` 获取 6 位码（10 分钟有效、5 次尝试上限、同邮箱 60s 限频），注册请求携带 `code` 字段；验证通过方建号。是否允许首个完成验证的注册者成为 `platform_admin` 由 `auth.allow_first_user_admin` 控制，新部署默认关闭。
+- **密码重置**：忘记密码 → `/user/auth/forgot-password` 发码 → `/user/auth/reset-password` 凭码改密。码消费原子（防双花），重置后旧 JWT 立即失效。
 - **模板系统**：两套内置中文默认模板（注册验证码/重置密码验证码，占位符 `{{code}}` / `{{ttl_minutes}}` / `{{app_name}}`），管理台可编辑覆盖、清空正文即还原默认。
 
 ### 邮件模板管理（platform_admin）

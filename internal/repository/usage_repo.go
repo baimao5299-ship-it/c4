@@ -34,6 +34,66 @@ type UsageQuery struct {
 	Limit     int
 }
 
+// ScanPublicChannelStats aggregates recent calls for a bounded set of public
+// groups. usage_logs and err_logs intentionally overlap for aborts; the query
+// de-duplicates non-empty request IDs before counting so the UI reports one
+// call and one outcome per request.
+func (r *UsageRepo) ScanPublicChannelStats(ctx context.Context, groupIDs []int64, from, to time.Time) (map[int64]*domain.PublicChannelStat, error) {
+	if len(groupIDs) == 0 {
+		return map[int64]*domain.PublicChannelStat{}, nil
+	}
+	if r.pool == nil {
+		return nil, fmt.Errorf("usage repo: pgx pool not configured (repository.NewWithPG); cannot scan public channel stats")
+	}
+	rows, err := r.pool.Query(ctx, `WITH raw AS (
+		SELECT group_id, request_id, latency_ms, created_at,
+			(error_type <> 'none') AS failed, 'usage'::text AS source, id
+		FROM usage_logs
+		WHERE group_id = ANY($1) AND created_at >= $2 AND created_at < $3
+		UNION ALL
+		SELECT group_id, request_id, latency_ms, created_at,
+			TRUE AS failed, 'error'::text AS source, id
+		FROM err_logs
+		WHERE group_id = ANY($1) AND created_at >= $2 AND created_at < $3
+	), keyed AS (
+		SELECT raw.*,
+			CASE WHEN request_id IS NULL OR request_id = ''
+				THEN source || ':' || id::text
+				ELSE 'request:' || request_id END AS event_key
+		FROM raw
+	), dedup AS (
+		SELECT DISTINCT ON (group_id, event_key)
+			group_id, latency_ms, created_at, failed
+		FROM keyed
+		ORDER BY group_id, event_key, failed DESC, created_at DESC, id DESC
+	)
+	SELECT group_id,
+		count(*)::bigint,
+		count(*) FILTER (WHERE failed)::bigint,
+		COALESCE(sum(GREATEST(latency_ms, 0)) FILTER (WHERE latency_ms > 0), 0)::bigint,
+		count(*) FILTER (WHERE latency_ms > 0)::bigint,
+		max(created_at)
+	FROM dedup
+	GROUP BY group_id`, groupIDs, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]*domain.PublicChannelStat, len(groupIDs))
+	for rows.Next() {
+		stat := &domain.PublicChannelStat{}
+		if err := rows.Scan(&stat.GroupID, &stat.RequestCount, &stat.ErrorCount,
+			&stat.LatencyTotalMS, &stat.LatencySampleCount, &stat.LastCalledAt); err != nil {
+			return nil, err
+		}
+		out[stat.GroupID] = stat
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 type UsageRepo struct {
 	client *ent.Client
 	// pool 为聚合 SQL 直查入口（ScanUsageAgg——usage_logs 含 raw_cost 等

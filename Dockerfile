@@ -7,6 +7,8 @@
 # dist 为平台无关产物（JS bundle），两平台镜像共用同一构建逻辑。多平台镜像
 # 构建慢的根因是 QEMU 模拟 arm64 执行 node/pnpm（慢 5-10 倍），原生执行消解。
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+ARG VITE_CARD_STORE_URL=
+ENV VITE_CARD_STORE_URL=$VITE_CARD_STORE_URL
 RUN corepack enable
 WORKDIR /web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./

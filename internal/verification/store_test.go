@@ -156,6 +156,57 @@ func TestDeleteIdempotentAndNilTolerant_whenKeyMissing(t *testing.T) {
 	require.NoError(t, st.DeleteEmailCode(ctx, "none@example.com", "reset"), "从未存在的键同理")
 }
 
+func TestConsumeEmailCodeIsAtomicAndSingleUse(t *testing.T) {
+	st, _ := newTestStore(t)
+	ctx := context.Background()
+	_, err := st.UpsertEmailCode(ctx, testEmail, testPurpose, testSHA, time.Now().Add(domain.EmailCodeTTL))
+	require.NoError(t, err)
+
+	got, err := st.ConsumeEmailCode(ctx, testEmail, testPurpose, testSHA, domain.EmailCodeMaxAttempts)
+	require.NoError(t, err)
+	require.Equal(t, domain.EmailCodeConsumeSuccess, got)
+	got, err = st.ConsumeEmailCode(ctx, testEmail, testPurpose, testSHA, domain.EmailCodeMaxAttempts)
+	require.NoError(t, err)
+	require.Equal(t, domain.EmailCodeConsumeMissing, got)
+}
+
+func TestTryReserveEmailCodeAllowsOnlyOneLiveCode(t *testing.T) {
+	st, _ := newTestStore(t)
+	ctx := context.Background()
+	expires := time.Now().Add(domain.EmailCodeTTL)
+	reserved, err := st.TryReserveEmailCode(ctx, testEmail, testPurpose, testSHA, expires)
+	require.NoError(t, err)
+	require.True(t, reserved)
+	reserved, err = st.TryReserveEmailCode(ctx, testEmail, testPurpose, testSHA2, expires)
+	require.NoError(t, err)
+	require.False(t, reserved)
+	got, err := st.GetEmailCode(ctx, testEmail, testPurpose)
+	require.NoError(t, err)
+	require.Equal(t, testSHA, got.CodeSHA256)
+}
+
+func TestConsumeEmailCodeCountsMismatchesAndExpires(t *testing.T) {
+	st, mr := newTestStore(t)
+	ctx := context.Background()
+	_, err := st.UpsertEmailCode(ctx, testEmail, testPurpose, testSHA, time.Now().Add(domain.EmailCodeTTL))
+	require.NoError(t, err)
+	for i := 1; i < domain.EmailCodeMaxAttempts; i++ {
+		got, err := st.ConsumeEmailCode(ctx, testEmail, testPurpose, "wrong", domain.EmailCodeMaxAttempts)
+		require.NoError(t, err)
+		require.Equal(t, domain.EmailCodeConsumeMismatch, got)
+	}
+	got, err := st.ConsumeEmailCode(ctx, testEmail, testPurpose, "wrong", domain.EmailCodeMaxAttempts)
+	require.NoError(t, err)
+	require.Equal(t, domain.EmailCodeConsumeAttemptsExceeded, got)
+
+	_, err = st.UpsertEmailCode(ctx, testEmail, testPurpose, testSHA, time.Now().Add(domain.EmailCodeTTL))
+	require.NoError(t, err)
+	mr.FastForward(domain.EmailCodeTTL + time.Second)
+	got, err = st.ConsumeEmailCode(ctx, testEmail, testPurpose, testSHA, domain.EmailCodeMaxAttempts)
+	require.NoError(t, err)
+	require.Equal(t, domain.EmailCodeConsumeMissing, got)
+}
+
 // TestUpdatedAtFreshnessForRateLimit_whenJustUpserted 场景 §3.6：Upsert 后立即
 // Get → UpdatedAt 距今 <60s——SendRegisterCode 的 429 抑制判定输入成立。
 func TestUpdatedAtFreshnessForRateLimit_whenJustUpserted(t *testing.T) {

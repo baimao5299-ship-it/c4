@@ -669,6 +669,12 @@ func (r *Repository) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.U
 	return r.Usages.QueryUsages(ctx, q)
 }
 
+// ScanPublicChannelStats exposes the privacy-safe public-group aggregate to
+// the user API without widening the legacy LogStore interface.
+func (r *Repository) ScanPublicChannelStats(ctx context.Context, groupIDs []int64, from, to time.Time) (map[int64]*domain.PublicChannelStat, error) {
+	return r.Usages.ScanPublicChannelStats(ctx, groupIDs, from, to)
+}
+
 // ScanUsageAgg 批量账号 usage_logs 区间聚合（/api/admin/accounts/usage 查询面；
 // LogStore 接口面注入——service 构造注入，测试 fake 直插）。
 func (r *Repository) ScanUsageAgg(ctx context.Context, accountIDs []int64, from, to time.Time) (map[int64]*domain.UsageAgg, error) {
