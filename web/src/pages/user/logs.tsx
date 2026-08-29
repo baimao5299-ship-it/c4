@@ -193,15 +193,15 @@ export default function UserLogs() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           <div className="space-y-1.5">
             <Label htmlFor="user-log-key">{t('user.logs.filter.keyId')}</Label>
-            <Input id="user-log-key" type="number" min={0} placeholder="1" value={filters.key_id} onChange={e => set({ key_id: e.target.value })} />
+            <Input id="user-log-key" type="number" inputMode="numeric" min={0} placeholder="1" value={filters.key_id} onChange={e => set({ key_id: e.target.value })} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="user-log-group">{t('user.logs.filter.groupId')}</Label>
-            <Input id="user-log-group" type="number" min={0} placeholder="1" value={filters.group_id} onChange={e => set({ group_id: e.target.value })} />
+            <Input id="user-log-group" type="number" inputMode="numeric" min={0} placeholder="1" value={filters.group_id} onChange={e => set({ group_id: e.target.value })} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="user-log-model">{t('user.logs.filter.model')}</Label>
-            <Input id="user-log-model" placeholder="gpt-4o" value={filters.model} onChange={e => set({ model: e.target.value })} />
+            <Input id="user-log-model" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="gpt-4o" value={filters.model} onChange={e => set({ model: e.target.value })} />
           </div>
           <div className="space-y-1.5">
             <Label>{t('user.logs.filter.format')}</Label>
@@ -234,7 +234,7 @@ export default function UserLogs() {
           {tab === 'errors' && (
             <div className="space-y-1.5">
               <Label htmlFor="user-log-status">{t('user.logs.filter.statusCode')}</Label>
-              <Input id="user-log-status" type="number" min={0} placeholder="429" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
+              <Input id="user-log-status" type="number" inputMode="numeric" min={0} placeholder="429" value={filters.status_code} onChange={e => set({ status_code: e.target.value })} />
             </div>
           )}
           <div className="space-y-1.5">

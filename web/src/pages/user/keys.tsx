@@ -377,12 +377,12 @@ export default function UserKeys() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="uk-max">{t('user.keys.maxLabel')}</Label>
-                    <Input id="uk-max" type="number" min={0} value={createForm.max_concurrency} onChange={e => updateCreate({ max_concurrency: e.target.value })} />
+                    <Input id="uk-max" type="number" inputMode="numeric" min={0} value={createForm.max_concurrency} onChange={e => updateCreate({ max_concurrency: e.target.value })} />
                     <p className="text-xs text-muted-foreground">{t('user.keys.maxHint')}</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="uk-quota">{t('user.keys.quotaLabel')}</Label>
-                    <Input id="uk-quota" type="number" min={0} value={createForm.quota} onChange={e => updateCreate({ quota: e.target.value })} />
+                    <Input id="uk-quota" type="number" inputMode="numeric" min={0} value={createForm.quota} onChange={e => updateCreate({ quota: e.target.value })} />
                     <p className="text-xs text-muted-foreground">{t('user.keys.quotaHint')}</p>
                   </div>
                 </div>
@@ -424,12 +424,12 @@ export default function UserKeys() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="uk-emax">{t('user.keys.maxLabel')}</Label>
-                <Input id="uk-emax" type="number" min={0} value={editForm.max_concurrency} onChange={e => setEditForm(f => ({ ...f, max_concurrency: e.target.value }))} />
+                <Input id="uk-emax" type="number" inputMode="numeric" min={0} value={editForm.max_concurrency} onChange={e => setEditForm(f => ({ ...f, max_concurrency: e.target.value }))} />
                 <p className="text-xs text-muted-foreground">{t('user.keys.maxHint')}</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="uk-equota">{t('user.keys.quotaLabel')}</Label>
-                <Input id="uk-equota" type="number" min={0} value={editForm.quota} onChange={e => setEditForm(f => ({ ...f, quota: e.target.value }))} />
+                <Input id="uk-equota" type="number" inputMode="numeric" min={0} value={editForm.quota} onChange={e => setEditForm(f => ({ ...f, quota: e.target.value }))} />
                 <p className="text-xs text-muted-foreground">{t('user.keys.quotaHint')}</p>
               </div>
             </div>

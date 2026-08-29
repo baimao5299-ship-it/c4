@@ -74,7 +74,7 @@ export default function UserLogin() {
           <CardContent>
             <form className="space-y-3" onSubmit={event => { event.preventDefault(); void submit() }}>
               <p className="text-sm text-muted-foreground">{t('user.auth.subtitle')}</p>
-              <div className="space-y-1.5"><Label htmlFor="login-email">{t('user.auth.email')}</Label><Input id="login-email" type="email" autoComplete="email" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'login-error' : undefined} /></div>
+              <div className="space-y-1.5"><Label htmlFor="login-email">{t('user.auth.email')}</Label><Input id="login-email" type="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'login-error' : undefined} /></div>
               <div className="space-y-1.5"><Label htmlFor="login-password">{t('user.auth.password')}</Label><Input id="login-password" type="password" autoComplete="current-password" placeholder={t('user.auth.password')} value={password} onChange={e => { setPassword(e.target.value); setErr('') }} aria-invalid={Boolean(err)} aria-describedby={err ? 'login-error' : undefined} /></div>
               {err && <p id="login-error" role="alert" className="text-sm text-destructive">{err}</p>}
               <Button type="submit" className="w-full" disabled={loading}>{t('user.auth.loginButton')}</Button>

@@ -139,6 +139,8 @@ export default function UserRedemptions() {
                 onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit() }}
                 placeholder={t('user.redemptions.codePlaceholder')}
                 autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
                 spellCheck={false}
                 disabled={redeem.isPending}
               />
