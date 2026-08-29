@@ -581,7 +581,7 @@ export default function RedemptionCodes() {
             <p className="py-8 text-center text-sm text-muted-foreground">{t('redemptions.historyEmpty')}</p>
           ) : (
             <div className="overflow-hidden rounded-lg border">
-              <ScrollArea className="max-h-[min(55vh,28rem)]">
+              <ScrollArea showHorizontal className="max-h-[min(55vh,28rem)]">
                 <Table>
                   <TableHeader>
                     <TableRow>
