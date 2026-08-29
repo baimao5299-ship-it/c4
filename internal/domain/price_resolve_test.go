@@ -80,3 +80,17 @@ func TestResolveEntryPrices_MultBPClamp(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, int64(500000), *rp.InputPerM)
 }
+
+func TestResolveEntryPrices_MultBPOverflowSaturates(t *testing.T) {
+	entry := &PriceEntry{Model: "huge", Mode: PriceModeToken, InputPerM: int64PtrD(maxPriceInt64)}
+	rp, ok := ResolveEntryPrices(entry, []*PriceVariant{{Model: "huge", Seq: 1, MultBP: intPtrD(100000)}}, "auto", 0, time.Now())
+	require.True(t, ok)
+	require.NotNil(t, rp.InputPerM)
+	require.Equal(t, maxPriceInt64, *rp.InputPerM, "variant multiplier must not wrap prices negative")
+
+	// A nil variant can occur in a partially built test/config snapshot and is
+	// skipped rather than dereferenced.
+	rp, ok = ResolveEntryPrices(entry, []*PriceVariant{nil}, "auto", 0, time.Now())
+	require.True(t, ok)
+	require.Equal(t, maxPriceInt64, *rp.InputPerM)
+}

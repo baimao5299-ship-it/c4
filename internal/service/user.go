@@ -163,6 +163,9 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, old, new str
 	if err != nil {
 		return mapRepoErr(err)
 	}
+	if u == nil {
+		return ErrNotFound
+	}
 	if !auth.VerifyPassword(u.PasswordHash, old) || u.Status != domain.UserStatusActive {
 		return ErrInvalidCredentials
 	}
@@ -257,6 +260,9 @@ const maxUserUpdateRetries = 3
 // 状态/并发/额度变更 → invalidate → Auth.Reload 全量刷新（评审 I-2）。价格
 // 倍率按组（T3.5 修正）经 group_assignment 设置，用户本体无倍率字段。
 func (s *Service) UpdateUser(ctx context.Context, p *repository.UserPatch) (*domain.User, error) {
+	if p == nil || p.ID <= 0 {
+		return nil, ErrInvalidInput
+	}
 	if p.Role != nil && !p.Role.Valid() {
 		return nil, ErrInvalidInput
 	}
@@ -284,6 +290,9 @@ func (s *Service) UpdateUser(ctx context.Context, p *repository.UserPatch) (*dom
 		cur, err := s.store.GetUser(ctx, p.ID)
 		if err != nil {
 			return nil, mapRepoErr(err)
+		}
+		if cur == nil {
+			return nil, ErrNotFound
 		}
 		p.OldMaxConcurrency = &cur.MaxConcurrency
 		p.OldBalance = &cur.Balance

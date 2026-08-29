@@ -43,6 +43,38 @@ func TestHealthz(t *testing.T) {
 	require.NotContains(t, body, "heap")
 }
 
+func TestReadyz(t *testing.T) {
+	ready := false
+	s := NewServer(Options{AdminToken: "tok", ReadyCheck: func() bool { return ready }})
+	for _, tc := range []struct {
+		name string
+		set  bool
+		code int
+		body string
+	}{
+		{name: "not ready", set: false, code: http.StatusServiceUnavailable, body: "not_ready"},
+		{name: "ready", set: true, code: http.StatusOK, body: "ready"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ready = tc.set
+			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			require.Equal(t, tc.code, rec.Code)
+			require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+			require.Contains(t, rec.Body.String(), tc.body)
+		})
+	}
+}
+
+func TestReadyzDefaultsToReady(t *testing.T) {
+	s := NewServer(Options{AdminToken: "tok"})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	s := NewServer(Options{AdminToken: "tok"})
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -493,6 +525,23 @@ func TestStatusWriterUnwrapResponseController(t *testing.T) {
 		err := http.NewResponseController(sw).SetWriteDeadline(time.Now())
 		require.Error(t, err, "httptest.Recorder 无 SetWriteDeadline → ErrNotSupported（语义同底层不支持）")
 	})
+}
+
+func TestStatusWriterPreservesFirstHeaderState(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := &statusWriter{ResponseWriter: rec}
+	sw.WriteHeader(http.StatusCreated)
+	sw.WriteHeader(http.StatusInternalServerError)
+	require.Equal(t, http.StatusCreated, sw.status)
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	streamRec := httptest.NewRecorder()
+	stream := &statusWriter{ResponseWriter: streamRec}
+	stream.Flush()
+	stream.WriteHeader(http.StatusInternalServerError)
+	require.True(t, stream.headersWritten)
+	require.Equal(t, http.StatusOK, stream.status)
+	require.Equal(t, http.StatusOK, streamRec.Code)
 }
 
 // deadlineRecorder 记录 SetWriteDeadline 调用的最小 writer（验证 Unwrap 链穿透）。

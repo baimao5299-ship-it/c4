@@ -32,7 +32,11 @@ import (
 )
 
 type Config struct {
-	MaxBodySize           int64
+	MaxBodySize int64
+	// MaxResponseSize bounds materialized non-streaming responses from raw
+	// upstream callers (images/search). A non-positive value uses the built-in
+	// default; streaming responses remain governed by UpstreamStreamTimeout.
+	MaxResponseSize       int64
 	MaxInflight           int64
 	UpstreamTimeout       time.Duration // codex 非流式上游超时（resp/images 各自包 ctx——B-P2-7；HTTPClient.Timeout 不可用：流式/非流式四方法共享，覆盖整响应体读取会切断长流式 SSE）。同源同值 cfg.Proxy.UpstreamTimeout（aiclient.Config.UpstreamTimeout 管 typed 面）
 	UpstreamStreamTimeout time.Duration // 流式 backstop（非流式超时在 aiclient.Config/cfg.Proxy.UpstreamTimeout）
@@ -44,6 +48,39 @@ type Config struct {
 	// 提取门控——false 完全不读供应商头直取 RemoteAddr，true 按序采信三头）。
 	// 部署前提见 config.go 注释与 clientip.go：源站只对 CDN 暴露。
 	BehindCDN bool
+}
+
+const defaultMaxResponseSize int64 = 32 << 20
+
+var errUpstreamResponseTooLarge = errors.New("upstream response exceeds configured size limit")
+
+func responseSizeLimit(configured int64) int64 {
+	if configured <= 0 {
+		return defaultMaxResponseSize
+	}
+	return configured
+}
+
+// readUpstreamResponse materializes a raw non-streaming response with a hard
+// upper bound. LimitReader(limit+1) lets us distinguish an exact-limit body
+// from an oversized body without retaining unbounded data. The caller owns
+// closing resp.Body on every return path.
+func readUpstreamResponse(resp *http.Response, configured int64) ([]byte, error) {
+	if resp == nil || resp.Body == nil {
+		return nil, errors.New("upstream response body is nil")
+	}
+	limit := responseSizeLimit(configured)
+	if resp.ContentLength > limit {
+		return nil, errUpstreamResponseTooLarge
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, errUpstreamResponseTooLarge
+	}
+	return b, nil
 }
 
 type Proxy struct {
@@ -229,7 +266,7 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	cost := billing.CostFromResolved(rp, l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
 	if l.CallCount > 0 && rp.PricePerImage != nil {
 		l.PricePerCallMillis = rp.PricePerImage
-		cost += billing.ImageCostFromResolved(rp, 0, 0, l.CallCount)
+		cost = addUsageTokens(cost, billing.ImageCostFromResolved(rp, 0, 0, l.CallCount))
 	}
 	l.Cost = cost
 	l.AboveHit = false
@@ -242,7 +279,11 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 // （applyMultiplier 纯函数不动）。热路径一次 int64 赋值零额外开销。
 func (p *Proxy) applyMultiplierLog(l *domain.UsageLog, raw int64) {
 	l.RawCost = raw
-	l.Cost = applyMultiplier(raw, p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID))
+	m := int(billingMultiplierBase)
+	if p != nil && p.bill != nil && p.bill.Balances != nil {
+		m = p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID)
+	}
+	l.Cost = applyMultiplier(raw, m)
 }
 
 // applyImageBilling 生图计费（统一 PriceEntry image 分量）。
@@ -298,15 +339,45 @@ func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
 // 计数（calls = 图片张数：resp 检测旁路计数 Task D 先行 / images 格式直连与
 // codex 路径 data 数组长 / 流式 completed 事件数）落 CallCount（不入 TotalTokens）。
 func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, u usageTuple, start time.Time) *domain.UsageLog {
+	in := addUsageTokens(u.it, u.ii)
+	out := addUsageTokens(u.ot, u.io)
+	total := u.tt
+	if total < 0 {
+		// A malformed/overflowed upstream total must not suppress quota debit.
+		total = addUsageTokens(in, out)
+	}
+	if total < 0 {
+		total = 0
+	}
+	calls := u.calls
+	if calls < 0 {
+		calls = 0
+	}
 	return &domain.UsageLog{
 		RequestID: reqID, GroupID: groupID, AccountID: accountID,
 		Model: reqModel, MappedModel: mappedFor(reqModel, usedModel), Format: format, StatusCode: status, ErrorType: et,
 		LatencyMS:   time.Since(start).Milliseconds(),
-		InputTokens: u.it + u.ii, OutputTokens: u.ot + u.io, TotalTokens: u.tt,
+		InputTokens: in, OutputTokens: out, TotalTokens: total,
 		CacheReadTokens: u.cr, CacheCreationTokens: u.cc,
-		CallCount: u.calls,
+		CallCount: calls,
 		CreatedAt: time.Now(),
 	}
+}
+
+// addUsageTokens adds non-negative usage components with saturation. Usage is
+// provider supplied data, so an invalid negative component is ignored and an
+// extreme sum is capped instead of wrapping into a negative quota debit.
+func addUsageTokens(a, b int64) int64 {
+	if a < 0 {
+		a = 0
+	}
+	if b < 0 {
+		b = 0
+	}
+	if a > maxBillingInt64-b {
+		return maxBillingInt64
+	}
+	return a + b
 }
 
 // mappedFor 判定映射关系：实际使用的模型（used）非空且与请求模型（req）不同
@@ -495,6 +566,7 @@ var errBodies = func() map[*formatError]encodedError {
 		errBody:                enc(errBody),
 		errNoPrice:             enc(errNoPrice),
 		errInsufficientBalance: enc(errInsufficientBalance),
+		errBillingUnavailable:  enc(errBillingUnavailable),
 		errServiceTierRejected: enc(errServiceTierRejected),
 		errUpgradeRequired:     enc(errUpgradeRequired),
 		errGroupNotFound:       enc(errGroupNotFound),

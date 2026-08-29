@@ -35,6 +35,7 @@ export default function UserRegister() {
     const res = await userApi.register({ email: email.trim(), password, ...(withCode ? { code: withCode } : {}) })
     userAuth.setToken(res.token)
     userAuth.setRole(res.user.Role)
+    userAuth.setMode('user')
     nav('/user')
   }
   const submit = async () => {

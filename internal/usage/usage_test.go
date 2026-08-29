@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -941,4 +942,39 @@ func indexOf(b []byte, s string) int {
 		}
 	}
 	return -1
+}
+
+func TestRecordClampsMalformedQuantities(t *testing.T) {
+	store := &memLogStore{}
+	r := New(UsageConfig{BatchSize: 10}, store, nil)
+	negTTFT := int64(-4)
+	log := &domain.UsageLog{
+		RequestID: "malformed", KeyID: 7,
+		InputTokens: -1, OutputTokens: -2, TotalTokens: -3,
+		CacheReadTokens: -4, CacheCreationTokens: -5, CallCount: -6,
+		LatencyMS: -7, Cost: -8, RawCost: -9, TTFTMS: &negTTFT,
+	}
+	r.Record(log)
+	require.Equal(t, int64(0), log.TotalTokens)
+	require.Equal(t, int64(0), log.Cost)
+	require.Equal(t, int64(0), *log.TTFTMS)
+	require.Equal(t, int64(0), r.quotaUsed[7], "negative tokens must not reduce quota")
+	require.Equal(t, int64(1), int64(r.flushLogs(context.Background())))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1)
+	require.Equal(t, int64(0), store.logs[0].InputTokens)
+}
+
+func TestRecordNilAndQuotaOverflowAreSafe(t *testing.T) {
+	r := New(UsageConfig{BatchSize: 1}, &memLogStore{}, nil)
+	r.Record(nil)
+	r.AddQuota(1, math.MaxInt64)
+	r.AddQuota(1, 1)
+	require.Equal(t, int64(math.MaxInt64), r.quotaUsed[1])
+	r.AddQuota(1, -1)
+	require.Equal(t, int64(math.MaxInt64), r.quotaUsed[1], "negative manual deltas are ignored")
+	r.quotaUsed[2] = -10
+	r.AddQuota(2, 3)
+	require.Equal(t, int64(3), r.quotaUsed[2], "legacy negative accumulator is normalized before adding")
 }

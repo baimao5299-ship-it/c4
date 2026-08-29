@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/is7qin/c3api/internal/billing"
@@ -203,22 +204,88 @@ func (s *Service) ListPriceVariants(ctx context.Context, model string) ([]*domai
 }
 
 func (s *Service) ReplacePriceVariants(ctx context.Context, model string, variants []*domain.PriceVariant) ([]*domain.PriceVariant, error) {
-	// effect at-least-one check mirrored
+	if strings.TrimSpace(model) == "" {
+		return nil, fmt.Errorf("%w: model is required", ErrInvalidInput)
+	}
+	seenSeq := make(map[int]struct{}, len(variants))
 	for _, v := range variants {
-		if v.MultBP == nil && v.SetInputPerM == nil && v.SetOutputPerM == nil && v.SetCacheReadPerM == nil && v.SetCacheCreationPerM == nil && v.SetPricePerCall == nil && v.SetImgInTokPerM == nil && v.SetImgOutTokPerM == nil && v.SetPricePerImage == nil {
-			return nil, fmt.Errorf("%w: variant seq %d requires at least one effect", ErrInvalidInput, v.Seq)
-		}
-		if v.MultBP != nil && (*v.MultBP < 0 || *v.MultBP > 100000) {
-			return nil, fmt.Errorf("%w: variant seq %d multiplier must be in [0,10]", ErrInvalidInput, v.Seq)
+		if err := validatePriceVariant(v, seenSeq); err != nil {
+			return nil, err
 		}
 	}
-	// entry existence check? allow variants for non-existent model? For now allow but warn; service layer still writes.
 	out, err := s.store.ReplacePriceVariants(ctx, model, variants)
 	if err != nil {
 		return nil, err
 	}
 	s.reloadPricing(ctx)
 	return out, nil
+}
+
+// validatePriceVariant keeps persisted conditional pricing deterministic. The
+// repository constraint covers only the effect presence rule; the remaining
+// bounds must be enforced before the replace transaction so invalid rows cannot
+// be accepted by lightweight stores or direct database adapters.
+func validatePriceVariant(v *domain.PriceVariant, seen map[int]struct{}) error {
+	if v == nil {
+		return fmt.Errorf("%w: variant must not be null", ErrInvalidInput)
+	}
+	if v.Seq < 1 {
+		return fmt.Errorf("%w: variant seq must be >= 1", ErrInvalidInput)
+	}
+	if _, ok := seen[v.Seq]; ok {
+		return fmt.Errorf("%w: duplicate variant seq %d", ErrInvalidInput, v.Seq)
+	}
+	seen[v.Seq] = struct{}{}
+	if v.ServiceTier != nil && (strings.TrimSpace(*v.ServiceTier) == "" || len([]byte(*v.ServiceTier)) > 64) {
+		return fmt.Errorf("%w: variant seq %d service_tier is invalid", ErrInvalidInput, v.Seq)
+	}
+	if v.CtxMin != nil && *v.CtxMin < 0 {
+		return fmt.Errorf("%w: variant seq %d ctx_min must be >= 0", ErrInvalidInput, v.Seq)
+	}
+	if v.CtxMax != nil && *v.CtxMax < 0 {
+		return fmt.Errorf("%w: variant seq %d ctx_max must be >= 0", ErrInvalidInput, v.Seq)
+	}
+	if v.CtxMin != nil && v.CtxMax != nil && *v.CtxMin >= *v.CtxMax {
+		return fmt.Errorf("%w: variant seq %d ctx_min must be less than ctx_max", ErrInvalidInput, v.Seq)
+	}
+	if v.TimeStart != nil && !validVariantClock(*v.TimeStart) {
+		return fmt.Errorf("%w: variant seq %d time_start must be HH:MM", ErrInvalidInput, v.Seq)
+	}
+	if v.TimeEnd != nil && !validVariantClock(*v.TimeEnd) {
+		return fmt.Errorf("%w: variant seq %d time_end must be HH:MM", ErrInvalidInput, v.Seq)
+	}
+	if v.DowMask != nil && (*v.DowMask < 0 || *v.DowMask > 0x7f) {
+		return fmt.Errorf("%w: variant seq %d dow_mask must use 7 bits", ErrInvalidInput, v.Seq)
+	}
+	if v.MultBP != nil && (*v.MultBP < 0 || *v.MultBP > 100000) {
+		return fmt.Errorf("%w: variant seq %d multiplier must be in [0,10]", ErrInvalidInput, v.Seq)
+	}
+	for _, effect := range []struct {
+		name  string
+		value *int64
+	}{
+		{"set_input_per_m", v.SetInputPerM}, {"set_output_per_m", v.SetOutputPerM},
+		{"set_cache_read_per_m", v.SetCacheReadPerM}, {"set_cache_creation_per_m", v.SetCacheCreationPerM},
+		{"set_price_per_call", v.SetPricePerCall}, {"set_img_in_tok_per_m", v.SetImgInTokPerM},
+		{"set_img_out_tok_per_m", v.SetImgOutTokPerM}, {"set_price_per_image", v.SetPricePerImage},
+	} {
+		if effect.value != nil && *effect.value < 0 {
+			return fmt.Errorf("%w: variant seq %d %s must be >= 0", ErrInvalidInput, v.Seq, effect.name)
+		}
+	}
+	if v.MultBP == nil && v.SetInputPerM == nil && v.SetOutputPerM == nil && v.SetCacheReadPerM == nil && v.SetCacheCreationPerM == nil && v.SetPricePerCall == nil && v.SetImgInTokPerM == nil && v.SetImgOutTokPerM == nil && v.SetPricePerImage == nil {
+		return fmt.Errorf("%w: variant seq %d requires at least one effect", ErrInvalidInput, v.Seq)
+	}
+	return nil
+}
+
+func validVariantClock(value string) bool {
+	if len(value) != 5 || value[2] != ':' || value[0] < '0' || value[0] > '9' || value[1] < '0' || value[1] > '9' || value[3] < '0' || value[3] > '9' || value[4] < '0' || value[4] > '9' {
+		return false
+	}
+	hour := int(value[0]-'0')*10 + int(value[1]-'0')
+	minute := int(value[3]-'0')*10 + int(value[4]-'0')
+	return hour < 24 && minute < 60
 }
 
 func (s *Service) ServiceTierPolicy(tier billing.Tier) billing.TierPolicyMode {

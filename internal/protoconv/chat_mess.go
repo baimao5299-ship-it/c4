@@ -328,7 +328,7 @@ func messUsageToChat(msg map[string]any) (map[string]any, bool) {
 	out := map[string]any{
 		"prompt_tokens":     it,
 		"completion_tokens": ot,
-		"total_tokens":      it + ot,
+		"total_tokens":      sumTokens(it, ot),
 	}
 	if c := intOr0(u, "cache_read_input_tokens"); c > 0 {
 		out["prompt_tokens_details"] = map[string]any{"cached_tokens": c}
@@ -415,7 +415,7 @@ func (m *StreamMapper) mapMessToChat(name string, data []byte) ([]byte, bool) {
 		}
 		m.ot = ot
 		usage := map[string]any{
-			"prompt_tokens": m.it, "completion_tokens": m.ot, "total_tokens": m.it + m.ot,
+			"prompt_tokens": m.it, "completion_tokens": m.ot, "total_tokens": sumTokens(m.it, m.ot),
 		}
 		if m.cached > 0 {
 			usage["prompt_tokens_details"] = map[string]any{"cached_tokens": m.cached}

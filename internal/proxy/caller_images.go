@@ -109,7 +109,7 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 		}
 		// 流终落账元组（对齐 caller_images_stream.go 口径）：ii/io = image
 		// tokens、tt = 之和、img = completed 帧计数；三处落账点共用。
-		u := usageTuple{ii: imgII, io: imgIO, tt: imgII + imgIO, calls: imgCount}
+		u := usageTuple{ii: imgII, io: imgIO, tt: addUsageTokens(imgII, imgIO), calls: imgCount}
 		if err != nil {
 			// 客户端断开：上游已消费请求（成功），仍须记录用量（同 chat 语义）。
 			// errors.Is(err, context.Canceled) 即客户端断开——sserelay.normalize
@@ -142,7 +142,7 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 		resp.Body.Close()
 		return resp.StatusCode, rb, false, &responseHeadersError{header: hdr}
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := readUpstreamResponse(resp, p.cfg.MaxResponseSize)
 	resp.Body.Close()
 	if err != nil {
 		return 0, nil, false, err
@@ -158,7 +158,7 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 	// usage 提取（codexImagesCaller 同款形态：ii/io = image tokens，tt = 之和，
 	// img = data 数组长；gjson 输入字节直读零分配）。
 	ii, io, count := billing.ImageUsageFromResponse(data)
-	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, 200, domain.ErrNone, usageTuple{ii: ii, io: io, tt: ii + io, calls: count}, start)))
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, 200, domain.ErrNone, usageTuple{ii: ii, io: io, tt: addUsageTokens(ii, io), calls: count}, start)))
 	return 200, nil, true, nil
 }
 

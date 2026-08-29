@@ -207,6 +207,7 @@ func main() {
 	clients := aiclient.NewFactory(hc, aiclient.Config{
 		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
 		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
+		MaxResponseSize:       cfg.Proxy.MaxResponseSize,
 	})
 	// 管理端变更统一经 invalidate 去抖器生效（O2 接线矩阵，评审 M-1）：
 	// - 用户 CRUD（含创建）/余额变更 → auth + 余额快照全量 Reload（去抖窗口
@@ -347,6 +348,7 @@ func main() {
 	}
 	px := proxy.New(proxy.Config{
 		MaxBodySize:           cfg.Proxy.MaxBodySize,
+		MaxResponseSize:       cfg.Proxy.MaxResponseSize,
 		MaxInflight:           cfg.Proxy.MaxInflight,
 		UpstreamTimeout:       cfg.Proxy.UpstreamTimeout,
 		UpstreamStreamTimeout: cfg.Proxy.UpstreamStreamTimeout,
@@ -490,6 +492,7 @@ func main() {
 		RegisterPerMinute: cfg.Auth.RegisterRatePerMinute,
 		CodePerMinute:     cfg.Auth.CodeRatePerMinute,
 		ResetPerMinute:    cfg.Auth.ResetRatePerMinute,
+		TrustForwardedIP:  cfg.Proxy.BehindCDN,
 	})
 
 	// /api/admin/ops/workers 运维观测（spec 2026-08-11，用户裁决并入管理面）：
@@ -555,6 +558,9 @@ func main() {
 		AIHandler:         aiRouter,
 		WebFS:             webUI(),
 		Logger:            log,
+		ReadyCheck: func() bool {
+			return snapshotsReady(snapReg.Status()) && proxyRuntime.Ready()
+		},
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -597,6 +603,10 @@ func main() {
 	wm.Register(concSync)
 	// 账号层孪生同段并排（spec conc-share-borrow-account §2：同款协调态语义）。
 	wm.Register(accConcSync)
+	// Proxy runtime retries a failed startup probe at a low cadence without
+	// changing the selected route; it must stop before the coordination workers
+	// during graceful shutdown.
+	wm.Register(proxyRuntime)
 	// discovery 在 billFlusher 之后、listener/authSync 之前注册（foundation spec
 	// §2.3 装配序）：反向排空时 listener 先停接收、discovery 随即 ZREM 自身缩容
 	// 掉出 N，再排业务 worker——游标终扫（billFlusher 最后排空）前集群基数已收敛。

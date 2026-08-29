@@ -59,7 +59,7 @@ export default function UserStats() {
     queryKey: ['user', 'stats', params],
     queryFn: () => userApi.getMyStats(params),
   })
-  const rows = data ?? []
+  const rows = useMemo(() => data ?? [], [data])
   const labeledRows = useMemo(() => rows.map(r => {
     const d = r.BucketTime ? new Date(r.BucketTime) : null
     const label = d && !Number.isNaN(d.getTime())

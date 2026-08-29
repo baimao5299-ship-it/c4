@@ -185,6 +185,12 @@ func (s *Service) verifyAndConsume(ctx context.Context, email, purpose, plain st
 
 // RegisterUserWithCode 带验证码校验的注册入口（handler 侧根据 verif 开关分发）。
 func (s *Service) RegisterUserWithCode(ctx context.Context, email, password, code string) (*domain.User, error) {
+	// Check the registration switch before consuming a one-time code. When
+	// registration is disabled, the request must have no side effects; otherwise
+	// an operator toggle could invalidate a valid code without creating a user.
+	if s.settingValue("signup_enabled") != "true" {
+		return nil, ErrSignupDisabled
+	}
 	// 评审补充（2026-08-26 Oracle）：email 先行校验再入验证码存储键材料；无效邮箱
 	// 终态不变（同一 ErrInvalidInput 哨兵），仅报错文案更早收敛。
 	if !validEmail(email) {

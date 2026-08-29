@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,9 +59,12 @@ func (f *httpFetcher) Fetch(ctx context.Context, sourceURL string) (*FetchResult
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("pricing: fetch %s: status %d", sourceURL, resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPriceTableBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPriceTableBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("pricing: fetch %s: read body: %w", sourceURL, err)
+	}
+	if len(data) > maxPriceTableBytes {
+		return nil, fmt.Errorf("pricing: fetch %s: response exceeds %d bytes", sourceURL, maxPriceTableBytes)
 	}
 	return Parse(data, f.log)
 }
@@ -140,9 +144,15 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 		Source: domain.PricingSourceLitellm,
 		Raw:    raw,
 	}
-	in := toMilliCentsPerMillion(*e.InputCostPerToken)
+	in, ok := toMilliCentsPerMillion(*e.InputCostPerToken)
+	if !ok {
+		return nil, nil, false
+	}
 	pe.InputPerM = &in
-	out := toMilliCentsPerMillion(*e.OutputCostPerToken)
+	out, ok := toMilliCentsPerMillion(*e.OutputCostPerToken)
+	if !ok {
+		return nil, nil, false
+	}
 	pe.OutputPerM = &out
 	if v := cacheCost(e.CacheReadInputTokenCost); v != nil {
 		pe.CacheReadPerM = v
@@ -166,12 +176,14 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 			st := "priority"
 			var setIn, setOut *int64
 			if validCost(e.InputCostPerTokenPriority) {
-				v := toMilliCentsPerMillion(*e.InputCostPerTokenPriority)
-				setIn = &v
+				if v, ok := toMilliCentsPerMillion(*e.InputCostPerTokenPriority); ok {
+					setIn = &v
+				}
 			}
 			if validCost(e.OutputCostPerTokenPriority) {
-				v := toMilliCentsPerMillion(*e.OutputCostPerTokenPriority)
-				setOut = &v
+				if v, ok := toMilliCentsPerMillion(*e.OutputCostPerTokenPriority); ok {
+					setOut = &v
+				}
 			}
 			if setIn != nil || setOut != nil {
 				vars = append(vars, &domain.PriceVariant{Model: model, Seq: seq, ServiceTier: &st, SetInputPerM: setIn, SetOutputPerM: setOut})
@@ -184,12 +196,14 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 			st := "flex"
 			var setIn, setOut *int64
 			if validCost(e.InputCostPerTokenFlex) {
-				v := toMilliCentsPerMillion(*e.InputCostPerTokenFlex)
-				setIn = &v
+				if v, ok := toMilliCentsPerMillion(*e.InputCostPerTokenFlex); ok {
+					setIn = &v
+				}
 			}
 			if validCost(e.OutputCostPerTokenFlex) {
-				v := toMilliCentsPerMillion(*e.OutputCostPerTokenFlex)
-				setOut = &v
+				if v, ok := toMilliCentsPerMillion(*e.OutputCostPerTokenFlex); ok {
+					setOut = &v
+				}
 			}
 			if setIn != nil || setOut != nil {
 				vars = append(vars, &domain.PriceVariant{Model: model, Seq: seq, ServiceTier: &st, SetInputPerM: setIn, SetOutputPerM: setOut})
@@ -214,19 +228,22 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 		}
 	}
 	for _, a := range abs {
+		if a.n > math.MaxInt64/1000 {
+			continue
+		}
 		nv := a.n * 1000
 		vars = append(vars, &domain.PriceVariant{Model: model, Seq: seq, CtxMin: &nv, SetInputPerM: a.vals[0], SetOutputPerM: a.vals[1]})
 		seq++
 	}
 	if e.ProviderSpecificEntry != nil && e.ProviderSpecificEntry.Fast != nil {
 		v := e.ProviderSpecificEntry.Fast
-		if !math.IsNaN(*v) && !math.IsInf(*v, 0) {
+		if !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v >= 0 {
 			f := *v * 1e4
 			var m int
-			if !(f >= 0 && f <= 100000) {
-				m = 100000
-			} else {
+			if !math.IsInf(f, 0) && f <= 100000 {
 				m = int(math.Round(f))
+			} else {
+				m = 100000
 			}
 			st := "fast"
 			vars = append(vars, &domain.PriceVariant{Model: model, Seq: seq, ServiceTier: &st, MultBP: &m})
@@ -256,12 +273,19 @@ func extractAboveAll(model string, raw json.RawMessage) map[int64][2]*int64 {
 			continue
 		}
 		rest := k[len(prefix) : len(k)-len("k_tokens")]
-		fmt.Sscanf(rest, "%d", &n)
+		parsed, err := strconv.ParseInt(rest, 10, 64)
+		if err != nil || parsed <= 0 {
+			continue
+		}
+		n = parsed
 		var f float64
 		if json.Unmarshal(v, &f) != nil || f <= 0 {
 			continue
 		}
-		milli := toMilliCentsPerMillion(f)
+		milli, ok := toMilliCentsPerMillion(f)
+		if !ok {
+			continue
+		}
 		arr := out[n]
 		arr[idx] = &milli
 		out[n] = arr
@@ -287,16 +311,22 @@ func parseImagePriceEntry(model string, raw json.RawMessage) (*domain.PriceEntry
 	}
 	pe := &domain.PriceEntry{Model: model, Mode: domain.PriceModeImage, Source: domain.PricingSourceLitellm, Raw: raw, Provider: e.Provider}
 	if validCost(e.InputCostPerImageToken) {
-		v := toMilliCentsPerMillion(*e.InputCostPerImageToken)
-		pe.ImgInTokPerM = &v
+		if v, ok := toMilliCentsPerMillion(*e.InputCostPerImageToken); ok {
+			pe.ImgInTokPerM = &v
+		}
 	}
 	if validCost(e.OutputCostPerImageToken) {
-		v := toMilliCentsPerMillion(*e.OutputCostPerImageToken)
-		pe.ImgOutTokPerM = &v
+		if v, ok := toMilliCentsPerMillion(*e.OutputCostPerImageToken); ok {
+			pe.ImgOutTokPerM = &v
+		}
 	}
 	if validCost(e.OutputCostPerImage) {
-		v := toMilliCentsPerImage(*e.OutputCostPerImage)
-		pe.PricePerImage = &v
+		if v, ok := toMilliCentsPerImage(*e.OutputCostPerImage); ok {
+			pe.PricePerImage = &v
+		}
+	}
+	if pe.ImgInTokPerM == nil && pe.ImgOutTokPerM == nil && pe.PricePerImage == nil {
+		return nil, false
 	}
 	return pe, true
 }
@@ -312,7 +342,10 @@ func parseFunctionPriceEntry(model string, raw json.RawMessage) (*domain.PriceEn
 	if !validCost(e.InputCostPerQuery) {
 		return nil, false
 	}
-	v := toMilliCentsPerCall(*e.InputCostPerQuery)
+	v, ok := toMilliCentsPerCall(*e.InputCostPerQuery)
+	if !ok {
+		return nil, false
+	}
 	return &domain.PriceEntry{Model: model, Mode: domain.PriceModeCall, PricePerCall: &v, Provider: e.Provider, Source: domain.PricingSourceLitellm, Raw: raw}, true
 }
 
@@ -320,7 +353,10 @@ func cacheCost(v *float64) *int64 {
 	if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) || *v <= 0 {
 		return nil
 	}
-	m := toMilliCentsPerMillion(*v)
+	m, ok := toMilliCentsPerMillion(*v)
+	if !ok {
+		return nil
+	}
 	return &m
 }
 
@@ -328,24 +364,40 @@ func validCost(v *float64) bool {
 	return v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v > 0
 }
 
-func toMilliCentsPerMillion(perTokenUSD float64) int64 {
-	return int64(math.Round(perTokenUSD * 1e11))
+func toMilliCentsPerMillion(perTokenUSD float64) (int64, bool) {
+	return scaledPositiveInt64(perTokenUSD, 1e11)
 }
 
-func toMilliCentsPerImage(perImageUSD float64) int64 {
-	return int64(math.Round(perImageUSD * 1e5))
+func toMilliCentsPerImage(perImageUSD float64) (int64, bool) {
+	return scaledPositiveInt64(perImageUSD, 1e5)
 }
 
-func toMilliCentsPerCall(perQueryUSD float64) int64 {
-	return int64(math.Round(perQueryUSD * 1e5))
+func toMilliCentsPerCall(perQueryUSD float64) (int64, bool) {
+	return scaledPositiveInt64(perQueryUSD, 1e5)
+}
+
+func scaledPositiveInt64(value, scale float64) (int64, bool) {
+	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) || scale <= 0 {
+		return 0, false
+	}
+	rounded := math.Round(value * scale)
+	limit := float64(uint64(1) << 63)
+	if rounded <= 0 || math.IsNaN(rounded) || math.IsInf(rounded, 0) || rounded >= limit {
+		return 0, false
+	}
+	return int64(rounded), true
 }
 
 func windowTokens(v *float64) int64 {
 	if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) || *v <= 0 {
 		return 0
 	}
-	if *v > float64(math.MaxInt64) {
+	if *v >= float64(uint64(1)<<63) {
 		return 0
 	}
-	return int64(math.Round(*v))
+	rounded := math.Round(*v)
+	if rounded <= 0 || rounded >= float64(uint64(1)<<63) {
+		return 0
+	}
+	return int64(rounded)
 }

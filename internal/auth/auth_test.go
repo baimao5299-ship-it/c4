@@ -109,6 +109,19 @@ func TestJWTNonHS256Rejected(t *testing.T) {
 	require.Error(t, err, "HS384 不得被固定 HS256 的验证器接受")
 }
 
+func TestBearerTokenParsing(t *testing.T) {
+	for _, header := range []string{"Bearer token", "bearer   token", "  BEARER\ttoken  "} {
+		got, ok := BearerToken(header)
+		require.True(t, ok, header)
+		require.Equal(t, "token", got)
+	}
+	for _, header := range []string{"", "Bearer", "Bearer ", "Bearer one two", "Basic token"} {
+		got, ok := BearerToken(header)
+		require.False(t, ok, header)
+		require.Empty(t, got)
+	}
+}
+
 // --- RequireJWT 中间件 ---
 
 type fakeUserStatus struct{ snapshots map[int64]domain.UserSnapshot }
@@ -162,6 +175,20 @@ func TestRequireJWTRejects(t *testing.T) {
 	})
 	t.Run("bad token", func(t *testing.T) {
 		rec := doReq(t, RequireJWT(iss, fakeUserStatus{}), "garbage")
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+	})
+	t.Run("case-insensitive bearer", func(t *testing.T) {
+		handler := RequireJWT(iss, fakeUserStatus{snapshots: map[int64]domain.UserSnapshot{7: {Status: domain.UserStatusActive}}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+		req := httptest.NewRequest(http.MethodGet, "/api/user/keys", nil)
+		req.Header.Set("Authorization", "bEaReR   "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNoContent, rec.Code)
+	})
+	t.Run("nil dependencies", func(t *testing.T) {
+		rec := doReq(t, RequireJWT(nil, fakeUserStatus{}), token)
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		rec = doReq(t, RequireJWT(iss, nil), token)
 		require.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
 	t.Run("expired", func(t *testing.T) {

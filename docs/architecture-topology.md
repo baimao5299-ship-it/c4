@@ -1,7 +1,7 @@
-# github.com/baimao5299-ship-it/c3api 架构拓扑（标准文档）
+# C4（github.com/is7qin/c3api）架构拓扑（标准文档）
 
 > 受众：vibecoding agent（改热路径/加表/加 worker/接线前必读）+ 新贡献者 onboarding。
-> 基准：main HEAD `9391c66`（2026-08-15，数据库残留清理后）。所有代码锚点均基于该 commit 的 worktree 核实。
+> 基准：当前 `main` HEAD（文中的代码锚点随版本变化，修改代码后请以实际文件为准）。
 > 约定：本文档只陈述 main 现状；快照注册表（#13）已合并，§7/§9 按合并后现状陈述。
 > 详细 API 契约见 `docs/admin-api.md` 与 `openapi/openapi.yaml`，本文不重复。
 
@@ -18,7 +18,7 @@ flowchart LR
 
     subgraph G1["网关实例 1（单二进制 server）"]
         direction TB
-        S["chi 路由<br/>/healthz /api/admin /api/user /v1/* /assets + SPA / /user /app"]
+        S["chi 路由<br/>/healthz /readyz /api/admin /api/user /v1/* /assets + SPA / /user /app"]
         PX["proxy 热路径<br/>鉴权→门禁→选号→转发"]
         WH["常驻 worker 群<br/>billing/usage/errlog/retention/stats-agg/<br/>scheduler/notify/invalidate/<br/>pricing-sync/auth-sync/rule-engine"]
     end
@@ -57,11 +57,11 @@ flowchart LR
 
 - 单二进制部署：前端 `web/` 构建产物经 `cmd/server/embed.go:14` 的 `go:embed all:dist` 内嵌进 Go 二进制；运行时 = `server` 进程 + 挂载 config（Dockerfile 三阶段：node → go → alpine 非 root）。
 - 部署面（一句话带过）：
-  - `compose.yml`：`db`（postgres:18-alpine，数据挂载 ./deploy/data/pg）+ `app`（单容器，`C3API_ADMIN_TOKEN`/`C3API_DB_DSN` 环境变量注入，config 只读挂载自 ./deploy/config.toml）。
+  - `compose.yml`：`db`（postgres:18-alpine，数据挂载 ./deploy/data/pg）+ `redis`（redis:8-alpine，易失协调态）+ `app`（单容器，`C3API_ADMIN_TOKEN`/`C3API_DB_DSN`/`C3API_REDIS_ADDR` 环境变量注入，config 只读挂载自 ./deploy/config.local.toml）。
   - `Dockerfile`：多阶段构建，`CGO_ENABLED=0` 静态单二进制。
   - `scripts/build.sh`：pnpm 构建 web → 拷入 `cmd/server/dist` → `go build -o bin/server`。
   - `tools/`：`tools/loadtest`（打压测，-mode stream/fill，交错跑 + 每请求 CPU）、`tools/fakeupstream`（假上游，chunks/latency 可配）、`tools/e2e`（端到端计费测试）。
-- 运维观测面：/api/admin/ops/workers、/api/admin/overview、/api/admin/users-top 收敛进 handler 包（`internal/handler/ops.go:62`、`overview.go:24`、`users_top.go:18`），worker 观测聚合在 `cmd/server/main.go:384-398`；`internal/server` 已纯通用装配（Options 注入 AdminHandler/UserHandler/AIHandler/WebFS，`internal/server/server.go:22-34`）。
+- 运维观测面：/api/admin/ops/workers、/api/admin/overview、/api/admin/users-top 收敛进 handler 包；worker 观测聚合在 `cmd/server/main.go` 装配；`internal/server` 只做通用装配（Options 注入 AdminHandler/UserHandler/AIHandler/WebFS）。
 
 ## 2. 模块地图
 
@@ -70,7 +70,7 @@ flowchart LR
 | 包 | 职责 | 依赖（被谁依赖） |
 |---|---|---|
 | `internal/config` | TOML 加载 + env 覆盖（`C3API_*`） | main 入口 |
-| `internal/server` | 纯通用装配：/healthz、/api/admin 鉴权中间件、/api/user 分流、AI Mount、SPA fallback（业务 handler 由 Options 注入） | main |
+| `internal/server` | 纯通用装配：/healthz（存活）与 /readyz（快照/代理就绪）、/api/admin 鉴权中间件、/api/user 分流、AI Mount、SPA fallback（业务 handler 由 Options 注入） | main |
 | `internal/handler`（+`/user`） | 管理面 API（openapi 生成，含 ops/overview/users-top）+ 用户面 API | 依赖 service/repository |
 | `internal/service` | 业务层：settings/pricing 快照、变更发布 `publish`、ClusterInstances | 依赖 repository/notify/invalidate/rule |
 | `internal/repository` | ent 持久化门面，只暴露 domain 类型（`internal/repository/repository.go:13`）；分区表 DDL 独占管理 | 被所有上层依赖 |
@@ -215,7 +215,7 @@ pkg 职责边界：
 | auth（key/user 元数据 + gate 计数） | `internal/proxy/auth.go:68` Reload，锁内整体换 | invalidate Users/Keys + authSync 60s 周期兜底 + 启动 ReloadAll |
 | scheduler（组/账号/路由 + 并发槽） | `internal/scheduler/scheduler.go:102` snapshotStore | invalidate 全量/组级 + 30s syncLoop ticker |
 | rules（规则表） | `internal/rule/engine.go:148` Reload | invalidate Rules + 启动 ReloadAll |
-| pricing（模型价格**三线**：pricing + image_price + function_price） | `internal/service/pricing.go:35-71` + `image_pricing.go:23` + `function_pricing.go:23` | ReloadPricing 三线（sync 成功/管理端改价后，`main.go:369-373`），**不进 invalidate**（`internal/invalidate/invalidate.go:26` 注释） |
+| pricing（统一 `price_entries` + `price_variants` 模型） | `internal/service/pricing.go` | 文本、图片和函数价格同步后重载统一价格快照；**不进 invalidate** |
 | balances（余额 + 倍率） | `internal/billing/balances.go:43-51`（atomic.Pointer，Set 原地 Store） | invalidate Users/Multipliers + BalanceRefreshInterval ticker（`internal/billing/flusher.go:134-145`） |
 | settings | `internal/service/setting.go:95` ReloadSettings | invalidate Settings + 启动（**自身不进注册表**，`main.go:242-248` 注释） |
 | credential.Registry | `internal/credential/credential.go`（类型注册表 + Provider 分发，无快照语义） | 静态注册 |
@@ -242,7 +242,7 @@ pkg 职责边界：
 | scheduler | "scheduler"（`internal/scheduler/scheduler.go:117`） | syncLoop + writebackLoop 双 goroutine（`scheduler.go:132-133`） | sync `sync_interval` 30s；writeCh 有界 4096 满则丢弃 DB 回写（`scheduler.go:117`，内存状态已生效）；组级 GroupPub 发布（:34-46,234-239） | Close 排空 writeCh 剩余回写，预算超时 Warn 丢（`scheduler.go:139-159`） |
 | notify.Listener | "notify"（`internal/notify/listener.go:123`） | 事件驱动（阻塞 WaitForNotification） | 独立单连接 LISTEN c3api_invalidate；断线指数退避 1s→30s + 重连全量刷新 | Close 取消 + 等 goroutine（阻塞点均响应 ctx，`internal/notify/listener.go:161-175`） |
 | invalidate.Debouncer | "invalidate"（`internal/invalidate/invalidate.go:230`） | 事件驱动单 goroutine | 200ms 去抖窗口 + 后沿语义（执行期新变更立即再执行，`invalidate.go:262-302`）；重载串行不重叠；**规则重载 Background ctx 不随请求取消**（:347-354，B4-4：规则快照无周期兜底，事件驱动全量重载必须无条件完成） | Close nil（停机不补最后 flush——DB 权威，`invalidate.go:249`） |
-| pricing.SyncWorker | "pricing-sync"（`internal/pricing/worker.go:74`，构造 `worker.go:63`） | 启动异步一次 + cron | `price_sync_cron`（默认 `0 3 * * *`）gronx 调度；每轮现读 settings；**三线 sync**（文本+image+function 价，`worker.go:126-128`）；非法 cron 1h 重试；观测面 running/lastSync（:73-74,98,172） | 无资源需排空，Close nil（`internal/pricing/worker.go:90`） |
+| pricing.SyncWorker | "pricing-sync" | 启动异步一次 + cron | `price_sync_cron`（默认 `0 3 * * *`）调度；每轮现读 settings；统一价格表同步，非法 cron 1h 重试；观测面提供运行状态与最近结果 | 无资源需排空 |
 | cmd/server.authSync | "auth-sync"（`cmd/server/auth_sync.go:38`） | ticker 60s | 周期全量 Reload auth 快照（NOTIFY 丢失兜底，`auth_sync.go:13-16`）；**per-attempt 30s 超时**（:26,80-84，B4-2：DB 挂起不卡死循环）+ **托管 goroutine**（:57,70，B4-3：panic 不崩进程）+ 观测面 running/lastReload/failures/lastFailure（:44-48，失败不前移 lastReload :93） | Close nil（循环随 ctx 退出，`auth_sync.go:64`） |
 | rule.RuleEngine | "rule-engine"（`internal/rule/worker.go:15`） | 事件队列 | 有界 channel 满则丢弃（dropped 计数 + **阈值告警边沿回落**——每风暴恰好一次，`worker.go:103-122`；resetDropWarnIfDrained :71-75） | Flush 同步排空（测试/优雅关闭用，`worker.go:52-64`） |
 
@@ -278,7 +278,7 @@ flowchart LR
 - **并发扣费**（`internal/repository/billing_repo.go:92-139`）：`DeductAndLog` 单事务——① FEFO 临时额度按 expires_at 升序逐行条件更新（`amount >= take` 行级防并发透支，NULL 最后即 NULLS LAST）；② 余额条件更新（`balance >= remain`），0 行 → 无条件扣允许透支，再 0 行 = 用户不存在跳过扣减仍插日志；③ 事务内回读 balanceAfter。行锁仲裁跨实例天然串行（`docs/superpowers/plans/2026-08-10-multi-instance-design.md` §1 表）。
 - **同 user 恒同桶串行分片**（`internal/billing/flusher.go:96,301-330`）：按 userID 取模分片 → 实例内同 user 串行；跨实例靠 DB 行锁。
 - **NOTIFY 跨实例**（§9 全链）：实例 ID = **hostname-pid-nonce**（crypto/rand 6B 随机，`cmd/server/main.go:118-130` 装配 + `instanceSrc` :526-536）——B4-1/p2-05 修复：容器化多实例同 hostname、pid namespace 各自 pid 1 → 纯 hostname-pid 互相碰撞 → 互把对方 NOTIFY 当自播跳过 → 失效静默全灭；自播判等 = 全串相等 `ch.Src == l.cfg.Src`（`listener.go:250-251` 注释）。
-- **额度预算分摊**（`internal/proxy/gate.go:51-87`）：`budget = consumed + ceil(remaining_eff/N)`，N 存 DB settings `cluster.instances`（`internal/domain/settings.go:36-39`，config 文件可漂移故 DB 是唯一共识源）；N 变更走 settings NOTIFY → 装配侧重调 `SetInstancesProvider` 即时重算（`cmd/server/main.go:355`）；组 RPM 同款 `ceil(rpm/N)`（`internal/proxy/limit.go:14-16`）。
+- **额度预算分摊**（`internal/proxy/gate.go`）：`budget = consumed + ceil(remaining_eff/N)`，N 由 Redis 心跳自动发现（`internal/discovery`）；Redis 故障时冻结最近一次活体数并按本地语义继续，避免手工 `cluster.instances` 漂移。组 RPM 同款按 N 分摊。
 - **分区 DROP 幂等**（`internal/repository/partition.go:301-307,358,421-426`）：IF NOT EXISTS / IF EXISTS + 撞名 42P07/42710/23505（`isDuplicateObject` :301-307）+ **42P01 stale-DROP 窗口**（`isMissingObject` :318-324、`isBootstrapRaceError` :329-331——并发实例基于过期"未分区"判定 DROP 误删对方刚建表，由最后执行 DROP 的实例补建收敛，评审 I-1 已接受）；retention DROP 需 ACCESS EXCLUSIVE 锁与在途插入串行（`internal/usage/retention.go:60-64` 评审 I-3 注记）。
 - **失效分发 B4 兜底面**：auth-sync 60s 兜底新增 per-attempt 30s 超时（`auth_sync.go:21-26,80-94`，B4-2）+ 托管 goroutine（:37-40,57,70，B4-3）；规则重载 Background ctx 不随请求取消（`invalidate.go:347-354`，B4-4）。
 - **已知接受的竞态**（`docs/superpowers/plans/2026-08-10-multi-instance-design.md` §R2）：NOTIFY 重复投递 → mark 幂等合并；`UpdateAccountStatus` 并发 → last-writer-wins；stats Upsert 同桶累加精确；规则种子双写 → 唯一约束幂等；pricing sync 每实例独立 cron 重复 fetch（v1 接受）。
@@ -289,19 +289,20 @@ flowchart LR
 
 | 路由 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /healthz` | 无 | inflight/goroutines/heap（`internal/server/server.go:58-66`） |
+| `GET /healthz` | 无 | `{"status":"ok"}` 存活响应；不会暴露进程计数或堆信息 |
+| `GET /readyz` | 无 | `{"status":"ready"}`；快照和已配置代理链路未就绪时返回 `503` |
 | `/api/admin/*` | 静态 admin token OR platform_admin JWT（`internal/server/server.go:68-79` + `middleware.go:38-67`） | 管理面（chi Handle，:73-78） |
 | `/api/user/*` | register/login 公开，其余 RequireJWT（`internal/handler/user/router.go:22-40`） | 用户面 |
 | `Mount("/")` | AI key 鉴权（proxy） | 8 端点：chat/anthropic/responses + WS + images×2 + search + models（`internal/proxy/router.go:19-58`） |
 | `/assets/*`、`/favicon.svg`、`/`、SPA fallback | 无 | 网关内嵌 web/dist（`internal/server/server.go:97-126` + `cmd/server/embed.go:14`） |
 
-- admin 组（`internal/handler/api.gen.go`，openapi 生成；Handler 路由区 :4228，BaseURL `/api/admin`）：`/accounts`（含批量 batch-delete/batch-update、`{id}/ext`、`{id}/groups`）、`/groups`（含 assignments）、`/users`（含 `{id}/groups`）、`/temp-balances`、`/templates`（含 batch、`{id}/ext`）、`/keys`、`/pricing`（含 `/pricing/sync`；PUT/DELETE 的 model 在 query）、`/image-price`、`/function-prices`（价格表三件套）、`/rules`、`/settings`、`/redemption-codes`（含 batch-deactivate、`{id}/deactivate`、`{id}/uses`）、`/usage_logs`、`/err_logs`、`/stats`、`/overview`、`/users-top`、`/ops/workers`（ops tag 契约化并入管理面，`internal/handler/ops.go:62`）。
+- admin 组（OpenAPI 生成，BaseURL `/api/admin`）：`/accounts`（含批量 batch-delete/batch-update、`{id}/ext`、`{id}/groups`）、`/groups`（含 assignments）、`/users`（含 `{id}/groups`）、`/temp-balances`、`/templates`（含 batch、`{id}/ext`）、`/keys`、`/upstreams`、`/prices`（含 entry/variants、sync/preview）、`/rules`、`/settings`、`/redemption-codes`（含 batch-deactivate、`{id}/deactivate`、`{id}/uses`）、`/usage_logs`、`/err_logs`、`/stats/*`、`/overview`、`/users-top`、`/ops/workers`。
 - user 组（`internal/handler/user/api.gen.go:1303`，路径自带 `/api/user` 前缀）：`/api/user/auth/login|register|me`、`/api/user/keys`（含 `{id}`、`{id}/rotate`）、`/api/user/groups`、`/api/user/usage_logs`、`/api/user/err_logs`、`/api/user/stats`、`/api/user/redemptions`、`/api/user/temp-balances`、`/api/user/auth/change-password`。
 - AI 组（`internal/proxy/router.go:19-58`）：`POST /v1/chat/completions`、`POST /v1/responses`（upgrade → WS）、`GET /v1/responses`（仅 upgrade 放行，否则 405）、`POST /v1/messages`、`POST /v1/images/generations`、`POST /v1/images/edits`、`POST /v1/alpha/search`（codex CLI web search 独立编排，`forward_search.go:59`）、`GET /v1/models`（快照读零 DB，`models.go:19`）。
 
 ## 12. 配置面
 
-`config.example.toml` 段落 → 模块映射（对照真实文件，`cmd/server/main.go` 消费，现 564 行）：
+`config.example.toml` 段落 → 模块映射（对照真实文件与 `cmd/server/main.go` 装配）：
 
 | 段落 | 消费模块 | 关键项 |
 |---|---|---|
@@ -309,16 +310,17 @@ flowchart LR
 | `[log]` | logx.New | level/output |
 | `[admin]` | server 静态 token | token |
 | `[auth]` | jwtauth.Issuer | jwt_secret（`C3API_AUTH_JWT_SECRET` 亦可） |
-| `[db]` | repository.OpenPG | dsn/max_conns（20 = billing 8 + stats 8 worker + 余量）；**F1 OpenPG 自动补丁**：lock_timeout=5s 会话级 + 计费扣费 per-query 10s 超时 + MaxConnLifetime=30m 滚动轮换——DSN 无需手工配置，用户 DSN 显式同名参数时尊重不覆盖（`config.go:56-61` + `main.go:134` 注释） |
+| `[db]` | repository.OpenPG | dsn/max_conns（默认 20）；连接池会话参数与计费事务超时由 repository 统一设置，用户 DSN 显式同名参数时尊重 |
+| `[redis]` | redisx/discovery/verification | addr/password/db；Redis 为启动必需依赖，承载实例心跳与短时效验证码 |
 | `[proxy]` | proxy.New | max_body_size/max_inflight/upstream_timeout/upstream_stream_timeout/failover_attempts/usage_capture |
 | `[upstream]` | httpx.TransportConfig | 连接池参数（max_idle_conns 8192 / per_host 2048 / force_http2 / idle_conn_timeout 90s / dial_timeout 10s，`config.example.toml:20-26`） |
 | `[limit]` | fixedWindowLimiter | group_key_rpm（0 = 关）；**cooldown_429/backoff_* 已移除**（配置含这些键将启动失败，规则引擎接管） |
 | `[scheduler]` | scheduler.Config | default_max_concurrency/sync_interval |
 | `[usage]` | usage.Recorder + StatsAggWorker + ErrLogWorker + RetentionWorker | batch_size/flush_interval/log_retention_days=30/quota_flush_interval/flush_workers=8/stats_agg_interval（默认 5m，0=禁用聚合）/errlog_queue_size=4096/errlog_batch_size=500/errlog_flush_interval=500ms/errlog_retention_days=7/stats_retention_days=180 |
-| `[billing]` | billing.NewFlusher + BillingHooks | enabled（**默认开启**——2026-08-15 用户裁决，`config.example.toml:60,69` `enabled = true`；注：`internal/config/config.go:139` 代码默认值仍 false 未同步）/flush_interval=1s/balance_refresh_interval=10s/flush_workers=8 |
+| `[billing]` | billing.NewFlusher + BillingHooks | enabled（默认开启）/flush_interval/balance_refresh_interval/flush_workers |
 
-- 必填校验（`internal/config/config.go` Load 末尾 validate）：admin.token、auth.jwt_secret、db.dsn 缺失/占位符即 fatal（占位符精确匹配拒绝：change-me/change-me-too/dev-admin-token/dev-jwt-secret-for-local）。
-- 分区/保留/倍率等策略参数在 **DB settings 表**而非 config（`internal/domain/settings.go:10-38`）：signup 默认资源、price_source_url/price_sync_cron、service_tier_policy_*、cluster.instances。
+- 必填校验（`internal/config/config.go` Load 末尾 validate）：auth.jwt_secret、db.dsn、redis.addr 缺失/占位符即 fatal；admin.token 可留空（此时管理面仅接受 platform_admin JWT）。占位符精确匹配拒绝：change-me/change-me-too/dev-admin-token/dev-jwt-secret-for-local。
+- 分区/保留/倍率等策略参数在 **DB settings 表**而非 config（`internal/domain/settings.go`）：signup 默认资源、price_source_url/price_sync_cron、service_tier_policy_*；多实例数量不再手工配置，由 Redis 心跳发现。
 
 ## 13. 架构决策记录（ADR）
 

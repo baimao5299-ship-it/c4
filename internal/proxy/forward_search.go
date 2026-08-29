@@ -195,6 +195,13 @@ func (p *Proxy) callCodexSearch(ctx context.Context, w http.ResponseWriter, r *h
 	if err != nil {
 		return statusOf(err), upstreamBody(err), false, err
 	}
+	if resp == nil {
+		// The SDK normally guarantees a non-nil response when err is nil. Keep
+		// the adapter boundary defensive so a faulty provider implementation is
+		// classified as a retryable upstream failure instead of panicking while
+		// dereferencing resp.Raw.
+		return 0, nil, false, errors.New("codex search returned empty response")
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp.Raw)
@@ -233,7 +240,7 @@ func (p *Proxy) callStaticSearch(ctx context.Context, w http.ResponseWriter, r *
 		resp.Body.Close()
 		return resp.StatusCode, rb, false, &responseHeadersError{header: hdr}
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := readUpstreamResponse(resp, p.cfg.MaxResponseSize)
 	resp.Body.Close()
 	if err != nil {
 		return 0, nil, false, err

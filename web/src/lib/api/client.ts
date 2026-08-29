@@ -17,6 +17,23 @@ export class ApiError extends Error {
   }
 }
 
+// Backend errors use both a compact {error: string} envelope and the proxy
+// shape {error: {message, type}}. Keep the first useful human-readable message
+// instead of reducing structured failures to a generic HTTP status.
+function errorMessage(body: unknown, fallback: string): string {
+  if (typeof body === 'string' && body.trim()) return body
+  if (!body || typeof body !== 'object') return fallback
+  const root = body as { error?: unknown; message?: unknown }
+  if (typeof root.message === 'string' && root.message.trim()) return root.message
+  if (typeof root.error === 'string' && root.error.trim()) return root.error
+  if (root.error && typeof root.error === 'object') {
+    const nested = root.error as { message?: unknown; detail?: unknown }
+    if (typeof nested.message === 'string' && nested.message.trim()) return nested.message
+    if (typeof nested.detail === 'string' && nested.detail.trim()) return nested.detail
+  }
+  return fallback
+}
+
 // —— 列表查询参数（三页通用 + 专属）——
 export interface ListParams {
   limit?: number
@@ -110,7 +127,7 @@ export class ApiClient {
     if (res.status === 401) throw new ApiUnauthorized()
     if (!res.ok) {
       const body = await res.json().catch(() => null)
-      throw new ApiError(res.status, (body as { error?: string } | null)?.error ?? `HTTP ${res.status}`)
+      throw new ApiError(res.status, errorMessage(body, `HTTP ${res.status}`))
     }
     // DELETE /rules/{id} 等返回 204 无 body，不能 res.json()
     if (res.status === 204) return undefined as T
@@ -260,4 +277,7 @@ export class ApiUnauthorized extends Error {
 }
 
 // 用户端实例：base '/api/user'，Authorization 走 userAuth（c3api_user_token）。
+// 管理端实例：登录页用它验证静态 ADMIN_TOKEN；业务页面继续从 App.tsx
+// 导出的同构实例调用，避免重复改动现有 API 使用点。
+export const adminApi = new ApiClient(userAuth.getToken)
 export const userApi = new ApiClient(userAuth.getToken, '/api/user')

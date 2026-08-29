@@ -130,9 +130,45 @@ func toAPIGroup(g *domain.Group) Group {
 // 毫分同构——内部存储恒万分数，仅 API 边界换算）。
 func multToNormal(v int) float64 { return float64(v) / 10000.0 }
 
-// normalToMult 正常值 → 万分数（API 输入换算：1.5 → 15000；math.Round 消除
-// 浮点取整误差）。
-func normalToMult(v float64) int { return int(math.Round(v * 10000)) }
+const (
+	multiplierScale = 10000.0
+	currencyScale   = 100000.0
+)
+
+// checkedScaledInt64 converts an API float to a scaled integer without
+// allowing NaN, infinities, or values outside int64.  float64 cannot represent
+// MaxInt64 exactly, so the signed 2^63 boundary is used explicitly.
+func checkedScaledInt64(v, scale float64, field string) (int64, error) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, fmt.Errorf("%s must be finite", field)
+	}
+	rounded := math.Round(v * scale)
+	limit := float64(uint64(1) << 63)
+	if math.IsInf(rounded, 0) || rounded >= limit || rounded < -limit {
+		return 0, fmt.Errorf("%s is out of range", field)
+	}
+	return int64(rounded), nil
+}
+
+func normalToMultChecked(v float64) (int, error) {
+	n, err := checkedScaledInt64(v, multiplierScale, "price_multiplier")
+	if err != nil {
+		return 0, err
+	}
+	maxInt := int64(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if n > maxInt || n < minInt {
+		return 0, errors.New("price_multiplier is out of range")
+	}
+	return int(n), nil
+}
+
+// normalToMult is retained for internal callers that already validate input.
+// New API boundaries use normalToMultChecked so invalid values become 400s.
+func normalToMult(v float64) int {
+	n, _ := normalToMultChecked(v)
+	return n
+}
 
 // apiMultiplierToMillis 生成类型倍率（正常值 *float64，nil = 未指定）→ 万分数
 // *int；越界（<0 或 >10）→ 错误（400 文案）。
@@ -143,7 +179,10 @@ func apiMultiplierToMillis(v *float64) (*int, error) {
 	if *v < 0 || *v > 10 {
 		return nil, errors.New("price_multiplier must be in [0, 10]")
 	}
-	m := normalToMult(*v)
+	m, err := normalToMultChecked(*v)
+	if err != nil {
+		return nil, err
+	}
 	return &m, nil
 }
 
@@ -167,7 +206,10 @@ func apiMultiplierMap(in map[string]*float64) (map[int64]*int, error) {
 		if *v < 0 || *v > 10 {
 			return nil, fmt.Errorf("multipliers: price_multiplier must be in [0, 10] for id %d", id)
 		}
-		m := normalToMult(*v)
+		m, err := normalToMultChecked(*v)
+		if err != nil {
+			return nil, fmt.Errorf("multipliers: %w for id %d", err, id)
+		}
 		out[id] = &m
 	}
 	return out, nil
@@ -195,9 +237,16 @@ func toAPIMultipliers(m map[int64]*int) *map[string]*float64 {
 // 内部存储恒毫分）。
 func millisToUSD(millis int64) float64 { return float64(millis) / 1e5 }
 
-// usdToMillis USD float64 → 毫分（math.Round 消除浮点取整误差；API 输入边界
-// 换算，内部存储恒毫分）。
-func usdToMillis(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
+// usdToMillisChecked USD float64 → 毫分 with finite/range validation.
+func usdToMillisChecked(usd float64) (int64, error) {
+	return checkedScaledInt64(usd, currencyScale, "amount")
+}
+
+// usdToMillis is retained for already-validated internal callers.
+func usdToMillis(usd float64) int64 {
+	n, _ := usdToMillisChecked(usd)
+	return n
+}
 
 // millisToUSDPtr *int64（毫分）→ *float64（USD）；nil 透传（价格矩阵可选列）。
 func millisToUSDPtr(v *int64) *float64 {
@@ -209,12 +258,15 @@ func millisToUSDPtr(v *int64) *float64 {
 }
 
 // usdToMillisPtr *float64（USD）→ *int64（毫分）；nil 透传（缺省 = 清空该价）。
-func usdToMillisPtr(v *float64) *int64 {
+func usdToMillisPtr(v *float64) (*int64, error) {
 	if v == nil {
-		return nil
+		return nil, nil
 	}
-	i := usdToMillis(*v)
-	return &i
+	i, err := usdToMillisChecked(*v)
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
 }
 
 // multI64ToNormalPtr *int64（万分数）→ *float64（正常值）；nil 透传（pricing
@@ -236,18 +288,28 @@ func multI64ToNormalPtr(v *int64) *float64 {
 
 // usdPerImageToMilli USD/张 → 毫分/张（×1e5；与 token 价同为 ×1e5 系数但单位
 // 语义独立——按张 flat 计费，防混用）。
-func usdPerImageToMilli(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
+func usdPerImageToMilli(usd float64) int64 {
+	n, _ := checkedScaledInt64(usd, currencyScale, "price_per_image")
+	return n
+}
+
+func usdPerImageToMilliChecked(usd float64) (int64, error) {
+	return checkedScaledInt64(usd, currencyScale, "price_per_image")
+}
 
 // milliPerImageToUSD 毫分/张 → USD/张（/1e5；API 展示换算）。
 func milliPerImageToUSD(millis int64) float64 { return float64(millis) / 1e5 }
 
 // usdPerImageToMilliPtr *float64（USD/张）→ *int64（毫分/张）；nil 透传。
-func usdPerImageToMilliPtr(v *float64) *int64 {
+func usdPerImageToMilliPtr(v *float64) (*int64, error) {
 	if v == nil {
-		return nil
+		return nil, nil
 	}
-	i := usdPerImageToMilli(*v)
-	return &i
+	i, err := usdPerImageToMilliChecked(*v)
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
 }
 
 // milliPerImageToUSDPtr *int64（毫分/张）→ *float64（USD/张）；nil 透传。
@@ -266,7 +328,14 @@ func milliPerImageToUSDPtr(v *int64) *float64 {
 // 单位语义独立——按次 flat 计费不走 /1e6 除法，独立函数防误用）。
 
 // usdPerCallToMilli USD/次 → 毫分/次（×1e5；math.Round 消除浮点取整误差）。
-func usdPerCallToMilli(usd float64) int64 { return int64(math.Round(usd * 1e5)) }
+func usdPerCallToMilli(usd float64) int64 {
+	n, _ := checkedScaledInt64(usd, currencyScale, "price_per_call")
+	return n
+}
+
+func usdPerCallToMilliChecked(usd float64) (int64, error) {
+	return checkedScaledInt64(usd, currencyScale, "price_per_call")
+}
 
 // milliPerCallToUSD 毫分/次 → USD/次（/1e5；API 展示换算，回显 litellm 原生
 // 口径 input_cost_per_query）。
@@ -274,12 +343,15 @@ func milliPerCallToUSD(millis int64) float64 { return float64(millis) / 1e5 }
 
 // usdPerCallToMilliPtr *float64（USD/次，litellm 原生口径）→ *int64（毫分/次）；
 // nil 透传。
-func usdPerCallToMilliPtr(v *float64) *int64 {
+func usdPerCallToMilliPtr(v *float64) (*int64, error) {
 	if v == nil {
-		return nil
+		return nil, nil
 	}
-	i := usdPerCallToMilli(*v)
-	return &i
+	i, err := usdPerCallToMilliChecked(*v)
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
 }
 
 // milliPerCallToUSDPtr *int64（毫分/次）→ *float64（USD/次）；nil 透传。
@@ -296,7 +368,10 @@ func normalToMultI64Ptr(v *float64) *int64 {
 	if v == nil {
 		return nil
 	}
-	i := int64(math.Round(*v * 10000))
+	i, err := checkedScaledInt64(*v, multiplierScale, "price_multiplier")
+	if err != nil {
+		return nil
+	}
 	return &i
 }
 

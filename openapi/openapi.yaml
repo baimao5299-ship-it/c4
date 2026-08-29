@@ -1961,7 +1961,7 @@ components:
       properties:
         ok: { type: boolean }
         latency_ms: { type: integer, format: int64 }
-        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, unconfigured, superseded, model_unavailable] }
+        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, unconfigured, superseded, model_unavailable] }
         upstream: { $ref: '#/components/schemas/Upstream' }
     UpstreamModelsPreview:
       type: object

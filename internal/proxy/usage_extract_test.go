@@ -81,6 +81,25 @@ func TestChatUsageFromResponse(t *testing.T) {
 	_, _, _, cr, cc = chatUsageFromResponse(p.Usage)
 	require.Zero(t, cr)
 	require.Zero(t, cc)
+
+	// Some compatible relays omit total_tokens. The gateway derives it from
+	// the raw input/output components so quota and cost accounting remain
+	// consistent with the streamed path.
+	missingTotal := `{"id":"x","object":"chat.completion","model":"m","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3}}`
+	var sparse openai.ChatCompletion
+	require.NoError(t, json.Unmarshal([]byte(missingTotal), &sparse))
+	_, _, total, _, _ := chatUsageFromResponse(sparse.Usage)
+	require.Equal(t, int64(10), total)
+}
+
+func TestStreamUsageDerivesMissingTotal(t *testing.T) {
+	u, ok := chatStreamUsage([]byte(`{"usage":{"prompt_tokens":7,"completion_tokens":3}}`))
+	require.True(t, ok)
+	require.Equal(t, int64(10), u.tt)
+
+	u, ok = responsesTopLevelUsage([]byte(`{"usage":{"input_tokens":7,"output_tokens":3}}`))
+	require.True(t, ok)
+	require.Equal(t, int64(10), u.tt)
 }
 
 // —— Anthropic 流式（message.usage.* 前缀） ——
@@ -228,6 +247,9 @@ func chatStreamUsageRef(data []byte) (usageTuple, bool) {
 		cc: gjson.GetBytes(data, "usage.cache_creation.ephemeral_5m_input_tokens").Int() +
 			gjson.GetBytes(data, "usage.cache_creation.ephemeral_1h_input_tokens").Int(),
 	}
+	if t.tt <= 0 {
+		t.tt = addUsageTokens(t.it, t.ot)
+	}
 	t.it = deductCacheRead(t.it, t.cr)
 	return t, gjson.GetBytes(data, "usage").Type == gjson.JSON
 }
@@ -254,6 +276,9 @@ func responsesCompletedUsageRef(data []byte) (usageTuple, bool) {
 		cc: gjson.GetBytes(data, "response.usage.cache_creation.ephemeral_5m_input_tokens").Int() +
 			gjson.GetBytes(data, "response.usage.cache_creation.ephemeral_1h_input_tokens").Int(),
 	}
+	if t.tt <= 0 {
+		t.tt = addUsageTokens(t.it, t.ot)
+	}
 	t.it = deductCacheRead(t.it, t.cr)
 	return t, gjson.GetBytes(data, "response.usage").Type == gjson.JSON
 }
@@ -266,6 +291,9 @@ func responsesTopLevelUsageRef(data []byte) (usageTuple, bool) {
 		cr: gjson.GetBytes(data, "usage.input_tokens_details.cached_tokens").Int(),
 		cc: gjson.GetBytes(data, "usage.cache_creation.ephemeral_5m_input_tokens").Int() +
 			gjson.GetBytes(data, "usage.cache_creation.ephemeral_1h_input_tokens").Int(),
+	}
+	if t.tt <= 0 {
+		t.tt = addUsageTokens(t.it, t.ot)
 	}
 	t.it = deductCacheRead(t.it, t.cr)
 	return t, gjson.GetBytes(data, "usage").Type == gjson.JSON
@@ -439,6 +467,22 @@ func TestResponsesUsageFromResponse(t *testing.T) {
 	require.Equal(t, int64(30), tt, "tt 先按原始 in+out 定值再归一——数值不变量")
 	require.Equal(t, int64(5), cr, "SDK InputTokensDetails.CachedTokens 直读")
 	require.Zero(t, cc, "恒 0 预期（M4）")
+}
+
+func TestUsageExtractionSaturatesProviderSums(t *testing.T) {
+	max := int64(math.MaxInt64)
+	require.Equal(t, max, cacheCreationFromRaw(`{"cache_creation":{"ephemeral_5m_input_tokens":9223372036854775807,"ephemeral_1h_input_tokens":1}}`))
+
+	respUsage := responses.ResponseUsage{InputTokens: max, OutputTokens: max}
+	_, _, total, _, _ := responsesUsageFromResponse(respUsage)
+	require.Equal(t, max, total, "responses input+output must saturate")
+
+	anthropicUsage := anthropic.Usage{InputTokens: max, OutputTokens: max}
+	_, _, total, _, _ = anthropicUsageFromResponse(anthropicUsage)
+	require.Equal(t, max, total, "anthropic input+output must saturate")
+
+	// The same helper backs image token totals in every caller.
+	require.Equal(t, max, addUsageTokens(max, 1))
 }
 
 // —— deductCacheRead 归一边界（spec 2026-08-25 验收 #2） ——

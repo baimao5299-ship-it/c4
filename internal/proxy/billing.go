@@ -14,6 +14,12 @@ import (
 	"github.com/is7qin/c3api/internal/domain"
 )
 
+const (
+	maxBillingInt64       = int64(1<<63 - 1)
+	maxBillingMultiplier  = 100000 // 10x, the validated upper bound (万分数)
+	billingMultiplierBase = int64(10000)
+)
+
 // PriceResolver 统一价格解析（零 DB 快照读，首中即停变体解析）。
 type PriceResolver interface {
 	ResolvePrices(model string, promptTokens int64, tier string, at time.Time) (domain.ResolvedPrices, bool)
@@ -34,6 +40,9 @@ var (
 	// errInsufficientBalance 402：余额预检拒绝（快照缺失或 <0；免费放行路径
 	// T3.5 价格倍率扩展）。
 	errInsufficientBalance = &formatError{status: http.StatusPaymentRequired, msg: "insufficient balance"}
+	// errBillingUnavailable 503：计费已打开但关键余额快照未装配。Failing
+	// closed avoids forwarding billable traffic with an unknown balance.
+	errBillingUnavailable = &formatError{status: http.StatusServiceUnavailable, msg: "billing temporarily unavailable"}
 	// errServiceTierRejected 400：service_tier 策略 reject（不转发，记 ErrBilling）。
 	errServiceTierRejected = &formatError{status: http.StatusBadRequest, msg: "service_tier rejected by gateway policy"}
 )
@@ -54,11 +63,30 @@ func stripServiceTier(body []byte) ([]byte, error) {
 // applyMultiplier 价格倍率应用（T3.5 用户拍板：整单 round-half-up）：
 // (cost×m + 5000)/10000。m==10000（×1 未设置/组默认）恒等短路——默认路径
 // 逐指令等价零 round 偏差（函数可内联）。m==0 → cost 0（免费，不扣费）。
-// 溢出安全：cost 毫分正常 ≤1e7 量级（恶意 token 经 cost.go 溢出钳制后仍
-// ≤ MaxInt64/1e6）× 倍率上限 1e5 → 远小于 MaxInt64。
+// 溢出安全：倍率先钳至校验上限，商/余数分解避免 cost×m 回绕，结果超出
+// int64 时饱和到最大值。
 func applyMultiplier(cost int64, m int) int64 {
-	if m == 10000 {
+	if cost <= 0 || m <= 0 {
+		return 0
+	}
+	if m == int(billingMultiplierBase) {
 		return cost
 	}
-	return (cost*int64(m) + 5000) / 10000
+	if m > maxBillingMultiplier {
+		m = maxBillingMultiplier
+	}
+	// Compute cost*m/base without forming the potentially overflowing product.
+	// The remainder product is bounded by 9999*100000, while the quotient part
+	// is checked before addition. Saturating protects the int64 ledger contract.
+	q, rem := cost/billingMultiplierBase, cost%billingMultiplierBase
+	m64 := int64(m)
+	if q > maxBillingInt64/m64 {
+		return maxBillingInt64
+	}
+	out := q * m64
+	remCost := (rem*m64 + billingMultiplierBase/2) / billingMultiplierBase
+	if out > maxBillingInt64-remCost {
+		return maxBillingInt64
+	}
+	return out + remCost
 }

@@ -116,14 +116,14 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			// context.Canceled) 即客户端断开——sserelay.normalize 已区分三类
 			// （C-P2-2）：上游停滞超时 → DeadlineExceeded 走上游错误分支。
 			if errors.Is(err, context.Canceled) {
-				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, start)))
+				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, client, usageTuple{it: it, ot: ot, tt: it + ot, cr: cr, cc: cc}, err)
+			p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, client, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, err)
 			p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 			return 0, nil, true, nil
 		}
-		tt = it + ot
+		tt = addUsageTokens(it, ot)
 		p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
 		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
 		return 200, nil, true, nil

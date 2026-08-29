@@ -38,7 +38,7 @@ C4 处于 **beta**。当前 API 已可使用，但 beta 版本之间仍可能调
 产品名称为 **C4**。为兼容已有部署，Go 模块路径（`github.com/is7qin/c3api`）、可执行文件/容器名称、API 路径以及 `C3API_*` 环境变量保持不变。
 
 - **暂不提供自动迁移**——beta 版本之间不保证数据库表结构和配置兼容。
-- **升级按全新部署处理**——先创建新数据库并重新核对配置，再切换流量。
+- **beta 升级按全新部署处理**——使用新的 `RemoteDir` 和数据库，重新核对配置后再切换流量。部署脚本默认拒绝复用已有数据库；只有完成表结构兼容性核对并显式传 `-ReuseDatabase` 才会继续。
 - 发布说明见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 特性
@@ -77,9 +77,9 @@ docker compose up -d --build
 
 这会在本地构建镜像，并一起启动 PostgreSQL、Redis 和 C4 网关。若要使用预构建镜像，先从 `compose.yml` 删除 `build:` 段，再运行 `docker compose pull` 和 `docker compose up -d`。
 
-网关监听 `http://127.0.0.1:18080`——管理台 `/app`，用户台 `/user`，健康检查 `/healthz`。
+网关监听 `http://127.0.0.1:18080`——管理台 `/app`，用户台 `/user`，存活检查 `/healthz`，就绪检查（快照和已配置代理链路）`/readyz`。
 
-**初始管理**——Compose 要求设置静态 `ADMIN_TOKEN`，并默认只绑定本机。公开注册始终是普通 `user`；要对其他机器开放，应放在 HTTPS 反向代理之后。
+**初始管理**——Compose 要求设置静态 `ADMIN_TOKEN`，并默认只绑定本机。打开 `/user/login`，切换到“管理员令牌”并粘贴生成的值；控制台会先用只读管理请求验证令牌，再进入 `/app`。公开注册始终是普通 `user`；要对其他机器开放，应放在 HTTPS 反向代理之后。
 
 预构建镜像发布在 GHCR（`ghcr.io/baimao5299-ship-it/c4`）：`:beta` 跟随最新 beta 版本，也提供固定版本 tag。单独拉取：`docker pull ghcr.io/baimao5299-ship-it/c4:beta`。为兼容已有部署，旧的 `c3api` 镜像标签会同步发布。
 
@@ -106,7 +106,7 @@ cd web && pnpm install && pnpm run dev
  OpenAI SDK / curl ─▶│   C4 网关（单二进制）           │
  Anthropic SDK ─────▶│  ┌─────────────────────────┐  │
  Codex 客户端 ──────▶│  │ chi 路由                │  │──▶ OpenAI 上游（REST + SSE）
-   浏览器（SPA） ───▶│  │ /healthz /api/admin /api/user + SPA / /user /app │  │──▶ Anthropic 上游（REST + SSE）
+   浏览器（SPA） ───▶│  │ /healthz /readyz /api/admin /api/user + SPA / /user /app │  │──▶ Anthropic 上游（REST + SSE）
                     │  │ /v1/*                    │  │──▶ Responses / resp-ws 上游
                     │  │ proxy：鉴权 → 门禁 →      │  │
                     │  │         选号 → 转发       │  │
@@ -171,8 +171,8 @@ cd web && pnpm install && pnpm run dev
 
 ## 部署
 
-- `scripts/deploy.ps1` — Windows PowerShell 远程部署助手。默认只预览；加 `-Apply` 后会按当前已提交版本上传到独立目录、生成缺省密钥、启动并检查 `/healthz`。它会在端口冲突或已有非 C4 服务占用时停止，不会覆盖其他项目。
-- `compose.yml` — 生产编排：`db`（postgres:18-alpine，数据挂载在 `deploy/data/pg`）+ `redis`（redis:8-alpine，易失状态（协调 + 短时效验证码）——不持久化）+ `app`（单容器，非 root、配置只读挂载自 `deploy/config.local.toml`、健康检查）。`deploy/config.toml` 仍作为需要显式选择时的生产配置模板。
+- `scripts/deploy.ps1` — PowerShell 7（命令名 `pwsh`）远程部署助手。默认只预览；加 `-Apply` 后会按当前已提交版本上传到独立目录，新部署时生成密钥、启动并检查 `/readyz`。它会先校验 Compose 再切换 `current`，在端口冲突或已有非 C4 服务占用时停止，不会覆盖其他项目；已有 `.env` 必须各含唯一且非空的 `POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`，beta 复用数据库必须显式传 `-ReuseDatabase`。
+- `compose.yml` — 生产编排：`db`（postgres:18-alpine，数据挂载在 `deploy/data/pg`）+ `redis`（redis:8-alpine，易失状态（协调 + 短时效验证码）——不持久化）+ `app`（单容器，非 root、配置只读挂载自 `deploy/config.toml`、健康检查）。只有机器需要单独覆盖时才设置 `CONFIG_FILE`。
 - `Dockerfile` — 三阶段构建（node → go → alpine），产出内嵌 UI 的静态单二进制。
 - 公网入口示例见 [`deploy/PUBLIC_DEPLOYMENT.md`](./deploy/PUBLIC_DEPLOYMENT.md) 和 [`deploy/Caddyfile.example`](./deploy/Caddyfile.example)：C4 保持本机端口监听，由 Caddy 负责 HTTPS；不要直接开放 18080。
 - **双必需依赖**：PostgreSQL 18（全部持久状态，唯一真相源）+ Redis 8（可丢的易失状态——实例发现心跳与短时效邮箱验证码；永不作为缓存层）。二者均为启动强制项；勿配 `allkeys-lru` 等淘汰策略——验证码被淘汰仅致用户重发，无害但应避免。

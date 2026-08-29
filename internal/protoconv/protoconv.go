@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/pkg/sserelay"
@@ -226,9 +227,30 @@ func num(m map[string]any, key string) (float64, bool) {
 // intOr0 读整数字段（缺失/类型异常 → 0）。
 func intOr0(m map[string]any, key string) int64 {
 	if f, ok := num(m, key); ok {
+		// JSON numbers are decoded as float64. Reject negative, NaN/Inf and
+		// values at or beyond 2^63 instead of relying on implementation-defined
+		// float-to-int conversion, which can wrap to MinInt64.
+		if f < 0 || math.IsNaN(f) || math.IsInf(f, 0) || f >= float64(uint64(1)<<63) {
+			return 0
+		}
 		return int64(f)
 	}
 	return 0
+}
+
+// sumTokens combines provider usage counters without allowing an extreme
+// response to wrap a positive total into a negative value.
+func sumTokens(a, b int64) int64 {
+	if a < 0 {
+		a = 0
+	}
+	if b < 0 {
+		b = 0
+	}
+	if a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	return a + b
 }
 
 // pass 按表透传字段：dst[key] = src[key]（仅当存在且非 nil）。

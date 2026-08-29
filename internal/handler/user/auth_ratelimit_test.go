@@ -59,3 +59,50 @@ func TestAuthRateLimiterExpiresWindow(t *testing.T) {
 		t.Fatal("request rejected after window expiry")
 	}
 }
+
+func TestAuthSourceKeyUsesForwardedIPOnlyWhenConfigured(t *testing.T) {
+	proxyReq := httptest.NewRequest(http.MethodPost, "/api/user/auth/login", nil)
+	// A host-side reverse proxy reaches a Docker container through the bridge
+	// gateway, so RemoteAddr is not necessarily loopback.
+	proxyReq.RemoteAddr = "172.17.0.1:443"
+	proxyReq.Header.Set("X-Forwarded-For", "198.51.100.7, 127.0.0.1")
+	if got := authSourceKey(proxyReq, true); got != "198.51.100.7" {
+		t.Fatalf("trusted proxy source = %q, want forwarded client IP", got)
+	}
+	if got := authSourceKey(proxyReq, false); got != "172.17.0.1" {
+		t.Fatalf("untrusted proxy source = %q, want remote peer", got)
+	}
+
+	directReq := httptest.NewRequest(http.MethodPost, "/api/user/auth/login", nil)
+	directReq.RemoteAddr = "203.0.113.9:443"
+	directReq.Header.Set("X-Forwarded-For", "198.51.100.7")
+	if got := authSourceKey(directReq, false); got != "203.0.113.9" {
+		t.Fatalf("direct source = %q, want remote peer", got)
+	}
+}
+
+func TestAuthSourceKeyRejectsInvalidForwardedIP(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/user/auth/login", nil)
+	req.RemoteAddr = "[::1]:443"
+	req.Header.Set("X-Forwarded-For", "not-an-ip")
+	req.Header.Set("X-Real-IP", "2001:db8::8")
+	if got := authSourceKey(req, true); got != "2001:db8::8" {
+		t.Fatalf("fallback source = %q, want validated X-Real-IP", got)
+	}
+}
+
+func TestAuthSourceKeyMatchesCDNHeaderOrder(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/user/auth/login", nil)
+	req.RemoteAddr = "172.17.0.1:443"
+	req.Header.Set("CF-Connecting-IP", "198.51.100.42")
+	req.Header.Set("True-Client-IP", "198.51.100.43")
+	req.Header.Set("X-Forwarded-For", "198.51.100.44, 172.17.0.1")
+	req.Header.Set("X-Real-IP", "198.51.100.45")
+	if got := authSourceKey(req, true); got != "198.51.100.42" {
+		t.Fatalf("CDN source = %q, want CF-Connecting-IP", got)
+	}
+	req.Header.Set("CF-Connecting-IP", "not-an-ip")
+	if got := authSourceKey(req, true); got != "198.51.100.43" {
+		t.Fatalf("fallback CDN source = %q, want True-Client-IP", got)
+	}
+}

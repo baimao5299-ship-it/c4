@@ -22,6 +22,18 @@ type UserStatusProvider interface {
 
 type ctxClaimsKey struct{}
 
+// BearerToken parses an HTTP Authorization value using the standard Bearer
+// scheme. Scheme matching is case-insensitive and optional horizontal
+// whitespace is accepted, while extra fields are rejected so a malformed
+// header cannot be interpreted as a different credential.
+func BearerToken(header string) (string, bool) {
+	fields := strings.Fields(strings.TrimSpace(header))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") || fields[1] == "" {
+		return "", false
+	}
+	return fields[1], true
+}
+
 // ClaimsFrom 从请求 context 取已验证 claims（RequireJWT 之后可用）。
 func ClaimsFrom(ctx context.Context) (*Claims, bool) {
 	c, ok := ctx.Value(ctxClaimsKey{}).(*Claims)
@@ -34,8 +46,12 @@ func ClaimsFrom(ctx context.Context) (*Claims, bool) {
 func RequireJWT(iss *Issuer, users UserStatusProvider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !ok || raw == "" {
+			if iss == nil || users == nil {
+				writeUnauthorized(w)
+				return
+			}
+			raw, ok := BearerToken(r.Header.Get("Authorization"))
+			if !ok {
 				writeUnauthorized(w)
 				return
 			}

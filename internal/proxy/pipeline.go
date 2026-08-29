@@ -82,14 +82,23 @@ func (p *Proxy) guardPipeline(w http.ResponseWriter, r *http.Request, format dom
 	// 同一判定；cost 0 只记日志不扣费）。余额 0 放行——临时额度由 FEFO 扣费
 	// 消化（billing_repo.go:71-76 先扣 temp）；负余额持续负债拒绝。快照缺失
 	// 窗口内免费组照常放行；缺失且非免费 → 仍 402（用户不在快照 = 无余额
-	// 记录，语义不变）。在 Acquire 前 → 不占用并发槽。
-	if precheckBalance && p.cfg.BillingCapture && p.bill != nil {
-		bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
-		if (!ok || bal < 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
+	// 记录，语义不变）。计费已启用但余额/价格钩子缺失时返回 503，避免未知
+	// 账单请求继续转发。在 Acquire 前 → 不占用并发槽。
+	if p.cfg.BillingCapture {
+		if p.bill == nil || p.bill.Balances == nil || p.bill.Resolver == nil {
 			p.inflight.Add(-1)
-			writeErr(w, errInsufficientBalance)
-			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errInsufficientBalance.msg)
+			writeErr(w, errBillingUnavailable)
+			p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusServiceUnavailable, domain.ErrBilling, 0, usageTuple{}, start, errBillingUnavailable.msg)
 			return nil, nil, 0, false
+		}
+		if precheckBalance {
+			bal, ok := p.bill.Balances.BalanceOf(meta.UserID)
+			if (!ok || bal < 0) && p.bill.Balances.EffectiveMultiplier(meta.UserID, groupID) != 0 {
+				p.inflight.Add(-1)
+				writeErr(w, errInsufficientBalance)
+				p.recordRejected(r.Context(), reqID, groupID, 0, "", "", format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errInsufficientBalance.msg)
+				return nil, nil, 0, false
+			}
 		}
 	}
 	// 两级并发门禁（user → key；两步回滚由 gate 内部完成；level 仅含已

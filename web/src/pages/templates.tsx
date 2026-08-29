@@ -2,7 +2,7 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Boxes, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
@@ -417,12 +417,17 @@ export default function Templates() {
     queryKey: ['templates', { limit, offset, name: debouncedName, sort: activeSort ?? 'id', order }],
     queryFn: () => api.listTemplates({ limit, offset, name: debouncedName || undefined, sort: activeSort ?? 'id', order }),
   })
-  const rows = data?.rows ?? []
+  // Keep the empty fallback stable while the first query is pending. A fresh
+  // [] on every render would retrigger the selection-cleanup effect forever.
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows])
 
   // 行数据变化后清理已不存在的勾选
   useEffect(() => {
     const ids = new Set(rows.map(r => r.ID))
-    setSelected(s => s.filter(id => ids.has(id)))
+    setSelected(s => {
+      const next = s.filter(id => ids.has(id))
+      return next.length === s.length ? s : next
+    })
   }, [rows])
 
   // 筛选/排序/翻页变化 → 重置 offset 并清空选择

@@ -11,12 +11,12 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/is7qin/c3api/internal/auth"
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/handler/httpface"
 	"github.com/is7qin/c3api/pkg/logx"
@@ -49,14 +49,14 @@ func UserIDFromContext(ctx context.Context) (int64, bool) {
 func adminAuth(opts Options) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			authz := req.Header.Get("Authorization")
-			if opts.AdminToken != "" && authz == "Bearer "+opts.AdminToken {
+			raw, hasBearer := auth.BearerToken(req.Header.Get("Authorization"))
+			if opts.AdminToken != "" && hasBearer && raw == opts.AdminToken {
 				// 静态 admin token 路径不注入 UserID（决策 5：handler 读到 0 = 系统）
 				next.ServeHTTP(w, req)
 				return
 			}
-			if opts.JWTIssuer != nil && opts.UserStatus != nil && strings.HasPrefix(authz, "Bearer ") {
-				claims, err := opts.JWTIssuer.Verify(strings.TrimPrefix(authz, "Bearer "))
+			if opts.JWTIssuer != nil && opts.UserStatus != nil && hasBearer {
+				claims, err := opts.JWTIssuer.Verify(raw)
 				if err == nil {
 					// 快照 role 覆盖 claims.Role + 快照状态校验（单次查找零分配）
 					// + token_version 比对（spec 2026-08-25-jwt-password-revocation：
@@ -137,6 +137,12 @@ type statusWriter struct {
 }
 
 func (w *statusWriter) WriteHeader(code int) {
+	if w.headersWritten {
+		// net/http ignores subsequent headers; keep the wrapper's status in
+		// lockstep with the actual response so access logs and panic recovery do
+		// not observe a value that never reached the client.
+		return
+	}
 	w.status = code
 	w.headersWritten = true
 	w.ResponseWriter.WriteHeader(code)
@@ -158,6 +164,10 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 // 不带 Flush——包装层不透传的话，下游 sseWriter 拿到的 Flusher 是 nil，
 // 流只能攒 4KB 缓冲批量放出，首字节延迟实测 ~145ms（Task 9 压测发现）。
 func (w *statusWriter) Flush() {
+	if !w.headersWritten {
+		w.status = http.StatusOK
+		w.headersWritten = true
+	}
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

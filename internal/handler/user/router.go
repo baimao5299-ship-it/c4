@@ -38,6 +38,10 @@ func Router(svc *service.Service, iss *auth.Issuer, users auth.UserStatusProvide
 	}
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// User responses include credentials, balances and usage data. Do not
+			// let a browser or shared reverse proxy retain a response and serve it
+			// to a later request, especially for the public login/register paths.
+			w.Header().Set("Cache-Control", "no-store")
 			if publicPaths[req.URL.Path] {
 				next.ServeHTTP(w, req)
 				return

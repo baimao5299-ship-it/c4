@@ -154,7 +154,11 @@ func (g *concurrencyGate) reload(metas map[string]domain.KeyMeta) {
 			if o, ok := old.quotas[meta.KeyID]; ok {
 				q.consumed.Store(o.consumed.Load()) // 在途额度继承（评审提醒②）
 			} else {
-				q.consumed.Store(meta.QuotaUsed)
+				base := meta.QuotaUsed
+				if base < 0 {
+					base = meta.Quota // invalid DB usage => exhausted, never free budget
+				}
+				q.consumed.Store(base)
 			}
 			g.allocBudget(q, meta) // 预算按最新快照重分配（§3.2 复核时刻）
 			snap.quotas[meta.KeyID] = q
@@ -183,7 +187,11 @@ func (g *concurrencyGate) upsert(meta domain.KeyMeta) {
 		q, ok := snap.quotas[meta.KeyID]
 		if !ok {
 			q = &keyQuota{}
-			q.consumed.Store(meta.QuotaUsed)
+			base := meta.QuotaUsed
+			if base < 0 {
+				base = meta.Quota // invalid DB usage => exhausted, never free budget
+			}
+			q.consumed.Store(base)
 			snap.quotas[meta.KeyID] = q
 		}
 		g.allocBudget(q, meta) // 配额调整即时生效（在途 consumed 不动）
@@ -241,12 +249,13 @@ func (g *concurrencyGate) acquire(meta domain.KeyMeta) (int, bool) {
 	snap := g.store.Load()
 	level := 0
 	if c, ok := snap.users[meta.UserID]; ok && c != nil {
-		c.Add(1) // 无条件计数（排行数据源；不限并发也计数）
-		level |= 1
+		if incCounter(c) { // 无条件计数（排行数据源；不限并发也计数）
+			level |= 1
+		}
 		limit := int64(meta.UserMaxConc)
 		if limit > 0 && c.Load() > int64(concShare(meta.UserMaxConc, g.instancesN())) &&
 			!g.concAllows(false, meta.UserID, limit, c.Load()) {
-			c.Add(-1) // 回滚计数（稳态不超限）
+			decNonNegative(c) // 回滚计数（稳态不超限）
 			level &^= 1
 			return 0, false // user 层超限 → 429（计数已复原，无占用）
 		}
@@ -256,11 +265,11 @@ func (g *concurrencyGate) acquire(meta domain.KeyMeta) (int, bool) {
 			if !casInc(c, concShare(meta.KeyMaxConc, g.instancesN())) {
 				// 超份额：视图判定借用，通过则按真上限兜底占用；拒绝或兜底
 				// CAS 竞态失败 → 两步回滚（评审 I-3，保守多拒方向安全）。
-				if !g.concAllows(true, meta.KeyID, int64(meta.KeyMaxConc), c.Load()+1) ||
+				if !g.concAllows(true, meta.KeyID, int64(meta.KeyMaxConc), saturatingQuotaAdd(c.Load(), 1)) ||
 					!casInc(c, meta.KeyMaxConc) {
 					if level&1 != 0 {
 						if uc, ok := snap.users[meta.UserID]; ok {
-							uc.Add(-1) // 回滚 user 计数
+							decNonNegative(uc) // 回滚 user 计数
 						}
 					}
 					return 0, false
@@ -311,6 +320,9 @@ func decNonNegative(c *atomic.Int64) {
 func (g *concurrencyGate) quotaExhausted(meta domain.KeyMeta) bool {
 	if !meta.HasQuota {
 		return false
+	}
+	if meta.Quota <= 0 || meta.QuotaUsed < 0 {
+		return true
 	}
 	snap := g.store.Load()
 	q, ok := snap.quotas[meta.KeyID]
@@ -383,8 +395,14 @@ func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 				logx.Int64("key_id", meta.KeyID))
 		}
 		// 软门禁：DB 错不误伤——本请求放行，预算补 1（退避期内其余到达 429）
-		q.budget.Store(q.consumed.Load() + 1)
+		q.budget.Store(saturatingQuotaAdd(q.consumed.Load(), 1))
 		return true
+	}
+	// Invalid DB values must not grant additional budget. Treat a negative
+	// counter or an already exhausted quota as a conservative denial.
+	if used < 0 || used >= meta.Quota {
+		q.exhausted.Store(true)
+		return false
 	}
 	if remaining := meta.Quota - used; remaining > 0 {
 		// 复核认领扣除本地未反映消耗（#37 P1 收敛修复）：DB quota_used 每
@@ -395,13 +413,21 @@ func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 		// ≤ quota - used(DB) + 基线差（与初始份额无关）；多实例 + DB 恒滞后
 		// 病理形态总量有界 ≈2Q - U（生产 flush 推进 U，总量 ≈ Q + N×flush
 		// 窗口滞后）。
-		unreported := q.consumed.Load() - q.quotaUsedAtReclaim.Load()
+		consumed := q.consumed.Load()
+		if consumed < 0 {
+			consumed = maxQuotaInt64
+		}
+		baseline := q.quotaUsedAtReclaim.Load()
+		if baseline < 0 {
+			baseline = 0
+		}
+		unreported := consumed - baseline
 		if unreported < 0 {
 			unreported = 0 // 其他实例回写使 DB 值领先于本地 → 无未反映消耗
 		}
 		if remainingEff := remaining - unreported; remainingEff > 0 {
 			q.quotaUsedAtReclaim.Store(used) // 基准前移：本次复核读到的 DB 值
-			q.budget.Store(q.consumed.Load() + ceilDiv(remainingEff, int64(g.instancesN())))
+			q.budget.Store(saturatingQuotaAdd(consumed, ceilDiv(remainingEff, int64(g.instancesN()))))
 			return true
 		}
 		q.exhausted.Store(true) // 剩余不足覆盖本地未反映消耗 → 真尽（额度边缘）
@@ -417,14 +443,14 @@ func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 // 复核基准 quotaUsedAtReclaim 同步前移 = 快照 quota_used（DB 刷新后 unreported 复位，
 // 压测 P1：防止陈旧基准使剩余额被过度扣除）。
 func (g *concurrencyGate) allocBudget(q *keyQuota, meta domain.KeyMeta) {
-	remaining := meta.Quota - meta.QuotaUsed
-	if remaining <= 0 {
+	if meta.Quota <= 0 || meta.QuotaUsed < 0 || meta.QuotaUsed >= meta.Quota {
 		q.budget.Store(q.consumed.Load())
 		q.exhausted.Store(true)
 		return
 	}
+	remaining := meta.Quota - meta.QuotaUsed
 	q.quotaUsedAtReclaim.Store(meta.QuotaUsed)
-	q.budget.Store(q.consumed.Load() + ceilDiv(remaining, int64(g.instancesN())))
+	q.budget.Store(saturatingQuotaAdd(q.consumed.Load(), ceilDiv(remaining, int64(g.instancesN()))))
 	q.exhausted.Store(false)
 }
 
@@ -435,17 +461,87 @@ func (g *concurrencyGate) deductQuota(keyID, tokens int64) {
 	}
 	snap := g.store.Load()
 	if q, ok := snap.quotas[keyID]; ok && q != nil {
-		q.consumed.Add(tokens)
+		addQuotaTokens(&q.consumed, tokens)
 	}
 }
 
-// ceilDiv 向上取整除法（§3.2 ceil(remaining/N)）；b ≥ 1（N 恒 ≥ 1），
-// a+b-1 溢出仅在 a 接近 MaxInt64 时可能——额度量级远小于此。
+// ceilDiv 向上取整除法（§3.2 ceil(remaining/N)）；以商/余数计算，避免
+// a+b-1 在极大额度下溢出。
 func ceilDiv(a, b int64) int64 {
-	if a <= 0 {
+	if a <= 0 || b <= 0 {
 		return 0
 	}
-	return (a + b - 1) / b
+	q := a / b
+	if a%b != 0 {
+		q++
+	}
+	return q
+}
+
+const maxQuotaInt64 = int64(1<<63 - 1)
+
+// saturatingQuotaAdd keeps a local budget monotonic at int64's upper bound.
+func saturatingQuotaAdd(a, b int64) int64 {
+	if a < 0 {
+		a = 0
+	}
+	if b <= 0 {
+		return a
+	}
+	if a > maxQuotaInt64-b {
+		return maxQuotaInt64
+	}
+	return a + b
+}
+
+// addQuotaTokens is the saturating counterpart to atomic.Int64.Add for
+// provider-supplied usage. Negative legacy values are repaired to zero.
+func addQuotaTokens(c *atomic.Int64, delta int64) {
+	if c == nil || delta <= 0 {
+		return
+	}
+	for {
+		cur := c.Load()
+		if cur < 0 {
+			if c.CompareAndSwap(cur, 0) {
+				continue
+			}
+			continue
+		}
+		if cur > maxQuotaInt64-delta {
+			if c.CompareAndSwap(cur, maxQuotaInt64) {
+				return
+			}
+			continue
+		}
+		if c.CompareAndSwap(cur, cur+delta) {
+			return
+		}
+	}
+}
+
+// incCounter increments an in-flight counter without allowing int64 wraparound.
+// A saturated counter is treated as a logically acquired slot so the matching
+// release still balances the request without ever wrapping the counter.
+func incCounter(c *atomic.Int64) bool {
+	if c == nil {
+		return false
+	}
+	for {
+		cur := c.Load()
+		if cur < 0 {
+			if c.CompareAndSwap(cur, 0) {
+				continue
+			}
+			continue
+		}
+		if cur >= maxQuotaInt64 {
+			return true
+		}
+		if c.CompareAndSwap(cur, cur+1) {
+			return true
+		}
+	}
 }
 
 // casInc CAS 循环自增：超过 max 返回 false（不占用）。

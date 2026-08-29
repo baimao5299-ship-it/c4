@@ -335,6 +335,7 @@ const (
 	UpstreamProbeResponseErrorCodeAuth             UpstreamProbeResponseErrorCode = "auth"
 	UpstreamProbeResponseErrorCodeCanceled         UpstreamProbeResponseErrorCode = "canceled"
 	UpstreamProbeResponseErrorCodeHttpError        UpstreamProbeResponseErrorCode = "http_error"
+	UpstreamProbeResponseErrorCodeInvalidResponse  UpstreamProbeResponseErrorCode = "invalid_response"
 	UpstreamProbeResponseErrorCodeInvalidValue     UpstreamProbeResponseErrorCode = "invalid_value"
 	UpstreamProbeResponseErrorCodeModelUnavailable UpstreamProbeResponseErrorCode = "model_unavailable"
 	UpstreamProbeResponseErrorCodeNetwork          UpstreamProbeResponseErrorCode = "network"

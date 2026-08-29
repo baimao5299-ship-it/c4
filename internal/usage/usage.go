@@ -18,6 +18,7 @@ package usage
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -158,6 +159,13 @@ func (r *Recorder) Start(ctx context.Context) error {
 // atomic.Load（I-4）。**零统计计算**（spec 2026-08-14）：统计桶机制整体删除，
 // 锁内仅剩明细 append + quotaUsed 累加两个 O(1) 操作。
 func (r *Recorder) Record(l *domain.UsageLog) {
+	if l == nil {
+		if r.log != nil {
+			r.log.Warn("usage record ignored: nil log")
+		}
+		return
+	}
+	normalizeUsageLog(l)
 	if r.closed.Load() { // Close 完成后无消费者——防御性缺口（评审 I-4）：
 		// Warn 恰好一次（不刷屏）；明细仍聚合入 pending **不丢**（驻留内存由
 		// 本 Warn 观测，worker 管理器顺序保证正常停机不触发）。
@@ -169,7 +177,7 @@ func (r *Recorder) Record(l *domain.UsageLog) {
 	r.mu.Lock()
 	r.pending = append(r.pending, l)
 	if l.KeyID > 0 { // quota 在线保留（独立于统计；本处累加是 quota 唯一生产增量入口——计费 worker 只动余额不动配额）
-		r.quotaUsed[l.KeyID] += l.TotalTokens
+		r.quotaUsed[l.KeyID] = saturatingAdd(r.quotaUsed[l.KeyID], l.TotalTokens)
 	}
 	n := r.pendingN.Add(1)
 	r.mu.Unlock()
@@ -184,12 +192,54 @@ func (r *Recorder) Record(l *domain.UsageLog) {
 // 不落统计）。Record 对 KeyID>0 行的累加是唯一生产增量入口（计费 worker 只动
 // 余额不动配额）；本方法是测试/手工注入面，汇入同一 map 与回写路径。
 func (r *Recorder) AddQuota(keyID int64, delta int64) {
-	if keyID <= 0 || delta == 0 {
+	if keyID <= 0 || delta <= 0 {
 		return
 	}
 	r.mu.Lock()
-	r.quotaUsed[keyID] += delta
+	r.quotaUsed[keyID] = saturatingAdd(r.quotaUsed[keyID], delta)
 	r.mu.Unlock()
+}
+
+// normalizeUsageLog protects the accounting path from malformed upstream
+// usage responses. Negative quantities could otherwise reduce quota_used or
+// create negative billing aggregates; clamp them before the log enters either
+// persistence or quota accumulation.
+func normalizeUsageLog(l *domain.UsageLog) {
+	l.LatencyMS = nonNegative(l.LatencyMS)
+	l.InputTokens = nonNegative(l.InputTokens)
+	l.OutputTokens = nonNegative(l.OutputTokens)
+	l.TotalTokens = nonNegative(l.TotalTokens)
+	l.CacheReadTokens = nonNegative(l.CacheReadTokens)
+	l.CacheCreationTokens = nonNegative(l.CacheCreationTokens)
+	l.CallCount = nonNegative(l.CallCount)
+	l.Cost = nonNegative(l.Cost)
+	l.RawCost = nonNegative(l.RawCost)
+	if l.TTFTMS != nil && *l.TTFTMS < 0 {
+		v := int64(0)
+		l.TTFTMS = &v
+	}
+}
+
+func nonNegative(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+func saturatingAdd(a, b int64) int64 {
+	if b <= 0 {
+		return a
+	}
+	// A negative accumulator can only come from legacy/corrupt state. Treat it
+	// as zero; promoting it to MaxInt64 would make the key look exhausted.
+	if a < 0 {
+		a = 0
+	}
+	if a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	return a + b
 }
 
 // Pending 返回尚未落库的明细条数（测试与积压观测用）。

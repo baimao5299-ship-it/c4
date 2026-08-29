@@ -52,11 +52,17 @@ func pageToQuery(page, pageSize *int) (repository.ListQuery, error) {
 func apiRedemptionValueToMillis(typ domain.RedemptionType, v float64) (int64, error) {
 	switch typ {
 	case domain.RedemptionTypeBalance, domain.RedemptionTypeTempBalance:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, errors.New("value must be finite")
+		}
 		if v <= 0 {
 			return 0, errors.New("value must be > 0")
 		}
-		return usdToMillis(v), nil
+		return usdToMillisChecked(v)
 	case domain.RedemptionTypeConcurrency:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, errors.New("concurrency value must be finite")
+		}
 		if v != math.Trunc(v) {
 			return 0, errors.New("concurrency value must be an integer")
 		}

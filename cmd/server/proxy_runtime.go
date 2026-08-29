@@ -52,7 +52,19 @@ type proxyTransportRuntime struct {
 	probeError string
 	probeAt    time.Time
 	probeDone  chan struct{}
+	// probeSeq invalidates overlapping health checks that target the same
+	// route generation (for example, startup check racing an explicit
+	// same-address re-apply). Route generation alone cannot distinguish those
+	// checks because the address and transport remain unchanged.
+	probeSeq      uint64
+	workerMu      sync.Mutex
+	workerStarted bool
+	workerCancel  context.CancelFunc
+	workerDone    chan struct{}
+	retryInterval time.Duration
 }
+
+const proxyRetryInterval = 30 * time.Second
 
 func newProxyTransportRuntime(cfg config.UpstreamConfig, proxyURL string, proxyFuncs httpx.ProxyFuncs, gateway, codex *httpx.SwitchableTransport, buildGateway func(httpx.ProxyFuncs) http.RoundTripper, buildCodex func(httpx.ProxyFuncs, bool) http.RoundTripper) *proxyTransportRuntime {
 	// Publish the initial gateway/Codex routes as one pair. The incoming
@@ -67,17 +79,18 @@ func newProxyTransportRuntime(cfg config.UpstreamConfig, proxyURL string, proxyF
 		}
 	}
 	return &proxyTransportRuntime{
-		cfg:          cfg,
-		proxyURL:     proxyURL,
-		proxyFunc:    proxyFuncs,
-		tls:          cfg.TLSConvergenceEnabled,
-		gateway:      gateway,
-		codex:        codex,
-		pair:         pair,
-		buildGateway: buildGateway,
-		buildCodex:   buildCodex,
-		probe:        probeProxyTransport,
-		probeState:   "not_checked",
+		cfg:           cfg,
+		proxyURL:      proxyURL,
+		proxyFunc:     proxyFuncs,
+		tls:           cfg.TLSConvergenceEnabled,
+		gateway:       gateway,
+		codex:         codex,
+		pair:          pair,
+		buildGateway:  buildGateway,
+		buildCodex:    buildCodex,
+		probe:         probeProxyTransport,
+		probeState:    "not_checked",
+		retryInterval: proxyRetryInterval,
 	}
 }
 
@@ -127,6 +140,79 @@ func (r *proxyTransportRuntime) Apply(ctx context.Context, raw string) error {
 	pair := r.pair
 	r.mu.RUnlock()
 	if raw == currentURL {
+		// Direct mode has no proxy process to probe. Re-applying an empty route
+		// must not make readiness depend on a fixed external host (the same rule
+		// used by StartStartupProbe); this is also important when an operator
+		// clears a stale proxy override after the proxy process has gone away.
+		if raw == "" {
+			now := time.Now().UTC()
+			r.mu.Lock()
+			r.probeState = "healthy"
+			r.probeError = ""
+			r.probeAt = now
+			r.lastError = ""
+			r.lastAt = now
+			r.mu.Unlock()
+			return nil
+		}
+		// Re-apply of the same address is still a meaningful operator action:
+		// the proxy process or its selected node may have recovered/changed
+		// while the URL stayed constant. Re-probe the already-published routes
+		// instead of treating the address string as a health guarantee. The
+		// switch mutex keeps Apply/SetTLS from replacing either route while the
+		// bounded probe is in flight; request traffic remains lock-free.
+		if probe != nil {
+			if gateway == nil || codex == nil {
+				err := fmt.Errorf("proxy transports are not configured")
+				r.mu.Lock()
+				r.lastError = err.Error()
+				r.lastAt = time.Now().UTC()
+				r.probeState = "unhealthy"
+				r.probeError = err.Error()
+				r.probeAt = r.lastAt
+				r.mu.Unlock()
+				return fmt.Errorf("current proxy connectivity check failed: %w", err)
+			}
+			probeCtx, cancel := context.WithTimeout(ctx, 16*time.Second)
+			defer cancel()
+			r.mu.Lock()
+			generation := r.generation
+			r.probeSeq++
+			probeID := r.probeSeq
+			r.probeState = "checking"
+			r.probeError = ""
+			r.probeAt = time.Now().UTC()
+			r.mu.Unlock()
+			probeErr := runProxyProbe(probeCtx, probe, gateway)
+			if probeErr == nil {
+				probeErr = runProxyProbe(probeCtx, probe, codex)
+			}
+			now := time.Now().UTC()
+			r.mu.Lock()
+			// A startup probe may have raced this operation. Do not overwrite a
+			// newer route's state if the generation changed while probing.
+			if generation == r.generation && probeID == r.probeSeq {
+				r.probeAt = now
+				if probeErr != nil {
+					r.probeState = "unhealthy"
+					r.probeError = probeErr.Error()
+					r.lastError = probeErr.Error()
+					r.lastAt = now
+				} else {
+					r.probeState = "healthy"
+					r.probeError = ""
+					r.lastError = ""
+					r.lastAt = now
+				}
+			}
+			r.mu.Unlock()
+			if probeErr != nil {
+				return fmt.Errorf("current proxy connectivity check failed: %w", probeErr)
+			}
+			return nil
+		}
+		// Test/integration runtimes may intentionally omit a probe hook. Keep
+		// the historical no-op behavior, but do not claim a fresh health result.
 		r.mu.Lock()
 		r.lastError = ""
 		r.mu.Unlock()
@@ -170,7 +256,11 @@ func (r *proxyTransportRuntime) Apply(ctx context.Context, raw string) error {
 		r.mu.Unlock()
 		return fmt.Errorf("codex transport builder returned nil")
 	}
-	validated := probe != nil
+	// Direct mode is intentionally considered healthy without probing a fixed
+	// provider host. The actual upstream endpoint probes remain available from
+	// the management surface, while proxy routes still require transport-level
+	// validation before publication.
+	validated := probe != nil && raw != ""
 	if validated {
 		probeCtx, cancel := context.WithTimeout(ctx, 16*time.Second)
 		defer cancel()
@@ -208,10 +298,12 @@ func (r *proxyTransportRuntime) Apply(ctx context.Context, raw string) error {
 	r.lastError = ""
 	r.lastAt = time.Now().UTC()
 	r.generation++
+	// Invalidate any startup/retry probe that captured the previous route.
+	r.probeSeq++
 	// Apply probes both candidate routes before publishing, so the newly
 	// selected route is already known healthy. If probing is unavailable, make
 	// that explicit rather than claiming health from an unvalidated transport.
-	if validated {
+	if validated || raw == "" {
 		r.probeState = "healthy"
 		r.probeError = ""
 		r.probeAt = r.lastAt
@@ -281,7 +373,10 @@ func (r *proxyTransportRuntime) SetTLS(enabled bool) error {
 			return fmt.Errorf("codex TLS connectivity check failed: %w", err)
 		}
 	}
-	var old http.RoundTripper
+	var oldGateway, oldCodex http.RoundTripper
+	r.mu.RLock()
+	previousProbeState := r.probeState
+	r.mu.RUnlock()
 	r.mu.Lock()
 	if pair != nil {
 		currentGateway := gateway.Current()
@@ -292,24 +387,124 @@ func (r *proxyTransportRuntime) SetTLS(enabled bool) error {
 			httpx.CloseIdle(next)
 			return fmt.Errorf("gateway transport has no current route")
 		}
-		_, old = pair.Swap(currentGateway, next)
+		oldGateway, oldCodex = pair.Swap(currentGateway, next)
 	} else {
-		old = codex.Swap(next)
+		oldCodex = codex.Swap(next)
 	}
 	r.tls = enabled
 	r.lastAt = time.Now().UTC()
 	r.generation++
+	// A TLS replacement invalidates probes that captured the old Codex route.
+	// The gateway route is unchanged, so preserve a known unhealthy state; a
+	// probe that was still running becomes not_checked and will be retried by
+	// the runtime worker instead of being reported as superseded forever.
+	r.probeSeq++
 	// SetTLS validates only the replacement Codex transport. Preserve the
 	// existing full-route health state instead of claiming the gateway is
 	// healthy without probing it.
-	if !validated {
+	if !validated || previousProbeState == "checking" {
 		r.probeState = "not_checked"
 		r.probeError = ""
 		r.probeAt = time.Time{}
+	} else if validated && previousProbeState == "healthy" {
+		r.probeState = "healthy"
+		r.probeError = ""
+		r.probeAt = r.lastAt
 	}
 	r.mu.Unlock()
-	httpx.CloseIdle(old)
+	// A TLS-only update still republishes the pair atomically. Close both
+	// replaced routes; retaining the gateway's idle pool on every toggle would
+	// leak sockets until the process exits.
+	httpx.CloseIdle(oldGateway)
+	httpx.CloseIdle(oldCodex)
 	return nil
+}
+
+// Start runs a low-frequency recovery probe for an unhealthy configured proxy.
+// A transient outage during process startup must not leave /readyz stuck at
+// 503 forever; retries only re-probe the currently selected route and never
+// replace it automatically. The worker is idempotent and non-blocking.
+func (r *proxyTransportRuntime) Start(ctx context.Context) error {
+	if r == nil {
+		return fmt.Errorf("proxy runtime is not configured")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.workerMu.Lock()
+	if r.workerStarted {
+		r.workerMu.Unlock()
+		return nil
+	}
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	r.workerStarted = true
+	r.workerCancel = cancel
+	r.workerDone = done
+	r.workerMu.Unlock()
+	go func() {
+		defer close(done)
+		interval := r.retryInterval
+		if interval <= 0 {
+			interval = proxyRetryInterval
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+				r.mu.RLock()
+				raw, state := r.proxyURL, r.probeState
+				r.mu.RUnlock()
+				if raw == "" || state == "healthy" || state == "checking" {
+					continue
+				}
+				if err := r.Apply(workerCtx, raw); err != nil {
+					// Apply records the bounded error in the runtime snapshot. Do
+					// not log every retry here; the management surface remains the
+					// single stable diagnostic channel during a proxy outage.
+					continue
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+// Close stops the retry worker. It never changes the selected route and is
+// safe before Start or when called more than once.
+func (r *proxyTransportRuntime) Close(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.workerMu.Lock()
+	if !r.workerStarted {
+		r.workerMu.Unlock()
+		return nil
+	}
+	cancel := r.workerCancel
+	done := r.workerDone
+	r.workerStarted = false
+	r.workerCancel = nil
+	r.workerDone = nil
+	r.workerMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // StartStartupProbe verifies the configured startup route asynchronously. It
@@ -329,6 +524,22 @@ func (r *proxyTransportRuntime) StartStartupProbe(parent context.Context, log *l
 		r.mu.Unlock()
 		return
 	}
+	// Direct mode intentionally has no proxy process whose health can be
+	// inferred from a fixed external host.  A deployment may serve a private
+	// or OpenAI-compatible upstream that does not depend on chatgpt.com, so
+	// treating that host as a readiness gate would keep an otherwise usable
+	// instance out of rotation.  The upstream's own probe/test endpoints remain
+	// available from the management surface; only configured proxy routes need
+	// this transport-level check.
+	if strings.TrimSpace(r.proxyURL) == "" {
+		r.probeState = "healthy"
+		r.probeError = ""
+		r.probeAt = time.Now().UTC()
+		r.lastError = ""
+		r.lastAt = r.probeAt
+		r.mu.Unlock()
+		return
+	}
 	// Apply/SetTLS already validated a newly published route. Do not probe the
 	// same route a second time during startup (important for rate-limited
 	// proxies); the initial config path remains not_checked and is still tested.
@@ -337,6 +548,8 @@ func (r *proxyTransportRuntime) StartStartupProbe(parent context.Context, log *l
 		return
 	}
 	generation := r.generation
+	r.probeSeq++
+	probeID := r.probeSeq
 	gateway := r.gateway
 	codex := r.codex
 	probe := r.probe
@@ -364,11 +577,11 @@ func (r *proxyTransportRuntime) StartStartupProbe(parent context.Context, log *l
 
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if generation != r.generation {
+		if generation != r.generation || probeID != r.probeSeq {
 			// A successful Apply/SetTLS has already published a newer validated
 			// route. Preserve that result; only expose superseded when no newer
 			// health result exists to describe the current route.
-			if r.probeState == "checking" {
+			if generation != r.generation && r.probeState == "checking" {
 				r.probeState = "superseded"
 				r.probeError = "route changed while startup check was running"
 			}
@@ -406,6 +619,19 @@ func (r *proxyTransportRuntime) ProxySummary() (string, bool, string, time.Time)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return httpx.ProxySummary(r.proxyURL), r.proxyURL != "", r.lastError, r.lastAt
+}
+
+// Ready reports whether the currently published proxy/Codex routes completed
+// a successful transport probe. It is intentionally stricter than liveness:
+// the admin console remains reachable while an unhealthy proxy is diagnosed,
+// but a public load balancer should keep this instance out of rotation.
+func (r *proxyTransportRuntime) Ready() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.probeState == "healthy" && r.probeError == ""
 }
 
 // Name and Stats implement the management worker observation contract without

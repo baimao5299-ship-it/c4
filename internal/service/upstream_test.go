@@ -242,6 +242,103 @@ func TestTestUpstreamFallsBackToChatCompletions(t *testing.T) {
 	require.Equal(t, []string{"/v1/models", "/v1/responses", "/v1/chat/completions"}, paths)
 }
 
+func TestTestUpstreamFallsBackWhenResponsesNotImplemented(t *testing.T) {
+	key := "relay-key"
+	var paths []string
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/v1/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
+		case "/v1/responses":
+			// Some relays use the standards-compliant 501 status when the
+			// Responses API is not implemented.
+			w.WriteHeader(http.StatusNotImplemented)
+		case "/v1/chat/completions":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"chat_test"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.True(t, result.OK)
+	require.Empty(t, result.ErrorCode)
+	require.Equal(t, []string{"/v1/models", "/v1/responses", "/v1/chat/completions"}, paths)
+}
+
+func TestShouldFallbackTestIncludesNotImplemented(t *testing.T) {
+	for _, status := range []int{
+		http.StatusBadRequest,
+		http.StatusNotFound,
+		http.StatusMethodNotAllowed,
+		http.StatusNotImplemented,
+		http.StatusUnsupportedMediaType,
+	} {
+		require.Truef(t, shouldFallbackTest(status), "status %d should trigger protocol fallback", status)
+	}
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError} {
+		require.Falsef(t, shouldFallbackTest(status), "status %d should not trigger protocol fallback", status)
+	}
+}
+
+func TestTestUpstreamRejectsSuccessfulNonJSONResponse(t *testing.T) {
+	key := "relay-key"
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html>proxy login</html>"))
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.False(t, result.OK)
+	require.Equal(t, "invalid_response", result.ErrorCode)
+}
+
+func TestTestUpstreamRejectsSuccessfulErrorEnvelope(t *testing.T) {
+	key := "relay-key"
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"error":{"message":"provider unavailable"}}`))
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.False(t, result.OK)
+	require.Equal(t, "invalid_response", result.ErrorCode)
+}
+
+func TestIsJSONObjectResponseRejectsEmptyAndScalar(t *testing.T) {
+	for _, body := range [][]byte{nil, []byte(""), []byte("null"), []byte("[]"), []byte(`"ok"`), []byte("<html>")} {
+		require.Falsef(t, isJSONObjectResponse(body), "body %q must be rejected", body)
+	}
+	require.True(t, isJSONObjectResponse([]byte(`{"id":"ok"}`)))
+	require.False(t, isJSONObjectResponse([]byte(`{"error":{"message":"failed"}}`)))
+}
+
 func TestListUpstreamModelsDeduplicatesRealCatalogue(t *testing.T) {
 	key := "relay-key"
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +449,14 @@ func TestCreateUpstreamRejectsClearAndKeyTogether(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 }
 
+func TestValidateUpstreamRejectsUnknownBalanceStatus(t *testing.T) {
+	u := &domain.Upstream{
+		Name: "relay", BaseURL: "https://relay.example.com", MultiplierBP: 10000,
+		BalanceStatus: "invented",
+	}
+	require.ErrorIs(t, validateUpstream(u), ErrInvalidInput)
+}
+
 func TestProbeDropsResultWhenEndpointChangesInFlight(t *testing.T) {
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -374,6 +479,37 @@ func TestProbeDropsResultWhenEndpointChangesInFlight(t *testing.T) {
 	require.Equal(t, "superseded", result.ErrorCode)
 	require.Equal(t, "https://new.example.test", result.Upstream.BaseURL)
 	require.Zero(t, result.Upstream.RequestCount)
+}
+
+func TestProbeRequiresValidModelsPayload(t *testing.T) {
+	cases := []struct {
+		name        string
+		contentType string
+		body        string
+		wantOK      bool
+		wantCode    string
+	}{
+		{name: "html portal", contentType: "text/html", body: "<html>login</html>", wantCode: "invalid_value"},
+		{name: "empty json", contentType: "application/json", body: `{}`, wantCode: "invalid_value"},
+		{name: "catalogue", contentType: "application/json", body: `{"data":[{"id":"gpt-5.6"}]}`, wantOK: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer endpoint.Close()
+
+			stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL}}
+			svc := &Service{upstreams: stub}
+			result, err := svc.ProbeUpstream(context.Background(), 1)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantOK, result.OK)
+			require.Equal(t, tc.wantCode, result.ErrorCode)
+		})
+	}
 }
 
 func TestBalanceRefreshDropsResultWhenReaderChangesInFlight(t *testing.T) {

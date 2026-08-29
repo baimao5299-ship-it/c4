@@ -256,10 +256,9 @@ func TestImportCodexSoftDeletedPG(t *testing.T) {
 	require.Equal(t, "at-1", *ext2.CodexOAuthToken, "凭据未更新（updated 只对存活账号）")
 }
 
-// TestImportCodexTxRollbackPG 单行事务回滚（真实 PG）：group_id 不存在 →
-// SetAccountGroups 失败 → account+ext 整体回滚（无孤儿断言——回滚后无
-// account 行无 ext 行）。
-func TestImportCodexTxRollbackPG(t *testing.T) {
+// TestImportCodexGroupPreflightPG 真实 PG 中 group_id 不存在时在批次开始
+// 预校验失败，避免创建 account/ext 后才在事务内失败（无孤儿断言）。
+func TestImportCodexGroupPreflightPG(t *testing.T) {
 	svc, repos := newCodexImportPG(t)
 	ctx := context.Background()
 	oauthTpl, _, _ := seedCodexImportTemplates(t, repos)
@@ -269,10 +268,8 @@ func TestImportCodexTxRollbackPG(t *testing.T) {
 		{CodexEmail: "rbpg@example.com", CodexAccountID: "rbpg",
 			CodexOAuthToken: "at", CodexOAuthRefreshToken: "rt"},
 	}, &oauthTpl, &missingGid)
-	require.NoError(t, err)
-	require.Equal(t, 0, res.Imported)
-	require.Len(t, res.Failed, 1)
-	require.Contains(t, res.Failed[0].Error, "missing")
+	require.Nil(t, res)
+	require.ErrorIs(t, err, ErrNotFound)
 
 	// 无孤儿：无 ext 行 + 无 account 行
 	_, err = repos.AccountExts.FindAccountExtByCodexKey(ctx, "rbpg@example.com", "rbpg")

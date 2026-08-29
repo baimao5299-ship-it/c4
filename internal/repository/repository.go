@@ -335,6 +335,31 @@ func (r *Repository) UpdateAccount(ctx context.Context, a *domain.Account, coold
 	return r.Accounts.UpdateAccount(ctx, a, cooldownUntil)
 }
 
+// UpdateAccountWithGroups atomically replaces an account and, when supplied,
+// its complete group membership.  The service uses this optional capability
+// for PUT requests that include group_ids; keeping it off AccountStore avoids a
+// breaking interface change for lightweight integrations.
+func (r *Repository) UpdateAccountWithGroups(ctx context.Context, a *domain.Account, cooldownUntil *time.Time, groupIDs []int64) (*domain.Account, error) {
+	var updated *domain.Account
+	if err := r.WithTx(ctx, func(tx TxStore) error {
+		accountTx, ok := tx.(interface {
+			UpdateAccount(context.Context, *domain.Account, *time.Time) (*domain.Account, error)
+		})
+		if !ok {
+			return fmt.Errorf("repository: transactional account update unavailable")
+		}
+		var err error
+		updated, err = accountTx.UpdateAccount(ctx, a, cooldownUntil)
+		if err != nil {
+			return err
+		}
+		return tx.SetAccountGroups(ctx, a.ID, groupIDs)
+	}); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 func (r *Repository) DeleteAccount(ctx context.Context, id int64) error {
 	return r.Accounts.DeleteAccount(ctx, id)
 }

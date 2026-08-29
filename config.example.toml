@@ -16,6 +16,8 @@ db = { dsn = "postgres://user:pass@localhost:5432/c3api?sslmode=disable", max_co
 redis = { addr = "127.0.0.1:6379", password = "", db = 0 }
 proxy = {
   max_body_size = 4194304,
+  # 非流式上游响应内存上限（默认 32 MiB）；流式响应由超时与背压保护。
+  max_response_size = 33554432,
   max_inflight = 50000,
   # upstream_timeout 保留段名（改名 proxy_timeout 会使旧键无字段对应 → ErrorUnused
   # 启动报错）；同源供 http.Server.ReadTimeout（slowloris 截断，见 main.go）。

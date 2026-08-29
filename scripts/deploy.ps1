@@ -4,9 +4,11 @@
 # 覆盖服务器上的其他 Compose 项目，也不会把密钥放在命令行参数中。
 #
 # 预览：
-#   .\scripts\deploy.ps1 -Server 23.251.32.239 -User root -RemoteDir /www/c4 -Domain qingyutian.duckdns.org
+#   pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -RemoteDir /srv/c4 -Domain app.example.com
 # 执行：
-#   .\scripts\deploy.ps1 -Server 23.251.32.239 -User root -RemoteDir /www/c4 -Domain qingyutian.duckdns.org -Apply
+#   pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -RemoteDir /srv/c4 -Domain app.example.com -Apply
+# Beta 版本默认要求新目录/新数据库；仅在已核对 schema 兼容性后显式传
+# -ReuseDatabase 复用已有数据库。
 
 [CmdletBinding()]
 param(
@@ -22,7 +24,7 @@ param(
   [int]$SshPort = 22,
 
   [ValidatePattern('^/[A-Za-z0-9._/-]+$')]
-  [string]$RemoteDir = '/www/c4',
+  [string]$RemoteDir = '/srv/c4',
 
   [ValidateRange(1024, 65535)]
   [int]$AppPort = 18080,
@@ -34,11 +36,28 @@ param(
 
   [string]$AppName = '',
 
+  [switch]$ReuseDatabase,
+
   [switch]$Apply
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+
+# RemoteDir is interpolated into the quoted remote shell script below.  The
+# character allow-list prevents shell metacharacters, but it still permits
+# traversal segments such as `/srv/c4/../shared`; reject those explicitly so a
+# typo cannot deploy outside the operator-selected release root.  Empty
+# segments and a trailing slash are rejected as well, keeping all generated
+# paths canonical and making the path checks deterministic on POSIX hosts.
+if ($RemoteDir -eq '/' -or $RemoteDir -match '//|/$') {
+  throw 'RemoteDir must be a canonical absolute path without the root, duplicate slashes, or a trailing slash.'
+}
+foreach ($segment in $RemoteDir.Substring(1).Split('/')) {
+  if ([string]::IsNullOrEmpty($segment) -or $segment -eq '.' -or $segment -eq '..') {
+    throw 'RemoteDir must not contain dot, dot-dot, or empty path segments.'
+  }
+}
 $sha = (& git -C $projectRoot rev-parse --verify HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sha.Length -ne 40) { throw '无法读取当前 Git 提交。' }
 
@@ -59,6 +78,7 @@ Write-Host "目标:  $User@$Server`:$SshPort"
 Write-Host "目录:  $RemoteDir"
 Write-Host "端口:  127.0.0.1`:$AppPort"
 if ($Domain) { Write-Host "域名:  $Domain (仅生成 Caddy 片段，不自动改 DNS)" }
+if ($ReuseDatabase) { Write-Warning '已显式允许复用已有数据库；仅用于已核对 schema 兼容性的版本。' }
 if ($CardStoreUrl -and ($CardStoreUrl -match "['`r`n]" -or $CardStoreUrl -notmatch '^https?://')) {
   throw 'CardStoreUrl 必须是 http(s) URL，且不能包含单引号或换行。'
 }
@@ -69,8 +89,11 @@ if ($Domain) {
   @(
     "# Generated for $Domain; review before installing on the server.",
     "$Domain {",
-    '    encode zstd gzip',
-    "    reverse_proxy 127.0.0.1:$AppPort",
+    "`tencode zstd gzip",
+    "`treverse_proxy 127.0.0.1:$AppPort {",
+	"`t`theader_up X-Forwarded-For {http.request.remote.host}",
+    "`t`theader_up X-Real-IP {http.request.remote.host}",
+    "`t}",
     '}'
   ) | Set-Content -Path $caddyPath -Encoding utf8
   Write-Host "Caddy: $caddyPath"
@@ -92,6 +115,7 @@ $target = "$User@$Server"
 $cardStoreLine = if ($CardStoreUrl) { "if ! grep -q '^VITE_CARD_STORE_URL=' '$RemoteDir/.env'; then printf 'VITE_CARD_STORE_URL=%s\n' '$CardStoreUrl' >> '$RemoteDir/.env'; fi" } else { ':' }
 $appNameLine = if ($AppName) { "if ! grep -q '^VITE_APP_NAME=' '$RemoteDir/.env'; then printf 'VITE_APP_NAME=%s\n' '$AppName' >> '$RemoteDir/.env'; fi" } else { ':' }
 $pgDataDir = "$RemoteDir/deploy/data/pg"
+$reuseDatabaseValue = if ($ReuseDatabase) { '1' } else { '0' }
 $remote = @'
 set -eu
 command -v docker >/dev/null || { echo '服务器缺少 docker' >&2; exit 2; }
@@ -109,8 +133,18 @@ port_in_use() {
   echo '服务器缺少 ss/netstat，无法安全检查端口' >&2; exit 3
 }
 if [ "$existing" -eq 0 ] && port_in_use; then echo '端口 __APP_PORT__ 已被占用，停止部署' >&2; exit 3; fi
-mkdir -p '__REMOTE_DIR__/releases/__SHA__'
+# A prior failed first deployment may have left an empty .env or release
+# directory. Only a current symlink or an initialized PG_VERSION means that
+# this directory already owns durable state and needs an explicit reuse opt-in.
+durable_state=0
+if [ -e '__REMOTE_DIR__/current' ] || [ -L '__REMOTE_DIR__/current' ] || [ -e '__PG_DATA_DIR__/PG_VERSION' ] || [ -e '__PG_DATA_DIR__/data/PG_VERSION' ]; then durable_state=1; fi
 if [ ! -s '__REMOTE_DIR__/.env' ]; then
+  # An existing current release or PG directory without .env is ambiguous:
+  # never generate replacement secrets and accidentally attach to old data.
+  if [ "$durable_state" -eq 1 ]; then
+    echo '检测到已有 release 或数据库目录但缺少 .env；请先恢复配置，停止部署' >&2
+    exit 5
+  fi
   umask 077
   rand() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
   printf 'ADMIN_TOKEN=%s\nPOSTGRES_PASSWORD=%s\nAUTH_JWT_SECRET=%s\nBIND_ADDRESS=127.0.0.1\nPORT=__APP_PORT__\nPG_DATA_DIR=__PG_DATA_DIR__\nCOMPOSE_PROJECT_NAME=c4\n' "$(rand)" "$(rand)" "$(rand)" > '__REMOTE_DIR__/.env'
@@ -133,22 +167,46 @@ configured_pg_data=$(sed -n 's/^PG_DATA_DIR=//p' '__REMOTE_DIR__/.env' | head -n
 if [ "$pg_data_count" -ne 1 ] || [ "$configured_pg_data" != '__PG_DATA_DIR__' ]; then echo 'PG_DATA_DIR 必须唯一且固定在共享数据目录，停止部署' >&2; exit 6; fi
 project_count=$(grep -c '^COMPOSE_PROJECT_NAME=' '__REMOTE_DIR__/.env' || true)
 if [ "$project_count" -ne 1 ] || ! grep -q '^COMPOSE_PROJECT_NAME=c4$' '__REMOTE_DIR__/.env'; then echo 'COMPOSE_PROJECT_NAME 必须唯一且为 c4，停止部署' >&2; exit 7; fi
+for secret in POSTGRES_PASSWORD AUTH_JWT_SECRET; do
+  secret_count=$(grep -c "^${secret}=" '__REMOTE_DIR__/.env' || true)
+  secret_value=$(sed -n "s/^${secret}=//p" '__REMOTE_DIR__/.env' | head -n 1)
+  if [ "$secret_count" -ne 1 ] || [ -z "$secret_value" ]; then
+    echo "$secret 缺失、为空或重复；请先补齐 .env，停止部署" >&2
+    exit 5
+  fi
+done
+if [ "$durable_state" -eq 1 ] && [ '__REUSE_DATABASE__' != '1' ]; then
+  echo 'Beta 部署默认不复用已有 .env/数据库；请使用新 RemoteDir，或显式传 -ReuseDatabase 并确认 schema 兼容' >&2
+  exit 10
+fi
 __CARD_STORE_LINE__
 __APP_NAME_LINE__
 chmod 600 '__REMOTE_DIR__/.env'
 mkdir -p '__PG_DATA_DIR__'
 previous=$(readlink -f '__REMOTE_DIR__/current' 2>/dev/null || true)
 if [ -e '__REMOTE_DIR__/current' ] && [ ! -L '__REMOTE_DIR__/current' ]; then echo 'current 必须是 release 符号链接，停止部署' >&2; exit 9; fi
+mkdir -p '__REMOTE_DIR__/releases/__SHA__'
 tar -xzf '__REMOTE_DIR__/c4-__SHA__.tar.gz' -C '__REMOTE_DIR__/releases/__SHA__'
-ln -sfn '__REMOTE_DIR__/releases/__SHA__' '__REMOTE_DIR__/current'
-ln -sfn '__REMOTE_DIR__/.env' '__REMOTE_DIR__/current/.env'
-cd '__REMOTE_DIR__/current'
-compose -p c4 config >/dev/null
+new_release='__REMOTE_DIR__/releases/__SHA__'
+ln -sfn '__REMOTE_DIR__/.env' "$new_release/.env"
+cd "$new_release"
+# Validate the exact release before moving current. A malformed compose file or
+# missing mount must leave the live symlink untouched and therefore keep the
+# running version reachable.
+if ! compose -p c4 config >/dev/null; then
+  echo 'C4 新版本 Compose 配置无效，保留当前版本，停止部署' >&2
+  exit 4
+fi
+ln -sfn "$new_release" '__REMOTE_DIR__/current'
 deploy_ok=1
 if ! compose -p c4 up -d --build; then deploy_ok=0; fi
 health_ok() {
-  if command -v curl >/dev/null; then curl -fsS --max-time 3 'http://127.0.0.1:__APP_PORT__/healthz' >/dev/null; return $?; fi
-  compose -p c4 exec -T app wget -q -T 3 -O /dev/null 'http://127.0.0.1:18080/healthz'
+  # The host may export HTTP(S)_PROXY for outbound traffic. A local readiness
+  # probe must never leave the machine or depend on that proxy route.
+  if command -v curl >/dev/null; then curl --noproxy '*' -fsS --max-time 3 'http://127.0.0.1:__APP_PORT__/readyz' >/dev/null; return $?; fi
+  # AppPort is the host-side mapping; the application always listens on 18080
+  # inside the container.
+  compose -p c4 exec -T app wget -q -T 3 -O /dev/null 'http://127.0.0.1:18080/readyz'
 }
 if [ "$deploy_ok" -eq 1 ]; then
   for i in $(seq 1 30); do if health_ok; then exit 0; fi; sleep 2; done
@@ -171,14 +229,22 @@ fi
 compose -p c4 ps
 exit 4
 '@
-$remote = $remote.Replace('__APP_PORT__', $AppPort.ToString()).Replace('__REMOTE_DIR__', $RemoteDir).Replace('__SHA__', $sha).Replace('__PG_DATA_DIR__', $pgDataDir).Replace('__CARD_STORE_LINE__', $cardStoreLine).Replace('__APP_NAME_LINE__', $appNameLine)
+$remote = $remote.Replace('__APP_PORT__', $AppPort.ToString()).Replace('__REMOTE_DIR__', $RemoteDir).Replace('__SHA__', $sha).Replace('__PG_DATA_DIR__', $pgDataDir).Replace('__CARD_STORE_LINE__', $cardStoreLine).Replace('__APP_NAME_LINE__', $appNameLine).Replace('__REUSE_DATABASE__', $reuseDatabaseValue)
 
-& ssh -p $SshPort -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 $target "mkdir -p '$RemoteDir'"
+$sshOptions = @(
+  '-o', 'BatchMode=yes',
+  '-o', 'ConnectTimeout=10',
+  '-o', 'ServerAliveInterval=15',
+  '-o', 'ServerAliveCountMax=3',
+  # Accept a host key only on first use; a changed key still fails closed.
+  '-o', 'StrictHostKeyChecking=accept-new'
+)
+& ssh -p $SshPort @sshOptions $target "mkdir -p '$RemoteDir'"
 if ($LASTEXITCODE -ne 0) { throw 'SSH 连接或远端目录创建失败。' }
-& scp -P $SshPort -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 $bundle "$target`:$RemoteDir/c4-$sha.tar.gz"
+& scp -P $SshPort @sshOptions $bundle "$target`:$RemoteDir/c4-$sha.tar.gz"
 if ($LASTEXITCODE -ne 0) { throw '上传部署包失败。' }
-& ssh -p $SshPort -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 $target $remote
+& ssh -p $SshPort @sshOptions $target $remote
 if ($LASTEXITCODE -ne 0) { throw '远程部署或健康检查失败；脚本已尝试回滚到上一版。' }
 
-Write-Host "C4 已启动：$target`:$RemoteDir/current，健康检查通过。"
+Write-Host "C4 已启动：$target`:$RemoteDir/current，就绪检查通过。"
 Write-Host '下一步：将 deploy/Caddyfile.example 复制到服务器并填入域名，再让 DNS 指向服务器。'

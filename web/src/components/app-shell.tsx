@@ -8,6 +8,7 @@ import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, B
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
+import { userAuth } from '@/lib/auth'
 import { setLang, type AppLang } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { ModeToggle } from '@/components/mode-toggle'
@@ -88,23 +89,29 @@ export default function AppShell() {
   const location = useLocation()
   const { t, i18n } = useTranslation()
   const lang: AppLang = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en'
+  const isAdminToken = userAuth.getMode() === 'admin_token'
   // 全局 qc 共享（与各页面同键缓存）；staleTime 60s 内路由切换不重复请求
   const { data: me } = useQuery({
     queryKey: ['user', 'me'],
     queryFn: () => userApi.me(),
     staleTime: 60_000,
+    // Static admin tokens are valid only for /api/admin. Do not issue a
+    // guaranteed 401 request to /api/user/auth/me for that session type.
+    enabled: !isAdminToken,
   })
-  const isAdmin = me?.Role === 'platform_admin'
-  const navs = isAdmin
-    ? [{ titleKey: 'user.nav.adminSection', items: adminNav }, { titleKey: 'user.nav.userSection', items: userNav }]
-    : [{ titleKey: 'user.nav.userSection', items: userNav }]
+  const isAdmin = isAdminToken || me?.Role === 'platform_admin'
+  const navs = isAdminToken
+    ? [{ titleKey: 'user.nav.adminSection', items: adminNav }]
+    : isAdmin
+      ? [{ titleKey: 'user.nav.adminSection', items: adminNav }, { titleKey: 'user.nav.userSection', items: userNav }]
+      : [{ titleKey: 'user.nav.userSection', items: userNav }]
   // 顶栏面包屑（两级）：未知路径返回 null 不渲染
   const crumb = breadcrumbFor(location.pathname)
   return (
     <div data-od-id="app-shell" className="relative z-10 flex h-screen overflow-hidden bg-transparent text-[#1d1d1f] dark:text-[#f5f5f7]">
       {/* h-screen 锁定视口高度：侧边栏 nav 与 main 各自 ScrollArea 独立滚动（自绘
           滚动条，深色模式统一观感）；底部用户卡固定左下角 */}
-      <AppSidebar navs={navs} userEmail={me?.Email} />
+      <AppSidebar navs={navs} userEmail={isAdminToken ? undefined : me?.Email} />
       {/* 主内容滚动区：自定义滚动条（scroll-area 自绘 thumb，深色模式统一观感）——
           header sticky 依赖滚动容器在其内部 */}
       <main data-od-id="app-shell-main" className="flex min-w-0 flex-1 flex-col">

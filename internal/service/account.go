@@ -133,7 +133,7 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 	}
 	// O2 组级定向：变更前取旧组（账号移组 A→B 时 A、B 两组快照都要重载——
 	// 旧组移除账号、新组加入账号）+ 旧 upstream_key/base_url 比较（变更 →
-	// clients 失效）。查询失败 → 空集 + Warn（调度器 ≤30s 同步兜底）。
+	// clients 失效）。查询失败时更新仍可提交，但必须走全量调度刷新兜底。
 	oldGroups, gErr := s.store.GetAccountGroups(ctx, a.ID)
 	keyChanged := false
 	recovered := false // T5 失效恢复审计：此前已失效（failed_at 置位）→ status→active 恢复
@@ -158,7 +158,24 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 		now := time.Now()
 		cooldownUntil = &now
 	}
-	updated, err := s.store.UpdateAccount(ctx, a, cooldownUntil)
+	var updated *domain.Account
+	if a.GroupIDs != nil {
+		// Production repositories expose an optional transaction wrapper so the
+		// account row and its replacement membership commit together. Legacy
+		// stores keep the previous two-step behavior for compatibility.
+		if txStore, ok := s.store.(interface {
+			UpdateAccountWithGroups(context.Context, *domain.Account, *time.Time, []int64) (*domain.Account, error)
+		}); ok {
+			updated, err = txStore.UpdateAccountWithGroups(ctx, a, cooldownUntil, *a.GroupIDs)
+		} else {
+			updated, err = s.store.UpdateAccount(ctx, a, cooldownUntil)
+			if err == nil {
+				err = s.store.SetAccountGroups(ctx, a.ID, *a.GroupIDs)
+			}
+		}
+	} else {
+		updated, err = s.store.UpdateAccount(ctx, a, cooldownUntil)
+	}
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
@@ -171,21 +188,23 @@ func (s *Service) UpdateAccount(ctx context.Context, a *domain.Account) (*domain
 		// last_error（repo 层执行），此处留痕恢复动作。
 		s.log.Info("account failure cleared (status->active)", logx.Int64("account_id", a.ID))
 	}
-	if a.GroupIDs != nil {
-		// nil = 不变；非 nil = 替换（含空数组 = 清空）。
-		if err := mapRepoErr(s.store.SetAccountGroups(ctx, a.ID, *a.GroupIDs)); err != nil {
-			return nil, err
-		}
-	}
 	gids := oldGroups
 	if a.GroupIDs != nil {
 		gids = append(gids, (*a.GroupIDs)...)
 	}
-	if gErr != nil && s.log != nil {
-		s.log.Warn("account groups query failed", logx.Int64("account_id", a.ID), logx.Error(gErr))
+	if gErr != nil {
+		if s.log != nil {
+			s.log.Warn("account groups query failed; forcing full refresh", logx.Int64("account_id", a.ID), logx.Error(gErr))
+		}
+		// Without the old membership, a targeted refresh can leave a stale
+		// scheduler snapshot. Templates() is the existing full scheduler/client
+		// refresh path and is deliberately conservative here.
+		s.inv.Templates()
+		s.publish(ctx, notify.Change{Templates: true, Clients: true})
+	} else {
+		s.inv.Accounts(gids, keyChanged)
+		s.publish(ctx, notify.Change{Groups: gids, Clients: keyChanged}) // upstream_key/base_url 变更 → clients 失效
 	}
-	s.inv.Accounts(gids, keyChanged)
-	s.publish(ctx, notify.Change{Groups: gids, Clients: keyChanged}) // upstream_key/base_url 变更 → clients 失效
 	return updated, nil
 }
 
@@ -221,8 +240,11 @@ func (s *Service) DeleteAccount(ctx context.Context, id int64) error {
 	}
 	// O2：删除前查旧组（删除后快照须移除该账号）。
 	gids, err := s.store.GetAccountGroups(ctx, id)
-	if err != nil && s.log != nil {
-		s.log.Warn("account groups query failed", logx.Int64("account_id", id), logx.Error(err))
+	if err != nil {
+		if s.log != nil {
+			s.log.Warn("account groups query failed; delete aborted", logx.Int64("account_id", id), logx.Error(err))
+		}
+		return mapRepoErr(err)
 	}
 	if err := mapRepoErr(s.store.DeleteAccount(ctx, id)); err != nil {
 		return err // 404 缺 id（与批量语义对齐）
@@ -243,9 +265,9 @@ func (s *Service) DeleteAccountsBatch(ctx context.Context, ids []int64) error {
 		gs, err := s.store.GetAccountGroups(ctx, id)
 		if err != nil {
 			if s.log != nil {
-				s.log.Warn("account groups query failed", logx.Int64("account_id", id), logx.Error(err))
+				s.log.Warn("account groups query failed; batch delete aborted", logx.Int64("account_id", id), logx.Error(err))
 			}
-			continue
+			return mapRepoErr(err)
 		}
 		gids = append(gids, gs...)
 	}

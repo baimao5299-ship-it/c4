@@ -106,16 +106,18 @@ func CostFromResolved(rp domain.ResolvedPrices, pt, ct, cr, cc int64) int64 {
 	}
 	pt, ct, cr, cc = clamp(pt), clamp(ct), clamp(cr), clamp(cc)
 	orInt := func(v *int64) int64 {
-		if v == nil {
+		if v == nil || *v <= 0 {
 			return 0
 		}
 		return *v
 	}
-	raw := clampToken(pt, orInt(rp.InputPerM))*orInt(rp.InputPerM) +
-		clampToken(ct, orInt(rp.OutputPerM))*orInt(rp.OutputPerM) +
-		clampToken(cr, orInt(rp.CacheReadPerM))*orInt(rp.CacheReadPerM) +
-		clampToken(cc, orInt(rp.CacheWritePerM))*orInt(rp.CacheWritePerM)
-	return (raw + milliPerMillion/2) / milliPerMillion
+	raw := saturatingCostAdd(
+		clampToken(pt, orInt(rp.InputPerM))*orInt(rp.InputPerM),
+		clampToken(ct, orInt(rp.OutputPerM))*orInt(rp.OutputPerM),
+	)
+	raw = saturatingCostAdd(raw, clampToken(cr, orInt(rp.CacheReadPerM))*orInt(rp.CacheReadPerM))
+	raw = saturatingCostAdd(raw, clampToken(cc, orInt(rp.CacheWritePerM))*orInt(rp.CacheWritePerM))
+	return roundedCost(raw)
 }
 
 // ImageCostFromResolved image branch via unified ResolvedPrices.
@@ -129,16 +131,22 @@ func ImageCostFromResolved(rp domain.ResolvedPrices, inTok, outTok, count int64)
 	inTok, outTok, count = clamp(inTok), clamp(outTok), clamp(count)
 	var inP, outP, perP int64
 	if rp.ImgInTokPerM != nil {
-		inP = *rp.ImgInTokPerM
+		if *rp.ImgInTokPerM > 0 {
+			inP = *rp.ImgInTokPerM
+		}
 	}
 	if rp.ImgOutTokPerM != nil {
-		outP = *rp.ImgOutTokPerM
+		if *rp.ImgOutTokPerM > 0 {
+			outP = *rp.ImgOutTokPerM
+		}
 	}
 	if rp.PricePerImage != nil {
-		perP = *rp.PricePerImage
+		if *rp.PricePerImage > 0 {
+			perP = *rp.PricePerImage
+		}
 	}
-	raw := clampToken(inTok, inP)*inP + clampToken(outTok, outP)*outP
-	tokenCost := (raw + milliPerMillion/2) / milliPerMillion
+	raw := saturatingCostAdd(clampToken(inTok, inP)*inP, clampToken(outTok, outP)*outP)
+	tokenCost := roundedCost(raw)
 	var perImage int64
 	if perP > 0 && count > 0 {
 		if lim := imageTotalCap / perP; count > lim {
@@ -146,11 +154,42 @@ func ImageCostFromResolved(rp domain.ResolvedPrices, inTok, outTok, count int64)
 		}
 		perImage = count * perP
 	}
-	total := tokenCost + perImage
+	total := saturatingCostAdd(tokenCost, perImage)
 	if total > imageTotalCap {
 		total = imageTotalCap
 	}
 	return total
+}
+
+// saturatingCostAdd combines provider-derived cost components without allowing
+// a malformed price or usage value to wrap a positive debit into a credit.
+func saturatingCostAdd(a, b int64) int64 {
+	if a <= 0 {
+		if b <= 0 {
+			return 0
+		}
+		return b
+	}
+	if b <= 0 {
+		return a
+	}
+	if a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	return a + b
+}
+
+// roundedCost applies the existing round-half-up policy without adding the
+// half-unit to an int64 value that may already be at the upper bound.
+func roundedCost(raw int64) int64 {
+	if raw <= 0 {
+		return 0
+	}
+	q, rem := raw/milliPerMillion, raw%milliPerMillion
+	if rem >= milliPerMillion/2 {
+		q++
+	}
+	return q
 }
 
 // CallCostFromResolved per-call branch.

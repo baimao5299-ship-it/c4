@@ -279,7 +279,7 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 
 `POST /api/admin/upstreams/{id}/probe`
 
-服务端请求 `base_url + "/v1/models"`，超时上限 10 秒；使用启动配置 `upstream.proxy_url` 的显式代理（为空则直连），不会读取 `HTTP_PROXY`，也不会修改账号调度。配置了 `upstream_key` 时发送 `Authorization: Bearer <key>`。任意 `2xx` 视为成功，结果和探测统计一起返回：
+服务端请求 `base_url + "/v1/models"`，超时上限 10 秒；使用启动配置 `upstream.proxy_url` 的显式代理（为空则直连），不会读取 `HTTP_PROXY`，也不会修改账号调度。配置了 `upstream_key` 时发送 `Authorization: Bearer <key>`。只有 `2xx` 且响应体能解析为包含至少一个模型的 JSON 目录才视为成功；HTTP 200 的登录页、HTML、空目录或错误 JSON 会标记为失败，结果和探测统计一起返回：
 
 ```json
 {
@@ -301,6 +301,7 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 | `network` | 建连或传输错误 |
 | `timeout` | 10 秒探测超时 |
 | `canceled` | 请求上下文被取消 |
+| `invalid_value` | 响应不是有效的模型目录（例如 HTML、空 JSON 或空模型列表） |
 | `superseded` | 检查期间配置已变化，旧结果已丢弃 |
 
 ### 一键发送测试

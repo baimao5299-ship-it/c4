@@ -274,6 +274,22 @@ func TestGateReleaseNeverUnderflowsOnDuplicateRelease(t *testing.T) {
 	require.Equal(t, int64(0), snap.keys[meta.KeyID].Load())
 }
 
+func TestGateInflightCounterSaturatesAtInt64Max(t *testing.T) {
+	g := newConcurrencyGate(nil)
+	meta := domain.KeyMeta{KeyID: 1, UserID: 1}
+	g.upsert(meta)
+	c := g.store.Load().users[meta.UserID]
+	c.Store(maxQuotaInt64)
+
+	lvl, ok := g.acquire(meta)
+	require.True(t, ok)
+	require.Equal(t, 1, lvl)
+	require.Equal(t, maxQuotaInt64, c.Load(), "in-flight counter must not wrap at int64 max")
+
+	g.release(meta, lvl)
+	require.Equal(t, maxQuotaInt64-1, c.Load(), "matching release still decrements a saturated counter")
+}
+
 // --- 多实例本地预算（#14 T3b §3.2） ---
 
 // fakeInstances 固定 N 的 InstancesProvider 测试桩。
@@ -605,4 +621,58 @@ func TestAuthSetInstancesRebuildsBudget(t *testing.T) {
 	q = a.gate.store.Load().quotas[1]
 	require.Equal(t, int64(20+ceilDiv(80, 4)), q.budget.Load(), "N 变更立即重算预算（§3.4）")
 	require.Equal(t, int64(20), q.consumed.Load(), "在途 consumed 不动")
+}
+
+func TestGateArithmeticExtremeValuesDoNotWrap(t *testing.T) {
+	require.Equal(t, int64(1), ceilDiv(maxQuotaInt64, maxQuotaInt64))
+	require.Equal(t, maxQuotaInt64/2+1, ceilDiv(maxQuotaInt64, 2))
+	require.Zero(t, ceilDiv(10, 0), "invalid divisor is handled defensively")
+
+	g := newConcurrencyGate(nil)
+	meta := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: maxQuotaInt64}
+	g.reload(map[string]domain.KeyMeta{"q": meta})
+	q := g.store.Load().quotas[1]
+	q.consumed.Store(maxQuotaInt64 - 1)
+	addQuotaTokens(&q.consumed, 10)
+	require.Equal(t, maxQuotaInt64, q.consumed.Load(), "usage accumulation saturates")
+	q.consumed.Store(maxQuotaInt64 - 1)
+	require.Equal(t, maxQuotaInt64, saturatingQuotaAdd(q.consumed.Load(), 10))
+}
+
+func TestGateSaturatedUserCounterDoesNotReleasePhantomSlot(t *testing.T) {
+	c := &atomic.Int64{}
+	c.Store(maxQuotaInt64)
+	require.True(t, incCounter(c), "a saturated counter still represents an acquired slot")
+	decNonNegative(c)
+	require.Equal(t, maxQuotaInt64-1, c.Load(), "the matching release remains bounded")
+}
+
+func TestGateReclaimErrorBudgetSaturates(t *testing.T) {
+	g := newConcurrencyGate(nil)
+	g.setReclaimer(&fakeQuotaReader{err: errors.New("db down")})
+	meta := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: maxQuotaInt64}
+	g.reload(map[string]domain.KeyMeta{"q": meta})
+	q := g.store.Load().quotas[meta.KeyID]
+	q.consumed.Store(maxQuotaInt64 - 1)
+	q.budget.Store(maxQuotaInt64 - 1)
+
+	require.False(t, g.quotaExhausted(meta), "DB failure keeps the soft gate open")
+	require.Equal(t, maxQuotaInt64, q.budget.Load(), "failure refill must saturate instead of wrapping")
+}
+
+func TestGateRejectsCorruptedQuotaUsage(t *testing.T) {
+	g := newConcurrencyGate(nil)
+	negative := domain.KeyMeta{KeyID: 1, HasQuota: true, Quota: 100, QuotaUsed: -1}
+	g.reload(map[string]domain.KeyMeta{"q": negative})
+	require.True(t, g.quotaExhausted(negative), "negative quota_used must not grant budget")
+
+	reader := &fakeQuotaReader{used: -1}
+	g = newConcurrencyGate(nil)
+	g.setReclaimer(reader)
+	meta := domain.KeyMeta{KeyID: 2, HasQuota: true, Quota: 100}
+	g.reload(map[string]domain.KeyMeta{"q": meta})
+	q := g.store.Load().quotas[2]
+	q.consumed.Store(q.budget.Load())
+	require.True(t, g.quotaExhausted(meta), "negative DB quota_used is fail-closed")
+	require.True(t, q.exhausted.Load())
 }

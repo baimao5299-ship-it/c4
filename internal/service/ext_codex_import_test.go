@@ -344,17 +344,79 @@ func TestImportCodexRowLevelFailures(t *testing.T) {
 			{CodexEmail: "g1@example.com", CodexAccountID: "g1",
 				CodexOAuthToken: "at", CodexOAuthRefreshToken: "rt"},
 		}, &tplID, &missingGid)
-		require.NoError(t, err)
-		require.Equal(t, 0, res.Imported)
-		require.Len(t, res.Failed, 1)
-		require.Contains(t, res.Failed[0].Error, "missing")
-		// 单行事务整体回滚：无 account 行无 ext 行（无孤儿）
+		require.Nil(t, res, "分组预校验失败时不返回部分结果")
+		require.ErrorIs(t, err, ErrNotFound)
+		// 批次预校验在创建账号前失败：无 account 行无 ext 行（无孤儿）
 		_, err = store.FindAccountExtByCodexKey(ctx, "g1@example.com", "g1")
 		require.ErrorIs(t, err, repository.ErrNotFound, "ext 无残留")
 		for _, a := range store.accs {
 			require.NotEqual(t, "g1@example.com", a.Name, "account 无残留")
 		}
 	})
+}
+
+func TestCodexImportTrimsCopiedFields(t *testing.T) {
+	ctx := context.Background()
+	svc, store, _ := importFixture(t)
+	tplID := int64(1)
+	expires := " 2030-01-02T03:04:05Z \t"
+	res, err := svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+		{CodexEmail: "  trim@example.com \n", CodexAccountID: " acct-1 \t",
+			CodexOAuthToken: " at-1 \r\n", CodexOAuthRefreshToken: " rt-1 ", CodexOAuthExpiresAt: &expires},
+	}, &tplID, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Imported)
+	require.Empty(t, res.Failed)
+	ext, err := store.FindAccountExtByCodexKey(ctx, "trim@example.com", "acct-1")
+	require.NoError(t, err)
+	require.Equal(t, "at-1", *ext.CodexOAuthToken)
+	require.Equal(t, "rt-1", *ext.CodexOAuthRefreshToken)
+	require.Equal(t, "trim@example.com", *ext.CodexEmail)
+	require.Equal(t, "acct-1", *ext.CodexAccountID)
+	require.Equal(t, "2030-01-02T03:04:05Z", ext.CodexOAuthExpiresAt.UTC().Format(time.RFC3339), "expires trim")
+
+	// Optional whitespace-only expiry is treated as omitted, matching access-token-only imports.
+	emptyExpiry := " \t\n"
+	res, err = svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
+		{CodexEmail: "blank-exp@example.com", CodexAccountID: "blank-exp", CodexOAuthToken: "at", CodexOAuthExpiresAt: &emptyExpiry},
+	}, &tplID, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Imported)
+	ext, err = store.FindAccountExtByCodexKey(ctx, "blank-exp@example.com", "blank-exp")
+	require.NoError(t, err)
+	require.Nil(t, ext.CodexOAuthExpiresAt)
+}
+
+func TestCodexImportRejectsInvalidOrDeletedGroupBeforeRows(t *testing.T) {
+	ctx := context.Background()
+	svc, store, _ := importFixture(t)
+	tplID := int64(1)
+	row := []domain.CodexOAuthImportItem{{CodexEmail: "group@example.com", CodexAccountID: "group", CodexOAuthToken: "token"}}
+
+	for _, tc := range []struct {
+		name string
+		gid  int64
+		err  error
+	}{
+		{name: "invalid id", gid: 0, err: ErrInvalidInput},
+		{name: "missing id", gid: 9999, err: ErrNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gid := tc.gid
+			res, err := svc.ImportCodexOAuthAccounts(ctx, row, &tplID, &gid)
+			require.Nil(t, res)
+			require.ErrorIs(t, err, tc.err)
+		})
+	}
+
+	now := time.Now()
+	store.groups[8] = &domain.Group{ID: 8, Name: "deleted", DeletedAt: &now}
+	deleted := int64(8)
+	res, err := svc.ImportCodexOAuthAccounts(ctx, row, &tplID, &deleted)
+	require.Nil(t, res)
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = store.FindAccountExtByCodexKey(ctx, "group@example.com", "group")
+	require.ErrorIs(t, err, repository.ErrNotFound, "预校验失败不应创建账号")
 }
 
 // TestImportCodexTxRollback 单行事务回滚：事务内 ext 写入失败（注入）→ 无

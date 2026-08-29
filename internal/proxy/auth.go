@@ -97,18 +97,18 @@ func (a *Auth) logWarn(msg string, err error) {
 func (a *Auth) Upsert(raw string, meta domain.KeyMeta) {
 	a.mu.Lock()
 	a.keys[raw] = meta
-	a.mu.Unlock()
 	a.gate.upsert(meta)
+	a.mu.Unlock()
 }
 
 func (a *Auth) Delete(raw string) {
 	a.mu.Lock()
 	meta, ok := a.keys[raw]
 	delete(a.keys, raw)
-	a.mu.Unlock()
 	if ok {
 		a.gate.delete(meta.KeyID)
 	}
+	a.mu.Unlock()
 }
 
 // UpsertUser 增量刷新单个用户状态（本地立即可见，不等去抖窗口）。
@@ -144,12 +144,7 @@ func (a *Auth) UserSnapshot(userID int64) (domain.UserSnapshot, bool) {
 // 快照 map key = 明文，等值直查（零哈希）；meta 无 key 字符串字段——
 // 鉴权失败日志天然不落明文。
 func (a *Auth) Authenticate(r *http.Request) (domain.KeyMeta, bool) {
-	raw := ""
-	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		raw = strings.TrimPrefix(h, "Bearer ")
-	} else if h := r.Header.Get("x-api-key"); h != "" {
-		raw = h
-	}
+	raw := gatewayKeyFromRequest(r)
 	if raw == "" {
 		return domain.KeyMeta{}, false
 	}
@@ -163,6 +158,25 @@ func (a *Auth) Authenticate(r *http.Request) (domain.KeyMeta, bool) {
 		return domain.KeyMeta{}, false
 	}
 	return meta, true
+}
+
+// gatewayKeyFromRequest accepts the standard Bearer scheme case-insensitively
+// and tolerates repeated horizontal whitespace. Authorization credentials are
+// token-like values, so extra fields remain invalid; x-api-key is used only
+// when Authorization does not contain a valid Bearer credential.
+func gatewayKeyFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if h := strings.TrimSpace(r.Header.Get("Authorization")); h != "" {
+		fields := strings.Fields(h)
+		if len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
+			if raw := strings.TrimSpace(fields[1]); raw != "" {
+				return raw
+			}
+		}
+	}
+	return strings.TrimSpace(r.Header.Get("x-api-key"))
 }
 
 // SetInstancesProvider 注入集群实例数 N 提供者（#14 多实例预算分摊；discovery

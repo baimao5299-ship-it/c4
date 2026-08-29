@@ -5,6 +5,7 @@
 package pricing
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -72,4 +73,28 @@ func TestParsePriceEntryVariants(t *testing.T) {
 	}
 	require.True(t, foundPriority)
 	require.True(t, foundFast)
+}
+
+func TestParseRejectsOverflowingCostsAndMalformedThresholds(t *testing.T) {
+	jsonStr := `{
+  "too-expensive": {"input_cost_per_token": 1e308, "output_cost_per_token": 1e-5, "mode": "chat"},
+  "bad-threshold": {"input_cost_per_token": 1e-6, "output_cost_per_token": 1e-5, "input_cost_per_token_above_12junk_tokens": 1e-5, "output_cost_per_token_above_12junk_tokens": 1e-5, "mode": "chat"},
+  "huge-threshold": {"input_cost_per_token": 1e-6, "output_cost_per_token": 1e-5, "input_cost_per_token_above_9223372036854777k_tokens": 1e-5, "output_cost_per_token_above_9223372036854777k_tokens": 1e-5, "mode": "chat"}
+}`
+	res, err := Parse([]byte(jsonStr), nil)
+	require.NoError(t, err)
+	require.Len(t, res.PriceEntries, 2)
+	for _, entry := range res.PriceEntries {
+		require.NotEqual(t, "too-expensive", entry.Model)
+	}
+	require.Empty(t, res.Variants, "malformed and overflowing above_* keys must be ignored")
+}
+
+func TestScaledPositiveInt64RejectsNonFiniteAndOverflow(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), 1e308} {
+		_, ok := toMilliCentsPerMillion(value)
+		require.False(t, ok)
+	}
+	_, ok := toMilliCentsPerMillion(1e-20)
+	require.False(t, ok, "a price that rounds to zero is not a usable price")
 }

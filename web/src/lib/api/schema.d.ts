@@ -1518,7 +1518,7 @@ export interface components {
             /** Format: int64 */
             latency_ms: number;
             /** @enum {string|null} */
-            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "unconfigured" | "superseded" | "model_unavailable" | null;
+            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "unconfigured" | "superseded" | "model_unavailable" | null;
             upstream: components["schemas"]["Upstream"];
         };
         UpstreamModelsPreview: {

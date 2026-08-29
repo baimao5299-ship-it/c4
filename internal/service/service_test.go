@@ -471,6 +471,40 @@ func TestBatchUpdateGroups(t *testing.T) {
 	require.Equal(t, "renamed", got.Name)
 }
 
+func TestGroupNameWhitespaceIsCanonicalized(t *testing.T) {
+	fs := newFakeStore()
+	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
+	ctx := context.Background()
+	g, err := svc.CreateGroup(ctx, "original", domain.GroupVisibilityPublic, nil, nil)
+	require.NoError(t, err)
+
+	input := &domain.Group{ID: g.ID, Name: "  renamed  ", PriceMultiplier: 10000}
+	updated, err := svc.UpdateGroup(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, "renamed", updated.Name)
+	require.Equal(t, "  renamed  ", input.Name, "service must not mutate caller input")
+
+	batchName := "  batch-renamed  "
+	require.NoError(t, svc.UpdateGroupsBatch(ctx, []int64{g.ID}, repository.GroupPatch{Name: &batchName}))
+	require.Equal(t, "  batch-renamed  ", batchName, "batch service must not mutate caller input")
+	got, err := svc.GetGroup(ctx, g.ID)
+	require.NoError(t, err)
+	require.Equal(t, "batch-renamed", got.Name)
+}
+
+func TestGroupNameWhitespaceIsRejected(t *testing.T) {
+	fs := newFakeStore()
+	svc := &Service{store: fs, inv: &invRecorder{}, log: nil}
+	ctx := context.Background()
+	g, err := svc.CreateGroup(ctx, "original", domain.GroupVisibilityPublic, nil, nil)
+	require.NoError(t, err)
+
+	_, err = svc.UpdateGroup(ctx, &domain.Group{ID: g.ID, Name: " \t\r\n ", PriceMultiplier: 10000})
+	require.ErrorIs(t, err, ErrInvalidInput)
+	name := " \t\r\n "
+	require.ErrorIs(t, svc.UpdateGroupsBatch(ctx, []int64{g.ID}, repository.GroupPatch{Name: &name}), ErrInvalidInput)
+}
+
 // TestBatchDeleteInvalidIDs 空/超长/重复 ids → ErrInvalidInput（三资源同型）。
 func TestBatchDeleteInvalidIDs(t *testing.T) {
 	svc := &Service{store: newFakeStore(), inv: &invRecorder{}, log: nil}

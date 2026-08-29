@@ -55,6 +55,9 @@ services:
     build:
       context: .
       args:
+        # Embed the release identifier in the binary so /version and support
+        # reports identify the exact image currently serving traffic.
+        C3API_VERSION: ${C3API_VERSION:-dev}
         # Vite embeds this public URL into the frontend bundle at build time.
         # Leave empty to show a clear not-configured state in the user portal.
         VITE_CARD_STORE_URL: ${VITE_CARD_STORE_URL:-}
@@ -95,13 +98,13 @@ services:
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-18080}:18080"
     volumes:
       # 目录挂载：配置只读注入（改配置重启即生效，不用重建镜像）。
-      # 生产配置模板在 deploy/config.toml（挂载源与 compose 分离——根目录
-      # config.toml 是本地开发配置，两者语义不同不混淆）
-      - ./deploy/config.local.toml:/app/config.toml:ro
+      # 默认使用版本内已验证的生产配置。需要机器级覆盖时显式设置 CONFIG_FILE，
+      # 例如 CONFIG_FILE=./deploy/config.local.toml；不要直接改发布模板。
+      - ${CONFIG_FILE:-./deploy/config.toml}:/app/config.toml:ro
     healthcheck:
-      # /healthz 为无鉴权存活端点（internal/server/server.go）；基镜像 alpine:3.20
-      # 自带 busybox wget（无 curl），非 root 用户可执行。
-      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:18080/healthz || exit 1"]
+      # /readyz 会同时确认启动快照和已配置代理链路；/healthz 仅代表进程存活。
+      # 基镜像 alpine:3.20 自带 busybox wget（无 curl），非 root 用户可执行。
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:18080/readyz || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5

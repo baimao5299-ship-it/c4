@@ -248,6 +248,24 @@ func TestSendRegisterCodeSignupDisabled403(t *testing.T) {
 	require.ErrorIs(t, err, ErrSignupDisabled)
 }
 
+func TestRegisterWithCodeSignupDisabledDoesNotConsumeCode(t *testing.T) {
+	fs := newFakeStore()
+	svc := newMailService(t, fs)
+	setMailSettings(t, fs, svc, map[string]string{
+		"signup_enabled": "false", "mail.enabled": "true", "mail.register_verification": "true",
+		"mail.smtp_host": "127.0.0.1", "mail.smtp_port": "587", "mail.from_address": "noreply@example.com", "mail.tls": "none",
+	})
+	ctx := context.Background()
+	email := "disabled-register@example.com"
+	_, err := fs.UpsertEmailCode(ctx, email, string(domain.EmailCodeRegister), hashForTest("123456"), time.Now().Add(10*time.Minute))
+	require.NoError(t, err)
+	_, err = svc.RegisterUserWithCode(ctx, email, "pass1234", "123456")
+	require.ErrorIs(t, err, ErrSignupDisabled)
+	row, err := fs.GetEmailCode(ctx, email, string(domain.EmailCodeRegister))
+	require.NoError(t, err)
+	require.NotNil(t, row, "disabled registration must not consume a code")
+}
+
 func TestSendRegisterCodeVerifOffSentinel(t *testing.T) {
 	fs := newFakeStore()
 	svc := newMailService(t, fs)

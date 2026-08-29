@@ -1,6 +1,12 @@
 # 将 api.example.com 替换为你的域名。Caddy 会自动申请和续期 HTTPS 证书。
 # C4 只监听 127.0.0.1，避免绕过 TLS 直接暴露应用端口。
 api.example.com {
-    encode zstd gzip
-    reverse_proxy 127.0.0.1:18080
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:18080 {
+		# Do not preserve client-supplied identity headers. C4 may trust these
+		# values when proxy.behind_cdn is enabled, so both must describe the
+		# immediate peer seen by Caddy.
+		header_up X-Forwarded-For {http.request.remote.host}
+		header_up X-Real-IP {http.request.remote.host}
+	}
 }

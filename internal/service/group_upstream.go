@@ -115,7 +115,9 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	s.inv.Multipliers()
+	if s.inv != nil {
+		s.inv.Multipliers()
+	}
 	s.invalidateGroups(created.ID)
 	s.publish(ctx, notify.Change{Multipliers: true, Groups: []int64{created.ID}})
 	return created, nil
@@ -155,7 +157,9 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	s.inv.Multipliers()
+	if s.inv != nil {
+		s.inv.Multipliers()
+	}
 	s.invalidateGroups(updated.ID)
 	s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: []int64{updated.ID}})
 	return updated, nil

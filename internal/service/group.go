@@ -114,7 +114,11 @@ func (s *Service) ListGroups(ctx context.Context, q repository.ListQuery) ([]*do
 }
 
 func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Group, error) {
-	if g == nil || g.Name == "" {
+	if g == nil {
+		return nil, ErrInvalidInput
+	}
+	name := strings.TrimSpace(g.Name)
+	if name == "" {
 		return nil, ErrInvalidInput
 	}
 	current, err := s.store.GetGroup(ctx, g.ID)
@@ -142,6 +146,7 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	}
 	// 副本写入：归一结果落在副本上，不原地改调用方入参（当前无实际影响，防未来踩坑）
 	cp := *g
+	cp.Name = name
 	cp.ProtocolConverts = converts
 	cp.RoutingMode = g.EffectiveRoutingMode()
 	if !cp.RoutingMode.Valid() {
@@ -339,8 +344,13 @@ func (s *Service) UpdateGroupsBatch(ctx context.Context, ids []int64, p reposito
 	if err := validateIDs(ids); err != nil {
 		return err
 	}
-	if p.Name != nil && *p.Name == "" {
-		return ErrInvalidInput
+	if p.Name != nil {
+		name := strings.TrimSpace(*p.Name)
+		if name == "" {
+			return ErrInvalidInput
+		}
+		// Keep caller-owned patch data unchanged while persisting canonical names.
+		p.Name = &name
 	}
 	if p.Visibility != nil && !p.Visibility.Valid() {
 		return ErrInvalidInput

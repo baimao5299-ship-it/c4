@@ -85,7 +85,15 @@ func ProxySummary(raw string) string {
 	if err != nil || u.Host == "" {
 		return "invalid"
 	}
+	// Runtime proxy URLs reject paths, queries, and fragments, but summaries
+	// are also used when rendering persisted legacy values. Keep the diagnostic
+	// form strictly to scheme/host/port so a stale query cannot expose a token.
 	u.User = nil
+	u.Path = ""
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
 	return u.String()
 }
 
@@ -93,11 +101,12 @@ type socks5Dialer struct {
 	address  string
 	username string
 	password string
+	hasAuth  bool
 	timeout  time.Duration
 }
 
 func newSocks5Dialer(u *url.URL, timeout time.Duration) *socks5Dialer {
-	d := &socks5Dialer{address: u.Host, timeout: timeout}
+	d := &socks5Dialer{address: u.Host, timeout: timeout, hasAuth: u != nil && u.User != nil}
 	if u.User != nil {
 		d.username = u.User.Username()
 		d.password, _ = u.User.Password()
@@ -109,8 +118,12 @@ func (d *socks5Dialer) DialContext(ctx context.Context, network, address string)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if network != "tcp" {
-		return nil, fmt.Errorf("socks5h only supports tcp")
+	// net/http normally asks for "tcp", but custom transports and callers may
+	// request an address-family-specific network. SOCKS5 still carries the
+	// target hostname identically for all TCP variants; rejecting tcp4/tcp6
+	// causes otherwise valid proxy routes to fail before the handshake starts.
+	if network != "tcp" && network != "tcp4" && network != "tcp6" {
+		return nil, fmt.Errorf("socks5h only supports tcp, tcp4, or tcp6")
 	}
 	conn, err := (&net.Dialer{Timeout: d.timeout, KeepAlive: 30 * time.Second}).DialContext(ctx, "tcp", d.address)
 	if err != nil {
@@ -148,7 +161,7 @@ func (d *socks5Dialer) DialContext(ctx context.Context, network, address string)
 	_ = conn.SetDeadline(deadline)
 	closeOnError := func(e error) (net.Conn, error) { _ = conn.Close(); return nil, e }
 	methods := []byte{0x00}
-	if d.username != "" {
+	if d.hasAuth {
 		methods = append(methods, 0x02)
 	}
 	if _, err = conn.Write(append([]byte{0x05, byte(len(methods))}, methods...)); err != nil {

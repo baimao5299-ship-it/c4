@@ -720,6 +720,38 @@ func TestProxyBillingInsufficientBalance402(t *testing.T) {
 	}
 }
 
+func TestProxyBillingMissingBalanceHookFailsClosed(t *testing.T) {
+	var hits atomic.Int64
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer up.Close()
+	store := &captureLogStore{}
+	rec := usage.New(usage.UsageConfig{
+		BatchSize: 100, FlushInterval: time.Hour, QuotaFlushInterval: time.Hour,
+	}, store, nil)
+	// BillingCapture without a Balances snapshot is a wiring error. It must not
+	// panic or forward traffic that cannot be charged deterministically.
+	p := newTestProxyTplTimeoutRec(t, &domain.Template{
+		ID: 1, Name: "t", BaseURL: up.URL,
+		CredentialType:   credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat}, Models: []string{"gpt-4o"},
+	}, 1, true, 30*time.Second, rec, &BillingHooks{
+		Resolver: &fakePriceLookup{entries: map[string]*domain.PriceEntry{"gpt-4o": proxyPricingEntry()}},
+	}, nil)
+	p.cfg.BillingCapture = true
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rr := httptest.NewRecorder()
+	require.NotPanics(t, func() { p.HandleChat(rr, req) })
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code, "body=%s", rr.Body.String())
+	require.Contains(t, rr.Body.String(), "billing temporarily unavailable")
+	require.Zero(t, hits.Load(), "incomplete billing wiring must not reach upstream")
+	require.Zero(t, p.Inflight())
+	require.NoError(t, rec.Close(context.Background()))
+}
+
 // TestProxyBillingSingleWritePointRecCapture F2 单写点路由（spec §一）：capture
 // 开 + 有用户归属的 billable 行一律经 rec.Record 入队（每日志恰好一个写者由
 // "唯一写点就是 rec 本身"构造性保证），入队前盖出生 Billed 标记（billable 行
@@ -820,6 +852,42 @@ func TestApplyMultiplier(t *testing.T) {
 			require.Equal(t, c.want, applyMultiplier(c.cost, c.m))
 		})
 	}
+}
+
+func TestApplyMultiplierSaturatesExtremeCost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cost int64
+		m    int
+		want int64
+	}{
+		{"overflowing product saturates", maxBillingInt64, 100000, maxBillingInt64},
+		{"negative cost is not a credit", -1, 20000, 0},
+		{"invalid negative multiplier is free", 100, -1, 0},
+		{"oversized multiplier is capped", 100, 1_000_000, 1000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, applyMultiplier(tc.cost, tc.m))
+		})
+	}
+}
+
+func TestApplyMultiplierLogWithoutBalanceSnapshot(t *testing.T) {
+	p := &Proxy{bill: &BillingHooks{}}
+	l := &domain.UsageLog{}
+	require.NotPanics(t, func() { p.applyMultiplierLog(l, 123) })
+	require.Equal(t, int64(123), l.RawCost)
+	require.Equal(t, int64(123), l.Cost, "missing balance snapshot defaults to ×1")
+}
+
+func TestBuildLogUsageSaturatesAndClamps(t *testing.T) {
+	p := &Proxy{}
+	l := p.buildLog("r", 1, 1, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone,
+		usageTuple{it: maxBillingInt64, ii: 1, ot: -1, io: 2, tt: -1, calls: -3}, time.Now())
+	require.Equal(t, maxBillingInt64, l.InputTokens)
+	require.Equal(t, int64(2), l.OutputTokens)
+	require.Equal(t, maxBillingInt64, l.TotalTokens, "overflowed upstream total falls back to saturated components")
+	require.Zero(t, l.CallCount, "negative call counts are invalid")
 }
 
 // TestProxyBillingMultiplierAssignment 用户-组专属倍率（T3.5 修正：按组挂载，

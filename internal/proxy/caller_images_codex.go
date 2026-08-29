@@ -135,7 +135,7 @@ func (c *codexImagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *
 	// 计费提取：data 长 = 张数 + usage image_tokens → usageTuple → finish 的
 	// applyImageBilling（GetImagePrice → ImageCost，倍率整单施加）。
 	ii, io, count := billing.ImageUsageFromResponse(wire)
-	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrNone, usageTuple{ii: ii, io: io, tt: ii + io, calls: count}, start)))
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIImages, http.StatusOK, domain.ErrNone, usageTuple{ii: ii, io: io, tt: addUsageTokens(ii, io), calls: count}, start)))
 	return http.StatusOK, nil, true, nil
 }
 

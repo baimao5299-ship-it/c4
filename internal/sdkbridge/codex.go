@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -35,6 +36,9 @@ type Codex struct {
 	// SDK 默认——MaxIdleConnsPerHost=2，补压测连接风暴根因）。装配点见
 	// SetTransport（main 注入 httpx 网关同形态 transport）。
 	transport http.RoundTripper
+	// boundedTransport wraps only materialized Codex endpoints. Keep the
+	// original transport field intact for lifecycle management and tests.
+	boundedTransport http.RoundTripper
 }
 
 // SetTransport 装配 SDK HTTPClient 的上游 transport（resp 补压测修复——SDK
@@ -46,6 +50,11 @@ func (a *Codex) SetTransport(rt http.RoundTripper) {
 	a.mu.Lock()
 	previous := a.transport
 	a.transport = rt
+	if rt != nil {
+		a.boundedTransport = &codexResponseLimitTransport{base: rt, limit: defaultCodexResponseLimit}
+	} else {
+		a.boundedTransport = nil
+	}
 	for _, e := range a.entries {
 		e.client = nil
 		e.idSig = ""
@@ -57,6 +66,72 @@ func (a *Codex) SetTransport(rt http.RoundTripper) {
 			closer.CloseIdleConnections()
 		}
 	}
+}
+
+const defaultCodexResponseLimit int64 = 32 << 20
+
+var errCodexResponseTooLarge = errors.New("codex upstream response exceeds configured size limit")
+
+// codexResponseLimitTransport protects non-streaming SDK endpoints while
+// leaving the long-lived Responses stream untouched. The SDK exposes one
+// transport for both surfaces, so endpoint scoping is the stable discriminator:
+// images, search, and usage are materialized; /responses is relayed/streamed.
+type codexResponseLimitTransport struct {
+	base  http.RoundTripper
+	limit int64
+}
+
+func (t *codexResponseLimitTransport) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
+func (t *codexResponseLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil || resp == nil || resp.Body == nil || !codexBoundedPath(reqPath(req)) {
+		return resp, err
+	}
+	if resp.ContentLength > t.limit {
+		_ = resp.Body.Close()
+		return nil, errCodexResponseTooLarge
+	}
+	resp.Body = &codexBoundedBody{ReadCloser: resp.Body, remaining: t.limit}
+	return resp, nil
+}
+
+func reqPath(req *http.Request) string {
+	if req == nil || req.URL == nil {
+		return ""
+	}
+	return req.URL.Path
+}
+
+func codexBoundedPath(path string) bool {
+	path = strings.ToLower(path)
+	return strings.Contains(path, "/images/") || strings.HasSuffix(path, "/alpha/search") || strings.Contains(path, "/usage")
+}
+
+type codexBoundedBody struct {
+	io.ReadCloser
+	remaining int64
+}
+
+func (b *codexBoundedBody) Read(p []byte) (int, error) {
+	if b.remaining <= 0 {
+		var one [1]byte
+		n, err := b.ReadCloser.Read(one[:])
+		if n > 0 {
+			return 0, errCodexResponseTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > b.remaining {
+		p = p[:b.remaining]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.remaining -= int64(n)
+	return n, err
 }
 
 // RotationStore 轮转回写落库面（repository.AccountExtRepo 满足；接口化供测试
@@ -331,8 +406,8 @@ func (a *Codex) clientFor(cred *domain.AccountCredential, sess *codexsdk.Session
 	opts = append(opts, identityOpts(sess, meta)...)
 	sig := identitySig(sess, meta)
 	a.mu.Lock()
-	if a.transport != nil {
-		opts = append(opts, codexsdk.WithTransport(a.transport))
+	if a.boundedTransport != nil {
+		opts = append(opts, codexsdk.WithTransport(a.boundedTransport))
 	}
 	if e.client == nil || e.idSig != sig || e.appliedTurnState != turnState {
 		e.client = codexsdk.NewHTTPClient(e.auth, opts...)

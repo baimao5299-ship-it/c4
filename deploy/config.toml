@@ -14,7 +14,12 @@ db = { dsn = "", max_conns = 20 }
 # Redis 必需依赖；compose 通过 C3API_REDIS_ADDR 覆盖为 redis:6379。
 redis = { addr = "", password = "", db = 0 }
 proxy = {
+  # Compose 默认只暴露宿主回环地址，并由 Caddy 覆盖来源头；开启后认证限流
+  # 与请求审计都能区分真实用户。若直接把应用端口暴露公网，必须关闭此项。
+  behind_cdn = true,
   max_body_size = 4194304,
+  # 非流式上游响应内存上限（默认 32 MiB）；流式响应由超时与背压保护。
+  max_response_size = 33554432,
   max_inflight = 50000,
   upstream_timeout = "120s",
   upstream_stream_timeout = "30m",

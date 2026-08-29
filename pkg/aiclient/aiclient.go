@@ -16,6 +16,7 @@ package aiclient
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -35,15 +36,129 @@ import (
 type Config struct {
 	UpstreamTimeout       time.Duration // 非流式调用超时
 	UpstreamStreamTimeout time.Duration // 流式 backstop（由调用方以 ctx 传入）
+	// MaxResponseSize limits the amount of data a typed SDK call may consume
+	// from an upstream response. Raw streaming/relay calls intentionally keep
+	// the original client and are bounded by their stream timeout instead.
+	// Zero or negative values use defaultMaxResponseSize.
+	MaxResponseSize int64
 }
 
 type Factory struct {
-	hc  *http.Client
-	cfg Config
+	hc *http.Client
+	// sdkHC is a shallow client clone with a bounded response body. Keep hc
+	// untouched for raw/SSE/WebSocket paths, where responses are relayed rather
+	// than materialized in memory.
+	sdkHC *http.Client
+	cfg   Config
 	// 客户端与 URL 缓存：单原子快照 copy-modify-Store（同 scheduler 惯例），
 	// 读路径零锁零共享计数——评审 F6：原全局互斥锁每请求一次，万级并发下
 	// 单字缓存行弹跳。写路径（懒构建/失效）CAS 重试。
 	cc atomic.Pointer[clientCache]
+}
+
+const defaultMaxResponseSize int64 = 32 << 20
+
+// ErrResponseTooLarge is returned when an upstream typed response exceeds the
+// configured bound. Callers classify it like a connection-level upstream
+// failure so failover can select another account instead of forwarding a
+// truncated payload.
+var ErrResponseTooLarge = errors.New("upstream response exceeds configured size limit")
+
+// responseLimitTransport wraps only typed SDK clients. The wrapper rejects a
+// known oversized Content-Length before handing the response to the SDK, and
+// otherwise exposes a reader that returns ErrResponseTooLarge as soon as the
+// limit is crossed. This prevents io.ReadAll inside an SDK from growing memory
+// without bound while preserving normal response parsing and body closing.
+type responseLimitTransport struct {
+	base  http.RoundTripper
+	limit int64
+}
+
+func (t *responseLimitTransport) CloseIdleConnections() {
+	if t == nil || t.base == nil {
+		return
+	}
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
+func (t *responseLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Body == nil || t.limit <= 0 {
+		return resp, nil
+	}
+	if resp.ContentLength > t.limit {
+		_ = resp.Body.Close()
+		return nil, ErrResponseTooLarge
+	}
+	resp.Body = &boundedResponseBody{ReadCloser: resp.Body, remaining: t.limit}
+	return resp, nil
+}
+
+type boundedResponseBody struct {
+	io.ReadCloser
+	remaining int64
+}
+
+func (b *boundedResponseBody) Read(p []byte) (int, error) {
+	if b.remaining <= 0 {
+		// Probe one byte so an exact-limit response still reaches EOF, while a
+		// larger chunked response is rejected before any extra byte escapes.
+		var one [1]byte
+		n, err := b.ReadCloser.Read(one[:])
+		if n > 0 {
+			return 0, ErrResponseTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > b.remaining {
+		p = p[:b.remaining]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.remaining -= int64(n)
+	return n, err
+}
+
+func boundedHTTPClient(hc *http.Client, limit int64) *http.Client {
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	if limit <= 0 {
+		limit = defaultMaxResponseSize
+	}
+	clone := *hc
+	// Keep a live reference to the source client's transport. The server builds
+	// this factory before publishing the atomic proxy pair, then updates the
+	// shared client to the pair-backed route. Capturing hc.Transport here would
+	// leave typed SDK calls pinned to the startup route after a proxy switch.
+	clone.Transport = &responseLimitTransport{base: &clientTransportRef{client: hc}, limit: limit}
+	return &clone
+}
+
+type clientTransportRef struct{ client *http.Client }
+
+func (r *clientTransportRef) RoundTrip(req *http.Request) (*http.Response, error) {
+	if r == nil || r.client == nil {
+		return http.DefaultTransport.RoundTrip(req)
+	}
+	rt := r.client.Transport
+	if rt == nil || rt == r {
+		rt = http.DefaultTransport
+	}
+	return rt.RoundTrip(req)
+}
+
+func (r *clientTransportRef) CloseIdleConnections() {
+	if r == nil || r.client == nil {
+		return
+	}
+	if closer, ok := r.client.Transport.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 // clientCache 不可变快照。gen 为失效代号：构建者捕获 gen 后在锁外构建，CAS
@@ -87,7 +202,13 @@ type TemplateClients struct {
 }
 
 func NewFactory(hc *http.Client, cfg Config) *Factory {
-	f := &Factory{hc: hc, cfg: cfg}
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	if cfg.MaxResponseSize <= 0 {
+		cfg.MaxResponseSize = defaultMaxResponseSize
+	}
+	f := &Factory{hc: hc, sdkHC: boundedHTTPClient(hc, cfg.MaxResponseSize), cfg: cfg}
 	f.cc.Store(&clientCache{
 		gen:  0,
 		byT:  make(map[clientKey]*TemplateClients),
@@ -291,7 +412,7 @@ func (f *Factory) chat(tpl *domain.Template) *openai.Client {
 		}
 		c := openai.NewClient(
 			openaioption.WithBaseURL(openaiBaseURL(tpl.BaseURL)),
-			openaioption.WithHTTPClient(f.hc),
+			openaioption.WithHTTPClient(f.sdkHC),
 			// 关闭 SDK 内置重试：转移/退避由调度器统一控制（规格 §5），
 			// SDK 在单次调用内静默重试会让 429 背压放大并阻塞热路径。
 			openaioption.WithMaxRetries(0),
@@ -320,7 +441,7 @@ func (f *Factory) responses(tpl *domain.Template) *openai.Client {
 		}
 		c := openai.NewClient(
 			openaioption.WithBaseURL(openaiBaseURL(tpl.BaseURL)),
-			openaioption.WithHTTPClient(f.hc),
+			openaioption.WithHTTPClient(f.sdkHC),
 			openaioption.WithMaxRetries(0),
 		)
 		merged := &TemplateClients{}
@@ -345,7 +466,7 @@ func (f *Factory) anthropic(tpl *domain.Template) *anthropic.Client {
 		}
 		c := anthropic.NewClient(
 			anthropicoption.WithBaseURL(tpl.BaseURL),
-			anthropicoption.WithHTTPClient(f.hc),
+			anthropicoption.WithHTTPClient(f.sdkHC),
 			anthropicoption.WithMaxRetries(0),
 		)
 		merged := &TemplateClients{}

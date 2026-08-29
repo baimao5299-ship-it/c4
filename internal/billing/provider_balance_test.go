@@ -342,6 +342,24 @@ func TestHTTPJSONAdapterMapsAmountAndAuth(t *testing.T) {
 	require.Equal(t, "Bearer secret", gotAuth)
 }
 
+type nilBalanceResponseTransport struct{}
+
+func (nilBalanceResponseTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, nil
+}
+
+func TestHTTPJSONAdapterRejectsNilResponse(t *testing.T) {
+	a := HTTPJSONAdapter{
+		NameValue:   "relay",
+		Endpoint:    "https://example.invalid/balance",
+		BalancePath: "balance",
+		Client:      &http.Client{Transport: nilBalanceResponseTransport{}},
+	}
+	_, err := a.Fetch(context.Background(), BalanceAccount{})
+	require.Error(t, err)
+	require.Equal(t, BalanceErrorUpstream, classifyBalanceError(err))
+}
+
 func TestHTTPJSONAdapterDefaultClientDoesNotFollowRedirectWithKey(t *testing.T) {
 	var destinationAuth string
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

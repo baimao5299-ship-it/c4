@@ -7,6 +7,7 @@ package protoconv
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -14,6 +15,13 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 )
+
+func TestUsageCountersRejectInvalidValuesAndSaturate(t *testing.T) {
+	require.Equal(t, int64(0), intOr0(map[string]any{"n": -1.0}, "n"))
+	require.Equal(t, int64(0), intOr0(map[string]any{"n": float64(uint64(1) << 63)}, "n"))
+	require.Equal(t, int64(math.MaxInt64), sumTokens(math.MaxInt64, 1))
+	require.Equal(t, int64(3), sumTokens(-1, 3))
+}
 
 func obj(t *testing.T, b []byte) map[string]any {
 	t.Helper()
@@ -214,6 +222,64 @@ func TestConvertRequestRespToMessSystemInputItems(t *testing.T) {
 	require.Equal(t, "dev rule", m["system"], "developer 消息项并入 system")
 	msgs := arrOf(t, m, "messages")
 	require.Len(t, msgs, 1, "developer 项不产生消息")
+}
+
+func TestConvertRequestRespToMessStringMessageContent(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-5",
+		"input": [
+			{"type": "message", "role": "developer", "content": "follow this rule"},
+			{"type": "message", "role": "user", "content": "hello"},
+			{"type": "message", "role": "assistant", "content": "hi"}
+		]
+	}`)
+	out, err := ConvertRequest(body, domain.ProtocolConvertRespToMess)
+	require.NoError(t, err)
+	m := obj(t, out)
+	require.Equal(t, "follow this rule", m["system"], "compact developer content → system")
+	msgs := arrOf(t, m, "messages")
+	require.Len(t, msgs, 2, "compact user/assistant messages are preserved")
+	for i, want := range []struct {
+		role string
+		text string
+	}{
+		{role: "user", text: "hello"},
+		{role: "assistant", text: "hi"},
+	} {
+		msg := msgs[i].(map[string]any)
+		require.Equal(t, want.role, msg["role"])
+		content := arrOf(t, msg, "content")
+		require.Len(t, content, 1)
+		require.Equal(t, want.text, content[0].(map[string]any)["text"])
+	}
+}
+
+func TestConvertRequestRespToMessStandaloneFunctionCall(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-5",
+		"input": [
+			{"type": "function_call", "call_id": "call_1", "name": "lookup", "arguments": "{\"q\":\"x\"}"},
+			{"type": "function_call", "call_id": "call_2", "name": "lookup", "arguments": "{\"q\":\"y\"}"},
+			{"type": "function_call_output", "call_id": "call_1", "output": "first"},
+			{"type": "function_call_output", "call_id": "call_2", "output": "second"}
+		]
+	}`)
+	out, err := ConvertRequest(body, domain.ProtocolConvertRespToMess)
+	require.NoError(t, err)
+	m := obj(t, out)
+	msgs := arrOf(t, m, "messages")
+	require.Len(t, msgs, 3, "standalone calls are grouped into an assistant turn")
+	assistant := msgs[0].(map[string]any)
+	require.Equal(t, "assistant", assistant["role"])
+	blocks := arrOf(t, assistant, "content")
+	require.Len(t, blocks, 2)
+	require.Equal(t, "call_1", blocks[0].(map[string]any)["id"])
+	require.Equal(t, "call_2", blocks[1].(map[string]any)["id"])
+	for i, want := range []string{"call_1", "call_2"} {
+		result := msgs[i+1].(map[string]any)
+		tool := arrOf(t, result, "content")[0].(map[string]any)
+		require.Equal(t, want, tool["tool_use_id"])
+	}
 }
 
 // --- chat→mess 请求 ---

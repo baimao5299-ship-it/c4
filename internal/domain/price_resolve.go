@@ -46,10 +46,7 @@ func ResolveEntryPrices(entry *PriceEntry, variants []*PriceVariant, tier string
 			}
 			applyMult := func(p **int64) {
 				if *p != nil {
-					val := (**p*mult + 5000) / 10000
-					if val < 0 {
-						return
-					}
+					val := priceMultiplierRound(**p, mult)
 					// 复制新指针，禁止改写快照内分量（并发读者可见性）
 					nv := val
 					*p = &nv
@@ -101,8 +98,36 @@ func ResolveEntryPrices(entry *PriceEntry, variants []*PriceVariant, tier string
 	return rp, true
 }
 
+const maxPriceInt64 = int64(1<<63 - 1)
+
+// priceMultiplierRound applies a bounded multiplier without overflowing the
+// int64 price representation. Negative source prices remain negative so the
+// billing layer can reject/ignore corrupted values consistently.
+func priceMultiplierRound(price, multiplier int64) int64 {
+	if price < 0 {
+		return price
+	}
+	if multiplier <= 0 || price == 0 {
+		return 0
+	}
+	const base int64 = 10000
+	q, rem := price/base, price%base
+	if q > maxPriceInt64/multiplier {
+		return maxPriceInt64
+	}
+	out := q * multiplier
+	remValue := (rem*multiplier + base/2) / base
+	if out > maxPriceInt64-remValue {
+		return maxPriceInt64
+	}
+	return out + remValue
+}
+
 // variantMatches 变体条件匹配：全 nil = 通配；非 nil 条件全过才命中。
 func variantMatches(v *PriceVariant, tier string, promptTokens int64, at time.Time) bool {
+	if v == nil {
+		return false
+	}
 	if v.ServiceTier != nil && *v.ServiceTier != tier {
 		return false
 	}

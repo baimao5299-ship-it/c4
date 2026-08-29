@@ -102,6 +102,7 @@ func TestAdminAuthEmptyTokenContract(t *testing.T) {
 		{"empty token: user JWT", Options{JWTIssuer: iss, UserStatus: fakeUserStatus{}}, "Bearer " + userTok, 401},
 		// 非空 token：旧行为不变
 		{"token set: matching", Options{AdminToken: "tok", JWTIssuer: iss, UserStatus: fakeUserStatus{}}, "Bearer tok", 200},
+		{"token set: bearer case/spacing", Options{AdminToken: "tok", JWTIssuer: iss, UserStatus: fakeUserStatus{}}, "bEaReR   tok", 200},
 		{"token set: mismatch", Options{AdminToken: "tok", JWTIssuer: iss, UserStatus: fakeUserStatus{}}, "Bearer nope", 401},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

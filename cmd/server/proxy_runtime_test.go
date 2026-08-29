@@ -3,12 +3,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -144,6 +146,40 @@ func TestProxyRuntimeSwapsAfterProbeAndMasksCredentials(t *testing.T) {
 	require.NotContains(t, summary, "@")
 }
 
+func TestProxyRuntimeSameAddressReprobesCurrentRoutes(t *testing.T) {
+	r, oldGateway, oldCodex := newRuntimeTest(t)
+	var calls atomic.Int32
+	r.probe = func(context.Context, http.RoundTripper) error {
+		calls.Add(1)
+		return nil
+	}
+
+	require.NoError(t, r.Apply(context.Background(), "http://old:1"))
+	require.Equal(t, int32(2), calls.Load(), "same-address apply must probe gateway and Codex")
+	require.Same(t, oldGateway, r.gateway.Current())
+	require.Same(t, oldCodex, r.codex.Current())
+	stats := r.Stats().(map[string]any)
+	require.Equal(t, "healthy", stats["probe_state"])
+	require.Empty(t, stats["probe_error"])
+}
+
+func TestProxyRuntimeSameAddressProbeFailureKeepsCurrentRoutes(t *testing.T) {
+	r, oldGateway, oldCodex := newRuntimeTest(t)
+	r.probe = func(context.Context, http.RoundTripper) error { return context.DeadlineExceeded }
+
+	err := r.Apply(context.Background(), "http://old:1")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Contains(t, err.Error(), "current proxy connectivity check failed")
+	require.Same(t, oldGateway, r.gateway.Current())
+	require.Same(t, oldCodex, r.codex.Current())
+	require.Equal(t, "http://old:1", r.ProxyURL())
+	stats := r.Stats().(map[string]any)
+	require.Equal(t, "unhealthy", stats["probe_state"])
+	require.Contains(t, stats["probe_error"], "context deadline exceeded")
+	_, _, lastErr, _ := r.ProxySummary()
+	require.Contains(t, lastErr, "context deadline exceeded")
+}
+
 func TestProxyRuntimeProbesGatewayAndCodexBeforePublishing(t *testing.T) {
 	r, oldGateway, oldCodex := newRuntimeTest(t)
 	var seen []string
@@ -247,6 +283,34 @@ func TestProxyRuntimeTLSChangeDoesNotMaskGatewayHealthFailure(t *testing.T) {
 	require.Equal(t, "gateway: connection refused", errText)
 }
 
+type closeTrackingRoundTripper struct {
+	closed atomic.Int32
+}
+
+func (r *closeTrackingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("ok"))}, nil
+}
+
+func (r *closeTrackingRoundTripper) CloseIdleConnections() { r.closed.Add(1) }
+
+func TestProxyRuntimeTLSPairClosesBothReplacedRoutes(t *testing.T) {
+	oldGateway := &closeTrackingRoundTripper{}
+	oldCodex := &closeTrackingRoundTripper{}
+	gateway, err := httpx.NewSwitchableTransport(oldGateway)
+	require.NoError(t, err)
+	codex, err := httpx.NewSwitchableTransport(oldCodex)
+	require.NoError(t, err)
+	r := newProxyTransportRuntime(
+		config.UpstreamConfig{}, "", httpx.ProxyFuncs{}, gateway, codex,
+		func(httpx.ProxyFuncs) http.RoundTripper { return &closeTrackingRoundTripper{} },
+		func(httpx.ProxyFuncs, bool) http.RoundTripper { return &closeTrackingRoundTripper{} },
+	)
+	r.probe = nil
+	require.NoError(t, r.SetTLS(true))
+	require.Equal(t, int32(1), oldGateway.closed.Load(), "TLS pair swap must close the replaced gateway pool")
+	require.Equal(t, int32(1), oldCodex.closed.Load(), "TLS pair swap must close the replaced Codex pool")
+}
+
 func TestProxyRuntimeUnprobedSwitchIsNotReportedHealthy(t *testing.T) {
 	r, _, _ := newRuntimeTest(t)
 	r.probe = nil
@@ -262,6 +326,86 @@ func TestProxyRuntimeUnprobedSwitchIsNotReportedHealthy(t *testing.T) {
 	r.mu.Unlock()
 	require.Equal(t, "not_checked", state)
 	require.True(t, probeAt.IsZero())
+}
+
+func TestProxyRuntimeDirectModeIsReadyWithoutFixedHostProbe(t *testing.T) {
+	r, _, _ := newRuntimeTest(t)
+	r.proxyURL = ""
+	r.probe = func(context.Context, http.RoundTripper) error {
+		return errors.New("fixed host unavailable")
+	}
+	r.StartStartupProbe(context.Background(), nil)
+	require.True(t, r.Ready(), "direct mode readiness must not depend on chatgpt.com")
+	require.Equal(t, "healthy", r.Stats().(map[string]any)["probe_state"])
+}
+
+func TestProxyRuntimeSwitchToDirectSkipsFixedHostProbe(t *testing.T) {
+	r, _, _ := newRuntimeTest(t)
+	var calls atomic.Int32
+	r.probe = func(context.Context, http.RoundTripper) error {
+		calls.Add(1)
+		return errors.New("fixed host unavailable")
+	}
+
+	// Clearing a configured proxy must be a valid route change even when the
+	// fixed external probe host is unavailable. Direct mode has no proxy process
+	// to validate; readiness is established without network I/O.
+	require.NoError(t, r.Apply(context.Background(), ""))
+	require.Equal(t, int32(0), calls.Load(), "direct route changes must not probe chatgpt.com")
+	require.Empty(t, r.ProxyURL())
+	require.True(t, r.Ready())
+	require.Equal(t, "healthy", r.Stats().(map[string]any)["probe_state"])
+}
+
+func TestProxyRuntimeRetryWorkerRecoversCurrentRoute(t *testing.T) {
+	r, oldGateway, oldCodex := newRuntimeTest(t)
+	r.retryInterval = time.Millisecond
+	var calls atomic.Int32
+	r.probe = func(context.Context, http.RoundTripper) error {
+		if calls.Add(1) == 1 {
+			return context.DeadlineExceeded
+		}
+		return nil
+	}
+	// Mark the configured route unhealthy as if the asynchronous startup probe
+	// had just failed. The worker must re-probe the same route and leave both
+	// published transports untouched.
+	r.mu.Lock()
+	r.probeState = "unhealthy"
+	r.probeError = "context deadline exceeded"
+	r.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, r.Start(ctx))
+	require.NoError(t, r.Start(ctx), "Start is idempotent")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if r.Ready() {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	require.True(t, r.Ready(), "retry worker should publish healthy after probe recovery")
+	require.GreaterOrEqual(t, calls.Load(), int32(2))
+	require.Same(t, oldGateway, r.gateway.Current())
+	require.Same(t, oldCodex, r.codex.Current())
+	require.NoError(t, r.Close(context.Background()))
+	require.NoError(t, r.Close(context.Background()), "Close is idempotent")
+	cancel()
+}
+
+func TestProxyRuntimeRetryWorkerStopsOnContextCancel(t *testing.T) {
+	r, _, _ := newRuntimeTest(t)
+	r.retryInterval = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, r.Start(ctx))
+	cancel()
+	require.NoError(t, r.Close(context.Background()))
+	require.NoError(t, r.Close(context.Background()))
+	r.workerMu.Lock()
+	started := r.workerStarted
+	r.workerMu.Unlock()
+	require.False(t, started)
 }
 
 func TestProbeProxyTransportRejectsRedirectAuthAndServerFailure(t *testing.T) {

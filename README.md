@@ -38,7 +38,7 @@ C4 is in **beta**. The current API is usable, but the schema and configuration m
 The public product name is **C4**. The Go module path (`github.com/is7qin/c3api`), executable/container names, API paths, and `C3API_*` environment variables remain unchanged for compatibility with existing deployments.
 
 - **No automatic migration yet** — database schemas and configuration are not guaranteed to stay compatible between beta releases.
-- **Plan upgrades as a fresh deployment** — provision a new database and re-check the configuration before switching traffic.
+- **Plan beta upgrades as a fresh deployment** — use a new `RemoteDir` and database, then re-check the configuration before switching traffic. The deployment helper refuses to reuse an existing database unless `-ReuseDatabase` is explicitly supplied after a schema-compatibility review.
 - See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 ## Features
@@ -77,9 +77,9 @@ docker compose up -d --build
 
 This builds the image locally and starts PostgreSQL, Redis, and the C4 gateway together. To use a published image instead, remove the `build:` block from `compose.yml`, then run `docker compose pull` followed by `docker compose up -d`.
 
-The gateway listens on `http://127.0.0.1:18080` — admin console at `/app`, user console at `/user`, health check at `/healthz`.
+The gateway listens on `http://127.0.0.1:18080` — admin console at `/app`, user console at `/user`, liveness at `/healthz`, and readiness (snapshots plus a configured proxy route) at `/readyz`.
 
-**Initial administration** — Compose requires a static `ADMIN_TOKEN` and binds the gateway to localhost by default. Public registrations are regular `user` accounts; use the token for initial administration, then place the gateway behind an HTTPS reverse proxy when exposing it to other machines.
+**Initial administration** — Compose requires a static `ADMIN_TOKEN` and binds the gateway to localhost by default. Open `/user/login`, choose **Admin token**, and paste the generated value; the console validates it with a read-only admin request before opening `/app`. Public registrations are regular `user` accounts; place the gateway behind an HTTPS reverse proxy when exposing it to other machines.
 
 Prebuilt images are published to GHCR (`ghcr.io/baimao5299-ship-it/c4`): `:beta` tracks the latest beta release, and version-pinned tags are also available. Pull standalone with `docker pull ghcr.io/baimao5299-ship-it/c4:beta`. The legacy `c3api` image tags are published in parallel for existing deployments.
 
@@ -107,7 +107,7 @@ Point any OpenAI/Anthropic-compatible SDK at the gateway URL — the request for
  OpenAI SDK / curl ─▶│   C4 gateway (1 binary)       │
  Anthropic SDK ─────▶│  ┌─────────────────────────┐  │
  Codex client ──────▶│  │ chi router              │  │──▶ OpenAI upstream (REST + SSE)
-   Browser (SPA) ───▶│  │ /healthz /api/admin /api/user + SPA / /user /app │  │──▶ Anthropic upstream (REST + SSE)
+   Browser (SPA) ───▶│  │ /healthz /readyz /api/admin /api/user + SPA / /user /app │  │──▶ Anthropic upstream (REST + SSE)
                     │  │ /v1/*                    │  │──▶ Responses / resp-ws upstream
                     │  │ proxy: auth → gate →     │  │
                     │  │         route → forward  │  │
@@ -174,8 +174,8 @@ See `config.example.toml` for the full schema (server, log, admin, auth, db, red
 
 ## Deployment
 
-- `scripts/deploy.ps1` — Windows PowerShell remote deploy helper. It previews by default; `-Apply` uploads the current committed version into an isolated directory, generates missing secrets, starts Compose, and checks `/healthz`. It stops on port conflicts or a non-C4 service using the port and never overwrites another project.
-- `compose.yml` — production stack: one `db` (postgres:18-alpine, bind-mounted data under `deploy/data/pg`) + one `redis` (redis:8-alpine, ephemeral coordination + short-lived verification codes — no persistence) + one `app` container (non-root, read-only config mount from `deploy/config.local.toml`, healthcheck). `deploy/config.toml` remains the production template for deployments that choose it explicitly.
+- `scripts/deploy.ps1` — PowerShell 7 (`pwsh`) remote deploy helper. It previews by default; `-Apply` uploads the current committed version into an isolated directory, generates secrets on a new deployment, starts Compose, and checks `/readyz`. It validates Compose before moving `current`, stops on port conflicts or a non-C4 service using the port, and never overwrites another project. Existing `.env` files must contain exactly one non-empty `POSTGRES_PASSWORD` and `AUTH_JWT_SECRET`; beta database reuse requires the explicit `-ReuseDatabase` switch.
+- `compose.yml` — production stack: one `db` (postgres:18-alpine, bind-mounted data under `deploy/data/pg`) + one `redis` (redis:8-alpine, ephemeral coordination + short-lived verification codes — no persistence) + one `app` container (non-root, read-only config mount from `deploy/config.toml`, healthcheck). Set `CONFIG_FILE` only when a deployment needs an explicit machine-local override.
 - `Dockerfile` — three-stage build (node → go → alpine), producing a single static binary with the UI embedded.
 - Public entry guidance is in [`deploy/PUBLIC_DEPLOYMENT.md`](./deploy/PUBLIC_DEPLOYMENT.md) and [`deploy/Caddyfile.example`](./deploy/Caddyfile.example): keep C4 on localhost and let Caddy terminate HTTPS; do not expose port 18080 directly.
 - **Dual required dependencies**: PostgreSQL 18 (all durable state, source of record) + Redis 8 (ephemeral coordination + short-lived email verification codes — instance discovery heartbeats and verification codes; never a cache layer). Both are startup-mandatory. Do not set an eviction policy (`allkeys-lru` etc.) for this instance: an evicted code is benign (the user just re-requests one), but keep it out of the configuration.

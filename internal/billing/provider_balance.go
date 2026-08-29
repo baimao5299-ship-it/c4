@@ -664,6 +664,12 @@ func (a HTTPJSONAdapter) fetchJSON(ctx context.Context, account BalanceAccount) 
 	if err != nil {
 		return nil, err
 	}
+	if resp == nil {
+		// net/http clients should never return (nil, nil), but custom transports
+		// and test doubles can violate that contract. Keep balance refreshes
+		// bounded instead of dereferencing a nil response below.
+		return nil, errors.New("nil provider balance response")
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))

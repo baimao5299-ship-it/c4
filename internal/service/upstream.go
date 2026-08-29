@@ -259,59 +259,22 @@ func (s *Service) ProbeUpstream(ctx context.Context, id int64) (*UpstreamProbeRe
 	if u == nil || u.DeletedAt != nil {
 		return nil, fmt.Errorf("%w: id=%d deleted", ErrNotFound, id)
 	}
-	target := strings.TrimRight(u.BaseURL, "/") + "/v1/models"
-	if _, err := url.ParseRequestURI(target); err != nil {
-		return nil, ErrInvalidInput
+	base := strings.TrimRight(strings.TrimSpace(u.BaseURL), "/")
+	if err := validateBaseURL(base); err != nil {
+		return nil, err
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, target, nil)
-	if err != nil {
-		return nil, ErrInvalidInput
-	}
-	if u.UpstreamKey != nil && strings.TrimSpace(*u.UpstreamKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*u.UpstreamKey))
-	}
 	client := s.managementHTTPClient()
 	client.Timeout = 10 * time.Second
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	// Probes may carry the upstream credential. Redirects are disabled above so
-	// the secret cannot be forwarded to a destination the operator did not set.
 	started := time.Now()
-	resp, requestErr := client.Do(req)
+	// Use the same bounded /v1/models parser as model discovery. A reachable
+	// portal or HTML error page may return HTTP 200; transport reachability alone
+	// must not mark such an upstream healthy.
+	_, code := fetchUpstreamModels(probeCtx, client, base, strings.TrimSpace(derefUpstreamKey(u.UpstreamKey)))
 	latency := time.Since(started).Milliseconds()
-	// net/http normally returns a non-nil response only with a nil error, but
-	// keep the boundary defensive so a custom RoundTripper cannot turn a failed
-	// probe into a panic in the admin handler.
-	ok := requestErr == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300
-	if resp != nil {
-		_ = resp.Body.Close()
-	}
-	code := ""
-	if requestErr != nil {
-		if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(probeCtx.Err(), context.DeadlineExceeded) {
-			code = "timeout"
-		} else if errors.Is(requestErr, context.Canceled) || errors.Is(probeCtx.Err(), context.Canceled) {
-			code = "canceled"
-		} else {
-			code = "network"
-		}
-	} else if !ok {
-		if resp == nil {
-			code = "network"
-		} else {
-			switch resp.StatusCode {
-			case http.StatusUnauthorized, http.StatusForbidden:
-				code = "auth"
-			case http.StatusTooManyRequests:
-				code = "rate_limited"
-			case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-				code = "upstream"
-			default:
-				code = "http_error"
-			}
-		}
-	}
+	ok := code == ""
 	var errCode *string
 	if code != "" {
 		errCode = &code
@@ -637,16 +600,65 @@ func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, k
 		return 0, errors.New("nil upstream response")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		// A relay can return a portal/error page with HTTP 200. Treat that as a
+		// failed test instead of reporting a false positive. Keep the body bound
+		// so a malicious or misconfigured endpoint cannot exhaust the manager.
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
+		if readErr != nil {
+			return resp.StatusCode, readErr
+		}
+		if len(body) == 0 || len(body) > 1<<20 || !isJSONObjectResponse(body) {
+			return resp.StatusCode, errInvalidUpstreamResponse
+		}
+		return resp.StatusCode, nil
+	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	return resp.StatusCode, nil
 }
 
+var errInvalidUpstreamResponse = errors.New("invalid upstream test response")
+
+func isJSONObjectResponse(body []byte) bool {
+	var value map[string]any
+	if err := json.Unmarshal(body, &value); err != nil {
+		return false
+	}
+	if value == nil {
+		return false
+	}
+	// Some relays incorrectly return HTTP 200 for an application-level error.
+	// Treating that envelope as a successful probe would mark a broken upstream
+	// healthy and make the scheduler route real traffic into it. A top-level
+	// error member is the common OpenAI-compatible shape; nested payload fields
+	// remain provider-specific and are intentionally not rejected here.
+	if _, hasError := value["error"]; hasError {
+		return false
+	}
+	// A generic 200 JSON document (for example a portal's {"status":"ok"})
+	// does not prove that the selected model endpoint answered. Require one of
+	// the response envelopes used by the supported OpenAI-compatible APIs.
+	for _, marker := range []string{"id", "object", "choices", "output", "data"} {
+		if _, ok := value[marker]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldFallbackTest(status int) bool {
-	return status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusMethodNotAllowed || status == http.StatusUnsupportedMediaType
+	// A few OpenAI-compatible relays explicitly report that the newer
+	// Responses API is not implemented (501) while still serving Chat
+	// Completions. Treat it as a protocol capability rejection, alongside the
+	// other format/path responses that already trigger the compatibility retry.
+	return status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusMethodNotAllowed || status == http.StatusNotImplemented || status == http.StatusUnsupportedMediaType
 }
 
 func classifyUpstreamTestError(ctx context.Context, status int, requestErr error) string {
 	if requestErr != nil {
+		if errors.Is(requestErr, errInvalidUpstreamResponse) {
+			return "invalid_response"
+		}
 		if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return "timeout"
 		}
@@ -784,6 +796,12 @@ func validateUpstream(u *domain.Upstream) error {
 	}
 	if u.BalanceStatus == "" {
 		u.BalanceStatus = domain.UpstreamBalanceUnconfigured
+	}
+	switch u.BalanceStatus {
+	case domain.UpstreamBalanceFresh, domain.UpstreamBalanceStale,
+		domain.UpstreamBalanceUnavailable, domain.UpstreamBalanceUnconfigured:
+	default:
+		return ErrInvalidInput
 	}
 	if u.UpstreamKey != nil {
 		key := strings.TrimSpace(*u.UpstreamKey)

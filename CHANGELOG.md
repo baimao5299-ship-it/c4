@@ -20,6 +20,13 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 - Channel monitor keeps the last successful snapshot during a failed refresh and labels the data as stale instead of hiding usable status.
 - Added baseline security response headers and longer Compose stop grace periods so streaming and billing work can drain during upgrades.
 
+### Fixed
+
+- Upstream health probes now require a bounded, valid `/v1/models` catalogue, so HTTP 200 portal or error pages are not reported as healthy.
+- Group updates trim names consistently and reject whitespace-only names without mutating caller input.
+- Trusted-proxy authentication limits now recognize the same CDN client headers as request auditing, and the bundled Caddy/deploy templates overwrite forwarding headers to prevent source-IP spoofing.
+- Response status tracking now preserves the first header write, including implicit writes caused by `Flush`, so streaming errors and access logs cannot report a status that was never sent.
+
 ## [v0.0.1-beta.7] - 2026-08-29
 
 ### Fixed

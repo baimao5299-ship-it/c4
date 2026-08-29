@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -60,6 +61,9 @@ func (s *Service) ImportCodexOAuthAccounts(ctx context.Context, items []domain.C
 	if err := s.checkCodexImportTemplate(ctx, tplID, credential.TypeCodexOAuth); err != nil {
 		return nil, err
 	}
+	if err := s.checkCodexImportGroup(ctx, groupID); err != nil {
+		return nil, err
+	}
 	res := &domain.ImportResult{}
 	rows := make([]codexImportRow, 0, len(items))
 	for i, it := range items {
@@ -78,6 +82,9 @@ func (s *Service) ImportCodexOAuthAccounts(ctx context.Context, items []domain.C
 // credential_type 必须 == codex-pat）。
 func (s *Service) ImportCodexPATAccounts(ctx context.Context, items []domain.CodexPATImportItem, tplID, groupID *int64) (*domain.ImportResult, error) {
 	if err := s.checkCodexImportTemplate(ctx, tplID, credential.TypeCodexPAT); err != nil {
+		return nil, err
+	}
+	if err := s.checkCodexImportGroup(ctx, groupID); err != nil {
 		return nil, err
 	}
 	res := &domain.ImportResult{}
@@ -116,28 +123,56 @@ func (s *Service) checkCodexImportTemplate(ctx context.Context, tplID *int64, en
 	return nil
 }
 
+// checkCodexImportGroup validates the optional target group once per batch.
+// Importing into a missing or soft-deleted group cannot succeed for any row,
+// so fail before creating accounts instead of returning a misleading set of
+// per-row transaction failures.
+func (s *Service) checkCodexImportGroup(ctx context.Context, groupID *int64) error {
+	if groupID == nil {
+		return nil
+	}
+	if *groupID <= 0 {
+		return ErrInvalidInput
+	}
+	g, err := s.store.GetGroup(ctx, *groupID)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	if g == nil || g.DeletedAt != nil {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // codexOAuthRow oauth 行类型特定校验 → 共享行形态（失败返回行级错误文案）。
 func codexOAuthRow(index int, it domain.CodexOAuthImportItem) (codexImportRow, error) {
-	if !validEmail(it.CodexEmail) {
+	email := strings.TrimSpace(it.CodexEmail)
+	accountID := strings.TrimSpace(it.CodexAccountID)
+	token := strings.TrimSpace(it.CodexOAuthToken)
+	refreshToken := strings.TrimSpace(it.CodexOAuthRefreshToken)
+	if !validEmail(email) {
 		return codexImportRow{}, errors.New("codex_email 必填且须为合法邮箱")
 	}
-	if it.CodexAccountID == "" {
+	if accountID == "" {
 		return codexImportRow{}, errors.New("codex_account_id 必填")
 	}
-	if it.CodexOAuthToken == "" {
+	if token == "" {
 		return codexImportRow{}, errors.New("codex_oauth_token 必填")
 	}
 	var expires *time.Time
 	if it.CodexOAuthExpiresAt != nil {
-		t, err := time.Parse(time.RFC3339, *it.CodexOAuthExpiresAt)
-		if err != nil {
-			return codexImportRow{}, errors.New("codex_oauth_expires_at 必须为 RFC3339 格式")
+		rawExpires := strings.TrimSpace(*it.CodexOAuthExpiresAt)
+		if rawExpires != "" {
+			t, err := time.Parse(time.RFC3339, rawExpires)
+			if err != nil {
+				return codexImportRow{}, errors.New("codex_oauth_expires_at 必须为 RFC3339 格式")
+			}
+			expires = &t
 		}
-		expires = &t
 	}
 	row := codexImportRow{
-		index: index, email: it.CodexEmail, accountID: it.CodexAccountID,
-		oauthToken: it.CodexOAuthToken, oauthRT: it.CodexOAuthRefreshToken, oauthExpires: expires,
+		index: index, email: email, accountID: accountID,
+		oauthToken: token, oauthRT: refreshToken, oauthExpires: expires,
 		maxConc: 25, weight: 100,
 	}
 	if err := applyCodexImportConfig(&row, it.MaxConcurrency, it.Weight); err != nil {
@@ -148,17 +183,20 @@ func codexOAuthRow(index int, it domain.CodexOAuthImportItem) (codexImportRow, e
 
 // codexPATRow pat 行类型特定校验 → 共享行形态（失败返回行级错误文案）。
 func codexPATRow(index int, it domain.CodexPATImportItem) (codexImportRow, error) {
-	if !validEmail(it.CodexEmail) {
+	email := strings.TrimSpace(it.CodexEmail)
+	accountID := strings.TrimSpace(it.CodexAccountID)
+	patKey := strings.TrimSpace(it.CodexPATKey)
+	if !validEmail(email) {
 		return codexImportRow{}, errors.New("codex_email 必填且须为合法邮箱")
 	}
-	if it.CodexAccountID == "" {
+	if accountID == "" {
 		return codexImportRow{}, errors.New("codex_account_id 必填")
 	}
-	if it.CodexPATKey == "" {
+	if patKey == "" {
 		return codexImportRow{}, errors.New("codex_pat_key 必填")
 	}
 	row := codexImportRow{
-		index: index, email: it.CodexEmail, accountID: it.CodexAccountID, patKey: it.CodexPATKey,
+		index: index, email: email, accountID: accountID, patKey: patKey,
 		maxConc: 25, weight: 100,
 	}
 	if err := applyCodexImportConfig(&row, it.MaxConcurrency, it.Weight); err != nil {
@@ -190,6 +228,7 @@ func applyCodexImportConfig(row *codexImportRow, maxConc, weight *int) error {
 // 组快照，新凭据经 AccountExt 快照生效）。
 func (s *Service) importCodexAccounts(ctx context.Context, rows []codexImportRow, tplID int64, groupID *int64, credType credential.Type, res *domain.ImportResult) {
 	var gids []int64
+	fullReload := false
 	for _, row := range rows {
 		imported, accountID, err := s.importCodexRow(ctx, row, tplID, groupID, credType)
 		if err != nil {
@@ -208,10 +247,19 @@ func (s *Service) importCodexAccounts(ctx context.Context, rows []codexImportRow
 				if s.log != nil {
 					s.log.Warn("codex import: account groups query failed", logx.Int64("account_id", accountID), logx.Error(gErr))
 				}
+				// The credential is already committed, but without the old group
+				// membership we cannot target the scheduler safely. A full template
+				// refresh is the fail-safe recovery path.
+				fullReload = true
 				continue
 			}
 			gids = append(gids, gs...)
 		}
+	}
+	if fullReload {
+		s.inv.Templates()
+		s.publish(ctx, notify.Change{Templates: true, Clients: true})
+		return
 	}
 	if len(gids) > 0 {
 		s.inv.Accounts(gids, false)

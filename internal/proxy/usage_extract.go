@@ -27,8 +27,10 @@ import (
 // cache_creation 对象（v1.12.0 结构体无此字段），必须走 RawJSON() 的
 // 上游原始字节（评审 I-1 方案）。
 func cacheCreationFromRaw(raw string) int64 {
-	return gjson.Get(raw, "cache_creation.ephemeral_5m_input_tokens").Int() +
-		gjson.Get(raw, "cache_creation.ephemeral_1h_input_tokens").Int()
+	return addUsageTokens(
+		gjson.Get(raw, "cache_creation.ephemeral_5m_input_tokens").Int(),
+		gjson.Get(raw, "cache_creation.ephemeral_1h_input_tokens").Int(),
+	)
 }
 
 // chatStreamUsage 流式 chat usage 帧 → 元组 + ok（usage 存在判定内建——调用方
@@ -192,11 +194,20 @@ func usageFieldsFromInterval(raw []byte, itKey, otKey, crKey []byte) usageTuple 
 	u.it = scanFieldInt64(raw, itKey)
 	u.ot = scanFieldInt64(raw, otKey)
 	u.tt = scanFieldInt64(raw, totalTokensKeyBytes)
+	// A few OpenAI-compatible relays omit total_tokens even though the two
+	// component counters are present. Preserve the provider total when valid,
+	// but derive a saturated fallback when it is missing or non-positive so a
+	// successful request cannot become free merely because of a sparse usage
+	// object. Use the raw input count before cache normalization: cached tokens
+	// are part of the provider total even when billed separately.
+	if u.tt <= 0 {
+		u.tt = addUsageTokens(u.it, u.ot)
+	}
 	if s, e, ok := scanKeyValue(raw, crKey); ok {
 		u.cr = scanFieldInt64(raw[s:e], cachedTokensKeyBytes)
 	}
 	if s, e, ok := scanKeyValue(raw, cacheCreationKeyBytes); ok {
-		u.cc = scanFieldInt64(raw[s:e], ephemeral5mKeyBytes) + scanFieldInt64(raw[s:e], ephemeral1hKeyBytes)
+		u.cc = addUsageTokens(scanFieldInt64(raw[s:e], ephemeral5mKeyBytes), scanFieldInt64(raw[s:e], ephemeral1hKeyBytes))
 	}
 	u.it = deductCacheRead(u.it, u.cr)
 	return u
@@ -257,6 +268,9 @@ func scanIntValue(raw []byte) int64 {
 func chatUsageFromResponse(u openai.CompletionUsage) (it, ot, tt, cr, cc int64) {
 	it, ot, tt, cr, cc = u.PromptTokens, u.CompletionTokens, u.TotalTokens,
 		u.PromptTokensDetails.CachedTokens, cacheCreationFromRaw(u.RawJSON())
+	if tt <= 0 {
+		tt = addUsageTokens(it, ot)
+	}
 	return deductCacheRead(it, cr), ot, tt, cr, cc
 }
 
@@ -265,7 +279,8 @@ func chatUsageFromResponse(u openai.CompletionUsage) (it, ot, tt, cr, cc int64) 
 // （spec 2026-08-25）——tt 先按原始 in+out 定值再归一 it（数值不变量：归一
 // 不改 total）。
 func responsesUsageFromResponse(u responses.ResponseUsage) (it, ot, tt, cr, cc int64) {
-	it, ot, tt = u.InputTokens, u.OutputTokens, u.InputTokens+u.OutputTokens
+	it, ot = u.InputTokens, u.OutputTokens
+	tt = addUsageTokens(it, ot)
 	cr, cc = u.InputTokensDetails.CachedTokens, cacheCreationFromRaw(u.RawJSON())
 	return deductCacheRead(it, cr), ot, tt, cr, cc
 }
@@ -273,7 +288,7 @@ func responsesUsageFromResponse(u responses.ResponseUsage) (it, ot, tt, cr, cc i
 // anthropicUsageFromResponse 非流式 Anthropic 响应用量：SDK v1.56.0 Usage
 // 结构体直读（CacheRead/CacheCreationInputTokens 字段存在）。
 func anthropicUsageFromResponse(u anthropic.Usage) (it, ot, tt, cr, cc int64) {
-	return u.InputTokens, u.OutputTokens, u.InputTokens + u.OutputTokens,
+	return u.InputTokens, u.OutputTokens, addUsageTokens(u.InputTokens, u.OutputTokens),
 		u.CacheReadInputTokens, u.CacheCreationInputTokens
 }
 

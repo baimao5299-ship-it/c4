@@ -86,7 +86,12 @@ type RedisConfig struct {
 }
 
 type ProxyConfig struct {
-	MaxBodySize           int64         `koanf:"max_body_size"`
+	MaxBodySize int64 `koanf:"max_body_size"`
+	// MaxResponseSize bounds materialized non-streaming upstream responses.
+	// Streaming responses remain governed by the stream timeout and relay
+	// backpressure. 32 MiB is the conservative default; operators can raise it
+	// explicitly for providers that return larger JSON payloads.
+	MaxResponseSize       int64         `koanf:"max_response_size"`
 	MaxInflight           int64         `koanf:"max_inflight"`
 	UpstreamTimeout       time.Duration `koanf:"upstream_timeout"`
 	UpstreamStreamTimeout time.Duration `koanf:"upstream_stream_timeout"`
@@ -184,7 +189,7 @@ func defaults() *Config {
 		// 显式配置同名参数时尊重不覆盖；statement_timeout 不设会话级——副作用核实见 f1-impl-report.md）。
 		Auth:      AuthConfig{AllowFirstUserAdmin: false, LoginRatePerMinute: 20, RegisterRatePerMinute: 5, CodeRatePerMinute: 3, ResetRatePerMinute: 5},
 		DB:        DBConfig{MaxConns: 20},
-		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
+		Proxy:     ProxyConfig{MaxBodySize: 4 << 20, MaxResponseSize: 32 << 20, MaxInflight: 50000, UpstreamTimeout: 120 * time.Second, UpstreamStreamTimeout: 30 * time.Minute, FailoverAttempts: 3, UsageCapture: true},
 		Upstream:  UpstreamConfig{MaxIdleConns: 8192, MaxIdleConnsPerHost: 2048, IdleConnTimeout: 90 * time.Second, DialTimeout: 10 * time.Second, ForceHTTP2: true},
 		Scheduler: SchedulerConfig{DefaultMaxConcurrency: 8, SyncInterval: 30 * time.Second},
 		Usage:     UsageConfig{BatchSize: 500, FlushInterval: 500 * time.Millisecond, LogRetentionDays: 30, QuotaFlushInterval: 10 * time.Second, FlushWorkers: 8, StatsAggInterval: 5 * time.Minute, ErrLogQueueSize: 4096, ErrLogBatchSize: 500, ErrLogFlushInterval: 500 * time.Millisecond, ErrLogRetentionDays: 7, StatsRetentionDays: 180},
@@ -293,10 +298,14 @@ func validate(c *Config) error {
 		// proxy.max_body_size：n<1 经 MaxBytesReader 归一 0 → 全量非空请求 413
 		// （internal/proxy/caller.go 用法；spec 2026-08-17 补下限，启动即拒绝）。
 		{"proxy.max_body_size", int(c.Proxy.MaxBodySize)},
+		{"proxy.max_response_size", int(c.Proxy.MaxResponseSize)},
 	} {
 		if n.value < 1 {
 			return fmt.Errorf("%s must be >= 1 (got %d)", n.path, n.value)
 		}
+	}
+	if c.Proxy.MaxInflight < 1 {
+		return fmt.Errorf("proxy.max_inflight must be >= 1 (got %d)", c.Proxy.MaxInflight)
 	}
 	for _, n := range []struct {
 		path  string

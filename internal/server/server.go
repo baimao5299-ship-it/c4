@@ -3,7 +3,7 @@
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
 // Package server 装配 chi 路由：/api/admin/*（静态 token OR platform_admin JWT）+
-// /api/user/*（JWT 保护，register/login 公开）+ 三个 AI 端点 + /healthz。
+// /api/user/*（JWT 保护，register/login 公开）+ 三个 AI 端点 + /healthz + /readyz。
 // 架构约束：所有 API 统一收口于 /api/*，前端 SPA 占用根及 /api/user/*、/app/*，
 // 两者无前缀重叠，SPA fallback 可无歧义地回 index.html。
 package server
@@ -33,6 +33,10 @@ type Options struct {
 	AIHandler         http.Handler // proxy 三个端点
 	WebFS             fs.FS        // 前端构建产物（nil = 不挂静态资源）
 	Logger            *logx.Logger
+	// ReadyCheck is an optional dependency/snapshot readiness check. Liveness
+	// remains available at /healthz even while the instance is warming up or
+	// reconciling; /readyz returns 503 until this callback reports ready.
+	ReadyCheck func() bool
 }
 
 type Server struct {
@@ -48,7 +52,7 @@ func NewServer(opts Options) *Server {
 	if opts.MaxHeaderBytes == 0 {
 		opts.MaxHeaderBytes = 1 << 20
 	}
-	if opts.MaxInflight == 0 {
+	if opts.MaxInflight <= 0 {
 		opts.MaxInflight = 50000
 	}
 	s := &Server{opts: opts}
@@ -67,6 +71,14 @@ func NewServer(opts Options) *Server {
 		// callers. Detailed counters remain available under the admin ops API.
 		w.Header().Set("Cache-Control", "no-store")
 		httpface.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if opts.ReadyCheck != nil && !opts.ReadyCheck() {
+			httpface.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+			return
+		}
+		httpface.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 
 	r.Group(func(r chi.Router) {
@@ -119,7 +131,7 @@ func NewServer(opts Options) *Server {
 		// 回 index.html。
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			p := r.URL.Path
-			if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v1") || strings.HasPrefix(p, "/assets/") || p == "/healthz" || p == "/favicon.svg" {
+			if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v1") || strings.HasPrefix(p, "/assets/") || p == "/healthz" || p == "/readyz" || p == "/favicon.svg" {
 				http.NotFound(w, r)
 				return
 			}

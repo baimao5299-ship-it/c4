@@ -55,7 +55,7 @@ export default function Stats() {
     queryFn: () => api.getStatsTrend(params),
   })
   // 数据即时间线点，无需中间聚合层；label 本地生成
-  const rows = data ?? []
+  const rows = useMemo(() => data ?? [], [data])
   // label 必须跨桶唯一：recharts category 轴 domain 按 label 值去重，
   // 纯时分（"04:00"×5 天重复）→ domain 6-7 个 → tooltip 索引在 0-5 循环
   // （"点位置一直在前面循环"——2026-08-14 修复）；hour 粒度加日期前缀。

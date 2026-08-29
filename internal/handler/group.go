@@ -6,7 +6,6 @@ package handler
 
 import (
 	"errors"
-	"math"
 	"net/http"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -149,11 +148,12 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 		g.Visibility = domain.GroupVisibility(*in.Visibility)
 	}
 	if in.PriceMultiplier != nil {
-		if *in.PriceMultiplier < 0 || *in.PriceMultiplier > 10 {
-			httpface.WriteErr(w, http.StatusBadRequest, "price_multiplier must be in [0, 10]")
+		mult, err := apiMultiplierToMillis(in.PriceMultiplier)
+		if err != nil {
+			httpface.WriteErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		g.PriceMultiplier = int(math.Round(*in.PriceMultiplier * 10000))
+		g.PriceMultiplier = *mult
 	}
 	// protocol_convert 缺省（null/省略）= 保持原值（读改写路径携带原值自然
 	// 保留）；显式数组（含空数组 = 清空既有方向）→ 覆盖。

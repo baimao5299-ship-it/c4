@@ -57,6 +57,12 @@ func TestServiceUpdateUserPatchValidation(t *testing.T) {
 	require.Equal(t, 2, rec.countKind("users"), "创建 + 成功更新各一次；非法值不触发")
 }
 
+func TestServiceUpdateUserRejectsNilPatch(t *testing.T) {
+	svc := &Service{store: newFakeStore()}
+	_, err := svc.UpdateUser(t.Context(), nil)
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
 // TestServiceUpdateUserConflictRetry 条件写 0 行（期间有扣费）→ 重读当前值
 // 刷新旧值条件重试（new 保持管理员显式意图）；成功后 invalidate。
 func TestServiceUpdateUserConflictRetry(t *testing.T) {

@@ -79,6 +79,12 @@ func respInstructions(req map[string]any) (string, bool) {
 // inputItemText resp input message 项（system/developer）→ 拼接文本。
 func inputItemText(im map[string]any) (string, bool) {
 	var parts []string
+	// Responses accepts the compact message form `content: "text"` in
+	// addition to the typed content-part array. Preserve it when folding
+	// system/developer items into Anthropic's top-level system field.
+	if content, ok := im["content"].(string); ok {
+		return content, true
+	}
 	if content, ok := arr(im, "content"); ok {
 		for _, part := range content {
 			if pm, ok := part.(map[string]any); ok {
@@ -117,7 +123,9 @@ func respInputToMessMessages(req map[string]any) ([]any, bool) {
 				continue // system/developer 已并入 system
 			}
 			var blocks []any
-			if content, ok := arr(im, "content"); ok {
+			if content, ok := im["content"].(string); ok {
+				blocks = append(blocks, map[string]any{"type": "text", "text": content})
+			} else if content, ok := arr(im, "content"); ok {
 				for _, part := range content {
 					pm, ok := part.(map[string]any)
 					if !ok {
@@ -138,10 +146,19 @@ func respInputToMessMessages(req map[string]any) ([]any, bool) {
 			msgs = append(msgs, msg)
 			if role == "assistant" {
 				lastAssistant = len(msgs) - 1
+			} else {
+				// A later function_call belongs to a new assistant turn, not
+				// to an assistant message from before this user turn.
+				lastAssistant = -1
 			}
 		case "function_call":
 			if lastAssistant < 0 {
-				continue // 无前置 assistant 消息：孤立调用按规范丢弃
+				// Responses returns function_call items as standalone input
+				// items. When a caller replays response.output there is no
+				// enclosing assistant message to attach to, so synthesize one
+				// instead of silently dropping the tool call.
+				msgs = append(msgs, map[string]any{"role": "assistant", "content": []any{}})
+				lastAssistant = len(msgs) - 1
 			}
 			am, _ := msgs[lastAssistant].(map[string]any)
 			content, _ := arr(am, "content")
@@ -160,6 +177,7 @@ func respInputToMessMessages(req map[string]any) ([]any, bool) {
 				"role":    "user",
 				"content": []any{map[string]any{"type": "tool_result", "tool_use_id": callID, "content": output}},
 			})
+			lastAssistant = -1
 		}
 	}
 	return msgs, true
@@ -290,7 +308,7 @@ func messUsageToResp(msg map[string]any, it, ot int64) map[string]any {
 	return map[string]any{
 		"input_tokens":         it,
 		"output_tokens":        ot,
-		"total_tokens":         it + ot,
+		"total_tokens":         sumTokens(it, ot),
 		"input_tokens_details": map[string]any{"cached_tokens": cached},
 	}
 }
@@ -415,7 +433,7 @@ func (m *StreamMapper) mapMessToResp(name string, data []byte) ([]byte, bool) {
 				"id": m.id, "object": "response", "created_at": 0, "status": "completed",
 				"model": m.model, "output": m.messOutputItems(), "parallel_tool_calls": true,
 				"usage": map[string]any{
-					"input_tokens": m.it, "output_tokens": m.ot, "total_tokens": m.it + m.ot,
+					"input_tokens": m.it, "output_tokens": m.ot, "total_tokens": sumTokens(m.it, m.ot),
 					"input_tokens_details": map[string]any{"cached_tokens": m.cached},
 				},
 			},

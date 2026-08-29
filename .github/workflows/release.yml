@@ -1,13 +1,17 @@
 name: Release
 
 # tag 触发（v* = semver tag，如 v0.0.1-beta.1）——tag 即发布源，不打 tag 不发布。
-# CI 质量门禁由 ci.yml 对 tag 自动覆盖（同 tag 的 ci.yml 并行跑、互不 gate，
-# REL spec 2026-08-15 P3-F 取舍：发布者打 tag 前本地全绿，beta 期单维护者流程
-# 成立）——本 workflow 不重复 test。
+# Release has its own gate because a tag can be pushed before the branch CI
+# finishes. Publishing is serialized so two tags cannot race on the floating
+# `beta` image tag.
 on:
   push:
     tags:
       - 'v*'
+
+concurrency:
+  group: c4-release-publish
+  cancel-in-progress: false
 
 # workflow 级权限（评审 P3-B）：gh release create 需 contents: write（建 Release
 # 页 + 附附件）；GHCR 推送需 packages: write。默认 read 权限下二者都会 403。
@@ -16,10 +20,75 @@ permissions:
   packages: write
 
 jobs:
+  # A tag must pass the same core checks as main before any image or binary is
+  # published. The real PostgreSQL service keeps repository tests meaningful.
+  verify:
+    name: release gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: c3api_test
+          POSTGRES_PASSWORD: c3api
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+      - name: go test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:c3api@localhost:5432/c3api_test?sslmode=disable
+        run: go test -count=1 -p 1 ./...
+        timeout-minutes: 30
+      - name: generated Go contract check
+        run: |
+          go generate ./internal/handler/ ./internal/ent/
+          git diff --exit-code
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: web install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: generated web contract check
+        working-directory: web
+        run: |
+          pnpm gen:api
+          git diff --exit-code
+      - name: web lint
+        working-directory: web
+        run: pnpm run lint
+      - name: web build
+        working-directory: web
+        run: pnpm run build
+
   # Job 1: 多平台镜像（linux/amd64 + linux/arm64）推 GHCR。
   image:
     name: image (GHCR multi-platform)
     runs-on: ubuntu-latest
+    needs: [verify]
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4 # build-push 的 context 需要代码（评审 P3-A 补漏）
       - uses: docker/setup-qemu-action@v4 # 交叉构建 arm64 需 QEMU 模拟
@@ -55,6 +124,9 @@ jobs:
   binaries:
     name: binaries (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
+    needs: [verify]
+    permissions:
+      contents: read
     strategy:
       fail-fast: false # 单平台失败不拖垮其余平台产物
       matrix:
@@ -119,6 +191,8 @@ jobs:
     name: release
     runs-on: ubuntu-latest
     needs: [image, binaries]
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4 # CHANGELOG.md 节选需要代码
       - uses: actions/download-artifact@v8

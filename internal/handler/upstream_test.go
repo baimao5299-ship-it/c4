@@ -282,7 +282,9 @@ func TestUpstreamManagementLifecycleAndSecretBoundary(t *testing.T) {
 			return
 		}
 		require.Equal(t, "Bearer secret-key", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.6"}]}`))
 	}))
 	defer probe.Close()
 

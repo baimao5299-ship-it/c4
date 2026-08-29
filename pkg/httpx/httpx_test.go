@@ -178,6 +178,11 @@ func TestParseProxyRejectsAmbiguousOrLocalDNSModes(t *testing.T) {
 	}
 }
 
+func TestProxySummaryRedactsLegacyURLParts(t *testing.T) {
+	got := ProxySummary("socks5h://user:pass@127.0.0.1:7897/path?token=secret#fragment")
+	require.Equal(t, "socks5h://127.0.0.1:7897", got)
+}
+
 func TestSocks5hDialSendsHostnameToProxy(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -225,6 +230,54 @@ func TestSocks5hDialSendsHostnameToProxy(t *testing.T) {
 	require.NoError(t, conn.Close())
 	require.Equal(t, "chatgpt.example:443", <-seen)
 	require.NoError(t, <-serverErr)
+}
+
+func TestSocks5hDialAcceptsTCPNetworkVariants(t *testing.T) {
+	for _, network := range []string{"tcp4", "tcp6"} {
+		t.Run(network, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			defer listener.Close()
+			serverErr := make(chan error, 1)
+			go func() {
+				conn, acceptErr := listener.Accept()
+				if acceptErr != nil {
+					serverErr <- acceptErr
+					return
+				}
+				defer conn.Close()
+				_ = conn.SetDeadline(time.Now().Add(time.Second))
+				greeting := make([]byte, 3)
+				if _, err := io.ReadFull(conn, greeting); err != nil {
+					serverErr <- err
+					return
+				}
+				if _, err := conn.Write([]byte{0x05, 0x00}); err != nil {
+					serverErr <- err
+					return
+				}
+				head := make([]byte, 5)
+				if _, err := io.ReadFull(conn, head); err != nil {
+					serverErr <- err
+					return
+				}
+				target := make([]byte, int(head[4])+2)
+				if _, err := io.ReadFull(conn, target); err != nil {
+					serverErr <- err
+					return
+				}
+				_, err := conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+				serverErr <- err
+			}()
+
+			funcs, err := ParseProxyWithTimeout("socks5h://"+listener.Addr().String(), time.Second)
+			require.NoError(t, err)
+			conn, err := funcs.DialContext(context.Background(), network, "chatgpt.example:443")
+			require.NoError(t, err)
+			require.NoError(t, conn.Close())
+			require.NoError(t, <-serverErr)
+		})
+	}
 }
 
 func TestSocks5hDialSupportsCredentials(t *testing.T) {
@@ -296,6 +349,76 @@ func TestSocks5hDialSupportsCredentials(t *testing.T) {
 	require.Equal(t, [2]string{"fixture-user", "fixture-pass"}, <-seen)
 	require.NoError(t, <-serverErr)
 	require.Equal(t, "socks5h://"+listener.Addr().String(), ProxySummary(u.String()))
+}
+
+func TestSocks5hDialSupportsPasswordOnlyCredentials(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	seen := make(chan [2]string, 1)
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serverErr <- acceptErr
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(time.Second))
+		greeting := make([]byte, 4)
+		if _, readErr := io.ReadFull(conn, greeting); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		if greeting[0] != 0x05 || greeting[1] != 0x02 || greeting[2] != 0x00 || greeting[3] != 0x02 {
+			serverErr <- io.ErrUnexpectedEOF
+			return
+		}
+		_, _ = conn.Write([]byte{0x05, 0x02})
+		authHead := make([]byte, 2)
+		if _, readErr := io.ReadFull(conn, authHead); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		user := make([]byte, int(authHead[1]))
+		if _, readErr := io.ReadFull(conn, user); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		var passwordLen [1]byte
+		if _, readErr := io.ReadFull(conn, passwordLen[:]); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		password := make([]byte, int(passwordLen[0]))
+		if _, readErr := io.ReadFull(conn, password); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		seen <- [2]string{string(user), string(password)}
+		_, _ = conn.Write([]byte{0x01, 0x00})
+		requestHead := make([]byte, 5)
+		if _, readErr := io.ReadFull(conn, requestHead); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		target := make([]byte, int(requestHead[4])+2)
+		if _, readErr := io.ReadFull(conn, target); readErr != nil {
+			serverErr <- readErr
+			return
+		}
+		_, _ = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		serverErr <- nil
+	}()
+
+	u := &url.URL{Scheme: "socks5h", Host: listener.Addr().String(), User: url.UserPassword("", "fixture-pass")}
+	funcs, err := ParseProxy(u.String())
+	require.NoError(t, err)
+	conn, err := funcs.DialContext(context.Background(), "tcp", "chatgpt.example:443")
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+	require.Equal(t, [2]string{"", "fixture-pass"}, <-seen)
+	require.NoError(t, <-serverErr)
 }
 
 func TestSocks5hDialHonorsContextCancellationDuringHandshake(t *testing.T) {

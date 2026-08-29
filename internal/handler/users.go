@@ -55,8 +55,13 @@ func (h *AdminAPI) PostUsers(w http.ResponseWriter, r *http.Request) {
 	if in.Status != nil {
 		status = domain.UserStatus(*in.Status)
 	}
+	balance, err := usdToMillisChecked(deref(in.Balance))
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	u, err := h.svc.CreateUser(r.Context(), in.Email, in.Password, role, status,
-		deref(in.MaxConcurrency), usdToMillis(deref(in.Balance)))
+		deref(in.MaxConcurrency), balance)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return
@@ -95,7 +100,11 @@ func (h *AdminAPI) PutUsersId(w http.ResponseWriter, r *http.Request, id int64) 
 		patch.OldMaxConcurrency = &u.MaxConcurrency // 旧值条件：GET 快照
 	}
 	if in.Balance != nil {
-		bal := usdToMillis(*in.Balance)
+		bal, err := usdToMillisChecked(*in.Balance)
+		if err != nil {
+			httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		patch.Balance = &bal
 		patch.OldBalance = &u.Balance // 旧值条件：GET 快照
 	}

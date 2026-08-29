@@ -89,3 +89,19 @@ func snapshotStates(st []snapshot.Status) []handler.SnapshotState {
 	}
 	return out
 }
+
+// snapshotsReady reports whether every registered startup snapshot has
+// completed at least one successful reload. A live process can still serve
+// /healthz while this is false, but it should not receive public traffic until
+// authentication, routing, rules, balances, and pricing have usable state.
+func snapshotsReady(st []snapshot.Status) bool {
+	if len(st) == 0 {
+		return false
+	}
+	for _, item := range st {
+		if item.LastReload.IsZero() || item.LastError != nil {
+			return false
+		}
+	}
+	return true
+}

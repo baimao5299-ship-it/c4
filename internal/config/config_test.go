@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ func TestDefaults(t *testing.T) {
 	c, err := Load("")
 	require.NoError(t, err)
 	require.Equal(t, "warn", c.Log.Level)
+	require.Equal(t, int64(32<<20), c.Proxy.MaxResponseSize)
 	require.Equal(t, int64(50000), c.Proxy.MaxInflight)
 	require.Equal(t, 500, c.Usage.BatchSize)
 	require.Equal(t, 8, c.Usage.FlushWorkers, "usage flush 并行 worker 默认 8（O1 管道化）")
@@ -49,6 +51,17 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, 250*time.Millisecond, c.Billing.FlushInterval, "F2 游标轮询默认 250ms（spec-f2-ledger-cursor）")
 	require.Equal(t, 10*time.Second, c.Billing.BalanceRefreshInterval)
 	require.Equal(t, 8, c.Billing.FlushWorkers, "flush 并行 worker 默认 8（O1）")
+}
+
+func TestProductionDeploymentConfigLoads(t *testing.T) {
+	setenvRequired(t)
+	_, currentFile, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	path := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "deploy", "config.toml"))
+	c, err := Load(path)
+	require.NoError(t, err)
+	require.True(t, c.Proxy.BehindCDN)
+	require.Equal(t, int64(32<<20), c.Proxy.MaxResponseSize)
 }
 
 func TestLoadValidatesExplicitUpstreamProxy(t *testing.T) {
@@ -187,9 +200,12 @@ func TestLoadRejectsNonPositiveNumeric(t *testing.T) {
 		{"scheduler.default_max_concurrency", `scheduler = { default_max_concurrency = 0 }`},
 		{"db.max_conns", `db = { max_conns = 0 }`},
 		{"proxy.failover_attempts", `proxy = { failover_attempts = 0 }`},
+		{"proxy.max_inflight", `proxy = { max_inflight = 0 }`},
+		{"proxy.max_inflight", `proxy = { max_inflight = -1 }`},
 		// proxy.max_body_size：n<1 经 MaxBytesReader 归一 0 → 全量非空请求 413，
 		// 启动即拒绝（spec 2026-08-17 补下限）。
 		{"proxy.max_body_size", `proxy = { max_body_size = 0 }`},
+		{"proxy.max_response_size", `proxy = { max_response_size = 0 }`},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			_, err := Load(writeConfig(t, tc.toml))

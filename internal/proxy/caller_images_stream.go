@@ -108,7 +108,7 @@ func (p *Proxy) streamImageGeneration(ctx context.Context, w http.ResponseWriter
 		ii, io = usage.InputImageTokens, usage.OutputImageTokens
 	}
 	// 已收集张数/usage 落账元组：tt = image tokens 之和（张数不入 TotalTokens）。
-	u := usageTuple{ii: ii, io: io, tt: ii + io, calls: count}
+	u := usageTuple{ii: ii, io: io, tt: addUsageTokens(ii, io), calls: count}
 
 	if genErr != nil {
 		if !headersSent {

@@ -67,13 +67,53 @@ func (h *AdminAPI) PutPriceEntry(w http.ResponseWriter, r *http.Request, params 
 		httpface.WriteErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
+	inputPerM, err := usdToMillisPtr(in.InputPerM)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	outputPerM, err := usdToMillisPtr(in.OutputPerM)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cacheReadPerM, err := usdToMillisPtr(in.CacheReadPerM)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cacheWritePerM, err := usdToMillisPtr(in.CacheWritePerM)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	pricePerCall, err := usdPerCallToMilliPtr(in.PricePerCall)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	imgInTokPerM, err := usdToMillisPtr(in.ImgInTokPerM)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	imgOutTokPerM, err := usdToMillisPtr(in.ImgOutTokPerM)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	pricePerImage, err := usdPerImageToMilliPtr(in.PricePerImage)
+	if err != nil {
+		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	m := &repository.PriceEntryManual{
 		Model: params.Model, Mode: domain.PriceMode(in.Mode),
-		InputPerM: usdToMillisPtr(in.InputPerM), OutputPerM: usdToMillisPtr(in.OutputPerM),
-		CacheReadPerM: usdToMillisPtr(in.CacheReadPerM), CacheWritePerM: usdToMillisPtr(in.CacheWritePerM),
-		PricePerCall: usdPerCallToMilliPtr(in.PricePerCall),
-		ImgInTokPerM: usdToMillisPtr(in.ImgInTokPerM), ImgOutTokPerM: usdToMillisPtr(in.ImgOutTokPerM),
-		PricePerImage: usdPerImageToMilliPtr(in.PricePerImage),
+		InputPerM: inputPerM, OutputPerM: outputPerM,
+		CacheReadPerM: cacheReadPerM, CacheWritePerM: cacheWritePerM,
+		PricePerCall: pricePerCall,
+		ImgInTokPerM: imgInTokPerM, ImgOutTokPerM: imgOutTokPerM,
+		PricePerImage: pricePerImage,
 	}
 	p, err := h.svc.UpsertPriceEntry(r.Context(), m)
 	if err != nil {
@@ -127,17 +167,50 @@ func (h *AdminAPI) PutPriceVariants(w http.ResponseWriter, r *http.Request, para
 			pv.TimeEnd = v.TimeEnd
 			pv.DowMask = v.DowMask
 			if v.Multiplier != nil {
-				m := normalToMult(*v.Multiplier)
+				m, err := normalToMultChecked(*v.Multiplier)
+				if err != nil {
+					httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				if m < 0 || m > 100000 {
+					httpface.WriteErr(w, http.StatusBadRequest, "price_multiplier must be in [0, 10]")
+					return
+				}
 				pv.MultBP = &m
 			}
-			pv.SetInputPerM = usdToMillisPtr(v.SetInputPerM)
-			pv.SetOutputPerM = usdToMillisPtr(v.SetOutputPerM)
-			pv.SetCacheReadPerM = usdToMillisPtr(v.SetCacheReadPerM)
-			pv.SetCacheCreationPerM = usdToMillisPtr(v.SetCacheCreationPerM)
-			pv.SetPricePerCall = usdPerCallToMilliPtr(v.SetPricePerCall)
-			pv.SetImgInTokPerM = usdToMillisPtr(v.SetImgInTokPerM)
-			pv.SetImgOutTokPerM = usdToMillisPtr(v.SetImgOutTokPerM)
-			pv.SetPricePerImage = usdPerImageToMilliPtr(v.SetPricePerImage)
+			var err error
+			if pv.SetInputPerM, err = usdToMillisPtr(v.SetInputPerM); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetOutputPerM, err = usdToMillisPtr(v.SetOutputPerM); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetCacheReadPerM, err = usdToMillisPtr(v.SetCacheReadPerM); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetCacheCreationPerM, err = usdToMillisPtr(v.SetCacheCreationPerM); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetPricePerCall, err = usdPerCallToMilliPtr(v.SetPricePerCall); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetImgInTokPerM, err = usdToMillisPtr(v.SetImgInTokPerM); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetImgOutTokPerM, err = usdToMillisPtr(v.SetImgOutTokPerM); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if pv.SetPricePerImage, err = usdPerImageToMilliPtr(v.SetPricePerImage); err != nil {
+				httpface.WriteErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			vars = append(vars, pv)
 		}
 	}

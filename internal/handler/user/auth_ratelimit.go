@@ -20,6 +20,11 @@ type AuthRateLimits struct {
 	RegisterPerMinute int
 	CodePerMinute     int
 	ResetPerMinute    int
+	// TrustForwardedIP is valid only when C4 is reachable exclusively through a
+	// reverse proxy that overwrites the forwarding headers. It is deliberately
+	// shared with proxy.behind_cdn at the composition root so authentication
+	// limits and request audit logs use the same client identity policy.
+	TrustForwardedIP bool
 }
 
 func (l AuthRateLimits) withDefaults() AuthRateLimits {
@@ -99,15 +104,42 @@ func (l *authRateLimiter) evictExpired(now time.Time) {
 	}
 }
 
-func authSourceKey(r *http.Request) string {
+func authSourceKey(r *http.Request, trustForwarded bool) string {
+	if r == nil {
+		return ""
+	}
+	if trustForwarded {
+		if forwarded := forwardedClientIP(r); forwarded != "" {
+			return forwarded
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil && host != "" {
 		return host
 	}
-	// httptest and custom transports may supply a bare address. Do not trust
-	// forwarded headers here; those are only enabled for audit metadata when
-	// explicitly configured for a CDN deployment.
+	// httptest and custom transports may supply a bare address. Forwarded
+	// headers are still ignored unless the deployment explicitly enabled them.
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func forwardedClientIP(r *http.Request) string {
+	// Keep the auth limiter's trusted-proxy order aligned with the request
+	// audit path. These headers are trusted only when the composition root has
+	// explicitly enabled TrustForwardedIP and the public proxy overwrites them.
+	for _, raw := range []string{
+		r.Header.Get("CF-Connecting-IP"),
+		r.Header.Get("True-Client-IP"),
+		r.Header.Get("X-Forwarded-For"),
+		r.Header.Get("X-Real-IP"),
+	} {
+		for _, part := range strings.Split(raw, ",") {
+			candidate := strings.TrimSpace(part)
+			if ip := net.ParseIP(candidate); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	return ""
 }
 
 func authRateLimitForPath(path string, limits AuthRateLimits) int {
@@ -140,7 +172,7 @@ func withAuthRateLimit(next http.Handler, limits AuthRateLimits) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if ok, retryAfter := limiter.allow(r.URL.Path+"\x00"+authSourceKey(r), limit); !ok {
+		if ok, retryAfter := limiter.allow(r.URL.Path+"\x00"+authSourceKey(r, limits.TrustForwardedIP), limit); !ok {
 			seconds := int((retryAfter + time.Second - 1) / time.Second)
 			if seconds < 1 {
 				seconds = 1
