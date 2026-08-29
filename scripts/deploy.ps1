@@ -210,6 +210,9 @@ if ! compose -p c4 config >/dev/null; then
 fi
 ln -sfn "$new_release" '__REMOTE_DIR__/current'
 deploy_ok=1
+# Pass the exact release id to the Compose build without persisting it beside
+# operator-managed secrets. Dockerfile uses this value for `-version` output.
+export C3API_VERSION='__SHA__'
 if ! compose -p c4 up -d --build; then deploy_ok=0; fi
 health_ok() {
   # The host may export HTTP(S)_PROXY for outbound traffic. A local readiness
@@ -229,6 +232,7 @@ if [ -n "$previous" ] && [ -f "$previous/compose.yml" ]; then
   ln -sfn "$previous" '__REMOTE_DIR__/current'
   ln -sfn '__REMOTE_DIR__/.env' '__REMOTE_DIR__/current/.env'
   cd '__REMOTE_DIR__/current'
+  export C3API_VERSION="$(basename "$previous")"
   if compose -p c4 up -d --build && health_ok; then
     echo '已恢复上一版本；新版本保留在 releases 目录供排查' >&2
   else
