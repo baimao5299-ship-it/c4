@@ -185,6 +185,55 @@ func (r *RedemptionRepo) ListUsesByUser(ctx context.Context, userID int64, q Lis
 	return out, int64(total), nil
 }
 
+// ListHistory 管理面全量兑换历史：按兑换码/用户/类型筛选，使用一次带 code
+// 边的查询返回完整审计行，避免前端逐码请求造成 N+1。排序字段与单码审计
+// 共用 redemptionUseSortFields，默认按 id 倒序。
+func (r *RedemptionRepo) ListHistory(ctx context.Context, q ListQuery, codeID, userID int64, typ *domain.RedemptionType) ([]*domain.RedemptionHistory, int64, error) {
+	pred := r.client.RedemptionUse.Query()
+	if codeID > 0 {
+		pred = pred.Where(redemptionuse.CodeIDEQ(codeID))
+	}
+	if userID > 0 {
+		pred = pred.Where(redemptionuse.UserIDEQ(userID))
+	}
+	if typ != nil {
+		pred = pred.Where(redemptionuse.HasCodeWith(redemptioncode.TypeEQ(redemptioncode.Type(*typ))))
+	}
+	total, err := pred.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	order, err := q.sortOrder(redemptionUseSortFields)
+	if err != nil {
+		return nil, 0, err
+	}
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	rows, err := pred.WithCode().Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]*domain.RedemptionHistory, 0, len(rows))
+	for _, row := range rows {
+		h := &domain.RedemptionHistory{
+			ID: row.ID, CodeID: row.CodeID, UserID: row.UserID,
+			Value: row.Value, ResourceExpiresAt: row.ResourceExpiresAt,
+			CreatedAt: row.CreatedAt,
+		}
+		if code := row.Edges.Code; code != nil {
+			h.Code = code.Code
+			h.CodeType = domain.RedemptionType(code.Type)
+			h.Remark = code.Remark
+		}
+		out = append(out, h)
+	}
+	return out, int64(total), nil
+}
+
 // GetUse 取用户对某码的兑换记录；无记录 → ErrNotFound（兑换判定先查 use —— 评审 M-1）。
 func (r *RedemptionRepo) GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error) {
 	row, err := r.client.RedemptionUse.Query().

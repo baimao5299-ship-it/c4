@@ -1102,7 +1102,7 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 
 ## 兑换码 Redemption Codes
 
-兑换码是资源发放的通用载体（Phase 5 计费前基础设施）：生成一批码 → 分发给用户 → 用户在 `/user/redemptions` 兑换 → 资源按码类型即时生效。管理面 5 个端点 + 用户面 2 个端点。
+兑换码是资源发放的通用载体（Phase 5 计费前基础设施）：生成一批码 → 分发给用户 → 用户在 `/user/redemptions` 兑换 → 资源按码类型即时生效。管理面 6 个端点 + 用户面 2 个端点。
 
 ### 生成兑换码
 
@@ -1189,6 +1189,45 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 `POST /api/admin/redemption-codes/{id}/deactivate`
 
 无请求体。已失效再次调用为 no-op 成功（响应仍为 `{"deactivated": true}`，表示操作成功而非"本次新失效"）；`404`：id 不存在（消息含缺失 id）。
+
+### 全部兑换历史
+
+`GET /api/admin/redemption-uses`
+
+这是管理台的全量审计入口，一次查看所有用户的成功兑换记录，不需要逐个打开兑换码。记录在兑换码失效后仍保留；查询由服务端分页，适合长期运行的实例。
+
+| 查询参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `page` | int | 1 | 页码，1-based；缺省或 `< 1` 按 1 |
+| `page_size` | int | 20 | 每页行数，范围 `1–1000`；越界 → `400` |
+| `code_id` | int64 | — | 只看指定兑换码 ID；必须为正整数 |
+| `user_id` | int64 | — | 只看指定用户 ID；必须为正整数 |
+| `type` | string | — | `balance` / `concurrency` / `temp_balance` |
+| `sort` | string | `id` | `id` / `code_id` / `user_id` / `value` / `created_at` |
+| `order` | string | `desc` | `asc` / `desc` |
+
+响应 `200`：
+
+```json
+{
+  "total": 1,
+  "rows": [
+    {
+      "ID": 1,
+      "CodeID": 1,
+      "Code": "JQVF-2XLD-7SJL-DQ9M",
+      "UserID": 7,
+      "CodeType": "balance",
+      "Value": 100,
+      "Remark": "618 活动",
+      "ResourceExpiresAt": null,
+      "CreatedAt": "2026-08-08T10:05:00Z"
+    }
+  ]
+}
+```
+
+`Value` 是兑换时的值快照：`balance`/`temp_balance` 使用 USD，`concurrency` 使用并发数。该接口只返回管理鉴权用户可见的全量数据；普通用户继续使用下方 `/user/redemptions`，只能看到自己的记录。
 
 ### 兑换记录（审计）
 

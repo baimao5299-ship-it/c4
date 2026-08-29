@@ -414,6 +414,28 @@ const (
 	GetRedemptionCodesParamsOrderDesc GetRedemptionCodesParamsOrder = "desc"
 )
 
+// Defines values for GetRedemptionUsesParamsType.
+const (
+	Balance     GetRedemptionUsesParamsType = "balance"
+	Concurrency GetRedemptionUsesParamsType = "concurrency"
+	TempBalance GetRedemptionUsesParamsType = "temp_balance"
+)
+
+// Defines values for GetRedemptionUsesParamsSort.
+const (
+	GetRedemptionUsesParamsSortCodeId    GetRedemptionUsesParamsSort = "code_id"
+	GetRedemptionUsesParamsSortCreatedAt GetRedemptionUsesParamsSort = "created_at"
+	GetRedemptionUsesParamsSortId        GetRedemptionUsesParamsSort = "id"
+	GetRedemptionUsesParamsSortUserId    GetRedemptionUsesParamsSort = "user_id"
+	GetRedemptionUsesParamsSortValue     GetRedemptionUsesParamsSort = "value"
+)
+
+// Defines values for GetRedemptionUsesParamsOrder.
+const (
+	GetRedemptionUsesParamsOrderAsc  GetRedemptionUsesParamsOrder = "asc"
+	GetRedemptionUsesParamsOrderDesc GetRedemptionUsesParamsOrder = "desc"
+)
+
 // Defines values for GetStatsEntityTrendParamsEntity.
 const (
 	GetStatsEntityTrendParamsEntityAccount GetStatsEntityTrendParamsEntity = "account"
@@ -474,16 +496,16 @@ const (
 
 // Defines values for GetUpstreamsParamsSort.
 const (
-	BaseUrl       GetUpstreamsParamsSort = "base_url"
-	CreatedAt     GetUpstreamsParamsSort = "created_at"
-	FailureCount  GetUpstreamsParamsSort = "failure_count"
-	Id            GetUpstreamsParamsSort = "id"
-	LastCheckedAt GetUpstreamsParamsSort = "last_checked_at"
-	MultiplierBp  GetUpstreamsParamsSort = "multiplier_bp"
-	Name          GetUpstreamsParamsSort = "name"
-	RequestCount  GetUpstreamsParamsSort = "request_count"
-	SuccessCount  GetUpstreamsParamsSort = "success_count"
-	UpdatedAt     GetUpstreamsParamsSort = "updated_at"
+	GetUpstreamsParamsSortBaseUrl       GetUpstreamsParamsSort = "base_url"
+	GetUpstreamsParamsSortCreatedAt     GetUpstreamsParamsSort = "created_at"
+	GetUpstreamsParamsSortFailureCount  GetUpstreamsParamsSort = "failure_count"
+	GetUpstreamsParamsSortId            GetUpstreamsParamsSort = "id"
+	GetUpstreamsParamsSortLastCheckedAt GetUpstreamsParamsSort = "last_checked_at"
+	GetUpstreamsParamsSortMultiplierBp  GetUpstreamsParamsSort = "multiplier_bp"
+	GetUpstreamsParamsSortName          GetUpstreamsParamsSort = "name"
+	GetUpstreamsParamsSortRequestCount  GetUpstreamsParamsSort = "request_count"
+	GetUpstreamsParamsSortSuccessCount  GetUpstreamsParamsSort = "success_count"
+	GetUpstreamsParamsSortUpdatedAt     GetUpstreamsParamsSort = "updated_at"
 )
 
 // Defines values for GetUpstreamsParamsOrder.
@@ -494,8 +516,8 @@ const (
 
 // Defines values for GetUsersParamsOrder.
 const (
-	Asc  GetUsersParamsOrder = "asc"
-	Desc GetUsersParamsOrder = "desc"
+	GetUsersParamsOrderAsc  GetUsersParamsOrder = "asc"
+	GetUsersParamsOrderDesc GetUsersParamsOrder = "desc"
 )
 
 // Account defines model for Account.
@@ -1434,6 +1456,27 @@ type RedemptionCodeListResponse struct {
 	Total int64            `json:"total"`
 }
 
+// RedemptionHistory defines model for RedemptionHistory.
+type RedemptionHistory struct {
+	Code              string         `json:"Code"`
+	CodeID            int64          `json:"CodeID"`
+	CodeType          RedemptionType `json:"CodeType"`
+	CreatedAt         time.Time      `json:"CreatedAt"`
+	ID                int64          `json:"ID"`
+	Remark            *string        `json:"Remark"`
+	ResourceExpiresAt *time.Time     `json:"ResourceExpiresAt"`
+	UserID            int64          `json:"UserID"`
+
+	// Value 兑换时的值快照（同面值单位语义）
+	Value float64 `json:"Value"`
+}
+
+// RedemptionHistoryListResponse defines model for RedemptionHistoryListResponse.
+type RedemptionHistoryListResponse struct {
+	Rows  []RedemptionHistory `json:"rows"`
+	Total int64               `json:"total"`
+}
+
 // RedemptionStatus defines model for RedemptionStatus.
 type RedemptionStatus string
 
@@ -2199,6 +2242,26 @@ type GetRedemptionCodesIdUsesParams struct {
 	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetRedemptionUsesParams defines parameters for GetRedemptionUses.
+type GetRedemptionUsesParams struct {
+	Page     *int                          `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                          `form:"page_size,omitempty" json:"page_size,omitempty"`
+	CodeId   *int64                        `form:"code_id,omitempty" json:"code_id,omitempty"`
+	UserId   *int64                        `form:"user_id,omitempty" json:"user_id,omitempty"`
+	Type     *GetRedemptionUsesParamsType  `form:"type,omitempty" json:"type,omitempty"`
+	Sort     *GetRedemptionUsesParamsSort  `form:"sort,omitempty" json:"sort,omitempty"`
+	Order    *GetRedemptionUsesParamsOrder `form:"order,omitempty" json:"order,omitempty"`
+}
+
+// GetRedemptionUsesParamsType defines parameters for GetRedemptionUses.
+type GetRedemptionUsesParamsType string
+
+// GetRedemptionUsesParamsSort defines parameters for GetRedemptionUses.
+type GetRedemptionUsesParamsSort string
+
+// GetRedemptionUsesParamsOrder defines parameters for GetRedemptionUses.
+type GetRedemptionUsesParamsOrder string
+
 // ListRulesParams defines parameters for ListRules.
 type ListRulesParams struct {
 	Enabled *bool `form:"enabled,omitempty" json:"enabled,omitempty"`
@@ -2585,6 +2648,9 @@ type ServerInterface interface {
 	// 某码的兑换记录（审计；码缺失 → 404）
 	// (GET /redemption-codes/{id}/uses)
 	GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Request, id int64, params GetRedemptionCodesIdUsesParams)
+	// 全部兑换记录（管理审计；支持按兑换码、用户、类型筛选）
+	// (GET /redemption-uses)
+	GetRedemptionUses(w http.ResponseWriter, r *http.Request, params GetRedemptionUsesParams)
 	// 规则列表（enabled 过滤，priority 升序）
 	// (GET /rules)
 	ListRules(w http.ResponseWriter, r *http.Request, params ListRulesParams)
@@ -2975,6 +3041,12 @@ func (_ Unimplemented) PostRedemptionCodesIdDeactivate(w http.ResponseWriter, r 
 // 某码的兑换记录（审计；码缺失 → 404）
 // (GET /redemption-codes/{id}/uses)
 func (_ Unimplemented) GetRedemptionCodesIdUses(w http.ResponseWriter, r *http.Request, id int64, params GetRedemptionCodesIdUsesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 全部兑换记录（管理审计；支持按兑换码、用户、类型筛选）
+// (GET /redemption-uses)
+func (_ Unimplemented) GetRedemptionUses(w http.ResponseWriter, r *http.Request, params GetRedemptionUsesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4664,6 +4736,81 @@ func (siw *ServerInterfaceWrapper) GetRedemptionCodesIdUses(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// GetRedemptionUses operation middleware
+func (siw *ServerInterfaceWrapper) GetRedemptionUses(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRedemptionUsesParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page", r.URL.Query(), &params.Page)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "code_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "code_id", r.URL.Query(), &params.CodeId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "type", r.URL.Query(), &params.Type)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "type", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "sort", r.URL.Query(), &params.Sort)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "order" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "order", r.URL.Query(), &params.Order)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "order", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRedemptionUses(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRules operation middleware
 func (siw *ServerInterfaceWrapper) ListRules(w http.ResponseWriter, r *http.Request) {
 
@@ -6258,6 +6405,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/redemption-codes/{id}/uses", wrapper.GetRedemptionCodesIdUses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/redemption-uses", wrapper.GetRedemptionUses)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/rules", wrapper.ListRules)

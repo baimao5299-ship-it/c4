@@ -152,6 +152,50 @@ func (h *AdminAPI) GetRedemptionCodes(w http.ResponseWriter, r *http.Request, pa
 	httpface.WriteJSON(w, http.StatusOK, RedemptionCodeListResponse{Total: total, Rows: out})
 }
 
+// GetRedemptionUses returns the management-wide redemption audit view. The
+// repository performs one paged query with the code edge preloaded, so this
+// endpoint remains bounded even when many codes exist.
+func (h *AdminAPI) GetRedemptionUses(w http.ResponseWriter, r *http.Request, params GetRedemptionUsesParams) {
+	q, err := pageToQuery(params.Page, params.PageSize)
+	if err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
+	q.Sort = string(deref(params.Sort))
+	q.Order = string(deref(params.Order))
+	codeID := int64(0)
+	if params.CodeId != nil {
+		if *params.CodeId <= 0 {
+			httpface.WriteErr(w, http.StatusBadRequest, "code_id must be positive")
+			return
+		}
+		codeID = *params.CodeId
+	}
+	userID := int64(0)
+	if params.UserId != nil {
+		if *params.UserId <= 0 {
+			httpface.WriteErr(w, http.StatusBadRequest, "user_id must be positive")
+			return
+		}
+		userID = *params.UserId
+	}
+	var typ *domain.RedemptionType
+	if params.Type != nil {
+		t := domain.RedemptionType(*params.Type)
+		typ = &t
+	}
+	rows, total, err := h.svc.ListRedemptionHistory(r.Context(), q, codeID, userID, typ)
+	if err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
+	out := make([]RedemptionHistory, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toAPIRedemptionHistory(row))
+	}
+	httpface.WriteJSON(w, http.StatusOK, RedemptionHistoryListResponse{Total: total, Rows: out})
+}
+
 // GetRedemptionCodesIdUses 某码的兑换记录（审计；码缺失 → 404，ServerInterface）。
 // 面值换算需码的 type（use 行不存类型——与前端 uses 弹窗同构：取码行 Type 换算）。
 // limit/offset 直透 ListQuery（缺省归一在 repo——spec 2026-08-17 补分页）。
@@ -237,5 +281,13 @@ func toAPIRedemptionUse(codeType domain.RedemptionType, u *domain.RedemptionUse)
 		Value:             redemptionValueToAPI(codeType, u.Value),
 		ResourceExpiresAt: u.ResourceExpiresAt,
 		CreatedAt:         u.CreatedAt,
+	}
+}
+
+func toAPIRedemptionHistory(h *domain.RedemptionHistory) RedemptionHistory {
+	return RedemptionHistory{
+		ID: h.ID, CodeID: h.CodeID, Code: h.Code, UserID: h.UserID,
+		CodeType: RedemptionType(h.CodeType), Value: redemptionValueToAPI(h.CodeType, h.Value),
+		Remark: h.Remark, ResourceExpiresAt: h.ResourceExpiresAt, CreatedAt: h.CreatedAt,
 	}
 }

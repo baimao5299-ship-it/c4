@@ -163,6 +163,27 @@ func (s *Service) GetCodeUses(ctx context.Context, codeID int64, q repository.Li
 	return s.store.ListCodeUses(ctx, codeID, q)
 }
 
+// ListRedemptionHistory returns the admin-wide redemption audit view. Filters
+// are validated here so every transport (HTTP or tests) shares the same rules.
+func (s *Service) ListRedemptionHistory(ctx context.Context, q repository.ListQuery, codeID, userID int64, typ *domain.RedemptionType) ([]*domain.RedemptionHistory, int64, error) {
+	if codeID < 0 || userID < 0 {
+		return nil, 0, ErrInvalidInput
+	}
+	if typ != nil && !typ.Valid() {
+		return nil, 0, ErrInvalidInput
+	}
+	if err := validateListQuery(q, listSortFields["redemption_uses"]); err != nil {
+		return nil, 0, err
+	}
+	store, ok := s.store.(interface {
+		ListRedemptionHistory(context.Context, repository.ListQuery, int64, int64, *domain.RedemptionType) ([]*domain.RedemptionHistory, int64, error)
+	})
+	if !ok {
+		return nil, 0, errors.New("redemption history is not available")
+	}
+	return store.ListRedemptionHistory(ctx, q, codeID, userID, typ)
+}
+
 // ListMyRedemptions 我的兑换记录（/api/user/redemptions）：use 快照 + 码的 type/remark
 // 联查；userID 由 handler 从 JWT 取（强制本人数据，防越权）。sort/order 白名单
 // 校验（非法 → 400）。

@@ -1011,6 +1011,27 @@ paths:
               schema: { $ref: '#/components/schemas/RedemptionCodeListResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /redemption-uses:
+    get:
+      operationId: GetRedemptionUses
+      tags: [redemptions]
+      summary: 全部兑换记录（管理审计；支持按兑换码、用户、类型筛选）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
+        - { name: code_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: user_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: type, in: query, schema: { type: string, enum: [balance, concurrency, temp_balance] } }
+        - { name: sort, in: query, schema: { type: string, enum: [id, code_id, user_id, value, created_at] } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: 全量兑换记录
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedemptionHistoryListResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /redemption-codes/batch-deactivate:
     post:
       operationId: PostRedemptionCodesBatchDeactivate
@@ -2980,6 +3001,27 @@ components:
         rows:
           type: array
           items: { $ref: '#/components/schemas/RedemptionRecord' }
+    RedemptionHistory:
+      type: object
+      required: [ID, CodeID, Code, UserID, CodeType, Value, CreatedAt]
+      properties:
+        ID: { type: integer, format: int64 }
+        CodeID: { type: integer, format: int64 }
+        Code: { type: string }
+        UserID: { type: integer, format: int64 }
+        CodeType: { $ref: '#/components/schemas/RedemptionType' }
+        Value: { type: number, format: double, description: 兑换时的值快照（同面值单位语义） }
+        Remark: { type: string, nullable: true }
+        ResourceExpiresAt: { type: string, format: date-time, nullable: true }
+        CreatedAt: { type: string, format: date-time }
+    RedemptionHistoryListResponse:
+      type: object
+      required: [total, rows]
+      properties:
+        total: { type: integer, format: int64 }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/RedemptionHistory' }
     # --- 临时额度（/api/user/temp-balances + /api/admin/temp-balances，spec 2026-08-15） ---
     # 用户侧仅有效额度（amount > 0 且未过期，FEFO 同序）；管理侧全量视角。
     # amount_usd = 毫分 /1e5（API 边界换算，内部存储恒毫分）。

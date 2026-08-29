@@ -89,3 +89,17 @@ type RedemptionRecord struct {
 	ResourceExpiresAt *time.Time
 	CreatedAt         time.Time
 }
+
+// RedemptionHistory 管理面全量兑换历史：在 RedemptionRecord 基础上保留
+// user_id，供平台管理员按码、用户和类型审计所有成功兑换。
+type RedemptionHistory struct {
+	ID                int64
+	CodeID            int64
+	Code              string
+	UserID            int64
+	CodeType          RedemptionType
+	Value             int64 // 兑换值快照（毫分；concurrency 类型为并发数）
+	Remark            *string
+	ResourceExpiresAt *time.Time
+	CreatedAt         time.Time
+}

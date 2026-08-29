@@ -776,6 +776,12 @@ func (r *Repository) ListUsesByUser(ctx context.Context, userID int64, q ListQue
 	return r.Redemptions.ListUsesByUser(ctx, userID, q)
 }
 
+// ListRedemptionHistory returns the management audit view of all successful
+// redemptions with optional code/user/type filters.
+func (r *Repository) ListRedemptionHistory(ctx context.Context, q ListQuery, codeID, userID int64, typ *domain.RedemptionType) ([]*domain.RedemptionHistory, int64, error) {
+	return r.Redemptions.ListHistory(ctx, q, codeID, userID, typ)
+}
+
 func (r *Repository) GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error) {
 	return r.Redemptions.GetUse(ctx, codeID, userID)
 }

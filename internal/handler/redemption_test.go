@@ -337,6 +337,32 @@ func TestRedemptionUsesAndHistory(t *testing.T) {
 	require.Equal(t, 200, rec.Code, "paged: %s", rec.Body.String())
 }
 
+func TestRedemptionHistoryAdminFiltersAndPagination(t *testing.T) {
+	doAdmin, doUser, _ := newSharedRouters(t)
+	token, userID := registerAndGet(t, doUser, "history-admin@example.com")
+	gen := genCodes(t, doAdmin, `{"type":"balance","value":12.5,"remark":"batch-a","count":2}`)
+	rec := doUser(http.MethodPost, "/api/user/redemptions", `{"code":"`+gen.Codes[0].Code+`"}`, token)
+	require.Equal(t, http.StatusOK, rec.Code, "redeem: %s", rec.Body.String())
+
+	rec = doAdmin(http.MethodGet, "/api/admin/redemption-uses?page=1&page_size=1", "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "history: %s", rec.Body.String())
+	var history RedemptionHistoryListResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &history))
+	require.Equal(t, int64(1), history.Total)
+	require.Len(t, history.Rows, 1)
+	require.Equal(t, gen.Codes[0].Code, history.Rows[0].Code)
+	require.Equal(t, userID, history.Rows[0].UserID)
+	require.Equal(t, 12.5, history.Rows[0].Value)
+
+	rec = doAdmin(http.MethodGet, fmt.Sprintf("/api/admin/redemption-uses?user_id=%d&type=balance", userID), "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "filtered history: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &history))
+	require.Equal(t, int64(1), history.Total)
+
+	rec = doAdmin(http.MethodGet, "/api/admin/redemption-uses?code_id=0", "", "")
+	require.Equal(t, http.StatusBadRequest, rec.Code, "invalid code_id: %s", rec.Body.String())
+}
+
 // TestRedemptionValueUSDConversion 面值 API 边界换算（存储毫分不变）：
 // balance/temp_balance 入参 USD → 存储毫分（1 USD = 100,000 毫分）；concurrency
 // 并发数直存直出；出参回显换算（10 USD ↔ 1,000,000 毫分 roundtrip）。

@@ -711,6 +711,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/redemption-uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 全部兑换记录（管理审计；支持按兑换码、用户、类型筛选） */
+        get: operations["GetRedemptionUses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/redemption-codes/batch-deactivate": {
         parameters: {
             query?: never;
@@ -2480,6 +2497,31 @@ export interface components {
             /** Format: int64 */
             total: number;
             rows: components["schemas"]["RedemptionRecord"][];
+        };
+        RedemptionHistory: {
+            /** Format: int64 */
+            ID: number;
+            /** Format: int64 */
+            CodeID: number;
+            Code: string;
+            /** Format: int64 */
+            UserID: number;
+            CodeType: components["schemas"]["RedemptionType"];
+            /**
+             * Format: double
+             * @description 兑换时的值快照（同面值单位语义）
+             */
+            Value: number;
+            Remark?: string | null;
+            /** Format: date-time */
+            ResourceExpiresAt?: string | null;
+            /** Format: date-time */
+            CreatedAt: string;
+        };
+        RedemptionHistoryListResponse: {
+            /** Format: int64 */
+            total: number;
+            rows: components["schemas"]["RedemptionHistory"][];
         };
         TempBalanceRow: {
             /** Format: int64 */
@@ -4785,6 +4827,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetRedemptionUses: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                code_id?: number;
+                user_id?: number;
+                type?: "balance" | "concurrency" | "temp_balance";
+                sort?: "id" | "code_id" | "user_id" | "value" | "created_at";
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 全量兑换记录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionHistoryListResponse"];
                 };
             };
             default: components["responses"]["Error"];

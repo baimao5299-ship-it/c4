@@ -58,14 +58,14 @@ function CodeStatusBadge({ status }: { status: RedemptionStatus }) {
 
 // 生成表单态。value 口径 = openapi GenerateRequest（2026-08-15 对齐修复）：
 // balance/temp_balance 按 USD 输入（1 USD = 100,000 毫分，可小数）；concurrency
-// 为并发数（正整数）。日期字段为 DateTimePicker 值（'YYYY-MM-DDTHH:mm'，
-// 与 datetime-local 同格式），提交时 toRFC3339 转 RFC3339。
+// 为并发数（正整数）。码过期时间仍使用 DateTimePicker；临时余额改为从兑换时
+// 起算的自然日数，提交时由前端换算成后端已有的 resource_expires_at。
 interface GenForm {
   type: RedemptionType
   value: string
   remark: string
   expires_at: string
-  resource_expires_at: string // temp_balance 必填
+  temp_days: string // temp_balance 必填；从生成时刻起的自然日数
   max_uses: string
   count: string
 }
@@ -75,10 +75,12 @@ const emptyGenForm = (): GenForm => ({
   value: '',
   remark: '',
   expires_at: '',
-  resource_expires_at: '',
+  temp_days: '7',
   max_uses: '1',
   count: '1',
 })
+
+const MAX_TEMP_DAYS = 3650
 
 export default function RedemptionCodes() {
   const { t } = useTranslation()
@@ -209,14 +211,15 @@ export default function RedemptionCodes() {
     const value = Number(genForm.value)
     const count = genForm.count === '' ? 1 : Number(genForm.count)
     const maxUses = genForm.max_uses === '' ? 1 : Number(genForm.max_uses)
+    const tempDays = genForm.temp_days === '' ? NaN : Number(genForm.temp_days)
     if (
       !(value > 0) ||
       (genForm.type === 'concurrency' && !Number.isInteger(value)) || // USD 面值可小数；并发数必须整数
       !Number.isInteger(count) || count < 1 || count > 1000 ||
       !Number.isInteger(maxUses) || maxUses < 1 ||
-      (genForm.type === 'temp_balance' && !genForm.resource_expires_at)
+      (genForm.type === 'temp_balance' && (!Number.isInteger(tempDays) || tempDays < 1 || tempDays > MAX_TEMP_DAYS))
     ) {
-      setGenErr(t('redemptions.formInvalid'))
+      setGenErr(t('redemptions.formInvalid', { max: MAX_TEMP_DAYS }))
       return
     }
     const body: GenerateRequest = {
@@ -228,13 +231,49 @@ export default function RedemptionCodes() {
     }
     const expires = toRFC3339(genForm.expires_at)
     if (expires) body.expires_at = expires
-    const resource = toRFC3339(genForm.resource_expires_at)
-    if (resource) body.resource_expires_at = resource
+    if (genForm.type === 'temp_balance') {
+      // 期限以服务端收到请求的当前时间为准，避免把用户机器时区/夏令时
+      // 的日期字符串直接交给 API；后端已有 resource_expires_at 校验。
+      body.resource_expires_at = new Date(Date.now() + tempDays * 24 * 60 * 60 * 1000).toISOString()
+    }
     generate.mutate(body)
   }
   const typeItems = Object.fromEntries(TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)]))
   const filterTypeItems = Object.fromEntries([['all', t('redemptions.all')], ...TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)])])
   const filterStatusItems = Object.fromEntries([['all', t('redemptions.all')], ...STATUSES.map(s => [s, t(`redemptions.status.${s}`)])])
+
+  // —— 全部兑换历史（管理审计）：服务端分页，避免把全部记录一次性拉到浏览器 ——
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyPageSize, setHistoryPageSize] = useState(20)
+  const [historyCodeID, setHistoryCodeID] = useState('')
+  const [historyUserID, setHistoryUserID] = useState('')
+  const [historyType, setHistoryType] = useState<'all' | RedemptionType>('all')
+  const historyCodeIdValue = historyCodeID === '' ? undefined : Number(historyCodeID)
+  const historyUserIdValue = historyUserID === '' ? undefined : Number(historyUserID)
+  const historyCodeIdValid = historyCodeID === '' || (Number.isInteger(historyCodeIdValue) && historyCodeIdValue! > 0)
+  const historyUserIdValid = historyUserID === '' || (Number.isInteger(historyUserIdValue) && historyUserIdValue! > 0)
+  const historyQ = useQuery({
+    queryKey: ['redemption-history', { page: historyPage, page_size: historyPageSize, code_id: historyCodeID, user_id: historyUserID, type: historyType }],
+    queryFn: () => api.getRedemptionHistory({
+      page: historyPage,
+      page_size: historyPageSize,
+      code_id: historyCodeIdValid ? historyCodeIdValue : undefined,
+      user_id: historyUserIdValid ? historyUserIdValue : undefined,
+      type: historyType === 'all' ? undefined : historyType,
+      sort: 'id',
+      order: 'desc',
+    }),
+    enabled: historyOpen && historyCodeIdValid && historyUserIdValid,
+  })
+  const historyRows = historyQ.data?.rows ?? []
+  const historyTypeItems = Object.fromEntries([['all', t('redemptions.all')], ...TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)])])
+  const resetHistory = () => {
+    setHistoryPage(1)
+    setHistoryCodeID('')
+    setHistoryUserID('')
+    setHistoryType('all')
+  }
 
   // —— 使用明细（审计）：某码全部兑换记录（端点不分页，整表展示） ——
   const [usesFor, setUsesFor] = useState<RedemptionCode | null>(null)
@@ -254,7 +293,10 @@ export default function RedemptionCodes() {
           <h1 className="text-2xl font-semibold tracking-tight">{t('redemptions.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('redemptions.subtitle')}</p>
         </div>
-        <Button onClick={openGenerate}><Plus /> {t('redemptions.new')}</Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={() => setHistoryOpen(true)}><History /> {t('redemptions.historyOpen')}</Button>
+          <Button onClick={openGenerate}><Plus /> {t('redemptions.new')}</Button>
+        </div>
       </div>
 
       {/* 筛选工具栏（与 ListToolbar 同风格；本列表无名称搜索，仅 type/status 筛选） */}
@@ -430,7 +472,7 @@ export default function RedemptionCodes() {
                     <Select
                       items={typeItems}
                       value={genForm.type}
-                      onValueChange={v => updateGenForm({ type: v as RedemptionType, ...(v !== 'temp_balance' ? { resource_expires_at: '' } : {}) })}
+                      onValueChange={v => updateGenForm({ type: v as RedemptionType })}
                     >
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -443,6 +485,9 @@ export default function RedemptionCodes() {
                     <Input id="rc-value" type="number" min={1} value={genForm.value} onChange={e => updateGenForm({ value: e.target.value })} />
                   </div>
                 </div>
+                <p className="-mt-2 text-xs text-muted-foreground">
+                  {t(`redemptions.typeHint${genForm.type === 'balance' ? 'Balance' : genForm.type === 'temp_balance' ? 'TempBalance' : 'Concurrency'}`)}
+                </p>
                 <p className="-mt-2 text-xs text-muted-foreground">
                   {genForm.type === 'concurrency' ? t('redemptions.valueHintConcurrency') : t('redemptions.valueHintBalance')}
                 </p>
@@ -457,13 +502,18 @@ export default function RedemptionCodes() {
                     <p className="text-xs text-muted-foreground">{t('redemptions.expiresAtHint')}</p>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="rc-resource">
-                      {t('redemptions.resourceExpiresAtLabel')}
-                      {genForm.type === 'temp_balance' && <span className="ml-1 text-destructive">*</span>}
-                    </Label>
-                    <DateTimePicker id="rc-resource" value={genForm.resource_expires_at} onChange={v => updateGenForm({ resource_expires_at: v })} />
-                    {genForm.type === 'temp_balance' && (
-                      <p className="text-xs text-destructive">{t('redemptions.resourceExpiresAtRequired')}</p>
+                    {genForm.type === 'temp_balance' ? (
+                      <>
+                        <Label htmlFor="rc-temp-days">
+                          {t('redemptions.tempDaysLabel')}<span className="ml-1 text-destructive">*</span>
+                        </Label>
+                        <Input id="rc-temp-days" type="number" min={1} max={MAX_TEMP_DAYS} step={1} value={genForm.temp_days} onChange={e => updateGenForm({ temp_days: e.target.value })} />
+                        <p className="text-xs text-muted-foreground">{t('redemptions.tempDaysHint', { max: MAX_TEMP_DAYS })}</p>
+                      </>
+                    ) : (
+                      <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                        {genForm.type === 'balance' ? t('redemptions.permanentBalanceHint') : t('redemptions.noResourceExpiryHint')}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -492,6 +542,86 @@ export default function RedemptionCodes() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* —— 全部兑换历史（管理审计） —— */}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{t('redemptions.historyTitle')}</DialogTitle>
+            <DialogDescription>{t('redemptions.historyDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="history-code-id">{t('redemptions.historyFilterCode')}</Label>
+              <Input id="history-code-id" type="number" min={1} step={1} inputMode="numeric" value={historyCodeID} placeholder={t('redemptions.historyFilterHint')} onChange={e => { setHistoryCodeID(e.target.value); setHistoryPage(1) }} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="history-user-id">{t('redemptions.historyFilterUser')}</Label>
+              <Input id="history-user-id" type="number" min={1} step={1} inputMode="numeric" value={historyUserID} placeholder={t('redemptions.historyFilterHint')} onChange={e => { setHistoryUserID(e.target.value); setHistoryPage(1) }} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('redemptions.historyFilterType')}</Label>
+              <Select items={historyTypeItems} value={historyType} onValueChange={v => { setHistoryType(v as 'all' | RedemptionType); setHistoryPage(1) }}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" label={t('redemptions.all')}>{t('redemptions.all')}</SelectItem>
+                  {TYPES.map(tp => <SelectItem key={tp} value={tp} label={t(`redemptions.type.${tp}`)}>{t(`redemptions.type.${tp}`)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {(!historyCodeIdValid || !historyUserIdValid) && <p className="text-sm text-destructive">{t('redemptions.historyFilterInvalid')}</p>}
+          {historyQ.isError ? (
+            <p className="text-sm text-destructive">{t('redemptions.historyLoadFailed', { message: (historyQ.error as Error).message })}</p>
+          ) : historyQ.isLoading ? (
+            <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
+          ) : historyRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">{t('redemptions.historyEmpty')}</p>
+          ) : (
+            <div className="overflow-hidden rounded-lg border">
+              <ScrollArea className="max-h-[min(55vh,28rem)]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>{t('redemptions.historyTable.code')}</TableHead>
+                      <TableHead>{t('redemptions.historyTable.userId')}</TableHead>
+                      <TableHead>{t('redemptions.historyTable.type')}</TableHead>
+                      <TableHead>{t('redemptions.historyTable.value')}</TableHead>
+                      <TableHead>{t('redemptions.historyTable.resourceExpiresAt')}</TableHead>
+                      <TableHead>{t('redemptions.historyTable.createdAt')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="[&_td]:py-3">
+                    {historyRows.map(row => (
+                      <TableRow key={row.ID}>
+                        <TableCell className="tabular-nums">{row.ID}</TableCell>
+                        <TableCell>
+                          <code className="font-mono text-xs">{row.Code}</code>
+                          {row.Remark && <div className="max-w-36 truncate text-xs text-muted-foreground" title={row.Remark}>{row.Remark}</div>}
+                        </TableCell>
+                        <TableCell className="tabular-nums">{row.UserID}</TableCell>
+                        <TableCell>{t(`redemptions.type.${row.CodeType}`)}</TableCell>
+                        <TableCell className="tabular-nums">{formatValue({ Type: row.CodeType, Value: row.Value })}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{formatDateTime(row.ResourceExpiresAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{formatDateTime(row.CreatedAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm text-muted-foreground">{t('redemptions.historyTotal', { count: historyQ.data?.total ?? 0 })}</span>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={resetHistory}>{t('redemptions.historyReset')}</Button>
+              <PagePagination total={historyQ.data?.total ?? 0} pageSize={historyPageSize} page={historyPage} onPageChange={setHistoryPage} onPageSizeChange={s => { setHistoryPageSize(s); setHistoryPage(1) }} />
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setHistoryOpen(false)}>{t('common.done')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

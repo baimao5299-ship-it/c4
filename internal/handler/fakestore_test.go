@@ -1951,6 +1951,42 @@ func (f *fakeStore) ListUsesByUser(ctx context.Context, userID int64, q reposito
 	return out, int64(len(out)), nil
 }
 
+func (f *fakeStore) ListRedemptionHistory(ctx context.Context, q repository.ListQuery, codeID, userID int64, typ *domain.RedemptionType) ([]*domain.RedemptionHistory, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*domain.RedemptionHistory
+	for _, u := range f.uses {
+		if codeID > 0 && u.CodeID != codeID || userID > 0 && u.UserID != userID {
+			continue
+		}
+		code, ok := f.codes[u.CodeID]
+		if !ok || typ != nil && code.Type != *typ {
+			continue
+		}
+		out = append(out, &domain.RedemptionHistory{
+			ID: u.ID, CodeID: u.CodeID, Code: code.Code, UserID: u.UserID,
+			CodeType: code.Type, Value: u.Value, Remark: code.Remark,
+			ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+		})
+	}
+	slices.SortFunc(out, func(a, b *domain.RedemptionHistory) int { return cmp.Compare(b.ID, a.ID) })
+	total := len(out)
+	if q.Limit <= 0 {
+		q.Limit = 20
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	if q.Offset >= total {
+		out = nil
+	} else if end := q.Offset + q.Limit; end < total {
+		out = out[q.Offset:end]
+	} else {
+		out = out[q.Offset:]
+	}
+	return out, int64(total), nil
+}
+
 func (f *fakeStore) GetUse(ctx context.Context, codeID, userID int64) (*domain.RedemptionUse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
