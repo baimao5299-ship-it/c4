@@ -20,9 +20,9 @@ C4 的 Compose 默认只绑定 `127.0.0.1`。公网用户应通过 HTTPS 反向�
 脚本会：
 
 1. 要求工作树干净，按当前提交生成部署包。
-2. 先检查服务器 Docker、Compose、`flock` 及基础 Unix 工具和应用端口；端口被占用就停止，不碰已有服务。
+2. 先检查服务器 Docker、Compose（支持 `docker compose` 或 `docker-compose`）、`flock` 及基础 Unix 工具和应用端口；端口被占用就停止，不碰已有服务。
 3. 将版本放到独立的 `releases/<commit>` 目录，`current` 只指向本次版本；部署锁阻止并发升级。
-4. 首次部署自动生成 `ADMIN_TOKEN`、`POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`，并将 `.env` 权限设为仅所有者可读写。
+4. 首次部署自动生成 `ADMIN_TOKEN`、`POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`；已有配置若 `ADMIN_TOKEN` 为空会补生成随机值，并将 `.env` 权限设为仅所有者可读写。
 5. 首次部署把 PostgreSQL 数据固定在 `<RemoteDir>/data/pg`（默认 `/opt/c4/data/pg`），并固定 Compose 项目名 `c4`；后续 release 切换不会换库或创建第二套项目。
 6. 已有 `.env` 若缺少 `PG_DATA_DIR` 或 `COMPOSE_PROJECT_NAME=c4` 会停止并要求先完成迁移，避免误用新库或接管其他 Compose 项目。
 7. 启动 Compose 后轮询 `/healthz`；新版本启动或健康检查失败会自动切回上一版并再次检查，首次部署则保留现场并报告容器状态。`-AppName` 和 `-CardStoreUrl` 只在首次生成 `.env` 时写入，后续升级会复用原值。

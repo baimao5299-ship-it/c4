@@ -95,12 +95,14 @@ $pgDataDir = "$RemoteDir/data/pg"
 $remote = @'
 set -eu
 command -v docker >/dev/null || { echo '服务器缺少 docker' >&2; exit 2; }
-docker compose version >/dev/null || { echo '服务器缺少 docker compose' >&2; exit 2; }
+if docker compose version >/dev/null 2>&1; then compose() { docker compose "$@"; }
+elif command -v docker-compose >/dev/null 2>&1; then compose() { docker-compose "$@"; }
+else echo '服务器缺少 Docker Compose' >&2; exit 2; fi
 for tool in flock tar grep sed head od tr seq ln readlink; do command -v "$tool" >/dev/null || { echo "服务器缺少 $tool" >&2; exit 3; }; done
 exec 9>'__REMOTE_DIR__/.deploy.lock'
 flock -n 9 || { echo '已有另一个 C4 部署正在进行' >&2; exit 8; }
 existing=0
-if [ -f '__REMOTE_DIR__/current/compose.yml' ] && (cd '__REMOTE_DIR__/current' && docker compose ps -q app 2>/dev/null | grep -q .); then existing=1; fi
+if [ -f '__REMOTE_DIR__/current/compose.yml' ] && (cd '__REMOTE_DIR__/current' && compose -p c4 ps -q app 2>/dev/null | grep -q .); then existing=1; fi
 port_in_use() {
   if command -v ss >/dev/null; then ss -ltn 2>/dev/null | grep -Eq '[:.]__APP_PORT__([[:space:]]|$)'; return $?; fi
   if command -v netstat >/dev/null; then netstat -ltn 2>/dev/null | grep -Eq '[:.]__APP_PORT__([[:space:]]|$)'; return $?; fi
@@ -112,6 +114,13 @@ if [ ! -s '__REMOTE_DIR__/.env' ]; then
   umask 077
   rand() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
   printf 'ADMIN_TOKEN=%s\nPOSTGRES_PASSWORD=%s\nAUTH_JWT_SECRET=%s\nBIND_ADDRESS=127.0.0.1\nPORT=__APP_PORT__\nPG_DATA_DIR=__PG_DATA_DIR__\nCOMPOSE_PROJECT_NAME=c4\n' "$(rand)" "$(rand)" "$(rand)" > '__REMOTE_DIR__/.env'
+fi
+admin_count=$(grep -c '^ADMIN_TOKEN=' '__REMOTE_DIR__/.env' || true)
+admin_value=$(sed -n 's/^ADMIN_TOKEN=//p' '__REMOTE_DIR__/.env' | head -n 1)
+if [ "$admin_count" -ne 1 ]; then echo 'ADMIN_TOKEN 必须唯一，停止部署' >&2; exit 5; fi
+if [ -z "$admin_value" ]; then
+  rand() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+  sed -i "s/^ADMIN_TOKEN=.*/ADMIN_TOKEN=$(rand)/" '__REMOTE_DIR__/.env'
 fi
 port_count=$(grep -c '^PORT=' '__REMOTE_DIR__/.env' || true)
 configured_port=$(sed -n 's/^PORT=//p' '__REMOTE_DIR__/.env' | head -n 1)
@@ -134,12 +143,12 @@ tar -xzf '__REMOTE_DIR__/c4-__SHA__.tar.gz' -C '__REMOTE_DIR__/releases/__SHA__'
 ln -sfn '__REMOTE_DIR__/releases/__SHA__' '__REMOTE_DIR__/current'
 ln -sfn '__REMOTE_DIR__/.env' '__REMOTE_DIR__/current/.env'
 cd '__REMOTE_DIR__/current'
-docker compose config >/dev/null
+compose -p c4 config >/dev/null
 deploy_ok=1
-if ! docker compose up -d --build; then deploy_ok=0; fi
+if ! compose -p c4 up -d --build; then deploy_ok=0; fi
 health_ok() {
   if command -v curl >/dev/null; then curl -fsS --max-time 3 'http://127.0.0.1:__APP_PORT__/healthz' >/dev/null; return $?; fi
-  docker compose exec -T app wget -q -T 3 -O /dev/null 'http://127.0.0.1:18080/healthz'
+  compose -p c4 exec -T app wget -q -T 3 -O /dev/null 'http://127.0.0.1:18080/healthz'
 }
 if [ "$deploy_ok" -eq 1 ]; then
   for i in $(seq 1 30); do if health_ok; then exit 0; fi; sleep 2; done
@@ -151,7 +160,7 @@ if [ -n "$previous" ] && [ -f "$previous/compose.yml" ]; then
   ln -sfn "$previous" '__REMOTE_DIR__/current'
   ln -sfn '__REMOTE_DIR__/.env' '__REMOTE_DIR__/current/.env'
   cd '__REMOTE_DIR__/current'
-  if docker compose up -d --build && health_ok; then
+  if compose -p c4 up -d --build && health_ok; then
     echo '已恢复上一版本；新版本保留在 releases 目录供排查' >&2
   else
     echo '回滚健康检查也失败，请保留现场并检查 docker compose ps/logs' >&2
@@ -159,7 +168,7 @@ if [ -n "$previous" ] && [ -f "$previous/compose.yml" ]; then
 else
   echo '这是首次部署，没有可回滚版本' >&2
 fi
-docker compose ps
+compose -p c4 ps
 exit 4
 '@
 $remote = $remote.Replace('__APP_PORT__', $AppPort.ToString()).Replace('__REMOTE_DIR__', $RemoteDir).Replace('__SHA__', $sha).Replace('__PG_DATA_DIR__', $pgDataDir).Replace('__CARD_STORE_LINE__', $cardStoreLine).Replace('__APP_NAME_LINE__', $appNameLine)

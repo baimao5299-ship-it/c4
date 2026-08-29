@@ -10,8 +10,6 @@
 # GHCR 快速上手（预构建镜像，release 流水线发布）：docker pull ghcr.io/baimao5299-ship-it/c4:beta
 #   （:beta 为浮动 tag = 最新 beta；版本固定用 ghcr.io/baimao5299-ship-it/c4:v0.0.1-beta.1）
 
-name: c4
-
 services:
   db:
     image: postgres:18-alpine
