@@ -105,7 +105,7 @@ func (p *Proxy) HandleSearch(w http.ResponseWriter, r *http.Request) {
 	// 预检——现状语义显式关，不给 search 新增 402）；尾部 Select 走主流 resp
 	// 路由面（openai-responses）；耗尽 Retry-After 分支由 httpSink 判 lastCode。
 	p.failoverLoop(w, r, domain.FormatOpenAISearch, routeFormat, reqID, groupID, start, reqModel, body, sel,
-		attemptState{}, p.searchAttempt, p.httpSink, false)
+		attemptState{}, p.searchAttempt, p.httpSink, false, nil)
 }
 
 // searchAttempt HandleSearch 的 attempt 实现（单次 codex search 上游调用，非

@@ -35,6 +35,16 @@ type forwardRoute struct {
 	format domain.RequestFormat
 	caller UpstreamCaller
 	body   []byte
+	// conversion is empty for a native route. It lets the failover loop avoid
+	// retrying the conversion that was already selected during initial routing.
+	conversion domain.ProtocolConvert
+}
+
+type protocolFallback struct {
+	conversion domain.ProtocolConvert
+	format     domain.RequestFormat
+	caller     UpstreamCaller
+	source     []byte
 }
 
 // convertedRoute 组协议转换方向集合 → （模板协议格式, 转换方向）：仅当配置方向
@@ -290,7 +300,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			}
 			sel = sel2
 			err = nil
-			route = forwardRoute{format: tgt, caller: p.convCallers[conv], body: cb}
+			route = forwardRoute{format: tgt, caller: p.convCallers[conv], body: cb, conversion: conv}
 			break
 		}
 		if err != nil && autoNegotiation && conversionErr != nil {
@@ -303,6 +313,24 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		p.recordRejected(r.Context(), reqID, groupID, 0, reqModel, "", format, statusFor(err), domain.ErrNoAccount, 0, usageTuple{}, start, selectErrorMessage(err))
 		return
 	}
+	// Pre-build the remaining conversion requests once. A protocol fallback is
+	// only selected after a capability rejection, so conversion work is kept off
+	// the normal native path and never repeated for each account attempt.
+	var fallbacks []protocolFallback
+	for _, conv := range conversionCandidates(rm.meta.ProtocolConverts, format) {
+		if conv == route.conversion {
+			continue
+		}
+		tgt, _, ok := convertedRoute([]domain.ProtocolConvert{conv}, format)
+		if !ok {
+			continue
+		}
+		caller := p.convCallers[conv]
+		if caller == nil {
+			continue
+		}
+		fallbacks = append(fallbacks, protocolFallback{conversion: conv, format: tgt, caller: caller, source: body})
+	}
 
 	// failover 循环（共享骨架，见 pipeline.go）：precheck=true（chat/resp/
 	// anthropic/images 走缺价预检）；尾部 Select 按 route.format（协议转换命中
@@ -310,7 +338,7 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 	// 状态按值传入 attemptState（零分配——attempt/sink 为 New 构造单例）。
 	p.failoverLoop(w, r, format, route.format, reqID, groupID, start, reqModel, route.body, sel,
 		attemptState{format: format, routeFormat: route.format, caller: route.caller, stream: stream},
-		p.chatAttempt, p.httpSink, true)
+		p.chatAttempt, p.httpSink, true, fallbacks)
 }
 
 // chatAttempt handleFormat 的 attempt 实现（覆盖 chat/responses/anthropic/

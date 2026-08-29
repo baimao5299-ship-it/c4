@@ -301,6 +301,11 @@ export default function Upstreams() {
     // Model catalogues are used by group creation/editing. Any credential,
     // endpoint, or enablement change invalidates the cached catalogue too.
     await qc.invalidateQueries({ queryKey: ['group-upstream-models'] })
+    // Keep the compact setup flow coherent across pages: after saving an
+    // upstream, the group dialog must refetch its selectable upstream list
+    // instead of serving the previous 30-second cache window.
+    await qc.invalidateQueries({ queryKey: ['groups', 'upstream-options'] })
+    await qc.invalidateQueries({ queryKey: ['upstreams', 'account-options'] })
   }
 
   // A deletion or filter change can leave the current page past the last page.

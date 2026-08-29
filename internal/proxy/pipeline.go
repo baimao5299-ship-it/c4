@@ -7,11 +7,13 @@ package proxy
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/protoconv"
 	"github.com/is7qin/c3api/internal/rule"
 	"github.com/is7qin/c3api/internal/scheduler"
 )
@@ -202,6 +204,57 @@ func applyPassthroughHeader(w http.ResponseWriter, then domain.RuleThen, hdr htt
 	}
 }
 
+// isProtocolCapabilityError distinguishes a relay that does not implement the
+// selected endpoint from an ordinary client/account error. The broad status
+// codes are only accepted when they are conventionally capability-related;
+// 400/422 require a matching message so malformed payloads and model errors do
+// not trigger a second chargeable request.
+func isProtocolCapabilityError(code int, body []byte, callErr error) bool {
+	switch code {
+	case http.StatusMethodNotAllowed, http.StatusUnsupportedMediaType, http.StatusNotImplemented:
+		return true
+	case http.StatusNotFound:
+		// A missing protocol path is common on compatibility relays, but a 404
+		// can also mean that the selected model does not exist. Do not issue a
+		// second chargeable request for an error that names the model.
+		message := strings.ToLower(string(body))
+		if callErr != nil {
+			message += " " + strings.ToLower(callErr.Error())
+		}
+		for _, marker := range []string{
+			"model not found", "model_not_found", "unknown model", "invalid model",
+			"model does not exist", "no such model", "model unavailable",
+		} {
+			if strings.Contains(message, marker) {
+				return false
+			}
+		}
+		return true
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		// Continue below and require an explicit capability/format hint.
+	default:
+		if code != 0 {
+			return false
+		}
+	}
+	message := strings.ToLower(string(body))
+	if callErr != nil {
+		message += " " + strings.ToLower(callErr.Error())
+	}
+	for _, marker := range []string{
+		"not implemented", "not supported", "unsupported", "not support",
+		"method not allowed", "unknown endpoint", "unknown path", "endpoint",
+		"content-type", "protocol", "responses api", "chat completions",
+		"messages api", "invalid format", "format error", "route not found",
+		"cannot decode", "failed to decode", "unmarshal", "invalid character",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // failoverLoop 共享 failover 骨架：precheckPrice(开关) → attempt.call → 分类
 // （429 MarkResult / 5xx、0 MarkResult / 4xx finish+透传）→ Release → attempted
 // 防呆 → 尾部 Select（最后一轮不预选——防并发槽泄漏）→ 耗尽记录（et 分类 +
@@ -212,7 +265,7 @@ func applyPassthroughHeader(w http.ResponseWriter, then domain.RuleThen, hdr htt
 // precheck=false 跳过缺价预检（search——现状无预检语义）。
 // 记录（recordRejected/buildLog/finish/recordLog/MarkResult）参数逐字段与三份
 // 原内联管线一致（行为契约：状态码/错误帧/Retry-After/固定文案逐字节不变）。
-func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, selectFormat domain.RequestFormat, reqID string, groupID int64, start time.Time, reqModel string, body []byte, sel *scheduler.Selection, st attemptState, attempt upstreamAttempt, sink pipelineSink, precheck bool) {
+func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, selectFormat domain.RequestFormat, reqID string, groupID int64, start time.Time, reqModel string, body []byte, sel *scheduler.Selection, st attemptState, attempt upstreamAttempt, sink pipelineSink, precheck bool, fallbacks []protocolFallback) {
 	lastSel := sel
 	// Keep account identity across this request. Rule events are queued
 	// asynchronously, so relying on MarkResult to remove a failed account leaves
@@ -228,12 +281,8 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		lastHdr    http.Header
 		lastBody   []byte
 	)
-	// 防呆（spec：failover_attempts=0 直构绕过 validate 下限）：循环零次执行时
-	// 首次 Select 已占并发槽，耗尽路径按此标志补 Release——N>=1 恒 true，不双释放。
-	attempted := false
 	for i := 0; i < p.cfg.FailoverAttempts; i++ {
 		lastSel = sel
-		attempted = true
 		// 缺价预检（评审 I-1 + P1-1 预检按格式切换）：每轮 sel 更新后、Call 前
 		// 查价——计费启用时模型无价格 → 释放并发槽 + 402（不按 0 计价），零 DB
 		// （快照读）。images 格式查统一价格快照 image 分量（跳过 chat
@@ -324,6 +373,65 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 				p.sched.MarkSelectionResult(sel, kind, nil, code, lastErrMsg, sel.Model)
 			}
 		} else {
+			// A native endpoint can exist in the route table while the relay only
+			// implements another wire protocol. Before returning a deterministic
+			// 4xx, try the next configured conversion. The failed selection is
+			// released, and a new member is preferred; if the pool has only the
+			// same member, the unexcluded selection is still valid for its alternate
+			// endpoint protocol.
+			if i+1 < p.cfg.FailoverAttempts && len(fallbacks) > 0 && isProtocolCapabilityError(code, respBody, callErr) {
+				failed := sel
+				switched := false
+				failureMessage := domain.TruncateErrMsg(string(respBody))
+				if failureMessage == "" && callErr != nil {
+					failureMessage = domain.TruncateErrMsg(callErr.Error())
+				}
+				failureLog := logWithCtx(r.Context(), p.buildLog(reqID, groupID, failed.AccountID, reqModel, failed.Model, format, code, domain.Err4xx, usageTuple{}, start))
+				if failureMessage != "" {
+					failureLog.ErrorMessage = &failureMessage
+				}
+				p.sched.ReleaseSelection(failed)
+				for len(fallbacks) > 0 {
+					next := fallbacks[0]
+					fallbacks = fallbacks[1:]
+					converted, convertErr := protoconv.ConvertRequest(next.source, next.conversion)
+					if convertErr != nil {
+						continue
+					}
+					nextSel, nextErr := p.sched.SelectExcluding(groupID, next.format, reqModel, attemptedAccounts)
+					if nextErr != nil {
+						// A single upstream member is allowed to serve both protocol
+						// routes. Retry without the account exclusion only for this
+						// alternate protocol, never for ordinary account failover.
+						nextSel, nextErr = p.sched.Select(groupID, next.format, reqModel)
+					}
+					if nextErr != nil {
+						continue
+					}
+					sel = nextSel
+					selectFormat = next.format
+					body = converted
+					st.routeFormat = next.format
+					st.caller = next.caller
+					attemptedAccounts = attemptedStorage[:0]
+					attemptedAccounts = append(attemptedAccounts, sel.TargetID)
+					lastSel = sel
+					switched = true
+					break
+				}
+				if switched {
+					// Preserve the failed protocol attempt for diagnostics, but only
+					// once an alternate route is actually going to be tried. If the
+					// attempt budget is exhausted, the terminal path below owns the
+					// single error log.
+					p.recordLog(failureLog)
+					continue
+				}
+				// No alternate route was available. Keep the failed selection as
+				// the source of the final log and response; ReleaseSelection is
+				// idempotent, so the terminal path remains balanced.
+				sel = failed
+			}
 			// 4xx 确定性错误（统一公式 status=ResponseCode!=nil?*ResponseCode:code, msg=CustomMessage!=nil?*CustomMessage:respBody）
 			l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, format, code, domain.Err4xx, usageTuple{}, start))
 			em := domain.TruncateErrMsg(string(respBody))
@@ -369,11 +477,11 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		attemptedAccounts = append(attemptedAccounts, sel.TargetID)
 	}
 	// 耗尽：请求已完成（上游消费了请求），以最后一次尝试的结果记一条用量（统一公式 status=ResponseCode!=nil?*ResponseCode:lastCode, msg=CustomMessage!=nil?*CustomMessage:lastBody/lastErrMsg）。
-	// 防呆释放：循环零次执行（failover_attempts=0 直构）时首次 Select 的槽从未
-	// 释放——耗尽路径补 Release；N>=1 时 attempted 恒 true（循环尾已释放，不双释放）。
-	if !attempted {
-		p.sched.ReleaseSelection(lastSel)
-	}
+	// 防呆释放覆盖 failover_attempts=0 和协议切换发生在最后一轮的路径。
+	// ReleaseSelection is idempotent. Releasing unconditionally closes the
+	// ownership gap when the last allowed attempt switched protocols immediately
+	// before the loop ended; normal attempts have already released their slot.
+	p.sched.ReleaseSelection(lastSel)
 	et := domain.Err5xx
 	switch {
 	case lastCode == http.StatusTooManyRequests:

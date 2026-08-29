@@ -280,12 +280,52 @@ func TestShouldFallbackTestIncludesNotImplemented(t *testing.T) {
 		http.StatusMethodNotAllowed,
 		http.StatusNotImplemented,
 		http.StatusUnsupportedMediaType,
+		http.StatusUnprocessableEntity,
 	} {
 		require.Truef(t, shouldFallbackTest(status), "status %d should trigger protocol fallback", status)
 	}
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError} {
 		require.Falsef(t, shouldFallbackTest(status), "status %d should not trigger protocol fallback", status)
 	}
+}
+
+func TestShouldFallbackTestRequestDoesNotRetryModelValidation(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		err := &upstreamHTTPError{status: status, body: []byte(`{"error":{"message":"model not found"}}`)}
+		require.Falsef(t, shouldFallbackTestRequest(status, err), "status %d model errors must not retry", status)
+	}
+}
+
+func TestShouldFallbackTestRequestRetriesExplicitProtocolError(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		err := &upstreamHTTPError{status: status, body: []byte(`{"error":{"message":"Responses API is not supported"}}`)}
+		require.Truef(t, shouldFallbackTestRequest(status, err), "status %d protocol errors should retry", status)
+	}
+}
+
+func TestTestUpstreamDoesNotRetryMissingModel(t *testing.T) {
+	key := "relay-key"
+	var paths []string
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"message":"model not found"}}`))
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.False(t, result.OK)
+	require.Equal(t, "http_error", result.ErrorCode)
+	require.Equal(t, []string{"/v1/models", "/v1/responses"}, paths)
 }
 
 func TestTestUpstreamRejectsSuccessfulNonJSONResponse(t *testing.T) {
@@ -329,6 +369,35 @@ func TestTestUpstreamRejectsSuccessfulErrorEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.OK)
 	require.Equal(t, "invalid_response", result.ErrorCode)
+}
+
+func TestTestUpstreamFallsBackOnSuccessfulErrorEnvelope(t *testing.T) {
+	key := "relay-key"
+	var paths []string
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
+			return
+		}
+		if r.URL.Path == "/v1/responses" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"error":{"message":"Responses API is not supported"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chat-ok","object":"chat.completion"}`))
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.True(t, result.OK)
+	require.Empty(t, result.ErrorCode)
+	require.Equal(t, []string{"/v1/models", "/v1/responses", "/v1/chat/completions"}, paths)
 }
 
 func TestIsJSONObjectResponseRejectsEmptyAndScalar(t *testing.T) {

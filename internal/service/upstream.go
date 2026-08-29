@@ -416,7 +416,7 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 	}
 	started := time.Now()
 	status, requestErr := sendUpstreamTestRequest(testCtx, client, base+"/v1/responses", key, model, false)
-	if shouldFallbackTest(status) && testCtx.Err() == nil {
+	if shouldFallbackTestRequest(status, requestErr) && testCtx.Err() == nil {
 		status, requestErr = sendUpstreamTestRequest(testCtx, client, base+"/v1/chat/completions", key, model, true)
 	}
 	latency := time.Since(started).Milliseconds()
@@ -609,15 +609,34 @@ func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, k
 			return resp.StatusCode, readErr
 		}
 		if len(body) == 0 || len(body) > 1<<20 || !isJSONObjectResponse(body) {
+			var envelope map[string]any
+			if json.Unmarshal(body, &envelope) == nil {
+				if _, hasError := envelope["error"]; hasError {
+					return resp.StatusCode, errUpstreamErrorEnvelope
+				}
+			}
 			return resp.StatusCode, errInvalidUpstreamResponse
 		}
 		return resp.StatusCode, nil
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	return resp.StatusCode, nil
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	return resp.StatusCode, &upstreamHTTPError{status: resp.StatusCode, body: responseBody}
 }
 
 var errInvalidUpstreamResponse = errors.New("invalid upstream test response")
+var errUpstreamErrorEnvelope = errors.New("upstream returned an error envelope")
+
+type upstreamHTTPError struct {
+	status int
+	body   []byte
+}
+
+func (e *upstreamHTTPError) Error() string {
+	if len(e.body) == 0 {
+		return fmt.Sprintf("upstream returned HTTP %d", e.status)
+	}
+	return fmt.Sprintf("upstream returned HTTP %d: %s", e.status, strings.TrimSpace(string(e.body)))
+}
 
 func isJSONObjectResponse(body []byte) bool {
 	var value map[string]any
@@ -651,12 +670,63 @@ func shouldFallbackTest(status int) bool {
 	// Responses API is not implemented (501) while still serving Chat
 	// Completions. Treat it as a protocol capability rejection, alongside the
 	// other format/path responses that already trigger the compatibility retry.
-	return status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusMethodNotAllowed || status == http.StatusNotImplemented || status == http.StatusUnsupportedMediaType
+	return status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusMethodNotAllowed || status == http.StatusUnsupportedMediaType || status == http.StatusUnprocessableEntity || status == http.StatusNotImplemented
+}
+
+// shouldFallbackTestRequest narrows the ambiguous 400/422 cases using the
+// response text while keeping the legacy status-only helper for callers and
+// tests that only have a status code. This prevents a model validation error
+// from causing a second paid probe against the same relay.
+func shouldFallbackTestRequest(status int, requestErr error) bool {
+	if errors.Is(requestErr, errUpstreamErrorEnvelope) || errors.Is(requestErr, errInvalidUpstreamResponse) {
+		return true
+	}
+	if status == http.StatusNotFound {
+		var httpErr *upstreamHTTPError
+		if errors.As(requestErr, &httpErr) {
+			message := strings.ToLower(string(httpErr.body))
+			for _, marker := range []string{
+				"model not found", "model_not_found", "unknown model", "invalid model",
+				"model does not exist", "no such model", "model unavailable",
+			} {
+				if strings.Contains(message, marker) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		return shouldFallbackTest(status)
+	}
+	var httpErr *upstreamHTTPError
+	if !errors.As(requestErr, &httpErr) {
+		return false
+	}
+	message := strings.ToLower(string(httpErr.body))
+	for _, marker := range []string{
+		"not implemented", "not supported", "unsupported", "not support",
+		"method not allowed", "unknown endpoint", "unknown path", "content-type",
+		"protocol", "responses api", "chat completions", "messages api",
+		"invalid format", "format error", "route not found", "cannot decode",
+		"failed to decode", "unmarshal",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyUpstreamTestError(ctx context.Context, status int, requestErr error) string {
 	if requestErr != nil {
-		if errors.Is(requestErr, errInvalidUpstreamResponse) {
+		var httpErr *upstreamHTTPError
+		if errors.As(requestErr, &httpErr) {
+			requestErr = nil
+		}
+	}
+	if requestErr != nil {
+		if errors.Is(requestErr, errInvalidUpstreamResponse) || errors.Is(requestErr, errUpstreamErrorEnvelope) {
 			return "invalid_response"
 		}
 		if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {

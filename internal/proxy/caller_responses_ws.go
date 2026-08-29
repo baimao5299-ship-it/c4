@@ -167,7 +167,7 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 	// wsAttempt 内（不统一 codex 4xx 收尾差异：分类代码位置 + 错误文本来源）。
 	p.failoverLoop(w, r, domain.FormatOpenAIResponsesWS, domain.FormatOpenAIResponsesWS, reqID, groupID, start, reqModel, nil, sel,
 		attemptState{client: client, firstTyp: firstTyp, first: first, stripTier: stripTier},
-		p.wsAttempt, p.wsSink, true)
+		p.wsAttempt, p.wsSink, true, nil)
 }
 
 // wsAttempt HandleResponsesWS 的 attempt 实现（struct 方法 + 接口引用——不用

@@ -30,11 +30,12 @@ import (
 // capturedUpstream 记录最近一次请求的路径与体（上游协议断言），并按路径/stream
 // 返回对应协议的非流式 JSON 或 SSE 流。
 type capturedUpstream struct {
-	mu       sync.Mutex
-	path     string
-	body     map[string]any
-	stream   bool
-	dataOnly bool // /v1/responses 流式不产 event: 行（P3：非规范上游形态，同 fakeupstream）
+	mu         sync.Mutex
+	path       string
+	body       map[string]any
+	stream     bool
+	dataOnly   bool // /v1/responses 流式不产 event: 行（P3：非规范上游形态，同 fakeupstream）
+	rejectChat bool // 模拟仅支持 Responses 的兼容上游
 }
 
 func (c *capturedUpstream) last(t *testing.T) (string, map[string]any, bool) {
@@ -56,7 +57,12 @@ func (c *capturedUpstream) srv(t *testing.T) *httptest.Server {
 		}
 		c.mu.Lock()
 		c.path, c.body, c.stream = r.URL.Path, body, body["stream"] == true
+		rejectChat := c.rejectChat
 		c.mu.Unlock()
+		if rejectChat && r.URL.Path == "/v1/chat/completions" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		stream, _ := body["stream"].(bool)
 		switch r.URL.Path {
 		case "/v1/responses":
@@ -413,6 +419,45 @@ func TestConvertedAutoNegotiation(t *testing.T) {
 	require.Equal(t, "/v1/responses", path)
 	require.NotNil(t, body["input"])
 	require.NotContains(t, rec.Body.String(), "protocol conversion failed")
+}
+
+func TestConvertedAutoNegotiationAfterNativeCapabilityRejection(t *testing.T) {
+	up := &capturedUpstream{rejectChat: true}
+	srv := up.srv(t)
+	defer srv.Close()
+	p := newConvertedTestProxy(t, srv.URL,
+		[]domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses},
+		[]domain.ProtocolConvert{domain.ProtocolConvertAuto})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "native 405 should negotiate the Responses route")
+	path, body, _ := up.last(t)
+	require.Equal(t, "/v1/responses", path)
+	require.NotNil(t, body["input"], "fallback request must be converted to Responses shape")
+	require.NotContains(t, rec.Body.String(), "method not allowed")
+}
+
+func TestConvertedFallbackReleasesSelectionWhenAttemptBudgetEnds(t *testing.T) {
+	up := &capturedUpstream{rejectChat: true}
+	srv := up.srv(t)
+	defer srv.Close()
+	p := newConvertedTestProxy(t, srv.URL,
+		[]domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses},
+		[]domain.ProtocolConvert{domain.ProtocolConvertAuto})
+	p.cfg.FailoverAttempts = 1
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "protocol fallback at the final attempt must release its alternate selection")
 }
 
 // TestConvertedDirectionMismatch 组配置转换方向与请求格式不匹配 → 不转换

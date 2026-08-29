@@ -57,6 +57,14 @@ const defaultUpstreamMember = (upstream_id: number): UpstreamMemberDraft => ({
   enabled: true,
 })
 
+function makeAutoGroupName(prefix: string): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  const suffix = uuid
+    ? uuid.slice(0, 8)
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `${prefix}-${suffix}`
+}
+
 const draftFromUpstream = (member: components['schemas']['GroupUpstream']): UpstreamMemberDraft => ({
   upstream_id: member.UpstreamID,
   priority: String(member.Priority),
@@ -631,9 +639,9 @@ export default function Groups() {
     // Reset a previous failed submission so an old error does not look like a
     // new request failure when the dialog is opened again.
     create.reset()
-    // A usable name is generated up front so the operator can complete the
-    // three-step flow without inventing metadata. It remains editable.
-    setCreateName(`${t('groups.autoNamePrefix')}-${Date.now().toString(36)}`)
+    // A usable unique name is generated up front so the operator can complete
+    // the three-step flow without inventing metadata; it can be edited later.
+    setCreateName(makeAutoGroupName(t('groups.autoNamePrefix')))
     setCreateAllowedModels([])
     setCreateMembers([])
     createAutoModelKey.current = ''
@@ -691,10 +699,11 @@ export default function Groups() {
       const successful = responses.flatMap(response => response.status === 'fulfilled' && response.value.ok && response.value.models?.length ? [response.value.models] : [])
       const union = sortModelsLatestFirst(Array.from(new Set(successful.flat())))
       const allSucceeded = responses.length > 0 && responses.every(response => response.status === 'fulfilled' && response.value.ok && !!response.value.models?.length)
-      const models = allSucceeded && successful.length > 1
-        ? sortModelsLatestFirst(successful[0].filter(model => successful.every(list => list.includes(model))))
-        : union
-      return { models, partial: !allSucceeded }
+      // Upstream routing selects any healthy member that advertises the
+      // requested model. Keep the catalogue as a union so the UI exposes the
+      // same routes the scheduler can actually serve; an intersection here
+      // silently hid models supported by only one selected upstream.
+      return { models: union, partial: !allSucceeded }
     },
     enabled: (createOpen || editTarget != null) && activeMemberIDs.length > 0,
     staleTime: 0,
@@ -706,7 +715,11 @@ export default function Groups() {
     createMembers.length > 0 &&
     createAllowedModels.length > 0 &&
     activeModels.length > 0 &&
+    !upstreamRowsLoading &&
+    !upstreamRowsError &&
     !groupModels.isLoading &&
+    !groupModels.isFetching &&
+    !groupModels.isError &&
     !activeModelsPartial &&
     !create.isPending
   useEffect(() => {
@@ -905,7 +918,7 @@ export default function Groups() {
         </>
       )}
 
-      {/* —— 创建分组：表单（name + visibility）；创建成功仅提示，不再返回 key 明文 —— */}
+      {/* —— 创建分组：只需选择上游和模型；其余策略由安全默认值处理 —— */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 overflow-y-auto sm:top-1/2 sm:max-w-2xl sm:-translate-y-1/2">
           <DialogHeader>
@@ -913,19 +926,9 @@ export default function Groups() {
             <DialogDescription>{t('groups.newDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="grp-name">{t('groups.nameLabel')}</Label>
-              <Input
-                id="grp-name"
-                value={createName}
-                placeholder={t('groups.namePlaceholder')}
-                onChange={e => setCreateName(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && canSubmitCreate) {
-                    create.mutate(createName.trim())
-                  }
-                }}
-              />
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+              <div className="font-medium">{t('groups.autoNameLabel')}</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{t('groups.autoNameValue', { name: createName })}</div>
             </div>
             <UpstreamPoolFields
               mode={createRoutingMode}
