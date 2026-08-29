@@ -76,9 +76,13 @@ func newPGReposNoPool(t *testing.T) *repository.Repository {
 
 // seedPGTemplate 建模板（accounts.template_id 有外键，必先建）。
 func seedPGTemplate(t *testing.T, repos *repository.Repository) *domain.Template {
+	return seedPGTemplateNamed(t, repos, "t")
+}
+
+func seedPGTemplateNamed(t *testing.T, repos *repository.Repository, name string) *domain.Template {
 	t.Helper()
 	tpl, err := repos.Templates.CreateTemplate(context.Background(), &domain.Template{
-		Name: "t", BaseURL: "https://u/v1",
+		Name: name, BaseURL: "https://u/v1",
 		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
 	})
 	require.NoError(t, err)

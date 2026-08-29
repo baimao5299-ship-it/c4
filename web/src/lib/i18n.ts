@@ -10,6 +10,12 @@ import en from '@/locales/en.json'
 export const LANG_KEY = 'c3api_lang'
 export type AppLang = 'zh-CN' | 'en'
 
+// Each deployment can set a build-time brand without forking the console.
+// Empty values keep the repository defaults in both languages.
+const appName = import.meta.env.VITE_APP_NAME?.trim()
+const zhResource = appName ? { ...zh, common: { ...zh.common, appTitle: appName } } : zh
+const enResource = appName ? { ...en, common: { ...en.common, appTitle: appName } } : en
+
 // 语言解析顺序：localStorage c3api_lang → navigator.language（zh 开头 → zh-CN，否则 en）→ 默认 zh-CN。
 function detectLang(): AppLang {
   const saved = localStorage.getItem(LANG_KEY)
@@ -19,8 +25,8 @@ function detectLang(): AppLang {
 
 i18n.use(initReactI18next).init({
   resources: {
-    'zh-CN': { translation: zh },
-    en: { translation: en },
+    'zh-CN': { translation: zhResource },
+    en: { translation: enResource },
   },
   lng: detectLang(),
   fallbackLng: 'zh-CN',

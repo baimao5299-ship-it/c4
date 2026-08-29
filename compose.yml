@@ -10,18 +10,22 @@
 # GHCR 快速上手（预构建镜像，release 流水线发布）：docker pull ghcr.io/baimao5299-ship-it/c4:beta
 #   （:beta 为浮动 tag = 最新 beta；版本固定用 ghcr.io/baimao5299-ship-it/c4:v0.0.1-beta.1）
 
+name: c4
+
 services:
   db:
     image: postgres:18-alpine
     restart: unless-stopped
+    stop_grace_period: 60s
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: c3api
     volumes:
       # 目录挂载：PG 数据落盘宿主 ./deploy/data/pg（备份/迁移直接拷目录）。
-      # PG 18+ 要求挂载 /var/lib/postgresql（数据在 data 子目录，支持 pg_upgrade --link）
-      - ./deploy/data/pg:/var/lib/postgresql
+      # PG 18+ 要求挂载 /var/lib/postgresql（数据在 data 子目录，支持 pg_upgrade --link）。
+      # 发布脚本通过 PG_DATA_DIR 指向版本目录外的共享路径，升级时不会换库。
+      - ${PG_DATA_DIR:-./deploy/data/pg}:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d c3api"]
       interval: 5s
@@ -33,6 +37,7 @@ services:
   redis:
     image: redis:8-alpine
     restart: unless-stopped
+    stop_grace_period: 30s
     command: ["redis-server", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -55,7 +60,13 @@ services:
         # Vite embeds this public URL into the frontend bundle at build time.
         # Leave empty to show a clear not-configured state in the user portal.
         VITE_CARD_STORE_URL: ${VITE_CARD_STORE_URL:-}
+        # Optional per-deployment brand; empty keeps the C4 default.
+        VITE_APP_NAME: ${VITE_APP_NAME:-}
     restart: unless-stopped
+    init: true
+    # Allow in-flight streaming requests and billing flushers to drain before
+    # Docker sends SIGKILL during an upgrade or host reboot.
+    stop_grace_period: 90s
     depends_on:
       db:
         condition: service_healthy

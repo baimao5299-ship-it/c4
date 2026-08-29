@@ -57,6 +57,7 @@ func NewServer(opts Options) *Server {
 	// 顺序：accessLog 最外层、recoverer 内层（F4）——recoverer 的 w 即
 	// statusWriter，已写头判定（headersWritten）与 500 状态回写都经同一包装；
 	// 旧序（recoverer 外层）recoverer 只见裸 writer，无法感知已写头。
+	r.Use(securityHeaders)
 	r.Use(accessLog(opts.Logger))
 	r.Use(recoverer(opts.Logger))
 
@@ -162,4 +163,17 @@ func (w webFSNoDirs) Open(name string) (fs.File, error) {
 		return nil, fs.ErrNotExist
 	}
 	return f, nil
+}
+
+// securityHeaders adds response headers that are safe for both the API and the
+// embedded console. TLS/HSTS remains the responsibility of the public reverse
+// proxy, while these headers also protect local and development deployments.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
 }

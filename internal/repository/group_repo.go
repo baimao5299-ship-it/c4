@@ -201,7 +201,10 @@ func (r *GroupRepo) LoadGroupsAccounts(ctx context.Context) (map[int64][]*domain
 	// 模板侧嵌套 WithExt：快照合并 StripImageTools（W4；ext IN 参数数受模板
 	// 表实体数约束——同一小表界，见上方注释）；账号侧 ext 不 eager-load
 	// （FK=account_id 的 IN 参数数受账号规模驱动——触顶约束，见步骤 4）。
-	accs, err := r.client.Account.Query().Where(account.DeletedAtIsNil()).
+	accs, err := r.client.Account.Query().Where(
+		account.DeletedAtIsNil(),
+		account.HasTemplateWith(template.DeletedAtIsNil()),
+	).
 		WithTemplate(func(q *ent.TemplateQuery) {
 			q.Where(template.DeletedAtIsNil()).WithExt()
 		}).All(ctx)
@@ -371,7 +374,11 @@ func (r *GroupRepo) LoadGroupAccounts(ctx context.Context, groupID int64) ([]*do
 	// WHERE ...)`（子查询非参数列表，语句参数数恒为常量——与上方 EXISTS 谓词
 	// 同界）；account_ext 表按组定向取，不做全表扫描（组级定向重载语义）。
 	accs, err := r.client.Account.Query().
-		Where(account.DeletedAtIsNil(), account.HasGroupsWith(group.IDEQ(groupID), group.DeletedAtIsNil())).
+		Where(
+			account.DeletedAtIsNil(),
+			account.HasTemplateWith(template.DeletedAtIsNil()),
+			account.HasGroupsWith(group.IDEQ(groupID), group.DeletedAtIsNil()),
+		).
 		WithTemplate(func(q *ent.TemplateQuery) {
 			q.Where(template.DeletedAtIsNil()).WithExt()
 		}). // W4：ext 边快照合并 StripImageTools

@@ -22,7 +22,7 @@ func TestPGSoftDeletedRowsRejectMutation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("template", func(t *testing.T) {
-		tpl := seedPGTemplate(t, repos)
+		tpl := seedPGTemplateNamed(t, repos, "sd-mutation-template")
 		require.NoError(t, repos.DeleteTemplate(ctx, tpl.ID))
 
 		got, err := repos.GetTemplate(ctx, tpl.ID)
@@ -48,7 +48,7 @@ func TestPGSoftDeletedRowsRejectMutation(t *testing.T) {
 	})
 
 	t.Run("account", func(t *testing.T) {
-		tpl := seedPGTemplate(t, repos)
+		tpl := seedPGTemplateNamed(t, repos, "sd-mutation-account-template")
 		acc := seedPGAccount(t, repos, tpl.ID, "sd-mutation-account")
 		require.NoError(t, repos.DeleteAccount(ctx, acc.ID))
 
@@ -67,7 +67,7 @@ func TestPGSoftDeletedRowsRejectMutation(t *testing.T) {
 	})
 
 	t.Run("deleted group relations", func(t *testing.T) {
-		tpl := seedPGTemplate(t, repos)
+		tpl := seedPGTemplateNamed(t, repos, "sd-group-relation-template")
 		acc := seedPGAccount(t, repos, tpl.ID, "sd-group-relation-account")
 		user := seedPGUser(t, repos, "sd-group-relation@example.com")
 		group := seedPGGroup(t, repos, "sd-group-relation")

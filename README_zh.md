@@ -171,8 +171,10 @@ cd web && pnpm install && pnpm run dev
 
 ## 部署
 
+- `scripts/deploy.ps1` — Windows PowerShell 远程部署助手。默认只预览；加 `-Apply` 后会按当前已提交版本上传到独立目录、生成缺省密钥、启动并检查 `/healthz`。它会在端口冲突或已有非 C4 服务占用时停止，不会覆盖其他项目。
 - `compose.yml` — 生产编排：`db`（postgres:18-alpine，数据挂载在 `deploy/data/pg`）+ `redis`（redis:8-alpine，易失状态（协调 + 短时效验证码）——不持久化）+ `app`（单容器，非 root、配置只读挂载自 `deploy/config.local.toml`、健康检查）。`deploy/config.toml` 仍作为需要显式选择时的生产配置模板。
 - `Dockerfile` — 三阶段构建（node → go → alpine），产出内嵌 UI 的静态单二进制。
+- 公网入口示例见 [`deploy/PUBLIC_DEPLOYMENT.md`](./deploy/PUBLIC_DEPLOYMENT.md) 和 [`deploy/Caddyfile.example`](./deploy/Caddyfile.example)：C4 保持本机端口监听，由 Caddy 负责 HTTPS；不要直接开放 18080。
 - **双必需依赖**：PostgreSQL 18（全部持久状态，唯一真相源）+ Redis 8（可丢的易失状态——实例发现心跳与短时效邮箱验证码；永不作为缓存层）。二者均为启动强制项；勿配 `allkeys-lru` 等淘汰策略——验证码被淘汰仅致用户重发，无害但应避免。
 
 ## 许可

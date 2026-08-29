@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -109,6 +110,7 @@ func TestImportCodexAccountsPG(t *testing.T) {
 	})
 
 	t.Run("same key re-import updated credentials only", func(t *testing.T) {
+		originalExpiry := time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)
 		res, err := svc.ImportCodexOAuthAccounts(ctx, []domain.CodexOAuthImportItem{
 			{CodexEmail: "pg1@example.com", CodexAccountID: "pg-1",
 				CodexOAuthToken: "at-2", CodexOAuthRefreshToken: "rt-2"},
@@ -121,7 +123,8 @@ func TestImportCodexAccountsPG(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "at-2", *ext.CodexOAuthToken, "凭据更新")
 		require.Equal(t, "rt-2", *ext.CodexOAuthRefreshToken)
-		require.Nil(t, ext.CodexOAuthExpiresAt, "updated 不传 expires → 清 NULL（保旧语义）")
+		require.NotNil(t, ext.CodexOAuthExpiresAt, "updated 不传 expires → 保留已有过期时间")
+		require.True(t, originalExpiry.Equal(*ext.CodexOAuthExpiresAt), "accessToken-only 重导入不得清空已有过期时间")
 		require.NotNil(t, ext.CodexIdentity, "身份沿用")
 		acc, err := repos.Accounts.GetAccount(ctx, ext.AccountID)
 		require.NoError(t, err)

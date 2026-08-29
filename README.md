@@ -174,8 +174,10 @@ See `config.example.toml` for the full schema (server, log, admin, auth, db, red
 
 ## Deployment
 
+- `scripts/deploy.ps1` — Windows PowerShell remote deploy helper. It previews by default; `-Apply` uploads the current committed version into an isolated directory, generates missing secrets, starts Compose, and checks `/healthz`. It stops on port conflicts or a non-C4 service using the port and never overwrites another project.
 - `compose.yml` — production stack: one `db` (postgres:18-alpine, bind-mounted data under `deploy/data/pg`) + one `redis` (redis:8-alpine, ephemeral coordination + short-lived verification codes — no persistence) + one `app` container (non-root, read-only config mount from `deploy/config.local.toml`, healthcheck). `deploy/config.toml` remains the production template for deployments that choose it explicitly.
 - `Dockerfile` — three-stage build (node → go → alpine), producing a single static binary with the UI embedded.
+- Public entry guidance is in [`deploy/PUBLIC_DEPLOYMENT.md`](./deploy/PUBLIC_DEPLOYMENT.md) and [`deploy/Caddyfile.example`](./deploy/Caddyfile.example): keep C4 on localhost and let Caddy terminate HTTPS; do not expose port 18080 directly.
 - **Dual required dependencies**: PostgreSQL 18 (all durable state, source of record) + Redis 8 (ephemeral coordination + short-lived email verification codes — instance discovery heartbeats and verification codes; never a cache layer). Both are startup-mandatory. Do not set an eviction policy (`allkeys-lru` etc.) for this instance: an evicted code is benign (the user just re-requests one), but keep it out of the configuration.
 
 ### GC tuning (optional, default off)

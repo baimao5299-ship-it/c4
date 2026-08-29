@@ -43,6 +43,18 @@ func TestHealthz(t *testing.T) {
 	require.NotContains(t, body, "heap")
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	s := NewServer(Options{AdminToken: "tok"})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
+	require.Equal(t, "strict-origin-when-cross-origin", rec.Header().Get("Referrer-Policy"))
+	require.Equal(t, "camera=(), microphone=(), geolocation=()", rec.Header().Get("Permissions-Policy"))
+}
+
 func TestUnknownPath404(t *testing.T) {
 	s := NewServer(Options{AdminToken: "tok"})
 	req := httptest.NewRequest(http.MethodGet, "/nope", nil)

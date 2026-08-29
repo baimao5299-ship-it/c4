@@ -66,8 +66,9 @@ export default function Home() {
             ))}
           </div>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }} className="flex items-center justify-center">
-          <Button render={<Link to="/user/login" />}>{t('home.loginEntry')} <ArrowRight className="h-4 w-4" /></Button>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }} className="flex w-full flex-col items-stretch justify-center gap-2 sm:w-auto sm:flex-row">
+          <Button render={<Link to="/user/register" />}>{t('home.registerEntry')} <ArrowRight className="h-4 w-4" /></Button>
+          <Button variant="outline" render={<Link to="/user/login" />}>{t('home.loginEntry')}</Button>
         </motion.div>
       </main>
     </div>

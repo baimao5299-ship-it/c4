@@ -5,10 +5,10 @@
 // 用户端总览（/user 默认落地页）：me() 余额卡（Balance/MaxConcurrency/Status/注册时间）
 // + 近况（可用 keys 数 + 最近 7 天用量摘要）。卡片与动画延续管理端 dashboard 模式。
 // 单位语义：User.Balance 为 USD 浮点直显（$ + 2 位小数）；MaxConcurrency 0 = 不限。
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { BarChart3, CalendarDays, FileText, KeyRound, Ticket, Wallet, Zap, BookOpen, Copy, ArrowRight } from 'lucide-react'
+import { BarChart3, CalendarDays, Check, FileText, KeyRound, Ticket, Wallet, Zap, BookOpen, Copy, ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -16,6 +16,8 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { copyText } from '@/components/key-box'
 import { formatDateTime, formatUSD } from '@/components/fmt'
 import UserModels from '@/pages/user/models'
 
@@ -30,6 +32,14 @@ const cardGrid = 'grid grid-cols-1 gap-5 *:data-[slot=card]:bg-linear-to-t *:dat
 export default function UserOverview() {
   const { t } = useTranslation()
   const apiEndpoint = `${window.location.origin}/v1`
+  const [endpointCopied, setEndpointCopied] = useState(false)
+
+  const copyEndpoint = async () => {
+    if (await copyText(apiEndpoint)) {
+      setEndpointCopied(true)
+      window.setTimeout(() => setEndpointCopied(false), 2000)
+    }
+  }
 
   // 近 7 天窗口（挂载时固定，避免 queryKey 每次渲染变化导致无限 refetch）
   const [from, to] = useMemo(() => {
@@ -85,7 +95,20 @@ export default function UserOverview() {
                 </details>
               ))}
             </div>
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-background/60 p-3 text-xs text-muted-foreground"><Copy className="mt-0.5 size-4 shrink-0" /><span>{t('user.overview.endpointHint')} <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-foreground">{apiEndpoint}</code></span></div>
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-background/60 p-3 text-xs text-muted-foreground">
+              <Copy className="mt-0.5 size-4 shrink-0" />
+              <span className="min-w-0 flex-1">{t('user.overview.endpointHint')} <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-foreground">{apiEndpoint}</code></span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-11 shrink-0"
+                title={t('user.overview.copyEndpoint')}
+                aria-label={t('user.overview.copyEndpoint')}
+                onClick={() => { void copyEndpoint() }}
+              >
+                {endpointCopied ? <Check /> : <Copy />}
+              </Button>
+            </div>
           </div>
         </div>
       </motion.section>

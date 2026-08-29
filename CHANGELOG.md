@@ -10,6 +10,16 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+### Added
+
+- Added a guarded PowerShell deployment helper and public HTTPS deployment guide with a Caddy reverse-proxy template.
+
+### Changed
+
+- Mobile onboarding now has a one-tap API endpoint copy action.
+- Channel monitor keeps the last successful snapshot during a failed refresh and labels the data as stale instead of hiding usable status.
+- Added baseline security response headers and longer Compose stop grace periods so streaming and billing work can drain during upgrades.
+
 ## [v0.0.1-beta.7] - 2026-08-29
 
 ### Fixed
