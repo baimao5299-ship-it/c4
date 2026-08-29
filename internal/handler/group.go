@@ -44,6 +44,11 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	routingMode := domain.GroupRoutingModeAccounts
 	if in.RoutingMode != nil {
 		routingMode = domain.GroupRoutingMode(*in.RoutingMode)
+	} else if in.UpstreamMembers != nil && len(*in.UpstreamMembers) > 0 {
+		// The simplified admin flow only asks for the upstreams and models. Treat
+		// a non-empty member list as an upstream-routed group when callers omit
+		// the internal routing_mode field; explicit values still win.
+		routingMode = domain.GroupRoutingModeUpstreams
 	}
 	allowedModels := []string(nil)
 	if in.AllowedModels != nil {
@@ -165,6 +170,11 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if in.RoutingMode != nil {
 		g.RoutingMode = domain.GroupRoutingMode(*in.RoutingMode)
+	} else if in.UpstreamMembers != nil && len(*in.UpstreamMembers) > 0 {
+		// Keep PUT ergonomic for API clients that use the same compact payload as
+		// POST. Supplying members without an explicit mode switches the group to
+		// the upstream pool atomically with the relation replacement below.
+		g.RoutingMode = domain.GroupRoutingModeUpstreams
 	}
 	if in.AllowedModels != nil {
 		g.AllowedModels = append([]string(nil), (*in.AllowedModels)...)

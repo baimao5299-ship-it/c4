@@ -60,6 +60,11 @@ func (s *Service) SetGroupUpstreams(ctx context.Context, groupID int64, members 
 	if group.EffectiveRoutingMode() != domain.GroupRoutingModeUpstreams && len(members) > 0 {
 		return nil, fmt.Errorf("%w: account groups cannot contain upstream members", ErrInvalidInput)
 	}
+	if group.EffectiveRoutingMode() == domain.GroupRoutingModeUpstreams {
+		if err := s.validateAllowedModelsForUpstreams(ctx, group.AllowedModels, members); err != nil {
+			return nil, err
+		}
+	}
 	normalized, err := s.normalizeGroupUpstreams(ctx, groupID, members)
 	if err != nil {
 		return nil, err
@@ -98,6 +103,9 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	allowed, err := normalizeAllowedModels(group.AllowedModels)
 	if err != nil || len(allowed) == 0 {
 		return nil, fmt.Errorf("%w: upstream groups require at least one allowed model", ErrInvalidInput)
+	}
+	if err := s.validateAllowedModelsForUpstreams(ctx, allowed, members); err != nil {
+		return nil, err
 	}
 	store, ok := s.groupRouting.(GroupRoutingStore)
 	if !ok || store == nil {
@@ -139,6 +147,9 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 		if len(members) == 0 || len(normalizedGroup.AllowedModels) == 0 {
 			return nil, fmt.Errorf("%w: upstream groups require members and allowed models", ErrInvalidInput)
 		}
+		if err := s.validateAllowedModelsForUpstreams(ctx, normalizedGroup.AllowedModels, members); err != nil {
+			return nil, err
+		}
 		members, err = s.normalizeGroupUpstreams(ctx, group.ID, members)
 		if err != nil {
 			return nil, err
@@ -163,6 +174,56 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 	s.invalidateGroups(updated.ID)
 	s.publish(ctx, notify.Change{Multipliers: true, Keys: true, Groups: []int64{updated.ID}})
 	return updated, nil
+}
+
+// validateAllowedModelsForUpstreams prevents a group from being persisted with
+// an allowlist that no selected upstream can serve. A nil ModelsCheckedAt means
+// the endpoint has not produced a successful catalogue yet, so its capabilities
+// remain unknown and the model is accepted for compatibility. Once a catalogue
+// is confirmed, the recorded list is authoritative until the next successful
+// refresh; a transient refresh error keeps that last known list intact.
+func (s *Service) validateAllowedModelsForUpstreams(ctx context.Context, allowed []string, members []*domain.GroupUpstream) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+	if s == nil || s.upstreams == nil {
+		return errUpstreamStoreUnavailable
+	}
+	covered := make(map[string]bool, len(allowed))
+	for _, model := range allowed {
+		covered[model] = false
+	}
+	for _, member := range members {
+		if member == nil || member.UpstreamID <= 0 {
+			continue
+		}
+		u, err := s.upstreams.GetUpstream(ctx, member.UpstreamID)
+		if err != nil {
+			return mapRepoErr(err)
+		}
+		if u == nil || u.DeletedAt != nil {
+			return fmt.Errorf("%w: upstream id=%d", ErrNotFound, member.UpstreamID)
+		}
+		// An unchecked catalogue is deliberately treated as unknown rather than
+		// as an empty list. The first successful model read will tighten routing.
+		if u.ModelsCheckedAt == nil {
+			for model := range covered {
+				covered[model] = true
+			}
+			continue
+		}
+		for _, model := range u.Models {
+			if _, ok := covered[model]; ok {
+				covered[model] = true
+			}
+		}
+	}
+	for model, ok := range covered {
+		if !ok {
+			return fmt.Errorf("%w: no selected upstream supports model %q", ErrInvalidInput, model)
+		}
+	}
+	return nil
 }
 
 func (s *Service) normalizeGroupUpstreams(ctx context.Context, groupID int64, members []*domain.GroupUpstream) ([]*domain.GroupUpstream, error) {

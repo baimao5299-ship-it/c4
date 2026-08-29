@@ -188,6 +188,22 @@ func TestPostGroupsUpstreamsAtomic(t *testing.T) {
 		require.False(t, rows[1].Enabled)
 	})
 
+	t.Run("member payload infers upstream routing when mode is omitted", func(t *testing.T) {
+		h, store, firstID, _ := newAtomicGroupHandler(t)
+		rec := postAtomicGroup(t, h, `{
+			"name":"compact-route",
+			"allowed_models":["gpt-5.6"],
+			"upstream_members":[{"upstream_id":`+itoa(firstID)+`}]
+		}`)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var got Group
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		require.Equal(t, GroupRoutingMode(domain.GroupRoutingModeUpstreams), *got.RoutingMode)
+		store.mu.Lock()
+		require.Len(t, store.members[*got.ID], 1)
+		store.mu.Unlock()
+	})
+
 	t.Run("unknown member leaves no group", func(t *testing.T) {
 		h, store, _, _ := newAtomicGroupHandler(t)
 		rec := postAtomicGroup(t, h, `{
@@ -275,6 +291,35 @@ func TestPutGroupsUpstreamsAtomic(t *testing.T) {
 	require.Equal(t, "edited-route", store.groups[*group.ID].Name)
 	require.Equal(t, secondID, store.members[*group.ID][0].UpstreamID)
 	store.mu.Unlock()
+}
+
+func TestPutGroupsInfersUpstreamRoutingWhenMembersAreProvided(t *testing.T) {
+	h, store, firstID, _ := newAtomicGroupHandler(t)
+	created := postAtomicGroup(t, h, `{
+		"name":"compact-put","routing_mode":"accounts"
+	}`)
+	require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	var group Group
+	require.NoError(t, json.Unmarshal(created.Body.Bytes(), &group))
+	require.NotNil(t, group.ID)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/groups/"+itoa(*group.ID), strings.NewReader(`{
+		"name":"compact-put","allowed_models":["gpt-5.6"],
+		"upstream_members":[{"upstream_id":`+itoa(firstID)+`}]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.PutGroupsId(rec, req, *group.ID)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	store.mu.Lock()
+	stored := *store.groups[*group.ID]
+	members := cloneAtomicGroupMembers(store.members[*group.ID])
+	store.mu.Unlock()
+	require.Equal(t, domain.GroupRoutingModeUpstreams, stored.RoutingMode)
+	require.Equal(t, []string{"gpt-5.6"}, stored.AllowedModels)
+	require.Len(t, members, 1)
+	require.Equal(t, firstID, members[0].UpstreamID)
 }
 
 func TestPutGroupsSwitchToAccountsClearsOmittedMembers(t *testing.T) {

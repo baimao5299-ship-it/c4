@@ -79,6 +79,7 @@ function serializeUpstreamMembers(drafts: UpstreamMemberDraft[]): GroupUpstreamI
 
 function UpstreamPoolFields({
   mode,
+  showMode = true,
   onModeChange,
   upstreams,
   upstreamsLoading,
@@ -90,12 +91,14 @@ function UpstreamPoolFields({
   models,
   modelsLoading,
   modelsError,
+  onRetryModels,
   configError,
   allowedModels,
   onToggleModel,
   onSelectAllModels,
 }: {
   mode: GroupRoutingMode
+  showMode?: boolean
   onModeChange: (mode: GroupRoutingMode) => void
   upstreams: Upstream[]
   upstreamsLoading: boolean
@@ -107,6 +110,7 @@ function UpstreamPoolFields({
   models: string[]
   modelsLoading: boolean
   modelsError: boolean
+  onRetryModels?: () => void
   configError?: boolean
   allowedModels: string[]
   onToggleModel: (model: string, checked: boolean) => void
@@ -120,21 +124,27 @@ function UpstreamPoolFields({
   const options = models
   return (
     <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-      <div className="space-y-1.5">
-        <Label>{t('groups.routingModeLabel')}</Label>
-        <Select
-          items={Object.fromEntries((['accounts', 'upstreams'] as GroupRoutingMode[]).map(value => [value, t(`groups.routingModes.${value}`)]))}
-          value={mode}
-          onValueChange={value => onModeChange(value as GroupRoutingMode)}
-        >
-          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="accounts" label={t('groups.routingModes.accounts')}>{t('groups.routingModes.accounts')}</SelectItem>
-            <SelectItem value="upstreams" label={t('groups.routingModes.upstreams')}>{t('groups.routingModes.upstreams')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">{t(`groups.routingModeHint.${mode}`)}</p>
-      </div>
+      {!showMode && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+          <span className="font-medium">{t('groups.routingModeLabel')}</span>
+          <Badge variant="secondary">{t('groups.routingModes.upstreams')}</Badge>
+        </div>
+      )}
+      {showMode && <div className="space-y-1.5">
+          <Label>{t('groups.routingModeLabel')}</Label>
+          <Select
+            items={Object.fromEntries((['accounts', 'upstreams'] as GroupRoutingMode[]).map(value => [value, t(`groups.routingModes.${value}`)]))}
+            value={mode}
+            onValueChange={value => onModeChange(value as GroupRoutingMode)}
+          >
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="accounts" label={t('groups.routingModes.accounts')}>{t('groups.routingModes.accounts')}</SelectItem>
+              <SelectItem value="upstreams" label={t('groups.routingModes.upstreams')}>{t('groups.routingModes.upstreams')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t(`groups.routingModeHint.${mode}`)}</p>
+        </div>}
       {mode !== 'upstreams' ? null : (
         <>
           <div className="space-y-1.5">
@@ -183,7 +193,17 @@ function UpstreamPoolFields({
               <Label>{t('groups.allowedModelsLabel')}</Label>
               <Button type="button" variant="ghost" size="sm" onClick={onSelectAllModels} disabled={modelsLoading || options.length === 0}>{t('groups.selectAllModels')}</Button>
             </div>
-            {modelsLoading ? <p className="text-xs text-muted-foreground">{t('groups.loadingModels')}</p> : modelsError ? <p className="text-xs text-amber-700 dark:text-amber-400">{t('groups.modelsReadPartial')}</p> : configError ? <p className="text-xs text-destructive">{t('groups.upstreamConfigReadFailed')}</p> : null}
+            {modelsLoading ? <p className="text-xs text-muted-foreground">{t('groups.loadingModels')}</p> : modelsError ? (
+              <div className="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-400">
+                <span>{t('groups.modelsReadPartial')}</span>
+                {onRetryModels && <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetryModels}>{t('groups.retryModels')}</Button>}
+              </div>
+            ) : configError ? (
+              <div className="flex items-center justify-between gap-2 text-xs text-destructive">
+                <span>{t('groups.upstreamConfigReadFailed')}</span>
+                {onRetryModels && <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetryModels}>{t('groups.retryModels')}</Button>}
+              </div>
+            ) : null}
             {options.length === 0 ? (
               <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">{t('groups.noModels')}</p>
             ) : (
@@ -568,9 +588,13 @@ export default function Groups() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createVisibility, setCreateVisibility] = useState<GroupVisibility>('public')
-  const [createProtocols, setCreateProtocols] = useState<GroupProtocolConvert[]>(['auto'])
+  // Automatic negotiation is the only protocol mode exposed for new groups.
+  const createProtocols: GroupProtocolConvert[] = ['auto']
   const [createMultiplier, setCreateMultiplier] = useState('')
-  const [createRoutingMode, setCreateRoutingMode] = useState<GroupRoutingMode>('accounts')
+  // A new group is always backed by the upstream pool. Existing account groups
+  // remain supported in the edit flow, but a fresh group can never be created
+  // empty and then look available while routing nothing.
+  const createRoutingMode: GroupRoutingMode = 'upstreams'
   const [createAllowedModels, setCreateAllowedModels] = useState<string[]>([])
   const [createMembers, setCreateMembers] = useState<UpstreamMemberDraft[]>([])
   const createAutoModelKey = useRef('')
@@ -606,9 +630,7 @@ export default function Groups() {
     create.reset()
     setCreateName('')
     setCreateVisibility('public')
-    setCreateProtocols(['auto'])
     setCreateMultiplier('')
-    setCreateRoutingMode('accounts')
     setCreateAllowedModels([])
     setCreateMembers([])
     createAutoModelKey.current = ''
@@ -677,6 +699,13 @@ export default function Groups() {
   })
   const activeModels = useMemo(() => groupModels.data?.models ?? [], [groupModels.data])
   const activeModelsPartial = groupModels.data?.partial ?? false
+  const canSubmitCreate = createName.trim().length > 0 &&
+    createMembers.length > 0 &&
+    createAllowedModels.length > 0 &&
+    activeModels.length > 0 &&
+    !groupModels.isLoading &&
+    !activeModelsPartial &&
+    !create.isPending
   useEffect(() => {
     // A member replacement invalidates any allowlist entry that the fresh
     // catalogue no longer confirms. The save action stays disabled while the
@@ -888,7 +917,11 @@ export default function Groups() {
                 value={createName}
                 placeholder={t('groups.namePlaceholder')}
                 onChange={e => setCreateName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && createRoutingMode === 'accounts' && !create.isPending) create.mutate(createName.trim()) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && canSubmitCreate) {
+                    create.mutate(createName.trim())
+                  }
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -907,15 +940,8 @@ export default function Groups() {
             </div>
             <UpstreamPoolFields
               mode={createRoutingMode}
-              onModeChange={mode => {
-                setCreateRoutingMode(mode)
-                if (mode === 'accounts') {
-                  setCreateMembers([])
-                  setCreateAllowedModels([])
-                  createModelsTouched.current = false
-                  createAutoModelKey.current = ''
-                }
-              }}
+              showMode={false}
+              onModeChange={() => {}}
               upstreams={upstreamRows}
               upstreamsLoading={upstreamRowsLoading}
               upstreamsError={upstreamRowsError}
@@ -926,16 +952,14 @@ export default function Groups() {
               models={activeModels}
               modelsLoading={groupModels.isLoading}
               modelsError={activeModelsPartial}
+              onRetryModels={() => { void groupModels.refetch() }}
               configError={false}
               allowedModels={createAllowedModels}
               onToggleModel={toggleCreateModel}
               onSelectAllModels={selectAllCreateModels}
             />
-            <div className="space-y-1.5">
-              <Label>{t('groups.protocolConvertLabel')}</Label>
-              <ProtocolConvertCheckboxes value={createProtocols} onChange={setCreateProtocols} />
-              <p className="text-xs text-muted-foreground">{t('groups.protocolConvertHint')}</p>
-            </div>
+            {/* New groups use the gateway's automatic protocol negotiation. The
+                legacy selector remains available when editing an old group. */}
             <div className="space-y-1.5">
               <Label htmlFor="grp-create-multiplier">{t('groups.multiplierLabel')}</Label>
               <Input
@@ -947,7 +971,11 @@ export default function Groups() {
                 value={createMultiplier}
                 placeholder="1"
                 onChange={e => setCreateMultiplier(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && createName.trim() && createRoutingMode === 'accounts' && !create.isPending) create.mutate(createName.trim()) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && canSubmitCreate) {
+                    create.mutate(createName.trim())
+                  }
+                }}
               />
               <p className="text-xs text-muted-foreground">{t('groups.createMultiplierHint')}</p>
             </div>
@@ -957,7 +985,7 @@ export default function Groups() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={create.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => create.mutate(createName.trim())} disabled={create.isPending || !createName.trim() || (createRoutingMode === 'upstreams' && (createMembers.length === 0 || groupModels.isLoading || activeModelsPartial || activeModels.length === 0 || createAllowedModels.length === 0))}>
+            <Button onClick={() => create.mutate(createName.trim())} disabled={!canSubmitCreate}>
               {create.isPending ? t('common.creating') : t('common.create')}
             </Button>
           </DialogFooter>
@@ -1002,6 +1030,7 @@ export default function Groups() {
               models={activeModels}
               modelsLoading={groupModels.isLoading || editUpstreamConfig.isLoading}
               modelsError={activeModelsPartial}
+              onRetryModels={() => { void groupModels.refetch() }}
               configError={editUpstreamConfig.isError}
               allowedModels={editAllowedModels}
               onToggleModel={(model, checked) => toggleModel(setEditAllowedModels, model, checked)}
