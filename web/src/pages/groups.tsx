@@ -80,6 +80,7 @@ function serializeUpstreamMembers(drafts: UpstreamMemberDraft[]): GroupUpstreamI
 function UpstreamPoolFields({
   mode,
   showMode = true,
+  showMemberOptions = true,
   onModeChange,
   upstreams,
   upstreamsLoading,
@@ -99,6 +100,7 @@ function UpstreamPoolFields({
 }: {
   mode: GroupRoutingMode
   showMode?: boolean
+  showMemberOptions?: boolean
   onModeChange: (mode: GroupRoutingMode) => void
   upstreams: Upstream[]
   upstreamsLoading: boolean
@@ -173,9 +175,9 @@ function UpstreamPoolFields({
                         <span className="min-w-0 flex-1 truncate font-medium" title={upstream.Name}>{upstream.Name || `#${id}`}</span>
                         <span className="text-xs text-muted-foreground">#{id}</span>
                         {upstream.Status !== 'active' && <Badge variant="outline" className="text-xs">{t('groups.upstreamDisabled')}</Badge>}
-                        {member && <Switch checked={member.enabled} onCheckedChange={enabled => onUpdate(id, { enabled })} aria-label={t(member.enabled ? 'groups.disableMember' : 'groups.enableMember')} />}
+                        {member && showMemberOptions && <Switch checked={member.enabled} onCheckedChange={enabled => onUpdate(id, { enabled })} aria-label={t(member.enabled ? 'groups.disableMember' : 'groups.enableMember')} />}
                       </div>
-                      {member && (
+                      {member && showMemberOptions && (
                         <div className="grid grid-cols-3 gap-2 pl-6">
                           <div className="space-y-1"><Label className="text-xs">{t('groups.priorityLabel')}</Label><Input type="number" min={0} max={100000} value={member.priority} onChange={event => onUpdate(id, { priority: event.target.value })} className="h-8" /></div>
                           <div className="space-y-1"><Label className="text-xs">{t('groups.weightLabel')}</Label><Input type="number" min={1} max={10000} value={member.weight} onChange={event => onUpdate(id, { weight: event.target.value })} className="h-8" /></div>
@@ -583,14 +585,15 @@ export default function Groups() {
     })
   }
 
-  // —— 创建（表单：name + visibility + protocol_convert 多选 + price_multiplier；
-  //     倍率留空 = 省略键，后端按 ×1）——
+  // —— 创建（名称 + 上游 + 模型；其余策略使用安全默认值）——
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
-  const [createVisibility, setCreateVisibility] = useState<GroupVisibility>('public')
+  // New groups are intentionally opinionated: public, x1 and automatic
+  // protocol negotiation. Advanced policy remains available in edit.
+  const createVisibility: GroupVisibility = 'public'
   // Automatic negotiation is the only protocol mode exposed for new groups.
   const createProtocols: GroupProtocolConvert[] = ['auto']
-  const [createMultiplier, setCreateMultiplier] = useState('')
+  const createMultiplier = ''
   // A new group is always backed by the upstream pool. Existing account groups
   // remain supported in the edit flow, but a fresh group can never be created
   // empty and then look available while routing nothing.
@@ -628,9 +631,9 @@ export default function Groups() {
     // Reset a previous failed submission so an old error does not look like a
     // new request failure when the dialog is opened again.
     create.reset()
-    setCreateName('')
-    setCreateVisibility('public')
-    setCreateMultiplier('')
+    // A usable name is generated up front so the operator can complete the
+    // three-step flow without inventing metadata. It remains editable.
+    setCreateName(`${t('groups.autoNamePrefix')}-${Date.now().toString(36)}`)
     setCreateAllowedModels([])
     setCreateMembers([])
     createAutoModelKey.current = ''
@@ -924,23 +927,10 @@ export default function Groups() {
                 }}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="grp-visibility">{t('groups.visibilityLabel')}</Label>
-              <Select
-                items={Object.fromEntries([['public', t('groups.visibilityPublic')], ['private', t('groups.visibilityPrivate')]])}
-                value={createVisibility}
-                onValueChange={v => setCreateVisibility(v as GroupVisibility)}
-              >
-                <SelectTrigger id="grp-visibility" className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
-                  <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <UpstreamPoolFields
               mode={createRoutingMode}
               showMode={false}
+              showMemberOptions={false}
               onModeChange={() => {}}
               upstreams={upstreamRows}
               upstreamsLoading={upstreamRowsLoading}
@@ -958,27 +948,9 @@ export default function Groups() {
               onToggleModel={toggleCreateModel}
               onSelectAllModels={selectAllCreateModels}
             />
-            {/* New groups use the gateway's automatic protocol negotiation. The
-                legacy selector remains available when editing an old group. */}
-            <div className="space-y-1.5">
-              <Label htmlFor="grp-create-multiplier">{t('groups.multiplierLabel')}</Label>
-              <Input
-                id="grp-create-multiplier"
-                type="number"
-                min={0}
-                max={10}
-                step={0.1}
-                value={createMultiplier}
-                placeholder="1"
-                onChange={e => setCreateMultiplier(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && canSubmitCreate) {
-                    create.mutate(createName.trim())
-                  }
-                }}
-              />
-              <p className="text-xs text-muted-foreground">{t('groups.createMultiplierHint')}</p>
-            </div>
+            <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              {t('groups.createDefaultsHint')}
+            </p>
             {create.isError && errMsg(create.error) && (
               <p className="text-sm text-destructive">{errMsg(create.error)}</p>
             )}
