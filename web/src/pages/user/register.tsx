@@ -59,7 +59,7 @@ export default function UserRegister() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-muted via-background to-background">
       <div className="absolute right-4 top-4 flex items-center gap-2"><ModeToggle /><div className="inline-flex items-center gap-1 rounded-md border bg-background p-0.5">{LANGS.map(({ code: c, label }) => <Button key={c} size="sm" variant="ghost" className={cn('h-7 min-w-9 px-2', lang === c && 'bg-secondary text-secondary-foreground')} onClick={() => setLang(c)}>{label}</Button>)}</div></div>
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <Card className="w-96"><CardHeader><CardTitle className="flex items-center gap-2"><UserPlus className="h-5 w-5" /> {t('user.register.title')}</CardTitle></CardHeader>
+        <Card className="w-[min(calc(100vw-2rem),24rem)]"><CardHeader><CardTitle className="flex items-center gap-2"><UserPlus className="h-5 w-5" /> {t('user.register.title')}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">{t('user.register.subtitle')}</p>
             <Input type="email" placeholder={t('user.auth.email')} value={email} onChange={e => { setEmail(e.target.value); setErr('') }} disabled={step==='code'} />

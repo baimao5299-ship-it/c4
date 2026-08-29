@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { CircleCheck, Ticket } from 'lucide-react'
+import { CircleCheck, Ticket, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { ApiError, userApi } from '@/lib/api/client'
@@ -18,7 +18,6 @@ import { PagePagination } from '@/components/page-pagination'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from '@/components/ui/toast'
@@ -56,7 +55,7 @@ export default function UserRedemptions() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [code, setCode] = useState('')
-  const [applied, setApplied] = useState<Applied | null>(null)
+  const [applied, setApplied] = useState<Array<{ code: string; applied?: Applied; error?: string }>>([])
 
   // —— 兑换记录：增强分页范式（page/page_size，1-based）——
   const [page, setPage] = useState(1)
@@ -74,38 +73,46 @@ export default function UserRedemptions() {
   }, [isLoading, isError, rows.length, page])
 
   const redeem = useMutation({
-    mutationFn: (c: string) => userApi.redeem(c),
-    onSuccess: res => {
-      setApplied(res.applied)
+    // 保持每个兑换码独立提交：服务端的单码事务和幂等语义不变，批量只是
+    // 用户端一次输入、按顺序执行并汇总结果，因此中途失败不会吞掉已成功的码。
+    mutationFn: async (codes: string[]) => {
+      const results: Array<{ code: string; applied?: Applied; error?: string }> = []
+      for (const value of codes) {
+        try {
+          const result = await userApi.redeem(value)
+          results.push({ code: value, applied: result.applied })
+        } catch (error) {
+          results.push({ code: value, error: error instanceof ApiError ? error.message : t('user.common.error') })
+        }
+      }
+      return results
+    },
+    onSuccess: results => {
+      setApplied(results)
       setCode('')
       // 刷新记录 + 保持当前页（queryKey 前缀失效，当前页数据重新拉取）
       qc.invalidateQueries({ queryKey: ['user', 'redemptions'] })
       // 余额/并发上限可能变化 → 刷新总览数据（overview 余额卡）
       qc.invalidateQueries({ queryKey: ['user', 'me'] })
-      toast.add({ title: t('user.redemptions.successTitle'), description: appliedText(res.applied, t), type: 'success' })
-    },
-    onError: (e: unknown) => {
-      // 失败 toast 区分：400 = 无效码（不存在/失效/过期/用尽，服务端统一不泄露细节）；
-      // 409 = 已兑换过；其余 = 网络/服务端错误（ApiError 的 message = 服务端 error 字段）。
-      if (e instanceof ApiError && e.status === 400) {
-        toast.add({ title: t('user.redemptions.invalidCode'), type: 'error' })
-      } else if (e instanceof ApiError && e.status === 409) {
-        toast.add({ title: t('user.redemptions.alreadyRedeemed'), type: 'error' })
-      } else {
-        toast.add({
-          title: t('user.redemptions.redeemFailed'),
-          description: e instanceof ApiError ? e.message : t('user.common.error'),
-          type: 'error',
-        })
-      }
+      const successCount = results.filter(result => result.applied).length
+      const failedCount = results.length - successCount
+      toast.add({
+        title: failedCount ? t('user.redemptions.partialTitle') : t('user.redemptions.successTitle'),
+        description: t('user.redemptions.batchSummary', { success: successCount, failed: failedCount }),
+        type: failedCount ? 'error' : 'success',
+      })
     },
   })
 
   const submit = () => {
-    const c = code.trim()
-    if (!c || redeem.isPending) return
-    setApplied(null) // 新一次兑换开始，清掉上次的成功回执
-    redeem.mutate(c)
+    const values = Array.from(new Set(code.split(/[\s,，;；]+/).map(value => value.trim()).filter(Boolean)))
+    if (!values.length || redeem.isPending) return
+    if (values.length > 50) {
+      toast.add({ title: t('user.redemptions.tooMany'), type: 'error' })
+      return
+    }
+    setApplied([])
+    redeem.mutate(values)
   }
 
   return (
@@ -123,26 +130,34 @@ export default function UserRedemptions() {
             <CardDescription>{t('user.redemptions.codeHint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex gap-3">
-              <Input
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <textarea
+                className="min-h-24 w-full resize-y rounded-md border border-input bg-background/70 px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 value={code}
                 onChange={e => setCode(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') submit() }}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit() }}
                 placeholder={t('user.redemptions.codePlaceholder')}
                 autoComplete="off"
                 spellCheck={false}
                 disabled={redeem.isPending}
               />
-              <Button className="shrink-0" onClick={submit} disabled={!code.trim() || redeem.isPending}>
-                {redeem.isPending ? t('user.redemptions.redeeming') : t('user.redemptions.redeem')}
+              <Button className="shrink-0 sm:self-end" onClick={submit} disabled={!code.trim() || redeem.isPending}>
+                {redeem.isPending ? <><LoaderCircle className="animate-spin" />{t('user.redemptions.redeeming')}</> : <><Ticket />{t('user.redemptions.redeem')}</>}
               </Button>
             </div>
-            {applied && (
-              <Alert>
-                <CircleCheck className="size-4 text-emerald-700 dark:text-emerald-400" />
-                <AlertTitle>{t('user.redemptions.successTitle')}</AlertTitle>
-                <AlertDescription>{appliedText(applied, t)}</AlertDescription>
-              </Alert>
+            <p className="text-xs text-muted-foreground">{t('user.redemptions.batchHint')}</p>
+            {applied.length > 0 && (
+              <div className="space-y-2">
+                {applied.map(result => result.applied ? (
+                  <Alert key={result.code}>
+                    <CircleCheck className="size-4 text-emerald-700 dark:text-emerald-400" />
+                    <AlertTitle>{result.code}</AlertTitle>
+                    <AlertDescription>{appliedText(result.applied, t)}</AlertDescription>
+                  </Alert>
+                ) : (
+                  <Alert key={result.code} variant="destructive"><AlertTitle>{result.code}</AlertTitle><AlertDescription>{result.error || t('user.redemptions.redeemFailed')}</AlertDescription></Alert>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

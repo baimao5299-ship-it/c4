@@ -68,7 +68,7 @@ export default function UserLogin() {
         </div>
       </div>
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <Card className="w-96">
+        <Card className="w-[min(calc(100vw-2rem),24rem)]">
           <CardHeader><CardTitle className="flex items-center gap-2"><LogIn className="h-5 w-5" /> {t('user.auth.title')}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">{t('user.auth.subtitle')}</p>

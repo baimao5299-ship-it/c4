@@ -2,9 +2,9 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu } from 'lucide-react'
+import { LayoutDashboard, Boxes, Server, Users, UserCog, FolderOpen, FileText, BarChart3, ScrollText, Ticket, Coins, Settings, KeyRound, Cpu, Menu, Activity } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
@@ -30,11 +30,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 // 用户中心菜单组（个人中心入口在底部用户卡内——用户裁决 2026-08-15，不放导航）
 const userNav = [
   { to: '/user', key: 'user.nav.overview', icon: LayoutDashboard, end: true },
+  { to: '/user/models', key: 'user.nav.models', icon: Activity, end: false },
   { to: '/user/keys', key: 'user.nav.keys', icon: KeyRound, end: false },
   { to: '/user/logs', key: 'user.nav.logs', icon: FileText, end: false },
   { to: '/user/stats', key: 'user.nav.stats', icon: BarChart3, end: false },
   { to: '/user/redemptions', key: 'user.nav.redemptions', icon: Ticket, end: false },
 ]
+
+// 手机底栏只保留用户完成一次调用所需的五个入口；统计仍可从顶部菜单进入。
+const mobileUserNav = [userNav[0], userNav[1], userNav[2], userNav[3], userNav[5]]
 
 // platform_admin 专属的管理端菜单组（排序 = 功能边界，2026-08-15 用户裁决）：
 // 概览独立首位 → 代理配置域（模板/账户/规则——上游资源与转发策略）→ 客户域
@@ -164,7 +168,7 @@ export default function AppShell() {
               </div>
             </div>
           </header>
-          <div data-od-id="app-shell-content" className="@container/main flex flex-col bg-transparent px-4 pb-6 pt-7 lg:px-8 lg:pb-8 lg:pt-9">
+          <div data-od-id="app-shell-content" className="@container/main flex flex-col bg-transparent px-4 pb-24 pt-7 lg:px-8 lg:pb-8 lg:pt-9">
             <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 md:gap-6">
               <motion.div key={location.pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                 <Outlet />
@@ -172,6 +176,27 @@ export default function AppShell() {
             </div>
           </div>
         </ScrollArea>
+        {/* 手机端把最高频的五个动作固定在拇指可达区域；桌面端继续使用完整侧栏。 */}
+        <nav
+          data-od-id="app-shell-mobile-bottom-nav"
+          aria-label={t('user.nav.userSection')}
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[rgba(19,45,83,0.2)] bg-[rgb(248_251_255_/_88%)] px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_28px_rgba(19,45,83,0.12)] backdrop-blur-xl dark:border-white/15 dark:bg-[rgb(20_26_35_/_90%)] md:hidden"
+        >
+          {mobileUserNav.map(({ to, key, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => cn(
+                'flex min-h-14 flex-col items-center justify-center gap-1 rounded-[10px] px-1 text-[10px] font-medium transition-colors',
+                isActive ? 'text-primary' : 'text-muted-foreground',
+              )}
+            >
+              <Icon className="size-5" />
+              <span className="max-w-full truncate">{t(key)}</span>
+            </NavLink>
+          ))}
+        </nav>
       </main>
     </div>
   )

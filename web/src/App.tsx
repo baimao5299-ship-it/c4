@@ -15,6 +15,7 @@ import UserLogin from '@/pages/user/login'
 import UserRegister from '@/pages/user/register'
 import ForgotPassword from '@/pages/user/forgot-password'
 import UserOverview from '@/pages/user/overview'
+import UserModels from '@/pages/user/models'
 import UserKeys from '@/pages/user/keys'
 import UserLogs from '@/pages/user/logs'
 import UserStats from '@/pages/user/stats'
@@ -74,6 +75,7 @@ const router = createBrowserRouter([
         path: 'user',
         children: [
           { index: true, element: <UserOverview /> },
+          { path: 'models', element: <UserModels /> },
           { path: 'profile', element: <UserProfile /> },
           { path: 'keys', element: <UserKeys /> },
           { path: 'logs', element: <UserLogs /> },
