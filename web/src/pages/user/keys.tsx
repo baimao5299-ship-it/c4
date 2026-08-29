@@ -293,7 +293,7 @@ export default function UserKeys() {
         </motion.div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-lg">
+          <div className="hidden overflow-hidden rounded-lg md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -334,6 +334,31 @@ export default function UserKeys() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {rows.map(k => (
+              <Card key={k.ID} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold" title={k.Name}>{k.Name || `#${k.ID}`}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t('user.keys.groupLabel')} #{k.GroupID ?? '—'} · {formatDateTime(k.CreatedAt)}</p>
+                  </div>
+                  <StatusBadge status={k.Status} />
+                </div>
+                <div className="mt-3 rounded-lg bg-muted/40 p-2">
+                  <KeyCell raw={k.key} />
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <div><dt className="text-xs text-muted-foreground">{t('user.keys.table.maxConcurrency')}</dt><dd className="mt-0.5 tabular-nums">{k.MaxConcurrency == null ? '—' : k.MaxConcurrency === 0 ? t('user.overview.unlimited') : k.MaxConcurrency}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">{t('user.keys.table.quota')}</dt><dd className="mt-0.5 tabular-nums">{k.Quota ? `${k.QuotaUsed ?? 0} / ${k.Quota}` : t('user.keys.unlimited')}</dd></div>
+                </dl>
+                <div className="mt-3 flex justify-end gap-1 border-t pt-3">
+                  <Button variant="ghost" size="icon-sm" className="size-11" title={t('common.edit')} aria-label={t('common.edit')} onClick={() => openEdit(k)}><Pencil /></Button>
+                  <Button variant="ghost" size="icon-sm" className="size-11" title={t('user.keys.rotate')} aria-label={t('user.keys.rotate')} onClick={() => openRotate(k)} disabled={rotate.isPending}><RefreshCcw /></Button>
+                  <Button variant="ghost" size="icon-sm" className="size-11 text-destructive" title={t('common.delete')} aria-label={t('common.delete')} onClick={() => openDelete(k)} disabled={del.isPending}><Trash2 /></Button>
+                </div>
+              </Card>
+            ))}
           </div>
           <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onOffsetChange={setOffset} onLimitChange={changeLimit} />
         </>
