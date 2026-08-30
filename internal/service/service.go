@@ -398,6 +398,10 @@ type Service struct {
 	// upstreamHTTPClient is shared with the proxy path so admin probes and
 	// balance checks observe the same explicit proxy/DNS behavior.
 	upstreamHTTPClient *http.Client
+	// upstreamValidationMu serializes model-snapshot writers. A batch and a
+	// single-row refresh otherwise could finish out of order and publish an
+	// older capability result over a newer one even when endpoint/key match.
+	upstreamValidationMu sync.Mutex
 	// upstreamProxyURL is the startup fallback. A persisted
 	// upstream_proxy_url setting can override it at runtime without replacing
 	// the process or interrupting in-flight requests.

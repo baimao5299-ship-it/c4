@@ -69,6 +69,19 @@ func (h *AdminAPI) PostUpstreamsModels(w http.ResponseWriter, r *http.Request) {
 	httpface.WriteJSON(w, http.StatusOK, toAPIUpstreamModels(result))
 }
 
+// PostUpstreamsValidateAll runs a complete model-capability check for every
+// saved upstream and returns one independent result per row. A failed relay is
+// represented inside the 200 response so the remaining upstreams are still
+// checked and the operator can act on the full inventory in one click.
+func (h *AdminAPI) PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request) {
+	result, err := h.svc.ValidateAllUpstreams(r.Context())
+	if err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
+	httpface.WriteJSON(w, http.StatusOK, toAPIUpstreamValidationSummary(result))
+}
+
 func (h *AdminAPI) GetUpstreamsId(w http.ResponseWriter, r *http.Request, id int64) {
 	u, err := h.svc.GetUpstream(r.Context(), id)
 	if err != nil {
@@ -264,7 +277,10 @@ func toAPIUpstream(u *domain.Upstream) Upstream {
 	}
 	var models *[]string
 	if u.Models != nil {
-		copyModels := append([]string(nil), u.Models...)
+		// Keep a verified empty catalogue as [] rather than turning it into JSON
+		// null. The distinction is meaningful: [] means the last complete probe
+		// found no routable models, while nil means no snapshot is known.
+		copyModels := append([]string{}, u.Models...)
 		models = &copyModels
 	}
 	out := Upstream{
@@ -355,4 +371,40 @@ func toAPIUpstreamModels(result *service.UpstreamModelsResult) UpstreamModelsRes
 		response.ErrorCode = &code
 	}
 	return response
+}
+
+func toAPIUpstreamValidationSummary(result *service.UpstreamValidationSummary) UpstreamValidationSummary {
+	if result == nil {
+		return UpstreamValidationSummary{Items: []UpstreamValidationItem{}}
+	}
+	items := make([]UpstreamValidationItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		models := append([]string{}, item.Models...)
+		var code *UpstreamValidationItemErrorCode
+		if item.ErrorCode != "" {
+			v := UpstreamValidationItemErrorCode(item.ErrorCode)
+			code = &v
+		}
+		items = append(items, UpstreamValidationItem{
+			Upstream:           toAPIUpstream(item.Upstream),
+			Attempted:          item.Attempted,
+			Models:             models,
+			ModelsTotal:        item.ModelsTotal,
+			ModelsChecked:      item.ModelsChecked,
+			ModelsAvailable:    item.ModelsAvailable,
+			ModelsFailed:       item.ModelsFailed,
+			ValidationComplete: item.ValidationComplete,
+			Ok:                 item.OK,
+			LatencyMs:          item.LatencyMS,
+			ErrorCode:          code,
+		})
+	}
+	return UpstreamValidationSummary{
+		Total:      result.Total,
+		Completed:  result.Completed,
+		Passed:     result.Passed,
+		Failed:     result.Failed,
+		DurationMs: result.DurationMS,
+		Items:      items,
+	}
 }

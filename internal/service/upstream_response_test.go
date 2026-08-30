@@ -15,16 +15,25 @@ func TestIsJSONObjectResponseRequiresProviderEnvelope(t *testing.T) {
 		[]byte(`{"status":"ok"}`),
 		[]byte(`{"message":"ok"}`),
 		[]byte(`{"error":null}`),
+		[]byte(`{"object":"error"}`),
+		[]byte(`{"object":"status"}`),
 	} {
 		require.Falsef(t, isJSONObjectResponse(body), "placeholder body %q must be rejected", body)
 	}
 	for _, body := range [][]byte{
 		[]byte(`{"id":"resp_1"}`),
 		[]byte(`{"object":"chat.completion"}`),
+		[]byte(`{"choices":[{"index":0}]}`),
+		[]byte(`{"output":[{"type":"message"}]}`),
+		[]byte(`{"data":[{"id":"item"}]}`),
+	} {
+		require.Truef(t, isJSONObjectResponse(body), "provider envelope %q must be accepted", body)
+	}
+	for _, body := range [][]byte{
 		[]byte(`{"choices":[]}`),
 		[]byte(`{"output":[]}`),
 		[]byte(`{"data":[]}`),
 	} {
-		require.Truef(t, isJSONObjectResponse(body), "provider envelope %q must be accepted", body)
+		require.Falsef(t, isJSONObjectResponse(body), "empty provider envelope %q must be rejected", body)
 	}
 }

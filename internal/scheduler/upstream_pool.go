@@ -2,6 +2,7 @@
 package scheduler
 
 import (
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -96,9 +97,9 @@ func newUpstreamSnapshot(member *domain.GroupUpstream, old *upstreamSnapshot) *u
 		concurrency: new(atomic.Int64), state: new(atomic.Pointer[upstreamState]),
 	}
 	if member.Upstream != nil {
-		us.endpoint = strings.TrimRight(strings.TrimSpace(member.Upstream.BaseURL), "/")
+		us.endpoint = normalizeUpstreamEndpoint(member.Upstream.BaseURL)
 		if member.Upstream.UpstreamKey != nil {
-			us.key = strings.TrimSpace(*member.Upstream.UpstreamKey)
+			us.key = normalizeUpstreamKey(member.Upstream.UpstreamKey)
 		}
 	}
 	var current *upstreamState
@@ -123,6 +124,31 @@ func newUpstreamSnapshot(member *domain.GroupUpstream, old *upstreamSnapshot) *u
 	}
 	us.state.Store(upstreamStateFromMember(member, current))
 	return us
+}
+
+// normalizeUpstreamEndpoint keeps the scheduler's endpoint identity aligned
+// with the service and aiclient conventions: the stored upstream URL is a
+// bare root, while OpenAI protocol paths add /v1 themselves. Older rows may
+// still contain a trailing /v1 (in any case or with extra slashes); treating
+// that spelling as equivalent prevents requests from being sent to /v1/v1.
+func normalizeUpstreamEndpoint(base string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Path == "" {
+		return base
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	lower := strings.ToLower(path)
+	if lower == "/v1" || strings.HasSuffix(lower, "/v1") {
+		path = path[:len(path)-len("/v1")]
+		if path == "/" {
+			path = ""
+		}
+		parsed.Path = path
+		parsed.RawPath = ""
+		base = parsed.String()
+	}
+	return strings.TrimRight(base, "/")
 }
 
 func buildUpstreamSnapshots(groups map[int64]*groupSnapshot, configs map[int64]*domain.Group, old map[int64]*upstreamSnapshot) map[int64]*upstreamSnapshot {
@@ -394,19 +420,33 @@ func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format doma
 			if cur >= int64(limit) || !item.concurrency.CompareAndSwap(cur, cur+1) {
 				continue
 			}
-			key := ""
-			if item.upstream.UpstreamKey != nil {
-				key = strings.TrimSpace(*item.upstream.UpstreamKey)
-			}
 			return &Selection{
 				TargetKind: TargetKindUpstreamMember, TargetID: item.member.ID, GroupID: groupID,
-				AccountID: 0, TemplateID: 0, BaseURL: strings.TrimRight(item.upstream.BaseURL, "/"),
-				Format: format, UpstreamKey: key, CredentialType: credential.TypeAPIKey, Model: model,
+				AccountID: 0, TemplateID: 0, BaseURL: item.endpoint,
+				Format: format, UpstreamKey: item.key, CredentialType: credential.TypeAPIKey, Model: model,
 				upstreamRef: item,
 			}, nil
 		}
 	}
 	return nil, ErrNoAvailable
+}
+
+// normalizeUpstreamKey keeps old rows that stored a copied Authorization
+// value compatible with the scheduler's raw-key contract. The proxy adds the
+// Bearer scheme when it forwards a selection, so it must appear only once.
+func normalizeUpstreamKey(key *string) string {
+	if key == nil {
+		return ""
+	}
+	value := strings.TrimSpace(*key)
+	for value != "" {
+		fields := strings.Fields(value)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "bearer") {
+			break
+		}
+		value = strings.TrimSpace(value[len(fields[0]):])
+	}
+	return value
 }
 
 func containsID(id int64, ids []int64) bool {

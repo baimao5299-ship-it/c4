@@ -510,6 +510,25 @@ paths:
               schema: { $ref: '#/components/schemas/UpstreamModelsResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /upstreams/validate-all:
+    post:
+      operationId: PostUpstreamsValidateAll
+      tags: [upstreams]
+      summary: 一键验证全部上游及其可用模型
+      description: 对每个已保存上游读取模型目录并发送有界真实最小请求；返回每个上游的可用模型子集与健康结果。禁用上游也会纳入检查，便于一次性发现配置问题。
+      responses:
+        '200':
+          description: 全部上游验证结果（单个上游失败不影响其他项）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamValidationSummary' }
+        '409':
+          description: 已有模型验证任务正在进行
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default:
+          $ref: '#/components/responses/Error'
   /upstreams/{id}/models:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -1022,7 +1041,7 @@ paths:
         - { name: page_size, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 1000 } }
         - { name: code_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: user_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
-        - { name: type, in: query, schema: { type: string, enum: [balance, concurrency, temp_balance] } }
+        - { name: type, in: query, schema: { type: string, enum: [balance, concurrency, temp_balance, scoped_temp_balance] } }
         - { name: sort, in: query, schema: { type: string, enum: [id, code_id, user_id, value, created_at] } }
         - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
       responses:
@@ -1913,7 +1932,7 @@ components:
       description: 上游管理表单；只需名称、端点、Key 和成本倍率；upstream_key 仅写入，响应永不返回；模型读取会保存最近一次有界能力快照供分组调度校验；余额查询会按供应商和常见中转站接口自动识别，旧的 balance_* 字段仅用于兼容已有配置
       properties:
         name: { type: string, minLength: 1, maxLength: 200 }
-        base_url: { type: string, minLength: 1, description: 裸根地址，不要填写 /v1 }
+        base_url: { type: string, minLength: 1, description: 支持裸根地址或末尾带 /v1 的地址；服务端会自动归一化 }
         upstream_key: { type: string, writeOnly: true }
         clear_upstream_key: { type: boolean, default: false, writeOnly: true, description: 清除已保存的上游密钥；不能与 upstream_key 同时提交 }
         expected_updated_at: { type: string, format: date-time, writeOnly: true, description: 编辑时携带上次读取的 UpdatedAt；旧版本保存返回 409，避免覆盖新设置 }
@@ -1963,7 +1982,7 @@ components:
         LastError: { type: string, nullable: true }
         Models:
           type: array
-          maxItems: 200
+          maxItems: 5000
           items: { type: string }
           description: 最近一次真实请求验证通过、可路由的模型
         ModelsCheckedAt: { type: string, format: date-time, nullable: true, description: 最近一次模型真实验证时间 }
@@ -1990,14 +2009,14 @@ components:
       properties:
         ok: { type: boolean }
         latency_ms: { type: integer, format: int64 }
-        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, unconfigured, superseded, model_unavailable] }
+        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, unconfigured, superseded, model_unavailable, storage] }
         upstream: { $ref: '#/components/schemas/Upstream' }
     UpstreamModelsPreview:
       type: object
       required: [base_url]
       additionalProperties: false
       properties:
-        base_url: { type: string, minLength: 1, description: 裸根地址，不要填写 /v1 }
+        base_url: { type: string, minLength: 1, description: 支持裸根地址或末尾带 /v1 的地址；服务端会自动归一化 }
         upstream_key: { type: string, writeOnly: true }
     UpstreamModelsResponse:
       type: object
@@ -2006,14 +2025,44 @@ components:
         ok: { type: boolean }
         models:
           type: array
-          maxItems: 200
+          maxItems: 5000
           items: { type: string }
-        models_total: { type: integer, minimum: 0, maximum: 200, description: /v1/models 返回的原始模型数量 }
-        models_checked: { type: integer, minimum: 0, maximum: 200, description: 已发送真实最小请求验证的模型数量 }
-        models_available: { type: integer, minimum: 0, maximum: 200, description: 真实请求返回有效 JSON 且成功的模型数量 }
-        models_failed: { type: integer, minimum: 0, maximum: 200, description: 验证失败或超时的模型数量 }
+        models_total: { type: integer, minimum: 0, maximum: 5000, description: 目录中解析出的去重模型数量（最多 5000） }
+        models_checked: { type: integer, minimum: 0, maximum: 5000, description: 已发送真实最小请求验证的模型数量 }
+        models_available: { type: integer, minimum: 0, maximum: 5000, description: 真实请求返回有效 JSON 且成功的模型数量 }
+        models_failed: { type: integer, minimum: 0, maximum: 5000, description: 验证失败或超时的模型数量 }
         validation_complete: { type: boolean, description: 是否在总超时前完成全部模型验证 }
-        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, model_unavailable] }
+        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, model_unavailable, storage] }
+    UpstreamValidationSummary:
+      type: object
+      required: [total, completed, passed, failed, duration_ms, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        completed: { type: integer, minimum: 0, description: 已交给 worker 且在整体期限内完成完整模型目录验证的上游数量；未完成项目不计入 }
+        passed: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        duration_ms: { type: integer, format: int64, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UpstreamValidationItem' }
+    UpstreamValidationItem:
+      type: object
+      required: [upstream, attempted, models, models_total, models_checked, models_available, models_failed, validation_complete, ok, latency_ms, error_code]
+      properties:
+        upstream: { $ref: '#/components/schemas/Upstream' }
+        attempted: { type: boolean, description: 是否已交给验证 worker；取消后未开始的项目为 false }
+        models:
+          type: array
+          maxItems: 5000
+          items: { type: string }
+        models_total: { type: integer, minimum: 0, maximum: 5000 }
+        models_checked: { type: integer, minimum: 0, maximum: 5000 }
+        models_available: { type: integer, minimum: 0, maximum: 5000 }
+        models_failed: { type: integer, minimum: 0, maximum: 5000 }
+        validation_complete: { type: boolean }
+        ok: { type: boolean }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+        error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, model_unavailable, superseded, storage] }
     UpstreamTestBody:
       type: object
       additionalProperties: false

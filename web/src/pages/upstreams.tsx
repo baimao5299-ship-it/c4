@@ -65,6 +65,10 @@ type SaveArgs = {
   revalidateModels?: boolean
 }
 
+type ModelValidationResult =
+  | { ok: true }
+  | { ok: false; reason: string }
+
 const EMPTY_FORM: FormState = {
   name: '',
   base_url: '',
@@ -122,6 +126,11 @@ function formatMultiplier(value: number): string {
 function errorMessage(error: unknown): string | null {
   if (error == null) return null
   return error instanceof ApiUnauthorized ? null : (error as Error)?.message ?? String(error)
+}
+
+function batchValidationErrorMessage(error: unknown, t: (key: string) => string): string | null {
+  if (error instanceof ApiError && error.status === 409) return t('upstreams.batchValidationConflict')
+  return errorMessage(error)
 }
 
 function isRevisionConflict(error: unknown): boolean {
@@ -242,7 +251,10 @@ function toBody(form: FormState, expectedUpdatedAt?: string): UpstreamCreateInpu
     expected_updated_at?: string
   } = {
     name: form.name.trim(),
-    base_url: form.base_url.trim(),
+    // The service accepts both a bare root and a copied `/v1` endpoint. Send
+    // one canonical spelling so an equivalent edit does not trigger another
+    // model validation pass or reset the saved telemetry.
+    base_url: normalizedRoot(form.base_url),
     multiplier_bp: Math.round(Number(form.multiplier) * 10_000),
   }
   const key = form.upstream_key.trim()
@@ -256,7 +268,8 @@ function toBody(form: FormState, expectedUpdatedAt?: string): UpstreamCreateInpu
 }
 
 function normalizedRoot(value: string): string {
-  return value.trim().replace(/\/+$/, '')
+  const trimmed = value.trim().replace(/\/+$/, '')
+  return trimmed.replace(/\/v1$/i, '')
 }
 
 function modelsForDisplay(row: UpstreamRecord): string[] {
@@ -264,11 +277,15 @@ function modelsForDisplay(row: UpstreamRecord): string[] {
 }
 
 function batchItemName(item: UpstreamBatchValidationItem): string {
-  return item.upstream?.Name?.trim() || item.name?.trim() || (item.upstream_id != null ? `#${item.upstream_id}` : '—')
+  return item.upstream.Name?.trim() || `#${item.upstream.ID}`
 }
 
 function batchItemModels(item: UpstreamBatchValidationItem): string[] {
-  return sortModelsLatestFirst(item.models ?? item.upstream?.Models ?? [])
+  // An incomplete run may contain models that finished before the deadline,
+  // but those are not a publishable capability snapshot. Keep the dialog from
+  // presenting partial results as routable models.
+  if (item.validation_complete !== true) return []
+  return sortModelsLatestFirst(item.models)
 }
 
 function batchItemCount(item: UpstreamBatchValidationItem, field: 'models_total' | 'models_available' | 'models_failed'): number | null {
@@ -314,16 +331,27 @@ export default function Upstreams() {
   const total = query.data?.total ?? 0
   // Mutation confirmations must not race a stale query cache. Refetch the
   // currently visible list before closing dialogs or showing success.
-  const refreshRows = async () => {
-    await qc.refetchQueries({ queryKey: ['upstreams'], type: 'active' })
-    // Model catalogues are used by group creation/editing. Any credential,
-    // endpoint, or enablement change invalidates the cached catalogue too.
-    await qc.invalidateQueries({ queryKey: ['group-upstream-models'] })
-    // Keep the compact setup flow coherent across pages: after saving an
-    // upstream, the group dialog must refetch its selectable upstream list
-    // instead of serving the previous 30-second cache window.
-    await qc.invalidateQueries({ queryKey: ['groups', 'upstream-options'] })
-    await qc.invalidateQueries({ queryKey: ['upstreams', 'account-options'] })
+  const refreshRows = async (): Promise<boolean> => {
+    let refreshed = true
+    try {
+      // Refetch the visible query directly so the result tells us whether the
+      // list actually refreshed. QueryClient.refetchQueries intentionally
+      // resolves even when a query fails, which used to leave a stale list
+      // looking like a successful mutation.
+      const result = await query.refetch()
+      refreshed = !result.isError
+      // Model catalogues are used by group creation/editing. Any credential,
+      // endpoint, or enablement change invalidates the cached catalogue too.
+      await qc.invalidateQueries({ queryKey: ['group-upstream-models'] })
+      // Keep the compact setup flow coherent across pages: after saving an
+      // upstream, the group dialog must refetch its selectable upstream list
+      // instead of serving the previous 30-second cache window.
+      await qc.invalidateQueries({ queryKey: ['groups', 'upstream-options'] })
+      await qc.invalidateQueries({ queryKey: ['upstreams', 'account-options'] })
+    } catch {
+      refreshed = false
+    }
+    return refreshed
   }
 
   // A deletion or filter change can leave the current page past the last page.
@@ -346,16 +374,20 @@ export default function Upstreams() {
     }
   }, [rows, total])
 
-  const validateSavedUpstream = async (id: number) => {
+  const validateSavedUpstream = async (id: number, reportFailure = true): Promise<ModelValidationResult> => {
     setPendingModelIDs(current => new Set(current).add(id))
     try {
       const result = await api.listUpstreamModels(id)
       if (!result.ok || !result.models?.length || result.validation_complete !== true) {
-        toast.add({ title: t('upstreams.modelsReadFailed', { code: probeErrorLabel(result.error_code, t) }), type: 'error' })
+        const reason = probeErrorLabel(result.error_code, t)
+        if (reportFailure) toast.add({ title: t('upstreams.modelsReadFailed', { code: reason }), type: 'error' })
+        return { ok: false, reason }
       }
+      return { ok: true }
     } catch (error) {
-      const message = errorMessage(error)
-      if (message) toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
+      const reason = batchValidationErrorMessage(error, t) ?? t('upstreams.probeErrors.unknown')
+      if (reportFailure) toast.add({ title: t('upstreams.actionFailed', { message: reason }), type: 'error' })
+      return { ok: false, reason }
     } finally {
       setPendingModelIDs(current => {
         const next = new Set(current)
@@ -379,10 +411,16 @@ export default function Upstreams() {
       // New rows already contain the server-side verified snapshot. Existing
       // rows are revalidated once after an edit so endpoint/key changes cannot
       // leave a stale capability catalogue in the group picker.
-      if (args.revalidateModels && result.ID > 0) await validateSavedUpstream(result.ID)
+      const modelValidation = args.revalidateModels && result.ID > 0
+        ? await validateSavedUpstream(result.ID, false)
+        : { ok: true as const }
       await refreshRows()
       setDialogOpen(false)
-      toast.add({ title: t(args.editingID != null ? 'upstreams.saved' : 'upstreams.created'), type: 'success' })
+      if (modelValidation.ok === false) {
+        toast.add({ title: t('upstreams.savedValidationFailed', { reason: modelValidation.reason }), type: 'warning' })
+      } else {
+        toast.add({ title: t(args.editingID != null ? 'upstreams.saved' : 'upstreams.created'), type: 'success' })
+      }
     },
     onError: async error => {
       if (isRevisionConflict(error)) {
@@ -467,24 +505,31 @@ export default function Upstreams() {
     },
     onSuccess: async result => {
       setBatchValidationResult(result)
-      await refreshRows()
+      const refreshed = await refreshRows()
+      const incomplete = Math.max(0, result.total - result.completed)
       toast.add({
-        title: t('upstreams.batchValidationFinished', { passed: result.passed, failed: result.failed }),
-        type: result.failed > 0 ? 'warning' : 'success',
+        title: t(incomplete > 0 ? 'upstreams.batchValidationFinishedIncomplete' : 'upstreams.batchValidationFinished', {
+          passed: result.passed,
+          failed: result.failed,
+          incomplete,
+        }),
+        type: result.failed > 0 || incomplete > 0 ? 'warning' : 'success',
       })
+      if (!refreshed) toast.add({ title: t('upstreams.batchValidationRefreshFailed'), type: 'warning' })
     },
     onError: error => {
-      const message = errorMessage(error)
+      const message = batchValidationErrorMessage(error, t)
       if (message) toast.add({ title: t('upstreams.batchValidationFailed', { message }), type: 'error' })
     },
   })
 
   const runProbe = (id: number, balance: boolean) => {
-    if (pendingProbeIDs.has(id)) return
+    if (batchValidation.isPending || pendingProbeIDs.has(id)) return
     probe.mutate({ id, balance })
   }
 
   const openCreate = () => {
+    if (batchValidation.isPending) return
     setEditing(null)
     setForm(EMPTY_FORM)
     setValidation(null)
@@ -493,6 +538,7 @@ export default function Upstreams() {
   }
 
   const openEdit = (row: UpstreamRecord) => {
+    if (batchValidation.isPending) return
     setEditing(row)
     setForm(toForm(row))
     setValidation(null)
@@ -501,6 +547,7 @@ export default function Upstreams() {
   }
 
   const submit = () => {
+    if (batchValidation.isPending) return
     if (!form.multiplier.trim()) {
       setValidation(t('upstreams.invalidMultiplier'))
       return
@@ -512,10 +559,6 @@ export default function Upstreams() {
     }
     if (!/^https?:\/\//i.test(form.base_url.trim())) {
       setValidation(t('upstreams.invalidUrl'))
-      return
-    }
-    if (/\/v1(?:\/|$)/i.test(form.base_url.trim())) {
-      setValidation(t('upstreams.invalidRoot'))
       return
     }
     if (!Number.isFinite(multiplier) || multiplier < 0 || multiplier > 100) {
@@ -549,6 +592,8 @@ export default function Upstreams() {
   const refresh = () => { void query.refetch() }
   const err = errorMessage(query.error)
   const endpointChanged = editing != null && normalizedRoot(editing.BaseURL) !== normalizedRoot(form.base_url)
+  const hasPendingAction = save.isPending || remove.isPending || toggle.isPending || probe.isPending || pendingModelIDs.size > 0 || pendingProbeIDs.size > 0 || pendingToggleIDs.size > 0
+  const batchLocked = batchValidation.isPending
 
   return (
     <motion.div className="space-y-6" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
@@ -558,17 +603,19 @@ export default function Upstreams() {
           <p className="text-sm text-muted-foreground">{t('upstreams.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => { if (!batchValidation.isPending) batchValidation.mutate() }} disabled={batchValidation.isPending}>
+          <Button variant="outline" onClick={() => { if (!batchLocked && !hasPendingAction) batchValidation.mutate() }} disabled={batchLocked || hasPendingAction}>
             <ListChecks className={cn(batchValidation.isPending && 'animate-pulse')} />
             <span>{batchValidation.isPending ? t('upstreams.validatingAll') : t('upstreams.validateAll')}</span>
           </Button>
-          <Button variant="outline" size="icon" title={t('common.refresh')} onClick={refresh} disabled={query.isFetching}>
+          <Button variant="outline" size="icon" title={t('common.refresh')} onClick={refresh} disabled={query.isFetching || batchLocked}>
             <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
             <span className="sr-only">{t('common.refresh')}</span>
           </Button>
-          <Button onClick={openCreate}><Plus />{t('upstreams.new')}</Button>
+          <Button onClick={openCreate} disabled={batchLocked}><Plus />{t('upstreams.new')}</Button>
         </div>
       </div>
+
+      {batchLocked && <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">{t('upstreams.batchValidationLocks')}</p>}
 
       <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
         <Info className="mt-0.5 size-4 shrink-0" />
@@ -607,7 +654,7 @@ export default function Upstreams() {
           <Route className="size-10" />
           <p className="font-medium">{debouncedName || status !== 'all' ? t('upstreams.noResultsTitle') : t('upstreams.emptyTitle')}</p>
           <p className="text-sm">{debouncedName || status !== 'all' ? t('upstreams.noResultsDesc') : t('upstreams.emptyDesc')}</p>
-          {!debouncedName && status === 'all' && <Button className="mt-2" onClick={openCreate}><Plus />{t('upstreams.new')}</Button>}
+          {!debouncedName && status === 'all' && <Button className="mt-2" onClick={openCreate} disabled={batchLocked}><Plus />{t('upstreams.new')}</Button>}
         </Card>
       ) : (
         <>
@@ -665,25 +712,25 @@ export default function Upstreams() {
                     {balanceBlockedReason && row.BalanceConfigured && <div className="text-xs text-amber-700 dark:text-amber-400">{balanceBlockedReason}</div>}
                     <div className="flex items-center justify-between gap-2 border-t pt-3">
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={pendingModelIDs.has(row.ID)}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={batchLocked || pendingModelIDs.has(row.ID)}>
                           <RefreshCw className={cn(pendingModelIDs.has(row.ID) && 'animate-spin')} />
                           <span className="sr-only">{t('upstreams.actions.refreshModels')}</span>
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={pending}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={batchLocked || pending}>
                           <Activity className={cn(pending && 'animate-pulse')} />
                           <span className="sr-only">{t('upstreams.actions.probe')}</span>
                         </Button>
                         <span title={balanceBlockedReason ?? t('upstreams.actions.balance')}>
-                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={pending || balanceBlockedReason != null}>
+                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={batchLocked || pending || balanceBlockedReason != null}>
                             <WalletCards className={cn(pending && 'animate-pulse')} />
                             <span className="sr-only">{t('upstreams.actions.balance')}</span>
                           </Button>
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Switch checked={active} onCheckedChange={checked => toggle.mutate({ id: row.ID, enabled: checked })} disabled={pendingToggleIDs.has(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
+                        <Switch checked={active} onCheckedChange={checked => toggle.mutate({ id: row.ID, enabled: checked })} disabled={batchLocked || pendingToggleIDs.has(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)} disabled={batchLocked}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }} disabled={batchLocked}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
                       </div>
                     </div>
                   </CardContent>
@@ -754,23 +801,23 @@ export default function Upstreams() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={pendingModelIDs.has(row.ID)}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={batchLocked || pendingModelIDs.has(row.ID)}>
                           <RefreshCw className={cn(pendingModelIDs.has(row.ID) && 'animate-spin')} />
                           <span className="sr-only">{t('upstreams.actions.refreshModels')}</span>
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={pendingProbeIDs.has(row.ID)}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={batchLocked || pendingProbeIDs.has(row.ID)}>
                           <Activity className={cn(pendingProbeIDs.has(row.ID) && 'animate-pulse')} />
                           <span className="sr-only">{t('upstreams.actions.probe')}</span>
                         </Button>
                         <span title={balanceBlockedReason ?? t('upstreams.actions.balance')}>
-                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={pendingProbeIDs.has(row.ID) || balanceBlockedReason != null}>
+                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={batchLocked || pendingProbeIDs.has(row.ID) || balanceBlockedReason != null}>
                             <WalletCards className={cn(pendingProbeIDs.has(row.ID) && 'animate-pulse')} />
                             <span className="sr-only">{t('upstreams.actions.balance')}</span>
                           </Button>
                         </span>
-                        <Switch checked={active} onCheckedChange={checked => toggle.mutate({ id: row.ID, enabled: checked })} disabled={pendingToggleIDs.has(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
+                        <Switch checked={active} onCheckedChange={checked => toggle.mutate({ id: row.ID, enabled: checked })} disabled={batchLocked || pendingToggleIDs.has(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)} disabled={batchLocked}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }} disabled={batchLocked}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -848,7 +895,7 @@ export default function Upstreams() {
           )}
           {batchValidation.isError && !batchValidation.isPending && (
             <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {t('upstreams.batchValidationFailed', { message: errorMessage(batchValidation.error) ?? t('upstreams.probeErrors.unknown') })}
+              {t('upstreams.batchValidationFailed', { message: batchValidationErrorMessage(batchValidation.error, t) ?? t('upstreams.probeErrors.unknown') })}
             </p>
           )}
           {batchValidationResult && !batchValidation.isPending && (
@@ -865,20 +912,21 @@ export default function Upstreams() {
               <div className="max-h-[45vh] space-y-2 overflow-y-auto pr-1" role="list" aria-label={t('upstreams.batchResults')}>
                 {batchValidationResult.items.map((item, index) => {
                   const models = batchItemModels(item)
+                  const verified = item.attempted && item.validation_complete && item.ok
                   const totalModels = batchItemCount(item, 'models_total')
                   const availableModels = batchItemCount(item, 'models_available')
                   const failedModels = batchItemCount(item, 'models_failed')
                   const errorCode = item.error_code ? probeErrorLabel(item.error_code, t) : null
                   return (
-                    <div key={`${item.upstream_id ?? item.upstream?.ID ?? batchItemName(item)}-${index}`} role="listitem" className="rounded-md border px-3 py-2.5 text-sm">
+                    <div key={`${item.upstream.ID}-${index}`} role="listitem" className="rounded-md border px-3 py-2.5 text-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="truncate font-medium">{batchItemName(item)}</div>
-                          {item.upstream?.BaseURL && <div className="truncate font-mono text-xs text-muted-foreground" title={item.upstream.BaseURL}>{item.upstream.BaseURL}</div>}
+                          {item.upstream.BaseURL && <div className="truncate font-mono text-xs text-muted-foreground" title={item.upstream.BaseURL}>{item.upstream.BaseURL}</div>}
                         </div>
-                        <Badge variant={item.ok ? 'secondary' : 'destructive'} className="shrink-0 gap-1">
-                          {item.ok ? <CircleCheck className="size-3" /> : <CircleX className="size-3" />}
-                          {t(item.ok ? 'upstreams.batchOk' : 'upstreams.batchFailedItem')}
+                        <Badge variant={verified ? 'secondary' : item.attempted ? 'destructive' : 'outline'} className="shrink-0 gap-1">
+                          {verified ? <CircleCheck className="size-3" /> : <CircleX className="size-3" />}
+                          {t(!item.attempted ? 'upstreams.batchNotStarted' : verified ? 'upstreams.batchOk' : 'upstreams.batchFailedItem')}
                         </Badge>
                       </div>
                       {(totalModels != null || availableModels != null || failedModels != null) && (
@@ -886,8 +934,9 @@ export default function Upstreams() {
                           {t('upstreams.batchModelsSummary', { total: totalModels ?? '—', available: availableModels ?? models.length, failed: failedModels ?? '—' })}
                         </div>
                       )}
+                      {!item.validation_complete && <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t('upstreams.batchIncomplete')}</div>}
                       {models.length > 0 && <div className="mt-1 break-words font-mono text-xs text-muted-foreground">{models.join(', ')}</div>}
-                      {errorCode && <div className="mt-1 text-xs text-destructive">{t('upstreams.batchError', { code: errorCode })}{item.error_message ? `：${item.error_message}` : ''}</div>}
+                      {errorCode && <div className="mt-1 text-xs text-destructive">{t('upstreams.batchError', { code: errorCode })}</div>}
                     </div>
                   )
                 })}

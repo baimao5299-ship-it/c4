@@ -155,3 +155,30 @@ func TestPGUpstreamModelFailureKeepsUnknownCatalogue(t *testing.T) {
 	require.NotNil(t, got.ModelsError)
 	require.Equal(t, "timeout", *got.ModelsError)
 }
+
+// TestPGUpstreamValidationAdvisoryLock is the multi-instance guard for the
+// long-running model probe. The lock must survive pool connection reuse until
+// the explicit release and become available again afterward.
+func TestPGUpstreamValidationAdvisoryLock(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	releaseA, ok, err := repos.AcquireUpstreamValidationLock(ctx)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, releaseA)
+
+	releaseB, ok, err := repos.AcquireUpstreamValidationLock(ctx)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, releaseB)
+
+	releaseA()
+	releaseA() // idempotent release must not return a pooled connection twice
+
+	releaseC, ok, err := repos.AcquireUpstreamValidationLock(ctx)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, releaseC)
+	releaseC()
+}

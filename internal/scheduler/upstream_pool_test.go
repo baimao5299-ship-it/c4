@@ -82,6 +82,61 @@ func testUpstreamGroup(id int64, members ...*domain.GroupUpstream) *domain.Group
 	return &domain.Group{ID: id, Name: fmt.Sprintf("group-%d", id), RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"gpt-5"}, UpstreamMembers: members}
 }
 
+func TestNormalizeUpstreamEndpointRemovesV1Suffix(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "bare root", in: "https://relay.example.test", want: "https://relay.example.test"},
+		{name: "v1", in: "https://relay.example.test/v1", want: "https://relay.example.test"},
+		{name: "v1 trailing slash", in: "https://relay.example.test/v1///", want: "https://relay.example.test"},
+		{name: "case insensitive", in: "https://relay.example.test/V1/", want: "https://relay.example.test"},
+		{name: "prefixed path", in: "https://relay.example.test/openai/v1/", want: "https://relay.example.test/openai"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, normalizeUpstreamEndpoint(tc.in))
+		})
+	}
+}
+
+func TestUpstreamSnapshotAndSelectionUseCanonicalEndpoint(t *testing.T) {
+	member := testGroupUpstream(1, 101, 1, 1, 8)
+	member.Upstream.BaseURL = "https://relay.example.test/V1///"
+	snapshot := newUpstreamSnapshot(member, nil)
+	require.Equal(t, "https://relay.example.test", snapshot.endpoint)
+
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{10: testUpstreamGroup(10, member)})
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-5")
+	require.NoError(t, err)
+	require.Equal(t, "https://relay.example.test", sel.BaseURL, "gateway clients append /v1 exactly once")
+	s.ReleaseSelection(sel)
+}
+
+func TestUpstreamEndpointIdentityTreatsV1SuffixAsEquivalent(t *testing.T) {
+	member := testGroupUpstream(1, 101, 1, 1, 8)
+	member.Upstream.BaseURL = "https://relay.example.test/v1"
+	old := newUpstreamSnapshot(member, nil)
+	old.statePtr().failureStreak = 3
+	member.Upstream.BaseURL = "https://relay.example.test"
+	next := newUpstreamSnapshot(member, old)
+	require.Same(t, old.concurrency, next.concurrency)
+	require.Same(t, old.state, next.state, "equivalent /v1 spelling must preserve breaker state")
+	require.Equal(t, 3, next.statePtr().failureStreak)
+}
+
+func TestUpstreamSelectionNormalizesHistoricalBearerKey(t *testing.T) {
+	member := testGroupUpstream(1, 101, 1, 1, 8)
+	key := "Bearer Bearer relay-key"
+	member.Upstream.UpstreamKey = &key
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{10: testUpstreamGroup(10, member)})
+
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-5")
+	require.NoError(t, err)
+	require.Equal(t, "relay-key", sel.UpstreamKey)
+	s.ReleaseSelection(sel)
+}
+
 func selectAndReleaseUpstream(t *testing.T, s *Scheduler, groupID int64) *Selection {
 	t.Helper()
 	sel, err := s.Select(groupID, domain.FormatOpenAIChat, "gpt-5")

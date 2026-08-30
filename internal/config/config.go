@@ -245,8 +245,9 @@ func Load(path string) (*Config, error) {
 //     裸数字 `flush_interval = 500` → 500ns ticker → 队列非空 DB 写风暴 / 队列空
 //     CPU 忙轮询）。errlog_flush_interval=0 由"钳位到默认"变为"启动报错"——有意
 //     选择（errlog 无文档化"0=禁用"语义，取 p2-14"全部 duration 字段"立场）；
-//   - 数值字段 ≥1：DefaultMaxConcurrency（silent 全坏面——从"健康地拒绝全流量"
-//     转启动即报错）、DB.MaxConns（puddle 层报 MaxSize 无法归因到 db.max_conns）；
+//   - 数值字段：DefaultMaxConcurrency 等至少为 1；DB.MaxConns 至少为 2——
+//     上游批量验证用专用连接持有 PostgreSQL advisory lock，还必须保留
+//     一条连接给 Ent/普通 SQL；单连接池会在获锁后永久等待自己；
 //   - 必填：auth.jwt_secret / db.dsn（自 main.go:64-66 移入内聚；admin.token
 //     已可空——空 = 不启用静态 token 鉴权，/admin 仅接受 platform_admin JWT）；
 //   - 占位密钥精确匹配拒绝（change-me 系列防原样部署鉴权绕过；精确匹配防误杀恰
@@ -293,7 +294,6 @@ func validate(c *Config) error {
 		value int
 	}{
 		{"scheduler.default_max_concurrency", c.Scheduler.DefaultMaxConcurrency},
-		{"db.max_conns", c.DB.MaxConns},
 		{"proxy.failover_attempts", c.Proxy.FailoverAttempts},
 		// proxy.max_body_size：n<1 经 MaxBytesReader 归一 0 → 全量非空请求 413
 		// （internal/proxy/caller.go 用法；spec 2026-08-17 补下限，启动即拒绝）。
@@ -303,6 +303,12 @@ func validate(c *Config) error {
 		if n.value < 1 {
 			return fmt.Errorf("%s must be >= 1 (got %d)", n.path, n.value)
 		}
+	}
+	// 上游验证的跨实例 advisory lock 在专用池连接上持有，同一操作
+	// 随后还要通过 Ent 读写验证结果。池大小为 1 时两者会循环等待，
+	// 因此在打开数据库前拒绝该配置。
+	if c.DB.MaxConns < 2 {
+		return fmt.Errorf("db.max_conns must be >= 2 (got %d)", c.DB.MaxConns)
 	}
 	if c.Proxy.MaxInflight < 1 {
 		return fmt.Errorf("proxy.max_inflight must be >= 1 (got %d)", c.Proxy.MaxInflight)

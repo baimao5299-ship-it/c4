@@ -112,7 +112,7 @@ func newRepositoryWithLocks(client *ent.Client, drv dialect.Driver, pool *pgxpoo
 		TemplateExts:   &TemplateExtRepo{client: client},
 		AccountExts:    &AccountExtRepo{client: client},
 		EmailTemplates: &EmailTemplateRepo{client: client},
-		Upstreams:      &UpstreamRepo{client: client, driver: drv},
+		Upstreams:      &UpstreamRepo{client: client, driver: drv, pool: pool},
 		Client:         client,
 		driver:         drv,
 	}
@@ -139,6 +139,17 @@ type UpstreamModelStore interface {
 	RecordUpstreamModels(context.Context, *domain.Upstream, []string, *string) (*domain.Upstream, error)
 }
 
+// Keep the production aggregate on the complete upstream management surface.
+// The optional snapshot method is intentionally part of this assertion even
+// though it is not required by UpstreamStore, so a future refactor cannot make
+// Service silently fall back to paginated reads again.
+var _ interface {
+	UpstreamStore
+	UpstreamModelStore
+	ListAllUpstreams(context.Context) ([]*domain.Upstream, error)
+	AcquireUpstreamValidationLock(context.Context) (func(), bool, error)
+} = (*Repository)(nil)
+
 // Forward the optional upstream management surface from the aggregate
 // repository. Keeping it out of service.Store preserves existing fakes and
 // integrations while allowing production Service instances to discover it.
@@ -150,6 +161,20 @@ func (r *Repository) GetUpstream(ctx context.Context, id int64) (*domain.Upstrea
 }
 func (r *Repository) ListUpstreams(ctx context.Context, q ListQuery) ([]*domain.Upstream, int64, error) {
 	return r.Upstreams.ListUpstreams(ctx, q)
+}
+
+// ListAllUpstreams forwards the stable, ID-ordered snapshot used by long-running
+// validation. Keeping this method on the aggregate is important: Service.New
+// receives *Repository in production, so without the forwarder it would fall
+// back to two paginated reads and lose the single-query snapshot guarantee.
+func (r *Repository) ListAllUpstreams(ctx context.Context) ([]*domain.Upstream, error) {
+	return r.Upstreams.ListAllUpstreams(ctx)
+}
+func (r *Repository) AcquireUpstreamValidationLock(ctx context.Context) (release func(), ok bool, err error) {
+	if r == nil || r.Upstreams == nil {
+		return nil, false, fmt.Errorf("%w: upstream repository is not configured", ErrUpstreamValidationLockUnavailable)
+	}
+	return r.Upstreams.AcquireUpstreamValidationLock(ctx)
 }
 func (r *Repository) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
 	return r.Upstreams.UpdateUpstream(ctx, u)

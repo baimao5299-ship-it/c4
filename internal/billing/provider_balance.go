@@ -466,7 +466,10 @@ func balanceCacheKey(provider string, account BalanceAccount, adapter BalanceAda
 	if a, ok := adapter.(balanceCacheIdentity); ok {
 		identity = a.CacheIdentity()
 	}
-	secretHash := sha256.Sum256([]byte(account.UpstreamKey))
+	// Imported credentials commonly contain the copied Authorization prefix.
+	// The wire request strips it, so the cache identity must do the same or one
+	// credential would create two independent snapshots and refreshes.
+	secretHash := sha256.Sum256([]byte(normalizeBearerKey(account.UpstreamKey)))
 	return provider + "\x00" + strconv.FormatInt(account.ID, 10) + "\x00" + account.BaseURL + "\x00" + identity + "\x00" + string(secretHash[:])
 }
 
@@ -629,11 +632,12 @@ func (a HTTPJSONAdapter) fetchJSON(ctx context.Context, account BalanceAccount) 
 	if err != nil {
 		return nil, err
 	}
+	key := normalizeBearerKey(account.UpstreamKey)
 	auth := a.Auth
 	if auth == "" {
 		auth = HTTPAuthNone
 	}
-	if auth != HTTPAuthNone && strings.TrimSpace(account.UpstreamKey) == "" {
+	if auth != HTTPAuthNone && key == "" {
 		return nil, errMissingKey
 	}
 	method := strings.ToUpper(strings.TrimSpace(a.Method))
@@ -652,9 +656,9 @@ func (a HTTPJSONAdapter) fetchJSON(ctx context.Context, account BalanceAccount) 
 	}
 	switch auth {
 	case HTTPAuthBearer:
-		req.Header.Set("Authorization", "Bearer "+account.UpstreamKey)
+		req.Header.Set("Authorization", "Bearer "+key)
 	case HTTPAuthAPIKey:
-		req.Header.Set("X-API-Key", account.UpstreamKey)
+		req.Header.Set("X-API-Key", key)
 	}
 	client := a.Client
 	if client == nil {
@@ -700,6 +704,22 @@ func (a HTTPJSONAdapter) fetchJSON(ctx context.Context, account BalanceAccount) 
 		return nil, err
 	}
 	return value, nil
+}
+
+// normalizeBearerKey accepts the form users most often paste from an
+// Authorization header while keeping only the credential value used by the
+// adapter. Repeated prefixes are collapsed so a later header construction
+// cannot produce "Bearer Bearer ...".
+func normalizeBearerKey(value string) string {
+	value = strings.TrimSpace(value)
+	for value != "" {
+		fields := strings.Fields(value)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "bearer") {
+			break
+		}
+		value = strings.TrimSpace(value[len(fields[0]):])
+	}
+	return value
 }
 
 type autoBalanceCandidate struct {

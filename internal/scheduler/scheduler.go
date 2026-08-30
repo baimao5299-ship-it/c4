@@ -519,7 +519,10 @@ func effectiveStatic(a *domain.Account, gid int64) *snapshotStatic {
 		av.upstreamEnabled = false
 		return av
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(u.BaseURL), "/")
+	// Keep account-bound upstreams on the same canonical endpoint contract as
+	// upstream-routed groups. The proxy appends protocol paths itself, so a
+	// historical `/v1` suffix must not become `/v1/v1` after binding.
+	baseURL := normalizeUpstreamEndpoint(u.BaseURL)
 	if baseURL == "" {
 		av.upstreamEnabled = false
 		return av
@@ -528,7 +531,7 @@ func effectiveStatic(a *domain.Account, gid int64) *snapshotStatic {
 	// base_url override when an explicit upstream is active.
 	av.acc.BaseURL = &baseURL
 	if strings.TrimSpace(av.acc.UpstreamKey) == "" && u.UpstreamKey != nil {
-		av.acc.UpstreamKey = strings.TrimSpace(*u.UpstreamKey)
+		av.acc.UpstreamKey = normalizeUpstreamKey(u.UpstreamKey)
 	}
 	return av
 }

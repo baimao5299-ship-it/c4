@@ -62,34 +62,11 @@ export type UpstreamProbeResponse = components['schemas']['UpstreamProbeResponse
 export type UpstreamModelsResponse = components['schemas']['UpstreamModelsResponse']
 export type UpstreamModelsPreviewInput = components['schemas']['UpstreamModelsPreview']
 
-// A batch model validation keeps each upstream's result separate so the
-// management UI can show partial failures instead of treating the whole run
-// as a single boolean. The optional aliases keep the client compatible with
-// older beta servers while the endpoint is rolled out.
-export interface UpstreamBatchValidationItem {
-  upstream?: UpstreamRecord | null
-  upstream_id?: number
-  name?: string
-  ok: boolean
-  models?: string[]
-  models_total?: number
-  models_checked?: number
-  models_available?: number
-  models_failed?: number
-  validation_complete?: boolean
-  latency_ms?: number
-  error_code?: string | null
-  error_message?: string | null
-}
-
-export interface UpstreamBatchValidationResponse {
-  total: number
-  completed: number
-  passed: number
-  failed: number
-  duration_ms?: number
-  items: UpstreamBatchValidationItem[]
-}
+// The batch validation response is generated from the same OpenAPI contract
+// as the server. Keeping this as an alias prevents the UI from silently
+// accepting a legacy shape that omits per-item completion state.
+export type UpstreamBatchValidationItem = components['schemas']['UpstreamValidationItem']
+export type UpstreamBatchValidationResponse = components['schemas']['UpstreamValidationSummary']
 
 // —— 日志/统计查询参数（usage/err 游标分页；from/to 必填）——
 export interface UsageLogParams {

@@ -342,6 +342,22 @@ func TestHTTPJSONAdapterMapsAmountAndAuth(t *testing.T) {
 	require.Equal(t, "Bearer secret", gotAuth)
 }
 
+func TestHTTPJSONAdapterNormalizesCopiedBearerKey(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode(map[string]any{"balance": "1.25"})
+	}))
+	defer srv.Close()
+	a := HTTPJSONAdapter{
+		NameValue: "relay", Endpoint: srv.URL, Auth: HTTPAuthBearer,
+		BalancePath: "balance", Client: srv.Client(),
+	}
+	_, err := a.Fetch(context.Background(), BalanceAccount{ID: 1, UpstreamKey: "Bearer Bearer secret"})
+	require.NoError(t, err)
+	require.Equal(t, "Bearer secret", gotAuth)
+}
+
 type nilBalanceResponseTransport struct{}
 
 func (nilBalanceResponseTransport) RoundTrip(*http.Request) (*http.Response, error) {
@@ -442,6 +458,25 @@ func TestFetchAutoBalanceUsesCommonRelayShape(t *testing.T) {
 	require.Equal(t, "12.34", result.Amount)
 	require.Equal(t, "USD", result.Currency)
 	require.Equal(t, []string{"/v1/usage", "/api/user/self"}, paths)
+}
+
+func TestFetchAutoBalanceNormalizesCopiedBearerKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/usage" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		require.Equal(t, "Bearer relay-key", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"remaining":"8.80","unit":"USD"}`))
+	}))
+	defer server.Close()
+
+	result, err := FetchAutoBalance(context.Background(), BalanceAccount{
+		ID: 1, BaseURL: server.URL, UpstreamKey: "Bearer relay-key",
+	}, server.Client())
+	require.NoError(t, err)
+	require.Equal(t, "8.80", result.Amount)
 }
 
 func TestFetchAutoBalanceUsesCCSwitchUsageShape(t *testing.T) {

@@ -328,6 +328,7 @@ const (
 	UpstreamModelsResponseErrorCodeModelUnavailable UpstreamModelsResponseErrorCode = "model_unavailable"
 	UpstreamModelsResponseErrorCodeNetwork          UpstreamModelsResponseErrorCode = "network"
 	UpstreamModelsResponseErrorCodeRateLimited      UpstreamModelsResponseErrorCode = "rate_limited"
+	UpstreamModelsResponseErrorCodeStorage          UpstreamModelsResponseErrorCode = "storage"
 	UpstreamModelsResponseErrorCodeTimeout          UpstreamModelsResponseErrorCode = "timeout"
 	UpstreamModelsResponseErrorCodeUpstream         UpstreamModelsResponseErrorCode = "upstream"
 )
@@ -342,10 +343,27 @@ const (
 	UpstreamProbeResponseErrorCodeModelUnavailable UpstreamProbeResponseErrorCode = "model_unavailable"
 	UpstreamProbeResponseErrorCodeNetwork          UpstreamProbeResponseErrorCode = "network"
 	UpstreamProbeResponseErrorCodeRateLimited      UpstreamProbeResponseErrorCode = "rate_limited"
+	UpstreamProbeResponseErrorCodeStorage          UpstreamProbeResponseErrorCode = "storage"
 	UpstreamProbeResponseErrorCodeSuperseded       UpstreamProbeResponseErrorCode = "superseded"
 	UpstreamProbeResponseErrorCodeTimeout          UpstreamProbeResponseErrorCode = "timeout"
 	UpstreamProbeResponseErrorCodeUnconfigured     UpstreamProbeResponseErrorCode = "unconfigured"
 	UpstreamProbeResponseErrorCodeUpstream         UpstreamProbeResponseErrorCode = "upstream"
+)
+
+// Defines values for UpstreamValidationItemErrorCode.
+const (
+	UpstreamValidationItemErrorCodeAuth             UpstreamValidationItemErrorCode = "auth"
+	UpstreamValidationItemErrorCodeCanceled         UpstreamValidationItemErrorCode = "canceled"
+	UpstreamValidationItemErrorCodeHttpError        UpstreamValidationItemErrorCode = "http_error"
+	UpstreamValidationItemErrorCodeInvalidResponse  UpstreamValidationItemErrorCode = "invalid_response"
+	UpstreamValidationItemErrorCodeInvalidValue     UpstreamValidationItemErrorCode = "invalid_value"
+	UpstreamValidationItemErrorCodeModelUnavailable UpstreamValidationItemErrorCode = "model_unavailable"
+	UpstreamValidationItemErrorCodeNetwork          UpstreamValidationItemErrorCode = "network"
+	UpstreamValidationItemErrorCodeRateLimited      UpstreamValidationItemErrorCode = "rate_limited"
+	UpstreamValidationItemErrorCodeStorage          UpstreamValidationItemErrorCode = "storage"
+	UpstreamValidationItemErrorCodeSuperseded       UpstreamValidationItemErrorCode = "superseded"
+	UpstreamValidationItemErrorCodeTimeout          UpstreamValidationItemErrorCode = "timeout"
+	UpstreamValidationItemErrorCodeUpstream         UpstreamValidationItemErrorCode = "upstream"
 )
 
 // Defines values for UserRole.
@@ -1874,7 +1892,7 @@ type UpstreamCreate struct {
 	// BalancePath 兼容字段；自动查询会识别常见 balance、quota、credits 等字段
 	BalancePath *string `json:"balance_path,omitempty"`
 
-	// BaseUrl 裸根地址，不要填写 /v1
+	// BaseUrl 支持裸根地址或末尾带 /v1 的地址；服务端会自动归一化
 	BaseUrl string `json:"base_url"`
 
 	// ClearUpstreamKey 清除已保存的上游密钥；不能与 upstream_key 同时提交
@@ -1909,7 +1927,7 @@ type UpstreamListResponse struct {
 
 // UpstreamModelsPreview defines model for UpstreamModelsPreview.
 type UpstreamModelsPreview struct {
-	// BaseUrl 裸根地址，不要填写 /v1
+	// BaseUrl 支持裸根地址或末尾带 /v1 的地址；服务端会自动归一化
 	BaseUrl     string  `json:"base_url"`
 	UpstreamKey *string `json:"upstream_key,omitempty"`
 }
@@ -1928,7 +1946,7 @@ type UpstreamModelsResponse struct {
 	// ModelsFailed 验证失败或超时的模型数量
 	ModelsFailed int `json:"models_failed"`
 
-	// ModelsTotal /v1/models 返回的原始模型数量
+	// ModelsTotal 目录中解析出的去重模型数量（最多 5000）
 	ModelsTotal int  `json:"models_total"`
 	Ok          bool `json:"ok"`
 
@@ -1960,6 +1978,36 @@ type UpstreamStatusUpdate struct {
 type UpstreamTestBody struct {
 	// Model 必须来自上游当前 /v1/models 列表；省略时使用列表第一项
 	Model *string `json:"model,omitempty"`
+}
+
+// UpstreamValidationItem defines model for UpstreamValidationItem.
+type UpstreamValidationItem struct {
+	// Attempted 是否已交给验证 worker；取消后未开始的项目为 false
+	Attempted          bool                             `json:"attempted"`
+	ErrorCode          *UpstreamValidationItemErrorCode `json:"error_code"`
+	LatencyMs          int64                            `json:"latency_ms"`
+	Models             []string                         `json:"models"`
+	ModelsAvailable    int                              `json:"models_available"`
+	ModelsChecked      int                              `json:"models_checked"`
+	ModelsFailed       int                              `json:"models_failed"`
+	ModelsTotal        int                              `json:"models_total"`
+	Ok                 bool                             `json:"ok"`
+	Upstream           Upstream                         `json:"upstream"`
+	ValidationComplete bool                             `json:"validation_complete"`
+}
+
+// UpstreamValidationItemErrorCode defines model for UpstreamValidationItem.ErrorCode.
+type UpstreamValidationItemErrorCode string
+
+// UpstreamValidationSummary defines model for UpstreamValidationSummary.
+type UpstreamValidationSummary struct {
+	// Completed 已交给 worker 且在整体期限内完成完整模型目录验证的上游数量；未完成项目不计入
+	Completed  int                      `json:"completed"`
+	DurationMs int64                    `json:"duration_ms"`
+	Failed     int                      `json:"failed"`
+	Items      []UpstreamValidationItem `json:"items"`
+	Passed     int                      `json:"passed"`
+	Total      int                      `json:"total"`
 }
 
 // UsageGatewayStats 账号网关计费聚合（usage_logs 实时明细；毫分 /1e5 → USD；无记录账号全 0）
@@ -2766,6 +2814,9 @@ type ServerInterface interface {
 	// 新增上游前读取 Key 实际支持的模型
 	// (POST /upstreams/models)
 	PostUpstreamsModels(w http.ResponseWriter, r *http.Request)
+	// 一键验证全部上游及其可用模型
+	// (POST /upstreams/validate-all)
+	PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /upstreams/{id})
 	DeleteUpstreamsId(w http.ResponseWriter, r *http.Request, id int64)
@@ -3231,6 +3282,12 @@ func (_ Unimplemented) PostUpstreams(w http.ResponseWriter, r *http.Request) {
 // 新增上游前读取 Key 实际支持的模型
 // (POST /upstreams/models)
 func (_ Unimplemented) PostUpstreamsModels(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 一键验证全部上游及其可用模型
+// (POST /upstreams/validate-all)
+func (_ Unimplemented) PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5702,6 +5759,20 @@ func (siw *ServerInterfaceWrapper) PostUpstreamsModels(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// PostUpstreamsValidateAll operation middleware
+func (siw *ServerInterfaceWrapper) PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUpstreamsValidateAll(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteUpstreamsId operation middleware
 func (siw *ServerInterfaceWrapper) DeleteUpstreamsId(w http.ResponseWriter, r *http.Request) {
 
@@ -6523,6 +6594,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/upstreams/models", wrapper.PostUpstreamsModels)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/upstreams/validate-all", wrapper.PostUpstreamsValidateAll)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/upstreams/{id}", wrapper.DeleteUpstreamsId)

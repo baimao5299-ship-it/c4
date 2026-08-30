@@ -342,6 +342,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upstreams/validate-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 一键验证全部上游及其可用模型
+         * @description 对每个已保存上游读取模型目录并发送有界真实最小请求；返回每个上游的可用模型子集与健康结果。禁用上游也会纳入检查，便于一次性发现配置问题。
+         */
+        post: operations["PostUpstreamsValidateAll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/upstreams/{id}/models": {
         parameters: {
             query?: never;
@@ -1421,7 +1441,7 @@ export interface components {
         /** @description 上游管理表单；只需名称、端点、Key 和成本倍率；upstream_key 仅写入，响应永不返回；模型读取会保存最近一次有界能力快照供分组调度校验；余额查询会按供应商和常见中转站接口自动识别，旧的 balance_* 字段仅用于兼容已有配置 */
         UpstreamCreate: {
             name: string;
-            /** @description 裸根地址，不要填写 /v1 */
+            /** @description 支持裸根地址或末尾带 /v1 的地址；服务端会自动归一化 */
             base_url: string;
             upstream_key?: string;
             /**
@@ -1547,18 +1567,18 @@ export interface components {
             /** Format: int64 */
             latency_ms: number;
             /** @enum {string|null} */
-            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "unconfigured" | "superseded" | "model_unavailable" | null;
+            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "unconfigured" | "superseded" | "model_unavailable" | "storage" | null;
             upstream: components["schemas"]["Upstream"];
         };
         UpstreamModelsPreview: {
-            /** @description 裸根地址，不要填写 /v1 */
+            /** @description 支持裸根地址或末尾带 /v1 的地址；服务端会自动归一化 */
             base_url: string;
             upstream_key?: string;
         };
         UpstreamModelsResponse: {
             ok: boolean;
             models: string[];
-            /** @description /v1/models 返回的原始模型数量 */
+            /** @description 目录中解析出的去重模型数量（最多 5000） */
             models_total: number;
             /** @description 已发送真实最小请求验证的模型数量 */
             models_checked: number;
@@ -1569,7 +1589,33 @@ export interface components {
             /** @description 是否在总超时前完成全部模型验证 */
             validation_complete: boolean;
             /** @enum {string|null} */
-            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "model_unavailable" | null;
+            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "model_unavailable" | "storage" | null;
+        };
+        UpstreamValidationSummary: {
+            total: number;
+            /** @description 已交给 worker 且在整体期限内完成完整模型目录验证的上游数量；未完成项目不计入 */
+            completed: number;
+            passed: number;
+            failed: number;
+            /** Format: int64 */
+            duration_ms: number;
+            items: components["schemas"]["UpstreamValidationItem"][];
+        };
+        UpstreamValidationItem: {
+            upstream: components["schemas"]["Upstream"];
+            /** @description 是否已交给验证 worker；取消后未开始的项目为 false */
+            attempted: boolean;
+            models: string[];
+            models_total: number;
+            models_checked: number;
+            models_available: number;
+            models_failed: number;
+            validation_complete: boolean;
+            ok: boolean;
+            /** Format: int64 */
+            latency_ms: number;
+            /** @enum {string|null} */
+            error_code: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "model_unavailable" | "superseded" | "storage" | null;
         };
         UpstreamTestBody: {
             /** @description 必须来自上游当前 /v1/models 列表；省略时使用列表第一项 */
@@ -4164,6 +4210,36 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    PostUpstreamsValidateAll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 全部上游验证结果（单个上游失败不影响其他项） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamValidationSummary"];
+                };
+            };
+            /** @description 已有模型验证任务正在进行 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     GetUpstreamsIdModels: {
         parameters: {
             query?: never;
@@ -4901,7 +4977,7 @@ export interface operations {
                 page_size?: number;
                 code_id?: number;
                 user_id?: number;
-                type?: "balance" | "concurrency" | "temp_balance";
+                type?: "balance" | "concurrency" | "temp_balance" | "scoped_temp_balance";
                 sort?: "id" | "code_id" | "user_id" | "value" | "created_at";
                 order?: "asc" | "desc";
             };

@@ -55,6 +55,28 @@ func TestSelectBoundUpstreamEndpointAndCredential(t *testing.T) {
 	})
 }
 
+func TestSelectBoundUpstreamUsesCanonicalEndpointAndKey(t *testing.T) {
+	tplx := tpl(1, domain.FormatOpenAIChat, []string{"gpt-5"})
+	upstreamKey := "Bearer Bearer relay-key"
+	upstream := &domain.Upstream{
+		ID:          43,
+		BaseURL:     " https://relay.example.test/api/v1/// ",
+		UpstreamKey: upstreamKeyPtr(upstreamKey),
+		Enabled:     true,
+	}
+	a := acc(3, tplx, 2)
+	a.UpstreamID = upstreamIDPtr(upstream.ID)
+	a.Upstream = upstream
+	a.UpstreamKey = ""
+	s := newTestScheduler(t, []*domain.Account{a})
+
+	sel, err := s.Select(10, domain.FormatOpenAIChat, "gpt-5")
+	require.NoError(t, err)
+	require.Equal(t, "https://relay.example.test/api", sel.BaseURL)
+	require.Equal(t, "relay-key", sel.UpstreamKey)
+	s.Release(sel.AccountID)
+}
+
 func TestSelectBoundUpstreamUnavailable(t *testing.T) {
 	tplx := tpl(1, domain.FormatOpenAIChat, []string{"gpt-5"})
 	now := time.Now()

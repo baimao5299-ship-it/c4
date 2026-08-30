@@ -270,9 +270,11 @@ func (s *upstreamTestStore) RecordUpstreamModels(_ context.Context, expected *do
 	if !sameUpstreamConfig(row, expected, false) {
 		return nil, fmt.Errorf("%w: id=%d configuration changed", repository.ErrConflict, expected.ID)
 	}
-	row.Models = append([]string(nil), models...)
-	now := time.Now()
-	row.ModelsCheckedAt = &now
+	if !(modelErr != nil && models == nil) {
+		row.Models = append([]string(nil), models...)
+		now := time.Now()
+		row.ModelsCheckedAt = &now
+	}
 	row.ModelsError = modelErr
 	return cloneUpstream(row), nil
 }
@@ -442,6 +444,16 @@ func TestUpstreamModelsPreviewAndSelectedTest(t *testing.T) {
 	rec = do(http.MethodPost, "/api/admin/upstreams/"+itoa(created.ID)+"/test", `{"model":"model-b"}`)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, "model-b", testedModel)
+	rec = do(http.MethodPost, "/api/admin/upstreams/validate-all", "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var batch UpstreamValidationSummary
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &batch))
+	require.Equal(t, 1, batch.Total)
+	require.Equal(t, 1, batch.Completed)
+	require.Equal(t, 1, batch.Passed)
+	require.Zero(t, batch.Failed)
+	require.Len(t, batch.Items, 1)
+	require.True(t, batch.Items[0].Ok)
 }
 
 func TestUpstreamUpdateRejectsStaleRevision(t *testing.T) {

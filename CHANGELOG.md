@@ -12,6 +12,11 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ### Changed
 
+- Upstream management now offers one-click, row-level model capability
+  validation with a stable ID-ordered inventory snapshot. Complete checks only
+  publish models that pass a real request; incomplete transport or timeout runs
+  preserve the last verified snapshot and report the cause. Generated Go and
+  web API clients remain synchronized with the OpenAPI contract.
 - Remote deployments now update only the `app` service when a valid release is
   already active, preserving PostgreSQL and Redis containers across release
   switches and rollbacks.

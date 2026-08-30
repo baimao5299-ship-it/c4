@@ -187,9 +187,9 @@ func TestLoadEnvBareNumberFailFast(t *testing.T) {
 	require.ErrorContains(t, err, "missing unit in duration")
 }
 
-// TestLoadRejectsNonPositiveNumeric：数值字段下限 ≥1——DefaultMaxConcurrency=0
-// （silent 全坏面：从"健康地拒绝全流量"转启动即报错）、DB.MaxConns=0（puddle 层
-// MaxSize 报错无法归因到 db.max_conns）、FailoverAttempts=0（failover 循环零次
+// TestLoadRejectsNonPositiveNumeric：数值字段下限——DefaultMaxConcurrency=0
+// （silent 全坏面：从"健康地拒绝全流量"转启动即报错）、DB.MaxConns=0（低于专用
+// advisory lock + 普通查询所需的最小值 2）、FailoverAttempts=0（failover 循环零次
 // 执行 → 首次选号并发槽永不释放，死锁配置启动即拒绝）。
 func TestLoadRejectsNonPositiveNumeric(t *testing.T) {
 	setenvRequired(t)
@@ -213,6 +213,27 @@ func TestLoadRejectsNonPositiveNumeric(t *testing.T) {
 			require.ErrorContains(t, err, tc.path)
 		})
 	}
+}
+
+// TestLoadRequiresTwoDatabaseConnections 锁定上游验证的连接池下限：
+// 一条专用连接持有 advisory lock 时，至少还需一条连接执行 Ent 读写。
+// TOML 和 env 两条配置路径都必须在启动前拒绝单连接池。
+func TestLoadRequiresTwoDatabaseConnections(t *testing.T) {
+	setenvRequired(t)
+
+	_, err := Load(writeConfig(t, `db = { max_conns = 1 }`))
+	require.Error(t, err)
+	require.EqualError(t, err, "db.max_conns must be >= 2 (got 1)")
+
+	t.Setenv("C3API_DB_MAX_CONNS", "1")
+	_, err = Load("")
+	require.Error(t, err)
+	require.EqualError(t, err, "db.max_conns must be >= 2 (got 1)")
+
+	t.Setenv("C3API_DB_MAX_CONNS", "2")
+	c, err := Load("")
+	require.NoError(t, err)
+	require.Equal(t, 2, c.DB.MaxConns)
 }
 
 // TestLoadAcceptsFailoverAttemptsOne：failover_attempts=1（最小合法值，单次尝试

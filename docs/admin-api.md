@@ -229,7 +229,7 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `name` | string | ✅ | 去除首尾空白，长度 1–200；数据库唯一约束覆盖软删除记录，删除后也不能立即复用同名 |
-| `base_url` | string | ✅ | HTTP(S) 裸根地址；末尾 `/` 会去掉，不能含 `/v1`、查询串、片段或账号信息 |
+| `base_url` | string | ✅ | HTTP(S) 地址；末尾 `/` 和 `/v1` 会自动归一化，不能含查询串、片段或账号信息 |
 | `upstream_key` | string | 否 | 仅写入；只用于管理端探测鉴权（`Bearer`），响应永不返回密钥内容 |
 | `multiplier_bp` | int | 否 | 价格倍率 ×10000 保存；`10000` = ×1，范围 0–1000000（即 ×0–×100）；默认 10000 |
 | `enabled` | bool | 否 | 默认 `true`；绑定该上游的账号会随状态变化从调度快照中摘除或恢复 |
@@ -279,7 +279,7 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 
 `POST /api/admin/upstreams/{id}/probe`
 
-服务端请求 `base_url + "/v1/models"`，超时上限 10 秒；使用启动配置 `upstream.proxy_url` 的显式代理（为空则直连），不会读取 `HTTP_PROXY`，也不会修改账号调度。配置了 `upstream_key` 时发送 `Authorization: Bearer <key>`。只有 `2xx` 且响应体能解析为包含至少一个模型的 JSON 目录才视为成功；HTTP 200 的登录页、HTML、空目录或错误 JSON 会标记为失败，结果和探测统计一起返回：
+服务端请求 `base_url + "/v1/models"`（若该路由明确不存在，再尝试 `/models`），超时上限 10 秒；使用启动配置 `upstream.proxy_url` 的显式代理（为空则直连），不会读取 `HTTP_PROXY`，也不会修改账号调度。配置了 `upstream_key` 时发送 `Authorization: Bearer <key>`。只有 `2xx` 且响应体能解析为包含至少一个模型的 JSON 目录才视为成功；HTTP 200 的登录页、HTML、空目录或错误 JSON 会标记为失败，结果和探测统计一起返回：
 
 ```json
 {
@@ -314,11 +314,61 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 
 `POST /api/admin/upstreams/models`
 
-创建表单提交前会由服务端用待保存的地址和 Key 请求 `/v1/models`。只有读取到至少一个真实模型才继续创建；失败时保留表单并显示认证、限流、网络或超时原因，不写入半成品上游。读取结果为 `{"ok":true,"models":[...]}`，模型最多返回 200 个。
+创建表单提交前会由服务端用待保存的地址和 Key 请求 `/v1/models`；若上游明确返回路由不存在，再兼容尝试 `/models`。只有读取到至少一个真实模型才继续创建；失败时保留表单并显示认证、限流、网络或超时原因，不写入半成品上游。读取结果为 `{"ok":true,"models":[...]}`，模型目录最多接受 5000 个去重模型，超过上限、分页未完成或包含非法项时整次读取失败，不发布不完整列表。
 
 `GET /api/admin/upstreams/{id}/models`
 
-读取已保存上游的实时模型列表，供一键测试选择；失败时仍返回 `200` 和受限 `error_code`，不会泄露上游响应内容。
+读取已保存上游的实时模型列表，供一键测试选择；失败时仍返回 `200` 和受限 `error_code`，不会泄露上游响应内容。返回的 `models_total` 是解析后的去重模型数量，不是未过滤的原始数组长度。
+
+### 一键验证全部上游模型
+
+`POST /api/admin/upstreams/validate-all`
+
+管理台的“验证全部上游”会在一次操作中检查所有未删除的上游，包含当前停用的记录。服务端先读取每个上游的模型目录，再对目录中的每个模型发送一次有界的最小请求；`/v1/responses` 不支持时只在明确的协议错误下回退到 `/v1/chat/completions`。上游之间最多并发 2 个模型验证，单个上游内部最多并发 4 个模型请求。每个模型只有真实请求成功并返回可识别 JSON 响应时才会进入可用列表。
+
+接口始终返回逐项结果，单个上游失败不会中止其他项。每个上游最多返回 5000 个模型及计数；超过上限的目录会被判为无效，不会发布部分结果。`models` 是本次完整验证通过的子集；完整验证但全部失败会写入空快照并清除旧模型，目录读取、网络或整体超时等未完成验证会保留上一份已确认快照并标记错误。验证期间同一服务的单项模型刷新、创建验证或另一批量验证会返回 `409`，避免旧结果覆盖新配置。
+
+响应示例：
+
+```json
+{
+  "total": 2,
+  "completed": 2,
+  "passed": 1,
+  "failed": 1,
+  "duration_ms": 1840,
+  "items": [
+    {
+      "upstream": { "ID": 1, "Name": "relay-a", "BaseURL": "https://relay.example.com" },
+      "attempted": true,
+      "models": ["gpt-5.6"],
+      "models_total": 2,
+      "models_checked": 2,
+      "models_available": 1,
+      "models_failed": 1,
+      "validation_complete": true,
+      "ok": true,
+      "latency_ms": 620,
+      "error_code": "model_unavailable"
+    },
+    {
+      "upstream": { "ID": 2, "Name": "relay-b", "BaseURL": "https://relay-b.example.com" },
+      "attempted": true,
+      "models": [],
+      "models_total": 0,
+      "models_checked": 0,
+      "models_available": 0,
+      "models_failed": 0,
+      "validation_complete": true,
+      "ok": false,
+      "latency_ms": 180,
+      "error_code": "auth"
+    }
+  ]
+}
+```
+
+`completed` 只统计已交给 worker 且在整体期限内完成完整模型目录验证的上游；已开始但因超时、取消或其他原因未完成的项目会保留在 `items` 中，但不计入 `completed`，并保留对应错误状态。验证只更新模型快照和探测统计，不改变上游的启用状态、倍率或绑定关系。
 
 ### 余额刷新
 

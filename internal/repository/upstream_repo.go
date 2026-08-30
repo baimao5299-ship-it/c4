@@ -6,13 +6,16 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
@@ -26,6 +29,58 @@ import (
 type UpstreamRepo struct {
 	client *ent.Client
 	driver dialect.Driver
+	pool   *pgxpool.Pool
+}
+
+// ErrUpstreamValidationLockUnavailable marks the intentionally supported
+// lightweight repository path that has no pgx pool. The service keeps its
+// process-local mutex in that case; production composition uses NewWithPG and
+// therefore takes the cross-instance lock below.
+var ErrUpstreamValidationLockUnavailable = errors.New("upstream validation advisory lock unavailable")
+
+// upstreamValidationLockKey is shared by every C4 instance. The session-level
+// lock is held on a dedicated pool connection for the complete validation
+// operation, including network probes, and therefore cannot be lost when the
+// ordinary query connection is returned to the pool.
+const upstreamValidationLockKey int64 = 0x55707664 // "UpVd"
+
+// upstreamValidationSnapshotLimit is one larger than the service's accepted
+// inventory size. ListAllUpstreams uses it as a database-side sentinel so an
+// accidentally huge inventory cannot be fully materialized before the service
+// rejects the validation request.
+const upstreamValidationSnapshotLimit = 5001
+
+// AcquireUpstreamValidationLock serializes paid model probes across instances.
+// A nil pool means this repository was built for a lightweight/local test path;
+// returning an explicit error avoids silently claiming cross-instance safety in
+// production when the dedicated PostgreSQL pool was not wired.
+func (r *UpstreamRepo) AcquireUpstreamValidationLock(ctx context.Context) (release func(), ok bool, err error) {
+	if r == nil || r.pool == nil {
+		return nil, false, fmt.Errorf("%w: repository.NewWithPG did not provide a pool", ErrUpstreamValidationLockUnavailable)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	var acquired bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, upstreamValidationLockKey).Scan(&acquired); err != nil {
+		conn.Release()
+		return nil, false, err
+	}
+	if !acquired {
+		conn.Release()
+		return nil, false, nil
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, upstreamValidationLockKey)
+			conn.Release()
+		})
+	}, true, nil
 }
 
 func (r *UpstreamRepo) CreateUpstream(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
@@ -56,7 +111,7 @@ func (r *UpstreamRepo) CreateUpstream(ctx context.Context, u *domain.Upstream) (
 		b.SetBalanceCheckedAt(*u.BalanceCheckedAt)
 	}
 	if u.Models != nil {
-		b.SetModels(append([]string(nil), u.Models...))
+		b.SetModels(append([]string{}, u.Models...))
 	}
 	if u.ModelsCheckedAt != nil {
 		b.SetModelsCheckedAt(*u.ModelsCheckedAt)
@@ -124,6 +179,26 @@ func (r *UpstreamRepo) ListUpstreams(ctx context.Context, q ListQuery) ([]*domai
 		out = append(out, toDomainUpstream(row))
 	}
 	return out, int64(total), nil
+}
+
+// ListAllUpstreams returns one stable, ID-ordered inventory snapshot for
+// long-running management operations. It intentionally avoids OFFSET paging:
+// an upstream created or soft-deleted while validation is in progress cannot
+// shift later rows and cause a probe to be skipped or duplicated.
+func (r *UpstreamRepo) ListAllUpstreams(ctx context.Context) ([]*domain.Upstream, error) {
+	rows, err := r.client.Upstream.Query().
+		Where(upstream.DeletedAtIsNil()).
+		Order(upstream.ByID()).
+		Limit(upstreamValidationSnapshotLimit).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.Upstream, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toDomainUpstream(row))
+	}
+	return out, nil
 }
 
 func (r *UpstreamRepo) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
@@ -219,19 +294,20 @@ func (r *UpstreamRepo) RecordUpstreamModels(ctx context.Context, expected *domai
 	)
 	if modelErr != nil && strings.TrimSpace(*modelErr) != "" {
 		code := domain.TruncateErrMsg(strings.TrimSpace(*modelErr))
-		if code == "model_unavailable" {
-			// Model validation has completed: publish exactly the subset that
-			// answered a real request, including an empty subset when every model
-			// failed. ModelsCheckedAt distinguishes this confirmed empty snapshot
-			// from an endpoint that has never been inspected. Transport/catalogue
-			// failures keep the prior verified snapshot for transient recovery.
-			clean := append([]string(nil), models...)
+		if models != nil {
+			// A non-nil list is an explicit completed validation snapshot. Publish
+			// exactly the subset that answered a real request, including an empty
+			// subset when every model failed. ModelsCheckedAt distinguishes this
+			// confirmed empty snapshot from an endpoint that has never been
+			// inspected. The service passes nil for incomplete catalogue/transport
+			// failures, which intentionally keeps the previous snapshot.
+			clean := append([]string{}, models...)
 			b.SetModels(clean).SetModelsCheckedAt(time.Now()).SetModelsError(code)
 		} else {
 			b.SetModelsError(code)
 		}
 	} else {
-		clean := append([]string(nil), models...)
+		clean := append([]string{}, models...)
 		b.SetModels(clean).SetModelsCheckedAt(time.Now())
 		b.ClearModelsError()
 	}

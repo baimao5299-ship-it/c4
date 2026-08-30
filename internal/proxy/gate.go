@@ -378,6 +378,13 @@ func (g *concurrencyGate) reclaim(meta domain.KeyMeta, q *keyQuota) bool {
 		return q.consumed.Load() < q.budget.Load() // 他人复核中：用旧预算判定
 	}
 	defer q.reclaiming.Store(false)
+	// A caller can pass the initial exhausted check while another goroutine is
+	// finishing its DB refresh, then acquire the single-flight flag afterwards.
+	// Recheck the terminal state after winning the flag so one quota boundary
+	// cannot trigger a second paid/database refresh.
+	if q.exhausted.Load() {
+		return false
+	}
 	if q.retryAt.Load() > time.Now().UnixNano() {
 		return false // 复核失败退避期：保守 429（防 DB 风暴）
 	}
