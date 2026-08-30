@@ -64,6 +64,14 @@ type proxyTransportRuntime struct {
 	retryInterval time.Duration
 }
 
+// proxyRouteSnapshot identifies the route a background recovery attempt read.
+// The proxy URL alone is not enough: re-applying the same address is a valid
+// operator action and increments generation even though the string is unchanged.
+type proxyRouteSnapshot struct {
+	proxyURL   string
+	generation uint64
+}
+
 const proxyRetryInterval = 30 * time.Second
 
 func newProxyTransportRuntime(cfg config.UpstreamConfig, proxyURL string, proxyFuncs httpx.ProxyFuncs, gateway, codex *httpx.SwitchableTransport, buildGateway func(httpx.ProxyFuncs) http.RoundTripper, buildCodex func(httpx.ProxyFuncs, bool) http.RoundTripper) *proxyTransportRuntime {
@@ -112,6 +120,13 @@ func (r *proxyTransportRuntime) CodexTransport() *httpx.SwitchableTransport {
 // serializes switch decisions, while request execution remains lock-free in
 // SwitchableTransport. A failed candidate leaves both existing routes intact.
 func (r *proxyTransportRuntime) Apply(ctx context.Context, raw string) error {
+	return r.apply(ctx, raw, nil)
+}
+
+// apply is the serialized route switch implementation. expected is supplied
+// only by the retry worker; it prevents a stale tick from restoring an older
+// proxy after an operator has already selected a newer route.
+func (r *proxyTransportRuntime) apply(ctx context.Context, raw string, expected *proxyRouteSnapshot) error {
 	if r == nil {
 		return fmt.Errorf("proxy runtime is not configured")
 	}
@@ -131,6 +146,8 @@ func (r *proxyTransportRuntime) Apply(ctx context.Context, raw string) error {
 	defer r.switchMu.Unlock()
 	r.mu.RLock()
 	currentURL := r.proxyURL
+	currentGeneration := r.generation
+	currentProbeState := r.probeState
 	tls := r.tls
 	buildGateway := r.buildGateway
 	buildCodex := r.buildCodex
@@ -139,6 +156,15 @@ func (r *proxyTransportRuntime) Apply(ctx context.Context, raw string) error {
 	probe := r.probe
 	pair := r.pair
 	r.mu.RUnlock()
+	if expected != nil && (expected.proxyURL != currentURL || expected.generation != currentGeneration) {
+		// The operator won the race while the worker was waiting for the switch
+		// mutex. Keep the newly selected route and let the next tick observe it.
+		return nil
+	}
+	if expected != nil && currentProbeState == "healthy" {
+		// A foreground apply or another retry already recovered this route.
+		return nil
+	}
 	if raw == currentURL {
 		// Direct mode has no proxy process to probe. Re-applying an empty route
 		// must not make readiness depend on a fixed external host (the same rule
@@ -456,12 +482,13 @@ func (r *proxyTransportRuntime) Start(ctx context.Context) error {
 				return
 			case <-ticker.C:
 				r.mu.RLock()
-				raw, state := r.proxyURL, r.probeState
+				snapshot := proxyRouteSnapshot{proxyURL: r.proxyURL, generation: r.generation}
+				state := r.probeState
 				r.mu.RUnlock()
-				if raw == "" || state == "healthy" || state == "checking" {
+				if snapshot.proxyURL == "" || state == "healthy" || state == "checking" {
 					continue
 				}
-				if err := r.Apply(workerCtx, raw); err != nil {
+				if err := r.apply(workerCtx, snapshot.proxyURL, &snapshot); err != nil {
 					// Apply records the bounded error in the runtime snapshot. Do
 					// not log every retry here; the management surface remains the
 					// single stable diagnostic channel during a proxy outage.
