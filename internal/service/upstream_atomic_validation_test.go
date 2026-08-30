@@ -120,7 +120,6 @@ func TestUpdateUpstreamWithoutModelChangeKeepsLegacyWritePath(t *testing.T) {
 		ID: 1, Name: "relay", BaseURL: "https://relay.example.test", UpstreamKey: &key,
 		MultiplierBP: 10000, UpdatedAt: time.Now(), Models: []string{"model-a"},
 	}}}
-	revision := store.row.UpdatedAt
 	svc := &Service{upstreams: store}
 
 	updated, err := svc.UpdateUpstreamWithModelValidation(context.Background(), &domain.Upstream{
@@ -131,8 +130,7 @@ func TestUpdateUpstreamWithoutModelChangeKeepsLegacyWritePath(t *testing.T) {
 	require.NotNil(t, updated)
 	require.Equal(t, 9000, store.updated.MultiplierBP)
 	require.Nil(t, store.updated.ModelsCheckedAt)
-	require.NotNil(t, store.updated.ExpectedUpdatedAt, "legacy edits receive an optimistic revision guard")
-	require.Equal(t, revision, *store.updated.ExpectedUpdatedAt)
+	require.Nil(t, store.updated.ExpectedUpdatedAt, "legacy non-connection edits remain unversioned")
 	require.Equal(t, []string(nil), store.updated.Models)
 }
 
@@ -160,4 +158,180 @@ func TestValidateModelCatalogueStopsAfterFatalRelayError(t *testing.T) {
 	require.Equal(t, "auth", result.ErrorCode)
 	require.Less(t, result.ModelsChecked, len(models), "a fatal relay error must stop the remaining catalogue probes")
 	require.LessOrEqual(t, requests.Load(), int32(upstreamModelValidationConcurrency*2), "only the current bounded worker batch may race with cancellation")
+}
+
+func TestValidateModelCatalogueDoesNotStopOnModelRateLimit(t *testing.T) {
+	var requests atomic.Int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		requests.Add(1)
+		var body struct {
+			Model string `json:"model"`
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		w.Header().Set("Content-Type", "application/json")
+		if body.Model == "model-0" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"model rate limit"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
+	}))
+	defer endpoint.Close()
+
+	models := []string{"model-0", "model-1", "model-2", "model-3", "model-4", "model-5"}
+	result := validateModelCatalogue(context.Background(), endpoint.Client(), endpoint.URL, "key", models)
+
+	// A 429 can apply to one model only. The validator must still check the
+	// remaining catalogue and publish its verified subset in provider order.
+	require.True(t, result.ValidationComplete)
+	require.Equal(t, len(models), result.ModelsChecked)
+	require.Equal(t, models[1:], result.Models)
+	require.Equal(t, "rate_limited", result.ErrorCode)
+	require.Equal(t, int32(len(models)), requests.Load())
+}
+
+func TestValidateModelCatalogueKeepsTransientAllFailureIncomplete(t *testing.T) {
+	var requests atomic.Int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"provider temporarily unavailable"}}`))
+	}))
+	defer endpoint.Close()
+
+	models := []string{"model-0", "model-1", "model-2", "model-3", "model-4"}
+	result := validateModelCatalogue(context.Background(), endpoint.Client(), endpoint.URL, "key", models)
+
+	// All requests completed, but a transient outage is not proof that the
+	// provider has no models. Treat the run as incomplete so persistence keeps
+	// the last known-good snapshot for routing.
+	require.False(t, result.ValidationComplete)
+	require.Equal(t, "upstream", result.ErrorCode)
+	require.Equal(t, len(models), result.ModelsChecked)
+	require.Equal(t, int32(len(models)), requests.Load())
+}
+
+func TestListUpstreamModelsKeepsSnapshotWhenTransientFailureHidesAllModels(t *testing.T) {
+	key := "relay-key"
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-missing"},{"id":"model-limited"}]}`))
+		case "/v1/responses":
+			var body struct {
+				Model string `json:"model"`
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if body.Model == "model-missing" {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":{"message":"model not found"}}`))
+				return
+			}
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limit exceeded"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	oldModels := []string{"previously-verified"}
+	store := &upstreamServiceStub{row: &domain.Upstream{
+		ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key, Models: oldModels,
+	}}
+	svc := &Service{upstreams: store, upstreamHTTPClient: endpoint.Client()}
+
+	result, err := svc.ListUpstreamModels(context.Background(), 1)
+	require.NoError(t, err)
+	require.False(t, result.OK)
+	require.False(t, result.ValidationComplete)
+	require.Equal(t, "rate_limited", result.ErrorCode)
+	require.Equal(t, oldModels, store.row.Models, "a transient failure must not erase the last verified route")
+}
+
+func TestValidateModelCatalogueCallerCancellationWinsOverAuthResponse(t *testing.T) {
+	started := make(chan struct{})
+	var cancel context.CancelFunc
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		case "/v1/responses":
+			close(started)
+			// Make the caller cancellation race with an otherwise valid auth
+			// response. The final diagnostic must describe the canceled request,
+			// not whichever worker happened to classify the 401 first.
+			cancel()
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	ctx, cancelRequest := context.WithCancel(context.Background())
+	cancel = cancelRequest
+	done := make(chan upstreamModelValidation, 1)
+	go func() {
+		done <- validateModelCatalogue(ctx, endpoint.Client(), endpoint.URL, "key", []string{"model-a"})
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("validation did not reach the model request")
+	}
+	result := <-done
+	require.False(t, result.ValidationComplete)
+	require.Equal(t, "canceled", result.ErrorCode)
+}
+
+func TestValidationCancellationWinsWhenHTTPErrorArrivesFirst(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	httpErr := &upstreamHTTPError{status: http.StatusUnauthorized, body: []byte(`{"error":{"message":"invalid api key"}}`)}
+
+	require.Equal(t, "canceled", classifyUpstreamTestError(ctx, http.StatusUnauthorized, httpErr))
+	require.Equal(t, "canceled", classifyModelValidationError(ctx, http.StatusUnauthorized, httpErr))
+}
+
+func TestValidateModelCatalogueUsesInternalDeadlineForCompletion(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		case "/v1/responses":
+			// Keep the request open until the bounded validation context is
+			// canceled. The caller context remains live, isolating the internal
+			// deadline from an outer request deadline.
+			select {
+			case <-r.Context().Done():
+			case <-time.After(100 * time.Millisecond):
+			}
+			_, _ = w.Write([]byte(`{"id":"late"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	result := validateModelCatalogueWithTimeout(
+		context.Background(), endpoint.Client(), endpoint.URL, "key", []string{"model-a"}, 20*time.Millisecond,
+	)
+
+	require.False(t, result.ValidationComplete, "an internal timeout cannot publish a complete snapshot")
+	require.Equal(t, "timeout", result.ErrorCode)
+	require.Equal(t, 1, result.ModelsChecked)
 }

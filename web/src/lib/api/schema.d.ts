@@ -318,7 +318,7 @@ export interface paths {
         get: operations["GetUpstreamsId"];
         /**
          * 更新上游并在连接变化前验证模型（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
-         * @description 修改地址或密钥时，服务端会在写入前读取模型目录并对每个模型执行一次有界真实最小请求；验证失败不会保存新配置。携带过期的 expected_updated_at 会在外部探测前返回 409。
+         * @description 修改地址或密钥时，服务端会在写入前读取模型目录并对每个模型执行一次有界真实最小请求；验证失败不会保存新配置。携带过期的 expected_updated_at 会在外部探测前返回 409；旧客户端省略该字段时，管理端仅对连接变更自动使用本次请求首读到的版本。
          */
         put: operations["PutUpstreamsId"];
         post?: never;
@@ -1454,7 +1454,7 @@ export interface components {
             clear_upstream_key: boolean;
             /**
              * Format: date-time
-             * @description 编辑时携带上次读取的 UpdatedAt；旧版本保存返回 409，避免覆盖新设置
+             * @description 显式携带编辑开始时读取的 UpdatedAt；版本过期返回 409。旧客户端省略时，仅地址或 Key 变更自动采用管理请求首读版本
              */
             expected_updated_at?: string;
             /**

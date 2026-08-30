@@ -17,6 +17,13 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
   publish models that pass a real request; incomplete transport or timeout runs
   preserve the last verified snapshot and report the cause. Generated Go and
   web API clients remain synchronized with the OpenAPI contract.
+- Upstream edits now carry a first-read revision only when the endpoint or
+  credential changes, and repeated credential copy forms are normalized before
+  conflict checks. Mixed model rejection plus transient failures no longer
+  erases the last verified catalogue; cancellation diagnostics keep priority
+  over an HTTP error that arrives at the same time.
+- Advisory-lock release now destroys an uncertain PostgreSQL session instead
+  of returning a possibly lock-bearing connection to the pool.
 - Remote deployments now update only the `app` service when a valid release is
   already active, preserving PostgreSQL and Redis containers across release
   switches and rollbacks.

@@ -35,6 +35,30 @@ func newUpstreamTestStore() *upstreamTestStore {
 	return &upstreamTestStore{fakeStore: newFakeStore(), upstreams: make(map[int64]*domain.Upstream)}
 }
 
+// revisionRaceStore changes the persisted row after the handler's first GET.
+// The service performs its own second GET during an update, so this isolates
+// the race that a legacy form (which omits expected_updated_at) must reject.
+type revisionRaceStore struct {
+	*upstreamTestStore
+	gets atomic.Int32
+}
+
+func (s *revisionRaceStore) GetUpstream(ctx context.Context, id int64) (*domain.Upstream, error) {
+	row, err := s.upstreamTestStore.GetUpstream(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if s.gets.Add(1) == 1 {
+		s.mu.Lock()
+		if stored := s.upstreams[id]; stored != nil {
+			stored.MultiplierBP = 7777
+			stored.UpdatedAt = stored.UpdatedAt.Add(time.Minute)
+		}
+		s.mu.Unlock()
+	}
+	return row, nil
+}
+
 func cloneUpstream(in *domain.Upstream) *domain.Upstream {
 	if in == nil {
 		return nil
@@ -493,12 +517,83 @@ func TestUpstreamUpdateRejectsStaleRevision(t *testing.T) {
 	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"revision-relay","base_url":%q,"multiplier_bp":9000,"expected_updated_at":%q}`, endpoint.URL, version))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
+	// An explicitly supplied revision remains an optimistic-concurrency
+	// contract, even for a multiplier-only edit.
 	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"revision-relay","base_url":%q,"multiplier_bp":8000,"expected_updated_at":%q}`, endpoint.URL, version))
 	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 
 	current, err := store.GetUpstream(context.Background(), created.ID)
 	require.NoError(t, err)
 	require.Equal(t, 9000, current.MultiplierBP)
+	require.Nil(t, current.UpstreamKey)
+}
+
+func TestPutUpstreamLegacyBodyUsesFirstReadRevision(t *testing.T) {
+	var modelProbes atomic.Int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"revision-model"}]}`))
+		case "/v1/responses":
+			modelProbes.Add(1)
+			_, _ = w.Write([]byte(`{"id":"revision-response","object":"response"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	base := newUpstreamTestStore()
+	store := &revisionRaceStore{upstreamTestStore: base}
+	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
+	svc.SetUpstreamHTTPClient(endpoint.Client())
+	h := New(svc)
+	r := chi.NewRouter()
+	r.Mount("/", h.Router())
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := do(http.MethodPost, "/api/admin/upstreams", fmt.Sprintf(`{"name":"legacy-race","base_url":%q,"upstream_key":"old-key"}`, endpoint.URL))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var created Upstream
+	require.NoError(t, jsonUnmarshal(rec.Body.Bytes(), &created))
+
+	// The body intentionally omits expected_updated_at. The wrapper mutates the
+	// row immediately after the handler's GET and before the service's GET. The
+	// first-read revision must therefore reject the stale credential edit before
+	// it performs another (potentially billable) model probe.
+	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"legacy-race","base_url":%q,"upstream_key":"new-key","multiplier_bp":9000}`, endpoint.URL))
+	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+	require.Equal(t, int32(1), modelProbes.Load(), "stale legacy edit must not probe the replacement key")
+
+	current, err := base.GetUpstream(context.Background(), created.ID)
+	require.NoError(t, err)
+	require.Equal(t, 7777, current.MultiplierBP, "the concurrent revision must remain intact")
+	require.NotNil(t, current.UpstreamKey)
+	require.Equal(t, "old-key", *current.UpstreamKey)
+}
+
+func TestCanonicalUpstreamKeyTreatsBearerCopyFormsAsEqual(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		left  string
+		right string
+	}{
+		{name: "plain whitespace", left: " relay-key ", right: "relay-key"},
+		{name: "single bearer", left: "Bearer relay-key", right: "relay-key"},
+		{name: "repeated bearer", left: "Bearer Bearer relay-key", right: "relay-key"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, canonicalUpstreamKey(tc.right), canonicalUpstreamKey(tc.left))
+		})
+	}
+	require.NotEqual(t, canonicalUpstreamKey("relay-key-a"), canonicalUpstreamKey("relay-key-b"))
 }
 
 func TestAPIUpstreamHidesLegacyBalanceWhenUnconfigured(t *testing.T) {

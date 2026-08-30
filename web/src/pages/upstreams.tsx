@@ -596,7 +596,13 @@ export default function Upstreams() {
       return
     }
     setValidation(null)
-    const body = toBody(form, editing?.UpdatedAt)
+    const credentialChanged = editing != null &&
+      (form.upstream_key.trim().length > 0 || (form.clear_upstream_key && editing.CredentialConfigured === true))
+    const connectionChanged = endpointChanged || credentialChanged
+    // A row's UpdatedAt also moves when health telemetry is recorded. Only
+    // connection edits need the optimistic revision guard; metadata edits can
+    // safely proceed while probes run in the background.
+    const body = toBody(form, connectionChanged ? editing?.UpdatedAt : undefined)
     save.mutate({
       editingID: editing?.ID ?? null,
       body,

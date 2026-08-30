@@ -6,6 +6,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -104,6 +105,29 @@ func (h *AdminAPI) PutUpstreamsId(w http.ResponseWriter, r *http.Request, id int
 	}
 	u := upstreamFromBody(in, current)
 	u.ID = id
+	// Anchor legacy connection edits to the row version observed by this
+	// request. The service performs a second read before validating a changed
+	// endpoint or credential; carrying the first read prevents a stale form that
+	// raced with that read from silently adopting the newer configuration. A
+	// name/multiplier-only legacy edit intentionally stays unversioned because
+	// health telemetry can advance UpdatedAt independently.
+	baseChanged := current != nil && canonicalUpstreamBaseURL(in.BaseUrl) != canonicalUpstreamBaseURL(current.BaseURL)
+	keyChanged := false
+	if current != nil {
+		if in.UpstreamKey != nil && strings.TrimSpace(*in.UpstreamKey) != "" {
+			// Compare the normalized copy/paste form so resubmitting the same
+			// credential does not create a spurious revision conflict when
+			// background telemetry has advanced UpdatedAt.
+			keyChanged = canonicalUpstreamKey(*in.UpstreamKey) != canonicalUpstreamKey(deref(current.UpstreamKey))
+		}
+		if deref(in.ClearUpstreamKey) && canonicalUpstreamKey(deref(current.UpstreamKey)) != "" {
+			keyChanged = true
+		}
+	}
+	if u.ExpectedUpdatedAt == nil && current != nil && (baseChanged || keyChanged) {
+		revision := current.UpdatedAt
+		u.ExpectedUpdatedAt = &revision
+	}
 	// The service performs capability validation before committing endpoint or
 	// credential changes, so a slow/changed upstream cannot leave an unroutable
 	// row saved between the browser's preview and PUT.
@@ -244,6 +268,45 @@ func upstreamFromBody(in UpstreamCreate, current *domain.Upstream) *domain.Upstr
 		u.Note = &note
 	}
 	return u
+}
+
+// canonicalUpstreamBaseURL mirrors the service's address comparison for the
+// management-only revision decision. Older clients commonly submit a copied
+// trailing /v1; that spelling is equivalent to the stored bare root and must
+// not turn a non-connection edit into a versioned conflict.
+func canonicalUpstreamBaseURL(value string) string {
+	value = strings.TrimRight(strings.TrimSpace(value), "/")
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Path == "" {
+		return value
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	lower := strings.ToLower(path)
+	if lower == "/v1" || strings.HasSuffix(lower, "/v1") {
+		path = path[:len(path)-len("/v1")]
+		if path == "/" {
+			path = ""
+		}
+		parsed.Path = path
+		parsed.RawPath = ""
+		value = parsed.String()
+	}
+	return strings.TrimRight(value, "/")
+}
+
+// canonicalUpstreamKey mirrors the service's credential normalization for the
+// management-only revision decision. Keys are write-only in API responses, so
+// an operator may paste the same value with one or more Bearer prefixes.
+func canonicalUpstreamKey(value string) string {
+	value = strings.TrimSpace(value)
+	for value != "" {
+		fields := strings.Fields(value)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "bearer") {
+			break
+		}
+		value = strings.TrimSpace(value[len(fields[0]):])
+	}
+	return value
 }
 
 func toAPIUpstream(u *domain.Upstream) Upstream {

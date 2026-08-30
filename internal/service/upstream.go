@@ -307,6 +307,9 @@ func (s *Service) CreateUpstreamWithModelValidation(ctx context.Context, u *doma
 	if s == nil {
 		return nil, errUpstreamStoreUnavailable
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	releaseValidation, err := s.lockUpstreamValidation(ctx)
 	if err != nil {
 		return nil, err
@@ -379,7 +382,9 @@ func (s *Service) UpdateUpstreamWithModelValidation(ctx context.Context, u *doma
 // updateUpstream contains the shared management-form semantics. When
 // validateModels is enabled, endpoint/key changes are capability-checked before
 // persistence and the current revision is required even if an older client did
-// not send expected_updated_at.
+// not send expected_updated_at. Ordinary metadata/billing-form edits do not
+// probe the upstream; legacy callers may omit the revision for those edits,
+// while an explicitly supplied revision is still honored.
 func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, validateModels bool) (*domain.Upstream, error) {
 	store, err := s.upstreamStore()
 	if err != nil {
@@ -394,18 +399,6 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 	}
 	if current == nil || current.DeletedAt != nil {
 		return nil, fmt.Errorf("%w: id=%d deleted", ErrNotFound, u.ID)
-	}
-	if validateModels && u.ExpectedUpdatedAt != nil && !current.UpdatedAt.Equal(*u.ExpectedUpdatedAt) {
-		// Reject a stale form before any external request. Capability probes can
-		// be billable and must never run for a revision that is already obsolete.
-		return nil, fmt.Errorf("%w: id=%d changed", ErrConflict, u.ID)
-	}
-	if validateModels && u.ExpectedUpdatedAt == nil {
-		// Legacy management clients may omit the revision field. Upgrade them
-		// to the same optimistic condition used by the current UI so even a
-		// name/multiplier-only edit cannot overwrite a concurrent save.
-		revision := current.UpdatedAt
-		u.ExpectedUpdatedAt = &revision
 	}
 	if u.ClearUpstreamKey && u.UpstreamKey != nil {
 		return nil, ErrInvalidInput
@@ -436,7 +429,26 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 	if baseURLChanged && hasUpstreamKey(current.UpstreamKey) && !u.ClearUpstreamKey && !keyChanged {
 		return nil, fmt.Errorf("%w: a new upstream key is required when changing the address", ErrInvalidInput)
 	}
-	if baseURLChanged || keyChanged {
+	connectionChanged := baseURLChanged || keyChanged
+	if validateModels && u.ExpectedUpdatedAt != nil && !current.UpdatedAt.Equal(*u.ExpectedUpdatedAt) {
+		// An explicitly supplied revision is an optimistic-concurrency contract
+		// for every management edit. Legacy callers may omit it, but a caller that
+		// sends one must never overwrite a row changed by another window.
+		return nil, fmt.Errorf("%w: id=%d changed", ErrConflict, u.ID)
+	}
+	if validateModels && connectionChanged {
+		// Reject a stale form before any external request. Capability probes can
+		// be billable and must never run for a revision that is already obsolete.
+		// Legacy management clients may omit the revision field. Upgrade them
+		// to the same optimistic condition used by the current UI. This guard is
+		// only needed for a connection change because that is the operation that
+		// performs an external capability probe.
+		if u.ExpectedUpdatedAt == nil {
+			revision := current.UpdatedAt
+			u.ExpectedUpdatedAt = &revision
+		}
+	}
+	if connectionChanged {
 		u.ResetTelemetry = true
 		u.BalanceAmount = nil
 		u.BalanceCurrency = nil
@@ -455,7 +467,7 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 		u.BalanceStatus = current.BalanceStatus
 		u.BalanceCheckedAt = current.BalanceCheckedAt
 	}
-	if validateModels && (baseURLChanged || keyChanged) {
+	if validateModels && connectionChanged {
 		base := normalizeUpstreamBaseURL(u.BaseURL)
 		key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
 		client := s.managementHTTPClient()
@@ -716,6 +728,17 @@ func upstreamValidationContextErrorCode(ctx context.Context) string {
 	return "canceled"
 }
 
+// validationContextErrorCode returns a diagnostic only when the context has
+// actually ended. It is kept separate from upstreamValidationContextErrorCode,
+// whose callers already know that cancellation occurred and therefore use its
+// "canceled" fallback for all non-deadline cases.
+func validationContextErrorCode(ctx context.Context) string {
+	if ctx == nil || ctx.Err() == nil {
+		return ""
+	}
+	return upstreamValidationContextErrorCode(ctx)
+}
+
 func loadUpstreamValidationSnapshot(ctx context.Context, store UpstreamStore) ([]*domain.Upstream, error) {
 	if snapshot, ok := store.(UpstreamSnapshotStore); ok {
 		rows, err := snapshot.ListAllUpstreams(ctx)
@@ -830,7 +853,8 @@ func (s *Service) validateStoredUpstream(ctx context.Context, store UpstreamStor
 		item.ErrorCode = "model_unavailable"
 	}
 	// An incomplete run must not replace the last verified snapshot. A complete
-	// run, including an empty or all-failed one, writes the exact result.
+	// run, including an empty or definitively rejected one, writes the exact
+	// result.
 	persistCtx, persistCancel := upstreamValidationPersistenceContext(ctx)
 	defer persistCancel()
 	if err := s.recordUpstreamModels(persistCtx, store, expected, result.Models, result.ErrorCode, result.ValidationComplete); err != nil {
@@ -1221,13 +1245,20 @@ func validateUpstreamModels(ctx context.Context, client *http.Client, base, key 
 }
 
 func validateModelCatalogue(ctx context.Context, client *http.Client, base, key string, models []string) upstreamModelValidation {
+	return validateModelCatalogueWithTimeout(ctx, client, base, key, models, upstreamModelValidationTimeout)
+}
+
+// validateModelCatalogueWithTimeout contains the bounded catalogue worker and
+// accepts a timeout override so the deadline boundary can be tested without
+// waiting for the production 30-second limit.
+func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client, base, key string, models []string, timeout time.Duration) upstreamModelValidation {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if len(models) == 0 {
 		return upstreamModelValidation{ValidationComplete: true}
 	}
-	validationCtx, cancel := context.WithTimeout(ctx, upstreamModelValidationTimeout)
+	validationCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	type outcome struct {
 		model   string
@@ -1242,25 +1273,16 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 	}
 	jobs := make(chan string, workers)
 	var wg sync.WaitGroup
-	var fatalMu sync.Mutex
-	fatalCode := ""
 	var stopDispatchOnce sync.Once
 	stopDispatch := make(chan struct{})
+	// An authentication failure is account-wide and is safe to stop on after
+	// the current worker batch. Rate limits, provider 5xx responses, and network
+	// resets can be model-specific or transient; dispatching must continue so a
+	// single bad model cannot hide other usable models from the verified snapshot.
 	recordFatal := func(code string) {
 		if !isFatalModelValidationCode(code) {
 			return
 		}
-		fatalMu.Lock()
-		if fatalCode == "" {
-			fatalCode = code
-		}
-		fatalMu.Unlock()
-		// Authentication, rate limiting, provider outages, and transport
-		// failures apply to the relay rather than one model. Stop dispatching
-		// more requests immediately so a bad key or outage cannot fan out into
-		// thousands of duplicate failures. Requests already handed to workers
-		// are allowed to settle; this keeps a small catalogue complete while
-		// bounding the work for a large catalogue to the current worker batch.
 		stopDispatchOnce.Do(func() { close(stopDispatch) })
 	}
 	for i := 0; i < workers; i++ {
@@ -1343,27 +1365,38 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 			ordered = append(ordered, model)
 		}
 	}
-	// An internal fatal signal stops dispatching new work. It must not turn a run
-	// that already checked every advertised model into a
-	// partial result (for example a one-model catalogue returning auth). Only a
-	// caller deadline/cancellation makes an otherwise complete run incomplete.
-	complete := checked == len(models) && ctx.Err() == nil
+	// An account-wide authentication signal can stop dispatching new work. It
+	// must not turn a run that already checked every advertised model into a
+	// partial result (for example a one-model catalogue returning auth). A caller
+	// deadline/cancellation or this function's own bounded deadline makes an
+	// otherwise complete-looking run incomplete.
+	complete := checked == len(models) && validationCtx.Err() == nil
+	// A catalogue with no successful model and any transient transport or
+	// throttling failure is not a trustworthy "no models" snapshot. Keep the
+	// previous verified list so one provider hiccup cannot remove every route.
+	// An authentication failure remains authoritative: an invalid credential
+	// should clear the stale snapshot instead of routing traffic into it.
+	if complete && len(ordered) == 0 && counts["auth"] == 0 && hasTransientValidationFailure(counts) {
+		complete = false
+	}
 	validationCode := ""
 	if !complete {
 		// A partial run is not a capability snapshot. Even if some workers
 		// succeeded, keep the previous verified catalogue and require a retry;
 		// publishing a partial list would make the scheduler silently hide models
 		// that were never checked.
-		fatalMu.Lock()
-		observedFatal := fatalCode
-		fatalMu.Unlock()
 		switch {
-		case observedFatal != "":
-			validationCode = observedFatal
-		case errors.Is(validationCtx.Err(), context.DeadlineExceeded):
+		// The caller's cancellation is the most useful explanation to the
+		// management API. A worker may have observed an auth/429 response just
+		// before the request was canceled; do not let that incidental result win.
+		case errors.Is(ctx.Err(), context.Canceled):
+			validationCode = "canceled"
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			validationCode = "timeout"
 		case errors.Is(validationCtx.Err(), context.Canceled):
 			validationCode = "canceled"
+		case errors.Is(validationCtx.Err(), context.DeadlineExceeded):
+			validationCode = "timeout"
 		default:
 			validationCode = dominantModelValidationError(counts)
 		}
@@ -1385,15 +1418,36 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 }
 
 func isFatalModelValidationCode(code string) bool {
-	switch code {
-	case "auth", "rate_limited", "upstream", "network":
-		return true
-	default:
+	// 401/403 means the credential itself is unusable for every model. Other
+	// categories are deliberately retained as per-model outcomes: a relay can
+	// rate-limit or temporarily fail one model while serving the rest.
+	return code == "auth"
+}
+
+func hasTransientValidationFailure(counts map[string]int) bool {
+	if len(counts) == 0 {
 		return false
 	}
+	for code, count := range counts {
+		if count <= 0 {
+			continue
+		}
+		switch code {
+		case "rate_limited", "upstream", "network", "timeout":
+			return true
+		default:
+			continue
+		}
+	}
+	return false
 }
 
 func classifyModelValidationError(ctx context.Context, status int, requestErr error) string {
+	if code := validationContextErrorCode(ctx); code != "" {
+		// The caller's cancellation/deadline outranks a response that happened
+		// to arrive at the same time (for example a 401 or 429).
+		return code
+	}
 	if requestErr != nil {
 		// A valid JSON error envelope means the model endpoint answered, but the
 		// advertised model was rejected. Hide only that model and retain other
@@ -1850,6 +1904,11 @@ func isExplicitProtocolFallbackMessage(message string) bool {
 }
 
 func classifyUpstreamTestError(ctx context.Context, status int, requestErr error) string {
+	if code := validationContextErrorCode(ctx); code != "" {
+		// Preserve cancellation semantics even when the transport returned an
+		// HTTP error before the context was observed by the caller.
+		return code
+	}
 	if requestErr != nil {
 		var envelope *upstreamErrorEnvelope
 		if errors.As(requestErr, &envelope) {

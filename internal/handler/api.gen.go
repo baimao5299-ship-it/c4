@@ -1899,7 +1899,7 @@ type UpstreamCreate struct {
 	ClearUpstreamKey *bool `json:"clear_upstream_key,omitempty"`
 	Enabled          *bool `json:"enabled,omitempty"`
 
-	// ExpectedUpdatedAt 编辑时携带上次读取的 UpdatedAt；旧版本保存返回 409，避免覆盖新设置
+	// ExpectedUpdatedAt 显式携带编辑开始时读取的 UpdatedAt；版本过期返回 409。旧客户端省略时，仅地址或 Key 变更自动采用管理请求首读版本
 	ExpectedUpdatedAt *time.Time `json:"expected_updated_at,omitempty"`
 
 	// MultiplierBp 价格倍率 ×10000 保存
