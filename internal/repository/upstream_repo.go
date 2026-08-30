@@ -259,6 +259,20 @@ func (r *UpstreamRepo) UpdateUpstream(ctx context.Context, u *domain.Upstream) (
 			SetModels([]string{}).
 			ClearModelsCheckedAt().
 			ClearModelsError()
+		// A validated endpoint/key update carries a fresh capability snapshot on
+		// the domain object. Preserve it after the telemetry reset; otherwise the
+		// same request would first clear the old catalogue and then silently drop
+		// the newly verified models, making the update appear unusable until a
+		// second manual refresh.
+		if u.ModelsCheckedAt != nil {
+			b.SetModels(append([]string{}, u.Models...)).
+				SetModelsCheckedAt(*u.ModelsCheckedAt)
+			if u.ModelsError != nil && strings.TrimSpace(*u.ModelsError) != "" {
+				b.SetModelsError(domain.TruncateErrMsg(strings.TrimSpace(*u.ModelsError)))
+			} else {
+				b.ClearModelsError()
+			}
+		}
 	}
 	row, err := b.Save(ctx)
 	if err != nil {

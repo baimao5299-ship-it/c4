@@ -352,6 +352,35 @@ func (s *Service) CreateUpstreamWithModelValidation(ctx context.Context, u *doma
 }
 
 func (s *Service) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
+	return s.updateUpstream(ctx, u, false)
+}
+
+// UpdateUpstreamWithModelValidation updates an upstream whose endpoint or
+// credential changed only after the new connection has passed a complete
+// capability check. The check and conditional write live on the server so a
+// browser cannot validate one configuration and then accidentally save another
+// one after a concurrent edit. Name/multiplier-only edits keep the existing
+// verified model snapshot and do not issue a paid probe.
+func (s *Service) UpdateUpstreamWithModelValidation(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
+	if s == nil {
+		return nil, errUpstreamStoreUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	releaseValidation, err := s.lockUpstreamValidation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseValidation()
+	return s.updateUpstream(ctx, u, true)
+}
+
+// updateUpstream contains the shared management-form semantics. When
+// validateModels is enabled, endpoint/key changes are capability-checked before
+// persistence and the current revision is required even if an older client did
+// not send expected_updated_at.
+func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, validateModels bool) (*domain.Upstream, error) {
 	store, err := s.upstreamStore()
 	if err != nil {
 		return nil, err
@@ -365,6 +394,11 @@ func (s *Service) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*doma
 	}
 	if current == nil || current.DeletedAt != nil {
 		return nil, fmt.Errorf("%w: id=%d deleted", ErrNotFound, u.ID)
+	}
+	if validateModels && u.ExpectedUpdatedAt != nil && !current.UpdatedAt.Equal(*u.ExpectedUpdatedAt) {
+		// Reject a stale form before any external request. Capability probes can
+		// be billable and must never run for a revision that is already obsolete.
+		return nil, fmt.Errorf("%w: id=%d changed", ErrConflict, u.ID)
 	}
 	if u.ClearUpstreamKey && u.UpstreamKey != nil {
 		return nil, ErrInvalidInput
@@ -413,6 +447,28 @@ func (s *Service) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*doma
 		u.BalanceCurrency = current.BalanceCurrency
 		u.BalanceStatus = current.BalanceStatus
 		u.BalanceCheckedAt = current.BalanceCheckedAt
+	}
+	if validateModels && (baseURLChanged || keyChanged) {
+		// A missing revision from a legacy client is upgraded to an optimistic
+		// condition using the value just read above. This prevents a slow network
+		// probe from overwriting a concurrent endpoint/key edit.
+		if u.ExpectedUpdatedAt == nil {
+			revision := current.UpdatedAt
+			u.ExpectedUpdatedAt = &revision
+		}
+		base := normalizeUpstreamBaseURL(u.BaseURL)
+		key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
+		client := s.managementHTTPClient()
+		client.Timeout = 10 * time.Second
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		result := validateUpstreamModels(ctx, client, base, key)
+		if !result.ValidationComplete || !result.OK {
+			return nil, &UpstreamModelValidationError{Code: result.ErrorCode}
+		}
+		u.Models = append([]string{}, result.Models...)
+		checkedAt := time.Now()
+		u.ModelsCheckedAt = &checkedAt
+		u.ModelsError = optionalString(result.ErrorCode)
 	}
 	updated, err := store.UpdateUpstream(ctx, u)
 	if err != nil {

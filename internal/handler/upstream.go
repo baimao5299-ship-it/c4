@@ -104,7 +104,10 @@ func (h *AdminAPI) PutUpstreamsId(w http.ResponseWriter, r *http.Request, id int
 	}
 	u := upstreamFromBody(in, current)
 	u.ID = id
-	saved, err := h.svc.UpdateUpstream(r.Context(), u)
+	// The service performs capability validation before committing endpoint or
+	// credential changes, so a slow/changed upstream cannot leave an unroutable
+	// row saved between the browser's preview and PUT.
+	saved, err := h.svc.UpdateUpstreamWithModelValidation(r.Context(), u)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return

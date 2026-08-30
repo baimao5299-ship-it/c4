@@ -29,7 +29,6 @@ import {
   type UpstreamBatchValidationResponse,
   type UpstreamBatchValidationItem,
   type UpstreamRecord,
-  type UpstreamModelsPreviewInput,
   type UpstreamStatus,
 } from '@/lib/api/client'
 import { useDebounced } from '@/lib/use-debounced'
@@ -63,22 +62,11 @@ type FormState = {
 type SaveArgs = {
   editingID: number | null
   body: UpstreamCreateInput
-  revalidateModels?: boolean
 }
 
 type ModelValidationResult =
   | { ok: true }
   | { ok: false; reason: string }
-
-class ModelValidationFailure extends Error {
-  readonly reason: string
-
-  constructor(reason: string) {
-    super(reason)
-    this.name = 'ModelValidationFailure'
-    this.reason = reason
-  }
-}
 
 const EMPTY_FORM: FormState = {
   name: '',
@@ -142,6 +130,13 @@ function errorMessage(error: unknown): string | null {
 function batchValidationErrorMessage(error: unknown, t: (key: string) => string): string | null {
   if (error instanceof ApiError && error.status === 409) return t('upstreams.batchValidationConflict')
   return errorMessage(error)
+}
+
+function modelValidationErrorCode(error: unknown): string | null {
+  const message = errorMessage(error)
+  if (!message) return null
+  const match = message.match(/upstream model validation failed\s*\(([^)]+)\)/i)
+  return match?.[1]?.trim() || null
 }
 
 function isRevisionConflict(error: unknown): boolean {
@@ -421,27 +416,11 @@ export default function Upstreams() {
 
   const save = useMutation({
     mutationFn: async (args: SaveArgs) => {
-      // Endpoint/key edits must prove the new target before the PUT. The
-      // update endpoint clears the old model snapshot when its configuration
-      // changes; probing first prevents an invalid edit from creating a saved
-      // but unroutable upstream. The successful preview is reused below so we
-      // do not send a second paid capability probe after the save.
-      if (args.editingID != null && args.revalidateModels) {
-        const previewBody: UpstreamModelsPreviewInput = {
-          base_url: args.body.base_url,
-          ...(typeof args.body.upstream_key === 'string' ? { upstream_key: args.body.upstream_key } : {}),
-        }
-        const preview = await api.previewUpstreamModels(previewBody)
-        if (!preview.ok || !preview.models?.length || preview.validation_complete !== true) {
-          throw new ModelValidationFailure(probeErrorLabel(preview.error_code, t))
-        }
-      }
       return args.editingID != null ? api.updateUpstream(args.editingID, args.body) : api.createUpstream(args.body)
     },
     onSuccess: async (_result, args) => {
-      // New rows are validated atomically by the server. Endpoint/key edits
-      // were previewed before the PUT above, so the successful save does not
-      // repeat the same paid model probes.
+      // Creation and endpoint/key edits are validated by the server before the
+      // database write, so one save never performs a duplicate paid probe.
       const refreshed = await refreshRows()
       setDialogOpen(false)
       if (!refreshed) warnRefreshFailure()
@@ -450,14 +429,17 @@ export default function Upstreams() {
       }
     },
     onError: async error => {
-      if (error instanceof ModelValidationFailure) {
-        toast.add({ title: t('upstreams.savedValidationFailed', { reason: error.reason }), type: 'warning' })
-      } else if (isRevisionConflict(error)) {
+      if (isRevisionConflict(error)) {
         await refreshRows()
         toast.add({ title: t('upstreams.staleUpdate'), type: 'warning' })
       } else {
         const message = errorMessage(error)
-        if (message) toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
+        const validationCode = modelValidationErrorCode(error)
+        if (validationCode) {
+          toast.add({ title: t('upstreams.savedValidationFailed', { reason: probeErrorLabel(validationCode, t) }), type: 'warning' })
+        } else if (message) {
+          toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
+        }
       }
     },
   })
@@ -618,9 +600,6 @@ export default function Upstreams() {
     save.mutate({
       editingID: editing?.ID ?? null,
       body,
-      // A multiplier/name-only edit keeps the verified snapshot. Re-run the
-      // paid capability checks only when the endpoint or credential changed.
-      revalidateModels: editing != null && (endpointChanged || form.upstream_key.trim() !== '' || form.clear_upstream_key),
     })
   }
 
