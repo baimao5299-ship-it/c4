@@ -62,6 +62,35 @@ export type UpstreamProbeResponse = components['schemas']['UpstreamProbeResponse
 export type UpstreamModelsResponse = components['schemas']['UpstreamModelsResponse']
 export type UpstreamModelsPreviewInput = components['schemas']['UpstreamModelsPreview']
 
+// A batch model validation keeps each upstream's result separate so the
+// management UI can show partial failures instead of treating the whole run
+// as a single boolean. The optional aliases keep the client compatible with
+// older beta servers while the endpoint is rolled out.
+export interface UpstreamBatchValidationItem {
+  upstream?: UpstreamRecord | null
+  upstream_id?: number
+  name?: string
+  ok: boolean
+  models?: string[]
+  models_total?: number
+  models_checked?: number
+  models_available?: number
+  models_failed?: number
+  validation_complete?: boolean
+  latency_ms?: number
+  error_code?: string | null
+  error_message?: string | null
+}
+
+export interface UpstreamBatchValidationResponse {
+  total: number
+  completed: number
+  passed: number
+  failed: number
+  duration_ms?: number
+  items: UpstreamBatchValidationItem[]
+}
+
 // —— 日志/统计查询参数（usage/err 游标分页；from/to 必填）——
 export interface UsageLogParams {
   limit?: number
@@ -157,6 +186,7 @@ export class ApiClient {
   previewUpstreamModels = (b: UpstreamModelsPreviewInput) => this.request<UpstreamModelsResponse>('/upstreams/models', { method: 'POST', body: JSON.stringify(b) })
   testUpstream = (id: number, model: string) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/test`, { method: 'POST', body: JSON.stringify({ model }) })
   refreshUpstreamBalance = (id: number) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/balance`, { method: 'POST' })
+  validateAllUpstreams = () => this.request<UpstreamBatchValidationResponse>('/upstreams/validate-all', { method: 'POST' })
   // —— 账号 ——
   listAccounts = (p?: AccountListParams) => this.request<components['schemas']['AccountListResponse']>('/accounts', { params: toQuery(p) })
   createAccount = (b: components['schemas']['AccountCreate']) => this.request<components['schemas']['Account']>('/accounts', { method: 'POST', body: JSON.stringify(b) })

@@ -12,6 +12,7 @@ import {
   CircleX,
   Gauge,
   Info,
+  ListChecks,
   Pencil,
   Plus,
   RefreshCw,
@@ -25,6 +26,8 @@ import {
   ApiError,
   ApiUnauthorized,
   type UpstreamCreateInput,
+  type UpstreamBatchValidationResponse,
+  type UpstreamBatchValidationItem,
   type UpstreamRecord,
   type UpstreamStatus,
 } from '@/lib/api/client'
@@ -260,6 +263,19 @@ function modelsForDisplay(row: UpstreamRecord): string[] {
   return sortModelsLatestFirst(row.Models ?? [])
 }
 
+function batchItemName(item: UpstreamBatchValidationItem): string {
+  return item.upstream?.Name?.trim() || item.name?.trim() || (item.upstream_id != null ? `#${item.upstream_id}` : '—')
+}
+
+function batchItemModels(item: UpstreamBatchValidationItem): string[] {
+  return sortModelsLatestFirst(item.models ?? item.upstream?.Models ?? [])
+}
+
+function batchItemCount(item: UpstreamBatchValidationItem, field: 'models_total' | 'models_available' | 'models_failed'): number | null {
+  const value = item[field]
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : null
+}
+
 export default function Upstreams() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -278,6 +294,8 @@ export default function Upstreams() {
   const [pendingProbeIDs, setPendingProbeIDs] = useState<Set<number>>(() => new Set())
   const [pendingModelIDs, setPendingModelIDs] = useState<Set<number>>(() => new Set())
   const [pendingToggleIDs, setPendingToggleIDs] = useState<Set<number>>(() => new Set())
+  const [batchValidationOpen, setBatchValidationOpen] = useState(false)
+  const [batchValidationResult, setBatchValidationResult] = useState<UpstreamBatchValidationResponse | null>(null)
 
   const query = useQuery({
     queryKey: ['upstreams', { name: debouncedName, status, page, pageSize, sort, order }],
@@ -440,6 +458,27 @@ export default function Upstreams() {
     },
   })
 
+  const batchValidation = useMutation({
+    mutationFn: () => api.validateAllUpstreams(),
+    onMutate: () => {
+      // Open immediately so a slow upstream cannot look like a dead button.
+      setBatchValidationResult(null)
+      setBatchValidationOpen(true)
+    },
+    onSuccess: async result => {
+      setBatchValidationResult(result)
+      await refreshRows()
+      toast.add({
+        title: t('upstreams.batchValidationFinished', { passed: result.passed, failed: result.failed }),
+        type: result.failed > 0 ? 'warning' : 'success',
+      })
+    },
+    onError: error => {
+      const message = errorMessage(error)
+      if (message) toast.add({ title: t('upstreams.batchValidationFailed', { message }), type: 'error' })
+    },
+  })
+
   const runProbe = (id: number, balance: boolean) => {
     if (pendingProbeIDs.has(id)) return
     probe.mutate({ id, balance })
@@ -519,6 +558,10 @@ export default function Upstreams() {
           <p className="text-sm text-muted-foreground">{t('upstreams.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => { if (!batchValidation.isPending) batchValidation.mutate() }} disabled={batchValidation.isPending}>
+            <ListChecks className={cn(batchValidation.isPending && 'animate-pulse')} />
+            <span>{batchValidation.isPending ? t('upstreams.validatingAll') : t('upstreams.validateAll')}</span>
+          </Button>
           <Button variant="outline" size="icon" title={t('common.refresh')} onClick={refresh} disabled={query.isFetching}>
             <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
             <span className="sr-only">{t('common.refresh')}</span>
@@ -787,6 +830,72 @@ export default function Upstreams() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { remove.reset(); setDeleting(null) }} disabled={remove.isPending}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID)} disabled={remove.isPending}>{remove.isPending ? t('common.deleting') : t('common.confirmDelete')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchValidationOpen} onOpenChange={o => { if (!o && batchValidation.isPending) return; setBatchValidationOpen(o) }}>
+        <DialogContent className="top-4 max-h-[calc(100dvh-2rem)] translate-y-0 overflow-y-auto sm:top-1/2 sm:max-w-2xl sm:-translate-y-1/2">
+          <DialogHeader>
+            <DialogTitle>{t('upstreams.batchValidationTitle')}</DialogTitle>
+            <DialogDescription>{t('upstreams.batchValidationDesc')}</DialogDescription>
+          </DialogHeader>
+          {batchValidation.isPending && (
+            <div className="space-y-3">
+              <ModelValidationProgress />
+              <p className="text-xs text-muted-foreground">{t('upstreams.batchValidationRunning')}</p>
+            </div>
+          )}
+          {batchValidation.isError && !batchValidation.isPending && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {t('upstreams.batchValidationFailed', { message: errorMessage(batchValidation.error) ?? t('upstreams.probeErrors.unknown') })}
+            </p>
+          )}
+          {batchValidationResult && !batchValidation.isPending && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                <div className="rounded-md border px-3 py-2"><div className="text-xs text-muted-foreground">{t('upstreams.batchTotal')}</div><div className="font-semibold tabular-nums">{batchValidationResult.total}</div></div>
+                <div className="rounded-md border px-3 py-2"><div className="text-xs text-muted-foreground">{t('upstreams.batchCompleted')}</div><div className="font-semibold tabular-nums">{batchValidationResult.completed}</div></div>
+                <div className="rounded-md border border-emerald-500/30 px-3 py-2"><div className="text-xs text-muted-foreground">{t('upstreams.batchSucceeded')}</div><div className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{batchValidationResult.passed}</div></div>
+                <div className="rounded-md border border-destructive/30 px-3 py-2"><div className="text-xs text-muted-foreground">{t('upstreams.batchFailed')}</div><div className="font-semibold tabular-nums text-destructive">{batchValidationResult.failed}</div></div>
+              </div>
+              {typeof batchValidationResult.duration_ms === 'number' && Number.isFinite(batchValidationResult.duration_ms) && (
+                <p className="text-xs text-muted-foreground">{t('upstreams.batchDuration', { value: (Math.max(0, batchValidationResult.duration_ms) / 1000).toFixed(1) })}</p>
+              )}
+              <div className="max-h-[45vh] space-y-2 overflow-y-auto pr-1" role="list" aria-label={t('upstreams.batchResults')}>
+                {batchValidationResult.items.map((item, index) => {
+                  const models = batchItemModels(item)
+                  const totalModels = batchItemCount(item, 'models_total')
+                  const availableModels = batchItemCount(item, 'models_available')
+                  const failedModels = batchItemCount(item, 'models_failed')
+                  const errorCode = item.error_code ? probeErrorLabel(item.error_code, t) : null
+                  return (
+                    <div key={`${item.upstream_id ?? item.upstream?.ID ?? batchItemName(item)}-${index}`} role="listitem" className="rounded-md border px-3 py-2.5 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{batchItemName(item)}</div>
+                          {item.upstream?.BaseURL && <div className="truncate font-mono text-xs text-muted-foreground" title={item.upstream.BaseURL}>{item.upstream.BaseURL}</div>}
+                        </div>
+                        <Badge variant={item.ok ? 'secondary' : 'destructive'} className="shrink-0 gap-1">
+                          {item.ok ? <CircleCheck className="size-3" /> : <CircleX className="size-3" />}
+                          {t(item.ok ? 'upstreams.batchOk' : 'upstreams.batchFailedItem')}
+                        </Badge>
+                      </div>
+                      {(totalModels != null || availableModels != null || failedModels != null) && (
+                        <div className="mt-1 text-xs text-muted-foreground tabular-nums">
+                          {t('upstreams.batchModelsSummary', { total: totalModels ?? '—', available: availableModels ?? models.length, failed: failedModels ?? '—' })}
+                        </div>
+                      )}
+                      {models.length > 0 && <div className="mt-1 break-words font-mono text-xs text-muted-foreground">{models.join(', ')}</div>}
+                      {errorCode && <div className="mt-1 text-xs text-destructive">{t('upstreams.batchError', { code: errorCode })}{item.error_message ? `：${item.error_message}` : ''}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchValidationOpen(false)} disabled={batchValidation.isPending}>{t('common.done')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
