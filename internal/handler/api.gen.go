@@ -2823,7 +2823,7 @@ type ServerInterface interface {
 
 	// (GET /upstreams/{id})
 	GetUpstreamsId(w http.ResponseWriter, r *http.Request, id int64)
-	// 更新上游（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
+	// 更新上游并在连接变化前验证模型（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
 	// (PUT /upstreams/{id})
 	PutUpstreamsId(w http.ResponseWriter, r *http.Request, id int64)
 	// 刷新上游余额快照（未配置余额接口时返回 unconfigured）
@@ -3301,7 +3301,7 @@ func (_ Unimplemented) GetUpstreamsId(w http.ResponseWriter, r *http.Request, id
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 更新上游（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
+// 更新上游并在连接变化前验证模型（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
 // (PUT /upstreams/{id})
 func (_ Unimplemented) PutUpstreamsId(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)

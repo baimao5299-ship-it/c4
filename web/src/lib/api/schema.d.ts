@@ -316,7 +316,10 @@ export interface paths {
             cookie?: never;
         };
         get: operations["GetUpstreamsId"];
-        /** 更新上游（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除） */
+        /**
+         * 更新上游并在连接变化前验证模型（upstream_key 省略时保留旧值；clear_upstream_key=true 时明确清除）
+         * @description 修改地址或密钥时，服务端会在写入前读取模型目录并对每个模型执行一次有界真实最小请求；验证失败不会保存新配置。携带过期的 expected_updated_at 会在外部探测前返回 409。
+         */
         put: operations["PutUpstreamsId"];
         post?: never;
         delete: operations["DeleteUpstreamsId"];
