@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -119,6 +120,7 @@ func TestUpdateUpstreamWithoutModelChangeKeepsLegacyWritePath(t *testing.T) {
 		ID: 1, Name: "relay", BaseURL: "https://relay.example.test", UpstreamKey: &key,
 		MultiplierBP: 10000, UpdatedAt: time.Now(), Models: []string{"model-a"},
 	}}}
+	revision := store.row.UpdatedAt
 	svc := &Service{upstreams: store}
 
 	updated, err := svc.UpdateUpstreamWithModelValidation(context.Background(), &domain.Upstream{
@@ -129,6 +131,33 @@ func TestUpdateUpstreamWithoutModelChangeKeepsLegacyWritePath(t *testing.T) {
 	require.NotNil(t, updated)
 	require.Equal(t, 9000, store.updated.MultiplierBP)
 	require.Nil(t, store.updated.ModelsCheckedAt)
-	require.Nil(t, store.updated.ExpectedUpdatedAt)
+	require.NotNil(t, store.updated.ExpectedUpdatedAt, "legacy edits receive an optimistic revision guard")
+	require.Equal(t, revision, *store.updated.ExpectedUpdatedAt)
 	require.Equal(t, []string(nil), store.updated.Models)
+}
+
+func TestValidateModelCatalogueStopsAfterFatalRelayError(t *testing.T) {
+	var requests atomic.Int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+	}))
+	defer endpoint.Close()
+
+	models := make([]string, 100)
+	for i := range models {
+		models[i] = "model-" + string(rune('a'+i%26))
+	}
+	result := validateModelCatalogue(context.Background(), endpoint.Client(), endpoint.URL, "key", models)
+
+	require.False(t, result.ValidationComplete)
+	require.Equal(t, "auth", result.ErrorCode)
+	require.Less(t, result.ModelsChecked, len(models), "a fatal relay error must stop the remaining catalogue probes")
+	require.LessOrEqual(t, requests.Load(), int32(upstreamModelValidationConcurrency*2), "only the current bounded worker batch may race with cancellation")
 }

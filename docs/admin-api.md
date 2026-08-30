@@ -261,6 +261,8 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 
 更新时同样执行地址、倍率和名称唯一性校验；不存在或已软删除返回 `404`，名称冲突返回 `409`。
 
+认证、限流、上游故障或网络故障会停止继续派发模型探测，已开始的少量请求会完成；这样可避免错误 Key 或故障上游产生大量重复请求。旧客户端未传 `expected_updated_at` 时，服务端会自动使用读取到的版本做条件写入。
+
 ### 启用状态
 
 `PATCH /api/admin/upstreams/{id}/status`

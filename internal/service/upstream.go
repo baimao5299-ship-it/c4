@@ -400,6 +400,13 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 		// be billable and must never run for a revision that is already obsolete.
 		return nil, fmt.Errorf("%w: id=%d changed", ErrConflict, u.ID)
 	}
+	if validateModels && u.ExpectedUpdatedAt == nil {
+		// Legacy management clients may omit the revision field. Upgrade them
+		// to the same optimistic condition used by the current UI so even a
+		// name/multiplier-only edit cannot overwrite a concurrent save.
+		revision := current.UpdatedAt
+		u.ExpectedUpdatedAt = &revision
+	}
 	if u.ClearUpstreamKey && u.UpstreamKey != nil {
 		return nil, ErrInvalidInput
 	}
@@ -449,13 +456,6 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 		u.BalanceCheckedAt = current.BalanceCheckedAt
 	}
 	if validateModels && (baseURLChanged || keyChanged) {
-		// A missing revision from a legacy client is upgraded to an optimistic
-		// condition using the value just read above. This prevents a slow network
-		// probe from overwriting a concurrent endpoint/key edit.
-		if u.ExpectedUpdatedAt == nil {
-			revision := current.UpdatedAt
-			u.ExpectedUpdatedAt = &revision
-		}
 		base := normalizeUpstreamBaseURL(u.BaseURL)
 		key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
 		client := s.managementHTTPClient()
@@ -1235,13 +1235,34 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 		checked bool
 		code    string
 	}
-	jobs := make(chan string)
 	results := make(chan outcome, len(models))
 	workers := upstreamModelValidationConcurrency
 	if len(models) < workers {
 		workers = len(models)
 	}
+	jobs := make(chan string, workers)
 	var wg sync.WaitGroup
+	var fatalMu sync.Mutex
+	fatalCode := ""
+	var stopDispatchOnce sync.Once
+	stopDispatch := make(chan struct{})
+	recordFatal := func(code string) {
+		if !isFatalModelValidationCode(code) {
+			return
+		}
+		fatalMu.Lock()
+		if fatalCode == "" {
+			fatalCode = code
+		}
+		fatalMu.Unlock()
+		// Authentication, rate limiting, provider outages, and transport
+		// failures apply to the relay rather than one model. Stop dispatching
+		// more requests immediately so a bad key or outage cannot fan out into
+		// thousands of duplicate failures. Requests already handed to workers
+		// are allowed to settle; this keeps a small catalogue complete while
+		// bounding the work for a large catalogue to the current worker batch.
+		stopDispatchOnce.Do(func() { close(stopDispatch) })
+	}
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
@@ -1261,6 +1282,7 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 				}
 				modelCancel()
 				modelCode := classifyModelValidationError(validationCtx, status, requestErr)
+				recordFatal(modelCode)
 				results <- outcome{model: model, ok: modelCode == "", checked: true, code: modelCode}
 			}
 		}()
@@ -1268,8 +1290,21 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 	go func() {
 		defer close(jobs)
 		for _, model := range models {
+			// Check the stop signal before entering the send select. When both a
+			// worker and the stop channel are ready, Go may otherwise choose the
+			// send case repeatedly; the explicit check keeps post-fatal dispatch
+			// to at most one in-flight handoff.
 			select {
 			case <-validationCtx.Done():
+				return
+			case <-stopDispatch:
+				return
+			default:
+			}
+			select {
+			case <-validationCtx.Done():
+				return
+			case <-stopDispatch:
 				return
 			case jobs <- model:
 			}
@@ -1308,14 +1343,23 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 			ordered = append(ordered, model)
 		}
 	}
-	complete := checked == len(models) && validationCtx.Err() == nil
+	// An internal fatal signal stops dispatching new work. It must not turn a run
+	// that already checked every advertised model into a
+	// partial result (for example a one-model catalogue returning auth). Only a
+	// caller deadline/cancellation makes an otherwise complete run incomplete.
+	complete := checked == len(models) && ctx.Err() == nil
 	validationCode := ""
 	if !complete {
 		// A partial run is not a capability snapshot. Even if some workers
 		// succeeded, keep the previous verified catalogue and require a retry;
 		// publishing a partial list would make the scheduler silently hide models
 		// that were never checked.
+		fatalMu.Lock()
+		observedFatal := fatalCode
+		fatalMu.Unlock()
 		switch {
+		case observedFatal != "":
+			validationCode = observedFatal
 		case errors.Is(validationCtx.Err(), context.DeadlineExceeded):
 			validationCode = "timeout"
 		case errors.Is(validationCtx.Err(), context.Canceled):
@@ -1337,6 +1381,15 @@ func validateModelCatalogue(ctx context.Context, client *http.Client, base, key 
 		ModelsAvailable:    len(ordered),
 		ModelsFailed:       failed,
 		ValidationComplete: complete,
+	}
+}
+
+func isFatalModelValidationCode(code string) bool {
+	switch code {
+	case "auth", "rate_limited", "upstream", "network":
+		return true
+	default:
+		return false
 	}
 }
 

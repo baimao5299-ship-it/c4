@@ -44,6 +44,8 @@ var ErrUpstreamValidationLockUnavailable = errors.New("upstream validation advis
 // ordinary query connection is returned to the pool.
 const upstreamValidationLockKey int64 = 0x55707664 // "UpVd"
 
+const upstreamValidationLockReleaseTimeout = 2 * time.Second
+
 // upstreamValidationSnapshotLimit is one larger than the service's accepted
 // inventory size. ListAllUpstreams uses it as a database-side sentinel so an
 // accidentally huge inventory cannot be fully materialized before the service
@@ -77,7 +79,9 @@ func (r *UpstreamRepo) AcquireUpstreamValidationLock(ctx context.Context) (relea
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, upstreamValidationLockKey)
+			unlockCtx, cancel := context.WithTimeout(context.Background(), upstreamValidationLockReleaseTimeout)
+			defer cancel()
+			_, _ = conn.Exec(unlockCtx, `SELECT pg_advisory_unlock($1)`, upstreamValidationLockKey)
 			conn.Release()
 		})
 	}, true, nil
