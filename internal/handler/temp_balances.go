@@ -59,6 +59,7 @@ func toAPIAdminTempBalance(tb *domain.TempBalance) AdminTempBalanceRow {
 	return AdminTempBalanceRow{
 		Id:        tb.ID,
 		UserId:    tb.UserID,
+		GroupId:   tb.GroupID,
 		AmountUsd: millisToUSD(tb.Amount),
 		ExpiresAt: tb.ExpiresAt,
 		Note:      tb.Note,

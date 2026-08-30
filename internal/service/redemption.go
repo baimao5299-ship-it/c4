@@ -26,13 +26,15 @@ type GenerateRequest struct {
 	Remark            *string
 	ExpiresAt         *time.Time // 码未兑换即过期；nil = 永久
 	ResourceExpiresAt *time.Time // 兑换后资源到期；temp_balance 必填（决策 4）
+	GroupID           *int64     // scoped_temp_balance 必填；nil = legacy/global
 	MaxUses           int
 	Count             int
 }
 
 // validateGenerateRequest 生成参数校验（决策 4/契约）：type 枚举、value > 0、
 // temp_balance 必填 resource_expires_at 且 > now、expires_at 若提供 > now、
-// max_uses ≥ 1（0 = 默认）、count 1-1000（0 = 默认）。
+// max_uses ≥ 1（0 = 默认）、count 1-1000（0 = 默认）。scoped_temp_balance 的
+// group_id 存活校验在 GenerateCodes 中使用请求上下文完成。
 func validateGenerateRequest(req GenerateRequest) error {
 	if !req.Type.Valid() {
 		return ErrInvalidInput
@@ -49,10 +51,19 @@ func validateGenerateRequest(req GenerateRequest) error {
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
 		return ErrInvalidInput
 	}
-	if req.Type == domain.RedemptionTypeTempBalance {
+	if req.GroupID != nil && *req.GroupID <= 0 {
+		return ErrInvalidInput
+	}
+	if req.Type == domain.RedemptionTypeTempBalance || req.Type == domain.RedemptionTypeScopedTempBalance {
 		if req.ResourceExpiresAt == nil || !req.ResourceExpiresAt.After(time.Now()) {
 			return ErrInvalidInput
 		}
+	}
+	if req.Type == domain.RedemptionTypeScopedTempBalance && req.GroupID == nil {
+		return ErrInvalidInput
+	}
+	if req.Type != domain.RedemptionTypeScopedTempBalance && req.GroupID != nil {
+		return ErrInvalidInput
 	}
 	return nil
 }
@@ -87,6 +98,18 @@ func (s *Service) GenerateCodes(ctx context.Context, req GenerateRequest, create
 	if err := validateGenerateRequest(req); err != nil {
 		return nil, err
 	}
+	if req.Type == domain.RedemptionTypeScopedTempBalance {
+		// Reject dangling activity grants while the selected group is still
+		// available. A code targeting a missing or soft-deleted group would be
+		// redeemable but could never be consumed by the billing matcher.
+		group, err := s.store.GetGroup(ctx, *req.GroupID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+		if group == nil || group.DeletedAt != nil {
+			return nil, fmt.Errorf("%w: group id=%d", ErrNotFound, *req.GroupID)
+		}
+	}
 	maxUses := req.MaxUses
 	if maxUses <= 0 {
 		maxUses = 1 // 决策 3：max_uses 默认 1（单次码）
@@ -104,13 +127,32 @@ func (s *Service) GenerateCodes(ctx context.Context, req GenerateRequest, create
 			}
 			codes = append(codes, &domain.RedemptionCode{
 				Code: code, Type: req.Type, Value: req.Value,
-				Remark: req.Remark, ExpiresAt: req.ExpiresAt,
+				GroupID: req.GroupID,
+				Remark:  req.Remark, ExpiresAt: req.ExpiresAt,
 				ResourceExpiresAt: req.ResourceExpiresAt,
 				MaxUses:           maxUses, UsedCount: 0,
 				Status: domain.RedemptionStatusActive, CreatedBy: createdBy,
 			})
 		}
-		if err := s.store.CreateCodes(ctx, codes); err != nil {
+		persist := func() error {
+			if req.Type != domain.RedemptionTypeScopedTempBalance {
+				return s.store.CreateCodes(ctx, codes)
+			}
+			// The initial live-group check above gives a fast, consistent error
+			// for all stores. Production repositories additionally lock the group
+			// row in this transaction, serializing issuance with group deletion.
+			return s.store.WithTx(ctx, func(tx repository.TxStore) error {
+				if guard, ok := tx.(interface {
+					EnsureGroupLiveForScopedCode(context.Context, int64) error
+				}); ok {
+					if err := guard.EnsureGroupLiveForScopedCode(ctx, *req.GroupID); err != nil {
+						return err
+					}
+				}
+				return tx.CreateCodes(ctx, codes)
+			})
+		}
+		if err := persist(); err != nil {
 			if errors.Is(err, repository.ErrConflict) && attempt < 4 {
 				continue // code 唯一冲突 → 换新码重试（N=5）
 			}
@@ -232,9 +274,10 @@ type applyFunc func(ctx context.Context, tx repository.TxStore, userID int64, c 
 
 // appliers 类型 → applier 注册表（决策 1）：新类型 = 注册新 applier，兑换编排零改动。
 var appliers = map[domain.RedemptionType]applyFunc{
-	domain.RedemptionTypeBalance:     applyBalance,
-	domain.RedemptionTypeConcurrency: applyConcurrency,
-	domain.RedemptionTypeTempBalance: applyTempBalance,
+	domain.RedemptionTypeBalance:           applyBalance,
+	domain.RedemptionTypeConcurrency:       applyConcurrency,
+	domain.RedemptionTypeTempBalance:       applyTempBalance,
+	domain.RedemptionTypeScopedTempBalance: applyScopedTempBalance,
 }
 
 // applyBalance 余额累加：users.balance += value（原子 SQL，无读改写——评审 I-1）。
@@ -257,6 +300,23 @@ func applyTempBalance(ctx context.Context, tx repository.TxStore, userID int64, 
 	}
 	note := "redemption code"
 	return tx.CreateTempBalance(ctx, userID, c.Value, c.ResourceExpiresAt, &note)
+}
+
+// applyScopedTempBalance inserts an activity allowance restricted to one group.
+// The optional interface keeps old transaction fakes/integrations source-compatible;
+// production Repository implements it on both normal and transactional clients.
+func applyScopedTempBalance(ctx context.Context, tx repository.TxStore, userID int64, c *domain.RedemptionCode) error {
+	if c.ResourceExpiresAt == nil || c.GroupID == nil || *c.GroupID <= 0 {
+		return fmt.Errorf("%w: invalid scoped code", ErrInvalidInput)
+	}
+	note := "activity redemption code"
+	creator, ok := tx.(interface {
+		CreateTempBalanceForGroup(context.Context, int64, int64, *time.Time, *string, *int64) error
+	})
+	if !ok {
+		return fmt.Errorf("%w: scoped balance storage unavailable", ErrInvalidInput)
+	}
+	return creator.CreateTempBalanceForGroup(ctx, userID, c.Value, c.ResourceExpiresAt, &note, c.GroupID)
 }
 
 // Redeem 兑换（/api/user/redemptions POST，决策 7/10-12 编排）：
@@ -298,7 +358,7 @@ func (s *Service) Redeem(ctx context.Context, code string, userID int64) (*domai
 		}
 		if err := tx.CreateUse(ctx, &domain.RedemptionUse{
 			CodeID: c.ID, UserID: userID, Value: c.Value,
-			ResourceExpiresAt: c.ResourceExpiresAt,
+			ResourceExpiresAt: c.ResourceExpiresAt, GroupID: c.GroupID,
 		}); err != nil {
 			return mapRepoErr(err) // (code_id,user_id) 唯一冲突 → 409（DB 兜底幂等）
 		}
@@ -309,7 +369,7 @@ func (s *Service) Redeem(ctx context.Context, code string, userID int64) (*domai
 		if !ok {
 			return fmt.Errorf("%w: invalid code", ErrInvalidInput) // 用尽（评审 I-2）
 		}
-		apply = &domain.RedemptionApply{Type: c.Type, Value: c.Value, ResourceExpiresAt: c.ResourceExpiresAt}
+		apply = &domain.RedemptionApply{Type: c.Type, Value: c.Value, ResourceExpiresAt: c.ResourceExpiresAt, GroupID: c.GroupID}
 		return nil
 	})
 	if err != nil {

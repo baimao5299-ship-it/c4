@@ -19,6 +19,7 @@ import (
 	"github.com/is7qin/c3api/internal/billing"
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent"
+	"github.com/is7qin/c3api/internal/ent/group"
 )
 
 // Repository 聚合各实体仓库（绑定单一 client + driver；WithTx 复用同一构造函数
@@ -269,6 +270,26 @@ func (r *Repository) WithTx(ctx context.Context, fn func(TxStore) error) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// EnsureGroupLiveForScopedCode serializes scoped-code issuance with group
+// deletion. The group row lock is held until the surrounding WithTx commits,
+// so a code can never be inserted after a successful group deletion has
+// invalidated that group's resources.
+func (r *Repository) EnsureGroupLiveForScopedCode(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id=%d", ErrNotFound, id)
+	}
+	ok, err := r.Client.Group.Query().
+		Where(group.IDEQ(id), group.DeletedAtIsNil(), func(s *entsql.Selector) { s.ForUpdate() }).
+		Exist(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: id=%d", ErrNotFound, id)
+	}
+	return nil
 }
 
 // execUpdate 执行 UPDATE 构建器，返回受影响行数（raw SQL 统一入口；
@@ -543,6 +564,13 @@ func (r *Repository) UpdateUserPassword(ctx context.Context, id int64, passwordH
 // repo 字段——避免与并行任务的门面改动冲突）。
 func (r *Repository) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
 	return r.Users.CreateTempBalance(ctx, userID, amount, expiresAt, note)
+}
+
+// CreateTempBalanceForGroup is the optional scoped activity-grant extension.
+// Keeping it out of UserStore/TxStore preserves source compatibility for
+// existing integrations and their legacy global grants.
+func (r *Repository) CreateTempBalanceForGroup(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string, groupID *int64) error {
+	return r.Users.CreateTempBalanceForGroup(ctx, userID, amount, expiresAt, note, groupID)
 }
 
 // ListUserTempBalances 用户侧有效临时额度（UserRepo 扩展方法）。

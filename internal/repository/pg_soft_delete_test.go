@@ -7,6 +7,7 @@ package repository_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -268,4 +269,41 @@ func TestPGSoftDeleteGroupCascade(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, auth, k1.KeyRaw)
 	require.NotContains(t, auth, k2.KeyRaw)
+}
+
+// TestPGSoftDeleteGroupInvalidatesScopedResources ensures deleting a group
+// cannot leave redeemable activity codes or spendable group-scoped balance
+// rows behind. Both mutations happen in the same repository transaction and
+// the audit records remain queryable.
+func TestPGSoftDeleteGroupInvalidatesScopedResources(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u := seedPGUser(t, repos, "sd-scoped-resources@example.com")
+	g := seedPGGroup(t, repos, "sd-scoped-resources-g")
+	expires := time.Now().Add(time.Hour)
+	groupID := g.ID
+	note := "activity"
+	code := &domain.RedemptionCode{
+		Code:              "SCOPED-DELETE-01",
+		Type:              domain.RedemptionTypeScopedTempBalance,
+		Value:             25_000,
+		GroupID:           &groupID,
+		ResourceExpiresAt: &expires,
+		MaxUses:           1,
+		Status:            domain.RedemptionStatusActive,
+	}
+	require.NoError(t, repos.Redemptions.CreateCodes(ctx, []*domain.RedemptionCode{code}))
+	require.NoError(t, repos.Users.CreateTempBalanceForGroup(ctx, u.ID, code.Value, &expires, &note, &groupID))
+
+	require.NoError(t, repos.Groups.DeleteGroup(ctx, g.ID))
+	stored, err := repos.Redemptions.GetByCode(ctx, code.Code)
+	require.NoError(t, err)
+	require.Equal(t, domain.RedemptionStatusDisabled, stored.Status)
+	rows, total, err := repos.Users.ListTempBalances(ctx, repository.ListQuery{Limit: 20}, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
+	require.Zero(t, rows[0].Amount, "invalidated scoped balance remains only as an audit row")
+	require.NotNil(t, rows[0].GroupID)
+	require.Equal(t, g.ID, *rows[0].GroupID)
 }

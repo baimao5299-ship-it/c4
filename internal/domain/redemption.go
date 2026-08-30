@@ -16,11 +16,15 @@ const (
 	RedemptionTypeBalance     RedemptionType = "balance"
 	RedemptionTypeConcurrency RedemptionType = "concurrency"
 	RedemptionTypeTempBalance RedemptionType = "temp_balance"
+	// RedemptionTypeScopedTempBalance is an activity grant restricted to one group.
+	// It intentionally remains distinct from temp_balance so legacy global codes
+	// keep their original semantics when read from old databases.
+	RedemptionTypeScopedTempBalance RedemptionType = "scoped_temp_balance"
 )
 
 func (t RedemptionType) Valid() bool {
 	switch t {
-	case RedemptionTypeBalance, RedemptionTypeConcurrency, RedemptionTypeTempBalance:
+	case RedemptionTypeBalance, RedemptionTypeConcurrency, RedemptionTypeTempBalance, RedemptionTypeScopedTempBalance:
 		return true
 	}
 	return false
@@ -48,6 +52,7 @@ type RedemptionCode struct {
 	Code              string
 	Type              RedemptionType
 	Value             int64      // 毫分（1 USD = 100,000 毫分；concurrency 类型为并发数）
+	GroupID           *int64     // scoped_temp_balance only; nil = global/legacy code
 	Remark            *string    // 运营备注，可选
 	ExpiresAt         *time.Time // 码未兑换即过期；nil = 永久
 	ResourceExpiresAt *time.Time // 兑换后资源到期；temp_balance 必填（service 校验）
@@ -66,6 +71,7 @@ type RedemptionUse struct {
 	UserID            int64
 	Value             int64 // 兑换时的值快照（毫分；concurrency 类型为并发数）
 	ResourceExpiresAt *time.Time
+	GroupID           *int64
 	CreatedAt         time.Time
 }
 
@@ -75,6 +81,7 @@ type RedemptionApply struct {
 	Type              RedemptionType
 	Value             int64 // 兑换值（毫分；concurrency 类型为并发数）
 	ResourceExpiresAt *time.Time
+	GroupID           *int64
 }
 
 // RedemptionRecord 我的兑换记录（/api/user/redemptions GET 行）：use 快照 + 码的
@@ -87,6 +94,7 @@ type RedemptionRecord struct {
 	Value             int64 // 兑换值快照（毫分；concurrency 类型为并发数）
 	Remark            *string
 	ResourceExpiresAt *time.Time
+	GroupID           *int64
 	CreatedAt         time.Time
 }
 
@@ -101,5 +109,6 @@ type RedemptionHistory struct {
 	Value             int64 // 兑换值快照（毫分；concurrency 类型为并发数）
 	Remark            *string
 	ResourceExpiresAt *time.Time
+	GroupID           *int64
 	CreatedAt         time.Time
 }

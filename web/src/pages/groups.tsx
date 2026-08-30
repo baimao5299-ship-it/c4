@@ -30,6 +30,7 @@ import { toast } from '@/components/ui/toast'
 import { formatDateTime } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
+import { ModelValidationProgress } from '@/components/model-validation-progress'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
@@ -203,7 +204,7 @@ function UpstreamPoolFields({
               <Label>{t('groups.allowedModelsLabel')}</Label>
               <Button type="button" variant="ghost" size="sm" onClick={onSelectAllModels} disabled={modelsLoading || options.length === 0}>{t('groups.selectAllModels')}</Button>
             </div>
-            {modelsLoading ? <p className="text-xs text-muted-foreground">{t('groups.loadingModels')}</p> : modelsError ? (
+            {modelsLoading ? <ModelValidationProgress /> : modelsError ? (
               <div className="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-400">
                 <span>{t('groups.modelsReadPartial')}</span>
                 {onRetryModels && <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onRetryModels}>{t('groups.retryModels')}</Button>}
@@ -692,25 +693,32 @@ export default function Groups() {
   }, [editTarget, editUpstreamConfig.data, editUpstreamConfig.dataUpdatedAt])
   const activeMemberIDs = (createOpen ? createMembers : editTarget ? editMembers : []).map(member => member.upstream_id).sort((a, b) => a - b)
   const activeMemberKey = activeMemberIDs.join(',')
+  const upstreamModelSnapshotKey = upstreamRows.map(upstream => `${upstream.ID}:${upstream.ModelsCheckedAt ?? ''}:${upstream.ModelsError ?? ''}:${(upstream.Models ?? []).join('|')}`).join(';')
   const groupModels = useQuery({
-    queryKey: ['group-upstream-models', activeMemberIDs],
-    queryFn: async () => {
-      const responses = await Promise.allSettled(activeMemberIDs.map(id => api.listUpstreamModels(id)))
-      const successful = responses.flatMap(response => response.status === 'fulfilled' && response.value.ok && response.value.models?.length ? [response.value.models] : [])
-      const union = sortModelsLatestFirst(Array.from(new Set(successful.flat())))
-      const allSucceeded = responses.length > 0 && responses.every(response => response.status === 'fulfilled' && response.value.ok && !!response.value.models?.length)
+    queryKey: ['group-upstream-models', activeMemberIDs, upstreamModelSnapshotKey],
+    queryFn: () => {
+      const selected = activeMemberIDs.map(id => upstreamRows.find(upstream => upstream.ID === id)).filter((upstream): upstream is Upstream => upstream != null)
+      const union = sortModelsLatestFirst(Array.from(new Set(selected.flatMap(upstream => upstream.Models ?? []))))
+      // A saved snapshot is usable only after a complete validation. A
+      // model_unavailable error means validation completed and only failed
+      // entries were filtered; transport/auth/timeout errors leave the old
+      // snapshot visible but must block group edits until a fresh check passes.
+      const incomplete = selected.length !== activeMemberIDs.length || selected.some(upstream => upstream.ModelsCheckedAt == null || (upstream.ModelsError != null && upstream.ModelsError !== 'model_unavailable'))
+      const degraded = selected.some(upstream => upstream.ModelsError === 'model_unavailable')
       // Upstream routing selects any healthy member that advertises the
       // requested model. Keep the catalogue as a union so the UI exposes the
       // same routes the scheduler can actually serve; an intersection here
       // silently hid models supported by only one selected upstream.
-      return { models: union, partial: !allSucceeded }
+      return { models: union, partial: incomplete, degraded }
     },
     enabled: (createOpen || editTarget != null) && activeMemberIDs.length > 0,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    // This query derives its result from the already-fetched upstream rows;
+    // changing the snapshot key is the explicit invalidation mechanism.
+    staleTime: Infinity,
   })
   const activeModels = useMemo(() => groupModels.data?.models ?? [], [groupModels.data])
   const activeModelsPartial = groupModels.data?.partial ?? false
+  const activeModelsDegraded = groupModels.data?.degraded ?? false
   const canSubmitCreate = createName.trim().length > 0 &&
     createMembers.length > 0 &&
     createAllowedModels.length > 0 &&
@@ -727,17 +735,22 @@ export default function Groups() {
     // catalogue no longer confirms. The save action stays disabled while the
     // catalogue is partial, so a transient read failure never clears config.
     if (!editTarget || editRoutingMode !== 'upstreams' || activeMemberIDs.length === 0 || activeModelsPartial || activeModels.length === 0) return
-    const key = `${editTarget.ID}:${activeMemberKey}`
+    // Include the capability snapshot in the guard. A model refresh can keep
+    // the same member IDs while removing a previously selected model; in that
+    // case the allowlist must be pruned before the next save.
+    const key = `${editTarget.ID}:${activeMemberKey}:${upstreamModelSnapshotKey}`
     if (editAutoModelKey.current === key) return
     editAutoModelKey.current = key
     setEditAllowedModels(current => current.filter(model => activeModels.includes(model)))
-  }, [activeMemberKey, activeMemberIDs.length, activeModels, activeModelsPartial, editRoutingMode, editTarget])
+  }, [activeMemberKey, activeMemberIDs.length, activeModels, activeModelsPartial, editRoutingMode, editTarget, upstreamModelSnapshotKey])
   useEffect(() => {
     // A new upstream pool starts with the models that were actually read. This
     // keeps an empty allowlist intentional (all common models) while avoiding
     // the dangerous interpretation of an unread/empty catalogue as success.
     if (!createOpen || createRoutingMode !== 'upstreams' || activeModelsPartial || activeModels.length === 0) return
-    const key = activeMemberKey
+    // A refreshed catalogue is a meaningful pool change even when the
+    // selected upstream IDs stay identical.
+    const key = `${activeMemberKey}:${upstreamModelSnapshotKey}`
     if (createAutoModelKey.current === key) return
     createAutoModelKey.current = key
     setCreateAllowedModels(current => {
@@ -747,7 +760,7 @@ export default function Groups() {
       // newly discovered models.
       return current.filter(model => activeModels.includes(model))
     })
-  }, [activeMemberKey, activeModels, activeModelsPartial, createOpen, createRoutingMode])
+  }, [activeMemberKey, activeModels, activeModelsPartial, createOpen, createRoutingMode, upstreamModelSnapshotKey])
   const updateCreateMember = (id: number, patch: Partial<UpstreamMemberDraft>) => setCreateMembers(current => current.map(member => member.upstream_id === id ? { ...member, ...patch } : member))
   const toggleCreateMember = (id: number, checked: boolean) => setCreateMembers(current => checked ? (current.some(member => member.upstream_id === id) ? current : [...current, defaultUpstreamMember(id)]) : current.filter(member => member.upstream_id !== id))
   const updateEditMember = (id: number, patch: Partial<UpstreamMemberDraft>) => setEditMembers(current => current.map(member => member.upstream_id === id ? { ...member, ...patch } : member))
@@ -943,9 +956,9 @@ export default function Groups() {
               onToggle={toggleCreateMember}
               onUpdate={updateCreateMember}
               models={activeModels}
-              modelsLoading={groupModels.isLoading}
-              modelsError={activeModelsPartial}
-              onRetryModels={() => { void groupModels.refetch() }}
+              modelsLoading={groupModels.isLoading || groupModels.isFetching}
+              modelsError={activeModelsPartial || activeModelsDegraded}
+              onRetryModels={() => { void refetchUpstreams() }}
               configError={false}
               allowedModels={createAllowedModels}
               onToggleModel={toggleCreateModel}
@@ -1003,9 +1016,9 @@ export default function Groups() {
               onToggle={toggleEditMember}
               onUpdate={updateEditMember}
               models={activeModels}
-              modelsLoading={groupModels.isLoading || editUpstreamConfig.isLoading}
-              modelsError={activeModelsPartial}
-              onRetryModels={() => { void groupModels.refetch() }}
+              modelsLoading={groupModels.isLoading || groupModels.isFetching || editUpstreamConfig.isLoading}
+              modelsError={activeModelsPartial || activeModelsDegraded}
+              onRetryModels={() => { void refetchUpstreams() }}
               configError={editUpstreamConfig.isError}
               allowedModels={editAllowedModels}
               onToggleModel={(model, checked) => toggleModel(setEditAllowedModels, model, checked)}

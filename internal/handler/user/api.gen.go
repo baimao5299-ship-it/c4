@@ -54,9 +54,10 @@ const (
 
 // Defines values for RedemptionType.
 const (
-	Balance     RedemptionType = "balance"
-	Concurrency RedemptionType = "concurrency"
-	TempBalance RedemptionType = "temp_balance"
+	Balance           RedemptionType = "balance"
+	Concurrency       RedemptionType = "concurrency"
+	ScopedTempBalance RedemptionType = "scoped_temp_balance"
+	TempBalance       RedemptionType = "temp_balance"
 )
 
 // Defines values for RequestFormat.
@@ -227,6 +228,8 @@ type RedeemRequest struct {
 // RedeemResponse defines model for RedeemResponse.
 type RedeemResponse struct {
 	Applied struct {
+		// GroupId 活动额度限定分组
+		GroupId           *int64         `json:"group_id"`
 		ResourceExpiresAt *time.Time     `json:"resource_expires_at"`
 		Type              RedemptionType `json:"type"`
 
@@ -237,13 +240,16 @@ type RedeemResponse struct {
 
 // RedemptionRecord defines model for RedemptionRecord.
 type RedemptionRecord struct {
-	Code              string         `json:"Code"`
-	CodeID            int64          `json:"CodeID"`
-	CodeType          RedemptionType `json:"CodeType"`
-	CreatedAt         time.Time      `json:"CreatedAt"`
-	ID                int64          `json:"ID"`
-	Remark            *string        `json:"Remark"`
-	ResourceExpiresAt *time.Time     `json:"ResourceExpiresAt"`
+	Code      string         `json:"Code"`
+	CodeID    int64          `json:"CodeID"`
+	CodeType  RedemptionType `json:"CodeType"`
+	CreatedAt time.Time      `json:"CreatedAt"`
+
+	// GroupID 活动额度限定分组快照
+	GroupID           *int64     `json:"GroupID"`
+	ID                int64      `json:"ID"`
+	Remark            *string    `json:"Remark"`
+	ResourceExpiresAt *time.Time `json:"ResourceExpiresAt"`
 
 	// Value 兑换时的值快照（同面值单位语义）
 	Value float64 `json:"Value"`
@@ -324,7 +330,10 @@ type TempBalanceRow struct {
 
 	// ExpiresAt 到期时间；null = 永久额度
 	ExpiresAt *time.Time `json:"expires_at"`
-	Id        int64      `json:"id"`
+
+	// GroupId 活动额度限定分组；null = 全局额度
+	GroupId *int64 `json:"group_id"`
+	Id      int64  `json:"id"`
 
 	// Note 固定系统备注（signup bonus / redemption code），无敏感信息
 	Note *string `json:"note"`

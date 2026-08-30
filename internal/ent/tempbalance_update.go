@@ -64,6 +64,33 @@ func (_u *TempBalanceUpdate) AddAmount(v int64) *TempBalanceUpdate {
 	return _u
 }
 
+// SetGroupID sets the "group_id" field.
+func (_u *TempBalanceUpdate) SetGroupID(v int64) *TempBalanceUpdate {
+	_u.mutation.ResetGroupID()
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *TempBalanceUpdate) SetNillableGroupID(v *int64) *TempBalanceUpdate {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// AddGroupID adds value to the "group_id" field.
+func (_u *TempBalanceUpdate) AddGroupID(v int64) *TempBalanceUpdate {
+	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *TempBalanceUpdate) ClearGroupID() *TempBalanceUpdate {
+	_u.mutation.ClearGroupID()
+	return _u
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (_u *TempBalanceUpdate) SetExpiresAt(v time.Time) *TempBalanceUpdate {
 	_u.mutation.SetExpiresAt(v)
@@ -187,6 +214,15 @@ func (_u *TempBalanceUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	if value, ok := _u.mutation.AddedAmount(); ok {
 		_spec.AddField(tempbalance.FieldAmount, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(tempbalance.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGroupID(); ok {
+		_spec.AddField(tempbalance.FieldGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(tempbalance.FieldGroupID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.ExpiresAt(); ok {
 		_spec.SetField(tempbalance.FieldExpiresAt, field.TypeTime, value)
 	}
@@ -283,6 +319,33 @@ func (_u *TempBalanceUpdateOne) SetNillableAmount(v *int64) *TempBalanceUpdateOn
 // AddAmount adds value to the "amount" field.
 func (_u *TempBalanceUpdateOne) AddAmount(v int64) *TempBalanceUpdateOne {
 	_u.mutation.AddAmount(v)
+	return _u
+}
+
+// SetGroupID sets the "group_id" field.
+func (_u *TempBalanceUpdateOne) SetGroupID(v int64) *TempBalanceUpdateOne {
+	_u.mutation.ResetGroupID()
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *TempBalanceUpdateOne) SetNillableGroupID(v *int64) *TempBalanceUpdateOne {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// AddGroupID adds value to the "group_id" field.
+func (_u *TempBalanceUpdateOne) AddGroupID(v int64) *TempBalanceUpdateOne {
+	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *TempBalanceUpdateOne) ClearGroupID() *TempBalanceUpdateOne {
+	_u.mutation.ClearGroupID()
 	return _u
 }
 
@@ -438,6 +501,15 @@ func (_u *TempBalanceUpdateOne) sqlSave(ctx context.Context) (_node *TempBalance
 	}
 	if value, ok := _u.mutation.AddedAmount(); ok {
 		_spec.AddField(tempbalance.FieldAmount, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(tempbalance.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGroupID(); ok {
+		_spec.AddField(tempbalance.FieldGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(tempbalance.FieldGroupID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.ExpiresAt(); ok {
 		_spec.SetField(tempbalance.FieldExpiresAt, field.TypeTime, value)

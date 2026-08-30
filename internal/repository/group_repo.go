@@ -161,6 +161,9 @@ func (r *GroupRepo) DeleteGroup(ctx context.Context, id int64) error {
 	if _, err := tx.GroupAssignment.Delete().Where(groupassignment.GroupIDEQ(id)).Exec(ctx); err != nil {
 		return err
 	}
+	if err := invalidateGroupScopedResources(ctx, tx, []int64{id}); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}

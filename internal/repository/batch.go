@@ -19,6 +19,8 @@ import (
 	"github.com/is7qin/c3api/internal/ent/groupassignment"
 	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/key"
+	"github.com/is7qin/c3api/internal/ent/redemptioncode"
+	"github.com/is7qin/c3api/internal/ent/tempbalance"
 	"github.com/is7qin/c3api/internal/ent/template"
 )
 
@@ -27,6 +29,33 @@ var ErrNotFound = errors.New("repository: not found")
 
 // ErrConflict 唯一约束冲突（规则 priority/name 等；service 映射 409）。
 var ErrConflict = errors.New("repository: conflict")
+
+// invalidateGroupScopedResources keeps a soft-deleted group from leaving
+// live activity grants behind. Codes are disabled (their audit rows remain),
+// while scoped balance rows are zeroed instead of deleted so the management
+// history still shows what was issued. The caller must run this on the same
+// transaction that marks the groups deleted.
+func invalidateGroupScopedResources(ctx context.Context, tx *ent.Tx, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := tx.RedemptionCode.Update().
+		Where(
+			redemptioncode.GroupIDIn(ids...),
+			redemptioncode.StatusEQ(redemptioncode.StatusActive),
+		).
+		SetStatus(redemptioncode.StatusDisabled).
+		Save(ctx); err != nil {
+		return fmt.Errorf("disable scoped redemption codes for groups: %w", err)
+	}
+	if _, err := tx.TempBalance.Update().
+		Where(tempbalance.GroupIDIn(ids...), tempbalance.AmountGT(0)).
+		SetAmount(0).
+		Save(ctx); err != nil {
+		return fmt.Errorf("invalidate scoped balances for groups: %w", err)
+	}
+	return nil
+}
 
 // --- 批量更新字段子集（nil 字段 = 不更新） ---
 
@@ -145,6 +174,9 @@ func (r *GroupRepo) DeleteGroupsBatch(ctx context.Context, ids []int64) error {
 			return err
 		}
 	}
+	if err := invalidateGroupScopedResources(ctx, tx, ids); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -205,6 +237,9 @@ func (r *GroupRepo) DeleteGroupsBatchWithKeys(ctx context.Context, ids []int64) 
 		if _, err := tx.GroupAssignment.Delete().Where(groupassignment.GroupIDEQ(id)).Exec(ctx); err != nil {
 			return nil, err
 		}
+	}
+	if err := invalidateGroupScopedResources(ctx, tx, ids); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

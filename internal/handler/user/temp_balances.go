@@ -41,6 +41,7 @@ func (h *UserAPI) GetUserTempBalances(w http.ResponseWriter, r *http.Request) {
 func toAPITempBalance(tb *domain.TempBalance) TempBalanceRow {
 	return TempBalanceRow{
 		Id:        tb.ID,
+		GroupId:   tb.GroupID,
 		AmountUsd: float64(tb.Amount) / 1e5,
 		ExpiresAt: tb.ExpiresAt,
 		Note:      tb.Note,

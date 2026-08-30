@@ -174,9 +174,10 @@ const (
 
 // Defines values for RedemptionType.
 const (
-	RedemptionTypeBalance     RedemptionType = "balance"
-	RedemptionTypeConcurrency RedemptionType = "concurrency"
-	RedemptionTypeTempBalance RedemptionType = "temp_balance"
+	RedemptionTypeBalance           RedemptionType = "balance"
+	RedemptionTypeConcurrency       RedemptionType = "concurrency"
+	RedemptionTypeScopedTempBalance RedemptionType = "scoped_temp_balance"
+	RedemptionTypeTempBalance       RedemptionType = "temp_balance"
 )
 
 // Defines values for RequestFormat.
@@ -322,6 +323,7 @@ const (
 	UpstreamModelsResponseErrorCodeAuth             UpstreamModelsResponseErrorCode = "auth"
 	UpstreamModelsResponseErrorCodeCanceled         UpstreamModelsResponseErrorCode = "canceled"
 	UpstreamModelsResponseErrorCodeHttpError        UpstreamModelsResponseErrorCode = "http_error"
+	UpstreamModelsResponseErrorCodeInvalidResponse  UpstreamModelsResponseErrorCode = "invalid_response"
 	UpstreamModelsResponseErrorCodeInvalidValue     UpstreamModelsResponseErrorCode = "invalid_value"
 	UpstreamModelsResponseErrorCodeModelUnavailable UpstreamModelsResponseErrorCode = "model_unavailable"
 	UpstreamModelsResponseErrorCodeNetwork          UpstreamModelsResponseErrorCode = "network"
@@ -397,9 +399,10 @@ const (
 
 // Defines values for GetRedemptionCodesParamsType.
 const (
-	GetRedemptionCodesParamsTypeBalance     GetRedemptionCodesParamsType = "balance"
-	GetRedemptionCodesParamsTypeConcurrency GetRedemptionCodesParamsType = "concurrency"
-	GetRedemptionCodesParamsTypeTempBalance GetRedemptionCodesParamsType = "temp_balance"
+	GetRedemptionCodesParamsTypeBalance           GetRedemptionCodesParamsType = "balance"
+	GetRedemptionCodesParamsTypeConcurrency       GetRedemptionCodesParamsType = "concurrency"
+	GetRedemptionCodesParamsTypeScopedTempBalance GetRedemptionCodesParamsType = "scoped_temp_balance"
+	GetRedemptionCodesParamsTypeTempBalance       GetRedemptionCodesParamsType = "temp_balance"
 )
 
 // Defines values for GetRedemptionCodesParamsStatus.
@@ -416,9 +419,10 @@ const (
 
 // Defines values for GetRedemptionUsesParamsType.
 const (
-	Balance     GetRedemptionUsesParamsType = "balance"
-	Concurrency GetRedemptionUsesParamsType = "concurrency"
-	TempBalance GetRedemptionUsesParamsType = "temp_balance"
+	Balance           GetRedemptionUsesParamsType = "balance"
+	Concurrency       GetRedemptionUsesParamsType = "concurrency"
+	ScopedTempBalance GetRedemptionUsesParamsType = "scoped_temp_balance"
+	TempBalance       GetRedemptionUsesParamsType = "temp_balance"
 )
 
 // Defines values for GetRedemptionUsesParamsSort.
@@ -708,9 +712,12 @@ type AdminTempBalanceRow struct {
 
 	// ExpiresAt 到期时间；null = 永久额度
 	ExpiresAt *time.Time `json:"expires_at"`
-	Id        int64      `json:"id"`
-	Note      *string    `json:"note"`
-	UserId    int64      `json:"user_id"`
+
+	// GroupId 活动额度限定分组；null = 全局额度
+	GroupId *int64  `json:"group_id"`
+	Id      int64   `json:"id"`
+	Note    *string `json:"note"`
+	UserId  int64   `json:"user_id"`
 }
 
 // AdminTempBalancesResponse defines model for AdminTempBalancesResponse.
@@ -950,6 +957,9 @@ type GenerateRequest struct {
 
 	// ExpiresAt 码未兑换即过期；缺省 = 永久
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+
+	// GroupId scoped_temp_balance 必填；活动额度仅可用于该分组
+	GroupId *int64 `json:"group_id,omitempty"`
 
 	// MaxUses 1 = 单次码（缺省）；>1 = 多人码
 	MaxUses *int    `json:"max_uses,omitempty"`
@@ -1431,7 +1441,10 @@ type RedemptionCode struct {
 
 	// ExpiresAt 码未兑换即过期；null = 永久
 	ExpiresAt *time.Time `json:"ExpiresAt"`
-	ID        int64      `json:"ID"`
+
+	// GroupID scoped_temp_balance 的限定分组；其他类型为 null
+	GroupID *int64 `json:"GroupID"`
+	ID      int64  `json:"ID"`
 
 	// MaxUses 1 = 单次码；>1 = 多人码
 	MaxUses int     `json:"MaxUses"`
@@ -1458,14 +1471,17 @@ type RedemptionCodeListResponse struct {
 
 // RedemptionHistory defines model for RedemptionHistory.
 type RedemptionHistory struct {
-	Code              string         `json:"Code"`
-	CodeID            int64          `json:"CodeID"`
-	CodeType          RedemptionType `json:"CodeType"`
-	CreatedAt         time.Time      `json:"CreatedAt"`
-	ID                int64          `json:"ID"`
-	Remark            *string        `json:"Remark"`
-	ResourceExpiresAt *time.Time     `json:"ResourceExpiresAt"`
-	UserID            int64          `json:"UserID"`
+	Code      string         `json:"Code"`
+	CodeID    int64          `json:"CodeID"`
+	CodeType  RedemptionType `json:"CodeType"`
+	CreatedAt time.Time      `json:"CreatedAt"`
+
+	// GroupID 活动额度限定分组快照
+	GroupID           *int64     `json:"GroupID"`
+	ID                int64      `json:"ID"`
+	Remark            *string    `json:"Remark"`
+	ResourceExpiresAt *time.Time `json:"ResourceExpiresAt"`
+	UserID            int64      `json:"UserID"`
 
 	// Value 兑换时的值快照（同面值单位语义）
 	Value float64 `json:"Value"`
@@ -1485,8 +1501,11 @@ type RedemptionType string
 
 // RedemptionUse defines model for RedemptionUse.
 type RedemptionUse struct {
-	CodeID            int64      `json:"CodeID"`
-	CreatedAt         time.Time  `json:"CreatedAt"`
+	CodeID    int64     `json:"CodeID"`
+	CreatedAt time.Time `json:"CreatedAt"`
+
+	// GroupID 活动额度限定分组快照
+	GroupID           *int64     `json:"GroupID"`
 	ID                int64      `json:"ID"`
 	ResourceExpiresAt *time.Time `json:"ResourceExpiresAt"`
 	UserID            int64      `json:"UserID"`
@@ -1799,6 +1818,15 @@ type Upstream struct {
 	LatencyMaxMS         int64      `json:"LatencyMaxMS"`
 	LatencyTotalMS       int64      `json:"LatencyTotalMS"`
 
+	// Models 最近一次真实请求验证通过、可路由的模型
+	Models *[]string `json:"Models,omitempty"`
+
+	// ModelsCheckedAt 最近一次模型真实验证时间
+	ModelsCheckedAt *time.Time `json:"ModelsCheckedAt"`
+
+	// ModelsError 最近一次模型目录读取错误类别
+	ModelsError *string `json:"ModelsError"`
+
 	// Multiplier 价格倍率的易读值
 	Multiplier *float64 `json:"Multiplier,omitempty"`
 
@@ -1890,7 +1918,22 @@ type UpstreamModelsPreview struct {
 type UpstreamModelsResponse struct {
 	ErrorCode *UpstreamModelsResponseErrorCode `json:"error_code"`
 	Models    []string                         `json:"models"`
-	Ok        bool                             `json:"ok"`
+
+	// ModelsAvailable 真实请求返回有效 JSON 且成功的模型数量
+	ModelsAvailable int `json:"models_available"`
+
+	// ModelsChecked 已发送真实最小请求验证的模型数量
+	ModelsChecked int `json:"models_checked"`
+
+	// ModelsFailed 验证失败或超时的模型数量
+	ModelsFailed int `json:"models_failed"`
+
+	// ModelsTotal /v1/models 返回的原始模型数量
+	ModelsTotal int  `json:"models_total"`
+	Ok          bool `json:"ok"`
+
+	// ValidationComplete 是否在总超时前完成全部模型验证
+	ValidationComplete bool `json:"validation_complete"`
 }
 
 // UpstreamModelsResponseErrorCode defines model for UpstreamModelsResponse.ErrorCode.
@@ -2717,7 +2760,7 @@ type ServerInterface interface {
 	// 上游清单（分页、倍率、余额与稳定性）
 	// (GET /upstreams)
 	GetUpstreams(w http.ResponseWriter, r *http.Request, params GetUpstreamsParams)
-	// 新增上游
+	// 新增上游并自动验证可用模型
 	// (POST /upstreams)
 	PostUpstreams(w http.ResponseWriter, r *http.Request)
 	// 新增上游前读取 Key 实际支持的模型
@@ -2744,7 +2787,7 @@ type ServerInterface interface {
 	// 仅更新上游清单的启用状态（不覆盖其他设置）
 	// (PATCH /upstreams/{id}/status)
 	PatchUpstreamsIdStatus(w http.ResponseWriter, r *http.Request, id int64)
-	// 向上游发送一次 hi 请求并返回耗时与结果
+	// 兼容旧客户端的单次模型探测；管理台已改为添加上游时自动验证模型
 	// (POST /upstreams/{id}/test)
 	PostUpstreamsIdTest(w http.ResponseWriter, r *http.Request, id int64)
 	// 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs）
@@ -3179,7 +3222,7 @@ func (_ Unimplemented) GetUpstreams(w http.ResponseWriter, r *http.Request, para
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 新增上游
+// 新增上游并自动验证可用模型
 // (POST /upstreams)
 func (_ Unimplemented) PostUpstreams(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -3231,7 +3274,7 @@ func (_ Unimplemented) PatchUpstreamsIdStatus(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 向上游发送一次 hi 请求并返回耗时与结果
+// 兼容旧客户端的单次模型探测；管理台已改为添加上游时自动验证模型
 // (POST /upstreams/{id}/test)
 func (_ Unimplemented) PostUpstreamsIdTest(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)

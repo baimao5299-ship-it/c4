@@ -18,28 +18,42 @@ import (
 // → 按 resp-ws 处理，走专用编排 HandleResponsesWS（caller_responses_ws.go）。
 func AIRouter(p *Proxy) http.Handler {
 	r := chi.NewRouter()
-	r.Post("/v1/chat/completions", func(w http.ResponseWriter, req *http.Request) {
+	chat := func(w http.ResponseWriter, req *http.Request) {
 		p.handleFormat(domain.FormatOpenAIChat, w, req)
-	})
-	r.Post("/v1/responses", func(w http.ResponseWriter, req *http.Request) {
+	}
+	// Accept both the canonical OpenAI paths and paths relative to a base URL
+	// that already contains /v1. A number of SDKs append /chat/completions to
+	// the configured base URL verbatim; keeping this alias at the gateway avoids
+	// forcing users to guess whether the base URL should include /v1.
+	r.Post("/v1/chat/completions", chat)
+	r.Post("/chat/completions", chat)
+
+	responses := func(w http.ResponseWriter, req *http.Request) {
 		if isWebSocketUpgrade(req) {
 			p.HandleResponsesWS(w, req)
 			return
 		}
 		p.handleFormat(domain.FormatOpenAIResponses, w, req)
-	})
+	}
+	r.Post("/v1/responses", responses)
+	r.Post("/responses", responses)
 	// WS 升级请求是 GET（RFC 6455），HTTP responses 是 POST——GET 路由只放行
 	// upgrade，普通 GET 保持 405（API 语义不变）。
-	r.Get("/v1/responses", func(w http.ResponseWriter, req *http.Request) {
+	responsesWS := func(w http.ResponseWriter, req *http.Request) {
 		if !isWebSocketUpgrade(req) {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]any{"message": "method not allowed"}})
 			return
 		}
 		p.HandleResponsesWS(w, req)
-	})
-	r.Post("/v1/messages", func(w http.ResponseWriter, req *http.Request) {
+	}
+	r.Get("/v1/responses", responsesWS)
+	r.Get("/responses", responsesWS)
+
+	messages := func(w http.ResponseWriter, req *http.Request) {
 		p.handleFormat(domain.FormatAnthropic, w, req)
-	})
+	}
+	r.Post("/v1/messages", messages)
+	r.Post("/messages", messages)
 	// 图片生成双端点（Task B §5.1）：同一格式 openai-images，上游子路径由
 	// handleFormat 内 imagesCallerFor 按路径区分（generations/edits）。
 	r.Post("/v1/images/generations", func(w http.ResponseWriter, req *http.Request) {
@@ -55,5 +69,6 @@ func AIRouter(p *Proxy) http.Handler {
 	// GET /v1/models（OpenAI 兼容模型列表）：user API key 鉴权；端点冷面——
 	// 快照读零 DB（models.go）。
 	r.Get("/v1/models", p.HandleModels)
+	r.Get("/models", p.HandleModels)
 	return r
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ type upstreamServiceStub struct {
 	row             *domain.Upstream
 	recordProbeFn   func(*domain.Upstream, bool, int64, *string) (*domain.Upstream, error)
 	recordBalanceFn func(*domain.Upstream, *string, *string, string, *time.Time) (*domain.Upstream, error)
+	recordModelsFn  func(*domain.Upstream, []string, *string) (*domain.Upstream, error)
 }
 
 func (s *upstreamServiceStub) CreateUpstream(_ context.Context, in *domain.Upstream) (*domain.Upstream, error) {
@@ -78,6 +80,22 @@ func (s *upstreamServiceStub) RecordUpstreamBalance(_ context.Context, expected 
 	s.row.BalanceStatus = status
 	s.row.BalanceCheckedAt = checkedAt
 	copy := *s.row
+	return &copy, nil
+}
+
+func (s *upstreamServiceStub) RecordUpstreamModels(_ context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
+	if s.recordModelsFn != nil {
+		return s.recordModelsFn(expected, models, modelErr)
+	}
+	if s.row == nil {
+		return nil, errors.New("missing")
+	}
+	s.row.Models = append([]string(nil), models...)
+	now := time.Now()
+	s.row.ModelsCheckedAt = &now
+	s.row.ModelsError = modelErr
+	copy := *s.row
+	copy.Models = append([]string(nil), s.row.Models...)
 	return &copy, nil
 }
 
@@ -242,6 +260,35 @@ func TestTestUpstreamFallsBackToChatCompletions(t *testing.T) {
 	require.Equal(t, []string{"/v1/models", "/v1/responses", "/v1/chat/completions"}, paths)
 }
 
+func TestTestUpstreamFallsBackToUnversionedModelsCatalogue(t *testing.T) {
+	key := "relay-key"
+	var paths []string
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/v1/models":
+			w.WriteHeader(http.StatusNotFound)
+		case "/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
+		case "/v1/responses":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"resp_test"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.True(t, result.OK)
+	require.Empty(t, result.ErrorCode)
+	require.Equal(t, []string{"/v1/models", "/models", "/v1/responses"}, paths)
+}
+
 func TestTestUpstreamFallsBackWhenResponsesNotImplemented(t *testing.T) {
 	key := "relay-key"
 	var paths []string
@@ -301,6 +348,12 @@ func TestShouldFallbackTestRequestRetriesExplicitProtocolError(t *testing.T) {
 		err := &upstreamHTTPError{status: status, body: []byte(`{"error":{"message":"Responses API is not supported"}}`)}
 		require.Truef(t, shouldFallbackTestRequest(status, err), "status %d protocol errors should retry", status)
 	}
+}
+
+func TestShouldFallbackTestRequestDoesNotRetrySuccessfulModelErrorEnvelope(t *testing.T) {
+	err := &upstreamErrorEnvelope{body: []byte(`{"error":{"message":"model unavailable"}}`)}
+	require.False(t, shouldFallbackTestRequest(http.StatusOK, err))
+	require.Equal(t, "model_unavailable", classifyModelValidationError(context.Background(), http.StatusOK, err))
 }
 
 func TestTestUpstreamDoesNotRetryMissingModel(t *testing.T) {
@@ -412,9 +465,70 @@ func TestListUpstreamModelsDeduplicatesRealCatalogue(t *testing.T) {
 	key := "relay-key"
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer "+key, r.Header.Get("Authorization"))
-		require.Equal(t, "/v1/models", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-a"},{"id":"model-b"}]}`))
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-a"},{"id":"model-b"}]}`))
+		case "/v1/responses", "/v1/chat/completions":
+			_, _ = w.Write([]byte(`{"id":"verified"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	oldModels := []string{"stale-model"}
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key, Models: oldModels}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.ListUpstreamModels(context.Background(), 1)
+	require.NoError(t, err)
+	require.True(t, result.OK)
+	require.Equal(t, []string{"model-a", "model-b"}, result.Models)
+	require.Equal(t, 2, result.ModelsTotal)
+	require.Equal(t, 2, result.ModelsChecked)
+	require.Equal(t, 2, result.ModelsAvailable)
+	require.Zero(t, result.ModelsFailed)
+	require.True(t, result.ValidationComplete)
+	require.Equal(t, result.Models, stub.row.Models)
+}
+
+func TestListUpstreamModelsKeepsOnlyModelsWithVerifiedJSONResponse(t *testing.T) {
+	key := "relay-key"
+	var active, maxActive int32
+	var modelCRequests int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer "+key, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-b"},{"id":"model-c"}]}`))
+		case "/v1/responses", "/v1/chat/completions":
+			var request struct {
+				Model string `json:"model"`
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			current := atomic.AddInt32(&active, 1)
+			for {
+				old := atomic.LoadInt32(&maxActive)
+				if current <= old || atomic.CompareAndSwapInt32(&maxActive, old, current) {
+					break
+				}
+			}
+			time.Sleep(15 * time.Millisecond)
+			atomic.AddInt32(&active, -1)
+			if request.Model == "model-b" && r.URL.Path == "/v1/responses" {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if request.Model == "model-c" {
+				atomic.AddInt32(&modelCRequests, 1)
+				_, _ = w.Write([]byte(`{"error":{"message":"model unavailable"}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer endpoint.Close()
 
@@ -424,6 +538,46 @@ func TestListUpstreamModelsDeduplicatesRealCatalogue(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.OK)
 	require.Equal(t, []string{"model-a", "model-b"}, result.Models)
+	require.Equal(t, "model_unavailable", result.ErrorCode)
+	require.Equal(t, 3, result.ModelsTotal)
+	require.Equal(t, 3, result.ModelsChecked)
+	require.Equal(t, 2, result.ModelsAvailable)
+	require.Equal(t, 1, result.ModelsFailed)
+	require.True(t, result.ValidationComplete)
+	require.LessOrEqual(t, atomic.LoadInt32(&maxActive), int32(upstreamModelValidationConcurrency))
+	require.Equal(t, int32(1), atomic.LoadInt32(&modelCRequests), "model rejection must not trigger a second protocol probe")
+	require.Equal(t, []string{"model-a", "model-b"}, stub.row.Models)
+	require.NotNil(t, stub.row.ModelsCheckedAt)
+}
+
+func TestListUpstreamModelsHonorsCallerDeadline(t *testing.T) {
+	key := "relay-key"
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-b"}]}`))
+			return
+		}
+		// Keep the handler finite; the client-side deadline should still abort
+		// the request well before this delayed response is written.
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusGatewayTimeout)
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	result, err := svc.ListUpstreamModels(ctx, 1)
+	require.NoError(t, err)
+	require.False(t, result.OK)
+	require.Equal(t, "timeout", result.ErrorCode)
+	require.Equal(t, 2, result.ModelsTotal)
+	require.Equal(t, 2, result.ModelsChecked)
+	require.Zero(t, result.ModelsAvailable)
+	require.Equal(t, 2, result.ModelsFailed)
+	require.False(t, result.ValidationComplete)
 }
 
 func TestTestUpstreamRejectsModelOutsideRealCatalogue(t *testing.T) {

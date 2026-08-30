@@ -35,6 +35,20 @@ func (_c *TempBalanceCreate) SetAmount(v int64) *TempBalanceCreate {
 	return _c
 }
 
+// SetGroupID sets the "group_id" field.
+func (_c *TempBalanceCreate) SetGroupID(v int64) *TempBalanceCreate {
+	_c.mutation.SetGroupID(v)
+	return _c
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_c *TempBalanceCreate) SetNillableGroupID(v *int64) *TempBalanceCreate {
+	if v != nil {
+		_c.SetGroupID(*v)
+	}
+	return _c
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (_c *TempBalanceCreate) SetExpiresAt(v time.Time) *TempBalanceCreate {
 	_c.mutation.SetExpiresAt(v)
@@ -180,6 +194,10 @@ func (_c *TempBalanceCreate) createSpec() (*TempBalance, *sqlgraph.CreateSpec) {
 		_spec.SetField(tempbalance.FieldAmount, field.TypeInt64, value)
 		_node.Amount = value
 	}
+	if value, ok := _c.mutation.GroupID(); ok {
+		_spec.SetField(tempbalance.FieldGroupID, field.TypeInt64, value)
+		_node.GroupID = &value
+	}
 	if value, ok := _c.mutation.ExpiresAt(); ok {
 		_spec.SetField(tempbalance.FieldExpiresAt, field.TypeTime, value)
 		_node.ExpiresAt = &value
@@ -288,6 +306,30 @@ func (u *TempBalanceUpsert) UpdateAmount() *TempBalanceUpsert {
 // AddAmount adds v to the "amount" field.
 func (u *TempBalanceUpsert) AddAmount(v int64) *TempBalanceUpsert {
 	u.Add(tempbalance.FieldAmount, v)
+	return u
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *TempBalanceUpsert) SetGroupID(v int64) *TempBalanceUpsert {
+	u.Set(tempbalance.FieldGroupID, v)
+	return u
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *TempBalanceUpsert) UpdateGroupID() *TempBalanceUpsert {
+	u.SetExcluded(tempbalance.FieldGroupID)
+	return u
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *TempBalanceUpsert) AddGroupID(v int64) *TempBalanceUpsert {
+	u.Add(tempbalance.FieldGroupID, v)
+	return u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *TempBalanceUpsert) ClearGroupID() *TempBalanceUpsert {
+	u.SetNull(tempbalance.FieldGroupID)
 	return u
 }
 
@@ -419,6 +461,34 @@ func (u *TempBalanceUpsertOne) AddAmount(v int64) *TempBalanceUpsertOne {
 func (u *TempBalanceUpsertOne) UpdateAmount() *TempBalanceUpsertOne {
 	return u.Update(func(s *TempBalanceUpsert) {
 		s.UpdateAmount()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *TempBalanceUpsertOne) SetGroupID(v int64) *TempBalanceUpsertOne {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *TempBalanceUpsertOne) AddGroupID(v int64) *TempBalanceUpsertOne {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *TempBalanceUpsertOne) UpdateGroupID() *TempBalanceUpsertOne {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *TempBalanceUpsertOne) ClearGroupID() *TempBalanceUpsertOne {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.ClearGroupID()
 	})
 }
 
@@ -724,6 +794,34 @@ func (u *TempBalanceUpsertBulk) AddAmount(v int64) *TempBalanceUpsertBulk {
 func (u *TempBalanceUpsertBulk) UpdateAmount() *TempBalanceUpsertBulk {
 	return u.Update(func(s *TempBalanceUpsert) {
 		s.UpdateAmount()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *TempBalanceUpsertBulk) SetGroupID(v int64) *TempBalanceUpsertBulk {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *TempBalanceUpsertBulk) AddGroupID(v int64) *TempBalanceUpsertBulk {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *TempBalanceUpsertBulk) UpdateGroupID() *TempBalanceUpsertBulk {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *TempBalanceUpsertBulk) ClearGroupID() *TempBalanceUpsertBulk {
+	return u.Update(func(s *TempBalanceUpsert) {
+		s.ClearGroupID()
 	})
 }
 

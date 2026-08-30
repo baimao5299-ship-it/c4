@@ -41,6 +41,20 @@ func (_c *RedemptionUseCreate) SetValue(v int64) *RedemptionUseCreate {
 	return _c
 }
 
+// SetGroupID sets the "group_id" field.
+func (_c *RedemptionUseCreate) SetGroupID(v int64) *RedemptionUseCreate {
+	_c.mutation.SetGroupID(v)
+	return _c
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_c *RedemptionUseCreate) SetNillableGroupID(v *int64) *RedemptionUseCreate {
+	if v != nil {
+		_c.SetGroupID(*v)
+	}
+	return _c
+}
+
 // SetResourceExpiresAt sets the "resource_expires_at" field.
 func (_c *RedemptionUseCreate) SetResourceExpiresAt(v time.Time) *RedemptionUseCreate {
 	_c.mutation.SetResourceExpiresAt(v)
@@ -179,6 +193,10 @@ func (_c *RedemptionUseCreate) createSpec() (*RedemptionUse, *sqlgraph.CreateSpe
 		_spec.SetField(redemptionuse.FieldValue, field.TypeInt64, value)
 		_node.Value = value
 	}
+	if value, ok := _c.mutation.GroupID(); ok {
+		_spec.SetField(redemptionuse.FieldGroupID, field.TypeInt64, value)
+		_node.GroupID = &value
+	}
 	if value, ok := _c.mutation.ResourceExpiresAt(); ok {
 		_spec.SetField(redemptionuse.FieldResourceExpiresAt, field.TypeTime, value)
 		_node.ResourceExpiresAt = &value
@@ -301,6 +319,30 @@ func (u *RedemptionUseUpsert) UpdateValue() *RedemptionUseUpsert {
 // AddValue adds v to the "value" field.
 func (u *RedemptionUseUpsert) AddValue(v int64) *RedemptionUseUpsert {
 	u.Add(redemptionuse.FieldValue, v)
+	return u
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *RedemptionUseUpsert) SetGroupID(v int64) *RedemptionUseUpsert {
+	u.Set(redemptionuse.FieldGroupID, v)
+	return u
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *RedemptionUseUpsert) UpdateGroupID() *RedemptionUseUpsert {
+	u.SetExcluded(redemptionuse.FieldGroupID)
+	return u
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *RedemptionUseUpsert) AddGroupID(v int64) *RedemptionUseUpsert {
+	u.Add(redemptionuse.FieldGroupID, v)
+	return u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *RedemptionUseUpsert) ClearGroupID() *RedemptionUseUpsert {
+	u.SetNull(redemptionuse.FieldGroupID)
 	return u
 }
 
@@ -435,6 +477,34 @@ func (u *RedemptionUseUpsertOne) AddValue(v int64) *RedemptionUseUpsertOne {
 func (u *RedemptionUseUpsertOne) UpdateValue() *RedemptionUseUpsertOne {
 	return u.Update(func(s *RedemptionUseUpsert) {
 		s.UpdateValue()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *RedemptionUseUpsertOne) SetGroupID(v int64) *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *RedemptionUseUpsertOne) AddGroupID(v int64) *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *RedemptionUseUpsertOne) UpdateGroupID() *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *RedemptionUseUpsertOne) ClearGroupID() *RedemptionUseUpsertOne {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.ClearGroupID()
 	})
 }
 
@@ -740,6 +810,34 @@ func (u *RedemptionUseUpsertBulk) AddValue(v int64) *RedemptionUseUpsertBulk {
 func (u *RedemptionUseUpsertBulk) UpdateValue() *RedemptionUseUpsertBulk {
 	return u.Update(func(s *RedemptionUseUpsert) {
 		s.UpdateValue()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *RedemptionUseUpsertBulk) SetGroupID(v int64) *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *RedemptionUseUpsertBulk) AddGroupID(v int64) *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *RedemptionUseUpsertBulk) UpdateGroupID() *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *RedemptionUseUpsertBulk) ClearGroupID() *RedemptionUseUpsertBulk {
+	return u.Update(func(s *RedemptionUseUpsert) {
+		s.ClearGroupID()
 	})
 }
 

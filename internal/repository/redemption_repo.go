@@ -40,6 +40,7 @@ func (r *RedemptionRepo) CreateCodes(ctx context.Context, codes []*domain.Redemp
 			SetCode(c.Code).
 			SetType(redemptioncode.Type(c.Type)).
 			SetValue(c.Value).
+			SetNillableGroupID(c.GroupID).
 			SetNillableRemark(c.Remark).
 			SetNillableExpiresAt(c.ExpiresAt).
 			SetNillableResourceExpiresAt(c.ResourceExpiresAt).
@@ -222,6 +223,7 @@ func (r *RedemptionRepo) ListHistory(ctx context.Context, q ListQuery, codeID, u
 		h := &domain.RedemptionHistory{
 			ID: row.ID, CodeID: row.CodeID, UserID: row.UserID,
 			Value: row.Value, ResourceExpiresAt: row.ResourceExpiresAt,
+			GroupID:   row.GroupID,
 			CreatedAt: row.CreatedAt,
 		}
 		if code := row.Edges.Code; code != nil {
@@ -254,7 +256,8 @@ func (r *RedemptionRepo) CreateUse(ctx context.Context, use *domain.RedemptionUs
 	b := r.client.RedemptionUse.Create().
 		SetCodeID(use.CodeID).
 		SetUserID(use.UserID).
-		SetValue(use.Value)
+		SetValue(use.Value).
+		SetNillableGroupID(use.GroupID)
 	if use.ResourceExpiresAt != nil {
 		b = b.SetResourceExpiresAt(*use.ResourceExpiresAt)
 	}
@@ -269,8 +272,10 @@ func (r *RedemptionRepo) CreateUse(ctx context.Context, use *domain.RedemptionUs
 
 // IncrementUsed 条件递增 used_count（防并发超卖——评审 I-2）：
 // UPDATE redemption_codes SET used_count = used_count + 1
-// WHERE id = ? AND used_count < max_uses —— 单语句条件原子，DB 行锁 + WHERE 保证
-// 并发兑换最后一张不超卖。0 行受影响 → (false, nil) = 已用尽（service → 400 并回滚）。
+// WHERE id = ? AND used_count < max_uses AND status = active AND
+// (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) —— 单语句条件原子，DB 行锁 + WHERE
+// 保证并发兑换最后一张不超卖，并在状态/过期更新与兑换竞态时阻止过期请求。
+// 0 行受影响 → (false, nil) = 已用尽/失效（service → 400 并回滚）。
 func (r *RedemptionRepo) IncrementUsed(ctx context.Context, codeID int64) (bool, error) {
 	u := sql.Update(redemptioncode.Table).
 		Set(redemptioncode.FieldUsedCount, sql.ExprFunc(func(b *sql.Builder) {
@@ -279,6 +284,11 @@ func (r *RedemptionRepo) IncrementUsed(ctx context.Context, codeID int64) (bool,
 		Where(sql.And(
 			sql.EQ(redemptioncode.FieldID, codeID),
 			sql.ColumnsLT(redemptioncode.FieldUsedCount, redemptioncode.FieldMaxUses),
+			sql.EQ(redemptioncode.FieldStatus, string(redemptioncode.StatusActive)),
+			sql.Or(
+				sql.IsNull(redemptioncode.FieldExpiresAt),
+				sql.GT(redemptioncode.FieldExpiresAt, sql.Expr("CURRENT_TIMESTAMP")),
+			),
 		))
 	n, err := execUpdate(ctx, r.driver, u)
 	if err != nil {
@@ -328,7 +338,7 @@ func (r *RedemptionRepo) DeactivateCodes(ctx context.Context, ids []int64) (int6
 func toDomainRedemptionCode(c *ent.RedemptionCode) *domain.RedemptionCode {
 	return &domain.RedemptionCode{
 		ID: c.ID, Code: c.Code, Type: domain.RedemptionType(c.Type),
-		Value: c.Value, Remark: c.Remark,
+		Value: c.Value, GroupID: c.GroupID, Remark: c.Remark,
 		ExpiresAt: c.ExpiresAt, ResourceExpiresAt: c.ResourceExpiresAt,
 		MaxUses: c.MaxUses, UsedCount: c.UsedCount,
 		Status: domain.RedemptionStatus(c.Status), CreatedBy: c.CreatedBy,
@@ -339,7 +349,7 @@ func toDomainRedemptionCode(c *ent.RedemptionCode) *domain.RedemptionCode {
 func toDomainRedemptionUse(u *ent.RedemptionUse) *domain.RedemptionUse {
 	return &domain.RedemptionUse{
 		ID: u.ID, CodeID: u.CodeID, UserID: u.UserID, Value: u.Value,
-		ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+		ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
 	}
 }
 
@@ -347,6 +357,6 @@ func toDomainRedemptionUse(u *ent.RedemptionUse) *domain.RedemptionUse {
 func toDomainRedemptionRecord(u *ent.RedemptionUse) *domain.RedemptionRecord {
 	return &domain.RedemptionRecord{
 		ID: u.ID, CodeID: u.CodeID, Value: u.Value,
-		ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+		ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
 	}
 }

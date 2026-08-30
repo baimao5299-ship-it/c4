@@ -18,13 +18,15 @@ package repository
 // （uid=-1 恒一行，ORDER BY 置首），其余为 debited/forced 的 (uid,balance_after)
 // 定向余额对（oracle 必改 #3——Balances.Set 预检新鲜度）。
 const settleBalanceSQL = `WITH batch AS (
-	SELECT id, COALESCE(user_id, 0) AS uid, cost
-	FROM usage_logs
-	WHERE NOT billed AND error_type IN ('none', 'abort') AND cost > 0
-		AND COALESCE(user_id, 0) % $2 = $3
-		AND COALESCE(user_id, 0) NOT IN (
-			SELECT user_id FROM temp_balances
-			WHERE amount > 0 AND (expires_at IS NULL OR expires_at > now()))
+	SELECT l.id, COALESCE(l.user_id, 0) AS uid, l.cost
+	FROM usage_logs l
+	WHERE NOT l.billed AND l.error_type IN ('none', 'abort') AND l.cost > 0
+		AND COALESCE(l.user_id, 0) % $2 = $3
+		AND NOT EXISTS (
+			SELECT 1 FROM temp_balances t
+			WHERE t.user_id = l.user_id AND t.amount > 0
+				AND (t.expires_at IS NULL OR t.expires_at > now())
+				AND (t.group_id IS NULL OR (l.group_id IS NOT NULL AND t.group_id = l.group_id)))
 	ORDER BY id LIMIT $1),
 totals AS (SELECT uid, SUM(cost)::numeric AS delta FROM batch GROUP BY uid),
 debited AS (
@@ -69,46 +71,64 @@ ORDER BY 1`
 // cum，边界部分扣公式失真（少扣差额误入余额），ROWS 帧逐行累加消除并列歧义。
 // spill>0 用户进余额条件扣→透支补刀→幽灵隔离，链形与 Balance 车道同构；
 // Σdrawn 一致性结构性成立（spill 由实际 drawn 推导，条件扣丢行自动并入 spill）。
-const settleFefoSQL = `WITH batch AS (
-	SELECT id, COALESCE(user_id, 0) AS uid, cost
-	FROM usage_logs
-	WHERE NOT billed AND error_type IN ('none', 'abort') AND cost > 0
-		AND COALESCE(user_id, 0) % $2 = $3
-		AND COALESCE(user_id, 0) IN (
-			SELECT user_id FROM temp_balances
-			WHERE amount > 0 AND (expires_at IS NULL OR expires_at > now()))
-	ORDER BY id LIMIT $1),
-totals AS (SELECT uid, SUM(cost)::numeric AS delta FROM batch GROUP BY uid),
+// Policy: a user's legacy/global temporary balance is the primary FEFO lane.
+// While any positive global row exists, all of that user's logs use the
+// global pool; group-scoped activity rows become eligible only after the
+// global pool is exhausted. This preserves legacy behavior and prevents a
+// global grant from being silently stranded by an unrelated scoped grant.
+const settleFefoSQL = `WITH global_temp_users AS (
+	SELECT DISTINCT user_id FROM temp_balances
+	WHERE group_id IS NULL AND amount > 0 AND (expires_at IS NULL OR expires_at > now())),
+batch AS (
+	SELECT l.id, COALESCE(l.user_id, 0) AS uid, l.group_id, l.cost,
+		CASE WHEN g.user_id IS NOT NULL THEN NULL ELSE l.group_id END AS charge_gid
+	FROM usage_logs l LEFT JOIN global_temp_users g ON g.user_id = l.user_id
+	WHERE NOT l.billed AND l.error_type IN ('none', 'abort') AND l.cost > 0
+		AND COALESCE(l.user_id, 0) % $2 = $3
+		AND (g.user_id IS NOT NULL OR EXISTS (
+			SELECT 1 FROM temp_balances t
+			WHERE t.user_id = l.user_id AND t.group_id = l.group_id AND l.group_id IS NOT NULL
+				AND t.amount > 0 AND (t.expires_at IS NULL OR t.expires_at > now())))
+	ORDER BY l.id LIMIT $1),
+totals AS (SELECT uid, charge_gid, SUM(cost)::numeric AS delta FROM batch GROUP BY uid, charge_gid),
 temp_pool AS (
-	SELECT t.id AS tid, t.user_id AS uid, t.amount,
-		ROW_NUMBER() OVER (PARTITION BY t.user_id ORDER BY t.expires_at NULLS LAST) AS rn,
-		SUM(t.amount) OVER (PARTITION BY t.user_id ORDER BY t.expires_at NULLS LAST
+	SELECT t.id AS tid, t.user_id AS uid, x.charge_gid,
+		t.amount,
+		ROW_NUMBER() OVER (PARTITION BY t.user_id, t.group_id ORDER BY t.expires_at NULLS LAST, t.id) AS rn,
+		SUM(t.amount) OVER (PARTITION BY t.user_id, t.group_id ORDER BY t.expires_at NULLS LAST, t.id
 			ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum
 	FROM temp_balances t
-	WHERE t.user_id IN (SELECT uid FROM totals) AND t.amount > 0
+	JOIN totals x ON x.uid = t.user_id AND ((x.charge_gid IS NULL AND t.group_id IS NULL) OR t.group_id = x.charge_gid)
+	WHERE t.amount > 0
 		AND (t.expires_at IS NULL OR t.expires_at > now())),
 takes AS (
-	SELECT p.tid, p.uid,
+	SELECT p.tid, p.uid, p.charge_gid,
 		CASE WHEN p.cum <= t.delta THEN p.amount
 			ELSE t.delta - (p.cum - p.amount) END AS take
 	FROM temp_pool p JOIN totals t ON t.uid = p.uid
+		AND t.charge_gid IS NOT DISTINCT FROM p.charge_gid
 	WHERE p.cum - p.amount < t.delta),
 temp_drawn AS (
 	UPDATE temp_balances tt SET amount = tt.amount - x.take
 	FROM takes x WHERE tt.id = x.tid AND tt.amount >= x.take
-	RETURNING x.uid AS uid, x.take),
+	RETURNING x.uid AS uid, x.charge_gid, x.take),
 spill AS (
 	SELECT t.uid, t.delta - COALESCE(SUM(d.take), 0) AS spill
 	FROM totals t LEFT JOIN temp_drawn d ON d.uid = t.uid
+		AND d.charge_gid IS NOT DISTINCT FROM t.charge_gid
 	GROUP BY t.uid, t.delta
 	HAVING t.delta - COALESCE(SUM(d.take), 0) > 0),
+user_spill AS (
+	SELECT uid, SUM(spill)::numeric AS spill
+	FROM spill
+	GROUP BY uid),
 debited AS (
 	UPDATE users u SET balance = u.balance - s.spill
-	FROM spill s WHERE u.id = s.uid AND u.balance >= s.spill
+	FROM user_spill s WHERE u.id = s.uid AND u.balance >= s.spill
 	RETURNING u.id AS uid, u.balance AS balance_after),
 forced AS (
 	UPDATE users u SET balance = u.balance - s.spill
-	FROM spill s WHERE u.id = s.uid AND u.id NOT IN (SELECT uid FROM debited)
+	FROM user_spill s WHERE u.id = s.uid AND u.id NOT IN (SELECT uid FROM debited)
 	RETURNING u.id AS uid, u.balance AS balance_after),
 od_map AS (
 	SELECT uid, TRUE AS od FROM forced
@@ -123,7 +143,7 @@ marked AS (
 	WHERE l.id = q.id AND NOT l.billed
 	RETURNING l.id),
 ghosts AS (
-	SELECT b.uid FROM batch b JOIN spill s ON s.uid = b.uid
+	SELECT b.uid FROM batch b JOIN user_spill s ON s.uid = b.uid
 	WHERE NOT EXISTS (SELECT 1 FROM debited d WHERE d.uid = b.uid)
 		AND NOT EXISTS (SELECT 1 FROM forced f WHERE f.uid = b.uid))
 SELECT -1::bigint, -1::bigint,
@@ -144,18 +164,24 @@ ORDER BY 1`
 // 队头行供 MarkBilledBulk 写销隔离——确定性毒行纯 LIMIT 重试永不收敛（oracle
 // 必改 #2），隔离必须命中失败车道自己的队头而非全局首行（否则误写销无辜行且
 // 毒行仍在）。
-const probeBalanceHeadSQL = `SELECT id FROM usage_logs
-WHERE NOT billed AND error_type IN ('none', 'abort') AND cost > 0
-	AND COALESCE(user_id, 0) % $1 = $2
-	AND COALESCE(user_id, 0) NOT IN (
-		SELECT user_id FROM temp_balances
-		WHERE amount > 0 AND (expires_at IS NULL OR expires_at > now()))
-ORDER BY id LIMIT 1`
+const probeBalanceHeadSQL = `SELECT l.id FROM usage_logs l
+WHERE NOT l.billed AND l.error_type IN ('none', 'abort') AND l.cost > 0
+	AND COALESCE(l.user_id, 0) % $1 = $2
+	AND NOT EXISTS (
+		SELECT 1 FROM temp_balances t
+		WHERE t.user_id = l.user_id AND t.amount > 0
+			AND (t.expires_at IS NULL OR t.expires_at > now())
+			AND (t.group_id IS NULL OR (l.group_id IS NOT NULL AND t.group_id = l.group_id)))
+ORDER BY l.id LIMIT 1`
 
-const probeFefoHeadSQL = `SELECT id FROM usage_logs
-WHERE NOT billed AND error_type IN ('none', 'abort') AND cost > 0
-	AND COALESCE(user_id, 0) % $1 = $2
-	AND COALESCE(user_id, 0) IN (
-		SELECT user_id FROM temp_balances
-		WHERE amount > 0 AND (expires_at IS NULL OR expires_at > now()))
-ORDER BY id LIMIT 1`
+const probeFefoHeadSQL = `WITH global_temp_users AS (
+	SELECT DISTINCT user_id FROM temp_balances
+	WHERE group_id IS NULL AND amount > 0 AND (expires_at IS NULL OR expires_at > now()))
+SELECT l.id FROM usage_logs l LEFT JOIN global_temp_users g ON g.user_id = l.user_id
+WHERE NOT l.billed AND l.error_type IN ('none', 'abort') AND l.cost > 0
+	AND COALESCE(l.user_id, 0) % $1 = $2
+	AND (g.user_id IS NOT NULL OR EXISTS (
+		SELECT 1 FROM temp_balances t
+		WHERE t.user_id = l.user_id AND t.group_id = l.group_id AND l.group_id IS NOT NULL
+			AND t.amount > 0 AND (t.expires_at IS NULL OR t.expires_at > now())))
+ORDER BY l.id LIMIT 1`

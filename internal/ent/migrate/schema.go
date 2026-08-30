@@ -365,8 +365,9 @@ var (
 	RedemptionCodesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "code", Type: field.TypeString, Unique: true},
-		{Name: "type", Type: field.TypeEnum, Enums: []string{"balance", "concurrency", "temp_balance"}},
+		{Name: "type", Type: field.TypeEnum, Enums: []string{"balance", "concurrency", "temp_balance", "scoped_temp_balance"}},
 		{Name: "value", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "remark", Type: field.TypeString, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "resource_expires_at", Type: field.TypeTime, Nullable: true},
@@ -388,6 +389,7 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "value", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "resource_expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "code_id", Type: field.TypeInt64},
@@ -400,7 +402,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "redemption_uses_redemption_codes_uses",
-				Columns:    []*schema.Column{RedemptionUsesColumns[5]},
+				Columns:    []*schema.Column{RedemptionUsesColumns[6]},
 				RefColumns: []*schema.Column{RedemptionCodesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -409,7 +411,7 @@ var (
 			{
 				Name:    "redemptionuse_code_id_user_id",
 				Unique:  true,
-				Columns: []*schema.Column{RedemptionUsesColumns[5], RedemptionUsesColumns[1]},
+				Columns: []*schema.Column{RedemptionUsesColumns[6], RedemptionUsesColumns[1]},
 			},
 			{
 				Name:    "redemptionuse_user_id",
@@ -454,6 +456,7 @@ var (
 	TempBalancesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "amount", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "note", Type: field.TypeString, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
@@ -467,7 +470,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "temp_balances_users_temp_balances",
-				Columns:    []*schema.Column{TempBalancesColumns[5]},
+				Columns:    []*schema.Column{TempBalancesColumns[6]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -476,7 +479,12 @@ var (
 			{
 				Name:    "tempbalance_user_id_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{TempBalancesColumns[5], TempBalancesColumns[2]},
+				Columns: []*schema.Column{TempBalancesColumns[6], TempBalancesColumns[3]},
+			},
+			{
+				Name:    "tempbalance_user_id_group_id_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{TempBalancesColumns[6], TempBalancesColumns[2], TempBalancesColumns[3]},
 			},
 		},
 	}

@@ -22,6 +22,9 @@ import { StatusBadge } from '@/components/status-badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from '@/components/ui/toast'
 import { formatDateTime, formatUSD } from '@/components/fmt'
+import type { components } from '@/lib/api/schema'
+
+type TempBalanceRowView = components['schemas']['TempBalanceRow'] & { group_id?: number | null }
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -44,6 +47,7 @@ export default function UserProfile() {
   // 与 AppShell/overview 同键共享缓存（me 一次拉取全局复用）
   const meQ = useQuery({ queryKey: ['user', 'me'], queryFn: () => userApi.me() })
   const tempQ = useQuery({ queryKey: ['user', 'temp-balances'], queryFn: () => userApi.getTempBalances() })
+  const tempRows = (tempQ.data?.rows ?? []) as TempBalanceRowView[]
 
   // —— 修改密码表单（register/login 同款原生 await 提交，非 useMutation：
   // 全局 MutationCache 401 拦截会把"旧密码错误"当会话过期登出，改密码的
@@ -125,7 +129,7 @@ export default function UserProfile() {
               <CardDescription className="flex items-center gap-1.5">
                 <Timer className="size-4" /> {t('user.profile.tempTitle')}
               </CardDescription>
-              {tempQ.data && tempQ.data.rows.length > 0 && (
+              {tempQ.data && tempRows.length > 0 && (
                 <CardTitle className="text-2xl font-semibold tabular-nums">
                   {formatUSD(tempQ.data.total_usd)}
                 </CardTitle>
@@ -138,28 +142,34 @@ export default function UserProfile() {
                 <div className="space-y-2">
                   {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8" />)}
                 </div>
-              ) : tempQ.data.rows.length === 0 ? (
+              ) : tempRows.length === 0 ? (
                 // 空结果（无有效额度）：total 0 无展示意义，整体空态提示
                 <p className="py-6 text-center text-sm text-muted-foreground">{t('user.profile.tempEmpty')}</p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('user.profile.tempAmount')}</TableHead>
-                      <TableHead>{t('user.profile.tempExpiresAt')}</TableHead>
-                      <TableHead>{t('user.profile.tempNote')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody className="[&_td]:py-3">
-                    {tempQ.data.rows.map(r => (
-                      <TableRow key={r.id}>
-                        <TableCell className="tabular-nums">{formatUSD(r.amount_usd)}</TableCell>
-                        <TableCell className="text-xs">{r.expires_at ? formatDateTime(r.expires_at) : t('user.profile.tempPermanent')}</TableCell>
-                        <TableCell className="max-w-40 truncate text-xs" title={r.note ?? undefined}>{r.note || '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto rounded-lg border">
+                  <div className="min-w-[520px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('user.profile.tempAmount')}</TableHead>
+                          <TableHead>{t('user.profile.tempGroup')}</TableHead>
+                          <TableHead>{t('user.profile.tempExpiresAt')}</TableHead>
+                          <TableHead>{t('user.profile.tempNote')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="[&_td]:py-3">
+                        {tempRows.map(r => (
+                          <TableRow key={r.id}>
+                            <TableCell className="tabular-nums">{formatUSD(r.amount_usd)}</TableCell>
+                            <TableCell className="tabular-nums">{r.group_id == null ? t('user.profile.tempGlobal') : `#${r.group_id}`}</TableCell>
+                            <TableCell className="text-xs">{r.expires_at ? formatDateTime(r.expires_at) : t('user.profile.tempPermanent')}</TableCell>
+                            <TableCell className="max-w-40 truncate text-xs" title={r.note ?? undefined}>{r.note || '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

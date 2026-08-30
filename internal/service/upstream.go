@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/is7qin/c3api/internal/billing"
@@ -67,14 +68,43 @@ type UpstreamProbeResult struct {
 	ErrorCode string
 }
 
-// UpstreamModelsResult is the bounded, non-secret result of reading an
-// upstream's model catalogue. The catalogue is used by the admin UI to avoid
-// sending a test request with a model the saved key does not support.
+// UpstreamModelsResult is the bounded, non-secret result of reading and
+// validating an upstream's model catalogue. The UI and scheduler consume only
+// models that completed a real request successfully.
 type UpstreamModelsResult struct {
-	Models    []string
-	OK        bool
-	ErrorCode string
+	Models             []string
+	OK                 bool
+	ErrorCode          string
+	ModelsTotal        int
+	ModelsChecked      int
+	ModelsAvailable    int
+	ModelsFailed       int
+	ValidationComplete bool
 }
+
+// UpstreamModelValidationError keeps the failed validation category visible at
+// the management boundary while still mapping to the normal invalid-input HTTP
+// response. No upstream row is created when validation does not complete with
+// at least one usable model.
+type UpstreamModelValidationError struct {
+	Code string
+}
+
+func (e *UpstreamModelValidationError) Error() string {
+	code := strings.TrimSpace(e.Code)
+	if code == "" {
+		code = "model_unavailable"
+	}
+	return fmt.Sprintf("%v: upstream model validation failed (%s)", ErrInvalidInput, code)
+}
+
+func (e *UpstreamModelValidationError) Unwrap() error { return ErrInvalidInput }
+
+const (
+	upstreamModelValidationConcurrency = 4
+	upstreamModelValidationTimeout     = 30 * time.Second
+	upstreamModelValidationPerModel    = 5 * time.Second
+)
 
 var errUpstreamStoreUnavailable = errors.New("upstream management is not configured")
 
@@ -133,6 +163,48 @@ func (s *Service) CreateUpstream(ctx context.Context, u *domain.Upstream) (*doma
 	if err := validateUpstream(u); err != nil {
 		return nil, err
 	}
+	created, err := store.CreateUpstream(ctx, u)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	s.invalidateUpstreamConfig(ctx)
+	return created, nil
+}
+
+// CreateUpstreamWithModelValidation validates the endpoint/key and persists the
+// verified model snapshot as one management operation. Keeping this server-side
+// prevents a browser from doing a full paid catalogue probe before creation and
+// then immediately repeating it after the row is saved.
+func (s *Service) CreateUpstreamWithModelValidation(ctx context.Context, u *domain.Upstream) (*domain.Upstream, error) {
+	store, err := s.upstreamStore()
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := store.(UpstreamModelStore); !ok {
+		return nil, fmt.Errorf("%w: model snapshot storage is not configured", ErrInvalidInput)
+	}
+	if u != nil && u.ClearUpstreamKey && u.UpstreamKey != nil {
+		return nil, ErrInvalidInput
+	}
+	if err := validateUpstream(u); err != nil {
+		return nil, err
+	}
+	base := strings.TrimRight(strings.TrimSpace(u.BaseURL), "/")
+	key := strings.TrimSpace(derefUpstreamKey(u.UpstreamKey))
+	client := s.managementHTTPClient()
+	client.Timeout = 10 * time.Second
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	result := validateUpstreamModels(ctx, client, base, key)
+	if !result.ValidationComplete || !result.OK {
+		return nil, &UpstreamModelValidationError{Code: result.ErrorCode}
+	}
+	// Carry the verified capability snapshot into the create mutation. The
+	// repository writes these fields with the row, so a successful response can
+	// never advertise a model catalogue that was not persisted.
+	u.Models = append([]string(nil), result.Models...)
+	checkedAt := time.Now()
+	u.ModelsCheckedAt = &checkedAt
+	u.ModelsError = optionalString(result.ErrorCode)
 	created, err := store.CreateUpstream(ctx, u)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -272,7 +344,7 @@ func (s *Service) ProbeUpstream(ctx context.Context, id int64) (*UpstreamProbeRe
 	// Use the same bounded /v1/models parser as model discovery. A reachable
 	// portal or HTML error page may return HTTP 200; transport reachability alone
 	// must not mark such an upstream healthy.
-	_, code := fetchUpstreamModels(probeCtx, client, base, strings.TrimSpace(derefUpstreamKey(u.UpstreamKey)))
+	_, code := fetchAdvertisedModels(probeCtx, client, base, strings.TrimSpace(derefUpstreamKey(u.UpstreamKey)))
 	latency := time.Since(started).Milliseconds()
 	ok := code == ""
 	var errCode *string
@@ -318,9 +390,9 @@ func (s *Service) ListUpstreamModels(ctx context.Context, id int64) (*UpstreamMo
 	client.Timeout = 10 * time.Second
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	key := strings.TrimSpace(derefUpstreamKey(u.UpstreamKey))
-	models, code := fetchUpstreamModels(ctx, client, base, key)
-	s.recordUpstreamModels(ctx, store, u, models, code)
-	return &UpstreamModelsResult{Models: models, OK: code == "", ErrorCode: code}, nil
+	result := validateUpstreamModels(ctx, client, base, key)
+	s.recordUpstreamModels(ctx, store, u, result.Models, result.ErrorCode)
+	return &result, nil
 }
 
 func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore, expected *domain.Upstream, models []string, code string) {
@@ -330,11 +402,17 @@ func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore,
 	}
 	var modelErr *string
 	if code != "" {
-		modelErr = &code
-		// Keep the last known catalogue on a failed refresh. The scheduler can
-		// continue serving confirmed models while the dashboard reports the
-		// failed refresh; configuration edits clear this snapshot first.
-		models = expected.Models
+		if code == "model_unavailable" {
+			// Validation completed (possibly partially): persist only models that
+			// answered a real request. Keeping the old list here could route
+			// traffic to models that are no longer proven usable.
+			modelErr = &code
+		} else {
+			modelErr = &code
+			// Transport/auth failures happen before validation. Keep the last
+			// verified catalogue while exposing the read error to operators.
+			models = expected.Models
+		}
 	}
 	if _, err := recorder.RecordUpstreamModels(ctx, expected, models, modelErr); err != nil {
 		// A concurrent endpoint/key edit makes the probe stale. The read result is
@@ -361,8 +439,8 @@ func (s *Service) PreviewUpstreamModels(ctx context.Context, base, key string) (
 	client := s.managementHTTPClient()
 	client.Timeout = 10 * time.Second
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	models, code := fetchUpstreamModels(ctx, client, base, strings.TrimSpace(key))
-	return &UpstreamModelsResult{Models: models, OK: code == "", ErrorCode: code}, nil
+	result := validateUpstreamModels(ctx, client, base, strings.TrimSpace(key))
+	return &result, nil
 }
 
 // TestUpstream keeps the existing programmatic API and uses the first real
@@ -403,8 +481,7 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 	client.Timeout = 12 * time.Second
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	key := strings.TrimSpace(derefUpstreamKey(u.UpstreamKey))
-	models, modelCode := fetchUpstreamModels(testCtx, client, base, key)
-	s.recordUpstreamModels(ctx, store, u, models, modelCode)
+	models, modelCode := fetchAdvertisedModels(testCtx, client, base, key)
 	model := strings.TrimSpace(requestedModel)
 	if modelCode != "" {
 		return s.recordUpstreamTestFailure(ctx, store, u, modelCode)
@@ -447,16 +524,39 @@ func (s *Service) recordUpstreamTestFailure(ctx context.Context, store UpstreamS
 	return &UpstreamProbeResult{Upstream: updated, OK: false, ErrorCode: code}, nil
 }
 
-func fetchUpstreamModels(ctx context.Context, client *http.Client, base, key string) ([]string, string) {
+func fetchAdvertisedModels(ctx context.Context, client *http.Client, base, key string) ([]string, string) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	target := base + "/v1/models"
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, target, nil)
+	// OpenAI-compatible relays usually expose /v1/models, but a number of
+	// gateways expose the same catalogue at /models when their configured base
+	// URL already represents the versioned API root. Try that route only when
+	// the canonical route explicitly looks missing; auth, network, rate-limit,
+	// and provider failures must retain their original classification.
+	paths := []string{"/v1/models", "/models"}
+	lastCode := "http_error"
+	for i, path := range paths {
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		models, code, status, retryable := fetchAdvertisedModelsPath(requestCtx, client, base+path, key)
+		cancel()
+		if code == "" {
+			return models, ""
+		}
+		lastCode = code
+		if i == len(paths)-1 || !retryable || status == 0 {
+			return nil, code
+		}
+	}
+	return nil, lastCode
+}
+
+// fetchAdvertisedModelsPath performs one bounded catalogue request. The
+// boolean return identifies route-level failures for which the caller may try
+// a compatibility path; it deliberately excludes model/auth/provider errors.
+func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target, key string) ([]string, string, int, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, "invalid_value"
+		return nil, "invalid_value", 0, false
 	}
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
@@ -466,40 +566,250 @@ func fetchUpstreamModels(ctx context.Context, client *http.Client, base, key str
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
-			return nil, "timeout"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, "timeout", 0, false
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(requestCtx.Err(), context.Canceled) {
-			return nil, "canceled"
+		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			return nil, "canceled", 0, false
 		}
-		return nil, "network"
+		return nil, "network", 0, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		switch resp.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return nil, "auth"
+			return nil, "auth", resp.StatusCode, false
 		case http.StatusTooManyRequests:
-			return nil, "rate_limited"
+			return nil, "rate_limited", resp.StatusCode, false
 		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			return nil, "upstream"
+			return nil, "upstream", resp.StatusCode, false
+		case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+			return nil, "http_error", resp.StatusCode, true
 		default:
-			return nil, "http_error"
+			return nil, "http_error", resp.StatusCode, false
 		}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 	if err != nil {
-		return nil, "network"
+		return nil, "network", resp.StatusCode, false
 	}
 	if len(body) > 1<<20 {
-		return nil, "invalid_value"
+		return nil, "invalid_value", resp.StatusCode, false
 	}
 	models := parseUpstreamModels(body)
 	if len(models) == 0 {
-		return nil, "invalid_value"
+		return nil, "invalid_value", resp.StatusCode, false
 	}
-	return models, ""
+	return models, "", resp.StatusCode, false
+}
+
+type upstreamModelValidation struct {
+	Models             []string
+	OK                 bool
+	ErrorCode          string
+	ModelsTotal        int
+	ModelsChecked      int
+	ModelsAvailable    int
+	ModelsFailed       int
+	ValidationComplete bool
+}
+
+// validateUpstreamModels turns an advertised catalogue into a verified
+// catalogue. Every model receives one tiny non-streaming request, bounded by a
+// worker pool and per-model/overall deadlines. The route is Responses first;
+// only an explicit protocol/format rejection is retried as Chat Completions.
+func validateUpstreamModels(ctx context.Context, client *http.Client, base, key string) UpstreamModelsResult {
+	models, code := fetchAdvertisedModels(ctx, client, base, key)
+	if code != "" {
+		return UpstreamModelsResult{Models: nil, OK: false, ErrorCode: code}
+	}
+	result := validateModelCatalogue(ctx, client, base, key, models)
+	return UpstreamModelsResult{
+		Models:             result.Models,
+		OK:                 len(result.Models) > 0,
+		ErrorCode:          result.ErrorCode,
+		ModelsTotal:        result.ModelsTotal,
+		ModelsChecked:      result.ModelsChecked,
+		ModelsAvailable:    result.ModelsAvailable,
+		ModelsFailed:       result.ModelsFailed,
+		ValidationComplete: result.ValidationComplete,
+	}
+}
+
+func validateModelCatalogue(ctx context.Context, client *http.Client, base, key string, models []string) upstreamModelValidation {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(models) == 0 {
+		return upstreamModelValidation{ValidationComplete: true}
+	}
+	validationCtx, cancel := context.WithTimeout(ctx, upstreamModelValidationTimeout)
+	defer cancel()
+	type outcome struct {
+		model   string
+		ok      bool
+		checked bool
+		code    string
+	}
+	jobs := make(chan string)
+	results := make(chan outcome, len(models))
+	workers := upstreamModelValidationConcurrency
+	if len(models) < workers {
+		workers = len(models)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for model := range jobs {
+				if validationCtx.Err() != nil {
+					results <- outcome{model: model, checked: false}
+					continue
+				}
+				// Only count models for which a worker actually started the
+				// bounded request. Jobs skipped after the overall deadline are
+				// not reported as real validation attempts.
+				modelCtx, modelCancel := context.WithTimeout(validationCtx, upstreamModelValidationPerModel)
+				status, requestErr := sendUpstreamTestRequest(modelCtx, client, base+"/v1/responses", key, model, false)
+				if shouldFallbackTestRequest(status, requestErr) && modelCtx.Err() == nil {
+					status, requestErr = sendUpstreamTestRequest(modelCtx, client, base+"/v1/chat/completions", key, model, true)
+				}
+				modelCancel()
+				modelCode := classifyModelValidationError(validationCtx, status, requestErr)
+				results <- outcome{model: model, ok: modelCode == "", checked: true, code: modelCode}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, model := range models {
+			select {
+			case <-validationCtx.Done():
+				return
+			case jobs <- model:
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	valid := make([]string, 0, len(models))
+	checked := 0
+	failed := 0
+	counts := make(map[string]int)
+	for outcome := range results {
+		if outcome.checked {
+			checked++
+		}
+		if outcome.ok {
+			valid = append(valid, outcome.model)
+		} else if outcome.checked {
+			failed++
+			if outcome.code != "" {
+				counts[outcome.code]++
+			}
+		}
+	}
+	// Preserve the provider's catalogue order. The UI applies its own stable
+	// latest-first presentation ordering after this verification step.
+	validSet := make(map[string]struct{}, len(valid))
+	for _, model := range valid {
+		validSet[model] = struct{}{}
+	}
+	ordered := make([]string, 0, len(valid))
+	for _, model := range models {
+		if _, ok := validSet[model]; ok {
+			ordered = append(ordered, model)
+		}
+	}
+	complete := checked == len(models) && validationCtx.Err() == nil
+	validationCode := ""
+	if !complete {
+		// A partial run is not a capability snapshot. Even if some workers
+		// succeeded, keep the previous verified catalogue and require a retry;
+		// publishing a partial list would make the scheduler silently hide models
+		// that were never checked.
+		switch {
+		case errors.Is(validationCtx.Err(), context.DeadlineExceeded):
+			validationCode = "timeout"
+		case errors.Is(validationCtx.Err(), context.Canceled):
+			validationCode = "canceled"
+		default:
+			validationCode = dominantModelValidationError(counts)
+		}
+	} else if failed > 0 {
+		// A complete run can safely publish the verified subset while explaining
+		// that advertised models which failed the real request were filtered.
+		validationCode = dominantModelValidationError(counts)
+		if len(ordered) > 0 {
+			validationCode = "model_unavailable"
+		}
+	}
+	return upstreamModelValidation{
+		Models:             ordered,
+		OK:                 len(ordered) > 0,
+		ErrorCode:          validationCode,
+		ModelsTotal:        len(models),
+		ModelsChecked:      checked,
+		ModelsAvailable:    len(ordered),
+		ModelsFailed:       failed,
+		ValidationComplete: complete,
+	}
+}
+
+func classifyModelValidationError(ctx context.Context, status int, requestErr error) string {
+	if requestErr != nil {
+		// A valid JSON error envelope means the model endpoint answered, but the
+		// advertised model was rejected. Hide only that model and retain other
+		// confirmed models.
+		var envelope *upstreamErrorEnvelope
+		if errors.As(requestErr, &envelope) {
+			if isModelUnavailableMessage(string(envelope.body)) {
+				return "model_unavailable"
+			}
+			return "invalid_response"
+		}
+		var httpErr *upstreamHTTPError
+		if errors.As(requestErr, &httpErr) {
+			if isModelUnavailableMessage(string(httpErr.body)) {
+				return "model_unavailable"
+			}
+		}
+	}
+	code := classifyUpstreamTestError(ctx, status, requestErr)
+	if code == "http_error" && (status == http.StatusBadRequest || status == http.StatusNotFound || status == http.StatusUnprocessableEntity) {
+		return "model_unavailable"
+	}
+	return code
+}
+
+func dominantModelValidationError(counts map[string]int) string {
+	if len(counts) == 0 {
+		return "model_unavailable"
+	}
+	// Prefer causes that require an upstream configuration or availability fix;
+	// model_unavailable is the fallback when no stronger signal exists.
+	priority := []string{"auth", "rate_limited", "timeout", "upstream", "network", "model_unavailable", "invalid_response", "http_error"}
+	winner, best := "model_unavailable", 0
+	for _, code := range priority {
+		if count := counts[code]; count > best {
+			winner, best = code, count
+		}
+	}
+	return winner
+}
+
+func isModelUnavailableMessage(message string) bool {
+	message = strings.ToLower(message)
+	for _, marker := range []string{"model not found", "model_not_found", "unknown model", "invalid model", "model does not exist", "no such model", "model unavailable"} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseUpstreamModels(body []byte) []string {
@@ -612,7 +922,7 @@ func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, k
 			var envelope map[string]any
 			if json.Unmarshal(body, &envelope) == nil {
 				if _, hasError := envelope["error"]; hasError {
-					return resp.StatusCode, errUpstreamErrorEnvelope
+					return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), body...)}
 				}
 			}
 			return resp.StatusCode, errInvalidUpstreamResponse
@@ -625,6 +935,14 @@ func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, k
 
 var errInvalidUpstreamResponse = errors.New("invalid upstream test response")
 var errUpstreamErrorEnvelope = errors.New("upstream returned an error envelope")
+
+type upstreamErrorEnvelope struct {
+	body []byte
+}
+
+func (e *upstreamErrorEnvelope) Error() string { return errUpstreamErrorEnvelope.Error() }
+
+func (e *upstreamErrorEnvelope) Unwrap() error { return errUpstreamErrorEnvelope }
 
 type upstreamHTTPError struct {
 	status int
@@ -655,12 +973,28 @@ func isJSONObjectResponse(body []byte) bool {
 		return false
 	}
 	// A generic 200 JSON document (for example a portal's {"status":"ok"})
-	// does not prove that the selected model endpoint answered. Require one of
-	// the response envelopes used by the supported OpenAI-compatible APIs.
-	for _, marker := range []string{"id", "object", "choices", "output", "data"} {
-		if _, ok := value[marker]; ok {
-			return true
-		}
+	// does not prove that the selected model endpoint answered. Require a
+	// recognized response envelope used by the supported APIs instead of merely
+	// accepting any arbitrary JSON object.
+	if id, ok := value["id"].(string); ok && strings.TrimSpace(id) != "" {
+		return true
+	}
+	if object, ok := value["object"].(string); ok && strings.TrimSpace(object) != "" {
+		return true
+	}
+	if _, ok := value["choices"].([]any); ok {
+		return true
+	}
+	if _, ok := value["output"].([]any); ok {
+		return true
+	}
+	switch data := value["data"].(type) {
+	case []any:
+		return true
+	case map[string]any:
+		return len(data) > 0
+	case string:
+		return strings.TrimSpace(data) != ""
 	}
 	return false
 }
@@ -678,7 +1012,14 @@ func shouldFallbackTest(status int) bool {
 // tests that only have a status code. This prevents a model validation error
 // from causing a second paid probe against the same relay.
 func shouldFallbackTestRequest(status int, requestErr error) bool {
-	if errors.Is(requestErr, errUpstreamErrorEnvelope) || errors.Is(requestErr, errInvalidUpstreamResponse) {
+	if errors.Is(requestErr, errUpstreamErrorEnvelope) {
+		var envelope *upstreamErrorEnvelope
+		if errors.As(requestErr, &envelope) && isModelUnavailableMessage(string(envelope.body)) {
+			return false
+		}
+		return true
+	}
+	if errors.Is(requestErr, errInvalidUpstreamResponse) {
 		return true
 	}
 	if status == http.StatusNotFound {

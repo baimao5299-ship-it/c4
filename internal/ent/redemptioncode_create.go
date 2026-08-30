@@ -41,6 +41,20 @@ func (_c *RedemptionCodeCreate) SetValue(v int64) *RedemptionCodeCreate {
 	return _c
 }
 
+// SetGroupID sets the "group_id" field.
+func (_c *RedemptionCodeCreate) SetGroupID(v int64) *RedemptionCodeCreate {
+	_c.mutation.SetGroupID(v)
+	return _c
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_c *RedemptionCodeCreate) SetNillableGroupID(v *int64) *RedemptionCodeCreate {
+	if v != nil {
+		_c.SetGroupID(*v)
+	}
+	return _c
+}
+
 // SetRemark sets the "remark" field.
 func (_c *RedemptionCodeCreate) SetRemark(v string) *RedemptionCodeCreate {
 	_c.mutation.SetRemark(v)
@@ -333,6 +347,10 @@ func (_c *RedemptionCodeCreate) createSpec() (*RedemptionCode, *sqlgraph.CreateS
 		_spec.SetField(redemptioncode.FieldValue, field.TypeInt64, value)
 		_node.Value = value
 	}
+	if value, ok := _c.mutation.GroupID(); ok {
+		_spec.SetField(redemptioncode.FieldGroupID, field.TypeInt64, value)
+		_node.GroupID = &value
+	}
 	if value, ok := _c.mutation.Remark(); ok {
 		_spec.SetField(redemptioncode.FieldRemark, field.TypeString, value)
 		_node.Remark = &value
@@ -476,6 +494,30 @@ func (u *RedemptionCodeUpsert) UpdateValue() *RedemptionCodeUpsert {
 // AddValue adds v to the "value" field.
 func (u *RedemptionCodeUpsert) AddValue(v int64) *RedemptionCodeUpsert {
 	u.Add(redemptioncode.FieldValue, v)
+	return u
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *RedemptionCodeUpsert) SetGroupID(v int64) *RedemptionCodeUpsert {
+	u.Set(redemptioncode.FieldGroupID, v)
+	return u
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *RedemptionCodeUpsert) UpdateGroupID() *RedemptionCodeUpsert {
+	u.SetExcluded(redemptioncode.FieldGroupID)
+	return u
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *RedemptionCodeUpsert) AddGroupID(v int64) *RedemptionCodeUpsert {
+	u.Add(redemptioncode.FieldGroupID, v)
+	return u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *RedemptionCodeUpsert) ClearGroupID() *RedemptionCodeUpsert {
+	u.SetNull(redemptioncode.FieldGroupID)
 	return u
 }
 
@@ -717,6 +759,34 @@ func (u *RedemptionCodeUpsertOne) AddValue(v int64) *RedemptionCodeUpsertOne {
 func (u *RedemptionCodeUpsertOne) UpdateValue() *RedemptionCodeUpsertOne {
 	return u.Update(func(s *RedemptionCodeUpsert) {
 		s.UpdateValue()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *RedemptionCodeUpsertOne) SetGroupID(v int64) *RedemptionCodeUpsertOne {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *RedemptionCodeUpsertOne) AddGroupID(v int64) *RedemptionCodeUpsertOne {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *RedemptionCodeUpsertOne) UpdateGroupID() *RedemptionCodeUpsertOne {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *RedemptionCodeUpsertOne) ClearGroupID() *RedemptionCodeUpsertOne {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.ClearGroupID()
 	})
 }
 
@@ -1148,6 +1218,34 @@ func (u *RedemptionCodeUpsertBulk) AddValue(v int64) *RedemptionCodeUpsertBulk {
 func (u *RedemptionCodeUpsertBulk) UpdateValue() *RedemptionCodeUpsertBulk {
 	return u.Update(func(s *RedemptionCodeUpsert) {
 		s.UpdateValue()
+	})
+}
+
+// SetGroupID sets the "group_id" field.
+func (u *RedemptionCodeUpsertBulk) SetGroupID(v int64) *RedemptionCodeUpsertBulk {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.SetGroupID(v)
+	})
+}
+
+// AddGroupID adds v to the "group_id" field.
+func (u *RedemptionCodeUpsertBulk) AddGroupID(v int64) *RedemptionCodeUpsertBulk {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.AddGroupID(v)
+	})
+}
+
+// UpdateGroupID sets the "group_id" field to the value that was provided on create.
+func (u *RedemptionCodeUpsertBulk) UpdateGroupID() *RedemptionCodeUpsertBulk {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.UpdateGroupID()
+	})
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (u *RedemptionCodeUpsertBulk) ClearGroupID() *RedemptionCodeUpsertBulk {
+	return u.Update(func(s *RedemptionCodeUpsert) {
+		s.ClearGroupID()
 	})
 }
 

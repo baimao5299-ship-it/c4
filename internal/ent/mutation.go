@@ -12564,6 +12564,8 @@ type RedemptionCodeMutation struct {
 	_type               *redemptioncode.Type
 	value               *int64
 	addvalue            *int64
+	group_id            *int64
+	addgroup_id         *int64
 	remark              *string
 	expires_at          *time.Time
 	resource_expires_at *time.Time
@@ -12815,6 +12817,76 @@ func (m *RedemptionCodeMutation) AddedValue() (r int64, exists bool) {
 func (m *RedemptionCodeMutation) ResetValue() {
 	m.value = nil
 	m.addvalue = nil
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *RedemptionCodeMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *RedemptionCodeMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the RedemptionCode entity.
+// If the RedemptionCode object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedemptionCodeMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *RedemptionCodeMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *RedemptionCodeMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *RedemptionCodeMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[redemptioncode.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *RedemptionCodeMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[redemptioncode.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *RedemptionCodeMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, redemptioncode.FieldGroupID)
 }
 
 // SetRemark sets the "remark" field.
@@ -13328,7 +13400,7 @@ func (m *RedemptionCodeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RedemptionCodeMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.code != nil {
 		fields = append(fields, redemptioncode.FieldCode)
 	}
@@ -13337,6 +13409,9 @@ func (m *RedemptionCodeMutation) Fields() []string {
 	}
 	if m.value != nil {
 		fields = append(fields, redemptioncode.FieldValue)
+	}
+	if m.group_id != nil {
+		fields = append(fields, redemptioncode.FieldGroupID)
 	}
 	if m.remark != nil {
 		fields = append(fields, redemptioncode.FieldRemark)
@@ -13379,6 +13454,8 @@ func (m *RedemptionCodeMutation) Field(name string) (ent.Value, bool) {
 		return m.GetType()
 	case redemptioncode.FieldValue:
 		return m.Value()
+	case redemptioncode.FieldGroupID:
+		return m.GroupID()
 	case redemptioncode.FieldRemark:
 		return m.Remark()
 	case redemptioncode.FieldExpiresAt:
@@ -13412,6 +13489,8 @@ func (m *RedemptionCodeMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldType(ctx)
 	case redemptioncode.FieldValue:
 		return m.OldValue(ctx)
+	case redemptioncode.FieldGroupID:
+		return m.OldGroupID(ctx)
 	case redemptioncode.FieldRemark:
 		return m.OldRemark(ctx)
 	case redemptioncode.FieldExpiresAt:
@@ -13459,6 +13538,13 @@ func (m *RedemptionCodeMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetValue(v)
+		return nil
+	case redemptioncode.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
 		return nil
 	case redemptioncode.FieldRemark:
 		v, ok := value.(string)
@@ -13534,6 +13620,9 @@ func (m *RedemptionCodeMutation) AddedFields() []string {
 	if m.addvalue != nil {
 		fields = append(fields, redemptioncode.FieldValue)
 	}
+	if m.addgroup_id != nil {
+		fields = append(fields, redemptioncode.FieldGroupID)
+	}
 	if m.addmax_uses != nil {
 		fields = append(fields, redemptioncode.FieldMaxUses)
 	}
@@ -13553,6 +13642,8 @@ func (m *RedemptionCodeMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case redemptioncode.FieldValue:
 		return m.AddedValue()
+	case redemptioncode.FieldGroupID:
+		return m.AddedGroupID()
 	case redemptioncode.FieldMaxUses:
 		return m.AddedMaxUses()
 	case redemptioncode.FieldUsedCount:
@@ -13574,6 +13665,13 @@ func (m *RedemptionCodeMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddValue(v)
+		return nil
+	case redemptioncode.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
 		return nil
 	case redemptioncode.FieldMaxUses:
 		v, ok := value.(int)
@@ -13604,6 +13702,9 @@ func (m *RedemptionCodeMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *RedemptionCodeMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(redemptioncode.FieldGroupID) {
+		fields = append(fields, redemptioncode.FieldGroupID)
+	}
 	if m.FieldCleared(redemptioncode.FieldRemark) {
 		fields = append(fields, redemptioncode.FieldRemark)
 	}
@@ -13627,6 +13728,9 @@ func (m *RedemptionCodeMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *RedemptionCodeMutation) ClearField(name string) error {
 	switch name {
+	case redemptioncode.FieldGroupID:
+		m.ClearGroupID()
+		return nil
 	case redemptioncode.FieldRemark:
 		m.ClearRemark()
 		return nil
@@ -13652,6 +13756,9 @@ func (m *RedemptionCodeMutation) ResetField(name string) error {
 		return nil
 	case redemptioncode.FieldValue:
 		m.ResetValue()
+		return nil
+	case redemptioncode.FieldGroupID:
+		m.ResetGroupID()
 		return nil
 	case redemptioncode.FieldRemark:
 		m.ResetRemark()
@@ -13778,6 +13885,8 @@ type RedemptionUseMutation struct {
 	adduser_id          *int64
 	value               *int64
 	addvalue            *int64
+	group_id            *int64
+	addgroup_id         *int64
 	resource_expires_at *time.Time
 	created_at          *time.Time
 	clearedFields       map[string]struct{}
@@ -14040,6 +14149,76 @@ func (m *RedemptionUseMutation) ResetValue() {
 	m.addvalue = nil
 }
 
+// SetGroupID sets the "group_id" field.
+func (m *RedemptionUseMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *RedemptionUseMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the RedemptionUse entity.
+// If the RedemptionUse object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedemptionUseMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *RedemptionUseMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *RedemptionUseMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *RedemptionUseMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[redemptionuse.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *RedemptionUseMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[redemptionuse.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *RedemptionUseMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, redemptionuse.FieldGroupID)
+}
+
 // SetResourceExpiresAt sets the "resource_expires_at" field.
 func (m *RedemptionUseMutation) SetResourceExpiresAt(t time.Time) {
 	m.resource_expires_at = &t
@@ -14186,7 +14365,7 @@ func (m *RedemptionUseMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RedemptionUseMutation) Fields() []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 6)
 	if m.code != nil {
 		fields = append(fields, redemptionuse.FieldCodeID)
 	}
@@ -14195,6 +14374,9 @@ func (m *RedemptionUseMutation) Fields() []string {
 	}
 	if m.value != nil {
 		fields = append(fields, redemptionuse.FieldValue)
+	}
+	if m.group_id != nil {
+		fields = append(fields, redemptionuse.FieldGroupID)
 	}
 	if m.resource_expires_at != nil {
 		fields = append(fields, redemptionuse.FieldResourceExpiresAt)
@@ -14216,6 +14398,8 @@ func (m *RedemptionUseMutation) Field(name string) (ent.Value, bool) {
 		return m.UserID()
 	case redemptionuse.FieldValue:
 		return m.Value()
+	case redemptionuse.FieldGroupID:
+		return m.GroupID()
 	case redemptionuse.FieldResourceExpiresAt:
 		return m.ResourceExpiresAt()
 	case redemptionuse.FieldCreatedAt:
@@ -14235,6 +14419,8 @@ func (m *RedemptionUseMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldUserID(ctx)
 	case redemptionuse.FieldValue:
 		return m.OldValue(ctx)
+	case redemptionuse.FieldGroupID:
+		return m.OldGroupID(ctx)
 	case redemptionuse.FieldResourceExpiresAt:
 		return m.OldResourceExpiresAt(ctx)
 	case redemptionuse.FieldCreatedAt:
@@ -14269,6 +14455,13 @@ func (m *RedemptionUseMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetValue(v)
 		return nil
+	case redemptionuse.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
 	case redemptionuse.FieldResourceExpiresAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -14297,6 +14490,9 @@ func (m *RedemptionUseMutation) AddedFields() []string {
 	if m.addvalue != nil {
 		fields = append(fields, redemptionuse.FieldValue)
 	}
+	if m.addgroup_id != nil {
+		fields = append(fields, redemptionuse.FieldGroupID)
+	}
 	return fields
 }
 
@@ -14309,6 +14505,8 @@ func (m *RedemptionUseMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedUserID()
 	case redemptionuse.FieldValue:
 		return m.AddedValue()
+	case redemptionuse.FieldGroupID:
+		return m.AddedGroupID()
 	}
 	return nil, false
 }
@@ -14332,6 +14530,13 @@ func (m *RedemptionUseMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddValue(v)
 		return nil
+	case redemptionuse.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown RedemptionUse numeric field %s", name)
 }
@@ -14340,6 +14545,9 @@ func (m *RedemptionUseMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *RedemptionUseMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(redemptionuse.FieldGroupID) {
+		fields = append(fields, redemptionuse.FieldGroupID)
+	}
 	if m.FieldCleared(redemptionuse.FieldResourceExpiresAt) {
 		fields = append(fields, redemptionuse.FieldResourceExpiresAt)
 	}
@@ -14357,6 +14565,9 @@ func (m *RedemptionUseMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *RedemptionUseMutation) ClearField(name string) error {
 	switch name {
+	case redemptionuse.FieldGroupID:
+		m.ClearGroupID()
+		return nil
 	case redemptionuse.FieldResourceExpiresAt:
 		m.ClearResourceExpiresAt()
 		return nil
@@ -14376,6 +14587,9 @@ func (m *RedemptionUseMutation) ResetField(name string) error {
 		return nil
 	case redemptionuse.FieldValue:
 		m.ResetValue()
+		return nil
+	case redemptionuse.FieldGroupID:
+		m.ResetGroupID()
 		return nil
 	case redemptionuse.FieldResourceExpiresAt:
 		m.ResetResourceExpiresAt()
@@ -15731,6 +15945,8 @@ type TempBalanceMutation struct {
 	id            *int64
 	amount        *int64
 	addamount     *int64
+	group_id      *int64
+	addgroup_id   *int64
 	expires_at    *time.Time
 	note          *string
 	created_at    *time.Time
@@ -15938,6 +16154,76 @@ func (m *TempBalanceMutation) ResetAmount() {
 	m.addamount = nil
 }
 
+// SetGroupID sets the "group_id" field.
+func (m *TempBalanceMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *TempBalanceMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the TempBalance entity.
+// If the TempBalance object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TempBalanceMutation) OldGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *TempBalanceMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *TempBalanceMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (m *TempBalanceMutation) ClearGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	m.clearedFields[tempbalance.FieldGroupID] = struct{}{}
+}
+
+// GroupIDCleared returns if the "group_id" field was cleared in this mutation.
+func (m *TempBalanceMutation) GroupIDCleared() bool {
+	_, ok := m.clearedFields[tempbalance.FieldGroupID]
+	return ok
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *TempBalanceMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+	delete(m.clearedFields, tempbalance.FieldGroupID)
+}
+
 // SetExpiresAt sets the "expires_at" field.
 func (m *TempBalanceMutation) SetExpiresAt(t time.Time) {
 	m.expires_at = &t
@@ -16133,12 +16419,15 @@ func (m *TempBalanceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TempBalanceMutation) Fields() []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 6)
 	if m.user != nil {
 		fields = append(fields, tempbalance.FieldUserID)
 	}
 	if m.amount != nil {
 		fields = append(fields, tempbalance.FieldAmount)
+	}
+	if m.group_id != nil {
+		fields = append(fields, tempbalance.FieldGroupID)
 	}
 	if m.expires_at != nil {
 		fields = append(fields, tempbalance.FieldExpiresAt)
@@ -16161,6 +16450,8 @@ func (m *TempBalanceMutation) Field(name string) (ent.Value, bool) {
 		return m.UserID()
 	case tempbalance.FieldAmount:
 		return m.Amount()
+	case tempbalance.FieldGroupID:
+		return m.GroupID()
 	case tempbalance.FieldExpiresAt:
 		return m.ExpiresAt()
 	case tempbalance.FieldNote:
@@ -16180,6 +16471,8 @@ func (m *TempBalanceMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldUserID(ctx)
 	case tempbalance.FieldAmount:
 		return m.OldAmount(ctx)
+	case tempbalance.FieldGroupID:
+		return m.OldGroupID(ctx)
 	case tempbalance.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case tempbalance.FieldNote:
@@ -16208,6 +16501,13 @@ func (m *TempBalanceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAmount(v)
+		return nil
+	case tempbalance.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
 		return nil
 	case tempbalance.FieldExpiresAt:
 		v, ok := value.(time.Time)
@@ -16241,6 +16541,9 @@ func (m *TempBalanceMutation) AddedFields() []string {
 	if m.addamount != nil {
 		fields = append(fields, tempbalance.FieldAmount)
 	}
+	if m.addgroup_id != nil {
+		fields = append(fields, tempbalance.FieldGroupID)
+	}
 	return fields
 }
 
@@ -16251,6 +16554,8 @@ func (m *TempBalanceMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case tempbalance.FieldAmount:
 		return m.AddedAmount()
+	case tempbalance.FieldGroupID:
+		return m.AddedGroupID()
 	}
 	return nil, false
 }
@@ -16267,6 +16572,13 @@ func (m *TempBalanceMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddAmount(v)
 		return nil
+	case tempbalance.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown TempBalance numeric field %s", name)
 }
@@ -16275,6 +16587,9 @@ func (m *TempBalanceMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *TempBalanceMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(tempbalance.FieldGroupID) {
+		fields = append(fields, tempbalance.FieldGroupID)
+	}
 	if m.FieldCleared(tempbalance.FieldExpiresAt) {
 		fields = append(fields, tempbalance.FieldExpiresAt)
 	}
@@ -16295,6 +16610,9 @@ func (m *TempBalanceMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *TempBalanceMutation) ClearField(name string) error {
 	switch name {
+	case tempbalance.FieldGroupID:
+		m.ClearGroupID()
+		return nil
 	case tempbalance.FieldExpiresAt:
 		m.ClearExpiresAt()
 		return nil
@@ -16314,6 +16632,9 @@ func (m *TempBalanceMutation) ResetField(name string) error {
 		return nil
 	case tempbalance.FieldAmount:
 		m.ResetAmount()
+		return nil
+	case tempbalance.FieldGroupID:
+		m.ResetGroupID()
 		return nil
 	case tempbalance.FieldExpiresAt:
 		m.ResetExpiresAt()

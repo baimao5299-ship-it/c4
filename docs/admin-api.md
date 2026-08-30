@@ -19,7 +19,7 @@
 | `format`（请求格式） | `openai-chat` / `openai-responses` / `anthropic` |
 | `status`（账号） | `active` / `unhealthy` / `429` / `disabled` |
 | `error_type`（日志） | `none` / `429` / `4xx` / `5xx` / `network` / `auth` / `no_account` / `abort` / `billing`（计费拒绝 402） |
-| `type`（兑换码） | `balance`（充值余额，面值 USD）/ `concurrency`（加并发数，面值整数）/ `temp_balance`（临时余额，面值 USD，兑换后资源到期） |
+| `type`（兑换码） | `balance`（充值余额，面值 USD）/ `concurrency`（加并发数，面值整数）/ `temp_balance`（全局临时余额，面值 USD，兑换后资源到期）/ `scoped_temp_balance`（限定分组临时余额，面值 USD，兑换后资源到期） |
 | `status`（兑换码） | `active` / `disabled`（不可编辑，仅可失效） |
 | `source`（模型价格） | `litellm`（官方价格表拉取）/ `manual`（管理端手动设价，优先级最高） |
 
@@ -668,7 +668,7 @@ GET /api/admin/upstreams?status=active&sort=success_count&order=desc&limit=20&of
 - `POST /user/auth/reset-password {email, code, new_password}`：凭邮件验证码重置密码（码一次性、10 分钟有效、5 次尝试上限后须重新请求；新密码校验前置）；成功后立即撤销该用户既有 JWT。
 - `GET /user/stats`：我的用量统计（强制 `user_id` = 当前用户，防越权；字段与 `/api/admin/stats` 同契约，见「查询用量统计」章节）。
 - `GET /user/temp-balances`：我的临时额度（仅有效额度：未过期且正余额，`expires_at` 升序 FEFO 同序、永久最后；`total_usd` 合计 USD），见「临时额度 Temp Balances」章节。
-- 兑换码（`/user/redemptions`）：`balance` / `temp_balance` 类型向毫分余额/临时额度充值，见「兑换码 Redemption Codes」章节。
+- 兑换码（`/user/redemptions`）：`balance` / `temp_balance` / `scoped_temp_balance` 类型向毫分余额/临时额度充值；活动额度只抵扣指定分组，见「兑换码 Redemption Codes」章节。
 
 ### 用户面：修改密码
 
@@ -728,7 +728,7 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 
 ## 临时额度 Temp Balances
 
-临时额度（`temp_balances` 表）是与 `users.balance` 分离的**限时消费额度**：扣费先扣临时额度（FEFO——最早到期先扣，永久最后），剩余再扣余额（见「计费 Billing」章节）。来源两路：注册赠金（`signup bonus`，受 `default_user_temp_balance` / `default_user_temp_balance_ttl_days` 设置）与兑换码（`redemption code`，`type=temp_balance`）。金额内部恒为**毫分整数**存储，API 边界统一换算 USD float64（`毫分 / 1e5`，1 USD = 100,000 毫分）——与 `users.balance` 同构。两个视角分明：**管理面全量**（含过期/用尽/负扣减行），**用户面仅有效额度**。
+临时额度（`temp_balances` 表）是与 `users.balance` 分离的**限时消费额度**：扣费先扣临时额度（FEFO——最早到期先扣，永久最后），剩余再扣余额（见「计费 Billing」章节）。来源三路：注册赠金（`signup bonus`，全局，受 `default_user_temp_balance` / `default_user_temp_balance_ttl_days` 设置）、兑换码（`redemption code`，`type=temp_balance`，全局）和活动兑换码（`type=scoped_temp_balance`，必须带 `group_id`，只匹配该分组的请求）。金额内部恒为**毫分整数**存储，API 边界统一换算 USD float64（`毫分 / 1e5`，1 USD = 100,000 毫分）——与 `users.balance` 同构。两个视角分明：**管理面全量**（含过期/用尽/负扣减行），**用户面仅有效额度**。
 
 ### 管理面：临时额度列表
 
@@ -1124,24 +1124,26 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `type` | string | ✅ | 枚举：`balance` / `concurrency` / `temp_balance`；非法 → `400` |
-| `value` | double | ✅ | 面值：`balance`/`temp_balance` = **USD**（如 `10` = $10；`concurrency` = 并发数，必须整数否则 `400`）；`> 0`，否则 `400`（存储毫分，API 边界换算） |
+| `type` | string | ✅ | 枚举：`balance` / `concurrency` / `temp_balance` / `scoped_temp_balance`；非法 → `400` |
+| `value` | double | ✅ | 面值：`balance`/`temp_balance`/`scoped_temp_balance` = **USD**（如 `10` = $10；`concurrency` = 并发数，必须整数否则 `400`）；`> 0`，否则 `400`（存储毫分，API 边界换算） |
+| `group_id` | int64 | 活动额度必填 | 仅 `scoped_temp_balance` 使用；兑换后额度只能抵扣该分组的请求，分组不存在或已删除 → `404`；其他类型传入 → `400` |
 | `remark` | string | 否 | 备注 |
 | `expires_at` | datetime | 否 | 码**未兑换即过期**；缺省 = 永久；必须晚于当前时间（过去时间 → `400`） |
-| `resource_expires_at` | datetime | 否 | 兑换后**资源到期**；`temp_balance` 必填且必须晚于当前时间，其余类型恒为 `null` |
+| `resource_expires_at` | datetime | 否 | 兑换后**资源到期**；`temp_balance`/`scoped_temp_balance` 必填且必须晚于当前时间，其余类型恒为 `null` |
 | `max_uses` | int | 否 | 可兑换次数：`1` = 单次码（缺省）；`>1` = 多人码；`< 0` → `400` |
 | `count` | int | 否 | 一次生成个数 `1–1000`（缺省 `1`）；`0` 或缺省 = 1；越界 → `400` |
 
-响应 `200`：生成的完整码列表（`count` 个，码格式 `XXXX-XXXX-XXXX-XXXX`（16 字符，熵 ~80bit），字符集去易混淆的 `I/O/0/1`）。
+响应 `200`：生成的完整码列表（`count` 个，码格式 `XXXX-XXXX-XXXX-XXXX`（16 个有效字符，含分隔符共 19 个字符，熵 ~80bit），字符集去易混淆的 `I/O/0/1`）。
 
 ```json
 {
   "codes": [
     {
       "ID": 1,
-      "Code": "JQVF2X-LD7SJQ",
+      "Code": "JQVF-2XLD-7SJL-DQ9M",
       "Type": "balance",
       "Value": 100,
+      "GroupID": null,
       "Remark": "618 活动",
       "ExpiresAt": "2026-12-31T23:59:59+08:00",
       "ResourceExpiresAt": null,
@@ -1163,8 +1165,8 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 | 查询参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `page` | int | 1 | 页码，**1-based**；缺省或 `< 1` 按 1（不报错） |
-| `page_size` | int | 20 | 每页行数；越界（`< 1` 或 `> 100`）→ `400` |
-| `type` | string | — | 筛选枚举：`balance` / `concurrency` / `temp_balance`；非法 → `400` |
+| `page_size` | int | 20 | 每页行数；越界（`< 1` 或 `> 1000`）→ `400` |
+| `type` | string | — | 筛选枚举：`balance` / `concurrency` / `temp_balance` / `scoped_temp_balance`；非法 → `400` |
 | `status` | string | — | 筛选枚举：`active` / `disabled`；非法 → `400` |
 | `sort` | string | `id` | 白名单：`id` / `code` / `type` / `value` / `max_uses` / `used_count` / `status` / `created_by` / `created_at` / `updated_at`；非法 → `400` |
 | `order` | string | `desc` | `asc` / `desc`；其他值 → `400` |
@@ -1202,7 +1204,7 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 | `page_size` | int | 20 | 每页行数，范围 `1–1000`；越界 → `400` |
 | `code_id` | int64 | — | 只看指定兑换码 ID；必须为正整数 |
 | `user_id` | int64 | — | 只看指定用户 ID；必须为正整数 |
-| `type` | string | — | `balance` / `concurrency` / `temp_balance` |
+| `type` | string | — | `balance` / `concurrency` / `temp_balance` / `scoped_temp_balance` |
 | `sort` | string | `id` | `id` / `code_id` / `user_id` / `value` / `created_at` |
 | `order` | string | `desc` | `asc` / `desc` |
 
@@ -1221,13 +1223,14 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
       "Value": 100,
       "Remark": "618 活动",
       "ResourceExpiresAt": null,
+      "GroupID": null,
       "CreatedAt": "2026-08-08T10:05:00Z"
     }
   ]
 }
 ```
 
-`Value` 是兑换时的值快照：`balance`/`temp_balance` 使用 USD，`concurrency` 使用并发数。该接口只返回管理鉴权用户可见的全量数据；普通用户继续使用下方 `/user/redemptions`，只能看到自己的记录。
+`Value` 是兑换时的值快照：`balance`/`temp_balance`/`scoped_temp_balance` 使用 USD，`concurrency` 使用并发数。`scoped_temp_balance` 额外返回 `GroupID` 快照。该接口只返回管理鉴权用户可见的全量数据；普通用户继续使用下方 `/user/redemptions`，只能看到自己的记录。
 
 ### 兑换记录（审计）
 
@@ -1239,18 +1242,18 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
 {
   "total": 1,
   "rows": [
-    { "ID": 1, "CodeID": 1, "UserID": 7, "Value": 100, "ResourceExpiresAt": null, "CreatedAt": "2026-08-08T10:05:00Z" }
+    { "ID": 1, "CodeID": 1, "UserID": 7, "Value": 100, "GroupID": null, "ResourceExpiresAt": null, "CreatedAt": "2026-08-08T10:05:00Z" }
   ]
 }
 ```
 
-`Value` 为兑换时的值快照（USD；`concurrency` 类型 = 并发数整数。码后续失效不影响历史记录）；`404`：码不存在。
+`Value` 为兑换时的值快照（USD；`concurrency` 类型 = 并发数整数；`scoped_temp_balance` 同时保留 `GroupID` 分组快照。码后续失效不影响历史记录）；`404`：码不存在。
 
 ### 用户面：兑换
 
 `POST /user/redemptions`（JWT 鉴权，非 admin 面——见下方"鉴权与 created_by 约定"）
 
-请求体：`{"code": "JQVF2X-LD7SJQ"}`。
+请求体：`{"code": "JQVF-2XLD-7SJL-DQ9M"}`。
 
 响应 `200`：
 
@@ -1259,12 +1262,13 @@ SMTP 连接参数（host/port/username/password/from/tls）同为运行时设置
   "applied": {
     "type": "balance",
     "value": 100,
-    "resource_expires_at": null
+    "resource_expires_at": null,
+    "group_id": null
   }
 }
 ```
 
-`applied` 为实际生效的资源（事务内应用）：`balance` 加余额、`concurrency` 加并发数、`temp_balance` 加临时余额（`resource_expires_at` 非空）；`value` 单位与生成时一致（`balance`/`temp_balance` = USD）。任一步失败（含并发用尽/重复兑换）整体回滚，资源不变。
+`applied` 为实际生效的资源（事务内应用）：`balance` 加余额、`concurrency` 加并发数、`temp_balance` 加全局临时余额、`scoped_temp_balance` 加限定分组的临时余额（两种临时额度的 `resource_expires_at` 均非空）；`value` 单位与生成时一致（货币类型 = USD）。任一步失败（含并发用尽/重复兑换/分组已删除）整体回滚，资源不变。
 
 | 状态码 | 场景 |
 |---|---|
@@ -1399,8 +1403,8 @@ billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "1
 
 ### 扣费与明细
 
-- **临时额度 FEFO**：未过期 `temp_balances` 按 `expires_at` 升序逐行扣至 0（最早到期先扣，永久额度最后），剩余扣 `users.balance`（数据面端点见「临时额度 Temp Balances」章节）。
-- **全毫分直接扣减**：1 USD = 100,000 毫分，cost/balance/temp_balance/兑换码 Value 同单位，无换算无取整。
+- **临时额度 FEFO**：未过期 `temp_balances` 按分组隔离；全局额度（`group_id=null`）匹配任意分组，活动额度仅匹配同一 `group_id`。每个额度池内按 `expires_at` 升序逐行扣至 0（最早到期先扣，永久额度最后），剩余扣 `users.balance`（数据面端点见「临时额度 Temp Balances」章节）。同一用户同时有全局额度和活动额度时，当前策略优先使用全局额度；该优先级应保持与管理台说明一致。
+- **全毫分直接扣减**：1 USD = 100,000 毫分，cost/balance/temp_balance/scoped_temp_balance/兑换码 Value 同单位，无换算无取整。
 - **优雅停机**：SIGTERM → 2s 优雅窗口 → 强断长连接（在途流式按已累积 token 计费）→ 等在途归零 → 排空扣费（计费 flusher 最先排空，日志 cost 不丢）。崩溃丢 ≤ 1 flush 窗口（接受）。
 - 管理面余额 API 均以 USD float64 输入/展示（换算见「用户 Users」章节）。
 
@@ -1410,7 +1414,7 @@ billing = { enabled = true, flush_interval = "1s", balance_refresh_interval = "1
 
 | 状态码 | 场景 |
 |---|---|
-| `400` | 请求体非法 / 修改密码新密码为空或超 72 字节 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance` 缺 `resource_expires_at`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `fast_multiplier` 越界 / 倍率（组/用户-组专属 `price_multiplier`，正常值 `0`~`10`）越界 / `service_tier_policy_*` 非法值 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
+| `400` | 请求体非法 / 修改密码新密码为空或超 72 字节 / 路径 ID 非法 / 非法 `sort` 或 `order` / 非法 `status` 枚举 / 批量 `ids` 为空或超 100 条 / 批量 `fields` 为空 / 规则 `when`/`then` 校验失败 / 兑换码生成参数非法（`type` 非法、`value ≤ 0`、`temp_balance`/`scoped_temp_balance` 缺 `resource_expires_at`、活动码缺 `group_id`、非活动码带 `group_id`、`expires_at` 过去、`count` 越界）/ 兑换码无效（`invalid code`：不存在/失效/过期/用尽，统一不泄露细节）/ 价格负数或非负校验失败 / `fast_multiplier` 越界 / 倍率（组/用户-组专属 `price_multiplier`，正常值 `0`~`10`）越界 / `service_tier_policy_*` 非法值 / `source` 筛选非法 / `price_source_url` 未配置触发 sync |
 | `401` | admin token 缺失或错误；普通 `user` 角色 JWT 访问 `/api/admin/*` |
 | `402` | **计费拒绝**（`error_type=billing`）：模型缺价 / 余额快照缺失或 ≤ 0（AI 请求面，非管理面） |
 | `404` | 资源不存在（单资源与批量均返回，消息含缺失 id，如 `service: not found: id=999 missing`） |

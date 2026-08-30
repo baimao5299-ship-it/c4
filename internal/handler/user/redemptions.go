@@ -49,6 +49,7 @@ func (h *UserAPI) PostUserRedemptions(w http.ResponseWriter, r *http.Request) {
 	resp.Applied.Type = RedemptionType(apply.Type)
 	resp.Applied.Value = redemptionValueToAPI(apply.Type, apply.Value)
 	resp.Applied.ResourceExpiresAt = apply.ResourceExpiresAt
+	resp.Applied.GroupId = apply.GroupID
 	httpface.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -77,6 +78,7 @@ func (h *UserAPI) GetUserRedemptions(w http.ResponseWriter, r *http.Request, par
 			Value:             redemptionValueToAPI(rec.CodeType, rec.Value),
 			Remark:            rec.Remark,
 			ResourceExpiresAt: rec.ResourceExpiresAt,
+			GroupID:           rec.GroupID,
 			CreatedAt:         rec.CreatedAt,
 		})
 	}

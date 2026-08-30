@@ -19,6 +19,7 @@ func (TempBalance) Fields() []ent.Field {
 		field.Int64("id"),
 		field.Int64("user_id"),
 		field.Int64("amount"),                          // 最小单位；可负（扣减记录）
+		field.Int64("group_id").Optional().Nillable(),  // NULL = global/legacy; otherwise exact usage group
 		field.Time("expires_at").Optional().Nillable(), // nil = 永久
 		field.String("note").Optional().Nillable(),
 		field.Time("created_at").Default(time.Now),
@@ -41,5 +42,6 @@ func (TempBalance) Edges() []ent.Edge {
 func (TempBalance) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id", "expires_at"),
+		index.Fields("user_id", "group_id", "expires_at"),
 	}
 }

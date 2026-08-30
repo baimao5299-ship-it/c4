@@ -21,6 +21,8 @@ const (
 	FieldType = "type"
 	// FieldValue holds the string denoting the value field in the database.
 	FieldValue = "value"
+	// FieldGroupID holds the string denoting the group_id field in the database.
+	FieldGroupID = "group_id"
 	// FieldRemark holds the string denoting the remark field in the database.
 	FieldRemark = "remark"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
@@ -58,6 +60,7 @@ var Columns = []string{
 	FieldCode,
 	FieldType,
 	FieldValue,
+	FieldGroupID,
 	FieldRemark,
 	FieldExpiresAt,
 	FieldResourceExpiresAt,
@@ -99,9 +102,10 @@ type Type string
 
 // Type values.
 const (
-	TypeBalance     Type = "balance"
-	TypeConcurrency Type = "concurrency"
-	TypeTempBalance Type = "temp_balance"
+	TypeBalance           Type = "balance"
+	TypeConcurrency       Type = "concurrency"
+	TypeTempBalance       Type = "temp_balance"
+	TypeScopedTempBalance Type = "scoped_temp_balance"
 )
 
 func (_type Type) String() string {
@@ -111,7 +115,7 @@ func (_type Type) String() string {
 // TypeValidator is a validator for the "type" field enum values. It is called by the builders before save.
 func TypeValidator(_type Type) error {
 	switch _type {
-	case TypeBalance, TypeConcurrency, TypeTempBalance:
+	case TypeBalance, TypeConcurrency, TypeTempBalance, TypeScopedTempBalance:
 		return nil
 	default:
 		return fmt.Errorf("redemptioncode: invalid enum value for type field: %q", _type)
@@ -165,6 +169,11 @@ func ByType(opts ...sql.OrderTermOption) OrderOption {
 // ByValue orders the results by the value field.
 func ByValue(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldValue, opts...).ToFunc()
+}
+
+// ByGroupID orders the results by the group_id field.
+func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
 // ByRemark orders the results by the remark field.

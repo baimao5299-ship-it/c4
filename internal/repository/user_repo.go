@@ -99,9 +99,16 @@ func (r *UserRepo) ListUserEmails(ctx context.Context, ids []int64) (map[int64]s
 // 兑换码路径必非零（temp_balance 码 resource_expires_at 生成时必填，决策 4）。
 // WithTx 事务内经 tx client 插入，随整体提交/回滚；普通 client 亦可用。
 func (r *UserRepo) CreateTempBalance(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string) error {
+	return r.CreateTempBalanceForGroup(ctx, userID, amount, expiresAt, note, nil)
+}
+
+// CreateTempBalanceForGroup is the scoped extension used by activity codes.
+// A nil group preserves the legacy global allowance semantics.
+func (r *UserRepo) CreateTempBalanceForGroup(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string, groupID *int64) error {
 	_, err := r.client.TempBalance.Create().
 		SetUserID(userID).
 		SetAmount(amount).
+		SetNillableGroupID(groupID).
 		SetNillableExpiresAt(expiresAt).
 		SetNillableNote(note).
 		Save(ctx)
@@ -171,6 +178,7 @@ func toDomainTempBalance(row *ent.TempBalance) *domain.TempBalance {
 		ID:        row.ID,
 		UserID:    row.UserID,
 		Amount:    row.Amount,
+		GroupID:   row.GroupID,
 		ExpiresAt: row.ExpiresAt,
 		Note:      row.Note,
 		CreatedAt: row.CreatedAt,

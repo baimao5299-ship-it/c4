@@ -289,6 +289,47 @@ func TestIncrementUsedConcurrentPG(t *testing.T) {
 	require.False(t, ok, "已用尽 → false")
 }
 
+// TestIncrementUsedRejectsInactiveAndExpiredPG guards the state checks in the
+// atomic increment itself. Redeem performs an earlier read, so the write must
+// re-check status and expiry to close the disable/expiry race window. It also
+// verifies CreateCodes backfills IDs, since the test intentionally uses the
+// returned domain objects for subsequent updates.
+func TestIncrementUsedRejectsInactiveAndExpiredPG(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+
+	expiredAt := time.Now().Add(-time.Minute)
+	expired := codeFor("EXPIRE", domain.RedemptionTypeBalance, 1)
+	expired.ExpiresAt = &expiredAt
+	disabled := codeFor("DISABL", domain.RedemptionTypeBalance, 1)
+	disabledAtCreate := codeFor("DISCRE", domain.RedemptionTypeBalance, 1)
+	disabledAtCreate.Status = domain.RedemptionStatusDisabled
+	require.NoError(t, repos.CreateCodes(ctx, []*domain.RedemptionCode{expired, disabled, disabledAtCreate}))
+	require.NotZero(t, expired.ID, "CreateCodes must backfill expired code ID")
+	require.NotZero(t, disabled.ID, "CreateCodes must backfill disabled code ID")
+	require.NotZero(t, disabledAtCreate.ID, "CreateCodes must backfill disabled-at-create code ID")
+	_, err := repos.DeactivateCodes(ctx, []int64{disabled.ID})
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name string
+		id   int64
+	}{
+		{name: "expired", id: expired.ID},
+		{name: "disabled after creation", id: disabled.ID},
+		{name: "disabled at creation", id: disabledAtCreate.ID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := repos.IncrementUsed(ctx, tc.id)
+			require.NoError(t, err)
+			require.False(t, ok, "inactive or expired code must not be consumed")
+			row, err := repos.GetCode(ctx, tc.id)
+			require.NoError(t, err)
+			require.Zero(t, row.UsedCount)
+		})
+	}
+}
+
 // TestUserResourceUpdatePG 原子资源方法（评审 I-1）：UpdateUserBalance 并发增量不丢；
 // UpdateUserMaxConcurrency 0 特判（0 → value；非 0 → 累加）。
 func TestUserResourceUpdatePG(t *testing.T) {

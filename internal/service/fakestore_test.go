@@ -26,6 +26,7 @@ import (
 type fakeTempBalance struct {
 	UserID    int64
 	Amount    int64
+	GroupID   *int64
 	ExpiresAt *time.Time
 	Note      *string
 }
@@ -100,6 +101,7 @@ type fakeStore struct {
 type fakeTempRow struct {
 	UserID    int64
 	Amount    int64
+	GroupID   *int64
 	ExpiresAt *time.Time
 	Note      *string
 }
@@ -1089,7 +1091,7 @@ func (f *fakeStore) ListUserTempBalances(ctx context.Context, userID int64) ([]*
 		if tb.ExpiresAt != nil && !tb.ExpiresAt.After(time.Now()) {
 			continue
 		}
-		out = append(out, &domain.TempBalance{UserID: tb.UserID, Amount: tb.Amount, ExpiresAt: tb.ExpiresAt, Note: tb.Note})
+		out = append(out, &domain.TempBalance{UserID: tb.UserID, Amount: tb.Amount, GroupID: tb.GroupID, ExpiresAt: tb.ExpiresAt, Note: tb.Note})
 	}
 	return out, nil
 }
@@ -1104,7 +1106,7 @@ func (f *fakeStore) ListTempBalances(ctx context.Context, q repository.ListQuery
 		if userID > 0 && tb.UserID != userID {
 			continue
 		}
-		out = append(out, &domain.TempBalance{UserID: tb.UserID, Amount: tb.Amount, ExpiresAt: tb.ExpiresAt, Note: tb.Note})
+		out = append(out, &domain.TempBalance{UserID: tb.UserID, Amount: tb.Amount, GroupID: tb.GroupID, ExpiresAt: tb.ExpiresAt, Note: tb.Note})
 	}
 	return out, int64(len(out)), nil
 }
@@ -1603,6 +1605,11 @@ func (t *fakeTx) CreateTempBalance(ctx context.Context, userID int64, amount int
 	return nil
 }
 
+func (t *fakeTx) CreateTempBalanceForGroup(ctx context.Context, userID int64, amount int64, expiresAt *time.Time, note *string, groupID *int64) error {
+	t.temps = append(t.temps, &fakeTempRow{UserID: userID, Amount: amount, GroupID: groupID, ExpiresAt: expiresAt, Note: note})
+	return nil
+}
+
 func (t *fakeTx) CreateUse(ctx context.Context, use *domain.RedemptionUse) error {
 	for _, u := range t.uses {
 		if u.CodeID == use.CodeID && u.UserID == use.UserID {
@@ -1951,7 +1958,7 @@ func (f *fakeStore) ListUsesByUser(ctx context.Context, userID int64, q reposito
 		}
 		rec := &domain.RedemptionRecord{
 			ID: u.ID, CodeID: u.CodeID, Value: u.Value,
-			ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+			ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
 		}
 		if code, ok := f.codes[u.CodeID]; ok {
 			rec.Code = code.Code

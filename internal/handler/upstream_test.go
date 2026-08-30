@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,6 +59,17 @@ func cloneUpstream(in *domain.Upstream) *domain.Upstream {
 	if in.LastError != nil {
 		v := *in.LastError
 		out.LastError = &v
+	}
+	if in.Models != nil {
+		out.Models = append([]string(nil), in.Models...)
+	}
+	if in.ModelsCheckedAt != nil {
+		v := *in.ModelsCheckedAt
+		out.ModelsCheckedAt = &v
+	}
+	if in.ModelsError != nil {
+		v := *in.ModelsError
+		out.ModelsError = &v
 	}
 	return &out
 }
@@ -245,6 +257,26 @@ func (s *upstreamTestStore) RecordUpstreamBalance(_ context.Context, expected *d
 	return cloneUpstream(row), nil
 }
 
+func (s *upstreamTestStore) RecordUpstreamModels(_ context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expected == nil {
+		return nil, repository.ErrNotFound
+	}
+	row, ok := s.upstreams[expected.ID]
+	if !ok || row.DeletedAt != nil {
+		return nil, fmt.Errorf("%w: id=%d missing", repository.ErrNotFound, expected.ID)
+	}
+	if !sameUpstreamConfig(row, expected, false) {
+		return nil, fmt.Errorf("%w: id=%d configuration changed", repository.ErrConflict, expected.ID)
+	}
+	row.Models = append([]string(nil), models...)
+	now := time.Now()
+	row.ModelsCheckedAt = &now
+	row.ModelsError = modelErr
+	return cloneUpstream(row), nil
+}
+
 func sameUpstreamConfig(current, expected *domain.Upstream, includeBalance bool) bool {
 	if current == nil || expected == nil || current.BaseURL != expected.BaseURL || upstreamTestKey(current.UpstreamKey) != upstreamTestKey(expected.UpstreamKey) {
 		return false
@@ -268,6 +300,7 @@ func upstreamTestKey(value *string) string {
 
 var _ service.Store = (*upstreamTestStore)(nil)
 var _ service.UpstreamStore = (*upstreamTestStore)(nil)
+var _ service.UpstreamModelStore = (*upstreamTestStore)(nil)
 
 func TestUpstreamManagementLifecycleAndSecretBoundary(t *testing.T) {
 	store := newUpstreamTestStore()
@@ -277,14 +310,18 @@ func TestUpstreamManagementLifecycleAndSecretBoundary(t *testing.T) {
 	r.Mount("/", h.Router())
 
 	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 		require.Equal(t, "Bearer secret-key", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.6"}]}`))
+		switch r.URL.Path {
+		case "/v1/models":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.6"}]}`))
+		case "/v1/responses":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"response-1","object":"response"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer probe.Close()
 
@@ -341,13 +378,17 @@ func TestUpstreamManagementLifecycleAndSecretBoundary(t *testing.T) {
 func TestUpstreamModelsPreviewAndSelectedTest(t *testing.T) {
 	key := "preview-key"
 	var testedModel string
+	var modelListCalls int32
+	var modelProbeCalls int32
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer "+key, r.Header.Get("Authorization"))
 		switch r.URL.Path {
 		case "/v1/models":
+			atomic.AddInt32(&modelListCalls, 1)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-b"}]}`))
 		case "/v1/responses":
+			atomic.AddInt32(&modelProbeCalls, 1)
 			var body struct {
 				Model string `json:"model"`
 			}
@@ -381,11 +422,21 @@ func TestUpstreamModelsPreviewAndSelectedTest(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &preview))
 	require.True(t, preview.Ok)
 	require.Equal(t, []string{"model-a", "model-b"}, preview.Models)
+	require.Equal(t, 2, preview.ModelsTotal)
+	require.Equal(t, 2, preview.ModelsChecked)
+	require.Equal(t, 2, preview.ModelsAvailable)
+	require.Zero(t, preview.ModelsFailed)
+	require.True(t, preview.ValidationComplete)
 
 	rec = do(http.MethodPost, "/api/admin/upstreams", fmt.Sprintf(`{"name":"preview-relay","base_url":%q,"upstream_key":%q}`, endpoint.URL, key))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var created Upstream
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+	require.NotNil(t, created.Models)
+	require.Equal(t, []string{"model-a", "model-b"}, *created.Models)
+	require.Equal(t, int32(2), atomic.LoadInt32(&modelListCalls), "create must validate once after the explicit preview")
+	require.Equal(t, int32(4), atomic.LoadInt32(&modelProbeCalls), "create must not repeat a second validation pass")
+	require.NotNil(t, created.ModelsCheckedAt)
 	rec = do(http.MethodGet, "/api/admin/upstreams/"+itoa(created.ID)+"/models", "")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	rec = do(http.MethodPost, "/api/admin/upstreams/"+itoa(created.ID)+"/test", `{"model":"model-b"}`)
@@ -394,8 +445,21 @@ func TestUpstreamModelsPreviewAndSelectedTest(t *testing.T) {
 }
 
 func TestUpstreamUpdateRejectsStaleRevision(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"revision-model"}]}`))
+		case "/v1/responses":
+			_, _ = w.Write([]byte(`{"id":"revision-response","object":"response"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
 	store := newUpstreamTestStore()
 	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
+	svc.SetUpstreamHTTPClient(endpoint.Client())
 	h := New(svc)
 	r := chi.NewRouter()
 	r.Mount("/", h.Router())
@@ -407,17 +471,17 @@ func TestUpstreamUpdateRejectsStaleRevision(t *testing.T) {
 		return rec
 	}
 
-	rec := do(http.MethodPost, "/api/admin/upstreams", `{"name":"revision-relay","base_url":"https://relay.example.test","multiplier_bp":10000}`)
+	rec := do(http.MethodPost, "/api/admin/upstreams", fmt.Sprintf(`{"name":"revision-relay","base_url":%q,"multiplier_bp":10000}`, endpoint.URL))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var created Upstream
 	require.NoError(t, jsonUnmarshal(rec.Body.Bytes(), &created))
 	require.NotNil(t, created.UpdatedAt)
 	version := created.UpdatedAt.Format(time.RFC3339Nano)
 
-	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"revision-relay","base_url":"https://relay.example.test","multiplier_bp":9000,"expected_updated_at":%q}`, version))
+	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"revision-relay","base_url":%q,"multiplier_bp":9000,"expected_updated_at":%q}`, endpoint.URL, version))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
-	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"revision-relay","base_url":"https://relay.example.test","multiplier_bp":8000,"expected_updated_at":%q}`, version))
+	rec = do(http.MethodPut, "/api/admin/upstreams/"+itoa(created.ID), fmt.Sprintf(`{"name":"revision-relay","base_url":%q,"multiplier_bp":8000,"expected_updated_at":%q}`, endpoint.URL, version))
 	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 
 	current, err := store.GetUpstream(context.Background(), created.ID)
@@ -442,8 +506,18 @@ func TestAPIUpstreamHidesLegacyBalanceWhenUnconfigured(t *testing.T) {
 func TestUpstreamBalanceRefreshReturnsFreshThenStaleSnapshot(t *testing.T) {
 	respondSuccess := true
 	balance := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodGet, r.Method)
 		require.Equal(t, "Bearer relay-key", r.Header.Get("Authorization"))
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"balance-model"}]}`))
+			return
+		}
+		if r.URL.Path == "/v1/responses" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"balance-response","object":"response"}`))
+			return
+		}
+		require.Equal(t, http.MethodGet, r.Method)
 		if !respondSuccess {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return

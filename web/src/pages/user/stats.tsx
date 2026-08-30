@@ -244,12 +244,12 @@ export default function UserStats() {
           {ttftQ.isError ? (
             <p className="text-sm text-destructive">{t('common.loadFailed', { message: (ttftQ.error as Error).message })}</p>
           ) : ttftQ.isLoading ? (
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {[
                   { key: 'avg', labelKey: 'user.stats.ttft.avg', value: ttftQ.data?.AvgMS ?? 0 },
                   { key: 'p95', labelKey: 'user.stats.ttft.p95', value: ttftQ.data?.P95MS ?? 0 },
@@ -273,7 +273,7 @@ export default function UserStats() {
         {isError ? (
           <p className="p-4 text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
         ) : (
-          <Table>
+          <Table containerClassName="max-w-full" className="min-w-[900px]">
             <TableHeader>
               <TableRow>
                 <TableHead>{t('user.stats.table.time')}</TableHead>

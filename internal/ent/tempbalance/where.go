@@ -65,6 +65,11 @@ func Amount(v int64) predicate.TempBalance {
 	return predicate.TempBalance(sql.FieldEQ(FieldAmount, v))
 }
 
+// GroupID applies equality check predicate on the "group_id" field. It's identical to GroupIDEQ.
+func GroupID(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldEQ(FieldGroupID, v))
+}
+
 // ExpiresAt applies equality check predicate on the "expires_at" field. It's identical to ExpiresAtEQ.
 func ExpiresAt(v time.Time) predicate.TempBalance {
 	return predicate.TempBalance(sql.FieldEQ(FieldExpiresAt, v))
@@ -138,6 +143,56 @@ func AmountLT(v int64) predicate.TempBalance {
 // AmountLTE applies the LTE predicate on the "amount" field.
 func AmountLTE(v int64) predicate.TempBalance {
 	return predicate.TempBalance(sql.FieldLTE(FieldAmount, v))
+}
+
+// GroupIDEQ applies the EQ predicate on the "group_id" field.
+func GroupIDEQ(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldEQ(FieldGroupID, v))
+}
+
+// GroupIDNEQ applies the NEQ predicate on the "group_id" field.
+func GroupIDNEQ(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldNEQ(FieldGroupID, v))
+}
+
+// GroupIDIn applies the In predicate on the "group_id" field.
+func GroupIDIn(vs ...int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldIn(FieldGroupID, vs...))
+}
+
+// GroupIDNotIn applies the NotIn predicate on the "group_id" field.
+func GroupIDNotIn(vs ...int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldNotIn(FieldGroupID, vs...))
+}
+
+// GroupIDGT applies the GT predicate on the "group_id" field.
+func GroupIDGT(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldGT(FieldGroupID, v))
+}
+
+// GroupIDGTE applies the GTE predicate on the "group_id" field.
+func GroupIDGTE(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldGTE(FieldGroupID, v))
+}
+
+// GroupIDLT applies the LT predicate on the "group_id" field.
+func GroupIDLT(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldLT(FieldGroupID, v))
+}
+
+// GroupIDLTE applies the LTE predicate on the "group_id" field.
+func GroupIDLTE(v int64) predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldLTE(FieldGroupID, v))
+}
+
+// GroupIDIsNil applies the IsNil predicate on the "group_id" field.
+func GroupIDIsNil() predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldIsNull(FieldGroupID))
+}
+
+// GroupIDNotNil applies the NotNil predicate on the "group_id" field.
+func GroupIDNotNil() predicate.TempBalance {
+	return predicate.TempBalance(sql.FieldNotNull(FieldGroupID))
 }
 
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.

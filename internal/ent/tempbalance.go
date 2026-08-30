@@ -22,6 +22,8 @@ type TempBalance struct {
 	UserID int64 `json:"user_id,omitempty"`
 	// Amount holds the value of the "amount" field.
 	Amount int64 `json:"amount,omitempty"`
+	// GroupID holds the value of the "group_id" field.
+	GroupID *int64 `json:"group_id,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// Note holds the value of the "note" field.
@@ -59,7 +61,7 @@ func (*TempBalance) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tempbalance.FieldID, tempbalance.FieldUserID, tempbalance.FieldAmount:
+		case tempbalance.FieldID, tempbalance.FieldUserID, tempbalance.FieldAmount, tempbalance.FieldGroupID:
 			values[i] = new(sql.NullInt64)
 		case tempbalance.FieldNote:
 			values[i] = new(sql.NullString)
@@ -97,6 +99,13 @@ func (_m *TempBalance) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field amount", values[i])
 			} else if value.Valid {
 				_m.Amount = value.Int64
+			}
+		case tempbalance.FieldGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field group_id", values[i])
+			} else if value.Valid {
+				_m.GroupID = new(int64)
+				*_m.GroupID = value.Int64
 			}
 		case tempbalance.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -164,6 +173,11 @@ func (_m *TempBalance) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("amount=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Amount))
+	builder.WriteString(", ")
+	if v := _m.GroupID; v != nil {
+		builder.WriteString("group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.ExpiresAt; v != nil {
 		builder.WriteString("expires_at=")

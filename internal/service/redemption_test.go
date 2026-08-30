@@ -153,6 +153,33 @@ func TestGenerateCodes(t *testing.T) {
 	})
 }
 
+func TestScopedTempBalanceRedemption(t *testing.T) {
+	svc, fs, _ := newRedemptionSvc()
+	ctx := context.Background()
+	gid := int64(42)
+	expires := time.Now().Add(time.Hour)
+	// Seed the exact group id used by the activity code. This exercises the
+	// service's live-group guard without depending on the fake's shared id
+	// allocator (which is also used by the user/code fixtures below).
+	fs.mu.Lock()
+	fs.groups[gid] = &domain.Group{ID: gid, Name: "scoped-activity", Visibility: domain.GroupVisibilityPublic}
+	fs.mu.Unlock()
+	var err error
+	c := genOne(t, svc, GenerateRequest{
+		Type: domain.RedemptionTypeScopedTempBalance, Value: 2_000,
+		GroupID: &gid, ResourceExpiresAt: &expires,
+	}, 0)
+	u := seedUser(t, fs, "scoped-activity@example.com", 0, 0)
+	apply, err := svc.Redeem(ctx, c.Code, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.RedemptionTypeScopedTempBalance, apply.Type)
+	require.NotNil(t, apply.GroupID)
+	require.Equal(t, gid, *apply.GroupID)
+	require.Len(t, fs.temps, 1)
+	require.NotNil(t, fs.temps[0].GroupID)
+	require.Equal(t, gid, *fs.temps[0].GroupID)
+}
+
 // TestListCodes 列表：非法枚举/sort/order → 400；type/status 筛选。
 func TestListCodes(t *testing.T) {
 	svc, _, _ := newRedemptionSvc()

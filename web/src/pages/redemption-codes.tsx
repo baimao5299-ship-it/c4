@@ -30,11 +30,17 @@ import { formatDateTime, toRFC3339 } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
 type RedemptionCode = components['schemas']['RedemptionCode']
-type RedemptionType = components['schemas']['RedemptionType']
+// The checked-in web schema can lag the server's activity-code addition. Keep
+// the local union compatible with both the current generated types and the
+// scoped_temp_balance contract exposed by the API.
+type RedemptionType = components['schemas']['RedemptionType'] | 'scoped_temp_balance'
 type RedemptionStatus = components['schemas']['RedemptionStatus']
 type GenerateRequest = components['schemas']['GenerateRequest']
+type GenerateRequestPayload = Omit<GenerateRequest, 'type'> & { type: RedemptionType; group_id?: number }
+type RedemptionCodeView = RedemptionCode & { GroupID?: number | null }
+type RedemptionHistoryView = components['schemas']['RedemptionHistory'] & { GroupID?: number | null }
 
-const TYPES: RedemptionType[] = ['balance', 'concurrency', 'temp_balance']
+const TYPES: RedemptionType[] = ['balance', 'concurrency', 'temp_balance', 'scoped_temp_balance']
 const STATUSES: RedemptionStatus[] = ['active', 'disabled']
 
 // 面值展示（2026-08-15 对齐修复）：Value = API 边界已换算的 USD——直接显示，
@@ -65,7 +71,8 @@ interface GenForm {
   value: string
   remark: string
   expires_at: string
-  temp_days: string // temp_balance 必填；从生成时刻起的自然日数
+  temp_days: string // temp_balance/scoped_temp_balance 必填；从生成时刻起的自然日数
+  group_id: string // scoped_temp_balance 必填；活动额度仅可用于该分组
   max_uses: string
   count: string
 }
@@ -76,6 +83,7 @@ const emptyGenForm = (): GenForm => ({
   remark: '',
   expires_at: '',
   temp_days: '7',
+  group_id: '',
   max_uses: '1',
   count: '1',
 })
@@ -109,7 +117,7 @@ export default function RedemptionCodes() {
         order,
       }),
   })
-  const rows = data?.rows ?? []
+  const rows = (data?.rows ?? []) as RedemptionCodeView[]
 
   // 末页死胡同守卫：非首页的当前页数据被清空（如批量失效把末页清空）时回退到第 1 页，
   // 避免空态页无返回入口。页 1 本身为空（列表真正为空）时无需回退，不会成环。
@@ -171,13 +179,23 @@ export default function RedemptionCodes() {
   const [genOpen, setGenOpen] = useState(false)
   const [genForm, setGenForm] = useState<GenForm>(emptyGenForm())
   const [genErr, setGenErr] = useState<string | null>(null)
-  const [generated, setGenerated] = useState<RedemptionCode[] | null>(null)
+  const [generated, setGenerated] = useState<RedemptionCodeView[] | null>(null)
   const [copiedId, setCopiedId] = useState<number | null>(null) // 列表行内单码复制反馈
   const [copiedAll, setCopiedAll] = useState(false) // 生成结果「复制全部」反馈
+  const groupsQ = useQuery({
+    queryKey: ['redemption-groups'],
+    queryFn: () => api.listGroups({ limit: 200, offset: 0, sort: 'id', order: 'asc' }),
+    // Fetch once for both the scoped-code selector and the list labels. This
+    // keeps existing activity codes readable before the generate dialog opens.
+    staleTime: 60_000,
+  })
+  const groups = (groupsQ.data?.rows ?? []).filter(g => g.ID != null && g.DeletedAt == null)
+  const groupNameById = new Map(groups.map(group => [group.ID!, group.Name?.trim() || `#${group.ID}`]))
+  const groupLabel = (id: number | null | undefined) => id == null ? '—' : (groupNameById.get(id) ?? `#${id}`)
   const generate = useMutation({
-    mutationFn: (b: GenerateRequest) => api.generateRedemptionCodes(b),
+    mutationFn: (b: GenerateRequestPayload) => api.generateRedemptionCodes(b as GenerateRequest),
     onSuccess: res => {
-      setGenerated(res.codes)
+      setGenerated(res.codes as RedemptionCodeView[])
       qc.invalidateQueries({ queryKey: ['redemption-codes'] })
     },
   })
@@ -212,17 +230,19 @@ export default function RedemptionCodes() {
     const count = genForm.count === '' ? 1 : Number(genForm.count)
     const maxUses = genForm.max_uses === '' ? 1 : Number(genForm.max_uses)
     const tempDays = genForm.temp_days === '' ? NaN : Number(genForm.temp_days)
+    const groupID = genForm.group_id === '' ? undefined : Number(genForm.group_id)
     if (
       !(value > 0) ||
       (genForm.type === 'concurrency' && !Number.isInteger(value)) || // USD 面值可小数；并发数必须整数
       !Number.isInteger(count) || count < 1 || count > 1000 ||
       !Number.isInteger(maxUses) || maxUses < 1 ||
-      (genForm.type === 'temp_balance' && (!Number.isInteger(tempDays) || tempDays < 1 || tempDays > MAX_TEMP_DAYS))
+      ((genForm.type === 'temp_balance' || genForm.type === 'scoped_temp_balance') && (!Number.isInteger(tempDays) || tempDays < 1 || tempDays > MAX_TEMP_DAYS)) ||
+      (genForm.type === 'scoped_temp_balance' && (!Number.isInteger(groupID) || groupID! <= 0 || !groups.some(g => g.ID === groupID)))
     ) {
       setGenErr(t('redemptions.formInvalid', { max: MAX_TEMP_DAYS }))
       return
     }
-    const body: GenerateRequest = {
+    const body: GenerateRequestPayload = {
       type: genForm.type,
       value,
       remark: genForm.remark.trim() || undefined,
@@ -231,13 +251,15 @@ export default function RedemptionCodes() {
     }
     const expires = toRFC3339(genForm.expires_at)
     if (expires) body.expires_at = expires
-    if (genForm.type === 'temp_balance') {
+    if (genForm.type === 'temp_balance' || genForm.type === 'scoped_temp_balance') {
       // 期限以服务端收到请求的当前时间为准，避免把用户机器时区/夏令时
       // 的日期字符串直接交给 API；后端已有 resource_expires_at 校验。
       body.resource_expires_at = new Date(Date.now() + tempDays * 24 * 60 * 60 * 1000).toISOString()
     }
+    if (genForm.type === 'scoped_temp_balance') body.group_id = groupID
     generate.mutate(body)
   }
+  const changeGenerateType = (type: RedemptionType) => updateGenForm({ type, group_id: type === 'scoped_temp_balance' ? genForm.group_id : '' })
   const typeItems = Object.fromEntries(TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)]))
   const filterTypeItems = Object.fromEntries([['all', t('redemptions.all')], ...TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)])])
   const filterStatusItems = Object.fromEntries([['all', t('redemptions.all')], ...STATUSES.map(s => [s, t(`redemptions.status.${s}`)])])
@@ -266,7 +288,7 @@ export default function RedemptionCodes() {
     }),
     enabled: historyOpen && historyCodeIdValid && historyUserIdValid,
   })
-  const historyRows = historyQ.data?.rows ?? []
+  const historyRows = (historyQ.data?.rows ?? []) as RedemptionHistoryView[]
   const historyTypeItems = Object.fromEntries([['all', t('redemptions.all')], ...TYPES.map(tp => [tp, t(`redemptions.type.${tp}`)])])
   const resetHistory = () => {
     setHistoryPage(1)
@@ -371,6 +393,7 @@ export default function RedemptionCodes() {
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="code" label={t('redemptions.table.code')} active={activeSort === 'code'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="type" label={t('redemptions.table.type')} active={activeSort === 'type'} order={order} onToggle={onColumnToggle} />
+                  <TableHead>{t('redemptions.table.group')}</TableHead>
                   <SortableHeader field="value" label={t('redemptions.table.value')} active={activeSort === 'value'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="used_count" label={t('redemptions.table.maxUses')} active={activeSort === 'used_count'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="status" label={t('redemptions.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
@@ -395,6 +418,7 @@ export default function RedemptionCodes() {
                       </div>
                     </TableCell>
                     <TableCell>{t(`redemptions.type.${c.Type}`)}</TableCell>
+                    <TableCell className="max-w-36 truncate" title={c.GroupID == null ? undefined : groupLabel(c.GroupID)}>{groupLabel(c.GroupID)}</TableCell>
                     <TableCell className="tabular-nums">{formatValue(c)}</TableCell>
                     <TableCell className="tabular-nums">{c.UsedCount} / {c.MaxUses}</TableCell>
                     <TableCell><CodeStatusBadge status={c.Status} /></TableCell>
@@ -472,7 +496,7 @@ export default function RedemptionCodes() {
                     <Select
                       items={typeItems}
                       value={genForm.type}
-                      onValueChange={v => updateGenForm({ type: v as RedemptionType })}
+                      onValueChange={v => changeGenerateType(v as RedemptionType)}
                     >
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -486,7 +510,7 @@ export default function RedemptionCodes() {
                   </div>
                 </div>
                 <p className="-mt-2 text-xs text-muted-foreground">
-                  {t(`redemptions.typeHint${genForm.type === 'balance' ? 'Balance' : genForm.type === 'temp_balance' ? 'TempBalance' : 'Concurrency'}`)}
+                  {t(`redemptions.typeHint${genForm.type === 'balance' ? 'Balance' : genForm.type === 'temp_balance' ? 'TempBalance' : genForm.type === 'scoped_temp_balance' ? 'ScopedTempBalance' : 'Concurrency'}`)}
                 </p>
                 <p className="-mt-2 text-xs text-muted-foreground">
                   {genForm.type === 'concurrency' ? t('redemptions.valueHintConcurrency') : t('redemptions.valueHintBalance')}
@@ -502,7 +526,7 @@ export default function RedemptionCodes() {
                     <p className="text-xs text-muted-foreground">{t('redemptions.expiresAtHint')}</p>
                   </div>
                   <div className="space-y-1.5">
-                    {genForm.type === 'temp_balance' ? (
+                    {genForm.type === 'temp_balance' || genForm.type === 'scoped_temp_balance' ? (
                       <>
                         <Label htmlFor="rc-temp-days">
                           {t('redemptions.tempDaysLabel')}<span className="ml-1 text-destructive">*</span>
@@ -517,6 +541,27 @@ export default function RedemptionCodes() {
                     )}
                   </div>
                 </div>
+                {genForm.type === 'scoped_temp_balance' && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="rc-group">
+                      {t('redemptions.groupLabel')}<span className="ml-1 text-destructive">*</span>
+                    </Label>
+                    <Select
+                      items={Object.fromEntries(groups.map(g => [String(g.ID), g.Name ?? `#${g.ID}`]))}
+                      value={genForm.group_id}
+                      onValueChange={v => updateGenForm({ group_id: v ?? '' })}
+                    >
+                      <SelectTrigger id="rc-group" className="w-full">
+                        <SelectValue placeholder={groupsQ.isLoading ? t('redemptions.groupLoading') : t('redemptions.groupPlaceholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {groups.map(g => <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? `#${g.ID}`}>{g.Name ?? `#${g.ID}`}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {groupsQ.isError && <p className="text-xs text-destructive">{t('redemptions.groupLoadFailed')}</p>}
+                    {!groupsQ.isLoading && !groupsQ.isError && groups.length === 0 && <p className="text-xs text-muted-foreground">{t('redemptions.groupEmpty')}</p>}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="rc-max">{t('redemptions.maxUsesLabel')}</Label>
@@ -536,7 +581,10 @@ export default function RedemptionCodes() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setGenOpen(false)} disabled={generate.isPending}>{t('common.cancel')}</Button>
-                <Button onClick={submitGenerate} disabled={generate.isPending}>
+                <Button
+                  onClick={submitGenerate}
+                  disabled={generate.isPending || (genForm.type === 'scoped_temp_balance' && (groupsQ.isLoading || groupsQ.isError || groups.length === 0 || !genForm.group_id))}
+                >
                   {generate.isPending ? t('common.creating') : t('redemptions.new')}
                 </Button>
               </DialogFooter>
@@ -589,6 +637,7 @@ export default function RedemptionCodes() {
                       <TableHead>{t('redemptions.historyTable.code')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.userId')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.type')}</TableHead>
+                      <TableHead>{t('redemptions.historyTable.group')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.value')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.resourceExpiresAt')}</TableHead>
                       <TableHead>{t('redemptions.historyTable.createdAt')}</TableHead>
@@ -604,6 +653,7 @@ export default function RedemptionCodes() {
                         </TableCell>
                         <TableCell className="tabular-nums">{row.UserID}</TableCell>
                         <TableCell>{t(`redemptions.type.${row.CodeType}`)}</TableCell>
+                        <TableCell>{groupLabel(row.GroupID)}</TableCell>
                         <TableCell className="tabular-nums">{formatValue({ Type: row.CodeType, Value: row.Value })}</TableCell>
                         <TableCell className="whitespace-nowrap text-sm">{formatDateTime(row.ResourceExpiresAt)}</TableCell>
                         <TableCell className="whitespace-nowrap text-sm">{formatDateTime(row.CreatedAt)}</TableCell>

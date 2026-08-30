@@ -20,6 +20,8 @@ const (
 	FieldUserID = "user_id"
 	// FieldValue holds the string denoting the value field in the database.
 	FieldValue = "value"
+	// FieldGroupID holds the string denoting the group_id field in the database.
+	FieldGroupID = "group_id"
 	// FieldResourceExpiresAt holds the string denoting the resource_expires_at field in the database.
 	FieldResourceExpiresAt = "resource_expires_at"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -43,6 +45,7 @@ var Columns = []string{
 	FieldCodeID,
 	FieldUserID,
 	FieldValue,
+	FieldGroupID,
 	FieldResourceExpiresAt,
 	FieldCreatedAt,
 }
@@ -83,6 +86,11 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 // ByValue orders the results by the value field.
 func ByValue(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldValue, opts...).ToFunc()
+}
+
+// ByGroupID orders the results by the group_id field.
+func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
 // ByResourceExpiresAt orders the results by the resource_expires_at field.

@@ -44,7 +44,10 @@ func (h *AdminAPI) PostUpstreams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := upstreamFromBody(in, nil)
-	saved, err := h.svc.CreateUpstream(r.Context(), u)
+	// Creation performs one server-side catalogue read and real model
+	// validation, then stores that verified snapshot with the new row. Keeping
+	// the operation together avoids the browser probing twice (preview + save).
+	saved, err := h.svc.CreateUpstreamWithModelValidation(r.Context(), u)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return
@@ -259,6 +262,11 @@ func toAPIUpstream(u *domain.Upstream) Upstream {
 		balanceCurrency = nil
 		balanceCheckedAt = nil
 	}
+	var models *[]string
+	if u.Models != nil {
+		copyModels := append([]string(nil), u.Models...)
+		models = &copyModels
+	}
 	out := Upstream{
 		ID:                   u.ID,
 		Name:                 u.Name,
@@ -289,6 +297,9 @@ func toAPIUpstream(u *domain.Upstream) Upstream {
 		LastSuccessAt:        u.LastSuccessAt,
 		LastFailureAt:        u.LastFailureAt,
 		LastError:            u.LastError,
+		Models:               models,
+		ModelsCheckedAt:      u.ModelsCheckedAt,
+		ModelsError:          u.ModelsError,
 		CreatedAt:            ptr(u.CreatedAt),
 		UpdatedAt:            ptr(u.UpdatedAt),
 	}
@@ -327,7 +338,15 @@ func toAPIUpstreamModels(result *service.UpstreamModelsResult) UpstreamModelsRes
 	if result == nil {
 		return UpstreamModelsResponse{Models: []string{}}
 	}
-	response := UpstreamModelsResponse{Ok: result.OK, Models: result.Models}
+	response := UpstreamModelsResponse{
+		Ok:                 result.OK,
+		Models:             result.Models,
+		ModelsTotal:        result.ModelsTotal,
+		ModelsChecked:      result.ModelsChecked,
+		ModelsAvailable:    result.ModelsAvailable,
+		ModelsFailed:       result.ModelsFailed,
+		ValidationComplete: result.ValidationComplete,
+	}
 	if response.Models == nil {
 		response.Models = []string{}
 	}

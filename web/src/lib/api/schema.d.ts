@@ -298,7 +298,7 @@ export interface paths {
         /** 上游清单（分页、倍率、余额与稳定性） */
         get: operations["GetUpstreams"];
         put?: never;
-        /** 新增上游 */
+        /** 新增上游并自动验证可用模型 */
         post: operations["PostUpstreams"];
         delete?: never;
         options?: never;
@@ -391,7 +391,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 向上游发送一次 hi 请求并返回耗时与结果 */
+        /**
+         * 兼容旧客户端的单次模型探测；管理台已改为添加上游时自动验证模型
+         * @deprecated
+         */
         post: operations["PostUpstreamsIdTest"];
         delete?: never;
         options?: never;
@@ -1516,6 +1519,15 @@ export interface components {
             /** Format: date-time */
             LastFailureAt?: string | null;
             LastError?: string | null;
+            /** @description 最近一次真实请求验证通过、可路由的模型 */
+            Models?: string[];
+            /**
+             * Format: date-time
+             * @description 最近一次模型真实验证时间
+             */
+            ModelsCheckedAt?: string | null;
+            /** @description 最近一次模型目录读取错误类别 */
+            ModelsError?: string | null;
             /** Format: date-time */
             CreatedAt?: string;
             /** Format: date-time */
@@ -1546,8 +1558,18 @@ export interface components {
         UpstreamModelsResponse: {
             ok: boolean;
             models: string[];
+            /** @description /v1/models 返回的原始模型数量 */
+            models_total: number;
+            /** @description 已发送真实最小请求验证的模型数量 */
+            models_checked: number;
+            /** @description 真实请求返回有效 JSON 且成功的模型数量 */
+            models_available: number;
+            /** @description 验证失败或超时的模型数量 */
+            models_failed: number;
+            /** @description 是否在总超时前完成全部模型验证 */
+            validation_complete: boolean;
             /** @enum {string|null} */
-            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "model_unavailable" | null;
+            error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "model_unavailable" | null;
         };
         UpstreamTestBody: {
             /** @description 必须来自上游当前 /v1/models 列表；省略时使用列表第一项 */
@@ -2408,7 +2430,7 @@ export interface components {
             reset: number;
         };
         /** @enum {string} */
-        RedemptionType: "balance" | "concurrency" | "temp_balance";
+        RedemptionType: "balance" | "concurrency" | "temp_balance" | "scoped_temp_balance";
         /** @enum {string} */
         RedemptionStatus: "active" | "disabled";
         RedemptionCode: {
@@ -2422,6 +2444,11 @@ export interface components {
              * @description 面值：balance/temp_balance = USD（1 = $1）；concurrency = 并发数（整数）。存储毫分（API 边界换算）
              */
             Value: number;
+            /**
+             * Format: int64
+             * @description scoped_temp_balance 的限定分组；其他类型为 null
+             */
+            GroupID?: number | null;
             Remark?: string | null;
             /**
              * Format: date-time
@@ -2462,6 +2489,11 @@ export interface components {
             Value: number;
             /** Format: date-time */
             ResourceExpiresAt?: string | null;
+            /**
+             * Format: int64
+             * @description 活动额度限定分组快照
+             */
+            GroupID?: number | null;
             /** Format: date-time */
             CreatedAt: string;
         };
@@ -2480,6 +2512,11 @@ export interface components {
             Remark?: string | null;
             /** Format: date-time */
             ResourceExpiresAt?: string | null;
+            /**
+             * Format: int64
+             * @description 活动额度限定分组快照
+             */
+            GroupID?: number | null;
             /** Format: date-time */
             CreatedAt: string;
         };
@@ -2515,6 +2552,11 @@ export interface components {
             Remark?: string | null;
             /** Format: date-time */
             ResourceExpiresAt?: string | null;
+            /**
+             * Format: int64
+             * @description 活动额度限定分组快照
+             */
+            GroupID?: number | null;
             /** Format: date-time */
             CreatedAt: string;
         };
@@ -2526,6 +2568,11 @@ export interface components {
         TempBalanceRow: {
             /** Format: int64 */
             id: number;
+            /**
+             * Format: int64
+             * @description 活动额度限定分组；null = 全局额度
+             */
+            group_id?: number | null;
             /**
              * Format: double
              * @description 金额 USD（毫分 /1e5；1 USD = 100,000 毫分）
@@ -2552,6 +2599,11 @@ export interface components {
             id: number;
             /** Format: int64 */
             user_id: number;
+            /**
+             * Format: int64
+             * @description 活动额度限定分组；null = 全局额度
+             */
+            group_id?: number | null;
             /**
              * Format: double
              * @description 金额 USD（毫分 /1e5；1 USD = 100,000 毫分）
@@ -2589,6 +2641,11 @@ export interface components {
              * @description 兑换后资源到期；temp_balance 必填（决策 4）
              */
             resource_expires_at?: string;
+            /**
+             * Format: int64
+             * @description scoped_temp_balance 必填；活动额度仅可用于该分组
+             */
+            group_id?: number;
             /** @description 1 = 单次码（缺省）；>1 = 多人码 */
             max_uses?: number;
             /** @description 生成个数 1-1000（缺省 1） */
@@ -2778,6 +2835,11 @@ export interface components {
                 value: number;
                 /** Format: date-time */
                 resource_expires_at?: string | null;
+                /**
+                 * Format: int64
+                 * @description 活动额度限定分组
+                 */
+                group_id?: number | null;
             };
         };
         UsageLog: {
@@ -4163,7 +4225,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description hi 请求测试结果与更新后的稳定性快照 */
+            /** @description 兼容旧客户端的单次模型探测结果与更新后的稳定性快照 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4784,7 +4846,7 @@ export interface operations {
             query?: {
                 page?: number;
                 page_size?: number;
-                type?: "balance" | "concurrency" | "temp_balance";
+                type?: "balance" | "concurrency" | "temp_balance" | "scoped_temp_balance";
                 status?: "active" | "disabled";
                 sort?: string;
                 order?: "asc" | "desc";

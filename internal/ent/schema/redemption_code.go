@@ -18,8 +18,9 @@ func (RedemptionCode) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("id"),
 		field.String("code").Unique(), // XXXX-XXXX-XXXX-XXXX，16 字符，字符集 32（熵 ~80bit）
-		field.Enum("type").Values("balance", "concurrency", "temp_balance"),
-		field.Int64("value"), // 最小单位（分/并发数）
+		field.Enum("type").Values("balance", "concurrency", "temp_balance", "scoped_temp_balance"),
+		field.Int64("value"),                          // 最小单位（分/并发数）
+		field.Int64("group_id").Optional().Nillable(), // scoped_temp_balance only; NULL = global/legacy
 		field.String("remark").Optional().Nillable(),
 		field.Time("expires_at").Optional().Nillable(),          // 码未兑换即过期；nil = 永久
 		field.Time("resource_expires_at").Optional().Nillable(), // 兑换后资源到期；temp_balance 必填（service 校验）

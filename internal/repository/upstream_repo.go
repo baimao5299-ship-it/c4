@@ -55,6 +55,15 @@ func (r *UpstreamRepo) CreateUpstream(ctx context.Context, u *domain.Upstream) (
 	if u.BalanceCheckedAt != nil {
 		b.SetBalanceCheckedAt(*u.BalanceCheckedAt)
 	}
+	if u.Models != nil {
+		b.SetModels(append([]string(nil), u.Models...))
+	}
+	if u.ModelsCheckedAt != nil {
+		b.SetModelsCheckedAt(*u.ModelsCheckedAt)
+	}
+	if u.ModelsError != nil && strings.TrimSpace(*u.ModelsError) != "" {
+		b.SetModelsError(domain.TruncateErrMsg(strings.TrimSpace(*u.ModelsError)))
+	}
 	row, err := b.Save(ctx)
 	if err != nil {
 		if sqlgraph.IsUniqueConstraintError(err) {
@@ -209,13 +218,18 @@ func (r *UpstreamRepo) RecordUpstreamModels(ctx context.Context, expected *domai
 		upstream.BaseURLEQ(expected.BaseURL),
 	)
 	if modelErr != nil && strings.TrimSpace(*modelErr) != "" {
-		// A failed first read must not turn an unknown catalogue into a
-		// confirmed empty one.  ModelsCheckedAt is the scheduler's distinction
-		// between "not observed yet" (bounded compatibility routing) and
-		// "observed empty" (no route); only a successful read may advance it.
-		// Keep the previous models and timestamp untouched while retaining the
-		// bounded error class for the management surface.
-		b.SetModelsError(domain.TruncateErrMsg(strings.TrimSpace(*modelErr)))
+		code := domain.TruncateErrMsg(strings.TrimSpace(*modelErr))
+		if code == "model_unavailable" {
+			// Model validation has completed: publish exactly the subset that
+			// answered a real request, including an empty subset when every model
+			// failed. ModelsCheckedAt distinguishes this confirmed empty snapshot
+			// from an endpoint that has never been inspected. Transport/catalogue
+			// failures keep the prior verified snapshot for transient recovery.
+			clean := append([]string(nil), models...)
+			b.SetModels(clean).SetModelsCheckedAt(time.Now()).SetModelsError(code)
+		} else {
+			b.SetModelsError(code)
+		}
 	} else {
 		clean := append([]string(nil), models...)
 		b.SetModels(clean).SetModelsCheckedAt(time.Now())

@@ -23,6 +23,8 @@ type RedemptionCode struct {
 	Type redemptioncode.Type `json:"type,omitempty"`
 	// Value holds the value of the "value" field.
 	Value int64 `json:"value,omitempty"`
+	// GroupID holds the value of the "group_id" field.
+	GroupID *int64 `json:"group_id,omitempty"`
 	// Remark holds the value of the "remark" field.
 	Remark *string `json:"remark,omitempty"`
 	// ExpiresAt holds the value of the "expires_at" field.
@@ -70,7 +72,7 @@ func (*RedemptionCode) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case redemptioncode.FieldID, redemptioncode.FieldValue, redemptioncode.FieldMaxUses, redemptioncode.FieldUsedCount, redemptioncode.FieldCreatedBy:
+		case redemptioncode.FieldID, redemptioncode.FieldValue, redemptioncode.FieldGroupID, redemptioncode.FieldMaxUses, redemptioncode.FieldUsedCount, redemptioncode.FieldCreatedBy:
 			values[i] = new(sql.NullInt64)
 		case redemptioncode.FieldCode, redemptioncode.FieldType, redemptioncode.FieldRemark, redemptioncode.FieldStatus:
 			values[i] = new(sql.NullString)
@@ -114,6 +116,13 @@ func (_m *RedemptionCode) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field value", values[i])
 			} else if value.Valid {
 				_m.Value = value.Int64
+			}
+		case redemptioncode.FieldGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field group_id", values[i])
+			} else if value.Valid {
+				_m.GroupID = new(int64)
+				*_m.GroupID = value.Int64
 			}
 		case redemptioncode.FieldRemark:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -221,6 +230,11 @@ func (_m *RedemptionCode) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("value=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Value))
+	builder.WriteString(", ")
+	if v := _m.GroupID; v != nil {
+		builder.WriteString("group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.Remark; v != nil {
 		builder.WriteString("remark=")

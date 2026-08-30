@@ -24,6 +24,8 @@ type RedemptionUse struct {
 	UserID int64 `json:"user_id,omitempty"`
 	// Value holds the value of the "value" field.
 	Value int64 `json:"value,omitempty"`
+	// GroupID holds the value of the "group_id" field.
+	GroupID *int64 `json:"group_id,omitempty"`
 	// ResourceExpiresAt holds the value of the "resource_expires_at" field.
 	ResourceExpiresAt *time.Time `json:"resource_expires_at,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -59,7 +61,7 @@ func (*RedemptionUse) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case redemptionuse.FieldID, redemptionuse.FieldCodeID, redemptionuse.FieldUserID, redemptionuse.FieldValue:
+		case redemptionuse.FieldID, redemptionuse.FieldCodeID, redemptionuse.FieldUserID, redemptionuse.FieldValue, redemptionuse.FieldGroupID:
 			values[i] = new(sql.NullInt64)
 		case redemptionuse.FieldResourceExpiresAt, redemptionuse.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -101,6 +103,13 @@ func (_m *RedemptionUse) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field value", values[i])
 			} else if value.Valid {
 				_m.Value = value.Int64
+			}
+		case redemptionuse.FieldGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field group_id", values[i])
+			} else if value.Valid {
+				_m.GroupID = new(int64)
+				*_m.GroupID = value.Int64
 			}
 		case redemptionuse.FieldResourceExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -164,6 +173,11 @@ func (_m *RedemptionUse) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("value=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Value))
+	builder.WriteString(", ")
+	if v := _m.GroupID; v != nil {
+		builder.WriteString("group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.ResourceExpiresAt; v != nil {
 		builder.WriteString("resource_expires_at=")

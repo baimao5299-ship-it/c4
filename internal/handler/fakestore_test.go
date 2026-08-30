@@ -1939,7 +1939,7 @@ func (f *fakeStore) ListUsesByUser(ctx context.Context, userID int64, q reposito
 		}
 		rec := &domain.RedemptionRecord{
 			ID: u.ID, CodeID: u.CodeID, Value: u.Value,
-			ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+			ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
 		}
 		if code, ok := f.codes[u.CodeID]; ok {
 			rec.Code = code.Code
@@ -1966,7 +1966,7 @@ func (f *fakeStore) ListRedemptionHistory(ctx context.Context, q repository.List
 		out = append(out, &domain.RedemptionHistory{
 			ID: u.ID, CodeID: u.CodeID, Code: code.Code, UserID: u.UserID,
 			CodeType: code.Type, Value: u.Value, Remark: code.Remark,
-			ResourceExpiresAt: u.ResourceExpiresAt, CreatedAt: u.CreatedAt,
+			ResourceExpiresAt: u.ResourceExpiresAt, GroupID: u.GroupID, CreatedAt: u.CreatedAt,
 		})
 	}
 	slices.SortFunc(out, func(a, b *domain.RedemptionHistory) int { return cmp.Compare(b.ID, a.ID) })

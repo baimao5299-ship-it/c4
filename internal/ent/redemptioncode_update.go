@@ -78,6 +78,33 @@ func (_u *RedemptionCodeUpdate) AddValue(v int64) *RedemptionCodeUpdate {
 	return _u
 }
 
+// SetGroupID sets the "group_id" field.
+func (_u *RedemptionCodeUpdate) SetGroupID(v int64) *RedemptionCodeUpdate {
+	_u.mutation.ResetGroupID()
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *RedemptionCodeUpdate) SetNillableGroupID(v *int64) *RedemptionCodeUpdate {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// AddGroupID adds value to the "group_id" field.
+func (_u *RedemptionCodeUpdate) AddGroupID(v int64) *RedemptionCodeUpdate {
+	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *RedemptionCodeUpdate) ClearGroupID() *RedemptionCodeUpdate {
+	_u.mutation.ClearGroupID()
+	return _u
+}
+
 // SetRemark sets the "remark" field.
 func (_u *RedemptionCodeUpdate) SetRemark(v string) *RedemptionCodeUpdate {
 	_u.mutation.SetRemark(v)
@@ -351,6 +378,15 @@ func (_u *RedemptionCodeUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if value, ok := _u.mutation.AddedValue(); ok {
 		_spec.AddField(redemptioncode.FieldValue, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(redemptioncode.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGroupID(); ok {
+		_spec.AddField(redemptioncode.FieldGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(redemptioncode.FieldGroupID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.Remark(); ok {
 		_spec.SetField(redemptioncode.FieldRemark, field.TypeString, value)
 	}
@@ -507,6 +543,33 @@ func (_u *RedemptionCodeUpdateOne) SetNillableValue(v *int64) *RedemptionCodeUpd
 // AddValue adds value to the "value" field.
 func (_u *RedemptionCodeUpdateOne) AddValue(v int64) *RedemptionCodeUpdateOne {
 	_u.mutation.AddValue(v)
+	return _u
+}
+
+// SetGroupID sets the "group_id" field.
+func (_u *RedemptionCodeUpdateOne) SetGroupID(v int64) *RedemptionCodeUpdateOne {
+	_u.mutation.ResetGroupID()
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *RedemptionCodeUpdateOne) SetNillableGroupID(v *int64) *RedemptionCodeUpdateOne {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// AddGroupID adds value to the "group_id" field.
+func (_u *RedemptionCodeUpdateOne) AddGroupID(v int64) *RedemptionCodeUpdateOne {
+	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *RedemptionCodeUpdateOne) ClearGroupID() *RedemptionCodeUpdateOne {
+	_u.mutation.ClearGroupID()
 	return _u
 }
 
@@ -812,6 +875,15 @@ func (_u *RedemptionCodeUpdateOne) sqlSave(ctx context.Context) (_node *Redempti
 	}
 	if value, ok := _u.mutation.AddedValue(); ok {
 		_spec.AddField(redemptioncode.FieldValue, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(redemptioncode.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGroupID(); ok {
+		_spec.AddField(redemptioncode.FieldGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(redemptioncode.FieldGroupID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.Remark(); ok {
 		_spec.SetField(redemptioncode.FieldRemark, field.TypeString, value)

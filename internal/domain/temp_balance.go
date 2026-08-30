@@ -12,6 +12,7 @@ type TempBalance struct {
 	ID        int64
 	UserID    int64
 	Amount    int64      // 毫分（1 USD = 100,000 毫分；handler 边界 /1e5 → USD）
+	GroupID   *int64     // nil = legacy/global allowance; otherwise only matching group
 	ExpiresAt *time.Time // nil = 永久额度
 	Note      *string    // 固定系统备注（signup bonus / redemption code），无敏感信息
 	CreatedAt time.Time

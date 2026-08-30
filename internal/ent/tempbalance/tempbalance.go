@@ -18,6 +18,8 @@ const (
 	FieldUserID = "user_id"
 	// FieldAmount holds the string denoting the amount field in the database.
 	FieldAmount = "amount"
+	// FieldGroupID holds the string denoting the group_id field in the database.
+	FieldGroupID = "group_id"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldNote holds the string denoting the note field in the database.
@@ -42,6 +44,7 @@ var Columns = []string{
 	FieldID,
 	FieldUserID,
 	FieldAmount,
+	FieldGroupID,
 	FieldExpiresAt,
 	FieldNote,
 	FieldCreatedAt,
@@ -78,6 +81,11 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 // ByAmount orders the results by the amount field.
 func ByAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAmount, opts...).ToFunc()
+}
+
+// ByGroupID orders the results by the group_id field.
+func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
 // ByExpiresAt orders the results by the expires_at field.

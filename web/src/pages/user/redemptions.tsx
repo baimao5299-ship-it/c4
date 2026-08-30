@@ -24,8 +24,19 @@ import { toast } from '@/components/ui/toast'
 import { formatDateTime } from '@/components/fmt'
 import type { components } from '@/lib/api/schema'
 
-type RedemptionType = components['schemas']['RedemptionType']
-type Applied = components['schemas']['RedeemResponse']['applied']
+// Keep the user view compatible while the checked-in generated schema catches
+// up with the server's activity-code contract.
+type RedemptionType = components['schemas']['RedemptionType'] | 'scoped_temp_balance'
+type AppliedBase = components['schemas']['RedeemResponse']['applied']
+type Applied = Omit<AppliedBase, 'type'> & {
+  type: RedemptionType
+  group_id?: number | null
+  GroupId?: number | null
+}
+type RedemptionRecordView = components['schemas']['RedemptionRecord'] & {
+  CodeType: RedemptionType
+  GroupID?: number | null
+}
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -39,14 +50,21 @@ function formatValue(type: RedemptionType, value: number): string {
 }
 
 // applied 回执差异化文案：balance → 余额 +USD；concurrency → 并发上限 +N；
-// temp_balance → 临时余额 +USD + 到期时间（resource_expires_at → 本地时间）。
+// temp_balance/scoped_temp_balance → 临时余额 +USD + 到期时间；活动余额额外回显分组。
 function appliedText(a: Applied, t: TFunction): string {
   if (a.type === 'concurrency') {
     return t('user.redemptions.successConcurrency', { value: a.value })
   }
   const value = formatValue(a.type, a.value)
   if (a.type === 'balance') return t('user.redemptions.successBalance', { value })
-  return `${t('user.redemptions.successTempBalance', { value })} · ${t('user.redemptions.successExpiresAt', {
+  const text = a.type === 'scoped_temp_balance'
+    ? t('user.redemptions.successScopedTempBalance', { value })
+    : t('user.redemptions.successTempBalance', { value })
+  const groupID = a.group_id ?? a.GroupId
+  const group = a.type === 'scoped_temp_balance'
+    ? ` · ${t('user.redemptions.successGroup', { group: groupID == null ? '—' : `#${groupID}` })}`
+    : ''
+  return `${text}${group} · ${t('user.redemptions.successExpiresAt', {
     time: a.resource_expires_at ? formatDateTime(a.resource_expires_at) : '—',
   })}`
 }
@@ -64,7 +82,7 @@ export default function UserRedemptions() {
     queryKey: ['user', 'redemptions', { page, page_size: pageSize }],
     queryFn: () => userApi.listUserRedemptions({ page, page_size: pageSize }),
   })
-  const rows = data?.rows ?? []
+  const rows = (data?.rows ?? []) as RedemptionRecordView[]
   const cardStoreURL = import.meta.env.VITE_CARD_STORE_URL?.trim() || 'https://catfk.com/shop/KPHP1N61/c60y6l'
 
   // 末页死胡同守卫：非首页的当前页数据被清空（如兑换后 total 变化）时回退到第 1 页；
@@ -81,7 +99,7 @@ export default function UserRedemptions() {
       for (const value of codes) {
         try {
           const result = await userApi.redeem(value)
-          results.push({ code: value, applied: result.applied })
+          results.push({ code: value, applied: result.applied as Applied })
         } catch (error) {
           results.push({ code: value, error: error instanceof ApiError ? error.message : t('user.common.error') })
         }
@@ -200,30 +218,36 @@ export default function UserRedemptions() {
               <p className="text-sm">{t('user.redemptions.emptyDesc')}</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('user.redemptions.table.code')}</TableHead>
-                  <TableHead>{t('user.redemptions.table.type')}</TableHead>
-                  <TableHead>{t('user.redemptions.table.value')}</TableHead>
-                  <TableHead>{t('user.redemptions.table.remark')}</TableHead>
-                  <TableHead>{t('user.redemptions.table.expiresAt')}</TableHead>
-                  <TableHead>{t('user.redemptions.table.createdAt')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="[&_td]:py-3">
-                {rows.map(r => (
-                  <TableRow key={r.ID}>
-                    <TableCell><code className="font-mono text-sm">{r.Code}</code></TableCell>
-                    <TableCell>{t(`redemptions.type.${r.CodeType}`)}</TableCell>
-                    <TableCell className="tabular-nums">{formatValue(r.CodeType, r.Value)}</TableCell>
-                    <TableCell className="max-w-40 truncate" title={r.Remark ?? undefined}>{r.Remark || '—'}</TableCell>
-                    <TableCell>{r.ResourceExpiresAt ? formatDateTime(r.ResourceExpiresAt) : '—'}</TableCell>
-                    <TableCell>{formatDateTime(r.CreatedAt)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="overflow-x-auto rounded-lg border">
+              <div className="min-w-[680px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('user.redemptions.table.code')}</TableHead>
+                      <TableHead>{t('user.redemptions.table.type')}</TableHead>
+                      <TableHead>{t('user.redemptions.table.group')}</TableHead>
+                      <TableHead>{t('user.redemptions.table.value')}</TableHead>
+                      <TableHead>{t('user.redemptions.table.remark')}</TableHead>
+                      <TableHead>{t('user.redemptions.table.expiresAt')}</TableHead>
+                      <TableHead>{t('user.redemptions.table.createdAt')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="[&_td]:py-3">
+                    {rows.map(r => (
+                      <TableRow key={r.ID}>
+                        <TableCell><code className="font-mono text-sm">{r.Code}</code></TableCell>
+                        <TableCell>{t(`redemptions.type.${r.CodeType}`)}</TableCell>
+                        <TableCell className="tabular-nums">{r.GroupID == null ? '—' : `#${r.GroupID}`}</TableCell>
+                        <TableCell className="tabular-nums">{formatValue(r.CodeType, r.Value)}</TableCell>
+                        <TableCell className="max-w-40 truncate" title={r.Remark ?? undefined}>{r.Remark || '—'}</TableCell>
+                        <TableCell>{r.ResourceExpiresAt ? formatDateTime(r.ResourceExpiresAt) : '—'}</TableCell>
+                        <TableCell>{formatDateTime(r.CreatedAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           )}
         </div>
         {!isLoading && !isError && (

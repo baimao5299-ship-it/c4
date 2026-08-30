@@ -45,13 +45,13 @@ func pageToQuery(page, pageSize *int) (repository.ListQuery, error) {
 }
 
 // apiRedemptionValueToMillis 契约面值 → 毫分存储（API 输入边界换算，与 balance
-// 毫分↔USD 同构）：balance/temp_balance = USD（1 USD = 100,000 毫分，
+// 毫分↔USD 同构）：balance/temp_balance/scoped_temp_balance = USD（1 USD = 100,000 毫分，
 // math.Round 消除取整误差）；concurrency = 并发数——非货币，必须整数（小数 →
 // 400，不静默取整）；≤ 0 → 400。type 非法 → (0, nil) 原样传 service 兜底
 // validateGenerateRequest（保持既有 400 文案）。
 func apiRedemptionValueToMillis(typ domain.RedemptionType, v float64) (int64, error) {
 	switch typ {
-	case domain.RedemptionTypeBalance, domain.RedemptionTypeTempBalance:
+	case domain.RedemptionTypeBalance, domain.RedemptionTypeTempBalance, domain.RedemptionTypeScopedTempBalance:
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return 0, errors.New("value must be finite")
 		}
@@ -75,7 +75,7 @@ func apiRedemptionValueToMillis(typ domain.RedemptionType, v float64) (int64, er
 }
 
 // redemptionValueToAPI 毫分存储 → 契约面值（API 边界展示换算）：
-// balance/temp_balance → USD float64（1 USD = 100,000 毫分）；concurrency →
+// balance/temp_balance/scoped_temp_balance → USD float64（1 USD = 100,000 毫分）；concurrency →
 // 并发数 float64 直出（非货币，仅类型转换——整数 float64 精确，JSON 序列化
 // 5.0 → "5"，无精度问题）。
 func redemptionValueToAPI(typ domain.RedemptionType, millis int64) float64 {
@@ -93,7 +93,7 @@ func (h *AdminAPI) PostRedemptionCodes(w http.ResponseWriter, r *http.Request) {
 		httpface.WriteErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	// 面值边界换算（balance/temp_balance USD → 毫分；concurrency 整数校验）——
+	// 面值边界换算（balance/temp_balance/scoped_temp_balance USD → 毫分；concurrency 整数校验）——
 	// 存储恒毫分，service 仍收 int64。
 	value, err := apiRedemptionValueToMillis(domain.RedemptionType(in.Type), in.Value)
 	if err != nil {
@@ -106,6 +106,7 @@ func (h *AdminAPI) PostRedemptionCodes(w http.ResponseWriter, r *http.Request) {
 		Remark:            in.Remark,
 		ExpiresAt:         in.ExpiresAt,
 		ResourceExpiresAt: in.ResourceExpiresAt,
+		GroupID:           in.GroupId,
 		MaxUses:           deref(in.MaxUses),
 		Count:             deref(in.Count),
 	}, createdBy(r))
@@ -252,7 +253,7 @@ func (h *AdminAPI) PostRedemptionCodesBatchDeactivate(w http.ResponseWriter, r *
 }
 
 // toAPIRedemptionCode 兑换码领域对象 → 契约类型（Value 毫分 → 面值换算：按
-// type——balance/temp_balance → USD；concurrency → 并发数直出）。
+// type——balance/temp_balance/scoped_temp_balance → USD；concurrency → 并发数直出）。
 func toAPIRedemptionCode(c *domain.RedemptionCode) RedemptionCode {
 	return RedemptionCode{
 		ID:                c.ID,
@@ -268,6 +269,7 @@ func toAPIRedemptionCode(c *domain.RedemptionCode) RedemptionCode {
 		CreatedBy:         c.CreatedBy,
 		CreatedAt:         c.CreatedAt,
 		UpdatedAt:         c.UpdatedAt,
+		GroupID:           c.GroupID,
 	}
 }
 
@@ -280,6 +282,7 @@ func toAPIRedemptionUse(codeType domain.RedemptionType, u *domain.RedemptionUse)
 		UserID:            u.UserID,
 		Value:             redemptionValueToAPI(codeType, u.Value),
 		ResourceExpiresAt: u.ResourceExpiresAt,
+		GroupID:           u.GroupID,
 		CreatedAt:         u.CreatedAt,
 	}
 }
@@ -289,5 +292,6 @@ func toAPIRedemptionHistory(h *domain.RedemptionHistory) RedemptionHistory {
 		ID: h.ID, CodeID: h.CodeID, Code: h.Code, UserID: h.UserID,
 		CodeType: RedemptionType(h.CodeType), Value: redemptionValueToAPI(h.CodeType, h.Value),
 		Remark: h.Remark, ResourceExpiresAt: h.ResourceExpiresAt, CreatedAt: h.CreatedAt,
+		GroupID: h.GroupID,
 	}
 }

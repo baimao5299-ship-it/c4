@@ -85,6 +85,33 @@ func (_u *RedemptionUseUpdate) AddValue(v int64) *RedemptionUseUpdate {
 	return _u
 }
 
+// SetGroupID sets the "group_id" field.
+func (_u *RedemptionUseUpdate) SetGroupID(v int64) *RedemptionUseUpdate {
+	_u.mutation.ResetGroupID()
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *RedemptionUseUpdate) SetNillableGroupID(v *int64) *RedemptionUseUpdate {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// AddGroupID adds value to the "group_id" field.
+func (_u *RedemptionUseUpdate) AddGroupID(v int64) *RedemptionUseUpdate {
+	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *RedemptionUseUpdate) ClearGroupID() *RedemptionUseUpdate {
+	_u.mutation.ClearGroupID()
+	return _u
+}
+
 // SetResourceExpiresAt sets the "resource_expires_at" field.
 func (_u *RedemptionUseUpdate) SetResourceExpiresAt(v time.Time) *RedemptionUseUpdate {
 	_u.mutation.SetResourceExpiresAt(v)
@@ -193,6 +220,15 @@ func (_u *RedemptionUseUpdate) sqlSave(ctx context.Context) (_node int, err erro
 	}
 	if value, ok := _u.mutation.AddedValue(); ok {
 		_spec.AddField(redemptionuse.FieldValue, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(redemptionuse.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGroupID(); ok {
+		_spec.AddField(redemptionuse.FieldGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(redemptionuse.FieldGroupID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.ResourceExpiresAt(); ok {
 		_spec.SetField(redemptionuse.FieldResourceExpiresAt, field.TypeTime, value)
@@ -305,6 +341,33 @@ func (_u *RedemptionUseUpdateOne) SetNillableValue(v *int64) *RedemptionUseUpdat
 // AddValue adds value to the "value" field.
 func (_u *RedemptionUseUpdateOne) AddValue(v int64) *RedemptionUseUpdateOne {
 	_u.mutation.AddValue(v)
+	return _u
+}
+
+// SetGroupID sets the "group_id" field.
+func (_u *RedemptionUseUpdateOne) SetGroupID(v int64) *RedemptionUseUpdateOne {
+	_u.mutation.ResetGroupID()
+	_u.mutation.SetGroupID(v)
+	return _u
+}
+
+// SetNillableGroupID sets the "group_id" field if the given value is not nil.
+func (_u *RedemptionUseUpdateOne) SetNillableGroupID(v *int64) *RedemptionUseUpdateOne {
+	if v != nil {
+		_u.SetGroupID(*v)
+	}
+	return _u
+}
+
+// AddGroupID adds value to the "group_id" field.
+func (_u *RedemptionUseUpdateOne) AddGroupID(v int64) *RedemptionUseUpdateOne {
+	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// ClearGroupID clears the value of the "group_id" field.
+func (_u *RedemptionUseUpdateOne) ClearGroupID() *RedemptionUseUpdateOne {
+	_u.mutation.ClearGroupID()
 	return _u
 }
 
@@ -446,6 +509,15 @@ func (_u *RedemptionUseUpdateOne) sqlSave(ctx context.Context) (_node *Redemptio
 	}
 	if value, ok := _u.mutation.AddedValue(); ok {
 		_spec.AddField(redemptionuse.FieldValue, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GroupID(); ok {
+		_spec.SetField(redemptionuse.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGroupID(); ok {
+		_spec.AddField(redemptionuse.FieldGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.GroupIDCleared() {
+		_spec.ClearField(redemptionuse.FieldGroupID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.ResourceExpiresAt(); ok {
 		_spec.SetField(redemptionuse.FieldResourceExpiresAt, field.TypeTime, value)

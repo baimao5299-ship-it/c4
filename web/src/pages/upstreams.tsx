@@ -16,7 +16,6 @@ import {
   Plus,
   RefreshCw,
   Route,
-  Send,
   Trash2,
   WalletCards,
 } from 'lucide-react'
@@ -26,7 +25,6 @@ import {
   ApiError,
   ApiUnauthorized,
   type UpstreamCreateInput,
-  type UpstreamModelsPreviewInput,
   type UpstreamRecord,
   type UpstreamStatus,
 } from '@/lib/api/client'
@@ -48,6 +46,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
+import { ModelValidationProgress } from '@/components/model-validation-progress'
 
 type FormState = {
   name: string
@@ -60,7 +59,7 @@ type FormState = {
 type SaveArgs = {
   editingID: number | null
   body: UpstreamCreateInput
-  preview?: UpstreamModelsPreviewInput
+  revalidateModels?: boolean
 }
 
 const EMPTY_FORM: FormState = {
@@ -257,6 +256,10 @@ function normalizedRoot(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
 
+function modelsForDisplay(row: UpstreamRecord): string[] {
+  return sortModelsLatestFirst(row.Models ?? [])
+}
+
 export default function Upstreams() {
   const { t } = useTranslation()
   const qc = useQueryClient()
@@ -274,10 +277,7 @@ export default function Upstreams() {
   const [validation, setValidation] = useState<string | null>(null)
   const [pendingProbeIDs, setPendingProbeIDs] = useState<Set<number>>(() => new Set())
   const [pendingModelIDs, setPendingModelIDs] = useState<Set<number>>(() => new Set())
-  const [pendingTestIDs, setPendingTestIDs] = useState<Set<number>>(() => new Set())
   const [pendingToggleIDs, setPendingToggleIDs] = useState<Set<number>>(() => new Set())
-  const [modelDialog, setModelDialog] = useState<{ id: number; name: string; models: string[] } | null>(null)
-  const [selectedModel, setSelectedModel] = useState('')
 
   const query = useQuery({
     queryKey: ['upstreams', { name: debouncedName, status, page, pageSize, sort, order }],
@@ -328,18 +328,40 @@ export default function Upstreams() {
     }
   }, [rows, total])
 
-  const save = useMutation({
-    mutationFn: async ({ editingID, body, preview }: SaveArgs) => {
-      if (preview) {
-        const result = await api.previewUpstreamModels(preview)
-        if (!result.ok || !result.models?.length) {
-          const code = probeErrorLabel(result.error_code, t)
-          throw new Error(t('upstreams.modelsReadFailed', { code }))
-        }
+  const validateSavedUpstream = async (id: number) => {
+    setPendingModelIDs(current => new Set(current).add(id))
+    try {
+      const result = await api.listUpstreamModels(id)
+      if (!result.ok || !result.models?.length || result.validation_complete !== true) {
+        toast.add({ title: t('upstreams.modelsReadFailed', { code: probeErrorLabel(result.error_code, t) }), type: 'error' })
       }
+    } catch (error) {
+      const message = errorMessage(error)
+      if (message) toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
+    } finally {
+      setPendingModelIDs(current => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
+  const refreshModelList = async (id: number) => {
+    if (pendingModelIDs.has(id)) return
+    await validateSavedUpstream(id)
+    await refreshRows()
+  }
+
+  const save = useMutation({
+    mutationFn: ({ editingID, body }: SaveArgs) => {
       return editingID != null ? api.updateUpstream(editingID, body) : api.createUpstream(body)
     },
-    onSuccess: async (_result, args) => {
+    onSuccess: async (result, args) => {
+      // New rows already contain the server-side verified snapshot. Existing
+      // rows are revalidated once after an edit so endpoint/key changes cannot
+      // leave a stale capability catalogue in the group picker.
+      if (args.revalidateModels && result.ID > 0) await validateSavedUpstream(result.ID)
       await refreshRows()
       setDialogOpen(false)
       toast.add({ title: t(args.editingID != null ? 'upstreams.saved' : 'upstreams.created'), type: 'success' })
@@ -423,73 +445,6 @@ export default function Upstreams() {
     probe.mutate({ id, balance })
   }
 
-  const test = useMutation({
-    mutationFn: ({ id, model }: { id: number; model: string }) => api.testUpstream(id, model),
-    onMutate: ({ id }) => {
-      setPendingTestIDs(current => new Set(current).add(id))
-    },
-    onSuccess: async result => {
-      await refreshRows()
-      setModelDialog(null)
-      const latency = formatLatency(result.latency_ms ?? null)
-      if (result.ok) {
-        toast.add({ title: t('upstreams.testSucceeded', { latency }), type: 'success' })
-      } else {
-        toast.add({ title: t('upstreams.testFailed', { latency, code: probeErrorLabel(result.error_code, t) }), type: 'error' })
-      }
-    },
-    onSettled: (_result, _error, variables) => {
-      setPendingTestIDs(current => {
-        const next = new Set(current)
-        next.delete(variables.id)
-        return next
-      })
-    },
-    onError: error => {
-      const message = errorMessage(error)
-      if (message) toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
-    },
-  })
-
-  const loadModels = useMutation({
-    mutationFn: (id: number) => api.listUpstreamModels(id),
-    onMutate: id => {
-      setPendingModelIDs(current => new Set(current).add(id))
-    },
-    onSuccess: (result, id) => {
-      if (!result.ok || !result.models?.length) {
-        toast.add({ title: t('upstreams.modelsReadFailed', { code: probeErrorLabel(result.error_code, t) }), type: 'error' })
-        return
-      }
-      const row = rows.find(item => item.ID === id)
-      const models = sortModelsLatestFirst(result.models)
-      setSelectedModel(models[0])
-      setModelDialog({ id, name: row?.Name ?? `#${id}`, models })
-    },
-    onSettled: (_result, _error, id) => {
-      setPendingModelIDs(current => {
-        const next = new Set(current)
-        next.delete(id)
-        return next
-      })
-    },
-    onError: error => {
-      const message = errorMessage(error)
-      if (message) toast.add({ title: t('upstreams.actionFailed', { message }), type: 'error' })
-    },
-  })
-
-  const runTest = (id: number) => {
-    if (pendingTestIDs.has(id) || pendingModelIDs.has(id)) return
-    test.reset()
-    loadModels.mutate(id)
-  }
-
-  const confirmTest = () => {
-    if (!modelDialog || !selectedModel.trim() || pendingTestIDs.has(modelDialog.id)) return
-    test.mutate({ id: modelDialog.id, model: selectedModel.trim() })
-  }
-
   const openCreate = () => {
     setEditing(null)
     setForm(EMPTY_FORM)
@@ -535,10 +490,13 @@ export default function Upstreams() {
     }
     setValidation(null)
     const body = toBody(form, editing?.UpdatedAt)
-    const preview = editing == null
-      ? { base_url: form.base_url.trim(), ...(form.upstream_key.trim() ? { upstream_key: form.upstream_key.trim() } : {}) }
-      : undefined
-    save.mutate({ editingID: editing?.ID ?? null, body, preview })
+    save.mutate({
+      editingID: editing?.ID ?? null,
+      body,
+      // A multiplier/name-only edit keeps the verified snapshot. Re-run the
+      // paid capability checks only when the endpoint or credential changed.
+      revalidateModels: editing != null && (endpointChanged || form.upstream_key.trim() !== '' || form.clear_upstream_key),
+    })
   }
 
   const toggleSort = (field: string) => {
@@ -573,6 +531,12 @@ export default function Upstreams() {
         <Info className="mt-0.5 size-4 shrink-0" />
         <p>{t('upstreams.scopeNotice')}</p>
       </div>
+
+      {pendingModelIDs.size > 0 && (
+        <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
+          <ModelValidationProgress />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2 text-sm text-muted-foreground"><Route className="size-4" />{t('upstreams.metrics.total')}</CardTitle></CardHeader><CardContent className="text-2xl font-semibold tabular-nums">{metrics.total}</CardContent></Card>
@@ -611,6 +575,7 @@ export default function Upstreams() {
               const latency = averageLatency(row)
               const active = recordEnabled(row)
               const pending = pendingProbeIDs.has(row.ID)
+              const models = modelsForDisplay(row)
               return (
                 <Card key={row.ID} size="sm" className="overflow-hidden">
                   <CardHeader className="space-y-2">
@@ -624,6 +589,11 @@ export default function Upstreams() {
                     <div className="truncate font-mono text-xs text-muted-foreground" title={row.BaseURL}>{row.BaseURL}</div>
                     {row.CredentialConfigured != null && <div className={cn('text-xs', row.CredentialConfigured ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')}>{t(row.CredentialConfigured ? 'upstreams.credentialConfigured' : 'upstreams.credentialMissing')}</div>}
                     {row.Note && <div className="truncate text-xs text-muted-foreground/80" title={row.Note}>{row.Note}</div>}
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">{t('upstreams.supportedModels')}</div>
+                      <div className="break-words font-mono text-xs" title={models.join(', ')}>{models.length ? models.join(', ') : t('upstreams.modelsNotVerified')}</div>
+                      {row.ModelsError && <div className="text-xs text-amber-700 dark:text-amber-400">{t('upstreams.modelsValidationState', { code: probeErrorLabel(row.ModelsError, t) })}</div>}
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-2 gap-3 text-sm">
@@ -652,9 +622,9 @@ export default function Upstreams() {
                     {balanceBlockedReason && row.BalanceConfigured && <div className="text-xs text-amber-700 dark:text-amber-400">{balanceBlockedReason}</div>}
                     <div className="flex items-center justify-between gap-2 border-t pt-3">
                       <div className="flex items-center gap-1">
-                       <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.test')} onClick={() => runTest(row.ID)} disabled={pendingTestIDs.has(row.ID) || pendingModelIDs.has(row.ID)}>
-                          <Send className={cn((pendingTestIDs.has(row.ID) || pendingModelIDs.has(row.ID)) && 'animate-pulse')} />
-                          <span className="sr-only">{t('upstreams.actions.test')}</span>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={pendingModelIDs.has(row.ID)}>
+                          <RefreshCw className={cn(pendingModelIDs.has(row.ID) && 'animate-spin')} />
+                          <span className="sr-only">{t('upstreams.actions.refreshModels')}</span>
                         </Button>
                         <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={pending}>
                           <Activity className={cn(pending && 'animate-pulse')} />
@@ -685,6 +655,7 @@ export default function Upstreams() {
               <TableRow>
                 <SortableHeader field="name" label={t('upstreams.table.name')} active={sort === 'name'} order={order} onToggle={toggleSort} />
                 <TableHead>{t('upstreams.table.endpoint')}</TableHead>
+                <TableHead>{t('upstreams.table.models')}</TableHead>
                 <SortableHeader field="multiplier_bp" label={t('upstreams.table.multiplier')} active={sort === 'multiplier_bp'} order={order} onToggle={toggleSort} />
                 <TableHead>{t('upstreams.table.balance')}</TableHead>
                 <TableHead>{t('upstreams.table.stability')}</TableHead>
@@ -694,10 +665,11 @@ export default function Upstreams() {
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
-              {rows.map(row => {
-                const balance = balanceLabel(row, t)
-                const balanceBlockedReason = balanceRefreshBlockReason(row, t)
-                const latency = averageLatency(row)
+            {rows.map(row => {
+              const balance = balanceLabel(row, t)
+              const balanceBlockedReason = balanceRefreshBlockReason(row, t)
+              const latency = averageLatency(row)
+              const models = modelsForDisplay(row)
                 const active = recordEnabled(row)
                 return (
                   <TableRow key={row.ID}>
@@ -711,6 +683,11 @@ export default function Upstreams() {
                       <div className="truncate font-mono text-xs text-muted-foreground" title={row.BaseURL}>{row.BaseURL}</div>
                       {row.CredentialConfigured != null && <div className={cn('text-xs', row.CredentialConfigured ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')}>{t(row.CredentialConfigured ? 'upstreams.credentialConfigured' : 'upstreams.credentialMissing')}</div>}
                       {row.Note && <div className="max-w-56 truncate text-xs text-muted-foreground/80" title={row.Note}>{row.Note}</div>}
+                    </TableCell>
+                    <TableCell className="max-w-72">
+                      <div className="text-xs text-muted-foreground">{models.length}</div>
+                      <div className="max-h-12 overflow-hidden break-words font-mono text-xs" title={models.join(', ')}>{models.length ? models.join(', ') : t('upstreams.modelsNotVerified')}</div>
+                      {row.ModelsError && <div className="text-xs text-amber-700 dark:text-amber-400">{t('upstreams.modelsValidationState', { code: probeErrorLabel(row.ModelsError, t) })}</div>}
                     </TableCell>
                     <TableCell className="font-semibold tabular-nums">{formatMultiplier(multiplierOf(row))}</TableCell>
                     <TableCell>
@@ -734,9 +711,9 @@ export default function Upstreams() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.test')} onClick={() => runTest(row.ID)} disabled={pendingTestIDs.has(row.ID) || pendingModelIDs.has(row.ID)}>
-                           <Send className={cn((pendingTestIDs.has(row.ID) || pendingModelIDs.has(row.ID)) && 'animate-pulse')} />
-                          <span className="sr-only">{t('upstreams.actions.test')}</span>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={pendingModelIDs.has(row.ID)}>
+                          <RefreshCw className={cn(pendingModelIDs.has(row.ID) && 'animate-spin')} />
+                          <span className="sr-only">{t('upstreams.actions.refreshModels')}</span>
                         </Button>
                         <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={pendingProbeIDs.has(row.ID)}>
                           <Activity className={cn(pendingProbeIDs.has(row.ID) && 'animate-pulse')} />
@@ -792,40 +769,13 @@ export default function Upstreams() {
               {endpointChanged && editing?.CredentialConfigured && <p className="text-xs text-amber-700 dark:text-amber-400">{t('upstreams.form.endpointChangedHint')}</p>}
             </div>
             <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">{t('upstreams.balanceAutoHint')}</p>
+            {save.isPending && <ModelValidationProgress />}
             {validation && <p className="text-sm text-destructive">{validation}</p>}
             {save.isError && <p className="text-sm text-destructive">{isRevisionConflict(save.error) ? t('upstreams.staleUpdate') : errorMessage(save.error)}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={save.isPending}>{t('common.cancel')}</Button>
             <Button onClick={submit} disabled={save.isPending}>{save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={modelDialog != null} onOpenChange={o => { if (!o && !test.isPending) setModelDialog(null) }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('upstreams.selectModelTitle')}</DialogTitle>
-            <DialogDescription>{t('upstreams.selectModelDesc', { name: modelDialog?.name ?? '' })}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="up-test-model">{t('upstreams.testModelLabel')}</Label>
-            <Select
-              items={Object.fromEntries((modelDialog?.models ?? []).map(model => [model, model]))}
-              value={selectedModel}
-              onValueChange={value => setSelectedModel(value ?? '')}
-              disabled={test.isPending || modelDialog == null}
-            >
-              <SelectTrigger id="up-test-model" className="w-full"><SelectValue placeholder={t('upstreams.selectModelPlaceholder')} /></SelectTrigger>
-              <SelectContent>
-                {(modelDialog?.models ?? []).map(model => <SelectItem key={model} value={model} label={model}>{model}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          {test.isError && errorMessage(test.error) && <p className="text-sm text-destructive">{errorMessage(test.error)}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModelDialog(null)} disabled={test.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={confirmTest} disabled={!selectedModel.trim() || test.isPending}>{test.isPending ? t('common.testing') : t('upstreams.startTest')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
