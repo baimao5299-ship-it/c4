@@ -89,32 +89,71 @@ type route struct {
 const maxSeqLen = 4096
 
 func newWeightedSeq(pool []*accountSnapshot) *weightedSeq {
+	// Build a compact list first. Runtime snapshots normally contain only
+	// validated accounts, but a stale/corrupt row must not turn a zero or
+	// negative weight into a negative make capacity (panic) or a huge loop.
+	items := make([]*accountSnapshot, 0, len(pool))
+	weights := make([]int, 0, len(pool))
 	g := 0
 	for _, a := range pool {
-		g = gcdInt(g, a.static.Load().acc.Weight)
+		if a == nil {
+			continue
+		}
+		st := a.static.Load()
+		if st == nil || st.acc.Weight <= 0 {
+			continue
+		}
+		items = append(items, a)
+		weights = append(weights, st.acc.Weight)
+		g = gcdInt(g, st.acc.Weight)
 	}
-	if g <= 0 {
-		g = 1
+	if g <= 0 || len(items) == 0 {
+		return &weightedSeq{}
 	}
-	var total int
-	for _, a := range pool {
-		total += a.static.Load().acc.Weight / g
+	// Sum in uint64 with saturation. Account weights are persisted ints and
+	// may be much larger than the normal UI range; an int sum can overflow
+	// before the sequence cap has a chance to scale it down.
+	const maxUint64 = ^uint64(0)
+	var total uint64
+	for _, weight := range weights {
+		normalized := uint64(weight / g)
+		if maxUint64-total < normalized {
+			total = maxUint64
+			break
+		}
+		total += normalized
 	}
 	// 超长缩放：ceil 除法降权，每个账号至少保留 1 次。语义：序列长度 ≈
 	// max(账号数, maxSeqLen) 量级——上限防极端权重比（9999:1 → 10000 长）的
 	// 膨胀，账号数本身超过上限时不硬截（O(账号数) 可接受）。
-	scale := 1
+	scale := uint64(1)
 	if total > maxSeqLen {
-		scale = (total + maxSeqLen - 1) / maxSeqLen // ceil
+		scale = total / uint64(maxSeqLen)
+		if total%uint64(maxSeqLen) != 0 {
+			scale++
+		}
 	}
 	ws := &weightedSeq{}
-	ws.seq = make([]*accountSnapshot, 0, total/scale+len(pool))
-	for _, a := range pool {
-		n := a.static.Load().acc.Weight / g / scale
+	// total/scale is at most maxSeqLen by construction. The additional
+	// len(items) allowance preserves the documented one-slot minimum when the
+	// candidate count itself exceeds the sequence target.
+	capHint := int(total / scale)
+	if capHint < 0 || capHint > maxSeqLen {
+		capHint = maxSeqLen
+	}
+	capHint += len(items)
+	ws.seq = make([]*accountSnapshot, 0, capHint)
+	for i, a := range items {
+		n := uint64(weights[i]/g) / scale
 		if n < 1 {
 			n = 1
 		}
-		for i := 0; i < n; i++ {
+		// Scaling above should already keep this bounded; retain a hard guard
+		// for saturated totals and future changes to the calculation.
+		if n > maxSeqLen {
+			n = maxSeqLen
+		}
+		for j := uint64(0); j < n; j++ {
 			ws.seq = append(ws.seq, a)
 		}
 	}
