@@ -10,22 +10,38 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [v0.0.1-beta.8] - 2026-08-30
+
 ### Added
 
 - Added a guarded PowerShell deployment helper and public HTTPS deployment guide with a Caddy reverse-proxy template.
+- Added a mobile-first user console with onboarding, model/channel monitoring,
+  key management, redemption history, and account status feedback.
+- Added complete redemption-code history and audit views for administrators and
+  users, including mobile-friendly browsing.
+- Added atomic upstream group setup with model discovery and validation, plus
+  quota isolation and stronger validation for redemption and temporary balances.
 
 ### Changed
 
 - Mobile onboarding now has a one-tap API endpoint copy action.
 - Channel monitor keeps the last successful snapshot during a failed refresh and labels the data as stale instead of hiding usable status.
+- Upstream protocol handling now adapts between supported request formats and
+  collapses duplicate model snapshots to the newest model entry.
 - Added baseline security response headers and longer Compose stop grace periods so streaming and billing work can drain during upgrades.
 
 ### Fixed
 
+- Upstream model validation now reports only models that pass real protocol
+  checks, with bounded progress and row-level failure details.
 - Upstream health probes now require a bounded, valid `/v1/models` catalogue, so HTTP 200 portal or error pages are not reported as healthy.
 - Group updates trim names consistently and reject whitespace-only names without mutating caller input.
 - Trusted-proxy authentication limits now recognize the same CDN client headers as request auditing, and the bundled Caddy/deploy templates overwrite forwarding headers to prevent source-IP spoofing.
 - Response status tracking now preserves the first header write, including implicit writes caused by `Flush`, so streaming errors and access logs cannot report a status that was never sent.
+- Deployment helpers now support the production host's legacy Docker builder and
+  Compose layout while preserving the existing database and Redis data paths.
 
 ## [v0.0.1-beta.7] - 2026-08-29
 

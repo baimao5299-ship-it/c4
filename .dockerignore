@@ -2,6 +2,7 @@
 .git
 .claude
 .superpowers
+.gocache-audit
 .env
 .env.*
 !.env.example

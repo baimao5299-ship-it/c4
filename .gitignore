@@ -38,6 +38,9 @@ web/dist/
 .playwright-mcp/
 .omo/
 
+# Local Go cache audit output (never part of source or Docker contexts).
+.gocache-audit/
+
 # 设计文档仅存本地，不进 git
 docs/superpowers/
 docs/review/
