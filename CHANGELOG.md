@@ -33,6 +33,8 @@ _No changes yet._
 - Added baseline security response headers and longer Compose stop grace periods so streaming and billing work can drain during upgrades.
 - Compose now applies bounded JSON log rotation and configurable per-service
   CPU/memory limits, with safe defaults exposed in `.env.example`.
+- Compose now pins the default application image to `v0.0.1-beta.8`; operators
+  must opt in to the moving `:beta` tag or another explicit image.
 - The PowerShell deploy helper accepts a reviewed `known_hosts` file for strict
   SSH host-key verification while retaining the existing first-use behavior.
 
