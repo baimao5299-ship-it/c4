@@ -25,6 +25,11 @@ param(
 
   [string]$IdentityFile = '',
 
+  # Optional pre-provisioned known_hosts file. When supplied, SSH uses strict
+  # host-key checking; the default keeps the existing accept-new behavior for
+  # first-time setup while still failing closed on a changed key.
+  [string]$KnownHostsFile = '',
+
   [ValidatePattern('^/[A-Za-z0-9._/-]+$')]
   [string]$RemoteDir = '/srv/c4',
 
@@ -51,6 +56,13 @@ if ($IdentityFile) {
   $identityPath = (Resolve-Path -LiteralPath $IdentityFile -ErrorAction Stop).Path
   if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf)) {
     throw "IdentityFile 不是文件：$IdentityFile"
+  }
+}
+$knownHostsPath = ''
+if ($KnownHostsFile) {
+  $knownHostsPath = (Resolve-Path -LiteralPath $KnownHostsFile -ErrorAction Stop).Path
+  if (-not (Test-Path -LiteralPath $knownHostsPath -PathType Leaf)) {
+    throw "KnownHostsFile 不是文件：$KnownHostsFile"
   }
 }
 
@@ -89,6 +101,7 @@ Write-Host "目录:  $RemoteDir"
 Write-Host "端口:  127.0.0.1`:$AppPort"
 if ($Domain) { Write-Host "域名:  $Domain (仅生成 Caddy 片段，不自动改 DNS)" }
 if ($identityPath) { Write-Host "密钥:  $identityPath" }
+if ($knownHostsPath) { Write-Host "主机指纹:  $knownHostsPath (严格校验)" }
 if ($ReuseDatabase) { Write-Warning '已显式允许复用已有数据库；仅用于已核对 schema 兼容性的版本。' }
 if ($CardStoreUrl -and ($CardStoreUrl -match "['`r`n]" -or $CardStoreUrl -notmatch '^https?://')) {
   throw 'CardStoreUrl 必须是 http(s) URL，且不能包含单引号或换行。'
@@ -101,10 +114,12 @@ if ($Domain) {
     "# Generated for $Domain; review before installing on the server.",
     "$Domain {",
     "`tencode zstd gzip",
-    "`treverse_proxy 127.0.0.1:$AppPort {",
+		"`treverse_proxy 127.0.0.1:$AppPort {",
 	"`t`theader_up X-Forwarded-For {http.request.remote.host}",
-    "`t`theader_up X-Real-IP {http.request.remote.host}",
-    "`t}",
+	"`t`theader_up X-Real-IP {http.request.remote.host}",
+	"`t`theader_up CF-Connecting-IP {http.request.remote.host}",
+	"`t`theader_up True-Client-IP {http.request.remote.host}",
+	"`t}",
     '}'
   ) | Set-Content -Path $caddyPath -Encoding utf8
   Write-Host "Caddy: $caddyPath"
@@ -250,10 +265,16 @@ $sshOptions = @(
   '-o', 'BatchMode=yes',
   '-o', 'ConnectTimeout=10',
   '-o', 'ServerAliveInterval=15',
-  '-o', 'ServerAliveCountMax=3',
-  # Accept a host key only on first use; a changed key still fails closed.
-  '-o', 'StrictHostKeyChecking=accept-new'
+  '-o', 'ServerAliveCountMax=3'
 )
+if ($knownHostsPath) {
+  # Operators can export a provider-verified key with ssh-keyscan and review
+  # it out of band before using this mode. Never silently replace this file.
+  $sshOptions += @('-o', "UserKnownHostsFile=$knownHostsPath", '-o', 'StrictHostKeyChecking=yes')
+} else {
+  # Accept a host key only on first use; a changed key still fails closed.
+  $sshOptions += @('-o', 'StrictHostKeyChecking=accept-new')
+}
 if ($identityPath) { $sshOptions = @('-i', $identityPath) + $sshOptions }
 & ssh -p $SshPort @sshOptions $target "mkdir -p '$RemoteDir'"
 if ($LASTEXITCODE -ne 0) { throw 'SSH 连接或远端目录创建失败。' }

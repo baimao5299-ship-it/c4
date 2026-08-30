@@ -4,9 +4,13 @@ api.example.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:18080 {
 		# Do not preserve client-supplied identity headers. C4 may trust these
-		# values when proxy.behind_cdn is enabled, so both must describe the
-		# immediate peer seen by Caddy.
+		# values when proxy.behind_cdn is enabled, so every forwarded identity
+		# header must describe the immediate peer seen by Caddy. If this Caddy
+		# instance itself sits behind a CDN, configure the CDN as the only
+		# trusted edge and pass its validated client header explicitly.
 		header_up X-Forwarded-For {http.request.remote.host}
 		header_up X-Real-IP {http.request.remote.host}
+		header_up CF-Connecting-IP {http.request.remote.host}
+		header_up True-Client-IP {http.request.remote.host}
 	}
 }

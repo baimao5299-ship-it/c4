@@ -15,6 +15,16 @@ services:
     image: postgres:18-alpine
     restart: unless-stopped
     stop_grace_period: 60s
+    # Keep a bounded host-side log even when the Docker daemon has no global
+    # rotation policy. Limits are configurable in .env and only cap a service;
+    # they do not reserve the full amount on the host.
+    mem_limit: ${DB_MEMORY_LIMIT:-2g}
+    cpus: ${DB_CPU_LIMIT:-2.0}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: ${LOG_MAX_FILES:-5}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -36,6 +46,13 @@ services:
     image: redis:8-alpine
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: ${REDIS_MEMORY_LIMIT:-512m}
+    cpus: ${REDIS_CPU_LIMIT:-1.0}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: ${LOG_MAX_FILES:-5}
     command: ["redis-server", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -65,6 +82,13 @@ services:
         VITE_APP_NAME: ${VITE_APP_NAME:-}
     restart: unless-stopped
     init: true
+    mem_limit: ${APP_MEMORY_LIMIT:-4g}
+    cpus: ${APP_CPU_LIMIT:-4.0}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: ${LOG_MAX_FILES:-5}
     # Allow in-flight streaming requests and billing flushers to drain before
     # Docker sends SIGKILL during an upgrade or host reboot.
     stop_grace_period: 90s

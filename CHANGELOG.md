@@ -31,6 +31,10 @@ _No changes yet._
 - Upstream protocol handling now adapts between supported request formats and
   collapses duplicate model snapshots to the newest model entry.
 - Added baseline security response headers and longer Compose stop grace periods so streaming and billing work can drain during upgrades.
+- Compose now applies bounded JSON log rotation and configurable per-service
+  CPU/memory limits, with safe defaults exposed in `.env.example`.
+- The PowerShell deploy helper accepts a reviewed `known_hosts` file for strict
+  SSH host-key verification while retaining the existing first-use behavior.
 
 ### Fixed
 

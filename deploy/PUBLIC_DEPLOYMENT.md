@@ -18,6 +18,11 @@ pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User depl
 pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User deploy -IdentityFile .\keys\c4-server-ed25519 -RemoteDir /srv/c4 -Domain app.example.com -AppName C4 -Apply
 ```
 
+如果已从服务器提供商处取得并审核过主机公钥，将其放入本机专用
+`known_hosts` 文件，并在两条命令后追加
+`-KnownHostsFile .\keys\c4-known-hosts`。脚本会改用严格主机密钥校验；不传该参数时，
+首次连接接受新指纹，之后指纹变化会失败并停止部署。
+
 脚本会：
 
 1. 要求工作树干净，按当前提交生成部署包。
@@ -30,6 +35,12 @@ pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User depl
 
 脚本不会自动修改 DNS、停止其他项目或把密钥打印到终端。SSH 连接带超时和保活参数；升级时使用新提交重新运行，
 切换前先确认 `/readyz` 就绪检查通过。
+
+Compose 默认给应用、PostgreSQL 和 Redis 设置内存/CPU 上限，并为每个服务启用
+`json-file` 日志轮转（10 MiB × 5）。按服务器规格在 `.env` 中调整
+`APP_MEMORY_LIMIT`、`APP_CPU_LIMIT`、`DB_MEMORY_LIMIT`、`DB_CPU_LIMIT`、
+`REDIS_MEMORY_LIMIT`、`REDIS_CPU_LIMIT`、`LOG_MAX_SIZE` 和 `LOG_MAX_FILES`；这些值只设上限，
+不会预留全部资源。
 
 ## 域名与 HTTPS
 
