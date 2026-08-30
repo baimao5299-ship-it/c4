@@ -1193,7 +1193,7 @@ func TestValidateAllUpstreamsRejectsConcurrentRun(t *testing.T) {
 		t.Fatal("first validation did not reach model request")
 	}
 	_, err := svc.ValidateAllUpstreams(context.Background())
-	require.ErrorIs(t, err, repository.ErrConflict)
+	require.ErrorIs(t, err, ErrConflict)
 	close(release)
 	require.NoError(t, <-firstDone)
 }

@@ -70,7 +70,7 @@ func TestValidationReportsCrossInstanceLockConflict(t *testing.T) {
 	}
 	svc := &Service{upstreams: store}
 	_, err := svc.PreviewUpstreamModels(context.Background(), "https://relay.example.test", "key")
-	require.ErrorIs(t, err, repository.ErrConflict)
+	require.ErrorIs(t, err, ErrConflict)
 	require.Zero(t, atomic.LoadInt32(&store.acquired))
 	require.Zero(t, atomic.LoadInt32(&store.released))
 }

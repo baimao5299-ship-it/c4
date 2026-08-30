@@ -29,6 +29,7 @@ import {
   type UpstreamBatchValidationResponse,
   type UpstreamBatchValidationItem,
   type UpstreamRecord,
+  type UpstreamModelsPreviewInput,
   type UpstreamStatus,
 } from '@/lib/api/client'
 import { useDebounced } from '@/lib/use-debounced'
@@ -68,6 +69,16 @@ type SaveArgs = {
 type ModelValidationResult =
   | { ok: true }
   | { ok: false; reason: string }
+
+class ModelValidationFailure extends Error {
+  readonly reason: string
+
+  constructor(reason: string) {
+    super(reason)
+    this.name = 'ModelValidationFailure'
+    this.reason = reason
+  }
+}
 
 const EMPTY_FORM: FormState = {
   name: '',
@@ -354,6 +365,10 @@ export default function Upstreams() {
     return refreshed
   }
 
+  const warnRefreshFailure = () => {
+    toast.add({ title: t('dashboard.loadFailedWarning'), type: 'warning' })
+  }
+
   // A deletion or filter change can leave the current page past the last page.
   // Clamp it so the list recovers instead of showing a misleading empty state.
   useEffect(() => {
@@ -398,32 +413,46 @@ export default function Upstreams() {
   }
 
   const refreshModelList = async (id: number) => {
-    if (pendingModelIDs.has(id)) return
+    if (upstreamBusy(id)) return
     await validateSavedUpstream(id)
-    await refreshRows()
+    const refreshed = await refreshRows()
+    if (!refreshed) warnRefreshFailure()
   }
 
   const save = useMutation({
-    mutationFn: ({ editingID, body }: SaveArgs) => {
-      return editingID != null ? api.updateUpstream(editingID, body) : api.createUpstream(body)
+    mutationFn: async (args: SaveArgs) => {
+      // Endpoint/key edits must prove the new target before the PUT. The
+      // update endpoint clears the old model snapshot when its configuration
+      // changes; probing first prevents an invalid edit from creating a saved
+      // but unroutable upstream. The successful preview is reused below so we
+      // do not send a second paid capability probe after the save.
+      if (args.editingID != null && args.revalidateModels) {
+        const previewBody: UpstreamModelsPreviewInput = {
+          base_url: args.body.base_url,
+          ...(typeof args.body.upstream_key === 'string' ? { upstream_key: args.body.upstream_key } : {}),
+        }
+        const preview = await api.previewUpstreamModels(previewBody)
+        if (!preview.ok || !preview.models?.length || preview.validation_complete !== true) {
+          throw new ModelValidationFailure(probeErrorLabel(preview.error_code, t))
+        }
+      }
+      return args.editingID != null ? api.updateUpstream(args.editingID, args.body) : api.createUpstream(args.body)
     },
-    onSuccess: async (result, args) => {
-      // New rows already contain the server-side verified snapshot. Existing
-      // rows are revalidated once after an edit so endpoint/key changes cannot
-      // leave a stale capability catalogue in the group picker.
-      const modelValidation = args.revalidateModels && result.ID > 0
-        ? await validateSavedUpstream(result.ID, false)
-        : { ok: true as const }
-      await refreshRows()
+    onSuccess: async (_result, args) => {
+      // New rows are validated atomically by the server. Endpoint/key edits
+      // were previewed before the PUT above, so the successful save does not
+      // repeat the same paid model probes.
+      const refreshed = await refreshRows()
       setDialogOpen(false)
-      if (modelValidation.ok === false) {
-        toast.add({ title: t('upstreams.savedValidationFailed', { reason: modelValidation.reason }), type: 'warning' })
-      } else {
+      if (!refreshed) warnRefreshFailure()
+      if (refreshed) {
         toast.add({ title: t(args.editingID != null ? 'upstreams.saved' : 'upstreams.created'), type: 'success' })
       }
     },
     onError: async error => {
-      if (isRevisionConflict(error)) {
+      if (error instanceof ModelValidationFailure) {
+        toast.add({ title: t('upstreams.savedValidationFailed', { reason: error.reason }), type: 'warning' })
+      } else if (isRevisionConflict(error)) {
         await refreshRows()
         toast.add({ title: t('upstreams.staleUpdate'), type: 'warning' })
       } else {
@@ -436,9 +465,10 @@ export default function Upstreams() {
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteUpstream(id),
     onSuccess: async () => {
-      await refreshRows()
+      const refreshed = await refreshRows()
       setDeleting(null)
-      toast.add({ title: t('upstreams.deleted'), type: 'success' })
+      if (refreshed) toast.add({ title: t('upstreams.deleted'), type: 'success' })
+      else warnRefreshFailure()
     },
     onError: error => {
       const message = errorMessage(error)
@@ -452,8 +482,9 @@ export default function Upstreams() {
       setPendingToggleIDs(current => new Set(current).add(id))
     },
     onSuccess: async () => {
-      await refreshRows()
-      toast.add({ title: t('upstreams.statusSaved'), type: 'success' })
+      const refreshed = await refreshRows()
+      if (refreshed) toast.add({ title: t('upstreams.statusSaved'), type: 'success' })
+      else warnRefreshFailure()
     },
     onSettled: (_result, _error, variables) => {
       setPendingToggleIDs(current => {
@@ -474,12 +505,13 @@ export default function Upstreams() {
       setPendingProbeIDs(current => new Set(current).add(id))
     },
     onSuccess: async (result, args) => {
-      await refreshRows()
+      const refreshed = await refreshRows()
+      if (!refreshed) warnRefreshFailure()
       if (args.balance && result.error_code === 'unconfigured') {
         toast.add({ title: t('upstreams.balanceNotConfigured'), type: 'info' })
       } else if (!result.ok) {
         toast.add({ title: t(args.balance ? 'upstreams.balanceRefreshFailed' : 'upstreams.probeFailed', { code: probeErrorLabel(result.error_code, t) }), type: 'error' })
-      } else {
+      } else if (refreshed) {
         toast.add({ title: t(args.balance ? 'upstreams.balanceRefreshed' : 'upstreams.probed'), type: 'success' })
       }
     },
@@ -523,13 +555,23 @@ export default function Upstreams() {
     },
   })
 
+  // Every operation that can change or inspect an upstream shares one row-level
+  // busy predicate.  The backend serializes model probes, so allowing a second
+  // action for the same row only creates an avoidable 409 race.
+  const upstreamBusy = (id: number): boolean =>
+    pendingModelIDs.has(id) ||
+    pendingProbeIDs.has(id) ||
+    pendingToggleIDs.has(id) ||
+    (save.isPending && editing?.ID === id) ||
+    (remove.isPending && deleting?.ID === id)
+
   const runProbe = (id: number, balance: boolean) => {
-    if (batchValidation.isPending || pendingProbeIDs.has(id)) return
+    if (batchValidation.isPending || upstreamBusy(id)) return
     probe.mutate({ id, balance })
   }
 
   const openCreate = () => {
-    if (batchValidation.isPending) return
+    if (batchValidation.isPending || hasPendingAction) return
     setEditing(null)
     setForm(EMPTY_FORM)
     setValidation(null)
@@ -538,7 +580,7 @@ export default function Upstreams() {
   }
 
   const openEdit = (row: UpstreamRecord) => {
-    if (batchValidation.isPending) return
+    if (batchValidation.isPending || upstreamBusy(row.ID)) return
     setEditing(row)
     setForm(toForm(row))
     setValidation(null)
@@ -547,7 +589,8 @@ export default function Upstreams() {
   }
 
   const submit = () => {
-    if (batchValidation.isPending) return
+    if (batchValidation.isPending || (editing == null && hasPendingAction)) return
+    if (editing != null && upstreamBusy(editing.ID)) return
     if (!form.multiplier.trim()) {
       setValidation(t('upstreams.invalidMultiplier'))
       return
@@ -592,6 +635,7 @@ export default function Upstreams() {
   const refresh = () => { void query.refetch() }
   const err = errorMessage(query.error)
   const endpointChanged = editing != null && normalizedRoot(editing.BaseURL) !== normalizedRoot(form.base_url)
+  const editingBusy = editing != null && upstreamBusy(editing.ID)
   const hasPendingAction = save.isPending || remove.isPending || toggle.isPending || probe.isPending || pendingModelIDs.size > 0 || pendingProbeIDs.size > 0 || pendingToggleIDs.size > 0
   const batchLocked = batchValidation.isPending
 
@@ -611,7 +655,7 @@ export default function Upstreams() {
             <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
             <span className="sr-only">{t('common.refresh')}</span>
           </Button>
-          <Button onClick={openCreate} disabled={batchLocked}><Plus />{t('upstreams.new')}</Button>
+          <Button onClick={openCreate} disabled={batchLocked || hasPendingAction}><Plus />{t('upstreams.new')}</Button>
         </div>
       </div>
 
@@ -712,25 +756,25 @@ export default function Upstreams() {
                     {balanceBlockedReason && row.BalanceConfigured && <div className="text-xs text-amber-700 dark:text-amber-400">{balanceBlockedReason}</div>}
                     <div className="flex items-center justify-between gap-2 border-t pt-3">
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={batchLocked || pendingModelIDs.has(row.ID)}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={batchLocked || upstreamBusy(row.ID)}>
                           <RefreshCw className={cn(pendingModelIDs.has(row.ID) && 'animate-spin')} />
                           <span className="sr-only">{t('upstreams.actions.refreshModels')}</span>
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={batchLocked || pending}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={batchLocked || upstreamBusy(row.ID)}>
                           <Activity className={cn(pending && 'animate-pulse')} />
                           <span className="sr-only">{t('upstreams.actions.probe')}</span>
                         </Button>
                         <span title={balanceBlockedReason ?? t('upstreams.actions.balance')}>
-                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={batchLocked || pending || balanceBlockedReason != null}>
+                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={batchLocked || upstreamBusy(row.ID) || balanceBlockedReason != null}>
                             <WalletCards className={cn(pending && 'animate-pulse')} />
                             <span className="sr-only">{t('upstreams.actions.balance')}</span>
                           </Button>
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Switch checked={active} onCheckedChange={checked => toggle.mutate({ id: row.ID, enabled: checked })} disabled={batchLocked || pendingToggleIDs.has(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)} disabled={batchLocked}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }} disabled={batchLocked}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
+                        <Switch checked={active} onCheckedChange={checked => { if (!upstreamBusy(row.ID)) toggle.mutate({ id: row.ID, enabled: checked }) }} disabled={batchLocked || upstreamBusy(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)} disabled={batchLocked || upstreamBusy(row.ID)}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }} disabled={batchLocked || upstreamBusy(row.ID)}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
                       </div>
                     </div>
                   </CardContent>
@@ -801,23 +845,23 @@ export default function Upstreams() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={batchLocked || pendingModelIDs.has(row.ID)}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.refreshModels')} onClick={() => { void refreshModelList(row.ID) }} disabled={batchLocked || upstreamBusy(row.ID)}>
                           <RefreshCw className={cn(pendingModelIDs.has(row.ID) && 'animate-spin')} />
                           <span className="sr-only">{t('upstreams.actions.refreshModels')}</span>
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={batchLocked || pendingProbeIDs.has(row.ID)}>
+                        <Button variant="ghost" size="icon-sm" title={t('upstreams.actions.probe')} onClick={() => runProbe(row.ID, false)} disabled={batchLocked || upstreamBusy(row.ID)}>
                           <Activity className={cn(pendingProbeIDs.has(row.ID) && 'animate-pulse')} />
                           <span className="sr-only">{t('upstreams.actions.probe')}</span>
                         </Button>
                         <span title={balanceBlockedReason ?? t('upstreams.actions.balance')}>
-                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={batchLocked || pendingProbeIDs.has(row.ID) || balanceBlockedReason != null}>
+                          <Button variant="ghost" size="icon-sm" title={balanceBlockedReason ?? t('upstreams.actions.balance')} onClick={() => runProbe(row.ID, true)} disabled={batchLocked || upstreamBusy(row.ID) || balanceBlockedReason != null}>
                             <WalletCards className={cn(pendingProbeIDs.has(row.ID) && 'animate-pulse')} />
                             <span className="sr-only">{t('upstreams.actions.balance')}</span>
                           </Button>
                         </span>
-                        <Switch checked={active} onCheckedChange={checked => toggle.mutate({ id: row.ID, enabled: checked })} disabled={batchLocked || pendingToggleIDs.has(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
-                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)} disabled={batchLocked}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
-                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }} disabled={batchLocked}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
+                        <Switch checked={active} onCheckedChange={checked => { if (!upstreamBusy(row.ID)) toggle.mutate({ id: row.ID, enabled: checked }) }} disabled={batchLocked || upstreamBusy(row.ID)} aria-label={t(active ? 'upstreams.actions.disable' : 'upstreams.actions.enable')} />
+                        <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(row)} disabled={batchLocked || upstreamBusy(row.ID)}><Pencil /><span className="sr-only">{t('common.edit')}</span></Button>
+                        <Button variant="ghost" size="icon-sm" className="text-destructive" title={t('common.delete')} onClick={() => { remove.reset(); setDeleting(row) }} disabled={batchLocked || upstreamBusy(row.ID)}><Trash2 /><span className="sr-only">{t('common.delete')}</span></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -865,7 +909,7 @@ export default function Upstreams() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={save.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={submit} disabled={save.isPending}>{save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}</Button>
+            <Button onClick={submit} disabled={save.isPending || editingBusy}>{save.isPending ? t('common.saving') : editing ? t('common.saveChanges') : t('common.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -876,7 +920,7 @@ export default function Upstreams() {
           {remove.isError && errorMessage(remove.error) && <p className="text-sm text-destructive">{errorMessage(remove.error)}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => { remove.reset(); setDeleting(null) }} disabled={remove.isPending}>{t('common.cancel')}</Button>
-            <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting.ID)} disabled={remove.isPending}>{remove.isPending ? t('common.deleting') : t('common.confirmDelete')}</Button>
+            <Button variant="destructive" onClick={() => { if (deleting && !upstreamBusy(deleting.ID)) remove.mutate(deleting.ID) }} disabled={remove.isPending || (deleting != null && upstreamBusy(deleting.ID))}>{remove.isPending ? t('common.deleting') : t('common.confirmDelete')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
