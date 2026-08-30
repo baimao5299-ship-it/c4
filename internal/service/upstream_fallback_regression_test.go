@@ -21,9 +21,15 @@ func TestShouldFallbackTestRequestDoesNotRetryStructured404Failures(t *testing.T
 		want bool
 	}{
 		{name: "quota", body: `{"error":{"message":"quota exceeded"}}`},
+		{name: "quota code", body: `{"error":{"type":"insufficient_quota"}}`},
+		{name: "quota code variant", body: `{"error":{"code":"quota_exceeded"}}`},
 		{name: "auth", body: `{"error":{"message":"invalid api key"}}`},
+		{name: "auth code", body: `{"error":{"code":"invalid_api_key"}}`},
+		{name: "permission code", body: `{"error":{"code":"permission_denied"}}`},
 		{name: "provider", body: `{"error":{"message":"provider unavailable"}}`},
+		{name: "provider code", body: `{"error":{"code":"provider_error"}}`},
 		{name: "model", body: `{"error":{"message":"model not found"}}`},
+		{name: "model code variant", body: `{"error":{"code":"model-not-found"}}`},
 		{name: "responses unsupported", body: `{"error":{"message":"Responses API not supported"}}`, want: true},
 		{name: "route missing", body: `{"error":{"message":"endpoint not found"}}`, want: true},
 	}

@@ -1320,21 +1320,26 @@ func classifyModelValidationError(ctx context.Context, status int, requestErr er
 // the operator sees the actionable category instead of a vague format error.
 func classifySuccessfulErrorEnvelope(message string) string {
 	lower := strings.ToLower(message)
+	// Providers vary between human-readable messages and machine codes. Treat
+	// underscores/hyphens as word separators so `invalid_api_key`,
+	// `insufficient-quota`, and similar codes receive the same category as their
+	// spaced equivalents.
+	normalized := strings.NewReplacer("_", " ", "-", " ").Replace(lower)
 	if isModelUnavailableMessage(lower) {
 		return "model_unavailable"
 	}
 	for _, marker := range []string{"unauthorized", "forbidden", "authentication", "auth failed", "invalid api key", "invalid token", "api key"} {
-		if strings.Contains(lower, marker) {
+		if strings.Contains(lower, marker) || strings.Contains(normalized, marker) {
 			return "auth"
 		}
 	}
 	for _, marker := range []string{"rate limit", "rate_limit", "too many requests", "quota exceeded", "quota limit", "throttl"} {
-		if strings.Contains(lower, marker) {
+		if strings.Contains(lower, marker) || strings.Contains(normalized, marker) {
 			return "rate_limited"
 		}
 	}
 	for _, marker := range []string{"service unavailable", "provider unavailable", "temporarily unavailable", "bad gateway", "gateway timeout", "upstream error", "internal server error", "overloaded"} {
-		if strings.Contains(lower, marker) {
+		if strings.Contains(lower, marker) || strings.Contains(normalized, marker) {
 			return "upstream"
 		}
 	}
@@ -1359,8 +1364,9 @@ func dominantModelValidationError(counts map[string]int) string {
 
 func isModelUnavailableMessage(message string) bool {
 	message = strings.ToLower(message)
+	normalized := strings.NewReplacer("_", " ", "-", " ").Replace(message)
 	for _, marker := range []string{"model not found", "model_not_found", "unknown model", "invalid model", "model does not exist", "no such model", "model unavailable"} {
-		if strings.Contains(message, marker) {
+		if strings.Contains(message, marker) || strings.Contains(normalized, marker) {
 			return true
 		}
 	}
@@ -1661,11 +1667,35 @@ func isStructuredProviderFailure(body []byte) bool {
 	if err := json.Unmarshal(body, &value); err != nil || len(value) == 0 {
 		return false
 	}
-	if _, ok := value["error"]; !ok {
+	raw, ok := value["error"]
+	if !ok || raw == nil {
 		return false
 	}
-	code := classifySuccessfulErrorEnvelope(string(body))
-	return code != "" && code != "invalid_response"
+	// Inspect the error member itself as well as the whole envelope. Machine
+	// codes are commonly nested under `error.code` or `error.type`, and a plain
+	// string scan of the complete body must normalize those fields too.
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		return false
+	}
+	message := strings.ToLower(string(rawJSON))
+	normalized := strings.NewReplacer("_", " ", "-", " ").Replace(message)
+	if isModelUnavailableMessage(message) {
+		return true
+	}
+	for _, marker := range []string{
+		"unauthorized", "forbidden", "permission denied", "authentication",
+		"auth failed", "invalid api key", "invalid token", "api key", "credential",
+		"rate limit", "ratelimit", "too many requests", "quota exceeded", "quota limit",
+		"insufficient quota", "throttl", "service unavailable", "provider unavailable",
+		"provider error", "temporarily unavailable", "bad gateway", "gateway timeout",
+		"upstream error", "internal server error", "server error", "overloaded",
+	} {
+		if strings.Contains(message, marker) || strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // isExplicitProtocolFallbackMessage distinguishes an endpoint capability
