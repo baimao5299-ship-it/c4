@@ -102,7 +102,13 @@ func NewServer(opts Options) *Server {
 	r.Group(func(r chi.Router) {
 		r.Use(inflightLimiter(opts.MaxInflight, &s.inflight))
 		if opts.AIHandler != nil {
-			r.Mount("/", opts.AIHandler)
+			// A root mount owns chi's catch-all route. Wrap it so a browser
+			// navigation such as /user/login still receives the SPA entrypoint.
+			ai := opts.AIHandler
+			if opts.WebFS != nil {
+				ai = spaAwareHandler(ai, opts.WebFS)
+			}
+			r.Mount("/", ai)
 		}
 	})
 
@@ -120,35 +126,18 @@ func NewServer(opts Options) *Server {
 		// instead of enabling a browsable catch-all for embedded files.
 		r.Handle("/qingyutian-avatar.png", http.FileServerFS(web))
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			index, err := fs.ReadFile(opts.WebFS, "index.html")
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(index)
+			serveIndex(w, r, opts.WebFS)
 		})
 		// SPA fallback：API 404 与页面路由彻底分离（架构根治）。
 		// 所有 API 统一在 /api/* 与 /v1/*，未知 API 直接 404；其余路径
 		// （/、/user/*、/app/* 等前端路由）仅对浏览器导航（Accept: text/html）
 		// 回 index.html。
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-			p := r.URL.Path
-			if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/v1") || strings.HasPrefix(p, "/assets/") || p == "/healthz" || p == "/readyz" || p == "/favicon.svg" {
+			if !shouldServeSPA(r) {
 				http.NotFound(w, r)
 				return
 			}
-			if !strings.Contains(r.Header.Get("Accept"), "text/html") {
-				http.NotFound(w, r)
-				return
-			}
-			index, err := fs.ReadFile(opts.WebFS, "index.html")
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(index)
+			serveIndex(w, r, opts.WebFS)
 		})
 	}
 
@@ -157,6 +146,35 @@ func NewServer(opts Options) *Server {
 }
 
 func (s *Server) Handler() http.Handler { return s.handler }
+
+func spaAwareHandler(next http.Handler, web fs.FS) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if shouldServeSPA(r) {
+			serveIndex(w, r, web)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func shouldServeSPA(r *http.Request) bool {
+	if r == nil || !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		return false
+	}
+	p := r.URL.Path
+	return !strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/v1") &&
+		!strings.HasPrefix(p, "/assets/") && p != "/healthz" && p != "/readyz" && p != "/favicon.svg"
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request, web fs.FS) {
+	index, err := fs.ReadFile(web, "index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(index)
+}
 
 // webFSNoDirs 包装 fs.FS：目录请求返回 fs.ErrNotExist（404）。/assets/* 若裸用
 // http.FileServerFS，目录会被渲染成 HTML 目录列表（go:embed all:dist 全部内容

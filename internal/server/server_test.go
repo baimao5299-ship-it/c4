@@ -184,6 +184,32 @@ func TestFaviconServedFromWebFS(t *testing.T) {
 	require.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
 }
 
+func TestSPAFallbackSurvivesRootAIMount(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte(`<html>app</html>`)},
+	}
+	ai := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+	s := NewServer(Options{AdminToken: "tok", WebFS: fsys, AIHandler: ai})
+
+	req := httptest.NewRequest(http.MethodGet, "/user/login", nil)
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
+	require.Equal(t, "<html>app</html>", rec.Body.String())
+
+	// Unknown API paths must remain 404 even when the browser sends an HTML
+	// Accept header; only client-side page navigations use the fallback.
+	req = httptest.NewRequest(http.MethodGet, "/api/unknown", nil)
+	req.Header.Set("Accept", "text/html")
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // O1 收尾（评审项）：/assets/* 不得渲染 HTML 目录列表——目录请求 404、文件
 // 200（go:embed all:dist 裸 FileServerFS 会把目录枚举成 HTML 列表，静态资源
 // 被遍历暴露）。
