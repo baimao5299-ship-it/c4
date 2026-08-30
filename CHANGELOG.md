@@ -12,6 +12,12 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ### Changed
 
+- Scoped temporary-balance settlement now keeps each group lane separate
+  before aggregating a user's spill, preventing same-sized grants from being
+  merged and undercharging the user's balance.
+- The temporary-balance management query applies its documented FEFO default
+  even for direct repository callers, and its PostgreSQL concurrency observer
+  recognizes both balance and scoped FEFO statement shapes.
 - Upstream management now offers one-click, row-level model capability
   validation with a stable ID-ordered inventory snapshot. Complete checks only
   publish models that pass a real request; incomplete transport or timeout runs

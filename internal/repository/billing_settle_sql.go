@@ -113,10 +113,10 @@ temp_drawn AS (
 	FROM takes x WHERE tt.id = x.tid AND tt.amount >= x.take
 	RETURNING x.uid AS uid, x.charge_gid, x.take),
 spill AS (
-	SELECT t.uid, t.delta - COALESCE(SUM(d.take), 0) AS spill
+	SELECT t.uid, t.charge_gid, t.delta - COALESCE(SUM(d.take), 0) AS spill
 	FROM totals t LEFT JOIN temp_drawn d ON d.uid = t.uid
 		AND d.charge_gid IS NOT DISTINCT FROM t.charge_gid
-	GROUP BY t.uid, t.delta
+	GROUP BY t.uid, t.charge_gid, t.delta
 	HAVING t.delta - COALESCE(SUM(d.take), 0) > 0),
 user_spill AS (
 	SELECT uid, SUM(spill)::numeric AS spill

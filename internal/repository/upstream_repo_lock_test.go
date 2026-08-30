@@ -16,7 +16,7 @@ func TestReleaseUpstreamValidationLockClosesConnectionWhenUnlockFails(t *testing
 	unlockErr := errors.New("unlock failed")
 	var closeCalls, releaseCalls int
 
-	releaseUpstreamValidationLock(
+	releaseAdvisoryLock(
 		func(context.Context) error { return unlockErr },
 		func(context.Context) error {
 			closeCalls++
@@ -32,7 +32,7 @@ func TestReleaseUpstreamValidationLockClosesConnectionWhenUnlockFails(t *testing
 func TestReleaseUpstreamValidationLockKeepsHealthyConnectionOnSuccess(t *testing.T) {
 	var closeCalls, releaseCalls int
 
-	releaseUpstreamValidationLock(
+	releaseAdvisoryLock(
 		func(context.Context) error { return nil },
 		func(context.Context) error {
 			closeCalls++

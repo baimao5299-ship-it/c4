@@ -44,29 +44,6 @@ var ErrUpstreamValidationLockUnavailable = errors.New("upstream validation advis
 // ordinary query connection is returned to the pool.
 const upstreamValidationLockKey int64 = 0x55707664 // "UpVd"
 
-const upstreamValidationLockReleaseTimeout = 2 * time.Second
-
-// releaseUpstreamValidationLock performs the unlock/return sequence for a
-// dedicated pool connection. The callbacks keep the failure path testable
-// without requiring a live PostgreSQL server.
-func releaseUpstreamValidationLock(
-	unlock func(context.Context) error,
-	closeConn func(context.Context) error,
-	releaseConn func(),
-) {
-	unlockCtx, cancel := context.WithTimeout(context.Background(), upstreamValidationLockReleaseTimeout)
-	defer cancel()
-	if err := unlock(unlockCtx); err != nil {
-		// A failed unlock leaves the session's lock state unknown. Close the
-		// underlying connection before releasing it so pgxpool destroys the
-		// resource instead of handing a lock-bearing session to another caller.
-		closeCtx, closeCancel := context.WithTimeout(context.Background(), upstreamValidationLockReleaseTimeout)
-		_ = closeConn(closeCtx)
-		closeCancel()
-	}
-	releaseConn()
-}
-
 // upstreamValidationSnapshotLimit is one larger than the service's accepted
 // inventory size. ListAllUpstreams uses it as a database-side sentinel so an
 // accidentally huge inventory cannot be fully materialized before the service
@@ -100,7 +77,7 @@ func (r *UpstreamRepo) AcquireUpstreamValidationLock(ctx context.Context) (relea
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			releaseUpstreamValidationLock(
+			releaseAdvisoryLock(
 				func(ctx context.Context) error {
 					_, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, upstreamValidationLockKey)
 					return err

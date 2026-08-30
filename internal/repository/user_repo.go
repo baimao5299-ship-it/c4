@@ -147,6 +147,16 @@ func (r *UserRepo) ListTempBalances(ctx context.Context, q ListQuery, userID int
 	if userID > 0 {
 		pred = pred.Where(tempbalance.UserIDEQ(userID))
 	}
+	// Keep the repository safe for direct callers as well as the HTTP handler.
+	// The management contract defaults to FEFO order; the shared ListQuery
+	// helper otherwise falls back to "id", which is intentionally not exposed
+	// by this endpoint's sort allow-list.
+	if q.Sort == "" {
+		q.Sort = "expires_at"
+		if q.Order == "" {
+			q.Order = "asc"
+		}
+	}
 	total, err := pred.Count(ctx)
 	if err != nil {
 		return nil, 0, err

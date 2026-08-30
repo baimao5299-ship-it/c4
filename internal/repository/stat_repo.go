@@ -11,6 +11,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -438,8 +439,8 @@ func insertStatBuckets(ctx context.Context, tx pgx.Tx, rows []*domain.StatBucket
 
 // AcquireStatsAggLock 抢占聚合 worker 会话级 advisory lock（pg_try_advisory_
 // lock；**专用连接持有到 release**——池连接复用即丢锁，P3）。抢锁失败 →
-// ok=false（本周期跳过，其他实例在聚合）。release 必须恰好调用一次（解锁 +
-// 归还连接；解锁失败静默——连接归还后会话级锁随连接生命周期消失，无泄漏）。
+// ok=false（本周期跳过，其他实例在聚合）。release 可重复调用且只执行一次；
+// 解锁失败时销毁底层会话，避免把状态未知的锁连接交回池。
 func (r *StatRepo) AcquireStatsAggLock(ctx context.Context) (release func(), ok bool, err error) {
 	if r.pool == nil {
 		return nil, false, fmt.Errorf("stat repo: pgx pool not configured (repository.NewWithPG); cannot acquire stats agg lock")
@@ -457,9 +458,18 @@ func (r *StatRepo) AcquireStatsAggLock(ctx context.Context) (release func(), ok 
 		conn.Release()
 		return nil, false, nil
 	}
+	var once sync.Once
 	return func() {
-		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, statsAggLockKey)
-		conn.Release()
+		once.Do(func() {
+			releaseAdvisoryLock(
+				func(ctx context.Context) error {
+					_, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, statsAggLockKey)
+					return err
+				},
+				func(ctx context.Context) error { return conn.Conn().Close(ctx) },
+				conn.Release,
+			)
+		})
 	}, true, nil
 }
 

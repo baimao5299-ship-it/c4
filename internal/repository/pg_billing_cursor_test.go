@@ -427,6 +427,7 @@ func TestPGBillingCursorMultiInstanceLock(t *testing.T) {
 	require.Equal(t, u.ID, res.Balances[0].UserID)
 	require.Equal(t, int64(800_000), res.Balances[0].Balance)
 	releaseA()
+	releaseA() // release is idempotent after the dedicated connection is returned
 
 	// 释放后实例 C 抢锁成功并消费：游标已空 → 无第二次扣减（多实例无双扣）
 	flusherC := billing.NewFlusher(
@@ -868,7 +869,7 @@ func waitBlockedOnSettle(t *testing.T, pool *pgxpool.Pool) {
 		var n int
 		err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_stat_activity
 			WHERE datname = current_database() AND pid <> pg_backend_pid()
-			  AND wait_event_type = 'Lock' AND query LIKE '%WITH batch AS%'`).Scan(&n)
+			  AND wait_event_type = 'Lock' AND query LIKE '%batch AS%'`).Scan(&n)
 		require.NoError(t, err)
 		if n > 0 {
 			return

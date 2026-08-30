@@ -817,6 +817,7 @@ func TestPGStatsAdvisoryLock(t *testing.T) {
 	require.False(t, ok, "锁持有期间其他实例抢锁失败（单写者）")
 	require.Nil(t, rel2)
 	rel1() // 释放
+	rel1() // 重复释放不应触碰已归还的专用连接
 	rel3, ok, err := repos.Stats.AcquireStatsAggLock(ctx)
 	require.NoError(t, err)
 	require.True(t, ok, "释放后可再获取")

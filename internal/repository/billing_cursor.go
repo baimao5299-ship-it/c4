@@ -13,6 +13,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -144,8 +145,8 @@ func (r *BillingRepo) probeCursorHead(ctx context.Context) (id int64, ok bool, e
 // AcquireBillingLock 抢占计费游标会话级 advisory lock（pg_try_advisory_lock；
 // **专用连接持有到 release**——池连接复用即丢锁，P3，形态对齐
 // AcquireStatsAggLock）。抢锁失败 → ok=false（本周期跳过，其他实例在消费）。
-// release 必须恰好调用一次（解锁 + 归还连接；解锁失败静默——连接归还后会话级
-// 锁随连接生命周期消失，无泄漏）。pool 未注入 → 显式错误（单写者互斥不可缺）。
+// release 可重复调用且只执行一次（解锁 + 归还连接）；解锁失败时销毁底层会话，
+// 避免把状态未知的锁连接交回池。pool 未注入 → 显式错误（单写者互斥不可缺）。
 func (r *BillingRepo) AcquireBillingLock(ctx context.Context) (release func(), ok bool, err error) {
 	if r.pool == nil {
 		return nil, false, fmt.Errorf("billing repo: pgx pool not configured (repository.NewWithPG); cannot acquire billing cursor lock")
@@ -163,9 +164,18 @@ func (r *BillingRepo) AcquireBillingLock(ctx context.Context) (release func(), o
 		conn.Release()
 		return nil, false, nil
 	}
+	var once sync.Once
 	return func() {
-		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, billingCursorLockKey)
-		conn.Release()
+		once.Do(func() {
+			releaseAdvisoryLock(
+				func(ctx context.Context) error {
+					_, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, billingCursorLockKey)
+					return err
+				},
+				func(ctx context.Context) error { return conn.Conn().Close(ctx) },
+				conn.Release,
+			)
+		})
 	}, true, nil
 }
 
