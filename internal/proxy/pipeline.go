@@ -6,6 +6,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -229,7 +230,19 @@ func isProtocolCapabilityError(code int, body []byte, callErr error) bool {
 				return false
 			}
 		}
-		return true
+		if strings.TrimSpace(message) == "" {
+			// A bodyless 404 is the conventional signal for a missing route.
+			return true
+		}
+		// Plain-text/HTML router pages are safe compatibility signals. For a
+		// structured JSON error, require an explicit route/path indication so a
+		// provider's quota or authentication response cannot trigger a second
+		// chargeable request through another protocol.
+		var structured map[string]any
+		if json.Unmarshal([]byte(message), &structured) != nil {
+			return true
+		}
+		return isRouteNotFoundMessage(message)
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
 		// Continue below and require an explicit capability/format hint.
 	default:
@@ -243,10 +256,24 @@ func isProtocolCapabilityError(code int, body []byte, callErr error) bool {
 	}
 	for _, marker := range []string{
 		"not implemented", "not supported", "unsupported", "not support",
-		"method not allowed", "unknown endpoint", "unknown path", "endpoint",
+		"method not allowed", "unknown endpoint", "unknown path",
 		"content-type", "protocol", "responses api", "chat completions",
 		"messages api", "invalid format", "format error", "route not found",
 		"cannot decode", "failed to decode", "unmarshal", "invalid character",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isRouteNotFoundMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	for _, marker := range []string{
+		"route not found", "not found", "unknown endpoint", "unknown path",
+		"endpoint not found", "endpoint does not exist", "endpoint doesn't exist",
+		"path not found", "no route", "no such endpoint",
 	} {
 		if strings.Contains(message, marker) {
 			return true
