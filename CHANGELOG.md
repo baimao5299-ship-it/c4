@@ -10,7 +10,15 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
-_No changes yet._
+### Changed
+
+- Remote deployments now update only the `app` service when a valid release is
+  already active, preserving PostgreSQL and Redis containers across release
+  switches and rollbacks.
+- The deploy helper validates that `current` resolves to an in-root Git release,
+  recognizes PostgreSQL 18 versioned data directories, fills blank first-deploy
+  secrets/layout values, and prunes old release bundles with configurable
+  retention.
 
 ## [v0.0.1-beta.8] - 2026-08-30
 

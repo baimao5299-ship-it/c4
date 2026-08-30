@@ -43,6 +43,11 @@ param(
 
   [string]$AppName = '',
 
+  # Keep enough previous releases for automatic rollback while bounding disk
+  # usage. The current and immediately previous release are always retained.
+  [ValidateRange(2, 20)]
+  [int]$KeepReleases = 3,
+
   [switch]$ReuseDatabase,
 
   [switch]$Apply
@@ -103,6 +108,7 @@ if ($Domain) { Write-Host "域名:  $Domain (仅生成 Caddy 片段，不自动�
 if ($identityPath) { Write-Host "密钥:  $identityPath" }
 if ($knownHostsPath) { Write-Host "主机指纹:  $knownHostsPath (严格校验)" }
 if ($ReuseDatabase) { Write-Warning '已显式允许复用已有数据库；仅用于已核对 schema 兼容性的版本。' }
+Write-Host "保留 release:  最少 $KeepReleases 个（含当前版）"
 if ($CardStoreUrl -and ($CardStoreUrl -match "['`r`n]" -or $CardStoreUrl -notmatch '^https?://')) {
   throw 'CardStoreUrl 必须是 http(s) URL，且不能包含单引号或换行。'
 }
@@ -148,11 +154,41 @@ command -v docker >/dev/null || { echo '服务器缺少 docker' >&2; exit 2; }
 if docker compose version >/dev/null 2>&1; then compose() { docker compose "$@"; }
 elif command -v docker-compose >/dev/null 2>&1; then compose() { docker-compose "$@"; }
 else echo '服务器缺少 Docker Compose' >&2; exit 2; fi
-for tool in flock tar grep sed head od tr seq ln readlink; do command -v "$tool" >/dev/null || { echo "服务器缺少 $tool" >&2; exit 3; }; done
+for tool in flock tar grep sed head od tr seq ln readlink find ls; do command -v "$tool" >/dev/null || { echo "服务器缺少 $tool" >&2; exit 3; }; done
 exec 9>'__REMOTE_DIR__/.deploy.lock'
 flock -n 9 || { echo '已有另一个 C4 部署正在进行' >&2; exit 8; }
+current_link='__REMOTE_DIR__/current'
+remote_root='__REMOTE_DIR__'
+release_root='__REMOTE_DIR__/releases'
+# current is a control-plane pointer, not an operator-controlled path. Resolve
+# it before using it for Compose or rollback, and fail closed if it escapes the
+# release root (including broken links and traversal segments).
+previous=''
+if [ -e "$current_link" ] && [ ! -L "$current_link" ]; then
+  echo 'current 必须是 release 符号链接，停止部署' >&2
+  exit 9
+fi
+if [ -L "$current_link" ]; then
+  previous=$(readlink -f "$current_link" 2>/dev/null || true)
+  if [ -z "$previous" ]; then
+    echo 'current 是无效或断裂的符号链接，停止部署' >&2
+    exit 9
+  fi
+  previous_id=${previous##*/}
+  case "$previous" in
+    "$release_root"/*) ;;
+    *) echo 'current 指向 RemoteDir 以外的路径，停止部署' >&2; exit 9 ;;
+  esac
+  if [ "$previous" != "$release_root/$previous_id" ] || ! printf '%s' "$previous_id" | grep -Eq '^[0-9a-f]{40}$' || [ ! -f "$previous/compose.yml" ]; then
+    echo 'current 不是有效的 C4 release 目录，停止部署' >&2
+    exit 9
+  fi
+fi
 existing=0
-if [ -f '__REMOTE_DIR__/current/compose.yml' ] && (cd '__REMOTE_DIR__/current' && compose -p c4 ps -q app 2>/dev/null | grep -q .); then existing=1; fi
+# A valid current release means this RemoteDir already owns the Compose
+# project, even if its app container is stopped or missing. Treat that as an
+# upgrade path so a failed app repair can never recreate PostgreSQL/Redis.
+if [ -n "$previous" ]; then existing=1; fi
 port_in_use() {
   if command -v ss >/dev/null; then ss -ltn 2>/dev/null | grep -Eq '[:.]__APP_PORT__([[:space:]]|$)'; return $?; fi
   if command -v netstat >/dev/null; then netstat -ltn 2>/dev/null | grep -Eq '[:.]__APP_PORT__([[:space:]]|$)'; return $?; fi
@@ -160,10 +196,20 @@ port_in_use() {
 }
 if [ "$existing" -eq 0 ] && port_in_use; then echo '端口 __APP_PORT__ 已被占用，停止部署' >&2; exit 3; fi
 # A prior failed first deployment may have left an empty .env or release
-# directory. Only a current symlink or an initialized PG_VERSION means that
-# this directory already owns durable state and needs an explicit reuse opt-in.
+# directory. Only a validated current release or an initialized PG_VERSION
+# means that this directory already owns durable state and needs an explicit
+# reuse opt-in.
 durable_state=0
-if [ -e '__REMOTE_DIR__/current' ] || [ -L '__REMOTE_DIR__/current' ] || [ -e '__PG_DATA_DIR__/PG_VERSION' ] || [ -e '__PG_DATA_DIR__/data/PG_VERSION' ]; then durable_state=1; fi
+pg_version_path=''
+if [ -d '__PG_DATA_DIR__' ]; then
+  # PostgreSQL 18 stores PG_VERSION below its versioned data directory (the
+  # older root/data checks miss this and can accidentally treat a live DB as
+  # fresh). Bound the walk to the configured data mount and do not cross a
+  # filesystem mount into unrelated host paths.
+  pg_version_path=$(find '__PG_DATA_DIR__' -xdev -maxdepth 5 -type f -name PG_VERSION -print -quit 2>/dev/null || true)
+fi
+if [ -n "$previous" ] || [ -n "$pg_version_path" ]; then durable_state=1; fi
+rand() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 if [ ! -s '__REMOTE_DIR__/.env' ]; then
   # An existing current release or PG directory without .env is ambiguous:
   # never generate replacement secrets and accidentally attach to old data.
@@ -172,33 +218,61 @@ if [ ! -s '__REMOTE_DIR__/.env' ]; then
     exit 5
   fi
   umask 077
-  rand() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
   printf 'ADMIN_TOKEN=%s\nPOSTGRES_PASSWORD=%s\nAUTH_JWT_SECRET=%s\nBIND_ADDRESS=127.0.0.1\nPORT=__APP_PORT__\nPG_DATA_DIR=__PG_DATA_DIR__\nCOMPOSE_PROJECT_NAME=c4\n' "$(rand)" "$(rand)" "$(rand)" > '__REMOTE_DIR__/.env'
 fi
 admin_count=$(grep -c '^ADMIN_TOKEN=' '__REMOTE_DIR__/.env' || true)
 admin_value=$(sed -n 's/^ADMIN_TOKEN=//p' '__REMOTE_DIR__/.env' | head -n 1)
-if [ "$admin_count" -ne 1 ]; then echo 'ADMIN_TOKEN 必须唯一，停止部署' >&2; exit 5; fi
-if [ -z "$admin_value" ]; then
-  rand() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+if [ "$admin_count" -gt 1 ]; then echo 'ADMIN_TOKEN 不能重复，停止部署' >&2; exit 5; fi
+if [ "$admin_count" -eq 0 ]; then
+  if [ "$durable_state" -eq 1 ]; then echo '已有数据库或 release 但缺少 ADMIN_TOKEN，停止部署' >&2; exit 5; fi
+  printf 'ADMIN_TOKEN=%s\n' "$(rand)" >> '__REMOTE_DIR__/.env'
+elif [ -z "$admin_value" ]; then
+  if [ "$durable_state" -eq 1 ]; then echo '已有数据库或 release 的 ADMIN_TOKEN 为空，停止部署' >&2; exit 5; fi
   sed -i "s/^ADMIN_TOKEN=.*/ADMIN_TOKEN=$(rand)/" '__REMOTE_DIR__/.env'
 fi
 port_count=$(grep -c '^PORT=' '__REMOTE_DIR__/.env' || true)
 configured_port=$(sed -n 's/^PORT=//p' '__REMOTE_DIR__/.env' | head -n 1)
+if [ "$port_count" -eq 0 ] && [ "$durable_state" -eq 0 ]; then
+  printf 'PORT=__APP_PORT__\n' >> '__REMOTE_DIR__/.env'
+  port_count=1
+  configured_port='__APP_PORT__'
+fi
 if [ "$port_count" -ne 1 ] || [ "$configured_port" != '__APP_PORT__' ]; then echo '现有 C4 配置端口缺失、重复或与本次参数不同，停止部署' >&2; exit 5; fi
 bind_count=$(grep -c '^BIND_ADDRESS=' '__REMOTE_DIR__/.env' || true)
 configured_bind=$(sed -n 's/^BIND_ADDRESS=//p' '__REMOTE_DIR__/.env' | head -n 1)
+if [ "$bind_count" -eq 0 ] && [ "$durable_state" -eq 0 ]; then
+  printf 'BIND_ADDRESS=127.0.0.1\n' >> '__REMOTE_DIR__/.env'
+  bind_count=1
+  configured_bind='127.0.0.1'
+fi
 if [ "$bind_count" -ne 1 ] || [ "$configured_bind" != '127.0.0.1' ]; then echo '现有 C4 配置绑定地址缺失、重复或不是本机绑定，停止部署' >&2; exit 5; fi
 pg_data_count=$(grep -c '^PG_DATA_DIR=' '__REMOTE_DIR__/.env' || true)
 configured_pg_data=$(sed -n 's/^PG_DATA_DIR=//p' '__REMOTE_DIR__/.env' | head -n 1)
+if [ "$pg_data_count" -eq 0 ] && [ "$durable_state" -eq 0 ]; then
+  printf 'PG_DATA_DIR=%s\n' '__PG_DATA_DIR__' >> '__REMOTE_DIR__/.env'
+  pg_data_count=1
+  configured_pg_data='__PG_DATA_DIR__'
+fi
 if [ "$pg_data_count" -ne 1 ] || [ "$configured_pg_data" != '__PG_DATA_DIR__' ]; then echo 'PG_DATA_DIR 必须唯一且固定在共享数据目录，停止部署' >&2; exit 6; fi
 project_count=$(grep -c '^COMPOSE_PROJECT_NAME=' '__REMOTE_DIR__/.env' || true)
+if [ "$project_count" -eq 0 ] && [ "$durable_state" -eq 0 ]; then
+  printf 'COMPOSE_PROJECT_NAME=c4\n' >> '__REMOTE_DIR__/.env'
+  project_count=1
+fi
 if [ "$project_count" -ne 1 ] || ! grep -q '^COMPOSE_PROJECT_NAME=c4$' '__REMOTE_DIR__/.env'; then echo 'COMPOSE_PROJECT_NAME 必须唯一且为 c4，停止部署' >&2; exit 7; fi
 for secret in POSTGRES_PASSWORD AUTH_JWT_SECRET; do
   secret_count=$(grep -c "^${secret}=" '__REMOTE_DIR__/.env' || true)
   secret_value=$(sed -n "s/^${secret}=//p" '__REMOTE_DIR__/.env' | head -n 1)
-  if [ "$secret_count" -ne 1 ] || [ -z "$secret_value" ]; then
-    echo "$secret 缺失、为空或重复；请先补齐 .env，停止部署" >&2
+  if [ "$secret_count" -gt 1 ]; then
+    echo "$secret 重复，停止部署" >&2
     exit 5
+  fi
+  if [ "$secret_count" -eq 0 ]; then
+    if [ "$durable_state" -eq 1 ]; then echo "$secret 缺失，已有数据库或 release；停止部署" >&2; exit 5; fi
+    printf '%s=%s\n' "$secret" "$(rand)" >> '__REMOTE_DIR__/.env'
+  elif [ -z "$secret_value" ]; then
+    if [ "$durable_state" -eq 1 ]; then echo "$secret 为空，已有数据库或 release；停止部署" >&2; exit 5; fi
+    sed -i "s/^${secret}=.*/${secret}=$(rand)/" '__REMOTE_DIR__/.env'
   fi
 done
 if [ "$durable_state" -eq 1 ] && [ '__REUSE_DATABASE__' != '1' ]; then
@@ -209,8 +283,6 @@ __CARD_STORE_LINE__
 __APP_NAME_LINE__
 chmod 600 '__REMOTE_DIR__/.env'
 mkdir -p '__PG_DATA_DIR__'
-previous=$(readlink -f '__REMOTE_DIR__/current' 2>/dev/null || true)
-if [ -e '__REMOTE_DIR__/current' ] && [ ! -L '__REMOTE_DIR__/current' ]; then echo 'current 必须是 release 符号链接，停止部署' >&2; exit 9; fi
 mkdir -p '__REMOTE_DIR__/releases/__SHA__'
 tar -xzf '__REMOTE_DIR__/c4-__SHA__.tar.gz' -C '__REMOTE_DIR__/releases/__SHA__'
 new_release='__REMOTE_DIR__/releases/__SHA__'
@@ -228,7 +300,36 @@ deploy_ok=1
 # Pass the exact release id to the Compose build without persisting it beside
 # operator-managed secrets. Dockerfile uses this value for `-version` output.
 export C3API_VERSION='__SHA__'
-if ! compose -p c4 up -d --build; then deploy_ok=0; fi
+ensure_dependency() {
+  service="$1"
+  container_id=$(docker ps -aq --filter 'label=com.docker.compose.project=c4' --filter "label=com.docker.compose.service=$service" | head -n 1)
+  if [ -z "$container_id" ]; then
+    echo "已有 C4 实例缺少 $service 容器；为避免重建依赖，停止部署" >&2
+    return 1
+  fi
+  container_state=$(docker inspect -f '{{.State.Status}}' "$container_id" 2>/dev/null || true)
+  if [ "$container_state" != 'running' ]; then
+    echo "已有 C4 $service 容器未运行（状态：$container_state）；为避免中断，停止部署" >&2
+    return 1
+  fi
+  container_health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id" 2>/dev/null || true)
+  case "$container_health" in
+    healthy|none) ;;
+    *) echo "已有 C4 $service 容器不健康（状态：$container_health）；为避免中断，停止部署" >&2; return 1 ;;
+  esac
+}
+start_app() {
+  if [ "$existing" -eq 1 ]; then
+    # Updating only app keeps PostgreSQL/Redis containers, networks, volumes,
+    # and in-flight database connections untouched across release switches.
+    ensure_dependency db || return 1
+    ensure_dependency redis || return 1
+    compose -p c4 up -d --build --no-deps app
+  else
+    compose -p c4 up -d --build
+  fi
+}
+if ! start_app; then deploy_ok=0; fi
 health_ok() {
   # The host may export HTTP(S)_PROXY for outbound traffic. A local readiness
   # probe must never leave the machine or depend on that proxy route.
@@ -237,8 +338,36 @@ health_ok() {
   # inside the container.
   compose -p c4 exec -T app wget -q -T 3 -O /dev/null 'http://127.0.0.1:18080/readyz'
 }
+cleanup_releases() {
+  # Keep the current and previous release regardless of mtime. Only remove
+  # directories whose names are full Git SHAs beneath the release root; this
+  # prevents a malformed operator-created entry from expanding the rm path.
+  kept=0
+  for release in $(ls -1dt "$release_root"/* 2>/dev/null || true); do
+    [ -d "$release" ] || continue
+    release_id=${release##*/}
+    [ "$release" = "$release_root/$release_id" ] || continue
+    printf '%s' "$release_id" | grep -Eq '^[0-9a-f]{40}$' || continue
+    if [ "$release" = "$new_release" ] || [ "$release" = "$previous" ]; then
+      kept=$((kept + 1))
+      continue
+    fi
+    kept=$((kept + 1))
+    if [ "$kept" -gt '__KEEP_RELEASES__' ]; then
+      rm -rf -- "$release" || return 1
+      rm -f -- "$remote_root/c4-$release_id.tar.gz" || return 1
+    fi
+  done
+  rm -f -- "$remote_root/c4-__SHA__.tar.gz" || return 1
+}
 if [ "$deploy_ok" -eq 1 ]; then
-  for i in $(seq 1 30); do if health_ok; then exit 0; fi; sleep 2; done
+  for i in $(seq 1 30); do
+    if health_ok; then
+      if ! cleanup_releases; then echo '警告：release 清理失败，但当前版本已就绪；请检查磁盘权限' >&2; fi
+      exit 0
+    fi
+    sleep 2
+  done
   deploy_ok=0
 fi
 echo 'C4 新版本启动或健康检查失败' >&2
@@ -248,7 +377,7 @@ if [ -n "$previous" ] && [ -f "$previous/compose.yml" ]; then
   ln -sfn '__REMOTE_DIR__/.env' '__REMOTE_DIR__/current/.env'
   cd '__REMOTE_DIR__/current'
   export C3API_VERSION="$(basename "$previous")"
-  if compose -p c4 up -d --build && health_ok; then
+  if start_app && health_ok; then
     echo '已恢复上一版本；新版本保留在 releases 目录供排查' >&2
   else
     echo '回滚健康检查也失败，请保留现场并检查 docker compose ps/logs' >&2
@@ -259,7 +388,7 @@ fi
 compose -p c4 ps
 exit 4
 '@
-$remote = $remote.Replace('__APP_PORT__', $AppPort.ToString()).Replace('__REMOTE_DIR__', $RemoteDir).Replace('__SHA__', $sha).Replace('__PG_DATA_DIR__', $pgDataDir).Replace('__CARD_STORE_LINE__', $cardStoreLine).Replace('__APP_NAME_LINE__', $appNameLine).Replace('__REUSE_DATABASE__', $reuseDatabaseValue)
+$remote = $remote.Replace('__APP_PORT__', $AppPort.ToString()).Replace('__REMOTE_DIR__', $RemoteDir).Replace('__SHA__', $sha).Replace('__PG_DATA_DIR__', $pgDataDir).Replace('__CARD_STORE_LINE__', $cardStoreLine).Replace('__APP_NAME_LINE__', $appNameLine).Replace('__REUSE_DATABASE__', $reuseDatabaseValue).Replace('__KEEP_RELEASES__', $KeepReleases.ToString())
 
 $sshOptions = @(
   '-o', 'BatchMode=yes',

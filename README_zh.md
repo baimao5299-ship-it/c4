@@ -171,7 +171,7 @@ cd web && pnpm install && pnpm run dev
 
 ## 部署
 
-- `scripts/deploy.ps1` — PowerShell 7（命令名 `pwsh`）远程部署助手。默认只预览；加 `-Apply` 后会按当前已提交版本上传到独立目录，新部署时生成密钥、启动并检查 `/readyz`。它会先校验 Compose 再切换 `current`，在端口冲突或已有非 C4 服务占用时停止，不会覆盖其他项目；已有 `.env` 必须各含唯一且非空的 `POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`，beta 复用数据库必须显式传 `-ReuseDatabase`。
+- `scripts/deploy.ps1` — PowerShell 7（命令名 `pwsh`）远程部署助手。默认只预览；加 `-Apply` 后会按当前已提交版本上传到独立目录，新部署时补齐密钥和布局值、启动并检查 `/readyz`。已有实例升级只替换 `app`，先确认 PostgreSQL/Redis 仍在运行且健康，失败回滚也不重建依赖；它会先校验 Compose 再切换 `current`，在端口冲突或已有非 C4 服务占用时停止，不会覆盖其他项目；已有 `.env` 必须各含唯一且非空的 `POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`，beta 复用数据库必须显式传 `-ReuseDatabase`。默认保留 3 个 release，可用 `-KeepReleases N` 调整（2–20）。
 - `compose.yml` — 生产编排：`db`（postgres:18-alpine，数据挂载在 `deploy/data/pg`）+ `redis`（redis:8-alpine，易失状态（协调 + 短时效验证码）——不持久化）+ `app`（单容器，非 root、配置只读挂载自 `deploy/config.toml`、健康检查）。只有机器需要单独覆盖时才设置 `CONFIG_FILE`。
 - `Dockerfile` — 三阶段构建（node → go → alpine），产出内嵌 UI 的静态单二进制。
 - 公网入口示例见 [`deploy/PUBLIC_DEPLOYMENT.md`](./deploy/PUBLIC_DEPLOYMENT.md) 和 [`deploy/Caddyfile.example`](./deploy/Caddyfile.example)：C4 保持本机端口监听，由 Caddy 负责 HTTPS；不要直接开放 18080。

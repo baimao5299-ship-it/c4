@@ -28,10 +28,11 @@ pwsh -NoProfile -File .\scripts\deploy.ps1 -Server server.example.com -User depl
 1. 要求工作树干净，按当前提交生成部署包。
 2. 先检查服务器 Docker、Compose（支持 `docker compose` 或 `docker-compose`）、`flock` 及基础 Unix 工具和应用端口；端口被占用就停止，不碰已有服务。
 3. 将版本放到独立的 `releases/<commit>` 目录，`current` 只指向本次版本；部署锁阻止并发升级。
-4. 首次部署自动生成 `ADMIN_TOKEN`、`POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`；已有配置若 `ADMIN_TOKEN` 为空会补生成随机值，并将 `.env` 权限设为仅所有者可读写。
-5. 首次部署把 PostgreSQL 数据固定在 `<RemoteDir>/deploy/data/pg`，并固定 Compose 项目名 `c4`。同一目录内的 release 切换会复用这套数据库；由于 beta 版本不提供迁移保证，beta 升级应改用新的 `RemoteDir` 和数据库。
-6. 已有 `.env` 若缺少 `PG_DATA_DIR` 或 `COMPOSE_PROJECT_NAME=c4` 会停止并要求先完成迁移，避免误用新库或接管其他 Compose 项目。
-7. 启动 Compose 前先校验新 release 的 Compose 配置，成功后才切换 `current`；启动或 `/readyz` 就绪检查失败会自动切回上一版并再次检查，首次部署则保留现场并报告容器状态。`/healthz` 只表示进程存活，`/readyz` 还要求启动快照和已配置代理链路就绪。已有 `.env` 必须包含唯一且非空的 `POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`；脚本默认拒绝 beta 数据库复用，已核对兼容性后可显式传 `-ReuseDatabase`。`-AppName` 和 `-CardStoreUrl` 只在首次写入 `.env`，后续升级会复用原值。
+4. 首次部署自动生成 `ADMIN_TOKEN`、`POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`；如果从 `.env.example` 复制出空值，脚本也会在全新目标补齐随机密钥。已有数据库或 release 时不会生成或替换密钥，并将 `.env` 权限设为仅所有者可读写。
+5. 首次部署把 PostgreSQL 数据固定在 `<RemoteDir>/deploy/data/pg`，并固定 Compose 项目名 `c4`。新目标若省略 `BIND_ADDRESS`、`PORT`、`PG_DATA_DIR` 或 `COMPOSE_PROJECT_NAME`，脚本会补齐安全默认值；同一目录内的 release 切换会复用这套数据库。由于 beta 版本不提供迁移保证，beta 升级应改用新的 `RemoteDir` 和数据库。
+6. 已有 `.env` 的 `PG_DATA_DIR`、`COMPOSE_PROJECT_NAME`、端口和绑定地址必须唯一且与当前目标一致，避免误用新库或接管其他 Compose 项目。PostgreSQL 18 的版本化 `PG_VERSION` 路径也会被识别为已有持久化状态。
+7. 已有实例升级时，脚本只更新 `app`（`--no-deps`），先确认 PostgreSQL 和 Redis 容器仍在运行且健康，不会因为新 release 的工作目录或配置哈希重建依赖服务。首次部署才会启动完整栈。启动 Compose 前先校验新 release 的 Compose 配置，成功后才切换 `current`；启动或 `/readyz` 就绪检查失败会自动切回上一版并再次检查，回滚同样只更新 `app`。`/healthz` 只表示进程存活，`/readyz` 还要求启动快照和已配置代理链路就绪。已有 `.env` 必须包含唯一且非空的 `POSTGRES_PASSWORD`、`AUTH_JWT_SECRET`；脚本默认拒绝 beta 数据库复用，已核对兼容性后可显式传 `-ReuseDatabase`。`-AppName` 和 `-CardStoreUrl` 只在首次写入 `.env`，后续升级会复用原值。
+8. 健康升级成功后默认只保留最近 3 个 release（当前版和上一版始终保留），并删除对应部署包；用 `-KeepReleases N` 调整为 2–20 个。清理失败只打印警告，不影响已就绪的当前版本；失败部署的包和新目录会保留供排查。
 
 脚本不会自动修改 DNS、停止其他项目或把密钥打印到终端。SSH 连接带超时和保活参数；升级时使用新提交重新运行，
 切换前先确认 `/readyz` 就绪检查通过。
