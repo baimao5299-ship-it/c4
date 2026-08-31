@@ -287,7 +287,13 @@ function toBody(form: FormState, expectedUpdatedAt?: string): UpstreamCreateInpu
 
 function normalizedRoot(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, '')
-  return trimmed.replace(/\/v1$/i, '')
+  // Users often paste an operation URL copied from a client or provider
+  // docs. The service stores/probes the upstream root, so compare all
+  // supported operation spellings as the same connection before deciding
+  // that a replacement key is required.
+  return trimmed
+    .replace(/\/(?:chat\/completions|responses|messages)$/i, '')
+    .replace(/\/v1$/i, '')
 }
 
 function modelsForDisplay(row: UpstreamRecord): string[] {
