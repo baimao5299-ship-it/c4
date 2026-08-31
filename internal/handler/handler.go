@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/is7qin/c3api/internal/handler/httpface"
@@ -31,6 +32,12 @@ type AdminAPI struct {
 	usersTopCache *ttlCache
 	// now 可注入时钟（默认 time.Now；测试注入断言缓存键日界滚转）。
 	now func() time.Time
+	// validationTasks holds short-lived, admin-scoped progress snapshots for
+	// the asynchronous one-click upstream validation action. The task map is
+	// process-local; the actual validation lock remains database-backed when
+	// multiple application instances share a repository.
+	validationTasksMu sync.RWMutex
+	validationTasks   map[string]*upstreamValidationTask
 }
 
 // New 构造契约处理器（路由由 HandlerWithOptions 生成）。
@@ -42,11 +49,12 @@ func New(svc *service.Service, ops ...OpsOptions) *AdminAPI {
 		o = ops[0]
 	}
 	return &AdminAPI{
-		svc:           svc,
-		ops:           o,
-		overviewCache: newTTLCache(30 * time.Second),
-		usersTopCache: newTTLCache(2 * time.Second),
-		now:           time.Now,
+		svc:             svc,
+		ops:             o,
+		overviewCache:   newTTLCache(30 * time.Second),
+		usersTopCache:   newTTLCache(2 * time.Second),
+		now:             time.Now,
+		validationTasks: make(map[string]*upstreamValidationTask),
 	}
 }
 

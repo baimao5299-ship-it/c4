@@ -21,6 +21,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { api } from '@/App'
 import {
   ApiError,
@@ -30,6 +31,7 @@ import {
   type UpstreamBatchValidationItem,
   type UpstreamRecord,
   type UpstreamStatus,
+  type UpstreamValidationTaskResponse,
 } from '@/lib/api/client'
 import { useDebounced } from '@/lib/use-debounced'
 import { formatDateTime } from '@/components/fmt'
@@ -130,6 +132,17 @@ function errorMessage(error: unknown): string | null {
 function batchValidationErrorMessage(error: unknown, t: (key: string) => string): string | null {
   if (error instanceof ApiError && error.status === 409) return t('upstreams.batchValidationConflict')
   return errorMessage(error)
+}
+
+function isRetryableValidationPollError(error: unknown): boolean {
+  if (error instanceof ApiUnauthorized) return false
+  if (error instanceof ApiError) {
+    return error.status === 408 || error.status === 425 || error.status === 429 || error.status >= 500
+  }
+  // Fetch reports a connection reset, DNS failure, or browser offline state as
+  // a plain TypeError. The task itself is still running on the server, so a
+  // later poll can recover the real status instead of showing a false failure.
+  return error instanceof TypeError
 }
 
 function modelValidationErrorCode(error: unknown): string | null {
@@ -282,16 +295,39 @@ function modelsForDisplay(row: UpstreamRecord): string[] {
   return sortModelsLatestFirst(row.Models ?? [])
 }
 
+function modelsValidationNotice(row: UpstreamRecord, t: TFunction): string | null {
+  if (!row.ModelsError) return null
+  const models = modelsForDisplay(row)
+  const code = probeErrorLabel(row.ModelsError, t)
+  // A stored model snapshot can remain routable after a transient or
+  // model-specific failure. Calling that state simply "error" made operators
+  // discard models they had already tested successfully.
+  return models.length > 0
+    ? t('upstreams.modelsValidationPartial', { code, count: models.length })
+    : t('upstreams.modelsValidationState', { code })
+}
+
 function batchItemName(item: UpstreamBatchValidationItem): string {
   return item.upstream.Name?.trim() || `#${item.upstream.ID}`
 }
 
 function batchItemModels(item: UpstreamBatchValidationItem): string[] {
-  // An incomplete run may contain models that finished before the deadline,
-  // but those are not a publishable capability snapshot. Keep the dialog from
-  // presenting partial results as routable models.
-  if (item.validation_complete !== true) return []
-  return sortModelsLatestFirst(item.models)
+  // The server returns only models that answered a real request successfully.
+  // Keep those names visible even when another model timed out; hiding them
+  // made a partial run look like every model was unavailable.
+  // Older servers did not include the item-level `models` field. In that case
+  // use the nested row snapshot, but never replace an explicit empty result:
+  // an empty array is a definitive "no model passed" outcome.
+  const itemModels = Array.isArray(item.models) ? item.models : null
+  const snapshotModels = item.upstream?.Models ?? []
+  // A few older task responses returned an empty item list for an incomplete
+  // row while still carrying the last verified snapshot on `upstream`. Use it
+  // only for an incomplete result; an explicit empty complete result remains
+  // authoritative and must not be presented as usable.
+  const models = itemModels == null || (itemModels.length === 0 && item.validation_complete === false && snapshotModels.length > 0)
+    ? snapshotModels
+    : itemModels
+  return sortModelsLatestFirst(models)
 }
 
 function batchItemCount(item: UpstreamBatchValidationItem, field: 'models_total' | 'models_available' | 'models_failed'): number | null {
@@ -319,6 +355,7 @@ export default function Upstreams() {
   const [pendingToggleIDs, setPendingToggleIDs] = useState<Set<number>>(() => new Set())
   const [batchValidationOpen, setBatchValidationOpen] = useState(false)
   const [batchValidationResult, setBatchValidationResult] = useState<UpstreamBatchValidationResponse | null>(null)
+  const [batchValidationProgress, setBatchValidationProgress] = useState<UpstreamValidationTaskResponse | null>(null)
 
   const query = useQuery({
     queryKey: ['upstreams', { name: debouncedName, status, page, pageSize, sort, order }],
@@ -388,10 +425,14 @@ export default function Upstreams() {
     setPendingModelIDs(current => new Set(current).add(id))
     try {
       const result = await api.listUpstreamModels(id)
-      if (!result.ok || !result.models?.length || result.validation_complete !== true) {
+      const hasModels = Array.isArray(result.models) && result.models.length > 0
+      if (!hasModels) {
         const reason = probeErrorLabel(result.error_code, t)
         if (reportFailure) toast.add({ title: t('upstreams.modelsReadFailed', { code: reason }), type: 'error' })
         return { ok: false, reason }
+      }
+      if ((result.ok !== true || result.validation_complete !== true) && reportFailure) {
+        toast.add({ title: t('upstreams.modelsPartiallyRead'), type: 'warning' })
       }
       return { ok: true }
     } catch (error) {
@@ -511,10 +552,36 @@ export default function Upstreams() {
   })
 
   const batchValidation = useMutation({
-    mutationFn: () => api.validateAllUpstreams(),
+    mutationFn: async (): Promise<UpstreamBatchValidationResponse> => {
+      const started = await api.startValidateAllUpstreams()
+      // The server allows a larger catalogue to finish serially without
+      // turning the tail into an automatic false negative. Keep polling past
+      // that bounded server budget plus a small network margin.
+      const deadline = Date.now() + 17 * 60_000
+      while (Date.now() < deadline) {
+        let progress: UpstreamValidationTaskResponse
+        try {
+          progress = await api.getValidateAllUpstreamsTask(started.task_id)
+          setBatchValidationProgress(progress)
+        } catch (error) {
+          if (!isRetryableValidationPollError(error)) throw error
+          // A single lost poll is not a failed validation. Keep the last real
+          // counters on screen and retry with a small bounded backoff.
+          await new Promise(resolve => window.setTimeout(resolve, 750))
+          continue
+        }
+        if (progress.status === 'completed' && progress.result) return progress.result
+        if (progress.status === 'failed') {
+          throw new ApiError(500, progress.error || t('upstreams.batchValidationFailedGeneric'))
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 500))
+      }
+      throw new ApiError(504, t('upstreams.batchValidationTimedOut'))
+    },
     onMutate: () => {
       // Open immediately so a slow upstream cannot look like a dead button.
       setBatchValidationResult(null)
+      setBatchValidationProgress(null)
       setBatchValidationOpen(true)
     },
     onSuccess: async result => {
@@ -695,6 +762,7 @@ export default function Upstreams() {
               const active = recordEnabled(row)
               const pending = pendingProbeIDs.has(row.ID)
               const models = modelsForDisplay(row)
+              const modelNotice = modelsValidationNotice(row, t)
               return (
                 <Card key={row.ID} size="sm" className="overflow-hidden">
                   <CardHeader className="space-y-2">
@@ -711,7 +779,7 @@ export default function Upstreams() {
                     <div className="space-y-1">
                       <div className="text-xs text-muted-foreground">{t('upstreams.supportedModels')}</div>
                       <div className="break-words font-mono text-xs" title={models.join(', ')}>{models.length ? models.join(', ') : t('upstreams.modelsNotVerified')}</div>
-                      {row.ModelsError && <div className="text-xs text-amber-700 dark:text-amber-400">{t('upstreams.modelsValidationState', { code: probeErrorLabel(row.ModelsError, t) })}</div>}
+                      {modelNotice && <div className="text-xs text-amber-700 dark:text-amber-400">{modelNotice}</div>}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -789,6 +857,7 @@ export default function Upstreams() {
               const balanceBlockedReason = balanceRefreshBlockReason(row, t)
               const latency = averageLatency(row)
               const models = modelsForDisplay(row)
+              const modelNotice = modelsValidationNotice(row, t)
                 const active = recordEnabled(row)
                 return (
                   <TableRow key={row.ID}>
@@ -806,7 +875,7 @@ export default function Upstreams() {
                     <TableCell className="max-w-72">
                       <div className="text-xs text-muted-foreground">{models.length}</div>
                       <div className="max-h-12 overflow-hidden break-words font-mono text-xs" title={models.join(', ')}>{models.length ? models.join(', ') : t('upstreams.modelsNotVerified')}</div>
-                      {row.ModelsError && <div className="text-xs text-amber-700 dark:text-amber-400">{t('upstreams.modelsValidationState', { code: probeErrorLabel(row.ModelsError, t) })}</div>}
+                      {modelNotice && <div className="text-xs text-amber-700 dark:text-amber-400">{modelNotice}</div>}
                     </TableCell>
                     <TableCell className="font-semibold tabular-nums">{formatMultiplier(multiplierOf(row))}</TableCell>
                     <TableCell>
@@ -918,7 +987,12 @@ export default function Upstreams() {
           </DialogHeader>
           {batchValidation.isPending && (
             <div className="space-y-3">
-              <ModelValidationProgress />
+              <ModelValidationProgress checked={batchValidationProgress?.upstreams_checked} total={batchValidationProgress?.upstreams_total} label={t('upstreams.batchProgressLabel')} />
+              {batchValidationProgress && (
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  {t('upstreams.batchModelProgress', { checked: batchValidationProgress.models_checked, total: batchValidationProgress.models_total, available: batchValidationProgress.models_available, failed: batchValidationProgress.models_failed })}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">{t('upstreams.batchValidationRunning')}</p>
             </div>
           )}
@@ -941,11 +1015,18 @@ export default function Upstreams() {
               <div className="max-h-[45vh] space-y-2 overflow-y-auto pr-1" role="list" aria-label={t('upstreams.batchResults')}>
                 {batchValidationResult.items.map((item, index) => {
                   const models = batchItemModels(item)
-                  const verified = item.attempted && item.validation_complete && item.ok
                   const totalModels = batchItemCount(item, 'models_total')
                   const availableModels = batchItemCount(item, 'models_available')
                   const failedModels = batchItemCount(item, 'models_failed')
                   const errorCode = item.error_code ? probeErrorLabel(item.error_code, t) : null
+                  const hasAvailableModels = models.length > 0 || (availableModels ?? 0) > 0
+                  // A complete catalogue may still contain model-specific
+                  // failures. It is usable, but not fully verified; label it
+                  // partial so operators do not mistake one failed model for
+                  // an outage or discard the models that did pass.
+                  const hasFailedModels = (failedModels ?? 0) > 0 || (errorCode != null && hasAvailableModels)
+                  const verified = item.attempted && item.validation_complete && item.ok && !hasFailedModels
+                  const partial = item.attempted && hasAvailableModels && !verified
                   return (
                     <div key={`${item.upstream.ID}-${index}`} role="listitem" className="rounded-md border px-3 py-2.5 text-sm">
                       <div className="flex items-start justify-between gap-3">
@@ -953,9 +1034,9 @@ export default function Upstreams() {
                           <div className="truncate font-medium">{batchItemName(item)}</div>
                           {item.upstream.BaseURL && <div className="truncate font-mono text-xs text-muted-foreground" title={item.upstream.BaseURL}>{item.upstream.BaseURL}</div>}
                         </div>
-                        <Badge variant={verified ? 'secondary' : item.attempted ? 'destructive' : 'outline'} className="shrink-0 gap-1">
-                          {verified ? <CircleCheck className="size-3" /> : <CircleX className="size-3" />}
-                          {t(!item.attempted ? 'upstreams.batchNotStarted' : verified ? 'upstreams.batchOk' : 'upstreams.batchFailedItem')}
+                        <Badge variant={verified ? 'secondary' : partial ? 'outline' : item.attempted ? 'destructive' : 'outline'} className="shrink-0 gap-1">
+                          {verified ? <CircleCheck className="size-3" /> : partial ? <CircleAlert className="size-3" /> : <CircleX className="size-3" />}
+                          {t(!item.attempted ? 'upstreams.batchNotStarted' : verified ? 'upstreams.batchOk' : partial ? 'upstreams.batchPartial' : 'upstreams.batchFailedItem')}
                         </Badge>
                       </div>
                       {(totalModels != null || availableModels != null || failedModels != null) && (

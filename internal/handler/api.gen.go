@@ -366,6 +366,22 @@ const (
 	UpstreamValidationItemErrorCodeUpstream         UpstreamValidationItemErrorCode = "upstream"
 )
 
+// Defines values for UpstreamValidationTaskStatus.
+const (
+	UpstreamValidationTaskStatusCompleted UpstreamValidationTaskStatus = "completed"
+	UpstreamValidationTaskStatusFailed    UpstreamValidationTaskStatus = "failed"
+	UpstreamValidationTaskStatusQueued    UpstreamValidationTaskStatus = "queued"
+	UpstreamValidationTaskStatusRunning   UpstreamValidationTaskStatus = "running"
+)
+
+// Defines values for UpstreamValidationTaskStartStatus.
+const (
+	UpstreamValidationTaskStartStatusCompleted UpstreamValidationTaskStartStatus = "completed"
+	UpstreamValidationTaskStartStatusFailed    UpstreamValidationTaskStartStatus = "failed"
+	UpstreamValidationTaskStartStatusQueued    UpstreamValidationTaskStartStatus = "queued"
+	UpstreamValidationTaskStartStatusRunning   UpstreamValidationTaskStartStatus = "running"
+)
+
 // Defines values for UserRole.
 const (
 	UserRolePlatformAdmin UserRole = "platform_admin"
@@ -1935,22 +1951,24 @@ type UpstreamModelsPreview struct {
 // UpstreamModelsResponse defines model for UpstreamModelsResponse.
 type UpstreamModelsResponse struct {
 	ErrorCode *UpstreamModelsResponseErrorCode `json:"error_code"`
-	Models    []string                         `json:"models"`
 
-	// ModelsAvailable 真实请求返回有效 JSON 且成功的模型数量
+	// Models 本轮真实请求成功并可路由的模型；未完成验证时可能保留上一份已确认快照
+	Models []string `json:"models"`
+
+	// ModelsAvailable 本轮真实请求返回有效 JSON 或 SSE 且成功的模型数量
 	ModelsAvailable int `json:"models_available"`
 
-	// ModelsChecked 已发送真实最小请求验证的模型数量
+	// ModelsChecked 已发送真实最小请求验证的模型数量；未开始的模型不计入
 	ModelsChecked int `json:"models_checked"`
 
-	// ModelsFailed 验证失败或超时的模型数量
+	// ModelsFailed 本轮已尝试但失败的模型数量（含超时、限流和协议错误）
 	ModelsFailed int `json:"models_failed"`
 
 	// ModelsTotal 目录中解析出的去重模型数量（最多 5000）
 	ModelsTotal int  `json:"models_total"`
 	Ok          bool `json:"ok"`
 
-	// ValidationComplete 是否在总超时前完成全部模型验证
+	// ValidationComplete 是否在总超时前完成全部模型验证；false 时不会把结果当作完整目录快照
 	ValidationComplete bool `json:"validation_complete"`
 }
 
@@ -1976,7 +1994,7 @@ type UpstreamStatusUpdate struct {
 
 // UpstreamTestBody defines model for UpstreamTestBody.
 type UpstreamTestBody struct {
-	// Model 必须来自上游当前 /v1/models 列表；省略时使用列表第一项
+	// Model 可选的显式模型标识；会直接发送真实请求，不要求出现在当前 /v1/models 列表中；省略时使用目录第一项
 	Model *string `json:"model,omitempty"`
 }
 
@@ -2009,6 +2027,32 @@ type UpstreamValidationSummary struct {
 	Passed     int                      `json:"passed"`
 	Total      int                      `json:"total"`
 }
+
+// UpstreamValidationTask defines model for UpstreamValidationTask.
+type UpstreamValidationTask struct {
+	Error            *string                      `json:"error"`
+	ModelsAvailable  int                          `json:"models_available"`
+	ModelsChecked    int                          `json:"models_checked"`
+	ModelsFailed     int                          `json:"models_failed"`
+	ModelsTotal      int                          `json:"models_total"`
+	Result           *UpstreamValidationSummary   `json:"result"`
+	Status           UpstreamValidationTaskStatus `json:"status"`
+	TaskId           string                       `json:"task_id"`
+	UpstreamsChecked int                          `json:"upstreams_checked"`
+	UpstreamsTotal   int                          `json:"upstreams_total"`
+}
+
+// UpstreamValidationTaskStatus defines model for UpstreamValidationTask.Status.
+type UpstreamValidationTaskStatus string
+
+// UpstreamValidationTaskStart defines model for UpstreamValidationTaskStart.
+type UpstreamValidationTaskStart struct {
+	Status UpstreamValidationTaskStartStatus `json:"status"`
+	TaskId string                            `json:"task_id"`
+}
+
+// UpstreamValidationTaskStartStatus defines model for UpstreamValidationTaskStart.Status.
+type UpstreamValidationTaskStartStatus string
 
 // UsageGatewayStats 账号网关计费聚合（usage_logs 实时明细；毫分 /1e5 → USD；无记录账号全 0）
 type UsageGatewayStats struct {
@@ -2817,6 +2861,12 @@ type ServerInterface interface {
 	// 一键验证全部上游及其可用模型
 	// (POST /upstreams/validate-all)
 	PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request)
+	// 启动异步上游验证任务
+	// (POST /upstreams/validate-all/start)
+	PostUpstreamsValidateAllStart(w http.ResponseWriter, r *http.Request)
+	// 查询异步上游验证进度
+	// (GET /upstreams/validate-all/tasks/{task_id})
+	GetUpstreamsValidateAllTask(w http.ResponseWriter, r *http.Request, taskId string)
 
 	// (DELETE /upstreams/{id})
 	DeleteUpstreamsId(w http.ResponseWriter, r *http.Request, id int64)
@@ -3288,6 +3338,18 @@ func (_ Unimplemented) PostUpstreamsModels(w http.ResponseWriter, r *http.Reques
 // 一键验证全部上游及其可用模型
 // (POST /upstreams/validate-all)
 func (_ Unimplemented) PostUpstreamsValidateAll(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 启动异步上游验证任务
+// (POST /upstreams/validate-all/start)
+func (_ Unimplemented) PostUpstreamsValidateAllStart(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 查询异步上游验证进度
+// (GET /upstreams/validate-all/tasks/{task_id})
+func (_ Unimplemented) GetUpstreamsValidateAllTask(w http.ResponseWriter, r *http.Request, taskId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5773,6 +5835,45 @@ func (siw *ServerInterfaceWrapper) PostUpstreamsValidateAll(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// PostUpstreamsValidateAllStart operation middleware
+func (siw *ServerInterfaceWrapper) PostUpstreamsValidateAllStart(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUpstreamsValidateAllStart(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUpstreamsValidateAllTask operation middleware
+func (siw *ServerInterfaceWrapper) GetUpstreamsValidateAllTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "task_id" -------------
+	var taskId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "task_id", chi.URLParam(r, "task_id"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "task_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUpstreamsValidateAllTask(w, r, taskId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteUpstreamsId operation middleware
 func (siw *ServerInterfaceWrapper) DeleteUpstreamsId(w http.ResponseWriter, r *http.Request) {
 
@@ -6597,6 +6698,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/upstreams/validate-all", wrapper.PostUpstreamsValidateAll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/upstreams/validate-all/start", wrapper.PostUpstreamsValidateAllStart)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/upstreams/validate-all/tasks/{task_id}", wrapper.GetUpstreamsValidateAllTask)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/upstreams/{id}", wrapper.DeleteUpstreamsId)

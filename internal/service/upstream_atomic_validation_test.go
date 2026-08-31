@@ -7,8 +7,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -186,12 +188,86 @@ func TestValidateModelCatalogueDoesNotStopOnModelRateLimit(t *testing.T) {
 	result := validateModelCatalogue(context.Background(), endpoint.Client(), endpoint.URL, "key", models)
 
 	// A 429 can apply to one model only. The validator must still check the
-	// remaining catalogue and publish its verified subset in provider order.
-	require.True(t, result.ValidationComplete)
+	// remaining catalogue and publish its verified subset in provider order, but
+	// the snapshot stays retryable so a previous manual result is not erased.
+	require.False(t, result.ValidationComplete)
 	require.Equal(t, len(models), result.ModelsChecked)
 	require.Equal(t, models[1:], result.Models)
 	require.Equal(t, "rate_limited", result.ErrorCode)
-	require.Equal(t, int32(len(models)), requests.Load())
+	// The transiently rate-limited model gets one bounded retry; the remaining
+	// catalogue entries are still each probed exactly once.
+	require.Equal(t, int32(len(models)+1), requests.Load())
+}
+
+func TestValidateModelCatalogueAvoidsConcurrencyOnlyFalseNegatives(t *testing.T) {
+	var active atomic.Int32
+	var maxActive atomic.Int32
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		current := active.Add(1)
+		defer active.Add(-1)
+		for {
+			old := maxActive.Load()
+			if current <= old || maxActive.CompareAndSwap(old, current) {
+				break
+			}
+		}
+		// This relay allows one request per credential. A burst is reported as a
+		// transient upstream failure even though the same model succeeds when
+		// tested alone, which mirrors the batch/manual discrepancy.
+		if current > 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"provider busy"}}`))
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
+	}))
+	defer endpoint.Close()
+
+	models := []string{"model-a", "model-b", "model-c", "model-d"}
+	result := validateModelCatalogue(context.Background(), endpoint.Client(), endpoint.URL, "key", models)
+
+	require.True(t, result.ValidationComplete)
+	require.True(t, result.OK)
+	require.Equal(t, models, result.Models)
+	require.Equal(t, len(models), result.ModelsChecked)
+	require.Zero(t, result.ModelsFailed)
+	require.Equal(t, int32(1), maxActive.Load(), "batch validation must not burst requests for one upstream credential")
+}
+
+type validationDeadlineTransport struct{}
+
+func (validationDeadlineTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	deadline, ok := req.Context().Deadline()
+	if !ok || time.Until(deadline) < 10*time.Second {
+		return nil, context.DeadlineExceeded
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"id":"verified","object":"response"}`)),
+		Request:    req,
+	}, nil
+}
+
+func TestValidateModelCatalogueUsesManualProbeBudget(t *testing.T) {
+	result := validateModelCatalogue(context.Background(), &http.Client{Transport: validationDeadlineTransport{}}, "https://relay.example.test", "key", []string{"model-a"})
+
+	require.True(t, result.ValidationComplete)
+	require.True(t, result.OK)
+	require.Equal(t, []string{"model-a"}, result.Models)
+	require.Equal(t, 1, result.ModelsChecked)
+	require.Zero(t, result.ModelsFailed)
+}
+
+func TestModelValidationTimeoutScalesWithCatalogueSize(t *testing.T) {
+	require.Equal(t, 30*time.Second, modelValidationTimeoutForCount(1))
+	require.Equal(t, 12*time.Minute+time.Second, modelValidationTimeoutForCount(60))
+	require.Equal(t, 15*time.Minute, modelValidationTimeoutForCount(5000))
 }
 
 func TestValidateModelCatalogueKeepsTransientAllFailureIncomplete(t *testing.T) {
@@ -217,7 +293,9 @@ func TestValidateModelCatalogueKeepsTransientAllFailureIncomplete(t *testing.T) 
 	require.False(t, result.ValidationComplete)
 	require.Equal(t, "upstream", result.ErrorCode)
 	require.Equal(t, len(models), result.ModelsChecked)
-	require.Equal(t, int32(len(models)), requests.Load())
+	// Every transient failure receives one bounded retry before the run is
+	// marked incomplete and the previous snapshot is retained.
+	require.Equal(t, int32(len(models)*2), requests.Load())
 }
 
 func TestListUpstreamModelsKeepsSnapshotWhenTransientFailureHidesAllModels(t *testing.T) {
@@ -253,7 +331,10 @@ func TestListUpstreamModelsKeepsSnapshotWhenTransientFailureHidesAllModels(t *te
 
 	result, err := svc.ListUpstreamModels(context.Background(), 1)
 	require.NoError(t, err)
-	require.False(t, result.OK)
+	// The endpoint was transiently rate-limited, but the previously verified
+	// snapshot remains routable until a definitive authentication/model result
+	// replaces it.
+	require.True(t, result.OK)
 	require.False(t, result.ValidationComplete)
 	require.Equal(t, "rate_limited", result.ErrorCode)
 	require.Equal(t, oldModels, store.row.Models, "a transient failure must not erase the last verified route")
@@ -304,6 +385,17 @@ func TestValidationCancellationWinsWhenHTTPErrorArrivesFirst(t *testing.T) {
 
 	require.Equal(t, "canceled", classifyUpstreamTestError(ctx, http.StatusUnauthorized, httpErr))
 	require.Equal(t, "canceled", classifyModelValidationError(ctx, http.StatusUnauthorized, httpErr))
+}
+
+func TestCompletedHTTPResponseWinsOverRacingCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// The response body has already been consumed successfully. A canceled
+	// caller at this exact boundary must retain the usable result rather than
+	// turning it into the misleading timeout/canceled category.
+	require.Empty(t, classifyUpstreamTestError(ctx, http.StatusOK, nil))
+	require.Empty(t, classifyModelValidationError(ctx, http.StatusOK, nil))
 }
 
 func TestValidateModelCatalogueUsesInternalDeadlineForCompletion(t *testing.T) {

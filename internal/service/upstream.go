@@ -5,6 +5,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -98,6 +99,11 @@ type UpstreamModelsResult struct {
 	ModelsAvailable    int
 	ModelsFailed       int
 	ValidationComplete bool
+	// advertisedModels and transientModels stay inside the service boundary.
+	// They let snapshot retention distinguish a temporarily failed model from a
+	// model that the provider definitively rejected or removed.
+	advertisedModels []string
+	transientModels  []string
 }
 
 // UpstreamValidationItem is the result of one complete capability check. The
@@ -134,10 +140,28 @@ type UpstreamValidationSummary struct {
 	Items      []UpstreamValidationItem
 }
 
+// UpstreamValidationProgress is emitted after the snapshot is loaded and
+// whenever one upstream finishes.  It deliberately reports counters only;
+// credentials and response bodies never leave the service boundary.
+type UpstreamValidationProgress struct {
+	UpstreamsTotal   int
+	UpstreamsChecked int
+	ModelsTotal      int
+	ModelsChecked    int
+	ModelsAvailable  int
+	ModelsFailed     int
+	Done             bool
+}
+
+// UpstreamValidationProgressFunc receives a point-in-time progress snapshot.
+// Callbacks must be short and non-blocking because they run on validation
+// workers.
+type UpstreamValidationProgressFunc func(UpstreamValidationProgress)
+
 // UpstreamModelValidationError keeps the failed validation category visible at
 // the management boundary while still mapping to the normal invalid-input HTTP
-// response. No upstream row is created when validation does not complete with
-// at least one usable model.
+// response. A management write is rejected only when no model completed a real
+// request; a partial usable subset is accepted with its transient error marker.
 type UpstreamModelValidationError struct {
 	Code string
 }
@@ -153,16 +177,32 @@ func (e *UpstreamModelValidationError) Error() string {
 func (e *UpstreamModelValidationError) Unwrap() error { return ErrInvalidInput }
 
 const (
-	upstreamModelValidationConcurrency = 4
-	upstreamModelValidationTimeout     = 30 * time.Second
-	upstreamModelValidationPerModel    = 5 * time.Second
-	upstreamValidationConcurrency      = 2
-	upstreamValidationBatchLimit       = 200
+	// Model probes are deliberately serialized within one upstream. A number
+	// of relays enforce a per-credential concurrency of one; probing four
+	// models at once made the same credential return transient 429/timeout
+	// responses even though an individual manual request succeeded.
+	upstreamModelValidationConcurrency = 1
+	// Keep the per-model budget aligned with the manual "hi" test (15s context,
+	// 12s client timeout). The old 5s budget was a different contract and was
+	// the main source of batch-only false negatives for slow relays.
+	upstreamModelValidationTimeout  = 30 * time.Second
+	upstreamModelValidationPerModel = 12 * time.Second
+	upstreamValidationConcurrency   = 2
+	upstreamValidationBatchLimit    = 200
+	// Keep catalogue reads bounded independently from per-model probes. A
+	// cursor-capable relay may expose many pages, but one broken page must not
+	// hold the management lock for the full validation budget.
+	upstreamModelCatalogueTimeout = 60 * time.Second
 	// Bound the synchronous admin action as a whole. Per-upstream deadlines are
 	// not sufficient when an inventory contains many slow or unreachable
 	// relays: without this cap the HTTP request and the shared validation lock
 	// could remain occupied for hours.
-	upstreamValidationBatchTimeout = 5 * time.Minute
+	// Serial model probes deliberately protect credentials that reject bursts.
+	// The old five-minute cap only covered roughly 25 twelve-second probes and
+	// therefore never reached the tail of a normal large catalogue. The async
+	// management endpoint can expose this longer bounded run without holding an
+	// HTTP request open.
+	upstreamValidationBatchTimeout = 15 * time.Minute
 	// Persist the outcome of a canceled validation for a short bounded window.
 	// Client disconnects should not turn a diagnostic write into a misleading
 	// storage failure, but a broken database must not keep the worker alive.
@@ -176,6 +216,16 @@ const (
 	// provider catalogues than the legacy 200-entry limit. Oversized catalogues
 	// are rejected as incomplete instead of being silently truncated.
 	upstreamModelCatalogueMax = 5000
+	// A provider catalogue may be cursor-paginated. Keep the number of GETs
+	// bounded so a broken cursor cannot hold the validation lock indefinitely.
+	upstreamModelCatalogueMaxPages = 100
+	// Model catalogue reads are GETs and do not execute a model request. One
+	// short retry removes a transient 429/503/network blip from the result
+	// without turning discovery into an unbounded poll loop.
+	upstreamModelCatalogueRetryDelay = 200 * time.Millisecond
+	// Keep a single model's transient retry short. The model context remains
+	// the authoritative budget, so an already-expired timeout is not replayed.
+	upstreamModelProbeRetryDelay = 150 * time.Millisecond
 )
 
 var errUpstreamStoreUnavailable = errors.New("upstream management is not configured")
@@ -331,10 +381,14 @@ func (s *Service) CreateUpstreamWithModelValidation(ctx context.Context, u *doma
 	base := normalizeUpstreamBaseURL(u.BaseURL)
 	key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
 	client := s.managementHTTPClient()
-	client.Timeout = 10 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.Timeout = upstreamModelValidationPerModel + time.Second
+	client.CheckRedirect = upstreamCheckRedirect
 	result := validateUpstreamModels(ctx, client, base, key)
-	if !result.ValidationComplete || !result.OK {
+	// A partial run is still useful when at least one model completed a real
+	// request. Persist that confirmed subset and surface the transient error so
+	// routing can continue for known-good models while an operator retries the
+	// remaining catalogue later.
+	if !result.OK {
 		return nil, &UpstreamModelValidationError{Code: result.ErrorCode}
 	}
 	// Carry the verified capability snapshot into the create mutation. The
@@ -359,7 +413,7 @@ func (s *Service) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*doma
 }
 
 // UpdateUpstreamWithModelValidation updates an upstream whose endpoint or
-// credential changed only after the new connection has passed a complete
+// credential changed only after the new connection has passed a real
 // capability check. The check and conditional write live on the server so a
 // browser cannot validate one configuration and then accidentally save another
 // one after a concurrent edit. Name/multiplier-only edits keep the existing
@@ -471,10 +525,10 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 		base := normalizeUpstreamBaseURL(u.BaseURL)
 		key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
 		client := s.managementHTTPClient()
-		client.Timeout = 10 * time.Second
-		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client.Timeout = upstreamModelValidationPerModel + time.Second
+		client.CheckRedirect = upstreamCheckRedirect
 		result := validateUpstreamModels(ctx, client, base, key)
-		if !result.ValidationComplete || !result.OK {
+		if !result.OK {
 			return nil, &UpstreamModelValidationError{Code: result.ErrorCode}
 		}
 		u.Models = append([]string{}, result.Models...)
@@ -555,7 +609,7 @@ func (s *Service) ProbeUpstream(ctx context.Context, id int64) (*UpstreamProbeRe
 	defer cancel()
 	client := s.managementHTTPClient()
 	client.Timeout = 10 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.CheckRedirect = upstreamCheckRedirect
 	started := time.Now()
 	// Use the same bounded /v1/models parser as model discovery. A reachable
 	// portal or HTML error page may return HTTP 200; transport reachability alone
@@ -575,6 +629,42 @@ func (s *Service) ProbeUpstream(ctx context.Context, id int64) (*UpstreamProbeRe
 		return nil, mapRepoErr(err)
 	}
 	return &UpstreamProbeResult{Upstream: updated, OK: ok, LatencyMS: latency, ErrorCode: code}, nil
+}
+
+func updatedOrFallbackUpstream(updated, fallback *domain.Upstream) *domain.Upstream {
+	if updated != nil {
+		return updated
+	}
+	return fallback
+}
+
+// recordExplicitUpstreamModel adds a model confirmed by a real operator test
+// to the persisted capability snapshot. The model store is optional for
+// lightweight integrations, so those callers keep the existing health-only
+// behavior. Existing error metadata is retained: one successful model test
+// proves that model, but does not claim that every advertised model passed.
+func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store UpstreamStore, expected *domain.Upstream, model string) (*domain.Upstream, error) {
+	recorder, ok := store.(UpstreamModelStore)
+	if !ok || expected == nil {
+		return expected, nil
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return expected, nil
+	}
+	models := mergeUpstreamModelLists(expected.Models, []string{model})
+	var modelErr *string
+	if expected.ModelsError != nil {
+		if code := strings.TrimSpace(*expected.ModelsError); code != "" {
+			modelErr = &code
+		}
+	}
+	saved, err := recorder.RecordUpstreamModels(ctx, expected, models, modelErr)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateUpstreamConfig(ctx)
+	return saved, nil
 }
 
 // ListUpstreamModels reads the real model catalogue for a saved upstream. It
@@ -611,10 +701,21 @@ func (s *Service) ListUpstreamModels(ctx context.Context, id int64) (*UpstreamMo
 		return nil, err
 	}
 	client := s.managementHTTPClient()
-	client.Timeout = 10 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.Timeout = upstreamModelValidationPerModel + time.Second
+	client.CheckRedirect = upstreamCheckRedirect
 	key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
 	result := validateUpstreamModels(ctx, client, base, key)
+	// A transient catalogue/probe interruption must not hide models that were
+	// already verified for this unchanged endpoint and credential. Keep the old
+	// snapshot alongside any models confirmed by the current run; the warning
+	// code still tells the operator that a retry is warranted.
+	result.Models = retainedUpstreamModels(u, result.Models, result.advertisedModels, result.transientModels, result.ValidationComplete, result.ErrorCode)
+	if len(result.Models) > 0 {
+		result.OK = true
+		if !result.ValidationComplete {
+			result.ModelsAvailable = len(result.Models)
+		}
+	}
 	if err := s.recordUpstreamModels(ctx, store, u, result.Models, result.ErrorCode, result.ValidationComplete); err != nil {
 		return nil, mapRepoErr(err)
 	}
@@ -626,6 +727,18 @@ func (s *Service) ListUpstreamModels(ctx context.Context, id int64) (*UpstreamMo
 // one broken relay cannot abort the rest of the operation; the returned order
 // is stable by upstream ID and every completed probe records health telemetry.
 func (s *Service) ValidateAllUpstreams(ctx context.Context) (*UpstreamValidationSummary, error) {
+	return s.validateAllUpstreams(ctx, nil)
+}
+
+// ValidateAllUpstreamsWithProgress is the asynchronous-management building
+// block.  The legacy ValidateAllUpstreams method remains synchronous for
+// existing callers; the handler uses this variant from a background task and
+// exposes the snapshots through a small polling endpoint.
+func (s *Service) ValidateAllUpstreamsWithProgress(ctx context.Context, report UpstreamValidationProgressFunc) (*UpstreamValidationSummary, error) {
+	return s.validateAllUpstreams(ctx, report)
+}
+
+func (s *Service) validateAllUpstreams(ctx context.Context, report UpstreamValidationProgressFunc) (*UpstreamValidationSummary, error) {
 	if s == nil {
 		return nil, errUpstreamStoreUnavailable
 	}
@@ -660,8 +773,18 @@ func (s *Service) ValidateAllUpstreams(ctx context.Context) (*UpstreamValidation
 		return nil, mapRepoErr(err)
 	}
 	items := make([]UpstreamValidationItem, len(rows))
+	emit := func(progress UpstreamValidationProgress) {
+		if report != nil {
+			report(progress)
+		}
+	}
+	// The initial total is available as soon as the stable snapshot is read;
+	// model totals are filled as each upstream returns its catalogue.
+	emit(UpstreamValidationProgress{UpstreamsTotal: len(rows)})
 	if len(rows) == 0 {
-		return &UpstreamValidationSummary{Items: []UpstreamValidationItem{}, DurationMS: time.Since(started).Milliseconds()}, nil
+		result := &UpstreamValidationSummary{Items: []UpstreamValidationItem{}, DurationMS: time.Since(started).Milliseconds()}
+		emit(UpstreamValidationProgress{Done: true})
+		return result, nil
 	}
 	workers := upstreamValidationConcurrency
 	if len(rows) < workers {
@@ -673,12 +796,25 @@ func (s *Service) ValidateAllUpstreams(ctx context.Context) (*UpstreamValidation
 	}
 	jobs := make(chan job)
 	var wg sync.WaitGroup
+	var progressMu sync.Mutex
+	var progress UpstreamValidationProgress
+	progress.UpstreamsTotal = len(rows)
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				items[j.index] = s.validateStoredUpstream(validationCtx, store, j.row)
+				item := s.validateStoredUpstream(validationCtx, store, j.row)
+				items[j.index] = item
+				progressMu.Lock()
+				progress.UpstreamsChecked++
+				progress.ModelsTotal += item.ModelsTotal
+				progress.ModelsChecked += item.ModelsChecked
+				progress.ModelsAvailable += item.ModelsAvailable
+				progress.ModelsFailed += item.ModelsFailed
+				current := progress
+				progressMu.Unlock()
+				emit(current)
 			}
 		}()
 	}
@@ -718,7 +854,13 @@ dispatch:
 			}
 		}
 	}
-	return summarizeUpstreamValidation(items, started), nil
+	result := summarizeUpstreamValidation(items, started)
+	progressMu.Lock()
+	finalProgress := progress
+	progressMu.Unlock()
+	finalProgress.Done = true
+	emit(finalProgress)
+	return result, nil
 }
 
 func upstreamValidationContextErrorCode(ctx context.Context) string {
@@ -833,28 +975,41 @@ func (s *Service) validateStoredUpstream(ctx context.Context, store UpstreamStor
 		item.ErrorCode = "invalid_value"
 		return item
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, upstreamModelValidationTimeout)
+	// The catalogue validator derives its deadline from the number of advertised
+	// models.  Keep the outer row deadline at the batch cap so it does not
+	// silently reintroduce the legacy 30-second cutoff for larger catalogues.
+	probeCtx, cancel := context.WithTimeout(ctx, upstreamValidationBatchTimeout)
 	defer cancel()
 	client := s.managementHTTPClient()
-	client.Timeout = upstreamModelValidationTimeout
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.Timeout = upstreamModelValidationPerModel + time.Second
+	client.CheckRedirect = upstreamCheckRedirect
 	started := time.Now()
 	result := validateUpstreamModels(probeCtx, client, base, normalizeUpstreamKey(derefUpstreamKey(expected.UpstreamKey)))
 	item.LatencyMS = time.Since(started).Milliseconds()
+	result.Models = retainedUpstreamModels(expected, result.Models, result.advertisedModels, result.transientModels, result.ValidationComplete, result.ErrorCode)
+	if len(result.Models) > 0 {
+		result.OK = true
+		if !result.ValidationComplete {
+			result.ModelsAvailable = len(result.Models)
+		}
+	}
 	item.Models = append([]string{}, result.Models...)
 	item.ModelsTotal = result.ModelsTotal
 	item.ModelsChecked = result.ModelsChecked
 	item.ModelsAvailable = result.ModelsAvailable
 	item.ModelsFailed = result.ModelsFailed
 	item.ValidationComplete = result.ValidationComplete
-	item.OK = result.ValidationComplete && result.OK
+	// A partial run with at least one current or retained model is still usable.
+	// `ValidationComplete` remains false so the UI can show a retry warning, but
+	// the upstream must not be presented as wholly unavailable.
+	item.OK = result.OK
 	item.ErrorCode = result.ErrorCode
 	if item.ErrorCode == "" && !item.OK {
 		item.ErrorCode = "model_unavailable"
 	}
-	// An incomplete run must not replace the last verified snapshot. A complete
-	// run, including an empty or definitively rejected one, writes the exact
-	// result.
+	// A run with confirmed models writes that subset even if other advertised
+	// models were not completed; a run with no confirmed model leaves the prior
+	// snapshot in place.
 	persistCtx, persistCancel := upstreamValidationPersistenceContext(ctx)
 	defer persistCancel()
 	if err := s.recordUpstreamModels(persistCtx, store, expected, result.Models, result.ErrorCode, result.ValidationComplete); err != nil {
@@ -958,11 +1113,15 @@ func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore,
 	var modelErr *string
 	if code != "" {
 		modelErr = &code
-		if !complete {
-			// A catalogue/transport failure or an overall deadline means the
-			// current run did not check every advertised model. Keep the last
-			// verified catalogue while exposing the transient error.
-			models = nil
+		if !complete && len(models) == 0 {
+			// Authentication is authoritative even when the catalogue request
+			// stopped early: clear stale routes for a key that is no longer valid.
+			// Other incomplete failures retain the previous snapshot.
+			if code != "auth" && code != "model_unavailable" {
+				models = nil
+			} else {
+				models = []string{}
+			}
 		}
 	}
 	if _, err := recorder.RecordUpstreamModels(ctx, expected, models, modelErr); err != nil {
@@ -972,6 +1131,95 @@ func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore,
 	}
 	s.invalidateUpstreamConfig(ctx)
 	return nil
+}
+
+// retainedUpstreamModels merges a previous verified snapshot only for an
+// unchanged upstream and a non-authoritative, incomplete run. This prevents a
+// timeout, relay reset, or malformed catalogue from deleting models that a
+// manual request already proved usable. Authentication and completed
+// model-specific failures remain authoritative and publish the current result.
+func retainedUpstreamModels(expected *domain.Upstream, current, advertised, transient []string, complete bool, code string) []string {
+	if expected == nil || len(expected.Models) == 0 || !isRetainableValidation(code, complete) {
+		return append([]string{}, current...)
+	}
+	previous := make([]string, 0, len(expected.Models))
+	advertisedSet := make(map[string]struct{}, len(advertised))
+	for _, model := range advertised {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			advertisedSet[model] = struct{}{}
+		}
+	}
+	transientSet := make(map[string]struct{}, len(transient))
+	for _, model := range transient {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			transientSet[model] = struct{}{}
+		}
+	}
+	for _, model := range expected.Models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		// If the catalogue was read successfully, retain only an advertised
+		// model whose probe failed transiently. A definitive model/auth failure
+		// must be allowed to remove that route. When the catalogue itself was
+		// interrupted, there is no trustworthy advertised set, so the last
+		// snapshot remains the fallback as a whole.
+		if len(advertisedSet) > 0 {
+			if _, listed := advertisedSet[model]; !listed {
+				if complete {
+					continue
+				}
+				previous = append(previous, model)
+				continue
+			}
+			if _, retryable := transientSet[model]; !retryable {
+				continue
+			}
+		} else if complete {
+			continue
+		}
+		previous = append(previous, model)
+	}
+	return mergeUpstreamModelLists(previous, current)
+}
+
+func isRetainableValidation(code string, complete bool) bool {
+	code = strings.TrimSpace(code)
+	if complete {
+		return isTransientModelValidationCode(code)
+	}
+	return isRetainableIncompleteValidationCode(code)
+}
+
+func isRetainableIncompleteValidationCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "canceled", "timeout", "network", "upstream", "rate_limited", "invalid_value", "http_error":
+		return true
+	default:
+		return false
+	}
+}
+
+func mergeUpstreamModelLists(previous, current []string) []string {
+	seen := make(map[string]struct{}, len(previous)+len(current))
+	merged := make([]string, 0, len(previous)+len(current))
+	for _, source := range [][]string{previous, current} {
+		for _, model := range source {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				continue
+			}
+			if _, exists := seen[model]; exists {
+				continue
+			}
+			seen[model] = struct{}{}
+			merged = append(merged, model)
+		}
+	}
+	return merged
 }
 
 // PreviewUpstreamModels validates a not-yet-saved endpoint and key. It is used
@@ -991,8 +1239,8 @@ func (s *Service) PreviewUpstreamModels(ctx context.Context, base, key string) (
 		return nil, err
 	}
 	client := s.managementHTTPClient()
-	client.Timeout = 10 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.Timeout = upstreamModelValidationPerModel + time.Second
+	client.CheckRedirect = upstreamCheckRedirect
 	result := validateUpstreamModels(ctx, client, base, normalizeUpstreamKey(key))
 	return &result, nil
 }
@@ -1004,9 +1252,11 @@ func (s *Service) TestUpstream(ctx context.Context, id int64) (*UpstreamProbeRes
 }
 
 // TestUpstreamWithModel sends one tiny, non-streaming "hi" request through the
-// same configured transport used by the gateway. The selected model must be in
-// the current /v1/models catalogue. Responses-compatible relays are tried
-// first; a format rejection falls back to Chat Completions.
+// same configured transport used by the gateway. When no model is supplied,
+// the first entry from the current /v1/models catalogue is used. An explicit
+// model is sent directly because some relays hide tenant aliases from that
+// catalogue. Responses-compatible relays are tried first; a format rejection
+// falls back to Chat Completions.
 func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requestedModel string) (*UpstreamProbeResult, error) {
 	releaseValidation, err := s.lockUpstreamValidation(ctx)
 	if err != nil {
@@ -1038,23 +1288,32 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 	defer cancel()
 	client := s.managementHTTPClient()
 	client.Timeout = 12 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.CheckRedirect = upstreamCheckRedirect
 	key := normalizeUpstreamKey(derefUpstreamKey(u.UpstreamKey))
-	models, modelCode := fetchAdvertisedModels(testCtx, client, base, key)
 	model := strings.TrimSpace(requestedModel)
-	if modelCode != "" {
-		return s.recordUpstreamTestFailure(ctx, store, u, modelCode)
-	}
 	if model == "" {
+		// Discovery is the source for a safe default when the caller did not
+		// choose a model. An explicit model is tested directly below: relays may
+		// hide tenant aliases or transiently fail /models while accepting that
+		// identifier on the completion route.
+		models, modelCode := fetchAdvertisedModels(testCtx, client, base, key)
+		if modelCode != "" {
+			return s.recordUpstreamTestFailure(ctx, store, u, modelCode)
+		}
+		if len(models) == 0 {
+			return s.recordUpstreamTestFailure(ctx, store, u, "model_unavailable")
+		}
 		model = models[0]
-	} else if !containsModel(models, model) {
-		return s.recordUpstreamTestFailure(ctx, store, u, "model_unavailable")
 	}
+	// The live catalogue is the default source for the picker, but it is not a
+	// complete authority for an explicit management test. Some relays hide
+	// aliases, tenant-scoped models, or newly enabled models from /models while
+	// accepting the same identifier on the completion route. When an operator
+	// explicitly supplies a model, send the real request and let the provider's
+	// response decide whether it is usable; this keeps a manually successful
+	// model from being rejected solely because discovery omitted it.
 	started := time.Now()
-	status, requestErr := sendUpstreamTestRequest(testCtx, client, upstreamURL(base, "/v1/responses"), key, model, false)
-	if shouldFallbackTestRequest(status, requestErr) && testCtx.Err() == nil {
-		status, requestErr = sendUpstreamTestRequest(testCtx, client, upstreamURL(base, "/v1/chat/completions"), key, model, true)
-	}
+	status, requestErr := sendUpstreamModelProbeWithRetry(testCtx, client, base, key, model)
 	latency := time.Since(started).Milliseconds()
 	ok := requestErr == nil && status >= 200 && status < 300
 	code := classifyUpstreamTestError(testCtx, status, requestErr)
@@ -1068,6 +1327,22 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 			return supersededUpstreamResult(ctx, store, id)
 		}
 		return nil, mapRepoErr(err)
+	}
+	if ok {
+		// A selected model can be hidden from /v1/models (tenant aliases and
+		// newly enabled models are common examples). Persist a successful manual
+		// probe so group pickers and later transient validations do not lose the
+		// exact model that the operator just proved usable.
+		persisted, persistErr := s.recordExplicitUpstreamModel(ctx, store, updatedOrFallbackUpstream(updated, u), model)
+		if persistErr != nil {
+			if errors.Is(persistErr, repository.ErrConflict) {
+				return supersededUpstreamResult(ctx, store, id)
+			}
+			return nil, mapRepoErr(persistErr)
+		}
+		if persisted != nil {
+			updated = persisted
+		}
 	}
 	return &UpstreamProbeResult{Upstream: updated, OK: ok, LatencyMS: latency, ErrorCode: code}, nil
 }
@@ -1096,9 +1371,12 @@ func fetchAdvertisedModels(ctx context.Context, client *http.Client, base, key s
 	paths := []string{"/v1/models", "/models"}
 	lastCode := "http_error"
 	for i, path := range paths {
-		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		models, code, status, retryable := fetchAdvertisedModelsPath(requestCtx, client, upstreamURL(base, path), key)
-		cancel()
+		models, code, status, retryable := fetchAdvertisedModelsPagedPath(ctx, client, upstreamURL(base, path), key)
+		if isTransientModelValidationCode(code) && ctx.Err() == nil {
+			if waitForUpstreamCatalogueRetry(ctx) {
+				models, code, status, retryable = fetchAdvertisedModelsPagedPath(ctx, client, upstreamURL(base, path), key)
+			}
+		}
 		if code == "" {
 			return models, ""
 		}
@@ -1113,13 +1391,140 @@ func fetchAdvertisedModels(ctx context.Context, client *http.Client, base, key s
 	return nil, lastCode
 }
 
-// fetchAdvertisedModelsPath performs one bounded catalogue request. The
+func waitForUpstreamCatalogueRetry(ctx context.Context) bool {
+	if ctx == nil {
+		return true
+	}
+	timer := time.NewTimer(upstreamModelCatalogueRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return ctx.Err() == nil
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// advertisedModelsPage is one response from a model catalogue. Some relays
+// expose a cursor-paginated list even though the OpenAI-compatible contract
+// usually returns one complete page. The cursor is followed only after the
+// page itself has passed the same strict model-entry validation.
+type advertisedModelsPage struct {
+	models     []string
+	recognized bool
+	hasMore    bool
+	nextURL    string
+	nextCursor string
+	cursorKey  string
+}
+
+// fetchAdvertisedModelsPagedPath reads one catalogue route, following a
+// bounded same-origin cursor chain. The boolean return identifies route-level
+// failures for which the caller may try a compatibility path; it deliberately
+// excludes model/auth/provider errors and failures on later pages.
+func fetchAdvertisedModelsPagedPath(ctx context.Context, client *http.Client, target, key string) ([]string, string, int, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	current := target
+	visited := make(map[string]struct{}, 1)
+	all := make([]string, 0)
+	seen := make(map[string]struct{})
+	lastStatus := 0
+	for page := 0; page < upstreamModelCatalogueMaxPages; page++ {
+		if _, exists := visited[current]; exists {
+			return nil, "invalid_value", lastStatus, false
+		}
+		visited[current] = struct{}{}
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		pageResult, code, status, retryable := fetchAdvertisedModelsPage(requestCtx, client, current, key)
+		cancel()
+		lastStatus = status
+		if code != "" {
+			// A compatibility path is meaningful only for the first request. A
+			// later page failure means the catalogue is incomplete and must not
+			// publish the prefix that happened to arrive first.
+			if page > 0 {
+				retryable = false
+			}
+			return nil, code, status, retryable
+		}
+		if !pageResult.recognized {
+			return nil, "invalid_value", status, false
+		}
+		if len(all)+len(pageResult.models) > upstreamModelCatalogueMax {
+			return nil, "invalid_value", status, false
+		}
+		for _, model := range pageResult.models {
+			if _, exists := seen[model]; exists {
+				continue
+			}
+			seen[model] = struct{}{}
+			all = append(all, model)
+		}
+
+		next := strings.TrimSpace(pageResult.nextURL)
+		if next == "" && pageResult.hasMore && pageResult.nextCursor != "" {
+			param := pageResult.cursorKey
+			if param == "" {
+				param = "after"
+			}
+			var ok bool
+			next, ok = appendAdvertisedModelsCursor(current, param, pageResult.nextCursor)
+			if !ok {
+				return nil, "invalid_value", status, false
+			}
+		}
+		if next == "" {
+			if pageResult.hasMore {
+				// A declared next page without a cursor/link cannot be fetched
+				// safely; treating the first page as complete would hide models.
+				return nil, "invalid_value", status, false
+			}
+			if len(all) == 0 {
+				// An explicitly valid but empty catalogue is a completed
+				// capability check. Keep it distinct from malformed JSON so
+				// callers clear a stale model snapshot instead of continuing to
+				// route to old models.
+				return []string{}, "model_unavailable", status, false
+			}
+			return all, "", status, false
+		}
+		resolved, ok := resolveAdvertisedModelsNextURL(current, next)
+		if !ok {
+			return nil, "invalid_value", status, false
+		}
+		current = resolved
+	}
+	return nil, "invalid_value", lastStatus, false
+}
+
+// fetchAdvertisedModelsPath preserves the historical one-request helper for
+// tests and integrations that call it internally. A paginated response is
+// intentionally reported invalid here; fetchAdvertisedModels uses the bounded
+// paged variant above to retrieve the complete catalogue.
+func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target, key string) ([]string, string, int, bool) {
+	page, code, status, retryable := fetchAdvertisedModelsPage(ctx, client, target, key)
+	if code != "" {
+		return nil, code, status, retryable
+	}
+	if !page.recognized || page.hasMore || page.nextURL != "" || page.nextCursor != "" {
+		return nil, "invalid_value", status, false
+	}
+	if len(page.models) == 0 {
+		return []string{}, "model_unavailable", status, false
+	}
+	return page.models, "", status, false
+}
+
+// fetchAdvertisedModelsPage performs one bounded catalogue request. The
 // boolean return identifies route-level failures for which the caller may try
 // a compatibility path; it deliberately excludes model/auth/provider errors.
-func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target, key string) ([]string, string, int, bool) {
+func fetchAdvertisedModelsPage(ctx context.Context, client *http.Client, target, key string) (advertisedModelsPage, string, int, bool) {
+	var empty advertisedModelsPage
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, "invalid_value", 0, false
+		return empty, "invalid_value", 0, false
 	}
 	key = normalizeUpstreamKey(key)
 	if key != "" {
@@ -1131,12 +1536,12 @@ func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target,
 			_ = resp.Body.Close()
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, "timeout", 0, false
+			return empty, "timeout", 0, false
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-			return nil, "canceled", 0, false
+			return empty, "canceled", 0, false
 		}
-		return nil, "network", 0, false
+		return empty, "network", 0, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -1148,40 +1553,35 @@ func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target,
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		switch resp.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return nil, "auth", resp.StatusCode, false
+			return empty, "auth", resp.StatusCode, false
 		case http.StatusTooManyRequests:
-			return nil, "rate_limited", resp.StatusCode, false
-		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			return nil, "upstream", resp.StatusCode, false
+			return empty, "rate_limited", resp.StatusCode, false
 		case http.StatusNotFound:
-			return nil, "http_error", resp.StatusCode, !isStructuredProviderFailure(body)
+			return empty, "http_error", resp.StatusCode, !isStructuredProviderFailure(body)
 		case http.StatusMethodNotAllowed, http.StatusNotImplemented:
-			return nil, "http_error", resp.StatusCode, true
+			return empty, "http_error", resp.StatusCode, true
 		default:
-			return nil, "http_error", resp.StatusCode, false
+			if resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode >= 500 {
+				return empty, "upstream", resp.StatusCode, false
+			}
+			return empty, "http_error", resp.StatusCode, false
 		}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 	if err != nil {
-		return nil, "network", resp.StatusCode, false
+		return empty, "network", resp.StatusCode, false
 	}
 	if len(body) > 1<<20 {
-		return nil, "invalid_value", resp.StatusCode, false
+		return empty, "invalid_value", resp.StatusCode, false
 	}
-	models, recognized := parseUpstreamModelsPayload(body)
+	page, recognized := parseUpstreamModelsPagePayload(body)
 	if !recognized {
 		if code, ok := classifyModelCatalogueErrorEnvelope(body); ok {
-			return nil, code, resp.StatusCode, false
+			return empty, code, resp.StatusCode, false
 		}
-		return nil, "invalid_value", resp.StatusCode, false
+		return empty, "invalid_value", resp.StatusCode, false
 	}
-	if len(models) == 0 {
-		// An explicitly valid but empty catalogue is a completed capability
-		// check. Keep it distinct from malformed JSON so callers clear a stale
-		// model snapshot instead of continuing to route to old models.
-		return []string{}, "model_unavailable", resp.StatusCode, false
-	}
-	return models, "", resp.StatusCode, false
+	return page, "", resp.StatusCode, false
 }
 
 // classifyModelCatalogueErrorEnvelope handles relays that return an
@@ -1189,6 +1589,7 @@ func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target,
 // deliberately limited to a top-level error member; arbitrary JSON remains an
 // invalid catalogue instead of being guessed as an auth or outage signal.
 func classifyModelCatalogueErrorEnvelope(body []byte) (string, bool) {
+	body = trimUpstreamJSONBody(body)
 	var value map[string]json.RawMessage
 	if err := json.Unmarshal(body, &value); err != nil {
 		return "", false
@@ -1208,6 +1609,8 @@ type upstreamModelValidation struct {
 	ModelsAvailable    int
 	ModelsFailed       int
 	ValidationComplete bool
+	advertisedModels   []string
+	transientModels    []string
 }
 
 // validateUpstreamModels turns an advertised catalogue into a verified
@@ -1215,7 +1618,15 @@ type upstreamModelValidation struct {
 // worker pool and per-model/overall deadlines. The route is Responses first;
 // only an explicit protocol/format rejection is retried as Chat Completions.
 func validateUpstreamModels(ctx context.Context, client *http.Client, base, key string) UpstreamModelsResult {
-	models, code := fetchAdvertisedModels(ctx, client, base, key)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// Catalogue acquisition has its own deadline. Without this boundary a
+	// cursor chain (each page has a ten-second request budget) could consume
+	// the entire model-validation window before a single model is probed.
+	catalogueCtx, catalogueCancel := context.WithTimeout(ctx, upstreamModelCatalogueTimeout)
+	models, code := fetchAdvertisedModels(catalogueCtx, client, base, key)
+	catalogueCancel()
 	if code != "" {
 		if code == "model_unavailable" && models != nil {
 			return UpstreamModelsResult{
@@ -1227,6 +1638,7 @@ func validateUpstreamModels(ctx context.Context, client *http.Client, base, key 
 				ModelsAvailable:    0,
 				ModelsFailed:       0,
 				ValidationComplete: true,
+				advertisedModels:   append([]string{}, models...),
 			}
 		}
 		return UpstreamModelsResult{Models: nil, OK: false, ErrorCode: code}
@@ -1241,11 +1653,37 @@ func validateUpstreamModels(ctx context.Context, client *http.Client, base, key 
 		ModelsAvailable:    result.ModelsAvailable,
 		ModelsFailed:       result.ModelsFailed,
 		ValidationComplete: result.ValidationComplete,
+		advertisedModels:   append([]string{}, models...),
+		transientModels:    append([]string{}, result.transientModels...),
 	}
 }
 
 func validateModelCatalogue(ctx context.Context, client *http.Client, base, key string, models []string) upstreamModelValidation {
-	return validateModelCatalogueWithTimeout(ctx, client, base, key, models, upstreamModelValidationTimeout)
+	// The default deadline must cover every model when probes are serialized.
+	// Keep the historical 30s floor for small catalogues, then add one second
+	// of hand-off/response slack per catalogue wave so a valid large catalogue
+	// is not cut off solely because it has more models than the floor allows.
+	return validateModelCatalogueWithTimeout(ctx, client, base, key, models, modelValidationTimeoutForCount(len(models)))
+}
+
+// modelValidationTimeoutForCount keeps the batch budget proportional to the
+// amount of work while retaining a floor for the common one- or two-model
+// case.  The hard batch cap prevents a provider that advertises an enormous
+// catalogue from holding the validation lock forever.
+func modelValidationTimeoutForCount(modelCount int) time.Duration {
+	if modelCount <= 0 {
+		return upstreamModelValidationTimeout
+	}
+	waves := (modelCount + upstreamModelValidationConcurrency - 1) / upstreamModelValidationConcurrency
+	timeout := upstreamModelValidationTimeout
+	minimum := time.Duration(waves)*upstreamModelValidationPerModel + time.Second
+	if minimum > timeout {
+		timeout = minimum
+	}
+	if timeout > upstreamValidationBatchTimeout {
+		timeout = upstreamValidationBatchTimeout
+	}
+	return timeout
 }
 
 // validateModelCatalogueWithTimeout contains the bounded catalogue worker and
@@ -1298,13 +1736,16 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 				// bounded request. Jobs skipped after the overall deadline are
 				// not reported as real validation attempts.
 				modelCtx, modelCancel := context.WithTimeout(validationCtx, upstreamModelValidationPerModel)
-				status, requestErr := sendUpstreamTestRequest(modelCtx, client, upstreamURL(base, "/v1/responses"), key, model, false)
-				if shouldFallbackTestRequest(status, requestErr) && modelCtx.Err() == nil {
-					status, requestErr = sendUpstreamTestRequest(modelCtx, client, upstreamURL(base, "/v1/chat/completions"), key, model, true)
-				}
+				status, requestErr := sendUpstreamModelProbeWithRetry(modelCtx, client, base, key, model)
 				modelCancel()
 				modelCode := classifyModelValidationError(validationCtx, status, requestErr)
-				recordFatal(modelCode)
+				// A 401/403 can be scoped to the selected model (for example a
+				// relay exposes a catalogue broader than the credential's
+				// entitlement). Keep probing the remaining models in that case;
+				// only an account-wide auth response should stop dispatch.
+				if !(modelCode == "auth" && isModelScopedAuthFailure(requestErr)) {
+					recordFatal(modelCode)
+				}
 				results <- outcome{model: model, ok: modelCode == "", checked: true, code: modelCode}
 			}
 		}()
@@ -1340,6 +1781,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 	checked := 0
 	failed := 0
 	counts := make(map[string]int)
+	transientSet := make(map[string]struct{})
 	for outcome := range results {
 		if outcome.checked {
 			checked++
@@ -1350,6 +1792,9 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 			failed++
 			if outcome.code != "" {
 				counts[outcome.code]++
+				if isTransientModelValidationCode(outcome.code) {
+					transientSet[outcome.model] = struct{}{}
+				}
 			}
 		}
 	}
@@ -1365,18 +1810,26 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 			ordered = append(ordered, model)
 		}
 	}
+	transientModels := make([]string, 0, len(transientSet))
+	for _, model := range models {
+		if _, ok := transientSet[model]; ok {
+			transientModels = append(transientModels, model)
+		}
+	}
 	// An account-wide authentication signal can stop dispatching new work. It
 	// must not turn a run that already checked every advertised model into a
 	// partial result (for example a one-model catalogue returning auth). A caller
 	// deadline/cancellation or this function's own bounded deadline makes an
 	// otherwise complete-looking run incomplete.
 	complete := checked == len(models) && validationCtx.Err() == nil
-	// A catalogue with no successful model and any transient transport or
-	// throttling failure is not a trustworthy "no models" snapshot. Keep the
-	// previous verified list so one provider hiccup cannot remove every route.
-	// An authentication failure remains authoritative: an invalid credential
-	// should clear the stale snapshot instead of routing traffic into it.
-	if complete && len(ordered) == 0 && counts["auth"] == 0 && hasTransientValidationFailure(counts) {
+	// Any transient transport/throttling failure means this is not a stable
+	// capability snapshot, even when other models succeeded. Keeping the run
+	// explicitly incomplete lets persistence retain the previous verified model
+	// while still exposing the newly confirmed subset. Otherwise a single 429 or
+	// timeout would make a previously manual-tested model disappear.
+	// Authentication/model-specific failures remain authoritative when every
+	// advertised model was actually checked.
+	if complete && hasTransientValidationFailure(counts) {
 		complete = false
 	}
 	validationCode := ""
@@ -1414,6 +1867,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 		ModelsAvailable:    len(ordered),
 		ModelsFailed:       failed,
 		ValidationComplete: complete,
+		transientModels:    transientModels,
 	}
 }
 
@@ -1442,7 +1896,23 @@ func hasTransientValidationFailure(counts map[string]int) bool {
 	return false
 }
 
+func isTransientModelValidationCode(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "rate_limited", "upstream", "network", "timeout":
+		return true
+	default:
+		return false
+	}
+}
+
 func classifyModelValidationError(ctx context.Context, status int, requestErr error) string {
+	// Once the complete response body was read, a context deadline that fires
+	// immediately afterwards must not rewrite that successful probe as a
+	// timeout. The transport already reports an error when the body was not
+	// completed; only then should cancellation/deadline precedence apply.
+	if requestErr == nil && status >= 200 && status < 300 {
+		return ""
+	}
 	if code := validationContextErrorCode(ctx); code != "" {
 		// The caller's cancellation/deadline outranks a response that happened
 		// to arrive at the same time (for example a 401 or 429).
@@ -1475,6 +1945,17 @@ func classifyModelValidationError(ctx context.Context, status int, requestErr er
 	// otherwise a malformed request or unsupported feature would incorrectly
 	// remove a usable model from the verified catalogue.
 	return classifyUpstreamTestError(ctx, status, requestErr)
+}
+
+func isModelScopedAuthFailure(err error) bool {
+	var httpErr *upstreamHTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	if httpErr.status != http.StatusUnauthorized && httpErr.status != http.StatusForbidden {
+		return false
+	}
+	return isModelUnavailableMessage(string(httpErr.body))
 }
 
 // classifySuccessfulErrorEnvelope keeps common provider/application failures
@@ -1528,7 +2009,18 @@ func dominantModelValidationError(counts map[string]int) string {
 func isModelUnavailableMessage(message string) bool {
 	message = strings.ToLower(message)
 	normalized := strings.NewReplacer("_", " ", "-", " ").Replace(message)
-	for _, marker := range []string{"model not found", "model_not_found", "unknown model", "invalid model", "model does not exist", "no such model", "model unavailable"} {
+	for _, marker := range []string{
+		"model not found", "model_not_found", "unknown model", "invalid model",
+		"model does not exist", "no such model", "model unavailable", "model not available", "model is not available",
+		"model not enabled", "model is not enabled", "model disabled", "model access denied",
+		"access denied for model", "no access to model", "does not have access to this model",
+		"doesn't have access to this model", "permission denied for model",
+		"model permission", "model forbidden", "model is not allowed", "model not allowed",
+		"model restricted", "access restricted for model", "restricted model", "model not entitled",
+		"not entitled to model", "model entitlement", "account is not entitled to use the model",
+		"account not entitled to model", "project is not entitled to use the model",
+		"model is not enabled for this project", "model is not enabled for this account",
+	} {
 		if strings.Contains(message, marker) || strings.Contains(normalized, marker) {
 			return true
 		}
@@ -1545,41 +2037,30 @@ func parseUpstreamModels(body []byte) []string {
 // response had a recognized catalogue shape. The second value matters for an
 // empty, valid list: [] and {"data":[]} mean "no models", not malformed data.
 func parseUpstreamModelsPayload(body []byte) ([]string, bool) {
+	page, recognized := parseUpstreamModelsPagePayload(body)
+	if !recognized || page.hasMore || page.nextURL != "" || page.nextCursor != "" {
+		return nil, false
+	}
+	return page.models, true
+}
+
+// parseUpstreamModelsPagePayload accepts one model-list page and extracts a
+// bounded continuation hint. It deliberately accepts the common nested
+// `data.models`/`result.data` shapes used by relays while keeping arbitrary
+// JSON objects out of the catalogue.
+func parseUpstreamModelsPagePayload(body []byte) (advertisedModelsPage, bool) {
+	var empty advertisedModelsPage
+	body = trimUpstreamJSONBody(body)
 	var root any
 	if err := json.Unmarshal(body, &root); err != nil {
-		return nil, false
+		return empty, false
 	}
-	var entries []any
-	recognized := false
-	switch value := root.(type) {
-	case []any:
-		entries = value
-		recognized = true
-	case map[string]any:
-		// A paginated response is not a complete catalogue. This validator does
-		// not guess cursor semantics across providers; fail closed so the caller
-		// cannot publish or route against only the first page.
-		if hasMore, ok := value["has_more"].(bool); ok && hasMore {
-			return nil, false
-		}
-		for _, key := range []string{"next", "next_page", "next_cursor"} {
-			if cursor, ok := value[key].(string); ok && strings.TrimSpace(cursor) != "" {
-				return nil, false
-			}
-		}
-		for _, key := range []string{"data", "models"} {
-			if candidate, ok := value[key].([]any); ok {
-				entries = candidate
-				recognized = true
-				break
-			}
-		}
-	}
+	entries, meta, recognized := modelCatalogueEntries(root)
 	if !recognized {
-		return nil, false
+		return empty, false
 	}
 	if len(entries) > upstreamModelCatalogueMax {
-		return nil, false
+		return empty, false
 	}
 	// The response body is already bounded by fetchAdvertisedModelsPath (1 MiB),
 	// and this explicit cap keeps validation work bounded. Every advertised model
@@ -1593,7 +2074,11 @@ func parseUpstreamModelsPayload(body []byte) ([]string, bool) {
 		case string:
 			name = value
 		case map[string]any:
-			for _, key := range []string{"id", "name", "model"} {
+			// Prefer invocation identifiers over display labels. Relays often
+			// return both `name` (a human title) and `slug`/`model_id` (the value
+			// accepted by the completion route); selecting the label would make a
+			// manually usable model look unavailable during the real probe.
+			for _, key := range []string{"model_id", "slug", "model", "id", "model_name", "name"} {
 				if candidate, ok := value[key].(string); ok {
 					name = candidate
 					break
@@ -1605,7 +2090,7 @@ func parseUpstreamModelsPayload(body []byte) ([]string, bool) {
 			// A non-empty advertised list containing an invalid entry is a
 			// malformed catalogue, not an empty catalogue. Rejecting the whole
 			// response prevents validation from silently skipping a provider model.
-			return nil, false
+			return empty, false
 		}
 		if _, ok := seen[name]; ok {
 			continue
@@ -1613,7 +2098,145 @@ func parseUpstreamModelsPayload(body []byte) ([]string, bool) {
 		seen[name] = struct{}{}
 		models = append(models, name)
 	}
-	return models, true
+	return advertisedModelsPage{
+		models:     models,
+		recognized: true,
+		hasMore:    meta.hasMore,
+		nextURL:    meta.nextURL,
+		nextCursor: meta.nextCursor,
+		cursorKey:  meta.cursorKey,
+	}, true
+}
+
+type modelCatalogueMeta struct {
+	hasMore    bool
+	nextURL    string
+	nextCursor string
+	cursorKey  string
+}
+
+const upstreamModelCatalogueMaxNesting = 3
+
+// modelCatalogueEntries identifies the model array and continuation metadata
+// without accepting a generic `status: ok` object as a catalogue. Relays can
+// wrap the same list in more than one envelope (`payload.result.data`, for
+// example), so the unwrapping is recursive but deliberately depth-limited.
+func modelCatalogueEntries(root any) ([]any, modelCatalogueMeta, bool) {
+	return modelCatalogueEntriesAtDepth(root, 0)
+}
+
+func modelCatalogueEntriesAtDepth(root any, depth int) ([]any, modelCatalogueMeta, bool) {
+	if entries, ok := root.([]any); ok {
+		return entries, modelCatalogueMeta{}, true
+	}
+	value, ok := root.(map[string]any)
+	if !ok {
+		return nil, modelCatalogueMeta{}, false
+	}
+	meta := modelCataloguePagination(value)
+	for _, key := range []string{"data", "models", "items"} {
+		if entries, ok := value[key].([]any); ok {
+			return entries, meta, true
+		}
+	}
+	if depth >= upstreamModelCatalogueMaxNesting {
+		return nil, modelCatalogueMeta{}, false
+	}
+	// A few relays wrap the OpenAI list in `result`, `data`, or `response`
+	// objects. Require a real array below the bounded wrapper chain so arbitrary
+	// JSON status documents are not treated as model catalogues.
+	for _, key := range []string{"result", "data", "response", "payload", "body"} {
+		nested, ok := value[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		entries, nestedMeta, recognized := modelCatalogueEntriesAtDepth(nested, depth+1)
+		if recognized {
+			return entries, mergeModelCatalogueMeta(meta, nestedMeta), true
+		}
+	}
+	return nil, modelCatalogueMeta{}, false
+}
+
+func mergeModelCatalogueMeta(outer, nested modelCatalogueMeta) modelCatalogueMeta {
+	if nested.hasMore || nested.nextURL != "" || nested.nextCursor != "" {
+		return nested
+	}
+	return outer
+}
+
+func modelCataloguePagination(value map[string]any) modelCatalogueMeta {
+	meta := modelCatalogueMeta{}
+	for _, key := range []string{"has_more", "hasMore", "more"} {
+		if hasMore, ok := value[key].(bool); ok {
+			meta.hasMore = hasMore
+			break
+		}
+	}
+	for _, key := range []string{"next", "next_url", "next_uri", "next_page", "next_link"} {
+		if next, ok := value[key].(string); ok && strings.TrimSpace(next) != "" {
+			meta.nextURL = strings.TrimSpace(next)
+			break
+		}
+	}
+	for _, key := range []string{"next_cursor", "nextCursor", "next_page_token", "nextPageToken", "page_token"} {
+		if cursor, ok := value[key].(string); ok && strings.TrimSpace(cursor) != "" {
+			meta.nextCursor = strings.TrimSpace(cursor)
+			switch strings.ToLower(key) {
+			case "next_cursor", "nextcursor":
+				meta.cursorKey = "cursor"
+			case "next_page_token", "nextpagetoken", "page_token":
+				meta.cursorKey = "page_token"
+			}
+			// `page_token` is also commonly used as the response's next-page
+			// cursor (without a separate has_more flag). Treat every non-empty
+			// cursor field as a continuation; the visited-URL guard prevents a
+			// provider echoing the same token from creating an unbounded loop.
+			meta.hasMore = true
+			break
+		}
+	}
+	if meta.hasMore && meta.nextCursor == "" {
+		for _, key := range []string{"last_id", "lastId", "after"} {
+			if cursor, ok := value[key].(string); ok && strings.TrimSpace(cursor) != "" {
+				meta.nextCursor = strings.TrimSpace(cursor)
+				meta.cursorKey = "after"
+				break
+			}
+		}
+	}
+	return meta
+}
+
+func resolveAdvertisedModelsNextURL(current, next string) (string, bool) {
+	currentURL, err := url.Parse(current)
+	if err != nil || currentURL.Scheme == "" || currentURL.Host == "" {
+		return "", false
+	}
+	candidate, err := url.Parse(strings.TrimSpace(next))
+	if err != nil {
+		return "", false
+	}
+	if !candidate.IsAbs() {
+		candidate = currentURL.ResolveReference(candidate)
+	}
+	if candidate.Scheme != currentURL.Scheme || !strings.EqualFold(candidate.Host, currentURL.Host) {
+		return "", false
+	}
+	candidate.Fragment = ""
+	return candidate.String(), true
+}
+
+func appendAdvertisedModelsCursor(current, key, cursor string) (string, bool) {
+	parsed, err := url.Parse(current)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	query := parsed.Query()
+	query.Set(key, cursor)
+	parsed.RawQuery = query.Encode()
+	parsed.Fragment = ""
+	return parsed.String(), true
 }
 
 func containsModel(models []string, target string) bool {
@@ -1625,24 +2248,256 @@ func containsModel(models []string, target string) bool {
 	return false
 }
 
+type responsesProbeShape uint8
+
+const (
+	// Shapes are bit flags rather than mutually-exclusive enum values. A strict
+	// relay may reject more than one field in sequence (for example it first
+	// requires an input array and then requires stream=true); retaining earlier
+	// fixes prevents a later retry from silently reverting them.
+	responsesProbeCanonical responsesProbeShape = 0
+	responsesProbeCompact   responsesProbeShape = 1 << iota
+	responsesProbeInputArray
+	responsesProbeStream
+	responsesProbeNoOutputLimit
+)
+
+// sendUpstreamResponsesProbe starts with the ordinary Responses request and
+// performs at most four compatibility retries.  A retry is allowed only when
+// the relay explicitly rejected the request shape before model execution;
+// quota, authentication, model, and provider errors are never replayed.
+func sendUpstreamResponsesProbe(ctx context.Context, client *http.Client, target, key, model string) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	status, requestErr := sendUpstreamTestRequest(ctx, client, target, key, model, false)
+	shape := responsesProbeCanonical
+	tried := map[responsesProbeShape]struct{}{shape: {}}
+	// Parameter rejections are handled before model execution and therefore do
+	// not consume model quota. Four bounded retries cover the independent
+	// compatibility dimensions without allowing a malformed relay to hold the
+	// validation worker indefinitely.
+	for attempt := 0; attempt < 4 && ctx.Err() == nil; attempt++ {
+		next := responsesProbeCompatibilityShape(status, requestErr)
+		if next == responsesProbeCanonical {
+			break
+		}
+		merged := shape | next
+		if merged == shape {
+			break
+		}
+		if _, exists := tried[merged]; exists {
+			break
+		}
+		shape = merged
+		tried[shape] = struct{}{}
+		status, requestErr = sendUpstreamTestRequestShape(ctx, client, target, key, model, false, shape)
+	}
+	return status, requestErr
+}
+
+// sendUpstreamModelProbe selects the Responses or Chat wire protocol once.
+// A protocol fallback is attempted only for an explicit route/format
+// rejection; it is intentionally not used for quota, auth, model, or provider
+// failures.
+func sendUpstreamModelProbe(ctx context.Context, client *http.Client, base, key, model string) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	status, requestErr := sendUpstreamResponsesProbe(ctx, client, upstreamURL(base, "/v1/responses"), key, model)
+	if shouldFallbackTestRequest(status, requestErr) && ctx.Err() == nil {
+		status, requestErr = sendUpstreamChatProbe(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model)
+	}
+	return status, requestErr
+}
+
+// sendUpstreamModelProbeWithRetry retries one transient model-level transport
+// result after the protocol selection above. The retry is bounded to one and
+// never runs after the caller's model deadline; definitive model/auth errors
+// are returned immediately.
+func sendUpstreamModelProbeWithRetry(ctx context.Context, client *http.Client, base, key, model string) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	status, requestErr := sendUpstreamModelProbe(ctx, client, base, key, model)
+	if !shouldRetryTransientModelProbe(status, requestErr) || !waitForUpstreamModelProbeRetry(ctx) {
+		return status, requestErr
+	}
+	return sendUpstreamModelProbe(ctx, client, base, key, model)
+}
+
+func shouldRetryTransientModelProbe(status int, requestErr error) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	// A status-less transport reset can be a one-off connection failure. Do not
+	// replay context deadlines or malformed/semantic responses.
+	if status != 0 || requestErr == nil {
+		return false
+	}
+	if errors.Is(requestErr, context.Canceled) || errors.Is(requestErr, context.DeadlineExceeded) {
+		return false
+	}
+	return true
+}
+
+func waitForUpstreamModelProbeRetry(ctx context.Context) bool {
+	if ctx == nil {
+		return true
+	}
+	timer := time.NewTimer(upstreamModelProbeRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return ctx.Err() == nil
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func responsesProbeCompatibilityShape(status int, requestErr error) responsesProbeShape {
+	if !shouldRetryResponsesParameter(status, requestErr) {
+		return responsesProbeCanonical
+	}
+	body := strings.ToLower(responseErrorBody(requestErr))
+	// Some relays implement the Responses wire format but require an input
+	// message array instead of the shorthand string accepted by OpenAI.
+	if strings.Contains(body, "input") && (strings.Contains(body, "array") ||
+		strings.Contains(body, "list") || strings.Contains(body, "object") ||
+		strings.Contains(body, "message") || strings.Contains(body, "expected")) {
+		return responsesProbeInputArray
+	}
+	// A few gateways force streaming for Responses requests.  Their error
+	// usually names both `stream` and the required true value.
+	if strings.Contains(body, "stream") && (strings.Contains(body, "true") ||
+		strings.Contains(body, "required") || strings.Contains(body, "must")) {
+		return responsesProbeStream
+	}
+	// A subset of OpenAI-compatible relays implements Responses but rejects
+	// max_output_tokens altogether (or only supports a provider-specific
+	// default).  The tiny `hi` probe is bounded by its context, so dropping this
+	// optional limit is preferable to hiding an otherwise usable model.
+	if strings.Contains(body, "max_output_tokens") || strings.Contains(body, "max output tokens") {
+		return responsesProbeNoOutputLimit
+	}
+	return responsesProbeCompact
+}
+
+// sendUpstreamChatProbe probes the legacy Chat Completions route and carries
+// explicit request-shape fixes across retries. A number of relays require
+// `max_completion_tokens` for newer models and some force `stream=true` even
+// for a tiny capability request; treating those as protocol mismatches keeps
+// a manually usable model from being filtered by the management probe.
+func sendUpstreamChatProbe(ctx context.Context, client *http.Client, target, key, model string) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	status, requestErr := sendUpstreamTestRequestShape(ctx, client, target, key, model, true, responsesProbeCanonical)
+	shape := responsesProbeCanonical
+	tried := map[responsesProbeShape]struct{}{shape: {}}
+	// Chat has two independent compatibility dimensions. Keep the same bounded
+	// retry discipline as Responses and never replay an ordinary model/provider
+	// failure.
+	for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+		next := chatProbeCompatibilityShape(status, requestErr)
+		if next == responsesProbeCanonical {
+			break
+		}
+		merged := shape | next
+		if merged == shape {
+			break
+		}
+		if _, exists := tried[merged]; exists {
+			break
+		}
+		shape = merged
+		tried[shape] = struct{}{}
+		status, requestErr = sendUpstreamTestRequestShape(ctx, client, target, key, model, true, shape)
+	}
+	return status, requestErr
+}
+
+func chatProbeCompatibilityShape(status int, requestErr error) responsesProbeShape {
+	if !shouldRetryChatParameter(status, requestErr) {
+		return responsesProbeCanonical
+	}
+	body := strings.ToLower(responseErrorBody(requestErr))
+	if strings.Contains(body, "stream") && (strings.Contains(body, "true") ||
+		strings.Contains(body, "required") || strings.Contains(body, "must")) {
+		return responsesProbeStream
+	}
+	return responsesProbeCompact
+}
+
 func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, key, model string, chat bool) (int, error) {
+	return sendUpstreamTestRequestVariant(ctx, client, target, key, model, chat, false)
+}
+
+// sendUpstreamTestRequestVariant sends the normal minimal probe or one
+// compatibility variant. The default shape remains stable for existing
+// clients; the variant omits optional fields that strict relays reject before
+// dispatching a request.
+func sendUpstreamTestRequestVariant(ctx context.Context, client *http.Client, target, key, model string, chat, compact bool) (int, error) {
+	if !chat {
+		shape := responsesProbeCanonical
+		if compact {
+			shape = responsesProbeCompact
+		}
+		return sendUpstreamTestRequestShape(ctx, client, target, key, model, false, shape)
+	}
+	shape := responsesProbeCanonical
+	if compact {
+		shape = responsesProbeCompact
+	}
+	return sendUpstreamTestRequestShape(ctx, client, target, key, model, true, shape)
+}
+
+func sendUpstreamTestRequestShape(ctx context.Context, client *http.Client, target, key, model string, chat bool, shape responsesProbeShape) (int, error) {
 	key = normalizeUpstreamKey(key)
 	var body []byte
 	if chat {
-		body, _ = json.Marshal(map[string]any{
-			"model":      model,
-			"messages":   []map[string]string{{"role": "user", "content": "hi"}},
-			"stream":     false,
-			"max_tokens": 1,
-		})
+		payload := map[string]any{
+			"model":    model,
+			"messages": []map[string]string{{"role": "user", "content": "hi"}},
+			"stream":   false,
+		}
+		if shape&responsesProbeStream != 0 {
+			payload["stream"] = true
+		}
+		if shape&responsesProbeCompact != 0 {
+			// Newer reasoning models reject the legacy max_tokens field. Keep
+			// the compatibility retry limited to an explicit parameter error.
+			payload["max_completion_tokens"] = 1
+		} else {
+			payload["max_tokens"] = 1
+		}
+		body, _ = json.Marshal(payload)
 	} else {
-		body, _ = json.Marshal(map[string]any{
+		payload := map[string]any{
 			"model":             model,
 			"input":             "hi",
 			"stream":            false,
-			"store":             false,
 			"max_output_tokens": 1,
-		})
+		}
+		if shape&responsesProbeInputArray != 0 {
+			payload["input"] = []map[string]any{{"role": "user", "content": "hi"}}
+		}
+		if shape&responsesProbeStream != 0 {
+			payload["stream"] = true
+		}
+		if shape&responsesProbeNoOutputLimit != 0 {
+			delete(payload, "max_output_tokens")
+		}
+		if shape&responsesProbeCompact == 0 && shape&responsesProbeInputArray == 0 && shape&responsesProbeStream == 0 && shape&responsesProbeNoOutputLimit == 0 {
+			// `store` is supported by the Responses API but a number of
+			// OpenAI-compatible relays reject unknown optional fields. It is
+			// kept in the normal request for wire compatibility and omitted by
+			// the one-shot parameter retry below.
+			payload["store"] = false
+		}
+		body, _ = json.Marshal(payload)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
@@ -1664,13 +2519,13 @@ func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, k
 		// A relay can return a portal/error page with HTTP 200. Treat that as a
 		// failed test instead of reporting a false positive. Keep the body bound
 		// so a malicious or misconfigured endpoint cannot exhaust the manager.
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
+		body, readErr := readUpstreamProbeBody(resp)
 		if readErr != nil {
 			return resp.StatusCode, readErr
 		}
-		if len(body) == 0 || len(body) > 1<<20 || !isJSONObjectResponse(body) {
+		if len(body) == 0 || len(body) > 1<<20 || !isUpstreamSuccessResponse(body) {
 			var envelope map[string]any
-			if json.Unmarshal(body, &envelope) == nil {
+			if json.Unmarshal(trimUpstreamJSONBody(body), &envelope) == nil {
 				if _, hasError := envelope["error"]; hasError {
 					return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), body...)}
 				}
@@ -1683,8 +2538,128 @@ func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, k
 	return resp.StatusCode, &upstreamHTTPError{status: resp.StatusCode, body: responseBody}
 }
 
+// readUpstreamProbeBody reads a bounded probe response. Streaming relays may
+// keep the HTTP connection open after emitting the first complete SSE event;
+// once that event proves a successful provider response, return immediately so
+// validation does not turn an otherwise usable model into a timeout.
+func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
+	if resp == nil || resp.Body == nil {
+		return nil, errors.New("nil upstream response body")
+	}
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	reader := bufio.NewReaderSize(io.LimitReader(resp.Body, 1<<20+1), 32<<10)
+	// A proxy may rewrite `text/event-stream` to `application/json`. Peek at
+	// the first complete line so an open stream is recognized by its SSE field
+	// syntax instead of waiting for EOF like an ordinary JSON response. A few
+	// relays prepend a blank line (or an SSE `id`/`retry` field), so retain a
+	// small prefix while looking past only those unambiguous SSE preamble lines.
+	firstLine, firstErr := reader.ReadBytes('\n')
+	prefix := append([]byte(nil), firstLine...)
+	looksLikeSSE := strings.Contains(contentType, "text/event-stream") || isUpstreamSSELine(firstLine)
+	if !looksLikeSSE {
+		// Leading empty lines are legal SSE separators but are also harmless in
+		// an ordinary response. Only read ahead while the prefix is blank; this
+		// keeps JSON responses from acquiring an extra blocking read while still
+		// recognizing `\n\ndata: ...` streams when the content type was rewritten.
+		for i := 0; i < 16 && isUpstreamSSEBlankLine(firstLine) && firstErr == nil; i++ {
+			next, err := reader.ReadBytes('\n')
+			prefix = append(prefix, next...)
+			firstLine, firstErr = next, err
+			if isUpstreamSSELine(next) {
+				looksLikeSSE = true
+				break
+			}
+		}
+	}
+	if !looksLikeSSE {
+		// Chunked JSON relays sometimes flush a complete one-line response and
+		// keep the connection alive for reuse without sending an end marker.
+		// The provider envelope is already sufficient evidence for a capability
+		// probe, so stop at that boundary instead of waiting for EOF. Multi-line
+		// or incomplete JSON continues through the bounded full read below.
+		if isUpstreamSuccessResponse(prefix) {
+			return prefix, nil
+		}
+		if firstErr != nil && !errors.Is(firstErr, io.EOF) {
+			return nil, firstErr
+		}
+		rest, readErr := io.ReadAll(reader)
+		body := append(prefix, rest...)
+		if errors.Is(readErr, io.EOF) {
+			readErr = nil
+		}
+		return body, readErr
+	}
+	var event bytes.Buffer
+	if len(prefix) > 0 {
+		event.Write(prefix)
+	}
+	if firstErr != nil && !errors.Is(firstErr, io.EOF) {
+		return nil, firstErr
+	}
+	if errors.Is(firstErr, io.EOF) {
+		if event.Len() > 0 && isUpstreamSuccessResponse(event.Bytes()) {
+			return event.Bytes(), nil
+		}
+		return nil, firstErr
+	}
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			event.Write(line)
+			if event.Len() > 1<<20 {
+				return nil, errors.New("upstream probe response too large")
+			}
+			if len(bytes.TrimSpace(line)) == 0 {
+				if isUpstreamSuccessResponse(event.Bytes()) {
+					return event.Bytes(), nil
+				}
+				event.Reset()
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if event.Len() > 0 && isUpstreamSuccessResponse(event.Bytes()) {
+					return event.Bytes(), nil
+				}
+			}
+			return nil, err
+		}
+	}
+}
+
+func isUpstreamSSELine(line []byte) bool {
+	line = trimUpstreamSSELine(line)
+	return bytes.HasPrefix(line, []byte("data:")) || bytes.HasPrefix(line, []byte("event:")) ||
+		bytes.HasPrefix(line, []byte("id:")) || bytes.HasPrefix(line, []byte("retry:")) ||
+		bytes.HasPrefix(line, []byte(":"))
+}
+
+func isUpstreamSSEBlankLine(line []byte) bool {
+	return len(trimUpstreamSSELine(line)) == 0
+}
+
+func trimUpstreamSSELine(line []byte) []byte {
+	line = bytes.TrimSpace(line)
+	// UTF-8 BOMs are occasionally emitted by a proxy before the first SSE
+	// field. Strip one after whitespace trimming so `\ufeffdata:` is treated
+	// exactly like the standards-compliant `data:` spelling.
+	line = bytes.TrimPrefix(line, []byte{0xef, 0xbb, 0xbf})
+	return bytes.TrimSpace(line)
+}
+
 var errInvalidUpstreamResponse = errors.New("invalid upstream test response")
 var errUpstreamErrorEnvelope = errors.New("upstream returned an error envelope")
+
+// trimUpstreamJSONBody removes the optional UTF-8 BOM and surrounding
+// whitespace emitted by a few relays or intermediary proxies. The standard
+// encoding/json package rejects a BOM even though it is valid in many real
+// world JSON feeds, so every JSON classification path uses this helper.
+func trimUpstreamJSONBody(body []byte) []byte {
+	body = bytes.TrimSpace(body)
+	body = bytes.TrimPrefix(body, []byte{0xef, 0xbb, 0xbf})
+	return bytes.TrimSpace(body)
+}
 
 type upstreamErrorEnvelope struct {
 	body []byte
@@ -1707,6 +2682,7 @@ func (e *upstreamHTTPError) Error() string {
 }
 
 func isJSONObjectResponse(body []byte) bool {
+	body = trimUpstreamJSONBody(body)
 	var value map[string]any
 	if err := json.Unmarshal(body, &value); err != nil {
 		return false
@@ -1719,7 +2695,7 @@ func isJSONObjectResponse(body []byte) bool {
 	// healthy and make the scheduler route real traffic into it. A top-level
 	// error member is the common OpenAI-compatible shape; nested payload fields
 	// remain provider-specific and are intentionally not rejected here.
-	if _, hasError := value["error"]; hasError {
+	if rawError, hasError := value["error"]; hasError && rawError != nil {
 		return false
 	}
 	// A generic 200 JSON document (for example a portal's {"status":"ok"})
@@ -1735,11 +2711,32 @@ func isJSONObjectResponse(body []byte) bool {
 			return true
 		}
 	}
-	if choices, ok := value["choices"].([]any); ok {
-		return len(choices) > 0
+	if responseType, ok := value["type"].(string); ok {
+		responseType = strings.ToLower(strings.TrimSpace(responseType))
+		switch responseType {
+		case "response", "message", "chat.completion", "completion", "image", "image_generation":
+			return true
+		}
+		// Responses streaming events use names such as
+		// `response.completed` and `response.output_text.delta`. The
+		// presence of a non-error event proves the endpoint answered even
+		// when the relay omits the nested `response.id`.
+		if strings.HasPrefix(responseType, "response.") || strings.HasPrefix(responseType, "message.") ||
+			strings.HasPrefix(responseType, "message_") || strings.HasPrefix(responseType, "content_block_") {
+			return true
+		}
 	}
-	if output, ok := value["output"].([]any); ok {
-		return len(output) > 0
+	if _, ok := value["choices"].([]any); ok {
+		// The envelope itself proves that the completion route answered. A
+		// filtered, tool-only, or otherwise empty completion can legitimately
+		// contain no choices; requiring one item made a usable model look like
+		// an invalid response during management validation.
+		return true
+	}
+	if _, ok := value["output"].([]any); ok {
+		// Responses providers may complete with an empty output array while
+		// still returning a valid response envelope.
+		return true
 	}
 	switch data := value["data"].(type) {
 	case []any:
@@ -1749,7 +2746,153 @@ func isJSONObjectResponse(body []byte) bool {
 	case string:
 		return strings.TrimSpace(data) != ""
 	}
+	for _, key := range []string{"output_text", "content", "result", "response"} {
+		if value[key] == nil {
+			continue
+		}
+		switch item := value[key].(type) {
+		case string:
+			if strings.TrimSpace(item) != "" {
+				return true
+			}
+		case []any:
+			if len(item) > 0 {
+				return true
+			}
+		case map[string]any:
+			if len(item) > 0 {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+// isUpstreamSuccessResponse accepts both ordinary JSON responses and relays
+// that emit one or more SSE `data:` frames despite receiving stream=false.
+// We only accept a frame whose JSON payload has a recognized provider shape;
+// HTML/login pages and bare keep-alives remain failures.
+func isUpstreamSuccessResponse(body []byte) bool {
+	if isJSONObjectResponse(body) {
+		return true
+	}
+	// SSE permits an event payload to span multiple `data:` lines. Join the
+	// physical lines with the protocol-mandated newline and inspect each event
+	// at its blank-line boundary. Parsing each line independently would reject
+	// valid long JSON frames and hide a manually usable model.
+	var event bytes.Buffer
+	flush := func() bool {
+		if event.Len() == 0 {
+			return false
+		}
+		payload := event.Bytes()
+		if bytes.Equal(bytes.TrimSpace(payload), []byte("[DONE]")) {
+			event.Reset()
+			return false
+		}
+		ok := isJSONObjectResponse(payload)
+		event.Reset()
+		return ok
+	}
+	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
+		trimmed := trimUpstreamSSELine(rawLine)
+		if len(trimmed) == 0 {
+			if flush() {
+				return true
+			}
+			continue
+		}
+		if !bytes.HasPrefix(trimmed, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("data:")))
+		if len(payload) == 0 {
+			continue
+		}
+		if event.Len() > 0 {
+			event.WriteByte('\n')
+		}
+		event.Write(payload)
+	}
+	return flush()
+}
+
+func responseErrorBody(err error) string {
+	var httpErr *upstreamHTTPError
+	if errors.As(err, &httpErr) {
+		return string(httpErr.body)
+	}
+	// Some relays incorrectly return an OpenAI-style error envelope with HTTP
+	// 2xx when they reject an optional request field. Expose that bounded body
+	// to the same narrow compatibility classifier used for HTTP errors; without
+	// this, a valid model can be reported as an invalid response before the
+	// compact request variant gets a chance.
+	var envelope *upstreamErrorEnvelope
+	if errors.As(err, &envelope) {
+		return string(envelope.body)
+	}
+	return ""
+}
+
+// isExplicitParameterCompatibilityMessage recognizes validation errors that
+// identify an unsupported optional request field. These errors are generated
+// before model execution, so one compact retry does not duplicate a paid
+// request. Provider/model errors without an explicit field marker do not
+// trigger this path.
+func isExplicitParameterCompatibilityMessage(message string, fields ...string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	if lower == "" {
+		return false
+	}
+	parameterMarkers := []string{
+		"unknown field", "unknown parameter", "unsupported parameter", "unsupported field",
+		"unrecognized field", "unrecognised field", "unexpected field", "additional properties",
+		"not allowed", "not supported", "unsupported", "extra inputs are not permitted", "extra fields not permitted",
+		"invalid parameter", "invalid field", "does not permit", "must be", "expected type",
+		"expected an", "expects", "requires",
+	}
+	matchedMarker := false
+	for _, marker := range parameterMarkers {
+		if strings.Contains(lower, marker) {
+			matchedMarker = true
+			break
+		}
+	}
+	if !matchedMarker {
+		return false
+	}
+	for _, field := range fields {
+		field = strings.ToLower(strings.TrimSpace(field))
+		if field != "" && strings.Contains(lower, field) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRetryResponsesParameter(status int, requestErr error) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		// A small number of relays wrap request validation failures in a 2xx
+		// error envelope. Only that typed envelope is eligible; a generic 2xx
+		// invalid response must never cause a second paid probe.
+		var envelope *upstreamErrorEnvelope
+		if status < 200 || status >= 300 || !errors.As(requestErr, &envelope) {
+			return false
+		}
+	}
+	body := responseErrorBody(requestErr)
+	return isExplicitParameterCompatibilityMessage(body, "store", "max_output_tokens", "stream", "input")
+}
+
+func shouldRetryChatParameter(status int, requestErr error) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		var envelope *upstreamErrorEnvelope
+		if status < 200 || status >= 300 || !errors.As(requestErr, &envelope) {
+			return false
+		}
+	}
+	body := responseErrorBody(requestErr)
+	return isExplicitParameterCompatibilityMessage(body, "max_tokens", "max_completion_tokens", "stream")
 }
 
 func shouldFallbackTest(status int) bool {
@@ -1786,6 +2929,20 @@ func shouldFallbackTestRequest(status int, requestErr error) bool {
 	if errors.Is(requestErr, errInvalidUpstreamResponse) {
 		return false
 	}
+	// A few Chat-only relays answer the Responses route with a gateway-style
+	// 500 (or another route status) instead of the usual 404/405. The body is
+	// still a safe capability signal when it explicitly names an unsupported
+	// route; provider, quota, and authentication errors remain excluded by the
+	// narrow classifier below. Some relays use 403 for the unsupported route,
+	// so allow that status only when the body explicitly says Chat is required.
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return isExplicitProtocolFallbackMessage(responseErrorBody(requestErr))
+	}
+	if status >= 400 {
+		if body := responseErrorBody(requestErr); body != "" && isExplicitProtocolFallbackMessage(body) {
+			return true
+		}
+	}
 	if status == http.StatusNotFound {
 		var httpErr *upstreamHTTPError
 		if !errors.As(requestErr, &httpErr) || len(strings.TrimSpace(string(httpErr.body))) == 0 {
@@ -1802,7 +2959,7 @@ func shouldFallbackTestRequest(status int, requestErr error) bool {
 		// Keep structured JSON errors conservative because they may describe a
 		// provider/model rejection instead of a missing endpoint.
 		var structured map[string]any
-		if json.Unmarshal([]byte(message), &structured) != nil {
+		if json.Unmarshal(trimUpstreamJSONBody([]byte(message)), &structured) != nil {
 			return true
 		}
 		// A model-specific 404 was excluded above. At this point a generic JSON
@@ -1818,6 +2975,12 @@ func shouldFallbackTestRequest(status int, requestErr error) bool {
 	if !errors.As(requestErr, &httpErr) {
 		return false
 	}
+	if len(strings.TrimSpace(string(httpErr.body))) == 0 {
+		// Chat-only relays commonly answer the unsupported Responses route
+		// with an empty 400/422. There is no model/provider signal to preserve,
+		// so one compatibility request is the useful next step.
+		return true
+	}
 	return isExplicitProtocolFallbackMessage(string(httpErr.body))
 }
 
@@ -1826,6 +2989,7 @@ func shouldFallbackTestRequest(status int, requestErr error) bool {
 // conservative: malformed JSON and generic "not found" objects still allow a
 // compatibility attempt, while quota/auth/upstream/model errors do not.
 func isStructuredProviderFailure(body []byte) bool {
+	body = trimUpstreamJSONBody(body)
 	var value map[string]any
 	if err := json.Unmarshal(body, &value); err != nil || len(value) == 0 {
 		return false
@@ -1871,6 +3035,24 @@ func isExplicitProtocolFallbackMessage(message string) bool {
 	if message == "" || isModelUnavailableMessage(message) {
 		return false
 	}
+	// Some relays expose a model in /v1/models but reject a Responses probe with
+	// a model-capability message instead of naming the Responses route. These
+	// phrases are an explicit signal that the same model must be tested through
+	// Chat Completions; they are not generic model errors.
+	for _, marker := range []string{
+		"model only supports chat completions",
+		"model only supports chat completion",
+		"model supports chat completions only",
+		"model supports chat completion only",
+		"only supports chat completions",
+		"only supports chat completion",
+		"chat completions only",
+		"chat completion only",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
 
 	unsupported := []string{
 		"not implemented", "not supported", "unsupported", "not support",
@@ -1892,6 +3074,8 @@ func isExplicitProtocolFallbackMessage(message string) bool {
 	for _, marker := range []string{
 		"method not allowed",
 		"unknown endpoint", "unknown path", "endpoint not found", "route not found",
+		"unsupported endpoint", "endpoint unsupported", "unsupported route", "route unsupported",
+		"invalid url", "no route", "cannot post /v1/responses", "cannot handle /v1/responses",
 		"unsupported media type", "invalid content-type", "invalid content type",
 		"cannot decode request", "failed to decode request", "invalid request format",
 		"invalid json", "invalid json body", "failed to unmarshal request",
@@ -1904,6 +3088,12 @@ func isExplicitProtocolFallbackMessage(message string) bool {
 }
 
 func classifyUpstreamTestError(ctx context.Context, status int, requestErr error) string {
+	// Prefer a fully received 2xx response over a deadline that raced with the
+	// final read. A non-nil transport error still takes the cancellation path
+	// below, so an actually incomplete response remains a failure.
+	if requestErr == nil && status >= 200 && status < 300 {
+		return ""
+	}
 	if code := validationContextErrorCode(ctx); code != "" {
 		// Preserve cancellation semantics even when the transport returned an
 		// HTTP error before the context was observed by the caller.
@@ -1935,6 +3125,8 @@ func classifyUpstreamTestError(ctx context.Context, status int, requestErr error
 		return ""
 	}
 	switch status {
+	case http.StatusRequestTimeout:
+		return "timeout"
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "auth"
 	case http.StatusTooManyRequests:
@@ -1942,6 +3134,9 @@ func classifyUpstreamTestError(ctx context.Context, status int, requestErr error
 	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return "upstream"
 	default:
+		if status >= 500 && status <= 599 {
+			return "upstream"
+		}
 		return "http_error"
 	}
 }
@@ -1969,7 +3164,7 @@ func (s *Service) RefreshUpstreamBalance(ctx context.Context, id int64) (*Upstre
 	}
 	client := s.managementHTTPClient()
 	client.Timeout = 10 * time.Second
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client.CheckRedirect = upstreamCheckRedirect
 	account := billing.BalanceAccount{
 		ID:          id,
 		BaseURL:     normalizeUpstreamBaseURL(u.BaseURL),
@@ -2045,6 +3240,123 @@ func (s *Service) managementHTTPClient() *http.Client {
 		return &copy
 	}
 	return &http.Client{Transport: &http.Transport{ForceAttemptHTTP2: true, DisableKeepAlives: true}}
+}
+
+const upstreamRedirectLimit = 4
+
+// upstreamCheckRedirect follows the redirects emitted by ordinary relay
+// front-ends (for example HTTP -> HTTPS and a trailing slash) without turning
+// an upstream key into a cross-origin credential.  The default http.Client
+// redirect policy is intentionally not used here: it can follow a redirect
+// to another host and its POST handling can silently turn a probe into GET.
+// GET catalogue/balance requests may follow a same-host redirect. POST probes
+// preserve their method/body for same-origin 301/302/303 aliases in addition
+// to the method-preserving 307/308 redirects handled by net/http itself.
+func upstreamCheckRedirect(req *http.Request, via []*http.Request) error {
+	if req == nil || req.URL == nil || len(via) == 0 {
+		return http.ErrUseLastResponse
+	}
+	if len(via) > upstreamRedirectLimit {
+		return http.ErrUseLastResponse
+	}
+	previous := via[len(via)-1]
+	if previous == nil || previous.URL == nil {
+		return http.ErrUseLastResponse
+	}
+	if !sameUpstreamRedirectHost(previous.URL, req.URL) {
+		// The request has not been sent yet, but remove the credential from the
+		// redirected copy as a defence-in-depth measure before returning the
+		// original 3xx response.
+		req.Header.Del("Authorization")
+		return http.ErrUseLastResponse
+	}
+	// Never follow a downgrade from HTTPS.  An initial HTTP endpoint may be
+	// upgraded to HTTPS, but it must not be bounced back to cleartext.
+	if strings.EqualFold(previous.URL.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+		return http.ErrUseLastResponse
+	}
+	if !strings.EqualFold(previous.URL.Scheme, req.URL.Scheme) &&
+		!(strings.EqualFold(previous.URL.Scheme, "http") && strings.EqualFold(req.URL.Scheme, "https")) {
+		return http.ErrUseLastResponse
+	}
+	// Go rewrites POST -> GET for 301/302/303 before invoking CheckRedirect.
+	// Restore the original probe method/body for same-origin redirects so a
+	// trailing-slash or front-end route alias does not turn a valid model into a
+	// false protocol failure. The redirect policy above has already rejected
+	// cross-host and HTTPS downgrade targets.
+	if strings.EqualFold(previous.Method, http.MethodPost) && !strings.EqualFold(req.Method, http.MethodPost) {
+		status := 0
+		if req.Response != nil {
+			status = req.Response.StatusCode
+		}
+		switch status {
+		case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther:
+			if previous.GetBody == nil {
+				return http.ErrUseLastResponse
+			}
+			body, err := previous.GetBody()
+			if err != nil {
+				return err
+			}
+			req.Method = previous.Method
+			req.Body = body
+			req.GetBody = previous.GetBody
+			req.ContentLength = previous.ContentLength
+			restoreRedirectBodyHeaders(req.Header, previous.Header)
+		default:
+			return http.ErrUseLastResponse
+		}
+	}
+	return nil
+}
+
+func restoreRedirectBodyHeaders(dst, src http.Header) {
+	if dst == nil || src == nil {
+		return
+	}
+	for _, name := range []string{"Content-Type", "Content-Encoding", "Content-Language", "Content-Location"} {
+		values := src.Values(name)
+		if len(values) == 0 {
+			continue
+		}
+		dst[name] = append([]string(nil), values...)
+	}
+}
+
+func sameUpstreamRedirectHost(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	if !strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	leftPort := redirectPort(left)
+	rightPort := redirectPort(right)
+	if leftPort == rightPort {
+		return true
+	}
+	// An explicit standard port is equivalent to the implicit one. During the
+	// only permitted scheme change, also accept the standard 80 -> 443 upgrade
+	// used by reverse proxies. Custom-port redirects remain same-origin only
+	// when the port itself is unchanged.
+	return strings.EqualFold(left.Scheme, "http") && strings.EqualFold(right.Scheme, "https") && leftPort == "80" && rightPort == "443"
+}
+
+func redirectPort(value *url.URL) string {
+	if value == nil {
+		return ""
+	}
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 // normalizeUpstreamBaseURL accepts both the documented bare root and the

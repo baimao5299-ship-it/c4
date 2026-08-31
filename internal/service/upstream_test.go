@@ -578,10 +578,12 @@ func TestTestUpstreamFallsBackOnSuccessfulErrorEnvelope(t *testing.T) {
 }
 
 func TestIsJSONObjectResponseRejectsEmptyAndScalar(t *testing.T) {
-	for _, body := range [][]byte{nil, []byte(""), []byte("null"), []byte("[]"), []byte(`"ok"`), []byte("<html>"), []byte(`{"choices":[]}`), []byte(`{"output":[]}`), []byte(`{"data":[]}`)} {
+	for _, body := range [][]byte{nil, []byte(""), []byte("null"), []byte("[]"), []byte(`"ok"`), []byte("<html>"), []byte(`{"data":[]}`)} {
 		require.Falsef(t, isJSONObjectResponse(body), "body %q must be rejected", body)
 	}
 	require.True(t, isJSONObjectResponse([]byte(`{"id":"ok"}`)))
+	require.True(t, isJSONObjectResponse([]byte(`{"choices":[]}`)))
+	require.True(t, isJSONObjectResponse([]byte(`{"output":[]}`)))
 	require.False(t, isJSONObjectResponse([]byte(`{"error":{"message":"failed"}}`)))
 }
 
@@ -733,13 +735,16 @@ func TestListUpstreamModelsHonorsCallerDeadline(t *testing.T) {
 	require.False(t, result.OK)
 	require.Equal(t, "timeout", result.ErrorCode)
 	require.Equal(t, 2, result.ModelsTotal)
-	require.Equal(t, 2, result.ModelsChecked)
+	// Probes for one upstream are serialized to avoid triggering per-credential
+	// concurrency limits. With the caller deadline expiring during the first
+	// request, later models remain untouched rather than being falsely counted.
+	require.Equal(t, 1, result.ModelsChecked)
 	require.Zero(t, result.ModelsAvailable)
-	require.Equal(t, 2, result.ModelsFailed)
+	require.Equal(t, 1, result.ModelsFailed)
 	require.False(t, result.ValidationComplete)
 }
 
-func TestTestUpstreamRejectsModelOutsideRealCatalogue(t *testing.T) {
+func TestTestUpstreamProbesExplicitModelOutsideRealCatalogue(t *testing.T) {
 	key := "relay-key"
 	called := false
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -749,7 +754,8 @@ func TestTestUpstreamRejectsModelOutsideRealCatalogue(t *testing.T) {
 			return
 		}
 		called = true
-		w.WriteHeader(http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"manual-response","object":"response"}`))
 	}))
 	defer endpoint.Close()
 
@@ -757,9 +763,9 @@ func TestTestUpstreamRejectsModelOutsideRealCatalogue(t *testing.T) {
 	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
 	result, err := svc.TestUpstreamWithModel(context.Background(), 1, "model-missing")
 	require.NoError(t, err)
-	require.False(t, result.OK)
-	require.Equal(t, "model_unavailable", result.ErrorCode)
-	require.False(t, called, "unsupported model must not send hi")
+	require.True(t, result.OK)
+	require.Empty(t, result.ErrorCode)
+	require.True(t, called, "an explicit model test must use the completion route even when /models omitted the alias")
 }
 
 func TestRefreshUpstreamBalanceStoresFreshSnapshot(t *testing.T) {

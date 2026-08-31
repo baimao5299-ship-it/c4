@@ -365,6 +365,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/upstreams/validate-all/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 启动异步上游验证任务
+         * @description 立即返回任务 ID；管理台通过任务状态接口读取真实的上游与模型检查进度。旧的同步验证接口继续保留。
+         */
+        post: operations["PostUpstreamsValidateAllStart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/upstreams/validate-all/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        /** 查询异步上游验证进度 */
+        get: operations["GetUpstreamsValidateAllTask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/upstreams/{id}/models": {
         parameters: {
             query?: never;
@@ -1580,16 +1619,17 @@ export interface components {
         };
         UpstreamModelsResponse: {
             ok: boolean;
+            /** @description 本轮真实请求成功并可路由的模型；未完成验证时可能保留上一份已确认快照 */
             models: string[];
             /** @description 目录中解析出的去重模型数量（最多 5000） */
             models_total: number;
-            /** @description 已发送真实最小请求验证的模型数量 */
+            /** @description 已发送真实最小请求验证的模型数量；未开始的模型不计入 */
             models_checked: number;
-            /** @description 真实请求返回有效 JSON 且成功的模型数量 */
+            /** @description 本轮真实请求返回有效 JSON 或 SSE 且成功的模型数量 */
             models_available: number;
-            /** @description 验证失败或超时的模型数量 */
+            /** @description 本轮已尝试但失败的模型数量（含超时、限流和协议错误） */
             models_failed: number;
-            /** @description 是否在总超时前完成全部模型验证 */
+            /** @description 是否在总超时前完成全部模型验证；false 时不会把结果当作完整目录快照 */
             validation_complete: boolean;
             /** @enum {string|null} */
             error_code?: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "model_unavailable" | "storage" | null;
@@ -1603,6 +1643,24 @@ export interface components {
             /** Format: int64 */
             duration_ms: number;
             items: components["schemas"]["UpstreamValidationItem"][];
+        };
+        UpstreamValidationTaskStart: {
+            task_id: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed";
+        };
+        UpstreamValidationTask: {
+            task_id: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed";
+            upstreams_total: number;
+            upstreams_checked: number;
+            models_total: number;
+            models_checked: number;
+            models_available: number;
+            models_failed: number;
+            result?: components["schemas"]["UpstreamValidationSummary"] | null;
+            error?: string | null;
         };
         UpstreamValidationItem: {
             upstream: components["schemas"]["Upstream"];
@@ -1621,7 +1679,7 @@ export interface components {
             error_code: "auth" | "rate_limited" | "upstream" | "network" | "timeout" | "canceled" | "http_error" | "invalid_value" | "invalid_response" | "model_unavailable" | "superseded" | "storage" | null;
         };
         UpstreamTestBody: {
-            /** @description 必须来自上游当前 /v1/models 列表；省略时使用列表第一项 */
+            /** @description 可选的显式模型标识；会直接发送真实请求，不要求出现在当前 /v1/models 列表中；省略时使用目录第一项 */
             model?: string;
         };
         DeletedResponse: {
@@ -4238,6 +4296,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    PostUpstreamsValidateAllStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 验证任务已排队 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamValidationTaskStart"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUpstreamsValidateAllTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前验证进度或最终结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpstreamValidationTask"];
                 };
             };
             default: components["responses"]["Error"];

@@ -530,6 +530,35 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         default:
           $ref: '#/components/responses/Error'
+  /upstreams/validate-all/start:
+    post:
+      operationId: PostUpstreamsValidateAllStart
+      tags: [upstreams]
+      summary: 启动异步上游验证任务
+      description: 立即返回任务 ID；管理台通过任务状态接口读取真实的上游与模型检查进度。旧的同步验证接口继续保留。
+      responses:
+        '202':
+          description: 验证任务已排队
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamValidationTaskStart' }
+        default:
+          $ref: '#/components/responses/Error'
+  /upstreams/validate-all/tasks/{task_id}:
+    parameters:
+      - { name: task_id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 64 } }
+    get:
+      operationId: GetUpstreamsValidateAllTask
+      tags: [upstreams]
+      summary: 查询异步上游验证进度
+      responses:
+        '200':
+          description: 当前验证进度或最终结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpstreamValidationTask' }
+        default:
+          $ref: '#/components/responses/Error'
   /upstreams/{id}/models:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -2028,11 +2057,12 @@ components:
           type: array
           maxItems: 5000
           items: { type: string }
+          description: 本轮真实请求成功并可路由的模型；未完成验证时可能保留上一份已确认快照
         models_total: { type: integer, minimum: 0, maximum: 5000, description: 目录中解析出的去重模型数量（最多 5000） }
-        models_checked: { type: integer, minimum: 0, maximum: 5000, description: 已发送真实最小请求验证的模型数量 }
-        models_available: { type: integer, minimum: 0, maximum: 5000, description: 真实请求返回有效 JSON 且成功的模型数量 }
-        models_failed: { type: integer, minimum: 0, maximum: 5000, description: 验证失败或超时的模型数量 }
-        validation_complete: { type: boolean, description: 是否在总超时前完成全部模型验证 }
+        models_checked: { type: integer, minimum: 0, maximum: 5000, description: 已发送真实最小请求验证的模型数量；未开始的模型不计入 }
+        models_available: { type: integer, minimum: 0, maximum: 5000, description: 本轮真实请求返回有效 JSON 或 SSE 且成功的模型数量 }
+        models_failed: { type: integer, minimum: 0, maximum: 5000, description: 本轮已尝试但失败的模型数量（含超时、限流和协议错误） }
+        validation_complete: { type: boolean, description: 是否在总超时前完成全部模型验证；false 时不会把结果当作完整目录快照 }
         error_code: { type: string, nullable: true, enum: [auth, rate_limited, upstream, network, timeout, canceled, http_error, invalid_value, invalid_response, model_unavailable, storage] }
     UpstreamValidationSummary:
       type: object
@@ -2046,6 +2076,28 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/UpstreamValidationItem' }
+    UpstreamValidationTaskStart:
+      type: object
+      required: [task_id, status]
+      additionalProperties: false
+      properties:
+        task_id: { type: string, minLength: 1, maxLength: 64 }
+        status: { type: string, enum: [queued, running, completed, failed] }
+    UpstreamValidationTask:
+      type: object
+      required: [task_id, status, upstreams_total, upstreams_checked, models_total, models_checked, models_available, models_failed]
+      additionalProperties: false
+      properties:
+        task_id: { type: string, minLength: 1, maxLength: 64 }
+        status: { type: string, enum: [queued, running, completed, failed] }
+        upstreams_total: { type: integer, minimum: 0 }
+        upstreams_checked: { type: integer, minimum: 0 }
+        models_total: { type: integer, minimum: 0 }
+        models_checked: { type: integer, minimum: 0 }
+        models_available: { type: integer, minimum: 0 }
+        models_failed: { type: integer, minimum: 0 }
+        result: { allOf: [{ $ref: '#/components/schemas/UpstreamValidationSummary' }], nullable: true }
+        error: { type: string, nullable: true }
     UpstreamValidationItem:
       type: object
       required: [upstream, attempted, models, models_total, models_checked, models_available, models_failed, validation_complete, ok, latency_ms, error_code]
@@ -2068,7 +2120,7 @@ components:
       type: object
       additionalProperties: false
       properties:
-        model: { type: string, maxLength: 200, description: 必须来自上游当前 /v1/models 列表；省略时使用列表第一项 }
+        model: { type: string, maxLength: 200, description: 可选的显式模型标识；会直接发送真实请求，不要求出现在当前 /v1/models 列表中；省略时使用目录第一项 }
     DeletedResponse:
       type: object
       required: [deleted]

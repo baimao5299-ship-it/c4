@@ -79,3 +79,60 @@ func TestFetchAdvertisedModelsStillProbesCompatibilityPathForRoute404(t *testing
 	require.Empty(t, code)
 	require.Equal(t, int32(2), requests.Load())
 }
+
+func TestFetchAdvertisedModelsFollowsSameOriginCursorPages(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("cursor") {
+		case "":
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"model-a"}],"has_more":true,"next_cursor":"page-2"}`))
+		case "page-2":
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"model-b"}],"has_more":false}`))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	models, code := fetchAdvertisedModels(context.Background(), server.Client(), server.URL, "key")
+	require.Empty(t, code)
+	require.Equal(t, []string{"model-a", "model-b"}, models)
+	require.Equal(t, []string{"/v1/models", "/v1/models?cursor=page-2"}, paths)
+}
+
+func TestFetchAdvertisedModelsFollowsOpenAIAfterCursor(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("after") == "model-a" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"model-b"}],"has_more":false}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}],"has_more":true,"last_id":"model-a"}`))
+	}))
+	defer server.Close()
+
+	models, code := fetchAdvertisedModels(context.Background(), server.Client(), server.URL, "key")
+	require.Empty(t, code)
+	require.Equal(t, []string{"model-a", "model-b"}, models)
+	require.Equal(t, 2, requests)
+}
+
+func TestFetchAdvertisedModelsRejectsCrossOriginCursor(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"should-not-leak-key"}]}`))
+	}))
+	defer other.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}],"has_more":true,"next":"` + other.URL + `/v1/models"}`))
+	}))
+	defer server.Close()
+
+	models, code := fetchAdvertisedModels(context.Background(), server.Client(), server.URL, "key")
+	require.Nil(t, models)
+	require.Equal(t, "invalid_value", code)
+}

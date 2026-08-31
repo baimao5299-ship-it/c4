@@ -86,6 +86,10 @@ function serializeUpstreamMembers(drafts: UpstreamMemberDraft[]): GroupUpstreamI
   })
 }
 
+function hasUsableUpstreamModelSnapshot(upstream: Upstream): boolean {
+  return upstream.ModelsCheckedAt != null && Array.isArray(upstream.Models) && upstream.Models.length > 0
+}
+
 function UpstreamPoolFields({
   mode,
   showMode = true,
@@ -699,17 +703,17 @@ export default function Groups() {
     queryFn: () => {
       const selected = activeMemberIDs.map(id => upstreamRows.find(upstream => upstream.ID === id)).filter((upstream): upstream is Upstream => upstream != null)
       const union = sortModelsLatestFirst(Array.from(new Set(selected.flatMap(upstream => upstream.Models ?? []))))
-      // A saved snapshot is usable only after a complete validation. A
-      // model_unavailable error means validation completed and only failed
-      // entries were filtered; transport/auth/timeout errors leave the old
-      // snapshot visible but must block group edits until a fresh check passes.
+      // A saved snapshot remains usable when the latest check is incomplete.
+      // The previous successful model set stays routable while the operator
+      // retries; only a missing snapshot blocks group setup.
       const incomplete = selected.length !== activeMemberIDs.length || selected.some(upstream => upstream.ModelsCheckedAt == null || (upstream.ModelsError != null && upstream.ModelsError !== 'model_unavailable'))
+      const usable = selected.length === activeMemberIDs.length && selected.every(hasUsableUpstreamModelSnapshot)
       const degraded = selected.some(upstream => upstream.ModelsError === 'model_unavailable')
       // Upstream routing selects any healthy member that advertises the
       // requested model. Keep the catalogue as a union so the UI exposes the
       // same routes the scheduler can actually serve; an intersection here
       // silently hid models supported by only one selected upstream.
-      return { models: union, partial: incomplete, degraded }
+      return { models: union, partial: incomplete, degraded, usable }
     },
     enabled: (createOpen || editTarget != null) && activeMemberIDs.length > 0,
     // This query derives its result from the already-fetched upstream rows;
@@ -719,6 +723,7 @@ export default function Groups() {
   const activeModels = useMemo(() => groupModels.data?.models ?? [], [groupModels.data])
   const activeModelsPartial = groupModels.data?.partial ?? false
   const activeModelsDegraded = groupModels.data?.degraded ?? false
+  const activeModelsUsable = groupModels.data?.usable ?? false
   const canSubmitCreate = createName.trim().length > 0 &&
     createMembers.length > 0 &&
     createAllowedModels.length > 0 &&
@@ -728,12 +733,12 @@ export default function Groups() {
     !groupModels.isLoading &&
     !groupModels.isFetching &&
     !groupModels.isError &&
-    !activeModelsPartial &&
+    activeModelsUsable &&
     !create.isPending
   useEffect(() => {
-    // A member replacement invalidates any allowlist entry that the fresh
-    // catalogue no longer confirms. The save action stays disabled while the
-    // catalogue is partial, so a transient read failure never clears config.
+    // A member replacement invalidates any allowlist entry that a complete
+    // catalogue no longer confirms. During a partial check, keep the prior
+    // choices visible until the retry succeeds.
     if (!editTarget || editRoutingMode !== 'upstreams' || activeMemberIDs.length === 0 || activeModelsPartial || activeModels.length === 0) return
     // Include the capability snapshot in the guard. A model refresh can keep
     // the same member IDs while removing a previously selected model; in that
@@ -1049,7 +1054,7 @@ export default function Groups() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)} disabled={rename.isPending}>{t('common.cancel')}</Button>
-            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || activeModelsPartial || activeModels.length === 0 || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
+            <Button onClick={() => rename.mutate()} disabled={rename.isPending || !editName.trim() || (editRoutingMode === 'upstreams' && (editMembers.length === 0 || editAllowedModels.length === 0 || !activeModelsUsable || activeModels.length === 0 || groupModels.isLoading || editUpstreamConfig.isLoading || editUpstreamConfig.isError))}>
               {rename.isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>

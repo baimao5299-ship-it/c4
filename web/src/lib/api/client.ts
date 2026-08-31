@@ -68,6 +68,44 @@ export type UpstreamModelsPreviewInput = components['schemas']['UpstreamModelsPr
 export type UpstreamBatchValidationItem = components['schemas']['UpstreamValidationItem']
 export type UpstreamBatchValidationResponse = components['schemas']['UpstreamValidationSummary']
 
+export type UpstreamValidationTaskStatus = 'queued' | 'running' | 'completed' | 'failed'
+export interface UpstreamValidationTaskStartResponse {
+  task_id: string
+  status: UpstreamValidationTaskStatus
+}
+export interface UpstreamValidationTaskResponse {
+  task_id: string
+  status: UpstreamValidationTaskStatus
+  upstreams_total: number
+  upstreams_checked: number
+  models_total: number
+  models_checked: number
+  models_available: number
+  models_failed: number
+  result?: UpstreamBatchValidationResponse
+  error?: string
+}
+
+// A polling request is diagnostic glue around a task that is already running
+// on the server. A brief browser/network hiccup must not turn that task into a
+// false validation failure, while deterministic responses (404 for an expired
+// task, 401 for an expired session, or 409 for a concurrent operation) should
+// still reach the caller immediately.
+const validationTaskRetryDelays = [200, 500, 1000] as const
+
+function isRetryableValidationTaskError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return [408, 425, 429, 500, 502, 503, 504].includes(error.status)
+  }
+  // fetch() reports an unavailable network (including an interrupted
+  // connection before an HTTP response exists) as TypeError in browsers.
+  return error instanceof TypeError
+}
+
+function waitForValidationTaskRetry(delay: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, delay))
+}
+
 // —— 日志/统计查询参数（usage/err 游标分页；from/to 必填）——
 export interface UsageLogParams {
   limit?: number
@@ -164,6 +202,19 @@ export class ApiClient {
   testUpstream = (id: number, model: string) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/test`, { method: 'POST', body: JSON.stringify({ model }) })
   refreshUpstreamBalance = (id: number) => this.request<UpstreamProbeResponse>(`/upstreams/${id}/balance`, { method: 'POST' })
   validateAllUpstreams = () => this.request<UpstreamBatchValidationResponse>('/upstreams/validate-all', { method: 'POST' })
+  startValidateAllUpstreams = () => this.request<UpstreamValidationTaskStartResponse>('/upstreams/validate-all/start', { method: 'POST' })
+  getValidateAllUpstreamsTask = async (taskID: string): Promise<UpstreamValidationTaskResponse> => {
+    let attempt = 0
+    while (true) {
+      try {
+        return await this.request<UpstreamValidationTaskResponse>(`/upstreams/validate-all/tasks/${encodeURIComponent(taskID)}`)
+      } catch (error) {
+        if (!isRetryableValidationTaskError(error) || attempt >= validationTaskRetryDelays.length) throw error
+        await waitForValidationTaskRetry(validationTaskRetryDelays[attempt])
+        attempt += 1
+      }
+    }
+  }
   // —— 账号 ——
   listAccounts = (p?: AccountListParams) => this.request<components['schemas']['AccountListResponse']>('/accounts', { params: toQuery(p) })
   createAccount = (b: components['schemas']['AccountCreate']) => this.request<components['schemas']['Account']>('/accounts', { method: 'POST', body: JSON.stringify(b) })
