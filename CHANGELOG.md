@@ -10,6 +10,14 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.10] - 2026-09-01
+
+### Fixed
+
+- Multi-platform image builds now keep the Node and Go build stages on the
+  native builder platform while retaining a default for Docker 20.10's legacy
+  builder, preventing ARM64 releases from compiling through QEMU.
+
 ## [v0.0.1-beta.9] - 2026-09-01
 
 ### Added

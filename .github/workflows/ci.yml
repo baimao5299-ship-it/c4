@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: native multi-platform build guard
+        run: |
+          grep -qx 'ARG BUILDPLATFORM=linux/amd64' Dockerfile
+          test "$(grep -c '^FROM --platform=$BUILDPLATFORM ' Dockerfile)" -eq 2
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

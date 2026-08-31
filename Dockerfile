@@ -2,13 +2,17 @@
 # 运行时为单二进制 + 挂载 config。
 # 用法：docker compose up -d --build（在仓库根目录执行）
 
+# BuildKit injects BUILDPLATFORM for multi-platform builds. The default keeps
+# Docker 20.10's legacy builder compatible when that automatic arg is absent.
+ARG BUILDPLATFORM=linux/amd64
+
 # ---- Stage 1: 前端构建（vite build → dist） ----
 # BUILDPLATFORM：前端构建在**构建机原生**执行（amd64 runner 无 QEMU 模拟）——
 # dist 为平台无关产物（JS bundle），两平台镜像共用同一构建逻辑。多平台镜像
 # 构建慢的根因是 QEMU 模拟 arm64 执行 node/pnpm（慢 5-10 倍），原生执行消解。
-# 不声明 BuildKit 专用的 $BUILDPLATFORM，兼容 Docker 20.10 的 legacy builder；
-# buildx 仍会按目标平台构建，旧 Docker 则直接使用宿主 amd64。
-FROM node:24-alpine AS web
+# The explicit default above prevents an empty platform on legacy Docker while
+# Buildx still overrides it with the native builder platform.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 ARG VITE_CARD_STORE_URL=
 ARG VITE_APP_NAME=
 ENV VITE_CARD_STORE_URL=$VITE_CARD_STORE_URL
@@ -31,7 +35,7 @@ RUN pnpm build
 # 在构建机原生执行（Go 交叉编译无需目标平台模拟）——与 web 阶段合计，QEMU
 # 模拟面降到零。本地 docker build（compose build）无注入时为空 → 本机平台，
 # 行为不变。
-FROM golang:1.26-alpine AS gobuild
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS gobuild
 ARG C3API_VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
