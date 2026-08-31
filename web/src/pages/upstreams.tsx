@@ -51,6 +51,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
+import { formatMultiplierValue, multiplierFromApi } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
 
 type FormState = {
@@ -84,9 +85,7 @@ function recordEnabled(row: UpstreamRecord): boolean {
 }
 
 function multiplierOf(row: UpstreamRecord): number {
-  if (typeof row.MultiplierBP === 'number' && Number.isFinite(row.MultiplierBP)) return row.MultiplierBP / 10_000
-  if (typeof row.Multiplier === 'number' && Number.isFinite(row.Multiplier)) return row.Multiplier
-  return 1
+  return multiplierFromApi(row.Multiplier, row.MultiplierBP)
 }
 
 function successRate(row: UpstreamRecord): number | null {
@@ -121,7 +120,7 @@ function formatLatency(ms: number | null): string {
 }
 
 function formatMultiplier(value: number): string {
-  return `×${value.toFixed(4).replace(/\.?(0+)$/, '')}`
+  return formatMultiplierValue(value)
 }
 
 function errorMessage(error: unknown): string | null {

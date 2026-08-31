@@ -30,6 +30,7 @@ import { toast } from '@/components/ui/toast'
 import { formatDateTime } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
+import { formatMultiplierValue } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
@@ -281,7 +282,7 @@ interface AssignRowMult { mult: string; cleared: boolean }
 const formatMultiplier = (m: number | null | undefined, t: TFunction): string => {
   if (m == null) return '—'
   if (m === 0) return t('groups.free')
-  return `×${m.toFixed(1)}`
+  return formatMultiplierValue(m)
 }
 
 // 倍率输入归一（创建/编辑共用）：空 = undefined（省略键）；非数字/越界抛错；
