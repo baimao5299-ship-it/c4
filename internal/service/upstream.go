@@ -228,6 +228,14 @@ const (
 	upstreamModelProbeRetryDelay = 150 * time.Millisecond
 )
 
+// Keep the management "test one model" request bounded independently for each
+// phase. The implicit-model path first reads /models and then sends a
+// completion probe; sharing one deadline lets a slow catalogue consume the
+// entire budget and falsely report a usable model as timed out. This is a
+// variable (rather than a const) so package tests can shorten the bounded
+// window without waiting 15 seconds to exercise the deadline boundary.
+var upstreamManualModelTestTimeout = 15 * time.Second
+
 var errUpstreamStoreUnavailable = errors.New("upstream management is not configured")
 
 const upstreamBalanceStaleFor = 15 * time.Minute
@@ -1284,8 +1292,6 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 	if err := validateBaseURL(base); err != nil {
 		return nil, err
 	}
-	testCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
 	client := s.managementHTTPClient()
 	client.Timeout = 12 * time.Second
 	client.CheckRedirect = upstreamCheckRedirect
@@ -1296,7 +1302,12 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 		// choose a model. An explicit model is tested directly below: relays may
 		// hide tenant aliases or transiently fail /models while accepting that
 		// identifier on the completion route.
-		models, modelCode := fetchAdvertisedModels(testCtx, client, base, key)
+		// Discovery and the actual model request are separate operations.  Give
+		// each its own bounded context so a slow but valid /models response does
+		// not leave the completion probe with only the tail of the same budget.
+		discoveryCtx, discoveryCancel := context.WithTimeout(ctx, upstreamManualModelTestTimeout)
+		models, modelCode := fetchAdvertisedModels(discoveryCtx, client, base, key)
+		discoveryCancel()
 		if modelCode != "" {
 			return s.recordUpstreamTestFailure(ctx, store, u, modelCode)
 		}
@@ -1313,10 +1324,12 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 	// response decide whether it is usable; this keeps a manually successful
 	// model from being rejected solely because discovery omitted it.
 	started := time.Now()
-	status, requestErr := sendUpstreamModelProbeWithRetry(testCtx, client, base, key, model)
+	probeCtx, probeCancel := context.WithTimeout(ctx, upstreamManualModelTestTimeout)
+	defer probeCancel()
+	status, requestErr := sendUpstreamModelProbeWithRetry(probeCtx, client, base, key, model)
 	latency := time.Since(started).Milliseconds()
 	ok := requestErr == nil && status >= 200 && status < 300
-	code := classifyUpstreamTestError(testCtx, status, requestErr)
+	code := classifyUpstreamTestError(probeCtx, status, requestErr)
 	var errCode *string
 	if code != "" {
 		errCode = &code

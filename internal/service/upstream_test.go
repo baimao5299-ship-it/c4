@@ -240,6 +240,41 @@ func TestTestUpstreamSendsHiUsingDiscoveredResponsesModel(t *testing.T) {
 	require.Equal(t, false, got["store"])
 }
 
+func TestTestUpstreamUsesFreshProbeBudgetAfterSlowModelDiscovery(t *testing.T) {
+	// Keep this regression fast while preserving the production relationship:
+	// discovery and the actual model request each receive a full bounded window.
+	previousTimeout := upstreamManualModelTestTimeout
+	upstreamManualModelTestTimeout = 120 * time.Millisecond
+	t.Cleanup(func() { upstreamManualModelTestTimeout = previousTimeout })
+
+	key := "relay-key"
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			time.Sleep(75 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"slow-catalogue-model"}]}`))
+		case "/v1/responses":
+			// The old implementation reused the catalogue deadline here. By the
+			// time this response arrives that shared 120ms budget has expired;
+			// separate phase contexts leave the probe its own 120ms window.
+			time.Sleep(75 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"response-ok","object":"response"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	stub := &upstreamServiceStub{row: &domain.Upstream{ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+	result, err := svc.TestUpstream(context.Background(), 1)
+	require.NoError(t, err)
+	require.True(t, result.OK, "a slow catalogue must not consume the model probe budget")
+	require.Empty(t, result.ErrorCode)
+}
+
 func TestTestUpstreamFallsBackToChatCompletions(t *testing.T) {
 	key := "relay-key"
 	var paths []string
