@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { fmtTTFT, formatDateTime, toRFC3339 } from '@/components/fmt'
+import { fmtTTFT, formatDateTime, formatUSDPrecise, toRFC3339 } from '@/components/fmt'
 
 type Metric = 'requests' | 'tokens'
 type Granularity = 'hour' | 'day'
@@ -302,7 +302,7 @@ export default function Stats() {
                       <TableCell className="text-right tabular-nums">{r.CacheReadTokens ?? 0}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.CacheCreationTokens ?? 0}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.TotalTokens ?? 0}</TableCell>
-                      <TableCell className="text-right tabular-nums">{`$${(r.Cost ?? 0).toFixed(4)}`}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatUSDPrecise(r.Cost ?? 0)}</TableCell>
                     </TableRow>
                   ))}
             </TableBody>

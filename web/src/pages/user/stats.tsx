@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3 } from 'lucide-react'
+import { Activity, BarChart3, Coins, Database, ReceiptText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { fmtTTFT, formatDateTime, toRFC3339 } from '@/components/fmt'
+import { fmtTTFT, formatDateTime, formatUSDPrecise, toRFC3339 } from '@/components/fmt'
 import { userApi } from '@/lib/api/client'
 import { useDebounced } from '@/lib/use-debounced'
 
@@ -60,6 +60,18 @@ export default function UserStats() {
     queryFn: () => userApi.getMyStats(params),
   })
   const rows = useMemo(() => data ?? [], [data])
+  const summary = useMemo(() => rows.reduce((acc, row) => {
+    acc.requests += row.RequestCount ?? 0
+    acc.tokens += row.TotalTokens ?? 0
+    acc.cost += row.Cost ?? 0
+    acc.rawCost += row.RawCost ?? 0
+    return acc
+  }, { requests: 0, tokens: 0, cost: 0, rawCost: 0 }), [rows])
+  const formatSummaryUSD = (value: number) => Number.isFinite(value) ? `$${value.toFixed(5)}` : '—'
+  // React Query may retain last known-good data during a failed refresh. Show
+  // that stale result rather than replacing it with a misleading zero; only a
+  // request that has never produced data stays unknown.
+  const summaryReady = data != null
   const labeledRows = useMemo(() => rows.map(r => {
     const d = r.BucketTime ? new Date(r.BucketTime) : null
     const label = d && !Number.isNaN(d.getTime())
@@ -120,12 +132,12 @@ export default function UserStats() {
       </div>
 
       <Card className="p-4">
-        <div className="flex flex-nowrap items-start gap-5 overflow-x-auto">
-          <div className="w-[14rem] shrink-0 space-y-1.5">
+        <div className="grid min-w-0 grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-[14rem_auto_auto_12rem] xl:gap-5">
+          <div className="w-full min-w-0 space-y-1.5">
             <Label>{t('dateRange.label')}</Label>
             <DateRangePicker value={range} onChange={setRange} />
           </div>
-          <div className="shrink-0 space-y-1.5">
+          <div className="w-full min-w-0 space-y-1.5">
             <Label>{t('user.stats.granularity')}</Label>
             <Tabs value={granularity} onValueChange={v => v && setGranularity(v as Granularity)}>
               <TabsList>
@@ -134,7 +146,7 @@ export default function UserStats() {
               </TabsList>
             </Tabs>
           </div>
-          <div className="shrink-0 space-y-1.5">
+          <div className="w-full min-w-0 space-y-1.5">
             <Label>{t('user.stats.metric')}</Label>
             <Tabs value={metric} onValueChange={v => v && setMetric(v as Metric)}>
               <TabsList>
@@ -143,12 +155,26 @@ export default function UserStats() {
               </TabsList>
             </Tabs>
           </div>
-          <div className="w-[12rem] shrink-0 space-y-1.5">
+          <div className="w-full min-w-0 space-y-1.5">
             <Label htmlFor="user-stats-model">{t('user.stats.modelLabel')}</Label>
             <Input id="user-stats-model" placeholder={t('user.stats.modelPlaceholder')} value={modelInput} onChange={e => setModelInput(e.target.value)} />
           </div>
         </div>
       </Card>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { key: 'requests', icon: Activity, value: summaryReady ? summary.requests.toLocaleString() : '—', label: t('user.stats.summary.requests') },
+          { key: 'tokens', icon: Database, value: summaryReady ? summary.tokens.toLocaleString() : '—', label: t('user.stats.summary.tokens') },
+          { key: 'cost', icon: Coins, value: summaryReady ? formatSummaryUSD(summary.cost) : '—', label: t('user.stats.summary.cost') },
+          { key: 'rawCost', icon: ReceiptText, value: summaryReady ? formatSummaryUSD(summary.rawCost) : '—', label: t('user.stats.summary.rawCost') },
+        ].map(({ key, icon: Icon, value, label }) => (
+          <div key={key} className="rounded-xl border border-border/70 bg-card/50 px-4 py-3">
+            <div className="flex items-center gap-2 text-muted-foreground"><Icon className="size-4" /><span className="text-xs">{label}</span></div>
+            <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
+          </div>
+        ))}
+      </div>
 
       <Card>
         <CardHeader>
@@ -314,7 +340,7 @@ export default function UserStats() {
                       <TableCell className="text-right tabular-nums">{r.CacheReadTokens ?? 0}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.CacheCreationTokens ?? 0}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.TotalTokens ?? 0}</TableCell>
-                      <TableCell className="text-right tabular-nums">{`$${(r.Cost ?? 0).toFixed(4)}`}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatUSDPrecise(r.Cost ?? 0)}</TableCell>
                     </TableRow>
                   ))}
             </TableBody>

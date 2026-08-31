@@ -93,6 +93,10 @@ type Proxy struct {
 	limit   *fixedWindowLimiter
 	log     *logx.Logger
 	bill    *BillingHooks // 计费钩子；nil = 计费全关
+	// billingRemainders carries sub-ledger-unit multiplier cost between requests
+	// for the same account/key/user/group identity. Its zero value is ready for
+	// concurrent use; dirty cells are retained until their fraction is settled.
+	billingRemainders multiplierRemainderAccumulator
 	// errlog 错误明细落盘 worker（分表设计；nil = 未装配——拒绝/异常路径只聚
 	// 合统计不落 err_logs 明细，测试/未装配形态）。与计费 flusher 完全解耦。
 	errlog   *usage.ErrLogWorker
@@ -263,14 +267,40 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	if l.CacheCreationTokens > 0 && rp.CacheWritePerM != nil {
 		l.PriceCacheCreationMillis = rp.CacheWritePerM
 	}
-	cost := billing.CostFromResolved(rp, l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
+	parts := billing.CostPartsFromResolved(rp, l.InputTokens, l.OutputTokens, l.CacheReadTokens, l.CacheCreationTokens)
 	if l.CallCount > 0 && rp.PricePerImage != nil {
 		l.PricePerCallMillis = rp.PricePerImage
-		cost = addUsageTokens(cost, billing.ImageCostFromResolved(rp, 0, 0, l.CallCount))
+		parts = billing.AddCostParts(parts, billing.ImageCostPartsFromResolved(rp, 0, 0, l.CallCount))
 	}
-	l.Cost = cost
+	// Keep the exact resolved model and price snapshot in the remainder key.
+	// This prevents a price or variant reload from consuming a fraction left by
+	// a different pricing period while preserving sub-unit costs for this one.
+	p.applyResolvedBillingParts(l, parts, model, rp)
 	l.AboveHit = false
-	p.applyMultiplierLog(l, cost)
+}
+
+func (p *Proxy) applyBillingParts(l *domain.UsageLog, parts billing.CostParts) {
+	p.applyResolvedBillingParts(l, parts, "", domain.ResolvedPrices{})
+}
+
+func (p *Proxy) applyResolvedBillingParts(l *domain.UsageLog, parts billing.CostParts, model string, rp domain.ResolvedPrices) {
+	if p == nil {
+		raw := parts.Rounded()
+		l.RawCost = raw
+		l.Cost = applyMultiplier(raw, int(billingMultiplierBase))
+		return
+	}
+	raw, billed := p.billingRemainders.applyResolvedIdentity(parts, p.multiplierFor(l), l.AccountID, l.KeyID, l.UserID, l.GroupID, model, rp)
+	l.RawCost = raw
+	l.Cost = billed
+}
+
+func (p *Proxy) multiplierFor(l *domain.UsageLog) int {
+	m := int(billingMultiplierBase)
+	if p != nil && p.bill != nil && p.bill.Balances != nil {
+		m = p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID)
+	}
+	return m
 }
 
 // applyMultiplierLog 倍率施加单点（spec 2026-08-18 raw_cost 列）：raw 显式传
@@ -278,12 +308,13 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 // 恒 0——buildLog 不设 Cost）恒失真（gate Major 1 修订）。cost 语义零变化
 // （applyMultiplier 纯函数不动）。热路径一次 int64 赋值零额外开销。
 func (p *Proxy) applyMultiplierLog(l *domain.UsageLog, raw int64) {
-	l.RawCost = raw
-	m := int(billingMultiplierBase)
-	if p != nil && p.bill != nil && p.bill.Balances != nil {
-		m = p.bill.Balances.EffectiveMultiplier(l.UserID, l.GroupID)
+	if p == nil {
+		l.RawCost = raw
+		m := int(billingMultiplierBase)
+		l.Cost = applyMultiplier(raw, m)
+		return
 	}
-	l.Cost = applyMultiplier(raw, m)
+	p.applyBillingParts(l, billing.CostParts{Units: raw})
 }
 
 // applyImageBilling 生图计费（统一 PriceEntry image 分量）。
@@ -309,8 +340,7 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 	if l.CallCount > 0 && rp.PricePerImage != nil {
 		l.PricePerCallMillis = rp.PricePerImage
 	}
-	cost := billing.ImageCostFromResolved(rp, l.InputTokens, l.OutputTokens, l.CallCount)
-	p.applyMultiplierLog(l, cost)
+	p.applyResolvedBillingParts(l, billing.ImageCostPartsFromResolved(rp, l.InputTokens, l.OutputTokens, l.CallCount), model, rp)
 }
 
 func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
@@ -327,7 +357,7 @@ func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
 	if l.CallCount > 0 {
 		l.PricePerCallMillis = rp.PricePerCall
 	}
-	p.applyMultiplierLog(l, billing.CallCostFromResolved(rp, l.CallCount))
+	p.applyResolvedBillingParts(l, billing.CostParts{Units: billing.CallCostFromResolved(rp, l.CallCount)}, model, rp)
 }
 
 // buildLog 组装 UsageLog（record 与 finish 共用）。语义（评审 I-1 确认）：

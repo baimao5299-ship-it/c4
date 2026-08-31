@@ -125,6 +125,16 @@ func (s *Service) ListGroupsForUser(ctx context.Context, userID int64) ([]*domai
 	if err != nil {
 		return nil, err
 	}
+	assignments, err := s.store.ListAssignmentsByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	effective := make(map[int64]int, len(assignments))
+	for _, assignment := range assignments {
+		if assignment != nil && assignment.PriceMultiplier != nil {
+			effective[assignment.GroupID] = *assignment.PriceMultiplier
+		}
+	}
 	selectable := make([]*domain.Group, 0, len(groups))
 	for _, group := range groups {
 		if err := s.ensureGroupRoutable(ctx, group); err != nil {
@@ -133,7 +143,14 @@ func (s *Service) ListGroupsForUser(ctx context.Context, userID int64) ([]*domai
 			}
 			return nil, err
 		}
-		selectable = append(selectable, group)
+		// The user API must show the same multiplier that billing applies. Copy
+		// the row so a per-user override never mutates a repository-owned group
+		// object that may be reused by another request or test fixture.
+		visible := *group
+		if multiplier, ok := effective[group.ID]; ok {
+			visible.PriceMultiplier = multiplier
+		}
+		selectable = append(selectable, &visible)
 	}
 	return selectable, nil
 }

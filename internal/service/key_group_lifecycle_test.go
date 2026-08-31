@@ -204,41 +204,115 @@ func TestUpdateKeyPatchSingleField(t *testing.T) {
 	require.Equal(t, int64(2000), noop.Quota)
 }
 
-// TestUpdateKeyPatchConcurrent S3-F1 -race：并发两个 PUT 改不同字段 → 各自
-// 生效（patch 化消除 lost-update——修复前全行快照写回，后写者覆盖先写者）。
+// TestUpdateKeyGroupSwitch validates the user-facing group switch contract:
+// public groups can be selected, private groups require an assignment, and the
+// in-memory auth metadata follows the persisted group immediately.
+func TestUpdateKeyGroupSwitch(t *testing.T) {
+	svc, fs, keys := newTask4Svc()
+	ctx := context.Background()
+
+	u, err := fs.CreateUser(ctx, &domain.User{Email: "switch@example.com", Role: domain.RoleUser, Status: domain.UserStatusActive})
+	require.NoError(t, err)
+	from, err := fs.CreateGroup(ctx, &domain.Group{Name: "switch-from", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	to, err := fs.CreateGroup(ctx, &domain.Group{Name: "switch-to", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	private, err := fs.CreateGroup(ctx, &domain.Group{Name: "switch-private", Visibility: domain.GroupVisibilityPrivate})
+	require.NoError(t, err)
+	k, err := svc.CreateKey(ctx, u.ID, "switch-key", from.ID, 0, 0)
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateKey(ctx, u.ID, k.ID, nil, nil, nil, nil, &to.ID)
+	require.NoError(t, err)
+	require.Equal(t, to.ID, updated.GroupID)
+	meta := keys.lastMeta()
+	require.NotNil(t, meta)
+	require.Equal(t, to.ID, meta.GroupID, "auth snapshot must switch with the persisted key")
+
+	_, err = svc.UpdateKey(ctx, u.ID, k.ID, nil, nil, nil, nil, &private.ID)
+	require.ErrorIs(t, err, ErrGroupNotEligible, "private group without assignment must be rejected")
+	got, err := svc.GetKey(ctx, u.ID, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, to.ID, got.GroupID, "rejected switch must leave the key in its original group")
+}
+
+// simultaneousKeyReadStore 让两个 UpdateKey 调用都先取得同一版本的 Key，
+// 再放行写入，用来稳定复现陈旧请求交错。
+type simultaneousKeyReadStore struct {
+	*fakeStore
+	mu      sync.Mutex
+	reads   int
+	release chan struct{}
+}
+
+func (s *simultaneousKeyReadStore) GetKey(ctx context.Context, id int64) (*domain.Key, error) {
+	k, err := s.fakeStore.GetKey(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.reads++
+	if s.reads == 2 {
+		close(s.release)
+	}
+	s.mu.Unlock()
+	<-s.release
+	return k, nil
+}
+
+// TestUpdateKeyPatchConcurrent 并发请求基于同一版本时只允许一个落库；另一个
+// 明确返回 409，且 Auth 最终分组始终与持久行一致，不会被旧请求回写。
 func TestUpdateKeyPatchConcurrent(t *testing.T) {
-	svc, fs, _ := newTask4Svc()
+	fs := newFakeStore()
+	store := &simultaneousKeyReadStore{fakeStore: fs, release: make(chan struct{})}
+	keys := &fakeKeyRegistrar{}
+	svc := &Service{store: store, inv: &invRecorder{}, keys: keys, log: nil}
 	ctx := context.Background()
 
 	u, err := fs.CreateUser(ctx, &domain.User{Email: "patchc@example.com", Role: domain.RoleUser, Status: domain.UserStatusActive})
 	require.NoError(t, err)
-	g, err := fs.CreateGroup(ctx, &domain.Group{Name: "patchc-g", Visibility: domain.GroupVisibilityPublic})
+	from, err := fs.CreateGroup(ctx, &domain.Group{Name: "patchc-from", Visibility: domain.GroupVisibilityPublic})
 	require.NoError(t, err)
-	k, err := svc.CreateKey(ctx, u.ID, "k", g.ID, 0, 0)
+	to, err := fs.CreateGroup(ctx, &domain.Group{Name: "patchc-to", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	k, err := svc.CreateKey(ctx, u.ID, "k", from.ID, 0, 0)
 	require.NoError(t, err)
 
 	name := "renamed"
-	st := domain.KeyStatusDisabled
+	errs := make(chan error, 2)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		_, err := svc.UpdateKey(ctx, u.ID, k.ID, &name, nil, nil, nil)
-		require.NoError(t, err)
+		errs <- err
 	}()
 	go func() {
 		defer wg.Done()
-		_, err := svc.UpdateKey(ctx, u.ID, k.ID, nil, &st, nil, nil)
-		require.NoError(t, err)
+		_, err := svc.UpdateKey(ctx, u.ID, k.ID, nil, nil, nil, nil, &to.ID)
+		errs <- err
 	}()
 	wg.Wait()
+	close(errs)
 
-	got, err := svc.GetKey(ctx, u.ID, k.ID)
+	succeeded, conflicted := 0, 0
+	for err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		require.ErrorIs(t, err, ErrConflict)
+		conflicted++
+	}
+	require.Equal(t, 1, succeeded)
+	require.Equal(t, 1, conflicted)
+
+	got, err := fs.GetKey(ctx, k.ID)
 	require.NoError(t, err)
-	require.Equal(t, "renamed", got.Name, "name PUT 生效")
-	require.Equal(t, domain.KeyStatusDisabled, got.Status, "status PUT 生效（互不覆盖）")
-	require.Equal(t, 0, got.MaxConcurrency, "未改字段保持原值")
-	require.Equal(t, int64(0), got.Quota, "未改字段保持原值")
+	meta := keys.lastMeta()
+	require.NotNil(t, meta)
+	require.Equal(t, got.GroupID, meta.GroupID, "Auth 分组必须等于最终持久行")
+	require.Len(t, keys.upserted, 2, "创建一次、唯一成功的更新再注册一次")
 }
 
 // TestSetGroupAssignmentsRollback S3-F2：替换中途注入失败（RevokeGroup）→

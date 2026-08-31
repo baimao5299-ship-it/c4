@@ -10,6 +10,16 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.9] - 2026-09-01
+
+### Added
+
+- Users can switch their own API keys between eligible, routable groups from
+  the mobile key page, with the effective group multiplier shown before the
+  change is saved.
+- The public model marketplace now shows each public group's effective
+  multiplier and current input, output, per-call, and per-image prices.
+
 ### Changed
 
 - Scoped temporary-balance settlement now keeps each group lane separate
@@ -37,6 +47,18 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
   recognizes PostgreSQL 18 versioned data directories, fills blank first-deploy
   secrets/layout values, and prunes old release bundles with configurable
   retention.
+
+### Fixed
+
+- Prices and multipliers now preserve their documented fixed-point precision
+  across API input, management views, model-marketplace display, usage logs,
+  statistics, and billing. Positive `0.001` values no longer appear or bill as
+  free, and unrepresentable positive values are rejected instead of rounded.
+- Fractional token costs and group multipliers carry safely across requests
+  without crossing users, groups, models, multipliers, or price snapshots;
+  unsettled fractions no longer expire during the idle sweep.
+- Key group changes now use eligibility and route checks plus optimistic
+  concurrency, preventing stale updates from restoring an older key route.
 
 ## [v0.0.1-beta.8] - 2026-08-30
 

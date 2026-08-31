@@ -65,6 +65,24 @@ type fakeUpserter struct {
 	varRows  []*domain.PriceVariant
 }
 
+type fakeMutationGuard struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (g *fakeMutationGuard) WithPricingMutation(ctx context.Context, fn func() error) error {
+	g.mu.Lock()
+	g.calls++
+	g.mu.Unlock()
+	return fn()
+}
+
+func (g *fakeMutationGuard) count() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls
+}
+
 func (u *fakeUpserter) UpsertPriceEntriesFromLiteLLM(ctx context.Context, rows []*domain.PriceEntry) (int, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -246,6 +264,26 @@ func TestSyncSuccess(t *testing.T) {
 	require.Equal(t, 1, u.count(), "upsert 一次")
 	require.Equal(t, 1, reloads, "成功后刷新快照")
 	require.Equal(t, []string{"https://u"}, f.urlsSeen())
+}
+
+func TestSyncUsesMutationGuardForWritesAndReload(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "m"}},
+		Variants:     []*domain.PriceVariant{{Model: "m", Seq: 1}},
+	}}
+	u := &fakeUpserter{n: 1, nVar: 1}
+	guard := &fakeMutationGuard{}
+	reloads := 0
+	w := NewSyncWorker(SyncWorkerConfig{
+		Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"},
+		Mutation: guard, Reload: func() { reloads++ }, Log: nil,
+	})
+
+	require.NoError(t, w.Sync(context.Background()))
+	require.Equal(t, 1, guard.count(), "all sync writes and snapshot publication use the shared guard")
+	require.Equal(t, 1, u.count())
+	require.Equal(t, 1, u.variantCount())
+	require.Equal(t, 1, reloads)
 }
 
 func TestSyncEmptySourceURL(t *testing.T) {

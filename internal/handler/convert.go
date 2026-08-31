@@ -151,14 +151,27 @@ func checkedScaledInt64(v, scale float64, field string) (int64, error) {
 }
 
 func normalToMultChecked(v float64) (int, error) {
+	if v < 0 {
+		return 0, errors.New("price_multiplier must be non-negative")
+	}
 	n, err := checkedScaledInt64(v, multiplierScale, "price_multiplier")
 	if err != nil {
 		return 0, err
+	}
+	if v > 0 && n == 0 {
+		return 0, errors.New("price_multiplier must be 0 or at least 0.0001")
+	}
+	scaled := v * multiplierScale
+	if math.Abs(scaled-math.Round(scaled)) > 1e-8 {
+		return 0, errors.New("price_multiplier must use at most 4 decimal places")
 	}
 	maxInt := int64(^uint(0) >> 1)
 	minInt := -maxInt - 1
 	if n > maxInt || n < minInt {
 		return 0, errors.New("price_multiplier is out of range")
+	}
+	if math.Abs(v-float64(n)/multiplierScale) > 1e-12 {
+		return 0, errors.New("price_multiplier supports at most 4 decimal places")
 	}
 	return int(n), nil
 }
@@ -242,6 +255,26 @@ func usdToMillisChecked(usd float64) (int64, error) {
 	return checkedScaledInt64(usd, currencyScale, "amount")
 }
 
+// checkedPriceScaledInt64 is the strict price variant of checkedScaledInt64.
+// Manual prices are persisted as fixed-point integers; accepting a value that
+// rounds to a different integer makes a later read-back silently change the
+// configured price. Keep the tolerance small enough for normal float parsing
+// noise while rejecting values with more precision than the storage unit.
+func checkedPriceScaledInt64(v, scale float64, field string) (int64, error) {
+	if v < 0 {
+		return 0, fmt.Errorf("%s must be non-negative", field)
+	}
+	n, err := checkedScaledInt64(v, scale, field)
+	if err != nil {
+		return 0, err
+	}
+	scaled := v * scale
+	if math.Abs(scaled-math.Round(scaled)) > 1e-8 {
+		return 0, fmt.Errorf("%s supports at most 5 decimal places", field)
+	}
+	return n, nil
+}
+
 // usdToMillis is retained for already-validated internal callers.
 func usdToMillis(usd float64) int64 {
 	n, _ := usdToMillisChecked(usd)
@@ -262,9 +295,12 @@ func usdToMillisPtr(v *float64) (*int64, error) {
 	if v == nil {
 		return nil, nil
 	}
-	i, err := usdToMillisChecked(*v)
+	i, err := checkedPriceScaledInt64(*v, currencyScale, "price")
 	if err != nil {
 		return nil, err
+	}
+	if *v > 0 && i == 0 {
+		return nil, errors.New("price must be 0 or at least 0.00001 USD")
 	}
 	return &i, nil
 }
@@ -289,12 +325,12 @@ func multI64ToNormalPtr(v *int64) *float64 {
 // usdPerImageToMilli USD/张 → 毫分/张（×1e5；与 token 价同为 ×1e5 系数但单位
 // 语义独立——按张 flat 计费，防混用）。
 func usdPerImageToMilli(usd float64) int64 {
-	n, _ := checkedScaledInt64(usd, currencyScale, "price_per_image")
+	n, _ := checkedPriceScaledInt64(usd, currencyScale, "price_per_image")
 	return n
 }
 
 func usdPerImageToMilliChecked(usd float64) (int64, error) {
-	return checkedScaledInt64(usd, currencyScale, "price_per_image")
+	return checkedPriceScaledInt64(usd, currencyScale, "price_per_image")
 }
 
 // milliPerImageToUSD 毫分/张 → USD/张（/1e5；API 展示换算）。
@@ -308,6 +344,9 @@ func usdPerImageToMilliPtr(v *float64) (*int64, error) {
 	i, err := usdPerImageToMilliChecked(*v)
 	if err != nil {
 		return nil, err
+	}
+	if *v > 0 && i == 0 {
+		return nil, errors.New("price_per_image must be 0 or at least 0.00001 USD")
 	}
 	return &i, nil
 }
@@ -329,12 +368,12 @@ func milliPerImageToUSDPtr(v *int64) *float64 {
 
 // usdPerCallToMilli USD/次 → 毫分/次（×1e5；math.Round 消除浮点取整误差）。
 func usdPerCallToMilli(usd float64) int64 {
-	n, _ := checkedScaledInt64(usd, currencyScale, "price_per_call")
+	n, _ := checkedPriceScaledInt64(usd, currencyScale, "price_per_call")
 	return n
 }
 
 func usdPerCallToMilliChecked(usd float64) (int64, error) {
-	return checkedScaledInt64(usd, currencyScale, "price_per_call")
+	return checkedPriceScaledInt64(usd, currencyScale, "price_per_call")
 }
 
 // milliPerCallToUSD 毫分/次 → USD/次（/1e5；API 展示换算，回显 litellm 原生
@@ -350,6 +389,9 @@ func usdPerCallToMilliPtr(v *float64) (*int64, error) {
 	i, err := usdPerCallToMilliChecked(*v)
 	if err != nil {
 		return nil, err
+	}
+	if *v > 0 && i == 0 {
+		return nil, errors.New("price_per_call must be 0 or at least 0.00001 USD")
 	}
 	return &i, nil
 }

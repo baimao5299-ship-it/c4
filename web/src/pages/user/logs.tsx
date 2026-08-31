@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCursorLogs } from '@/components/use-cursor-logs'
-import { defaultLogRange, fmtTokens, formatCost, formatDateTime, toRFC3339 } from '@/components/fmt'
+import { defaultLogRange, fmtTokens, formatCost, formatDateTime, formatPricePerMillion, toRFC3339 } from '@/components/fmt'
 import { userApi } from '@/lib/api/client'
 import type { MyErrLogParams, MyUsageLogParams } from '@/lib/api/client'
 import { useDebounced } from '@/lib/use-debounced'
@@ -91,10 +91,7 @@ function latencyColor(ms: number): { dot: string; text: string } {
 const fmtDuration = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
 // 单价：毫分/M → USD/M（API 边界换算 1 USD = 100,000 毫分）。
 const fmtPricePerM = (millis: number): string => {
-  const usd = millis / 1e5
-  if (usd >= 1) return `$${usd.toFixed(4)}/M`
-  if (usd >= 0.001) return `$${usd.toFixed(4)}/M`
-  return `$${usd.toPrecision(2)}/M`
+  return formatPricePerMillion(millis / 1e5)
 }
 
 // base-ui Select 不接受空串值，用哨兵表示「全部」。

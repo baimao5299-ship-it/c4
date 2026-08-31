@@ -258,6 +258,9 @@ func Load(path string) (*Config, error) {
 // （出厂 0）、Proxy.MaxInflight（server 侧 0→50000 兜底，proxy 消费语义未核实——
 // 范围外）。
 func validate(c *Config) error {
+	if c.Billing.Enabled && !c.Proxy.UsageCapture {
+		return fmt.Errorf("billing.enabled requires proxy.usage_capture=true")
+	}
 	for _, d := range []struct {
 		path      string
 		value     time.Duration

@@ -2,7 +2,7 @@
 // Dual-licensed: AGPL-3.0-or-later (open source) or commercial license (closed-source
 // deployment exemption); see LICENSE and LICENSE.commercial. Copyright (c) 2026 is7Qin.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Check, Copy, KeyRound, Pencil, Plus, RefreshCcw, Trash2 } from 'lucide-react'
@@ -20,12 +20,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDateTime } from '@/components/fmt'
+import { formatMultiplierValue } from '@/lib/multiplier'
 import type { components } from '@/lib/api/schema'
 
 type Key = components['schemas']['Key']
 type KeyCreate = components['schemas']['KeyCreate']
 type KeyUpdate = components['schemas']['KeyUpdate']
 type KeyStatus = components['schemas']['KeyStatus']
+type Group = components['schemas']['Group']
 
 const STATUSES: KeyStatus[] = ['active', 'disabled']
 
@@ -39,9 +41,10 @@ interface CreateForm {
 
 const emptyCreateForm = (): CreateForm => ({ name: '', group_id: '', max_concurrency: '', quota: '' })
 
-// 编辑表单（KeyUpdate 全可选）：name/status 必有值总是发送（读改写幂等）；
+// 编辑表单（KeyUpdate 全可选）：group_id/name/status 必有值总是回显；
 // 数值字段 '' = 不发送（后端视为未提供，保持不变）。
 interface EditForm {
+  group_id: string
   name: string
   status: KeyStatus
   max_concurrency: string
@@ -50,6 +53,7 @@ interface EditForm {
 
 function toEditForm(k: Key): EditForm {
   return {
+    group_id: k.GroupID == null ? '' : String(k.GroupID),
     name: k.Name ?? '',
     status: k.Status ?? 'active',
     max_concurrency: k.MaxConcurrency == null ? '' : String(k.MaxConcurrency),
@@ -60,6 +64,15 @@ function toEditForm(k: Key): EditForm {
 // 数值字段校验：'' 或非负整数（0 = 不限）。
 function validNumber(s: string): boolean {
   return s === '' || (Number.isInteger(Number(s)) && Number(s) >= 0)
+}
+
+// Group prices are returned as normal decimal multipliers (for example 0.08),
+// not storage units. Keep significant decimals on small values so a 0.08 group
+// is never rounded up to 0.1 in the key picker or mobile cards.
+function formatGroupMultiplier(value: number | null | undefined, freeLabel: string): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  if (value === 0) return freeLabel
+  return formatMultiplierValue(value)
 }
 
 // 列表行明文展示：短展示头 8 尾 4 省略中间（title 悬停全文）+ 行内复制按钮
@@ -101,9 +114,9 @@ function EndpointCell() {
   const endpoint = typeof window === 'undefined' ? '' : `${window.location.origin}/v1`
   if (!endpoint) return null
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
       <span className="shrink-0">{t('user.keys.endpointLabel')}</span>
-      <code className="max-w-48 truncate font-mono" title={endpoint}>{endpoint}</code>
+      <code className="min-w-0 max-w-[min(16rem,calc(100vw-8rem))] flex-1 truncate font-mono" title={endpoint}>{endpoint}</code>
       <Button
         variant="ghost"
         size="icon-xs"
@@ -160,6 +173,15 @@ export default function UserKeys() {
     staleTime: 60_000,
   })
   const selectableGroups = (groups ?? []).filter(g => g.ID != null)
+  const groupsByID = useMemo(() => new Map<number, Group>(selectableGroups.map(g => [g.ID!, g])), [selectableGroups])
+  const groupName = (id?: number) => {
+    const group = id == null ? undefined : groupsByID.get(id)
+    return group?.Name?.trim() || (id == null ? '—' : `#${id}`)
+  }
+  const groupMultiplier = (id?: number) => {
+    const group = id == null ? undefined : groupsByID.get(id)
+    return formatGroupMultiplier(group?.PriceMultiplier, t('groups.free'))
+  }
   // Select 必须用 items prop（Record<string, ReactNode>），否则 trigger 显示原始 value。
   const groupItems = Object.fromEntries(selectableGroups.map(g => [String(g.ID!), g.Name ?? String(g.ID!)]))
 
@@ -168,6 +190,7 @@ export default function UserKeys() {
   const [createForm, setCreateForm] = useState<CreateForm>(emptyCreateForm())
   const [createErr, setCreateErr] = useState<string | null>(null)
   const [created, setCreated] = useState<Key | null>(null)
+  const selectedCreateGroup = createForm.group_id ? groupsByID.get(Number(createForm.group_id)) : undefined
 
   const create = useMutation({
     mutationFn: (f: CreateForm) => {
@@ -210,6 +233,16 @@ export default function UserKeys() {
   const [editing, setEditing] = useState<Key | null>(null)
   const [editForm, setEditForm] = useState<EditForm>(toEditForm({}))
   const [editErr, setEditErr] = useState<string | null>(null)
+  const editGroupOptions = useMemo(() => {
+    const options = [...selectableGroups]
+    const currentID = editing?.GroupID
+    if (currentID != null && !options.some(g => g.ID === currentID)) {
+      options.push({ ID: currentID, Name: `#${currentID}` } as Group)
+    }
+    return options
+  }, [selectableGroups, editing?.GroupID])
+  const editGroupItems = Object.fromEntries(editGroupOptions.map(g => [String(g.ID!), g.Name ?? String(g.ID!)]))
+  const selectedEditGroup = editForm.group_id ? groupsByID.get(Number(editForm.group_id)) : undefined
 
   const update = useMutation({
     mutationFn: (p: { id: number; body: KeyUpdate }) => userApi.updateUserKey(p.id, p.body),
@@ -224,6 +257,7 @@ export default function UserKeys() {
     setEditErr(null)
     update.reset()
     setEditOpen(true)
+    void refetchGroups()
   }
   const submitEdit = () => {
     if (!editForm.name.trim() || !validNumber(editForm.max_concurrency) || !validNumber(editForm.quota)) {
@@ -231,6 +265,10 @@ export default function UserKeys() {
       return
     }
     const body: KeyUpdate = { name: editForm.name.trim(), status: editForm.status }
+    const selectedGroupID = editForm.group_id ? Number(editForm.group_id) : NaN
+    if (Number.isInteger(selectedGroupID) && selectedGroupID > 0 && selectedGroupID !== editing?.GroupID) {
+      body.group_id = selectedGroupID
+    }
     if (editForm.max_concurrency !== '') body.max_concurrency = Number(editForm.max_concurrency)
     if (editForm.quota !== '') body.quota = Number(editForm.quota)
     update.mutate({ id: editing!.ID!, body })
@@ -333,7 +371,14 @@ export default function UserKeys() {
                     <TableCell className="max-w-40 truncate" title={k.Name}>{k.Name ?? '—'}</TableCell>
                     <TableCell><KeyCell raw={k.key} /></TableCell>
                     <TableCell><StatusBadge status={k.Status} /></TableCell>
-                    <TableCell className="tabular-nums">{k.GroupID ?? '—'}</TableCell>
+                    <TableCell>
+                      <div className="min-w-0">
+                        <div className="max-w-40 truncate font-medium" title={groupName(k.GroupID)}>{groupName(k.GroupID)}</div>
+                        <div className="text-xs tabular-nums text-muted-foreground">
+                          {k.GroupID != null ? `#${k.GroupID}` : '—'} · {t('groups.table.priceMultiplier')}: {groupMultiplier(k.GroupID)}
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {k.MaxConcurrency == null ? '—' : k.MaxConcurrency === 0 ? t('user.overview.unlimited') : k.MaxConcurrency}
                     </TableCell>
@@ -359,7 +404,11 @@ export default function UserKeys() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-semibold" title={k.Name}>{k.Name || `#${k.ID}`}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{t('user.keys.groupLabel')} #{k.GroupID ?? '—'} · {formatDateTime(k.CreatedAt)}</p>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                      <span className="min-w-0 max-w-full truncate" title={groupName(k.GroupID)}>{t('user.keys.groupLabel')}: {groupName(k.GroupID)}</span>
+                      <span className="shrink-0 tabular-nums">{groupMultiplier(k.GroupID)}</span>
+                      <span className="shrink-0">{formatDateTime(k.CreatedAt)}</span>
+                    </div>
                   </div>
                   <StatusBadge status={k.Status} />
                 </div>
@@ -384,7 +433,7 @@ export default function UserKeys() {
 
       {/* —— 创建对话框（form → result 两阶段） —— */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{created ? t('user.keys.createdTitle') : t('user.keys.createTitle')}</DialogTitle>
             <DialogDescription>{created ? t('user.keys.createdDesc') : t('user.keys.createDesc')}</DialogDescription>
@@ -398,7 +447,7 @@ export default function UserKeys() {
             </>
           ) : (
             <>
-              <div className="space-y-3">
+              <div className="min-w-0 space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="uk-name">{t('user.keys.nameLabel')}</Label>
                   <Input id="uk-name" value={createForm.name} placeholder={t('user.keys.namePlaceholder')} onChange={e => updateCreate({ name: e.target.value })} />
@@ -406,13 +455,23 @@ export default function UserKeys() {
                 <div className="space-y-1.5">
                   <Label>{t('user.keys.groupLabel')}</Label>
                   <Select items={groupItems} value={createForm.group_id} onValueChange={v => updateCreate({ group_id: v })}>
-                    <SelectTrigger className="w-full"><SelectValue placeholder={t('user.keys.groupPlaceholder')} /></SelectTrigger>
+                    <SelectTrigger className="w-full min-w-0 max-w-full"><SelectValue className="min-w-0 truncate" placeholder={t('user.keys.groupPlaceholder')} /></SelectTrigger>
                     <SelectContent>
                       {selectableGroups.map(g => (
-                        <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? String(g.ID)}>{g.Name ?? String(g.ID)}</SelectItem>
+                        <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? String(g.ID)}>
+                          <span className="min-w-0 flex-1 truncate">{g.Name ?? String(g.ID)}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatGroupMultiplier(g.PriceMultiplier, t('groups.free'))}</span>
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedCreateGroup && (
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-2 text-xs">
+                      <span className="min-w-0 max-w-full truncate font-medium" title={selectedCreateGroup.Name}>{selectedCreateGroup.Name}</span>
+                      <span className="shrink-0 tabular-nums text-primary">{t('groups.table.priceMultiplier')}: {formatGroupMultiplier(selectedCreateGroup.PriceMultiplier, t('groups.free'))}</span>
+                      {selectedCreateGroup.AllowedModels && <span className="shrink-0 text-muted-foreground">{selectedCreateGroup.AllowedModels.length} {t('groups.allowedModelsLabel')}</span>}
+                    </div>
+                  )}
                   {groupsLoading && <p className="text-xs text-muted-foreground">{t('user.keys.groupLoading')}</p>}
                   {groupsError && <p className="text-xs text-destructive">{t('user.keys.groupLoadFailed')}</p>}
                   {!groupsLoading && !groupsError && selectableGroups.length === 0 && <p className="text-xs text-muted-foreground">{t('user.keys.groupEmpty')}</p>}
@@ -445,12 +504,12 @@ export default function UserKeys() {
 
       {/* —— 编辑对话框 —— */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('user.keys.editTitle', { id: editing?.ID })}</DialogTitle>
             <DialogDescription>{t('user.keys.editDesc')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="uk-ename">{t('user.keys.nameLabel')}</Label>
               <Input id="uk-ename" value={editForm.name} onChange={e => { setEditForm(f => ({ ...f, name: e.target.value })); setEditErr(null) }} />
@@ -458,11 +517,33 @@ export default function UserKeys() {
             <div className="space-y-1.5">
               <Label>{t('user.keys.statusLabel')}</Label>
               <Select items={Object.fromEntries(STATUSES.map(s => [s, t(`status.${s}`)]))} value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v as KeyStatus }))}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full min-w-0 max-w-full"><SelectValue className="min-w-0 truncate" /></SelectTrigger>
                 <SelectContent>
                   {STATUSES.map(s => <SelectItem key={s} value={s} label={t(`status.${s}`)}>{t(`status.${s}`)}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('user.keys.groupLabel')}</Label>
+              <Select items={editGroupItems} value={editForm.group_id} onValueChange={v => { setEditForm(f => ({ ...f, group_id: v })); setEditErr(null) }}>
+                <SelectTrigger className="w-full min-w-0 max-w-full"><SelectValue className="min-w-0 truncate" placeholder={t('user.keys.groupPlaceholder')} /></SelectTrigger>
+                <SelectContent>
+                  {editGroupOptions.map(g => (
+                    <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? String(g.ID)}>
+                      <span className="min-w-0 flex-1 truncate">{g.Name ?? String(g.ID)}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatGroupMultiplier(g.PriceMultiplier, t('groups.free'))}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedEditGroup && (
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-2 text-xs">
+                  <span className="min-w-0 max-w-full truncate font-medium" title={selectedEditGroup.Name}>{selectedEditGroup.Name}</span>
+                  <span className="shrink-0 tabular-nums text-primary">{t('groups.table.priceMultiplier')}: {formatGroupMultiplier(selectedEditGroup.PriceMultiplier, t('groups.free'))}</span>
+                  {selectedEditGroup.AllowedModels && <span className="shrink-0 text-muted-foreground">{selectedEditGroup.AllowedModels.length} {t('groups.allowedModelsLabel')}</span>}
+                </div>
+              )}
+              {editGroupOptions.length === 0 && <p className="text-xs text-muted-foreground">{t('user.keys.groupEmpty')}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -490,7 +571,7 @@ export default function UserKeys() {
 
       {/* —— 删除确认 —— */}
       <Dialog open={!!deleting} onOpenChange={o => { if (!o && !del.isPending) setDeleting(null) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('user.keys.deleteTitle')}</DialogTitle>
             <DialogDescription>{t('user.keys.deleteDesc', { name: deleting?.Name })}</DialogDescription>
@@ -507,7 +588,7 @@ export default function UserKeys() {
 
       {/* —— 轮换（confirm → result 两阶段） —— */}
       <Dialog open={!!rotating} onOpenChange={o => { if (!o) closeRotate() }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
           {rotated ? (
             <>
               <DialogHeader>

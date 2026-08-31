@@ -383,6 +383,11 @@ type Service struct {
 	settings atomic.Pointer[map[string]*domain.Setting]
 	// priceSnapshot 统一价格快照：entries + variants
 	priceSnapshot atomic.Pointer[priceSnapshot]
+	// pricingMutationMu serializes every in-process price mutation (manual
+	// writes and automated sync). Keeping validation and the corresponding
+	// repository write in one critical section prevents a stale base entry from
+	// being paired with a newly replaced variant set.
+	pricingMutationMu sync.Mutex
 	// priceFetcher 价格拉取器（pricing.Fetcher 实现）：管理端手动 sync
 	// （SyncPricingNow）与 cron worker 共享同一实例（main 装配注入；nil 时
 	// SyncPricingNow 返回错误——启动配置缺失，不应发生）。
@@ -419,6 +424,19 @@ type Service struct {
 	codexTLSInitial          bool
 	codexTLSInitialSet       bool
 	codexTLSExplicit         bool
+}
+
+// WithPricingMutation executes fn while holding the process-wide pricing
+// mutation lock. The pricing sync worker receives this hook at composition time
+// so its repository writes share the same ordering as manual admin updates.
+// The callback must not call another pricing mutation on this service.
+func (s *Service) WithPricingMutation(_ context.Context, fn func() error) error {
+	if fn == nil {
+		return nil
+	}
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
+	return fn()
 }
 
 func New(store Store, sched RuntimeProvider, invalidate Invalidator, pub Publisher, ruleReload RuleReloader, keys KeyRegistrar, log *logx.Logger) *Service {

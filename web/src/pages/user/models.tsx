@@ -9,8 +9,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatPricePerCall, formatPricePerImage, formatPricePerMillion } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
+import { formatMultiplierValue } from '@/lib/multiplier'
 
 type ChannelMetric = components['schemas']['UserChannelMetric']
 
@@ -32,19 +34,34 @@ function formatUpdated(value: string | null | undefined, empty: string) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function modelRows(metric: ChannelMetric) {
+  const models = sortModelsLatestFirst(metric.AllowedModels ?? [])
+  const byName = new Map((metric.ModelPrices ?? []).map(row => [row.Model, row]))
+  // Older C4 servers may not send ModelPrices yet. Keep those models visible
+  // with explicit empty prices during a rolling frontend/backend upgrade.
+  return models.map(model => byName.get(model) ?? { Model: model })
+}
+
+function priceMode(price: components['schemas']['UserChannelModelPrice']): 'token' | 'call' | 'image' {
+  if (price.Mode === 'call' || price.PricePerCall != null) return 'call'
+  if (price.Mode === 'image' || price.PricePerImage != null) return 'image'
+  return 'token'
+}
+
 function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, options?: Record<string, unknown>) => string }) {
   const status = statusFor(metric, t)
   const Icon = status.icon
   const models = sortModelsLatestFirst(metric.AllowedModels ?? [])
+  const prices = modelRows(metric)
   const success = metric.RequestCount > 0 ? `${metric.SuccessRate.toFixed(1)}%` : '—'
   return (
     <Card className="h-full transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg">
       <CardHeader className="gap-3">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex w-full min-w-0 items-start justify-between gap-3">
           <CardTitle className="min-w-0 truncate text-base" title={metric.Name}>{metric.Name}</CardTitle>
           <Badge variant="secondary" className={cn('shrink-0 gap-1', status.className)}><Icon className="size-3.5" />{status.label}</Badge>
         </div>
-        <CardDescription className="flex items-center gap-1.5"><Activity className="size-4" />{t('user.models.channelWindow')}</CardDescription>
+        <CardDescription className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><span className="flex min-w-0 items-center gap-1.5 truncate"><Activity className="size-4 shrink-0" />{t('user.models.channelWindow')}</span><span className="shrink-0 font-mono text-xs">{t('user.models.multiplier', { value: formatMultiplierValue(metric.PriceMultiplier) })}</span></CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-3 gap-2 text-center">
@@ -54,7 +71,11 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('user.models.modelsLabel')}</span><span className="shrink-0">{formatUpdated(metric.LastCalledAt, t('user.models.notCalled'))}</span></div>
-          {models.length ? <div className="flex flex-wrap gap-1.5">{models.slice(0, 4).map(model => <span key={model} className="max-w-full truncate rounded-md bg-muted px-2 py-1 font-mono text-[11px]" title={model}>{model}</span>)}{models.length > 4 && <span className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground">+{models.length - 4}</span>}</div> : <p className="text-xs text-muted-foreground">{t('user.models.modelsPending')}</p>}
+          {prices.length ? <div className="max-h-64 divide-y overflow-y-auto rounded-lg border bg-background/60">{prices.map(price => {
+            const mode = priceMode(price)
+            return <div key={price.Model} className="grid grid-cols-2 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><span className="col-span-2 min-w-0 truncate font-mono sm:col-span-1" title={price.Model}>{price.Model}</span>{mode === 'call' ? <span className="col-span-2 whitespace-nowrap sm:col-span-2 sm:text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.callShort')}</span><span className="tabular-nums">{formatPricePerCall(price.PricePerCall, t('user.models.callUnit'))}</span></span> : mode === 'image' ? <span className="col-span-2 whitespace-nowrap sm:col-span-2 sm:text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.imageShort')}</span><span className="tabular-nums">{formatPricePerImage(price.PricePerImage, t('user.models.imageUnit'))}</span></span> : <><span className="whitespace-nowrap sm:text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.inputShort')}</span><span className="tabular-nums">{formatPricePerMillion(price.InputPerM)}</span></span><span className="whitespace-nowrap text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.outputShort')}</span><span className="tabular-nums">{formatPricePerMillion(price.OutputPerM)}</span></span></>}</div>
+          })}</div> : <p className="text-xs text-muted-foreground">{t('user.models.modelsPending')}</p>}
+          {models.length > 0 && <p className="text-[11px] text-muted-foreground">{t('user.models.priceUnit')}</p>}
         </div>
       </CardContent>
     </Card>

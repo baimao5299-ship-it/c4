@@ -1491,7 +1491,7 @@ paths:
     put:
       operationId: PutUserKeysId
       tags: [user]
-      summary: 更新 key（name/status/max_concurrency/quota；仅本人）
+      summary: 更新 key（group_id/name/status/max_concurrency/quota；仅本人；切换分组需具备访问权限且目标组可路由）
       requestBody:
         required: true
         content:
@@ -2482,7 +2482,8 @@ components:
             nullable: true
             minimum: 0
             maximum: 10
-          description: 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值
+            multipleOf: 0.0001
+          description: 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10，最多 4 位小数；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值
     GroupAssignmentsResponse:
       type: object
       required: [user_ids]
@@ -2513,7 +2514,8 @@ components:
             nullable: true
             minimum: 0
             maximum: 10
-          description: 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值
+            multipleOf: 0.0001
+          description: 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10，最多 4 位小数；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值
     UserGroupsResponse:
       type: object
       required: [group_ids]
@@ -2539,13 +2541,17 @@ components:
           items: { $ref: '#/components/schemas/UserChannelMetric' }
     UserChannelMetric:
       type: object
-      required: [GroupID, Name, AllowedModels, PriceMultiplier, RequestCount, ErrorCount, AverageLatencyMS, SuccessRate, Status]
+      required: [GroupID, Name, AllowedModels, ModelPrices, PriceMultiplier, RequestCount, ErrorCount, AverageLatencyMS, SuccessRate, Status]
       properties:
         GroupID: { type: integer, format: int64 }
         Name: { type: string }
         AllowedModels:
           type: array
           items: { type: string }
+        ModelPrices:
+          type: array
+          description: "公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。"
+          items: { $ref: '#/components/schemas/UserChannelModelPrice' }
         PriceMultiplier: { type: number, format: double, minimum: 0 }
         RequestCount: { type: integer, format: int64, minimum: 0 }
         ErrorCount: { type: integer, format: int64, minimum: 0 }
@@ -2553,6 +2559,18 @@ components:
         SuccessRate: { type: number, format: double, minimum: 0, maximum: 100 }
         LastCalledAt: { type: string, format: date-time, nullable: true }
         Status: { type: string, enum: [stable, degraded, no_data] }
+    UserChannelModelPrice:
+      type: object
+      required: [Model]
+      properties:
+        Model: { type: string }
+        InputPerM: { type: number, format: double, nullable: true, minimum: 0, description: "应用分组倍率后的输入单价（USD/1M tokens）；null = 未配置价格" }
+        OutputPerM: { type: number, format: double, nullable: true, minimum: 0, description: "应用分组倍率后的输出单价（USD/1M tokens）；null = 未配置价格" }
+        CacheReadPerM: { type: number, format: double, nullable: true, minimum: 0, description: "应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 未配置价格" }
+        CacheWritePerM: { type: number, format: double, nullable: true, minimum: 0, description: "应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 未配置价格" }
+        PricePerCall: { type: number, format: double, nullable: true, minimum: 0, description: "应用分组倍率后的按次单价（USD/次）；null = 未配置价格" }
+        PricePerImage: { type: number, format: double, nullable: true, minimum: 0, description: "应用分组倍率后的图片单价（USD/张）；null = 未配置价格" }
+        Mode: { type: string, enum: [token, call, image], nullable: true }
     KeyStatus:
       type: string
       enum: [active, disabled]
@@ -2583,6 +2601,7 @@ components:
       type: object
       properties:
         name: { type: string }
+        group_id: { type: integer, format: int64, minimum: 1, description: 切换 Key 归属分组；目标分组必须对当前用户可用且存在可路由配置 }
         status: { $ref: '#/components/schemas/KeyStatus' }
         max_concurrency: { type: integer }
         quota: { type: integer, format: int64 }
@@ -2754,7 +2773,7 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/GroupUpstreamInput' }
           description: 上游池成员。POST 在 routing_mode=upstreams 时与分组策略同事务创建；PUT 携带时与分组策略同事务替换，切回 accounts 时传空数组可清理旧成员
-        price_multiplier: { type: number, format: double, minimum: 0, maximum: 10, nullable: true, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0） }
+        price_multiplier: { type: number, format: double, minimum: 0, maximum: 10, multipleOf: 0.0001, nullable: true, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0） }
         protocol_convert:
           type: array
           items: { $ref: '#/components/schemas/GroupProtocolConvert' }
@@ -3277,14 +3296,14 @@ components:
       required: [mode]
       properties:
         mode: { type: string, enum: [token, call, image] }
-        input_per_m: { type: number, format: double, minimum: 0, nullable: true }
-        output_per_m: { type: number, format: double, minimum: 0, nullable: true }
-        cache_read_per_m: { type: number, format: double, minimum: 0, nullable: true }
-        cache_write_per_m: { type: number, format: double, minimum: 0, nullable: true }
-        price_per_call: { type: number, format: double, minimum: 0, nullable: true }
-        img_in_tok_per_m: { type: number, format: double, minimum: 0, nullable: true }
-        img_out_tok_per_m: { type: number, format: double, minimum: 0, nullable: true }
-        price_per_image: { type: number, format: double, minimum: 0, nullable: true }
+        input_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        output_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        cache_read_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        cache_write_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        price_per_call: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        img_in_tok_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        img_out_tok_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        price_per_image: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
     PriceEntryListResponse:
       type: object
       required: [total, rows]
@@ -3305,7 +3324,7 @@ components:
         TimeStart: { type: string, nullable: true }
         TimeEnd: { type: string, nullable: true }
         DowMask: { type: integer, nullable: true }
-        multiplier: { type: number, format: double, minimum: 0, maximum: 10, nullable: true, description: "价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）" }
+        multiplier: { type: number, format: double, minimum: 0, maximum: 10, multipleOf: 0.0001, nullable: true, description: "价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）" }
         SetInputPerM: { type: number, format: double, nullable: true }
         SetOutputPerM: { type: number, format: double, nullable: true }
         SetCacheReadPerM: { type: number, format: double, nullable: true }
@@ -3325,15 +3344,15 @@ components:
         time_start: { type: string, nullable: true }
         time_end: { type: string, nullable: true }
         dow_mask: { type: integer, nullable: true }
-        multiplier: { type: number, format: double, minimum: 0, maximum: 10, nullable: true, description: "价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）" }
-        set_input_per_m: { type: number, format: double, nullable: true }
-        set_output_per_m: { type: number, format: double, nullable: true }
-        set_cache_read_per_m: { type: number, format: double, nullable: true }
-        set_cache_creation_per_m: { type: number, format: double, nullable: true }
-        set_price_per_call: { type: number, format: double, nullable: true }
-        set_img_in_tok_per_m: { type: number, format: double, nullable: true }
-        set_img_out_tok_per_m: { type: number, format: double, nullable: true }
-        set_price_per_image: { type: number, format: double, nullable: true }
+        multiplier: { type: number, format: double, minimum: 0, maximum: 10, multipleOf: 0.0001, nullable: true, description: "价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）" }
+        set_input_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_output_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_cache_read_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_cache_creation_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_price_per_call: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_img_in_tok_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_img_out_tok_per_m: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
+        set_price_per_image: { type: number, format: double, minimum: 0, multipleOf: 0.00001, nullable: true }
         seq: { type: integer, minimum: 1 }
     PriceVariantListResponse:
       type: object

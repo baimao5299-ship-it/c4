@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { StatusBadge } from '@/components/status-badge'
-import { fmtTTFT, formatPercent, truncate } from '@/components/fmt'
+import { fmtTTFT, formatPercent, formatUSDPrecise, truncate } from '@/components/fmt'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -101,7 +101,7 @@ export default function Dashboard() {
   const summaryCards = [
     { key: 'requests', icon: Activity, labelKey: 'dashboard.summaryCards.requests', value: ov?.summary.requests ?? 0 },
     { key: 'callCount', icon: Boxes, labelKey: 'dashboard.summaryCards.callCount', value: ov?.summary.call_count ?? 0 },
-    { key: 'cost', icon: Coins, labelKey: 'dashboard.summaryCards.cost', value: `$${(ov?.summary.cost_usd ?? 0).toFixed(4)}` },
+    { key: 'cost', icon: Coins, labelKey: 'dashboard.summaryCards.cost', value: formatUSDPrecise(ov?.summary.cost_usd ?? 0) },
     { key: 'tokens', icon: Zap, labelKey: 'dashboard.summaryCards.tokens', value: formatCompact(ov?.summary.total_tokens ?? 0) },
   ] as const
 
@@ -283,7 +283,7 @@ export default function Dashboard() {
                                         <span className="flex w-full justify-between text-muted-foreground">
                                           <span>{t('dashboard.tableCost')}</span>
                                           <span className="font-mono font-medium text-foreground tabular-nums">
-                                            ${row.cost_usd.toFixed(4)}
+                                            {formatUSDPrecise(row.cost_usd)}
                                           </span>
                                         </span>
                                         <span className="flex w-full justify-between text-muted-foreground">

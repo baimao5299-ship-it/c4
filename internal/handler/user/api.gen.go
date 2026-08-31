@@ -83,6 +83,13 @@ const (
 	Stable   UserChannelMetricStatus = "stable"
 )
 
+// Defines values for UserChannelModelPriceMode.
+const (
+	Call  UserChannelModelPriceMode = "call"
+	Image UserChannelModelPriceMode = "image"
+	Token UserChannelModelPriceMode = "token"
+)
+
 // Defines values for UserRole.
 const (
 	UserRolePlatformAdmin UserRole = "platform_admin"
@@ -214,6 +221,8 @@ type KeyStatus string
 
 // KeyUpdate defines model for KeyUpdate.
 type KeyUpdate struct {
+	// GroupId 切换 Key 归属分组；目标分组必须对当前用户可用且存在可路由配置
+	GroupId        *int64     `json:"group_id,omitempty"`
 	MaxConcurrency *int       `json:"max_concurrency,omitempty"`
 	Name           *string    `json:"name,omitempty"`
 	Quota          *int64     `json:"quota,omitempty"`
@@ -389,20 +398,49 @@ type UserAuthResponse struct {
 
 // UserChannelMetric defines model for UserChannelMetric.
 type UserChannelMetric struct {
-	AllowedModels    []string                `json:"AllowedModels"`
-	AverageLatencyMS int64                   `json:"AverageLatencyMS"`
-	ErrorCount       int64                   `json:"ErrorCount"`
-	GroupID          int64                   `json:"GroupID"`
-	LastCalledAt     *time.Time              `json:"LastCalledAt"`
-	Name             string                  `json:"Name"`
-	PriceMultiplier  float64                 `json:"PriceMultiplier"`
-	RequestCount     int64                   `json:"RequestCount"`
-	Status           UserChannelMetricStatus `json:"Status"`
-	SuccessRate      float64                 `json:"SuccessRate"`
+	AllowedModels    []string   `json:"AllowedModels"`
+	AverageLatencyMS int64      `json:"AverageLatencyMS"`
+	ErrorCount       int64      `json:"ErrorCount"`
+	GroupID          int64      `json:"GroupID"`
+	LastCalledAt     *time.Time `json:"LastCalledAt"`
+
+	// ModelPrices 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。
+	ModelPrices     []UserChannelModelPrice `json:"ModelPrices"`
+	Name            string                  `json:"Name"`
+	PriceMultiplier float64                 `json:"PriceMultiplier"`
+	RequestCount    int64                   `json:"RequestCount"`
+	Status          UserChannelMetricStatus `json:"Status"`
+	SuccessRate     float64                 `json:"SuccessRate"`
 }
 
 // UserChannelMetricStatus defines model for UserChannelMetric.Status.
 type UserChannelMetricStatus string
+
+// UserChannelModelPrice defines model for UserChannelModelPrice.
+type UserChannelModelPrice struct {
+	// CacheReadPerM 应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 未配置价格
+	CacheReadPerM *float64 `json:"CacheReadPerM"`
+
+	// CacheWritePerM 应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 未配置价格
+	CacheWritePerM *float64 `json:"CacheWritePerM"`
+
+	// InputPerM 应用分组倍率后的输入单价（USD/1M tokens）；null = 未配置价格
+	InputPerM *float64                   `json:"InputPerM"`
+	Mode      *UserChannelModelPriceMode `json:"Mode"`
+	Model     string                     `json:"Model"`
+
+	// OutputPerM 应用分组倍率后的输出单价（USD/1M tokens）；null = 未配置价格
+	OutputPerM *float64 `json:"OutputPerM"`
+
+	// PricePerCall 应用分组倍率后的按次单价（USD/次）；null = 未配置价格
+	PricePerCall *float64 `json:"PricePerCall"`
+
+	// PricePerImage 应用分组倍率后的图片单价（USD/张）；null = 未配置价格
+	PricePerImage *float64 `json:"PricePerImage"`
+}
+
+// UserChannelModelPriceMode defines model for UserChannelModelPrice.Mode.
+type UserChannelModelPriceMode string
 
 // UserChannelMonitorResponse defines model for UserChannelMonitorResponse.
 type UserChannelMonitorResponse struct {
@@ -664,7 +702,7 @@ type ServerInterface interface {
 	// key 详情（仅本人；他人 key → 404）
 	// (GET /api/user/keys/{id})
 	GetUserKeysId(w http.ResponseWriter, r *http.Request, id int64)
-	// 更新 key（name/status/max_concurrency/quota；仅本人）
+	// 更新 key（group_id/name/status/max_concurrency/quota；仅本人；切换分组需具备访问权限且目标组可路由）
 	// (PUT /api/user/keys/{id})
 	PutUserKeysId(w http.ResponseWriter, r *http.Request, id int64)
 	// 轮换 key（仅本人；新明文生效，旧 key 立即失效）
@@ -778,7 +816,7 @@ func (_ Unimplemented) GetUserKeysId(w http.ResponseWriter, r *http.Request, id 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// 更新 key（name/status/max_concurrency/quota；仅本人）
+// 更新 key（group_id/name/status/max_concurrency/quota；仅本人；切换分组需具备访问权限且目标组可路由）
 // (PUT /api/user/keys/{id})
 func (_ Unimplemented) PutUserKeysId(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)

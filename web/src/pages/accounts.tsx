@@ -30,7 +30,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from '@/components/ui/toast'
 import { StatusBadge, CooldownBadge } from '@/components/status-badge'
-import { fmtTokens, formatPercent, toRFC3339, truncate } from '@/components/fmt'
+import { fmtTokens, formatPercent, formatUSDPrecise, toRFC3339, truncate } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 import { CodexImportDialog } from '@/components/codex-import/import-dialog'
@@ -70,8 +70,9 @@ function saveHiddenCols(cols: Set<string>) {
 // —— 用量/额度概要列（0e77d2a accounts/usage 批量聚合）——
 // A = 乘倍率前原始成本（raw_cost_usd）、U = 计费成本（cost_usd）——gateway 全账号有；
 // codex 账号（upstream 非 null）追加消耗百分比条 + reset 剩余时间；upstream_error 显示失败态。
-// 金额：≥$0.01 两位小数，更小四位保精度（0.0042 不被抹成 $0.00）；0/null 显示 —。
-const fmtUsd = (v?: number | null): string => (v == null || v <= 0 ? '$0.00' : `$${(v >= 0.01 ? v.toFixed(2) : v.toFixed(4))}`)
+// 金额：沿用统一的精确 USD 展示，小到一个账本单位（$0.00001）也不会
+// 被旧的四位小数格式化成 $0.0000；0/null 继续明确显示为 $0.00。
+const fmtUsd = (v?: number | null): string => (v == null || v <= 0 ? '$0.00' : formatUSDPrecise(v))
 const pctColor = (p: number): string => (p < 60 ? 'bg-emerald-500' : p < 85 ? 'bg-amber-500' : 'bg-red-500')
 // reset 剩余时长紧凑格式：≥1d → "Xd Xh"，≥1h → "Xh Xm"，否则 "Xm"。
 const fmtReset = (ms: number): string => {

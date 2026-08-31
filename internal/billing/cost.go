@@ -74,30 +74,66 @@ const (
 // 完成（毫分/1M tokens → 毫分）。
 const (
 	milliPerMillion = 1_000_000 // 毫分/1M tokens → 毫分的除数
+	// CostRemainderScale is the denominator used by CostParts.Remainder.
+	// Exporting the scale lets the proxy aggregate fractional request costs
+	// before applying a group multiplier without duplicating a magic number.
+	CostRemainderScale int64 = milliPerMillion
 )
 
-// segBudget 单乘积上界（评审 I-1 溢出钳制）：每分量至多 2 个乘法（阈值内/
-// 超额），四分量共 ≤ 8 个；各乘积钳制后总和 ≤ 8×segBudget ≤ MaxInt64 -
-// milliPerMillion/2，末次 (raw + 5e5) 四舍五入不回绕。
+// segBudget 单乘积上界（评审 I-1 溢出钳制）：每个 token 计费分量由
+// saturatingCostMul 限制到此值，四分量求和后仍留出 round-half-up 的余量，
+// 因此末次舍入不会回绕。异常高价格会得到这个正上限，不会因整除得到零。
 const segBudget = (math.MaxInt64 - milliPerMillion/2) / 8
 
-// clampToken 恶意防护：恶意/异常上游可报超大 token 数（如 9e15），t×p 会
-// 回绕成负 cost（T3 扣费变反向入账）。乘法前把 token 钳到 segBudget/p，乘积
-// 恒 ≤ segBudget；合法输入（t ≤ 1e6、p ≤ 1e7 → 乘积 ≤ 1e13）远低于上界，
-// 正常路径仅一次除法一次比较，零分配。负数 token 已在 Cost 入口钳 0。
-func clampToken(t, p int64) int64 {
-	if p > 0 {
-		if lim := segBudget / p; t > lim {
-			return lim
-		}
+// saturatingCostMul multiplies two non-negative billing values while keeping
+// the result within limit. Computing the quotient before multiplying avoids
+// int64 wraparound. In particular, when b > limit, limit/b is zero; returning
+// limit for any positive a preserves a positive debit instead of turning an
+// unusually high price into a free request.
+func saturatingCostMul(a, b, limit int64) int64 {
+	if a <= 0 || b <= 0 || limit <= 0 {
+		return 0
 	}
-	return t
+	if a > limit/b {
+		return limit
+	}
+	return a * b
 }
 
 const imageTotalCap = math.MaxInt64 / 100_000
 
-// CostFromResolved pure arithmetic on resolved prices (new unified path).
-func CostFromResolved(rp domain.ResolvedPrices, pt, ct, cr, cc int64) int64 {
+// CostParts is the fixed-point result before rounding to the ledger unit.
+// Units are whole milli-cents and Remainder is the numerator left after the
+// one-million-token division. The proxy carries Remainder across requests so
+// a very small configured price is not silently treated as free forever.
+type CostParts struct {
+	Units     int64
+	Remainder int64
+}
+
+// Rounded returns the legacy standalone round-half-up result. The live proxy
+// aggregates Remainder across requests, while pure callers retain the existing
+// one-request contract through this method.
+func (p CostParts) Rounded() int64 { return roundCostParts(p) }
+
+func positiveCostPrice(v *int64) int64 {
+	if v == nil || *v <= 0 {
+		return 0
+	}
+	return *v
+}
+
+func splitCostParts(raw int64) CostParts {
+	if raw <= 0 {
+		return CostParts{}
+	}
+	return CostParts{Units: raw / milliPerMillion, Remainder: raw % milliPerMillion}
+}
+
+// CostPartsFromResolved returns token-priced usage without rounding away its
+// fractional ledger unit. CostFromResolved remains the pure half-up API for
+// callers that need a standalone integer result.
+func CostPartsFromResolved(rp domain.ResolvedPrices, pt, ct, cr, cc int64) CostParts {
 	clamp := func(t int64) int64 {
 		if t < 0 {
 			return 0
@@ -105,23 +141,28 @@ func CostFromResolved(rp domain.ResolvedPrices, pt, ct, cr, cc int64) int64 {
 		return t
 	}
 	pt, ct, cr, cc = clamp(pt), clamp(ct), clamp(cr), clamp(cc)
-	orInt := func(v *int64) int64 {
-		if v == nil || *v <= 0 {
-			return 0
-		}
-		return *v
-	}
-	raw := saturatingCostAdd(
-		clampToken(pt, orInt(rp.InputPerM))*orInt(rp.InputPerM),
-		clampToken(ct, orInt(rp.OutputPerM))*orInt(rp.OutputPerM),
-	)
-	raw = saturatingCostAdd(raw, clampToken(cr, orInt(rp.CacheReadPerM))*orInt(rp.CacheReadPerM))
-	raw = saturatingCostAdd(raw, clampToken(cc, orInt(rp.CacheWritePerM))*orInt(rp.CacheWritePerM))
-	return roundedCost(raw)
+	in, out := positiveCostPrice(rp.InputPerM), positiveCostPrice(rp.OutputPerM)
+	cacheRead, cacheWrite := positiveCostPrice(rp.CacheReadPerM), positiveCostPrice(rp.CacheWritePerM)
+	raw := saturatingCostAdd(saturatingCostMul(pt, in, segBudget), saturatingCostMul(ct, out, segBudget))
+	raw = saturatingCostAdd(raw, saturatingCostMul(cr, cacheRead, segBudget))
+	raw = saturatingCostAdd(raw, saturatingCostMul(cc, cacheWrite, segBudget))
+	return splitCostParts(raw)
+}
+
+// CostFromResolved pure arithmetic on resolved prices (new unified path).
+func CostFromResolved(rp domain.ResolvedPrices, pt, ct, cr, cc int64) int64 {
+	return CostPartsFromResolved(rp, pt, ct, cr, cc).Rounded()
 }
 
 // ImageCostFromResolved image branch via unified ResolvedPrices.
 func ImageCostFromResolved(rp domain.ResolvedPrices, inTok, outTok, count int64) int64 {
+	return ImageCostPartsFromResolved(rp, inTok, outTok, count).Rounded()
+}
+
+// ImageCostPartsFromResolved is the fixed-point image equivalent. The
+// per-image component is already in ledger units, so only image-token prices
+// contribute a remainder.
+func ImageCostPartsFromResolved(rp domain.ResolvedPrices, inTok, outTok, count int64) CostParts {
 	clamp := func(t int64) int64 {
 		if t < 0 {
 			return 0
@@ -129,36 +170,34 @@ func ImageCostFromResolved(rp domain.ResolvedPrices, inTok, outTok, count int64)
 		return t
 	}
 	inTok, outTok, count = clamp(inTok), clamp(outTok), clamp(count)
-	var inP, outP, perP int64
-	if rp.ImgInTokPerM != nil {
-		if *rp.ImgInTokPerM > 0 {
-			inP = *rp.ImgInTokPerM
-		}
-	}
-	if rp.ImgOutTokPerM != nil {
-		if *rp.ImgOutTokPerM > 0 {
-			outP = *rp.ImgOutTokPerM
-		}
-	}
-	if rp.PricePerImage != nil {
-		if *rp.PricePerImage > 0 {
-			perP = *rp.PricePerImage
-		}
-	}
-	raw := saturatingCostAdd(clampToken(inTok, inP)*inP, clampToken(outTok, outP)*outP)
-	tokenCost := roundedCost(raw)
-	var perImage int64
+	inP, outP, perP := positiveCostPrice(rp.ImgInTokPerM), positiveCostPrice(rp.ImgOutTokPerM), positiveCostPrice(rp.PricePerImage)
+	raw := saturatingCostAdd(saturatingCostMul(inTok, inP, segBudget), saturatingCostMul(outTok, outP, segBudget))
+	parts := splitCostParts(raw)
 	if perP > 0 && count > 0 {
-		if lim := imageTotalCap / perP; count > lim {
-			count = lim
-		}
-		perImage = count * perP
+		parts.Units = saturatingCostAdd(parts.Units, saturatingCostMul(count, perP, imageTotalCap))
 	}
-	total := saturatingCostAdd(tokenCost, perImage)
-	if total > imageTotalCap {
-		total = imageTotalCap
+	if parts.Units >= imageTotalCap {
+		parts.Units = imageTotalCap
+		parts.Remainder = 0
 	}
-	return total
+	return parts
+}
+
+// AddCostParts combines fixed-point cost components without rounding between
+// them. This is used when one response contains token usage plus a flat image
+// charge, so the token fraction survives until the proxy's aggregate ledger
+// rounding step.
+func AddCostParts(a, b CostParts) CostParts {
+	units := saturatingCostAdd(a.Units, b.Units)
+	if units == math.MaxInt64 {
+		return CostParts{Units: math.MaxInt64}
+	}
+	remainder := a.Remainder + b.Remainder
+	carry := remainder / milliPerMillion
+	if units > math.MaxInt64-carry {
+		return CostParts{Units: math.MaxInt64}
+	}
+	return CostParts{Units: units + carry, Remainder: remainder % milliPerMillion}
 }
 
 // saturatingCostAdd combines provider-derived cost components without allowing
@@ -182,14 +221,18 @@ func saturatingCostAdd(a, b int64) int64 {
 // roundedCost applies the existing round-half-up policy without adding the
 // half-unit to an int64 value that may already be at the upper bound.
 func roundedCost(raw int64) int64 {
-	if raw <= 0 {
-		return 0
+	return splitCostParts(raw).Rounded()
+}
+
+func roundCostParts(parts CostParts) int64 {
+	units := parts.Units
+	if units < 0 {
+		units = 0
 	}
-	q, rem := raw/milliPerMillion, raw%milliPerMillion
-	if rem >= milliPerMillion/2 {
-		q++
+	if parts.Remainder >= milliPerMillion/2 && units < math.MaxInt64 {
+		units++
 	}
-	return q
+	return units
 }
 
 // CallCostFromResolved per-call branch.
@@ -201,10 +244,7 @@ func CallCostFromResolved(rp domain.ResolvedPrices, count int64) int64 {
 		return 0
 	}
 	if p := *rp.PricePerCall; p > 0 {
-		if count > imageTotalCap/p {
-			count = imageTotalCap / p
-		}
-		return count * p
+		return saturatingCostMul(count, p, imageTotalCap)
 	}
 	return 0
 }

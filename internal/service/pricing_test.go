@@ -6,6 +6,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,6 +56,26 @@ func TestPriceEntrySnapshotLoad(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestPriceEntriesForModelsPagesStartupFallback(t *testing.T) {
+	fs := newFakeStore()
+	rows := make([]*domain.PriceEntry, 0, pricingReloadPage+1)
+	for i := 0; i <= pricingReloadPage; i++ {
+		rows = append(rows, &domain.PriceEntry{
+			Model: fmt.Sprintf("model-%04d", i), Mode: domain.PriceModeToken,
+			InputPerM: int64Ptr(int64(i + 1)), OutputPerM: int64Ptr(int64(i + 2)), Source: domain.PricingSourceLitellm,
+		})
+	}
+	_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), rows)
+	require.NoError(t, err)
+
+	// Do not initialize the snapshot: this exercises the startup fallback.
+	svc := New(fs, nil, NopInvalidator{}, nil, nil, nil, nil)
+	got, err := svc.PriceEntriesForModels(context.Background(), []string{"model-1000"})
+	require.NoError(t, err)
+	require.Contains(t, got, "model-1000")
+	require.Equal(t, int64(1001), *got["model-1000"].InputPerM)
+}
+
 func TestPriceEntryManualValidation(t *testing.T) {
 	fs := newFakeStore()
 	svc := newPricingSvc(t, fs)
@@ -81,6 +103,70 @@ func TestResolvePricesWithVariant(t *testing.T) {
 	require.Equal(t, int64(150000), *rp.InputPerM)
 }
 
+func TestPricingSnapshotExcludesModelWhenAnyConditionalVariantIsInexact(t *testing.T) {
+	tests := []struct {
+		name    string
+		variant *domain.PriceVariant
+		tier    string
+		tokens  int64
+	}{
+		{
+			name:    "fast tier",
+			variant: &domain.PriceVariant{Seq: 1, ServiceTier: strPtr("fast"), MultBP: intPtr(10)},
+			tier:    "fast",
+		},
+		{
+			name:    "large context",
+			variant: &domain.PriceVariant{Seq: 1, CtxMin: int64Ptr(100_000), MultBP: intPtr(10)},
+			tokens:  100_000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFakeStore()
+			model := "inexact-" + strings.ReplaceAll(tt.name, " ", "-")
+			_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+				Model: model, Mode: domain.PriceModeToken,
+				InputPerM: int64Ptr(100), OutputPerM: int64Ptr(500), Source: domain.PricingSourceLitellm,
+			}})
+			require.NoError(t, err)
+			tt.variant.Model = model
+			_, err = fs.ReplacePriceVariants(context.Background(), model, []*domain.PriceVariant{tt.variant})
+			require.NoError(t, err)
+
+			svc := newPricingSvc(t, fs)
+			_, ok := svc.ResolvePrices(model, 0, "", time.Now())
+			require.False(t, ok, "an invalid conditional branch must fail the request precheck even when it does not match")
+			_, ok = svc.ResolvePrices(model, tt.tokens, tt.tier, time.Now())
+			require.False(t, ok, "the invalid conditional branch must not reach response-time billing")
+		})
+	}
+}
+
+func TestPricingSnapshotKeepsModelWhenAllConditionalVariantsAreExact(t *testing.T) {
+	fs := newFakeStore()
+	model := "exact-variants"
+	_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+		Model: model, Mode: domain.PriceModeToken,
+		InputPerM: int64Ptr(10_000), OutputPerM: int64Ptr(20_000), Source: domain.PricingSourceLitellm,
+	}})
+	require.NoError(t, err)
+	_, err = fs.ReplacePriceVariants(context.Background(), model, []*domain.PriceVariant{
+		{Model: model, Seq: 1, ServiceTier: strPtr("fast"), MultBP: intPtr(10)},
+		{Model: model, Seq: 2, CtxMin: int64Ptr(100_000), MultBP: intPtr(10)},
+	})
+	require.NoError(t, err)
+
+	svc := newPricingSvc(t, fs)
+	_, ok := svc.ResolvePrices(model, 0, "", time.Now())
+	require.True(t, ok)
+	_, ok = svc.ResolvePrices(model, 0, "fast", time.Now())
+	require.True(t, ok)
+	_, ok = svc.ResolvePrices(model, 100_000, "", time.Now())
+	require.True(t, ok)
+}
+
 func TestReplacePriceVariants_MultBPValidation(t *testing.T) {
 	fs := newFakeStore()
 	svc := newPricingSvc(t, fs)
@@ -99,6 +185,48 @@ func TestReplacePriceVariants_MultBPValidation(t *testing.T) {
 	v100001 := 100001
 	_, err = svc.ReplacePriceVariants(context.Background(), "m", []*domain.PriceVariant{{Model: "m", Seq: 1, MultBP: &v100001}})
 	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
+func TestPriceVariantMultiplierRejectsPrecisionChangingCombinations(t *testing.T) {
+	fs := newFakeStore()
+	_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+		Model: "tiny", Mode: domain.PriceModeToken,
+		InputPerM: int64Ptr(100), OutputPerM: int64Ptr(500), Source: domain.PricingSourceManual,
+	}})
+	require.NoError(t, err)
+	svc := newPricingSvc(t, fs)
+	mult := 10 // x0.001: 100 -> 0.1 and 500 -> 0.5 internal units
+	_, err = svc.ReplacePriceVariants(context.Background(), "tiny", []*domain.PriceVariant{{Model: "tiny", Seq: 1, MultBP: &mult}})
+	require.ErrorIs(t, err, ErrInvalidInput)
+
+	exactInput, exactOutput := int64(10_000), int64(20_000)
+	_, err = svc.UpsertPriceEntry(context.Background(), &repository.PriceEntryManual{
+		Model: "exact", Mode: domain.PriceModeToken, InputPerM: &exactInput, OutputPerM: &exactOutput,
+	})
+	require.NoError(t, err)
+	_, err = svc.ReplacePriceVariants(context.Background(), "exact", []*domain.PriceVariant{{Model: "exact", Seq: 1, MultBP: &mult}})
+	require.NoError(t, err)
+}
+
+func TestPriceEntryUpdateCannotInvalidateExistingVariantPrecision(t *testing.T) {
+	fs := newFakeStore()
+	baseInput, baseOutput, mult := int64(10_000), int64(20_000), 10
+	_, err := fs.UpsertPriceEntryManual(context.Background(), &repository.PriceEntryManual{
+		Model: "changing", Mode: domain.PriceModeToken, InputPerM: &baseInput, OutputPerM: &baseOutput,
+	})
+	require.NoError(t, err)
+	_, err = fs.ReplacePriceVariants(context.Background(), "changing", []*domain.PriceVariant{{Model: "changing", Seq: 1, MultBP: &mult}})
+	require.NoError(t, err)
+	svc := newPricingSvc(t, fs)
+
+	inexactInput, inexactOutput := int64(100), int64(500)
+	_, err = svc.UpsertPriceEntry(context.Background(), &repository.PriceEntryManual{
+		Model: "changing", Mode: domain.PriceModeToken, InputPerM: &inexactInput, OutputPerM: &inexactOutput,
+	})
+	require.ErrorIs(t, err, ErrInvalidInput)
+	stored, getErr := fs.GetPriceEntry(context.Background(), "changing")
+	require.NoError(t, getErr)
+	require.Equal(t, baseInput, *stored.InputPerM, "a rejected update must leave the previous price intact")
 }
 
 func TestReplacePriceVariants_CallSetPricePerCall(t *testing.T) {

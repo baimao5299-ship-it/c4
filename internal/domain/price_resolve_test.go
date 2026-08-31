@@ -50,7 +50,7 @@ func TestResolveEntryPrices_CacheOverrides(t *testing.T) {
 	require.Equal(t, int64(1000), *rp.InputPerM)
 }
 
-func TestResolveEntryPrices_MultBPClamp(t *testing.T) {
+func TestResolveEntryPrices_MultBPValidation(t *testing.T) {
 	base := int64(1000000)
 	entry := &PriceEntry{Model: "m", Mode: PriceModeToken, InputPerM: int64PtrD(base), OutputPerM: int64PtrD(base)}
 	// large valid price with mult 100000 should stay non-negative (no overflow wrap)
@@ -61,36 +61,52 @@ func TestResolveEntryPrices_MultBPClamp(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, rp.InputPerM)
 	require.GreaterOrEqual(t, *rp.InputPerM, int64(0))
-	// mult negative should be clamped to 0 => price 0, not negative
+	// Invalid persisted multipliers fail closed instead of changing the price.
 	variantsNeg := []*PriceVariant{{Model: "m", Seq: 1, MultBP: intPtrD(-5000)}}
 	rp, ok = ResolveEntryPrices(entry, variantsNeg, "auto", 0, time.Now())
-	require.True(t, ok)
-	require.NotNil(t, rp.InputPerM)
-	require.Equal(t, int64(0), *rp.InputPerM)
-	// mult >100000 should be clamped to 100000
+	require.False(t, ok)
+	// Values above the supported x10 maximum fail closed as well.
 	variantsHuge := []*PriceVariant{{Model: "m", Seq: 1, MultBP: intPtrD(999999)}}
 	rp, ok = ResolveEntryPrices(entry, variantsHuge, "auto", 0, time.Now())
-	require.True(t, ok)
-	require.NotNil(t, rp.InputPerM)
-	// 100000 means ×10: 1_000_000 *10 =10_000_000
-	require.Equal(t, int64(10000000), *rp.InputPerM)
-	// mult 5000 means ×0.5 (with round): 1_000_000*5000/10000=500000
+	require.False(t, ok)
+	// mult 5000 means ×0.5 exactly: 1_000_000*5000/10000=500000
 	variantsHalf := []*PriceVariant{{Model: "m", Seq: 1, MultBP: intPtrD(5000)}}
 	rp, ok = ResolveEntryPrices(entry, variantsHalf, "auto", 0, time.Now())
 	require.True(t, ok)
 	require.Equal(t, int64(500000), *rp.InputPerM)
 }
 
-func TestResolveEntryPrices_MultBPOverflowSaturates(t *testing.T) {
+func TestResolveEntryPrices_MultBPOverflowFailsClosed(t *testing.T) {
 	entry := &PriceEntry{Model: "huge", Mode: PriceModeToken, InputPerM: int64PtrD(maxPriceInt64)}
 	rp, ok := ResolveEntryPrices(entry, []*PriceVariant{{Model: "huge", Seq: 1, MultBP: intPtrD(100000)}}, "auto", 0, time.Now())
-	require.True(t, ok)
-	require.NotNil(t, rp.InputPerM)
-	require.Equal(t, maxPriceInt64, *rp.InputPerM, "variant multiplier must not wrap prices negative")
+	require.False(t, ok, "an overflowing conditional price must not be silently saturated")
 
 	// A nil variant can occur in a partially built test/config snapshot and is
 	// skipped rather than dereferenced.
 	rp, ok = ResolveEntryPrices(entry, []*PriceVariant{nil}, "auto", 0, time.Now())
 	require.True(t, ok)
 	require.Equal(t, maxPriceInt64, *rp.InputPerM)
+}
+
+func TestResolveEntryPrices_MultBPMustStayOnPriceGrid(t *testing.T) {
+	for _, price := range []int64{100, 500} {
+		entry := &PriceEntry{Model: "tiny", Mode: PriceModeToken, InputPerM: int64PtrD(price)}
+		_, ok := ResolveEntryPrices(entry, []*PriceVariant{{Model: "tiny", Seq: 1, MultBP: intPtrD(10)}}, "auto", 0, time.Now())
+		require.False(t, ok, "price=%d multiplied by 0.001 cannot be represented exactly", price)
+	}
+
+	entry := &PriceEntry{Model: "exact", Mode: PriceModeToken, InputPerM: int64PtrD(10_000)}
+	rp, ok := ResolveEntryPrices(entry, []*PriceVariant{{Model: "exact", Seq: 1, MultBP: intPtrD(10)}}, "auto", 0, time.Now())
+	require.True(t, ok)
+	require.Equal(t, int64(10), *rp.InputPerM)
+}
+
+func TestResolveEntryPrices_OverrideBypassesInexactBaseProduct(t *testing.T) {
+	base, override, mult := int64(100), int64(7), 10
+	entry := &PriceEntry{Model: "override", Mode: PriceModeToken, InputPerM: &base}
+	variant := &PriceVariant{Model: "override", Seq: 1, MultBP: &mult, SetInputPerM: &override}
+	rp, ok := ResolveEntryPrices(entry, []*PriceVariant{variant}, "auto", 0, time.Now())
+	require.True(t, ok)
+	require.Equal(t, override, *rp.InputPerM)
+	require.NoError(t, ValidateVariantPricePrecision(entry, variant))
 }

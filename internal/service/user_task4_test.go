@@ -175,6 +175,33 @@ func TestCreateKeyGetUserFailureNoWrite(t *testing.T) {
 	require.Empty(t, keys.upserted, "失败注入下不得注册任何 key")
 }
 
+// TestUpdateKeyGetUserFailureNoWrite：UpdateKey 的用户门禁字段必须在写库前
+// 读取；读取失败时，持久行和 Auth 快照都保持原样。
+func TestUpdateKeyGetUserFailureNoWrite(t *testing.T) {
+	fs := &getUserFailStore{fakeStore: newFakeStore()}
+	keys := &fakeKeyRegistrar{}
+	svc := &Service{store: fs, inv: &invRecorder{}, keys: keys, log: nil}
+	ctx := context.Background()
+
+	user, err := fs.CreateUser(ctx, &domain.User{Email: "update@example.com", Role: domain.RoleUser, Status: domain.UserStatusActive})
+	require.NoError(t, err)
+	g, err := fs.CreateGroup(ctx, &domain.Group{Name: "update-g", Visibility: domain.GroupVisibilityPublic})
+	require.NoError(t, err)
+	k, err := svc.CreateKey(ctx, user.ID, "before", g.ID, 0, 0)
+	require.NoError(t, err)
+	beforeUpserts := len(keys.upserted)
+
+	fs.failGetUser = true
+	name := "after"
+	_, err = svc.UpdateKey(ctx, user.ID, k.ID, &name, nil, nil, nil)
+	require.Error(t, err)
+	got, err := fs.GetKey(ctx, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, "before", got.Name, "用户预取失败时更新零落库")
+	require.Equal(t, k.UpdatedAt, got.UpdatedAt, "用户预取失败时版本不前进")
+	require.Len(t, keys.upserted, beforeUpserts, "用户预取失败时 Auth 零刷新")
+}
+
 // TestRotateKeyGetUserFailureNoDestruction B1-1：GetUser 失败注入 → RotateKey
 // 在写库前终止——DB 行未轮换、旧明文未失效、注册面零变化（修复前：先
 // Delete 后 upsert 失败 → DB 已轮换只留新明文、新 raw 蒸发 → 永久死亡）。

@@ -94,8 +94,41 @@ export function formatUSD(c?: number | null): string {
 
 // 每百万 token 价格：USD/1M tokens 正常值直接展示（API 边界已换算，内部存储毫分），
 // 如 3.5 → $3.5000/M；空值显示 —（0 = 免费价，照常展示 $0.0000/M）。
+function formatVisibleDecimal(value: number): string {
+  if (value === 0) return '0'
+  const abs = Math.abs(value)
+  if (abs < 1e-8) return value.toExponential(2)
+  // A 5-decimal base price multiplied by a 4-decimal group rate can contain
+  // nine meaningful decimal places. Keep the full product grid before trimming
+  // zeros so values such as 1.00001 and 0.999909999 remain distinguishable.
+  return value.toFixed(9).replace(/\.?0+$/, '')
+}
+
 export function formatPricePerMillion(c?: number | null): string {
-  return c == null ? '—' : `$${c.toFixed(4)}/M`
+  return c == null || !Number.isFinite(c) ? '—' : `$${formatVisibleDecimal(c)}/M`
+}
+
+// USD amounts used by dashboards and statistics. Zero stays explicit (the
+// existing tables render it as a free value), while positive tiny amounts keep
+// enough precision to expose the smallest ledger unit instead of becoming
+// `$0.0000` through fixed four-decimal formatting.
+export function formatUSDValuePrecise(c?: number | null): string {
+  if (c == null || !Number.isFinite(c)) return '—'
+  if (c === 0) return '0.0000'
+  return formatVisibleDecimal(c)
+}
+
+export function formatUSDPrecise(c?: number | null): string {
+  const value = formatUSDValuePrecise(c)
+  return value === '—' ? value : `$${value}`
+}
+
+export function formatPricePerCall(c?: number | null, unit = '次'): string {
+  return c == null || !Number.isFinite(c) ? '—' : `$${formatVisibleDecimal(c)}/${unit}`
+}
+
+export function formatPricePerImage(c?: number | null, unit = '张'): string {
+  return c == null || !Number.isFinite(c) ? '—' : `$${formatVisibleDecimal(c)}/${unit}`
 }
 
 // 行内 token 紧凑格式：K/M/B 分级（1 位小数去尾零），<1000 原始值。

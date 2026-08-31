@@ -49,8 +49,31 @@ type priceSnapshot struct {
 
 const pricingReloadPage = 1000
 
-func (s *Service) ReloadPricing() { s.reloadPricing(context.Background()) }
+func (s *Service) ReloadPricing() {
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
+	s.reloadPricingUnlocked(context.Background())
+}
+
+// ReloadPricingForMutation refreshes the snapshot for a caller that already
+// holds WithPricingMutation. It is intentionally narrow: the pricing sync
+// worker uses it while its repository writes and snapshot publication are
+// covered by the same service lock.
+func (s *Service) ReloadPricingForMutation() { s.reloadPricingUnlocked(context.Background()) }
+
+// ReloadPricingCtxForMutation is the context-aware counterpart used by code
+// that already owns the mutation guard and must preserve its cancellation
+// budget while rebuilding the immutable snapshot.
+func (s *Service) ReloadPricingCtxForMutation(ctx context.Context) error {
+	return s.reloadPricingCtxUnlocked(ctx)
+}
+
 func (s *Service) ReloadPricingCtx(ctx context.Context) error {
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
+	return s.reloadPricingCtxUnlocked(ctx)
+}
+func (s *Service) reloadPricingCtxUnlocked(ctx context.Context) error {
 	m, err := s.loadPricingSnapshot(ctx)
 	if err != nil {
 		return err
@@ -59,6 +82,11 @@ func (s *Service) ReloadPricingCtx(ctx context.Context) error {
 	return nil
 }
 func (s *Service) reloadPricing(ctx context.Context) {
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
+	s.reloadPricingUnlocked(ctx)
+}
+func (s *Service) reloadPricingUnlocked(ctx context.Context) {
 	m, err := s.loadPricingSnapshot(ctx)
 	if err != nil {
 		return
@@ -98,6 +126,27 @@ func (s *Service) loadPricingSnapshot(ctx context.Context) (*priceSnapshot, erro
 	for _, lst := range vMap {
 		sort.Slice(lst, func(i, j int) bool { return lst[i].Seq < lst[j].Seq })
 	}
+	// A model is only usable when every persisted conditional branch can be
+	// represented on the same 1e-5 USD price grid. Runtime resolution cannot
+	// know which tier/context branch a request will select, so retaining a
+	// partially valid model would let a late no_price result silently bill zero.
+	for model, entry := range entriesMap {
+		valid := true
+		for _, variant := range vMap[model] {
+			if err := domain.ValidateVariantPricePrecision(entry, variant); err != nil {
+				valid = false
+				if s.log != nil {
+					s.log.Warn("pricing: excluding model with unrepresentable variant",
+						logx.String("model", model), logx.Int("variant_seq", variant.Seq), logx.Error(err))
+				}
+				break
+			}
+		}
+		if !valid {
+			delete(entriesMap, model)
+			delete(vMap, model)
+		}
+	}
 	return &priceSnapshot{entries: entriesMap, variants: vMap}, nil
 }
 
@@ -112,6 +161,88 @@ func (s *Service) ResolvePrices(model string, promptTokens int64, tier string, a
 		at = at.In(s.tzLoc)
 	}
 	return domain.ResolveEntryPrices((*snap).entries[model], (*snap).variants[model], tier, promptTokens, at)
+}
+
+// PriceEntriesForModels returns the current immutable price snapshot for the
+// requested model names. The user-facing channel monitor calls this on every
+// refresh, so it must stay off the database hot path after startup and after a
+// pricing reload. A database fallback keeps the endpoint useful during the
+// short window before the first snapshot has been built.
+func (s *Service) PriceEntriesForModels(ctx context.Context, models []string) (map[string]*domain.PriceEntry, error) {
+	wanted := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			wanted[model] = struct{}{}
+		}
+	}
+	out := make(map[string]*domain.PriceEntry, len(wanted))
+	if len(wanted) == 0 {
+		return out, nil
+	}
+	if snap := s.priceSnapshot.Load(); snap != nil {
+		for model := range wanted {
+			if entry := snap.entries[model]; entry != nil {
+				out[model] = entry
+			}
+		}
+		return out, nil
+	}
+	// Startup fallback: page until every requested model is found or the price
+	// table ends. Deployments normally have a snapshot before serving traffic,
+	// but a large catalogue must still be complete during this short window.
+	for offset := 0; len(out) < len(wanted); offset += pricingReloadPage {
+		rows, _, err := s.store.ListPriceEntries(ctx, repository.ListQuery{
+			Limit: pricingReloadPage, Offset: offset, Sort: "model", Order: "asc",
+		}, nil, nil, nil, "")
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range rows {
+			if entry != nil {
+				if _, ok := wanted[entry.Model]; ok {
+					out[entry.Model] = entry
+				}
+			}
+		}
+		if len(rows) < pricingReloadPage {
+			break
+		}
+	}
+	return out, nil
+}
+
+// ResolvedPricesForModels returns the same current price projection used by
+// billing. The normal user tier and a zero-token context are explicit because
+// context-dependent variants can only be finalized once a real request exists.
+func (s *Service) ResolvedPricesForModels(ctx context.Context, models []string, tier string, promptTokens int64, at time.Time) (map[string]domain.ResolvedPrices, error) {
+	wanted := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		if model = strings.TrimSpace(model); model != "" {
+			wanted[model] = struct{}{}
+		}
+	}
+	out := make(map[string]domain.ResolvedPrices, len(wanted))
+	if len(wanted) == 0 {
+		return out, nil
+	}
+	snap := s.priceSnapshot.Load()
+	if snap == nil {
+		loaded, err := s.loadPricingSnapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
+		snap = loaded
+	}
+	if s.tzLoc != nil {
+		at = at.In(s.tzLoc)
+	}
+	for model := range wanted {
+		if resolved, ok := domain.ResolveEntryPrices((*snap).entries[model], (*snap).variants[model], tier, promptTokens, at); ok {
+			out[model] = resolved
+		}
+	}
+	return out, nil
 }
 
 // validation helpers
@@ -153,15 +284,36 @@ func (s *Service) UpsertPriceEntry(ctx context.Context, m *repository.PriceEntry
 			return nil, err
 		}
 	}
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
+	candidate := &domain.PriceEntry{
+		Model: m.Model, Mode: m.Mode,
+		InputPerM: m.InputPerM, OutputPerM: m.OutputPerM,
+		CacheReadPerM: m.CacheReadPerM, CacheWritePerM: m.CacheWritePerM,
+		PricePerCall: m.PricePerCall,
+		ImgInTokPerM: m.ImgInTokPerM, ImgOutTokPerM: m.ImgOutTokPerM,
+		PricePerImage: m.PricePerImage,
+	}
+	variants, err := s.store.ListPriceVariants(ctx, m.Model)
+	if err != nil {
+		return nil, mapRepoErr(err)
+	}
+	for _, v := range variants {
+		if err := validateVariantPricePrecision(candidate, v); err != nil {
+			return nil, err
+		}
+	}
 	p, err := s.store.UpsertPriceEntryManual(ctx, m)
 	if err != nil {
 		return nil, err
 	}
-	s.reloadPricing(ctx)
+	s.reloadPricingUnlocked(ctx)
 	return p, nil
 }
 
 func (s *Service) DeletePriceEntry(ctx context.Context, model string) error {
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
 	err := s.store.WithTx(ctx, func(tx repository.TxStore) error {
 		if err := tx.DeletePriceVariantsByModel(ctx, model); err != nil {
 			return err
@@ -174,7 +326,7 @@ func (s *Service) DeletePriceEntry(ctx context.Context, model string) error {
 	if err != nil {
 		return mapRepoErr(err)
 	}
-	s.reloadPricing(ctx)
+	s.reloadPricingUnlocked(ctx)
 	return nil
 }
 
@@ -213,12 +365,33 @@ func (s *Service) ReplacePriceVariants(ctx context.Context, model string, varian
 			return nil, err
 		}
 	}
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
+	entry, err := s.store.GetPriceEntry(ctx, model)
+	if err != nil {
+		if !errors.Is(err, repository.ErrNotFound) {
+			return nil, mapRepoErr(err)
+		}
+		entry = nil
+	}
+	for _, v := range variants {
+		if err := validateVariantPricePrecision(entry, v); err != nil {
+			return nil, err
+		}
+	}
 	out, err := s.store.ReplacePriceVariants(ctx, model, variants)
 	if err != nil {
 		return nil, err
 	}
-	s.reloadPricing(ctx)
+	s.reloadPricingUnlocked(ctx)
 	return out, nil
+}
+
+func validateVariantPricePrecision(entry *domain.PriceEntry, v *domain.PriceVariant) error {
+	if err := domain.ValidateVariantPricePrecision(entry, v); err != nil {
+		return fmt.Errorf("%w: variant seq %d: %v", ErrInvalidInput, v.Seq, err)
+	}
+	return nil
 }
 
 // validatePriceVariant keeps persisted conditional pricing deterministic. The
@@ -331,10 +504,16 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 		}
 		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
 	}
+	// Hold the same mutation lock as manual entry/variant updates from the first
+	// repository write through the final snapshot publication. This keeps an
+	// automated batch from interleaving with a manual update between validation
+	// and persistence.
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
 	entries := res.PriceEntries
 	n, err := s.store.UpsertPriceEntriesFromLiteLLM(ctx, entries)
 	if err != nil {
-		s.reloadPricing(ctx)
+		s.reloadPricingUnlocked(ctx)
 		return nil, err
 	}
 	if len(res.Variants) > 0 {
@@ -361,7 +540,7 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 			}
 		}
 	}
-	s.reloadPricing(ctx)
+	s.reloadPricingUnlocked(ctx)
 	if err != nil {
 		return nil, err
 	}

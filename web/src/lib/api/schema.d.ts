@@ -1118,7 +1118,7 @@ export interface paths {
         };
         /** key 详情（仅本人；他人 key → 404） */
         get: operations["GetUserKeysId"];
-        /** 更新 key（name/status/max_concurrency/quota；仅本人） */
+        /** 更新 key（group_id/name/status/max_concurrency/quota；仅本人；切换分组需具备访问权限且目标组可路由） */
         put: operations["PutUserKeysId"];
         post?: never;
         /** 删除 key（仅本人；Auth 快照增量移除——立即失效） */
@@ -2027,7 +2027,7 @@ export interface components {
         GroupAssignmentsBody: {
             /** @description 替换语义：完整授予列表（未列出即撤销；空数组 = 清空） */
             user_ids: number[];
-            /** @description 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值 */
+            /** @description 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10，最多 4 位小数；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值 */
             multipliers?: {
                 [key: string]: number | null;
             };
@@ -2042,7 +2042,7 @@ export interface components {
         UserGroupsBody: {
             /** @description 替换语义：完整授予组列表（未列出即撤销；空数组 = 清空） */
             group_ids: number[];
-            /** @description 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值 */
+            /** @description 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10，最多 4 位小数；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值 */
             multipliers?: {
                 [key: string]: number | null;
             };
@@ -2066,6 +2066,8 @@ export interface components {
             GroupID: number;
             Name: string;
             AllowedModels: string[];
+            /** @description 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。 */
+            ModelPrices: components["schemas"]["UserChannelModelPrice"][];
             /** Format: double */
             PriceMultiplier: number;
             /** Format: int64 */
@@ -2080,6 +2082,41 @@ export interface components {
             LastCalledAt?: string | null;
             /** @enum {string} */
             Status: "stable" | "degraded" | "no_data";
+        };
+        UserChannelModelPrice: {
+            Model: string;
+            /**
+             * Format: double
+             * @description 应用分组倍率后的输入单价（USD/1M tokens）；null = 未配置价格
+             */
+            InputPerM?: number | null;
+            /**
+             * Format: double
+             * @description 应用分组倍率后的输出单价（USD/1M tokens）；null = 未配置价格
+             */
+            OutputPerM?: number | null;
+            /**
+             * Format: double
+             * @description 应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 未配置价格
+             */
+            CacheReadPerM?: number | null;
+            /**
+             * Format: double
+             * @description 应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 未配置价格
+             */
+            CacheWritePerM?: number | null;
+            /**
+             * Format: double
+             * @description 应用分组倍率后的按次单价（USD/次）；null = 未配置价格
+             */
+            PricePerCall?: number | null;
+            /**
+             * Format: double
+             * @description 应用分组倍率后的图片单价（USD/张）；null = 未配置价格
+             */
+            PricePerImage?: number | null;
+            /** @enum {string|null} */
+            Mode?: "token" | "call" | "image" | null;
         };
         /** @enum {string} */
         KeyStatus: "active" | "disabled";
@@ -2129,6 +2166,11 @@ export interface components {
         };
         KeyUpdate: {
             name?: string;
+            /**
+             * Format: int64
+             * @description 切换 Key 归属分组；目标分组必须对当前用户可用且存在可路由配置
+             */
+            group_id?: number;
             status?: components["schemas"]["KeyStatus"];
             max_concurrency?: number;
             /** Format: int64 */
@@ -2285,7 +2327,7 @@ export interface components {
             upstream_members?: components["schemas"]["GroupUpstreamInput"][];
             /**
              * Format: double
-             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
+             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
              */
             price_multiplier?: number | null;
             /** @description 协议转换模式。默认推荐 [auto]，优先原生协议并在缺少原生路由时自动选择转换；也可传单个或多个手动方向。空数组/缺省 = off = 不转换；auto 必须单独出现。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向 */
@@ -2867,7 +2909,7 @@ export interface components {
             DowMask?: number | null;
             /**
              * Format: double
-             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
+             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
              */
             multiplier?: number | null;
             /** Format: double */
@@ -2902,7 +2944,7 @@ export interface components {
             dow_mask?: number | null;
             /**
              * Format: double
-             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
+             * @description 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
              */
             multiplier?: number | null;
             /** Format: double */

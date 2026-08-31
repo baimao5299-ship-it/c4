@@ -152,6 +152,25 @@ func TestPGKeyLifecycle(t *testing.T) {
 	require.Equal(t, int64(200), updated.Quota)
 	require.Equal(t, int64(10), updated.QuotaUsed, "返回行 QuotaUsed = DB 新鲜值（快照 15 不落库）")
 
+	// 乐观版本：新鲜 updated_at 成功，复用旧版本的后到请求明确 409，且不
+	// 覆盖成功写入的值。
+	revision := updated.UpdatedAt
+	time.Sleep(time.Millisecond)
+	freshName := "k1-fresh"
+	fresh, err := repos.UpdateKey(ctx, &repository.KeyPatch{
+		ID: k.ID, ExpectedUpdatedAt: &revision, Name: &freshName,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, revision, fresh.UpdatedAt)
+	staleName := "k1-stale"
+	_, err = repos.UpdateKey(ctx, &repository.KeyPatch{
+		ID: k.ID, ExpectedUpdatedAt: &revision, Name: &staleName,
+	})
+	require.ErrorIs(t, err, repository.ErrConflict)
+	got, err = repos.GetKey(ctx, k.ID)
+	require.NoError(t, err)
+	require.Equal(t, freshName, got.Name, "陈旧请求不得覆盖新鲜写入")
+
 	// RotateKey（明文换新单参）
 	rotated, err := repos.RotateKey(ctx, k.ID, "ck-k1-new")
 	require.NoError(t, err)

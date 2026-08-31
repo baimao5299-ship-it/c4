@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/pkg/logx"
 )
 
 // PublicChannelStatsStore is deliberately optional: existing lightweight
@@ -28,12 +29,31 @@ const maxChannelMonitorSpan = 7 * 24 * time.Hour
 // the recent sample has no positive latency values.
 type PublicChannelMetric struct {
 	Group            *domain.Group
+	PriceMultiplier  int
+	ModelPrices      []PublicChannelModelPrice
 	RequestCount     int64
 	ErrorCount       int64
 	AverageLatencyMS int64
 	SuccessRate      float64
 	LastCalledAt     *time.Time
 	Status           string
+}
+
+// PublicChannelModelPrice is the pricing catalogue projection for one model
+// exposed by a public group. Values keep the pricing snapshot's internal unit
+// (milli-USD per million tokens, or milli-USD per call/image) until the HTTP
+// handler converts them to user-facing USD and applies the group multiplier.
+// A model remains in this list when its catalogue row is missing; nil prices
+// then make the missing configuration explicit instead of hiding the model.
+type PublicChannelModelPrice struct {
+	Model          string
+	Mode           domain.PriceMode
+	InputPerM      *int64
+	OutputPerM     *int64
+	CacheReadPerM  *int64
+	CacheWritePerM *int64
+	PricePerCall   *int64
+	PricePerImage  *int64
 }
 
 // UserChannelMetrics lists only public, live groups and joins their recent
@@ -48,7 +68,9 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 	if from.IsZero() || to.IsZero() || !to.After(from) || to.Sub(from) > maxChannelMonitorSpan {
 		return nil, ErrInvalidInput
 	}
-	groups, err := s.store.ListGroupsForUser(ctx, userID)
+	// Reuse the user-facing group projection so per-user assignment
+	// multipliers match the amount billing actually charges.
+	groups, err := s.ListGroupsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,10 +91,52 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 	if err != nil {
 		return nil, err
 	}
+	// Pricing is read from the immutable service snapshot so refreshing the
+	// public monitor does not issue one database query per model. If the
+	// snapshot is temporarily unavailable, keep the health monitor usable and
+	// expose models with nil prices; the next refresh fills them in.
+	allModels := make([]string, 0)
+	for _, g := range public {
+		allModels = append(allModels, g.AllowedModels...)
+	}
+	prices, priceErr := s.ResolvedPricesForModels(ctx, allModels, "auto", 0, time.Now())
+	if priceErr != nil {
+		prices = make(map[string]domain.ResolvedPrices)
+		if s.log != nil {
+			s.log.Warn("public channel pricing snapshot unavailable", logx.Error(priceErr))
+		}
+	}
+	assignments, err := s.store.ListAssignmentsByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	effectiveMultipliers := make(map[int64]int, len(assignments))
+	for _, assignment := range assignments {
+		if assignment != nil && assignment.PriceMultiplier != nil {
+			effectiveMultipliers[assignment.GroupID] = *assignment.PriceMultiplier
+		}
+	}
 	out := make([]*PublicChannelMetric, 0, len(public))
 	for _, g := range public {
 		stat := stats[g.ID]
-		metric := &PublicChannelMetric{Group: g, Status: "no_data"}
+		multiplier := g.PriceMultiplier
+		if userMultiplier, ok := effectiveMultipliers[g.ID]; ok {
+			multiplier = userMultiplier
+		}
+		metric := &PublicChannelMetric{Group: g, PriceMultiplier: multiplier, Status: "no_data", ModelPrices: make([]PublicChannelModelPrice, 0, len(g.AllowedModels))}
+		for _, model := range g.AllowedModels {
+			row := PublicChannelModelPrice{Model: model}
+			if entry, ok := prices[model]; ok {
+				row.Mode = entry.Mode
+				row.InputPerM = entry.InputPerM
+				row.OutputPerM = entry.OutputPerM
+				row.CacheReadPerM = entry.CacheReadPerM
+				row.CacheWritePerM = entry.CacheWritePerM
+				row.PricePerCall = entry.PricePerCall
+				row.PricePerImage = entry.PricePerImage
+			}
+			metric.ModelPrices = append(metric.ModelPrices, row)
+		}
 		if stat != nil {
 			metric.RequestCount = stat.RequestCount
 			metric.ErrorCount = stat.ErrorCount

@@ -30,7 +30,7 @@ import { toast } from '@/components/ui/toast'
 import { formatDateTime } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
-import { formatMultiplierValue } from '@/lib/multiplier'
+import { formatMultiplierValue, isStorableMultiplier } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
@@ -291,7 +291,7 @@ const normalizeMultiplierInput = (v: string, invalidMsg: string): number | undef
   const m = v.trim()
   if (m === '') return undefined
   const n = Number(m)
-  if (!Number.isFinite(n) || n < 0 || n > 10) throw new Error(invalidMsg)
+  if (!isStorableMultiplier(n, 10)) throw new Error(invalidMsg)
   return n
 }
 
@@ -328,7 +328,7 @@ function AssignUserRow({ uid, label, checked, row, onToggle, onMult, onClear, t 
             type="number"
             min={0}
             max={10}
-            step={0.1}
+            step={0.0001}
             value={row?.mult ?? ''}
             placeholder={t('groups.assignMultiplierPlaceholder')}
             onChange={e => onMult(uid, e.target.value)}
@@ -552,7 +552,7 @@ export default function Groups() {
         const v = row?.mult.trim()
         if (v !== undefined && v !== '') {
           const n = Number(v)
-          if (!Number.isFinite(n) || n < 0 || n > 10) throw new Error(t('groups.multiplierInvalid'))
+          if (!isStorableMultiplier(n, 10)) throw new Error(t('groups.multiplierInvalid'))
           muls[String(uid)] = n
         } else if (row?.cleared) {
           muls[String(uid)] = null
@@ -581,7 +581,7 @@ export default function Groups() {
     const v = assignBatchMult.trim()
     if (v === '' || assignChecked.length < 2) return
     const n = Number(v)
-    if (!Number.isFinite(n) || n < 0 || n > 10) {
+    if (!isStorableMultiplier(n, 10)) {
       toast.add({ title: t('groups.multiplierInvalid'), type: 'error' })
       return
     }
@@ -1042,7 +1042,7 @@ export default function Groups() {
                 type="number"
                 min={0}
                 max={10}
-                step={0.1}
+                step={0.0001}
                 value={editMultiplier}
                 onChange={e => setEditMultiplier(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && editName.trim() && !rename.isPending) rename.mutate() }}
@@ -1150,7 +1150,7 @@ export default function Groups() {
                   type="number"
                   min={0}
                   max={10}
-                  step={0.1}
+                  step={0.0001}
                   value={assignBatchMult}
                   placeholder={t('groups.assignBatchPlaceholder')}
                   onChange={e => setAssignBatchMult(e.target.value)}

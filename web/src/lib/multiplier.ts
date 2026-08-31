@@ -9,6 +9,8 @@
  * prefer the explicit normal value and use basis points only as a fallback.
  */
 const MULTIPLIER_SCALE = 10_000
+// Upstream pricing historically permits up to x100; group pricing has a
+// narrower x10 validation at its own API boundary.
 const MAX_MULTIPLIER = 100
 
 function finiteNumber(value: unknown): number | null {
@@ -33,4 +35,11 @@ export function formatMultiplierValue(value: number | null | undefined, maxFract
   const normalized = Object.is(value, -0) ? 0 : value
   const text = normalized.toFixed(digits).replace(/\.?0+$/, '')
   return `×${text || '0'}`
+}
+
+/** True when a decimal multiplier can be stored without changing its value. */
+export function isStorableMultiplier(value: number, max = MAX_MULTIPLIER): boolean {
+  if (!Number.isFinite(value) || value < 0 || value > max) return false
+  const scaled = value * MULTIPLIER_SCALE
+  return Math.abs(scaled - Math.round(scaled)) <= 1e-8
 }

@@ -114,12 +114,15 @@ func (s *Service) ListKeys(ctx context.Context, userID int64, q repository.ListQ
 	return s.store.ListKeysByUser(ctx, userID, q)
 }
 
-// UpdateKey 更新自己的 key（name/status/max_concurrency/quota；nil 字段不变）。
-// patch 化（S3-F1）：只把显式字段传给 repo（nil = 不改），不再全行快照写回——
-// 并发两个 PUT 改不同字段各自生效（不再静默覆盖先写者）。全 nil = 无变更，
-// 直接返回当前行（零写库零发布）。
+// UpdateKey 更新自己的 key（group_id/name/status/max_concurrency/quota；nil 字段不变）。
+// patch 化（S3-F1）：只把显式字段传给 repo（nil = 不改），不再全行快照写回。
+// 写入携带 updated_at 乐观版本；并发请求若基于同一旧快照，后写者返回 409，
+// 不会把鉴权内存回写成旧分组。全 nil = 无变更，直接返回当前行（零写库零发布）。
 // 变更后 Auth 增量 Upsert（禁用/额度调整即时生效——评审 I-2 的 key 级路径）。
-func (s *Service) UpdateKey(ctx context.Context, userID, keyID int64, name *string, status *domain.KeyStatus, maxConcurrency *int, quota *int64) (*domain.Key, error) {
+// groupID is optional for source compatibility with integrations that still
+// call the pre-group-switch signature. When present, the target group is
+// checked for user eligibility and persistent routing before the key moves.
+func (s *Service) UpdateKey(ctx context.Context, userID, keyID int64, name *string, status *domain.KeyStatus, maxConcurrency *int, quota *int64, groupID ...*int64) (*domain.Key, error) {
 	cur, err := s.ownedKey(ctx, userID, keyID)
 	if err != nil {
 		return nil, err
@@ -136,25 +139,60 @@ func (s *Service) UpdateKey(ctx context.Context, userID, keyID int64, name *stri
 	if quota != nil && *quota < 0 {
 		return nil, ErrInvalidInput
 	}
-	if name == nil && status == nil && maxConcurrency == nil && quota == nil {
+	var targetGroupID *int64
+	if len(groupID) > 0 {
+		targetGroupID = groupID[0]
+	}
+	if targetGroupID != nil && *targetGroupID <= 0 {
+		return nil, ErrInvalidInput
+	}
+	if name == nil && status == nil && maxConcurrency == nil && quota == nil && targetGroupID == nil {
 		return cur, nil // 无变更：零写库（对齐"单字段 PUT 只改该字段"的惰性语义）
 	}
 	// A-2：组转换方向写库前预取（B1-1 同款纪律——失败 → 更新零发生，无"写库
-	// 成功但内存未注册"窗口）；GetKey 不带组边（key_repo.go），组查询单点
-	// getGroupLive。低频路径，一次查询可接受。
-	g, err := s.getGroupLive(ctx, cur.GroupID)
+	// 成功但内存未注册"窗口）。A target group switch additionally requires
+	// public/private eligibility and a persistent route, so a key never points at
+	// a group the caller cannot use or that cannot serve traffic.
+	resolvedGroupID := cur.GroupID
+	if targetGroupID != nil {
+		resolvedGroupID = *targetGroupID
+	}
+	var g *domain.Group
+	if resolvedGroupID != cur.GroupID {
+		g, err = s.checkGroupEligible(ctx, userID, resolvedGroupID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.ensureGroupRoutable(ctx, g); err != nil {
+			return nil, err
+		}
+	} else {
+		g, err = s.getGroupLive(ctx, cur.GroupID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
+	// 用户门禁字段同样在写库前预取：成功写入后只做不可失败的内存 Upsert，
+	// 避免 DB 已更新但 GetUser 失败导致本实例仍持有旧鉴权快照。
+	var user *domain.User
+	if s.keys != nil {
+		user, err = s.store.GetUser(ctx, userID)
+		if err != nil {
+			return nil, mapRepoErr(err)
+		}
+	}
 	updated, err := s.store.UpdateKey(ctx, &repository.KeyPatch{
-		ID: keyID, Name: name, Status: status, MaxConcurrency: maxConcurrency, Quota: quota,
+		ID: cur.ID, ExpectedUpdatedAt: &cur.UpdatedAt,
+		GroupID: targetGroupID, Name: name, Status: status,
+		MaxConcurrency: maxConcurrency, Quota: quota,
 	})
 	if err != nil {
 		return nil, mapRepoErr(err)
 	}
-	if err := s.upsertKeyMeta(ctx, updated, g.ProtocolConverts); err != nil {
-		return nil, err
-	}
+	s.upsertKeyMetaInMemory(updated, user, g.ProtocolConverts)
 	s.publish(ctx, notify.Change{Keys: true}) // 改额度/状态 → 全实例 auth 快照全量 Reload
 	return updated, nil
 }
@@ -235,23 +273,9 @@ func (s *Service) ownedKey(ctx context.Context, userID, keyID int64) (*domain.Ke
 	return k, nil
 }
 
-// upsertKeyMeta 构造 KeyMeta 并增量注册到 Auth 鉴权快照（UpdateKey 用——P3
-// 路径：GetUser 失败 → 错误返回，快照靠全量 Reload 兜底 ≤60s 自愈）。
-// converts 组级转换方向（A-2：写库前预取，调用方保证与组一致）。
-func (s *Service) upsertKeyMeta(ctx context.Context, k *domain.Key, converts []domain.ProtocolConvert) error {
-	if s.keys == nil {
-		return nil
-	}
-	u, err := s.store.GetUser(ctx, k.UserID)
-	if err != nil {
-		return mapRepoErr(err)
-	}
-	s.upsertKeyMetaInMemory(k, u, converts)
-	return nil
-}
-
 // upsertKeyMetaInMemory 纯内存增量注册（不可失败）：CreateKey/RotateKey 的
-// 用户门禁字段已写库前预取（B1-1）——调用方保证 s.keys != nil 时 u 非 nil；
+// 用户门禁字段已写库前预取（B1-1）；UpdateKey 也遵守同一纪律。调用方保证
+// s.keys != nil 时 u 非 nil；
 // converts 同上（A-2——缺口字段补齐，全量路径 LoadKeys 经 WithGroup 同源）。
 func (s *Service) upsertKeyMetaInMemory(k *domain.Key, u *domain.User, converts []domain.ProtocolConvert) {
 	if s.keys == nil {

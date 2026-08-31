@@ -38,6 +38,13 @@ type Upserter interface {
 	UpsertPriceVariantsFromLiteLLM(ctx context.Context, variants []*domain.PriceVariant) (int, error)
 }
 
+// MutationGuard serializes a sync's repository writes and snapshot publication
+// with the service's manual pricing mutations. It is optional for standalone
+// worker users and injected by the application composition root.
+type MutationGuard interface {
+	WithPricingMutation(ctx context.Context, fn func() error) error
+}
+
 // SyncWorkerConfig SyncWorker 装配参数。
 type SyncWorkerConfig struct {
 	Fetcher  Fetcher
@@ -45,8 +52,9 @@ type SyncWorkerConfig struct {
 	Settings SettingReader
 	// Reload 同步成功后刷新 service pricing 快照（svc.ReloadPricing）；nil 可
 	// 用（纯落库不刷新快照，装配时必传真实实现）。
-	Reload func()
-	Log    *logx.Logger // nil 可用（静默）
+	Reload   func()
+	Mutation MutationGuard
+	Log      *logx.Logger // nil 可用（静默）
 }
 
 // SyncWorker 模型价格同步 worker（worker.Worker 契约）：启动异步拉取一次 +
@@ -57,6 +65,7 @@ type SyncWorker struct {
 	repo     Upserter
 	settings SettingReader
 	reload   func()
+	mutation MutationGuard
 	log      *logx.Logger
 	// now/wait 可注入（测试）：now 固定时间基准（cron 数学确定性）；wait 替代
 	// 真实 timer（测试免等真实时间）。默认实现见 waitReal。
@@ -75,7 +84,7 @@ type SyncWorker struct {
 func NewSyncWorker(cfg SyncWorkerConfig) *SyncWorker {
 	w := &SyncWorker{
 		fetch: cfg.Fetcher, repo: cfg.Repo, settings: cfg.Settings,
-		reload: cfg.Reload, log: cfg.Log,
+		reload: cfg.Reload, mutation: cfg.Mutation, log: cfg.Log,
 		now:  time.Now,
 		wait: waitReal,
 	}
@@ -125,17 +134,26 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	n, err := w.repo.UpsertPriceEntriesFromLiteLLM(ctx, res.PriceEntries)
-	var nVar int
-	var varErr error
-	if len(res.Variants) > 0 {
-		nVar, varErr = w.repo.UpsertPriceVariantsFromLiteLLM(ctx, res.Variants)
-		if err == nil {
-			err = varErr
+	var n, nVar int
+	mutate := func() error {
+		var writeErr error
+		n, writeErr = w.repo.UpsertPriceEntriesFromLiteLLM(ctx, res.PriceEntries)
+		if len(res.Variants) > 0 {
+			var varErr error
+			nVar, varErr = w.repo.UpsertPriceVariantsFromLiteLLM(ctx, res.Variants)
+			if writeErr == nil {
+				writeErr = varErr
+			}
 		}
+		if w.reload != nil {
+			w.reload()
+		}
+		return writeErr
 	}
-	if w.reload != nil {
-		w.reload()
+	if w.mutation != nil {
+		err = w.mutation.WithPricingMutation(ctx, mutate)
+	} else {
+		err = mutate()
 	}
 	if err == nil && w.log != nil {
 		w.log.Info("pricing: sync done",

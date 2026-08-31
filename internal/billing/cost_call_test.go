@@ -84,3 +84,46 @@ func TestCostArithmeticSaturatesExtremeComponents(t *testing.T) {
 	require.Greater(t, got, int64(0))
 	require.LessOrEqual(t, got, max)
 }
+
+func TestCostFromResolved_HighTokenPricesNeverBecomeFree(t *testing.T) {
+	high := int64(math.MaxInt64)
+	for name, rp := range map[string]domain.ResolvedPrices{
+		"input":       {InputPerM: &high},
+		"output":      {OutputPerM: &high},
+		"cache_read":  {CacheReadPerM: &high},
+		"cache_write": {CacheWritePerM: &high},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := CostFromResolved(rp, 1, 1, 1, 1)
+			require.Greater(t, got, int64(0), "a positive token price must never be rounded to a free request")
+			require.LessOrEqual(t, got, int64(math.MaxInt64))
+		})
+	}
+}
+
+func TestImageCostFromResolved_HighPricesNeverBecomeFree(t *testing.T) {
+	high := int64(math.MaxInt64)
+	for name, rp := range map[string]domain.ResolvedPrices{
+		"input_tokens":  {ImgInTokPerM: &high},
+		"output_tokens": {ImgOutTokPerM: &high},
+		"per_image":     {PricePerImage: &high},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := ImageCostFromResolved(rp, 1, 1, 1)
+			require.Greater(t, got, int64(0), "a positive image price must never be rounded to a free request")
+			require.LessOrEqual(t, got, int64(math.MaxInt64))
+		})
+	}
+}
+
+func TestCallCostFromResolved_HighPriceSaturatesInsteadOfBecomingFree(t *testing.T) {
+	high := int64(math.MaxInt64)
+	got := CallCostFromResolved(domain.ResolvedPrices{PricePerCall: &high}, 1)
+	require.Equal(t, int64(imageTotalCap), got)
+
+	// A count larger than the cap is also bounded without overflowing or
+	// turning the charge into zero.
+	require.Equal(t, int64(imageTotalCap), CallCostFromResolved(
+		domain.ResolvedPrices{PricePerCall: &high}, math.MaxInt64,
+	))
+}

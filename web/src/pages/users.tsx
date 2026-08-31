@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { formatDateTime, formatUSD } from '@/components/fmt'
+import { formatMultiplierValue, isStorableMultiplier } from '@/lib/multiplier'
 import type { TFunction } from 'i18next'
 import type { components } from '@/lib/api/schema'
 
@@ -66,7 +67,7 @@ interface AssignRowMult { mult: string; cleared: boolean }
 const formatMultiplier = (m: number | null | undefined, t: TFunction): string => {
   if (m == null) return '—'
   if (m === 0) return t('groups.free')
-  return `×${m.toFixed(1)}`
+  return formatMultiplierValue(m)
 }
 
 // 组可见性小标：public 绿点 / private 灰点（与 RoleBadge 同风格）。
@@ -327,7 +328,7 @@ export default function Users() {
         const v = row?.mult.trim()
         if (v !== undefined && v !== '') {
           const n = Number(v)
-          if (!Number.isFinite(n) || n < 0 || n > 10) throw new Error(t('groups.multiplierInvalid'))
+          if (!isStorableMultiplier(n, 10)) throw new Error(t('groups.multiplierInvalid'))
           muls[String(gid)] = n
         } else if (row?.cleared) {
           muls[String(gid)] = null
@@ -635,7 +636,7 @@ export default function Users() {
                         type="number"
                         min={0}
                         max={10}
-                        step={0.1}
+                        step={0.0001}
                         value={row?.mult ?? ''}
                         placeholder={t('groups.assignMultiplierPlaceholder')}
                         onChange={e => setGroupMult(g.ID!, e.target.value)}

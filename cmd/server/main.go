@@ -475,12 +475,13 @@ func main() {
 		Fetcher:  priceFetcher,
 		Repo:     repos,
 		Settings: svc,
+		Mutation: svc,
 		// 三线：文本价 + image 价 + 按单元价快照一并刷新（拉取成功后同样重载
 		// 对应快照——Task A 双线 + 价格表三件套扩展）。
 		Reload: func() {
-			svc.ReloadPricing()
-			svc.ReloadImagePricing()
-			svc.ReloadFunctionPricing()
+			// The worker invokes this callback while holding svc's pricing
+			// mutation lock; use the unlocked in-transaction refresh hook here.
+			svc.ReloadPricingForMutation()
 		},
 		Log: log,
 	})

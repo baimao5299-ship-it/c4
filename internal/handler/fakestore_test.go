@@ -1363,6 +1363,12 @@ func (f *fakeStore) UpdateKey(ctx context.Context, p *repository.KeyPatch) (*dom
 	if !ok {
 		return nil, missingErr(p.ID)
 	}
+	if p.ExpectedUpdatedAt != nil && !cur.UpdatedAt.Equal(*p.ExpectedUpdatedAt) {
+		return nil, fmt.Errorf("%w: id=%d changed concurrently", repository.ErrConflict, p.ID)
+	}
+	if p.GroupID != nil {
+		cur.GroupID = *p.GroupID
+	}
 	if p.Name != nil {
 		cur.Name = *p.Name
 	}
@@ -1375,6 +1381,11 @@ func (f *fakeStore) UpdateKey(ctx context.Context, p *repository.KeyPatch) (*dom
 	if p.Quota != nil {
 		cur.Quota = *p.Quota
 	}
+	now := time.Now()
+	if !now.After(cur.UpdatedAt) {
+		now = cur.UpdatedAt.Add(time.Nanosecond)
+	}
+	cur.UpdatedAt = now
 	c := *cur
 	return &c, nil
 }

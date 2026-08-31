@@ -51,7 +51,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
-import { formatMultiplierValue, multiplierFromApi } from '@/lib/multiplier'
+import { formatMultiplierValue, isStorableMultiplier, multiplierFromApi } from '@/lib/multiplier'
 import { ModelValidationProgress } from '@/components/model-validation-progress'
 
 type FormState = {
@@ -658,7 +658,7 @@ export default function Upstreams() {
       setValidation(t('upstreams.invalidUrl'))
       return
     }
-    if (!Number.isFinite(multiplier) || multiplier < 0 || multiplier > 100) {
+    if (!isStorableMultiplier(multiplier, 100)) {
       setValidation(t('upstreams.invalidMultiplier'))
       return
     }
@@ -942,7 +942,7 @@ export default function Upstreams() {
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5"><Label htmlFor="up-name">{t('upstreams.form.name')}</Label><Input id="up-name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label htmlFor="up-mult">{t('upstreams.form.multiplier')}</Label><Input id="up-mult" type="number" min={0} step="0.0001" value={form.multiplier} onChange={e => setForm(f => ({ ...f, multiplier: e.target.value }))} /><p className="text-xs text-muted-foreground">{t('upstreams.form.multiplierHint')}</p></div>
+              <div className="space-y-1.5"><Label htmlFor="up-mult">{t('upstreams.form.multiplier')}</Label><Input id="up-mult" type="number" min={0} max={100} step="0.0001" value={form.multiplier} onChange={e => setForm(f => ({ ...f, multiplier: e.target.value }))} /><p className="text-xs text-muted-foreground">{t('upstreams.form.multiplierHint')}</p></div>
             </div>
             <div className="space-y-1.5"><Label htmlFor="up-url">{t('upstreams.form.endpoint')}</Label><Input id="up-url" type="url" placeholder="https://relay.example.com" value={form.base_url} onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} /></div>
             <div className="space-y-1.5">

@@ -79,6 +79,24 @@ func TestUserKeyFlowKeepsUncheckedAndAccountGroupsCompatible(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestListGroupsForUserReturnsEffectiveAssignmentMultiplier(t *testing.T) {
+	store := newGroupUpstreamStoreStub()
+	ctx := context.Background()
+	user, err := store.CreateUser(ctx, &domain.User{Email: "multiplier@example.com", Role: domain.RoleUser, Status: domain.UserStatusActive})
+	require.NoError(t, err)
+	group := &domain.Group{ID: 1, Name: "public", Visibility: domain.GroupVisibilityPublic, PriceMultiplier: 800}
+	store.groups[group.ID] = group
+	require.NoError(t, store.GrantGroup(ctx, group.ID, user.ID))
+	require.NoError(t, store.SetAssignmentMultiplier(ctx, group.ID, user.ID, intPtr(10)))
+
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	groups, err := svc.ListGroupsForUser(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	require.Equal(t, 10, groups[0].PriceMultiplier, "user-facing price must match the effective x0.001 assignment")
+	require.Equal(t, 800, store.groups[group.ID].PriceMultiplier, "projection must not mutate the shared group row")
+}
+
 func TestUpstreamGroupHasRouteMatchesPersistentSchedulerRules(t *testing.T) {
 	checkedAt := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	member := func(id int64, enabled bool, upstream *domain.Upstream) *domain.GroupUpstream {

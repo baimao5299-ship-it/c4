@@ -44,4 +44,31 @@ func TestUserChannelMetricsOnlyPublicAndComputesHealth(t *testing.T) {
 	require.Equal(t, "no_data", rows[2].Status)
 }
 
+func TestUserChannelMetricsIncludesModelPricesAndKeepsUnpricedModels(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "priced", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: []string{"gpt-priced", "gpt-unpriced"}, PriceMultiplier: 800,
+	}
+	inPrice, outPrice := int64(100000), int64(250000)
+	_, err := store.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+		Model: "gpt-priced", Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceLitellm,
+	}})
+	require.NoError(t, err)
+
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].ModelPrices, 2, "unpriced models stay visible")
+	require.Equal(t, "gpt-priced", rows[0].ModelPrices[0].Model)
+	require.Equal(t, int64(100000), *rows[0].ModelPrices[0].InputPerM)
+	require.Equal(t, int64(250000), *rows[0].ModelPrices[0].OutputPerM)
+	require.Equal(t, "gpt-unpriced", rows[0].ModelPrices[1].Model)
+	require.Nil(t, rows[0].ModelPrices[1].InputPerM)
+	require.Nil(t, rows[0].ModelPrices[1].OutputPerM)
+}
+
 func ptrTime(t time.Time) *time.Time { return &t }

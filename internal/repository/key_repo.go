@@ -167,17 +167,28 @@ func (r *KeyRepo) ListKeysByUser(ctx context.Context, userID int64, q ListQuery)
 // 不 429）；ent Save re-SELECT 返回行 → 调用方拿到的 QuotaUsed 反为 DB 新鲜
 // 值，upsertKeyMeta 顺带同步最新。
 type KeyPatch struct {
-	ID             int64
-	Name           *string
-	Status         *domain.KeyStatus
-	MaxConcurrency *int
-	Quota          *int64
+	ID                int64
+	ExpectedUpdatedAt *time.Time
+	GroupID           *int64
+	Name              *string
+	Status            *domain.KeyStatus
+	MaxConcurrency    *int
+	Quota             *int64
 }
 
-// UpdateKey 按 patch 更新 name/status/max_concurrency/quota（不写 key_raw——
+// UpdateKey 按 patch 更新 group_id/name/status/max_concurrency/quota（不写 key_raw——
 // 明文变更仅 CreateKey/RotateKey 路径）；仅 Set 非 nil 列，nil = 该列不动。
+// ExpectedUpdatedAt 非 nil 时作为乐观版本条件：陈旧请求返回 ErrConflict，避免
+// 后完成的旧请求把 Auth 快照回写成旧分组。UpdateOne 的返回行来自同一条
+// UPDATE，调用方可直接用于内存快照，不需要写后再次查询。
 func (r *KeyRepo) UpdateKey(ctx context.Context, p *KeyPatch) (*domain.Key, error) {
 	upd := r.client.Key.UpdateOneID(p.ID).Where(key.DeletedAtIsNil())
+	if p.ExpectedUpdatedAt != nil {
+		upd.Where(key.UpdatedAtEQ(*p.ExpectedUpdatedAt))
+	}
+	if p.GroupID != nil {
+		upd.SetGroupID(*p.GroupID)
+	}
 	if p.Name != nil {
 		upd.SetName(*p.Name)
 	}
@@ -192,6 +203,19 @@ func (r *KeyRepo) UpdateKey(ctx context.Context, p *KeyPatch) (*domain.Key, erro
 	}
 	row, err := upd.Save(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) && p.ExpectedUpdatedAt != nil {
+			// 条件更新 0 行可能是并发修改，也可能是目标已软删/不存在；回查只
+			// 用于区分 409 与 404，成功路径仍保持单条 UPDATE 返回最终行。
+			exists, existsErr := r.client.Key.Query().
+				Where(key.IDEQ(p.ID), key.DeletedAtIsNil()).
+				Exist(ctx)
+			if existsErr != nil {
+				return nil, existsErr
+			}
+			if exists {
+				return nil, fmt.Errorf("%w: id=%d changed concurrently", ErrConflict, p.ID)
+			}
+		}
 		return nil, errMissingID(err, p.ID)
 	}
 	return toDomainKey(row), nil

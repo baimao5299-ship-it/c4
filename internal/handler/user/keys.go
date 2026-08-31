@@ -60,7 +60,7 @@ func (h *UserAPI) GetUserKeysId(w http.ResponseWriter, r *http.Request, id int64
 	httpface.WriteJSON(w, http.StatusOK, toAPIKey(k))
 }
 
-// PutUserKeysId 更新 key（name/status/max_concurrency/quota；仅本人，
+// PutUserKeysId 更新 key（group_id/name/status/max_concurrency/quota；仅本人，
 // ServerInterface）。
 func (h *UserAPI) PutUserKeysId(w http.ResponseWriter, r *http.Request, id int64) {
 	var in KeyUpdate
@@ -74,7 +74,7 @@ func (h *UserAPI) PutUserKeysId(w http.ResponseWriter, r *http.Request, id int64
 		status = &st
 	}
 	k, err := h.svc.UpdateKey(r.Context(), currentUserID(r), id, in.Name, status,
-		in.MaxConcurrency, in.Quota)
+		in.MaxConcurrency, in.Quota, in.GroupId)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return

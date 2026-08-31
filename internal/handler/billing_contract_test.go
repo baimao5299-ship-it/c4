@@ -116,6 +116,10 @@ func TestGroupMultiplier(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "put 1.5: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
 	require.Equal(t, 1.5, *g.PriceMultiplier, "1.5 ↔ 15000 换算回显")
+	rec = doAdmin(http.MethodPut, "/api/admin/groups/"+itoa(*g.ID), `{"name":"g-free","price_multiplier":0.001}`, "")
+	require.Equal(t, http.StatusOK, rec.Code, "put 0.001: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
+	require.InDelta(t, 0.001, *g.PriceMultiplier, 1e-12, "0.001 ↔ 10 换算回显，不能变成免费")
 	rec = doAdmin(http.MethodPut, "/api/admin/groups/"+itoa(*g.ID), `{"name":"g-free","price_multiplier":10}`, "")
 	require.Equal(t, http.StatusOK, rec.Code, "put 10: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &g))
@@ -184,6 +188,18 @@ func TestGroupAssignmentMultipliers(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "free mult: %s", rec.Body.String())
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, 0.0, *(*resp.Multipliers)[itoa(uids[0])], "0 = 免费")
+	// Small positive values retain four-decimal storage precision.
+	body = fmt.Sprintf(`{"user_ids":[%d],"multipliers":{"%d":0.001}}`, uids[0], uids[0])
+	rec = doAdmin(http.MethodPut, "/api/admin/groups/"+itoa(*g.ID)+"/assignments", body, "")
+	require.Equal(t, http.StatusOK, rec.Code, "small positive mult: %s", rec.Body.String())
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.InDelta(t, 0.001, *(*resp.Multipliers)[itoa(uids[0])], 1e-12, "0.001 = ten basis points")
+
+	// A positive value below storage precision must be rejected instead of
+	// silently becoming an explicit free override.
+	body = fmt.Sprintf(`{"user_ids":[%d],"multipliers":{"%d":0.00001}}`, uids[0], uids[0])
+	rec = doAdmin(http.MethodPut, "/api/admin/groups/"+itoa(*g.ID)+"/assignments", body, "")
+	require.Equal(t, http.StatusBadRequest, rec.Code, "sub-precision multiplier: %s", rec.Body.String())
 
 	// 越界 → 400
 	body = fmt.Sprintf(`{"user_ids":[%d],"multipliers":{"%d":10.1}}`, uids[0], uids[0])

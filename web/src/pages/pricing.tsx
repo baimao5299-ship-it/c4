@@ -26,7 +26,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
-import { formatDateTime, formatPricePerMillion } from '@/components/fmt'
+import { formatDateTime, formatPricePerMillion, formatUSDPrecise, formatUSDValuePrecise } from '@/components/fmt'
+import { isStorableMultiplier } from '@/lib/multiplier'
 import type { components } from '@/lib/api/schema'
 
 type PriceEntry = components['schemas']['PriceEntry']
@@ -52,10 +53,27 @@ function SourceBadge({ source }: { source: PricingSource }) {
 const formatUsd = (v: number | null | undefined): string => {
   if (v == null) return '—'
   if (v === 0) return '$0'
-  return Math.abs(v) >= 0.0001 ? `$${v.toFixed(4)}` : `$${v.toExponential(2)}`
+  return formatUSDPrecise(v)
 }
 
-const isNonNegNum = (v: string) => v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0)
+const PRICE_SCALE = 100_000
+const MIN_POSITIVE_PRICE = 1 / PRICE_SCALE
+
+type PriceInputIssue = 'notNumber' | 'negative' | 'tooSmall' | 'precision'
+
+function priceInputIssue(value: string): PriceInputIssue | null {
+  if (value === '') return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 'notNumber'
+  if (parsed < 0) return 'negative'
+  if (parsed > 0 && parsed < MIN_POSITIVE_PRICE) return 'tooSmall'
+
+  // Validate the storage grid rather than the spelling. This accepts numeric
+  // inputs such as `1e-5` while still rejecting values that would be rounded
+  // to a different fixed-point price by the API.
+  const scaled = parsed * PRICE_SCALE
+  return Math.abs(scaled - Math.round(scaled)) <= 1e-8 ? null : 'precision'
+}
 
 // ── Variants (price tier) helpers ──
 type PriceVariant = components['schemas']['PriceVariant']
@@ -239,17 +257,23 @@ function VariantsDialog({
       if (multiplierStr === '') return t('pricing.variants.effectNone')
       const n = Number(multiplierStr)
       if (!Number.isFinite(n) || n < 0 || n > 10) return t('pricing.variants.errMultRange', { field: t('pricing.variants.multiplierLabel') })
+      if (!isStorableMultiplier(n, 10)) return t('pricing.variants.errMultPrecision')
     } else {
-      const isNeg = (s: string) => s !== '' && (!Number.isFinite(Number(s)) || Number(s) < 0)
-      if (isNeg(setInputStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setInput') })
-      if (isNeg(setOutputStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setOutput') })
-      if (isNeg(setCacheReadStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setCacheReadLabel') })
-      if (isNeg(setCacheWriteStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setCacheWriteLabel') })
-      if (isNeg(setPricePerCallStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setPricePerCallLabel') })
-      if (isNeg(setImgInStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setImgInTokLabel') })
-      if (isNeg(setImgOutStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setImgOutTokLabel') })
-      if (isNeg(setPricePerImageStr)) return t('pricing.variants.errNonNeg', { field: t('pricing.variants.setPricePerImageLabel') })
-      const hasAny = [setInputStr, setOutputStr, setCacheReadStr, setCacheWriteStr, setPricePerCallStr, setImgInStr, setImgOutStr, setPricePerImageStr].some(s => s !== '')
+      const overrideFields: Array<[string, string]> = [
+        [setInputStr, t('pricing.variants.setInputLabel')],
+        [setOutputStr, t('pricing.variants.setOutputLabel')],
+        [setCacheReadStr, t('pricing.variants.setCacheReadLabel')],
+        [setCacheWriteStr, t('pricing.variants.setCacheWriteLabel')],
+        [setPricePerCallStr, t('pricing.variants.setPricePerCallLabel')],
+        [setImgInStr, t('pricing.variants.setImgInTokLabel')],
+        [setImgOutStr, t('pricing.variants.setImgOutTokLabel')],
+        [setPricePerImageStr, t('pricing.variants.setPricePerImageLabel')],
+      ]
+      for (const [value, field] of overrideFields) {
+        const issue = priceInputIssue(value)
+        if (issue) return t(`pricing.priceErrors.${issue}`, { field })
+      }
+      const hasAny = overrideFields.some(([value]) => value !== '')
       if (!hasAny) return t('pricing.variants.effectNone')
     }
     return null
@@ -368,7 +392,7 @@ function VariantsDialog({
 
   // 实时预览最终价（倍率态）
   const previewMultVal = Number(multiplierStr)
-  const previewMultValid = multiplierStr !== '' && Number.isFinite(previewMultVal) && previewMultVal >= 0 && previewMultVal <= 10
+  const previewMultValid = multiplierStr !== '' && isStorableMultiplier(previewMultVal, 10)
   const previewInput = previewMultValid && inputPerM != null ? (inputPerM * previewMultVal) : null
   const previewOutput = previewMultValid && outputPerM != null ? (outputPerM * previewMultVal) : null
 
@@ -461,49 +485,49 @@ function VariantsDialog({
                   <Input id="var-multiplier" type="number" min={0} max={10} step="any" value={multiplierStr} onChange={e => { setMultiplierStr(e.target.value); setRowErr(null) }} placeholder="1.5" />
                   {(previewInput != null || previewOutput != null) && previewMultValid && (
                     <p className="text-xs text-muted-foreground">
-                      {previewInput != null && t('pricing.variants.finalInput', { value: previewInput.toFixed(4) })}
+                      {previewInput != null && t('pricing.variants.finalInput', { value: formatUSDValuePrecise(previewInput) })}
                       {previewInput != null && previewOutput != null && ' · '}
-                      {previewOutput != null && t('pricing.variants.finalOutput', { value: previewOutput.toFixed(4) })}
+                      {previewOutput != null && t('pricing.variants.finalOutput', { value: formatUSDValuePrecise(previewOutput) })}
                     </p>
                   )}
                 </div>
               ) : mode === 'call' ? (
                 <div className="space-y-1.5">
                   <Label htmlFor="var-call">{t('pricing.variants.setPricePerCallLabel')}</Label>
-                  <Input id="var-call" type="number" min={0} step="any" value={setPricePerCallStr} onChange={e => { setSetPricePerCallStr(e.target.value); setRowErr(null) }} placeholder="0.01" />
+                  <Input id="var-call" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setPricePerCallStr} onChange={e => { setSetPricePerCallStr(e.target.value); setRowErr(null) }} placeholder="0.01" />
                 </div>
               ) : mode === 'image' ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="var-img-in">{t('pricing.variants.setImgInTokLabel')}</Label>
-                    <Input id="var-img-in" type="number" min={0} step="any" value={setImgInStr} onChange={e => { setSetImgInStr(e.target.value); setRowErr(null) }} placeholder="0.001" />
+                    <Input id="var-img-in" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setImgInStr} onChange={e => { setSetImgInStr(e.target.value); setRowErr(null) }} placeholder="0.001" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="var-img-out">{t('pricing.variants.setImgOutTokLabel')}</Label>
-                    <Input id="var-img-out" type="number" min={0} step="any" value={setImgOutStr} onChange={e => { setSetImgOutStr(e.target.value); setRowErr(null) }} placeholder="0.002" />
+                    <Input id="var-img-out" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setImgOutStr} onChange={e => { setSetImgOutStr(e.target.value); setRowErr(null) }} placeholder="0.002" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="var-per-img">{t('pricing.variants.setPricePerImageLabel')}</Label>
-                    <Input id="var-per-img" type="number" min={0} step="any" value={setPricePerImageStr} onChange={e => { setSetPricePerImageStr(e.target.value); setRowErr(null) }} placeholder="0.02" />
+                    <Input id="var-per-img" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setPricePerImageStr} onChange={e => { setSetPricePerImageStr(e.target.value); setRowErr(null) }} placeholder="0.02" />
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="var-in">{t('pricing.variants.setInputLabel')}</Label>
-                    <Input id="var-in" type="number" min={0} step="any" value={setInputStr} onChange={e => { setSetInputStr(e.target.value); setRowErr(null) }} placeholder="0.001" />
+                    <Input id="var-in" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setInputStr} onChange={e => { setSetInputStr(e.target.value); setRowErr(null) }} placeholder="0.001" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="var-out">{t('pricing.variants.setOutputLabel')}</Label>
-                    <Input id="var-out" type="number" min={0} step="any" value={setOutputStr} onChange={e => { setSetOutputStr(e.target.value); setRowErr(null) }} placeholder="0.002" />
+                    <Input id="var-out" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setOutputStr} onChange={e => { setSetOutputStr(e.target.value); setRowErr(null) }} placeholder="0.002" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="var-cache-read">{t('pricing.variants.setCacheReadLabel')}</Label>
-                    <Input id="var-cache-read" type="number" min={0} step="any" value={setCacheReadStr} onChange={e => { setSetCacheReadStr(e.target.value); setRowErr(null) }} placeholder="0.0005" />
+                    <Input id="var-cache-read" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setCacheReadStr} onChange={e => { setSetCacheReadStr(e.target.value); setRowErr(null) }} placeholder="0.0005" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="var-cache-write">{t('pricing.variants.setCacheWriteLabel')}</Label>
-                    <Input id="var-cache-write" type="number" min={0} step="any" value={setCacheWriteStr} onChange={e => { setSetCacheWriteStr(e.target.value); setRowErr(null) }} placeholder="0.001" />
+                    <Input id="var-cache-write" type="number" min={0} step={MIN_POSITIVE_PRICE} value={setCacheWriteStr} onChange={e => { setSetCacheWriteStr(e.target.value); setRowErr(null) }} placeholder="0.001" />
                   </div>
                 </div>
               )}
@@ -850,8 +874,19 @@ export default function PricingPage() {
   })
   const submit = () => {
     const fm = form
-    const valid = (editing || fm.model.trim() !== '') && isNonNegNum(fm.inputPerM) && isNonNegNum(fm.outputPerM) && isNonNegNum(fm.cacheReadPerM) && isNonNegNum(fm.cacheWritePerM)
-    if (!valid) { setFormErr(t('pricing.formInvalid')); return }
+    if (!editing && fm.model.trim() === '') { setFormErr(t('pricing.modelRequired')); return }
+    if (fm.inputPerM === '') { setFormErr(t('pricing.priceRequired', { field: t('pricing.promptLabel') })); return }
+    if (fm.outputPerM === '') { setFormErr(t('pricing.priceRequired', { field: t('pricing.completionLabel') })); return }
+    const priceFields: Array<[string, string]> = [
+      [fm.inputPerM, t('pricing.promptLabel')],
+      [fm.outputPerM, t('pricing.completionLabel')],
+      [fm.cacheReadPerM, t('pricing.cacheReadLabel')],
+      [fm.cacheWritePerM, t('pricing.cacheWriteLabel')],
+    ]
+    for (const [value, field] of priceFields) {
+      const issue = priceInputIssue(value)
+      if (issue) { setFormErr(t(`pricing.priceErrors.${issue}`, { field })); return }
+    }
     save.mutate(fm)
   }
 
@@ -874,8 +909,17 @@ export default function PricingPage() {
   })
   const imgSubmit = () => {
     const fm = imgForm
-    const valid = (imgEditing || fm.model.trim() !== '') && (fm.imgInTokPerM !== '' || fm.imgOutTokPerM !== '' || fm.pricePerImage !== '') && isNonNegNum(fm.imgInTokPerM) && isNonNegNum(fm.imgOutTokPerM) && isNonNegNum(fm.pricePerImage)
-    if (!valid) { setImgFormErr(t('pricing.image.formInvalid')); return }
+    if (!imgEditing && fm.model.trim() === '') { setImgFormErr(t('pricing.modelRequired')); return }
+    const priceFields: Array<[string, string]> = [
+      [fm.imgInTokPerM, t('pricing.image.inputTokenLabel')],
+      [fm.imgOutTokPerM, t('pricing.image.outputTokenLabel')],
+      [fm.pricePerImage, t('pricing.image.perImageLabel')],
+    ]
+    if (!priceFields.some(([value]) => value !== '')) { setImgFormErr(t('pricing.image.formInvalid')); return }
+    for (const [value, field] of priceFields) {
+      const issue = priceInputIssue(value)
+      if (issue) { setImgFormErr(t(`pricing.priceErrors.${issue}`, { field })); return }
+    }
     imgSave.mutate(fm)
   }
   const [imgDeleting, setImgDeleting] = useState<PriceEntry | null>(null)
@@ -897,9 +941,10 @@ export default function PricingPage() {
   })
   const fnSubmit = () => {
     const fm = fnForm
-    const v = Number(fm.pricePerCall)
-    const valid = (fnEditing || fm.model.trim() !== '') && fm.pricePerCall !== '' && Number.isFinite(v) && v >= 0
-    if (!valid) { setFnFormErr(t('pricing.function.formInvalid')); return }
+    if (!fnEditing && fm.model.trim() === '') { setFnFormErr(t('pricing.modelRequired')); return }
+    if (fm.pricePerCall === '') { setFnFormErr(t('pricing.priceRequired', { field: t('pricing.function.priceLabel') })); return }
+    const issue = priceInputIssue(fm.pricePerCall)
+    if (issue) { setFnFormErr(t(`pricing.priceErrors.${issue}`, { field: t('pricing.function.priceLabel') })); return }
     fnSave.mutate(fm)
   }
   const [fnDeleting, setFnDeleting] = useState<PriceEntry | null>(null)
@@ -1256,20 +1301,20 @@ export default function PricingPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="pf-input">{t('pricing.promptLabel')}</Label>
-                <Input id="pf-input" type="number" min={0} step="any" value={form.inputPerM} onChange={e => { setForm(f => ({ ...f, inputPerM: e.target.value })); setFormErr(null) }} />
+                <Label htmlFor="pf-input">{t('pricing.promptLabel')} <span className="text-destructive">*</span></Label>
+                <Input id="pf-input" type="number" min={0} step={MIN_POSITIVE_PRICE} value={form.inputPerM} onChange={e => { setForm(f => ({ ...f, inputPerM: e.target.value })); setFormErr(null) }} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="pf-output">{t('pricing.completionLabel')}</Label>
-                <Input id="pf-output" type="number" min={0} step="any" value={form.outputPerM} onChange={e => { setForm(f => ({ ...f, outputPerM: e.target.value })); setFormErr(null) }} />
+                <Label htmlFor="pf-output">{t('pricing.completionLabel')} <span className="text-destructive">*</span></Label>
+                <Input id="pf-output" type="number" min={0} step={MIN_POSITIVE_PRICE} value={form.outputPerM} onChange={e => { setForm(f => ({ ...f, outputPerM: e.target.value })); setFormErr(null) }} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pf-cache-read">{t('pricing.cacheReadLabel')}</Label>
-                <Input id="pf-cache-read" type="number" min={0} step="any" value={form.cacheReadPerM} onChange={e => { setForm(f => ({ ...f, cacheReadPerM: e.target.value })); setFormErr(null) }} />
+                <Input id="pf-cache-read" type="number" min={0} step={MIN_POSITIVE_PRICE} value={form.cacheReadPerM} onChange={e => { setForm(f => ({ ...f, cacheReadPerM: e.target.value })); setFormErr(null) }} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pf-cache-write">{t('pricing.cacheWriteLabel')}</Label>
-                <Input id="pf-cache-write" type="number" min={0} step="any" value={form.cacheWritePerM} onChange={e => { setForm(f => ({ ...f, cacheWritePerM: e.target.value })); setFormErr(null) }} />
+                <Input id="pf-cache-write" type="number" min={0} step={MIN_POSITIVE_PRICE} value={form.cacheWritePerM} onChange={e => { setForm(f => ({ ...f, cacheWritePerM: e.target.value })); setFormErr(null) }} />
               </div>
             </div>
           </div>
@@ -1310,15 +1355,15 @@ export default function PricingPage() {
             <div className="grid grid-cols-1 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="im-input">{t('pricing.image.inputTokenLabel')}</Label>
-                <Input id="im-input" type="number" min={0} step="any" value={imgForm.imgInTokPerM} onChange={e => setImg('imgInTokPerM', e.target.value)} />
+                <Input id="im-input" type="number" min={0} step={MIN_POSITIVE_PRICE} value={imgForm.imgInTokPerM} onChange={e => setImg('imgInTokPerM', e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="im-output">{t('pricing.image.outputTokenLabel')}</Label>
-                <Input id="im-output" type="number" min={0} step="any" value={imgForm.imgOutTokPerM} onChange={e => setImg('imgOutTokPerM', e.target.value)} />
+                <Input id="im-output" type="number" min={0} step={MIN_POSITIVE_PRICE} value={imgForm.imgOutTokPerM} onChange={e => setImg('imgOutTokPerM', e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="im-per-image">{t('pricing.image.perImageLabel')}</Label>
-                <Input id="im-per-image" type="number" min={0} step="any" value={imgForm.pricePerImage} onChange={e => setImg('pricePerImage', e.target.value)} />
+                <Input id="im-per-image" type="number" min={0} step={MIN_POSITIVE_PRICE} value={imgForm.pricePerImage} onChange={e => setImg('pricePerImage', e.target.value)} />
               </div>
             </div>
           </div>
@@ -1358,7 +1403,7 @@ export default function PricingPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="fn-price">{t('pricing.function.priceLabel')} <span className="text-destructive">*</span></Label>
-              <Input id="fn-price" type="number" min={0} step="any" value={fnForm.pricePerCall} onChange={e => setFn('pricePerCall', e.target.value)} />
+              <Input id="fn-price" type="number" min={0} step={MIN_POSITIVE_PRICE} value={fnForm.pricePerCall} onChange={e => setFn('pricePerCall', e.target.value)} />
             </div>
           </div>
           {fnFormErr && <p className="text-sm text-destructive">{fnFormErr}</p>}

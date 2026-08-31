@@ -122,9 +122,33 @@ func TestBehindCDNDefaultFalseAndExplicit(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, c2.Proxy.BehindCDN, "显式 true 加载")
 
-	c3, err := Load(writeConfig(t, "[proxy]\nbehind_cdn = false\nusage_capture = false\n"))
+	c3, err := Load(writeConfig(t, "[proxy]\nbehind_cdn = false\nusage_capture = false\n[billing]\nenabled = false\n"))
 	require.NoError(t, err)
 	require.False(t, c3.Proxy.BehindCDN, "显式 false 等价缺省")
+}
+
+func TestLoadRejectsBillingWithoutUsageCapture(t *testing.T) {
+	t.Run("TOML", func(t *testing.T) {
+		setenvRequired(t)
+		_, err := Load(writeConfig(t, "[proxy]\nusage_capture = false\n[billing]\nenabled = true\n"))
+		require.EqualError(t, err, "billing.enabled requires proxy.usage_capture=true")
+	})
+
+	t.Run("environment", func(t *testing.T) {
+		setenvRequired(t)
+		t.Setenv("C3API_PROXY_USAGE_CAPTURE", "false")
+		t.Setenv("C3API_BILLING_ENABLED", "true")
+		_, err := Load("")
+		require.EqualError(t, err, "billing.enabled requires proxy.usage_capture=true")
+	})
+
+	t.Run("billing disabled", func(t *testing.T) {
+		setenvRequired(t)
+		c, err := Load(writeConfig(t, "[proxy]\nusage_capture = false\n[billing]\nenabled = false\n"))
+		require.NoError(t, err)
+		require.False(t, c.Proxy.UsageCapture)
+		require.False(t, c.Billing.Enabled)
+	})
 }
 
 // TestLoadRejectsNonPositiveDurations：8 个 duration 字段 × 0/-1s → error 含字段名

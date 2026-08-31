@@ -1036,7 +1036,7 @@ type Group struct {
 
 // GroupAssignmentsBody defines model for GroupAssignmentsBody.
 type GroupAssignmentsBody struct {
-	// Multipliers 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值
+	// Multipliers 可选：user_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10，最多 4 位小数；API 边界与万分数换算）。仅对 user_ids 中列出的用户生效；null = 清除为未设置（回退组倍率）；未列出的用户沿用当前值
 	Multipliers *map[string]*float64 `json:"multipliers,omitempty"`
 
 	// UserIds 替换语义：完整授予列表（未列出即撤销；空数组 = 清空）
@@ -1056,7 +1056,7 @@ type GroupCreate struct {
 	AllowedModels *[]string `json:"allowed_models,omitempty"`
 	Name          string    `json:"name"`
 
-	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
+	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
 	PriceMultiplier *float64 `json:"price_multiplier"`
 
 	// ProtocolConvert 协议转换模式。默认推荐 [auto]，优先原生协议并在缺少原生路由时自动选择转换；也可传单个或多个手动方向。空数组/缺省 = off = 不转换；auto 必须单独出现。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向
@@ -1365,7 +1365,7 @@ type PriceVariant struct {
 	TimeStart            *string   `json:"TimeStart"`
 	UpdatedAt            time.Time `json:"UpdatedAt"`
 
-	// Multiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
+	// Multiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
 	Multiplier *float64 `json:"multiplier"`
 }
 
@@ -1385,7 +1385,7 @@ type PriceVariantUpsert struct {
 	CtxMin  *int64 `json:"ctx_min"`
 	DowMask *int   `json:"dow_mask"`
 
-	// Multiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
+	// Multiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界倍数小数——存储 mult_bp 万分：存储 15000 ↔ 显示 1.5）
 	Multiplier           *float64 `json:"multiplier"`
 	Seq                  *int     `json:"seq,omitempty"`
 	ServiceTier          *string  `json:"service_tier"`
@@ -2158,7 +2158,7 @@ type UserGroupsBody struct {
 	// GroupIds 替换语义：完整授予组列表（未列出即撤销；空数组 = 清空）
 	GroupIds []int64 `json:"group_ids"`
 
-	// Multipliers 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值
+	// Multipliers 可选：group_id → 该用户在该组的专属价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10，最多 4 位小数；API 边界与万分数换算）。仅对 group_ids 中列出的组生效；null = 清除为未设置（回退组倍率）；未列出的组沿用当前值
 	Multipliers *map[string]*float64 `json:"multipliers,omitempty"`
 }
 

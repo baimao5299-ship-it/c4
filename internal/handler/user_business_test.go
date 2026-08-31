@@ -139,6 +139,14 @@ func TestUserKeysLifecycle(t *testing.T) {
 	var k2 userapi.Key
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &k2))
 
+	// Existing keys can switch groups through the same user-owned update route.
+	rec = doUser(http.MethodPut, "/api/user/keys/"+itoa(*created.ID),
+		`{"group_id":`+itoa(*privG.ID)+`}`, token)
+	require.Equal(t, http.StatusOK, rec.Code, "switch key group: %s", rec.Body.String())
+	var switched userapi.Key
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &switched))
+	require.Equal(t, *privG.ID, *switched.GroupID)
+
 	// 列表：2 个；行含明文（长期回显契约）
 	rec = doUser(http.MethodGet, "/api/user/keys", "", token)
 	require.Equal(t, http.StatusOK, rec.Code, "list keys: %s", rec.Body.String())
