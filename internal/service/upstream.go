@@ -649,8 +649,9 @@ func updatedOrFallbackUpstream(updated, fallback *domain.Upstream) *domain.Upstr
 // recordExplicitUpstreamModel adds a model confirmed by a real operator test
 // to the persisted capability snapshot. The model store is optional for
 // lightweight integrations, so those callers keep the existing health-only
-// behavior. Existing error metadata is retained: one successful model test
-// proves that model, but does not claim that every advertised model passed.
+// behavior. A successful explicit probe is stronger evidence than a previous
+// catalogue/transport warning: keeping that warning in ModelsError made the
+// whole upstream look broken even though the selected model was routable.
 func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store UpstreamStore, expected *domain.Upstream, model string) (*domain.Upstream, error) {
 	recorder, ok := store.(UpstreamModelStore)
 	if !ok || expected == nil {
@@ -661,13 +662,10 @@ func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store Upstrea
 		return expected, nil
 	}
 	models := mergeUpstreamModelLists(expected.Models, []string{model})
-	var modelErr *string
-	if expected.ModelsError != nil {
-		if code := strings.TrimSpace(*expected.ModelsError); code != "" {
-			modelErr = &code
-		}
-	}
-	saved, err := recorder.RecordUpstreamModels(ctx, expected, models, modelErr)
+	// ModelsError is a single upstream-level field, not a per-model result. A
+	// successful explicit model request therefore clears it; any later batch
+	// validation can repopulate it with a fresh warning for the current run.
+	saved, err := recorder.RecordUpstreamModels(ctx, expected, models, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3372,10 +3370,12 @@ func redirectPort(value *url.URL) string {
 	}
 }
 
-// normalizeUpstreamBaseURL accepts both the documented bare root and the
-// commonly copied /v1 endpoint. The gateway itself appends /v1, so retaining
-// that suffix would probe /v1/v1 and make an otherwise valid relay look dead.
-// Only a final /v1 path segment is removed; prefixes such as /openai are kept.
+// normalizeUpstreamBaseURL accepts both the documented bare root and commonly
+// copied API operation URLs. The gateway itself appends /v1 and the operation
+// path, so retaining a pasted `/v1/chat/completions`, `/v1/responses`, or
+// `/v1/messages` suffix would probe a path such as `/v1/chat/completions/v1/models`
+// and make an otherwise valid relay look dead. Prefixes such as `/openai` are
+// kept intact.
 func normalizeUpstreamBaseURL(base string) string {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	parsed, err := url.Parse(base)
@@ -3384,6 +3384,13 @@ func normalizeUpstreamBaseURL(base string) string {
 	}
 	path := strings.TrimRight(parsed.Path, "/")
 	lower := strings.ToLower(path)
+	for _, suffix := range []string{"/chat/completions", "/responses", "/messages"} {
+		if strings.HasSuffix(lower, suffix) {
+			path = path[:len(path)-len(suffix)]
+			lower = strings.ToLower(strings.TrimRight(path, "/"))
+			break
+		}
+	}
 	if lower == "/v1" || strings.HasSuffix(lower, "/v1") {
 		path = path[:len(path)-len("/v1")]
 		if path == "/" {
