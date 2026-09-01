@@ -472,6 +472,8 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		GrossProfit:              l.GrossProfit,
 		ProfitMarginBP:           l.ProfitMarginBP,
 		BillingTier:              &l.BillingTier,
+		CallCount:                &l.CallCount,
+		PricePerCallMillis:       l.PricePerCallMillis,
 		AboveHit:                 &l.AboveHit,
 		Overdraft:                &l.Overdraft,
 		CreatedAt:                &l.CreatedAt,

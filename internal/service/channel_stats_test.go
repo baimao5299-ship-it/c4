@@ -140,4 +140,30 @@ func TestUserChannelMetricsKeepsCataloguePriceForInvalidRuntimeVariant(t *testin
 	require.Equal(t, int64(250), *price.OfficialOutputPerM)
 }
 
+func TestUserChannelMetricsIncludesImageTokenPrices(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "image", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: []string{"image-model"}, PriceMultiplier: 800,
+	}
+	inPrice, outPrice := int64(120000), int64(340000)
+	store.priceEntries["image-model"] = &domain.PriceEntry{
+		Model: "image-model", Mode: domain.PriceModeImage,
+		ImgInTokPerM: &inPrice, ImgOutTokPerM: &outPrice,
+		Source: domain.PricingSourceLitellm,
+	}
+
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].ModelPrices, 1)
+	price := rows[0].ModelPrices[0]
+	require.Equal(t, int64(120000), *price.ImgInTokPerM)
+	require.Equal(t, int64(340000), *price.ImgOutTokPerM)
+	require.Equal(t, int64(120000), *price.OfficialImgInTokPerM)
+	require.Equal(t, int64(340000), *price.OfficialImgOutTokPerM)
+}
+
 func ptrTime(t time.Time) *time.Time { return &t }

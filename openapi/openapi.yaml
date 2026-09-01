@@ -2588,12 +2588,16 @@ components:
       properties:
         Model: { type: string }
         InputPerM: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的输入单价（USD/1M tokens）；null = 当前没有可用价" }
+        ImgInTokPerM: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的图片输入 token 单价（USD/1M tokens）；null = 当前没有可用价" }
+        ImgOutTokPerM: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的图片输出 token 单价（USD/1M tokens）；null = 当前没有可用价" }
         OutputPerM: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的输出单价（USD/1M tokens）；null = 当前没有可用价" }
         CacheReadPerM: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 当前没有可用价" }
         CacheWritePerM: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 当前没有可用价" }
         PricePerCall: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的按次单价（USD/次）；null = 当前没有可用价" }
         PricePerImage: { type: number, format: double, nullable: true, minimum: 0, description: "按当前模型解析结果并应用分组倍率后的图片单价（USD/张）；null = 当前没有可用价" }
         OfficialInputPerM: { type: number, format: double, nullable: true, minimum: 0, description: "价格目录原始输入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置" }
+        OfficialImgInTokPerM: { type: number, format: double, nullable: true, minimum: 0, description: "价格目录原始图片输入 token 单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置" }
+        OfficialImgOutTokPerM: { type: number, format: double, nullable: true, minimum: 0, description: "价格目录原始图片输出 token 单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置" }
         OfficialOutputPerM: { type: number, format: double, nullable: true, minimum: 0, description: "价格目录原始输出单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置" }
         OfficialCacheReadPerM: { type: number, format: double, nullable: true, minimum: 0, description: "价格目录原始缓存读取单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置" }
         OfficialCacheWritePerM: { type: number, format: double, nullable: true, minimum: 0, description: "价格目录原始缓存写入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置" }
@@ -3417,8 +3421,8 @@ components:
       properties:
         ID: { type: integer, format: int64 }
         RequestID: { type: string }
-        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
-        ClientIPSource: { type: string, nullable: true, enum: [remote_addr, cf_connecting_ip, true_client_ip, x_real_ip], description: 客户端 IP 来源的请求时快照；null = 历史行未记录 }
+        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
+        ClientIPSource: { type: string, nullable: true, enum: [remote_addr, cf_connecting_ip, true_client_ip, x_real_ip, x_forwarded_for], description: 客户端 IP 来源的请求时快照；null = 历史行未记录 }
         ClientIPTrusted: { type: boolean, nullable: true, description: 该 IP 来源是否被请求时的代理配置信任；null = 未知 }
         GroupID: { type: integer, format: int64 }
         AccountID: { type: integer, format: int64 }
@@ -3447,6 +3451,8 @@ components:
         PriceCacheReadMillis: { type: integer, format: int64, nullable: true, description: "缓存读单价快照（每 M token 毫分）；null = 该请求无缓存读或无缓存价 " }
         CacheCreationTokens: { type: integer, format: int64 }
         PriceCacheCreationMillis: { type: integer, format: int64, nullable: true, description: 缓存写单价快照（每 M token 毫分）；null = 该请求无缓存写或无缓存价 }
+        CallCount: { type: integer, format: int64, description: 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens） }
+        PricePerCallMillis: { type: integer, format: int64, nullable: true, description: 按次调用单价快照（毫分/单元）；null = 无按次计费分量 }
         Cost: { type: integer, format: int64, description: "计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0" }
         UserCharge: { type: integer, format: int64, description: 用户扣费（毫分），与 Cost 同值的明确业务语义 }
         RawCost: { type: integer, format: int64, description: "原始成本（毫分，乘倍率前——免费组 cost=0 但 raw 有值，实际消耗口径）；bill 未装配/无价防御路径恒 0" }
@@ -3463,7 +3469,7 @@ components:
       properties:
         ID: { type: integer, format: int64 }
         RequestID: { type: string }
-        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
+        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
         GroupID: { type: integer, format: int64 }
         UserID: { type: integer, format: int64, description: 鉴权归属用户；0 = 无 }
         KeyID: { type: integer, format: int64, description: 鉴权归属 key；0 = 无 }
@@ -3484,6 +3490,8 @@ components:
         PriceCacheReadMillis: { type: integer, format: int64, nullable: true, description: "缓存读单价快照（每 M token 毫分）；null = 该请求无缓存读或无缓存价 " }
         CacheCreationTokens: { type: integer, format: int64 }
         PriceCacheCreationMillis: { type: integer, format: int64, nullable: true, description: 缓存写单价快照（每 M token 毫分）；null = 该请求无缓存写或无缓存价 }
+        CallCount: { type: integer, format: int64, description: 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens） }
+        PricePerCallMillis: { type: integer, format: int64, nullable: true, description: 按次调用单价快照（毫分/单元）；null = 无按次计费分量 }
         Cost: { type: integer, format: int64, description: "计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0" }
         RawCost: { type: integer, format: int64, description: "原始成本（毫分，乘倍率前——免费组 cost=0 但 raw 有值，实际消耗口径）；bill 未装配/无价防御路径恒 0" }
         BillingTier: { type: string, description: 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径 }
@@ -3524,8 +3532,8 @@ components:
       properties:
         ID: { type: integer, format: int64 }
         RequestID: { type: string }
-        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
-        ClientIPSource: { type: string, nullable: true, enum: [remote_addr, cf_connecting_ip, true_client_ip, x_real_ip] }
+        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
+        ClientIPSource: { type: string, nullable: true, enum: [remote_addr, cf_connecting_ip, true_client_ip, x_real_ip, x_forwarded_for] }
         ClientIPTrusted: { type: boolean, nullable: true }
         GroupID: { type: integer, format: int64 }
         AccountID: { type: integer, format: int64 }
@@ -3551,7 +3559,7 @@ components:
       properties:
         ID: { type: integer, format: int64 }
         RequestID: { type: string }
-        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
+        ClientIP: { type: string, description: 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 }
         GroupID: { type: integer, format: int64 }
         UserID: { type: integer, format: int64, description: 鉴权归属用户；0 = 无 }
         KeyID: { type: integer, format: int64, description: 鉴权归属 key；0 = 无 }

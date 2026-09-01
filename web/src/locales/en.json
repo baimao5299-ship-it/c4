@@ -926,7 +926,8 @@
         "remote_addr": "Direct peer address",
         "cf_connecting_ip": "Cloudflare client header",
         "true_client_ip": "True-Client-IP header",
-        "x_real_ip": "X-Real-IP header"
+        "x_real_ip": "X-Real-IP header",
+        "x_forwarded_for": "X-Forwarded-For header"
       }
     },
     "upstream": {
@@ -1973,6 +1974,10 @@
       "modelsLabel": "Open models",
       "inputShort": "In",
       "outputShort": "Out",
+      "cacheReadShort": "Cache read",
+      "cacheWriteShort": "Cache write",
+      "imageInputShort": "Image in",
+      "imageOutputShort": "Image out",
       "callShort": "Per call",
       "imageShort": "Per image",
       "callUnit": "call",
@@ -1984,7 +1989,7 @@
       "copyModel": "Copy model name",
       "copiedModel": "Copied",
       "copyFailed": "Copy failed",
-      "priceUnit": "Prices: USD / 1M tokens; Official is the catalogue price, Group is the amount charged by this group; — means not priced yet",
+      "priceUnit": "Prices: USD / 1M tokens (image input/output are token prices too); Official is the catalogue price, Group is the amount charged by this group; — means not priced yet",
       "modelsPending": "No models configured yet",
       "notCalled": "No calls yet",
       "totalChannels": "Public channels",

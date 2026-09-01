@@ -41,6 +41,51 @@ func (f *fakePriceFetcher) Fetch(ctx context.Context, sourceURL string) (*pricin
 
 func int64Ptr(v int64) *int64 { return &v }
 
+type fakePricingSnapshotStore struct {
+	*fakeStore
+	calls         int
+	models        []string
+	variantModels []string
+}
+
+func (f *fakePricingSnapshotStore) ReconcileLiteLLMSnapshot(_ context.Context, models, variantModels []string) (int, error) {
+	f.calls++
+	f.models = append([]string(nil), models...)
+	f.variantModels = append([]string(nil), variantModels...)
+	return 0, nil
+}
+
+func TestSyncPricingUsesSourceModelsForSnapshotCompleteness(t *testing.T) {
+	store := &fakePricingSnapshotStore{fakeStore: newFakeStore()}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	require.NoError(t, svc.ReloadPricingCtx(context.Background()))
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc.SetPriceFetcher(&fakePriceFetcher{res: &pricing.FetchResult{
+		Models:       []string{"metadata-only", "priced"},
+		PriceEntries: []*domain.PriceEntry{{Model: "priced", Mode: domain.PriceModeToken, InputPerM: int64Ptr(100), OutputPerM: int64Ptr(200), Source: domain.PricingSourceLitellm}},
+		Skipped:      1,
+	}})
+
+	_, err = svc.SyncPricingNow(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, store.calls)
+	require.Equal(t, []string{"metadata-only", "priced"}, store.models)
+}
+
+func TestSyncPricingProtectsExplicitEmptySource(t *testing.T) {
+	store := &fakePricingSnapshotStore{fakeStore: newFakeStore()}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	require.NoError(t, svc.ReloadPricingCtx(context.Background()))
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc.SetPriceFetcher(&fakePriceFetcher{res: &pricing.FetchResult{Models: []string{}}})
+
+	_, err = svc.SyncPricingNow(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, store.calls, "an empty source must not prune the existing catalogue")
+}
+
 func TestPriceEntrySnapshotLoad(t *testing.T) {
 	fs := newFakeStore()
 	_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{
@@ -54,6 +99,81 @@ func TestPriceEntrySnapshotLoad(t *testing.T) {
 	require.Equal(t, int64(250000), *pe.InputPerM)
 	_, err = svc.GetPriceEntry(context.Background(), "missing")
 	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestPricingSnapshotNormalizesModelWhitespace(t *testing.T) {
+	fs := newFakeStore()
+	model := "  gpt-spaced  "
+	inPrice, outPrice, variantInput := int64(100000), int64(250000), int64(50000)
+	fs.priceEntries[model] = &domain.PriceEntry{
+		Model: model, Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceManual,
+	}
+	fs.priceVariants[model] = []*domain.PriceVariant{{
+		Model: model, Seq: 1, SetInputPerM: &variantInput,
+	}}
+
+	svc := newPricingSvc(t, fs)
+
+	// Runtime billing accepts the canonical name and ignores accidental request
+	// padding while retaining case-sensitive exact matching.
+	rp, ok := svc.ResolvePrices("  gpt-spaced  ", 0, "", time.Now())
+	require.True(t, ok)
+	require.Equal(t, variantInput, *rp.InputPerM)
+	require.Equal(t, outPrice, *rp.OutputPerM)
+	_, ok = svc.ResolvePrices("GPT-SPACED", 0, "", time.Now())
+	require.False(t, ok, "model matching remains case-sensitive")
+
+	entries, err := svc.PriceEntriesForModels(context.Background(), []string{" gpt-spaced "})
+	require.NoError(t, err)
+	require.Contains(t, entries, "gpt-spaced")
+	require.Equal(t, model, entries["gpt-spaced"].Model, "catalogue keeps the persisted model text")
+
+	resolved, err := svc.ResolvedPricesForModels(context.Background(), []string{"gpt-spaced"}, "", 0, time.Now())
+	require.NoError(t, err)
+	require.Contains(t, resolved, "gpt-spaced")
+	require.Equal(t, variantInput, *resolved["gpt-spaced"].InputPerM)
+}
+
+func TestPriceEntriesForModelsStartupFallbackNormalizesModelWhitespace(t *testing.T) {
+	fs := newFakeStore()
+	model := "  startup-spaced  "
+	inPrice, outPrice := int64(100), int64(200)
+	fs.priceEntries[model] = &domain.PriceEntry{
+		Model: model, Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceManual,
+	}
+
+	// Do not initialize the snapshot: this exercises the database fallback.
+	svc := New(fs, nil, NopInvalidator{}, nil, nil, nil, nil)
+	got, err := svc.PriceEntriesForModels(context.Background(), []string{" startup-spaced "})
+	require.NoError(t, err)
+	require.Contains(t, got, "startup-spaced")
+	require.Equal(t, inPrice, *got["startup-spaced"].InputPerM)
+}
+
+func TestPreviewPricingSyncNormalizesModelWhitespace(t *testing.T) {
+	fs := newFakeStore()
+	model := "preview-spaced"
+	inPrice, outPrice := int64(100), int64(200)
+	fs.priceEntries[model] = &domain.PriceEntry{
+		Model: model, Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceLitellm,
+	}
+	svc := newPricingSvc(t, fs)
+	_, err := fs.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc.SetPriceFetcher(&fakePriceFetcher{res: &pricing.FetchResult{
+		PriceEntries: []*domain.PriceEntry{{
+			Model: "  " + model + "  ", Mode: domain.PriceModeToken,
+			InputPerM: int64Ptr(300), OutputPerM: int64Ptr(400), Source: domain.PricingSourceLitellm,
+		}},
+	}})
+
+	preview, err := svc.PreviewPricingSync(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, preview.ToUpdate, "padded upstream model matches the persisted row")
+	require.Equal(t, 0, preview.ToAdd)
 }
 
 func TestPriceEntriesForModelsPagesStartupFallback(t *testing.T) {

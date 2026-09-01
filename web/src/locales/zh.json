@@ -926,7 +926,8 @@
         "remote_addr": "直连地址",
         "cf_connecting_ip": "Cloudflare 客户端头",
         "true_client_ip": "True-Client-IP 头",
-        "x_real_ip": "X-Real-IP 头"
+        "x_real_ip": "X-Real-IP 头",
+        "x_forwarded_for": "X-Forwarded-For 头"
       }
     },
     "upstream": {
@@ -1973,6 +1974,10 @@
       "modelsLabel": "开放模型",
       "inputShort": "输入",
       "outputShort": "输出",
+      "cacheReadShort": "缓存读",
+      "cacheWriteShort": "缓存写",
+      "imageInputShort": "图片输入",
+      "imageOutputShort": "图片输出",
       "callShort": "按次",
       "imageShort": "按张",
       "callUnit": "次",
@@ -1984,7 +1989,7 @@
       "copyModel": "复制模型名称",
       "copiedModel": "已复制",
       "copyFailed": "复制失败",
-      "priceUnit": "价格：美元 / 100 万 token；官方价为价格目录原价，分组价为本组实际扣费；— 表示尚未定价",
+      "priceUnit": "价格：美元 / 100 万 token（图片输入/输出同样按 token）；官方价为价格目录原价，分组价为本组实际扣费；— 表示尚未定价",
       "modelsPending": "管理员尚未配置模型",
       "notCalled": "暂无调用",
       "totalChannels": "公开渠道",

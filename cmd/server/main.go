@@ -473,10 +473,11 @@ func main() {
 	priceFetcher := pricing.NewFetcher(hc, log)
 	svc.SetPriceFetcher(priceFetcher)
 	pricingSync := pricing.NewSyncWorker(pricing.SyncWorkerConfig{
-		Fetcher:  priceFetcher,
-		Repo:     repos,
-		Settings: svc,
-		Mutation: svc,
+		Fetcher:   priceFetcher,
+		Repo:      repos,
+		Reconcile: repos,
+		Settings:  svc,
+		Mutation:  svc,
 		// 三线：文本价 + image 价 + 按单元价快照一并刷新（拉取成功后同样重载
 		// 对应快照——Task A 双线 + 价格表三件套扩展）。
 		Reload: func() {

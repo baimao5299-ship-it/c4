@@ -16,7 +16,9 @@ import (
 	"math/bits"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -248,14 +250,54 @@ func applySelectionAttribution(l *domain.UsageLog, sel *scheduler.Selection) {
 		return
 	}
 	l.TargetKind = string(sel.TargetKind)
+	// Legacy account-routed selections do not have a managed upstream ID, but
+	// their BaseURL is still the endpoint that handled the request. Preserve
+	// that host in diagnostics while stripping credentials and URL paths. A
+	// managed selection normally already carries UpstreamHost; deriving it from
+	// BaseURL is a fallback for old snapshots and partially populated fixtures.
+	l.UpstreamHost = attributionHost(sel.UpstreamHost)
+	if l.UpstreamHost == "" {
+		l.UpstreamHost = attributionHost(sel.BaseURL)
+	}
 	if sel.UpstreamID <= 0 {
 		return
 	}
 	l.UpstreamID = sel.UpstreamID
 	l.UpstreamName = sel.UpstreamName
-	l.UpstreamHost = sel.UpstreamHost
 	multiplier := sel.UpstreamMultiplierBP
 	l.UpstreamMultiplierBP = &multiplier
+}
+
+// attributionHost accepts either a full endpoint URL or an authority-only
+// host snapshot and returns only the parsed authority (host plus optional
+// port). It deliberately never returns userinfo, path, query, or fragment so
+// usage/error logs cannot leak an upstream credential accidentally included in
+// a legacy account URL.
+func attributionHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if parsed.Host == "" {
+		// A value that explicitly looks like a URL but has no authority is
+		// malformed; do not reinterpret it as a host ("https://" must not
+		// become the host "https:").
+		if strings.Contains(raw, "://") {
+			return ""
+		}
+		// A scheduler snapshot is authority-only (for example
+		// "api.example.test:8443"), which net/url interprets as a scheme
+		// unless it is prefixed with //.
+		parsed, err = url.Parse("//" + raw)
+		if err != nil || parsed.Host == "" {
+			return ""
+		}
+	}
+	return parsed.Host
 }
 
 func hasBillingPriceSnapshot(l *domain.UsageLog) bool {

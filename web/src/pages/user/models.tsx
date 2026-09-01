@@ -20,6 +20,8 @@ type ChannelModelPrice = components['schemas']['UserChannelModelPrice'] & {
   // Newer servers expose the catalogue price alongside the effective group
   // price. Keep these optional so an older frontend can still read old payloads.
   OfficialInputPerM?: number | null
+  OfficialImgInTokPerM?: number | null
+  OfficialImgOutTokPerM?: number | null
   OfficialOutputPerM?: number | null
   OfficialCacheReadPerM?: number | null
   OfficialCacheWritePerM?: number | null
@@ -47,15 +49,36 @@ function formatUpdated(value: string | null | undefined, empty: string) {
 
 function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
   const models = sortModelsLatestFirst(metric.AllowedModels ?? [])
-  const byName = new Map((metric.ModelPrices ?? []).map(row => [row.Model, row as ChannelModelPrice]))
+  // The allowlist is trimmed by current write paths, but older groups and
+  // rolling backend upgrades can still return surrounding whitespace in either
+  // array. Use the canonical trimmed identifier only for the lookup key while
+  // returning the original price row unchanged so provider spelling/display is
+  // preserved.
+  const byName = new Map<string, ChannelModelPrice>()
+  for (const row of metric.ModelPrices ?? []) {
+    const key = row.Model.trim()
+    if (key === '') continue
+    // Prefer an already-canonical row when duplicate legacy rows differ only
+    // by whitespace; otherwise keep the first stable response entry.
+    const existing = byName.get(key)
+    if (!existing || row.Model === key) byName.set(key, row as ChannelModelPrice)
+  }
   // Older C4 servers may not send ModelPrices yet. Keep those models visible
   // with explicit empty prices during a rolling frontend/backend upgrade.
-  return models.map(model => byName.get(model) ?? { Model: model })
+  return models.map(model => {
+    const canonical = model.trim()
+    return byName.get(canonical) ?? { Model: canonical || model }
+  })
 }
 
 function priceMode(price: ChannelModelPrice): 'token' | 'call' | 'image' {
-  if (price.Mode === 'call' || price.PricePerCall != null) return 'call'
-  if (price.Mode === 'image' || price.PricePerImage != null) return 'image'
+  if (price.Mode === 'call') return 'call'
+  if (price.Mode === 'image') return 'image'
+  if (price.Mode === 'token') return 'token'
+  if (price.PricePerCall != null || price.OfficialPricePerCall != null) return 'call'
+  // Older API responses may omit Mode. Infer image mode from any image
+  // component so token-only image models are still shown with their prices.
+  if (price.PricePerImage != null || price.OfficialPricePerImage != null || price.ImgInTokPerM != null || price.ImgOutTokPerM != null || price.OfficialImgInTokPerM != null || price.OfficialImgOutTokPerM != null) return 'image'
   return 'token'
 }
 
@@ -101,6 +124,43 @@ function PricePair({
       </div>
     </div>
   )
+}
+
+function PriceDetails({
+  price,
+  mode,
+  multiplier,
+  t,
+}: {
+  price: ChannelModelPrice
+  mode: 'token' | 'call' | 'image'
+  multiplier: number
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
+  const pairs: Array<{ key: string; label: string; value?: number | null; officialValue?: number | null; format: PriceFormatter }> = []
+  const add = (key: string, label: string, value: number | null | undefined, officialValue: number | null | undefined, format: PriceFormatter) => {
+    // Do not render an empty component. A zero is a real free price and is
+    // intentionally retained by this check.
+    if (value == null && officialValue == null) return
+    pairs.push({ key, label, value, officialValue, format })
+  }
+  if (mode === 'call') {
+    add('call', t('user.models.callShort'), price.PricePerCall, price.OfficialPricePerCall, value => formatPricePerCall(value, t('user.models.callUnit')))
+  } else {
+    if (mode === 'image') {
+      add('image-input', t('user.models.imageInputShort'), price.ImgInTokPerM, price.OfficialImgInTokPerM, value => formatPricePerMillion(value))
+      add('image-output', t('user.models.imageOutputShort'), price.ImgOutTokPerM, price.OfficialImgOutTokPerM, value => formatPricePerMillion(value))
+      add('image', t('user.models.imageShort'), price.PricePerImage, price.OfficialPricePerImage, value => formatPricePerImage(value, t('user.models.imageUnit')))
+    }
+    // Multimodal catalogue rows can also carry normal token/cache prices.
+    // Keep them visible instead of assuming image mode is mutually exclusive.
+    add('input', t('user.models.inputShort'), price.InputPerM, price.OfficialInputPerM, value => formatPricePerMillion(value))
+    add('output', t('user.models.outputShort'), price.OutputPerM, price.OfficialOutputPerM, value => formatPricePerMillion(value))
+    add('cache-read', t('user.models.cacheReadShort'), price.CacheReadPerM, price.OfficialCacheReadPerM, value => formatPricePerMillion(value))
+    add('cache-write', t('user.models.cacheWriteShort'), price.CacheWritePerM, price.OfficialCacheWritePerM, value => formatPricePerMillion(value))
+  }
+  if (pairs.length === 0) return <span className="text-xs text-muted-foreground">—</span>
+  return <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">{pairs.map(pair => <PricePair key={pair.key} label={pair.label} value={pair.value} officialValue={pair.officialValue} multiplier={multiplier} format={pair.format} t={t} />)}</div>
 }
 
 function ModelNameButton({
@@ -169,7 +229,7 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('user.models.modelsLabel')}</span><span className="shrink-0">{formatUpdated(metric.LastCalledAt, t('user.models.notCalled'))}</span></div>
           {prices.length ? <div className="max-h-64 divide-y overflow-y-auto rounded-lg border bg-background/60">{prices.map(price => {
             const mode = priceMode(price)
-            return <div key={price.Model} className="grid grid-cols-1 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><ModelNameButton model={price.Model} copyState={copyState?.model === price.Model ? copyState.status : null} onCopy={() => { void copyModel(price.Model) }} t={t} />{mode === 'call' ? <PricePair label={t('user.models.callShort')} value={price.PricePerCall} officialValue={price.OfficialPricePerCall} multiplier={multiplier} format={value => formatPricePerCall(value, t('user.models.callUnit'))} t={t} /> : mode === 'image' ? <PricePair label={t('user.models.imageShort')} value={price.PricePerImage} officialValue={price.OfficialPricePerImage} multiplier={multiplier} format={value => formatPricePerImage(value, t('user.models.imageUnit'))} t={t} /> : <><PricePair label={t('user.models.inputShort')} value={price.InputPerM} officialValue={price.OfficialInputPerM} multiplier={multiplier} format={value => formatPricePerMillion(value)} t={t} /><PricePair label={t('user.models.outputShort')} value={price.OutputPerM} officialValue={price.OfficialOutputPerM} multiplier={multiplier} format={value => formatPricePerMillion(value)} t={t} /></>}</div>
+            return <div key={price.Model} className="grid grid-cols-1 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)]"><ModelNameButton model={price.Model} copyState={copyState?.model === price.Model ? copyState.status : null} onCopy={() => { void copyModel(price.Model) }} t={t} /><PriceDetails price={price} mode={mode} multiplier={multiplier} t={t} /></div>
           })}</div> : <p className="text-xs text-muted-foreground">{t('user.models.modelsPending')}</p>}
           {models.length > 0 && <p className="text-[11px] text-muted-foreground">{t('user.models.priceUnit')}</p>}
         </div>

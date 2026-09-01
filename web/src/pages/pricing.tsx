@@ -1152,15 +1152,15 @@ export default function PricingPage() {
                     {imgRows.map(p => (
                       <TableRow key={p.Model}>
                         <TableCell className="max-w-48 truncate font-mono text-sm" title={p.Model}>{p.Model}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatUsd(p.ImgInTokPerM)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatUsd(p.ImgOutTokPerM)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.ImgInTokPerM)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatPricePerMillion(p.ImgOutTokPerM)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatUsd(p.PricePerImage)}</TableCell>
                         <TableCell><SourceBadge source={p.Source} /></TableCell>
                         <TableCell className="max-w-32 truncate" title={p.Provider ?? undefined}>{p.Provider || '—'}</TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(p.UpdatedAt)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon-sm" title={t('pricing.variants.title', { model: p.Model })} onClick={() => setVariantsTarget({ model: p.Model, source: p.Source, mode: 'image', inputPerM: (p as unknown as PriceEntry).InputPerM, outputPerM: (p as unknown as PriceEntry).OutputPerM })}><Layers /></Button>
+                            <Button variant="ghost" size="icon-sm" title={t('pricing.variants.title', { model: p.Model })} onClick={() => setVariantsTarget({ model: p.Model, source: p.Source, mode: 'image', inputPerM: p.ImgInTokPerM, outputPerM: p.ImgOutTokPerM })}><Layers /></Button>
                             <Button variant="ghost" size="icon-sm" title={t('common.edit')} onClick={() => openEdit(p)}><Pencil /></Button>
                             <Button
                               variant="ghost"

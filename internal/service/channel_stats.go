@@ -58,6 +58,8 @@ type PublicChannelModelPrice struct {
 	CacheWritePerM *int64
 	PricePerCall   *int64
 	PricePerImage  *int64
+	ImgInTokPerM   *int64
+	ImgOutTokPerM  *int64
 
 	// Official* is the raw catalogue row before any conditional variant or
 	// group/assignment multiplier. This is deliberately separate from the
@@ -69,6 +71,8 @@ type PublicChannelModelPrice struct {
 	OfficialCacheWritePerM *int64
 	OfficialPricePerCall   *int64
 	OfficialPricePerImage  *int64
+	OfficialImgInTokPerM   *int64
+	OfficialImgOutTokPerM  *int64
 }
 
 // UserChannelMetrics lists only public, live groups and joins their recent
@@ -125,6 +129,13 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 			s.log.Warn("public channel pricing snapshot unavailable", logx.Error(priceErr))
 		}
 	}
+	// Resolve aliases once per response. Upstream model IDs often carry a
+	// provider namespace or a dated snapshot suffix while the pricing catalogue
+	// stores one canonical root row. The lookup helper only accepts a unique,
+	// deterministic candidate, so an ambiguous provider price remains visible
+	// as unpriced instead of showing a misleading number.
+	catalogueKeys := sortedModelKeys(catalogue)
+	priceKeys := sortedModelKeys(prices)
 	assignments, err := s.store.ListAssignmentsByUser(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -145,16 +156,20 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 		metric := &PublicChannelMetric{Group: g, PriceMultiplier: multiplier, Status: "no_data", ModelPrices: make([]PublicChannelModelPrice, 0, len(g.AllowedModels))}
 		for _, model := range g.AllowedModels {
 			row := PublicChannelModelPrice{Model: model}
-			if entry, ok := catalogue[model]; ok && entry != nil {
+			catalogueKey, hasCatalogue := modelLookupKey(catalogueKeys, model)
+			if entry, ok := catalogue[catalogueKey]; hasCatalogue && ok && entry != nil {
 				row.OfficialInputPerM = entry.InputPerM
 				row.OfficialOutputPerM = entry.OutputPerM
 				row.OfficialCacheReadPerM = entry.CacheReadPerM
 				row.OfficialCacheWritePerM = entry.CacheWritePerM
 				row.OfficialPricePerCall = entry.PricePerCall
 				row.OfficialPricePerImage = entry.PricePerImage
+				row.OfficialImgInTokPerM = entry.ImgInTokPerM
+				row.OfficialImgOutTokPerM = entry.ImgOutTokPerM
 				row.Mode = entry.Mode
 			}
-			if entry, ok := prices[model]; ok {
+			priceKey, hasPrice := modelLookupKey(priceKeys, model)
+			if entry, ok := prices[priceKey]; hasPrice && ok {
 				row.Mode = entry.Mode
 				row.InputPerM = entry.InputPerM
 				row.OutputPerM = entry.OutputPerM
@@ -162,6 +177,8 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 				row.CacheWritePerM = entry.CacheWritePerM
 				row.PricePerCall = entry.PricePerCall
 				row.PricePerImage = entry.PricePerImage
+				row.ImgInTokPerM = entry.ImgInTokPerM
+				row.ImgOutTokPerM = entry.ImgOutTokPerM
 			}
 			metric.ModelPrices = append(metric.ModelPrices, row)
 		}

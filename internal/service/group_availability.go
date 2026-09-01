@@ -74,31 +74,23 @@ func upstreamGroupHasRoute(allowed []string, members []*domain.GroupUpstream) bo
 
 	// Legacy groups without an explicit allowlist publish an unrestricted route
 	// only while every live member is unchecked. Once a catalogue exists, the
-	// scheduler publishes the confirmed intersection instead.
-	var intersection map[string]struct{}
+	// scheduler publishes one route per model in the union of confirmed
+	// snapshots. A checked empty snapshot contributes no model, while an
+	// unchecked member remains a candidate for models discovered elsewhere.
+	confirmed := make(map[string]struct{})
 	allUnchecked := true
 	for _, u := range live {
 		if u.ModelsCheckedAt == nil {
 			continue
 		}
 		allUnchecked = false
-		local := make(map[string]struct{}, len(u.Models))
 		for _, model := range u.Models {
 			if model = strings.TrimSpace(model); model != "" {
-				local[model] = struct{}{}
-			}
-		}
-		if intersection == nil {
-			intersection = local
-			continue
-		}
-		for model := range intersection {
-			if _, ok := local[model]; !ok {
-				delete(intersection, model)
+				confirmed[model] = struct{}{}
 			}
 		}
 	}
-	return allUnchecked || len(intersection) > 0
+	return allUnchecked || len(confirmed) > 0
 }
 
 func groupUpstreamContainsModel(models []string, want string) bool {

@@ -21,7 +21,7 @@ func TestProductionConfigTrustsOnlyLocalReverseProxy(t *testing.T) {
 	c, err := Load("../../deploy/config.toml")
 	require.NoError(t, err)
 	require.True(t, c.Proxy.BehindCDN)
-	require.Equal(t, []string{"127.0.0.1/32", "::1/128"}, c.Proxy.TrustedProxyCIDRs)
+	require.Equal(t, []string{"127.0.0.1/32", "::1/128", "172.18.0.1/32"}, c.Proxy.TrustedProxyCIDRs)
 }
 
 func TestTrustedProxyCIDRsRejectInvalidValues(t *testing.T) {

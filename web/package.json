@@ -6,6 +6,7 @@
   "packageManager": "pnpm@11.20.0",
   "scripts": {
     "check:stats-chart": "node scripts/check-stats-chart.mjs",
+    "check:model-sort": "node scripts/check-model-sort.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",

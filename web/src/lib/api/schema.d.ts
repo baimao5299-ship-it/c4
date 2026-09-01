@@ -2109,6 +2109,16 @@ export interface components {
             InputPerM?: number | null;
             /**
              * Format: double
+             * @description 按当前模型解析结果并应用分组倍率后的图片输入 token 单价（USD/1M tokens）；null = 当前没有可用价
+             */
+            ImgInTokPerM?: number | null;
+            /**
+             * Format: double
+             * @description 按当前模型解析结果并应用分组倍率后的图片输出 token 单价（USD/1M tokens）；null = 当前没有可用价
+             */
+            ImgOutTokPerM?: number | null;
+            /**
+             * Format: double
              * @description 按当前模型解析结果并应用分组倍率后的输出单价（USD/1M tokens）；null = 当前没有可用价
              */
             OutputPerM?: number | null;
@@ -2137,6 +2147,16 @@ export interface components {
              * @description 价格目录原始输入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
              */
             OfficialInputPerM?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始图片输入 token 单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialImgInTokPerM?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始图片输出 token 单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialImgOutTokPerM?: number | null;
             /**
              * Format: double
              * @description 价格目录原始输出单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
@@ -3042,13 +3062,13 @@ export interface components {
             /** Format: int64 */
             ID?: number;
             RequestID?: string;
-            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
+            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
             ClientIP?: string;
             /**
              * @description 客户端 IP 来源的请求时快照；null = 历史行未记录
              * @enum {string|null}
              */
-            ClientIPSource?: "remote_addr" | "cf_connecting_ip" | "true_client_ip" | "x_real_ip" | null;
+            ClientIPSource?: "remote_addr" | "cf_connecting_ip" | "true_client_ip" | "x_real_ip" | "x_forwarded_for" | null;
             /** @description 该 IP 来源是否被请求时的代理配置信任；null = 未知 */
             ClientIPTrusted?: boolean | null;
             /** Format: int64 */
@@ -3126,6 +3146,16 @@ export interface components {
             PriceCacheCreationMillis?: number | null;
             /**
              * Format: int64
+             * @description 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens）
+             */
+            CallCount?: number;
+            /**
+             * Format: int64
+             * @description 按次调用单价快照（毫分/单元）；null = 无按次计费分量
+             */
+            PricePerCallMillis?: number | null;
+            /**
+             * Format: int64
              * @description 计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0
              */
             Cost?: number;
@@ -3168,7 +3198,7 @@ export interface components {
             /** Format: int64 */
             ID?: number;
             RequestID?: string;
-            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
+            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
             ClientIP?: string;
             /** Format: int64 */
             GroupID?: number;
@@ -3223,6 +3253,16 @@ export interface components {
              * @description 缓存写单价快照（每 M token 毫分）；null = 该请求无缓存写或无缓存价
              */
             PriceCacheCreationMillis?: number | null;
+            /**
+             * Format: int64
+             * @description 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens）
+             */
+            CallCount?: number;
+            /**
+             * Format: int64
+             * @description 按次调用单价快照（毫分/单元）；null = 无按次计费分量
+             */
+            PricePerCallMillis?: number | null;
             /**
              * Format: int64
              * @description 计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0
@@ -3305,10 +3345,10 @@ export interface components {
             /** Format: int64 */
             ID?: number;
             RequestID?: string;
-            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
+            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
             ClientIP?: string;
             /** @enum {string|null} */
-            ClientIPSource?: "remote_addr" | "cf_connecting_ip" | "true_client_ip" | "x_real_ip" | null;
+            ClientIPSource?: "remote_addr" | "cf_connecting_ip" | "true_client_ip" | "x_real_ip" | "x_forwarded_for" | null;
             ClientIPTrusted?: boolean | null;
             /** Format: int64 */
             GroupID?: number;
@@ -3356,7 +3396,7 @@ export interface components {
             /** Format: int64 */
             ID?: number;
             RequestID?: string;
-            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
+            /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
             ClientIP?: string;
             /** Format: int64 */
             GroupID?: number;

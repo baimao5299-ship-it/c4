@@ -1,44 +1,82 @@
-// Catalogue names are provider-controlled identifiers. We only collapse
-// unambiguous release snapshots and the well-known Claude families; capability
-// suffixes such as mini/pro/vision/thinking remain separate models. The actual
-// identifier is always returned unchanged, so requests still use the provider's
-// exact model ID.
-const claudeFamilies = new Set(['opus', 'sonnet', 'haiku', 'instant'])
+// Catalogue names are provider-controlled identifiers. Keep distinct model
+// versions and capabilities visible; only an explicit release/snapshot alias
+// is eligible for latest-only collapsing. The provider's original spelling is
+// always returned unchanged so a displayed model can be sent back verbatim.
 
-function releaseDate(name: string): number {
-  const dashed = name.match(/(?:^|[-_.])((?:20|19)\d{2})[-_.](\d{2})[-_.](\d{2})(?:$|[-_.])/)
-  if (dashed) return Number(`${dashed[1]}${dashed[2]}${dashed[3]}`)
-  const compact = name.match(/(?:^|[-_.])((?:20|19)\d{6})(?:$|[-_.])/)
-  if (compact) return Number(compact[1])
-  // Gemini-style preview snapshots use MM-DD without repeating the year.
-  // Keep them in a comparable bucket so the newest snapshot still wins.
-  const preview = name.match(/(?:^|[-_.])(?:preview|exp)[-_.](\d{2})[-_.](\d{2})(?:$|[-_.])/i)
-  return preview ? 20_000_000 + Number(preview[1]) * 100 + Number(preview[2]) : 0
+type SnapshotInfo = {
+  family: string
+  date: number
+  snapshot: boolean
+}
+
+// Date forms used by common OpenAI-compatible catalogues. Matching is limited
+// to a trailing token: a numeric version in the middle of an identifier must
+// never become a deduplication key by accident.
+const fullDateAtEnd = /^(.*?)([-_.])((?:19|20)\d{2})[-_.](\d{2})[-_.](\d{2})$/
+const compactDateAtEnd = /^(.*?)([-_.])((?:19|20)\d{6})$/
+const previewDateAtEnd = /^(.*?)([-_.](?:preview|exp))[-_.](\d{2})[-_.](\d{2})$/i
+const monthDayAtEnd = /^(.*?)([-_.])((?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))$/
+const latestAliasAtEnd = /^(.*?)[-_.](latest|stable)$/i
+
+function calendarDate(year: number, month: number, day: number): number | null {
+  const value = new Date(Date.UTC(year, month - 1, day))
+  if (value.getUTCFullYear() !== year || value.getUTCMonth() !== month - 1 || value.getUTCDate() !== day) return null
+  return year * 10_000 + month * 100 + day
+}
+
+function snapshotInfo(name: string): SnapshotInfo {
+  const trimmed = name.trim()
+  let match = trimmed.match(fullDateAtEnd)
+  if (match) {
+    const date = calendarDate(Number(match[3]), Number(match[4]), Number(match[5]))
+    if (date != null && match[1].length > 0) {
+      return { family: match[1].toLowerCase(), date, snapshot: true }
+    }
+  }
+  match = trimmed.match(compactDateAtEnd)
+  if (match) {
+    const raw = match[3]
+    const date = calendarDate(Number(raw.slice(0, 4)), Number(raw.slice(4, 6)), Number(raw.slice(6, 8)))
+    if (date != null && match[1].length > 0) {
+      return { family: match[1].toLowerCase(), date, snapshot: true }
+    }
+  }
+  match = trimmed.match(previewDateAtEnd)
+  if (match) {
+    const month = Number(match[3])
+    const day = Number(match[4])
+    if (calendarDate(2024, month, day) != null && match[1].length > 0) {
+      return {
+        family: `${match[1]}${match[2]}`.toLowerCase(),
+        date: 20_000_000 + month * 100 + day,
+        snapshot: true,
+      }
+    }
+  }
+  match = trimmed.match(monthDayAtEnd)
+  if (match) {
+    const raw = match[3]
+    const month = Number(raw.slice(0, 2))
+    const day = Number(raw.slice(2, 4))
+    if (calendarDate(2024, month, day) != null && match[1].length > 0) {
+      // A year is not present in this provider convention. Keep it in a
+      // separate comparison range so an explicit YYYYMMDD always wins.
+      return { family: match[1].toLowerCase(), date: 20_000_000 + Number(raw), snapshot: true }
+    }
+  }
+  match = trimmed.match(latestAliasAtEnd)
+  if (match && match[1].length > 0) {
+    return {
+      family: match[1].toLowerCase(),
+      date: 1,
+      snapshot: true,
+    }
+  }
+  return { family: trimmed, date: 0, snapshot: false }
 }
 
 function withoutReleaseDate(name: string): string {
-  return name
-    .replace(/[-_.]?(?:20|19)\d{2}[-_.]\d{2}[-_.]\d{2}(?=$|[-_.])/g, '')
-    .replace(/[-_.]?(?:20|19)\d{6}(?=$|[-_.])/g, '')
-    // Preserve the channel name while removing its dated snapshot suffix.
-    .replace(/([-_.])((?:preview|exp))[-_.]\d{2}[-_.]\d{2}(?=$|[-_.])/gi, '$1$2')
-    .replace(/[-_.](?:latest|stable)$/i, '')
-    .replace(/[-_.]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
-function familyKey(name: string): string {
-  const normalized = withoutReleaseDate(name.trim().toLowerCase())
-  const parts = normalized.split(/[-_]+/).filter(Boolean)
-  if (parts[0] !== 'claude') return normalized
-
-  const familyIndex = parts.findIndex((part, index) => index > 0 && claudeFamilies.has(part))
-  if (familyIndex < 0) return normalized
-  const variant = parts.slice(familyIndex + 1).filter(part => {
-    if (/^\d+(?:\.\d+)?$/.test(part)) return false
-    return part !== 'latest' && part !== 'stable'
-  })
-  return ['claude', parts[familyIndex], ...variant].join('-')
+  return snapshotInfo(name).family
 }
 
 function versionScore(name: string): number[] {
@@ -52,7 +90,11 @@ function versionScore(name: string): number[] {
 // order as the provider's catalogue is the only reliable signal for them.
 export function sortModelsLatestFirst(models: readonly string[]): string[] {
   const indexed = models
-    .map((raw, index) => ({ name: raw.trim(), index, family: familyKey(raw) }))
+    .map((raw, index) => {
+      const name = raw.trim()
+      const info = snapshotInfo(name)
+      return { name, index, ...info }
+    })
     .filter(item => item.name.length > 0)
 
   const compareVersions = (left: number[], right: number[]): number => {
@@ -64,17 +106,24 @@ export function sortModelsLatestFirst(models: readonly string[]): string[] {
   }
 
   indexed.sort((left, right) => {
-    const dateDelta = releaseDate(right.name) - releaseDate(left.name)
+    const dateDelta = right.date - left.date
     if (dateDelta !== 0) return dateDelta
     const versionDelta = compareVersions(versionScore(left.name), versionScore(right.name))
     if (versionDelta !== 0) return versionDelta
-    const previewDelta = Number(right.name.includes('preview')) - Number(left.name.includes('preview'))
+    const previewDelta = Number(right.name.toLowerCase().includes('preview')) - Number(left.name.toLowerCase().includes('preview'))
     if (previewDelta !== 0) return previewDelta
     return left.index - right.index
   })
+  const seenExact = new Set<string>()
   const latest = new Set<string>()
   return indexed
     .filter(item => {
+      // Whitespace-only differences are not meaningful model IDs. For all
+      // other non-snapshot identifiers, do not collapse case or punctuation:
+      // those can be provider-specific routes rather than aliases.
+      if (seenExact.has(item.name)) return false
+      seenExact.add(item.name)
+      if (!item.snapshot) return true
       if (latest.has(item.family)) return false
       latest.add(item.family)
       return true

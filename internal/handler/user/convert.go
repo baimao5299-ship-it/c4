@@ -111,6 +111,8 @@ func toAPIUsageLog(l *domain.UsageLog) UserUsageLog {
 		Cost:                     &l.Cost,
 		RawCost:                  &l.RawCost,
 		BillingTier:              &l.BillingTier,
+		CallCount:                &l.CallCount,
+		PricePerCallMillis:       l.PricePerCallMillis,
 		AboveHit:                 &l.AboveHit,
 		Overdraft:                &l.Overdraft,
 		CreatedAt:                &l.CreatedAt,

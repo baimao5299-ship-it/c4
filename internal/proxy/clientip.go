@@ -11,20 +11,20 @@ import (
 	"strings"
 )
 
-// clientIPHeaders 供应商头名（init 时 CanonicalMIMEHeaderKey 归一）：Header.Get
+// clientIPHeaders 供应商/反代头名（init 时 CanonicalMIMEHeaderKey 归一）：Header.Get
 // 对非规范键（如 "CF-Connecting-IP"）每次调用都走 canonicalMIMEHeaderKey 规范化
 // 路径恒分配（本三头不在 commonHeader 常用头缓存内——缓存仅含 ~40 个常见头如
-// Accept/Content-Type/X-Forwarded-For 等，CF-Connecting-IP/True-Client-IP/
-// X-Real-IP 本就不在其中）；规范键（"Cf-Connecting-Ip"）走 quick-check 零分配
+// Accept/Content-Type 等常见头，CF-Connecting-IP/True-Client-IP/X-Real-IP/
+// X-Forwarded-For 本就不在其中）；规范键（"Cf-Connecting-Ip"）走 quick-check 零分配
 // 直返——init 归一使请求路径零分配。HTTP/1.1 与 HTTP/2 入站请求头均以规范形
 // 存储（textproto 归一），Get(规范键) 与 Get(任意大小写) 语义等价——零分配
 // 且不牺牲查找正确性。AllocsPerRun==0 测试钉住。
 var clientIPHeaders = func() []string {
 	canon := func(s string) string { return textproto.CanonicalMIMEHeaderKey(s) }
-	return []string{canon("CF-Connecting-IP"), canon("True-Client-IP"), canon("X-Real-IP")}
+	return []string{canon("CF-Connecting-IP"), canon("True-Client-IP"), canon("X-Real-IP"), canon("X-Forwarded-For")}
 }()
 
-var clientIPSources = [...]string{"cf_connecting_ip", "true_client_ip", "x_real_ip"}
+var clientIPSources = [...]string{"cf_connecting_ip", "true_client_ip", "x_real_ip", "x_forwarded_for"}
 
 const clientIPSourceRemoteAddr = "remote_addr"
 
@@ -34,10 +34,11 @@ const clientIPSourceRemoteAddr = "remote_addr"
 //     直取 RemoteAddr 剥端口（IPv6 [::1]:port → ::1；net.SplitHostPort 失败
 //     原样返回）。
 //   - behindCDN=true：若配置 trusted_proxy_cidrs，先确认直接对端命中可信网段，
-//     再按序采信首个非空头 CF-Connecting-IP → True-Client-IP → X-Real-IP
-//     （TrimSpace；值域截断 64 字符——真实 IP 最长 IPv6 45 字符）；不匹配时
-//     忽略这些头并返回 RemoteAddr。未配置网段时沿用只对 CDN/反向代理暴露的
-//     防火墙部署契约。全空 → RemoteAddr 剥端口。
+//     再按序采信首个非空头 CF-Connecting-IP → True-Client-IP → X-Real-IP →
+//     X-Forwarded-For。X-Forwarded-For 按逗号链从左到右取首个合法 IP（支持
+//     常见的 IPv6 方括号写法）；所有头均 TrimSpace，值域截断 64 字符——真实
+//     IP 最长 IPv6 45 字符。不匹配时忽略这些头并返回 RemoteAddr。未配置网段
+//     时沿用只对 CDN/反向代理暴露的防火墙部署契约。全空 → RemoteAddr 剥端口。
 //
 // 热路径零分配（≤64 路径）：Header.Get map 查找、TrimSpace 子串、切片、
 // SplitHostPort 均零分配；>64 防御截断必须 strings.Clone（string(s[:64]) 在
@@ -70,13 +71,50 @@ func clientIPDetailsWithTrustedProxies(r *http.Request, behindCDN bool, trustedP
 			return stripPort(r.RemoteAddr), clientIPSourceRemoteAddr, false
 		}
 		for i, name := range clientIPHeaders {
-			if v := strings.TrimSpace(r.Header.Get(name)); v != "" {
-				return truncateClientIP(v), clientIPSources[i], true
+			v := strings.TrimSpace(r.Header.Get(name))
+			if v == "" {
+				continue
 			}
+			if i == len(clientIPHeaders)-1 {
+				if forwarded := firstForwardedIP(v); forwarded != "" {
+					return forwarded, clientIPSources[i], true
+				}
+				continue
+			}
+			return truncateClientIP(v), clientIPSources[i], true
 		}
 		return stripPort(r.RemoteAddr), clientIPSourceRemoteAddr, false
 	}
 	return stripPort(r.RemoteAddr), clientIPSourceRemoteAddr, true
+}
+
+// firstForwardedIP extracts the client-most address from a conventional
+// X-Forwarded-For chain. It deliberately accepts only syntactically valid IP
+// literals, so a malformed token cannot become an apparently precise audit
+// identity. The caller has already established that the immediate peer is a
+// trusted reverse proxy.
+func firstForwardedIP(value string) string {
+	for _, raw := range strings.Split(value, ",") {
+		token := strings.TrimSpace(raw)
+		if token == "" {
+			continue
+		}
+		if strings.HasPrefix(token, "[") {
+			if end := strings.IndexByte(token, ']'); end > 1 {
+				host := token[1:end]
+				if net.ParseIP(host) != nil {
+					return truncateClientIP(host)
+				}
+			}
+		}
+		if net.ParseIP(token) != nil {
+			return truncateClientIP(token)
+		}
+		if host, _, err := net.SplitHostPort(token); err == nil && net.ParseIP(host) != nil {
+			return truncateClientIP(host)
+		}
+	}
+	return ""
 }
 
 // parseTrustedProxyCIDRs compiles configuration once during proxy

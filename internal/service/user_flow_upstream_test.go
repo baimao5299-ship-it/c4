@@ -125,13 +125,17 @@ func TestUpstreamGroupHasRouteMatchesPersistentSchedulerRules(t *testing.T) {
 		{name: "checked model hit", allowed: []string{"gpt-5"}, members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", true, "gpt-5"))}, want: true},
 		{name: "legacy all unchecked", members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", false))}, want: true},
 		{name: "legacy checked empty", members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", true))}, want: false},
-		{name: "legacy confirmed intersection", members: []*domain.GroupUpstream{
+		{name: "confirmed model union", members: []*domain.GroupUpstream{
 			member(1, true, upstream(true, "https://a.example", true, "gpt-5", "gpt-4")),
 			member(2, true, upstream(true, "https://b.example", true, "gpt-5")),
 		}, want: true},
-		{name: "legacy disjoint catalogues", members: []*domain.GroupUpstream{
+		{name: "confirmed disjoint catalogues still have routes", members: []*domain.GroupUpstream{
 			member(1, true, upstream(true, "https://a.example", true, "gpt-5")),
 			member(2, true, upstream(true, "https://b.example", true, "gpt-4")),
+		}, want: true},
+		{name: "checked empty plus unknown has no automatic route", members: []*domain.GroupUpstream{
+			member(1, true, upstream(true, "https://a.example", true)),
+			member(2, true, upstream(true, "https://b.example", false)),
 		}, want: false},
 	}
 

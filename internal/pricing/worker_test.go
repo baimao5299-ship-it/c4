@@ -55,14 +55,33 @@ func (f *fakeFetcher) urlsSeen() []string {
 }
 
 type fakeUpserter struct {
-	mu       sync.Mutex
-	n        int
-	err      error
-	calls    int
-	nVar     int
-	errVar   error
-	callsVar int
-	varRows  []*domain.PriceVariant
+	mu           sync.Mutex
+	n            int
+	err          error
+	calls        int
+	nVar         int
+	errVar       error
+	callsVar     int
+	varRows      []*domain.PriceVariant
+	manualModels []string
+	manualErr    error
+}
+
+type fakeReconciler struct {
+	mu            sync.Mutex
+	calls         int
+	models        []string
+	variantModels []string
+	err           error
+}
+
+func (r *fakeReconciler) ReconcileLiteLLMSnapshot(_ context.Context, models, variantModels []string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	r.models = append([]string(nil), models...)
+	r.variantModels = append([]string(nil), variantModels...)
+	return 0, r.err
 }
 
 type fakeMutationGuard struct {
@@ -98,6 +117,15 @@ func (u *fakeUpserter) UpsertPriceVariantsFromLiteLLM(ctx context.Context, rows 
 	return u.nVar, u.errVar
 }
 
+func (u *fakeUpserter) ManualEntryModels(_ context.Context) ([]string, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.manualErr != nil {
+		return nil, u.manualErr
+	}
+	return append([]string(nil), u.manualModels...), nil
+}
+
 func (u *fakeUpserter) count() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -108,6 +136,12 @@ func (u *fakeUpserter) variantCount() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.callsVar
+}
+
+func (r *fakeReconciler) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
 }
 
 // fakeSettings 固定值 settings（mutex 保护，测试中可改）。
@@ -256,14 +290,60 @@ func TestNextTrigger(t *testing.T) {
 func TestSyncSuccess(t *testing.T) {
 	f := &fakeFetcher{result: &FetchResult{PriceEntries: []*domain.PriceEntry{{Model: "m", Source: domain.PricingSourceLitellm}}}}
 	u := &fakeUpserter{n: 1}
+	reconciler := &fakeReconciler{}
 	reloads := 0
-	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }, Log: nil})
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Reconcile: reconciler, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }, Log: nil})
 	w.now = fixedNow
 
 	require.NoError(t, w.Sync(context.Background()))
 	require.Equal(t, 1, u.count(), "upsert 一次")
 	require.Equal(t, 1, reloads, "成功后刷新快照")
 	require.Equal(t, []string{"https://u"}, f.urlsSeen())
+	require.Equal(t, 1, reconciler.count(), "完整快照成功后协调旧官方条目")
+}
+
+func TestSyncDoesNotReconcilePartialSnapshot(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "m"}},
+		Skipped:      1,
+	}}
+	u := &fakeUpserter{n: 1}
+	reconciler := &fakeReconciler{}
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Reconcile: reconciler, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
+
+	require.NoError(t, w.Sync(context.Background()))
+	require.Zero(t, reconciler.count(), "partial fetch must not prune the last known catalogue")
+}
+
+func TestSyncReconcilesSnapshotWithSkippedNoPriceRows(t *testing.T) {
+	// Skipped is an informational count: the source still contains a complete
+	// model key set, including legal metadata-only rows with no billable price.
+	f := &fakeFetcher{result: &FetchResult{
+		Models:       []string{"metadata-only", "priced"},
+		PriceEntries: []*domain.PriceEntry{{Model: "priced"}},
+		Skipped:      1,
+	}}
+	u := &fakeUpserter{n: 1}
+	reconciler := &fakeReconciler{}
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Reconcile: reconciler, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
+
+	require.NoError(t, w.Sync(context.Background()))
+	require.Equal(t, 1, reconciler.count(), "a non-empty source key set is a complete snapshot even when rows are skipped")
+	reconciler.mu.Lock()
+	defer reconciler.mu.Unlock()
+	require.Equal(t, []string{"metadata-only", "priced"}, reconciler.models)
+}
+
+func TestSyncDoesNotReconcileExplicitEmptySnapshot(t *testing.T) {
+	// Parse represents an empty JSON object with a non-nil empty Models slice;
+	// this must never be interpreted as a signal to delete all existing prices.
+	f := &fakeFetcher{result: &FetchResult{Models: []string{}}}
+	u := &fakeUpserter{}
+	reconciler := &fakeReconciler{}
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Reconcile: reconciler, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
+
+	require.NoError(t, w.Sync(context.Background()))
+	require.Zero(t, reconciler.count(), "an empty source must retain the last known catalogue")
 }
 
 func TestSyncUsesMutationGuardForWritesAndReload(t *testing.T) {
@@ -329,6 +409,40 @@ func TestSyncVariantLine(t *testing.T) {
 	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }, Log: nil})
 	require.NoError(t, w.Sync(context.Background()))
 	require.Equal(t, 1, u.variantCount())
+}
+
+func TestSyncDoesNotOverwriteManualPriceVariants(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "manual", Mode: domain.PriceModeToken, Source: domain.PricingSourceLitellm}},
+		Variants: []*domain.PriceVariant{
+			{Model: "manual", Seq: 1},
+			{Model: "automatic", Seq: 1},
+		},
+	}}
+	u := &fakeUpserter{n: 1, nVar: 1, manualModels: []string{"manual"}}
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
+
+	require.NoError(t, w.Sync(context.Background()))
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	require.Len(t, u.varRows, 1)
+	require.Equal(t, "automatic", u.varRows[0].Model)
+}
+
+func TestSyncSkipsVariantsWhenManualLookupFails(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "m", Mode: domain.PriceModeToken}},
+		Variants:     []*domain.PriceVariant{{Model: "m", Seq: 1}},
+	}}
+	u := &fakeUpserter{n: 1, manualErr: errors.New("database unavailable")}
+	reloads := 0
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }, Log: nil})
+
+	err := w.Sync(context.Background())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "list manual price entries")
+	require.Zero(t, u.variantCount(), "a failed manual lookup must not overwrite variants")
+	require.Equal(t, 1, reloads, "base rows may have been upserted and snapshot still refreshes")
 }
 
 // --- cron 循环 ---

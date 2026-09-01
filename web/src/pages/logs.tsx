@@ -325,7 +325,7 @@ function ClientAttribution({ row, compact = false }: { row: LogRow; compact?: bo
   const ip = row.ClientIP
   const trusted = trustedIPState(row)
   const source = row.ClientIPSource ?? undefined
-  const knownSources = ['remote_addr', 'cf_connecting_ip', 'true_client_ip', 'x_real_ip']
+  const knownSources = ['remote_addr', 'cf_connecting_ip', 'true_client_ip', 'x_real_ip', 'x_forwarded_for']
   const normalizedSource = source?.replaceAll('-', '_')
   const sourceLabel = normalizedSource && knownSources.includes(normalizedSource)
     ? t(`logs.client.sources.${normalizedSource}`)

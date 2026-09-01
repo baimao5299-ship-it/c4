@@ -35,6 +35,42 @@ func TestClientIPTrustedProxyCIDRAcceptsMatchingPeer(t *testing.T) {
 	require.True(t, trusted)
 }
 
+func TestClientIPTrustedProxyCIDRAcceptsForwardedForChain(t *testing.T) {
+	r := ipReq("127.0.0.1:443", map[string]string{
+		"X-Forwarded-For": "203.0.113.9, 10.0.0.7",
+	})
+	nets := parseTrustedProxyCIDRs([]string{"127.0.0.1/32"})
+
+	ip, source, trusted := clientIPDetailsWithTrustedProxies(r, true, nets)
+	require.Equal(t, "203.0.113.9", ip)
+	require.Equal(t, "x_forwarded_for", source)
+	require.True(t, trusted)
+}
+
+func TestClientIPTrustedProxyCIDRSkipsMalformedForwardedFor(t *testing.T) {
+	r := ipReq("127.0.0.1:443", map[string]string{
+		"X-Forwarded-For": "not-an-ip, 203.0.113.9",
+	})
+	nets := parseTrustedProxyCIDRs([]string{"127.0.0.1/32"})
+
+	ip, source, trusted := clientIPDetailsWithTrustedProxies(r, true, nets)
+	require.Equal(t, "203.0.113.9", ip)
+	require.Equal(t, "x_forwarded_for", source)
+	require.True(t, trusted)
+}
+
+func TestClientIPTrustedProxyCIDRRejectsForwardedForFromUntrustedPeer(t *testing.T) {
+	r := ipReq("198.51.100.10:443", map[string]string{
+		"X-Forwarded-For": "203.0.113.9",
+	})
+	nets := parseTrustedProxyCIDRs([]string{"127.0.0.1/32"})
+
+	ip, source, trusted := clientIPDetailsWithTrustedProxies(r, true, nets)
+	require.Equal(t, "198.51.100.10", ip)
+	require.Equal(t, clientIPSourceRemoteAddr, source)
+	require.False(t, trusted)
+}
+
 func TestClientIPTrustedProxyCIDRSupportsIPv6(t *testing.T) {
 	r := ipReq("[::1]:443", map[string]string{
 		"X-Real-IP": "2001:db8::9",

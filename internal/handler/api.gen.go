@@ -46,6 +46,7 @@ const (
 	ErrLogClientIPSourceCfConnectingIp ErrLogClientIPSource = "cf_connecting_ip"
 	ErrLogClientIPSourceRemoteAddr     ErrLogClientIPSource = "remote_addr"
 	ErrLogClientIPSourceTrueClientIp   ErrLogClientIPSource = "true_client_ip"
+	ErrLogClientIPSourceXForwardedFor  ErrLogClientIPSource = "x_forwarded_for"
 	ErrLogClientIPSourceXRealIp        ErrLogClientIPSource = "x_real_ip"
 )
 
@@ -401,6 +402,7 @@ const (
 	UsageLogClientIPSourceCfConnectingIp UsageLogClientIPSource = "cf_connecting_ip"
 	UsageLogClientIPSourceRemoteAddr     UsageLogClientIPSource = "remote_addr"
 	UsageLogClientIPSourceTrueClientIp   UsageLogClientIPSource = "true_client_ip"
+	UsageLogClientIPSourceXForwardedFor  UsageLogClientIPSource = "x_forwarded_for"
 	UsageLogClientIPSourceXRealIp        UsageLogClientIPSource = "x_real_ip"
 )
 
@@ -972,7 +974,7 @@ type ErrLog struct {
 	// BillingTier 计费档位（service_tier 归一化：priority/flex/fast/auto）；null = 未计费路径
 	BillingTier *string `json:"BillingTier"`
 
-	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无
+	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无
 	ClientIP        *string               `json:"ClientIP,omitempty"`
 	ClientIPSource  *ErrLogClientIPSource `json:"ClientIPSource"`
 	ClientIPTrusted *bool                 `json:"ClientIPTrusted"`
@@ -2121,11 +2123,13 @@ type UsageLog struct {
 	AccountID *int64 `json:"AccountID,omitempty"`
 
 	// BillingTier 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径
-	BillingTier         *string `json:"BillingTier,omitempty"`
-	CacheCreationTokens *int64  `json:"CacheCreationTokens,omitempty"`
-	CacheReadTokens     *int64  `json:"CacheReadTokens,omitempty"`
+	BillingTier *string `json:"BillingTier,omitempty"`
+	// CallCount 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens）
+	CallCount           *int64 `json:"CallCount,omitempty"`
+	CacheCreationTokens *int64 `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64 `json:"CacheReadTokens,omitempty"`
 
-	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无
+	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无
 	ClientIP *string `json:"ClientIP,omitempty"`
 
 	// ClientIPSource 客户端 IP 来源的请求时快照；null = 历史行未记录
@@ -2167,6 +2171,9 @@ type UsageLog struct {
 
 	// PriceOutputMillis 输出单价快照（每 M token 毫分）；null = 未计费路径
 	PriceOutputMillis *int64 `json:"PriceOutputMillis"`
+
+	// PricePerCallMillis 按次调用单价快照（毫分/单元）；null = 无按次计费分量
+	PricePerCallMillis *int64 `json:"PricePerCallMillis"`
 
 	// ProfitMarginBP 估算毛利率万分数；用户扣费为 0 时 null
 	ProfitMarginBP *int64 `json:"ProfitMarginBP"`

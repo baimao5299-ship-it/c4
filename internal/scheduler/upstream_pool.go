@@ -280,11 +280,17 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 	return routes
 }
 
-// upstreamModelIntersection returns the common confirmed model set. The bool
-// is true only when every member lacks a capability snapshot, preserving
-// legacy rows until an operator performs the first model read.
+// upstreamModelIntersection returns the union of confirmed model snapshots.
+// The historical name is retained because this helper used to publish the
+// intersection. The union is required for an upstream pool: each model route
+// is built with only the members that advertise that model, so one provider's
+// narrower catalogue cannot hide models offered by another provider.
+//
+// The bool is true only when every member lacks a capability snapshot,
+// preserving legacy rows until an operator performs the first model read.
 func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
-	var common map[string]struct{}
+	confirmed := make(map[string]struct{})
+	checked := false
 	unknown := false
 	for _, item := range pool {
 		if item == nil || item.upstream == nil || item.member == nil || !item.member.Enabled || !item.upstream.Enabled {
@@ -294,30 +300,22 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 			unknown = true
 			continue
 		}
-		local := make(map[string]struct{}, len(item.upstream.Models))
+		checked = true
 		// A failed refresh keeps the last known catalogue in service. Continue
 		// using that bounded snapshot instead of dropping a healthy route during
 		// a transient probe failure; an endpoint/key edit clears the snapshot.
 		for _, model := range item.upstream.Models {
-			if strings.TrimSpace(model) != "" {
-				local[model] = struct{}{}
-			}
-		}
-		if common == nil {
-			common = local
-			continue
-		}
-		for model := range common {
-			if _, ok := local[model]; !ok {
-				delete(common, model)
+			model = strings.TrimSpace(model)
+			if model != "" {
+				confirmed[model] = struct{}{}
 			}
 		}
 	}
-	if common == nil {
+	if !checked {
 		return nil, unknown
 	}
-	models := make([]string, 0, len(common))
-	for model := range common {
+	models := make([]string, 0, len(confirmed))
+	for model := range confirmed {
 		models = append(models, model)
 	}
 	slices.Sort(models)
@@ -342,7 +340,13 @@ func upstreamSupportsModel(u *domain.Upstream, model string) bool {
 	if u.ModelsCheckedAt == nil {
 		return true
 	}
-	return slices.Contains(u.Models, model)
+	model = strings.TrimSpace(model)
+	for _, candidate := range u.Models {
+		if strings.TrimSpace(candidate) == model {
+			return true
+		}
+	}
+	return false
 }
 
 func newUpstreamWeightedSeq(pool []*upstreamSnapshot) *upstreamWeightedSeq {

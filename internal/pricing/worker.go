@@ -7,6 +7,7 @@ package pricing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -38,6 +39,23 @@ type Upserter interface {
 	UpsertPriceVariantsFromLiteLLM(ctx context.Context, variants []*domain.PriceVariant) (int, error)
 }
 
+// ManualEntryLister is an optional repository capability used to protect
+// administrator-owned price rows during the scheduled sync.  It is kept
+// separate from Upserter so lightweight embedders and existing test doubles
+// remain source-compatible; production repositories implement it.
+type ManualEntryLister interface {
+	ManualEntryModels(ctx context.Context) ([]string, error)
+}
+
+// SnapshotReconciler is an optional production capability used after a
+// complete official catalogue refresh. It removes vanished official rows and
+// stale conditional variants while preserving manual prices. Keeping this
+// separate from Upserter leaves existing integrations and test doubles
+// source-compatible.
+type SnapshotReconciler interface {
+	ReconcileLiteLLMSnapshot(ctx context.Context, models, variantModels []string) (int, error)
+}
+
 // MutationGuard serializes a sync's repository writes and snapshot publication
 // with the service's manual pricing mutations. It is optional for standalone
 // worker users and injected by the application composition root.
@@ -47,9 +65,10 @@ type MutationGuard interface {
 
 // SyncWorkerConfig SyncWorker 装配参数。
 type SyncWorkerConfig struct {
-	Fetcher  Fetcher
-	Repo     Upserter
-	Settings SettingReader
+	Fetcher   Fetcher
+	Repo      Upserter
+	Reconcile SnapshotReconciler
+	Settings  SettingReader
 	// Reload 同步成功后刷新 service pricing 快照（svc.ReloadPricing）；nil 可
 	// 用（纯落库不刷新快照，装配时必传真实实现）。
 	Reload   func()
@@ -61,12 +80,13 @@ type SyncWorkerConfig struct {
 // gronx cron 定期循环。并发安全注记（评审 M-3）：手动 sync 与 cron 并发拉取
 // 无锁——幂等安全（upsert 语义），最坏浪费一次 fetch，无需额外处理。
 type SyncWorker struct {
-	fetch    Fetcher
-	repo     Upserter
-	settings SettingReader
-	reload   func()
-	mutation MutationGuard
-	log      *logx.Logger
+	fetch     Fetcher
+	repo      Upserter
+	reconcile SnapshotReconciler
+	settings  SettingReader
+	reload    func()
+	mutation  MutationGuard
+	log       *logx.Logger
 	// now/wait 可注入（测试）：now 固定时间基准（cron 数学确定性）；wait 替代
 	// 真实 timer（测试免等真实时间）。默认实现见 waitReal。
 	now       func() time.Time
@@ -84,7 +104,8 @@ type SyncWorker struct {
 func NewSyncWorker(cfg SyncWorkerConfig) *SyncWorker {
 	w := &SyncWorker{
 		fetch: cfg.Fetcher, repo: cfg.Repo, settings: cfg.Settings,
-		reload: cfg.Reload, mutation: cfg.Mutation, log: cfg.Log,
+		reconcile: cfg.Reconcile,
+		reload:    cfg.Reload, mutation: cfg.Mutation, log: cfg.Log,
 		now:  time.Now,
 		wait: waitReal,
 	}
@@ -138,11 +159,59 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 	mutate := func() error {
 		var writeErr error
 		n, writeErr = w.repo.UpsertPriceEntriesFromLiteLLM(ctx, res.PriceEntries)
-		if len(res.Variants) > 0 {
+		variants := res.Variants
+		// A manual entry owns both its base price and its conditional variants.
+		// The repository's base upsert already excludes manual rows, but variant
+		// upserts are a separate operation and need the same guard.  If the
+		// optional lookup fails, skip every variant for this run rather than
+		// risking an overwrite; the next scheduled run can retry the lookup.
+		if len(variants) > 0 {
+			if lister, ok := w.repo.(ManualEntryLister); ok {
+				manualModels, listErr := lister.ManualEntryModels(ctx)
+				if listErr != nil {
+					if writeErr == nil {
+						writeErr = fmt.Errorf("pricing: list manual price entries: %w", listErr)
+					}
+					variants = nil
+				} else if len(manualModels) > 0 {
+					manualSet := make(map[string]struct{}, len(manualModels))
+					for _, model := range manualModels {
+						manualSet[model] = struct{}{}
+					}
+					filtered := make([]*domain.PriceVariant, 0, len(variants))
+					for _, variant := range variants {
+						if variant == nil {
+							continue
+						}
+						if _, manual := manualSet[variant.Model]; !manual {
+							filtered = append(filtered, variant)
+						}
+					}
+					variants = filtered
+				}
+			}
+		}
+		if len(variants) > 0 {
 			var varErr error
-			nVar, varErr = w.repo.UpsertPriceVariantsFromLiteLLM(ctx, res.Variants)
+			nVar, varErr = w.repo.UpsertPriceVariantsFromLiteLLM(ctx, variants)
 			if writeErr == nil {
 				writeErr = varErr
+			}
+		}
+		// Reconcile whenever the source document contains at least one model
+		// key. Models is captured before parsing, so Skipped may include legal
+		// no-price entries and is intentionally informational rather than a
+		// completeness gate. An empty source remains protected from pruning.
+		models := snapshotModels(res)
+		if writeErr == nil && w.reconcile != nil && hasSnapshotModels(models) {
+			variantModels := make([]string, 0, len(res.Variants))
+			for _, variant := range res.Variants {
+				if variant != nil {
+					variantModels = append(variantModels, variant.Model)
+				}
+			}
+			if _, reconcileErr := w.reconcile.ReconcileLiteLLMSnapshot(ctx, models, variantModels); reconcileErr != nil {
+				writeErr = reconcileErr
 			}
 		}
 		if w.reload != nil {
@@ -165,6 +234,40 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 		)
 	}
 	return err
+}
+
+// snapshotModels returns the source model key set when available. The
+// fallback keeps manually constructed FetchResults from older integrations
+// compatible while Parse always populates Models (including an empty slice).
+func snapshotModels(res *FetchResult) []string {
+	if res == nil {
+		return nil
+	}
+	if res.Models != nil {
+		return res.Models
+	}
+	// Fetchers compiled before Models was added cannot provide a source key set.
+	// Keep their historical partial-fetch guard; Parse always initializes Models
+	// (including an explicit empty slice), so this branch is compatibility only.
+	if res.Skipped != 0 {
+		return nil
+	}
+	models := make([]string, 0, len(res.PriceEntries))
+	for _, entry := range res.PriceEntries {
+		if entry != nil {
+			models = append(models, entry.Model)
+		}
+	}
+	return models
+}
+
+func hasSnapshotModels(models []string) bool {
+	for _, model := range models {
+		if strings.TrimSpace(model) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // syncOnce 单次同步 + 失败告警（不重试风暴——等下个周期）：fetch 失败 → Warn +

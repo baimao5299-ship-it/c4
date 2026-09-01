@@ -52,6 +52,11 @@ type priceSnapshot struct {
 	// of silently dropping a model.
 	catalogue map[string]*domain.PriceEntry
 	variants  map[string][]*domain.PriceVariant
+	// Sorted keys are built once with the immutable snapshot. Alias resolution
+	// is used by both billing and projections, so rebuilding them per request
+	// would add avoidable hot-path work and could make paths disagree.
+	entryKeys     []string
+	catalogueKeys []string
 }
 
 const pricingReloadPage = 1000
@@ -125,15 +130,26 @@ func (s *Service) loadPricingSnapshot(ctx context.Context) (*priceSnapshot, erro
 	entriesMap := make(map[string]*domain.PriceEntry, len(all))
 	catalogueMap := make(map[string]*domain.PriceEntry, len(all))
 	for _, e := range all {
-		if e == nil || strings.TrimSpace(e.Model) == "" {
+		if e == nil {
 			continue
 		}
-		entriesMap[e.Model] = e
-		catalogueMap[e.Model] = e
+		model := strings.TrimSpace(e.Model)
+		if model == "" {
+			continue
+		}
+		entriesMap[model] = e
+		catalogueMap[model] = e
 	}
 	vMap := make(map[string][]*domain.PriceVariant)
 	for _, v := range variants {
-		vMap[v.Model] = append(vMap[v.Model], v)
+		if v == nil {
+			continue
+		}
+		model := strings.TrimSpace(v.Model)
+		if model == "" {
+			continue
+		}
+		vMap[model] = append(vMap[model], v)
 	}
 	for _, lst := range vMap {
 		sort.Slice(lst, func(i, j int) bool { return lst[i].Seq < lst[j].Seq })
@@ -159,7 +175,13 @@ func (s *Service) loadPricingSnapshot(ctx context.Context) (*priceSnapshot, erro
 			delete(vMap, model)
 		}
 	}
-	return &priceSnapshot{entries: entriesMap, catalogue: catalogueMap, variants: vMap}, nil
+	return &priceSnapshot{
+		entries:       entriesMap,
+		catalogue:     catalogueMap,
+		variants:      vMap,
+		entryKeys:     sortedModelKeys(entriesMap),
+		catalogueKeys: sortedModelKeys(catalogueMap),
+	}, nil
 }
 
 // ResolvePrices 模型价格解析：快照零 DB 读 + 委托 domain 解析核
@@ -169,10 +191,22 @@ func (s *Service) ResolvePrices(model string, promptTokens int64, tier string, a
 	if snap == nil {
 		return domain.ResolvedPrices{}, false
 	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return domain.ResolvedPrices{}, false
+	}
 	if s.tzLoc != nil {
 		at = at.In(s.tzLoc)
 	}
-	return domain.ResolveEntryPrices((*snap).entries[model], (*snap).variants[model], tier, promptTokens, at)
+	entryKeys := (*snap).entryKeys
+	if len(entryKeys) == 0 && len((*snap).entries) > 0 {
+		entryKeys = sortedModelKeys((*snap).entries)
+	}
+	key, ok := priceLookupKey(entryKeys, model, (*snap).entries, (*snap).variants)
+	if !ok {
+		return domain.ResolvedPrices{}, false
+	}
+	return domain.ResolveEntryPrices((*snap).entries[key], (*snap).variants[key], tier, promptTokens, at)
 }
 
 // PriceEntriesForModels returns the current immutable catalogue rows for the
@@ -195,17 +229,25 @@ func (s *Service) PriceEntriesForModels(ctx context.Context, models []string) (m
 		return out, nil
 	}
 	if snap := s.priceSnapshot.Load(); snap != nil {
+		catalogueKeys := snap.catalogueKeys
+		if len(catalogueKeys) == 0 && len(snap.catalogue) > 0 {
+			catalogueKeys = sortedModelKeys(snap.catalogue)
+		}
 		for model := range wanted {
-			if entry := snap.catalogue[model]; entry != nil {
-				out[model] = entry
+			if key, ok := priceLookupKey(catalogueKeys, model, snap.catalogue, nil); ok {
+				if entry := snap.catalogue[key]; entry != nil {
+					out[model] = entry
+				}
 			}
 		}
 		return out, nil
 	}
-	// Startup fallback: page until every requested model is found or the price
-	// table ends. Deployments normally have a snapshot before serving traffic,
-	// but a large catalogue must still be complete during this short window.
-	for offset := 0; len(out) < len(wanted); offset += pricingReloadPage {
+	// Startup fallback: load the complete catalogue before resolving aliases.
+	// Alias ambiguity cannot be known from a single page (for example two
+	// provider-qualified rows may be on different pages), so stopping after the
+	// first exact hit could expose the wrong provider price.
+	allCatalogue := make(map[string]*domain.PriceEntry)
+	for offset := 0; ; offset += pricingReloadPage {
 		rows, _, err := s.store.ListPriceEntries(ctx, repository.ListQuery{
 			Limit: pricingReloadPage, Offset: offset, Sort: "model", Order: "asc",
 		}, nil, nil, nil, "")
@@ -214,13 +256,22 @@ func (s *Service) PriceEntriesForModels(ctx context.Context, models []string) (m
 		}
 		for _, entry := range rows {
 			if entry != nil {
-				if _, ok := wanted[entry.Model]; ok {
-					out[entry.Model] = entry
+				model := strings.TrimSpace(entry.Model)
+				if model != "" {
+					allCatalogue[model] = entry
 				}
 			}
 		}
 		if len(rows) < pricingReloadPage {
 			break
+		}
+	}
+	keys := sortedModelKeys(allCatalogue)
+	for model := range wanted {
+		if key, ok := priceLookupKey(keys, model, allCatalogue, nil); ok {
+			if entry := allCatalogue[key]; entry != nil {
+				out[model] = entry
+			}
 		}
 	}
 	return out, nil
@@ -253,12 +304,24 @@ func (s *Service) pricingProjectionForModels(ctx context.Context, models []strin
 	if s.tzLoc != nil {
 		at = at.In(s.tzLoc)
 	}
+	catalogueKeys := snap.catalogueKeys
+	if len(catalogueKeys) == 0 && len(snap.catalogue) > 0 {
+		catalogueKeys = sortedModelKeys(snap.catalogue)
+	}
+	entryKeys := snap.entryKeys
+	if len(entryKeys) == 0 && len(snap.entries) > 0 {
+		entryKeys = sortedModelKeys(snap.entries)
+	}
 	for model := range wanted {
-		if entry := snap.catalogue[model]; entry != nil {
-			catalogue[model] = entry
+		if key, ok := priceLookupKey(catalogueKeys, model, snap.catalogue, nil); ok {
+			if entry := snap.catalogue[key]; entry != nil {
+				catalogue[model] = entry
+			}
 		}
-		if rp, ok := domain.ResolveEntryPrices(snap.entries[model], snap.variants[model], tier, promptTokens, at); ok {
-			resolved[model] = rp
+		if key, ok := priceLookupKey(entryKeys, model, snap.entries, snap.variants); ok {
+			if rp, ok := domain.ResolveEntryPrices(snap.entries[key], snap.variants[key], tier, promptTokens, at); ok {
+				resolved[model] = rp
+			}
 		}
 	}
 	return catalogue, resolved, nil
@@ -289,9 +352,15 @@ func (s *Service) ResolvedPricesForModels(ctx context.Context, models []string, 
 	if s.tzLoc != nil {
 		at = at.In(s.tzLoc)
 	}
+	entryKeys := snap.entryKeys
+	if len(entryKeys) == 0 && len(snap.entries) > 0 {
+		entryKeys = sortedModelKeys(snap.entries)
+	}
 	for model := range wanted {
-		if resolved, ok := domain.ResolveEntryPrices((*snap).entries[model], (*snap).variants[model], tier, promptTokens, at); ok {
-			out[model] = resolved
+		if key, ok := priceLookupKey(entryKeys, model, (*snap).entries, (*snap).variants); ok {
+			if resolved, ok := domain.ResolveEntryPrices((*snap).entries[key], (*snap).variants[key], tier, promptTokens, at); ok {
+				out[model] = resolved
+			}
 		}
 	}
 	return out, nil
@@ -569,8 +638,20 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 		return nil, err
 	}
 	if len(res.Variants) > 0 {
-		filtered := res.Variants
-		if manualModels, merr := s.store.ManualEntryModels(ctx); merr == nil && len(manualModels) > 0 {
+		// Keep the fetched slice immutable while filtering manual rows; the
+		// original model list is also used for snapshot reconciliation below.
+		filtered := append([]*domain.PriceVariant(nil), res.Variants...)
+		manualModels, merr := s.store.ManualEntryModels(ctx)
+		if merr != nil {
+			// A manual-row lookup is the guard that prevents the separate variant
+			// upsert from overwriting administrator-owned pricing.  If the lookup
+			// is unavailable, skip variants for this run and surface the error;
+			// writing every official variant would silently undo a manual price.
+			filtered = nil
+			if err == nil {
+				err = fmt.Errorf("pricing: list manual price entries: %w", merr)
+			}
+		} else if len(manualModels) > 0 {
 			manualSet := make(map[string]struct{}, len(manualModels))
 			for _, m := range manualModels {
 				manualSet[m] = struct{}{}
@@ -592,11 +673,67 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 			}
 		}
 	}
+	// Reconcile whenever the source document contains at least one model key.
+	// FetchResult.Models is captured before parsing, so Skipped may include legal
+	// no-price entries and is intentionally informational rather than a
+	// completeness gate. Empty fetches are retained as-is so a transient blank
+	// response cannot remove the last known official prices.
+	if err == nil {
+		if reconciler, ok := s.store.(pricing.SnapshotReconciler); ok {
+			models := sourceSnapshotModels(res)
+			if lenNonBlankModels(models) > 0 {
+				variantModels := make([]string, 0, len(res.Variants))
+				for _, variant := range res.Variants {
+					if variant != nil {
+						variantModels = append(variantModels, variant.Model)
+					}
+				}
+				if _, reconcileErr := reconciler.ReconcileLiteLLMSnapshot(ctx, models, variantModels); reconcileErr != nil {
+					err = reconcileErr
+				}
+			}
+		}
+	}
 	s.reloadPricingUnlocked(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &PricingSyncStats{Rows: len(entries), Skipped: res.Skipped, Updated: n, Variants: len(res.Variants)}, nil
+}
+
+// sourceSnapshotModels returns the source key set captured by Parse. The
+// fallback preserves compatibility with Fetcher implementations written before
+// FetchResult.Models was added; Parse always supplies the authoritative list.
+func sourceSnapshotModels(res *pricing.FetchResult) []string {
+	if res == nil {
+		return nil
+	}
+	if res.Models != nil {
+		return res.Models
+	}
+	// Fetchers compiled before Models was added cannot provide a source key set.
+	// Preserve their historical partial-fetch guard; Parse always initializes
+	// Models, including an explicit empty slice.
+	if res.Skipped != 0 {
+		return nil
+	}
+	models := make([]string, 0, len(res.PriceEntries))
+	for _, entry := range res.PriceEntries {
+		if entry != nil {
+			models = append(models, entry.Model)
+		}
+	}
+	return models
+}
+
+func lenNonBlankModels(models []string) int {
+	count := 0
+	for _, model := range models {
+		if strings.TrimSpace(model) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Service) PreviewPricingSync(ctx context.Context) (*PricingPreview, error) {
@@ -626,7 +763,11 @@ func (s *Service) PreviewPricingSync(ctx context.Context) (*PricingPreview, erro
 		return preview, nil
 	}
 	for _, e := range entries {
-		if _, ok := (*snap).entries[e.Model]; ok {
+		if e == nil {
+			continue
+		}
+		model := strings.TrimSpace(e.Model)
+		if _, ok := (*snap).entries[model]; ok {
 			preview.ToUpdate++
 			preview.Entries = append(preview.Entries, PricingPreviewEntry{Model: e.Model, Mode: string(e.Mode), Action: "update"})
 		} else {
