@@ -614,6 +614,12 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 	if s.priceFetcher == nil {
 		return nil, errors.New("pricing: fetcher not injected")
 	}
+	// Serialize the fetch as well as the subsequent writes. Locking only the
+	// persistence phase lets two requests fetch A/B concurrently and commit A
+	// after B when A is slower, silently restoring stale prices. The same mutex
+	// is used by the scheduled worker through WithPricingMutation.
+	s.pricingMutationMu.Lock()
+	defer s.pricingMutationMu.Unlock()
 	url := s.settingValue("price_source_url")
 	if url == "" {
 		return nil, fmt.Errorf("%w: price_source_url not set, skip sync", ErrInvalidInput)
@@ -625,12 +631,13 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 		}
 		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
 	}
-	// Hold the same mutation lock as manual entry/variant updates from the first
-	// repository write through the final snapshot publication. This keeps an
-	// automated batch from interleaving with a manual update between validation
-	// and persistence.
-	s.pricingMutationMu.Lock()
-	defer s.pricingMutationMu.Unlock()
+	if res == nil {
+		err := errors.New("pricing: fetch returned nil result")
+		if s.log != nil {
+			s.log.Warn("pricing sync failed", logx.Error(err))
+		}
+		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
+	}
 	entries := res.PriceEntries
 	n, err := s.store.UpsertPriceEntriesFromLiteLLM(ctx, entries)
 	if err != nil {

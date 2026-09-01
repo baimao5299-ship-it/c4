@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -77,8 +78,8 @@ type SyncWorkerConfig struct {
 }
 
 // SyncWorker 模型价格同步 worker（worker.Worker 契约）：启动异步拉取一次 +
-// gronx cron 定期循环。并发安全注记（评审 M-3）：手动 sync 与 cron 并发拉取
-// 无锁——幂等安全（upsert 语义），最坏浪费一次 fetch，无需额外处理。
+// gronx cron 定期循环。Sync 自身串行化，且生产装配的 MutationGuard 覆盖
+// fetch 到快照发布的整个事务边界，避免慢的旧价格快照在新快照之后落库。
 type SyncWorker struct {
 	fetch     Fetcher
 	repo      Upserter
@@ -89,8 +90,11 @@ type SyncWorker struct {
 	log       *logx.Logger
 	// now/wait 可注入（测试）：now 固定时间基准（cron 数学确定性）；wait 替代
 	// 真实 timer（测试免等真实时间）。默认实现见 waitReal。
-	now       func() time.Time
-	wait      func(ctx context.Context, d time.Duration) error
+	now  func() time.Time
+	wait func(ctx context.Context, d time.Duration) error
+	// syncMu prevents a manually triggered run and the startup/cron run from
+	// overlapping when a standalone worker has no external mutation guard.
+	syncMu    sync.Mutex
 	startOnce atomic.Bool
 	// running/lastSync 观测面（/ops/workers；低频路径原子写，零热路径成本）：
 	// running 循环存活（Start 置位、cronLoop 退出复位——authSync/notify 同款，
@@ -117,7 +121,7 @@ func (w *SyncWorker) Name() string { return "pricing-sync" }
 
 // Start 启动：异步拉取一次（独立 goroutine，不阻塞 Start/main——启动流程不被
 // 外网延迟阻塞）+ cron 循环。重复 Start 幂等（返回错误）。启动拉取与 cron 首
-// 触发可能并发（如 cron 为每分钟）——幂等安全，最坏浪费一次 fetch（M-3 同款）。
+// 触发即使同时到点也会由 Sync 的串行门顺序执行。
 func (w *SyncWorker) Start(ctx context.Context) error {
 	if !w.startOnce.CompareAndSwap(false, true) {
 		return fmt.Errorf("pricing: sync worker already started")
@@ -145,16 +149,11 @@ func (w *SyncWorker) Close(ctx context.Context) error { return nil }
 // 同样刷新对应快照（Reload 装配点由调用方聚合 pricing + image + function
 // 三重载）。
 func (w *SyncWorker) Sync(ctx context.Context) error {
+	w.syncMu.Lock()
+	defer w.syncMu.Unlock()
+
 	start := w.now()
-	url := w.settings.PriceSourceURL()
-	if url == "" {
-		return fmt.Errorf("pricing: price_source_url not set, skip sync")
-	}
-	res, err := w.fetch.Fetch(ctx, url)
-	w.lastSync.Store(time.Now().UnixMilli())
-	if err != nil {
-		return err
-	}
+	var res *FetchResult
 	var n, nVar int
 	mutate := func() error {
 		var writeErr error
@@ -219,10 +218,31 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 		}
 		return writeErr
 	}
+	// Keep URL lookup and the network fetch inside the same mutation guard as
+	// repository writes. Service.WithPricingMutation is shared with the manual
+	// admin sync path; guarding only the writes allowed a slow older fetch to
+	// finish after a newer one and overwrite its prices.
+	syncAll := func() error {
+		url := w.settings.PriceSourceURL()
+		if url == "" {
+			return fmt.Errorf("pricing: price_source_url not set, skip sync")
+		}
+		var err error
+		res, err = w.fetch.Fetch(ctx, url)
+		w.lastSync.Store(time.Now().UnixMilli())
+		if err != nil {
+			return err
+		}
+		if res == nil {
+			return fmt.Errorf("pricing: fetch returned nil result")
+		}
+		return mutate()
+	}
+	var err error
 	if w.mutation != nil {
-		err = w.mutation.WithPricingMutation(ctx, mutate)
+		err = w.mutation.WithPricingMutation(ctx, syncAll)
 	} else {
-		err = mutate()
+		err = syncAll()
 	}
 	if err == nil && w.log != nil {
 		w.log.Info("pricing: sync done",

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,44 @@ type fakePriceFetcher struct {
 	res *pricing.FetchResult
 	err error
 	url string
+}
+
+// serialPriceFetcher blocks its first call until released and records the
+// maximum number of concurrent fetches. SyncPricingNow must hold the pricing
+// mutation guard across fetch and persistence, so a second caller cannot enter
+// the fetch while the first call is still in flight.
+type serialPriceFetcher struct {
+	started chan struct{}
+	release chan struct{}
+	active  atomic.Int32
+	max     atomic.Int32
+	calls   atomic.Int32
+}
+
+func (f *serialPriceFetcher) Fetch(ctx context.Context, _ string) (*pricing.FetchResult, error) {
+	f.calls.Add(1)
+	active := f.active.Add(1)
+	for {
+		old := f.max.Load()
+		if active <= old || f.max.CompareAndSwap(old, active) {
+			break
+		}
+	}
+	defer f.active.Add(-1)
+	select {
+	case f.started <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case <-f.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return &pricing.FetchResult{PriceEntries: []*domain.PriceEntry{{
+		Model: "serial-model", Mode: domain.PriceModeToken,
+		InputPerM: int64Ptr(100), OutputPerM: int64Ptr(200), Source: domain.PricingSourceLitellm,
+	}}}, nil
 }
 
 func (f *fakePriceFetcher) Fetch(ctx context.Context, sourceURL string) (*pricing.FetchResult, error) {
@@ -71,6 +110,52 @@ func TestSyncPricingUsesSourceModelsForSnapshotCompleteness(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, store.calls)
 	require.Equal(t, []string{"metadata-only", "priced"}, store.models)
+}
+
+func TestSyncPricingSerializesFetchAndPreventsOverlap(t *testing.T) {
+	store := newFakeStore()
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	fetcher := &serialPriceFetcher{started: make(chan struct{}, 2), release: make(chan struct{})}
+	svc.SetPriceFetcher(fetcher)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, callErr := svc.SyncPricingNow(context.Background())
+		firstDone <- callErr
+	}()
+	select {
+	case <-fetcher.started:
+	case <-time.After(time.Second):
+		t.Fatal("first pricing fetch did not start")
+	}
+	secondDone := make(chan error, 1)
+	go func() {
+		_, callErr := svc.SyncPricingNow(context.Background())
+		secondDone <- callErr
+	}()
+	// Give the second caller a scheduling opportunity while the first fetch is
+	// blocked. It must remain outside the fetch, proving the lock spans I/O.
+	time.Sleep(30 * time.Millisecond)
+	require.Equal(t, int32(1), fetcher.max.Load())
+	close(fetcher.release)
+	require.NoError(t, <-firstDone)
+	require.NoError(t, <-secondDone)
+	require.Equal(t, int32(2), fetcher.calls.Load())
+}
+
+func TestSyncPricingRejectsNilFetcherResult(t *testing.T) {
+	store := newFakeStore()
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	svc.SetPriceFetcher(&fakePriceFetcher{})
+	// A nil result with no error is malformed fetcher behavior; it must become a
+	// controlled pricing error rather than panic while dereferencing PriceEntries.
+	_, err = svc.SyncPricingNow(context.Background())
+	require.ErrorIs(t, err, ErrPriceFetch)
+	require.Contains(t, err.Error(), "nil result")
 }
 
 func TestSyncPricingProtectsExplicitEmptySource(t *testing.T) {

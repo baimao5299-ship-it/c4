@@ -91,6 +91,14 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 	keySnapshot, keyHasSnapshot := stripModelSnapshot(key)
 	keySnapshotBase := modelBasename(keySnapshot)
 	keyQualified := strings.Contains(key, "/")
+	// Some providers encode the same numeric release as either `2.0` or
+	// `2-0` (Volcengine's doubao catalogue is a common example). Normalize
+	// only separators between short numeric components; broad punctuation
+	// folding would merge unrelated routes such as `foo.bar` and `foo-bar`.
+	keyNumericBase := numericModelAlias(keyBase)
+	requestedNumericBase := numericModelAlias(requestedBase)
+	keyNumericSnapshotBase := numericModelAlias(keySnapshotBase)
+	requestedNumericSnapshotBase := numericModelAlias(requestedSnapshotBase)
 	if key == requested {
 		return 100
 	}
@@ -111,6 +119,29 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		}
 		return 80
 	}
+	// An unqualified request often omits the provider's dated suffix while the
+	// official row includes it. Prefer an undated root (rank 80), but accept one
+	// dated row when no root exists. The caller still rejects ambiguous rows.
+	if keyHasSnapshot && !requestedHasSnapshot && keySnapshotBase == requestedBase {
+		if !requestedQualified && keyQualified {
+			return 54
+		}
+		return 78
+	}
+	// Apply the same release fallback after conservative numeric separator
+	// normalization, covering `doubao-seed-2.0-pro` ↔ `...-2-0-pro`.
+	if keyNumericBase == requestedNumericBase && keyNumericBase != keyBase {
+		if !requestedQualified && keyQualified {
+			return 54
+		}
+		return 79
+	}
+	if keyHasSnapshot && !requestedHasSnapshot && keyNumericSnapshotBase == requestedNumericBase {
+		if !requestedQualified && keyQualified {
+			return 53
+		}
+		return 77
+	}
 	// Provider catalogues are not consistent about basename casing. Permit
 	// this normalization only for a namespaced candidate; direct model IDs
 	// remain case-sensitive so billing never silently changes an identifier.
@@ -129,6 +160,12 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		}
 		return 60
 	}
+	if requestedHasSnapshot && keyHasSnapshot && keyNumericSnapshotBase == requestedNumericSnapshotBase && keySnapshotBase != requestedSnapshotBase {
+		if !requestedQualified && !keyQualified {
+			return 64
+		}
+		return 59
+	}
 	if requestedHasSnapshot && !requestedQualified && keyQualified && keyHasSnapshot && strings.EqualFold(keySnapshotBase, requestedSnapshotBase) {
 		// As with an undated provider row, only a namespaced candidate gets
 		// case-folding. modelLookupKey still rejects multiple equal-rank rows.
@@ -141,6 +178,48 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		return 50
 	}
 	return 0
+}
+
+// numericModelAlias folds only '-'/'_' separators between two short numeric
+// components to '.'. Provider IDs use hyphens for both version numbers
+// (`claude-opus-4-6`) and ordinary dimensions (`qwen3-235b`); limiting each
+// component to at most two digits avoids rewriting the latter while covering
+// common 2.0/2-0 and 4.6/4-6 spellings.
+func numericModelAlias(model string) string {
+	if model == "" {
+		return model
+	}
+	var out strings.Builder
+	out.Grow(len(model))
+	for i := 0; i < len(model); {
+		if model[i] < '0' || model[i] > '9' {
+			out.WriteByte(model[i])
+			i++
+			continue
+		}
+		start := i
+		for i < len(model) && model[i] >= '0' && model[i] <= '9' {
+			i++
+		}
+		leftLen := i - start
+		if i < len(model) && (model[i] == '-' || model[i] == '_') {
+			sep := i
+			right := i + 1
+			for right < len(model) && model[right] >= '0' && model[right] <= '9' {
+				right++
+			}
+			rightLen := right - (sep + 1)
+			if leftLen <= 2 && rightLen > 0 && rightLen <= 2 {
+				out.WriteString(model[start:i])
+				out.WriteByte('.')
+				out.WriteString(model[sep+1 : right])
+				i = right
+				continue
+			}
+		}
+		out.WriteString(model[start:i])
+	}
+	return out.String()
 }
 
 func modelBasename(model string) string {
@@ -163,7 +242,14 @@ func stripModelSnapshot(model string) (string, bool) {
 		{parts: 5, date: func(p []string) bool { return validCalendarDate(p[2], p[3], p[4]) }},
 		{parts: 3, date: func(p []string) bool {
 			raw := p[2]
-			return len(raw) == 8 && validCalendarDate(raw[:4], raw[4:6], raw[6:])
+			if len(raw) == 8 {
+				return validCalendarDate(raw[:4], raw[4:6], raw[6:])
+			}
+			// Several provider catalogues (notably Volcengine) use YYMMDD
+			// release suffixes such as `260215`. Restrict the year range to
+			// contemporary/future releases so ordinary six-digit model IDs are
+			// not mistaken for snapshots.
+			return len(raw) == 6 && raw[:2] >= "20" && raw[:2] <= "39" && validCalendarDate("20"+raw[:2], raw[2:4], raw[4:])
 		}},
 		{parts: 4, date: func(p []string) bool { return validMonthDay(p[2], p[3]) }},
 	} {
@@ -242,8 +328,11 @@ func splitTrailingDate(model string, parts int) []string {
 	}
 	for _, sep := range []string{"-", "_", "."} {
 		idx := strings.LastIndex(model, sep)
-		if idx > 0 && len(model)-idx-1 == 8 {
-			return []string{model[:idx], sep, model[idx+1:]}
+		if idx > 0 {
+			raw := model[idx+1:]
+			if len(raw) == 8 || len(raw) == 6 {
+				return []string{model[:idx], sep, raw}
+			}
 		}
 	}
 	return nil

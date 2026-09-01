@@ -499,6 +499,13 @@ func firstTokenTier(tiers []tieredPrice) (tieredPrice, bool) {
 		if !ok {
 			continue
 		}
+		// A tier that starts above zero is not a base price. Promoting it would
+		// charge short requests at a high-context rate (and can also fabricate a
+		// missing input/output component). Keep it as a conditional variant;
+		// only a zero-bound tier may seed the unconditional row.
+		if lower != 0 {
+			continue
+		}
 		// Use the same fixed-point conversion as the persisted row. This
 		// prevents a tiny positive value that rounds below one grid unit from
 		// poisoning an otherwise usable later tier.

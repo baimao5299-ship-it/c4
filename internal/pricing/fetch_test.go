@@ -248,6 +248,25 @@ func TestParseTieredPricingPromotesBaseAndKeepsContextRanges(t *testing.T) {
 	require.Equal(t, int64(200000), *variant.SetOutputPerM)
 }
 
+func TestParseTieredPricingDoesNotPromoteHighContextTier(t *testing.T) {
+	jsonStr := `{
+  "high-context-only": {
+    "mode": "chat",
+    "tiered_pricing": [
+      {"input_cost_per_token": 2e-6, "output_cost_per_token": 4e-6, "range": [32000, 128000]}
+    ]
+  }
+}`
+	res, err := Parse([]byte(jsonStr), nil)
+	require.NoError(t, err)
+	// The source key remains visible for catalogue reconciliation, but there is
+	// no safe unconditional price to persist for requests below 32k tokens.
+	require.Equal(t, []string{"high-context-only"}, res.Models)
+	require.Empty(t, res.PriceEntries)
+	require.Empty(t, res.Variants)
+	require.Equal(t, 1, res.Skipped)
+}
+
 func TestParseTieredPricingFillsOnlyMissingTopLevelComponent(t *testing.T) {
 	jsonStr := `{
   "partial-tiered": {

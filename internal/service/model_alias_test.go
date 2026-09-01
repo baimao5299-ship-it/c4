@@ -95,6 +95,20 @@ func TestModelLookupKeyReleaseAndProviderAliases(t *testing.T) {
 			request: "relay/gpt-4o",
 			ok:      false,
 		},
+		{
+			name:    "provider dated row accepts numeric separator alias",
+			keys:    []string{"volcengine/doubao-seed-2-0-pro-260215"},
+			request: "doubao-seed-2.0-pro",
+			want:    "volcengine/doubao-seed-2-0-pro-260215",
+			ok:      true,
+		},
+		{
+			name:    "explicit dated numeric alias accepts provider row",
+			keys:    []string{"volcengine/doubao-seed-2-0-pro-260215"},
+			request: "doubao-seed-2.0-pro-260215",
+			want:    "volcengine/doubao-seed-2-0-pro-260215",
+			ok:      true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok := modelLookupKey(tc.keys, tc.request)
@@ -138,11 +152,30 @@ func TestStripModelSnapshotRecognizesSupportedDateForms(t *testing.T) {
 		{model: "gemini-2.5-pro-preview-05-06", base: "gemini-2.5-pro-preview"},
 		{model: "gpt-4o-latest", base: "gpt-4o"},
 		{model: "gpt-4o_stable", base: "gpt-4o"},
+		{model: "doubao-seed-2-0-pro-260215", base: "doubao-seed-2-0-pro"},
 	} {
 		t.Run(tc.model, func(t *testing.T) {
 			got, ok := stripModelSnapshot(tc.model)
 			require.True(t, ok)
 			require.Equal(t, tc.base, got)
+		})
+	}
+}
+
+func TestNumericModelAliasIsConservative(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		left  string
+		right string
+		want  bool
+	}{
+		{name: "version dot and dash", left: "doubao-seed-2.0-pro", right: "doubao-seed-2-0-pro", want: true},
+		{name: "claude release number remains distinct", left: "claude-opus-4-6", right: "claude-opus-4-7", want: false},
+		{name: "large dimension remains distinct", left: "qwen3-235b", right: "qwen3.235b", want: false},
+		{name: "text punctuation remains distinct", left: "foo.bar", right: "foo-bar", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, numericModelAlias(tc.left) == numericModelAlias(tc.right))
 		})
 	}
 }
@@ -207,4 +240,21 @@ func TestPricingAliasWithDifferentProviderPricesStaysUnpriced(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, catalogue, "deepseek-v4-pro-0813")
 	require.NotContains(t, resolved, "deepseek-v4-pro-0813")
+}
+
+func TestPricingAliasMatchesVolcengineNumericReleaseAndDate(t *testing.T) {
+	fs := newFakeStore()
+	inPrice, outPrice := int64(46000), int64(230000)
+	_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+		Model: "volcengine/doubao-seed-2-0-pro-260215", Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceLitellm,
+	}})
+	require.NoError(t, err)
+	svc := newPricingSvc(t, fs)
+	for _, requested := range []string{"doubao-seed-2.0-pro", "doubao-seed-2.0-pro-260215", "volcengine/doubao-seed-2.0-pro"} {
+		got, ok := svc.ResolvePrices(requested, 0, "", time.Now())
+		require.Truef(t, ok, "expected alias %q to resolve", requested)
+		require.Equal(t, inPrice, *got.InputPerM)
+		require.Equal(t, outPrice, *got.OutputPerM)
+	}
 }
