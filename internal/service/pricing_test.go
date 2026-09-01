@@ -158,6 +158,17 @@ func TestSyncPricingRejectsNilFetcherResult(t *testing.T) {
 	require.Contains(t, err.Error(), "nil result")
 }
 
+func TestPreviewPricingRejectsNilFetcherResult(t *testing.T) {
+	store := newFakeStore()
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	svc.SetPriceFetcher(&fakePriceFetcher{})
+	_, err = svc.PreviewPricingSync(context.Background())
+	require.ErrorIs(t, err, ErrPriceFetch)
+	require.Contains(t, err.Error(), "nil result")
+}
+
 func TestSyncPricingProtectsExplicitEmptySource(t *testing.T) {
 	store := &fakePricingSnapshotStore{fakeStore: newFakeStore()}
 	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)

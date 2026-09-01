@@ -758,6 +758,13 @@ func (s *Service) PreviewPricingSync(ctx context.Context) (*PricingPreview, erro
 		}
 		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
 	}
+	if res == nil {
+		err := errors.New("pricing: fetch returned nil result")
+		if s.log != nil {
+			s.log.Warn("pricing sync preview failed", logx.Error(err))
+		}
+		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
+	}
 	entries := res.PriceEntries
 	snap := s.priceSnapshot.Load()
 	preview := &PricingPreview{Skipped: res.Skipped}
