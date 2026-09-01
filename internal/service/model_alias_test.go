@@ -96,6 +96,19 @@ func TestModelLookupKeyReleaseAndProviderAliases(t *testing.T) {
 			ok:      false,
 		},
 		{
+			name:    "different qualified provider is rejected even when unique",
+			keys:    []string{"provider-a/gpt-4o"},
+			request: "relay/gpt-4o",
+			ok:      false,
+		},
+		{
+			name:    "same qualified provider keeps snapshot alias",
+			keys:    []string{"relay/gpt-4o-2024-08-06"},
+			request: "relay/gpt-4o",
+			want:    "relay/gpt-4o-2024-08-06",
+			ok:      true,
+		},
+		{
 			name:    "provider dated row accepts numeric separator alias",
 			keys:    []string{"volcengine/doubao-seed-2-0-pro-260215"},
 			request: "doubao-seed-2.0-pro",

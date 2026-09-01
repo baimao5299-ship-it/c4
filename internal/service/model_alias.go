@@ -91,6 +91,13 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 	keySnapshot, keyHasSnapshot := stripModelSnapshot(key)
 	keySnapshotBase := modelBasename(keySnapshot)
 	keyQualified := strings.Contains(key, "/")
+	// A qualified request identifies a provider namespace as well as the model
+	// name. Never borrow a price from a different qualified namespace: a single
+	// remaining candidate is not proof that two providers charge the same.
+	// Falling back to an unqualified canonical row remains supported below.
+	if requestedQualified && keyQualified && modelNamespace(key) != modelNamespace(requested) {
+		return 0
+	}
 	// Some providers encode the same numeric release as either `2.0` or
 	// `2-0` (Volcengine's doubao catalogue is a common example). Normalize
 	// only separators between short numeric components; broad punctuation
@@ -228,6 +235,14 @@ func modelBasename(model string) string {
 		return model[slash+1:]
 	}
 	return model
+}
+
+func modelNamespace(model string) string {
+	model = strings.TrimSpace(model)
+	if slash := strings.LastIndexByte(model, '/'); slash > 0 {
+		return model[:slash]
+	}
+	return ""
 }
 
 // stripModelSnapshot removes only a validated trailing release token. Numeric
