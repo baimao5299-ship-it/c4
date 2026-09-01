@@ -58,18 +58,18 @@ func TestPGCursorPerfBounded(t *testing.T) {
 	// cursor 取"第 100k 条最新行"的 id（OFFSET 查询顺带量出深翻页基线）
 	var cursorID int64
 	err := pool.QueryRow(ctx,
-		`SELECT id FROM usage_logs WHERE created_at >= $1 AND created_at <= $2 ORDER BY id DESC OFFSET 100000 LIMIT 1`,
+		`SELECT id FROM usage_logs WHERE created_at >= $1 AND created_at < $2 ORDER BY id DESC OFFSET 100000 LIMIT 1`,
 		from, to).Scan(&cursorID)
 	require.NoError(t, err)
 
 	// 两路对比：同窗口同位置——OFFSET 深翻 100k vs keyset 游标页（id < cursor）
 	offsetDur := measureUsagePage(t, pool, `
 		SELECT id, created_at FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2
+		WHERE created_at >= $1 AND created_at < $2
 		ORDER BY id DESC OFFSET 100000 LIMIT 21`, from, to, nil)
 	cursorDur := measureUsagePage(t, pool, `
 		SELECT id, created_at FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2 AND id < $3
+		WHERE created_at >= $1 AND created_at < $2 AND id < $3
 		ORDER BY id DESC LIMIT 21`, from, to, &cursorID)
 	t.Logf("offset 100k 页: %s | cursor 页: %s", offsetDur, cursorDur)
 
@@ -82,7 +82,7 @@ func TestPGCursorPerfBounded(t *testing.T) {
 	var planJSON string
 	require.NoError(t, pool.QueryRow(ctx, `
 		EXPLAIN (FORMAT JSON) SELECT id, created_at FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2 AND id < $3
+		WHERE created_at >= $1 AND created_at < $2 AND id < $3
 		ORDER BY id DESC LIMIT 21`, from, to, cursorID).Scan(&planJSON))
 	t.Logf("perf plan: %s", planJSON)
 	var plan []struct {

@@ -21,6 +21,7 @@ import (
 
 // ErrLogQuery err_logs 查询过滤面（/errlogs API 同构 /usages：分页 + error_type/
 // status_code/时间范围/model/group 等——完整错误面，status_code/error_type 全值）。
+// 时间范围采用半开区间 [From, To)：From 包含，To 排除。
 type ErrLogQuery struct {
 	GroupID    int64 // 0 = 不过滤
 	AccountID  int64
@@ -147,7 +148,7 @@ func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain
 		pred = pred.Where(errlog.CreatedAtGTE(*q.From))
 	}
 	if q.To != nil {
-		pred = pred.Where(errlog.CreatedAtLTE(*q.To))
+		pred = pred.Where(errlog.CreatedAtLT(*q.To))
 	}
 	if q.Cursor > 0 {
 		pred = pred.Where(errlog.IDLT(q.Cursor))

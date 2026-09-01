@@ -434,13 +434,23 @@ func TestGetLogsFilters(t *testing.T) {
 	require.Equal(t, int64(2), *body.Rows[0].ID)
 	require.Equal(t, int64(72), *body.Rows[0].KeyID)
 
-	// 时间范围过滤（from 含、to 含——与真实 repo CreatedAtGTE/LTE 一致）
+	// 时间范围过滤采用半开区间 [from,to)：from 含、to 不含——与真实
+	// repo CreatedAtGTE/LT 一致。
 	rec = doAdmin(http.MethodGet,
 		"/api/admin/usage_logs?from=2026-08-10T10:30:00Z&to=2026-08-10T12:00:00Z", "", "")
 	require.Equal(t, http.StatusOK, rec.Code, "time range: %s", rec.Body.String())
 	body = LogsResponse{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Len(t, body.Rows, 2, "时间范围 [10:30, 12:00] → 行 2/3")
+	require.Len(t, body.Rows, 1, "时间范围 [10:30, 12:00) → 仅行 2（to 边界行 3 排除）")
+	require.Equal(t, int64(2), *body.Rows[0].ID, "to 边界行排除")
+
+	// to 右移后，原本等于边界的行 3 命中；用于锁定边界不是闭区间。
+	rec = doAdmin(http.MethodGet,
+		"/api/admin/usage_logs?from=2026-08-10T10:30:00Z&to=2026-08-10T12:01:00Z", "", "")
+	require.Equal(t, http.StatusOK, rec.Code, "time range widened: %s", rec.Body.String())
+	body = LogsResponse{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Rows, 2, "时间范围 [10:30, 12:01) → 行 3/2")
 	require.Equal(t, int64(3), *body.Rows[0].ID, "ID 降序不受时间过滤影响")
 	require.Equal(t, int64(2), *body.Rows[1].ID)
 

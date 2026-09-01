@@ -567,7 +567,7 @@ func (f *fakeStore) queryLogs(q logFilter) []*domain.UsageLog {
 		if q.from != nil && l.CreatedAt.Before(*q.from) {
 			continue
 		}
-		if q.to != nil && l.CreatedAt.After(*q.to) {
+		if q.to != nil && !l.CreatedAt.Before(*q.to) {
 			continue
 		}
 		c := *l

@@ -452,7 +452,7 @@ func usageLogsSummarySQL(q UsageQuery) (string, []any) {
 	}
 	if q.To != nil {
 		args = append(args, *q.To)
-		clauses = append(clauses, fmt.Sprintf("created_at <= $%d", len(args)))
+		clauses = append(clauses, fmt.Sprintf("created_at < $%d", len(args)))
 	}
 	if len(clauses) == 0 {
 		return selectSQL, args
@@ -486,7 +486,8 @@ func (r *UsageRepo) SummarizeUsages(ctx context.Context, q UsageQuery) (*UsageLo
 
 // QueryUsages usage_logs keyset 游标分页查询（用户裁决：无 from/to 的全分区
 // OFFSET 扫描是压测中危——游标分页 + from/to 必填 + 零新索引，id 主键天然有序）。
-// 游标语义：WHERE id < cursor AND created_at BETWEEN from/to [AND 既有过滤]，
+// 游标语义：WHERE id < cursor AND created_at >= from AND created_at < to
+// [AND 既有过滤]，
 // ORDER BY id DESC LIMIT limit+1——多取 1 行探测是否有下一页（调用方按
 // len(rows) > limit 组装 next_cursor）；去 Count（Total 已从契约移除）。
 func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.UsageLog, error) {
@@ -516,7 +517,7 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 		pred = pred.Where(usagelog.CreatedAtGTE(*q.From))
 	}
 	if q.To != nil {
-		pred = pred.Where(usagelog.CreatedAtLTE(*q.To))
+		pred = pred.Where(usagelog.CreatedAtLT(*q.To))
 	}
 	if q.Cursor > 0 {
 		pred = pred.Where(usagelog.IDLT(q.Cursor))

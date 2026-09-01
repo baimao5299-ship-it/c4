@@ -370,7 +370,7 @@ func TestPGCursorExplainBoundedCost(t *testing.T) {
 			var planJSON string
 			err := pool.QueryRow(ctx, `
 				EXPLAIN (FORMAT JSON) SELECT id, created_at FROM `+tc.table+`
-				WHERE created_at >= $1 AND created_at <= $2 AND id < $3
+				WHERE created_at >= $1 AND created_at < $2 AND id < $3
 				ORDER BY id DESC LIMIT 21`, from, to, 999999).Scan(&planJSON)
 			require.NoError(t, err)
 			t.Logf("%s plan: %s", tc.table, planJSON)
