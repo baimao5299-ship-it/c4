@@ -47,6 +47,11 @@ check(
   ['deepseek-v4-pro-0813', 'deepseek-v4-pro']
 )
 check(
+  'YYMMDD snapshots collapse to newest while numeric model versions stay visible',
+  sortModelsLatestFirst(['doubao-seed-2-0-pro-260101', 'doubao-seed-2-0-pro-260215', 'doubao-seed-2-0-pro']),
+  ['doubao-seed-2-0-pro-260215', 'doubao-seed-2-0-pro']
+)
+check(
   'invalid dates remain separate identifiers',
   sortModelsLatestFirst(['foo-2024-13-40', 'foo-2024-12-31']),
   ['foo-2024-12-31', 'foo-2024-13-40']

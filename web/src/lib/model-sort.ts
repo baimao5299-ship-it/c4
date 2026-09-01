@@ -14,6 +14,11 @@ type SnapshotInfo = {
 // never become a deduplication key by accident.
 const fullDateAtEnd = /^(.*?)([-_.])((?:19|20)\d{2})[-_.](\d{2})[-_.](\d{2})$/
 const compactDateAtEnd = /^(.*?)([-_.])((?:19|20)\d{6})$/
+// Some providers use a contemporary YYMMDD suffix (for example
+// `doubao-seed-2-0-pro-260215`). Keep the same conservative 20xx-39xx
+// window as the backend alias resolver so ordinary numeric model IDs are not
+// accidentally collapsed.
+const shortCompactDateAtEnd = /^(.*?)([-_.])((?:2[0-9]|3[0-9])\d{4})$/
 const previewDateAtEnd = /^(.*?)([-_.](?:preview|exp))[-_.](\d{2})[-_.](\d{2})$/i
 const monthDayAtEnd = /^(.*?)([-_.])((?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))$/
 const latestAliasAtEnd = /^(.*?)[-_.](latest|stable)$/i
@@ -37,6 +42,14 @@ function snapshotInfo(name: string): SnapshotInfo {
   if (match) {
     const raw = match[3]
     const date = calendarDate(Number(raw.slice(0, 4)), Number(raw.slice(4, 6)), Number(raw.slice(6, 8)))
+    if (date != null && match[1].length > 0) {
+      return { family: match[1].toLowerCase(), date, snapshot: true }
+    }
+  }
+  match = trimmed.match(shortCompactDateAtEnd)
+  if (match) {
+    const raw = match[3]
+    const date = calendarDate(Number(`20${raw.slice(0, 2)}`), Number(raw.slice(2, 4)), Number(raw.slice(4, 6)))
     if (date != null && match[1].length > 0) {
       return { family: match[1].toLowerCase(), date, snapshot: true }
     }
