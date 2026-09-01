@@ -42,6 +42,34 @@ func (_c *UsageLogCreate) SetNillableClientIP(v *string) *UsageLogCreate {
 	return _c
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (_c *UsageLogCreate) SetClientIPSource(v string) *UsageLogCreate {
+	_c.mutation.SetClientIPSource(v)
+	return _c
+}
+
+// SetNillableClientIPSource sets the "client_ip_source" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableClientIPSource(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetClientIPSource(*v)
+	}
+	return _c
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (_c *UsageLogCreate) SetClientIPTrusted(v bool) *UsageLogCreate {
+	_c.mutation.SetClientIPTrusted(v)
+	return _c
+}
+
+// SetNillableClientIPTrusted sets the "client_ip_trusted" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableClientIPTrusted(v *bool) *UsageLogCreate {
+	if v != nil {
+		_c.SetClientIPTrusted(*v)
+	}
+	return _c
+}
+
 // SetGroupID sets the "group_id" field.
 func (_c *UsageLogCreate) SetGroupID(v int64) *UsageLogCreate {
 	_c.mutation.SetGroupID(v)
@@ -80,6 +108,76 @@ func (_c *UsageLogCreate) SetTemplateID(v int64) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableTemplateID(v *int64) *UsageLogCreate {
 	if v != nil {
 		_c.SetTemplateID(*v)
+	}
+	return _c
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (_c *UsageLogCreate) SetTargetKind(v string) *UsageLogCreate {
+	_c.mutation.SetTargetKind(v)
+	return _c
+}
+
+// SetNillableTargetKind sets the "target_kind" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableTargetKind(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetTargetKind(*v)
+	}
+	return _c
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_c *UsageLogCreate) SetUpstreamID(v int64) *UsageLogCreate {
+	_c.mutation.SetUpstreamID(v)
+	return _c
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamID(*v)
+	}
+	return _c
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (_c *UsageLogCreate) SetUpstreamName(v string) *UsageLogCreate {
+	_c.mutation.SetUpstreamName(v)
+	return _c
+}
+
+// SetNillableUpstreamName sets the "upstream_name" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamName(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamName(*v)
+	}
+	return _c
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (_c *UsageLogCreate) SetUpstreamHost(v string) *UsageLogCreate {
+	_c.mutation.SetUpstreamHost(v)
+	return _c
+}
+
+// SetNillableUpstreamHost sets the "upstream_host" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamHost(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamHost(*v)
+	}
+	return _c
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (_c *UsageLogCreate) SetUpstreamMultiplierBp(v int) *UsageLogCreate {
+	_c.mutation.SetUpstreamMultiplierBp(v)
+	return _c
+}
+
+// SetNillableUpstreamMultiplierBp sets the "upstream_multiplier_bp" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamMultiplierBp(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamMultiplierBp(*v)
 	}
 	return _c
 }
@@ -370,6 +468,48 @@ func (_c *UsageLogCreate) SetNillableRawCost(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetUpstreamCost sets the "upstream_cost" field.
+func (_c *UsageLogCreate) SetUpstreamCost(v int64) *UsageLogCreate {
+	_c.mutation.SetUpstreamCost(v)
+	return _c
+}
+
+// SetNillableUpstreamCost sets the "upstream_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamCost(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamCost(*v)
+	}
+	return _c
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (_c *UsageLogCreate) SetGrossProfit(v int64) *UsageLogCreate {
+	_c.mutation.SetGrossProfit(v)
+	return _c
+}
+
+// SetNillableGrossProfit sets the "gross_profit" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableGrossProfit(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetGrossProfit(*v)
+	}
+	return _c
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (_c *UsageLogCreate) SetProfitMarginBp(v int64) *UsageLogCreate {
+	_c.mutation.SetProfitMarginBp(v)
+	return _c
+}
+
+// SetNillableProfitMarginBp sets the "profit_margin_bp" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableProfitMarginBp(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetProfitMarginBp(*v)
+	}
+	return _c
+}
+
 // SetBillingTier sets the "billing_tier" field.
 func (_c *UsageLogCreate) SetBillingTier(v string) *UsageLogCreate {
 	_c.mutation.SetBillingTier(v)
@@ -642,6 +782,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldClientIP, field.TypeString, value)
 		_node.ClientIP = &value
 	}
+	if value, ok := _c.mutation.ClientIPSource(); ok {
+		_spec.SetField(usagelog.FieldClientIPSource, field.TypeString, value)
+		_node.ClientIPSource = &value
+	}
+	if value, ok := _c.mutation.ClientIPTrusted(); ok {
+		_spec.SetField(usagelog.FieldClientIPTrusted, field.TypeBool, value)
+		_node.ClientIPTrusted = &value
+	}
 	if value, ok := _c.mutation.GroupID(); ok {
 		_spec.SetField(usagelog.FieldGroupID, field.TypeInt64, value)
 		_node.GroupID = &value
@@ -653,6 +801,26 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TemplateID(); ok {
 		_spec.SetField(usagelog.FieldTemplateID, field.TypeInt64, value)
 		_node.TemplateID = &value
+	}
+	if value, ok := _c.mutation.TargetKind(); ok {
+		_spec.SetField(usagelog.FieldTargetKind, field.TypeString, value)
+		_node.TargetKind = &value
+	}
+	if value, ok := _c.mutation.UpstreamID(); ok {
+		_spec.SetField(usagelog.FieldUpstreamID, field.TypeInt64, value)
+		_node.UpstreamID = &value
+	}
+	if value, ok := _c.mutation.UpstreamName(); ok {
+		_spec.SetField(usagelog.FieldUpstreamName, field.TypeString, value)
+		_node.UpstreamName = &value
+	}
+	if value, ok := _c.mutation.UpstreamHost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamHost, field.TypeString, value)
+		_node.UpstreamHost = &value
+	}
+	if value, ok := _c.mutation.UpstreamMultiplierBp(); ok {
+		_spec.SetField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+		_node.UpstreamMultiplierBp = &value
 	}
 	if value, ok := _c.mutation.UserID(); ok {
 		_spec.SetField(usagelog.FieldUserID, field.TypeInt64, value)
@@ -737,6 +905,18 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RawCost(); ok {
 		_spec.SetField(usagelog.FieldRawCost, field.TypeInt64, value)
 		_node.RawCost = value
+	}
+	if value, ok := _c.mutation.UpstreamCost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCost, field.TypeInt64, value)
+		_node.UpstreamCost = &value
+	}
+	if value, ok := _c.mutation.GrossProfit(); ok {
+		_spec.SetField(usagelog.FieldGrossProfit, field.TypeInt64, value)
+		_node.GrossProfit = &value
+	}
+	if value, ok := _c.mutation.ProfitMarginBp(); ok {
+		_spec.SetField(usagelog.FieldProfitMarginBp, field.TypeInt64, value)
+		_node.ProfitMarginBp = &value
 	}
 	if value, ok := _c.mutation.BillingTier(); ok {
 		_spec.SetField(usagelog.FieldBillingTier, field.TypeString, value)
@@ -840,6 +1020,42 @@ func (u *UsageLogUpsert) ClearClientIP() *UsageLogUpsert {
 	return u
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (u *UsageLogUpsert) SetClientIPSource(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldClientIPSource, v)
+	return u
+}
+
+// UpdateClientIPSource sets the "client_ip_source" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateClientIPSource() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldClientIPSource)
+	return u
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (u *UsageLogUpsert) ClearClientIPSource() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldClientIPSource)
+	return u
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (u *UsageLogUpsert) SetClientIPTrusted(v bool) *UsageLogUpsert {
+	u.Set(usagelog.FieldClientIPTrusted, v)
+	return u
+}
+
+// UpdateClientIPTrusted sets the "client_ip_trusted" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateClientIPTrusted() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldClientIPTrusted)
+	return u
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (u *UsageLogUpsert) ClearClientIPTrusted() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldClientIPTrusted)
+	return u
+}
+
 // SetGroupID sets the "group_id" field.
 func (u *UsageLogUpsert) SetGroupID(v int64) *UsageLogUpsert {
 	u.Set(usagelog.FieldGroupID, v)
@@ -909,6 +1125,108 @@ func (u *UsageLogUpsert) AddTemplateID(v int64) *UsageLogUpsert {
 // ClearTemplateID clears the value of the "template_id" field.
 func (u *UsageLogUpsert) ClearTemplateID() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldTemplateID)
+	return u
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (u *UsageLogUpsert) SetTargetKind(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldTargetKind, v)
+	return u
+}
+
+// UpdateTargetKind sets the "target_kind" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateTargetKind() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldTargetKind)
+	return u
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (u *UsageLogUpsert) ClearTargetKind() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldTargetKind)
+	return u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *UsageLogUpsert) SetUpstreamID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamID, v)
+	return u
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamID)
+	return u
+}
+
+// AddUpstreamID adds v to the "upstream_id" field.
+func (u *UsageLogUpsert) AddUpstreamID(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamID, v)
+	return u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *UsageLogUpsert) ClearUpstreamID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamID)
+	return u
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (u *UsageLogUpsert) SetUpstreamName(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamName, v)
+	return u
+}
+
+// UpdateUpstreamName sets the "upstream_name" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamName() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamName)
+	return u
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (u *UsageLogUpsert) ClearUpstreamName() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamName)
+	return u
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (u *UsageLogUpsert) SetUpstreamHost(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamHost, v)
+	return u
+}
+
+// UpdateUpstreamHost sets the "upstream_host" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamHost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamHost)
+	return u
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (u *UsageLogUpsert) ClearUpstreamHost() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamHost)
+	return u
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsert) SetUpstreamMultiplierBp(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamMultiplierBp, v)
+	return u
+}
+
+// UpdateUpstreamMultiplierBp sets the "upstream_multiplier_bp" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamMultiplierBp() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamMultiplierBp)
+	return u
+}
+
+// AddUpstreamMultiplierBp adds v to the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsert) AddUpstreamMultiplierBp(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamMultiplierBp, v)
+	return u
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsert) ClearUpstreamMultiplierBp() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamMultiplierBp)
 	return u
 }
 
@@ -1320,6 +1638,78 @@ func (u *UsageLogUpsert) AddRawCost(v int64) *UsageLogUpsert {
 	return u
 }
 
+// SetUpstreamCost sets the "upstream_cost" field.
+func (u *UsageLogUpsert) SetUpstreamCost(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamCost, v)
+	return u
+}
+
+// UpdateUpstreamCost sets the "upstream_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamCost)
+	return u
+}
+
+// AddUpstreamCost adds v to the "upstream_cost" field.
+func (u *UsageLogUpsert) AddUpstreamCost(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamCost, v)
+	return u
+}
+
+// ClearUpstreamCost clears the value of the "upstream_cost" field.
+func (u *UsageLogUpsert) ClearUpstreamCost() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamCost)
+	return u
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (u *UsageLogUpsert) SetGrossProfit(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldGrossProfit, v)
+	return u
+}
+
+// UpdateGrossProfit sets the "gross_profit" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateGrossProfit() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldGrossProfit)
+	return u
+}
+
+// AddGrossProfit adds v to the "gross_profit" field.
+func (u *UsageLogUpsert) AddGrossProfit(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldGrossProfit, v)
+	return u
+}
+
+// ClearGrossProfit clears the value of the "gross_profit" field.
+func (u *UsageLogUpsert) ClearGrossProfit() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldGrossProfit)
+	return u
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (u *UsageLogUpsert) SetProfitMarginBp(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldProfitMarginBp, v)
+	return u
+}
+
+// UpdateProfitMarginBp sets the "profit_margin_bp" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateProfitMarginBp() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldProfitMarginBp)
+	return u
+}
+
+// AddProfitMarginBp adds v to the "profit_margin_bp" field.
+func (u *UsageLogUpsert) AddProfitMarginBp(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldProfitMarginBp, v)
+	return u
+}
+
+// ClearProfitMarginBp clears the value of the "profit_margin_bp" field.
+func (u *UsageLogUpsert) ClearProfitMarginBp() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldProfitMarginBp)
+	return u
+}
+
 // SetBillingTier sets the "billing_tier" field.
 func (u *UsageLogUpsert) SetBillingTier(v string) *UsageLogUpsert {
 	u.Set(usagelog.FieldBillingTier, v)
@@ -1469,6 +1859,48 @@ func (u *UsageLogUpsertOne) ClearClientIP() *UsageLogUpsertOne {
 	})
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (u *UsageLogUpsertOne) SetClientIPSource(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetClientIPSource(v)
+	})
+}
+
+// UpdateClientIPSource sets the "client_ip_source" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateClientIPSource() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateClientIPSource()
+	})
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (u *UsageLogUpsertOne) ClearClientIPSource() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearClientIPSource()
+	})
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (u *UsageLogUpsertOne) SetClientIPTrusted(v bool) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetClientIPTrusted(v)
+	})
+}
+
+// UpdateClientIPTrusted sets the "client_ip_trusted" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateClientIPTrusted() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateClientIPTrusted()
+	})
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (u *UsageLogUpsertOne) ClearClientIPTrusted() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearClientIPTrusted()
+	})
+}
+
 // SetGroupID sets the "group_id" field.
 func (u *UsageLogUpsertOne) SetGroupID(v int64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -1550,6 +1982,125 @@ func (u *UsageLogUpsertOne) UpdateTemplateID() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearTemplateID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearTemplateID()
+	})
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (u *UsageLogUpsertOne) SetTargetKind(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTargetKind(v)
+	})
+}
+
+// UpdateTargetKind sets the "target_kind" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateTargetKind() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTargetKind()
+	})
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (u *UsageLogUpsertOne) ClearTargetKind() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTargetKind()
+	})
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *UsageLogUpsertOne) SetUpstreamID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamID(v)
+	})
+}
+
+// AddUpstreamID adds v to the "upstream_id" field.
+func (u *UsageLogUpsertOne) AddUpstreamID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamID(v)
+	})
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamID()
+	})
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *UsageLogUpsertOne) ClearUpstreamID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamID()
+	})
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (u *UsageLogUpsertOne) SetUpstreamName(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamName(v)
+	})
+}
+
+// UpdateUpstreamName sets the "upstream_name" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamName() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamName()
+	})
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (u *UsageLogUpsertOne) ClearUpstreamName() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamName()
+	})
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (u *UsageLogUpsertOne) SetUpstreamHost(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamHost(v)
+	})
+}
+
+// UpdateUpstreamHost sets the "upstream_host" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamHost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamHost()
+	})
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (u *UsageLogUpsertOne) ClearUpstreamHost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamHost()
+	})
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsertOne) SetUpstreamMultiplierBp(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamMultiplierBp(v)
+	})
+}
+
+// AddUpstreamMultiplierBp adds v to the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsertOne) AddUpstreamMultiplierBp(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamMultiplierBp(v)
+	})
+}
+
+// UpdateUpstreamMultiplierBp sets the "upstream_multiplier_bp" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamMultiplierBp() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamMultiplierBp()
+	})
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsertOne) ClearUpstreamMultiplierBp() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamMultiplierBp()
 	})
 }
 
@@ -2029,6 +2580,90 @@ func (u *UsageLogUpsertOne) UpdateRawCost() *UsageLogUpsertOne {
 	})
 }
 
+// SetUpstreamCost sets the "upstream_cost" field.
+func (u *UsageLogUpsertOne) SetUpstreamCost(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCost(v)
+	})
+}
+
+// AddUpstreamCost adds v to the "upstream_cost" field.
+func (u *UsageLogUpsertOne) AddUpstreamCost(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamCost(v)
+	})
+}
+
+// UpdateUpstreamCost sets the "upstream_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCost()
+	})
+}
+
+// ClearUpstreamCost clears the value of the "upstream_cost" field.
+func (u *UsageLogUpsertOne) ClearUpstreamCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCost()
+	})
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (u *UsageLogUpsertOne) SetGrossProfit(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetGrossProfit(v)
+	})
+}
+
+// AddGrossProfit adds v to the "gross_profit" field.
+func (u *UsageLogUpsertOne) AddGrossProfit(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddGrossProfit(v)
+	})
+}
+
+// UpdateGrossProfit sets the "gross_profit" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateGrossProfit() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateGrossProfit()
+	})
+}
+
+// ClearGrossProfit clears the value of the "gross_profit" field.
+func (u *UsageLogUpsertOne) ClearGrossProfit() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearGrossProfit()
+	})
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (u *UsageLogUpsertOne) SetProfitMarginBp(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetProfitMarginBp(v)
+	})
+}
+
+// AddProfitMarginBp adds v to the "profit_margin_bp" field.
+func (u *UsageLogUpsertOne) AddProfitMarginBp(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddProfitMarginBp(v)
+	})
+}
+
+// UpdateProfitMarginBp sets the "profit_margin_bp" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateProfitMarginBp() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateProfitMarginBp()
+	})
+}
+
+// ClearProfitMarginBp clears the value of the "profit_margin_bp" field.
+func (u *UsageLogUpsertOne) ClearProfitMarginBp() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearProfitMarginBp()
+	})
+}
+
 // SetBillingTier sets the "billing_tier" field.
 func (u *UsageLogUpsertOne) SetBillingTier(v string) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2355,6 +2990,48 @@ func (u *UsageLogUpsertBulk) ClearClientIP() *UsageLogUpsertBulk {
 	})
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (u *UsageLogUpsertBulk) SetClientIPSource(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetClientIPSource(v)
+	})
+}
+
+// UpdateClientIPSource sets the "client_ip_source" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateClientIPSource() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateClientIPSource()
+	})
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (u *UsageLogUpsertBulk) ClearClientIPSource() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearClientIPSource()
+	})
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (u *UsageLogUpsertBulk) SetClientIPTrusted(v bool) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetClientIPTrusted(v)
+	})
+}
+
+// UpdateClientIPTrusted sets the "client_ip_trusted" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateClientIPTrusted() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateClientIPTrusted()
+	})
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (u *UsageLogUpsertBulk) ClearClientIPTrusted() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearClientIPTrusted()
+	})
+}
+
 // SetGroupID sets the "group_id" field.
 func (u *UsageLogUpsertBulk) SetGroupID(v int64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2436,6 +3113,125 @@ func (u *UsageLogUpsertBulk) UpdateTemplateID() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearTemplateID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearTemplateID()
+	})
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (u *UsageLogUpsertBulk) SetTargetKind(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetTargetKind(v)
+	})
+}
+
+// UpdateTargetKind sets the "target_kind" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateTargetKind() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateTargetKind()
+	})
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (u *UsageLogUpsertBulk) ClearTargetKind() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearTargetKind()
+	})
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *UsageLogUpsertBulk) SetUpstreamID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamID(v)
+	})
+}
+
+// AddUpstreamID adds v to the "upstream_id" field.
+func (u *UsageLogUpsertBulk) AddUpstreamID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamID(v)
+	})
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamID()
+	})
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamID()
+	})
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (u *UsageLogUpsertBulk) SetUpstreamName(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamName(v)
+	})
+}
+
+// UpdateUpstreamName sets the "upstream_name" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamName() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamName()
+	})
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamName() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamName()
+	})
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (u *UsageLogUpsertBulk) SetUpstreamHost(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamHost(v)
+	})
+}
+
+// UpdateUpstreamHost sets the "upstream_host" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamHost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamHost()
+	})
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamHost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamHost()
+	})
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsertBulk) SetUpstreamMultiplierBp(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamMultiplierBp(v)
+	})
+}
+
+// AddUpstreamMultiplierBp adds v to the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsertBulk) AddUpstreamMultiplierBp(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamMultiplierBp(v)
+	})
+}
+
+// UpdateUpstreamMultiplierBp sets the "upstream_multiplier_bp" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamMultiplierBp() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamMultiplierBp()
+	})
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamMultiplierBp() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamMultiplierBp()
 	})
 }
 
@@ -2912,6 +3708,90 @@ func (u *UsageLogUpsertBulk) AddRawCost(v int64) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateRawCost() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRawCost()
+	})
+}
+
+// SetUpstreamCost sets the "upstream_cost" field.
+func (u *UsageLogUpsertBulk) SetUpstreamCost(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamCost(v)
+	})
+}
+
+// AddUpstreamCost adds v to the "upstream_cost" field.
+func (u *UsageLogUpsertBulk) AddUpstreamCost(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamCost(v)
+	})
+}
+
+// UpdateUpstreamCost sets the "upstream_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamCost()
+	})
+}
+
+// ClearUpstreamCost clears the value of the "upstream_cost" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamCost()
+	})
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (u *UsageLogUpsertBulk) SetGrossProfit(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetGrossProfit(v)
+	})
+}
+
+// AddGrossProfit adds v to the "gross_profit" field.
+func (u *UsageLogUpsertBulk) AddGrossProfit(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddGrossProfit(v)
+	})
+}
+
+// UpdateGrossProfit sets the "gross_profit" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateGrossProfit() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateGrossProfit()
+	})
+}
+
+// ClearGrossProfit clears the value of the "gross_profit" field.
+func (u *UsageLogUpsertBulk) ClearGrossProfit() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearGrossProfit()
+	})
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (u *UsageLogUpsertBulk) SetProfitMarginBp(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetProfitMarginBp(v)
+	})
+}
+
+// AddProfitMarginBp adds v to the "profit_margin_bp" field.
+func (u *UsageLogUpsertBulk) AddProfitMarginBp(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddProfitMarginBp(v)
+	})
+}
+
+// UpdateProfitMarginBp sets the "profit_margin_bp" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateProfitMarginBp() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateProfitMarginBp()
+	})
+}
+
+// ClearProfitMarginBp clears the value of the "profit_margin_bp" field.
+func (u *UsageLogUpsertBulk) ClearProfitMarginBp() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearProfitMarginBp()
 	})
 }
 

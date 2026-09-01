@@ -41,6 +41,20 @@ const (
 	UpstreamUnavailable AccountUsageItemUpstreamError = "upstream_unavailable"
 )
 
+// Defines values for ErrLogClientIPSource.
+const (
+	ErrLogClientIPSourceCfConnectingIp ErrLogClientIPSource = "cf_connecting_ip"
+	ErrLogClientIPSourceRemoteAddr     ErrLogClientIPSource = "remote_addr"
+	ErrLogClientIPSourceTrueClientIp   ErrLogClientIPSource = "true_client_ip"
+	ErrLogClientIPSourceXRealIp        ErrLogClientIPSource = "x_real_ip"
+)
+
+// Defines values for ErrLogTargetKind.
+const (
+	ErrLogTargetKindAccount        ErrLogTargetKind = "account"
+	ErrLogTargetKindUpstreamMember ErrLogTargetKind = "upstream_member"
+)
+
 // Defines values for ErrorType.
 const (
 	ErrorTypeAbort     ErrorType = "abort"
@@ -380,6 +394,20 @@ const (
 	UpstreamValidationTaskStartStatusFailed    UpstreamValidationTaskStartStatus = "failed"
 	UpstreamValidationTaskStartStatusQueued    UpstreamValidationTaskStartStatus = "queued"
 	UpstreamValidationTaskStartStatusRunning   UpstreamValidationTaskStartStatus = "running"
+)
+
+// Defines values for UsageLogClientIPSource.
+const (
+	UsageLogClientIPSourceCfConnectingIp UsageLogClientIPSource = "cf_connecting_ip"
+	UsageLogClientIPSourceRemoteAddr     UsageLogClientIPSource = "remote_addr"
+	UsageLogClientIPSourceTrueClientIp   UsageLogClientIPSource = "true_client_ip"
+	UsageLogClientIPSourceXRealIp        UsageLogClientIPSource = "x_real_ip"
+)
+
+// Defines values for UsageLogTargetKind.
+const (
+	UsageLogTargetKindAccount        UsageLogTargetKind = "account"
+	UsageLogTargetKindUpstreamMember UsageLogTargetKind = "upstream_member"
 )
 
 // Defines values for UserRole.
@@ -945,8 +973,10 @@ type ErrLog struct {
 	BillingTier *string `json:"BillingTier"`
 
 	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无
-	ClientIP  *string    `json:"ClientIP,omitempty"`
-	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
+	ClientIP        *string               `json:"ClientIP,omitempty"`
+	ClientIPSource  *ErrLogClientIPSource `json:"ClientIPSource"`
+	ClientIPTrusted *bool                 `json:"ClientIPTrusted"`
+	CreatedAt       *time.Time            `json:"CreatedAt,omitempty"`
 
 	// ErrorMessage 错误文本（拒绝文案/上游 body，域内截断 500 字符）；null = 无错误文本
 	ErrorMessage *string        `json:"ErrorMessage"`
@@ -962,12 +992,27 @@ type ErrLog struct {
 	RequestID *string `json:"RequestID,omitempty"`
 
 	// StatusCode 错误状态码（完整错误面；0 = 连接级）
-	StatusCode *int   `json:"StatusCode,omitempty"`
-	TemplateID *int64 `json:"TemplateID,omitempty"`
+	StatusCode *int              `json:"StatusCode,omitempty"`
+	TargetKind *ErrLogTargetKind `json:"TargetKind"`
+	TemplateID *int64            `json:"TemplateID,omitempty"`
+
+	// UpstreamHost 不含凭据/path/query/fragment
+	UpstreamHost *string `json:"UpstreamHost"`
+
+	// UpstreamID 最后一次实际尝试的上游清单 ID
+	UpstreamID           *int64  `json:"UpstreamID"`
+	UpstreamMultiplierBP *int    `json:"UpstreamMultiplierBP"`
+	UpstreamName         *string `json:"UpstreamName"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`
 }
+
+// ErrLogClientIPSource defines model for ErrLog.ClientIPSource.
+type ErrLogClientIPSource string
+
+// ErrLogTargetKind defines model for ErrLog.TargetKind.
+type ErrLogTargetKind string
 
 // ErrLogsResponse defines model for ErrLogsResponse.
 type ErrLogsResponse struct {
@@ -2083,14 +2128,23 @@ type UsageLog struct {
 	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无
 	ClientIP *string `json:"ClientIP,omitempty"`
 
+	// ClientIPSource 客户端 IP 来源的请求时快照；null = 历史行未记录
+	ClientIPSource *UsageLogClientIPSource `json:"ClientIPSource"`
+
+	// ClientIPTrusted 该 IP 来源是否被请求时的代理配置信任；null = 未知
+	ClientIPTrusted *bool `json:"ClientIPTrusted"`
+
 	// Cost 计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0
-	Cost        *int64         `json:"Cost,omitempty"`
-	CreatedAt   *time.Time     `json:"CreatedAt,omitempty"`
-	ErrorType   *ErrorType     `json:"ErrorType,omitempty"`
-	Format      *RequestFormat `json:"Format,omitempty"`
-	GroupID     *int64         `json:"GroupID,omitempty"`
-	ID          *int64         `json:"ID,omitempty"`
-	InputTokens *int64         `json:"InputTokens,omitempty"`
+	Cost      *int64         `json:"Cost,omitempty"`
+	CreatedAt *time.Time     `json:"CreatedAt,omitempty"`
+	ErrorType *ErrorType     `json:"ErrorType,omitempty"`
+	Format    *RequestFormat `json:"Format,omitempty"`
+
+	// GrossProfit 估算毛利（毫分）= UserCharge - UpstreamCost
+	GrossProfit *int64 `json:"GrossProfit"`
+	GroupID     *int64 `json:"GroupID,omitempty"`
+	ID          *int64 `json:"ID,omitempty"`
+	InputTokens *int64 `json:"InputTokens,omitempty"`
 
 	// KeyID 鉴权归属 key；0 = 无
 	KeyID        *int64  `json:"KeyID,omitempty"`
@@ -2114,17 +2168,74 @@ type UsageLog struct {
 	// PriceOutputMillis 输出单价快照（每 M token 毫分）；null = 未计费路径
 	PriceOutputMillis *int64 `json:"PriceOutputMillis"`
 
+	// ProfitMarginBP 估算毛利率万分数；用户扣费为 0 时 null
+	ProfitMarginBP *int64 `json:"ProfitMarginBP"`
+
 	// RawCost 原始成本（毫分，乘倍率前——免费组 cost=0 但 raw 有值，实际消耗口径）；bill 未装配/无价防御路径恒 0
 	RawCost   *int64  `json:"RawCost,omitempty"`
 	RequestID *string `json:"RequestID,omitempty"`
 
 	// TTFTMS 首 token 时间毫秒（流式首 chunk 采集）；非流式/失败/无首 token 路径 = null
-	TTFTMS      *int64 `json:"TTFTMS"`
-	TemplateID  *int64 `json:"TemplateID,omitempty"`
-	TotalTokens *int64 `json:"TotalTokens,omitempty"`
+	TTFTMS *int64 `json:"TTFTMS"`
+
+	// TargetKind 实际调度目标类型；null = 未选路/历史行
+	TargetKind  *UsageLogTargetKind `json:"TargetKind"`
+	TemplateID  *int64              `json:"TemplateID,omitempty"`
+	TotalTokens *int64              `json:"TotalTokens,omitempty"`
+
+	// UpstreamCost 上游成本估算（毫分）= RawCost × 请求时配置倍率；非上游账单；null = 无价格或倍率快照
+	UpstreamCost *int64 `json:"UpstreamCost"`
+
+	// UpstreamHost 请求选路时的上游 host 快照（不含凭据/path/query/fragment）
+	UpstreamHost *string `json:"UpstreamHost"`
+
+	// UpstreamID 实际命中的上游清单 ID（非 group-member 关系 ID）；null = 未绑定/未记录
+	UpstreamID *int64 `json:"UpstreamID"`
+
+	// UpstreamMultiplierBP 请求选路时的配置成本倍率万分数；null = 未知
+	UpstreamMultiplierBP *int `json:"UpstreamMultiplierBP"`
+
+	// UpstreamName 请求选路时的上游名称快照
+	UpstreamName *string `json:"UpstreamName"`
+
+	// UserCharge 用户扣费（毫分），与 Cost 同值的明确业务语义
+	UserCharge *int64 `json:"UserCharge,omitempty"`
 
 	// UserID 鉴权归属用户；0 = 无
 	UserID *int64 `json:"UserID,omitempty"`
+}
+
+// UsageLogClientIPSource 客户端 IP 来源的请求时快照；null = 历史行未记录
+type UsageLogClientIPSource string
+
+// UsageLogTargetKind 实际调度目标类型；null = 未选路/历史行
+type UsageLogTargetKind string
+
+// UsageLogsSummary defines model for UsageLogsSummary.
+type UsageLogsSummary struct {
+	// AttributedUserCharge 仅上游成本已知行的用户扣费合计（毛利率分母）
+	AttributedUserCharge int64 `json:"AttributedUserCharge"`
+
+	// CostedRequestCount 具备上游成本估算的请求数
+	CostedRequestCount int64 `json:"CostedRequestCount"`
+
+	// GrossProfit 已知行的估算毛利合计；无已知行时 null
+	GrossProfit *int64 `json:"GrossProfit"`
+
+	// LossRequestCount GrossProfit < 0 的已知行数
+	LossRequestCount int64 `json:"LossRequestCount"`
+
+	// ProfitMarginBP GrossProfit / AttributedUserCharge 的万分数；分母为 0 时 null
+	ProfitMarginBP *int64 `json:"ProfitMarginBP"`
+
+	// RequestCount 筛选窗口内的用量请求数
+	RequestCount int64 `json:"RequestCount"`
+
+	// UpstreamCost 已知行的配置倍率上游成本估算合计；无已知行时 null
+	UpstreamCost *int64 `json:"UpstreamCost"`
+
+	// UserCharge 全部筛选行的用户扣费合计（毫分）
+	UserCharge int64 `json:"UserCharge"`
 }
 
 // User defines model for User.
@@ -2515,6 +2626,19 @@ type GetUsageLogsParams struct {
 	To        time.Time      `form:"to" json:"to"`
 }
 
+// GetUsageLogsSummaryParams defines parameters for GetUsageLogsSummary.
+type GetUsageLogsSummaryParams struct {
+	GroupId   *int64         `form:"group_id,omitempty" json:"group_id,omitempty"`
+	AccountId *int64         `form:"account_id,omitempty" json:"account_id,omitempty"`
+	UserId    *int64         `form:"user_id,omitempty" json:"user_id,omitempty"`
+	KeyId     *int64         `form:"key_id,omitempty" json:"key_id,omitempty"`
+	Model     *string        `form:"model,omitempty" json:"model,omitempty"`
+	Format    *RequestFormat `form:"format,omitempty" json:"format,omitempty"`
+	ErrorType *string        `form:"error_type,omitempty" json:"error_type,omitempty"`
+	From      time.Time      `form:"from" json:"from"`
+	To        time.Time      `form:"to" json:"to"`
+}
+
 // GetUsersParams defines parameters for GetUsers.
 type GetUsersParams struct {
 	Limit  *int                 `form:"limit,omitempty" json:"limit,omitempty"`
@@ -2894,6 +3018,9 @@ type ServerInterface interface {
 	// 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs）
 	// (GET /usage_logs)
 	GetUsageLogs(w http.ResponseWriter, r *http.Request, params GetUsageLogsParams)
+	// 按用量日志筛选条件聚合用户收入与配置倍率估算的上游成本/毛利（不是上游账单）
+	// (GET /usage_logs/summary)
+	GetUsageLogsSummary(w http.ResponseWriter, r *http.Request, params GetUsageLogsSummaryParams)
 	// 用户列表（platform_admin 专属；分页/筛选/排序）
 	// (GET /users)
 	GetUsers(w http.ResponseWriter, r *http.Request, params GetUsersParams)
@@ -3402,6 +3529,12 @@ func (_ Unimplemented) PostUpstreamsIdTest(w http.ResponseWriter, r *http.Reques
 // 用量明细分页查询（usage_logs 放行路径明细——成功 none + abort 半异常，cost 不限；失败行（4xx/5xx/拒绝）归 /err_logs）
 // (GET /usage_logs)
 func (_ Unimplemented) GetUsageLogs(w http.ResponseWriter, r *http.Request, params GetUsageLogsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 按用量日志筛选条件聚合用户收入与配置倍率估算的上游成本/毛利（不是上游账单）
+// (GET /usage_logs/summary)
+func (_ Unimplemented) GetUsageLogsSummary(w http.ResponseWriter, r *http.Request, params GetUsageLogsSummaryParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6195,6 +6328,111 @@ func (siw *ServerInterfaceWrapper) GetUsageLogs(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetUsageLogsSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetUsageLogsSummary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetUsageLogsSummaryParams
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "group_id", r.URL.Query(), &params.GroupId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "account_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "account_id", r.URL.Query(), &params.AccountId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "user_id", r.URL.Query(), &params.UserId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "key_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "key_id", r.URL.Query(), &params.KeyId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "model" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "model", r.URL.Query(), &params.Model)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "model", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "format", r.URL.Query(), &params.Format)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "error_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "error_type", r.URL.Query(), &params.ErrorType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error_type", Err: err})
+		return
+	}
+
+	// ------------- Required query parameter "from" -------------
+
+	if paramValue := r.URL.Query().Get("from"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "from", r.URL.Query(), &params.From)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	if paramValue := r.URL.Query().Get("to"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "to", r.URL.Query(), &params.To)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUsageLogsSummary(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUsers operation middleware
 func (siw *ServerInterfaceWrapper) GetUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -6731,6 +6969,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/usage_logs", wrapper.GetUsageLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/usage_logs/summary", wrapper.GetUsageLogsSummary)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/users", wrapper.GetUsers)

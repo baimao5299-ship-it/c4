@@ -64,6 +64,16 @@ func ClientIP(v string) predicate.ErrLog {
 	return predicate.ErrLog(sql.FieldEQ(FieldClientIP, v))
 }
 
+// ClientIPSource applies equality check predicate on the "client_ip_source" field. It's identical to ClientIPSourceEQ.
+func ClientIPSource(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldClientIPSource, v))
+}
+
+// ClientIPTrusted applies equality check predicate on the "client_ip_trusted" field. It's identical to ClientIPTrustedEQ.
+func ClientIPTrusted(v bool) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldClientIPTrusted, v))
+}
+
 // GroupID applies equality check predicate on the "group_id" field. It's identical to GroupIDEQ.
 func GroupID(v int64) predicate.ErrLog {
 	return predicate.ErrLog(sql.FieldEQ(FieldGroupID, v))
@@ -77,6 +87,31 @@ func AccountID(v int64) predicate.ErrLog {
 // TemplateID applies equality check predicate on the "template_id" field. It's identical to TemplateIDEQ.
 func TemplateID(v int64) predicate.ErrLog {
 	return predicate.ErrLog(sql.FieldEQ(FieldTemplateID, v))
+}
+
+// TargetKind applies equality check predicate on the "target_kind" field. It's identical to TargetKindEQ.
+func TargetKind(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldTargetKind, v))
+}
+
+// UpstreamID applies equality check predicate on the "upstream_id" field. It's identical to UpstreamIDEQ.
+func UpstreamID(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamID, v))
+}
+
+// UpstreamName applies equality check predicate on the "upstream_name" field. It's identical to UpstreamNameEQ.
+func UpstreamName(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamName, v))
+}
+
+// UpstreamHost applies equality check predicate on the "upstream_host" field. It's identical to UpstreamHostEQ.
+func UpstreamHost(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamHost, v))
+}
+
+// UpstreamMultiplierBp applies equality check predicate on the "upstream_multiplier_bp" field. It's identical to UpstreamMultiplierBpEQ.
+func UpstreamMultiplierBp(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamMultiplierBp, v))
 }
 
 // UserID applies equality check predicate on the "user_id" field. It's identical to UserIDEQ.
@@ -264,6 +299,101 @@ func ClientIPContainsFold(v string) predicate.ErrLog {
 	return predicate.ErrLog(sql.FieldContainsFold(FieldClientIP, v))
 }
 
+// ClientIPSourceEQ applies the EQ predicate on the "client_ip_source" field.
+func ClientIPSourceEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldClientIPSource, v))
+}
+
+// ClientIPSourceNEQ applies the NEQ predicate on the "client_ip_source" field.
+func ClientIPSourceNEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldClientIPSource, v))
+}
+
+// ClientIPSourceIn applies the In predicate on the "client_ip_source" field.
+func ClientIPSourceIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIn(FieldClientIPSource, vs...))
+}
+
+// ClientIPSourceNotIn applies the NotIn predicate on the "client_ip_source" field.
+func ClientIPSourceNotIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotIn(FieldClientIPSource, vs...))
+}
+
+// ClientIPSourceGT applies the GT predicate on the "client_ip_source" field.
+func ClientIPSourceGT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGT(FieldClientIPSource, v))
+}
+
+// ClientIPSourceGTE applies the GTE predicate on the "client_ip_source" field.
+func ClientIPSourceGTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGTE(FieldClientIPSource, v))
+}
+
+// ClientIPSourceLT applies the LT predicate on the "client_ip_source" field.
+func ClientIPSourceLT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLT(FieldClientIPSource, v))
+}
+
+// ClientIPSourceLTE applies the LTE predicate on the "client_ip_source" field.
+func ClientIPSourceLTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLTE(FieldClientIPSource, v))
+}
+
+// ClientIPSourceContains applies the Contains predicate on the "client_ip_source" field.
+func ClientIPSourceContains(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContains(FieldClientIPSource, v))
+}
+
+// ClientIPSourceHasPrefix applies the HasPrefix predicate on the "client_ip_source" field.
+func ClientIPSourceHasPrefix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasPrefix(FieldClientIPSource, v))
+}
+
+// ClientIPSourceHasSuffix applies the HasSuffix predicate on the "client_ip_source" field.
+func ClientIPSourceHasSuffix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasSuffix(FieldClientIPSource, v))
+}
+
+// ClientIPSourceIsNil applies the IsNil predicate on the "client_ip_source" field.
+func ClientIPSourceIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldClientIPSource))
+}
+
+// ClientIPSourceNotNil applies the NotNil predicate on the "client_ip_source" field.
+func ClientIPSourceNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldClientIPSource))
+}
+
+// ClientIPSourceEqualFold applies the EqualFold predicate on the "client_ip_source" field.
+func ClientIPSourceEqualFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEqualFold(FieldClientIPSource, v))
+}
+
+// ClientIPSourceContainsFold applies the ContainsFold predicate on the "client_ip_source" field.
+func ClientIPSourceContainsFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContainsFold(FieldClientIPSource, v))
+}
+
+// ClientIPTrustedEQ applies the EQ predicate on the "client_ip_trusted" field.
+func ClientIPTrustedEQ(v bool) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldClientIPTrusted, v))
+}
+
+// ClientIPTrustedNEQ applies the NEQ predicate on the "client_ip_trusted" field.
+func ClientIPTrustedNEQ(v bool) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldClientIPTrusted, v))
+}
+
+// ClientIPTrustedIsNil applies the IsNil predicate on the "client_ip_trusted" field.
+func ClientIPTrustedIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldClientIPTrusted))
+}
+
+// ClientIPTrustedNotNil applies the NotNil predicate on the "client_ip_trusted" field.
+func ClientIPTrustedNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldClientIPTrusted))
+}
+
 // GroupIDEQ applies the EQ predicate on the "group_id" field.
 func GroupIDEQ(v int64) predicate.ErrLog {
 	return predicate.ErrLog(sql.FieldEQ(FieldGroupID, v))
@@ -412,6 +542,331 @@ func TemplateIDIsNil() predicate.ErrLog {
 // TemplateIDNotNil applies the NotNil predicate on the "template_id" field.
 func TemplateIDNotNil() predicate.ErrLog {
 	return predicate.ErrLog(sql.FieldNotNull(FieldTemplateID))
+}
+
+// TargetKindEQ applies the EQ predicate on the "target_kind" field.
+func TargetKindEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldTargetKind, v))
+}
+
+// TargetKindNEQ applies the NEQ predicate on the "target_kind" field.
+func TargetKindNEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldTargetKind, v))
+}
+
+// TargetKindIn applies the In predicate on the "target_kind" field.
+func TargetKindIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIn(FieldTargetKind, vs...))
+}
+
+// TargetKindNotIn applies the NotIn predicate on the "target_kind" field.
+func TargetKindNotIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotIn(FieldTargetKind, vs...))
+}
+
+// TargetKindGT applies the GT predicate on the "target_kind" field.
+func TargetKindGT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGT(FieldTargetKind, v))
+}
+
+// TargetKindGTE applies the GTE predicate on the "target_kind" field.
+func TargetKindGTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGTE(FieldTargetKind, v))
+}
+
+// TargetKindLT applies the LT predicate on the "target_kind" field.
+func TargetKindLT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLT(FieldTargetKind, v))
+}
+
+// TargetKindLTE applies the LTE predicate on the "target_kind" field.
+func TargetKindLTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLTE(FieldTargetKind, v))
+}
+
+// TargetKindContains applies the Contains predicate on the "target_kind" field.
+func TargetKindContains(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContains(FieldTargetKind, v))
+}
+
+// TargetKindHasPrefix applies the HasPrefix predicate on the "target_kind" field.
+func TargetKindHasPrefix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasPrefix(FieldTargetKind, v))
+}
+
+// TargetKindHasSuffix applies the HasSuffix predicate on the "target_kind" field.
+func TargetKindHasSuffix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasSuffix(FieldTargetKind, v))
+}
+
+// TargetKindIsNil applies the IsNil predicate on the "target_kind" field.
+func TargetKindIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldTargetKind))
+}
+
+// TargetKindNotNil applies the NotNil predicate on the "target_kind" field.
+func TargetKindNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldTargetKind))
+}
+
+// TargetKindEqualFold applies the EqualFold predicate on the "target_kind" field.
+func TargetKindEqualFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEqualFold(FieldTargetKind, v))
+}
+
+// TargetKindContainsFold applies the ContainsFold predicate on the "target_kind" field.
+func TargetKindContainsFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContainsFold(FieldTargetKind, v))
+}
+
+// UpstreamIDEQ applies the EQ predicate on the "upstream_id" field.
+func UpstreamIDEQ(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamID, v))
+}
+
+// UpstreamIDNEQ applies the NEQ predicate on the "upstream_id" field.
+func UpstreamIDNEQ(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldUpstreamID, v))
+}
+
+// UpstreamIDIn applies the In predicate on the "upstream_id" field.
+func UpstreamIDIn(vs ...int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIn(FieldUpstreamID, vs...))
+}
+
+// UpstreamIDNotIn applies the NotIn predicate on the "upstream_id" field.
+func UpstreamIDNotIn(vs ...int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotIn(FieldUpstreamID, vs...))
+}
+
+// UpstreamIDGT applies the GT predicate on the "upstream_id" field.
+func UpstreamIDGT(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGT(FieldUpstreamID, v))
+}
+
+// UpstreamIDGTE applies the GTE predicate on the "upstream_id" field.
+func UpstreamIDGTE(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGTE(FieldUpstreamID, v))
+}
+
+// UpstreamIDLT applies the LT predicate on the "upstream_id" field.
+func UpstreamIDLT(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLT(FieldUpstreamID, v))
+}
+
+// UpstreamIDLTE applies the LTE predicate on the "upstream_id" field.
+func UpstreamIDLTE(v int64) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLTE(FieldUpstreamID, v))
+}
+
+// UpstreamIDIsNil applies the IsNil predicate on the "upstream_id" field.
+func UpstreamIDIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldUpstreamID))
+}
+
+// UpstreamIDNotNil applies the NotNil predicate on the "upstream_id" field.
+func UpstreamIDNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldUpstreamID))
+}
+
+// UpstreamNameEQ applies the EQ predicate on the "upstream_name" field.
+func UpstreamNameEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamName, v))
+}
+
+// UpstreamNameNEQ applies the NEQ predicate on the "upstream_name" field.
+func UpstreamNameNEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldUpstreamName, v))
+}
+
+// UpstreamNameIn applies the In predicate on the "upstream_name" field.
+func UpstreamNameIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIn(FieldUpstreamName, vs...))
+}
+
+// UpstreamNameNotIn applies the NotIn predicate on the "upstream_name" field.
+func UpstreamNameNotIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotIn(FieldUpstreamName, vs...))
+}
+
+// UpstreamNameGT applies the GT predicate on the "upstream_name" field.
+func UpstreamNameGT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGT(FieldUpstreamName, v))
+}
+
+// UpstreamNameGTE applies the GTE predicate on the "upstream_name" field.
+func UpstreamNameGTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGTE(FieldUpstreamName, v))
+}
+
+// UpstreamNameLT applies the LT predicate on the "upstream_name" field.
+func UpstreamNameLT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLT(FieldUpstreamName, v))
+}
+
+// UpstreamNameLTE applies the LTE predicate on the "upstream_name" field.
+func UpstreamNameLTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLTE(FieldUpstreamName, v))
+}
+
+// UpstreamNameContains applies the Contains predicate on the "upstream_name" field.
+func UpstreamNameContains(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContains(FieldUpstreamName, v))
+}
+
+// UpstreamNameHasPrefix applies the HasPrefix predicate on the "upstream_name" field.
+func UpstreamNameHasPrefix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasPrefix(FieldUpstreamName, v))
+}
+
+// UpstreamNameHasSuffix applies the HasSuffix predicate on the "upstream_name" field.
+func UpstreamNameHasSuffix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasSuffix(FieldUpstreamName, v))
+}
+
+// UpstreamNameIsNil applies the IsNil predicate on the "upstream_name" field.
+func UpstreamNameIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldUpstreamName))
+}
+
+// UpstreamNameNotNil applies the NotNil predicate on the "upstream_name" field.
+func UpstreamNameNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldUpstreamName))
+}
+
+// UpstreamNameEqualFold applies the EqualFold predicate on the "upstream_name" field.
+func UpstreamNameEqualFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEqualFold(FieldUpstreamName, v))
+}
+
+// UpstreamNameContainsFold applies the ContainsFold predicate on the "upstream_name" field.
+func UpstreamNameContainsFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContainsFold(FieldUpstreamName, v))
+}
+
+// UpstreamHostEQ applies the EQ predicate on the "upstream_host" field.
+func UpstreamHostEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamHost, v))
+}
+
+// UpstreamHostNEQ applies the NEQ predicate on the "upstream_host" field.
+func UpstreamHostNEQ(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldUpstreamHost, v))
+}
+
+// UpstreamHostIn applies the In predicate on the "upstream_host" field.
+func UpstreamHostIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIn(FieldUpstreamHost, vs...))
+}
+
+// UpstreamHostNotIn applies the NotIn predicate on the "upstream_host" field.
+func UpstreamHostNotIn(vs ...string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotIn(FieldUpstreamHost, vs...))
+}
+
+// UpstreamHostGT applies the GT predicate on the "upstream_host" field.
+func UpstreamHostGT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGT(FieldUpstreamHost, v))
+}
+
+// UpstreamHostGTE applies the GTE predicate on the "upstream_host" field.
+func UpstreamHostGTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGTE(FieldUpstreamHost, v))
+}
+
+// UpstreamHostLT applies the LT predicate on the "upstream_host" field.
+func UpstreamHostLT(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLT(FieldUpstreamHost, v))
+}
+
+// UpstreamHostLTE applies the LTE predicate on the "upstream_host" field.
+func UpstreamHostLTE(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLTE(FieldUpstreamHost, v))
+}
+
+// UpstreamHostContains applies the Contains predicate on the "upstream_host" field.
+func UpstreamHostContains(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContains(FieldUpstreamHost, v))
+}
+
+// UpstreamHostHasPrefix applies the HasPrefix predicate on the "upstream_host" field.
+func UpstreamHostHasPrefix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasPrefix(FieldUpstreamHost, v))
+}
+
+// UpstreamHostHasSuffix applies the HasSuffix predicate on the "upstream_host" field.
+func UpstreamHostHasSuffix(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldHasSuffix(FieldUpstreamHost, v))
+}
+
+// UpstreamHostIsNil applies the IsNil predicate on the "upstream_host" field.
+func UpstreamHostIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldUpstreamHost))
+}
+
+// UpstreamHostNotNil applies the NotNil predicate on the "upstream_host" field.
+func UpstreamHostNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldUpstreamHost))
+}
+
+// UpstreamHostEqualFold applies the EqualFold predicate on the "upstream_host" field.
+func UpstreamHostEqualFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEqualFold(FieldUpstreamHost, v))
+}
+
+// UpstreamHostContainsFold applies the ContainsFold predicate on the "upstream_host" field.
+func UpstreamHostContainsFold(v string) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldContainsFold(FieldUpstreamHost, v))
+}
+
+// UpstreamMultiplierBpEQ applies the EQ predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpEQ(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldEQ(FieldUpstreamMultiplierBp, v))
+}
+
+// UpstreamMultiplierBpNEQ applies the NEQ predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpNEQ(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNEQ(FieldUpstreamMultiplierBp, v))
+}
+
+// UpstreamMultiplierBpIn applies the In predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpIn(vs ...int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIn(FieldUpstreamMultiplierBp, vs...))
+}
+
+// UpstreamMultiplierBpNotIn applies the NotIn predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpNotIn(vs ...int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotIn(FieldUpstreamMultiplierBp, vs...))
+}
+
+// UpstreamMultiplierBpGT applies the GT predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpGT(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGT(FieldUpstreamMultiplierBp, v))
+}
+
+// UpstreamMultiplierBpGTE applies the GTE predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpGTE(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldGTE(FieldUpstreamMultiplierBp, v))
+}
+
+// UpstreamMultiplierBpLT applies the LT predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpLT(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLT(FieldUpstreamMultiplierBp, v))
+}
+
+// UpstreamMultiplierBpLTE applies the LTE predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpLTE(v int) predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldLTE(FieldUpstreamMultiplierBp, v))
+}
+
+// UpstreamMultiplierBpIsNil applies the IsNil predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpIsNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldIsNull(FieldUpstreamMultiplierBp))
+}
+
+// UpstreamMultiplierBpNotNil applies the NotNil predicate on the "upstream_multiplier_bp" field.
+func UpstreamMultiplierBpNotNil() predicate.ErrLog {
+	return predicate.ErrLog(sql.FieldNotNull(FieldUpstreamMultiplierBp))
 }
 
 // UserIDEQ applies the EQ predicate on the "user_id" field.

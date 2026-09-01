@@ -23,6 +23,12 @@ func (s *Service) QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*
 	return s.store.QueryUsages(ctx, q)
 }
 
+// SummarizeUsages returns the aggregate across the complete usage-log filter
+// window. Cursor and limit do not affect the repository aggregate.
+func (s *Service) SummarizeUsages(ctx context.Context, q repository.UsageQuery) (*repository.UsageLogsSummary, error) {
+	return s.store.SummarizeUsages(ctx, q)
+}
+
 // QueryErrLogs err_logs 错误明细分页查询（/err_logs API：完整错误面——拒绝 +
 // 异常双轨，status_code/error_type 全值；行类型同为 *domain.UsageLog——
 // err_logs 表复用该领域类型）。keyset 游标分页同 QueryUsages。

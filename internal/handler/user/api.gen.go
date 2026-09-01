@@ -418,24 +418,42 @@ type UserChannelMetricStatus string
 
 // UserChannelModelPrice defines model for UserChannelModelPrice.
 type UserChannelModelPrice struct {
-	// CacheReadPerM 应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 未配置价格
+	// CacheReadPerM 按当前模型解析结果并应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 当前没有可用价
 	CacheReadPerM *float64 `json:"CacheReadPerM"`
 
-	// CacheWritePerM 应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 未配置价格
+	// CacheWritePerM 按当前模型解析结果并应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 当前没有可用价
 	CacheWritePerM *float64 `json:"CacheWritePerM"`
 
-	// InputPerM 应用分组倍率后的输入单价（USD/1M tokens）；null = 未配置价格
+	// InputPerM 按当前模型解析结果并应用分组倍率后的输入单价（USD/1M tokens）；null = 当前没有可用价
 	InputPerM *float64                   `json:"InputPerM"`
 	Mode      *UserChannelModelPriceMode `json:"Mode"`
 	Model     string                     `json:"Model"`
 
-	// OutputPerM 应用分组倍率后的输出单价（USD/1M tokens）；null = 未配置价格
+	// OfficialCacheReadPerM 价格目录原始缓存读取单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+	OfficialCacheReadPerM *float64 `json:"OfficialCacheReadPerM"`
+
+	// OfficialCacheWritePerM 价格目录原始缓存写入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+	OfficialCacheWritePerM *float64 `json:"OfficialCacheWritePerM"`
+
+	// OfficialInputPerM 价格目录原始输入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+	OfficialInputPerM *float64 `json:"OfficialInputPerM"`
+
+	// OfficialOutputPerM 价格目录原始输出单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+	OfficialOutputPerM *float64 `json:"OfficialOutputPerM"`
+
+	// OfficialPricePerCall 价格目录原始按次单价（USD/次），不含条件变体与分组倍率；null = 未配置
+	OfficialPricePerCall *float64 `json:"OfficialPricePerCall"`
+
+	// OfficialPricePerImage 价格目录原始图片单价（USD/张），不含条件变体与分组倍率；null = 未配置
+	OfficialPricePerImage *float64 `json:"OfficialPricePerImage"`
+
+	// OutputPerM 按当前模型解析结果并应用分组倍率后的输出单价（USD/1M tokens）；null = 当前没有可用价
 	OutputPerM *float64 `json:"OutputPerM"`
 
-	// PricePerCall 应用分组倍率后的按次单价（USD/次）；null = 未配置价格
+	// PricePerCall 按当前模型解析结果并应用分组倍率后的按次单价（USD/次）；null = 当前没有可用价
 	PricePerCall *float64 `json:"PricePerCall"`
 
-	// PricePerImage 应用分组倍率后的图片单价（USD/张）；null = 未配置价格
+	// PricePerImage 按当前模型解析结果并应用分组倍率后的图片单价（USD/张）；null = 当前没有可用价
 	PricePerImage *float64 `json:"PricePerImage"`
 }
 

@@ -17,6 +17,13 @@ import (
 )
 
 type multiplierRemainderKey struct {
+	// scope separates user billing carries from upstream-cost carries even when
+	// the remaining dimensions happen to be zero. The zero value is the legacy
+	// user/group billing scope; upstream paths use the explicit "upstream" scope.
+	scope string
+	// upstreamID identifies the configured upstream that owns an economics carry.
+	// It is populated only for the upstream scope.
+	upstreamID int64
 	// Account and key identity are part of the ledger bucket. A user can have
 	// several upstream accounts and gateway keys; their fractional balances
 	// must never be allowed to settle into one another.
@@ -82,7 +89,8 @@ type multiplierRemainderAccumulator struct {
 
 const (
 	maxBillingInt64       = int64(1<<63 - 1)
-	maxBillingMultiplier  = 100000 // 10x, the validated upper bound (万分数)
+	maxBillingMultiplier  = 100000    // 10x, the validated user/group upper bound (万分数)
+	maxUpstreamMultiplier = 1_000_000 // 100x, the validated upstream upper bound (万分数)
 	billingMultiplierBase = int64(10000)
 	remainderSweepEvery   = uint64(4096)
 	remainderIdleSeconds  = int64((24 * time.Hour) / time.Second)
@@ -99,6 +107,16 @@ func normalizeBillingMultiplier(m int) int {
 	}
 	if m > maxBillingMultiplier {
 		return maxBillingMultiplier
+	}
+	return m
+}
+
+func normalizeUpstreamMultiplier(m int) int {
+	if m < 0 {
+		return 0
+	}
+	if m > maxUpstreamMultiplier {
+		return maxUpstreamMultiplier
 	}
 	return m
 }
@@ -184,19 +202,40 @@ func applyMultiplier(cost int64, m int) int64 {
 	return out + 1
 }
 
+// applyUpstreamMultiplier is the same half-up fixed-point operation with the
+// separate upstream validation ceiling (100x). User/group billing continues to
+// use applyMultiplier and its 10x ceiling.
+func applyUpstreamMultiplier(cost int64, m int) int64 {
+	out, remainder := multiplierFloorPartsWithMax(cost, m, maxUpstreamMultiplier)
+	if out == maxBillingInt64 || remainder < billingMultiplierBase/2 {
+		return out
+	}
+	return out + 1
+}
+
 // multiplierFloorParts returns floor(cost*m/base) and the exact numerator
 // remainder. Splitting the result this way lets the request-level helper keep
 // its historical half-up contract while the live billing path aggregates the
 // remainder across requests instead of rounding every small request to zero.
 func multiplierFloorParts(cost int64, m int) (int64, int64) {
+	return multiplierFloorPartsWithMax(cost, m, maxBillingMultiplier)
+}
+
+func multiplierFloorPartsWithMax(cost int64, m, maxMultiplier int) (int64, int64) {
 	if cost <= 0 || m <= 0 {
 		return 0, 0
 	}
 	if m == int(billingMultiplierBase) {
 		return cost, 0
 	}
-	if m > maxBillingMultiplier {
-		m = maxBillingMultiplier
+	if maxMultiplier < 0 {
+		maxMultiplier = 0
+	}
+	if m > maxMultiplier {
+		m = maxMultiplier
+	}
+	if m <= 0 {
+		return 0, 0
 	}
 	// Compute cost*m/base without forming the potentially overflowing product.
 	// The remainder product is bounded by 9999*100000, while the quotient part
@@ -220,6 +259,24 @@ func multiplierFloorParts(cost int64, m int) (int64, int64) {
 // of the remainder key.
 func (a *multiplierRemainderAccumulator) apply(parts billing.CostParts, m int, userID, groupID int64) (int64, int64) {
 	return a.applyResolved(parts, m, userID, groupID, "", domain.ResolvedPrices{})
+}
+
+// applyUpstream carries only the multiplier fraction for a configured
+// upstream. RawCost is already an integer ledger amount, so the raw-price
+// remainder stage is intentionally unused here. Keeping this path separate
+// from user billing prevents a user's group/key dimensions from fragmenting
+// one upstream's cost estimate into many small rounded rows.
+func (a *multiplierRemainderAccumulator) applyUpstream(rawCost int64, multiplier int, upstreamID int64, model string, rp domain.ResolvedPrices) int64 {
+	if rawCost <= 0 || upstreamID <= 0 || multiplier <= 0 {
+		return applyUpstreamMultiplier(rawCost, multiplier)
+	}
+	m := normalizeUpstreamMultiplier(multiplier)
+	key := multiplierRemainderKey{
+		scope: "upstream", upstreamID: upstreamID, model: model,
+		multiplier: m, prices: snapshotResolvedPrices(rp),
+	}
+	_, billed := a.applyKey(billing.CostParts{Units: rawCost}, key)
+	return billed
 }
 
 // applyResolved emits aggregate raw and billed integer costs. The two-stage
@@ -257,7 +314,7 @@ func (a *multiplierRemainderAccumulator) applyKey(parts billing.CostParts, key m
 				// fraction.
 				a.trimSettled()
 				if !a.reserveCell() {
-					return applyConservativeCost(parts, key.multiplier)
+					return applyConservativeCostWithMax(parts, key.multiplier, maxMultiplierForKey(key))
 				}
 			}
 			candidate := &multiplierRemainderCell{}
@@ -301,7 +358,7 @@ func (a *multiplierRemainderAccumulator) applyKey(parts billing.CostParts, key m
 		cell.rawRemainder = 0
 	}
 
-	billed, fraction := multiplierFloorParts(raw, key.multiplier)
+	billed, fraction := multiplierFloorPartsWithMax(raw, key.multiplier, maxMultiplierForKey(key))
 	if billed == maxBillingInt64 {
 		cell.multiplierRemainder = 0
 	} else {
@@ -374,6 +431,13 @@ func (a *multiplierRemainderAccumulator) trimSettled() {
 	})
 }
 
+func maxMultiplierForKey(key multiplierRemainderKey) int {
+	if key.scope == "upstream" {
+		return maxUpstreamMultiplier
+	}
+	return maxBillingMultiplier
+}
+
 func normalizedCostParts(parts billing.CostParts) (int64, int64) {
 	units := parts.Units
 	if units < 0 {
@@ -391,6 +455,10 @@ func normalizedCostParts(parts billing.CostParts) (int64, int64) {
 // now. This may overstate by less than one ledger unit, but never turns a
 // positive cost into a free request or loses an unpaid fraction.
 func applyConservativeCost(parts billing.CostParts, multiplier int) (int64, int64) {
+	return applyConservativeCostWithMax(parts, multiplier, maxBillingMultiplier)
+}
+
+func applyConservativeCostWithMax(parts billing.CostParts, multiplier, maxMultiplier int) (int64, int64) {
 	units, rem := normalizedCostParts(parts)
 	if units < maxBillingInt64 {
 		carry := rem / billing.CostRemainderScale
@@ -406,11 +474,20 @@ func applyConservativeCost(parts billing.CostParts, multiplier int) (int64, int6
 	if units < maxBillingInt64 && rem%billing.CostRemainderScale != 0 {
 		units++
 	}
-	m := normalizeBillingMultiplier(multiplier)
+	if maxMultiplier < 0 {
+		maxMultiplier = 0
+	}
+	m := multiplier
+	if m < 0 {
+		m = 0
+	}
+	if m > maxMultiplier {
+		m = maxMultiplier
+	}
 	if m == 0 || units <= 0 {
 		return units, 0
 	}
-	billed, fraction := multiplierFloorParts(units, m)
+	billed, fraction := multiplierFloorPartsWithMax(units, m, maxMultiplier)
 	if billed < maxBillingInt64 && fraction > 0 {
 		billed++
 	}

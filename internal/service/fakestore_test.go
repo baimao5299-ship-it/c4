@@ -517,6 +517,10 @@ func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([
 	return f.queryLogs(q.UserID), nil
 }
 
+func (f *fakeStore) SummarizeUsages(ctx context.Context, q repository.UsageQuery) (*repository.UsageLogsSummary, error) {
+	return &repository.UsageLogsSummary{}, nil
+}
+
 // QueryErrLogs 模拟 repo 过滤（/err_logs：user_id > 0 强制过滤——/api/user/err_logs
 // 防越权测试依赖此语义）。
 func (f *fakeStore) QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, error) {

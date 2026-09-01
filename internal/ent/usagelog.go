@@ -21,12 +21,26 @@ type UsageLog struct {
 	RequestID string `json:"request_id,omitempty"`
 	// ClientIP holds the value of the "client_ip" field.
 	ClientIP *string `json:"client_ip,omitempty"`
+	// ClientIPSource holds the value of the "client_ip_source" field.
+	ClientIPSource *string `json:"client_ip_source,omitempty"`
+	// ClientIPTrusted holds the value of the "client_ip_trusted" field.
+	ClientIPTrusted *bool `json:"client_ip_trusted,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID *int64 `json:"group_id,omitempty"`
 	// AccountID holds the value of the "account_id" field.
 	AccountID *int64 `json:"account_id,omitempty"`
 	// TemplateID holds the value of the "template_id" field.
 	TemplateID *int64 `json:"template_id,omitempty"`
+	// TargetKind holds the value of the "target_kind" field.
+	TargetKind *string `json:"target_kind,omitempty"`
+	// UpstreamID holds the value of the "upstream_id" field.
+	UpstreamID *int64 `json:"upstream_id,omitempty"`
+	// UpstreamName holds the value of the "upstream_name" field.
+	UpstreamName *string `json:"upstream_name,omitempty"`
+	// UpstreamHost holds the value of the "upstream_host" field.
+	UpstreamHost *string `json:"upstream_host,omitempty"`
+	// UpstreamMultiplierBp holds the value of the "upstream_multiplier_bp" field.
+	UpstreamMultiplierBp *int `json:"upstream_multiplier_bp,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID *int64 `json:"user_id,omitempty"`
 	// KeyID holds the value of the "key_id" field.
@@ -69,6 +83,12 @@ type UsageLog struct {
 	Cost int64 `json:"cost,omitempty"`
 	// RawCost holds the value of the "raw_cost" field.
 	RawCost int64 `json:"raw_cost,omitempty"`
+	// UpstreamCost holds the value of the "upstream_cost" field.
+	UpstreamCost *int64 `json:"upstream_cost,omitempty"`
+	// GrossProfit holds the value of the "gross_profit" field.
+	GrossProfit *int64 `json:"gross_profit,omitempty"`
+	// ProfitMarginBp holds the value of the "profit_margin_bp" field.
+	ProfitMarginBp *int64 `json:"profit_margin_bp,omitempty"`
 	// BillingTier holds the value of the "billing_tier" field.
 	BillingTier *string `json:"billing_tier,omitempty"`
 	// AboveHit holds the value of the "above_hit" field.
@@ -87,11 +107,11 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case usagelog.FieldAboveHit, usagelog.FieldOverdraft, usagelog.FieldBilled:
+		case usagelog.FieldClientIPTrusted, usagelog.FieldAboveHit, usagelog.FieldOverdraft, usagelog.FieldBilled:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCallCount, usagelog.FieldPricePerCallMillis, usagelog.FieldCost, usagelog.FieldRawCost:
+		case usagelog.FieldID, usagelog.FieldGroupID, usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUpstreamID, usagelog.FieldUpstreamMultiplierBp, usagelog.FieldUserID, usagelog.FieldKeyID, usagelog.FieldLatencyMs, usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis, usagelog.FieldOutputTokens, usagelog.FieldPriceOutputMillis, usagelog.FieldTotalTokens, usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis, usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis, usagelog.FieldCallCount, usagelog.FieldPricePerCallMillis, usagelog.FieldCost, usagelog.FieldRawCost, usagelog.FieldUpstreamCost, usagelog.FieldGrossProfit, usagelog.FieldProfitMarginBp:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldClientIP, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldBillingTier:
+		case usagelog.FieldRequestID, usagelog.FieldClientIP, usagelog.FieldClientIPSource, usagelog.FieldTargetKind, usagelog.FieldUpstreamName, usagelog.FieldUpstreamHost, usagelog.FieldModel, usagelog.FieldMappedModel, usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldBillingTier:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -129,6 +149,20 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				_m.ClientIP = new(string)
 				*_m.ClientIP = value.String
 			}
+		case usagelog.FieldClientIPSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field client_ip_source", values[i])
+			} else if value.Valid {
+				_m.ClientIPSource = new(string)
+				*_m.ClientIPSource = value.String
+			}
+		case usagelog.FieldClientIPTrusted:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field client_ip_trusted", values[i])
+			} else if value.Valid {
+				_m.ClientIPTrusted = new(bool)
+				*_m.ClientIPTrusted = value.Bool
+			}
 		case usagelog.FieldGroupID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
@@ -149,6 +183,41 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TemplateID = new(int64)
 				*_m.TemplateID = value.Int64
+			}
+		case usagelog.FieldTargetKind:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field target_kind", values[i])
+			} else if value.Valid {
+				_m.TargetKind = new(string)
+				*_m.TargetKind = value.String
+			}
+		case usagelog.FieldUpstreamID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_id", values[i])
+			} else if value.Valid {
+				_m.UpstreamID = new(int64)
+				*_m.UpstreamID = value.Int64
+			}
+		case usagelog.FieldUpstreamName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_name", values[i])
+			} else if value.Valid {
+				_m.UpstreamName = new(string)
+				*_m.UpstreamName = value.String
+			}
+		case usagelog.FieldUpstreamHost:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_host", values[i])
+			} else if value.Valid {
+				_m.UpstreamHost = new(string)
+				*_m.UpstreamHost = value.String
+			}
+		case usagelog.FieldUpstreamMultiplierBp:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_multiplier_bp", values[i])
+			} else if value.Valid {
+				_m.UpstreamMultiplierBp = new(int)
+				*_m.UpstreamMultiplierBp = int(value.Int64)
 			}
 		case usagelog.FieldUserID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -285,6 +354,27 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RawCost = value.Int64
 			}
+		case usagelog.FieldUpstreamCost:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_cost", values[i])
+			} else if value.Valid {
+				_m.UpstreamCost = new(int64)
+				*_m.UpstreamCost = value.Int64
+			}
+		case usagelog.FieldGrossProfit:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field gross_profit", values[i])
+			} else if value.Valid {
+				_m.GrossProfit = new(int64)
+				*_m.GrossProfit = value.Int64
+			}
+		case usagelog.FieldProfitMarginBp:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field profit_margin_bp", values[i])
+			} else if value.Valid {
+				_m.ProfitMarginBp = new(int64)
+				*_m.ProfitMarginBp = value.Int64
+			}
 		case usagelog.FieldBillingTier:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field billing_tier", values[i])
@@ -360,6 +450,16 @@ func (_m *UsageLog) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
+	if v := _m.ClientIPSource; v != nil {
+		builder.WriteString("client_ip_source=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.ClientIPTrusted; v != nil {
+		builder.WriteString("client_ip_trusted=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	if v := _m.GroupID; v != nil {
 		builder.WriteString("group_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
@@ -372,6 +472,31 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.TemplateID; v != nil {
 		builder.WriteString("template_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.TargetKind; v != nil {
+		builder.WriteString("target_kind=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamID; v != nil {
+		builder.WriteString("upstream_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamName; v != nil {
+		builder.WriteString("upstream_name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamHost; v != nil {
+		builder.WriteString("upstream_host=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamMultiplierBp; v != nil {
+		builder.WriteString("upstream_multiplier_bp=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
@@ -455,6 +580,21 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("raw_cost=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RawCost))
+	builder.WriteString(", ")
+	if v := _m.UpstreamCost; v != nil {
+		builder.WriteString("upstream_cost=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.GrossProfit; v != nil {
+		builder.WriteString("gross_profit=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.ProfitMarginBp; v != nil {
+		builder.WriteString("profit_margin_bp=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.BillingTier; v != nil {
 		builder.WriteString("billing_tier=")

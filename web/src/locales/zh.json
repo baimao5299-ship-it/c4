@@ -865,7 +865,7 @@
   },
   "logs": {
     "title": "日志",
-    "subtitle": "按条件查询用量日志",
+    "subtitle": "按条件追踪请求路由、结算与错误阶段",
     "tab": {
       "usage": "用量日志",
       "errors": "错误日志"
@@ -879,6 +879,9 @@
       "format": "格式",
       "errorType": "错误类型",
       "statusCode": "状态码",
+      "toggle": "筛选条件",
+      "show": "展开",
+      "hide": "收起",
       "all": "全部",
       "reset": "重置",
       "searching": "搜索中…",
@@ -890,21 +893,81 @@
       "createdAt": "时间",
       "group": "分组",
       "account": "账号",
+      "upstream": "命中上游",
       "model": "模型",
       "format": "格式",
       "errorType": "错误类型",
       "statusCode": "状态码",
       "errorMessage": "错误信息",
       "cost": "费用",
+      "finance": "结算 / 毛利",
       "billingTier": "计费档",
       "aboveHit": "超档",
       "overdraft": "透支",
       "latency": "耗时",
+      "diagnostics": "耗时 / 诊断",
       "tokens": "Token",
       "title": "共 {{total}} 条记录",
       "user": "用户",
       "key": "Key",
-      "ip": "IP"
+      "ip": "IP",
+      "client": "客户端"
+    },
+    "value": {
+      "unrecorded": "未记录"
+    },
+    "client": {
+      "trusted": "可信",
+      "untrusted": "不可信",
+      "unknownTrust": "可信度未知",
+      "source": "来源：{{source}}",
+      "lookupRegion": "查询大致地区",
+      "sources": {
+        "remote_addr": "直连地址",
+        "cf_connecting_ip": "Cloudflare 客户端头",
+        "true_client_ip": "True-Client-IP 头",
+        "x_real_ip": "X-Real-IP 头"
+      }
+    },
+    "upstream": {
+      "unknown": "目标未命名",
+      "targetKind": "路由：{{value}}",
+      "costMultiplier": "成本倍率 ×{{value}}",
+      "targetKinds": {
+        "account": "账号直连",
+        "upstream_member": "上游池成员"
+      }
+    },
+    "finance": {
+      "userCharge": "用户扣费",
+      "upstreamCost": "估算上游成本",
+      "grossProfit": "估算毛利",
+      "margin": "估算利润率",
+      "estimateBasis": "按请求时配置倍率估算"
+    },
+    "summary": {
+      "title": "筛选结果汇总",
+      "basis": "共 {{total}} 次请求，其中 {{costed}} 次有成本快照。上游成本、毛利与毛利率仅统计这些请求，按配置倍率估算，并非上游账单。",
+      "requestCount": "请求数",
+      "userCharge": "用户收入",
+      "upstreamCost": "估算上游成本",
+      "grossProfit": "估算毛利",
+      "profitMargin": "估算毛利率",
+      "lossRequestCount": "亏损请求",
+      "refreshing": "正在刷新…",
+      "loadFailed": "汇总加载失败：{{message}}"
+    },
+    "diagnostics": {
+      "attempts": "尝试 {{count}}",
+      "failovers": "故障转移 {{count}}",
+      "errorStage": "错误阶段",
+      "incomplete": "未完成"
+    },
+    "mobile": {
+      "route": "实际路由",
+      "finance": "结算与毛利",
+      "diagnostics": "耗时与错误阶段",
+      "client": "客户端来源"
     },
     "tokens": {
       "read": "读",
@@ -1914,7 +1977,14 @@
       "imageShort": "按张",
       "callUnit": "次",
       "imageUnit": "张",
-      "priceUnit": "价格：美元 / 100 万 token；— 表示尚未定价",
+      "officialShort": "官方价",
+      "groupShort": "分组价",
+      "discountedShort": "优惠价",
+      "officialPrice": "价格目录原价",
+      "copyModel": "复制模型名称",
+      "copiedModel": "已复制",
+      "copyFailed": "复制失败",
+      "priceUnit": "价格：美元 / 100 万 token；官方价为价格目录原价，分组价为本组实际扣费；— 表示尚未定价",
       "modelsPending": "管理员尚未配置模型",
       "notCalled": "暂无调用",
       "totalChannels": "公开渠道",

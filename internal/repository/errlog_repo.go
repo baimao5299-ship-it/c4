@@ -70,6 +70,12 @@ func buildErrLogCreate(client *ent.Client, l *domain.UsageLog) *ent.ErrLogCreate
 	if l.ClientIP != "" {
 		c = c.SetClientIP(l.ClientIP)
 	}
+	if l.ClientIPSource != "" {
+		c = c.SetClientIPSource(l.ClientIPSource)
+	}
+	if l.ClientIPTrusted != nil {
+		c = c.SetClientIPTrusted(*l.ClientIPTrusted)
+	}
 	if l.GroupID > 0 {
 		c = c.SetGroupID(l.GroupID)
 	}
@@ -78,6 +84,21 @@ func buildErrLogCreate(client *ent.Client, l *domain.UsageLog) *ent.ErrLogCreate
 	}
 	if l.TemplateID > 0 {
 		c = c.SetTemplateID(l.TemplateID)
+	}
+	if l.TargetKind != "" {
+		c = c.SetTargetKind(l.TargetKind)
+	}
+	if l.UpstreamID > 0 {
+		c = c.SetUpstreamID(l.UpstreamID)
+	}
+	if l.UpstreamName != "" {
+		c = c.SetUpstreamName(l.UpstreamName)
+	}
+	if l.UpstreamHost != "" {
+		c = c.SetUpstreamHost(l.UpstreamHost)
+	}
+	if l.UpstreamMultiplierBP != nil {
+		c = c.SetUpstreamMultiplierBp(*l.UpstreamMultiplierBP)
 	}
 	if l.UserID > 0 {
 		c = c.SetUserID(l.UserID)
@@ -151,6 +172,10 @@ func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain
 		if row.ClientIP != nil {
 			l.ClientIP = *row.ClientIP
 		}
+		if row.ClientIPSource != nil {
+			l.ClientIPSource = *row.ClientIPSource
+		}
+		l.ClientIPTrusted = row.ClientIPTrusted
 		if row.GroupID != nil {
 			l.GroupID = *row.GroupID
 		}
@@ -160,6 +185,19 @@ func (r *ErrLogRepo) QueryErrLogs(ctx context.Context, q ErrLogQuery) ([]*domain
 		if row.TemplateID != nil {
 			l.TemplateID = *row.TemplateID
 		}
+		if row.TargetKind != nil {
+			l.TargetKind = *row.TargetKind
+		}
+		if row.UpstreamID != nil {
+			l.UpstreamID = *row.UpstreamID
+		}
+		if row.UpstreamName != nil {
+			l.UpstreamName = *row.UpstreamName
+		}
+		if row.UpstreamHost != nil {
+			l.UpstreamHost = *row.UpstreamHost
+		}
+		l.UpstreamMultiplierBP = row.UpstreamMultiplierBp
 		if row.UserID != nil {
 			l.UserID = *row.UserID
 		}

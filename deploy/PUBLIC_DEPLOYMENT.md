@@ -51,6 +51,16 @@ Compose 默认给应用、PostgreSQL 和 Redis 设置内存/CPU 上限，并为�
 4. Caddy 启动后，用户访问 `https://你的域名/user/login`；客户端 API Base URL 使用
    `https://你的域名/v1`。
 
+### 来源 IP 信任边界
+
+生产配置的 `proxy.trusted_proxy_cidrs` 默认只信任本机回环地址。C4 只会在
+请求的直接对端命中这些网段时采信 `CF-Connecting-IP`、`True-Client-IP`
+和 `X-Real-IP`；其他请求会记录实际对端并标记为未验证，客户端不能伪造
+限流和审计来源。若 Caddy 通过 Docker 网络访问 C4，直接对端可能是该网络的
+网关地址，此时将 `docker network inspect <project>_default` 中的网关以
+`/32`（IPv6 用 `/128`）加入列表。只填写实际反代网段，不要使用
+`0.0.0.0/0` 或整个公网地址段。
+
 ## 开放用户前检查
 
 - 管理员打开 `/user/login`，切换到“管理员令牌”并粘贴部署时生成的 `ADMIN_TOKEN`；页面会先调用一个只读管理接口验证令牌，再进入 `/app`。

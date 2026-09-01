@@ -52,7 +52,8 @@ func (p *Proxy) guardPipeline(w http.ResponseWriter, r *http.Request, format dom
 	// Authenticate(r) 只读 Header 不碰 ctx，WithValue 不改 header 无干扰；成功
 	// 路径分配不变（原本就有一个 rm），错误路径多一个 reqMeta 堆分配（非热
 	// 路径，可接受）。
-	rm := &reqMeta{clientIP: clientIP(r, p.cfg.BehindCDN)}
+	clientIPValue, clientIPSource, clientIPTrusted := clientIPDetailsWithTrustedProxies(r, p.cfg.BehindCDN, p.trustedProxyCIDRs)
+	rm := &reqMeta{clientIP: clientIPValue, clientIPSource: clientIPSource, clientIPTrusted: clientIPTrusted}
 	r = r.WithContext(context.WithValue(r.Context(), ctxKeyReqMeta{}, rm))
 	meta, ok := p.auth.Authenticate(r)
 	if !ok {
@@ -318,7 +319,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		if precheck {
 			if err := p.precheckPrice(format, sel.Model); err != nil {
 				p.sched.ReleaseSelection(sel)
-				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg)
+				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg, sel)
 				sink.writePrecheckRejected(w, st)
 				return
 			}
@@ -414,6 +415,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 					failureMessage = domain.TruncateErrMsg(callErr.Error())
 				}
 				failureLog := logWithCtx(r.Context(), p.buildLog(reqID, groupID, failed.AccountID, reqModel, failed.Model, format, code, domain.Err4xx, usageTuple{}, start))
+				applySelectionAttribution(failureLog, failed)
 				if failureMessage != "" {
 					failureLog.ErrorMessage = &failureMessage
 				}
@@ -537,6 +539,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 	status := passthroughStatus(then, lastCode)
 	applyPassthroughHeader(w, then, lastHdr, status)
 	l := logWithCtx(r.Context(), p.buildLog(reqID, groupID, lastSel.AccountID, reqModel, lastSel.Model, format, lastCode, et, usageTuple{}, start))
+	applySelectionAttribution(l, lastSel)
 	if lastErrMsg != "" {
 		l.ErrorMessage = &lastErrMsg
 	}

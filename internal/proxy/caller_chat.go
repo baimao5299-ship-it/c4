@@ -29,6 +29,10 @@ type chatCaller struct{ p *Proxy }
 func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 
+	if err := validateRequestParameterTypes(domain.FormatOpenAIChat, body); err != nil {
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, domain.FormatOpenAIChat, body, err)
+	}
+
 	if stream {
 		// 客户端请求模型：流式无完整 params 解析（评审 I-2），gjson 顶层
 		// 提取（1 次分配，远低于旧的完整参数解析）。ChatModel 即 string 别名。
@@ -109,12 +113,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 	var params openai.ChatCompletionNewParams
 	if err := json.Unmarshal(body, &params); err != nil {
-		// 本地拒绝（handled=true，无记录）：非流式 params 解析失败现状即
-		// 本地 400、不记日志（评审 I-1 附加缺口）。Select 已占并发槽，必须
-		// 释放（Release-only；finish(nil) 等价，直接 Release 更显式）。
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
-		p.sched.ReleaseSelection(sel)
-		return 400, nil, true, nil
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, domain.FormatOpenAIChat, body, err)
 	}
 	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
 	reqModel := params.Model

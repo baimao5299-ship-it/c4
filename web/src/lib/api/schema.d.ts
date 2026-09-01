@@ -1322,6 +1322,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/usage_logs/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按用量日志筛选条件聚合用户收入与配置倍率估算的上游成本/毛利（不是上游账单） */
+        get: operations["GetUsageLogsSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/err_logs": {
         parameters: {
             query?: never;
@@ -2087,34 +2104,64 @@ export interface components {
             Model: string;
             /**
              * Format: double
-             * @description 应用分组倍率后的输入单价（USD/1M tokens）；null = 未配置价格
+             * @description 按当前模型解析结果并应用分组倍率后的输入单价（USD/1M tokens）；null = 当前没有可用价
              */
             InputPerM?: number | null;
             /**
              * Format: double
-             * @description 应用分组倍率后的输出单价（USD/1M tokens）；null = 未配置价格
+             * @description 按当前模型解析结果并应用分组倍率后的输出单价（USD/1M tokens）；null = 当前没有可用价
              */
             OutputPerM?: number | null;
             /**
              * Format: double
-             * @description 应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 未配置价格
+             * @description 按当前模型解析结果并应用分组倍率后的缓存读取单价（USD/1M tokens）；null = 当前没有可用价
              */
             CacheReadPerM?: number | null;
             /**
              * Format: double
-             * @description 应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 未配置价格
+             * @description 按当前模型解析结果并应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 当前没有可用价
              */
             CacheWritePerM?: number | null;
             /**
              * Format: double
-             * @description 应用分组倍率后的按次单价（USD/次）；null = 未配置价格
+             * @description 按当前模型解析结果并应用分组倍率后的按次单价（USD/次）；null = 当前没有可用价
              */
             PricePerCall?: number | null;
             /**
              * Format: double
-             * @description 应用分组倍率后的图片单价（USD/张）；null = 未配置价格
+             * @description 按当前模型解析结果并应用分组倍率后的图片单价（USD/张）；null = 当前没有可用价
              */
             PricePerImage?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始输入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialInputPerM?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始输出单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialOutputPerM?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始缓存读取单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialCacheReadPerM?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始缓存写入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialCacheWritePerM?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始按次单价（USD/次），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialPricePerCall?: number | null;
+            /**
+             * Format: double
+             * @description 价格目录原始图片单价（USD/张），不含条件变体与分组倍率；null = 未配置
+             */
+            OfficialPricePerImage?: number | null;
             /** @enum {string|null} */
             Mode?: "token" | "call" | "image" | null;
         };
@@ -2997,12 +3044,35 @@ export interface components {
             RequestID?: string;
             /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
             ClientIP?: string;
+            /**
+             * @description 客户端 IP 来源的请求时快照；null = 历史行未记录
+             * @enum {string|null}
+             */
+            ClientIPSource?: "remote_addr" | "cf_connecting_ip" | "true_client_ip" | "x_real_ip" | null;
+            /** @description 该 IP 来源是否被请求时的代理配置信任；null = 未知 */
+            ClientIPTrusted?: boolean | null;
             /** Format: int64 */
             GroupID?: number;
             /** Format: int64 */
             AccountID?: number;
             /** Format: int64 */
             TemplateID?: number;
+            /**
+             * @description 实际调度目标类型；null = 未选路/历史行
+             * @enum {string|null}
+             */
+            TargetKind?: "account" | "upstream_member" | null;
+            /**
+             * Format: int64
+             * @description 实际命中的上游清单 ID（非 group-member 关系 ID）；null = 未绑定/未记录
+             */
+            UpstreamID?: number | null;
+            /** @description 请求选路时的上游名称快照 */
+            UpstreamName?: string | null;
+            /** @description 请求选路时的上游 host 快照（不含凭据/path/query/fragment） */
+            UpstreamHost?: string | null;
+            /** @description 请求选路时的配置成本倍率万分数；null = 未知 */
+            UpstreamMultiplierBP?: number | null;
             /**
              * Format: int64
              * @description 鉴权归属用户；0 = 无
@@ -3061,9 +3131,29 @@ export interface components {
             Cost?: number;
             /**
              * Format: int64
+             * @description 用户扣费（毫分），与 Cost 同值的明确业务语义
+             */
+            UserCharge?: number;
+            /**
+             * Format: int64
              * @description 原始成本（毫分，乘倍率前——免费组 cost=0 但 raw 有值，实际消耗口径）；bill 未装配/无价防御路径恒 0
              */
             RawCost?: number;
+            /**
+             * Format: int64
+             * @description 上游成本估算（毫分）= RawCost × 请求时配置倍率；非上游账单；null = 无价格或倍率快照
+             */
+            UpstreamCost?: number | null;
+            /**
+             * Format: int64
+             * @description 估算毛利（毫分）= UserCharge - UpstreamCost
+             */
+            GrossProfit?: number | null;
+            /**
+             * Format: int64
+             * @description 估算毛利率万分数；用户扣费为 0 时 null
+             */
+            ProfitMarginBP?: number | null;
             /** @description 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径 */
             BillingTier?: string;
             /** @description 任一分量超 above 阈值命中分段 */
@@ -3160,6 +3250,48 @@ export interface components {
              */
             next_cursor: number | null;
         };
+        UsageLogsSummary: {
+            /**
+             * Format: int64
+             * @description 筛选窗口内的用量请求数
+             */
+            RequestCount: number;
+            /**
+             * Format: int64
+             * @description 具备上游成本估算的请求数
+             */
+            CostedRequestCount: number;
+            /**
+             * Format: int64
+             * @description 全部筛选行的用户扣费合计（毫分）
+             */
+            UserCharge: number;
+            /**
+             * Format: int64
+             * @description 仅上游成本已知行的用户扣费合计（毛利率分母）
+             */
+            AttributedUserCharge: number;
+            /**
+             * Format: int64
+             * @description 已知行的配置倍率上游成本估算合计；无已知行时 null
+             */
+            UpstreamCost?: number | null;
+            /**
+             * Format: int64
+             * @description 已知行的估算毛利合计；无已知行时 null
+             */
+            GrossProfit?: number | null;
+            /**
+             * Format: int64
+             * @description GrossProfit / AttributedUserCharge 的万分数；分母为 0 时 null
+             */
+            ProfitMarginBP?: number | null;
+            /**
+             * Format: int64
+             * @description GrossProfit < 0 的已知行数
+             */
+            LossRequestCount: number;
+        };
         UserLogsResponse: {
             rows: components["schemas"]["UserUsageLog"][];
             /**
@@ -3175,12 +3307,26 @@ export interface components {
             RequestID?: string;
             /** @description 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无 */
             ClientIP?: string;
+            /** @enum {string|null} */
+            ClientIPSource?: "remote_addr" | "cf_connecting_ip" | "true_client_ip" | "x_real_ip" | null;
+            ClientIPTrusted?: boolean | null;
             /** Format: int64 */
             GroupID?: number;
             /** Format: int64 */
             AccountID?: number;
             /** Format: int64 */
             TemplateID?: number;
+            /** @enum {string|null} */
+            TargetKind?: "account" | "upstream_member" | null;
+            /**
+             * Format: int64
+             * @description 最后一次实际尝试的上游清单 ID
+             */
+            UpstreamID?: number | null;
+            UpstreamName?: string | null;
+            /** @description 不含凭据/path/query/fragment */
+            UpstreamHost?: string | null;
+            UpstreamMultiplierBP?: number | null;
             /**
              * Format: int64
              * @description 鉴权归属用户；0 = 无
@@ -6141,6 +6287,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    GetUsageLogsSummary: {
+        parameters: {
+            query: {
+                group_id?: number;
+                account_id?: number;
+                user_id?: number;
+                key_id?: number;
+                model?: string;
+                format?: components["schemas"]["RequestFormat"];
+                error_type?: string;
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 整个筛选时间窗的真实聚合（不受当前分页影响） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageLogsSummary"];
                 };
             };
             default: components["responses"]["Error"];

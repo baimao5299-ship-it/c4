@@ -43,8 +43,15 @@ type PricingPreviewEntry struct {
 }
 
 type priceSnapshot struct {
-	entries  map[string]*domain.PriceEntry
-	variants map[string][]*domain.PriceVariant
+	// entries contains only models whose conditional branches can be represented
+	// exactly on the billing price grid. It is the runtime/billing view.
+	entries map[string]*domain.PriceEntry
+	// catalogue keeps every persisted row, including a row temporarily excluded
+	// from runtime billing because one conditional variant is invalid. The user
+	// model monitor can therefore show the authoritative catalogue price instead
+	// of silently dropping a model.
+	catalogue map[string]*domain.PriceEntry
+	variants  map[string][]*domain.PriceVariant
 }
 
 const pricingReloadPage = 1000
@@ -116,8 +123,13 @@ func (s *Service) loadPricingSnapshot(ctx context.Context) (*priceSnapshot, erro
 		return nil, err
 	}
 	entriesMap := make(map[string]*domain.PriceEntry, len(all))
+	catalogueMap := make(map[string]*domain.PriceEntry, len(all))
 	for _, e := range all {
+		if e == nil || strings.TrimSpace(e.Model) == "" {
+			continue
+		}
 		entriesMap[e.Model] = e
+		catalogueMap[e.Model] = e
 	}
 	vMap := make(map[string][]*domain.PriceVariant)
 	for _, v := range variants {
@@ -147,7 +159,7 @@ func (s *Service) loadPricingSnapshot(ctx context.Context) (*priceSnapshot, erro
 			delete(vMap, model)
 		}
 	}
-	return &priceSnapshot{entries: entriesMap, variants: vMap}, nil
+	return &priceSnapshot{entries: entriesMap, catalogue: catalogueMap, variants: vMap}, nil
 }
 
 // ResolvePrices 模型价格解析：快照零 DB 读 + 委托 domain 解析核
@@ -163,11 +175,13 @@ func (s *Service) ResolvePrices(model string, promptTokens int64, tier string, a
 	return domain.ResolveEntryPrices((*snap).entries[model], (*snap).variants[model], tier, promptTokens, at)
 }
 
-// PriceEntriesForModels returns the current immutable price snapshot for the
-// requested model names. The user-facing channel monitor calls this on every
-// refresh, so it must stay off the database hot path after startup and after a
-// pricing reload. A database fallback keeps the endpoint useful during the
-// short window before the first snapshot has been built.
+// PriceEntriesForModels returns the current immutable catalogue rows for the
+// requested model names. It intentionally reads the catalogue view rather than
+// the runtime billing view, so a model with an invalid conditional branch can
+// still explain its official price in the monitor. The user-facing channel
+// monitor calls this on every refresh, so it must stay off the database hot path
+// after startup and after a pricing reload. A database fallback keeps the
+// endpoint useful during the short window before the first snapshot is built.
 func (s *Service) PriceEntriesForModels(ctx context.Context, models []string) (map[string]*domain.PriceEntry, error) {
 	wanted := make(map[string]struct{}, len(models))
 	for _, model := range models {
@@ -182,7 +196,7 @@ func (s *Service) PriceEntriesForModels(ctx context.Context, models []string) (m
 	}
 	if snap := s.priceSnapshot.Load(); snap != nil {
 		for model := range wanted {
-			if entry := snap.entries[model]; entry != nil {
+			if entry := snap.catalogue[model]; entry != nil {
 				out[model] = entry
 			}
 		}
@@ -210,6 +224,44 @@ func (s *Service) PriceEntriesForModels(ctx context.Context, models []string) (m
 		}
 	}
 	return out, nil
+}
+
+// pricingProjectionForModels reads the catalogue and runtime views from one
+// immutable snapshot. Keeping the two maps together prevents a pricing reload
+// between separate calls from pairing an old official price with a new
+// effective price in the user-facing model monitor.
+func (s *Service) pricingProjectionForModels(ctx context.Context, models []string, tier string, promptTokens int64, at time.Time) (map[string]*domain.PriceEntry, map[string]domain.ResolvedPrices, error) {
+	wanted := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		if model = strings.TrimSpace(model); model != "" {
+			wanted[model] = struct{}{}
+		}
+	}
+	catalogue := make(map[string]*domain.PriceEntry, len(wanted))
+	resolved := make(map[string]domain.ResolvedPrices, len(wanted))
+	if len(wanted) == 0 {
+		return catalogue, resolved, nil
+	}
+	snap := s.priceSnapshot.Load()
+	if snap == nil {
+		loaded, err := s.loadPricingSnapshot(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		snap = loaded
+	}
+	if s.tzLoc != nil {
+		at = at.In(s.tzLoc)
+	}
+	for model := range wanted {
+		if entry := snap.catalogue[model]; entry != nil {
+			catalogue[model] = entry
+		}
+		if rp, ok := domain.ResolveEntryPrices(snap.entries[model], snap.variants[model], tier, promptTokens, at); ok {
+			resolved[model] = rp
+		}
+	}
+	return catalogue, resolved, nil
 }
 
 // ResolvedPricesForModels returns the same current price projection used by

@@ -747,6 +747,12 @@ func (r *Repository) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.U
 	return r.Usages.QueryUsages(ctx, q)
 }
 
+// SummarizeUsages returns a full-window aggregate for the active usage log
+// filters. Pagination fields on q are ignored by UsageRepo.
+func (r *Repository) SummarizeUsages(ctx context.Context, q UsageQuery) (*UsageLogsSummary, error) {
+	return r.Usages.SummarizeUsages(ctx, q)
+}
+
 // ScanPublicChannelStats exposes the privacy-safe public-group aggregate to
 // the user API without widening the legacy LogStore interface.
 func (r *Repository) ScanPublicChannelStats(ctx context.Context, groupIDs []int64, from, to time.Time) (map[int64]*domain.PublicChannelStat, error) {

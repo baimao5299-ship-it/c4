@@ -118,6 +118,18 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 		p.record(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, statusClientClosedRequest, domain.ErrAbort, 0, usageTuple{}, start)
 		return
 	}
+	if !json.Valid(first) {
+		wsWriteError(client, "invalid request body: invalid JSON")
+		return
+	}
+	// The first frame is the Responses request body. Validate its known
+	// top-level wire types before extracting billing fields or selecting an
+	// account so malformed frames receive the same deterministic 400 error as
+	// the HTTP Responses caller and never consume an upstream slot.
+	if err := validateRequestParameterTypes(domain.FormatOpenAIResponses, first); err != nil {
+		wsWriteError(client, "invalid request body: "+err.Error())
+		return
+	}
 	reqModel := gjson.GetBytes(first, "model").String()
 
 	// service_tier 归一化 + 转发策略（首帧读后、Select 前——与 HTTP

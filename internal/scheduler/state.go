@@ -38,6 +38,13 @@ type snapshotStatic struct {
 	// disabled upstream is kept in the snapshot for observability but skipped
 	// by selection until the next upstream reload.
 	upstreamEnabled bool
+	// Managed-upstream attribution is copied into Selection at admission time.
+	// Keeping it in this immutable view avoids parsing URLs or reading mutable
+	// inventory state on the request hot path.
+	upstreamID           int64
+	upstreamName         string
+	upstreamHost         string
+	upstreamMultiplierBP int
 }
 
 type accountSnapshot struct {

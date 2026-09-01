@@ -745,14 +745,33 @@ type KeyMeta struct {
 // 列删除——image token 价快照列随之删除，cost 口径不变：ImageCost 仍按
 // 张数 × 每张价 + image token 价计算）。
 type UsageLog struct {
-	ID                       int64
-	RequestID                string
-	ClientIP                 string // 客户端 IP（供应商头按序识别 + RemoteAddr 兜底——proxy.behind_cdn 门控；审计/排障标识，非安全边界；空 = 理论无（提取恒有兜底））
-	GroupID                  int64  // 0 = 无
-	AccountID                int64  // 0 = 无
-	TemplateID               int64  // 0 = 无
-	UserID                   int64  // 0 = 无（鉴权失败/无 key）
-	KeyID                    int64  // 0 = 无
+	ID        int64
+	RequestID string
+	ClientIP  string // 客户端 IP（供应商头按序识别 + RemoteAddr 兜底——proxy.behind_cdn 门控；审计/排障标识，非安全边界；空 = 理论无（提取恒有兜底））
+	// ClientIPSource records which request source produced ClientIP. New rows
+	// use remote_addr, cf_connecting_ip, true_client_ip, or x_real_ip; empty
+	// keeps historical rows explicitly unknown.
+	ClientIPSource string
+	// ClientIPTrusted snapshots whether the chosen source was trusted under the
+	// request-time proxy mode. Nil preserves the unknown state for old rows.
+	ClientIPTrusted *bool
+	// TargetKind and the upstream fields snapshot the actual scheduler choice.
+	// UpstreamID is the managed upstream inventory ID, never a group-member ID.
+	TargetKind           string
+	UpstreamID           int64
+	UpstreamName         string
+	UpstreamHost         string
+	UpstreamMultiplierBP *int
+	// These values are estimates derived from the configured request-time
+	// multiplier and local price snapshot, not provider invoice amounts.
+	UpstreamCost             *int64
+	GrossProfit              *int64
+	ProfitMarginBP           *int64
+	GroupID                  int64 // 0 = 无
+	AccountID                int64 // 0 = 无
+	TemplateID               int64 // 0 = 无
+	UserID                   int64 // 0 = 无（鉴权失败/无 key）
+	KeyID                    int64 // 0 = 无
 	Model                    string
 	MappedModel              string // 空 = 未映射
 	Format                   RequestFormat

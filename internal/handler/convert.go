@@ -440,10 +440,11 @@ func toAPIUser(u *domain.User) User {
 func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 	f := RequestFormat(l.Format)
 	et := ErrorType(l.ErrorType)
-	return UsageLog{
+	out := UsageLog{
 		ID:                       &l.ID,
 		RequestID:                &l.RequestID,
 		ClientIP:                 &l.ClientIP,
+		ClientIPTrusted:          l.ClientIPTrusted,
 		GroupID:                  &l.GroupID,
 		AccountID:                &l.AccountID,
 		TemplateID:               &l.TemplateID,
@@ -465,12 +466,35 @@ func toAPIUsageLog(l *domain.UsageLog) UsageLog {
 		CacheCreationTokens:      &l.CacheCreationTokens,
 		PriceCacheCreationMillis: l.PriceCacheCreationMillis,
 		Cost:                     &l.Cost,
+		UserCharge:               &l.Cost,
 		RawCost:                  &l.RawCost,
+		UpstreamCost:             l.UpstreamCost,
+		GrossProfit:              l.GrossProfit,
+		ProfitMarginBP:           l.ProfitMarginBP,
 		BillingTier:              &l.BillingTier,
 		AboveHit:                 &l.AboveHit,
 		Overdraft:                &l.Overdraft,
 		CreatedAt:                &l.CreatedAt,
 	}
+	if l.ClientIPSource != "" {
+		v := UsageLogClientIPSource(l.ClientIPSource)
+		out.ClientIPSource = &v
+	}
+	if l.TargetKind != "" {
+		v := UsageLogTargetKind(l.TargetKind)
+		out.TargetKind = &v
+	}
+	if l.UpstreamID > 0 {
+		out.UpstreamID = &l.UpstreamID
+	}
+	if l.UpstreamName != "" {
+		out.UpstreamName = &l.UpstreamName
+	}
+	if l.UpstreamHost != "" {
+		out.UpstreamHost = &l.UpstreamHost
+	}
+	out.UpstreamMultiplierBP = l.UpstreamMultiplierBP
+	return out
 }
 
 // toAPIErrLog 错误明细领域对象（*domain.UsageLog 瞬态审计字段投影）→ /err_logs
@@ -480,22 +504,41 @@ func toAPIErrLog(l *domain.UsageLog) ErrLog {
 	f := RequestFormat(l.Format)
 	et := ErrorType(l.ErrorType)
 	e := ErrLog{
-		ID:           &l.ID,
-		RequestID:    &l.RequestID,
-		ClientIP:     &l.ClientIP,
-		GroupID:      &l.GroupID,
-		AccountID:    &l.AccountID,
-		TemplateID:   &l.TemplateID,
-		UserID:       &l.UserID,
-		KeyID:        &l.KeyID,
-		Model:        &l.Model,
-		Format:       &f,
-		StatusCode:   &l.StatusCode,
-		ErrorType:    &et,
-		ErrorMessage: l.ErrorMessage,
-		LatencyMS:    &l.LatencyMS,
-		CreatedAt:    &l.CreatedAt,
+		ID:              &l.ID,
+		RequestID:       &l.RequestID,
+		ClientIP:        &l.ClientIP,
+		ClientIPTrusted: l.ClientIPTrusted,
+		GroupID:         &l.GroupID,
+		AccountID:       &l.AccountID,
+		TemplateID:      &l.TemplateID,
+		UserID:          &l.UserID,
+		KeyID:           &l.KeyID,
+		Model:           &l.Model,
+		Format:          &f,
+		StatusCode:      &l.StatusCode,
+		ErrorType:       &et,
+		ErrorMessage:    l.ErrorMessage,
+		LatencyMS:       &l.LatencyMS,
+		CreatedAt:       &l.CreatedAt,
 	}
+	if l.ClientIPSource != "" {
+		v := ErrLogClientIPSource(l.ClientIPSource)
+		e.ClientIPSource = &v
+	}
+	if l.TargetKind != "" {
+		v := ErrLogTargetKind(l.TargetKind)
+		e.TargetKind = &v
+	}
+	if l.UpstreamID > 0 {
+		e.UpstreamID = &l.UpstreamID
+	}
+	if l.UpstreamName != "" {
+		e.UpstreamName = &l.UpstreamName
+	}
+	if l.UpstreamHost != "" {
+		e.UpstreamHost = &l.UpstreamHost
+	}
+	e.UpstreamMultiplierBP = l.UpstreamMultiplierBP
 	if l.BillingTier != "" {
 		e.BillingTier = &l.BillingTier
 	}

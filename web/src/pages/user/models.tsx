@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, CheckCircle2, CircleAlert, Clock3, RefreshCw, Sparkles } from 'lucide-react'
+import { Activity, ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Copy, RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
@@ -9,12 +9,23 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { copyText } from '@/components/key-box'
 import { formatPricePerCall, formatPricePerImage, formatPricePerMillion } from '@/components/fmt'
 import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 import { formatMultiplierValue } from '@/lib/multiplier'
 
 type ChannelMetric = components['schemas']['UserChannelMetric']
+type ChannelModelPrice = components['schemas']['UserChannelModelPrice'] & {
+  // Newer servers expose the catalogue price alongside the effective group
+  // price. Keep these optional so an older frontend can still read old payloads.
+  OfficialInputPerM?: number | null
+  OfficialOutputPerM?: number | null
+  OfficialCacheReadPerM?: number | null
+  OfficialCacheWritePerM?: number | null
+  OfficialPricePerCall?: number | null
+  OfficialPricePerImage?: number | null
+}
 
 const rollingRange = (anchor: number) => {
   const to = new Date(anchor)
@@ -34,18 +45,89 @@ function formatUpdated(value: string | null | undefined, empty: string) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function modelRows(metric: ChannelMetric) {
+function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
   const models = sortModelsLatestFirst(metric.AllowedModels ?? [])
-  const byName = new Map((metric.ModelPrices ?? []).map(row => [row.Model, row]))
+  const byName = new Map((metric.ModelPrices ?? []).map(row => [row.Model, row as ChannelModelPrice]))
   // Older C4 servers may not send ModelPrices yet. Keep those models visible
   // with explicit empty prices during a rolling frontend/backend upgrade.
   return models.map(model => byName.get(model) ?? { Model: model })
 }
 
-function priceMode(price: components['schemas']['UserChannelModelPrice']): 'token' | 'call' | 'image' {
+function priceMode(price: ChannelModelPrice): 'token' | 'call' | 'image' {
   if (price.Mode === 'call' || price.PricePerCall != null) return 'call'
   if (price.Mode === 'image' || price.PricePerImage != null) return 'image'
   return 'token'
+}
+
+type PriceFormatter = (value: number | null | undefined) => string
+
+function basePrice(value: number | null | undefined, multiplier: number): number | null {
+  if (value == null || !Number.isFinite(value) || !Number.isFinite(multiplier) || multiplier <= 0) return null
+  const base = value / multiplier
+  return Number.isFinite(base) ? base : null
+}
+
+function PricePair({
+  label,
+  value,
+  officialValue,
+  multiplier,
+  format,
+  t,
+}: {
+  label: string
+  value?: number | null
+  officialValue?: number | null
+  multiplier: number
+  format: PriceFormatter
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
+  // Explicit catalogue prices are authoritative. The derived value is only a
+  // compatibility fallback for servers that predate the Official* fields.
+  const official = officialValue !== undefined ? officialValue : basePrice(value, multiplier)
+  const hasDiscount = official != null && value != null && value < official
+  const appliedLabel = hasDiscount ? t('user.models.discountedShort') : t('user.models.groupShort')
+  const showStrike = hasDiscount
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 tabular-nums">
+        <span className={cn('whitespace-nowrap text-[10px] text-muted-foreground', showStrike && 'line-through decoration-muted-foreground/60')} title={t('user.models.officialPrice')}>
+          {t('user.models.officialShort')} {format(official)}
+        </span>
+        <span className="whitespace-nowrap font-medium" title={appliedLabel}>
+          {appliedLabel} {format(value)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function ModelNameButton({
+  model,
+  copyState,
+  onCopy,
+  t,
+}: {
+  model: string
+  copyState: 'success' | 'error' | null
+  onCopy: () => void
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
+  const copied = copyState === 'success'
+  const failed = copyState === 'error'
+  return (
+    <button
+      type="button"
+      className="inline-flex min-h-11 min-w-0 max-w-full items-center gap-1 text-left font-mono hover:text-primary sm:min-h-0"
+      title={t('user.models.copyModel')}
+      aria-label={t('user.models.copyModel')}
+      onClick={onCopy}
+    >
+      <span className="min-w-0 truncate">{model}</span>
+      {copied ? <><Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" /><span className="shrink-0 font-sans text-[10px] text-emerald-600 dark:text-emerald-400">{t('user.models.copiedModel')}</span></> : failed ? <span className="shrink-0 font-sans text-[10px] text-destructive">{t('user.models.copyFailed')}</span> : <Copy className="size-3 shrink-0 text-muted-foreground" />}
+    </button>
+  )
 }
 
 function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, options?: Record<string, unknown>) => string }) {
@@ -53,6 +135,20 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
   const Icon = status.icon
   const models = sortModelsLatestFirst(metric.AllowedModels ?? [])
   const prices = modelRows(metric)
+  const [copyState, setCopyState] = useState<{ model: string; status: 'success' | 'error' } | null>(null)
+  const copyTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => {
+    if (copyTimer.current != null) window.clearTimeout(copyTimer.current)
+  }, [])
+  const copyModel = async (model: string) => {
+    const ok = await copyText(model)
+    setCopyState({ model, status: ok ? 'success' : 'error' })
+    if (copyTimer.current != null) window.clearTimeout(copyTimer.current)
+    copyTimer.current = window.setTimeout(() => {
+      setCopyState(current => current?.model === model ? null : current)
+    }, 2000)
+  }
+  const multiplier = Number.isFinite(metric.PriceMultiplier) && metric.PriceMultiplier >= 0 ? metric.PriceMultiplier : 1
   const success = metric.RequestCount > 0 ? `${metric.SuccessRate.toFixed(1)}%` : '—'
   return (
     <Card className="h-full transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg">
@@ -73,7 +169,7 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('user.models.modelsLabel')}</span><span className="shrink-0">{formatUpdated(metric.LastCalledAt, t('user.models.notCalled'))}</span></div>
           {prices.length ? <div className="max-h-64 divide-y overflow-y-auto rounded-lg border bg-background/60">{prices.map(price => {
             const mode = priceMode(price)
-            return <div key={price.Model} className="grid grid-cols-2 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><span className="col-span-2 min-w-0 truncate font-mono sm:col-span-1" title={price.Model}>{price.Model}</span>{mode === 'call' ? <span className="col-span-2 whitespace-nowrap sm:col-span-2 sm:text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.callShort')}</span><span className="tabular-nums">{formatPricePerCall(price.PricePerCall, t('user.models.callUnit'))}</span></span> : mode === 'image' ? <span className="col-span-2 whitespace-nowrap sm:col-span-2 sm:text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.imageShort')}</span><span className="tabular-nums">{formatPricePerImage(price.PricePerImage, t('user.models.imageUnit'))}</span></span> : <><span className="whitespace-nowrap sm:text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.inputShort')}</span><span className="tabular-nums">{formatPricePerMillion(price.InputPerM)}</span></span><span className="whitespace-nowrap text-right"><span className="mr-1 text-[10px] text-muted-foreground">{t('user.models.outputShort')}</span><span className="tabular-nums">{formatPricePerMillion(price.OutputPerM)}</span></span></>}</div>
+            return <div key={price.Model} className="grid grid-cols-1 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto]"><ModelNameButton model={price.Model} copyState={copyState?.model === price.Model ? copyState.status : null} onCopy={() => { void copyModel(price.Model) }} t={t} />{mode === 'call' ? <PricePair label={t('user.models.callShort')} value={price.PricePerCall} officialValue={price.OfficialPricePerCall} multiplier={multiplier} format={value => formatPricePerCall(value, t('user.models.callUnit'))} t={t} /> : mode === 'image' ? <PricePair label={t('user.models.imageShort')} value={price.PricePerImage} officialValue={price.OfficialPricePerImage} multiplier={multiplier} format={value => formatPricePerImage(value, t('user.models.imageUnit'))} t={t} /> : <><PricePair label={t('user.models.inputShort')} value={price.InputPerM} officialValue={price.OfficialInputPerM} multiplier={multiplier} format={value => formatPricePerMillion(value)} t={t} /><PricePair label={t('user.models.outputShort')} value={price.OutputPerM} officialValue={price.OfficialOutputPerM} multiplier={multiplier} format={value => formatPricePerMillion(value)} t={t} /></>}</div>
           })}</div> : <p className="text-xs text-muted-foreground">{t('user.models.modelsPending')}</p>}
           {models.length > 0 && <p className="text-[11px] text-muted-foreground">{t('user.models.priceUnit')}</p>}
         </div>

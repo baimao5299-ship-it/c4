@@ -26,6 +26,7 @@ type upstreamSnapshot struct {
 	// upstream is edited in place, its ID remains stable but cooldown and
 	// in-flight counters must not be carried to the new connection.
 	endpoint    string
+	host        string
 	key         string
 	concurrency *atomic.Int64
 	state       *atomic.Pointer[upstreamState]
@@ -98,6 +99,7 @@ func newUpstreamSnapshot(member *domain.GroupUpstream, old *upstreamSnapshot) *u
 	}
 	if member.Upstream != nil {
 		us.endpoint = normalizeUpstreamEndpoint(member.Upstream.BaseURL)
+		us.host = sanitizedUpstreamHost(us.endpoint)
 		if member.Upstream.UpstreamKey != nil {
 			us.key = normalizeUpstreamKey(member.Upstream.UpstreamKey)
 		}
@@ -149,6 +151,18 @@ func normalizeUpstreamEndpoint(base string) string {
 		base = parsed.String()
 	}
 	return strings.TrimRight(base, "/")
+}
+
+// sanitizedUpstreamHost returns only the URL authority host (including an
+// explicit port). User info, path, query, and fragment are never retained in
+// log attribution. Invalid or relative endpoints stay unknown instead of
+// falling back to the raw configured string.
+func sanitizedUpstreamHost(base string) string {
+	parsed, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Host
 }
 
 func buildUpstreamSnapshots(groups map[int64]*groupSnapshot, configs map[int64]*domain.Group, old map[int64]*upstreamSnapshot) map[int64]*upstreamSnapshot {
@@ -423,6 +437,8 @@ func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format doma
 			return &Selection{
 				TargetKind: TargetKindUpstreamMember, TargetID: item.member.ID, GroupID: groupID,
 				AccountID: 0, TemplateID: 0, BaseURL: item.endpoint,
+				UpstreamID: item.upstream.ID, UpstreamName: item.upstream.Name,
+				UpstreamHost: item.host, UpstreamMultiplierBP: item.upstream.MultiplierBP,
 				Format: format, UpstreamKey: item.key, CredentialType: credential.TypeAPIKey, Model: model,
 				upstreamRef: item,
 			}, nil

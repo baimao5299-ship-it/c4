@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
+	"net"
 	"net/http"
 	"reflect"
 	"sync/atomic"
@@ -48,6 +50,9 @@ type Config struct {
 	// 提取门控——false 完全不读供应商头直取 RemoteAddr，true 按序采信三头）。
 	// 部署前提见 config.go 注释与 clientip.go：源站只对 CDN 暴露。
 	BehindCDN bool
+	// TrustedProxyCIDRs restricts forwarded client-IP headers to configured
+	// reverse-proxy networks when non-empty. Empty preserves legacy behavior.
+	TrustedProxyCIDRs []string
 }
 
 const defaultMaxResponseSize int64 = 32 << 20
@@ -97,11 +102,16 @@ type Proxy struct {
 	// for the same account/key/user/group identity. Its zero value is ready for
 	// concurrent use; dirty cells are retained until their fraction is settled.
 	billingRemainders multiplierRemainderAccumulator
+	// upstreamCostRemainders carries fractional configured upstream costs across
+	// rows. It is separate from user billing because all users contribute to the
+	// same upstream economics bucket.
+	upstreamCostRemainders multiplierRemainderAccumulator
 	// errlog 错误明细落盘 worker（分表设计；nil = 未装配——拒绝/异常路径只聚
 	// 合统计不落 err_logs 明细，测试/未装配形态）。与计费 flusher 完全解耦。
-	errlog   *usage.ErrLogWorker
-	inflight atomic.Int64
-	callers  map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
+	errlog            *usage.ErrLogWorker
+	trustedProxyCIDRs []*net.IPNet
+	inflight          atomic.Int64
+	callers           map[domain.RequestFormat]UpstreamCaller // 格式 → 上游调用器（New 构造，零查找 per-request 只一次 map 读）
 	// imageGenerations/imageEdits images 端点调用器（Task B：同一格式
 	// openai-images 两个端点，上游子路径不同——handleFormat 按请求路径选
 	// 调用器，New 一次性构造免 per-request 分配）。
@@ -142,6 +152,7 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 	p := &Proxy{
 		cfg: cfg, sched: sched, creds: creds, rec: rec, clients: clients, auth: auth,
 		limit: newFixedWindowLimiter(cfg.GroupKeyRPM), log: log, bill: bill, errlog: errlog,
+		trustedProxyCIDRs:   parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs),
 		wsHeartbeatInterval: responsesWSHeartbeatInterval,
 		wsConns:             newWSRegistry(),
 	}
@@ -213,6 +224,7 @@ func (p *Proxy) finish(accountID int64, l *domain.UsageLog) {
 }
 
 func (p *Proxy) finishSelection(sel *scheduler.Selection, l *domain.UsageLog) {
+	applySelectionAttribution(l, sel)
 	p.sched.ReleaseSelection(sel)
 	p.finishAfterRelease(l)
 }
@@ -220,11 +232,133 @@ func (p *Proxy) finishSelection(sel *scheduler.Selection, l *domain.UsageLog) {
 func (p *Proxy) finishAfterRelease(l *domain.UsageLog) {
 	if l != nil {
 		p.applyBilling(l)
+		p.applyUpstreamEconomics(l)
 		p.auth.DeductQuota(l.KeyID, l.TotalTokens)
 	}
 	if p.cfg.UsageCapture && l != nil {
 		p.routeLog(l)
 	}
+}
+
+// applySelectionAttribution copies only non-secret scheduler metadata into a
+// log row. It runs before release so every success, abort, and terminal error
+// retains the exact selection that handled that attempt even after reloads.
+func applySelectionAttribution(l *domain.UsageLog, sel *scheduler.Selection) {
+	if l == nil || sel == nil {
+		return
+	}
+	l.TargetKind = string(sel.TargetKind)
+	if sel.UpstreamID <= 0 {
+		return
+	}
+	l.UpstreamID = sel.UpstreamID
+	l.UpstreamName = sel.UpstreamName
+	l.UpstreamHost = sel.UpstreamHost
+	multiplier := sel.UpstreamMultiplierBP
+	l.UpstreamMultiplierBP = &multiplier
+}
+
+func hasBillingPriceSnapshot(l *domain.UsageLog) bool {
+	return l != nil && (l.PriceInputMillis != nil || l.PriceOutputMillis != nil ||
+		l.PriceCacheReadMillis != nil || l.PriceCacheCreationMillis != nil ||
+		l.PricePerCallMillis != nil)
+}
+
+// applyUpstreamEconomics derives configured-multiplier estimates from the
+// immutable raw local price result. Unknown price snapshots stay nil so old or
+// unpriced requests are never presented as zero-cost upstream traffic.
+func applyUpstreamEconomics(l *domain.UsageLog) {
+	applyUpstreamEconomicsWith(l, nil)
+}
+
+// applyUpstreamEconomics uses a process-local carry so low upstream rates such
+// as 0.08 do not round every small request to zero. The free function above is
+// retained for package callers that need the historical one-row calculation.
+func (p *Proxy) applyUpstreamEconomics(l *domain.UsageLog) {
+	if p == nil {
+		applyUpstreamEconomics(l)
+		return
+	}
+	applyUpstreamEconomicsWith(l, &p.upstreamCostRemainders)
+}
+
+func applyUpstreamEconomicsWith(l *domain.UsageLog, remainders *multiplierRemainderAccumulator) {
+	if l == nil || l.UpstreamMultiplierBP == nil || !hasBillingPriceSnapshot(l) {
+		return
+	}
+	multiplier := *l.UpstreamMultiplierBP
+	model := l.MappedModel
+	if model == "" {
+		model = l.Model
+	}
+	// Include the request format in the carry identity: the same model name can
+	// have distinct token/call/image pricing snapshots.
+	model = string(l.Format) + "\x00" + model
+	rp := domain.ResolvedPrices{
+		InputPerM: l.PriceInputMillis, OutputPerM: l.PriceOutputMillis,
+		CacheReadPerM: l.PriceCacheReadMillis, CacheWritePerM: l.PriceCacheCreationMillis,
+		PricePerCall: l.PricePerCallMillis,
+	}
+	// Images reuse the generic input/output snapshot columns after the image
+	// token columns were removed from usage_logs. Rehydrate those values into
+	// the image-specific fields for the carry identity; otherwise two image
+	// price snapshots with different token rates would share a remainder cell.
+	if l.Format == domain.FormatOpenAIImages {
+		rp.InputPerM = nil
+		rp.OutputPerM = nil
+		rp.ImgInTokPerM = l.PriceInputMillis
+		rp.ImgOutTokPerM = l.PriceOutputMillis
+		rp.PricePerCall = nil
+		rp.PricePerImage = l.PricePerCallMillis
+	}
+	var upstreamCost int64
+	if remainders != nil && l.UpstreamID > 0 {
+		upstreamCost = remainders.applyUpstream(l.RawCost, multiplier, l.UpstreamID, model, rp)
+	} else {
+		upstreamCost = applyUpstreamMultiplier(l.RawCost, multiplier)
+	}
+	grossProfit := l.Cost - upstreamCost
+	l.UpstreamCost = &upstreamCost
+	l.GrossProfit = &grossProfit
+	if l.Cost > 0 {
+		margin := signedMulDivBP(grossProfit, l.Cost)
+		l.ProfitMarginBP = &margin
+	}
+}
+
+// signedMulDivBP computes round-half-away-from-zero(value*10000/divisor)
+// without overflowing the intermediate product.
+func signedMulDivBP(value, divisor int64) int64 {
+	if value == 0 || divisor <= 0 {
+		return 0
+	}
+	negative := value < 0
+	magnitude := uint64(value)
+	if negative {
+		magnitude = uint64(-(value + 1)) + 1
+	}
+	denominator := uint64(divisor)
+	hi, lo := bits.Mul64(magnitude, uint64(billingMultiplierBase))
+	if hi >= denominator {
+		if negative {
+			return -maxBillingInt64
+		}
+		return maxBillingInt64
+	}
+	quotient, remainder := bits.Div64(hi, lo, denominator)
+	if remainder >= (denominator+1)/2 {
+		quotient++
+	}
+	if quotient > uint64(maxBillingInt64) {
+		if negative {
+			return -maxBillingInt64
+		}
+		return maxBillingInt64
+	}
+	if negative {
+		return -int64(quotient)
+	}
+	return int64(quotient)
 }
 
 // applyBilling 计费计算（统一 PriceEntry/variants 解析，零 DB）。
@@ -337,6 +471,16 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 		l.BillingTier = "no_price"
 		return
 	}
+	// Image token prices share the generic input/output snapshot columns in the
+	// usage log schema. Persist them before calculating RawCost so the admin
+	// log can explain the exact price used and upstream economics can identify
+	// the request-time snapshot.
+	if rp.ImgInTokPerM != nil {
+		l.PriceInputMillis = rp.ImgInTokPerM
+	}
+	if rp.ImgOutTokPerM != nil {
+		l.PriceOutputMillis = rp.ImgOutTokPerM
+	}
 	if l.CallCount > 0 && rp.PricePerImage != nil {
 		l.PricePerCallMillis = rp.PricePerImage
 	}
@@ -439,11 +583,14 @@ func (p *Proxy) record(ctx context.Context, reqID string, groupID, accountID int
 // 为独立瘦表 + 有界队列背压（队列满丢弃采样），风暴不淹没 DB 不爆内存——
 // 审计明细补回但不回到 usage_logs 主链路。msg 为拒绝文案（error_message 审计
 // 字段，域内截断 500）。
-func (p *Proxy) recordRejected(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time, msg string) {
+func (p *Proxy) recordRejected(ctx context.Context, reqID string, groupID, accountID int64, reqModel, usedModel string, format domain.RequestFormat, status int, et domain.ErrorType, latencyMS int64, u usageTuple, start time.Time, msg string, selections ...*scheduler.Selection) {
 	if !p.cfg.UsageCapture {
 		return
 	}
 	l := logWithCtx(ctx, p.buildLog(reqID, groupID, accountID, reqModel, usedModel, format, status, et, u, start))
+	if len(selections) > 0 {
+		applySelectionAttribution(l, selections[0])
+	}
 	if msg != "" {
 		m := domain.TruncateErrMsg(msg)
 		l.ErrorMessage = &m
@@ -518,10 +665,12 @@ type ctxKeyReqMeta struct{}
 type ctxKeyTTFT struct{}
 
 type reqMeta struct {
-	meta     domain.KeyMeta
-	tier     billing.Tier
-	hasTier  bool
-	clientIP string // 客户端 IP（guardPipeline 入口鉴权前提取；401 及全部拒绝路径带）
+	meta            domain.KeyMeta
+	tier            billing.Tier
+	hasTier         bool
+	clientIP        string // 客户端 IP（guardPipeline 入口鉴权前提取；401 及全部拒绝路径带）
+	clientIPSource  string
+	clientIPTrusted bool
 }
 
 // logWithCtx 从 ctx 读请求元数据填日志归属（user_id/key_id；context 传递
@@ -535,6 +684,8 @@ func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 		l.UserID = rm.meta.UserID
 		l.KeyID = rm.meta.KeyID
 		l.ClientIP = rm.clientIP
+		l.ClientIPSource = rm.clientIPSource
+		l.ClientIPTrusted = &rm.clientIPTrusted
 		if rm.hasTier {
 			l.BillingTier = rm.tier.String()
 		}

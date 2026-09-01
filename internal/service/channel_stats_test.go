@@ -66,9 +66,78 @@ func TestUserChannelMetricsIncludesModelPricesAndKeepsUnpricedModels(t *testing.
 	require.Equal(t, "gpt-priced", rows[0].ModelPrices[0].Model)
 	require.Equal(t, int64(100000), *rows[0].ModelPrices[0].InputPerM)
 	require.Equal(t, int64(250000), *rows[0].ModelPrices[0].OutputPerM)
+	require.Equal(t, int64(100000), *rows[0].ModelPrices[0].OfficialInputPerM,
+		"official input price comes from the catalogue row")
+	require.Equal(t, int64(250000), *rows[0].ModelPrices[0].OfficialOutputPerM,
+		"official output price comes from the catalogue row")
 	require.Equal(t, "gpt-unpriced", rows[0].ModelPrices[1].Model)
 	require.Nil(t, rows[0].ModelPrices[1].InputPerM)
 	require.Nil(t, rows[0].ModelPrices[1].OutputPerM)
+	require.Nil(t, rows[0].ModelPrices[1].OfficialInputPerM)
+	require.Nil(t, rows[0].ModelPrices[1].OfficialOutputPerM)
+}
+
+func TestUserChannelMetricsSeparatesOfficialAndResolvedPrices(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "discounted", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: []string{"gpt-discounted"}, PriceMultiplier: 800,
+	}
+	inPrice, outPrice := int64(100000), int64(250000)
+	store.priceEntries["gpt-discounted"] = &domain.PriceEntry{
+		Model: "gpt-discounted", Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceLitellm,
+	}
+	variantMultiplier := 5000
+	store.priceVariants["gpt-discounted"] = []*domain.PriceVariant{{
+		Model: "gpt-discounted", Seq: 1, MultBP: &variantMultiplier,
+	}}
+
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].ModelPrices, 1)
+	price := rows[0].ModelPrices[0]
+	require.Equal(t, int64(100000), *price.OfficialInputPerM,
+		"official price ignores conditional and group multipliers")
+	require.Equal(t, int64(250000), *price.OfficialOutputPerM)
+	require.Equal(t, int64(50000), *price.InputPerM,
+		"resolved price includes the matching conditional variant")
+	require.Equal(t, int64(125000), *price.OutputPerM)
+}
+
+func TestUserChannelMetricsKeepsCataloguePriceForInvalidRuntimeVariant(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "catalogue-only", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: []string{"gpt-invalid-variant"}, PriceMultiplier: 800,
+	}
+	inPrice, outPrice := int64(100), int64(250)
+	store.priceEntries["gpt-invalid-variant"] = &domain.PriceEntry{
+		Model: "gpt-invalid-variant", Mode: domain.PriceModeToken,
+		InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceLitellm,
+	}
+	// This branch cannot be represented on the persisted 1e-5 USD grid. It is
+	// excluded from runtime billing, but the base catalogue row remains useful
+	// to explain the model's official price in the public monitor.
+	variantMultiplier := 10
+	store.priceVariants["gpt-invalid-variant"] = []*domain.PriceVariant{{
+		Model: "gpt-invalid-variant", Seq: 1, MultBP: &variantMultiplier,
+	}}
+
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].ModelPrices, 1)
+	price := rows[0].ModelPrices[0]
+	require.Nil(t, price.InputPerM, "invalid runtime branch must not look billable")
+	require.Nil(t, price.OutputPerM)
+	require.Equal(t, int64(100), *price.OfficialInputPerM)
+	require.Equal(t, int64(250), *price.OfficialOutputPerM)
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }

@@ -3086,35 +3086,44 @@ func (m *EmailTemplateMutation) ResetEdge(name string) error {
 // ErrLogMutation represents an operation that mutates the ErrLog nodes in the graph.
 type ErrLogMutation struct {
 	config
-	op             Op
-	typ            string
-	id             *int64
-	request_id     *string
-	client_ip      *string
-	group_id       *int64
-	addgroup_id    *int64
-	account_id     *int64
-	addaccount_id  *int64
-	template_id    *int64
-	addtemplate_id *int64
-	user_id        *int64
-	adduser_id     *int64
-	key_id         *int64
-	addkey_id      *int64
-	model          *string
-	format         *errlog.Format
-	status_code    *int
-	addstatus_code *int
-	error_type     *string
-	error_message  *string
-	latency_ms     *int64
-	addlatency_ms  *int64
-	billing_tier   *string
-	created_at     *time.Time
-	clearedFields  map[string]struct{}
-	done           bool
-	oldValue       func(context.Context) (*ErrLog, error)
-	predicates     []predicate.ErrLog
+	op                        Op
+	typ                       string
+	id                        *int64
+	request_id                *string
+	client_ip                 *string
+	client_ip_source          *string
+	client_ip_trusted         *bool
+	group_id                  *int64
+	addgroup_id               *int64
+	account_id                *int64
+	addaccount_id             *int64
+	template_id               *int64
+	addtemplate_id            *int64
+	target_kind               *string
+	upstream_id               *int64
+	addupstream_id            *int64
+	upstream_name             *string
+	upstream_host             *string
+	upstream_multiplier_bp    *int
+	addupstream_multiplier_bp *int
+	user_id                   *int64
+	adduser_id                *int64
+	key_id                    *int64
+	addkey_id                 *int64
+	model                     *string
+	format                    *errlog.Format
+	status_code               *int
+	addstatus_code            *int
+	error_type                *string
+	error_message             *string
+	latency_ms                *int64
+	addlatency_ms             *int64
+	billing_tier              *string
+	created_at                *time.Time
+	clearedFields             map[string]struct{}
+	done                      bool
+	oldValue                  func(context.Context) (*ErrLog, error)
+	predicates                []predicate.ErrLog
 }
 
 var _ ent.Mutation = (*ErrLogMutation)(nil)
@@ -3304,6 +3313,104 @@ func (m *ErrLogMutation) ClientIPCleared() bool {
 func (m *ErrLogMutation) ResetClientIP() {
 	m.client_ip = nil
 	delete(m.clearedFields, errlog.FieldClientIP)
+}
+
+// SetClientIPSource sets the "client_ip_source" field.
+func (m *ErrLogMutation) SetClientIPSource(s string) {
+	m.client_ip_source = &s
+}
+
+// ClientIPSource returns the value of the "client_ip_source" field in the mutation.
+func (m *ErrLogMutation) ClientIPSource() (r string, exists bool) {
+	v := m.client_ip_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientIPSource returns the old "client_ip_source" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldClientIPSource(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientIPSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientIPSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientIPSource: %w", err)
+	}
+	return oldValue.ClientIPSource, nil
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (m *ErrLogMutation) ClearClientIPSource() {
+	m.client_ip_source = nil
+	m.clearedFields[errlog.FieldClientIPSource] = struct{}{}
+}
+
+// ClientIPSourceCleared returns if the "client_ip_source" field was cleared in this mutation.
+func (m *ErrLogMutation) ClientIPSourceCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldClientIPSource]
+	return ok
+}
+
+// ResetClientIPSource resets all changes to the "client_ip_source" field.
+func (m *ErrLogMutation) ResetClientIPSource() {
+	m.client_ip_source = nil
+	delete(m.clearedFields, errlog.FieldClientIPSource)
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (m *ErrLogMutation) SetClientIPTrusted(b bool) {
+	m.client_ip_trusted = &b
+}
+
+// ClientIPTrusted returns the value of the "client_ip_trusted" field in the mutation.
+func (m *ErrLogMutation) ClientIPTrusted() (r bool, exists bool) {
+	v := m.client_ip_trusted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientIPTrusted returns the old "client_ip_trusted" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldClientIPTrusted(ctx context.Context) (v *bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientIPTrusted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientIPTrusted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientIPTrusted: %w", err)
+	}
+	return oldValue.ClientIPTrusted, nil
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (m *ErrLogMutation) ClearClientIPTrusted() {
+	m.client_ip_trusted = nil
+	m.clearedFields[errlog.FieldClientIPTrusted] = struct{}{}
+}
+
+// ClientIPTrustedCleared returns if the "client_ip_trusted" field was cleared in this mutation.
+func (m *ErrLogMutation) ClientIPTrustedCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldClientIPTrusted]
+	return ok
+}
+
+// ResetClientIPTrusted resets all changes to the "client_ip_trusted" field.
+func (m *ErrLogMutation) ResetClientIPTrusted() {
+	m.client_ip_trusted = nil
+	delete(m.clearedFields, errlog.FieldClientIPTrusted)
 }
 
 // SetGroupID sets the "group_id" field.
@@ -3514,6 +3621,293 @@ func (m *ErrLogMutation) ResetTemplateID() {
 	m.template_id = nil
 	m.addtemplate_id = nil
 	delete(m.clearedFields, errlog.FieldTemplateID)
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (m *ErrLogMutation) SetTargetKind(s string) {
+	m.target_kind = &s
+}
+
+// TargetKind returns the value of the "target_kind" field in the mutation.
+func (m *ErrLogMutation) TargetKind() (r string, exists bool) {
+	v := m.target_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetKind returns the old "target_kind" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldTargetKind(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetKind: %w", err)
+	}
+	return oldValue.TargetKind, nil
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (m *ErrLogMutation) ClearTargetKind() {
+	m.target_kind = nil
+	m.clearedFields[errlog.FieldTargetKind] = struct{}{}
+}
+
+// TargetKindCleared returns if the "target_kind" field was cleared in this mutation.
+func (m *ErrLogMutation) TargetKindCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldTargetKind]
+	return ok
+}
+
+// ResetTargetKind resets all changes to the "target_kind" field.
+func (m *ErrLogMutation) ResetTargetKind() {
+	m.target_kind = nil
+	delete(m.clearedFields, errlog.FieldTargetKind)
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (m *ErrLogMutation) SetUpstreamID(i int64) {
+	m.upstream_id = &i
+	m.addupstream_id = nil
+}
+
+// UpstreamID returns the value of the "upstream_id" field in the mutation.
+func (m *ErrLogMutation) UpstreamID() (r int64, exists bool) {
+	v := m.upstream_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamID returns the old "upstream_id" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldUpstreamID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamID: %w", err)
+	}
+	return oldValue.UpstreamID, nil
+}
+
+// AddUpstreamID adds i to the "upstream_id" field.
+func (m *ErrLogMutation) AddUpstreamID(i int64) {
+	if m.addupstream_id != nil {
+		*m.addupstream_id += i
+	} else {
+		m.addupstream_id = &i
+	}
+}
+
+// AddedUpstreamID returns the value that was added to the "upstream_id" field in this mutation.
+func (m *ErrLogMutation) AddedUpstreamID() (r int64, exists bool) {
+	v := m.addupstream_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (m *ErrLogMutation) ClearUpstreamID() {
+	m.upstream_id = nil
+	m.addupstream_id = nil
+	m.clearedFields[errlog.FieldUpstreamID] = struct{}{}
+}
+
+// UpstreamIDCleared returns if the "upstream_id" field was cleared in this mutation.
+func (m *ErrLogMutation) UpstreamIDCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldUpstreamID]
+	return ok
+}
+
+// ResetUpstreamID resets all changes to the "upstream_id" field.
+func (m *ErrLogMutation) ResetUpstreamID() {
+	m.upstream_id = nil
+	m.addupstream_id = nil
+	delete(m.clearedFields, errlog.FieldUpstreamID)
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (m *ErrLogMutation) SetUpstreamName(s string) {
+	m.upstream_name = &s
+}
+
+// UpstreamName returns the value of the "upstream_name" field in the mutation.
+func (m *ErrLogMutation) UpstreamName() (r string, exists bool) {
+	v := m.upstream_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamName returns the old "upstream_name" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldUpstreamName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamName: %w", err)
+	}
+	return oldValue.UpstreamName, nil
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (m *ErrLogMutation) ClearUpstreamName() {
+	m.upstream_name = nil
+	m.clearedFields[errlog.FieldUpstreamName] = struct{}{}
+}
+
+// UpstreamNameCleared returns if the "upstream_name" field was cleared in this mutation.
+func (m *ErrLogMutation) UpstreamNameCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldUpstreamName]
+	return ok
+}
+
+// ResetUpstreamName resets all changes to the "upstream_name" field.
+func (m *ErrLogMutation) ResetUpstreamName() {
+	m.upstream_name = nil
+	delete(m.clearedFields, errlog.FieldUpstreamName)
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (m *ErrLogMutation) SetUpstreamHost(s string) {
+	m.upstream_host = &s
+}
+
+// UpstreamHost returns the value of the "upstream_host" field in the mutation.
+func (m *ErrLogMutation) UpstreamHost() (r string, exists bool) {
+	v := m.upstream_host
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamHost returns the old "upstream_host" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldUpstreamHost(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamHost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamHost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamHost: %w", err)
+	}
+	return oldValue.UpstreamHost, nil
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (m *ErrLogMutation) ClearUpstreamHost() {
+	m.upstream_host = nil
+	m.clearedFields[errlog.FieldUpstreamHost] = struct{}{}
+}
+
+// UpstreamHostCleared returns if the "upstream_host" field was cleared in this mutation.
+func (m *ErrLogMutation) UpstreamHostCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldUpstreamHost]
+	return ok
+}
+
+// ResetUpstreamHost resets all changes to the "upstream_host" field.
+func (m *ErrLogMutation) ResetUpstreamHost() {
+	m.upstream_host = nil
+	delete(m.clearedFields, errlog.FieldUpstreamHost)
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (m *ErrLogMutation) SetUpstreamMultiplierBp(i int) {
+	m.upstream_multiplier_bp = &i
+	m.addupstream_multiplier_bp = nil
+}
+
+// UpstreamMultiplierBp returns the value of the "upstream_multiplier_bp" field in the mutation.
+func (m *ErrLogMutation) UpstreamMultiplierBp() (r int, exists bool) {
+	v := m.upstream_multiplier_bp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamMultiplierBp returns the old "upstream_multiplier_bp" field's value of the ErrLog entity.
+// If the ErrLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ErrLogMutation) OldUpstreamMultiplierBp(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamMultiplierBp is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamMultiplierBp requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamMultiplierBp: %w", err)
+	}
+	return oldValue.UpstreamMultiplierBp, nil
+}
+
+// AddUpstreamMultiplierBp adds i to the "upstream_multiplier_bp" field.
+func (m *ErrLogMutation) AddUpstreamMultiplierBp(i int) {
+	if m.addupstream_multiplier_bp != nil {
+		*m.addupstream_multiplier_bp += i
+	} else {
+		m.addupstream_multiplier_bp = &i
+	}
+}
+
+// AddedUpstreamMultiplierBp returns the value that was added to the "upstream_multiplier_bp" field in this mutation.
+func (m *ErrLogMutation) AddedUpstreamMultiplierBp() (r int, exists bool) {
+	v := m.addupstream_multiplier_bp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (m *ErrLogMutation) ClearUpstreamMultiplierBp() {
+	m.upstream_multiplier_bp = nil
+	m.addupstream_multiplier_bp = nil
+	m.clearedFields[errlog.FieldUpstreamMultiplierBp] = struct{}{}
+}
+
+// UpstreamMultiplierBpCleared returns if the "upstream_multiplier_bp" field was cleared in this mutation.
+func (m *ErrLogMutation) UpstreamMultiplierBpCleared() bool {
+	_, ok := m.clearedFields[errlog.FieldUpstreamMultiplierBp]
+	return ok
+}
+
+// ResetUpstreamMultiplierBp resets all changes to the "upstream_multiplier_bp" field.
+func (m *ErrLogMutation) ResetUpstreamMultiplierBp() {
+	m.upstream_multiplier_bp = nil
+	m.addupstream_multiplier_bp = nil
+	delete(m.clearedFields, errlog.FieldUpstreamMultiplierBp)
 }
 
 // SetUserID sets the "user_id" field.
@@ -4044,12 +4438,18 @@ func (m *ErrLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ErrLogMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 22)
 	if m.request_id != nil {
 		fields = append(fields, errlog.FieldRequestID)
 	}
 	if m.client_ip != nil {
 		fields = append(fields, errlog.FieldClientIP)
+	}
+	if m.client_ip_source != nil {
+		fields = append(fields, errlog.FieldClientIPSource)
+	}
+	if m.client_ip_trusted != nil {
+		fields = append(fields, errlog.FieldClientIPTrusted)
 	}
 	if m.group_id != nil {
 		fields = append(fields, errlog.FieldGroupID)
@@ -4059,6 +4459,21 @@ func (m *ErrLogMutation) Fields() []string {
 	}
 	if m.template_id != nil {
 		fields = append(fields, errlog.FieldTemplateID)
+	}
+	if m.target_kind != nil {
+		fields = append(fields, errlog.FieldTargetKind)
+	}
+	if m.upstream_id != nil {
+		fields = append(fields, errlog.FieldUpstreamID)
+	}
+	if m.upstream_name != nil {
+		fields = append(fields, errlog.FieldUpstreamName)
+	}
+	if m.upstream_host != nil {
+		fields = append(fields, errlog.FieldUpstreamHost)
+	}
+	if m.upstream_multiplier_bp != nil {
+		fields = append(fields, errlog.FieldUpstreamMultiplierBp)
 	}
 	if m.user_id != nil {
 		fields = append(fields, errlog.FieldUserID)
@@ -4102,12 +4517,26 @@ func (m *ErrLogMutation) Field(name string) (ent.Value, bool) {
 		return m.RequestID()
 	case errlog.FieldClientIP:
 		return m.ClientIP()
+	case errlog.FieldClientIPSource:
+		return m.ClientIPSource()
+	case errlog.FieldClientIPTrusted:
+		return m.ClientIPTrusted()
 	case errlog.FieldGroupID:
 		return m.GroupID()
 	case errlog.FieldAccountID:
 		return m.AccountID()
 	case errlog.FieldTemplateID:
 		return m.TemplateID()
+	case errlog.FieldTargetKind:
+		return m.TargetKind()
+	case errlog.FieldUpstreamID:
+		return m.UpstreamID()
+	case errlog.FieldUpstreamName:
+		return m.UpstreamName()
+	case errlog.FieldUpstreamHost:
+		return m.UpstreamHost()
+	case errlog.FieldUpstreamMultiplierBp:
+		return m.UpstreamMultiplierBp()
 	case errlog.FieldUserID:
 		return m.UserID()
 	case errlog.FieldKeyID:
@@ -4141,12 +4570,26 @@ func (m *ErrLogMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldRequestID(ctx)
 	case errlog.FieldClientIP:
 		return m.OldClientIP(ctx)
+	case errlog.FieldClientIPSource:
+		return m.OldClientIPSource(ctx)
+	case errlog.FieldClientIPTrusted:
+		return m.OldClientIPTrusted(ctx)
 	case errlog.FieldGroupID:
 		return m.OldGroupID(ctx)
 	case errlog.FieldAccountID:
 		return m.OldAccountID(ctx)
 	case errlog.FieldTemplateID:
 		return m.OldTemplateID(ctx)
+	case errlog.FieldTargetKind:
+		return m.OldTargetKind(ctx)
+	case errlog.FieldUpstreamID:
+		return m.OldUpstreamID(ctx)
+	case errlog.FieldUpstreamName:
+		return m.OldUpstreamName(ctx)
+	case errlog.FieldUpstreamHost:
+		return m.OldUpstreamHost(ctx)
+	case errlog.FieldUpstreamMultiplierBp:
+		return m.OldUpstreamMultiplierBp(ctx)
 	case errlog.FieldUserID:
 		return m.OldUserID(ctx)
 	case errlog.FieldKeyID:
@@ -4190,6 +4633,20 @@ func (m *ErrLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetClientIP(v)
 		return nil
+	case errlog.FieldClientIPSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientIPSource(v)
+		return nil
+	case errlog.FieldClientIPTrusted:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientIPTrusted(v)
+		return nil
 	case errlog.FieldGroupID:
 		v, ok := value.(int64)
 		if !ok {
@@ -4210,6 +4667,41 @@ func (m *ErrLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTemplateID(v)
+		return nil
+	case errlog.FieldTargetKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetKind(v)
+		return nil
+	case errlog.FieldUpstreamID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamID(v)
+		return nil
+	case errlog.FieldUpstreamName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamName(v)
+		return nil
+	case errlog.FieldUpstreamHost:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamHost(v)
+		return nil
+	case errlog.FieldUpstreamMultiplierBp:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamMultiplierBp(v)
 		return nil
 	case errlog.FieldUserID:
 		v, ok := value.(int64)
@@ -4298,6 +4790,12 @@ func (m *ErrLogMutation) AddedFields() []string {
 	if m.addtemplate_id != nil {
 		fields = append(fields, errlog.FieldTemplateID)
 	}
+	if m.addupstream_id != nil {
+		fields = append(fields, errlog.FieldUpstreamID)
+	}
+	if m.addupstream_multiplier_bp != nil {
+		fields = append(fields, errlog.FieldUpstreamMultiplierBp)
+	}
 	if m.adduser_id != nil {
 		fields = append(fields, errlog.FieldUserID)
 	}
@@ -4324,6 +4822,10 @@ func (m *ErrLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedAccountID()
 	case errlog.FieldTemplateID:
 		return m.AddedTemplateID()
+	case errlog.FieldUpstreamID:
+		return m.AddedUpstreamID()
+	case errlog.FieldUpstreamMultiplierBp:
+		return m.AddedUpstreamMultiplierBp()
 	case errlog.FieldUserID:
 		return m.AddedUserID()
 	case errlog.FieldKeyID:
@@ -4361,6 +4863,20 @@ func (m *ErrLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddTemplateID(v)
+		return nil
+	case errlog.FieldUpstreamID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpstreamID(v)
+		return nil
+	case errlog.FieldUpstreamMultiplierBp:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpstreamMultiplierBp(v)
 		return nil
 	case errlog.FieldUserID:
 		v, ok := value.(int64)
@@ -4401,6 +4917,12 @@ func (m *ErrLogMutation) ClearedFields() []string {
 	if m.FieldCleared(errlog.FieldClientIP) {
 		fields = append(fields, errlog.FieldClientIP)
 	}
+	if m.FieldCleared(errlog.FieldClientIPSource) {
+		fields = append(fields, errlog.FieldClientIPSource)
+	}
+	if m.FieldCleared(errlog.FieldClientIPTrusted) {
+		fields = append(fields, errlog.FieldClientIPTrusted)
+	}
 	if m.FieldCleared(errlog.FieldGroupID) {
 		fields = append(fields, errlog.FieldGroupID)
 	}
@@ -4409,6 +4931,21 @@ func (m *ErrLogMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(errlog.FieldTemplateID) {
 		fields = append(fields, errlog.FieldTemplateID)
+	}
+	if m.FieldCleared(errlog.FieldTargetKind) {
+		fields = append(fields, errlog.FieldTargetKind)
+	}
+	if m.FieldCleared(errlog.FieldUpstreamID) {
+		fields = append(fields, errlog.FieldUpstreamID)
+	}
+	if m.FieldCleared(errlog.FieldUpstreamName) {
+		fields = append(fields, errlog.FieldUpstreamName)
+	}
+	if m.FieldCleared(errlog.FieldUpstreamHost) {
+		fields = append(fields, errlog.FieldUpstreamHost)
+	}
+	if m.FieldCleared(errlog.FieldUpstreamMultiplierBp) {
+		fields = append(fields, errlog.FieldUpstreamMultiplierBp)
 	}
 	if m.FieldCleared(errlog.FieldUserID) {
 		fields = append(fields, errlog.FieldUserID)
@@ -4439,6 +4976,12 @@ func (m *ErrLogMutation) ClearField(name string) error {
 	case errlog.FieldClientIP:
 		m.ClearClientIP()
 		return nil
+	case errlog.FieldClientIPSource:
+		m.ClearClientIPSource()
+		return nil
+	case errlog.FieldClientIPTrusted:
+		m.ClearClientIPTrusted()
+		return nil
 	case errlog.FieldGroupID:
 		m.ClearGroupID()
 		return nil
@@ -4447,6 +4990,21 @@ func (m *ErrLogMutation) ClearField(name string) error {
 		return nil
 	case errlog.FieldTemplateID:
 		m.ClearTemplateID()
+		return nil
+	case errlog.FieldTargetKind:
+		m.ClearTargetKind()
+		return nil
+	case errlog.FieldUpstreamID:
+		m.ClearUpstreamID()
+		return nil
+	case errlog.FieldUpstreamName:
+		m.ClearUpstreamName()
+		return nil
+	case errlog.FieldUpstreamHost:
+		m.ClearUpstreamHost()
+		return nil
+	case errlog.FieldUpstreamMultiplierBp:
+		m.ClearUpstreamMultiplierBp()
 		return nil
 	case errlog.FieldUserID:
 		m.ClearUserID()
@@ -4474,6 +5032,12 @@ func (m *ErrLogMutation) ResetField(name string) error {
 	case errlog.FieldClientIP:
 		m.ResetClientIP()
 		return nil
+	case errlog.FieldClientIPSource:
+		m.ResetClientIPSource()
+		return nil
+	case errlog.FieldClientIPTrusted:
+		m.ResetClientIPTrusted()
+		return nil
 	case errlog.FieldGroupID:
 		m.ResetGroupID()
 		return nil
@@ -4482,6 +5046,21 @@ func (m *ErrLogMutation) ResetField(name string) error {
 		return nil
 	case errlog.FieldTemplateID:
 		m.ResetTemplateID()
+		return nil
+	case errlog.FieldTargetKind:
+		m.ResetTargetKind()
+		return nil
+	case errlog.FieldUpstreamID:
+		m.ResetUpstreamID()
+		return nil
+	case errlog.FieldUpstreamName:
+		m.ResetUpstreamName()
+		return nil
+	case errlog.FieldUpstreamHost:
+		m.ResetUpstreamHost()
+		return nil
+	case errlog.FieldUpstreamMultiplierBp:
+		m.ResetUpstreamMultiplierBp()
 		return nil
 	case errlog.FieldUserID:
 		m.ResetUserID()
@@ -22535,12 +23114,21 @@ type UsageLogMutation struct {
 	id                             *int64
 	request_id                     *string
 	client_ip                      *string
+	client_ip_source               *string
+	client_ip_trusted              *bool
 	group_id                       *int64
 	addgroup_id                    *int64
 	account_id                     *int64
 	addaccount_id                  *int64
 	template_id                    *int64
 	addtemplate_id                 *int64
+	target_kind                    *string
+	upstream_id                    *int64
+	addupstream_id                 *int64
+	upstream_name                  *string
+	upstream_host                  *string
+	upstream_multiplier_bp         *int
+	addupstream_multiplier_bp      *int
 	user_id                        *int64
 	adduser_id                     *int64
 	key_id                         *int64
@@ -22579,6 +23167,12 @@ type UsageLogMutation struct {
 	addcost                        *int64
 	raw_cost                       *int64
 	addraw_cost                    *int64
+	upstream_cost                  *int64
+	addupstream_cost               *int64
+	gross_profit                   *int64
+	addgross_profit                *int64
+	profit_margin_bp               *int64
+	addprofit_margin_bp            *int64
 	billing_tier                   *string
 	above_hit                      *bool
 	overdraft                      *bool
@@ -22777,6 +23371,104 @@ func (m *UsageLogMutation) ClientIPCleared() bool {
 func (m *UsageLogMutation) ResetClientIP() {
 	m.client_ip = nil
 	delete(m.clearedFields, usagelog.FieldClientIP)
+}
+
+// SetClientIPSource sets the "client_ip_source" field.
+func (m *UsageLogMutation) SetClientIPSource(s string) {
+	m.client_ip_source = &s
+}
+
+// ClientIPSource returns the value of the "client_ip_source" field in the mutation.
+func (m *UsageLogMutation) ClientIPSource() (r string, exists bool) {
+	v := m.client_ip_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientIPSource returns the old "client_ip_source" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldClientIPSource(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientIPSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientIPSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientIPSource: %w", err)
+	}
+	return oldValue.ClientIPSource, nil
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (m *UsageLogMutation) ClearClientIPSource() {
+	m.client_ip_source = nil
+	m.clearedFields[usagelog.FieldClientIPSource] = struct{}{}
+}
+
+// ClientIPSourceCleared returns if the "client_ip_source" field was cleared in this mutation.
+func (m *UsageLogMutation) ClientIPSourceCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldClientIPSource]
+	return ok
+}
+
+// ResetClientIPSource resets all changes to the "client_ip_source" field.
+func (m *UsageLogMutation) ResetClientIPSource() {
+	m.client_ip_source = nil
+	delete(m.clearedFields, usagelog.FieldClientIPSource)
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (m *UsageLogMutation) SetClientIPTrusted(b bool) {
+	m.client_ip_trusted = &b
+}
+
+// ClientIPTrusted returns the value of the "client_ip_trusted" field in the mutation.
+func (m *UsageLogMutation) ClientIPTrusted() (r bool, exists bool) {
+	v := m.client_ip_trusted
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientIPTrusted returns the old "client_ip_trusted" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldClientIPTrusted(ctx context.Context) (v *bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientIPTrusted is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientIPTrusted requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientIPTrusted: %w", err)
+	}
+	return oldValue.ClientIPTrusted, nil
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (m *UsageLogMutation) ClearClientIPTrusted() {
+	m.client_ip_trusted = nil
+	m.clearedFields[usagelog.FieldClientIPTrusted] = struct{}{}
+}
+
+// ClientIPTrustedCleared returns if the "client_ip_trusted" field was cleared in this mutation.
+func (m *UsageLogMutation) ClientIPTrustedCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldClientIPTrusted]
+	return ok
+}
+
+// ResetClientIPTrusted resets all changes to the "client_ip_trusted" field.
+func (m *UsageLogMutation) ResetClientIPTrusted() {
+	m.client_ip_trusted = nil
+	delete(m.clearedFields, usagelog.FieldClientIPTrusted)
 }
 
 // SetGroupID sets the "group_id" field.
@@ -22987,6 +23679,293 @@ func (m *UsageLogMutation) ResetTemplateID() {
 	m.template_id = nil
 	m.addtemplate_id = nil
 	delete(m.clearedFields, usagelog.FieldTemplateID)
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (m *UsageLogMutation) SetTargetKind(s string) {
+	m.target_kind = &s
+}
+
+// TargetKind returns the value of the "target_kind" field in the mutation.
+func (m *UsageLogMutation) TargetKind() (r string, exists bool) {
+	v := m.target_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetKind returns the old "target_kind" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldTargetKind(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetKind: %w", err)
+	}
+	return oldValue.TargetKind, nil
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (m *UsageLogMutation) ClearTargetKind() {
+	m.target_kind = nil
+	m.clearedFields[usagelog.FieldTargetKind] = struct{}{}
+}
+
+// TargetKindCleared returns if the "target_kind" field was cleared in this mutation.
+func (m *UsageLogMutation) TargetKindCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldTargetKind]
+	return ok
+}
+
+// ResetTargetKind resets all changes to the "target_kind" field.
+func (m *UsageLogMutation) ResetTargetKind() {
+	m.target_kind = nil
+	delete(m.clearedFields, usagelog.FieldTargetKind)
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (m *UsageLogMutation) SetUpstreamID(i int64) {
+	m.upstream_id = &i
+	m.addupstream_id = nil
+}
+
+// UpstreamID returns the value of the "upstream_id" field in the mutation.
+func (m *UsageLogMutation) UpstreamID() (r int64, exists bool) {
+	v := m.upstream_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamID returns the old "upstream_id" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUpstreamID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamID: %w", err)
+	}
+	return oldValue.UpstreamID, nil
+}
+
+// AddUpstreamID adds i to the "upstream_id" field.
+func (m *UsageLogMutation) AddUpstreamID(i int64) {
+	if m.addupstream_id != nil {
+		*m.addupstream_id += i
+	} else {
+		m.addupstream_id = &i
+	}
+}
+
+// AddedUpstreamID returns the value that was added to the "upstream_id" field in this mutation.
+func (m *UsageLogMutation) AddedUpstreamID() (r int64, exists bool) {
+	v := m.addupstream_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (m *UsageLogMutation) ClearUpstreamID() {
+	m.upstream_id = nil
+	m.addupstream_id = nil
+	m.clearedFields[usagelog.FieldUpstreamID] = struct{}{}
+}
+
+// UpstreamIDCleared returns if the "upstream_id" field was cleared in this mutation.
+func (m *UsageLogMutation) UpstreamIDCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUpstreamID]
+	return ok
+}
+
+// ResetUpstreamID resets all changes to the "upstream_id" field.
+func (m *UsageLogMutation) ResetUpstreamID() {
+	m.upstream_id = nil
+	m.addupstream_id = nil
+	delete(m.clearedFields, usagelog.FieldUpstreamID)
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (m *UsageLogMutation) SetUpstreamName(s string) {
+	m.upstream_name = &s
+}
+
+// UpstreamName returns the value of the "upstream_name" field in the mutation.
+func (m *UsageLogMutation) UpstreamName() (r string, exists bool) {
+	v := m.upstream_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamName returns the old "upstream_name" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUpstreamName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamName: %w", err)
+	}
+	return oldValue.UpstreamName, nil
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (m *UsageLogMutation) ClearUpstreamName() {
+	m.upstream_name = nil
+	m.clearedFields[usagelog.FieldUpstreamName] = struct{}{}
+}
+
+// UpstreamNameCleared returns if the "upstream_name" field was cleared in this mutation.
+func (m *UsageLogMutation) UpstreamNameCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUpstreamName]
+	return ok
+}
+
+// ResetUpstreamName resets all changes to the "upstream_name" field.
+func (m *UsageLogMutation) ResetUpstreamName() {
+	m.upstream_name = nil
+	delete(m.clearedFields, usagelog.FieldUpstreamName)
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (m *UsageLogMutation) SetUpstreamHost(s string) {
+	m.upstream_host = &s
+}
+
+// UpstreamHost returns the value of the "upstream_host" field in the mutation.
+func (m *UsageLogMutation) UpstreamHost() (r string, exists bool) {
+	v := m.upstream_host
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamHost returns the old "upstream_host" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUpstreamHost(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamHost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamHost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamHost: %w", err)
+	}
+	return oldValue.UpstreamHost, nil
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (m *UsageLogMutation) ClearUpstreamHost() {
+	m.upstream_host = nil
+	m.clearedFields[usagelog.FieldUpstreamHost] = struct{}{}
+}
+
+// UpstreamHostCleared returns if the "upstream_host" field was cleared in this mutation.
+func (m *UsageLogMutation) UpstreamHostCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUpstreamHost]
+	return ok
+}
+
+// ResetUpstreamHost resets all changes to the "upstream_host" field.
+func (m *UsageLogMutation) ResetUpstreamHost() {
+	m.upstream_host = nil
+	delete(m.clearedFields, usagelog.FieldUpstreamHost)
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (m *UsageLogMutation) SetUpstreamMultiplierBp(i int) {
+	m.upstream_multiplier_bp = &i
+	m.addupstream_multiplier_bp = nil
+}
+
+// UpstreamMultiplierBp returns the value of the "upstream_multiplier_bp" field in the mutation.
+func (m *UsageLogMutation) UpstreamMultiplierBp() (r int, exists bool) {
+	v := m.upstream_multiplier_bp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamMultiplierBp returns the old "upstream_multiplier_bp" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUpstreamMultiplierBp(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamMultiplierBp is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamMultiplierBp requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamMultiplierBp: %w", err)
+	}
+	return oldValue.UpstreamMultiplierBp, nil
+}
+
+// AddUpstreamMultiplierBp adds i to the "upstream_multiplier_bp" field.
+func (m *UsageLogMutation) AddUpstreamMultiplierBp(i int) {
+	if m.addupstream_multiplier_bp != nil {
+		*m.addupstream_multiplier_bp += i
+	} else {
+		m.addupstream_multiplier_bp = &i
+	}
+}
+
+// AddedUpstreamMultiplierBp returns the value that was added to the "upstream_multiplier_bp" field in this mutation.
+func (m *UsageLogMutation) AddedUpstreamMultiplierBp() (r int, exists bool) {
+	v := m.addupstream_multiplier_bp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (m *UsageLogMutation) ClearUpstreamMultiplierBp() {
+	m.upstream_multiplier_bp = nil
+	m.addupstream_multiplier_bp = nil
+	m.clearedFields[usagelog.FieldUpstreamMultiplierBp] = struct{}{}
+}
+
+// UpstreamMultiplierBpCleared returns if the "upstream_multiplier_bp" field was cleared in this mutation.
+func (m *UsageLogMutation) UpstreamMultiplierBpCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUpstreamMultiplierBp]
+	return ok
+}
+
+// ResetUpstreamMultiplierBp resets all changes to the "upstream_multiplier_bp" field.
+func (m *UsageLogMutation) ResetUpstreamMultiplierBp() {
+	m.upstream_multiplier_bp = nil
+	m.addupstream_multiplier_bp = nil
+	delete(m.clearedFields, usagelog.FieldUpstreamMultiplierBp)
 }
 
 // SetUserID sets the "user_id" field.
@@ -24210,6 +25189,216 @@ func (m *UsageLogMutation) ResetRawCost() {
 	m.addraw_cost = nil
 }
 
+// SetUpstreamCost sets the "upstream_cost" field.
+func (m *UsageLogMutation) SetUpstreamCost(i int64) {
+	m.upstream_cost = &i
+	m.addupstream_cost = nil
+}
+
+// UpstreamCost returns the value of the "upstream_cost" field in the mutation.
+func (m *UsageLogMutation) UpstreamCost() (r int64, exists bool) {
+	v := m.upstream_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamCost returns the old "upstream_cost" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUpstreamCost(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamCost: %w", err)
+	}
+	return oldValue.UpstreamCost, nil
+}
+
+// AddUpstreamCost adds i to the "upstream_cost" field.
+func (m *UsageLogMutation) AddUpstreamCost(i int64) {
+	if m.addupstream_cost != nil {
+		*m.addupstream_cost += i
+	} else {
+		m.addupstream_cost = &i
+	}
+}
+
+// AddedUpstreamCost returns the value that was added to the "upstream_cost" field in this mutation.
+func (m *UsageLogMutation) AddedUpstreamCost() (r int64, exists bool) {
+	v := m.addupstream_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUpstreamCost clears the value of the "upstream_cost" field.
+func (m *UsageLogMutation) ClearUpstreamCost() {
+	m.upstream_cost = nil
+	m.addupstream_cost = nil
+	m.clearedFields[usagelog.FieldUpstreamCost] = struct{}{}
+}
+
+// UpstreamCostCleared returns if the "upstream_cost" field was cleared in this mutation.
+func (m *UsageLogMutation) UpstreamCostCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUpstreamCost]
+	return ok
+}
+
+// ResetUpstreamCost resets all changes to the "upstream_cost" field.
+func (m *UsageLogMutation) ResetUpstreamCost() {
+	m.upstream_cost = nil
+	m.addupstream_cost = nil
+	delete(m.clearedFields, usagelog.FieldUpstreamCost)
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (m *UsageLogMutation) SetGrossProfit(i int64) {
+	m.gross_profit = &i
+	m.addgross_profit = nil
+}
+
+// GrossProfit returns the value of the "gross_profit" field in the mutation.
+func (m *UsageLogMutation) GrossProfit() (r int64, exists bool) {
+	v := m.gross_profit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGrossProfit returns the old "gross_profit" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldGrossProfit(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGrossProfit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGrossProfit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGrossProfit: %w", err)
+	}
+	return oldValue.GrossProfit, nil
+}
+
+// AddGrossProfit adds i to the "gross_profit" field.
+func (m *UsageLogMutation) AddGrossProfit(i int64) {
+	if m.addgross_profit != nil {
+		*m.addgross_profit += i
+	} else {
+		m.addgross_profit = &i
+	}
+}
+
+// AddedGrossProfit returns the value that was added to the "gross_profit" field in this mutation.
+func (m *UsageLogMutation) AddedGrossProfit() (r int64, exists bool) {
+	v := m.addgross_profit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearGrossProfit clears the value of the "gross_profit" field.
+func (m *UsageLogMutation) ClearGrossProfit() {
+	m.gross_profit = nil
+	m.addgross_profit = nil
+	m.clearedFields[usagelog.FieldGrossProfit] = struct{}{}
+}
+
+// GrossProfitCleared returns if the "gross_profit" field was cleared in this mutation.
+func (m *UsageLogMutation) GrossProfitCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldGrossProfit]
+	return ok
+}
+
+// ResetGrossProfit resets all changes to the "gross_profit" field.
+func (m *UsageLogMutation) ResetGrossProfit() {
+	m.gross_profit = nil
+	m.addgross_profit = nil
+	delete(m.clearedFields, usagelog.FieldGrossProfit)
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (m *UsageLogMutation) SetProfitMarginBp(i int64) {
+	m.profit_margin_bp = &i
+	m.addprofit_margin_bp = nil
+}
+
+// ProfitMarginBp returns the value of the "profit_margin_bp" field in the mutation.
+func (m *UsageLogMutation) ProfitMarginBp() (r int64, exists bool) {
+	v := m.profit_margin_bp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfitMarginBp returns the old "profit_margin_bp" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldProfitMarginBp(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfitMarginBp is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfitMarginBp requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfitMarginBp: %w", err)
+	}
+	return oldValue.ProfitMarginBp, nil
+}
+
+// AddProfitMarginBp adds i to the "profit_margin_bp" field.
+func (m *UsageLogMutation) AddProfitMarginBp(i int64) {
+	if m.addprofit_margin_bp != nil {
+		*m.addprofit_margin_bp += i
+	} else {
+		m.addprofit_margin_bp = &i
+	}
+}
+
+// AddedProfitMarginBp returns the value that was added to the "profit_margin_bp" field in this mutation.
+func (m *UsageLogMutation) AddedProfitMarginBp() (r int64, exists bool) {
+	v := m.addprofit_margin_bp
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearProfitMarginBp clears the value of the "profit_margin_bp" field.
+func (m *UsageLogMutation) ClearProfitMarginBp() {
+	m.profit_margin_bp = nil
+	m.addprofit_margin_bp = nil
+	m.clearedFields[usagelog.FieldProfitMarginBp] = struct{}{}
+}
+
+// ProfitMarginBpCleared returns if the "profit_margin_bp" field was cleared in this mutation.
+func (m *UsageLogMutation) ProfitMarginBpCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldProfitMarginBp]
+	return ok
+}
+
+// ResetProfitMarginBp resets all changes to the "profit_margin_bp" field.
+func (m *UsageLogMutation) ResetProfitMarginBp() {
+	m.profit_margin_bp = nil
+	m.addprofit_margin_bp = nil
+	delete(m.clearedFields, usagelog.FieldProfitMarginBp)
+}
+
 // SetBillingTier sets the "billing_tier" field.
 func (m *UsageLogMutation) SetBillingTier(s string) {
 	m.billing_tier = &s
@@ -24437,12 +25626,18 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 41)
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
 	}
 	if m.client_ip != nil {
 		fields = append(fields, usagelog.FieldClientIP)
+	}
+	if m.client_ip_source != nil {
+		fields = append(fields, usagelog.FieldClientIPSource)
+	}
+	if m.client_ip_trusted != nil {
+		fields = append(fields, usagelog.FieldClientIPTrusted)
 	}
 	if m.group_id != nil {
 		fields = append(fields, usagelog.FieldGroupID)
@@ -24452,6 +25647,21 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.template_id != nil {
 		fields = append(fields, usagelog.FieldTemplateID)
+	}
+	if m.target_kind != nil {
+		fields = append(fields, usagelog.FieldTargetKind)
+	}
+	if m.upstream_id != nil {
+		fields = append(fields, usagelog.FieldUpstreamID)
+	}
+	if m.upstream_name != nil {
+		fields = append(fields, usagelog.FieldUpstreamName)
+	}
+	if m.upstream_host != nil {
+		fields = append(fields, usagelog.FieldUpstreamHost)
+	}
+	if m.upstream_multiplier_bp != nil {
+		fields = append(fields, usagelog.FieldUpstreamMultiplierBp)
 	}
 	if m.user_id != nil {
 		fields = append(fields, usagelog.FieldUserID)
@@ -24516,6 +25726,15 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.raw_cost != nil {
 		fields = append(fields, usagelog.FieldRawCost)
 	}
+	if m.upstream_cost != nil {
+		fields = append(fields, usagelog.FieldUpstreamCost)
+	}
+	if m.gross_profit != nil {
+		fields = append(fields, usagelog.FieldGrossProfit)
+	}
+	if m.profit_margin_bp != nil {
+		fields = append(fields, usagelog.FieldProfitMarginBp)
+	}
 	if m.billing_tier != nil {
 		fields = append(fields, usagelog.FieldBillingTier)
 	}
@@ -24543,12 +25762,26 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.RequestID()
 	case usagelog.FieldClientIP:
 		return m.ClientIP()
+	case usagelog.FieldClientIPSource:
+		return m.ClientIPSource()
+	case usagelog.FieldClientIPTrusted:
+		return m.ClientIPTrusted()
 	case usagelog.FieldGroupID:
 		return m.GroupID()
 	case usagelog.FieldAccountID:
 		return m.AccountID()
 	case usagelog.FieldTemplateID:
 		return m.TemplateID()
+	case usagelog.FieldTargetKind:
+		return m.TargetKind()
+	case usagelog.FieldUpstreamID:
+		return m.UpstreamID()
+	case usagelog.FieldUpstreamName:
+		return m.UpstreamName()
+	case usagelog.FieldUpstreamHost:
+		return m.UpstreamHost()
+	case usagelog.FieldUpstreamMultiplierBp:
+		return m.UpstreamMultiplierBp()
 	case usagelog.FieldUserID:
 		return m.UserID()
 	case usagelog.FieldKeyID:
@@ -24591,6 +25824,12 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.Cost()
 	case usagelog.FieldRawCost:
 		return m.RawCost()
+	case usagelog.FieldUpstreamCost:
+		return m.UpstreamCost()
+	case usagelog.FieldGrossProfit:
+		return m.GrossProfit()
+	case usagelog.FieldProfitMarginBp:
+		return m.ProfitMarginBp()
 	case usagelog.FieldBillingTier:
 		return m.BillingTier()
 	case usagelog.FieldAboveHit:
@@ -24614,12 +25853,26 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldRequestID(ctx)
 	case usagelog.FieldClientIP:
 		return m.OldClientIP(ctx)
+	case usagelog.FieldClientIPSource:
+		return m.OldClientIPSource(ctx)
+	case usagelog.FieldClientIPTrusted:
+		return m.OldClientIPTrusted(ctx)
 	case usagelog.FieldGroupID:
 		return m.OldGroupID(ctx)
 	case usagelog.FieldAccountID:
 		return m.OldAccountID(ctx)
 	case usagelog.FieldTemplateID:
 		return m.OldTemplateID(ctx)
+	case usagelog.FieldTargetKind:
+		return m.OldTargetKind(ctx)
+	case usagelog.FieldUpstreamID:
+		return m.OldUpstreamID(ctx)
+	case usagelog.FieldUpstreamName:
+		return m.OldUpstreamName(ctx)
+	case usagelog.FieldUpstreamHost:
+		return m.OldUpstreamHost(ctx)
+	case usagelog.FieldUpstreamMultiplierBp:
+		return m.OldUpstreamMultiplierBp(ctx)
 	case usagelog.FieldUserID:
 		return m.OldUserID(ctx)
 	case usagelog.FieldKeyID:
@@ -24662,6 +25915,12 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldCost(ctx)
 	case usagelog.FieldRawCost:
 		return m.OldRawCost(ctx)
+	case usagelog.FieldUpstreamCost:
+		return m.OldUpstreamCost(ctx)
+	case usagelog.FieldGrossProfit:
+		return m.OldGrossProfit(ctx)
+	case usagelog.FieldProfitMarginBp:
+		return m.OldProfitMarginBp(ctx)
 	case usagelog.FieldBillingTier:
 		return m.OldBillingTier(ctx)
 	case usagelog.FieldAboveHit:
@@ -24695,6 +25954,20 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetClientIP(v)
 		return nil
+	case usagelog.FieldClientIPSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientIPSource(v)
+		return nil
+	case usagelog.FieldClientIPTrusted:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientIPTrusted(v)
+		return nil
 	case usagelog.FieldGroupID:
 		v, ok := value.(int64)
 		if !ok {
@@ -24715,6 +25988,41 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTemplateID(v)
+		return nil
+	case usagelog.FieldTargetKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetKind(v)
+		return nil
+	case usagelog.FieldUpstreamID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamID(v)
+		return nil
+	case usagelog.FieldUpstreamName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamName(v)
+		return nil
+	case usagelog.FieldUpstreamHost:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamHost(v)
+		return nil
+	case usagelog.FieldUpstreamMultiplierBp:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamMultiplierBp(v)
 		return nil
 	case usagelog.FieldUserID:
 		v, ok := value.(int64)
@@ -24863,6 +26171,27 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRawCost(v)
 		return nil
+	case usagelog.FieldUpstreamCost:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamCost(v)
+		return nil
+	case usagelog.FieldGrossProfit:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGrossProfit(v)
+		return nil
+	case usagelog.FieldProfitMarginBp:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfitMarginBp(v)
+		return nil
 	case usagelog.FieldBillingTier:
 		v, ok := value.(string)
 		if !ok {
@@ -24915,6 +26244,12 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addtemplate_id != nil {
 		fields = append(fields, usagelog.FieldTemplateID)
 	}
+	if m.addupstream_id != nil {
+		fields = append(fields, usagelog.FieldUpstreamID)
+	}
+	if m.addupstream_multiplier_bp != nil {
+		fields = append(fields, usagelog.FieldUpstreamMultiplierBp)
+	}
 	if m.adduser_id != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -24966,6 +26301,15 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addraw_cost != nil {
 		fields = append(fields, usagelog.FieldRawCost)
 	}
+	if m.addupstream_cost != nil {
+		fields = append(fields, usagelog.FieldUpstreamCost)
+	}
+	if m.addgross_profit != nil {
+		fields = append(fields, usagelog.FieldGrossProfit)
+	}
+	if m.addprofit_margin_bp != nil {
+		fields = append(fields, usagelog.FieldProfitMarginBp)
+	}
 	return fields
 }
 
@@ -24980,6 +26324,10 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedAccountID()
 	case usagelog.FieldTemplateID:
 		return m.AddedTemplateID()
+	case usagelog.FieldUpstreamID:
+		return m.AddedUpstreamID()
+	case usagelog.FieldUpstreamMultiplierBp:
+		return m.AddedUpstreamMultiplierBp()
 	case usagelog.FieldUserID:
 		return m.AddedUserID()
 	case usagelog.FieldKeyID:
@@ -25014,6 +26362,12 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedCost()
 	case usagelog.FieldRawCost:
 		return m.AddedRawCost()
+	case usagelog.FieldUpstreamCost:
+		return m.AddedUpstreamCost()
+	case usagelog.FieldGrossProfit:
+		return m.AddedGrossProfit()
+	case usagelog.FieldProfitMarginBp:
+		return m.AddedProfitMarginBp()
 	}
 	return nil, false
 }
@@ -25043,6 +26397,20 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddTemplateID(v)
+		return nil
+	case usagelog.FieldUpstreamID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpstreamID(v)
+		return nil
+	case usagelog.FieldUpstreamMultiplierBp:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpstreamMultiplierBp(v)
 		return nil
 	case usagelog.FieldUserID:
 		v, ok := value.(int64)
@@ -25163,6 +26531,27 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddRawCost(v)
 		return nil
+	case usagelog.FieldUpstreamCost:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpstreamCost(v)
+		return nil
+	case usagelog.FieldGrossProfit:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGrossProfit(v)
+		return nil
+	case usagelog.FieldProfitMarginBp:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProfitMarginBp(v)
+		return nil
 	}
 	return fmt.Errorf("unknown UsageLog numeric field %s", name)
 }
@@ -25174,6 +26563,12 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldClientIP) {
 		fields = append(fields, usagelog.FieldClientIP)
 	}
+	if m.FieldCleared(usagelog.FieldClientIPSource) {
+		fields = append(fields, usagelog.FieldClientIPSource)
+	}
+	if m.FieldCleared(usagelog.FieldClientIPTrusted) {
+		fields = append(fields, usagelog.FieldClientIPTrusted)
+	}
 	if m.FieldCleared(usagelog.FieldGroupID) {
 		fields = append(fields, usagelog.FieldGroupID)
 	}
@@ -25182,6 +26577,21 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(usagelog.FieldTemplateID) {
 		fields = append(fields, usagelog.FieldTemplateID)
+	}
+	if m.FieldCleared(usagelog.FieldTargetKind) {
+		fields = append(fields, usagelog.FieldTargetKind)
+	}
+	if m.FieldCleared(usagelog.FieldUpstreamID) {
+		fields = append(fields, usagelog.FieldUpstreamID)
+	}
+	if m.FieldCleared(usagelog.FieldUpstreamName) {
+		fields = append(fields, usagelog.FieldUpstreamName)
+	}
+	if m.FieldCleared(usagelog.FieldUpstreamHost) {
+		fields = append(fields, usagelog.FieldUpstreamHost)
+	}
+	if m.FieldCleared(usagelog.FieldUpstreamMultiplierBp) {
+		fields = append(fields, usagelog.FieldUpstreamMultiplierBp)
 	}
 	if m.FieldCleared(usagelog.FieldUserID) {
 		fields = append(fields, usagelog.FieldUserID)
@@ -25210,6 +26620,15 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldPricePerCallMillis) {
 		fields = append(fields, usagelog.FieldPricePerCallMillis)
 	}
+	if m.FieldCleared(usagelog.FieldUpstreamCost) {
+		fields = append(fields, usagelog.FieldUpstreamCost)
+	}
+	if m.FieldCleared(usagelog.FieldGrossProfit) {
+		fields = append(fields, usagelog.FieldGrossProfit)
+	}
+	if m.FieldCleared(usagelog.FieldProfitMarginBp) {
+		fields = append(fields, usagelog.FieldProfitMarginBp)
+	}
 	if m.FieldCleared(usagelog.FieldBillingTier) {
 		fields = append(fields, usagelog.FieldBillingTier)
 	}
@@ -25230,6 +26649,12 @@ func (m *UsageLogMutation) ClearField(name string) error {
 	case usagelog.FieldClientIP:
 		m.ClearClientIP()
 		return nil
+	case usagelog.FieldClientIPSource:
+		m.ClearClientIPSource()
+		return nil
+	case usagelog.FieldClientIPTrusted:
+		m.ClearClientIPTrusted()
+		return nil
 	case usagelog.FieldGroupID:
 		m.ClearGroupID()
 		return nil
@@ -25238,6 +26663,21 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldTemplateID:
 		m.ClearTemplateID()
+		return nil
+	case usagelog.FieldTargetKind:
+		m.ClearTargetKind()
+		return nil
+	case usagelog.FieldUpstreamID:
+		m.ClearUpstreamID()
+		return nil
+	case usagelog.FieldUpstreamName:
+		m.ClearUpstreamName()
+		return nil
+	case usagelog.FieldUpstreamHost:
+		m.ClearUpstreamHost()
+		return nil
+	case usagelog.FieldUpstreamMultiplierBp:
+		m.ClearUpstreamMultiplierBp()
 		return nil
 	case usagelog.FieldUserID:
 		m.ClearUserID()
@@ -25266,6 +26706,15 @@ func (m *UsageLogMutation) ClearField(name string) error {
 	case usagelog.FieldPricePerCallMillis:
 		m.ClearPricePerCallMillis()
 		return nil
+	case usagelog.FieldUpstreamCost:
+		m.ClearUpstreamCost()
+		return nil
+	case usagelog.FieldGrossProfit:
+		m.ClearGrossProfit()
+		return nil
+	case usagelog.FieldProfitMarginBp:
+		m.ClearProfitMarginBp()
+		return nil
 	case usagelog.FieldBillingTier:
 		m.ClearBillingTier()
 		return nil
@@ -25283,6 +26732,12 @@ func (m *UsageLogMutation) ResetField(name string) error {
 	case usagelog.FieldClientIP:
 		m.ResetClientIP()
 		return nil
+	case usagelog.FieldClientIPSource:
+		m.ResetClientIPSource()
+		return nil
+	case usagelog.FieldClientIPTrusted:
+		m.ResetClientIPTrusted()
+		return nil
 	case usagelog.FieldGroupID:
 		m.ResetGroupID()
 		return nil
@@ -25291,6 +26746,21 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldTemplateID:
 		m.ResetTemplateID()
+		return nil
+	case usagelog.FieldTargetKind:
+		m.ResetTargetKind()
+		return nil
+	case usagelog.FieldUpstreamID:
+		m.ResetUpstreamID()
+		return nil
+	case usagelog.FieldUpstreamName:
+		m.ResetUpstreamName()
+		return nil
+	case usagelog.FieldUpstreamHost:
+		m.ResetUpstreamHost()
+		return nil
+	case usagelog.FieldUpstreamMultiplierBp:
+		m.ResetUpstreamMultiplierBp()
 		return nil
 	case usagelog.FieldUserID:
 		m.ResetUserID()
@@ -25354,6 +26824,15 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldRawCost:
 		m.ResetRawCost()
+		return nil
+	case usagelog.FieldUpstreamCost:
+		m.ResetUpstreamCost()
+		return nil
+	case usagelog.FieldGrossProfit:
+		m.ResetGrossProfit()
+		return nil
+	case usagelog.FieldProfitMarginBp:
+		m.ResetProfitMarginBp()
 		return nil
 	case usagelog.FieldBillingTier:
 		m.ResetBillingTier()

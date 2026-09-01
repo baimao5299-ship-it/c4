@@ -28,6 +28,10 @@ type responsesCaller struct{ p *Proxy }
 func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 
+	if err := validateRequestParameterTypes(domain.FormatOpenAIResponses, body); err != nil {
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, domain.FormatOpenAIResponses, body, err)
+	}
+
 	// codex 类型分流（T6 §1）：codex-oauth/codex-pat → 适配层调用（SDK 合成非
 	// 流式 Responses / Stream SSE 透传——实现独立文件 codex_responses_http.go）；
 	// api_key / responses-special → typed 段（下方原样，零改动）。分流在
@@ -128,11 +132,7 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 
 	var params responses.ResponseNewParams
 	if err := json.Unmarshal(body, &params); err != nil {
-		// 本地拒绝（handled=true，无记录）：同 chat 语义。Select 已占并发槽，
-		// 必须释放（Release-only）。
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
-		p.sched.ReleaseSelection(sel)
-		return 400, nil, true, nil
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, domain.FormatOpenAIResponses, body, err)
 	}
 	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
 	reqModel := params.Model

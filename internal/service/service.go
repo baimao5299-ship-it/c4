@@ -270,6 +270,7 @@ type PricingStore interface {
 
 type LogStore interface {
 	QueryUsages(ctx context.Context, q repository.UsageQuery) ([]*domain.UsageLog, error)
+	SummarizeUsages(ctx context.Context, q repository.UsageQuery) (*repository.UsageLogsSummary, error)
 	QueryErrLogs(ctx context.Context, q repository.ErrLogQuery) ([]*domain.UsageLog, error)
 	// ScanUsageAgg 批量账号 usage_logs 区间聚合（/api/admin/accounts/usage 查询面：
 	// 单查询 ANY + GROUP BY；无记录账号无键——补零由 service 按 ids 全量组装）。

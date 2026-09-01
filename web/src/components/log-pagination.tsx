@@ -72,7 +72,7 @@ export function LogPagination({
           disabled={isFetching}
           onValueChange={v => onChangeLimit(Number(v))}
         >
-          <SelectTrigger size="sm" aria-label={`${t('list.pageSize')}: ${limit}`}>
+          <SelectTrigger size="sm" className="min-h-11 md:min-h-7" aria-label={`${t('list.pageSize')}: ${limit}`}>
             <span className="text-xs">{t('list.pageSize')}</span>
             <SelectValue />
           </SelectTrigger>
@@ -81,7 +81,7 @@ export function LogPagination({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
         {/* 页码按钮组：1..已加载最远页（全部已缓存，点击零请求）；isFetching 时禁用 */}
         <div className="hidden items-center gap-1 md:flex">
           {pageNumbers(page, Math.max(1, loadedPages)).map((p, i) =>
@@ -128,14 +128,35 @@ export function LogPagination({
             {t('list.jump')}
           </Button>
         </div>
-        <Button variant="outline" size="sm" disabled={page <= 1 || isFetching} onClick={onGoPrev}>
-          <ChevronLeft /> {t('list.prev')}
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-11 min-w-11 md:min-h-7 md:min-w-7"
+          aria-label={t('list.prev')}
+          disabled={page <= 1 || isFetching}
+          onClick={onGoPrev}
+        >
+          <ChevronLeft /> <span className="hidden sm:inline">{t('list.prev')}</span>
         </Button>
-        <Button variant="outline" size="sm" disabled={!hasNext || isFetching} onClick={onGoNext}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-11 min-w-11 md:min-h-7 md:min-w-7"
+          aria-label={t(`${ns}.next`)}
+          disabled={!hasNext || isFetching}
+          onClick={onGoNext}
+        >
           <span className="hidden sm:inline">{t(`${ns}.next`)}</span> <ChevronRight />
         </Button>
         {page > 1 && (
-          <Button variant="outline" size="sm" disabled={isFetching} onClick={onGoLatest}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-h-11 min-w-11 md:min-h-7 md:min-w-7"
+            aria-label={t(`${ns}.latest`)}
+            disabled={isFetching}
+            onClick={onGoLatest}
+          >
             <RotateCcw /> <span className="hidden sm:inline">{t(`${ns}.latest`)}</span>
           </Button>
         )}

@@ -23,6 +23,14 @@ func scaledPrice(millis *int64, multiplier float64) *float64 {
 	return &value
 }
 
+// officialPrice converts the persisted catalogue unit (milli-USD on the
+// 1e-5 USD grid) without applying a group/assignment multiplier. Keeping this
+// separate from scaledPrice prevents clients from having to reverse a free or
+// discounted group price to recover the official catalogue value.
+func officialPrice(millis *int64) *float64 {
+	return scaledPrice(millis, 1)
+}
+
 // GetUserChannelMonitor returns the privacy-safe public-channel aggregate.
 // Missing bounds mean the rolling 24-hour window; explicit bounds are limited
 // by service to keep this endpoint suitable for mobile polling.
@@ -54,13 +62,19 @@ func (h *UserAPI) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, 
 		modelPrices := make([]UserChannelModelPrice, 0, len(metric.ModelPrices))
 		for _, price := range metric.ModelPrices {
 			row := UserChannelModelPrice{
-				Model:          price.Model,
-				InputPerM:      scaledPrice(price.InputPerM, multiplier),
-				OutputPerM:     scaledPrice(price.OutputPerM, multiplier),
-				CacheReadPerM:  scaledPrice(price.CacheReadPerM, multiplier),
-				CacheWritePerM: scaledPrice(price.CacheWritePerM, multiplier),
-				PricePerCall:   scaledPrice(price.PricePerCall, multiplier),
-				PricePerImage:  scaledPrice(price.PricePerImage, multiplier),
+				Model:                  price.Model,
+				OfficialInputPerM:      officialPrice(price.OfficialInputPerM),
+				OfficialOutputPerM:     officialPrice(price.OfficialOutputPerM),
+				OfficialCacheReadPerM:  officialPrice(price.OfficialCacheReadPerM),
+				OfficialCacheWritePerM: officialPrice(price.OfficialCacheWritePerM),
+				OfficialPricePerCall:   officialPrice(price.OfficialPricePerCall),
+				OfficialPricePerImage:  officialPrice(price.OfficialPricePerImage),
+				InputPerM:              scaledPrice(price.InputPerM, multiplier),
+				OutputPerM:             scaledPrice(price.OutputPerM, multiplier),
+				CacheReadPerM:          scaledPrice(price.CacheReadPerM, multiplier),
+				CacheWritePerM:         scaledPrice(price.CacheWritePerM, multiplier),
+				PricePerCall:           scaledPrice(price.PricePerCall, multiplier),
+				PricePerImage:          scaledPrice(price.PricePerImage, multiplier),
 			}
 			if price.Mode != "" {
 				mode := UserChannelModelPriceMode(price.Mode)

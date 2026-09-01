@@ -54,7 +54,7 @@ func (p *Proxy) callCodexResponses(ctx context.Context, w http.ResponseWriter, r
 	if p.codex == nil {
 		// 适配层未装配（SetCodex 未调用）：显式 501（防 nil 误走凭据缺失 502）。
 		p.sched.ReleaseSelection(sel)
-		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexResponsesNotIntegrated.msg)
+		p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIResponses, http.StatusNotImplemented, domain.ErrBilling, 0, usageTuple{}, start, errCodexResponsesNotIntegrated.msg, sel)
 		writeErr(w, errCodexResponsesNotIntegrated)
 		return 0, nil, true, nil
 	}

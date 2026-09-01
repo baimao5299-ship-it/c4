@@ -21,12 +21,26 @@ type ErrLog struct {
 	RequestID string `json:"request_id,omitempty"`
 	// ClientIP holds the value of the "client_ip" field.
 	ClientIP *string `json:"client_ip,omitempty"`
+	// ClientIPSource holds the value of the "client_ip_source" field.
+	ClientIPSource *string `json:"client_ip_source,omitempty"`
+	// ClientIPTrusted holds the value of the "client_ip_trusted" field.
+	ClientIPTrusted *bool `json:"client_ip_trusted,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID *int64 `json:"group_id,omitempty"`
 	// AccountID holds the value of the "account_id" field.
 	AccountID *int64 `json:"account_id,omitempty"`
 	// TemplateID holds the value of the "template_id" field.
 	TemplateID *int64 `json:"template_id,omitempty"`
+	// TargetKind holds the value of the "target_kind" field.
+	TargetKind *string `json:"target_kind,omitempty"`
+	// UpstreamID holds the value of the "upstream_id" field.
+	UpstreamID *int64 `json:"upstream_id,omitempty"`
+	// UpstreamName holds the value of the "upstream_name" field.
+	UpstreamName *string `json:"upstream_name,omitempty"`
+	// UpstreamHost holds the value of the "upstream_host" field.
+	UpstreamHost *string `json:"upstream_host,omitempty"`
+	// UpstreamMultiplierBp holds the value of the "upstream_multiplier_bp" field.
+	UpstreamMultiplierBp *int `json:"upstream_multiplier_bp,omitempty"`
 	// UserID holds the value of the "user_id" field.
 	UserID *int64 `json:"user_id,omitempty"`
 	// KeyID holds the value of the "key_id" field.
@@ -55,9 +69,11 @@ func (*ErrLog) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case errlog.FieldID, errlog.FieldGroupID, errlog.FieldAccountID, errlog.FieldTemplateID, errlog.FieldUserID, errlog.FieldKeyID, errlog.FieldStatusCode, errlog.FieldLatencyMs:
+		case errlog.FieldClientIPTrusted:
+			values[i] = new(sql.NullBool)
+		case errlog.FieldID, errlog.FieldGroupID, errlog.FieldAccountID, errlog.FieldTemplateID, errlog.FieldUpstreamID, errlog.FieldUpstreamMultiplierBp, errlog.FieldUserID, errlog.FieldKeyID, errlog.FieldStatusCode, errlog.FieldLatencyMs:
 			values[i] = new(sql.NullInt64)
-		case errlog.FieldRequestID, errlog.FieldClientIP, errlog.FieldModel, errlog.FieldFormat, errlog.FieldErrorType, errlog.FieldErrorMessage, errlog.FieldBillingTier:
+		case errlog.FieldRequestID, errlog.FieldClientIP, errlog.FieldClientIPSource, errlog.FieldTargetKind, errlog.FieldUpstreamName, errlog.FieldUpstreamHost, errlog.FieldModel, errlog.FieldFormat, errlog.FieldErrorType, errlog.FieldErrorMessage, errlog.FieldBillingTier:
 			values[i] = new(sql.NullString)
 		case errlog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -95,6 +111,20 @@ func (_m *ErrLog) assignValues(columns []string, values []any) error {
 				_m.ClientIP = new(string)
 				*_m.ClientIP = value.String
 			}
+		case errlog.FieldClientIPSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field client_ip_source", values[i])
+			} else if value.Valid {
+				_m.ClientIPSource = new(string)
+				*_m.ClientIPSource = value.String
+			}
+		case errlog.FieldClientIPTrusted:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field client_ip_trusted", values[i])
+			} else if value.Valid {
+				_m.ClientIPTrusted = new(bool)
+				*_m.ClientIPTrusted = value.Bool
+			}
 		case errlog.FieldGroupID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
@@ -115,6 +145,41 @@ func (_m *ErrLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.TemplateID = new(int64)
 				*_m.TemplateID = value.Int64
+			}
+		case errlog.FieldTargetKind:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field target_kind", values[i])
+			} else if value.Valid {
+				_m.TargetKind = new(string)
+				*_m.TargetKind = value.String
+			}
+		case errlog.FieldUpstreamID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_id", values[i])
+			} else if value.Valid {
+				_m.UpstreamID = new(int64)
+				*_m.UpstreamID = value.Int64
+			}
+		case errlog.FieldUpstreamName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_name", values[i])
+			} else if value.Valid {
+				_m.UpstreamName = new(string)
+				*_m.UpstreamName = value.String
+			}
+		case errlog.FieldUpstreamHost:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_host", values[i])
+			} else if value.Valid {
+				_m.UpstreamHost = new(string)
+				*_m.UpstreamHost = value.String
+			}
+		case errlog.FieldUpstreamMultiplierBp:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_multiplier_bp", values[i])
+			} else if value.Valid {
+				_m.UpstreamMultiplierBp = new(int)
+				*_m.UpstreamMultiplierBp = int(value.Int64)
 			}
 		case errlog.FieldUserID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -224,6 +289,16 @@ func (_m *ErrLog) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
+	if v := _m.ClientIPSource; v != nil {
+		builder.WriteString("client_ip_source=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.ClientIPTrusted; v != nil {
+		builder.WriteString("client_ip_trusted=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	if v := _m.GroupID; v != nil {
 		builder.WriteString("group_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
@@ -236,6 +311,31 @@ func (_m *ErrLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.TemplateID; v != nil {
 		builder.WriteString("template_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.TargetKind; v != nil {
+		builder.WriteString("target_kind=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamID; v != nil {
+		builder.WriteString("upstream_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamName; v != nil {
+		builder.WriteString("upstream_name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamHost; v != nil {
+		builder.WriteString("upstream_host=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamMultiplierBp; v != nil {
+		builder.WriteString("upstream_multiplier_bp=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

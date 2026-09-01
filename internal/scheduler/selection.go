@@ -123,6 +123,8 @@ func (s *Scheduler) pickFrom(ws *weightedSeq, groupID int64, format domain.Reque
 			return &Selection{
 				TargetKind: TargetKindAccount, TargetID: av.acc.ID,
 				AccountID: av.acc.ID, GroupID: groupID, TemplateID: av.tpl.ID,
+				UpstreamID: av.upstreamID, UpstreamName: av.upstreamName,
+				UpstreamHost: av.upstreamHost, UpstreamMultiplierBP: av.upstreamMultiplierBP,
 				BaseURL: baseURL, Format: format,
 				UpstreamKey: av.acc.UpstreamKey, CredentialType: av.tpl.CredentialType, Model: mapped,
 				StripImageTools: av.tpl.StripImageTools, // W4：模板快照布尔复制（热路径零 DB）

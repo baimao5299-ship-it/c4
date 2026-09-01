@@ -62,6 +62,11 @@ func TestUsageLogColumnDefsMatchCreateDDL(t *testing.T) {
 	require.Contains(t, source, "raw_cost", "锚必须覆盖 raw_cost 新列")
 	// billed（F2 ledger-cursor，spec 2026-08-23）：扣费收敛标记列锚。
 	require.Contains(t, source, "billed", "锚必须覆盖 billed 新列")
+	for _, column := range []string{"client_ip_source", "client_ip_trusted", "target_kind",
+		"upstream_id", "upstream_name", "upstream_host", "upstream_multiplier_bp",
+		"upstream_cost", "gross_profit", "profit_margin_bp"} {
+		require.Contains(t, source, column, "upstream attribution/economics column: %s", column)
+	}
 	for _, old := range []string{"image_input_tokens", "image_output_tokens", "image_count",
 		"price_image_input_millis", "price_image_output_millis", "price_per_image_millis"} {
 		require.NotContains(t, source, old, "删 6 列：%s 不得残留", old)
@@ -75,7 +80,7 @@ func TestUsageLogColumnDefsMatchCreateDDL(t *testing.T) {
 // billed 为 F2 ledger-cursor spec 2026-08-23 追加）。
 func TestUsageLogCopyColumnsMatchColumnDefs(t *testing.T) {
 	source := ddlColumnNames(strings.Join(usageLogColumnDefs, "\n"))
-	require.Len(t, usageLogCopyColumns, 31, "COPY 列数 30→31")
+	require.Len(t, usageLogCopyColumns, 41, "COPY includes attribution and economics snapshots")
 	want := make([]string, 0, len(source)-1)
 	for _, s := range source {
 		if s != "id" { // id 为自增列（COPY 不写，序列默认生成）
@@ -89,6 +94,9 @@ func TestUsageLogCopyColumnsMatchColumnDefs(t *testing.T) {
 	for i, c := range usageLogCopyColumns {
 		if c == usagelog.FieldCost {
 			require.Equal(t, usagelog.FieldRawCost, usageLogCopyColumns[i+1], "raw_cost 紧随 cost")
+		}
+		if c == usagelog.FieldRawCost {
+			require.Equal(t, usagelog.FieldUpstreamCost, usageLogCopyColumns[i+1], "upstream_cost follows raw_cost")
 		}
 		if c == usagelog.FieldOverdraft {
 			require.Equal(t, usagelog.FieldBilled, usageLogCopyColumns[i+1], "billed 紧随 overdraft")
@@ -120,8 +128,26 @@ func TestErrLogColumnDefsMatchCreateDDL(t *testing.T) {
 	require.Equal(t, source, create, "建表 DDL 与事实源列集合一致")
 	require.Contains(t, source, "error_message", "锚必须覆盖 err_logs 错误审计列")
 	require.Contains(t, source, "billing_tier", "锚必须覆盖 I-3 tier 审计列")
+	for _, column := range []string{"client_ip_source", "client_ip_trusted", "target_kind",
+		"upstream_id", "upstream_name", "upstream_host", "upstream_multiplier_bp"} {
+		require.Contains(t, source, column, "error attribution column: %s", column)
+	}
 	require.NotContains(t, source, "cost", "err_logs 瘦表无计费列")
 	require.NotContains(t, source, "input_tokens", "err_logs 瘦表无 token 列")
+}
+
+func TestLogUpgradeDDLsCoverAdditiveColumns(t *testing.T) {
+	usageUpgrades := ddlColumnNames(usageLogUpgradeDDLs...)
+	errUpgrades := ddlColumnNames(errLogUpgradeDDLs...)
+	require.Equal(t, []string{
+		"client_ip_source", "client_ip_trusted", "gross_profit", "profit_margin_bp",
+		"target_kind", "upstream_cost", "upstream_host", "upstream_id",
+		"upstream_multiplier_bp", "upstream_name",
+	}, usageUpgrades)
+	require.Equal(t, []string{
+		"client_ip_source", "client_ip_trusted", "target_kind", "upstream_host",
+		"upstream_id", "upstream_multiplier_bp", "upstream_name",
+	}, errUpgrades)
 }
 
 // TestUsageStatsColumnDefsMatchCreateDDL usage_stats 列事实源锚 v2（用户裁决

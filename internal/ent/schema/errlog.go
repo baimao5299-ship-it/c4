@@ -26,9 +26,16 @@ func (ErrLog) Fields() []ent.Field {
 		// （401 鉴权失败等）也带（guardPipeline 入口鉴权前提取）。NULL = Optional
 		// 未 Set。
 		field.String("client_ip").Optional().Nillable(),
+		field.String("client_ip_source").Optional().Nillable(),
+		field.Bool("client_ip_trusted").Optional().Nillable(),
 		field.Int64("group_id").Optional().Nillable(),
 		field.Int64("account_id").Optional().Nillable(),
 		field.Int64("template_id").Optional().Nillable(),
+		field.String("target_kind").Optional().Nillable(),
+		field.Int64("upstream_id").Optional().Nillable(),
+		field.String("upstream_name").Optional().Nillable(),
+		field.String("upstream_host").Optional().Nillable(),
+		field.Int("upstream_multiplier_bp").Optional().Nillable(),
 		// 归属字段（context 传递，0 = 无）：401 鉴权失败行无 KeyMeta → 全部
 		// 0/NULL（无效 key 本质不可归因，可接受——架构审查 A1；仅 request_id +
 		// format + status 可关联）。

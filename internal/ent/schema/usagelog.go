@@ -19,9 +19,16 @@ func (UsageLog) Fields() []ent.Field {
 		// proxy.behind_cdn 开关门控；审计/排障的尽力而为标识，非安全边界。
 		// NULL = Optional 未 Set（空 = 无）。
 		field.String("client_ip").Optional().Nillable(),
+		field.String("client_ip_source").Optional().Nillable(),
+		field.Bool("client_ip_trusted").Optional().Nillable(),
 		field.Int64("group_id").Optional().Nillable(),
 		field.Int64("account_id").Optional().Nillable(),
 		field.Int64("template_id").Optional().Nillable(),
+		field.String("target_kind").Optional().Nillable(),
+		field.Int64("upstream_id").Optional().Nillable(),
+		field.String("upstream_name").Optional().Nillable(),
+		field.String("upstream_host").Optional().Nillable(),
+		field.Int("upstream_multiplier_bp").Optional().Nillable(),
 		field.Int64("user_id").Optional().Nillable(), // 鉴权 key 归属用户（context 传递，0 = 无）
 		field.Int64("key_id").Optional().Nillable(),  // 鉴权 key（context 传递，0 = 无）
 		field.String("model").Default(""),
@@ -80,6 +87,9 @@ func (UsageLog) Fields() []ent.Field {
 		// 不迁移）。恒落（对齐 cost 恒落语义）。
 		field.Int64("cost").Default(0),
 		field.Int64("raw_cost").Default(0),
+		field.Int64("upstream_cost").Optional().Nillable(),
+		field.Int64("gross_profit").Optional().Nillable(),
+		field.Int64("profit_margin_bp").Optional().Nillable(),
 		field.String("billing_tier").Optional().Nillable(),
 		field.Bool("above_hit").Default(false),
 		field.Bool("overdraft").Default(false),

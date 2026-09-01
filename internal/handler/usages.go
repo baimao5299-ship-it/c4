@@ -69,3 +69,47 @@ func (h *AdminAPI) GetUsageLogs(w http.ResponseWriter, r *http.Request, params G
 	}
 	httpface.WriteJSON(w, http.StatusOK, LogsResponse{Rows: out, NextCursor: next})
 }
+
+// GetUsageLogsSummary aggregates the complete active usage-log filter window.
+// It intentionally does not accept pagination fields, so its totals never
+// depend on the currently visible page.
+func (h *AdminAPI) GetUsageLogsSummary(w http.ResponseWriter, r *http.Request, params GetUsageLogsSummaryParams) {
+	q := repository.UsageQuery{From: &params.From, To: &params.To}
+	if params.GroupId != nil {
+		q.GroupID = *params.GroupId
+	}
+	if params.AccountId != nil {
+		q.AccountID = *params.AccountId
+	}
+	if params.UserId != nil {
+		q.UserID = *params.UserId
+	}
+	if params.KeyId != nil {
+		q.KeyID = *params.KeyId
+	}
+	if params.Model != nil {
+		q.Model = *params.Model
+	}
+	if params.Format != nil {
+		q.Format = string(*params.Format)
+	}
+	if params.ErrorType != nil {
+		q.ErrorType = *params.ErrorType
+	}
+
+	summary, err := h.svc.SummarizeUsages(r.Context(), q)
+	if err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
+	httpface.WriteJSON(w, http.StatusOK, UsageLogsSummary{
+		RequestCount:         summary.RequestCount,
+		CostedRequestCount:   summary.CostedRequestCount,
+		UserCharge:           summary.UserCharge,
+		AttributedUserCharge: summary.AttributedUserCharge,
+		UpstreamCost:         summary.UpstreamCost,
+		GrossProfit:          summary.GrossProfit,
+		ProfitMarginBP:       summary.ProfitMarginBP,
+		LossRequestCount:     summary.LossRequestCount,
+	})
+}

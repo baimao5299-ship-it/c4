@@ -42,6 +42,9 @@ type convertedCaller struct {
 func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 	client, target := clientAndTargetOf(c.dir)
+	if err := validateRequestParameterTypes(target, body); err != nil {
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, client, body, err)
+	}
 
 	if stream {
 		// 客户端请求模型：转换器保证 model 字段原样保留（补差映射），gjson
@@ -140,8 +143,13 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	case domain.FormatOpenAIResponses:
 		var params responses.ResponseNewParams
 		if err := json.Unmarshal(body, &params); err != nil {
-			// 本地拒绝（handled=true，无记录）：同 chat caller 语义。
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+			// 本地参数拒绝：已选号但尚未调用 SDK/上游。记录 err_logs 并保留
+			// 选择快照，便于定位是哪一个上游候选被参数错误占用过。
+			msg := "invalid request body: " + err.Error()
+			p.recordRejected(ctx, reqID, groupID, sel.AccountID, reqModel,
+				sel.Model, client, http.StatusBadRequest, domain.Err4xx, 0,
+				usageTuple{}, start, localRejectionMessage("invalid request body", err), sel)
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": msg}})
 			p.sched.ReleaseSelection(sel)
 			return 400, nil, true, nil
 		}
@@ -157,7 +165,12 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	case domain.FormatAnthropic:
 		var params anthropic.MessageNewParams
 		if err := json.Unmarshal(body, &params); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
+			// 同上：转换目标参数在本地失败，目标上游尚未收到请求。
+			msg := "invalid request body: " + err.Error()
+			p.recordRejected(ctx, reqID, groupID, sel.AccountID, reqModel,
+				sel.Model, client, http.StatusBadRequest, domain.Err4xx, 0,
+				usageTuple{}, start, localRejectionMessage("invalid request body", err), sel)
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": msg}})
 			p.sched.ReleaseSelection(sel)
 			return 400, nil, true, nil
 		}

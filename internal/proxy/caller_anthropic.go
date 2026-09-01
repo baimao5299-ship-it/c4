@@ -27,6 +27,10 @@ type anthropicCaller struct{ p *Proxy }
 func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Request, reqID string, groupID int64, start time.Time, sel *scheduler.Selection, cred string, body []byte, stream bool) (int, []byte, bool, error) {
 	p := c.p
 
+	if err := validateRequestParameterTypes(domain.FormatAnthropic, body); err != nil {
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, domain.FormatAnthropic, body, err)
+	}
+
 	if stream {
 		// 客户端请求模型：流式无完整 params 解析（评审 I-2），gjson 顶层
 		// 提取（1 次分配，远低于旧的完整参数解析）。Model 即 string 别名。
@@ -107,11 +111,7 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 
 	var params anthropic.MessageNewParams
 	if err := json.Unmarshal(body, &params); err != nil {
-		// 本地拒绝（handled=true，无记录）：同 chat 语义。Select 已占并发槽，
-		// 必须释放（Release-only）。
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": "invalid request body: " + err.Error()}})
-		p.sched.ReleaseSelection(sel)
-		return 400, nil, true, nil
+		return p.rejectLocalRequest(ctx, w, reqID, groupID, start, sel, domain.FormatAnthropic, body, err)
 	}
 	// 客户端请求模型快照：下一行覆盖前取值（零额外分配，与 gjson 值等价）。
 	reqModel := params.Model

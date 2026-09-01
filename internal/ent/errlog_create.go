@@ -42,6 +42,34 @@ func (_c *ErrLogCreate) SetNillableClientIP(v *string) *ErrLogCreate {
 	return _c
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (_c *ErrLogCreate) SetClientIPSource(v string) *ErrLogCreate {
+	_c.mutation.SetClientIPSource(v)
+	return _c
+}
+
+// SetNillableClientIPSource sets the "client_ip_source" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableClientIPSource(v *string) *ErrLogCreate {
+	if v != nil {
+		_c.SetClientIPSource(*v)
+	}
+	return _c
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (_c *ErrLogCreate) SetClientIPTrusted(v bool) *ErrLogCreate {
+	_c.mutation.SetClientIPTrusted(v)
+	return _c
+}
+
+// SetNillableClientIPTrusted sets the "client_ip_trusted" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableClientIPTrusted(v *bool) *ErrLogCreate {
+	if v != nil {
+		_c.SetClientIPTrusted(*v)
+	}
+	return _c
+}
+
 // SetGroupID sets the "group_id" field.
 func (_c *ErrLogCreate) SetGroupID(v int64) *ErrLogCreate {
 	_c.mutation.SetGroupID(v)
@@ -80,6 +108,76 @@ func (_c *ErrLogCreate) SetTemplateID(v int64) *ErrLogCreate {
 func (_c *ErrLogCreate) SetNillableTemplateID(v *int64) *ErrLogCreate {
 	if v != nil {
 		_c.SetTemplateID(*v)
+	}
+	return _c
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (_c *ErrLogCreate) SetTargetKind(v string) *ErrLogCreate {
+	_c.mutation.SetTargetKind(v)
+	return _c
+}
+
+// SetNillableTargetKind sets the "target_kind" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableTargetKind(v *string) *ErrLogCreate {
+	if v != nil {
+		_c.SetTargetKind(*v)
+	}
+	return _c
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_c *ErrLogCreate) SetUpstreamID(v int64) *ErrLogCreate {
+	_c.mutation.SetUpstreamID(v)
+	return _c
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableUpstreamID(v *int64) *ErrLogCreate {
+	if v != nil {
+		_c.SetUpstreamID(*v)
+	}
+	return _c
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (_c *ErrLogCreate) SetUpstreamName(v string) *ErrLogCreate {
+	_c.mutation.SetUpstreamName(v)
+	return _c
+}
+
+// SetNillableUpstreamName sets the "upstream_name" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableUpstreamName(v *string) *ErrLogCreate {
+	if v != nil {
+		_c.SetUpstreamName(*v)
+	}
+	return _c
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (_c *ErrLogCreate) SetUpstreamHost(v string) *ErrLogCreate {
+	_c.mutation.SetUpstreamHost(v)
+	return _c
+}
+
+// SetNillableUpstreamHost sets the "upstream_host" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableUpstreamHost(v *string) *ErrLogCreate {
+	if v != nil {
+		_c.SetUpstreamHost(*v)
+	}
+	return _c
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (_c *ErrLogCreate) SetUpstreamMultiplierBp(v int) *ErrLogCreate {
+	_c.mutation.SetUpstreamMultiplierBp(v)
+	return _c
+}
+
+// SetNillableUpstreamMultiplierBp sets the "upstream_multiplier_bp" field if the given value is not nil.
+func (_c *ErrLogCreate) SetNillableUpstreamMultiplierBp(v *int) *ErrLogCreate {
+	if v != nil {
+		_c.SetUpstreamMultiplierBp(*v)
 	}
 	return _c
 }
@@ -348,6 +446,14 @@ func (_c *ErrLogCreate) createSpec() (*ErrLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(errlog.FieldClientIP, field.TypeString, value)
 		_node.ClientIP = &value
 	}
+	if value, ok := _c.mutation.ClientIPSource(); ok {
+		_spec.SetField(errlog.FieldClientIPSource, field.TypeString, value)
+		_node.ClientIPSource = &value
+	}
+	if value, ok := _c.mutation.ClientIPTrusted(); ok {
+		_spec.SetField(errlog.FieldClientIPTrusted, field.TypeBool, value)
+		_node.ClientIPTrusted = &value
+	}
 	if value, ok := _c.mutation.GroupID(); ok {
 		_spec.SetField(errlog.FieldGroupID, field.TypeInt64, value)
 		_node.GroupID = &value
@@ -359,6 +465,26 @@ func (_c *ErrLogCreate) createSpec() (*ErrLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TemplateID(); ok {
 		_spec.SetField(errlog.FieldTemplateID, field.TypeInt64, value)
 		_node.TemplateID = &value
+	}
+	if value, ok := _c.mutation.TargetKind(); ok {
+		_spec.SetField(errlog.FieldTargetKind, field.TypeString, value)
+		_node.TargetKind = &value
+	}
+	if value, ok := _c.mutation.UpstreamID(); ok {
+		_spec.SetField(errlog.FieldUpstreamID, field.TypeInt64, value)
+		_node.UpstreamID = &value
+	}
+	if value, ok := _c.mutation.UpstreamName(); ok {
+		_spec.SetField(errlog.FieldUpstreamName, field.TypeString, value)
+		_node.UpstreamName = &value
+	}
+	if value, ok := _c.mutation.UpstreamHost(); ok {
+		_spec.SetField(errlog.FieldUpstreamHost, field.TypeString, value)
+		_node.UpstreamHost = &value
+	}
+	if value, ok := _c.mutation.UpstreamMultiplierBp(); ok {
+		_spec.SetField(errlog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+		_node.UpstreamMultiplierBp = &value
 	}
 	if value, ok := _c.mutation.UserID(); ok {
 		_spec.SetField(errlog.FieldUserID, field.TypeInt64, value)
@@ -482,6 +608,42 @@ func (u *ErrLogUpsert) ClearClientIP() *ErrLogUpsert {
 	return u
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (u *ErrLogUpsert) SetClientIPSource(v string) *ErrLogUpsert {
+	u.Set(errlog.FieldClientIPSource, v)
+	return u
+}
+
+// UpdateClientIPSource sets the "client_ip_source" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateClientIPSource() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldClientIPSource)
+	return u
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (u *ErrLogUpsert) ClearClientIPSource() *ErrLogUpsert {
+	u.SetNull(errlog.FieldClientIPSource)
+	return u
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (u *ErrLogUpsert) SetClientIPTrusted(v bool) *ErrLogUpsert {
+	u.Set(errlog.FieldClientIPTrusted, v)
+	return u
+}
+
+// UpdateClientIPTrusted sets the "client_ip_trusted" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateClientIPTrusted() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldClientIPTrusted)
+	return u
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (u *ErrLogUpsert) ClearClientIPTrusted() *ErrLogUpsert {
+	u.SetNull(errlog.FieldClientIPTrusted)
+	return u
+}
+
 // SetGroupID sets the "group_id" field.
 func (u *ErrLogUpsert) SetGroupID(v int64) *ErrLogUpsert {
 	u.Set(errlog.FieldGroupID, v)
@@ -551,6 +713,108 @@ func (u *ErrLogUpsert) AddTemplateID(v int64) *ErrLogUpsert {
 // ClearTemplateID clears the value of the "template_id" field.
 func (u *ErrLogUpsert) ClearTemplateID() *ErrLogUpsert {
 	u.SetNull(errlog.FieldTemplateID)
+	return u
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (u *ErrLogUpsert) SetTargetKind(v string) *ErrLogUpsert {
+	u.Set(errlog.FieldTargetKind, v)
+	return u
+}
+
+// UpdateTargetKind sets the "target_kind" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateTargetKind() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldTargetKind)
+	return u
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (u *ErrLogUpsert) ClearTargetKind() *ErrLogUpsert {
+	u.SetNull(errlog.FieldTargetKind)
+	return u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *ErrLogUpsert) SetUpstreamID(v int64) *ErrLogUpsert {
+	u.Set(errlog.FieldUpstreamID, v)
+	return u
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateUpstreamID() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldUpstreamID)
+	return u
+}
+
+// AddUpstreamID adds v to the "upstream_id" field.
+func (u *ErrLogUpsert) AddUpstreamID(v int64) *ErrLogUpsert {
+	u.Add(errlog.FieldUpstreamID, v)
+	return u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *ErrLogUpsert) ClearUpstreamID() *ErrLogUpsert {
+	u.SetNull(errlog.FieldUpstreamID)
+	return u
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (u *ErrLogUpsert) SetUpstreamName(v string) *ErrLogUpsert {
+	u.Set(errlog.FieldUpstreamName, v)
+	return u
+}
+
+// UpdateUpstreamName sets the "upstream_name" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateUpstreamName() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldUpstreamName)
+	return u
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (u *ErrLogUpsert) ClearUpstreamName() *ErrLogUpsert {
+	u.SetNull(errlog.FieldUpstreamName)
+	return u
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (u *ErrLogUpsert) SetUpstreamHost(v string) *ErrLogUpsert {
+	u.Set(errlog.FieldUpstreamHost, v)
+	return u
+}
+
+// UpdateUpstreamHost sets the "upstream_host" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateUpstreamHost() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldUpstreamHost)
+	return u
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (u *ErrLogUpsert) ClearUpstreamHost() *ErrLogUpsert {
+	u.SetNull(errlog.FieldUpstreamHost)
+	return u
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsert) SetUpstreamMultiplierBp(v int) *ErrLogUpsert {
+	u.Set(errlog.FieldUpstreamMultiplierBp, v)
+	return u
+}
+
+// UpdateUpstreamMultiplierBp sets the "upstream_multiplier_bp" field to the value that was provided on create.
+func (u *ErrLogUpsert) UpdateUpstreamMultiplierBp() *ErrLogUpsert {
+	u.SetExcluded(errlog.FieldUpstreamMultiplierBp)
+	return u
+}
+
+// AddUpstreamMultiplierBp adds v to the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsert) AddUpstreamMultiplierBp(v int) *ErrLogUpsert {
+	u.Add(errlog.FieldUpstreamMultiplierBp, v)
+	return u
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsert) ClearUpstreamMultiplierBp() *ErrLogUpsert {
+	u.SetNull(errlog.FieldUpstreamMultiplierBp)
 	return u
 }
 
@@ -805,6 +1069,48 @@ func (u *ErrLogUpsertOne) ClearClientIP() *ErrLogUpsertOne {
 	})
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (u *ErrLogUpsertOne) SetClientIPSource(v string) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetClientIPSource(v)
+	})
+}
+
+// UpdateClientIPSource sets the "client_ip_source" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateClientIPSource() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateClientIPSource()
+	})
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (u *ErrLogUpsertOne) ClearClientIPSource() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearClientIPSource()
+	})
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (u *ErrLogUpsertOne) SetClientIPTrusted(v bool) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetClientIPTrusted(v)
+	})
+}
+
+// UpdateClientIPTrusted sets the "client_ip_trusted" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateClientIPTrusted() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateClientIPTrusted()
+	})
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (u *ErrLogUpsertOne) ClearClientIPTrusted() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearClientIPTrusted()
+	})
+}
+
 // SetGroupID sets the "group_id" field.
 func (u *ErrLogUpsertOne) SetGroupID(v int64) *ErrLogUpsertOne {
 	return u.Update(func(s *ErrLogUpsert) {
@@ -886,6 +1192,125 @@ func (u *ErrLogUpsertOne) UpdateTemplateID() *ErrLogUpsertOne {
 func (u *ErrLogUpsertOne) ClearTemplateID() *ErrLogUpsertOne {
 	return u.Update(func(s *ErrLogUpsert) {
 		s.ClearTemplateID()
+	})
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (u *ErrLogUpsertOne) SetTargetKind(v string) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetTargetKind(v)
+	})
+}
+
+// UpdateTargetKind sets the "target_kind" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateTargetKind() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateTargetKind()
+	})
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (u *ErrLogUpsertOne) ClearTargetKind() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearTargetKind()
+	})
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *ErrLogUpsertOne) SetUpstreamID(v int64) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamID(v)
+	})
+}
+
+// AddUpstreamID adds v to the "upstream_id" field.
+func (u *ErrLogUpsertOne) AddUpstreamID(v int64) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.AddUpstreamID(v)
+	})
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateUpstreamID() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamID()
+	})
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *ErrLogUpsertOne) ClearUpstreamID() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamID()
+	})
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (u *ErrLogUpsertOne) SetUpstreamName(v string) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamName(v)
+	})
+}
+
+// UpdateUpstreamName sets the "upstream_name" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateUpstreamName() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamName()
+	})
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (u *ErrLogUpsertOne) ClearUpstreamName() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamName()
+	})
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (u *ErrLogUpsertOne) SetUpstreamHost(v string) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamHost(v)
+	})
+}
+
+// UpdateUpstreamHost sets the "upstream_host" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateUpstreamHost() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamHost()
+	})
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (u *ErrLogUpsertOne) ClearUpstreamHost() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamHost()
+	})
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsertOne) SetUpstreamMultiplierBp(v int) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamMultiplierBp(v)
+	})
+}
+
+// AddUpstreamMultiplierBp adds v to the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsertOne) AddUpstreamMultiplierBp(v int) *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.AddUpstreamMultiplierBp(v)
+	})
+}
+
+// UpdateUpstreamMultiplierBp sets the "upstream_multiplier_bp" field to the value that was provided on create.
+func (u *ErrLogUpsertOne) UpdateUpstreamMultiplierBp() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamMultiplierBp()
+	})
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsertOne) ClearUpstreamMultiplierBp() *ErrLogUpsertOne {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamMultiplierBp()
 	})
 }
 
@@ -1334,6 +1759,48 @@ func (u *ErrLogUpsertBulk) ClearClientIP() *ErrLogUpsertBulk {
 	})
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (u *ErrLogUpsertBulk) SetClientIPSource(v string) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetClientIPSource(v)
+	})
+}
+
+// UpdateClientIPSource sets the "client_ip_source" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateClientIPSource() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateClientIPSource()
+	})
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (u *ErrLogUpsertBulk) ClearClientIPSource() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearClientIPSource()
+	})
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (u *ErrLogUpsertBulk) SetClientIPTrusted(v bool) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetClientIPTrusted(v)
+	})
+}
+
+// UpdateClientIPTrusted sets the "client_ip_trusted" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateClientIPTrusted() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateClientIPTrusted()
+	})
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (u *ErrLogUpsertBulk) ClearClientIPTrusted() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearClientIPTrusted()
+	})
+}
+
 // SetGroupID sets the "group_id" field.
 func (u *ErrLogUpsertBulk) SetGroupID(v int64) *ErrLogUpsertBulk {
 	return u.Update(func(s *ErrLogUpsert) {
@@ -1415,6 +1882,125 @@ func (u *ErrLogUpsertBulk) UpdateTemplateID() *ErrLogUpsertBulk {
 func (u *ErrLogUpsertBulk) ClearTemplateID() *ErrLogUpsertBulk {
 	return u.Update(func(s *ErrLogUpsert) {
 		s.ClearTemplateID()
+	})
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (u *ErrLogUpsertBulk) SetTargetKind(v string) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetTargetKind(v)
+	})
+}
+
+// UpdateTargetKind sets the "target_kind" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateTargetKind() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateTargetKind()
+	})
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (u *ErrLogUpsertBulk) ClearTargetKind() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearTargetKind()
+	})
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (u *ErrLogUpsertBulk) SetUpstreamID(v int64) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamID(v)
+	})
+}
+
+// AddUpstreamID adds v to the "upstream_id" field.
+func (u *ErrLogUpsertBulk) AddUpstreamID(v int64) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.AddUpstreamID(v)
+	})
+}
+
+// UpdateUpstreamID sets the "upstream_id" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateUpstreamID() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamID()
+	})
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (u *ErrLogUpsertBulk) ClearUpstreamID() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamID()
+	})
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (u *ErrLogUpsertBulk) SetUpstreamName(v string) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamName(v)
+	})
+}
+
+// UpdateUpstreamName sets the "upstream_name" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateUpstreamName() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamName()
+	})
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (u *ErrLogUpsertBulk) ClearUpstreamName() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamName()
+	})
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (u *ErrLogUpsertBulk) SetUpstreamHost(v string) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamHost(v)
+	})
+}
+
+// UpdateUpstreamHost sets the "upstream_host" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateUpstreamHost() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamHost()
+	})
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (u *ErrLogUpsertBulk) ClearUpstreamHost() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamHost()
+	})
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsertBulk) SetUpstreamMultiplierBp(v int) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.SetUpstreamMultiplierBp(v)
+	})
+}
+
+// AddUpstreamMultiplierBp adds v to the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsertBulk) AddUpstreamMultiplierBp(v int) *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.AddUpstreamMultiplierBp(v)
+	})
+}
+
+// UpdateUpstreamMultiplierBp sets the "upstream_multiplier_bp" field to the value that was provided on create.
+func (u *ErrLogUpsertBulk) UpdateUpstreamMultiplierBp() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.UpdateUpstreamMultiplierBp()
+	})
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (u *ErrLogUpsertBulk) ClearUpstreamMultiplierBp() *ErrLogUpsertBulk {
+	return u.Update(func(s *ErrLogUpsert) {
+		s.ClearUpstreamMultiplierBp()
 	})
 }
 

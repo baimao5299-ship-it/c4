@@ -26,6 +26,8 @@ proxy = {
   # 总尝试次数（含首次）——>= 1，0 会启动失败（拒绝死锁配置）
   failover_attempts = 3,
   usage_capture = true,
+  # behind_cdn=true 时可限制来源头只接受指定反代网段；留空保持兼容。
+  # trusted_proxy_cidrs = ["127.0.0.1/32", "::1/128"],
 }
 upstream = {
   max_idle_conns = 8192,

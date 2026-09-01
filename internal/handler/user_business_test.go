@@ -223,9 +223,12 @@ func TestUserUsageLogsOwnOnly(t *testing.T) {
 
 	// 直接向 store 灌入两个用户的日志（含 key_id——key_id 过滤传递断言用）
 	base := time.Now().UTC().Truncate(time.Second)
+	upstreamCost, grossProfit, margin := int64(17), int64(83), int64(8300)
 	store.mu.Lock()
 	store.logs = []*domain.UsageLog{
-		{ID: 1, UserID: userA, KeyID: 11, RequestID: "r-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat, CreatedAt: base},
+		{ID: 1, UserID: userA, KeyID: 11, RequestID: "r-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
+			TargetKind: "upstream", UpstreamID: 7, UpstreamName: "relay-one", UpstreamHost: "relay.example",
+			UpstreamCost: &upstreamCost, GrossProfit: &grossProfit, ProfitMarginBP: &margin, CreatedAt: base},
 		{ID: 2, UserID: userB, RequestID: "r-b1", Model: "gpt-4o", Format: domain.FormatOpenAIChat, CreatedAt: base},
 		{ID: 3, UserID: userA, KeyID: 33, RequestID: "r-a2", Model: "o3", Format: domain.FormatOpenAIResponses, CreatedAt: base},
 	}
@@ -247,6 +250,9 @@ func TestUserUsageLogsOwnOnly(t *testing.T) {
 	// 用户面响应无上游拓扑字段（UserUsageLog 契约：AccountID/TemplateID 已删）
 	require.NotContains(t, rec.Body.String(), "AccountID", "用户面响应不得含 AccountID")
 	require.NotContains(t, rec.Body.String(), "TemplateID", "用户面响应不得含 TemplateID")
+	for _, secretField := range []string{"TargetKind", "UpstreamID", "UpstreamName", "UpstreamHost", "UpstreamCost", "GrossProfit", "ProfitMarginBP"} {
+		require.NotContains(t, rec.Body.String(), secretField, "用户面响应不得含管理端归因字段 %s", secretField)
+	}
 
 	// key_id 过滤（自己的 key）：key_id=33 → 仅行 3（user_id + key_id 双谓词）
 	rec = doUser(http.MethodGet, "/api/user/usage_logs?key_id=33&"+win, "", tokenA)
@@ -289,10 +295,13 @@ func TestUserErrLogsOwnOnly(t *testing.T) {
 	_, userB := registerAndGet(t, doUser, "b@example.com")
 
 	base := time.Now().UTC().Truncate(time.Second)
+	upstreamCost, grossProfit, margin := int64(17), int64(83), int64(8300)
 	store.mu.Lock()
 	msg := "no available account"
 	store.logs = []*domain.UsageLog{
 		{ID: 1, UserID: userA, KeyID: 11, RequestID: "e-a1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
+			TargetKind: "upstream", UpstreamID: 7, UpstreamName: "relay-one", UpstreamHost: "relay.example",
+			UpstreamCost: &upstreamCost, GrossProfit: &grossProfit, ProfitMarginBP: &margin,
 			StatusCode: 429, ErrorType: domain.Err429, ErrorMessage: &msg, CreatedAt: base},
 		{ID: 2, UserID: userB, RequestID: "e-b1", Model: "gpt-4o", Format: domain.FormatOpenAIChat,
 			StatusCode: 402, ErrorType: domain.ErrBilling, CreatedAt: base},
@@ -319,6 +328,9 @@ func TestUserErrLogsOwnOnly(t *testing.T) {
 	// 用户面响应无上游拓扑字段（UserErrLog 契约：AccountID/TemplateID 已删）
 	require.NotContains(t, rec.Body.String(), "AccountID", "用户面响应不得含 AccountID")
 	require.NotContains(t, rec.Body.String(), "TemplateID", "用户面响应不得含 TemplateID")
+	for _, secretField := range []string{"TargetKind", "UpstreamID", "UpstreamName", "UpstreamHost", "UpstreamCost", "GrossProfit", "ProfitMarginBP"} {
+		require.NotContains(t, rec.Body.String(), secretField, "用户面响应不得含管理端归因字段 %s", secretField)
+	}
 
 	// key_id 过滤（自己的 key）：key_id=33 → 仅行 3（user_id + key_id 双谓词）
 	rec = doUser(http.MethodGet, "/api/user/err_logs?key_id=33&"+win, "", tokenA)

@@ -7,6 +7,7 @@ package config
 import (
 	"encoding"
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -102,10 +103,15 @@ type ProxyConfig struct {
 	// BehindCDN 客户端 IP 识别开关（用户裁决 2026-08-17：config 文件键，非 admin
 	// setting）：false（默认）→ 完全不读供应商头（CF-Connecting-IP /
 	// True-Client-IP / X-Real-IP），直取 RemoteAddr（零伪造面，与直连行为一致）；
-	// true → 按序采信三头。部署前提：源站只对 CDN/反向代理暴露（防火墙层封
-	// 直连）——直连时可自填任意值，client_ip 为审计/排障的尽力而为标识，非安全
-	// 边界。可选键，旧配置不带此键照常加载（零值 false）。
+	// true → 按序采信三头；配置 trusted_proxy_cidrs 后仅来自匹配网段的直接对端
+	// 才能提供这些头。未配置网段时沿用旧的防火墙部署契约。client_ip 仍是审计/
+	// 排障标识，非鉴权安全边界。可选键，旧配置不带此键照常加载（零值 false）。
 	BehindCDN bool `koanf:"behind_cdn"`
+	// TrustedProxyCIDRs optionally restricts forwarded client-IP headers to
+	// requests whose immediate peer is inside one of these proxy networks. An
+	// empty list preserves the historical BehindCDN contract for deployments
+	// that enforce the same boundary in a firewall or reverse proxy.
+	TrustedProxyCIDRs []string `koanf:"trusted_proxy_cidrs"`
 }
 
 type UpstreamConfig struct {
@@ -363,6 +369,15 @@ func validate(c *Config) error {
 	if c.Server.TimeZone != "" {
 		if _, err := time.LoadLocation(c.Server.TimeZone); err != nil {
 			return fmt.Errorf("server.time_zone: invalid IANA timezone %q: %w", c.Server.TimeZone, err)
+		}
+	}
+	for i, raw := range c.Proxy.TrustedProxyCIDRs {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return fmt.Errorf("proxy.trusted_proxy_cidrs[%d] must not be empty", i)
+		}
+		if _, _, err := net.ParseCIDR(raw); err != nil {
+			return fmt.Errorf("proxy.trusted_proxy_cidrs[%d] must be a valid CIDR (got %q): %w", i, raw, err)
 		}
 	}
 	if strings.TrimSpace(c.Upstream.ProxyURL) != "" {

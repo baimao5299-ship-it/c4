@@ -46,14 +46,29 @@ type PublicChannelMetric struct {
 // A model remains in this list when its catalogue row is missing; nil prices
 // then make the missing configuration explicit instead of hiding the model.
 type PublicChannelModelPrice struct {
-	Model          string
-	Mode           domain.PriceMode
+	Model string
+	Mode  domain.PriceMode
+
+	// The existing fields are the resolved catalogue values before the public
+	// group's multiplier is applied. The HTTP layer turns them into the amount
+	// the user is charged. Keep them for compatibility with existing clients.
 	InputPerM      *int64
 	OutputPerM     *int64
 	CacheReadPerM  *int64
 	CacheWritePerM *int64
 	PricePerCall   *int64
 	PricePerImage  *int64
+
+	// Official* is the raw catalogue row before any conditional variant or
+	// group/assignment multiplier. This is deliberately separate from the
+	// resolved fields: deriving an original price by dividing an effective
+	// price is wrong for manual prices, tier variants, and free groups.
+	OfficialInputPerM      *int64
+	OfficialOutputPerM     *int64
+	OfficialCacheReadPerM  *int64
+	OfficialCacheWritePerM *int64
+	OfficialPricePerCall   *int64
+	OfficialPricePerImage  *int64
 }
 
 // UserChannelMetrics lists only public, live groups and joins their recent
@@ -99,8 +114,12 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 	for _, g := range public {
 		allModels = append(allModels, g.AllowedModels...)
 	}
-	prices, priceErr := s.ResolvedPricesForModels(ctx, allModels, "auto", 0, time.Now())
+	// Read the official catalogue and resolved runtime prices from one immutable
+	// snapshot so a concurrent pricing reload cannot mix two versions in one
+	// response.
+	catalogue, prices, priceErr := s.pricingProjectionForModels(ctx, allModels, "auto", 0, time.Now())
 	if priceErr != nil {
+		catalogue = make(map[string]*domain.PriceEntry)
 		prices = make(map[string]domain.ResolvedPrices)
 		if s.log != nil {
 			s.log.Warn("public channel pricing snapshot unavailable", logx.Error(priceErr))
@@ -126,6 +145,15 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 		metric := &PublicChannelMetric{Group: g, PriceMultiplier: multiplier, Status: "no_data", ModelPrices: make([]PublicChannelModelPrice, 0, len(g.AllowedModels))}
 		for _, model := range g.AllowedModels {
 			row := PublicChannelModelPrice{Model: model}
+			if entry, ok := catalogue[model]; ok && entry != nil {
+				row.OfficialInputPerM = entry.InputPerM
+				row.OfficialOutputPerM = entry.OutputPerM
+				row.OfficialCacheReadPerM = entry.CacheReadPerM
+				row.OfficialCacheWritePerM = entry.CacheWritePerM
+				row.OfficialPricePerCall = entry.PricePerCall
+				row.OfficialPricePerImage = entry.PricePerImage
+				row.Mode = entry.Mode
+			}
 			if entry, ok := prices[model]; ok {
 				row.Mode = entry.Mode
 				row.InputPerM = entry.InputPerM

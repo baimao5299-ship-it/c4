@@ -357,6 +357,7 @@ func main() {
 		UsageCapture:          cfg.Proxy.UsageCapture,
 		BillingCapture:        cfg.Billing.Enabled,
 		BehindCDN:             cfg.Proxy.BehindCDN, // client_ip 供应商头识别开关（false = 直取 RemoteAddr）
+		TrustedProxyCIDRs:     cfg.Proxy.TrustedProxyCIDRs,
 	}, sched, credential.New(), rec, clients, auth, log, billHooks, errlogW)
 	// codex SDK 适配层装配（T2 §3——统一失效回调先落生图路径；T5 全量）：
 	// 适配层构造注册 WithOnAuthFatal → 统一回调 → 失效处理链（写 failed_at +

@@ -182,6 +182,10 @@ func TestStreamImagePassthrough(t *testing.T) {
 	require.Equal(t, int64(150), l.TotalTokens, "image tokens 入 TotalTokens（口径不变）")
 	require.NotNil(t, l.PricePerCallMillis)
 	require.Equal(t, int64(5400), *l.PricePerCallMillis)
+	require.NotNil(t, l.PriceInputMillis, "image input token 价格必须落到通用输入快照列")
+	require.Equal(t, int64(800000), *l.PriceInputMillis)
+	require.NotNil(t, l.PriceOutputMillis, "image output token 价格必须落到通用输出快照列")
+	require.Equal(t, int64(3000000), *l.PriceOutputMillis)
 	require.Equal(t, int64(11030), l.Cost, "100×800000/1e6 + 50×3000000/1e6 + 2×5400（ImageCost 口径不变）")
 }
 

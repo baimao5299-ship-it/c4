@@ -865,7 +865,7 @@
   },
   "logs": {
     "title": "Logs",
-    "subtitle": "Query usage logs with filters",
+    "subtitle": "Trace request routing, settlement, and failure stages",
     "tab": {
       "usage": "Usage logs",
       "errors": "Error logs"
@@ -879,6 +879,9 @@
       "format": "Format",
       "errorType": "Error type",
       "statusCode": "Status code",
+      "toggle": "Filters",
+      "show": "Show",
+      "hide": "Hide",
       "all": "All",
       "reset": "Reset",
       "searching": "Searching…",
@@ -890,21 +893,81 @@
       "createdAt": "Time",
       "group": "Group",
       "account": "Account",
+      "upstream": "Hit upstream",
       "model": "Model",
       "format": "Format",
       "errorType": "Error type",
       "statusCode": "Status code",
       "errorMessage": "Error message",
       "cost": "Cost",
+      "finance": "Settlement / profit",
       "billingTier": "Billing tier",
       "aboveHit": "Over limit",
       "overdraft": "Overdraft",
       "latency": "Latency",
+      "diagnostics": "Timing / diagnostics",
       "tokens": "Tokens",
       "title": "{{total}} records",
       "user": "User",
       "key": "Key",
-      "ip": "IP"
+      "ip": "IP",
+      "client": "Client"
+    },
+    "value": {
+      "unrecorded": "Not recorded"
+    },
+    "client": {
+      "trusted": "Trusted",
+      "untrusted": "Untrusted",
+      "unknownTrust": "Trust unknown",
+      "source": "Source: {{source}}",
+      "lookupRegion": "Look up approximate region",
+      "sources": {
+        "remote_addr": "Direct peer address",
+        "cf_connecting_ip": "Cloudflare client header",
+        "true_client_ip": "True-Client-IP header",
+        "x_real_ip": "X-Real-IP header"
+      }
+    },
+    "upstream": {
+      "unknown": "Unnamed target",
+      "targetKind": "Route: {{value}}",
+      "costMultiplier": "Cost multiplier ×{{value}}",
+      "targetKinds": {
+        "account": "Account route",
+        "upstream_member": "Upstream pool member"
+      }
+    },
+    "finance": {
+      "userCharge": "User charge",
+      "upstreamCost": "Est. upstream cost",
+      "grossProfit": "Est. gross profit",
+      "margin": "Est. margin",
+      "estimateBasis": "Estimated from the configured request-time multiplier"
+    },
+    "summary": {
+      "title": "Filtered usage summary",
+      "basis": "{{costed}} of {{total}} requests have cost snapshots. Upstream cost, gross profit, and margin include those rows only and are configured-multiplier estimates, not provider invoices.",
+      "requestCount": "Requests",
+      "userCharge": "User revenue",
+      "upstreamCost": "Est. upstream cost",
+      "grossProfit": "Est. gross profit",
+      "profitMargin": "Est. margin",
+      "lossRequestCount": "Loss-making requests",
+      "refreshing": "Refreshing…",
+      "loadFailed": "Summary unavailable: {{message}}"
+    },
+    "diagnostics": {
+      "attempts": "Attempts {{count}}",
+      "failovers": "Failovers {{count}}",
+      "errorStage": "Failure stage",
+      "incomplete": "Incomplete"
+    },
+    "mobile": {
+      "route": "Actual route",
+      "finance": "Settlement and profit",
+      "diagnostics": "Timing and failure stage",
+      "client": "Client provenance"
     },
     "tokens": {
       "read": "R",
@@ -1914,7 +1977,14 @@
       "imageShort": "Per image",
       "callUnit": "call",
       "imageUnit": "image",
-      "priceUnit": "Price: USD / 1M tokens; — means not priced yet",
+      "officialShort": "Official",
+      "groupShort": "Group",
+      "discountedShort": "Discounted",
+      "officialPrice": "Catalogue price before the group multiplier",
+      "copyModel": "Copy model name",
+      "copiedModel": "Copied",
+      "copyFailed": "Copy failed",
+      "priceUnit": "Prices: USD / 1M tokens; Official is the catalogue price, Group is the amount charged by this group; — means not priced yet",
       "modelsPending": "No models configured yet",
       "notCalled": "No calls yet",
       "totalChannels": "Public channels",

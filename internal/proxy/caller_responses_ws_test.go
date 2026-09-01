@@ -1043,3 +1043,39 @@ func TestResponsesWSBillingTierTypeError(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Empty(t, store.logs, "类型错误不产生任何记录（usage_logs + err_logs 均无）")
 }
+
+// TestResponsesWSRequestParameterTypeError 首帧的 Responses 参数类型错误：
+// 错误帧 + 正常关闭，不拨号上游、不选号占槽、也不写拒绝日志。
+func TestResponsesWSRequestParameterTypeError(t *testing.T) {
+	hooks := &fakeWSHooks{}
+	up := fakeResponsesWS(t, hooks)
+	defer up.Close()
+	store := &captureLogStore{}
+	p, srv := wsTestProxy(t, up.URL, domain.FormatOpenAIResponsesWS, store)
+
+	c := dialResponsesWS(t, srv)
+	defer c.CloseNow()
+	require.NoError(t, c.Write(context.Background(), websocket.MessageText,
+		[]byte(`{"type":"response.create","model":"gpt-4o","input":"hi","max_output_tokens":"1"}`)))
+	frame := readResponsesWSFrame(t, c)
+	var ev struct {
+		Type  string `json:"type"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(frame, &ev))
+	require.Equal(t, "error", ev.Type)
+	require.Equal(t, "invalid request body: max_output_tokens must be an integer", ev.Error.Message)
+	readResponsesWSClose(t, c, websocket.StatusNormalClosure)
+
+	hooks.mu.Lock()
+	require.Empty(t, hooks.frames, "首帧参数类型错误不得拨号上游")
+	hooks.mu.Unlock()
+	require.Zero(t, p.rec.Pending(), "首帧参数类型错误不产生用量记录")
+	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Empty(t, store.logs, "首帧参数类型错误不产生错误明细")
+}

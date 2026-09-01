@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, FileText, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, CircleDollarSign, ExternalLink, FileText, Funnel, Globe2, GitBranch, Network, RotateCcw, ShieldCheck, ShieldQuestion, SlidersHorizontal, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/App'
 import { Badge } from '@/components/ui/badge'
@@ -26,13 +26,132 @@ import { useCursorLogs } from '@/components/use-cursor-logs'
 import { defaultLogRange, fmtTokens, formatCost, formatDateTime, formatPricePerMillion, toRFC3339 } from '@/components/fmt'
 import { useDebounced } from '@/lib/use-debounced'
 import { cn } from '@/lib/utils'
-import type { ErrLogParams, UsageLogParams } from '@/lib/api/client'
+import type { ErrLogParams, UsageLogParams, UsageLogSummaryParams } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 
 type ErrorType = components['schemas']['ErrorType']
 type RequestFormat = components['schemas']['RequestFormat']
 type UsageLog = components['schemas']['UsageLog']
 type ErrLog = components['schemas']['ErrLog']
+type UsageLogsSummary = components['schemas']['UsageLogsSummary']
+
+type PagedRows<T> = { total: number; rows: T[] }
+
+const NAME_LOOKUP_PAGE_SIZE = 200
+
+// List endpoints cap each response at 200 rows. Aggregate every page so log
+// rows can resolve names even when their related entity is outside page one.
+async function fetchAllRows<T>(
+  fetchPage: (params: { limit: number; offset: number }) => Promise<PagedRows<T>>,
+): Promise<PagedRows<T>> {
+  const rows: T[] = []
+  let offset = 0
+  let total = 0
+
+  while (true) {
+    const page = await fetchPage({ limit: NAME_LOOKUP_PAGE_SIZE, offset })
+    const pageRows = Array.isArray(page.rows) ? page.rows : []
+    rows.push(...pageRows)
+
+    const declaredTotal = typeof page.total === 'number' && Number.isFinite(page.total)
+      ? Math.max(0, Math.floor(page.total))
+      : 0
+    const pageTotal = Math.max(declaredTotal, offset + pageRows.length)
+    total = Math.max(total, pageTotal)
+
+    const nextOffset = offset + pageRows.length
+    if (pageRows.length === 0 || pageRows.length < NAME_LOOKUP_PAGE_SIZE || nextOffset >= pageTotal || nextOffset <= offset) break
+    offset = nextOffset
+  }
+
+  return { total: Math.max(total, rows.length), rows }
+}
+
+// Diagnostics are intentionally forward-compatible: the current contract has
+// request timing, while a later retry audit contract may add these fields.
+type DiagnosticCompatFields = {
+  AttemptCount?: number | null
+  FailoverCount?: number | null
+  FinalAttempt?: boolean | null
+  FailoverReason?: string | null
+  ErrorStage?: string | null
+  FailureStage?: string | null
+  Stage?: string | null
+}
+type LogRow = (UsageLog | ErrLog) & DiagnosticCompatFields
+
+function rawLogValue(row: LogRow, keys: string[]): unknown {
+  const raw = row as unknown as Record<string, unknown>
+  for (const key of keys) {
+    const value = raw[key]
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+  return undefined
+}
+
+function logString(row: LogRow, keys: string[]): string | undefined {
+  const value = rawLogValue(row, keys)
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function logNumber(row: LogRow, keys: string[]): number | undefined {
+  const value = rawLogValue(row, keys)
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+  return undefined
+}
+
+function logBoolean(row: LogRow, keys: string[]): boolean | undefined {
+  const value = rawLogValue(row, keys)
+  if (typeof value === 'boolean') return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return undefined
+}
+
+function trustedIPState(row: LogRow): boolean | undefined {
+  return row.ClientIPTrusted ?? undefined
+}
+
+function errorStage(row: LogRow): string | undefined {
+  return logString(row, ['ErrorStage', 'FailureStage', 'Stage', 'error_stage', 'failure_stage', 'stage'])
+}
+
+function upstreamDetails(row: LogRow) {
+  return {
+    targetKind: row.TargetKind ?? undefined,
+    id: row.UpstreamID ?? undefined,
+    name: row.UpstreamName ?? undefined,
+    host: row.UpstreamHost ?? undefined,
+    multiplierBP: row.UpstreamMultiplierBP ?? undefined,
+  }
+}
+
+function financialDetails(row: LogRow) {
+  const usage = 'Cost' in row ? row : undefined
+  const userCharge = usage?.UserCharge ?? usage?.Cost
+  const upstreamCost = usage?.UpstreamCost ?? undefined
+  const explicitProfit = usage?.GrossProfit ?? undefined
+  const grossProfit = explicitProfit ?? (userCharge !== undefined && upstreamCost !== undefined ? userCharge - upstreamCost : undefined)
+  const explicitMarginBP = usage?.ProfitMarginBP ?? undefined
+  const marginBP = explicitMarginBP ?? (grossProfit !== undefined && userCharge > 0 ? (grossProfit / userCharge) * 10_000 : undefined)
+  return { userCharge, upstreamCost, grossProfit, marginBP }
+}
+
+// Money fields in log rows are milli-cents (100,000 = USD 1). Unlike the old
+// formatCost helper, zero is explicit here: a free request is different from a
+// field that was not captured by an older server.
+function formatLogMoney(milliCents?: number): string {
+  return milliCents === undefined ? '—' : `$${(milliCents / 100_000).toFixed(5)}`
+}
+
+function formatMargin(marginBP?: number): string {
+  return marginBP === undefined ? '—' : `${(marginBP / 100).toFixed(1)}%`
+}
+
+function formatCount(value?: number): string {
+  return value === undefined ? '—' : Math.max(0, Math.round(value)).toLocaleString()
+}
 
 // 错误类型全值域（err_logs 完整错误面：拒绝 + 异常双轨）。
 const ERROR_TYPES: ErrorType[] = ['none', '429', '4xx', '5xx', 'network', 'auth', 'no_account', 'abort', 'billing']
@@ -82,14 +201,6 @@ function Th({ className, ...props }: React.ComponentProps<typeof TableHead>) {
   )
 }
 
-// 延迟健康色（仅色点着色，阈值应用于 TTFT）：<1s 绿 / <5s 黄 / <15s 橙 / 以上红。
-function latencyColor(ms: number): string {
-  if (ms < 1000) return 'bg-emerald-500'
-  if (ms < 5000) return 'bg-amber-500'
-  if (ms < 15000) return 'bg-orange-500'
-  return 'bg-red-500'
-}
-
 // 时长格式化：≥1000ms 用 s（保留 1 位小数），否则 ms。
 const fmtDuration = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
 
@@ -106,8 +217,8 @@ const FORMAT_ALL = '__all__'
 // BillingTier/AboveHit/Overdraft 已并入 Tokens 悬停窗（不再独立列）。
 // 隐藏选择持久化到 localStorage（logs-hidden-columns）。用量/错误两 Tab 列集不同。
 const HIDDEN_STORAGE_KEY = 'logs-hidden-columns'
-const USAGE_HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'errorType', 'cost', 'latency', 'tokens'] as const
-const ERR_HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'model', 'format', 'statusCode', 'errorType', 'errorMessage', 'latency', 'billingTier'] as const
+const USAGE_HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'upstream', 'model', 'format', 'errorType', 'tokens', 'finance', 'diagnostics', 'client'] as const
+const ERR_HIDDENABLE_COLS = ['user', 'key', 'group', 'account', 'upstream', 'model', 'format', 'statusCode', 'errorType', 'errorMessage', 'diagnostics', 'billingTier', 'client'] as const
 
 function loadHiddenCols(): Set<string> {
   try {
@@ -209,11 +320,339 @@ function FilterCombobox({
   )
 }
 
+function ClientAttribution({ row, compact = false }: { row: LogRow; compact?: boolean }) {
+  const { t } = useTranslation()
+  const ip = row.ClientIP
+  const trusted = trustedIPState(row)
+  const source = row.ClientIPSource ?? undefined
+  const knownSources = ['remote_addr', 'cf_connecting_ip', 'true_client_ip', 'x_real_ip']
+  const normalizedSource = source?.replaceAll('-', '_')
+  const sourceLabel = normalizedSource && knownSources.includes(normalizedSource)
+    ? t(`logs.client.sources.${normalizedSource}`)
+    : source
+
+  if (!ip) return <span className="text-xs text-muted-foreground">{t('logs.value.unrecorded')}</span>
+
+  return (
+    <div className={cn('min-w-0 space-y-1', compact ? 'text-sm' : 'text-xs')}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="min-w-0 truncate font-mono" title={ip}>{ip ?? t('logs.value.unrecorded')}</span>
+        {trusted === true ? (
+          <Badge className="shrink-0 gap-1 bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-400">
+            <ShieldCheck className="size-3" />{t('logs.client.trusted')}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="shrink-0 gap-1 text-muted-foreground">
+            <ShieldQuestion className="size-3" />{t(trusted === false ? 'logs.client.untrusted' : 'logs.client.unknownTrust')}
+          </Badge>
+        )}
+      </div>
+      {sourceLabel && (
+        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <Globe2 className="size-3.5 shrink-0" />
+          <span className="truncate" title={source}>{t('logs.client.source', { source: sourceLabel })}</span>
+        </div>
+      )}
+      <a
+        href={`https://ipinfo.io/${encodeURIComponent(ip)}`}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline md:min-h-0"
+      >
+        {t('logs.client.lookupRegion')}<ExternalLink className="size-3" />
+      </a>
+    </div>
+  )
+}
+
+function UpstreamAttribution({ row, compact = false }: { row: LogRow; compact?: boolean }) {
+  const { t } = useTranslation()
+  const upstream = upstreamDetails(row)
+  const hasRoute = upstream.id !== undefined || upstream.name || upstream.host || upstream.targetKind
+  if (!hasRoute) return <span className="text-xs text-muted-foreground">{t('logs.value.unrecorded')}</span>
+
+  const primary = upstream.name ?? (upstream.id !== undefined ? `#${upstream.id}` : upstream.host) ?? t('logs.upstream.unknown')
+  const knownTargetKinds = ['account', 'upstream_member']
+  const targetKindLabel = upstream.targetKind && knownTargetKinds.includes(upstream.targetKind)
+    ? t(`logs.upstream.targetKinds.${upstream.targetKind}`)
+    : upstream.targetKind
+  return (
+    <div className={cn('min-w-0 space-y-0.5', compact ? 'text-sm' : 'text-xs')}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Network className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 truncate font-medium" title={primary}>{primary}</span>
+        {upstream.name && upstream.id !== undefined && <span className="shrink-0 font-mono text-muted-foreground">#{upstream.id}</span>}
+      </div>
+      {targetKindLabel && <div className="pl-5 text-muted-foreground">{t('logs.upstream.targetKind', { value: targetKindLabel })}</div>}
+      {upstream.host && upstream.host !== primary && (
+        <div className="truncate pl-5 font-mono text-muted-foreground" title={upstream.host}>{upstream.host}</div>
+      )}
+      {upstream.multiplierBP !== undefined && (
+        <div className="pl-5 text-muted-foreground">
+          {t('logs.upstream.costMultiplier', { value: (upstream.multiplierBP / 10_000).toFixed(4).replace(/\.?0+$/, '') })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FinancialAttribution({ row, compact = false }: { row: LogRow; compact?: boolean }) {
+  const { t } = useTranslation()
+  const finance = financialDetails(row)
+  const profitTone = finance.grossProfit === undefined
+    ? 'text-muted-foreground'
+    : finance.grossProfit < 0
+      ? 'text-destructive'
+      : 'text-emerald-700 dark:text-emerald-400'
+
+  return (
+    <div>
+      <dl className={cn('grid gap-x-3 gap-y-0.5 tabular-nums', compact ? 'grid-cols-[1fr_auto] text-sm' : 'grid-cols-[auto_auto] justify-end text-xs')}>
+        <dt className="text-muted-foreground">{t('logs.finance.userCharge')}</dt>
+        <dd className="text-right font-medium">{formatLogMoney(finance.userCharge)}</dd>
+        <dt className="text-muted-foreground">{t('logs.finance.upstreamCost')}</dt>
+        <dd className="text-right font-medium">{formatLogMoney(finance.upstreamCost)}</dd>
+        <dt className="text-muted-foreground">{t('logs.finance.grossProfit')}</dt>
+        <dd className={cn('text-right font-semibold', profitTone)}>{formatLogMoney(finance.grossProfit)}</dd>
+        <dt className="text-muted-foreground">{t('logs.finance.margin')}</dt>
+        <dd className={cn('text-right font-medium', profitTone)}>{formatMargin(finance.marginBP)}</dd>
+      </dl>
+      {finance.upstreamCost !== undefined && (
+        <p className="mt-1 text-right text-[11px] text-muted-foreground">{t('logs.finance.estimateBasis')}</p>
+      )}
+    </div>
+  )
+}
+
+function LogDiagnostics({ row, compact = false, showStage = false }: { row: LogRow; compact?: boolean; showStage?: boolean }) {
+  const { t } = useTranslation()
+  const attemptsRaw = logNumber(row, ['AttemptCount', 'attempt_count'])
+  const attempts = attemptsRaw !== undefined && attemptsRaw > 0 ? attemptsRaw : undefined
+  const failoversRaw = logNumber(row, ['FailoverCount', 'failover_count'])
+  const failovers = failoversRaw !== undefined && (failoversRaw > 0 || attempts !== undefined) ? Math.max(0, failoversRaw) : undefined
+  const stage = errorStage(row)
+  const reason = logString(row, ['FailoverReason', 'failover_reason'])
+  const finalAttempt = logBoolean(row, ['FinalAttempt', 'final_attempt'])
+  const hasAttemptData = attempts !== undefined || failovers !== undefined || finalAttempt !== undefined
+
+  return (
+    <div className={cn('space-y-1', compact ? 'text-sm' : 'text-xs')}>
+      <div className="flex items-center justify-end gap-1.5 tabular-nums">
+        <Timer className="size-3.5 shrink-0 text-muted-foreground" />
+        {'TTFTMS' in row && row.TTFTMS != null && (
+          <span className="text-muted-foreground">{t('logs.latency.ttft')} {fmtDuration(row.TTFTMS)}</span>
+        )}
+        {row.LatencyMS != null ? (
+          <span className="font-medium">{t('logs.latency.total')} {fmtDuration(row.LatencyMS)}</span>
+        ) : (
+          <span className="text-muted-foreground">{t('logs.value.unrecorded')}</span>
+        )}
+      </div>
+      {hasAttemptData && (
+        <div className="flex items-center justify-end gap-2 text-muted-foreground tabular-nums">
+          <GitBranch className="size-3.5 shrink-0" />
+          <span>{t('logs.diagnostics.attempts', { count: formatCount(attempts) })}</span>
+          <span>{t('logs.diagnostics.failovers', { count: formatCount(failovers) })}</span>
+          {finalAttempt === false && <Badge variant="outline">{t('logs.diagnostics.incomplete')}</Badge>}
+        </div>
+      )}
+      {showStage && (
+        <div className="flex min-w-0 items-start justify-end gap-1.5 text-muted-foreground">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span className="min-w-0 truncate text-right" title={[stage, reason].filter(Boolean).join(' · ')}>
+            <span>{t('logs.diagnostics.errorStage')} </span>
+            <span className="font-medium text-foreground">{stage ?? t('logs.value.unrecorded')}</span>
+            {stage && reason && <span> · </span>}
+            {reason}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MobileSection({ icon: Icon, title, children }: { icon: typeof Globe2; title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-t border-border/60 px-4 py-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <Icon className="size-4" />
+        <h3>{title}</h3>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function MobileLogCard({
+  row,
+  tab,
+  groupNameById,
+  accountNameById,
+  userEmailById,
+}: {
+  row: LogRow
+  tab: 'usage' | 'errors'
+  groupNameById?: Map<number, string>
+  accountNameById?: Map<number, string>
+  userEmailById?: Map<number, string>
+}) {
+  const { t } = useTranslation()
+  const usage = row as UsageLog
+  const error = row as ErrLog
+  const model = row.Model ?? t('logs.value.unrecorded')
+  const mappedModel = 'MappedModel' in row ? row.MappedModel : undefined
+
+  return (
+    <Card className="gap-0 py-0">
+      <article>
+        <header className="space-y-2 px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-mono text-xs text-muted-foreground" title={row.RequestID}>{row.RequestID ?? t('logs.value.unrecorded')}</div>
+              <time className="mt-0.5 block text-xs text-muted-foreground">{formatDateTime(row.CreatedAt)}</time>
+            </div>
+            <ErrorTypeBadge type={row.ErrorType} />
+          </div>
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold" title={model}>{model}</div>
+              {mappedModel && <div className="truncate text-xs text-muted-foreground" title={mappedModel}>↳ {mappedModel}</div>}
+            </div>
+            {tab === 'errors' && error.StatusCode ? <Badge variant="outline">HTTP {error.StatusCode}</Badge> : null}
+          </div>
+        </header>
+
+        <MobileSection icon={Network} title={t('logs.mobile.route')}>
+          <UpstreamAttribution row={row} compact />
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <span className="text-muted-foreground">{t('logs.table.account')}</span>
+            <span className="truncate text-right" title={row.AccountID ? accountNameById?.get(row.AccountID) : undefined}>
+              {row.AccountID ? accountNameById?.get(row.AccountID) ?? `#${row.AccountID}` : t('logs.value.unrecorded')}
+            </span>
+            <span className="text-muted-foreground">{t('logs.table.group')}</span>
+            <span className="truncate text-right" title={row.GroupID ? groupNameById?.get(row.GroupID) : undefined}>
+              {row.GroupID ? groupNameById?.get(row.GroupID) ?? `#${row.GroupID}` : t('logs.value.unrecorded')}
+            </span>
+          </div>
+        </MobileSection>
+
+        {tab === 'usage' && (
+          <MobileSection icon={CircleDollarSign} title={t('logs.mobile.finance')}>
+            <FinancialAttribution row={row} compact />
+          </MobileSection>
+        )}
+
+        <MobileSection icon={Timer} title={t('logs.mobile.diagnostics')}>
+          <LogDiagnostics row={row} compact showStage={tab === 'errors'} />
+          {tab === 'errors' && error.ErrorMessage && (
+            <p className="mt-2 line-clamp-3 text-xs text-destructive" title={error.ErrorMessage}>{error.ErrorMessage}</p>
+          )}
+        </MobileSection>
+
+        <MobileSection icon={Globe2} title={t('logs.mobile.client')}>
+          <ClientAttribution row={row} compact />
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <span className="text-muted-foreground">{t('logs.table.user')}</span>
+            <span className="truncate text-right" title={row.UserID ? userEmailById?.get(row.UserID) : undefined}>
+              {row.UserID ? userEmailById?.get(row.UserID) ?? `#${row.UserID}` : t('logs.value.unrecorded')}
+            </span>
+            <span className="text-muted-foreground">{t('logs.table.key')}</span>
+            <span className="text-right tabular-nums">{row.KeyID ? `#${row.KeyID}` : t('logs.value.unrecorded')}</span>
+          </div>
+        </MobileSection>
+
+        {tab === 'usage' && (usage.InputTokens || usage.OutputTokens || usage.CacheReadTokens || usage.CacheCreationTokens) ? (
+          <footer className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground tabular-nums">
+            <span>{t('logs.tokens.input')} {fmtTokens(usage.InputTokens ?? 0)} · {t('logs.tokens.output')} {fmtTokens(usage.OutputTokens ?? 0)}</span>
+            <span>{t('logs.tokens.total')} {fmtTokens(usage.TotalTokens ?? ((usage.InputTokens ?? 0) + (usage.OutputTokens ?? 0)))}</span>
+          </footer>
+        ) : null}
+      </article>
+    </Card>
+  )
+}
+
+function UsageSummaryBand({
+  summary,
+  isLoading,
+  isFetching,
+  error,
+}: {
+  summary?: UsageLogsSummary
+  isLoading: boolean
+  isFetching: boolean
+  error?: Error
+}) {
+  const { t } = useTranslation()
+  type SummaryMetric = { key: string; label: string; value: string; tone?: string }
+  const profitTone = summary?.GrossProfit == null
+    ? 'text-muted-foreground'
+    : summary.GrossProfit < 0
+      ? 'text-destructive'
+      : 'text-emerald-700 dark:text-emerald-400'
+  const metrics: SummaryMetric[] = summary ? [
+    { key: 'requests', label: t('logs.summary.requestCount'), value: summary.RequestCount.toLocaleString() },
+    { key: 'charge', label: t('logs.summary.userCharge'), value: formatLogMoney(summary.UserCharge) },
+    { key: 'upstream', label: t('logs.summary.upstreamCost'), value: formatLogMoney(summary.UpstreamCost ?? undefined) },
+    { key: 'profit', label: t('logs.summary.grossProfit'), value: formatLogMoney(summary.GrossProfit ?? undefined), tone: profitTone },
+    { key: 'margin', label: t('logs.summary.profitMargin'), value: formatMargin(summary.ProfitMarginBP ?? undefined), tone: profitTone },
+    {
+      key: 'losses',
+      label: t('logs.summary.lossRequestCount'),
+      value: summary.LossRequestCount.toLocaleString(),
+      tone: summary.LossRequestCount > 0 ? 'text-destructive' : undefined,
+    },
+  ] : []
+  const renderedMetrics: SummaryMetric[] = isLoading || !summary
+    ? Array.from({ length: 6 }, (_, index) => ({ key: String(index), label: '', value: '' }))
+    : metrics
+
+  return (
+    <section className="overflow-hidden border-y border-border/70 bg-muted/15" aria-labelledby="usage-summary-title" aria-busy={isLoading || isFetching}>
+      <header className="flex flex-col gap-1 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h2 id="usage-summary-title" className="text-sm font-semibold">{t('logs.summary.title')}</h2>
+          {summary ? (
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              {t('logs.summary.basis', { costed: summary.CostedRequestCount.toLocaleString(), total: summary.RequestCount.toLocaleString() })}
+            </p>
+          ) : null}
+        </div>
+        {isFetching && !isLoading ? <span className="shrink-0 text-xs text-muted-foreground">{t('logs.summary.refreshing')}</span> : null}
+      </header>
+      {error && !summary ? (
+        <p className="border-t border-border/70 px-3 py-3 text-sm text-destructive">
+          {t('logs.summary.loadFailed', { message: error.message })}
+        </p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-px bg-border/70 sm:grid-cols-3 xl:grid-cols-6" aria-live="polite">
+          {renderedMetrics.map(metric => (
+            <div key={metric.key} className="flex min-h-20 min-w-0 flex-col justify-center bg-background px-3 py-3">
+              {isLoading || !summary ? (
+                <>
+                  <Skeleton className="mb-2 h-3 w-20" />
+                  <Skeleton className="h-6 w-24 max-w-full" />
+                </>
+              ) : (
+                <>
+                  <dt className="text-xs leading-4 text-muted-foreground">{metric.label}</dt>
+                  <dd className={cn('mt-1 truncate text-lg font-semibold tabular-nums', metric.tone)} title={metric.value}>{metric.value}</dd>
+                </>
+              )}
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
+  )
+}
+
 export default function Logs() {
   const { t } = useTranslation()
   const [tab, setTab] = useState<'usage' | 'errors'>('usage')
   const [filters, setFilters] = useState<LogFilters>(emptyFilters)
   const [limit, setLimit] = useState(20)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
 
   // 过滤条件 / 每页条数变化 → hook 参数键变化自动重置回第 1 页（游标链自持，调用方只传派生值）。
   const set = (patch: Partial<LogFilters>) => setFilters(f => ({ ...f, ...patch }))
@@ -234,8 +673,8 @@ export default function Logs() {
   // 参数对象随 filter/limit/tab 派生（游标由 hook 注入）。管理端 7 字段全筛
   // （user/key/group/account 数字输入 + model/format/errorType）+ 错误面 status_code 专属。
   // model/status_code 走防抖值（useDebounced——300ms 合并逐键输入）。
-  const { usageParams, errParams } = useMemo(() => {
-    const base: UsageLogParams = {
+  const { usageParams, errParams, summaryParams } = useMemo(() => {
+    const summaryParams: UsageLogSummaryParams = {
       user_id: filters.user_id ? Number(filters.user_id) : undefined,
       key_id: filters.key_id ? Number(filters.key_id) : undefined,
       group_id: filters.group_id ? Number(filters.group_id) : undefined,
@@ -245,12 +684,16 @@ export default function Logs() {
       error_type: filters.error_type || undefined,
       from: toRFC3339(filters.from) ?? '',
       to: toRFC3339(filters.to) ?? '',
+    }
+    const usageParams: UsageLogParams = {
+      ...summaryParams,
       limit,
     }
     return {
-      usageParams: base,
+      usageParams,
+      summaryParams,
       errParams: {
-        ...base,
+        ...usageParams,
         // Number('e')=NaN 会以 'NaN' 字符串发送 → 服务端 400；isFinite 过滤为 undefined。
         status_code: debouncedStatus && Number.isFinite(Number(debouncedStatus)) ? Number(debouncedStatus) : undefined,
       } satisfies ErrLogParams,
@@ -265,26 +708,32 @@ export default function Logs() {
         ? api.getErrLogs({ ...errParams, cursor: cursor ?? undefined })
         : api.getUsageLogs({ ...usageParams, cursor: cursor ?? undefined }),
   )
+  const usageSummaryQ = useQuery({
+    queryKey: ['usage-logs-summary', summaryParams],
+    queryFn: () => api.getUsageLogsSummary(summaryParams),
+    enabled: tab === 'usage' && Boolean(summaryParams.from && summaryParams.to),
+    staleTime: 15_000,
+  })
 
   // —— 名称映射：日志行只存 ID，组/账号列显示名称（未命中回退 #id）——
-  // 全量拉取（上限 1000，超出部分仅影响展示回退数字）；5 分钟缓存避免每页刷新重查。
+  // 分页拉取全量（每页遵守服务端 200 上限）；5 分钟缓存避免每页刷新重查。
   const { data: groupNameById } = useQuery({
-    queryKey: ['groups', { limit: 1000 }],
-    queryFn: () => api.listGroups({ limit: 1000 }),
-    select: data => new Map(data.rows.map(g => [g.ID, g.Name])),
+    queryKey: ['groups', 'all-for-log-names'],
+    queryFn: () => fetchAllRows(({ limit, offset }) => api.listGroups({ limit, offset, sort: 'id', order: 'asc' })),
+    select: data => new Map(data.rows.flatMap(g => (g.ID == null || !g.Name ? [] : [[g.ID, g.Name] as [number, string]]))),
     staleTime: 5 * 60 * 1000,
   })
   const { data: accountNameById } = useQuery({
-    queryKey: ['accounts', { limit: 1000 }],
-    queryFn: () => api.listAccounts({ limit: 1000 }),
-    select: data => new Map(data.rows.map(a => [a.ID, a.Name])),
+    queryKey: ['accounts', 'all-for-log-names'],
+    queryFn: () => fetchAllRows(({ limit, offset }) => api.listAccounts({ limit, offset, sort: 'id', order: 'asc' })),
+    select: data => new Map(data.rows.flatMap(a => (a.ID == null || !a.Name ? [] : [[a.ID, a.Name] as [number, string]]))),
     staleTime: 5 * 60 * 1000,
   })
   // 用户列：id → 邮箱（sub2api 使用明细同款，邮箱太长截断 + title 悬停全文）
   const { data: userEmailById } = useQuery({
-    queryKey: ['users', { limit: 1000 }],
-    queryFn: () => api.listUsers({ limit: 1000 }),
-    select: data => new Map(data.rows.map(u => [u.ID, u.Email ?? ''])),
+    queryKey: ['users', 'all-for-log-names'],
+    queryFn: () => fetchAllRows(({ limit, offset }) => api.listUsers({ limit, offset, sort: 'id', order: 'asc' })),
+    select: data => new Map(data.rows.flatMap(u => (u.ID == null || !u.Email ? [] : [[u.ID, u.Email] as [number, string]]))),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -367,15 +816,30 @@ export default function Logs() {
 
       {/* Tab 切换：用量日志 / 错误日志（两表独立游标与列集） */}
       <Tabs value={tab} onValueChange={v => v && switchTab(v)}>
-        <TabsList>
-          <TabsTrigger value="usage">{t('logs.tab.usage')}</TabsTrigger>
-          <TabsTrigger value="errors">{t('logs.tab.errors')}</TabsTrigger>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="usage" className="min-h-11 flex-1 sm:flex-none md:min-h-8">{t('logs.tab.usage')}</TabsTrigger>
+          <TabsTrigger value="errors" className="min-h-11 flex-1 sm:flex-none md:min-h-8">{t('logs.tab.errors')}</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {/* 过滤栏：分组/账号/模型/错误类型（+错误面状态码）+ 时间范围 */}
-      <Card className="p-4">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div className="space-y-3">
+      <Card className="p-4 [&_button]:min-h-11 [&_input]:min-h-11 md:[&_button]:min-h-8 md:[&_input]:min-h-8">
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full justify-between md:hidden"
+          aria-expanded={mobileFiltersOpen}
+          aria-controls="admin-log-filters"
+          onClick={() => setMobileFiltersOpen(open => !open)}
+        >
+          <span className="inline-flex items-center gap-2"><Funnel />{t('logs.filter.toggle')}</span>
+          <span className="text-xs text-muted-foreground">{t(mobileFiltersOpen ? 'logs.filter.hide' : 'logs.filter.show')}</span>
+        </Button>
+        <div
+          id="admin-log-filters"
+          className={cn('grid-cols-1 gap-3 sm:grid-cols-2 md:grid md:grid-cols-4 xl:grid-cols-8', mobileFiltersOpen ? 'mt-3 grid' : 'hidden')}
+        >
           <div className="space-y-1.5">
             <Label htmlFor="log-user">{t('logs.filter.userId')}</Label>
             <FilterCombobox
@@ -490,18 +954,28 @@ export default function Logs() {
           </div>
         </div>
       </Card>
+      {tab === 'usage' ? (
+        <UsageSummaryBand
+          summary={usageSummaryQ.data}
+          isLoading={usageSummaryQ.isLoading}
+          isFetching={usageSummaryQ.isFetching}
+          error={usageSummaryQ.error as Error | undefined}
+        />
+      ) : null}
+      </div>
 
       {/* 列设置 + 表格标题（游标分页无 total，标题用当前 Tab 名） */}
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-muted-foreground">{t(tab === 'errors' ? 'logs.tab.errors' : 'logs.tab.usage')}</h2>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm"><SlidersHorizontal className="size-4" />{t('logs.columnSettings')}</Button>} />
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="min-h-11 md:min-h-7"><SlidersHorizontal className="size-4" />{t('logs.columnSettings')}</Button>} />
           <DropdownMenuContent align="end" className="max-h-80 w-48">
             <DropdownMenuGroup>
               <DropdownMenuLabel>{t('logs.columnSettings')}</DropdownMenuLabel>
               {(tab === 'errors' ? ERR_HIDDENABLE_COLS : USAGE_HIDDENABLE_COLS).map(key => (
                 <DropdownMenuCheckboxItem
                   key={key}
+                  className="min-h-11 md:min-h-8"
                   checked={isColVisible(key)}
                   onCheckedChange={() => toggleCol(key)}
                 >
@@ -529,7 +1003,19 @@ export default function Logs() {
         </Card>
       ) : (
         <>
-        <Card className="bg-transparent border-0 shadow-none backdrop-blur-none p-0 gap-0">
+        <div className="space-y-3 md:hidden">
+          {(rows as LogRow[]).map(row => (
+            <MobileLogCard
+              key={row.ID ?? row.RequestID}
+              row={row}
+              tab={tab}
+              groupNameById={groupNameById}
+              accountNameById={accountNameById}
+              userEmailById={userEmailById}
+            />
+          ))}
+        </div>
+        <Card className="hidden bg-transparent border-0 shadow-none backdrop-blur-none p-0 gap-0 md:flex">
           {/* 玻璃与滚动分离：Card 透明化，玻璃与圆角由包裹表格的 ScrollArea 承载（单层边框）；
               横竖滚动均由 ScrollArea 自绘滚动条承接，Table 去自身玻璃与横向滚动依赖，
               避免 Card overflow-hidden 与 Table 横向滚动嵌套导致的裁切/贴边 */}
@@ -539,6 +1025,10 @@ export default function Logs() {
               <TableRow>
                 <Th>{t('logs.table.requestId')}</Th>
                 <Th>{t('logs.table.createdAt')}</Th>
+                {isColVisible('client') && <Th>{t('logs.table.client')}</Th>}
+                {isColVisible('upstream') && <Th>{t('logs.table.upstream')}</Th>}
+                {tab === 'usage' && isColVisible('finance') && <Th className="text-right">{t('logs.table.finance')}</Th>}
+                {isColVisible('diagnostics') && <Th className="text-right">{t('logs.table.diagnostics')}</Th>}
                 {isColVisible('user') && <Th className="text-right">{t('logs.table.user')}</Th>}
                 {isColVisible('key') && <Th className="text-right">{t('logs.table.key')}</Th>}
                 {isColVisible('group') && <Th className="text-right">{t('logs.table.group')}</Th>}
@@ -548,13 +1038,10 @@ export default function Logs() {
                 {tab === 'errors' && isColVisible('statusCode') && <Th className="text-right">{t('logs.table.statusCode')}</Th>}
                 {isColVisible('errorType') && <Th>{t('logs.table.errorType')}</Th>}
                 {tab === 'errors' && isColVisible('errorMessage') && <Th>{t('logs.table.errorMessage')}</Th>}
-                {/* 表头顺序与单元格渲染一致（usage: tokens→cost→latency；errors: latency→billingTier）——
-                    Token/费用曾按用户要求移到耗时前，表头漏同步导致错位 */}
+                {/* Attribution columns remain stacked instead of expanding into many
+                    narrow fields: route, finance, diagnostics and client provenance. */}
                 {tab === 'usage' && isColVisible('tokens') && <Th className="text-right">{t('logs.table.tokens')}</Th>}
-                {tab === 'usage' && isColVisible('cost') && <Th className="text-right">{t('logs.table.cost')}</Th>}
-                {isColVisible('latency') && <Th className="text-right">{t('logs.table.latency')}</Th>}
                 {tab === 'errors' && isColVisible('billingTier') && <Th>{t('logs.table.billingTier')}</Th>}
-                <Th>{t('logs.table.ip')}</Th>
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:py-3">
@@ -565,6 +1052,26 @@ export default function Logs() {
                     <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
+                  {isColVisible('client') && (
+                    <TableCell className="min-w-44 max-w-56">
+                      <ClientAttribution row={l} />
+                    </TableCell>
+                  )}
+                  {isColVisible('upstream') && (
+                    <TableCell className="min-w-44 max-w-56">
+                      <UpstreamAttribution row={l} />
+                    </TableCell>
+                  )}
+                  {isColVisible('finance') && (
+                    <TableCell className="min-w-44 text-right">
+                      <FinancialAttribution row={l} />
+                    </TableCell>
+                  )}
+                  {isColVisible('diagnostics') && (
+                    <TableCell className="min-w-48 text-right">
+                      <LogDiagnostics row={l} />
+                    </TableCell>
+                  )}
                   {/* 鉴权归属：用户(邮箱)/Key；组/账号显示名称，未命中回退 #id（0 = 无鉴权） */}
                   {isColVisible('user') && (
                     <TableCell className="text-right">
@@ -708,30 +1215,6 @@ export default function Logs() {
                     )}
                   </TableCell>
                   )}
-                  {/* 计费：Cost 毫分 → USD（0/空显示 —）；档位/超档/透支已并入 Tokens 悬停窗 */}
-                  {isColVisible('cost') && <TableCell className="text-right tabular-nums">{formatCost(l.Cost)}</TableCell>}
-                  {/* 耗时列：上行 TTFT（色点按 ttft 着色 + ≥1000ms 用 s）+ 下行总耗时；ttft 无值只显示总耗时 */}
-                  {isColVisible('latency') && (
-                  <TableCell className="text-right tabular-nums">
-                    {l.TTFTMS != null ? (
-                      <div className="space-y-0.5 text-right text-xs">
-                        <div className="inline-flex items-center justify-end gap-1.5">
-                          <span className={cn('size-2 rounded-full', latencyColor(l.TTFTMS))} />
-                          <span className="text-muted-foreground">{t('logs.latency.ttft')} {fmtDuration(l.TTFTMS)}</span>
-                        </div>
-                        <div className="text-muted-foreground/60">{t('logs.latency.total')} {fmtDuration(l.LatencyMS)}</div>
-                      </div>
-                    ) : l.LatencyMS != null ? (
-                      <span className="text-muted-foreground">{fmtDuration(l.LatencyMS)}</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  )}
-                  {/* 客户端 IP（CF-Connecting-IP 优先；无则 RemoteAddr）；IPv6 超长 truncate */}
-                  <TableCell className="max-w-36">
-                    <span className="block truncate font-mono text-xs text-muted-foreground" title={l.ClientIP}>{l.ClientIP ?? '—'}</span>
-                  </TableCell>
                 </TableRow>
                 ))
                 : (rows as ErrLog[]).map(l => (
@@ -740,6 +1223,22 @@ export default function Logs() {
                     <span className="block truncate font-mono text-xs text-muted-foreground" title={l.RequestID}>{l.RequestID ?? '—'}</span>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.CreatedAt)}</TableCell>
+                  {isColVisible('client') && (
+                    <TableCell className="min-w-44 max-w-56">
+                      <ClientAttribution row={l} />
+                    </TableCell>
+                  )}
+                  {isColVisible('upstream') && (
+                    <TableCell className="min-w-44 max-w-56">
+                      <UpstreamAttribution row={l} />
+                    </TableCell>
+                  )}
+                  {/* 错误明细不产生 usage_logs 计费行，财务列仅在用量 Tab 展示。 */}
+                  {isColVisible('diagnostics') && (
+                    <TableCell className="min-w-48 text-right">
+                      <LogDiagnostics row={l} showStage />
+                    </TableCell>
+                  )}
                   {/* 鉴权归属：用户(邮箱)/Key；组/账号显示名称，未命中回退 #id（0 = 无鉴权） */}
                   {isColVisible('user') && (
                     <TableCell className="text-right">
@@ -789,29 +1288,12 @@ export default function Logs() {
                       )}
                     </TableCell>
                   )}
-                  {/* 耗时：错误面无 TTFT，仅总耗时（健康色点 + 着色数字） */}
-                  {isColVisible('latency') && (
-                  <TableCell className="text-right tabular-nums">
-                    {l.LatencyMS != null ? (
-                      <span className="inline-flex items-center justify-end gap-1.5">
-                        <span className={cn('size-2 rounded-full', latencyColor(l.LatencyMS))} />
-                        <span className="text-xs text-muted-foreground">{fmtDuration(l.LatencyMS)}</span>
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  )}
                   {/* 计费档：service_tier 归一化值；null = 未计费路径 */}
                   {isColVisible('billingTier') && (
                     <TableCell>
                       {l.BillingTier ? <Badge variant="outline">{l.BillingTier}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
                   )}
-                  {/* 客户端 IP（CF-Connecting-IP 优先；无则 RemoteAddr）；IPv6 超长 truncate */}
-                  <TableCell className="max-w-36">
-                    <span className="block truncate font-mono text-xs text-muted-foreground" title={l.ClientIP}>{l.ClientIP ?? '—'}</span>
-                  </TableCell>
                 </TableRow>
                 ))}
             </TableBody>

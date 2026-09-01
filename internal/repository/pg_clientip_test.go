@@ -43,6 +43,9 @@ func TestUsageLogClientIPRoundtripPG(t *testing.T) {
 	// 有值 + 未设置（NULL）两态
 	l1 := usageLogFor("cip-u-1", time.Now().UTC())
 	l1.ClientIP = "9.9.9.9"
+	l1.ClientIPSource = "cf_connecting_ip"
+	trusted := true
+	l1.ClientIPTrusted = &trusted
 	l2 := usageLogFor("cip-u-2", time.Now().UTC())
 	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{l1, l2}))
 
@@ -54,7 +57,12 @@ func TestUsageLogClientIPRoundtripPG(t *testing.T) {
 		got[r.RequestID] = r
 	}
 	require.Equal(t, "9.9.9.9", got["cip-u-1"].ClientIP, "有值必须读回（QueryUsages 回填）")
+	require.Equal(t, "cf_connecting_ip", got["cip-u-1"].ClientIPSource, "IP 来源必须读回")
+	require.NotNil(t, got["cip-u-1"].ClientIPTrusted)
+	require.True(t, *got["cip-u-1"].ClientIPTrusted, "可信状态必须读回")
 	require.Empty(t, got["cip-u-2"].ClientIP, "未设置 → NULL → 回填空")
+	require.Empty(t, got["cip-u-2"].ClientIPSource, "未设置来源 → NULL → 回填空")
+	require.Nil(t, got["cip-u-2"].ClientIPTrusted, "未设置可信状态 → NULL → 回填 nil")
 
 	var raw *string
 	err = pool.QueryRow(ctx, `SELECT client_ip FROM usage_logs WHERE request_id = 'cip-u-2'`).Scan(&raw)
@@ -85,6 +93,9 @@ func TestErrLogClientIPRoundtripPG(t *testing.T) {
 	// 有值（拒绝行恒带）+ 未设置（NULL）两态
 	l1 := errLogFor("cip-e-1", time.Now().UTC())
 	l1.ClientIP = "9.9.9.9"
+	l1.ClientIPSource = "x_real_ip"
+	trusted := false
+	l1.ClientIPTrusted = &trusted
 	l2 := errLogFor("cip-e-2", time.Now().UTC())
 	require.NoError(t, repos.InsertErrLogBatch(ctx, []*domain.UsageLog{l1, l2}))
 
@@ -96,7 +107,12 @@ func TestErrLogClientIPRoundtripPG(t *testing.T) {
 		got[r.RequestID] = r
 	}
 	require.Equal(t, "9.9.9.9", got["cip-e-1"].ClientIP, "有值必须读回（QueryErrLogs 回填）")
+	require.Equal(t, "x_real_ip", got["cip-e-1"].ClientIPSource, "IP 来源必须读回")
+	require.NotNil(t, got["cip-e-1"].ClientIPTrusted)
+	require.False(t, *got["cip-e-1"].ClientIPTrusted, "不可信状态必须保留")
 	require.Empty(t, got["cip-e-2"].ClientIP, "未设置 → NULL → 回填空")
+	require.Empty(t, got["cip-e-2"].ClientIPSource, "未设置来源 → NULL → 回填空")
+	require.Nil(t, got["cip-e-2"].ClientIPTrusted, "未设置可信状态 → NULL → 回填 nil")
 }
 
 // TestBillingCursorPreservesClientIPPG F2 游标消费不触碰 client_ip：usage

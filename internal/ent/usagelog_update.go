@@ -62,6 +62,46 @@ func (_u *UsageLogUpdate) ClearClientIP() *UsageLogUpdate {
 	return _u
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (_u *UsageLogUpdate) SetClientIPSource(v string) *UsageLogUpdate {
+	_u.mutation.SetClientIPSource(v)
+	return _u
+}
+
+// SetNillableClientIPSource sets the "client_ip_source" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableClientIPSource(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetClientIPSource(*v)
+	}
+	return _u
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (_u *UsageLogUpdate) ClearClientIPSource() *UsageLogUpdate {
+	_u.mutation.ClearClientIPSource()
+	return _u
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (_u *UsageLogUpdate) SetClientIPTrusted(v bool) *UsageLogUpdate {
+	_u.mutation.SetClientIPTrusted(v)
+	return _u
+}
+
+// SetNillableClientIPTrusted sets the "client_ip_trusted" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableClientIPTrusted(v *bool) *UsageLogUpdate {
+	if v != nil {
+		_u.SetClientIPTrusted(*v)
+	}
+	return _u
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (_u *UsageLogUpdate) ClearClientIPTrusted() *UsageLogUpdate {
+	_u.mutation.ClearClientIPTrusted()
+	return _u
+}
+
 // SetGroupID sets the "group_id" field.
 func (_u *UsageLogUpdate) SetGroupID(v int64) *UsageLogUpdate {
 	_u.mutation.ResetGroupID()
@@ -140,6 +180,120 @@ func (_u *UsageLogUpdate) AddTemplateID(v int64) *UsageLogUpdate {
 // ClearTemplateID clears the value of the "template_id" field.
 func (_u *UsageLogUpdate) ClearTemplateID() *UsageLogUpdate {
 	_u.mutation.ClearTemplateID()
+	return _u
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (_u *UsageLogUpdate) SetTargetKind(v string) *UsageLogUpdate {
+	_u.mutation.SetTargetKind(v)
+	return _u
+}
+
+// SetNillableTargetKind sets the "target_kind" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableTargetKind(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetTargetKind(*v)
+	}
+	return _u
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (_u *UsageLogUpdate) ClearTargetKind() *UsageLogUpdate {
+	_u.mutation.ClearTargetKind()
+	return _u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_u *UsageLogUpdate) SetUpstreamID(v int64) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamID()
+	_u.mutation.SetUpstreamID(v)
+	return _u
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamID(*v)
+	}
+	return _u
+}
+
+// AddUpstreamID adds value to the "upstream_id" field.
+func (_u *UsageLogUpdate) AddUpstreamID(v int64) *UsageLogUpdate {
+	_u.mutation.AddUpstreamID(v)
+	return _u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (_u *UsageLogUpdate) ClearUpstreamID() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamID()
+	return _u
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (_u *UsageLogUpdate) SetUpstreamName(v string) *UsageLogUpdate {
+	_u.mutation.SetUpstreamName(v)
+	return _u
+}
+
+// SetNillableUpstreamName sets the "upstream_name" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamName(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamName(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (_u *UsageLogUpdate) ClearUpstreamName() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamName()
+	return _u
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (_u *UsageLogUpdate) SetUpstreamHost(v string) *UsageLogUpdate {
+	_u.mutation.SetUpstreamHost(v)
+	return _u
+}
+
+// SetNillableUpstreamHost sets the "upstream_host" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamHost(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamHost(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (_u *UsageLogUpdate) ClearUpstreamHost() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamHost()
+	return _u
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (_u *UsageLogUpdate) SetUpstreamMultiplierBp(v int) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamMultiplierBp()
+	_u.mutation.SetUpstreamMultiplierBp(v)
+	return _u
+}
+
+// SetNillableUpstreamMultiplierBp sets the "upstream_multiplier_bp" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamMultiplierBp(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamMultiplierBp(*v)
+	}
+	return _u
+}
+
+// AddUpstreamMultiplierBp adds value to the "upstream_multiplier_bp" field.
+func (_u *UsageLogUpdate) AddUpstreamMultiplierBp(v int) *UsageLogUpdate {
+	_u.mutation.AddUpstreamMultiplierBp(v)
+	return _u
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (_u *UsageLogUpdate) ClearUpstreamMultiplierBp() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamMultiplierBp()
 	return _u
 }
 
@@ -610,6 +764,87 @@ func (_u *UsageLogUpdate) AddRawCost(v int64) *UsageLogUpdate {
 	return _u
 }
 
+// SetUpstreamCost sets the "upstream_cost" field.
+func (_u *UsageLogUpdate) SetUpstreamCost(v int64) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamCost()
+	_u.mutation.SetUpstreamCost(v)
+	return _u
+}
+
+// SetNillableUpstreamCost sets the "upstream_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamCost(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamCost(*v)
+	}
+	return _u
+}
+
+// AddUpstreamCost adds value to the "upstream_cost" field.
+func (_u *UsageLogUpdate) AddUpstreamCost(v int64) *UsageLogUpdate {
+	_u.mutation.AddUpstreamCost(v)
+	return _u
+}
+
+// ClearUpstreamCost clears the value of the "upstream_cost" field.
+func (_u *UsageLogUpdate) ClearUpstreamCost() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamCost()
+	return _u
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (_u *UsageLogUpdate) SetGrossProfit(v int64) *UsageLogUpdate {
+	_u.mutation.ResetGrossProfit()
+	_u.mutation.SetGrossProfit(v)
+	return _u
+}
+
+// SetNillableGrossProfit sets the "gross_profit" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableGrossProfit(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetGrossProfit(*v)
+	}
+	return _u
+}
+
+// AddGrossProfit adds value to the "gross_profit" field.
+func (_u *UsageLogUpdate) AddGrossProfit(v int64) *UsageLogUpdate {
+	_u.mutation.AddGrossProfit(v)
+	return _u
+}
+
+// ClearGrossProfit clears the value of the "gross_profit" field.
+func (_u *UsageLogUpdate) ClearGrossProfit() *UsageLogUpdate {
+	_u.mutation.ClearGrossProfit()
+	return _u
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (_u *UsageLogUpdate) SetProfitMarginBp(v int64) *UsageLogUpdate {
+	_u.mutation.ResetProfitMarginBp()
+	_u.mutation.SetProfitMarginBp(v)
+	return _u
+}
+
+// SetNillableProfitMarginBp sets the "profit_margin_bp" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableProfitMarginBp(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetProfitMarginBp(*v)
+	}
+	return _u
+}
+
+// AddProfitMarginBp adds value to the "profit_margin_bp" field.
+func (_u *UsageLogUpdate) AddProfitMarginBp(v int64) *UsageLogUpdate {
+	_u.mutation.AddProfitMarginBp(v)
+	return _u
+}
+
+// ClearProfitMarginBp clears the value of the "profit_margin_bp" field.
+func (_u *UsageLogUpdate) ClearProfitMarginBp() *UsageLogUpdate {
+	_u.mutation.ClearProfitMarginBp()
+	return _u
+}
+
 // SetBillingTier sets the "billing_tier" field.
 func (_u *UsageLogUpdate) SetBillingTier(v string) *UsageLogUpdate {
 	_u.mutation.SetBillingTier(v)
@@ -749,6 +984,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.ClientIPCleared() {
 		_spec.ClearField(usagelog.FieldClientIP, field.TypeString)
 	}
+	if value, ok := _u.mutation.ClientIPSource(); ok {
+		_spec.SetField(usagelog.FieldClientIPSource, field.TypeString, value)
+	}
+	if _u.mutation.ClientIPSourceCleared() {
+		_spec.ClearField(usagelog.FieldClientIPSource, field.TypeString)
+	}
+	if value, ok := _u.mutation.ClientIPTrusted(); ok {
+		_spec.SetField(usagelog.FieldClientIPTrusted, field.TypeBool, value)
+	}
+	if _u.mutation.ClientIPTrustedCleared() {
+		_spec.ClearField(usagelog.FieldClientIPTrusted, field.TypeBool)
+	}
 	if value, ok := _u.mutation.GroupID(); ok {
 		_spec.SetField(usagelog.FieldGroupID, field.TypeInt64, value)
 	}
@@ -775,6 +1022,42 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.TemplateIDCleared() {
 		_spec.ClearField(usagelog.FieldTemplateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.TargetKind(); ok {
+		_spec.SetField(usagelog.FieldTargetKind, field.TypeString, value)
+	}
+	if _u.mutation.TargetKindCleared() {
+		_spec.ClearField(usagelog.FieldTargetKind, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamID(); ok {
+		_spec.SetField(usagelog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamID(); ok {
+		_spec.AddField(usagelog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if _u.mutation.UpstreamIDCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpstreamName(); ok {
+		_spec.SetField(usagelog.FieldUpstreamName, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamNameCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamName, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamHost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamHost, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamHostCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamHost, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamMultiplierBp(); ok {
+		_spec.SetField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamMultiplierBp(); ok {
+		_spec.AddField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamMultiplierBpCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserID(); ok {
 		_spec.SetField(usagelog.FieldUserID, field.TypeInt64, value)
@@ -917,6 +1200,33 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedRawCost(); ok {
 		_spec.AddField(usagelog.FieldRawCost, field.TypeInt64, value)
 	}
+	if value, ok := _u.mutation.UpstreamCost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamCost(); ok {
+		_spec.AddField(usagelog.FieldUpstreamCost, field.TypeInt64, value)
+	}
+	if _u.mutation.UpstreamCostCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCost, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.GrossProfit(); ok {
+		_spec.SetField(usagelog.FieldGrossProfit, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGrossProfit(); ok {
+		_spec.AddField(usagelog.FieldGrossProfit, field.TypeInt64, value)
+	}
+	if _u.mutation.GrossProfitCleared() {
+		_spec.ClearField(usagelog.FieldGrossProfit, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ProfitMarginBp(); ok {
+		_spec.SetField(usagelog.FieldProfitMarginBp, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedProfitMarginBp(); ok {
+		_spec.AddField(usagelog.FieldProfitMarginBp, field.TypeInt64, value)
+	}
+	if _u.mutation.ProfitMarginBpCleared() {
+		_spec.ClearField(usagelog.FieldProfitMarginBp, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.BillingTier(); ok {
 		_spec.SetField(usagelog.FieldBillingTier, field.TypeString, value)
 	}
@@ -986,6 +1296,46 @@ func (_u *UsageLogUpdateOne) SetNillableClientIP(v *string) *UsageLogUpdateOne {
 // ClearClientIP clears the value of the "client_ip" field.
 func (_u *UsageLogUpdateOne) ClearClientIP() *UsageLogUpdateOne {
 	_u.mutation.ClearClientIP()
+	return _u
+}
+
+// SetClientIPSource sets the "client_ip_source" field.
+func (_u *UsageLogUpdateOne) SetClientIPSource(v string) *UsageLogUpdateOne {
+	_u.mutation.SetClientIPSource(v)
+	return _u
+}
+
+// SetNillableClientIPSource sets the "client_ip_source" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableClientIPSource(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetClientIPSource(*v)
+	}
+	return _u
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (_u *UsageLogUpdateOne) ClearClientIPSource() *UsageLogUpdateOne {
+	_u.mutation.ClearClientIPSource()
+	return _u
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (_u *UsageLogUpdateOne) SetClientIPTrusted(v bool) *UsageLogUpdateOne {
+	_u.mutation.SetClientIPTrusted(v)
+	return _u
+}
+
+// SetNillableClientIPTrusted sets the "client_ip_trusted" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableClientIPTrusted(v *bool) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetClientIPTrusted(*v)
+	}
+	return _u
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (_u *UsageLogUpdateOne) ClearClientIPTrusted() *UsageLogUpdateOne {
+	_u.mutation.ClearClientIPTrusted()
 	return _u
 }
 
@@ -1067,6 +1417,120 @@ func (_u *UsageLogUpdateOne) AddTemplateID(v int64) *UsageLogUpdateOne {
 // ClearTemplateID clears the value of the "template_id" field.
 func (_u *UsageLogUpdateOne) ClearTemplateID() *UsageLogUpdateOne {
 	_u.mutation.ClearTemplateID()
+	return _u
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (_u *UsageLogUpdateOne) SetTargetKind(v string) *UsageLogUpdateOne {
+	_u.mutation.SetTargetKind(v)
+	return _u
+}
+
+// SetNillableTargetKind sets the "target_kind" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableTargetKind(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetTargetKind(*v)
+	}
+	return _u
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (_u *UsageLogUpdateOne) ClearTargetKind() *UsageLogUpdateOne {
+	_u.mutation.ClearTargetKind()
+	return _u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_u *UsageLogUpdateOne) SetUpstreamID(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamID()
+	_u.mutation.SetUpstreamID(v)
+	return _u
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamID(*v)
+	}
+	return _u
+}
+
+// AddUpstreamID adds value to the "upstream_id" field.
+func (_u *UsageLogUpdateOne) AddUpstreamID(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamID(v)
+	return _u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamID() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamID()
+	return _u
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (_u *UsageLogUpdateOne) SetUpstreamName(v string) *UsageLogUpdateOne {
+	_u.mutation.SetUpstreamName(v)
+	return _u
+}
+
+// SetNillableUpstreamName sets the "upstream_name" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamName(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamName(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamName() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamName()
+	return _u
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (_u *UsageLogUpdateOne) SetUpstreamHost(v string) *UsageLogUpdateOne {
+	_u.mutation.SetUpstreamHost(v)
+	return _u
+}
+
+// SetNillableUpstreamHost sets the "upstream_host" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamHost(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamHost(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamHost() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamHost()
+	return _u
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (_u *UsageLogUpdateOne) SetUpstreamMultiplierBp(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamMultiplierBp()
+	_u.mutation.SetUpstreamMultiplierBp(v)
+	return _u
+}
+
+// SetNillableUpstreamMultiplierBp sets the "upstream_multiplier_bp" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamMultiplierBp(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamMultiplierBp(*v)
+	}
+	return _u
+}
+
+// AddUpstreamMultiplierBp adds value to the "upstream_multiplier_bp" field.
+func (_u *UsageLogUpdateOne) AddUpstreamMultiplierBp(v int) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamMultiplierBp(v)
+	return _u
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamMultiplierBp() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamMultiplierBp()
 	return _u
 }
 
@@ -1537,6 +2001,87 @@ func (_u *UsageLogUpdateOne) AddRawCost(v int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetUpstreamCost sets the "upstream_cost" field.
+func (_u *UsageLogUpdateOne) SetUpstreamCost(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamCost()
+	_u.mutation.SetUpstreamCost(v)
+	return _u
+}
+
+// SetNillableUpstreamCost sets the "upstream_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamCost(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamCost(*v)
+	}
+	return _u
+}
+
+// AddUpstreamCost adds value to the "upstream_cost" field.
+func (_u *UsageLogUpdateOne) AddUpstreamCost(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamCost(v)
+	return _u
+}
+
+// ClearUpstreamCost clears the value of the "upstream_cost" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamCost() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamCost()
+	return _u
+}
+
+// SetGrossProfit sets the "gross_profit" field.
+func (_u *UsageLogUpdateOne) SetGrossProfit(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetGrossProfit()
+	_u.mutation.SetGrossProfit(v)
+	return _u
+}
+
+// SetNillableGrossProfit sets the "gross_profit" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableGrossProfit(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetGrossProfit(*v)
+	}
+	return _u
+}
+
+// AddGrossProfit adds value to the "gross_profit" field.
+func (_u *UsageLogUpdateOne) AddGrossProfit(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddGrossProfit(v)
+	return _u
+}
+
+// ClearGrossProfit clears the value of the "gross_profit" field.
+func (_u *UsageLogUpdateOne) ClearGrossProfit() *UsageLogUpdateOne {
+	_u.mutation.ClearGrossProfit()
+	return _u
+}
+
+// SetProfitMarginBp sets the "profit_margin_bp" field.
+func (_u *UsageLogUpdateOne) SetProfitMarginBp(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetProfitMarginBp()
+	_u.mutation.SetProfitMarginBp(v)
+	return _u
+}
+
+// SetNillableProfitMarginBp sets the "profit_margin_bp" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableProfitMarginBp(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetProfitMarginBp(*v)
+	}
+	return _u
+}
+
+// AddProfitMarginBp adds value to the "profit_margin_bp" field.
+func (_u *UsageLogUpdateOne) AddProfitMarginBp(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddProfitMarginBp(v)
+	return _u
+}
+
+// ClearProfitMarginBp clears the value of the "profit_margin_bp" field.
+func (_u *UsageLogUpdateOne) ClearProfitMarginBp() *UsageLogUpdateOne {
+	_u.mutation.ClearProfitMarginBp()
+	return _u
+}
+
 // SetBillingTier sets the "billing_tier" field.
 func (_u *UsageLogUpdateOne) SetBillingTier(v string) *UsageLogUpdateOne {
 	_u.mutation.SetBillingTier(v)
@@ -1706,6 +2251,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if _u.mutation.ClientIPCleared() {
 		_spec.ClearField(usagelog.FieldClientIP, field.TypeString)
 	}
+	if value, ok := _u.mutation.ClientIPSource(); ok {
+		_spec.SetField(usagelog.FieldClientIPSource, field.TypeString, value)
+	}
+	if _u.mutation.ClientIPSourceCleared() {
+		_spec.ClearField(usagelog.FieldClientIPSource, field.TypeString)
+	}
+	if value, ok := _u.mutation.ClientIPTrusted(); ok {
+		_spec.SetField(usagelog.FieldClientIPTrusted, field.TypeBool, value)
+	}
+	if _u.mutation.ClientIPTrustedCleared() {
+		_spec.ClearField(usagelog.FieldClientIPTrusted, field.TypeBool)
+	}
 	if value, ok := _u.mutation.GroupID(); ok {
 		_spec.SetField(usagelog.FieldGroupID, field.TypeInt64, value)
 	}
@@ -1732,6 +2289,42 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.TemplateIDCleared() {
 		_spec.ClearField(usagelog.FieldTemplateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.TargetKind(); ok {
+		_spec.SetField(usagelog.FieldTargetKind, field.TypeString, value)
+	}
+	if _u.mutation.TargetKindCleared() {
+		_spec.ClearField(usagelog.FieldTargetKind, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamID(); ok {
+		_spec.SetField(usagelog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamID(); ok {
+		_spec.AddField(usagelog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if _u.mutation.UpstreamIDCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpstreamName(); ok {
+		_spec.SetField(usagelog.FieldUpstreamName, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamNameCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamName, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamHost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamHost, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamHostCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamHost, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamMultiplierBp(); ok {
+		_spec.SetField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamMultiplierBp(); ok {
+		_spec.AddField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamMultiplierBpCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamMultiplierBp, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserID(); ok {
 		_spec.SetField(usagelog.FieldUserID, field.TypeInt64, value)
@@ -1873,6 +2466,33 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedRawCost(); ok {
 		_spec.AddField(usagelog.FieldRawCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.UpstreamCost(); ok {
+		_spec.SetField(usagelog.FieldUpstreamCost, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamCost(); ok {
+		_spec.AddField(usagelog.FieldUpstreamCost, field.TypeInt64, value)
+	}
+	if _u.mutation.UpstreamCostCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamCost, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.GrossProfit(); ok {
+		_spec.SetField(usagelog.FieldGrossProfit, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedGrossProfit(); ok {
+		_spec.AddField(usagelog.FieldGrossProfit, field.TypeInt64, value)
+	}
+	if _u.mutation.GrossProfitCleared() {
+		_spec.ClearField(usagelog.FieldGrossProfit, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.ProfitMarginBp(); ok {
+		_spec.SetField(usagelog.FieldProfitMarginBp, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedProfitMarginBp(); ok {
+		_spec.AddField(usagelog.FieldProfitMarginBp, field.TypeInt64, value)
+	}
+	if _u.mutation.ProfitMarginBpCleared() {
+		_spec.ClearField(usagelog.FieldProfitMarginBp, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.BillingTier(); ok {
 		_spec.SetField(usagelog.FieldBillingTier, field.TypeString, value)

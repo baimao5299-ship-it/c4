@@ -18,12 +18,26 @@ const (
 	FieldRequestID = "request_id"
 	// FieldClientIP holds the string denoting the client_ip field in the database.
 	FieldClientIP = "client_ip"
+	// FieldClientIPSource holds the string denoting the client_ip_source field in the database.
+	FieldClientIPSource = "client_ip_source"
+	// FieldClientIPTrusted holds the string denoting the client_ip_trusted field in the database.
+	FieldClientIPTrusted = "client_ip_trusted"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
 	// FieldAccountID holds the string denoting the account_id field in the database.
 	FieldAccountID = "account_id"
 	// FieldTemplateID holds the string denoting the template_id field in the database.
 	FieldTemplateID = "template_id"
+	// FieldTargetKind holds the string denoting the target_kind field in the database.
+	FieldTargetKind = "target_kind"
+	// FieldUpstreamID holds the string denoting the upstream_id field in the database.
+	FieldUpstreamID = "upstream_id"
+	// FieldUpstreamName holds the string denoting the upstream_name field in the database.
+	FieldUpstreamName = "upstream_name"
+	// FieldUpstreamHost holds the string denoting the upstream_host field in the database.
+	FieldUpstreamHost = "upstream_host"
+	// FieldUpstreamMultiplierBp holds the string denoting the upstream_multiplier_bp field in the database.
+	FieldUpstreamMultiplierBp = "upstream_multiplier_bp"
 	// FieldUserID holds the string denoting the user_id field in the database.
 	FieldUserID = "user_id"
 	// FieldKeyID holds the string denoting the key_id field in the database.
@@ -66,6 +80,12 @@ const (
 	FieldCost = "cost"
 	// FieldRawCost holds the string denoting the raw_cost field in the database.
 	FieldRawCost = "raw_cost"
+	// FieldUpstreamCost holds the string denoting the upstream_cost field in the database.
+	FieldUpstreamCost = "upstream_cost"
+	// FieldGrossProfit holds the string denoting the gross_profit field in the database.
+	FieldGrossProfit = "gross_profit"
+	// FieldProfitMarginBp holds the string denoting the profit_margin_bp field in the database.
+	FieldProfitMarginBp = "profit_margin_bp"
 	// FieldBillingTier holds the string denoting the billing_tier field in the database.
 	FieldBillingTier = "billing_tier"
 	// FieldAboveHit holds the string denoting the above_hit field in the database.
@@ -85,9 +105,16 @@ var Columns = []string{
 	FieldID,
 	FieldRequestID,
 	FieldClientIP,
+	FieldClientIPSource,
+	FieldClientIPTrusted,
 	FieldGroupID,
 	FieldAccountID,
 	FieldTemplateID,
+	FieldTargetKind,
+	FieldUpstreamID,
+	FieldUpstreamName,
+	FieldUpstreamHost,
+	FieldUpstreamMultiplierBp,
 	FieldUserID,
 	FieldKeyID,
 	FieldModel,
@@ -109,6 +136,9 @@ var Columns = []string{
 	FieldPricePerCallMillis,
 	FieldCost,
 	FieldRawCost,
+	FieldUpstreamCost,
+	FieldGrossProfit,
+	FieldProfitMarginBp,
 	FieldBillingTier,
 	FieldAboveHit,
 	FieldOverdraft,
@@ -204,6 +234,16 @@ func ByClientIP(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldClientIP, opts...).ToFunc()
 }
 
+// ByClientIPSource orders the results by the client_ip_source field.
+func ByClientIPSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientIPSource, opts...).ToFunc()
+}
+
+// ByClientIPTrusted orders the results by the client_ip_trusted field.
+func ByClientIPTrusted(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClientIPTrusted, opts...).ToFunc()
+}
+
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
@@ -217,6 +257,31 @@ func ByAccountID(opts ...sql.OrderTermOption) OrderOption {
 // ByTemplateID orders the results by the template_id field.
 func ByTemplateID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTemplateID, opts...).ToFunc()
+}
+
+// ByTargetKind orders the results by the target_kind field.
+func ByTargetKind(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTargetKind, opts...).ToFunc()
+}
+
+// ByUpstreamID orders the results by the upstream_id field.
+func ByUpstreamID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamID, opts...).ToFunc()
+}
+
+// ByUpstreamName orders the results by the upstream_name field.
+func ByUpstreamName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamName, opts...).ToFunc()
+}
+
+// ByUpstreamHost orders the results by the upstream_host field.
+func ByUpstreamHost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamHost, opts...).ToFunc()
+}
+
+// ByUpstreamMultiplierBp orders the results by the upstream_multiplier_bp field.
+func ByUpstreamMultiplierBp(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamMultiplierBp, opts...).ToFunc()
 }
 
 // ByUserID orders the results by the user_id field.
@@ -322,6 +387,21 @@ func ByCost(opts ...sql.OrderTermOption) OrderOption {
 // ByRawCost orders the results by the raw_cost field.
 func ByRawCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRawCost, opts...).ToFunc()
+}
+
+// ByUpstreamCost orders the results by the upstream_cost field.
+func ByUpstreamCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamCost, opts...).ToFunc()
+}
+
+// ByGrossProfit orders the results by the gross_profit field.
+func ByGrossProfit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGrossProfit, opts...).ToFunc()
+}
+
+// ByProfitMarginBp orders the results by the profit_margin_bp field.
+func ByProfitMarginBp(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProfitMarginBp, opts...).ToFunc()
 }
 
 // ByBillingTier orders the results by the billing_tier field.

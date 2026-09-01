@@ -10,6 +10,33 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.11] - 2026-09-01
+
+### Added
+
+- Usage and error logs now retain the request-time client-IP source/trust
+  decision, selected upstream identity, configured multiplier, and sanitized
+  host for reliable operational attribution.
+- The admin usage view exposes whole-filter financial totals for user charge,
+  estimated upstream cost, gross profit, margin, and loss requests without
+  pagination distortion.
+- `proxy.trusted_proxy_cidrs` restricts forwarded client-IP headers to known
+  reverse-proxy networks while preserving direct-connection attribution.
+- The user model marketplace now shows the unmodified catalogue price beside
+  the effective group price, including call/image prices, and keeps catalogue
+  prices visible when a conditional runtime branch is temporarily invalid.
+- Model IDs in the marketplace are clickable and copy to the clipboard with a
+  short success/failure state, including a mobile-friendly fallback path.
+
+### Fixed
+
+- Local Chat Completions, Responses, Anthropic Messages, converted requests,
+  and Responses WebSocket frames now reject known top-level JSON type errors
+  before contacting an upstream; selected slots are released and detailed
+  error attribution is retained where the request was selected.
+- Upstream-cost estimates preserve fractional multipliers across requests and
+  keep unknown price snapshots distinct from zero-cost traffic.
+
 ## [v0.0.1-beta.10] - 2026-09-01
 
 ### Fixed

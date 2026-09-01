@@ -154,6 +154,18 @@ func extractTier(body []byte) (billing.Tier, error) {
 	return billing.NormalizeTier(tierVal.String()), nil
 }
 
+// localRejectionMessage makes it explicit in the admin error log that a
+// request stopped inside the gateway and never reached the selected upstream.
+// Keeping this prefix consistent lets operators distinguish client/schema
+// failures from provider responses without changing the client-facing error.
+func localRejectionMessage(reason string, err error) string {
+	msg := "upstream not contacted: " + reason
+	if err != nil {
+		msg += ": " + err.Error()
+	}
+	return msg
+}
+
 // handleFormat 通用转发入口（openai-chat/openai-responses/anthropic/openai-
 // images 四格式共用——从原 HandleXxx 提取）：guardPipeline（鉴权 → reqMeta ctx
 // 注入 → quota → 余额预检 → 两级并发门禁 → 限流，见 pipeline.go）→ 读体 →
@@ -290,6 +302,12 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 			}
 			cb, cerr := protoconv.ConvertRequest(body, conv)
 			if cerr != nil {
+				// 转换候选已成功选号，但请求体在网关内无法转换；上游尚未
+				// 收到请求。保留该选择的错误明细，避免把本地 400 误认为上游
+				// 响应，也便于定位具体失败候选。
+				p.recordRejected(r.Context(), reqID, groupID, sel2.AccountID, reqModel,
+					sel2.Model, format, http.StatusBadRequest, domain.Err4xx, 0,
+					usageTuple{}, start, localRejectionMessage("protocol conversion failed", cerr), sel2)
 				p.sched.ReleaseSelection(sel2)
 				if autoNegotiation {
 					conversionErr = cerr

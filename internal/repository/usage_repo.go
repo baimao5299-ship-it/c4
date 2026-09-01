@@ -11,6 +11,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,20 @@ type UsageQuery struct {
 	To        *time.Time
 	Cursor    int64 // keyset 游标（上页最后一条 id；<=0 = 首页无 id 谓词）
 	Limit     int
+}
+
+// UsageLogsSummary is the full-window financial aggregate for an admin usage
+// log query. Cost estimates are nullable because historical or unpriced rows
+// do not have a request-time upstream cost snapshot.
+type UsageLogsSummary struct {
+	RequestCount         int64
+	CostedRequestCount   int64
+	UserCharge           int64
+	AttributedUserCharge int64
+	UpstreamCost         *int64
+	GrossProfit          *int64
+	ProfitMarginBP       *int64
+	LossRequestCount     int64
 }
 
 // ScanPublicChannelStats aggregates recent calls for a bounded set of public
@@ -161,6 +176,12 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	if l.ClientIP != "" {
 		c = c.SetClientIP(l.ClientIP)
 	}
+	if l.ClientIPSource != "" {
+		c = c.SetClientIPSource(l.ClientIPSource)
+	}
+	if l.ClientIPTrusted != nil {
+		c = c.SetClientIPTrusted(*l.ClientIPTrusted)
+	}
 	if l.GroupID > 0 {
 		c = c.SetGroupID(l.GroupID)
 	}
@@ -169,6 +190,21 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	}
 	if l.TemplateID > 0 {
 		c = c.SetTemplateID(l.TemplateID)
+	}
+	if l.TargetKind != "" {
+		c = c.SetTargetKind(l.TargetKind)
+	}
+	if l.UpstreamID > 0 {
+		c = c.SetUpstreamID(l.UpstreamID)
+	}
+	if l.UpstreamName != "" {
+		c = c.SetUpstreamName(l.UpstreamName)
+	}
+	if l.UpstreamHost != "" {
+		c = c.SetUpstreamHost(l.UpstreamHost)
+	}
+	if l.UpstreamMultiplierBP != nil {
+		c = c.SetUpstreamMultiplierBp(*l.UpstreamMultiplierBP)
 	}
 	if l.UserID > 0 {
 		c = c.SetUserID(l.UserID)
@@ -200,6 +236,15 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 	if l.PricePerCallMillis != nil {
 		c = c.SetPricePerCallMillis(*l.PricePerCallMillis)
 	}
+	if l.UpstreamCost != nil {
+		c = c.SetUpstreamCost(*l.UpstreamCost)
+	}
+	if l.GrossProfit != nil {
+		c = c.SetGrossProfit(*l.GrossProfit)
+	}
+	if l.ProfitMarginBP != nil {
+		c = c.SetProfitMarginBp(*l.ProfitMarginBP)
+	}
 	return c
 }
 
@@ -214,8 +259,11 @@ func buildUsageLogCreate(client *ent.Client, l *domain.UsageLog) *ent.UsageLogCr
 // 列定义同位；恒落布尔，出生标记由调用方盖章）。（自 billing_repo.go 整体
 // 搬迁：COPY 事实源归 usage 写入面所有，billing_repo.go 归 F2 T3 独占。）
 var usageLogCopyColumns = []string{
-	usagelog.FieldRequestID, usagelog.FieldClientIP, usagelog.FieldGroupID,
-	usagelog.FieldAccountID, usagelog.FieldTemplateID, usagelog.FieldUserID,
+	usagelog.FieldRequestID, usagelog.FieldClientIP, usagelog.FieldClientIPSource,
+	usagelog.FieldClientIPTrusted, usagelog.FieldGroupID, usagelog.FieldAccountID,
+	usagelog.FieldTemplateID, usagelog.FieldTargetKind, usagelog.FieldUpstreamID,
+	usagelog.FieldUpstreamName, usagelog.FieldUpstreamHost, usagelog.FieldUpstreamMultiplierBp,
+	usagelog.FieldUserID,
 	usagelog.FieldKeyID, usagelog.FieldModel, usagelog.FieldMappedModel,
 	usagelog.FieldFormat, usagelog.FieldErrorType, usagelog.FieldLatencyMs,
 	usagelog.FieldTtftMs, usagelog.FieldInputTokens, usagelog.FieldPriceInputMillis,
@@ -223,7 +271,8 @@ var usageLogCopyColumns = []string{
 	usagelog.FieldCacheReadTokens, usagelog.FieldPriceCacheReadMillis,
 	usagelog.FieldCacheCreationTokens, usagelog.FieldPriceCacheCreationMillis,
 	usagelog.FieldCallCount, usagelog.FieldPricePerCallMillis, usagelog.FieldCost,
-	usagelog.FieldRawCost,
+	usagelog.FieldRawCost, usagelog.FieldUpstreamCost, usagelog.FieldGrossProfit,
+	usagelog.FieldProfitMarginBp,
 	usagelog.FieldBillingTier, usagelog.FieldAboveHit, usagelog.FieldOverdraft,
 	usagelog.FieldBilled,
 	usagelog.FieldCreatedAt,
@@ -235,9 +284,16 @@ var usageLogCopyColumns = []string{
 // client_ip 非空才赋值，否则 NULL；billed 恒落布尔——出生标记透传）。
 func usageLogRowValues(l *domain.UsageLog) []any {
 	var groupID, accountID, templateID, userID, keyID, mappedModel, billingTier, clientIP any
-	var ttft, priceIn, priceOut, priceCR, priceCC, pricePerCall any
+	var clientIPSource, clientIPTrusted, targetKind, upstreamID, upstreamName, upstreamHost, upstreamMultiplier any
+	var ttft, priceIn, priceOut, priceCR, priceCC, pricePerCall, upstreamCost, grossProfit, profitMargin any
 	if l.ClientIP != "" {
 		clientIP = l.ClientIP
+	}
+	if l.ClientIPSource != "" {
+		clientIPSource = l.ClientIPSource
+	}
+	if l.ClientIPTrusted != nil {
+		clientIPTrusted = *l.ClientIPTrusted
 	}
 	if l.GroupID > 0 {
 		groupID = l.GroupID
@@ -247,6 +303,21 @@ func usageLogRowValues(l *domain.UsageLog) []any {
 	}
 	if l.TemplateID > 0 {
 		templateID = l.TemplateID
+	}
+	if l.TargetKind != "" {
+		targetKind = l.TargetKind
+	}
+	if l.UpstreamID > 0 {
+		upstreamID = l.UpstreamID
+	}
+	if l.UpstreamName != "" {
+		upstreamName = l.UpstreamName
+	}
+	if l.UpstreamHost != "" {
+		upstreamHost = l.UpstreamHost
+	}
+	if l.UpstreamMultiplierBP != nil {
+		upstreamMultiplier = *l.UpstreamMultiplierBP
 	}
 	if l.UserID > 0 {
 		userID = l.UserID
@@ -278,14 +349,139 @@ func usageLogRowValues(l *domain.UsageLog) []any {
 	if l.PricePerCallMillis != nil {
 		pricePerCall = *l.PricePerCallMillis
 	}
+	if l.UpstreamCost != nil {
+		upstreamCost = *l.UpstreamCost
+	}
+	if l.GrossProfit != nil {
+		grossProfit = *l.GrossProfit
+	}
+	if l.ProfitMarginBP != nil {
+		profitMargin = *l.ProfitMarginBP
+	}
 	return []any{
-		l.RequestID, clientIP, groupID, accountID, templateID, userID, keyID,
+		l.RequestID, clientIP, clientIPSource, clientIPTrusted,
+		groupID, accountID, templateID, targetKind, upstreamID, upstreamName, upstreamHost, upstreamMultiplier,
+		userID, keyID,
 		l.Model, mappedModel, string(l.Format), string(l.ErrorType), l.LatencyMS, ttft,
 		l.InputTokens, priceIn, l.OutputTokens, priceOut, l.TotalTokens,
 		l.CacheReadTokens, priceCR, l.CacheCreationTokens, priceCC,
 		l.CallCount, pricePerCall,
-		l.Cost, l.RawCost, billingTier, l.AboveHit, l.Overdraft, l.Billed, l.CreatedAt,
+		l.Cost, l.RawCost, upstreamCost, grossProfit, profitMargin,
+		billingTier, l.AboveHit, l.Overdraft, l.Billed, l.CreatedAt,
 	}
+}
+
+// usageLogsSummarySQL builds the aggregate query from the same filtering
+// surface as QueryUsages. Cursor and limit are intentionally excluded: the
+// summary always covers the complete active filter window.
+func usageLogsSummarySQL(q UsageQuery) (string, []any) {
+	// PostgreSQL sum(bigint) returns numeric. Casting the sum (or the
+	// subtraction) directly to bigint can fail once an aggregate exceeds the
+	// ledger range, even though each stored row is valid. Aggregate in numeric,
+	// clamp every exposed integer to int64, and only then cast for the API. Keep
+	// the aggregate directly over usage_logs so the dynamic filters below remain
+	// predicates on the source rows rather than on an outer summary row.
+	const selectSQL = `SELECT
+		count(*)::bigint,
+		count(upstream_cost)::bigint,
+		CASE
+			WHEN COALESCE(sum(cost::numeric), 0::numeric) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+			WHEN COALESCE(sum(cost::numeric), 0::numeric) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+			ELSE COALESCE(sum(cost::numeric), 0::numeric)
+		END::bigint,
+		CASE
+			WHEN COALESCE(sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL), 0::numeric) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+			WHEN COALESCE(sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL), 0::numeric) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+			ELSE COALESCE(sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL), 0::numeric)
+		END::bigint,
+		CASE
+			WHEN sum(upstream_cost::numeric) IS NULL THEN NULL
+			WHEN sum(upstream_cost::numeric) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+			WHEN sum(upstream_cost::numeric) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+			ELSE sum(upstream_cost::numeric)
+		END::bigint,
+		CASE
+			WHEN sum(cost::numeric - upstream_cost::numeric) IS NULL THEN NULL
+			WHEN sum(cost::numeric - upstream_cost::numeric) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+			WHEN sum(cost::numeric - upstream_cost::numeric) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+			ELSE sum(cost::numeric - upstream_cost::numeric)
+		END::bigint,
+		CASE
+			WHEN COALESCE(sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL), 0::numeric) = 0
+				OR sum(cost::numeric - upstream_cost::numeric) IS NULL THEN NULL
+			WHEN round(sum(cost::numeric - upstream_cost::numeric) * 10000 /
+				sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL)) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+			WHEN round(sum(cost::numeric - upstream_cost::numeric) * 10000 /
+				sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL)) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+			ELSE round(sum(cost::numeric - upstream_cost::numeric) * 10000 /
+				sum(cost::numeric) FILTER (WHERE upstream_cost IS NOT NULL))
+		END::bigint,
+		count(*) FILTER (WHERE upstream_cost IS NOT NULL AND cost::numeric - upstream_cost::numeric < 0)::bigint
+	FROM usage_logs`
+
+	clauses := make([]string, 0, 9)
+	args := make([]any, 0, 9)
+	addEqual := func(column string, value any) {
+		args = append(args, value)
+		clauses = append(clauses, fmt.Sprintf("%s = $%d", column, len(args)))
+	}
+	if q.GroupID > 0 {
+		addEqual("group_id", q.GroupID)
+	}
+	if q.AccountID > 0 {
+		addEqual("account_id", q.AccountID)
+	}
+	if q.UserID > 0 {
+		addEqual("user_id", q.UserID)
+	}
+	if q.KeyID > 0 {
+		addEqual("key_id", q.KeyID)
+	}
+	if q.Model != "" {
+		addEqual("model", q.Model)
+	}
+	if q.Format != "" {
+		addEqual("format", q.Format)
+	}
+	if q.ErrorType != "" {
+		addEqual("error_type", q.ErrorType)
+	}
+	if q.From != nil {
+		args = append(args, *q.From)
+		clauses = append(clauses, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if q.To != nil {
+		args = append(args, *q.To)
+		clauses = append(clauses, fmt.Sprintf("created_at <= $%d", len(args)))
+	}
+	if len(clauses) == 0 {
+		return selectSQL, args
+	}
+	return selectSQL + "\nWHERE " + strings.Join(clauses, " AND "), args
+}
+
+// SummarizeUsages aggregates the complete UsageQuery filter window. It uses
+// the persisted request-time estimate snapshots and never derives totals from
+// a paginated result set.
+func (r *UsageRepo) SummarizeUsages(ctx context.Context, q UsageQuery) (*UsageLogsSummary, error) {
+	if r.pool == nil {
+		return nil, fmt.Errorf("usage repo: pgx pool not configured (repository.NewWithPG); cannot summarize usage logs")
+	}
+	query, args := usageLogsSummarySQL(q)
+	out := &UsageLogsSummary{}
+	if err := r.pool.QueryRow(ctx, query, args...).Scan(
+		&out.RequestCount,
+		&out.CostedRequestCount,
+		&out.UserCharge,
+		&out.AttributedUserCharge,
+		&out.UpstreamCost,
+		&out.GrossProfit,
+		&out.ProfitMarginBP,
+		&out.LossRequestCount,
+	); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // QueryUsages usage_logs keyset 游标分页查询（用户裁决：无 from/to 的全分区
@@ -355,6 +551,9 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 			PricePerCallMillis:       row.PricePerCallMillis,
 			Cost:                     row.Cost,
 			RawCost:                  row.RawCost,
+			UpstreamCost:             row.UpstreamCost,
+			GrossProfit:              row.GrossProfit,
+			ProfitMarginBP:           row.ProfitMarginBp,
 			AboveHit:                 row.AboveHit,
 			Overdraft:                row.Overdraft,
 			CreatedAt:                row.CreatedAt,
@@ -368,6 +567,19 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 		if row.TemplateID != nil {
 			l.TemplateID = *row.TemplateID
 		}
+		if row.TargetKind != nil {
+			l.TargetKind = *row.TargetKind
+		}
+		if row.UpstreamID != nil {
+			l.UpstreamID = *row.UpstreamID
+		}
+		if row.UpstreamName != nil {
+			l.UpstreamName = *row.UpstreamName
+		}
+		if row.UpstreamHost != nil {
+			l.UpstreamHost = *row.UpstreamHost
+		}
+		l.UpstreamMultiplierBP = row.UpstreamMultiplierBp
 		if row.UserID != nil {
 			l.UserID = *row.UserID
 		}
@@ -383,6 +595,10 @@ func (r *UsageRepo) QueryUsages(ctx context.Context, q UsageQuery) ([]*domain.Us
 		if row.ClientIP != nil {
 			l.ClientIP = *row.ClientIP
 		}
+		if row.ClientIPSource != nil {
+			l.ClientIPSource = *row.ClientIPSource
+		}
+		l.ClientIPTrusted = row.ClientIPTrusted
 		out = append(out, l)
 	}
 	return out, nil
@@ -404,12 +620,15 @@ func (r *UsageRepo) ScanUsageAgg(ctx context.Context, accountIDs []int64, from, 
 	if r.pool == nil {
 		return nil, fmt.Errorf("usage repo: pgx pool not configured (repository.NewWithPG); cannot scan usage agg")
 	}
-	// sum(bigint) → numeric，显式 ::bigint 回落（pgx 扫描 int64 不受 numeric
-	// 精度语义干扰——statSummarySQL 同款）；GROUP BY 行必有行 → sum 非 NULL，
-	// COALESCE 归零仅为形态防御。
+	// PostgreSQL sum(bigint) returns numeric. Keep the aggregate in numeric until
+	// it is saturated to the API's int64 range; casting an unchecked sum directly
+	// to bigint makes a valid pair of large ledger rows fail the whole endpoint.
+	// The columns are intentionally cast individually so pgx can scan plain int64
+	// values without introducing a numeric dependency in the domain type.
 	rows, err := r.pool.Query(ctx, `SELECT account_id, count(*)::bigint,
-		COALESCE(sum(cost), 0)::bigint, COALESCE(sum(raw_cost), 0)::bigint,
-		COALESCE(sum(total_tokens), 0)::bigint
+		LEAST(GREATEST(COALESCE(sum(cost::numeric), 0::numeric), -9223372036854775808::numeric), 9223372036854775807::numeric)::bigint,
+		LEAST(GREATEST(COALESCE(sum(raw_cost::numeric), 0::numeric), -9223372036854775808::numeric), 9223372036854775807::numeric)::bigint,
+		LEAST(GREATEST(COALESCE(sum(total_tokens::numeric), 0::numeric), -9223372036854775808::numeric), 9223372036854775807::numeric)::bigint
 		FROM usage_logs WHERE account_id = ANY($1) AND created_at >= $2 AND created_at < $3
 		GROUP BY account_id`, accountIDs, from, to)
 	if err != nil {

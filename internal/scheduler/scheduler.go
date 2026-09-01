@@ -80,6 +80,13 @@ type Selection struct {
 	TargetKind TargetKind
 	TargetID   int64
 	AccountID  int64
+	// Managed upstream attribution is a request-time immutable snapshot.
+	// UpstreamID is the inventory row ID; TargetID remains the schedulable
+	// account or group-member relation ID used for exclusion and release.
+	UpstreamID           int64
+	UpstreamName         string
+	UpstreamHost         string
+	UpstreamMultiplierBP int
 	// GroupID is the group that admitted this request. An account may belong
 	// to several groups, so result/rule events must use the request scope rather
 	// than the first group encountered while building the shared account view.
@@ -530,6 +537,10 @@ func effectiveStatic(a *domain.Account, gid int64) *snapshotStatic {
 	// A binding selects the managed endpoint. Do not retain an account-level
 	// base_url override when an explicit upstream is active.
 	av.acc.BaseURL = &baseURL
+	av.upstreamID = u.ID
+	av.upstreamName = u.Name
+	av.upstreamHost = sanitizedUpstreamHost(baseURL)
+	av.upstreamMultiplierBP = u.MultiplierBP
 	if strings.TrimSpace(av.acc.UpstreamKey) == "" && u.UpstreamKey != nil {
 		av.acc.UpstreamKey = normalizeUpstreamKey(u.UpstreamKey)
 	}

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -438,6 +439,39 @@ func (f *fakeStore) QueryUsages(ctx context.Context, q repository.UsageQuery) ([
 		model: q.Model, format: q.Format, errorType: q.ErrorType,
 		from: q.From, to: q.To, cursor: q.Cursor, limit: q.Limit,
 	}), nil
+}
+
+func (f *fakeStore) SummarizeUsages(ctx context.Context, q repository.UsageQuery) (*repository.UsageLogsSummary, error) {
+	rows := f.queryLogs(logFilter{
+		groupID: q.GroupID, accountID: q.AccountID, userID: q.UserID, keyID: q.KeyID,
+		model: q.Model, format: q.Format, errorType: q.ErrorType,
+		from: q.From, to: q.To, limit: int(^uint(0) >> 1),
+	})
+	out := &repository.UsageLogsSummary{RequestCount: int64(len(rows))}
+	var upstreamCost, grossProfit int64
+	for _, l := range rows {
+		out.UserCharge += l.Cost
+		if l.UpstreamCost == nil {
+			continue
+		}
+		out.CostedRequestCount++
+		out.AttributedUserCharge += l.Cost
+		upstreamCost += *l.UpstreamCost
+		profit := l.Cost - *l.UpstreamCost
+		grossProfit += profit
+		if profit < 0 {
+			out.LossRequestCount++
+		}
+	}
+	if out.CostedRequestCount > 0 {
+		out.UpstreamCost = &upstreamCost
+		out.GrossProfit = &grossProfit
+	}
+	if out.AttributedUserCharge != 0 {
+		margin := int64(math.Round(float64(grossProfit) * 10000 / float64(out.AttributedUserCharge)))
+		out.ProfitMarginBP = &margin
+	}
+	return out, nil
 }
 
 // QueryErrLogs 模拟 repo 过滤（/err_logs：usage_logs 过滤面 + status_code 专属

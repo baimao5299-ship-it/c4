@@ -64,4 +64,6 @@ func TestUserChannelMonitorReturnsEffectiveModelPrices(t *testing.T) {
 	require.InDelta(t, 0.001, body.Rows[0].PriceMultiplier, 1e-12)
 	require.InDelta(t, 0.001, *body.Rows[0].ModelPrices[0].InputPerM, 1e-12)
 	require.InDelta(t, 0.0025, *body.Rows[0].ModelPrices[0].OutputPerM, 1e-12)
+	require.InDelta(t, 1.0, *body.Rows[0].ModelPrices[0].OfficialInputPerM, 1e-12)
+	require.InDelta(t, 2.5, *body.Rows[0].ModelPrices[0].OfficialOutputPerM, 1e-12)
 }

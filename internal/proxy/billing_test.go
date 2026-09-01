@@ -864,7 +864,7 @@ func TestApplyMultiplierSaturatesExtremeCost(t *testing.T) {
 		{"overflowing product saturates", maxBillingInt64, 100000, maxBillingInt64},
 		{"negative cost is not a credit", -1, 20000, 0},
 		{"invalid negative multiplier is free", 100, -1, 0},
-		{"oversized multiplier is capped", 100, 1_000_000, 1000},
+		{"oversized multiplier is capped at 10x", 100, 1_000_001, 1000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, applyMultiplier(tc.cost, tc.m))

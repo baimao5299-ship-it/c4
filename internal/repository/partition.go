@@ -103,9 +103,16 @@ var usageLogColumnDefs = []string{
 	// 供应商头识别 + RemoteAddr 兜底（proxy.behind_cdn 门控）；NULL 语义 =
 	// Optional（与 ent schema 一致，未 Set 的列不写）。
 	`client_ip text NULL`,
+	`client_ip_source varchar NULL`,
+	`client_ip_trusted boolean NULL`,
 	`group_id bigint NULL`,
 	`account_id bigint NULL`,
 	`template_id bigint NULL`,
+	`target_kind varchar NULL`,
+	`upstream_id bigint NULL`,
+	`upstream_name varchar NULL`,
+	`upstream_host varchar NULL`,
+	`upstream_multiplier_bp integer NULL`,
 	`user_id bigint NULL`,
 	`key_id bigint NULL`,
 	`model varchar NOT NULL DEFAULT ''`,
@@ -136,6 +143,9 @@ var usageLogColumnDefs = []string{
 	// cost=0 但 raw 有值（"实际消耗"可见）；历史行/缺省 = 0（fresh setup
 	// 不迁移）。
 	`raw_cost bigint NOT NULL DEFAULT 0`,
+	`upstream_cost bigint NULL`,
+	`gross_profit bigint NULL`,
+	`profit_margin_bp bigint NULL`,
 	`billing_tier varchar NULL`,
 	`above_hit boolean NOT NULL DEFAULT false`,
 	`overdraft boolean NOT NULL DEFAULT false`,
@@ -147,6 +157,22 @@ var usageLogColumnDefs = []string{
 }
 
 var usageLogCreateDDL = partitionedCreateDDL("usage_logs", "created_at", usageLogColumnDefs)
+
+// These additive upgrades run against the partitioned parent. PostgreSQL
+// propagates each column to existing child partitions; NULL defaults preserve
+// the explicit unknown state for historical rows without a table rewrite.
+var usageLogUpgradeDDLs = []string{
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS client_ip_source varchar NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS client_ip_trusted boolean NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS target_kind varchar NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_id bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_name varchar NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_host varchar NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_multiplier_bp integer NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_cost bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS gross_profit bigint NULL`,
+	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS profit_margin_bp bigint NULL`,
+}
 
 // usageLogIndexDDLs 对齐 ent schema Indexes（同名同列；分区表父表索引为
 // 分区索引，子分区自动继承）。唯一索引含分区键 created_at（分区表硬约束，
@@ -183,9 +209,16 @@ var errLogColumnDefs = []string{
 	// 用户裁决（2026-08-17，S-E）：client_ip 审计列（紧随 request_id）——拒绝行
 	// （401 鉴权失败等）也带（guardPipeline 入口鉴权前提取）；NULL = Optional。
 	`client_ip text NULL`,
+	`client_ip_source varchar NULL`,
+	`client_ip_trusted boolean NULL`,
 	`group_id bigint NULL`,
 	`account_id bigint NULL`,
 	`template_id bigint NULL`,
+	`target_kind varchar NULL`,
+	`upstream_id bigint NULL`,
+	`upstream_name varchar NULL`,
+	`upstream_host varchar NULL`,
+	`upstream_multiplier_bp integer NULL`,
 	`user_id bigint NULL`,
 	`key_id bigint NULL`,
 	`model varchar NOT NULL DEFAULT ''`,
@@ -199,6 +232,16 @@ var errLogColumnDefs = []string{
 }
 
 var errLogCreateDDL = partitionedCreateDDL("err_logs", "created_at", errLogColumnDefs)
+
+var errLogUpgradeDDLs = []string{
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS client_ip_source varchar NULL`,
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS client_ip_trusted boolean NULL`,
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS target_kind varchar NULL`,
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS upstream_id bigint NULL`,
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS upstream_name varchar NULL`,
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS upstream_host varchar NULL`,
+	`ALTER TABLE err_logs ADD COLUMN IF NOT EXISTS upstream_multiplier_bp integer NULL`,
+}
 
 // errLogIndexDDLs 对齐 ent schema Indexes（同名同列；分区表父表索引为分区
 // 索引，子分区自动继承）：created_at 时间窗口查询/清理 + (group_id/user_id,
@@ -469,13 +512,29 @@ func (r *PartitionRepo) ensureTablePartitioned(ctx context.Context, table, parti
 // EnsureUsageLogPartitioned usage_logs 分区 bootstrap（既有 API，见
 // ensureTablePartitioned；分区键 created_at）。
 func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.Time) error {
-	return r.ensureTablePartitioned(ctx, "usage_logs", "created_at", usageLogColumnDefs, usageLogIndexDDLs, now)
+	if err := r.ensureTablePartitioned(ctx, "usage_logs", "created_at", usageLogColumnDefs, usageLogIndexDDLs, now); err != nil {
+		return err
+	}
+	for _, ddl := range usageLogUpgradeDDLs {
+		if err := r.execDDL(ctx, ddl); err != nil {
+			return fmt.Errorf("upgrade usage_logs attribution columns: %w", err)
+		}
+	}
+	return nil
 }
 
 // EnsureErrLogPartitioned err_logs 分区 bootstrap（同路线复用：独立列事实源 +
 // 独立序列 err_logs_id_seq + 独立保留期；分区键 created_at）。
 func (r *PartitionRepo) EnsureErrLogPartitioned(ctx context.Context, now time.Time) error {
-	return r.ensureTablePartitioned(ctx, "err_logs", "created_at", errLogColumnDefs, errLogIndexDDLs, now)
+	if err := r.ensureTablePartitioned(ctx, "err_logs", "created_at", errLogColumnDefs, errLogIndexDDLs, now); err != nil {
+		return err
+	}
+	for _, ddl := range errLogUpgradeDDLs {
+		if err := r.execDDL(ctx, ddl); err != nil {
+			return fmt.Errorf("upgrade err_logs attribution columns: %w", err)
+		}
+	}
+	return nil
 }
 
 // statsAggWatermarkDDL 离线聚合 watermark 单行表（spec 2026-08-14：settings

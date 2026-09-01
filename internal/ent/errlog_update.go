@@ -62,6 +62,46 @@ func (_u *ErrLogUpdate) ClearClientIP() *ErrLogUpdate {
 	return _u
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (_u *ErrLogUpdate) SetClientIPSource(v string) *ErrLogUpdate {
+	_u.mutation.SetClientIPSource(v)
+	return _u
+}
+
+// SetNillableClientIPSource sets the "client_ip_source" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableClientIPSource(v *string) *ErrLogUpdate {
+	if v != nil {
+		_u.SetClientIPSource(*v)
+	}
+	return _u
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (_u *ErrLogUpdate) ClearClientIPSource() *ErrLogUpdate {
+	_u.mutation.ClearClientIPSource()
+	return _u
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (_u *ErrLogUpdate) SetClientIPTrusted(v bool) *ErrLogUpdate {
+	_u.mutation.SetClientIPTrusted(v)
+	return _u
+}
+
+// SetNillableClientIPTrusted sets the "client_ip_trusted" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableClientIPTrusted(v *bool) *ErrLogUpdate {
+	if v != nil {
+		_u.SetClientIPTrusted(*v)
+	}
+	return _u
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (_u *ErrLogUpdate) ClearClientIPTrusted() *ErrLogUpdate {
+	_u.mutation.ClearClientIPTrusted()
+	return _u
+}
+
 // SetGroupID sets the "group_id" field.
 func (_u *ErrLogUpdate) SetGroupID(v int64) *ErrLogUpdate {
 	_u.mutation.ResetGroupID()
@@ -140,6 +180,120 @@ func (_u *ErrLogUpdate) AddTemplateID(v int64) *ErrLogUpdate {
 // ClearTemplateID clears the value of the "template_id" field.
 func (_u *ErrLogUpdate) ClearTemplateID() *ErrLogUpdate {
 	_u.mutation.ClearTemplateID()
+	return _u
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (_u *ErrLogUpdate) SetTargetKind(v string) *ErrLogUpdate {
+	_u.mutation.SetTargetKind(v)
+	return _u
+}
+
+// SetNillableTargetKind sets the "target_kind" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableTargetKind(v *string) *ErrLogUpdate {
+	if v != nil {
+		_u.SetTargetKind(*v)
+	}
+	return _u
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (_u *ErrLogUpdate) ClearTargetKind() *ErrLogUpdate {
+	_u.mutation.ClearTargetKind()
+	return _u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_u *ErrLogUpdate) SetUpstreamID(v int64) *ErrLogUpdate {
+	_u.mutation.ResetUpstreamID()
+	_u.mutation.SetUpstreamID(v)
+	return _u
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableUpstreamID(v *int64) *ErrLogUpdate {
+	if v != nil {
+		_u.SetUpstreamID(*v)
+	}
+	return _u
+}
+
+// AddUpstreamID adds value to the "upstream_id" field.
+func (_u *ErrLogUpdate) AddUpstreamID(v int64) *ErrLogUpdate {
+	_u.mutation.AddUpstreamID(v)
+	return _u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (_u *ErrLogUpdate) ClearUpstreamID() *ErrLogUpdate {
+	_u.mutation.ClearUpstreamID()
+	return _u
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (_u *ErrLogUpdate) SetUpstreamName(v string) *ErrLogUpdate {
+	_u.mutation.SetUpstreamName(v)
+	return _u
+}
+
+// SetNillableUpstreamName sets the "upstream_name" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableUpstreamName(v *string) *ErrLogUpdate {
+	if v != nil {
+		_u.SetUpstreamName(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (_u *ErrLogUpdate) ClearUpstreamName() *ErrLogUpdate {
+	_u.mutation.ClearUpstreamName()
+	return _u
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (_u *ErrLogUpdate) SetUpstreamHost(v string) *ErrLogUpdate {
+	_u.mutation.SetUpstreamHost(v)
+	return _u
+}
+
+// SetNillableUpstreamHost sets the "upstream_host" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableUpstreamHost(v *string) *ErrLogUpdate {
+	if v != nil {
+		_u.SetUpstreamHost(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (_u *ErrLogUpdate) ClearUpstreamHost() *ErrLogUpdate {
+	_u.mutation.ClearUpstreamHost()
+	return _u
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (_u *ErrLogUpdate) SetUpstreamMultiplierBp(v int) *ErrLogUpdate {
+	_u.mutation.ResetUpstreamMultiplierBp()
+	_u.mutation.SetUpstreamMultiplierBp(v)
+	return _u
+}
+
+// SetNillableUpstreamMultiplierBp sets the "upstream_multiplier_bp" field if the given value is not nil.
+func (_u *ErrLogUpdate) SetNillableUpstreamMultiplierBp(v *int) *ErrLogUpdate {
+	if v != nil {
+		_u.SetUpstreamMultiplierBp(*v)
+	}
+	return _u
+}
+
+// AddUpstreamMultiplierBp adds value to the "upstream_multiplier_bp" field.
+func (_u *ErrLogUpdate) AddUpstreamMultiplierBp(v int) *ErrLogUpdate {
+	_u.mutation.AddUpstreamMultiplierBp(v)
+	return _u
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (_u *ErrLogUpdate) ClearUpstreamMultiplierBp() *ErrLogUpdate {
+	_u.mutation.ClearUpstreamMultiplierBp()
 	return _u
 }
 
@@ -398,6 +552,18 @@ func (_u *ErrLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.ClientIPCleared() {
 		_spec.ClearField(errlog.FieldClientIP, field.TypeString)
 	}
+	if value, ok := _u.mutation.ClientIPSource(); ok {
+		_spec.SetField(errlog.FieldClientIPSource, field.TypeString, value)
+	}
+	if _u.mutation.ClientIPSourceCleared() {
+		_spec.ClearField(errlog.FieldClientIPSource, field.TypeString)
+	}
+	if value, ok := _u.mutation.ClientIPTrusted(); ok {
+		_spec.SetField(errlog.FieldClientIPTrusted, field.TypeBool, value)
+	}
+	if _u.mutation.ClientIPTrustedCleared() {
+		_spec.ClearField(errlog.FieldClientIPTrusted, field.TypeBool)
+	}
 	if value, ok := _u.mutation.GroupID(); ok {
 		_spec.SetField(errlog.FieldGroupID, field.TypeInt64, value)
 	}
@@ -424,6 +590,42 @@ func (_u *ErrLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.TemplateIDCleared() {
 		_spec.ClearField(errlog.FieldTemplateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.TargetKind(); ok {
+		_spec.SetField(errlog.FieldTargetKind, field.TypeString, value)
+	}
+	if _u.mutation.TargetKindCleared() {
+		_spec.ClearField(errlog.FieldTargetKind, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamID(); ok {
+		_spec.SetField(errlog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamID(); ok {
+		_spec.AddField(errlog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if _u.mutation.UpstreamIDCleared() {
+		_spec.ClearField(errlog.FieldUpstreamID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpstreamName(); ok {
+		_spec.SetField(errlog.FieldUpstreamName, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamNameCleared() {
+		_spec.ClearField(errlog.FieldUpstreamName, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamHost(); ok {
+		_spec.SetField(errlog.FieldUpstreamHost, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamHostCleared() {
+		_spec.ClearField(errlog.FieldUpstreamHost, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamMultiplierBp(); ok {
+		_spec.SetField(errlog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamMultiplierBp(); ok {
+		_spec.AddField(errlog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamMultiplierBpCleared() {
+		_spec.ClearField(errlog.FieldUpstreamMultiplierBp, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserID(); ok {
 		_spec.SetField(errlog.FieldUserID, field.TypeInt64, value)
@@ -533,6 +735,46 @@ func (_u *ErrLogUpdateOne) ClearClientIP() *ErrLogUpdateOne {
 	return _u
 }
 
+// SetClientIPSource sets the "client_ip_source" field.
+func (_u *ErrLogUpdateOne) SetClientIPSource(v string) *ErrLogUpdateOne {
+	_u.mutation.SetClientIPSource(v)
+	return _u
+}
+
+// SetNillableClientIPSource sets the "client_ip_source" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableClientIPSource(v *string) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetClientIPSource(*v)
+	}
+	return _u
+}
+
+// ClearClientIPSource clears the value of the "client_ip_source" field.
+func (_u *ErrLogUpdateOne) ClearClientIPSource() *ErrLogUpdateOne {
+	_u.mutation.ClearClientIPSource()
+	return _u
+}
+
+// SetClientIPTrusted sets the "client_ip_trusted" field.
+func (_u *ErrLogUpdateOne) SetClientIPTrusted(v bool) *ErrLogUpdateOne {
+	_u.mutation.SetClientIPTrusted(v)
+	return _u
+}
+
+// SetNillableClientIPTrusted sets the "client_ip_trusted" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableClientIPTrusted(v *bool) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetClientIPTrusted(*v)
+	}
+	return _u
+}
+
+// ClearClientIPTrusted clears the value of the "client_ip_trusted" field.
+func (_u *ErrLogUpdateOne) ClearClientIPTrusted() *ErrLogUpdateOne {
+	_u.mutation.ClearClientIPTrusted()
+	return _u
+}
+
 // SetGroupID sets the "group_id" field.
 func (_u *ErrLogUpdateOne) SetGroupID(v int64) *ErrLogUpdateOne {
 	_u.mutation.ResetGroupID()
@@ -611,6 +853,120 @@ func (_u *ErrLogUpdateOne) AddTemplateID(v int64) *ErrLogUpdateOne {
 // ClearTemplateID clears the value of the "template_id" field.
 func (_u *ErrLogUpdateOne) ClearTemplateID() *ErrLogUpdateOne {
 	_u.mutation.ClearTemplateID()
+	return _u
+}
+
+// SetTargetKind sets the "target_kind" field.
+func (_u *ErrLogUpdateOne) SetTargetKind(v string) *ErrLogUpdateOne {
+	_u.mutation.SetTargetKind(v)
+	return _u
+}
+
+// SetNillableTargetKind sets the "target_kind" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableTargetKind(v *string) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetTargetKind(*v)
+	}
+	return _u
+}
+
+// ClearTargetKind clears the value of the "target_kind" field.
+func (_u *ErrLogUpdateOne) ClearTargetKind() *ErrLogUpdateOne {
+	_u.mutation.ClearTargetKind()
+	return _u
+}
+
+// SetUpstreamID sets the "upstream_id" field.
+func (_u *ErrLogUpdateOne) SetUpstreamID(v int64) *ErrLogUpdateOne {
+	_u.mutation.ResetUpstreamID()
+	_u.mutation.SetUpstreamID(v)
+	return _u
+}
+
+// SetNillableUpstreamID sets the "upstream_id" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableUpstreamID(v *int64) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamID(*v)
+	}
+	return _u
+}
+
+// AddUpstreamID adds value to the "upstream_id" field.
+func (_u *ErrLogUpdateOne) AddUpstreamID(v int64) *ErrLogUpdateOne {
+	_u.mutation.AddUpstreamID(v)
+	return _u
+}
+
+// ClearUpstreamID clears the value of the "upstream_id" field.
+func (_u *ErrLogUpdateOne) ClearUpstreamID() *ErrLogUpdateOne {
+	_u.mutation.ClearUpstreamID()
+	return _u
+}
+
+// SetUpstreamName sets the "upstream_name" field.
+func (_u *ErrLogUpdateOne) SetUpstreamName(v string) *ErrLogUpdateOne {
+	_u.mutation.SetUpstreamName(v)
+	return _u
+}
+
+// SetNillableUpstreamName sets the "upstream_name" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableUpstreamName(v *string) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamName(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamName clears the value of the "upstream_name" field.
+func (_u *ErrLogUpdateOne) ClearUpstreamName() *ErrLogUpdateOne {
+	_u.mutation.ClearUpstreamName()
+	return _u
+}
+
+// SetUpstreamHost sets the "upstream_host" field.
+func (_u *ErrLogUpdateOne) SetUpstreamHost(v string) *ErrLogUpdateOne {
+	_u.mutation.SetUpstreamHost(v)
+	return _u
+}
+
+// SetNillableUpstreamHost sets the "upstream_host" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableUpstreamHost(v *string) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamHost(*v)
+	}
+	return _u
+}
+
+// ClearUpstreamHost clears the value of the "upstream_host" field.
+func (_u *ErrLogUpdateOne) ClearUpstreamHost() *ErrLogUpdateOne {
+	_u.mutation.ClearUpstreamHost()
+	return _u
+}
+
+// SetUpstreamMultiplierBp sets the "upstream_multiplier_bp" field.
+func (_u *ErrLogUpdateOne) SetUpstreamMultiplierBp(v int) *ErrLogUpdateOne {
+	_u.mutation.ResetUpstreamMultiplierBp()
+	_u.mutation.SetUpstreamMultiplierBp(v)
+	return _u
+}
+
+// SetNillableUpstreamMultiplierBp sets the "upstream_multiplier_bp" field if the given value is not nil.
+func (_u *ErrLogUpdateOne) SetNillableUpstreamMultiplierBp(v *int) *ErrLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamMultiplierBp(*v)
+	}
+	return _u
+}
+
+// AddUpstreamMultiplierBp adds value to the "upstream_multiplier_bp" field.
+func (_u *ErrLogUpdateOne) AddUpstreamMultiplierBp(v int) *ErrLogUpdateOne {
+	_u.mutation.AddUpstreamMultiplierBp(v)
+	return _u
+}
+
+// ClearUpstreamMultiplierBp clears the value of the "upstream_multiplier_bp" field.
+func (_u *ErrLogUpdateOne) ClearUpstreamMultiplierBp() *ErrLogUpdateOne {
+	_u.mutation.ClearUpstreamMultiplierBp()
 	return _u
 }
 
@@ -899,6 +1255,18 @@ func (_u *ErrLogUpdateOne) sqlSave(ctx context.Context) (_node *ErrLog, err erro
 	if _u.mutation.ClientIPCleared() {
 		_spec.ClearField(errlog.FieldClientIP, field.TypeString)
 	}
+	if value, ok := _u.mutation.ClientIPSource(); ok {
+		_spec.SetField(errlog.FieldClientIPSource, field.TypeString, value)
+	}
+	if _u.mutation.ClientIPSourceCleared() {
+		_spec.ClearField(errlog.FieldClientIPSource, field.TypeString)
+	}
+	if value, ok := _u.mutation.ClientIPTrusted(); ok {
+		_spec.SetField(errlog.FieldClientIPTrusted, field.TypeBool, value)
+	}
+	if _u.mutation.ClientIPTrustedCleared() {
+		_spec.ClearField(errlog.FieldClientIPTrusted, field.TypeBool)
+	}
 	if value, ok := _u.mutation.GroupID(); ok {
 		_spec.SetField(errlog.FieldGroupID, field.TypeInt64, value)
 	}
@@ -925,6 +1293,42 @@ func (_u *ErrLogUpdateOne) sqlSave(ctx context.Context) (_node *ErrLog, err erro
 	}
 	if _u.mutation.TemplateIDCleared() {
 		_spec.ClearField(errlog.FieldTemplateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.TargetKind(); ok {
+		_spec.SetField(errlog.FieldTargetKind, field.TypeString, value)
+	}
+	if _u.mutation.TargetKindCleared() {
+		_spec.ClearField(errlog.FieldTargetKind, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamID(); ok {
+		_spec.SetField(errlog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamID(); ok {
+		_spec.AddField(errlog.FieldUpstreamID, field.TypeInt64, value)
+	}
+	if _u.mutation.UpstreamIDCleared() {
+		_spec.ClearField(errlog.FieldUpstreamID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpstreamName(); ok {
+		_spec.SetField(errlog.FieldUpstreamName, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamNameCleared() {
+		_spec.ClearField(errlog.FieldUpstreamName, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamHost(); ok {
+		_spec.SetField(errlog.FieldUpstreamHost, field.TypeString, value)
+	}
+	if _u.mutation.UpstreamHostCleared() {
+		_spec.ClearField(errlog.FieldUpstreamHost, field.TypeString)
+	}
+	if value, ok := _u.mutation.UpstreamMultiplierBp(); ok {
+		_spec.SetField(errlog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamMultiplierBp(); ok {
+		_spec.AddField(errlog.FieldUpstreamMultiplierBp, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamMultiplierBpCleared() {
+		_spec.ClearField(errlog.FieldUpstreamMultiplierBp, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserID(); ok {
 		_spec.SetField(errlog.FieldUserID, field.TypeInt64, value)

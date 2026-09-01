@@ -123,6 +123,7 @@ export interface UsageLogParams {
 export interface ErrLogParams extends UsageLogParams {
   status_code?: number
 }
+export type UsageLogSummaryParams = Omit<UsageLogParams, 'limit' | 'cursor'>
 // 用户端无 user_id 过滤（服务端强制本人），也无 account_id（用户级契约不含该参数）
 export type MyUsageLogParams = Omit<UsageLogParams, 'user_id' | 'account_id'>
 export type MyErrLogParams = Omit<ErrLogParams, 'user_id' | 'account_id'>
@@ -256,6 +257,7 @@ export class ApiClient {
   deleteRulesBatch = (ids: number[]) => this.request<components['schemas']['BatchDeleteResponse']>('/rules/batch-delete', { method: 'POST', body: JSON.stringify({ ids }) })
   // —— 日志 / 统计 ——
   getUsageLogs = (p: UsageLogParams) => this.request<components['schemas']['LogsResponse']>('/usage_logs', { params: toQuery(p) })
+  getUsageLogsSummary = (p: UsageLogSummaryParams) => this.request<components['schemas']['UsageLogsSummary']>('/usage_logs/summary', { params: toQuery(p) })
   getErrLogs = (p: ErrLogParams) => this.request<components['schemas']['ErrLogsResponse']>('/err_logs', { params: toQuery(p) })
   // —— 统计 v2 ——
   getStatsTrend = (p: { from: string; to: string; granularity: 'hour' | 'day'; group_id?: number; model?: string }) =>

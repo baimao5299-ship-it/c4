@@ -65,6 +65,36 @@ func TestPGScanUsageAgg(t *testing.T) {
 	require.Empty(t, empty)
 }
 
+// TestPGScanUsageAggSaturatesInt64Aggregates keeps the account usage endpoint
+// usable when individually valid bigint ledger rows add up beyond int64. The
+// API exposes int64 counters, so the repository must clamp each numeric sum
+// before scanning it rather than letting PostgreSQL reject the aggregate cast.
+func TestPGScanUsageAggSaturatesInt64Aggregates(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	tpl := seedPGTemplate(t, repos)
+	account := seedPGAccount(t, repos, tpl.ID, "agg-extreme")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	from, to := now.Add(-time.Minute), now.Add(time.Minute)
+	minInt64 := int64(-1 << 63)
+	maxInt64 := int64(1<<63 - 1)
+	require.NoError(t, repos.Usages.InsertBatch(ctx, []*domain.UsageLog{
+		{RequestID: "agg-extreme-1", AccountID: account.ID, Model: "m", Format: domain.FormatOpenAIChat,
+			ErrorType: domain.ErrNone, Cost: maxInt64, RawCost: minInt64, TotalTokens: maxInt64, CreatedAt: now},
+		{RequestID: "agg-extreme-2", AccountID: account.ID, Model: "m", Format: domain.FormatOpenAIChat,
+			ErrorType: domain.ErrNone, Cost: maxInt64, RawCost: minInt64, TotalTokens: maxInt64, CreatedAt: now},
+	}))
+
+	aggs, err := repos.ScanUsageAgg(ctx, []int64{account.ID}, from, to)
+	require.NoError(t, err)
+	agg := aggs[account.ID]
+	require.NotNil(t, agg)
+	require.Equal(t, int64(2), agg.Requests)
+	require.Equal(t, maxInt64, agg.Cost, "cost sum clamps to MaxInt64")
+	require.Equal(t, minInt64, agg.RawCost, "raw cost sum clamps to MinInt64")
+	require.Equal(t, maxInt64, agg.TotalTokens, "token sum clamps to MaxInt64")
+}
+
 // TestPGScanUsageAggPartitionPruning 分区剪枝命中（验收）：created_at 半开区间
 // 谓词在计划期裁剪到当日分区——EXPLAIN 命中关系仅当日分区（无其他分区无父表
 // 全扫；时间窗完全落在当日分区内 → 单分区）。种子 5000 行 + ANALYZE 防计划
