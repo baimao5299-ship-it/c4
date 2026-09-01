@@ -420,13 +420,18 @@ func TestSyncDoesNotOverwriteManualPriceVariants(t *testing.T) {
 		},
 	}}
 	u := &fakeUpserter{n: 1, nVar: 1, manualModels: []string{"manual"}}
-	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
+	reconciler := &fakeReconciler{}
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Reconcile: reconciler, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
 
 	require.NoError(t, w.Sync(context.Background()))
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	require.Len(t, u.varRows, 1)
 	require.Equal(t, "automatic", u.varRows[0].Model)
+	reconciler.mu.Lock()
+	defer reconciler.mu.Unlock()
+	require.Equal(t, []string{"automatic"}, reconciler.variantModels,
+		"manual models filtered from variant writes must also be absent from reconciliation")
 }
 
 func TestSyncSkipsVariantsWhenManualLookupFails(t *testing.T) {

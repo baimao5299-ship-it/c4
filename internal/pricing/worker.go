@@ -159,6 +159,7 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 		var writeErr error
 		n, writeErr = w.repo.UpsertPriceEntriesFromLiteLLM(ctx, res.PriceEntries)
 		variants := res.Variants
+		variantModels := make([]string, 0, len(variants))
 		// A manual entry owns both its base price and its conditional variants.
 		// The repository's base upsert already excludes manual rows, but variant
 		// upserts are a separate operation and need the same guard.  If the
@@ -197,18 +198,17 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 				writeErr = varErr
 			}
 		}
+		for _, variant := range variants {
+			if variant != nil {
+				variantModels = append(variantModels, variant.Model)
+			}
+		}
 		// Reconcile whenever the source document contains at least one model
 		// key. Models is captured before parsing, so Skipped may include legal
 		// no-price entries and is intentionally informational rather than a
 		// completeness gate. An empty source remains protected from pruning.
 		models := snapshotModels(res)
 		if writeErr == nil && w.reconcile != nil && hasSnapshotModels(models) {
-			variantModels := make([]string, 0, len(res.Variants))
-			for _, variant := range res.Variants {
-				if variant != nil {
-					variantModels = append(variantModels, variant.Model)
-				}
-			}
 			if _, reconcileErr := w.reconcile.ReconcileLiteLLMSnapshot(ctx, models, variantModels); reconcileErr != nil {
 				writeErr = reconcileErr
 			}

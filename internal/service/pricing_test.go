@@ -112,6 +112,31 @@ func TestSyncPricingUsesSourceModelsForSnapshotCompleteness(t *testing.T) {
 	require.Equal(t, []string{"metadata-only", "priced"}, store.models)
 }
 
+func TestSyncPricingReconcilesOnlyNonManualVariantModels(t *testing.T) {
+	store := &fakePricingSnapshotStore{fakeStore: newFakeStore()}
+	store.priceEntries["manual"] = &domain.PriceEntry{
+		Model: "manual", Mode: domain.PriceModeToken, Source: domain.PricingSourceManual,
+		InputPerM: int64Ptr(100), OutputPerM: int64Ptr(200),
+	}
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	require.NoError(t, svc.ReloadPricingCtx(context.Background()))
+	svc.SetPriceFetcher(&fakePriceFetcher{res: &pricing.FetchResult{
+		Models: []string{"manual", "automatic"},
+		PriceEntries: []*domain.PriceEntry{
+			{Model: "manual", Mode: domain.PriceModeToken, Source: domain.PricingSourceLitellm, InputPerM: int64Ptr(300), OutputPerM: int64Ptr(400)},
+			{Model: "automatic", Mode: domain.PriceModeToken, Source: domain.PricingSourceLitellm, InputPerM: int64Ptr(500), OutputPerM: int64Ptr(600)},
+		},
+		Variants: []*domain.PriceVariant{{Model: "manual", Seq: 1}, {Model: "automatic", Seq: 1}},
+	}})
+
+	_, err = svc.SyncPricingNow(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"automatic"}, store.variantModels,
+		"manual models filtered from variant writes must also be absent from reconciliation")
+}
+
 func TestSyncPricingSerializesFetchAndPreventsOverlap(t *testing.T) {
 	store := newFakeStore()
 	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")

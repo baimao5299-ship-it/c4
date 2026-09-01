@@ -644,9 +644,10 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 		s.reloadPricingUnlocked(ctx)
 		return nil, err
 	}
+	variantModels := make([]string, 0, len(res.Variants))
 	if len(res.Variants) > 0 {
 		// Keep the fetched slice immutable while filtering manual rows; the
-		// original model list is also used for snapshot reconciliation below.
+		// filtered model list is also used for snapshot reconciliation below.
 		filtered := append([]*domain.PriceVariant(nil), res.Variants...)
 		manualModels, merr := s.store.ManualEntryModels(ctx)
 		if merr != nil {
@@ -679,6 +680,11 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 				err = verr
 			}
 		}
+		for _, variant := range filtered {
+			if variant != nil {
+				variantModels = append(variantModels, variant.Model)
+			}
+		}
 	}
 	// Reconcile whenever the source document contains at least one model key.
 	// FetchResult.Models is captured before parsing, so Skipped may include legal
@@ -689,12 +695,6 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 		if reconciler, ok := s.store.(pricing.SnapshotReconciler); ok {
 			models := sourceSnapshotModels(res)
 			if lenNonBlankModels(models) > 0 {
-				variantModels := make([]string, 0, len(res.Variants))
-				for _, variant := range res.Variants {
-					if variant != nil {
-						variantModels = append(variantModels, variant.Model)
-					}
-				}
 				if _, reconcileErr := reconciler.ReconcileLiteLLMSnapshot(ctx, models, variantModels); reconcileErr != nil {
 					err = reconcileErr
 				}
