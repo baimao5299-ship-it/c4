@@ -75,6 +75,25 @@ type fakeReconciler struct {
 	err           error
 }
 
+type fakeSnapshotApplier struct {
+	*fakeUpserter
+	calls      int
+	entries    []*domain.PriceEntry
+	variants   []*domain.PriceVariant
+	models     []string
+	applyErr   error
+	updated    int
+	varUpdated int
+}
+
+func (a *fakeSnapshotApplier) ApplyLiteLLMSnapshot(_ context.Context, entries []*domain.PriceEntry, variants []*domain.PriceVariant, models []string) (int, int, error) {
+	a.calls++
+	a.entries = append([]*domain.PriceEntry(nil), entries...)
+	a.variants = append([]*domain.PriceVariant(nil), variants...)
+	a.models = append([]string(nil), models...)
+	return a.updated, a.varUpdated, a.applyErr
+}
+
 func (r *fakeReconciler) ReconcileLiteLLMSnapshot(_ context.Context, models, variantModels []string) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -316,8 +335,8 @@ func TestSyncDoesNotReconcilePartialSnapshot(t *testing.T) {
 }
 
 func TestSyncReconcilesSnapshotWithSkippedNoPriceRows(t *testing.T) {
-	// Skipped is an informational count: the source still contains a complete
-	// model key set, including legal metadata-only rows with no billable price.
+	// Parse is authoritative even when it skips metadata-only rows. Reconcile
+	// only the billable set so a previous price for metadata-only is removed.
 	f := &fakeFetcher{result: &FetchResult{
 		Models:       []string{"metadata-only", "priced"},
 		PriceEntries: []*domain.PriceEntry{{Model: "priced"}},
@@ -328,10 +347,52 @@ func TestSyncReconcilesSnapshotWithSkippedNoPriceRows(t *testing.T) {
 	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Reconcile: reconciler, Settings: &fakeSettings{url: "https://u"}, Reload: func() {}, Log: nil})
 
 	require.NoError(t, w.Sync(context.Background()))
-	require.Equal(t, 1, reconciler.count(), "a non-empty source key set is a complete snapshot even when rows are skipped")
+	require.Equal(t, 1, reconciler.count(), "a parsed source remains authoritative when rows are skipped")
 	reconciler.mu.Lock()
 	defer reconciler.mu.Unlock()
-	require.Equal(t, []string{"metadata-only", "priced"}, reconciler.models)
+	require.Equal(t, []string{"priced"}, reconciler.models)
+}
+
+func TestSyncUsesAtomicSnapshotApplier(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{
+		Models:       []string{"metadata-only", "priced"},
+		PriceEntries: []*domain.PriceEntry{{Model: "priced", Mode: domain.PriceModeToken}},
+		Variants:     []*domain.PriceVariant{{Model: "priced", Seq: 1}},
+		Skipped:      1,
+	}}
+	a := &fakeSnapshotApplier{fakeUpserter: &fakeUpserter{}, updated: 1, varUpdated: 1}
+	reloads := 0
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: a, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }})
+
+	require.NoError(t, w.Sync(context.Background()))
+	require.Equal(t, 1, a.calls)
+	require.Equal(t, []string{"priced"}, a.models)
+	require.Zero(t, a.fakeUpserter.count(), "atomic production path bypasses legacy partial upserts")
+	require.Equal(t, 1, reloads)
+}
+
+func TestSyncAtomicSnapshotFailureKeepsPublishedSnapshot(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{
+		Models:       []string{"priced"},
+		PriceEntries: []*domain.PriceEntry{{Model: "priced", Mode: domain.PriceModeToken}},
+	}}
+	a := &fakeSnapshotApplier{fakeUpserter: &fakeUpserter{}, applyErr: errors.New("transaction rolled back")}
+	reloads := 0
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: a, Settings: &fakeSettings{url: "https://u"}, Reload: func() { reloads++ }})
+
+	require.Error(t, w.Sync(context.Background()))
+	require.Equal(t, 1, a.calls)
+	require.Zero(t, reloads)
+}
+
+func TestSyncRejectsNonEmptySourceWithoutBillablePrices(t *testing.T) {
+	f := &fakeFetcher{result: &FetchResult{Models: []string{"metadata-only"}, Skipped: 1}}
+	u := &fakeUpserter{}
+	w := NewSyncWorker(SyncWorkerConfig{Fetcher: f, Repo: u, Settings: &fakeSettings{url: "https://u"}})
+
+	err := w.Sync(context.Background())
+	require.ErrorContains(t, err, "no supported billable prices")
+	require.Zero(t, u.count())
 }
 
 func TestSyncDoesNotReconcileExplicitEmptySnapshot(t *testing.T) {
@@ -390,7 +451,9 @@ func TestSyncFetchFailureKeepsOldPrices(t *testing.T) {
 }
 
 func TestSyncPartialUpsertErrorStillReloads(t *testing.T) {
-	// 仓库部分成功（分批独立事务）仍返回错误：已落库的批立即生效 → 刷新快照。
+	// Legacy repositories can still partially persist a batch, but publishing
+	// that mixed state would make runtime billing inconsistent. Keep the last
+	// known in-memory snapshot until a complete retry succeeds.
 	f := &fakeFetcher{result: &FetchResult{PriceEntries: []*domain.PriceEntry{{Model: "m"}}}}
 	u := &fakeUpserter{n: 100, err: errors.New("batch 2 failed")}
 	reloads := 0
@@ -398,7 +461,7 @@ func TestSyncPartialUpsertErrorStillReloads(t *testing.T) {
 
 	err := w.Sync(context.Background())
 	require.Error(t, err, "部分失败错误透传（调用方告警）")
-	require.Equal(t, 1, reloads, "部分落库仍刷新快照")
+	require.Zero(t, reloads, "部分落库不发布混合快照")
 }
 
 // TestSyncVariantLine 变体行独立落库
@@ -447,7 +510,7 @@ func TestSyncSkipsVariantsWhenManualLookupFails(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "list manual price entries")
 	require.Zero(t, u.variantCount(), "a failed manual lookup must not overwrite variants")
-	require.Equal(t, 1, reloads, "base rows may have been upserted and snapshot still refreshes")
+	require.Zero(t, reloads, "failed sync must retain the last published snapshot")
 }
 
 // --- cron 循环 ---

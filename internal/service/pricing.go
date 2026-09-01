@@ -639,9 +639,24 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 		return nil, fmt.Errorf("%w: %w", ErrPriceFetch, err)
 	}
 	entries := res.PriceEntries
+	models, authoritative := pricing.SnapshotPriceModels(res)
+	sourceHasModels := res.Models != nil && lenNonBlankModels(res.Models) > 0
+	if authoritative && sourceHasModels && len(models) == 0 {
+		return nil, fmt.Errorf("%w: source contains models but no supported billable prices", ErrPriceFetch)
+	}
+	if res.Models != nil && !sourceHasModels {
+		return &PricingSyncStats{}, nil
+	}
+	if applier, ok := s.store.(pricing.SnapshotApplier); ok && authoritative && len(models) > 0 {
+		n, _, applyErr := applier.ApplyLiteLLMSnapshot(ctx, entries, res.Variants, models)
+		if applyErr != nil {
+			return nil, applyErr
+		}
+		s.reloadPricingUnlocked(ctx)
+		return &PricingSyncStats{Rows: len(entries), Skipped: res.Skipped, Updated: n, Variants: len(res.Variants)}, nil
+	}
 	n, err := s.store.UpsertPriceEntriesFromLiteLLM(ctx, entries)
 	if err != nil {
-		s.reloadPricingUnlocked(ctx)
 		return nil, err
 	}
 	variantModels := make([]string, 0, len(res.Variants))
@@ -686,14 +701,10 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 			}
 		}
 	}
-	// Reconcile whenever the source document contains at least one model key.
-	// FetchResult.Models is captured before parsing, so Skipped may include legal
-	// no-price entries and is intentionally informational rather than a
-	// completeness gate. Empty fetches are retained as-is so a transient blank
-	// response cannot remove the last known official prices.
-	if err == nil {
+	// Reconcile only an authoritative set of billable rows. A source key whose
+	// price became malformed or unsupported must not retain its old price.
+	if err == nil && authoritative {
 		if reconciler, ok := s.store.(pricing.SnapshotReconciler); ok {
-			models := sourceSnapshotModels(res)
 			if lenNonBlankModels(models) > 0 {
 				if _, reconcileErr := reconciler.ReconcileLiteLLMSnapshot(ctx, models, variantModels); reconcileErr != nil {
 					err = reconcileErr
@@ -701,36 +712,11 @@ func (s *Service) SyncPricingNow(ctx context.Context) (*PricingSyncStats, error)
 			}
 		}
 	}
-	s.reloadPricingUnlocked(ctx)
 	if err != nil {
 		return nil, err
 	}
+	s.reloadPricingUnlocked(ctx)
 	return &PricingSyncStats{Rows: len(entries), Skipped: res.Skipped, Updated: n, Variants: len(res.Variants)}, nil
-}
-
-// sourceSnapshotModels returns the source key set captured by Parse. The
-// fallback preserves compatibility with Fetcher implementations written before
-// FetchResult.Models was added; Parse always supplies the authoritative list.
-func sourceSnapshotModels(res *pricing.FetchResult) []string {
-	if res == nil {
-		return nil
-	}
-	if res.Models != nil {
-		return res.Models
-	}
-	// Fetchers compiled before Models was added cannot provide a source key set.
-	// Preserve their historical partial-fetch guard; Parse always initializes
-	// Models, including an explicit empty slice.
-	if res.Skipped != 0 {
-		return nil
-	}
-	models := make([]string, 0, len(res.PriceEntries))
-	for _, entry := range res.PriceEntries {
-		if entry != nil {
-			models = append(models, entry.Model)
-		}
-	}
-	return models
 }
 
 func lenNonBlankModels(models []string) int {

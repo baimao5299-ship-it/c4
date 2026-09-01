@@ -32,9 +32,9 @@ type FetchResult struct {
 	Variants     []*domain.PriceVariant
 	// Models contains every model key present in the source document, including
 	// entries that have no billable price and are therefore counted in Skipped.
-	// Keeping the source key set separate from parsed price rows lets syncs
-	// reconcile a complete catalogue without treating legitimate no-price rows
-	// as a partial fetch.
+	// Keeping source keys separate from parsed price rows distinguishes a complete
+	// document with unsupported rows from a legacy partial Fetcher result. Stale
+	// price reconciliation itself uses SnapshotPriceModels below.
 	Models  []string
 	Skipped int
 }
@@ -121,20 +121,38 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("pricing: parse price table: %w", err)
 	}
+	// Provider model identifiers never need surrounding whitespace. Normalize
+	// them before parsing/persistence so a malformed source cannot create two
+	// database rows that later collapse to one runtime lookup key. A collision
+	// after trimming is rejected rather than resolved by map iteration order.
+	normalized := make(map[string]json.RawMessage, len(raw))
+	skipped := 0
+	for sourceModel, entry := range raw {
+		model := strings.TrimSpace(sourceModel)
+		if model == "" {
+			skipped++
+			continue
+		}
+		if _, exists := normalized[model]; exists {
+			return nil, fmt.Errorf("pricing: duplicate model after trimming: %q", model)
+		}
+		normalized[model] = entry
+	}
 	// JSON objects are unordered. Keep the result stable so sync previews,
 	// deterministic tests, and UI progress do not reshuffle on every refresh.
-	models := make([]string, 0, len(raw))
-	for model := range raw {
+	models := make([]string, 0, len(normalized))
+	for model := range normalized {
 		models = append(models, model)
 	}
 	sort.Strings(models)
 	res := &FetchResult{
-		PriceEntries: make([]*domain.PriceEntry, 0, len(raw)),
+		PriceEntries: make([]*domain.PriceEntry, 0, len(normalized)),
 		Variants:     make([]*domain.PriceVariant, 0),
 		Models:       models,
+		Skipped:      skipped,
 	}
 	for _, model := range models {
-		entry := raw[model]
+		entry := normalized[model]
 		if pe2, ok2 := parseImagePriceEntry(model, entry); ok2 {
 			res.PriceEntries = append(res.PriceEntries, pe2)
 			continue
@@ -155,6 +173,43 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 		res.Skipped++
 	}
 	return res, nil
+}
+
+// SnapshotPriceModels returns the normalized model set whose price rows can be
+// represented and billed by C4. The boolean reports whether that set is an
+// authoritative snapshot: Parse always supplies Models, while legacy Fetcher
+// implementations without Models are authoritative only when they did not
+// report skipped rows.
+//
+// Reconciliation must use this set rather than every source key. Keeping a
+// source key that no longer has a parseable price would otherwise preserve its
+// previous database row forever and continue billing at a stale price.
+func SnapshotPriceModels(res *FetchResult) ([]string, bool) {
+	if res == nil {
+		return nil, false
+	}
+	authoritative := res.Models != nil || res.Skipped == 0
+	if !authoritative {
+		return nil, false
+	}
+	seen := make(map[string]struct{}, len(res.PriceEntries))
+	models := make([]string, 0, len(res.PriceEntries))
+	for _, entry := range res.PriceEntries {
+		if entry == nil {
+			continue
+		}
+		model := strings.TrimSpace(entry.Model)
+		if model == "" {
+			continue
+		}
+		if _, exists := seen[model]; exists {
+			continue
+		}
+		seen[model] = struct{}{}
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	return models, true
 }
 
 func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*domain.PriceEntry, []*domain.PriceVariant, bool) {
@@ -330,15 +385,7 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 		}
 	}
 	if e.ProviderSpecificEntry != nil && e.ProviderSpecificEntry.Fast != nil {
-		v := e.ProviderSpecificEntry.Fast
-		if !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v >= 0 {
-			f := *v * 1e4
-			var m int
-			if !math.IsInf(f, 0) && f <= 100000 {
-				m = int(math.Round(f))
-			} else {
-				m = 100000
-			}
+		if m, ok := providerFastMultiplierBP(e.ProviderSpecificEntry.Fast); ok {
 			st := "fast"
 			vars = append(vars, &domain.PriceVariant{Model: model, Seq: seq, ServiceTier: &st, MultBP: &m})
 			seq++
@@ -346,6 +393,24 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 	}
 	vars = orderGeneratedVariants(vars)
 	return pe, vars, true
+}
+
+func providerFastMultiplierBP(value *float64) (int, bool) {
+	if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) || *value <= 0 || *value > 10 {
+		return 0, false
+	}
+	scaled := *value * 1e4
+	if math.IsNaN(scaled) || math.IsInf(scaled, 0) {
+		return 0, false
+	}
+	rounded := math.Round(scaled)
+	// A positive provider multiplier that rounds to zero is not an explicit
+	// free tier. Dropping the malformed optional variant safely falls back to
+	// the base price instead of turning fast requests into free traffic.
+	if rounded <= 0 || rounded > 100000 {
+		return 0, false
+	}
+	return int(rounded), true
 }
 
 // orderGeneratedVariants sets the resolver order for rows generated from the

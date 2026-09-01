@@ -33,11 +33,18 @@ type SettingReader interface {
 	PriceSyncCron() string
 }
 
-// Upserter 拉取价落库（*repository.Repository 实现；500/批独立事务 + manual
-// 行级互斥 WHERE source != 'manual'，部分成功可接受）。统一单表 + 变体批量。
+// Upserter 拉取价落库。生产仓库同时实现 SnapshotApplier，以一个外层事务发布
+// 基础价、变体和清理；这些方法保留给轻量集成与旧实现。
 type Upserter interface {
 	UpsertPriceEntriesFromLiteLLM(ctx context.Context, rows []*domain.PriceEntry) (int, error)
 	UpsertPriceVariantsFromLiteLLM(ctx context.Context, variants []*domain.PriceVariant) (int, error)
+}
+
+// SnapshotApplier is the production atomic publication capability. Keeping it
+// optional preserves source compatibility for lightweight embedders while the
+// real repository prevents partial batches from becoming a mixed snapshot.
+type SnapshotApplier interface {
+	ApplyLiteLLMSnapshot(ctx context.Context, entries []*domain.PriceEntry, variants []*domain.PriceVariant, models []string) (entriesUpdated, variantsUpdated int, err error)
 }
 
 // ManualEntryLister is an optional repository capability used to protect
@@ -156,6 +163,28 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 	var res *FetchResult
 	var n, nVar int
 	mutate := func() error {
+		models, authoritative := SnapshotPriceModels(res)
+		sourceHasModels := res.Models != nil && hasSnapshotModels(res.Models)
+		if authoritative && sourceHasModels && !hasSnapshotModels(models) {
+			return fmt.Errorf("pricing: source contains models but no supported billable prices")
+		}
+		// An explicit empty parsed object is not a deletion instruction. Preserve
+		// both the database and the currently published in-memory snapshot.
+		if res.Models != nil && !sourceHasModels {
+			return nil
+		}
+		if applier, ok := w.repo.(SnapshotApplier); ok && authoritative && hasSnapshotModels(models) {
+			var applyErr error
+			n, nVar, applyErr = applier.ApplyLiteLLMSnapshot(ctx, res.PriceEntries, res.Variants, models)
+			if applyErr != nil {
+				return applyErr
+			}
+			if w.reload != nil {
+				w.reload()
+			}
+			return nil
+		}
+
 		var writeErr error
 		n, writeErr = w.repo.UpsertPriceEntriesFromLiteLLM(ctx, res.PriceEntries)
 		variants := res.Variants
@@ -203,17 +232,15 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 				variantModels = append(variantModels, variant.Model)
 			}
 		}
-		// Reconcile whenever the source document contains at least one model
-		// key. Models is captured before parsing, so Skipped may include legal
-		// no-price entries and is intentionally informational rather than a
-		// completeness gate. An empty source remains protected from pruning.
-		models := snapshotModels(res)
-		if writeErr == nil && w.reconcile != nil && hasSnapshotModels(models) {
+		// Reconcile only an authoritative set of billable rows. Source keys that
+		// no longer have a representable price must be removed instead of keeping
+		// their previous price forever.
+		if writeErr == nil && authoritative && w.reconcile != nil && hasSnapshotModels(models) {
 			if _, reconcileErr := w.reconcile.ReconcileLiteLLMSnapshot(ctx, models, variantModels); reconcileErr != nil {
 				writeErr = reconcileErr
 			}
 		}
-		if w.reload != nil {
+		if writeErr == nil && w.reload != nil {
 			w.reload()
 		}
 		return writeErr
@@ -256,31 +283,6 @@ func (w *SyncWorker) Sync(ctx context.Context) error {
 	return err
 }
 
-// snapshotModels returns the source model key set when available. The
-// fallback keeps manually constructed FetchResults from older integrations
-// compatible while Parse always populates Models (including an empty slice).
-func snapshotModels(res *FetchResult) []string {
-	if res == nil {
-		return nil
-	}
-	if res.Models != nil {
-		return res.Models
-	}
-	// Fetchers compiled before Models was added cannot provide a source key set.
-	// Keep their historical partial-fetch guard; Parse always initializes Models
-	// (including an explicit empty slice), so this branch is compatibility only.
-	if res.Skipped != 0 {
-		return nil
-	}
-	models := make([]string, 0, len(res.PriceEntries))
-	for _, entry := range res.PriceEntries {
-		if entry != nil {
-			models = append(models, entry.Model)
-		}
-	}
-	return models
-}
-
 func hasSnapshotModels(models []string) bool {
 	for _, model := range models {
 		if strings.TrimSpace(model) != "" {
@@ -290,8 +292,8 @@ func hasSnapshotModels(models []string) bool {
 	return false
 }
 
-// syncOnce 单次同步 + 失败告警（不重试风暴——等下个周期）：fetch 失败 → Warn +
-// 保留旧快照；upsert 部分失败 → Warn（已落库批仍生效）→ 仍刷新快照。
+// syncOnce 单次同步 + 失败告警（不重试风暴——等下个周期）：fetch/落库失败
+// 均 Warn 并保留上次发布的内存快照；生产仓库的原子应用同时回滚数据库写入。
 func (w *SyncWorker) syncOnce(ctx context.Context) {
 	start := w.now()
 	if err := w.Sync(ctx); err != nil {

@@ -6,12 +6,18 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/is7qin/c3api/internal/ent/priceentry"
 	"github.com/is7qin/c3api/internal/ent/pricevariant"
 )
+
+var ErrSuspiciousPriceSnapshot = errors.New("pricing snapshot is unexpectedly smaller than the current catalogue")
+
+const snapshotShrinkGuardMinExisting = 100
 
 // ReconcileLiteLLMSnapshot removes official rows that disappeared from a
 // complete LiteLLM snapshot and clears their conditional variants. It also
@@ -39,6 +45,22 @@ func (r *Repository) ReconcileLiteLLMSnapshot(ctx context.Context, models, varia
 		return 0, err
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit closes the transaction.
+	currentRows, err := tx.PriceEntry.Query().
+		Where(priceentry.SourceEQ(priceentry.SourceLitellm)).
+		Count(ctx)
+	if err != nil {
+		return 0, err
+	}
+	manualCandidates, err := tx.PriceEntry.Query().
+		Where(priceentry.SourceEQ(priceentry.SourceManual), priceentry.ModelIn(models...)).
+		Count(ctx)
+	if err != nil {
+		return 0, err
+	}
+	candidateRows := len(models) - manualCandidates
+	if suspiciousPriceSnapshotShrink(currentRows, candidateRows) {
+		return 0, fmt.Errorf("%w: current=%d candidate=%d", ErrSuspiciousPriceSnapshot, currentRows, candidateRows)
+	}
 
 	// Discover stale official rows inside the same transaction used for the
 	// deletes. The source predicate protects manual rows even if a model name
@@ -111,6 +133,15 @@ func (r *Repository) ReconcileLiteLLMSnapshot(ctx context.Context, models, varia
 		return 0, err
 	}
 	return removed, nil
+}
+
+func suspiciousPriceSnapshotShrink(current, candidate int) bool {
+	if current < snapshotShrinkGuardMinExisting {
+		return false
+	}
+	// Use ceil(current/2) without multiplying candidate, avoiding overflow and
+	// treating an exact 50%% snapshot as the conservative acceptance boundary.
+	return candidate < (current+1)/2
 }
 
 func normalizeModelList(models []string) []string {

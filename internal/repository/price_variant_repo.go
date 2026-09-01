@@ -24,10 +24,19 @@ func (r *PriceVariantRepo) UpsertFromLiteLLM(ctx context.Context, variants []*do
 	}
 	byModel := make(map[string][]*domain.PriceVariant)
 	for _, v := range variants {
+		if v == nil {
+			continue
+		}
 		byModel[v.Model] = append(byModel[v.Model], v)
 	}
+	models := make([]string, 0, len(byModel))
+	for model := range byModel {
+		models = append(models, model)
+	}
+	sort.Strings(models)
 	total := 0
-	for model, lst := range byModel {
+	for _, model := range models {
+		lst := byModel[model]
 		if _, err := r.ReplaceBatch(ctx, model, lst); err != nil {
 			return total, err
 		}

@@ -133,6 +133,40 @@ func TestParseRetainsSourceModelsWhenRowsHaveNoUsablePrice(t *testing.T) {
 	require.Equal(t, []string{"malformed", "metadata-only", "priced"}, res.Models)
 	require.Len(t, res.PriceEntries, 1)
 	require.Equal(t, 2, res.Skipped)
+	models, authoritative := SnapshotPriceModels(res)
+	require.True(t, authoritative)
+	require.Equal(t, []string{"priced"}, models,
+		"reconciliation uses billable rows so an old malformed price cannot survive")
+}
+
+func TestParseNormalizesModelWhitespaceAndRejectsCollisions(t *testing.T) {
+	res, err := Parse([]byte(`{
+  "  spaced-model  ": {"mode":"chat","input_cost_per_token":0.000001}
+}`), nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"spaced-model"}, res.Models)
+	require.Equal(t, "spaced-model", res.PriceEntries[0].Model)
+
+	_, err = Parse([]byte(`{
+  "duplicate": {"mode":"chat","input_cost_per_token":0.000001},
+  " duplicate ": {"mode":"chat","input_cost_per_token":0.000002}
+}`), nil)
+	require.ErrorContains(t, err, "duplicate model after trimming")
+}
+
+func TestSnapshotPriceModelsLegacyCompleteness(t *testing.T) {
+	models, authoritative := SnapshotPriceModels(&FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "priced"}},
+	})
+	require.True(t, authoritative)
+	require.Equal(t, []string{"priced"}, models)
+
+	models, authoritative = SnapshotPriceModels(&FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "priced"}},
+		Skipped:      1,
+	})
+	require.False(t, authoritative)
+	require.Nil(t, models)
 }
 
 func TestParseEmptySourceHasExplicitEmptyModels(t *testing.T) {
@@ -259,7 +293,7 @@ func TestParseTieredPricingDoesNotPromoteHighContextTier(t *testing.T) {
 }`
 	res, err := Parse([]byte(jsonStr), nil)
 	require.NoError(t, err)
-	// The source key remains visible for catalogue reconciliation, but there is
+	// The source key remains visible for completeness diagnostics, but there is
 	// no safe unconditional price to persist for requests below 32k tokens.
 	require.Equal(t, []string{"high-context-only"}, res.Models)
 	require.Empty(t, res.PriceEntries)
@@ -414,6 +448,32 @@ func TestParsePriceEntryVariants(t *testing.T) {
 	}
 	require.True(t, foundPriority)
 	require.True(t, foundFast)
+}
+
+func TestParseProviderFastMultiplierNeverRoundsPositiveValueToFree(t *testing.T) {
+	res, err := Parse([]byte(`{
+  "tiny-fast": {
+    "mode":"chat",
+    "input_cost_per_token":0.000001,
+    "provider_specific_entry":{"fast":0.000001}
+  },
+  "oversized-fast": {
+    "mode":"chat",
+    "input_cost_per_token":0.000001,
+    "provider_specific_entry":{"fast":11}
+  },
+  "normal-fast": {
+    "mode":"chat",
+    "input_cost_per_token":0.000001,
+    "provider_specific_entry":{"fast":2}
+  }
+}`), nil)
+	require.NoError(t, err)
+	require.Len(t, res.PriceEntries, 3)
+	require.Len(t, res.Variants, 1)
+	require.Equal(t, "normal-fast", res.Variants[0].Model)
+	require.NotNil(t, res.Variants[0].MultBP)
+	require.Equal(t, 20000, *res.Variants[0].MultBP)
 }
 
 func TestParseTieredPricingPromotesBaseAndAddsBoundedVariants(t *testing.T) {

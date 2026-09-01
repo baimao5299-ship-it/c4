@@ -94,7 +94,7 @@ func (f *fakePricingSnapshotStore) ReconcileLiteLLMSnapshot(_ context.Context, m
 	return 0, nil
 }
 
-func TestSyncPricingUsesSourceModelsForSnapshotCompleteness(t *testing.T) {
+func TestSyncPricingUsesBillableModelsForSnapshotReconciliation(t *testing.T) {
 	store := &fakePricingSnapshotStore{fakeStore: newFakeStore()}
 	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
 	require.NoError(t, svc.ReloadPricingCtx(context.Background()))
@@ -109,7 +109,20 @@ func TestSyncPricingUsesSourceModelsForSnapshotCompleteness(t *testing.T) {
 	_, err = svc.SyncPricingNow(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, 1, store.calls)
-	require.Equal(t, []string{"metadata-only", "priced"}, store.models)
+	require.Equal(t, []string{"priced"}, store.models,
+		"a source row without a current billable price must not preserve an old price")
+}
+
+func TestSyncPricingRejectsNonEmptySourceWithoutBillablePrices(t *testing.T) {
+	store := &fakePricingSnapshotStore{fakeStore: newFakeStore()}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+	_, err := store.SetSetting(context.Background(), "price_source_url", domain.SettingTypeString, "http://example.com/prices.json")
+	require.NoError(t, err)
+	svc.SetPriceFetcher(&fakePriceFetcher{res: &pricing.FetchResult{Models: []string{"metadata-only"}, Skipped: 1}})
+
+	_, err = svc.SyncPricingNow(context.Background())
+	require.ErrorIs(t, err, ErrPriceFetch)
+	require.Zero(t, store.calls)
 }
 
 func TestSyncPricingReconcilesOnlyNonManualVariantModels(t *testing.T) {
