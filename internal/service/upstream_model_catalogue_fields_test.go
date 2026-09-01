@@ -23,6 +23,17 @@ func TestParseUpstreamModelsPayloadAcceptsRelayModelIdentifierFields(t *testing.
 	require.Equal(t, []string{"model-id", "model-name", "model-slug", "canonical-slug"}, models)
 }
 
+func TestParseUpstreamModelsPayloadFallsBackWhenPreferredIdentifierIsEmpty(t *testing.T) {
+	body := []byte(`{"data":[
+		{"model_id":"", "id":"usable-id"},
+		{"slug":"   ", "model":"usable-model"},
+		{"model_id":"  ", "name":"usable-name"}
+	]}`)
+	models, recognized := parseUpstreamModelsPayload(body)
+	require.True(t, recognized)
+	require.Equal(t, []string{"usable-id", "usable-model", "usable-name"}, models)
+}
+
 func TestParseUpstreamModelsPayloadRejectsMalformedModelEntries(t *testing.T) {
 	for _, body := range []string{
 		`{"data":[{"id":123}]}`,

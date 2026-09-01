@@ -2091,6 +2091,15 @@ func parseUpstreamModelsPagePayload(body []byte) (advertisedModelsPage, bool) {
 			// manually usable model look unavailable during the real probe.
 			for _, key := range []string{"model_id", "slug", "model", "id", "model_name", "name"} {
 				if candidate, ok := value[key].(string); ok {
+					// Some providers include a preferred field with an empty
+					// value and put the actual identifier in a later alias
+					// (for example {"model_id":"", "id":"gpt-x"}).
+					// Keep walking the priority list until a non-empty value is
+					// found; an entirely empty entry is still rejected below.
+					candidate = strings.TrimSpace(candidate)
+					if candidate == "" {
+						continue
+					}
 					name = candidate
 					break
 				}
