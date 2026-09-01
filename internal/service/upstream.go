@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"mime"
 	"net/http"
 	"net/url"
 	"sort"
@@ -85,6 +86,129 @@ type UpstreamProbeResult struct {
 	OK        bool
 	LatencyMS int64
 	ErrorCode string
+}
+
+// upstreamAuthMode identifies the two credential headers used by the relay
+// families supported by the gateway.  It intentionally stays private: the
+// management API stores one opaque key and negotiates the wire header per
+// request instead of making operators maintain another setting.
+type upstreamAuthMode uint8
+
+const (
+	upstreamAuthBearer upstreamAuthMode = iota
+	upstreamAuthAPIKey
+)
+
+// upstreamAuthModes returns a deterministic, bounded preference list.  Keys
+// that look like Anthropic credentials start with x-api-key; all other keys
+// retain the historical Bearer-first behavior.  The alternate header is only
+// attempted after an authentication response, never after a model/provider
+// failure, so a normal probe cannot be duplicated accidentally.
+func upstreamAuthModes(key string, preferred upstreamAuthMode) []upstreamAuthMode {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if strings.HasPrefix(key, "sk-ant-") || strings.Contains(key, "anthropic") {
+		preferred = upstreamAuthAPIKey
+	}
+	if preferred == upstreamAuthAPIKey {
+		return []upstreamAuthMode{upstreamAuthAPIKey, upstreamAuthBearer}
+	}
+	return []upstreamAuthMode{upstreamAuthBearer, upstreamAuthAPIKey}
+}
+
+func setUpstreamAuthHeader(req *http.Request, key string, mode upstreamAuthMode) {
+	if req == nil {
+		return
+	}
+	key = normalizeUpstreamKey(key)
+	// Never leave a credential selected by a previous redirect/request on a
+	// reused request object.  The redirect policy separately prevents sending
+	// either header to another origin.
+	req.Header.Del("Authorization")
+	req.Header.Del("x-api-key")
+	if key == "" {
+		return
+	}
+	if mode == upstreamAuthAPIKey {
+		req.Header.Set("x-api-key", key)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+}
+
+// shouldRetryUpstreamAuth is deliberately narrower than a generic 4xx retry.
+// A model entitlement error must stay attached to that model. Empty or generic
+// 401/403 responses are definitive; only a directional header/scheme complaint
+// can justify trying the other conventional spelling.
+func shouldRetryUpstreamAuth(status int, requestErr error) bool {
+	return shouldRetryUpstreamAuthMode(status, requestErr, upstreamAuthBearer)
+}
+
+func shouldRetryUpstreamAuthMode(status int, requestErr error, mode upstreamAuthMode) bool {
+	if status != http.StatusUnauthorized && status != http.StatusForbidden {
+		return false
+	}
+	body := strings.ToLower(strings.TrimSpace(responseErrorBody(requestErr)))
+	// A missing body does not identify which header the relay expects. Retrying
+	// blindly here doubles every model probe on an ordinary 401/403 and can
+	// turn a fatal credential error into a false success when the second header
+	// is ignored by a permissive router.
+	if body == "" || isModelUnavailableMessage(body) {
+		return false
+	}
+	// Only an explicit header/scheme instruction justifies trying the other
+	// conventional credential spelling. Generic "invalid api key", "invalid
+	// token", "unauthorized", and "forbidden" responses are definitive and
+	// must not trigger another request.
+	return isExplicitAuthHeaderMismatchForMode(body, mode)
+}
+
+func isExplicitAuthHeaderMismatch(message string) bool {
+	return isExplicitAuthHeaderMismatchForMode(message, upstreamAuthBearer) ||
+		isExplicitAuthHeaderMismatchForMode(message, upstreamAuthAPIKey)
+}
+
+func isExplicitAuthHeaderMismatchForMode(message string, mode upstreamAuthMode) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if message == "" {
+		return false
+	}
+	// Keep this list directional: merely mentioning an auth header in a generic
+	// error is not enough. The relay must say that the alternate spelling is
+	// required, missing, expected, or preferred.
+	markers := []string{}
+	if mode == upstreamAuthAPIKey {
+		markers = []string{
+			"use authorization", "use the authorization", "use bearer", "use the bearer",
+			"send authorization", "send the authorization", "send bearer", "send the bearer",
+			"provide authorization", "provide the authorization", "provide bearer",
+			"provide the bearer", "expected authorization", "expected bearer",
+			"requires authorization", "require authorization", "requires bearer",
+			"require bearer", "authorization is required", "bearer is required",
+			"authorization header required", "bearer token required", "missing authorization",
+			"missing bearer", "authorization instead", "bearer instead",
+		}
+	} else {
+		markers = []string{
+			"use x-api-key", "use the x-api-key", "send x-api-key", "send the x-api-key",
+			"provide x-api-key", "provide the x-api-key", "expected x-api-key",
+			"requires x-api-key", "require x-api-key", "x-api-key is required",
+			"x-api-key header required", "missing x-api-key", "x-api-key instead",
+		}
+	}
+	for _, marker := range markers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	// Scheme errors that name the expected scheme are directional even when the
+	// relay omits the words "use" or "required".
+	if strings.Contains(message, "authentication scheme") || strings.Contains(message, "auth scheme") {
+		if mode == upstreamAuthAPIKey {
+			return strings.Contains(message, "bearer") || strings.Contains(message, "authorization")
+		}
+		return strings.Contains(message, "x-api-key")
+	}
+	return false
 }
 
 // UpstreamModelsResult is the bounded, non-secret result of reading and
@@ -1532,27 +1656,52 @@ func fetchAdvertisedModelsPath(ctx context.Context, client *http.Client, target,
 // boolean return identifies route-level failures for which the caller may try
 // a compatibility path; it deliberately excludes model/auth/provider errors.
 func fetchAdvertisedModelsPage(ctx context.Context, client *http.Client, target, key string) (advertisedModelsPage, string, int, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// Catalogue reads are free GETs, so an auth-header mismatch can be retried
+	// safely with the other conventional header.  Keep the retry inside this
+	// helper so cursor pages and the /models compatibility path share exactly
+	// the same behavior.
+	modes := upstreamAuthModes(key, upstreamAuthBearer)
+	var last advertisedModelsPage
+	var lastCode string
+	var lastStatus int
+	var lastRetryable bool
+	for index, mode := range modes {
+		page, code, status, retryable, authRetryable := fetchAdvertisedModelsPageWithAuthMode(ctx, client, target, key, mode)
+		last, lastCode, lastStatus, lastRetryable = page, code, status, retryable
+		if code == "" || index == len(modes)-1 || code != "auth" || !authRetryable {
+			return page, code, status, retryable
+		}
+	}
+	return last, lastCode, lastStatus, lastRetryable
+}
+
+func fetchAdvertisedModelsPageWithAuth(ctx context.Context, client *http.Client, target, key string, mode upstreamAuthMode) (advertisedModelsPage, string, int, bool) {
+	page, code, status, retryable, _ := fetchAdvertisedModelsPageWithAuthMode(ctx, client, target, key, mode)
+	return page, code, status, retryable
+}
+
+func fetchAdvertisedModelsPageWithAuthMode(ctx context.Context, client *http.Client, target, key string, mode upstreamAuthMode) (advertisedModelsPage, string, int, bool, bool) {
 	var empty advertisedModelsPage
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return empty, "invalid_value", 0, false
+		return empty, "invalid_value", 0, false, false
 	}
-	key = normalizeUpstreamKey(key)
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
+	setUpstreamAuthHeader(req, key, mode)
 	resp, err := client.Do(req)
 	if err != nil || resp == nil {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return empty, "timeout", 0, false
+			return empty, "timeout", 0, false, false
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-			return empty, "canceled", 0, false
+			return empty, "canceled", 0, false, false
 		}
-		return empty, "network", 0, false
+		return empty, "network", 0, false, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -1564,35 +1713,36 @@ func fetchAdvertisedModelsPage(ctx context.Context, client *http.Client, target,
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		switch resp.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return empty, "auth", resp.StatusCode, false
+			authRetryable := shouldRetryUpstreamAuthMode(resp.StatusCode, &upstreamHTTPError{status: resp.StatusCode, body: body}, mode)
+			return empty, "auth", resp.StatusCode, false, authRetryable
 		case http.StatusTooManyRequests:
-			return empty, "rate_limited", resp.StatusCode, false
+			return empty, "rate_limited", resp.StatusCode, false, false
 		case http.StatusNotFound:
-			return empty, "http_error", resp.StatusCode, !isStructuredProviderFailure(body)
+			return empty, "http_error", resp.StatusCode, !isStructuredProviderFailure(body), false
 		case http.StatusMethodNotAllowed, http.StatusNotImplemented:
-			return empty, "http_error", resp.StatusCode, true
+			return empty, "http_error", resp.StatusCode, true, false
 		default:
 			if resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode >= 500 {
-				return empty, "upstream", resp.StatusCode, false
+				return empty, "upstream", resp.StatusCode, false, false
 			}
-			return empty, "http_error", resp.StatusCode, false
+			return empty, "http_error", resp.StatusCode, false, false
 		}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 	if err != nil {
-		return empty, "network", resp.StatusCode, false
+		return empty, "network", resp.StatusCode, false, false
 	}
 	if len(body) > 1<<20 {
-		return empty, "invalid_value", resp.StatusCode, false
+		return empty, "invalid_value", resp.StatusCode, false, false
 	}
 	page, recognized := parseUpstreamModelsPagePayload(body)
 	if !recognized {
 		if code, ok := classifyModelCatalogueErrorEnvelope(body); ok {
-			return empty, code, resp.StatusCode, false
+			return empty, code, resp.StatusCode, false, false
 		}
-		return empty, "invalid_value", resp.StatusCode, false
+		return empty, "invalid_value", resp.StatusCode, false, false
 	}
-	return page, "", resp.StatusCode, false
+	return page, "", resp.StatusCode, false, false
 }
 
 // classifyModelCatalogueErrorEnvelope handles relays that return an
@@ -1704,6 +1854,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	models = dedupeProbeModels(models)
 	if len(models) == 0 {
 		return upstreamModelValidation{ValidationComplete: true}
 	}
@@ -1880,6 +2031,30 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 		ValidationComplete: complete,
 		transientModels:    transientModels,
 	}
+}
+
+// dedupeProbeModels removes exact model identifiers (after trimming) before
+// any paid capability request is sent.  It deliberately does not collapse
+// case, vendor prefixes, or version/date suffixes: those can be distinct
+// callable models even when they look similar in a UI.
+func dedupeProbeModels(models []string) []string {
+	if len(models) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(models))
+	unique := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if _, exists := seen[model]; exists {
+			continue
+		}
+		seen[model] = struct{}{}
+		unique = append(unique, model)
+	}
+	return unique
 }
 
 func isFatalModelValidationCode(code string) bool {
@@ -2316,10 +2491,12 @@ func sendUpstreamResponsesProbe(ctx context.Context, client *http.Client, target
 	return status, requestErr
 }
 
-// sendUpstreamModelProbe selects the Responses or Chat wire protocol once.
-// A protocol fallback is attempted only for an explicit route/format
-// rejection; it is intentionally not used for quota, auth, model, or provider
-// failures.
+// sendUpstreamModelProbe selects the first working wire protocol.  Responses
+// remains the preferred route, followed by Chat Completions and Anthropic
+// Messages only when the preceding route explicitly rejects its protocol.
+// Authentication mismatches are handled inside each request helper, while
+// quota, model, and provider failures are never replayed through another
+// protocol.
 func sendUpstreamModelProbe(ctx context.Context, client *http.Client, base, key, model string) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -2327,6 +2504,9 @@ func sendUpstreamModelProbe(ctx context.Context, client *http.Client, base, key,
 	status, requestErr := sendUpstreamResponsesProbe(ctx, client, upstreamURL(base, "/v1/responses"), key, model)
 	if shouldFallbackTestRequest(status, requestErr) && ctx.Err() == nil {
 		status, requestErr = sendUpstreamChatProbe(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model)
+	}
+	if shouldFallbackToMessagesRequest(status, requestErr, key) && ctx.Err() == nil {
+		status, requestErr = sendUpstreamMessagesProbe(ctx, client, upstreamURL(base, "/v1/messages"), key, model)
 	}
 	return status, requestErr
 }
@@ -2451,6 +2631,179 @@ func chatProbeCompatibilityShape(status int, requestErr error) responsesProbeSha
 	return responsesProbeCompact
 }
 
+// sendUpstreamMessagesProbe is the last compatibility route for relays that
+// expose Anthropic's Messages API but do not implement either OpenAI route.
+// The request is intentionally tiny and non-streaming.  Strict gateways may
+// require stream=true or reject an optional field; those shape corrections are
+// retried only when the response explicitly identifies the offending field.
+func sendUpstreamMessagesProbe(ctx context.Context, client *http.Client, target, key, model string) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	status, requestErr := sendUpstreamMessagesRequestShape(ctx, client, target, key, model, responsesProbeCanonical)
+	shape := responsesProbeCanonical
+	tried := map[responsesProbeShape]struct{}{shape: {}}
+	for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+		next := messagesProbeCompatibilityShape(status, requestErr)
+		if next == responsesProbeCanonical {
+			break
+		}
+		merged := shape | next
+		if merged == shape {
+			break
+		}
+		if _, exists := tried[merged]; exists {
+			break
+		}
+		shape = merged
+		tried[shape] = struct{}{}
+		status, requestErr = sendUpstreamMessagesRequestShape(ctx, client, target, key, model, shape)
+	}
+	return status, requestErr
+}
+
+func messagesProbeCompatibilityShape(status int, requestErr error) responsesProbeShape {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		return responsesProbeCanonical
+	}
+	body := strings.ToLower(responseErrorBody(requestErr))
+	if !shouldRetryMessagesParameter(status, requestErr) {
+		return responsesProbeCanonical
+	}
+	if isMessagesStreamRequiredMessage(body) {
+		return responsesProbeStream
+	}
+	if isMessagesStreamRejectedMessage(body) {
+		// `stream` is optional in the Messages contract. A relay that rejects
+		// the field wants the same request with it omitted, not stream=true.
+		return responsesProbeCompact
+	}
+	return responsesProbeCanonical
+}
+
+func isMessagesStreamRequiredMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if !strings.Contains(message, "stream") {
+		return false
+	}
+	for _, marker := range []string{
+		"stream must be true", "stream=true required", "stream=true is required",
+		"stream parameter is required", "stream parameter required", "stream is required",
+		"stream must be enabled", "stream must be enabled", "requires stream=true",
+		"require stream=true", "use stream=true", "set stream=true",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isMessagesStreamRejectedMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if !strings.Contains(message, "stream") {
+		return false
+	}
+	for _, marker := range []string{
+		"stream is not supported", "stream not supported", "stream is unsupported",
+		"unsupported stream", "stream parameter is not supported", "stream parameter not supported",
+		"stream is not allowed", "stream not allowed", "stream parameter is not allowed",
+		"unknown parameter stream", "unknown field stream", "unrecognized field stream",
+		"unrecognised field stream", "unexpected field stream", "extra field stream",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRetryMessagesParameter(status int, requestErr error) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		var envelope *upstreamErrorEnvelope
+		if status < 200 || status >= 300 || !errors.As(requestErr, &envelope) {
+			return false
+		}
+	}
+	body := responseErrorBody(requestErr)
+	// max_tokens is required by the Messages contract; retrying while changing
+	// or removing it would only repeat a paid semantic failure.  Only optional
+	// stream/messages shape complaints are eligible here.
+	return isExplicitParameterCompatibilityMessage(body, "stream", "messages")
+}
+
+// sendUpstreamMessagesRequest sends one Anthropic-compatible probe.  The
+// canonical header is x-api-key; a Bearer retry is allowed only after a 401 or
+// 403 that looks like an authentication/header mismatch.  This lets generic
+// OpenAI relays that happen to expose /v1/messages work without making the
+// operator choose a protocol-specific credential setting.
+func sendUpstreamMessagesRequestShape(ctx context.Context, client *http.Client, target, key, model string, shape responsesProbeShape) (int, error) {
+	payload := map[string]any{
+		"model":      model,
+		"max_tokens": 1,
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"stream":     false,
+	}
+	if shape&responsesProbeStream != 0 {
+		payload["stream"] = true
+	}
+	if shape&responsesProbeCompact != 0 {
+		// A few Anthropic-compatible relays reject the optional stream field
+		// unless streaming was explicitly requested.  The compact retry removes
+		// it while retaining the required max_tokens/messages fields.
+		delete(payload, "stream")
+	}
+	body, _ := json.Marshal(payload)
+	lastStatus := 0
+	var lastErr error
+	for index, mode := range upstreamAuthModes(key, upstreamAuthAPIKey) {
+		status, requestErr := sendUpstreamMessagesRequestOnce(ctx, client, target, key, model, body, mode)
+		lastStatus, lastErr = status, requestErr
+		if status == 0 || index == 1 || !shouldRetryUpstreamAuthMode(status, requestErr, mode) {
+			break
+		}
+	}
+	return lastStatus, lastErr
+}
+
+func sendUpstreamMessagesRequestOnce(ctx context.Context, client *http.Client, target, key, model string, body []byte, mode upstreamAuthMode) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	setUpstreamAuthHeader(req, key, mode)
+	// Anthropic-compatible relays generally require this version header, while
+	// OpenAI-compatible relays safely ignore it.  Keep it on both auth attempts.
+	req.Header.Set("anthropic-version", "2023-06-01")
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	if resp == nil {
+		return 0, errors.New("nil upstream response")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		responseBody, readErr := readUpstreamProbeBody(resp)
+		if readErr != nil {
+			return resp.StatusCode, readErr
+		}
+		if len(responseBody) == 0 || len(responseBody) > 1<<20 || !isUpstreamSuccessResponse(responseBody) {
+			var envelope map[string]any
+			if json.Unmarshal(trimUpstreamJSONBody(responseBody), &envelope) == nil {
+				if _, hasError := envelope["error"]; hasError {
+					return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), responseBody...)}
+				}
+			}
+			return resp.StatusCode, errInvalidUpstreamResponse
+		}
+		return resp.StatusCode, nil
+	}
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	return resp.StatusCode, &upstreamHTTPError{status: resp.StatusCode, body: responseBody}
+}
+
 func sendUpstreamTestRequest(ctx context.Context, client *http.Client, target, key, model string, chat bool) (int, error) {
 	return sendUpstreamTestRequestVariant(ctx, client, target, key, model, chat, false)
 }
@@ -2519,14 +2872,25 @@ func sendUpstreamTestRequestShape(ctx context.Context, client *http.Client, targ
 		}
 		body, _ = json.Marshal(payload)
 	}
+	lastStatus := 0
+	var lastErr error
+	for index, mode := range upstreamAuthModes(key, upstreamAuthBearer) {
+		status, requestErr := sendUpstreamTestRequestShapeOnce(ctx, client, target, key, body, chat, mode)
+		lastStatus, lastErr = status, requestErr
+		if status == 0 || index == 1 || !shouldRetryUpstreamAuthMode(status, requestErr, mode) {
+			break
+		}
+	}
+	return lastStatus, lastErr
+}
+
+func sendUpstreamTestRequestShapeOnce(ctx context.Context, client *http.Client, target, key string, body []byte, chat bool, mode upstreamAuthMode) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
+	setUpstreamAuthHeader(req, key, mode)
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
@@ -2568,6 +2932,27 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	reader := bufio.NewReaderSize(io.LimitReader(resp.Body, 1<<20+1), 32<<10)
+	// A normal JSON response with a declared length has a complete boundary
+	// even when the server keeps the TCP connection alive. Read exactly that
+	// bounded body instead of waiting for a newline or EOF.
+	if !strings.Contains(contentType, "text/event-stream") && resp.ContentLength >= 0 && resp.ContentLength <= 1<<20 {
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, err
+		}
+		return body, nil
+	}
+	// Chunked JSON relays may omit both a newline and a terminating chunk while
+	// retaining the connection for reuse. The JSON decoder stops at the end of a
+	// complete value, which is the only boundary needed for capability proof.
+	// Restrict this fast path to JSON media types; SSE and plain-text responses
+	// continue through the line/event parser below.
+	if !strings.Contains(contentType, "text/event-stream") && isJSONContentType(contentType) {
+		var value json.RawMessage
+		if err := json.NewDecoder(reader).Decode(&value); err == nil && len(value) > 0 {
+			return value, nil
+		}
+	}
 	// A proxy may rewrite `text/event-stream` to `application/json`. Peek at
 	// the first complete line so an open stream is recognized by its SSE field
 	// syntax instead of waiting for EOF like an ordinary JSON response. A few
@@ -2623,12 +3008,28 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 		}
 		return nil, firstErr
 	}
+	// The first line itself may be a complete data frame.  Do this check before
+	// reading another line: some keep-alive streams never emit the blank event
+	// separator after their first response.
+	if isUpstreamSuccessResponse(event.Bytes()) {
+		return event.Bytes(), nil
+	}
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			event.Write(line)
 			if event.Len() > 1<<20 {
 				return nil, errors.New("upstream probe response too large")
+			}
+			// A few relays flush one complete data frame and keep the HTTP
+			// connection open without sending the blank-line event terminator.
+			// A recognized successful JSON frame is already sufficient evidence
+			// that the model answered; return immediately instead of waiting for a
+			// context timeout.  Multi-line data frames still wait for their normal
+			// blank boundary and are handled below.
+			trimmed := trimUpstreamSSELine(line)
+			if bytes.HasPrefix(trimmed, []byte("data:")) && isUpstreamSuccessResponse(event.Bytes()) {
+				return event.Bytes(), nil
 			}
 			if len(bytes.TrimSpace(line)) == 0 {
 				if isUpstreamSuccessResponse(event.Bytes()) {
@@ -2646,6 +3047,21 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 			return nil, err
 		}
 	}
+}
+
+// isJSONContentType recognizes JSON media types without treating a vendor
+// suffix or parameters as a different protocol.  Relays commonly return
+// `application/vnd.provider+json; charset=utf-8`; using MIME parsing keeps
+// quoted parameters and casing from taking the fast path away accidentally.
+func isJSONContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		// A malformed parameter must not make us classify an otherwise obvious
+		// JSON type as plain text. Keep the fallback deliberately conservative.
+		mediaType = strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	return mediaType == "application/json" || mediaType == "text/json" || strings.HasSuffix(mediaType, "+json")
 }
 
 func isUpstreamSSELine(line []byte) bool {
@@ -3004,6 +3420,67 @@ func shouldFallbackTestRequest(status int, requestErr error) bool {
 	return isExplicitProtocolFallbackMessage(string(httpErr.body))
 }
 
+// shouldFallbackToMessagesRequest is intentionally separate from the
+// Responses→Chat classifier.  Messages is a third, paid protocol attempt, so
+// it is selected only for a clear Chat-route rejection (or an Anthropic-shaped
+// authentication mismatch where the route is known to use x-api-key).
+func shouldFallbackToMessagesRequest(status int, requestErr error, key string) bool {
+	if status >= 200 && status < 300 && requestErr == nil {
+		return false
+	}
+	if errors.Is(requestErr, errInvalidUpstreamResponse) {
+		return false
+	}
+	body := strings.ToLower(responseErrorBody(requestErr))
+	if isModelUnavailableMessage(body) {
+		return false
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		// Anthropic credentials and explicit x-api-key/messages wording are the
+		// only auth cases that justify trying the Messages route.
+		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), "sk-ant-") ||
+			isExplicitMessagesProtocolMessage(body) || strings.Contains(body, "x-api-key") ||
+			strings.Contains(body, "anthropic")
+	}
+	if isStructuredProviderFailure([]byte(body)) && !isExplicitMessagesProtocolMessage(body) {
+		return false
+	}
+	if status == http.StatusNotFound || status == http.StatusMethodNotAllowed ||
+		status == http.StatusNotImplemented || status == http.StatusUnsupportedMediaType {
+		if body == "" {
+			return true
+		}
+		return isExplicitMessagesProtocolMessage(body) || !isStructuredProviderFailure([]byte(body))
+	}
+	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
+		if body == "" {
+			return true
+		}
+		return isExplicitMessagesProtocolMessage(body)
+	}
+	if status >= 500 {
+		return isExplicitMessagesProtocolMessage(body)
+	}
+	return false
+}
+
+func isExplicitMessagesProtocolMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if message == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"messages api", "messages endpoint", "/v1/messages", "anthropic messages",
+		"use messages", "messages only", "message api only", "chat completions not supported",
+		"chat completion endpoint not supported", "chat route unsupported",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // isStructuredProviderFailure identifies JSON error envelopes that describe a
 // provider/model/auth failure rather than a missing route. It is intentionally
 // conservative: malformed JSON and generic "not found" objects still allow a
@@ -3288,6 +3765,7 @@ func upstreamCheckRedirect(req *http.Request, via []*http.Request) error {
 		// redirected copy as a defence-in-depth measure before returning the
 		// original 3xx response.
 		req.Header.Del("Authorization")
+		req.Header.Del("x-api-key")
 		return http.ErrUseLastResponse
 	}
 	// Never follow a downgrade from HTTPS.  An initial HTTP endpoint may be
@@ -3393,10 +3871,12 @@ func normalizeUpstreamBaseURL(base string) string {
 	}
 	path := strings.TrimRight(parsed.Path, "/")
 	lower := strings.ToLower(path)
+	strippedOperation := false
 	for _, suffix := range []string{"/chat/completions", "/responses", "/messages"} {
 		if strings.HasSuffix(lower, suffix) {
 			path = path[:len(path)-len(suffix)]
 			lower = strings.ToLower(strings.TrimRight(path, "/"))
+			strippedOperation = true
 			break
 		}
 	}
@@ -3405,6 +3885,9 @@ func normalizeUpstreamBaseURL(base string) string {
 		if path == "/" {
 			path = ""
 		}
+		strippedOperation = true
+	}
+	if strippedOperation {
 		parsed.Path = path
 		parsed.RawPath = ""
 		base = parsed.String()
