@@ -18880,6 +18880,7 @@ type UpstreamMutation struct {
 	upstream_key          *string
 	models                *[]string
 	appendmodels          []string
+	model_formats         *map[string][]domain.RequestFormat
 	models_checked_at     *time.Time
 	models_error          *string
 	multiplier_bp         *int
@@ -19198,6 +19199,42 @@ func (m *UpstreamMutation) AppendedModels() ([]string, bool) {
 func (m *UpstreamMutation) ResetModels() {
 	m.models = nil
 	m.appendmodels = nil
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (m *UpstreamMutation) SetModelFormats(mf map[string][]domain.RequestFormat) {
+	m.model_formats = &mf
+}
+
+// ModelFormats returns the value of the "model_formats" field in the mutation.
+func (m *UpstreamMutation) ModelFormats() (r map[string][]domain.RequestFormat, exists bool) {
+	v := m.model_formats
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelFormats returns the old "model_formats" field's value of the Upstream entity.
+// If the Upstream object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UpstreamMutation) OldModelFormats(ctx context.Context) (v map[string][]domain.RequestFormat, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelFormats is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelFormats requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelFormats: %w", err)
+	}
+	return oldValue.ModelFormats, nil
+}
+
+// ResetModelFormats resets all changes to the "model_formats" field.
+func (m *UpstreamMutation) ResetModelFormats() {
+	m.model_formats = nil
 }
 
 // SetModelsCheckedAt sets the "models_checked_at" field.
@@ -20541,7 +20578,7 @@ func (m *UpstreamMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UpstreamMutation) Fields() []string {
-	fields := make([]string, 0, 30)
+	fields := make([]string, 0, 31)
 	if m.name != nil {
 		fields = append(fields, upstream.FieldName)
 	}
@@ -20553,6 +20590,9 @@ func (m *UpstreamMutation) Fields() []string {
 	}
 	if m.models != nil {
 		fields = append(fields, upstream.FieldModels)
+	}
+	if m.model_formats != nil {
+		fields = append(fields, upstream.FieldModelFormats)
 	}
 	if m.models_checked_at != nil {
 		fields = append(fields, upstream.FieldModelsCheckedAt)
@@ -20648,6 +20688,8 @@ func (m *UpstreamMutation) Field(name string) (ent.Value, bool) {
 		return m.UpstreamKey()
 	case upstream.FieldModels:
 		return m.Models()
+	case upstream.FieldModelFormats:
+		return m.ModelFormats()
 	case upstream.FieldModelsCheckedAt:
 		return m.ModelsCheckedAt()
 	case upstream.FieldModelsError:
@@ -20717,6 +20759,8 @@ func (m *UpstreamMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldUpstreamKey(ctx)
 	case upstream.FieldModels:
 		return m.OldModels(ctx)
+	case upstream.FieldModelFormats:
+		return m.OldModelFormats(ctx)
 	case upstream.FieldModelsCheckedAt:
 		return m.OldModelsCheckedAt(ctx)
 	case upstream.FieldModelsError:
@@ -20805,6 +20849,13 @@ func (m *UpstreamMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetModels(v)
+		return nil
+	case upstream.FieldModelFormats:
+		v, ok := value.(map[string][]domain.RequestFormat)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelFormats(v)
 		return nil
 	case upstream.FieldModelsCheckedAt:
 		v, ok := value.(time.Time)
@@ -21198,6 +21249,9 @@ func (m *UpstreamMutation) ResetField(name string) error {
 		return nil
 	case upstream.FieldModels:
 		m.ResetModels()
+		return nil
+	case upstream.FieldModelFormats:
+		m.ResetModelFormats()
 		return nil
 	case upstream.FieldModelsCheckedAt:
 		m.ResetModelsCheckedAt()

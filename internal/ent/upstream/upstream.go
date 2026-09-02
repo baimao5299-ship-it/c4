@@ -8,6 +8,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 const (
@@ -23,6 +24,8 @@ const (
 	FieldUpstreamKey = "upstream_key"
 	// FieldModels holds the string denoting the models field in the database.
 	FieldModels = "models"
+	// FieldModelFormats holds the string denoting the model_formats field in the database.
+	FieldModelFormats = "model_formats"
 	// FieldModelsCheckedAt holds the string denoting the models_checked_at field in the database.
 	FieldModelsCheckedAt = "models_checked_at"
 	// FieldModelsError holds the string denoting the models_error field in the database.
@@ -104,6 +107,7 @@ var Columns = []string{
 	FieldBaseURL,
 	FieldUpstreamKey,
 	FieldModels,
+	FieldModelFormats,
 	FieldModelsCheckedAt,
 	FieldModelsError,
 	FieldMultiplierBp,
@@ -145,6 +149,8 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultModels holds the default value on creation for the "models" field.
 	DefaultModels []string
+	// DefaultModelFormats holds the default value on creation for the "model_formats" field.
+	DefaultModelFormats map[string][]domain.RequestFormat
 	// DefaultMultiplierBp holds the default value on creation for the "multiplier_bp" field.
 	DefaultMultiplierBp int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.

@@ -93,6 +93,7 @@ func (r *UpstreamRepo) CreateUpstream(ctx context.Context, u *domain.Upstream) (
 	b := r.client.Upstream.Create().
 		SetName(u.Name).
 		SetBaseURL(u.BaseURL).
+		SetModelFormats(cloneUpstreamModelFormats(u.ModelFormats)).
 		SetMultiplierBp(u.MultiplierBP).
 		SetEnabled(u.Enabled).
 		SetBalanceEndpoint(u.BalanceEndpoint).
@@ -263,6 +264,7 @@ func (r *UpstreamRepo) UpdateUpstream(ctx context.Context, u *domain.Upstream) (
 			ClearLastFailureAt().
 			ClearLastError().
 			SetModels([]string{}).
+			SetModelFormats(map[string][]domain.RequestFormat{}).
 			ClearModelsCheckedAt().
 			ClearModelsError()
 		// A validated endpoint/key update carries a fresh capability snapshot on
@@ -272,6 +274,7 @@ func (r *UpstreamRepo) UpdateUpstream(ctx context.Context, u *domain.Upstream) (
 		// second manual refresh.
 		if u.ModelsCheckedAt != nil {
 			b.SetModels(append([]string{}, u.Models...)).
+				SetModelFormats(cloneUpstreamModelFormats(u.ModelFormats)).
 				SetModelsCheckedAt(*u.ModelsCheckedAt)
 			if u.ModelsError != nil && strings.TrimSpace(*u.ModelsError) != "" {
 				b.SetModelsError(domain.TruncateErrMsg(strings.TrimSpace(*u.ModelsError)))
@@ -304,6 +307,18 @@ func (r *UpstreamRepo) UpdateUpstream(ctx context.Context, u *domain.Upstream) (
 // The endpoint and write-only key are part of the predicate so a slow probe
 // cannot attach an old model list to a newly edited upstream.
 func (r *UpstreamRepo) RecordUpstreamModels(ctx context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
+	return r.recordUpstreamModelCapabilities(ctx, expected, models, nil, false, modelErr)
+}
+
+// RecordUpstreamModelCapabilities atomically publishes the model catalogue and
+// the protocols verified for each model. A nil model list means the validation
+// did not complete, so both parts of the previous capability snapshot remain
+// intact while the bounded error is recorded.
+func (r *UpstreamRepo) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
+	return r.recordUpstreamModelCapabilities(ctx, expected, models, modelFormats, true, modelErr)
+}
+
+func (r *UpstreamRepo) recordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, updateFormats bool, modelErr *string) (*domain.Upstream, error) {
 	if expected == nil || expected.ID <= 0 {
 		return nil, fmt.Errorf("%w: missing expected upstream", ErrNotFound)
 	}
@@ -323,12 +338,18 @@ func (r *UpstreamRepo) RecordUpstreamModels(ctx context.Context, expected *domai
 			// failures, which intentionally keeps the previous snapshot.
 			clean := append([]string{}, models...)
 			b.SetModels(clean).SetModelsCheckedAt(time.Now()).SetModelsError(code)
+			if updateFormats {
+				b.SetModelFormats(cloneUpstreamModelFormats(modelFormats))
+			}
 		} else {
 			b.SetModelsError(code)
 		}
 	} else {
 		clean := append([]string{}, models...)
 		b.SetModels(clean).SetModelsCheckedAt(time.Now())
+		if updateFormats {
+			b.SetModelFormats(cloneUpstreamModelFormats(modelFormats))
+		}
 		b.ClearModelsError()
 	}
 	if expected.UpstreamKey == nil {
@@ -344,6 +365,18 @@ func (r *UpstreamRepo) RecordUpstreamModels(ctx context.Context, expected *domai
 		return r.upstreamTelemetryConflict(ctx, expected.ID)
 	}
 	return r.GetUpstream(ctx, expected.ID)
+}
+
+// cloneUpstreamModelFormats prevents Ent mutations and returned domain models
+// from sharing caller-owned slice storage. It always returns a non-nil map so
+// the JSON column keeps the canonical empty-object representation for unknown
+// or legacy capability data.
+func cloneUpstreamModelFormats(in map[string][]domain.RequestFormat) map[string][]domain.RequestFormat {
+	out := make(map[string][]domain.RequestFormat, len(in))
+	for model, formats := range in {
+		out[model] = append([]domain.RequestFormat{}, formats...)
+	}
+	return out
 }
 
 func (r *UpstreamRepo) SetUpstreamEnabled(ctx context.Context, id int64, enabled bool) (*domain.Upstream, error) {

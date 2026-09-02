@@ -750,6 +750,37 @@ func TestParseRejectsTinyPositivePricesInsteadOfTreatingThemAsFree(t *testing.T)
 	require.Equal(t, 3, res.Skipped)
 }
 
+func TestParseKeepsModelWhenOptionalTokenComponentsAreTooSmall(t *testing.T) {
+	jsonStr := `{
+  "tiny-optional": {
+    "mode": "chat",
+    "input_cost_per_token": 1e-6,
+    "output_cost_per_token": 2e-6,
+    "cache_read_input_token_cost": 1e-20,
+    "input_cost_per_token_priority": 1e-20,
+    "output_cost_per_token_priority": 3e-6,
+    "tiered_pricing": [{"input_cost_per_token": 1e-20, "output_cost_per_token": 4e-6, "range": [1000, 2000]}]
+  }
+}`
+	res, err := Parse([]byte(jsonStr), nil)
+	require.NoError(t, err)
+	require.Len(t, res.PriceEntries, 1)
+	require.Zero(t, res.Skipped)
+	require.Nil(t, res.PriceEntries[0].CacheReadPerM)
+	require.Len(t, res.Variants, 2)
+	for _, variant := range res.Variants {
+		if variant.ServiceTier != nil {
+			require.Equal(t, "priority", *variant.ServiceTier)
+			require.Nil(t, variant.SetInputPerM)
+			require.Equal(t, int64(300000), *variant.SetOutputPerM)
+		} else {
+			require.Equal(t, int64(1000), *variant.CtxMin)
+			require.Nil(t, variant.SetInputPerM)
+			require.Equal(t, int64(400000), *variant.SetOutputPerM)
+		}
+	}
+}
+
 func TestParseRejectsOverflowingCostsAndMalformedThresholds(t *testing.T) {
 	jsonStr := `{
   "too-expensive": {"input_cost_per_token": 1e308, "output_cost_per_token": 1e-5, "mode": "chat"},

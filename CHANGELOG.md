@@ -10,6 +10,51 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.12] - 2026-09-02
+
+### Changed
+
+- Upstream model validation now negotiates Responses, Chat Completions, and
+  Anthropic Messages routes automatically, including Bearer and `x-api-key`
+  authentication where the relay reports a compatible header mismatch.
+- Capability snapshots now bind each advertised model to the protocols that
+  completed a real probe; routing uses the model/protocol pair instead of a
+  broad endpoint fallback.
+- Price refreshes now publish base prices, variants, and removals as one atomic
+  snapshot so requests never observe a partially updated catalogue.
+- The deployment helper now treats release activation as a transaction: a
+  failed health check or interrupted SSH session restores the last validated
+  release while leaving PostgreSQL and Redis untouched.
+
+### Fixed
+
+- Model probes now accept completed JSON and SSE provider envelopes while
+  rejecting login pages, model-list payloads, start-only events, nested error
+  envelopes, and generic request IDs that do not prove a model call succeeded.
+- Probe retries no longer replay HTTP responses or requests that may have been
+  written upstream. Only a proven pre-write connection failure gets one bounded
+  retry, preventing duplicate validation charges.
+- Runtime protocol conversion now receives one bounded alternate-route attempt
+  even when ordinary account failover is configured for a single attempt.
+- Streaming conversion now preserves split tool-call metadata, mixed
+  Anthropic text/tool-result ordering, and emits a terminal event sequence when
+  an upstream closes without an explicit `[DONE]` marker.
+- Price synchronization rejects abnormal source shrinkage, removes stale invalid
+  entries, and preserves positive fractional fast-mode multipliers instead of
+  rounding them to free. Optional cache, priority, Flex, and tier components
+  below storage precision are dropped per component while authoritative base
+  prices remain intact; base prices that cannot be represented still fail
+  closed. Snapshot reconciliation also rejects same-sized, near-disjoint model
+  catalogues instead of deleting the last known prices.
+- Protocol negotiation now preserves the per-request failover exclusion set, so
+  a later retry cannot return to an account that already failed the request.
+- Deployment rollback pins the previously running image by digest-derived tag
+  and restores it without a network-dependent rebuild, while PostgreSQL and
+  Redis remain untouched.
+- Deployment now verifies that an occupied application port belongs to the
+  running C4 app container during upgrades; unrelated listeners and stale
+  containers stop the transaction before Compose can replace the app.
+
 ## [v0.0.1-beta.11] - 2026-09-01
 
 ### Added

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 func TestSendUpstreamMessagesProbeUsesAnthropicWireShape(t *testing.T) {
@@ -60,9 +62,10 @@ func TestSendUpstreamModelProbeFallsBackToMessagesOnlyRelay(t *testing.T) {
 	}))
 	defer server.Close()
 
-	status, err := sendUpstreamModelProbe(context.Background(), server.Client(), server.URL, "relay-key", "messages-model")
+	status, format, err := sendUpstreamModelProbeWithFormat(context.Background(), server.Client(), server.URL, "relay-key", "messages-model")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, domain.FormatAnthropic, format)
 	require.Equal(t, []string{"/v1/responses", "/v1/chat/completions", "/v1/messages"}, paths)
 }
 
@@ -243,7 +246,9 @@ func TestReadUpstreamProbeBodyAcceptsOpenSSEFrameImmediately(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, ok := w.(http.Flusher)
 		require.True(t, ok)
-		_, _ = io.WriteString(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"m-1\"}}\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"message_start\",\"message\":{\"id\":\"m-1\"}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"ok\"}}\n")
 		flusher.Flush()
 		<-r.Context().Done()
 	}))
@@ -261,6 +266,130 @@ func TestReadUpstreamProbeBodyAcceptsOpenSSEFrameImmediately(t *testing.T) {
 	require.NoError(t, err)
 	require.Less(t, time.Since(started), 500*time.Millisecond)
 	require.True(t, isUpstreamSuccessResponse(body))
+}
+
+func TestSendUpstreamTestRequestWaitsForSSEFailureAfterStart(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.created\",\"response\":{\"id\":\"r-1\",\"status\":\"in_progress\"}}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r-1\",\"status\":\"failed\",\"error\":{\"message\":\"rate limit exceeded\"}}}\n\n")
+		flusher.Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	started := time.Now()
+	status, err := sendUpstreamTestRequest(ctx, server.Client(), server.URL, "relay-key", "model-a", false)
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, "rate_limited", classifyUpstreamTestError(ctx, status, err))
+	require.Less(t, time.Since(started), 500*time.Millisecond)
+}
+
+func TestSendUpstreamTestRequestWaitsForSSEFailureAfterRoleChunk(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		_, _ = io.WriteString(w, "data: {\"id\":\"chat-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"error\":{\"message\":\"quota exceeded\"}}\n\n")
+		flusher.Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	status, err := sendUpstreamTestRequest(ctx, server.Client(), server.URL, "relay-key", "model-a", true)
+	require.Equal(t, http.StatusOK, status)
+	var envelope *upstreamErrorEnvelope
+	require.ErrorAs(t, err, &envelope)
+	require.Contains(t, string(envelope.body), "quota exceeded")
+}
+
+func TestReadUpstreamProbeBodyReturnsAfterChatContentFollowingRoleChunk(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		_, _ = io.WriteString(w, "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n")
+		flusher.Flush()
+		_, _ = io.WriteString(w, "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		flusher.Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+	response, err := server.Client().Do(request)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	started := time.Now()
+	body, err := readUpstreamProbeBody(response)
+	require.NoError(t, err)
+	require.Less(t, time.Since(started), 500*time.Millisecond)
+	require.Contains(t, string(body), `"content":"ok"`)
+	require.True(t, isUpstreamSuccessResponse(body))
+}
+
+func TestSendUpstreamResponsesProbeRetriesNestedParameterError(t *testing.T) {
+	for _, chunked := range []bool{false, true} {
+		name := "fixed-length"
+		if chunked {
+			name = "chunked"
+		}
+		t.Run(name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				attempt := requests.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if attempt == 1 {
+					require.Contains(t, body, "store")
+					_, _ = io.WriteString(w, `{"data":{"error":{"message":"unsupported parameter: store"}}}`)
+					if chunked {
+						flusher, ok := w.(http.Flusher)
+						require.True(t, ok)
+						flusher.Flush()
+					}
+					return
+				}
+				require.NotContains(t, body, "store")
+				_, _ = io.WriteString(w, `{"id":"resp-1","object":"response"}`)
+			}))
+			defer server.Close()
+
+			status, err := sendUpstreamResponsesProbe(context.Background(), server.Client(), server.URL, "relay-key", "model-a")
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, status)
+			require.Equal(t, int32(2), requests.Load())
+		})
+	}
+}
+
+func TestSendUpstreamModelProbeDoesNotRetryNestedQuotaError(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"payload":{"status":"failed","error":{"message":"quota exceeded"}}}`)
+	}))
+	defer server.Close()
+
+	status, err := sendUpstreamModelProbe(context.Background(), server.Client(), server.URL, "relay-key", "model-a")
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, "rate_limited", classifyModelValidationError(context.Background(), status, err))
+	require.Equal(t, int32(1), requests.Load(), "quota failures must not retry parameters or another protocol")
 }
 
 func TestReadUpstreamProbeBodyAcceptsChunkedJSONWithoutEOF(t *testing.T) {
@@ -288,6 +417,43 @@ func TestReadUpstreamProbeBodyAcceptsChunkedJSONWithoutEOF(t *testing.T) {
 	require.NoError(t, err)
 	require.Less(t, time.Since(started), 500*time.Millisecond)
 	require.True(t, isUpstreamSuccessResponse(body))
+}
+
+func TestReadUpstreamProbeBodyAcceptsLeadingWhitespaceJSONWithoutEOF(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		_, _ = io.WriteString(w, " \r\n\t"+`{"id":"resp-spaced","object":"response"}`)
+		flusher.Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+	response, err := server.Client().Do(request)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	started := time.Now()
+	body, err := readUpstreamProbeBody(response)
+	require.NoError(t, err)
+	require.Less(t, time.Since(started), 500*time.Millisecond)
+	require.True(t, isUpstreamSuccessResponse(body))
+}
+
+func TestReadUpstreamProbeBodyRejectsDeclaredOversizeResponse(t *testing.T) {
+	response := &http.Response{
+		Header:        http.Header{"Content-Type": []string{"application/json"}},
+		ContentLength: 1<<20 + 1,
+		Body:          io.NopCloser(strings.NewReader(`{"id":"too-large","object":"response"}`)),
+	}
+
+	body, err := readUpstreamProbeBody(response)
+	require.ErrorContains(t, err, "too large")
+	require.Empty(t, body)
 }
 
 func TestIsJSONContentType(t *testing.T) {

@@ -550,6 +550,7 @@ var (
 		{Name: "base_url", Type: field.TypeString},
 		{Name: "upstream_key", Type: field.TypeString, Nullable: true},
 		{Name: "models", Type: field.TypeJSON, Default: "[]"},
+		{Name: "model_formats", Type: field.TypeJSON, Default: "{}"},
 		{Name: "models_checked_at", Type: field.TypeTime, Nullable: true},
 		{Name: "models_error", Type: field.TypeString, Nullable: true},
 		{Name: "multiplier_bp", Type: field.TypeInt, Default: 10000},

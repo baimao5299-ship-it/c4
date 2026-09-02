@@ -805,6 +805,13 @@ func TestRelayClassifyCloseFramePriority(t *testing.T) {
 	}
 }
 
+func TestRelayClassifyMissingCloseAndErrorReturnsConcreteError(t *testing.T) {
+	end, endErr := relayClassify(nil, nil, nil, nil)
+	require.Equal(t, relayEndUpstreamError, end)
+	require.Error(t, endErr)
+	require.Equal(t, "upstream websocket closed without a close frame", endErr.Error())
+}
+
 // TestResponsesWSConcurrentWriteClose I-1 端到端竞态复现：上游关闭帧与客户端
 // 活跃写帧并发——客户端持续写帧（flood），假上游读满 1 帧后立即流式下发 +
 // 发 1000 关闭帧（不再读帧）。网关侧 up-loop 解码关闭帧的同时 client-loop

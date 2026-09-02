@@ -211,8 +211,11 @@ func TestOpsWorkersPG(t *testing.T) {
 	t.Cleanup(cancelStatsAgg)
 	require.NoError(t, statsAgg.Start(saggCtx))
 	require.Eventually(t, func() bool {
-		return statsAgg.Stats().(usage.StatsAggWorkerStats).LastDurationMs > 0
-	}, 3*time.Second, 10*time.Millisecond, "首轮聚合轮完成（含耗时观测）")
+		// A fast local/loopback PostgreSQL round can legitimately finish in
+		// under one millisecond. The watermark is the completion signal; a
+		// zero-millisecond duration is still an accurate observation.
+		return statsAgg.Stats().(usage.StatsAggWorkerStats).WatermarkUnixMs > 0
+	}, 10*time.Second, 10*time.Millisecond, "首轮聚合轮完成（含耗时观测）")
 	cancelStatsAgg()
 	require.Eventually(t, func() bool {
 		wm1, err1 := repos.Stats.LoadStatsAggWatermark(ctx)
@@ -248,7 +251,7 @@ func TestOpsWorkersPG(t *testing.T) {
 	// 表真实值一致（停摆冻结后 GET 的快照值 == 读表值——见上文前置比对）；
 	// 上轮耗时已观测（首轮聚合完成必有耗时）。
 	require.Equal(t, float64(wm.UnixMilli()), got["stats-agg"]["watermark_unix_ms"], "watermark 观测 = stats_agg_watermark 表真实值")
-	require.Positive(t, got["stats-agg"]["last_duration_ms"].(float64), "上轮耗时已观测")
+	require.GreaterOrEqual(t, got["stats-agg"]["last_duration_ms"].(float64), float64(0), "上轮耗时已观测（亚毫秒轮次允许为 0）")
 
 	// 快照区 Status 同步：5 条、全部已首刷、无错误。
 	require.Len(t, resp.Snapshots, 5)

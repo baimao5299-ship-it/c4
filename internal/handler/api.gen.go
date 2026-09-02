@@ -2123,11 +2123,12 @@ type UsageLog struct {
 	AccountID *int64 `json:"AccountID,omitempty"`
 
 	// BillingTier 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径
-	BillingTier *string `json:"BillingTier,omitempty"`
+	BillingTier         *string `json:"BillingTier,omitempty"`
+	CacheCreationTokens *int64  `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64  `json:"CacheReadTokens,omitempty"`
+
 	// CallCount 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens）
-	CallCount           *int64 `json:"CallCount,omitempty"`
-	CacheCreationTokens *int64 `json:"CacheCreationTokens,omitempty"`
-	CacheReadTokens     *int64 `json:"CacheReadTokens,omitempty"`
+	CallCount *int64 `json:"CallCount,omitempty"`
 
 	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无
 	ClientIP *string `json:"ClientIP,omitempty"`

@@ -244,36 +244,37 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 		}
 		return route
 	}
-	formats := []domain.RequestFormat{domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatOpenAIResponsesWS, domain.FormatOpenAIImages, domain.FormatOpenAISearch, domain.FormatAnthropic}
+	formats := []domain.RequestFormat{
+		domain.FormatOpenAIChat,
+		domain.FormatOpenAIResponses,
+		domain.FormatAnthropic,
+	}
 	if len(allowed) == 0 {
 		models, legacyFallback := upstreamModelIntersection(pool)
 		if legacyFallback {
 			// Rows created before capability snapshots existed remain routable until
 			// their first model read. Once a catalogue is recorded, an empty or
 			// failed read produces no route rather than an unrestricted fallback.
-			fallback := build(pool)
-			for _, format := range formats {
-				routes[routeKey{format: format}] = fallback
-			}
+			routes[routeKey{format: domain.FormatOpenAIChat}] = build(pool)
 			return routes
 		}
 		for _, model := range models {
-			candidates := upstreamCandidatesForModel(pool, model)
-			if len(candidates) == 0 {
-				continue
-			}
 			for _, format := range formats {
+				candidates := upstreamCandidatesForModelFormat(pool, model, format)
+				if len(candidates) == 0 {
+					continue
+				}
 				routes[routeKey{format: format, model: model}] = build(candidates)
 			}
 		}
 		return routes
 	}
 	for _, model := range allowed {
-		candidates := upstreamCandidatesForModel(pool, model)
-		if len(candidates) == 0 {
-			continue
-		}
 		for _, format := range formats {
+			candidates := upstreamCandidatesForModelFormat(pool, model, format)
+			if len(candidates) == 0 {
+				continue
+			}
 			routes[routeKey{format: format, model: model}] = build(candidates)
 		}
 	}
@@ -322,15 +323,35 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 	return models, false
 }
 
-func upstreamCandidatesForModel(pool []*upstreamSnapshot, model string) []*upstreamSnapshot {
+func upstreamCandidatesForModelFormat(pool []*upstreamSnapshot, model string, format domain.RequestFormat) []*upstreamSnapshot {
 	out := make([]*upstreamSnapshot, 0, len(pool))
 	for _, item := range pool {
-		if item == nil || item.member == nil || item.upstream == nil || !item.member.Enabled || !item.upstream.Enabled || !upstreamSupportsModel(item.upstream, model) {
+		if item == nil || item.member == nil || item.upstream == nil || !item.member.Enabled || !item.upstream.Enabled || !upstreamSupportsModelFormat(item.upstream, model, format) {
 			continue
 		}
 		out = append(out, item)
 	}
 	return out
+}
+
+func upstreamSupportsModelFormat(u *domain.Upstream, model string, format domain.RequestFormat) bool {
+	if !upstreamSupportsModel(u, model) {
+		return false
+	}
+	model = strings.TrimSpace(model)
+	// Rows written before protocol-aware probing have a checked catalogue but an
+	// empty format map. Preserve their historical Chat route so an upgrade does
+	// not strand existing accounts. Once any per-model capability is present,
+	// however, a missing model key is an unverified result (typically a transient
+	// probe failure) and must not be widened into a Chat route.
+	if len(u.ModelFormats) == 0 {
+		return format == domain.FormatOpenAIChat
+	}
+	formats, recorded := u.ModelFormats[model]
+	if !recorded {
+		return false
+	}
+	return slices.Contains(formats, format)
 }
 
 func upstreamSupportsModel(u *domain.Upstream, model string) bool {

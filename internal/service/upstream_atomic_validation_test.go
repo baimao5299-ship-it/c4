@@ -194,9 +194,8 @@ func TestValidateModelCatalogueDoesNotStopOnModelRateLimit(t *testing.T) {
 	require.Equal(t, len(models), result.ModelsChecked)
 	require.Equal(t, models[1:], result.Models)
 	require.Equal(t, "rate_limited", result.ErrorCode)
-	// The transiently rate-limited model gets one bounded retry; the remaining
-	// catalogue entries are still each probed exactly once.
-	require.Equal(t, int32(len(models)+1), requests.Load())
+	// A response status is never replayed; every catalogue entry is probed once.
+	require.Equal(t, int32(len(models)), requests.Load())
 }
 
 func TestValidateModelCatalogueAvoidsConcurrencyOnlyFalseNegatives(t *testing.T) {
@@ -293,9 +292,9 @@ func TestValidateModelCatalogueKeepsTransientAllFailureIncomplete(t *testing.T) 
 	require.False(t, result.ValidationComplete)
 	require.Equal(t, "upstream", result.ErrorCode)
 	require.Equal(t, len(models), result.ModelsChecked)
-	// Every transient failure receives one bounded retry before the run is
-	// marked incomplete and the previous snapshot is retained.
-	require.Equal(t, int32(len(models)*2), requests.Load())
+	// The transient run stays incomplete without replaying already received
+	// requests; persistence retains the previous snapshot for a later run.
+	require.Equal(t, int32(len(models)), requests.Load())
 }
 
 func TestListUpstreamModelsKeepsSnapshotWhenTransientFailureHidesAllModels(t *testing.T) {
@@ -412,7 +411,7 @@ func TestValidateModelCatalogueUsesInternalDeadlineForCompletion(t *testing.T) {
 			case <-r.Context().Done():
 			case <-time.After(100 * time.Millisecond):
 			}
-			_, _ = w.Write([]byte(`{"id":"late"}`))
+			_, _ = w.Write([]byte(`{"id":"late","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/predicate"
@@ -88,6 +89,12 @@ func (_u *UpstreamUpdate) SetModels(v []string) *UpstreamUpdate {
 // AppendModels appends value to the "models" field.
 func (_u *UpstreamUpdate) AppendModels(v []string) *UpstreamUpdate {
 	_u.mutation.AppendModels(v)
+	return _u
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (_u *UpstreamUpdate) SetModelFormats(v map[string][]domain.RequestFormat) *UpstreamUpdate {
+	_u.mutation.SetModelFormats(v)
 	return _u
 }
 
@@ -710,6 +717,9 @@ func (_u *UpstreamUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			sqljson.Append(u, upstream.FieldModels, value)
 		})
 	}
+	if value, ok := _u.mutation.ModelFormats(); ok {
+		_spec.SetField(upstream.FieldModelFormats, field.TypeJSON, value)
+	}
 	if value, ok := _u.mutation.ModelsCheckedAt(); ok {
 		_spec.SetField(upstream.FieldModelsCheckedAt, field.TypeTime, value)
 	}
@@ -1006,6 +1016,12 @@ func (_u *UpstreamUpdateOne) SetModels(v []string) *UpstreamUpdateOne {
 // AppendModels appends value to the "models" field.
 func (_u *UpstreamUpdateOne) AppendModels(v []string) *UpstreamUpdateOne {
 	_u.mutation.AppendModels(v)
+	return _u
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (_u *UpstreamUpdateOne) SetModelFormats(v map[string][]domain.RequestFormat) *UpstreamUpdateOne {
+	_u.mutation.SetModelFormats(v)
 	return _u
 }
 
@@ -1657,6 +1673,9 @@ func (_u *UpstreamUpdateOne) sqlSave(ctx context.Context) (_node *Upstream, err 
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, upstream.FieldModels, value)
 		})
+	}
+	if value, ok := _u.mutation.ModelFormats(); ok {
+		_spec.SetField(upstream.FieldModelFormats, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.ModelsCheckedAt(); ok {
 		_spec.SetField(upstream.FieldModelsCheckedAt, field.TypeTime, value)

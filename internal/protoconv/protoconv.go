@@ -37,6 +37,10 @@ func ConvertRequest(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 		return respToMessRequest(body)
 	case domain.ProtocolConvertChatToMess:
 		return chatToMessRequest(body)
+	case AutoResponsesToChat:
+		return respToChatRequest(body)
+	case AutoMessagesToChat:
+		return messToChatRequest(body)
 	}
 	return nil, fmt.Errorf("protoconv: unsupported direction %q", dir)
 }
@@ -52,6 +56,10 @@ func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 		return messToRespResponse(body)
 	case domain.ProtocolConvertChatToMess:
 		return messToChatResponse(body)
+	case AutoResponsesToChat:
+		return chatToRespResponse(body)
+	case AutoMessagesToChat:
+		return chatToMessResponse(body)
 	}
 	return nil, fmt.Errorf("protoconv: unsupported direction %q", dir)
 }
@@ -61,7 +69,11 @@ func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 // map（blockStarted 等）懒初始化（ensureBlocks，评审 I-4）——chat→resp 等
 // 方向从不使用，免每流 6 个 map 分配。
 func NewStreamMapper(dir domain.ProtocolConvert) *StreamMapper {
-	return &StreamMapper{dir: dir}
+	m := &StreamMapper{dir: dir}
+	if dir == AutoResponsesToChat {
+		m.inner = NewStreamMapper(domain.ProtocolConvertRespToMess)
+	}
+	return m
 }
 
 // ensureBlocks 懒初始化 mess→resp / resp→mess 方向的内容块累积状态
@@ -74,6 +86,9 @@ func (m *StreamMapper) ensureBlocks() {
 		m.argsByIndex = make(map[int64]string)
 		m.fcNames = make(map[int64]string)
 		m.fcIDs = make(map[int64]string)
+	}
+	if m.chatToolIndexes == nil {
+		m.chatToolIndexes = make(map[int64]int64)
 	}
 }
 
@@ -93,6 +108,7 @@ type StreamMapper struct {
 	it, ot  int64 // 用量（input/output tokens）
 	cached  int64 // cache_read / cached_tokens
 	reason  string
+	inner   *StreamMapper // auto Responses->Chat composes Chat->Messages->Responses
 
 	// 字节级帧组装复用缓冲（chat→resp 流式路径）：buf = 输出帧；dbuf =
 	// delta/usage 预组装。帧返回后下一帧覆盖，调用方不得跨帧保留。
@@ -107,6 +123,14 @@ type StreamMapper struct {
 	fcNames      map[int64]string
 	fcIDs        map[int64]string
 	blockOrder   []int64 // 内容块出现顺序（output items 保持顺序）
+
+	// Chat target streaming state. Content block indexes are allocated in
+	// first-seen order so pure-tool and mixed text/tool streams both remain
+	// contiguous Anthropic streams.
+	chatTextIndex   int64
+	chatTextSet     bool
+	chatToolIndexes map[int64]int64
+	nextChatBlock   int64
 }
 
 // Map 把一个模板协议 SSE 事件映射为客户端协议帧；drop=true 丢弃该帧。
@@ -117,6 +141,14 @@ type StreamMapper struct {
 // 空帧（无字节可透传）→ 丢弃。chat 的 [DONE] 等终止帧由映射器自行产出，
 // 透传仅兜底非规范上游。
 func (m *StreamMapper) Map(name string, data []byte) ([]byte, bool) {
+	// Chat SSE normally has no event name and its JSON uses object rather than
+	// type, so it must be dispatched before the generic type-based inference.
+	switch m.dir {
+	case AutoResponsesToChat:
+		return m.mapChatToResp(name, data)
+	case AutoMessagesToChat:
+		return m.mapChatToMess(name, data)
+	}
 	if name == "" {
 		name = string(sserelay.InferEventName(data))
 		if name == "" {

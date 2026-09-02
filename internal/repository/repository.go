@@ -139,6 +139,13 @@ type UpstreamModelStore interface {
 	RecordUpstreamModels(context.Context, *domain.Upstream, []string, *string) (*domain.Upstream, error)
 }
 
+// UpstreamModelCapabilityStore persists the protocol-aware capability
+// snapshot. It is separate from UpstreamModelStore so older service fakes and
+// integrations keep compiling while protocol-aware callers opt in explicitly.
+type UpstreamModelCapabilityStore interface {
+	RecordUpstreamModelCapabilities(context.Context, *domain.Upstream, []string, map[string][]domain.RequestFormat, *string) (*domain.Upstream, error)
+}
+
 // Keep the production aggregate on the complete upstream management surface.
 // The optional snapshot method is intentionally part of this assertion even
 // though it is not required by UpstreamStore, so a future refactor cannot make
@@ -146,6 +153,7 @@ type UpstreamModelStore interface {
 var _ interface {
 	UpstreamStore
 	UpstreamModelStore
+	UpstreamModelCapabilityStore
 	ListAllUpstreams(context.Context) ([]*domain.Upstream, error)
 	AcquireUpstreamValidationLock(context.Context) (func(), bool, error)
 } = (*Repository)(nil)
@@ -181,6 +189,9 @@ func (r *Repository) UpdateUpstream(ctx context.Context, u *domain.Upstream) (*d
 }
 func (r *Repository) RecordUpstreamModels(ctx context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
 	return r.Upstreams.RecordUpstreamModels(ctx, expected, models, modelErr)
+}
+func (r *Repository) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
+	return r.Upstreams.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr)
 }
 func (r *Repository) SetUpstreamEnabled(ctx context.Context, id int64, enabled bool) (*domain.Upstream, error) {
 	return r.Upstreams.SetUpstreamEnabled(ctx, id, enabled)

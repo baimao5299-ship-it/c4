@@ -26,7 +26,7 @@ func TestIsProtocolCapabilityError(t *testing.T) {
 		{name: "unsupported 422", code: http.StatusUnprocessableEntity, body: `{"error":{"message":"invalid content-type for this endpoint"}}`, want: true},
 		{name: "bad model", code: http.StatusBadRequest, body: `{"error":{"message":"model not found"}}`, want: false},
 		{name: "auth", code: http.StatusUnauthorized, body: `{"error":{"message":"unsupported key"}}`, want: false},
-		{name: "json decode", code: 0, err: errors.New("invalid character 'x' looking for beginning of value"), want: true},
+		{name: "json decode", code: 0, err: errors.New("invalid character 'x' looking for beginning of value"), want: false},
 		{name: "network", code: 0, err: errors.New("dial tcp: connection refused"), want: false},
 	}
 	for _, tc := range cases {

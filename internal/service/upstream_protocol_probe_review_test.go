@@ -67,14 +67,15 @@ func TestSendUpstreamResponsesProbeAccumulatesCompatibilityShapes(t *testing.T) 
 
 func TestIsJSONObjectResponseAcceptsAnthropicStreamEvents(t *testing.T) {
 	for _, body := range [][]byte{
-		[]byte(`{"type":"message_start","message":{"id":"msg-1"}}`),
 		[]byte(`{"type":"content_block_delta","delta":{"text":"hi"}}`),
+		[]byte(`{"type":"message_stop"}`),
 	} {
 		require.Truef(t, isJSONObjectResponse(body), "Anthropic event %q must be accepted", body)
 	}
 	for _, body := range [][]byte{
+		[]byte(`{"type":"message_start","message":{"id":"msg-1"}}`),
 		[]byte(`{"type":"message_error","error":{"message":"provider unavailable"}}`),
 	} {
-		require.Falsef(t, isJSONObjectResponse(body), "error event %q must be rejected", body)
+		require.Falsef(t, isJSONObjectResponse(body), "non-final event %q must be rejected", body)
 	}
 }

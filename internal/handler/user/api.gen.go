@@ -424,16 +424,16 @@ type UserChannelModelPrice struct {
 	// CacheWritePerM 按当前模型解析结果并应用分组倍率后的缓存写入单价（USD/1M tokens）；null = 当前没有可用价
 	CacheWritePerM *float64 `json:"CacheWritePerM"`
 
-	// InputPerM 按当前模型解析结果并应用分组倍率后的输入单价（USD/1M tokens）；null = 当前没有可用价
-	InputPerM *float64 `json:"InputPerM"`
-
 	// ImgInTokPerM 按当前模型解析结果并应用分组倍率后的图片输入 token 单价（USD/1M tokens）；null = 当前没有可用价
 	ImgInTokPerM *float64 `json:"ImgInTokPerM"`
 
 	// ImgOutTokPerM 按当前模型解析结果并应用分组倍率后的图片输出 token 单价（USD/1M tokens）；null = 当前没有可用价
-	ImgOutTokPerM *float64                   `json:"ImgOutTokPerM"`
-	Mode          *UserChannelModelPriceMode `json:"Mode"`
-	Model         string                     `json:"Model"`
+	ImgOutTokPerM *float64 `json:"ImgOutTokPerM"`
+
+	// InputPerM 按当前模型解析结果并应用分组倍率后的输入单价（USD/1M tokens）；null = 当前没有可用价
+	InputPerM *float64                   `json:"InputPerM"`
+	Mode      *UserChannelModelPriceMode `json:"Mode"`
+	Model     string                     `json:"Model"`
 
 	// OfficialCacheReadPerM 价格目录原始缓存读取单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
 	OfficialCacheReadPerM *float64 `json:"OfficialCacheReadPerM"`
@@ -441,14 +441,14 @@ type UserChannelModelPrice struct {
 	// OfficialCacheWritePerM 价格目录原始缓存写入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
 	OfficialCacheWritePerM *float64 `json:"OfficialCacheWritePerM"`
 
-	// OfficialInputPerM 价格目录原始输入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
-	OfficialInputPerM *float64 `json:"OfficialInputPerM"`
-
 	// OfficialImgInTokPerM 价格目录原始图片输入 token 单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
 	OfficialImgInTokPerM *float64 `json:"OfficialImgInTokPerM"`
 
 	// OfficialImgOutTokPerM 价格目录原始图片输出 token 单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
 	OfficialImgOutTokPerM *float64 `json:"OfficialImgOutTokPerM"`
+
+	// OfficialInputPerM 价格目录原始输入单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
+	OfficialInputPerM *float64 `json:"OfficialInputPerM"`
 
 	// OfficialOutputPerM 价格目录原始输出单价（USD/1M tokens），不含条件变体与分组倍率；null = 未配置
 	OfficialOutputPerM *float64 `json:"OfficialOutputPerM"`
@@ -484,7 +484,7 @@ type UserErrLog struct {
 	// BillingTier 计费档位（service_tier 归一化：priority/flex/fast/auto）；null = 未计费路径
 	BillingTier *string `json:"BillingTier"`
 
-	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无
+	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无
 	ClientIP  *string    `json:"ClientIP,omitempty"`
 	CreatedAt *time.Time `json:"CreatedAt,omitempty"`
 
@@ -534,13 +534,14 @@ type UserUsageLog struct {
 	AboveHit *bool `json:"AboveHit,omitempty"`
 
 	// BillingTier 请求 service_tier 归一化值（priority/flex/fast/auto）；空 = 未计费路径
-	BillingTier *string `json:"BillingTier,omitempty"`
-	// CallCount 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens）
-	CallCount           *int64 `json:"CallCount,omitempty"`
-	CacheCreationTokens *int64 `json:"CacheCreationTokens,omitempty"`
-	CacheReadTokens     *int64 `json:"CacheReadTokens,omitempty"`
+	BillingTier         *string `json:"BillingTier,omitempty"`
+	CacheCreationTokens *int64  `json:"CacheCreationTokens,omitempty"`
+	CacheReadTokens     *int64  `json:"CacheReadTokens,omitempty"`
 
-	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP 按序识别；无则 RemoteAddr 剥端口）；空 = 无
+	// CallCount 按次调用数量（图片生成 = 张数，搜索 = 1；不计入 TotalTokens）
+	CallCount *int64 `json:"CallCount,omitempty"`
+
+	// ClientIP 客户端 IP（CF-Connecting-IP / True-Client-IP / X-Real-IP / X-Forwarded-For 按序识别；无则 RemoteAddr 剥端口）；空 = 无
 	ClientIP *string `json:"ClientIP,omitempty"`
 
 	// Cost 计费成本（毫分，1 USD = 100,000 毫分）；错误请求（402/4xx）为 0

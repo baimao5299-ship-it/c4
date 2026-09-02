@@ -71,6 +71,14 @@ func convertedRoute(converts []domain.ProtocolConvert, client domain.RequestForm
 			if client == domain.FormatOpenAIChat {
 				return domain.FormatAnthropic, pc, true
 			}
+		case protoconv.AutoResponsesToChat:
+			if client == domain.FormatOpenAIResponses {
+				return domain.FormatOpenAIChat, pc, true
+			}
+		case protoconv.AutoMessagesToChat:
+			if client == domain.FormatAnthropic {
+				return domain.FormatOpenAIChat, pc, true
+			}
 		}
 	}
 	return "", "", false
@@ -89,6 +97,9 @@ func conversionCandidates(converts []domain.ProtocolConvert, client domain.Reque
 			auto = true
 			continue
 		}
+		if pc == protoconv.AutoResponsesToChat || pc == protoconv.AutoMessagesToChat {
+			continue
+		}
 		manual = append(manual, pc)
 	}
 	if auto {
@@ -96,9 +107,9 @@ func conversionCandidates(converts []domain.ProtocolConvert, client domain.Reque
 		case domain.FormatOpenAIChat:
 			return []domain.ProtocolConvert{domain.ProtocolConvertChatToResp, domain.ProtocolConvertChatToMess}
 		case domain.FormatAnthropic:
-			return []domain.ProtocolConvert{domain.ProtocolConvertMessToResp}
+			return []domain.ProtocolConvert{domain.ProtocolConvertMessToResp, protoconv.AutoMessagesToChat}
 		case domain.FormatOpenAIResponses:
-			return []domain.ProtocolConvert{domain.ProtocolConvertRespToMess}
+			return []domain.ProtocolConvert{domain.ProtocolConvertRespToMess, protoconv.AutoResponsesToChat}
 		}
 		return nil
 	}

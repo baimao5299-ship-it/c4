@@ -156,6 +156,61 @@ func TestPGUpstreamModelFailureKeepsUnknownCatalogue(t *testing.T) {
 	require.Equal(t, "timeout", *got.ModelsError)
 }
 
+func TestPGUpstreamModelCapabilitiesRoundTripAndReset(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	u, err := repos.Upstreams.CreateUpstream(ctx, &domain.Upstream{
+		Name: "model-capabilities", BaseURL: "https://relay.example.com",
+		MultiplierBP: 10000, Enabled: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, u.ModelFormats)
+	require.Empty(t, u.ModelFormats, "new rows use the backward-compatible unknown object")
+
+	formats := map[string][]domain.RequestFormat{
+		"chat-only": {domain.FormatOpenAIChat},
+		"multi":     {domain.FormatOpenAIResponses, domain.FormatAnthropic},
+	}
+	saved, err := repos.RecordUpstreamModelCapabilities(ctx, u, []string{"chat-only", "multi"}, formats, nil)
+	require.NoError(t, err)
+	require.Equal(t, formats, saved.ModelFormats)
+	require.NotNil(t, saved.ModelsCheckedAt)
+
+	// Mutating the caller's map after the write must not mutate the returned or
+	// persisted capability snapshot.
+	formats["chat-only"][0] = domain.FormatOpenAIResponses
+	formats["new"] = []domain.RequestFormat{domain.FormatAnthropic}
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIChat}, saved.ModelFormats["chat-only"])
+	require.NotContains(t, saved.ModelFormats, "new")
+	got, err := repos.GetUpstream(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIChat}, got.ModelFormats["chat-only"])
+	require.NotContains(t, got.ModelFormats, "new")
+
+	// An incomplete validation records its error but keeps both halves of the
+	// previous capability snapshot.
+	errorCode := "timeout"
+	failed, err := repos.RecordUpstreamModelCapabilities(ctx, got, nil, nil, &errorCode)
+	require.NoError(t, err)
+	require.Equal(t, got.Models, failed.Models)
+	require.Equal(t, got.ModelFormats, failed.ModelFormats)
+
+	// Moving to another endpoint invalidates all telemetry, including protocol
+	// capabilities from the previous provider.
+	next := *failed
+	next.BaseURL = "https://relay-new.example.com"
+	next.ResetTelemetry = true
+	next.Models = nil
+	next.ModelFormats = nil
+	next.ModelsCheckedAt = nil
+	reset, err := repos.UpdateUpstream(ctx, &next)
+	require.NoError(t, err)
+	require.Nil(t, reset.ModelsCheckedAt)
+	require.Empty(t, reset.Models)
+	require.NotNil(t, reset.ModelFormats)
+	require.Empty(t, reset.ModelFormats)
+}
+
 // TestPGUpstreamValidationAdvisoryLock is the multi-instance guard for the
 // long-running model probe. The lock must survive pool connection reuse until
 // the explicit release and become available again afterward.

@@ -247,9 +247,10 @@ func isProtocolCapabilityError(code int, body []byte, callErr error) bool {
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
 		// Continue below and require an explicit capability/format hint.
 	default:
-		if code != 0 {
-			return false
-		}
+		// A status-less SDK/transport error cannot prove that the endpoint is
+		// unsupported. Retrying the prompt through another protocol could repeat
+		// work after a response parse or connection failure.
+		return false
 	}
 	message := strings.ToLower(string(body))
 	if callErr != nil {
@@ -309,7 +310,8 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		lastHdr    http.Header
 		lastBody   []byte
 	)
-	for i := 0; i < p.cfg.FailoverAttempts; i++ {
+	attemptLimit := p.cfg.FailoverAttempts
+	for i := 0; i < attemptLimit; i++ {
 		lastSel = sel
 		// 缺价预检（评审 I-1 + P1-1 预检按格式切换）：每轮 sel 更新后、Call 前
 		// 查价——计费启用时模型无价格 → 释放并发槽 + 402（不按 0 计价），零 DB
@@ -331,6 +333,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		lastCode = code
 		lastHdr = hdr
 		lastBody = respBody
+		protocolCapability := len(fallbacks) > 0 && isProtocolCapabilityError(code, respBody, callErr)
 		if code == http.StatusTooManyRequests {
 			// 429：上游 body message（既有语义；域内截断 500）。WS 拨号 429 的
 			// 错误文本经 respBody 传递（可能为 SDK 纯文本）——提取为空时直取
@@ -351,7 +354,7 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 				resetAt := retryAfterDeadline(time.Now(), lastHdr, callErr)
 				p.sched.MarkSelectionResult(sel, rule.Kind429, resetAt, code, lastErrMsg, sel.Model)
 			}
-		} else if code >= 500 || code == 0 {
+		} else if (code >= 500 || code == 0) && !protocolCapability {
 			// 首字节前客户端断连（分类正确性，用户实证：模型思考期取消常见）：
 			// r.Context() 已取消 → SDK 返回 context.Canceled（statusOf=0）。这是
 			// 客户端行为，非上游错误——不 failover、不 MarkResult/冷却（否则
@@ -407,14 +410,18 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 			// released, and a new member is preferred; if the pool has only the
 			// same member, the unexcluded selection is still valid for its alternate
 			// endpoint protocol.
-			if i+1 < p.cfg.FailoverAttempts && len(fallbacks) > 0 && isProtocolCapabilityError(code, respBody, callErr) {
+			if protocolCapability {
 				failed := sel
 				switched := false
 				failureMessage := domain.TruncateErrMsg(string(respBody))
 				if failureMessage == "" && callErr != nil {
 					failureMessage = domain.TruncateErrMsg(callErr.Error())
 				}
-				failureLog := logWithCtx(r.Context(), p.buildLog(reqID, groupID, failed.AccountID, reqModel, failed.Model, format, code, domain.Err4xx, usageTuple{}, start))
+				failureType := domain.Err4xx
+				if code >= 500 {
+					failureType = domain.Err5xx
+				}
+				failureLog := logWithCtx(r.Context(), p.buildLog(reqID, groupID, failed.AccountID, reqModel, failed.Model, format, code, failureType, usageTuple{}, start))
 				applySelectionAttribution(failureLog, failed)
 				if failureMessage != "" {
 					failureLog.ErrorMessage = &failureMessage
@@ -430,9 +437,12 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 					nextSel, nextErr := p.sched.SelectExcluding(groupID, next.format, reqModel, attemptedAccounts)
 					if nextErr != nil {
 						// A single upstream member is allowed to serve both protocol
-						// routes. Retry without the account exclusion only for this
-						// alternate protocol, never for ordinary account failover.
-						nextSel, nextErr = p.sched.Select(groupID, next.format, reqModel)
+						// routes. Retry with only the failed member eligible for this
+						// alternate protocol. Keeping every other attempted member
+						// excluded prevents a later 5xx/network turn from replaying a
+						// request against an account that already failed it.
+						alternateExcluded := excludeAttemptedExcept(attemptedAccounts, failed.TargetID)
+						nextSel, nextErr = p.sched.SelectExcluding(groupID, next.format, reqModel, alternateExcluded)
 					}
 					if nextErr != nil {
 						continue
@@ -442,13 +452,20 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 					body = converted
 					st.routeFormat = next.format
 					st.caller = next.caller
-					attemptedAccounts = attemptedStorage[:0]
-					attemptedAccounts = append(attemptedAccounts, sel.TargetID)
+					if !containsAttempted(attemptedAccounts, sel.TargetID) {
+						attemptedAccounts = append(attemptedAccounts, sel.TargetID)
+					}
 					lastSel = sel
 					switched = true
 					break
 				}
 				if switched {
+					// Protocol negotiation is separate from ordinary account failover.
+					// Give each explicitly configured alternate route one bounded turn,
+					// even when the operator keeps account failover at one attempt.
+					if i+1 >= attemptLimit {
+						attemptLimit++
+					}
 					// Preserve the failed protocol attempt for diagnostics, but only
 					// once an alternate route is actually going to be tried. If the
 					// attempt budget is exhausted, the terminal path below owns the
@@ -573,6 +590,32 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 			writeErr(w, &formatError{status: status, msg: "all upstream attempts failed"})
 		}
 	}
+}
+
+// containsAttempted and excludeAttemptedExcept are used only on the protocol
+// negotiation path (a low-frequency failure path). Keeping them as small slice
+// helpers makes the ordinary selection loop allocation-free while preserving
+// the per-request failover history across protocol changes.
+func containsAttempted(attempted []int64, id int64) bool {
+	for _, candidate := range attempted {
+		if candidate == id {
+			return true
+		}
+	}
+	return false
+}
+
+func excludeAttemptedExcept(attempted []int64, allowed int64) []int64 {
+	if len(attempted) == 0 {
+		return nil
+	}
+	excluded := make([]int64, 0, len(attempted))
+	for _, candidate := range attempted {
+		if candidate != allowed && !containsAttempted(excluded, candidate) {
+			excluded = append(excluded, candidate)
+		}
+	}
+	return excluded
 }
 
 // httpSink HTTP 信封收尾（chat/search 共用；无状态——w 经方法参数流入）。

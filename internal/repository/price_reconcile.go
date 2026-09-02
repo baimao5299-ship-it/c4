@@ -18,6 +18,8 @@ import (
 var ErrSuspiciousPriceSnapshot = errors.New("pricing snapshot is unexpectedly smaller than the current catalogue")
 
 const snapshotShrinkGuardMinExisting = 100
+const snapshotOverlapGuardMinExisting = 100
+const snapshotOverlapMinPercent = 5
 
 // ReconcileLiteLLMSnapshot removes official rows that disappeared from a
 // complete LiteLLM snapshot and clears their conditional variants. It also
@@ -45,21 +47,45 @@ func (r *Repository) ReconcileLiteLLMSnapshot(ctx context.Context, models, varia
 		return 0, err
 	}
 	defer tx.Rollback() // nolint:errcheck // Commit closes the transaction.
-	currentRows, err := tx.PriceEntry.Query().
+	currentEntries, err := tx.PriceEntry.Query().
 		Where(priceentry.SourceEQ(priceentry.SourceLitellm)).
-		Count(ctx)
+		All(ctx)
 	if err != nil {
 		return 0, err
+	}
+	currentRows := len(currentEntries)
+	currentModels := make([]string, 0, currentRows)
+	for _, row := range currentEntries {
+		if row != nil {
+			if model := strings.TrimSpace(row.Model); model != "" {
+				currentModels = append(currentModels, model)
+			}
+		}
 	}
 	manualCandidates, err := tx.PriceEntry.Query().
 		Where(priceentry.SourceEQ(priceentry.SourceManual), priceentry.ModelIn(models...)).
-		Count(ctx)
+		All(ctx)
 	if err != nil {
 		return 0, err
 	}
-	candidateRows := len(models) - manualCandidates
-	if suspiciousPriceSnapshotShrink(currentRows, candidateRows) {
-		return 0, fmt.Errorf("%w: current=%d candidate=%d", ErrSuspiciousPriceSnapshot, currentRows, candidateRows)
+	manualSet := make(map[string]struct{}, len(manualCandidates))
+	for _, row := range manualCandidates {
+		if row != nil {
+			if model := strings.TrimSpace(row.Model); model != "" {
+				manualSet[model] = struct{}{}
+			}
+		}
+	}
+	candidateRows := len(models) - len(manualSet)
+	candidateOfficialModels := make([]string, 0, candidateRows)
+	for _, model := range models {
+		if _, manual := manualSet[model]; !manual {
+			candidateOfficialModels = append(candidateOfficialModels, model)
+		}
+	}
+	if suspiciousPriceSnapshotShrink(currentRows, candidateRows) || suspiciousPriceSnapshotContent(currentModels, candidateOfficialModels) {
+		overlap := snapshotModelOverlap(currentModels, candidateOfficialModels)
+		return 0, fmt.Errorf("%w: current=%d candidate=%d overlap=%d", ErrSuspiciousPriceSnapshot, currentRows, candidateRows, overlap)
 	}
 
 	// Discover stale official rows inside the same transaction used for the
@@ -103,18 +129,6 @@ func (r *Repository) ReconcileLiteLLMSnapshot(ctx context.Context, models, varia
 		}
 	}
 	if len(clearModels) > 0 {
-		manualRows, err := tx.PriceEntry.Query().
-			Where(priceentry.SourceEQ(priceentry.SourceManual), priceentry.ModelIn(clearModels...)).
-			All(ctx)
-		if err != nil {
-			return 0, err
-		}
-		manualSet := make(map[string]struct{}, len(manualRows))
-		for _, row := range manualRows {
-			if row != nil {
-				manualSet[row.Model] = struct{}{}
-			}
-		}
 		officialClear := make([]string, 0, len(clearModels))
 		for _, model := range clearModels {
 			if _, manual := manualSet[model]; !manual {
@@ -142,6 +156,47 @@ func suspiciousPriceSnapshotShrink(current, candidate int) bool {
 	// Use ceil(current/2) without multiplying candidate, avoiding overflow and
 	// treating an exact 50%% snapshot as the conservative acceptance boundary.
 	return candidate < (current+1)/2
+}
+
+// suspiciousPriceSnapshotContent catches a complete feed that has roughly the
+// same size as the current catalogue but contains almost none of the same
+// model identifiers. Such a response is more likely an HTML/error document or
+// a provider namespace change than a legitimate price removal. Small custom
+// catalogues remain allowed, matching the count guard's compatibility rule.
+func suspiciousPriceSnapshotContent(current, candidate []string) bool {
+	current = normalizeModelList(current)
+	candidate = normalizeModelList(candidate)
+	if len(current) < snapshotOverlapGuardMinExisting || len(candidate) == 0 {
+		return false
+	}
+	overlap := snapshotModelOverlap(current, candidate)
+	denom := len(current)
+	if len(candidate) < denom {
+		denom = len(candidate)
+	}
+	return overlap*100 < denom*snapshotOverlapMinPercent
+}
+
+func snapshotModelOverlap(current, candidate []string) int {
+	if len(current) == 0 || len(candidate) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(current))
+	for _, model := range current {
+		set[model] = struct{}{}
+	}
+	overlap := 0
+	seen := make(map[string]struct{}, len(candidate))
+	for _, model := range candidate {
+		if _, duplicate := seen[model]; duplicate {
+			continue
+		}
+		seen[model] = struct{}{}
+		if _, ok := set[model]; ok {
+			overlap++
+		}
+	}
+	return overlap
 }
 
 func normalizeModelList(models []string) []string {

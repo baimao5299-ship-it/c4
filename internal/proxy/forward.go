@@ -28,6 +28,7 @@ import (
 	"github.com/is7qin/c3api/internal/billing"
 	"github.com/is7qin/c3api/internal/credential"
 	"github.com/is7qin/c3api/internal/domain"
+	"github.com/is7qin/c3api/internal/protoconv"
 	"github.com/is7qin/c3api/internal/scheduler"
 	"github.com/is7qin/c3api/internal/sdkbridge"
 	"github.com/is7qin/c3api/internal/usage"
@@ -177,6 +178,8 @@ func New(cfg Config, sched *scheduler.Scheduler, creds *credential.Registry, rec
 		domain.ProtocolConvertMessToResp: &convertedCaller{p: p, dir: domain.ProtocolConvertMessToResp},
 		domain.ProtocolConvertRespToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertRespToMess},
 		domain.ProtocolConvertChatToMess: &convertedCaller{p: p, dir: domain.ProtocolConvertChatToMess},
+		protoconv.AutoResponsesToChat:    &convertedCaller{p: p, dir: protoconv.AutoResponsesToChat},
+		protoconv.AutoMessagesToChat:     &convertedCaller{p: p, dir: protoconv.AutoMessagesToChat},
 	}
 	p.codexImagesGenerations = &codexImagesCaller{p: p}
 	p.codexImagesEdits = &codexImagesCaller{p: p}

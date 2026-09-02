@@ -161,13 +161,14 @@ func toDomainUpstream(u *ent.Upstream) *domain.Upstream {
 		// verified empty list as [] while keeping never-validated rows unknown.
 		models = append([]string{}, u.Models...)
 	}
+	modelFormats := cloneUpstreamModelFormats(u.ModelFormats)
 	return &domain.Upstream{
 		ID: u.ID, Name: u.Name, BaseURL: u.BaseURL, UpstreamKey: u.UpstreamKey,
 		// Preserve an explicitly verified empty catalogue as a non-nil empty
 		// slice. ModelsCheckedAt distinguishes it from an unknown catalogue, and
 		// the API mapper relies on that distinction to emit [] rather than omit
 		// the field.
-		Models: models, ModelsCheckedAt: u.ModelsCheckedAt,
+		Models: models, ModelFormats: modelFormats, ModelsCheckedAt: u.ModelsCheckedAt,
 		ModelsError:  u.ModelsError,
 		MultiplierBP: u.MultiplierBp, Enabled: u.Enabled, Note: u.Note,
 		BalanceEndpoint: u.BalanceEndpoint, BalanceMethod: u.BalanceMethod,

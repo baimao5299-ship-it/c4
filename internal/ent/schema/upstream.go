@@ -7,6 +7,8 @@ import (
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // Upstream is a standalone management record for a provider endpoint. It keeps
@@ -28,6 +30,12 @@ func (Upstream) Fields() []ent.Field {
 		field.JSON("models", []string{}).
 			Default([]string{}).
 			Annotations(entsql.Default("[]")),
+		// Per-model protocols verified by the last completed capability probe.
+		// Existing rows migrate to an empty object, which deliberately means
+		// unknown rather than "all protocols".
+		field.JSON("model_formats", map[string][]domain.RequestFormat{}).
+			Default(map[string][]domain.RequestFormat{}).
+			Annotations(entsql.Default("{}")),
 		field.Time("models_checked_at").Optional().Nillable(),
 		field.String("models_error").Optional().Nillable(),
 		field.Int("multiplier_bp").Default(10000),

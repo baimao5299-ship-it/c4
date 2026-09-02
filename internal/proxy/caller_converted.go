@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/responses"
 	"github.com/tidwall/gjson"
 
@@ -60,6 +61,8 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 		var resp *http.Response
 		switch target {
+		case domain.FormatOpenAIChat:
+			resp, err = p.clients.ChatCompletionStreamRaw(ctx, sel.TemplateID, sel.BaseURL, cred, streamBody)
 		case domain.FormatOpenAIResponses:
 			resp, err = p.clients.ResponseStreamRaw(ctx, sel.TemplateID, sel.BaseURL, cred, streamBody)
 		case domain.FormatAnthropic:
@@ -90,6 +93,12 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// 用量提取走原始帧（与模板 caller 逐字同构；映射只影响写出字节）。
 				// EventName：缺 event: 名帧按 data.type 推断（非规范上游，P3）。
 				switch target {
+				case domain.FormatOpenAIChat:
+					if len(ev.Event) == 0 && bytes.Contains(ev.Data, []byte(`"usage"`)) {
+						if t, ok := chatStreamUsage(ev.Data); ok {
+							it, ot, tt, cr, cc = t.it, t.ot, t.tt, t.cr, t.cc
+						}
+					}
 				case domain.FormatOpenAIResponses:
 					if bytes.Equal(ev.EventName(), []byte("response.completed")) {
 						if t, ok := responsesCompletedUsage(ev.Data); ok {
@@ -109,6 +118,19 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				return mapper.Map(string(ev.Event), ev.Data)
 			},
 		})
+		if err == nil && target == domain.FormatOpenAIChat {
+			// Some compatible Chat relays close immediately after the final JSON
+			// chunk without emitting the conventional [DONE] sentinel. Complete
+			// the client protocol once at EOF; the mapper drops this synthetic
+			// sentinel when the real one already completed the stream.
+			if tail, drop := mapper.Map("", []byte("[DONE]")); !drop {
+				if _, writeErr := w.Write(tail); writeErr != nil {
+					err = writeErr
+				} else if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+		}
 		resp.Body.Close()
 		if ttft != nil {
 			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
@@ -140,6 +162,26 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	tpl := tplOf(sel) // 非流式 SDK 路径（流式原始请求路径免模板对象分配）
 	var upstreamErr error
 	switch target {
+	case domain.FormatOpenAIChat:
+		var params openai.ChatCompletionNewParams
+		if err := json.Unmarshal(body, &params); err != nil {
+			msg := "invalid request body: " + err.Error()
+			p.recordRejected(ctx, reqID, groupID, sel.AccountID, reqModel,
+				sel.Model, client, http.StatusBadRequest, domain.Err4xx, 0,
+				usageTuple{}, start, localRejectionMessage("invalid request body", err), sel)
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"message": msg}})
+			p.sched.ReleaseSelection(sel)
+			return 400, nil, true, nil
+		}
+		params.Model = sel.Model
+		var resp *openai.ChatCompletion
+		resp, upstreamErr = p.clients.ChatCompletion(ctx, tpl, cred, params)
+		if upstreamErr == nil {
+			data, upstreamErr = json.Marshal(resp)
+			if resp.JSON.Usage.Valid() {
+				it, ot, tt, cr, cc = chatUsageFromResponse(resp.Usage)
+			}
+		}
 	case domain.FormatOpenAIResponses:
 		var params responses.ResponseNewParams
 		if err := json.Unmarshal(body, &params); err != nil {
@@ -213,6 +255,10 @@ func clientAndTargetOf(dir domain.ProtocolConvert) (domain.RequestFormat, domain
 		return domain.FormatOpenAIResponses, domain.FormatAnthropic
 	case domain.ProtocolConvertChatToMess:
 		return domain.FormatOpenAIChat, domain.FormatAnthropic
+	case protoconv.AutoResponsesToChat:
+		return domain.FormatOpenAIResponses, domain.FormatOpenAIChat
+	case protoconv.AutoMessagesToChat:
+		return domain.FormatAnthropic, domain.FormatOpenAIChat
 	}
 	return "", ""
 }

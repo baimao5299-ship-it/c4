@@ -421,7 +421,7 @@ func TestUpstreamModelsPreviewAndSelectedTest(t *testing.T) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 			testedModel = body.Model
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"ok"}`))
+			_, _ = w.Write([]byte(`{"id":"ok","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

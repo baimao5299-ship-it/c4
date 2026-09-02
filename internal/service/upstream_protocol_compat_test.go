@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/is7qin/c3api/internal/domain"
 )
 
 // A model catalogue can contain entries for which the credential has no
@@ -111,6 +113,7 @@ func TestValidateModelCatalogueAcceptsSuccessfulSSEResponse(t *testing.T) {
 	require.True(t, result.ValidationComplete)
 	require.True(t, result.OK)
 	require.Equal(t, []string{"sse-model"}, result.Models)
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIResponses}, result.modelFormats["sse-model"])
 	require.Zero(t, result.ModelsFailed)
 }
 
@@ -173,5 +176,6 @@ func TestValidateModelCatalogueFallsBackWhenModelOnlySupportsChatCompletions(t *
 	require.True(t, result.ValidationComplete)
 	require.True(t, result.OK)
 	require.Equal(t, []string{"chat-only-model"}, result.Models)
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIChat}, result.modelFormats["chat-only-model"])
 	require.Equal(t, int32(1), chatRequests.Load())
 }

@@ -230,8 +230,45 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 	if !validOptionalCost(e.InputCostPerToken) || !validOptionalCost(e.OutputCostPerToken) {
 		return nil, nil, false
 	}
+	for _, value := range []*float64{
+		e.CacheReadInputTokenCost, e.CacheCreationInputTokenCost,
+		e.InputCostPerTokenPriority, e.OutputCostPerTokenPriority,
+		e.CacheReadInputTokenCostPriority, e.CacheCreationInputTokenCostPriority,
+		e.InputCostPerTokenFlex, e.OutputCostPerTokenFlex,
+		e.CacheReadInputTokenCostFlex, e.CacheCreationInputTokenCostFlex,
+	} {
+		if !validOptionalCost(value) {
+			return nil, nil, false
+		}
+	}
 	if !validTokenTiers(tiers) {
 		return nil, nil, false
+	}
+	// The persisted grid cannot represent a positive value below one unit. A
+	// tiny optional component is omitted (it must not become an apparent free
+	// tier), while an overflowing base input/output price still rejects the row.
+	var representable bool
+	if e.InputCostPerToken, representable = normalizeBaseTokenCost(e.InputCostPerToken); !representable {
+		return nil, nil, false
+	}
+	if e.OutputCostPerToken, representable = normalizeBaseTokenCost(e.OutputCostPerToken); !representable {
+		return nil, nil, false
+	}
+	e.CacheReadInputTokenCost = normalizeOptionalTokenCost(e.CacheReadInputTokenCost)
+	e.CacheCreationInputTokenCost = normalizeOptionalTokenCost(e.CacheCreationInputTokenCost)
+	e.InputCostPerTokenPriority = normalizeOptionalTokenCost(e.InputCostPerTokenPriority)
+	e.OutputCostPerTokenPriority = normalizeOptionalTokenCost(e.OutputCostPerTokenPriority)
+	e.CacheReadInputTokenCostPriority = normalizeOptionalTokenCost(e.CacheReadInputTokenCostPriority)
+	e.CacheCreationInputTokenCostPriority = normalizeOptionalTokenCost(e.CacheCreationInputTokenCostPriority)
+	e.InputCostPerTokenFlex = normalizeOptionalTokenCost(e.InputCostPerTokenFlex)
+	e.OutputCostPerTokenFlex = normalizeOptionalTokenCost(e.OutputCostPerTokenFlex)
+	e.CacheReadInputTokenCostFlex = normalizeOptionalTokenCost(e.CacheReadInputTokenCostFlex)
+	e.CacheCreationInputTokenCostFlex = normalizeOptionalTokenCost(e.CacheCreationInputTokenCostFlex)
+	for i := range tiers {
+		tiers[i].InputCostPerToken = normalizeOptionalTokenCost(tiers[i].InputCostPerToken)
+		tiers[i].OutputCostPerToken = normalizeOptionalTokenCost(tiers[i].OutputCostPerToken)
+		tiers[i].CacheReadInputTokenCost = normalizeOptionalTokenCost(tiers[i].CacheReadInputTokenCost)
+		tiers[i].CacheCreationInputTokenCost = normalizeOptionalTokenCost(tiers[i].CacheCreationInputTokenCost)
 	}
 	// Some providers (notably DashScope and Volcengine) publish no top-level
 	// token prices and put every tier in `tiered_pricing`. Promote the first
@@ -272,21 +309,6 @@ func parsePriceEntry(model string, raw json.RawMessage, log *logx.Logger) (*doma
 	// never be fabricated for providers that bill only input or only output.
 	if !validCost(e.InputCostPerToken) && !validCost(e.OutputCostPerToken) {
 		return nil, nil, false
-	}
-	// Do not silently discard optional prices that cannot be represented on the
-	// persisted grid. Such a discard would make billing fall back to another
-	// component and report a misleading value.
-	for _, value := range []*float64{
-		e.InputCostPerToken, e.OutputCostPerToken,
-		e.CacheReadInputTokenCost, e.CacheCreationInputTokenCost,
-		e.InputCostPerTokenPriority, e.OutputCostPerTokenPriority,
-		e.CacheReadInputTokenCostPriority, e.CacheCreationInputTokenCostPriority,
-		e.InputCostPerTokenFlex, e.OutputCostPerTokenFlex,
-		e.CacheReadInputTokenCostFlex, e.CacheCreationInputTokenCostFlex,
-	} {
-		if !representablePerMillion(value) {
-			return nil, nil, false
-		}
 	}
 	pe := &domain.PriceEntry{
 		Model:  model,
@@ -606,7 +628,10 @@ func tierBounds(tier tieredPrice) (lower, upper int64, ok bool) {
 }
 
 func validTierComponent(v *float64) bool {
-	return v == nil || (validCost(v) && representablePerMillion(v))
+	// Range validation rejects malformed negative/non-finite values. Positive
+	// values below the persisted precision are sanitized per component below so
+	// one optional tier field cannot discard an otherwise usable model.
+	return v == nil || validCost(v)
 }
 
 func validTokenTiers(tiers []tieredPrice) bool {
@@ -645,6 +670,41 @@ func pricePerMillion(v *float64) *int64 {
 		return nil
 	}
 	return &n
+}
+
+// normalizeBaseTokenCost keeps the base input/output pair authoritative. Any
+// positive value that cannot be represented is rejected rather than silently
+// omitted, because dropping an explicitly supplied base component would turn
+// a two-sided price into an undercharging one-sided row.
+func normalizeBaseTokenCost(v *float64) (*float64, bool) {
+	if v == nil {
+		return nil, true
+	}
+	if !validCost(v) {
+		return nil, false
+	}
+	if *v == 0 {
+		return cloneFloat(v), true
+	}
+	scaled := *v * 1e11
+	limit := float64(uint64(1) << 63)
+	if math.IsNaN(scaled) || math.IsInf(scaled, 0) || scaled >= limit {
+		return nil, false
+	}
+	if math.Round(scaled) <= 0 {
+		return nil, false
+	}
+	return cloneFloat(v), true
+}
+
+// normalizeOptionalTokenCost drops only values that cannot be represented by
+// the fixed-point price grid. Malformed negatives/non-finite values are
+// rejected by the caller's validation pass before this helper is reached.
+func normalizeOptionalTokenCost(v *float64) *float64 {
+	if v == nil || !validCost(v) || !representablePerMillion(v) {
+		return nil
+	}
+	return cloneFloat(v)
 }
 
 func setTokenVariantPrices(v *domain.PriceVariant, input, output, cacheRead, cacheWrite *float64) {

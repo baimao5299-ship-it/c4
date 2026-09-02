@@ -317,7 +317,12 @@ type Upstream struct {
 	// Models is the last successfully read /v1/models catalogue. A nil or
 	// unchecked catalogue is intentionally treated as unknown by upstream-pool
 	// routing; it must not silently mean "all models".
-	Models          []string
+	Models []string
+	// ModelFormats records the request protocols that were verified for each
+	// model in the same capability snapshot as Models. An empty map is the
+	// backward-compatible unknown state for rows created before protocol-aware
+	// probing; callers must not interpret it as support for every protocol.
+	ModelFormats    map[string][]RequestFormat
 	ModelsCheckedAt *time.Time
 	ModelsError     *string
 	// ClearUpstreamKey is a transient update instruction. It allows an operator

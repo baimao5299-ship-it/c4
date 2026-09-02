@@ -15,10 +15,12 @@ import (
 	"math/big"
 	"mime"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/is7qin/c3api/internal/billing"
@@ -63,6 +65,14 @@ type UpstreamValidationLocker interface {
 // production repositories retain the last verified /v1/models catalogue.
 type UpstreamModelStore interface {
 	RecordUpstreamModels(context.Context, *domain.Upstream, []string, *string) (*domain.Upstream, error)
+}
+
+// UpstreamModelCapabilityStore atomically persists the verified model list and
+// the concrete wire protocol that answered for each model. Production uses
+// this richer surface; UpstreamModelStore remains as a compatibility fallback
+// for lightweight integrations.
+type UpstreamModelCapabilityStore interface {
+	RecordUpstreamModelCapabilities(context.Context, *domain.Upstream, []string, map[string][]domain.RequestFormat, *string) (*domain.Upstream, error)
 }
 
 // GroupUpstreamStore persists the per-group upstream relation. It is kept
@@ -228,6 +238,7 @@ type UpstreamModelsResult struct {
 	// model that the provider definitively rejected or removed.
 	advertisedModels []string
 	transientModels  []string
+	modelFormats     map[string][]domain.RequestFormat
 }
 
 // UpstreamValidationItem is the result of one complete capability check. The
@@ -776,7 +787,7 @@ func updatedOrFallbackUpstream(updated, fallback *domain.Upstream) *domain.Upstr
 // behavior. A successful explicit probe is stronger evidence than a previous
 // catalogue/transport warning: keeping that warning in ModelsError made the
 // whole upstream look broken even though the selected model was routable.
-func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store UpstreamStore, expected *domain.Upstream, model string) (*domain.Upstream, error) {
+func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store UpstreamStore, expected *domain.Upstream, model string, format domain.RequestFormat) (*domain.Upstream, error) {
 	recorder, ok := store.(UpstreamModelStore)
 	if !ok || expected == nil {
 		return expected, nil
@@ -786,10 +797,20 @@ func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store Upstrea
 		return expected, nil
 	}
 	models := mergeUpstreamModelLists(expected.Models, []string{model})
+	modelFormats := cloneModelFormatSnapshot(expected.ModelFormats)
+	if format.Valid() {
+		modelFormats[model] = []domain.RequestFormat{format}
+	}
 	// ModelsError is a single upstream-level field, not a per-model result. A
 	// successful explicit model request therefore clears it; any later batch
 	// validation can repopulate it with a fresh warning for the current run.
-	saved, err := recorder.RecordUpstreamModels(ctx, expected, models, nil)
+	var saved *domain.Upstream
+	var err error
+	if capabilityRecorder, capabilityOK := store.(UpstreamModelCapabilityStore); capabilityOK {
+		saved, err = capabilityRecorder.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, nil)
+	} else {
+		saved, err = recorder.RecordUpstreamModels(ctx, expected, models, nil)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -840,13 +861,14 @@ func (s *Service) ListUpstreamModels(ctx context.Context, id int64) (*UpstreamMo
 	// snapshot alongside any models confirmed by the current run; the warning
 	// code still tells the operator that a retry is warranted.
 	result.Models = retainedUpstreamModels(u, result.Models, result.advertisedModels, result.transientModels, result.ValidationComplete, result.ErrorCode)
+	result.modelFormats = retainedUpstreamModelFormats(u, result.Models, result.modelFormats, result.ValidationComplete)
 	if len(result.Models) > 0 {
 		result.OK = true
 		if !result.ValidationComplete {
 			result.ModelsAvailable = len(result.Models)
 		}
 	}
-	if err := s.recordUpstreamModels(ctx, store, u, result.Models, result.ErrorCode, result.ValidationComplete); err != nil {
+	if err := s.recordUpstreamModels(ctx, store, u, result.Models, result.modelFormats, result.ErrorCode, result.ValidationComplete); err != nil {
 		return nil, mapRepoErr(err)
 	}
 	return &result, nil
@@ -1117,6 +1139,7 @@ func (s *Service) validateStoredUpstream(ctx context.Context, store UpstreamStor
 	result := validateUpstreamModels(probeCtx, client, base, normalizeUpstreamKey(derefUpstreamKey(expected.UpstreamKey)))
 	item.LatencyMS = time.Since(started).Milliseconds()
 	result.Models = retainedUpstreamModels(expected, result.Models, result.advertisedModels, result.transientModels, result.ValidationComplete, result.ErrorCode)
+	result.modelFormats = retainedUpstreamModelFormats(expected, result.Models, result.modelFormats, result.ValidationComplete)
 	if len(result.Models) > 0 {
 		result.OK = true
 		if !result.ValidationComplete {
@@ -1142,7 +1165,7 @@ func (s *Service) validateStoredUpstream(ctx context.Context, store UpstreamStor
 	// snapshot in place.
 	persistCtx, persistCancel := upstreamValidationPersistenceContext(ctx)
 	defer persistCancel()
-	if err := s.recordUpstreamModels(persistCtx, store, expected, result.Models, result.ErrorCode, result.ValidationComplete); err != nil {
+	if err := s.recordUpstreamModels(persistCtx, store, expected, result.Models, result.modelFormats, result.ErrorCode, result.ValidationComplete); err != nil {
 		item.OK = false
 		if errors.Is(err, repository.ErrConflict) {
 			item.ErrorCode = "superseded"
@@ -1235,7 +1258,7 @@ func summarizeUpstreamValidation(items []UpstreamValidationItem, started time.Ti
 	return summary
 }
 
-func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore, expected *domain.Upstream, models []string, code string, complete bool) error {
+func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, code string, complete bool) error {
 	recorder, ok := store.(UpstreamModelStore)
 	if !ok {
 		return nil
@@ -1249,18 +1272,50 @@ func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore,
 			// Other incomplete failures retain the previous snapshot.
 			if code != "auth" && code != "model_unavailable" {
 				models = nil
+				modelFormats = nil
 			} else {
 				models = []string{}
+				modelFormats = map[string][]domain.RequestFormat{}
 			}
 		}
 	}
-	if _, err := recorder.RecordUpstreamModels(ctx, expected, models, modelErr); err != nil {
+	var err error
+	if capabilityRecorder, capabilityOK := store.(UpstreamModelCapabilityStore); capabilityOK {
+		_, err = capabilityRecorder.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr)
+	} else {
+		_, err = recorder.RecordUpstreamModels(ctx, expected, models, modelErr)
+	}
+	if err != nil {
 		// A concurrent endpoint/key edit makes the probe stale. The read result is
 		// still useful to the caller, while the next reload will use the new config.
 		return err
 	}
 	s.invalidateUpstreamConfig(ctx)
 	return nil
+}
+
+func retainedUpstreamModelFormats(expected *domain.Upstream, models []string, current map[string][]domain.RequestFormat, complete bool) map[string][]domain.RequestFormat {
+	out := make(map[string][]domain.RequestFormat, len(models))
+	for _, model := range models {
+		if formats := current[model]; len(formats) > 0 {
+			out[model] = append([]domain.RequestFormat(nil), formats...)
+			continue
+		}
+		if !complete && expected != nil {
+			if formats := expected.ModelFormats[model]; len(formats) > 0 {
+				out[model] = append([]domain.RequestFormat(nil), formats...)
+			}
+		}
+	}
+	return out
+}
+
+func cloneModelFormatSnapshot(in map[string][]domain.RequestFormat) map[string][]domain.RequestFormat {
+	out := make(map[string][]domain.RequestFormat, len(in))
+	for model, formats := range in {
+		out[model] = append([]domain.RequestFormat(nil), formats...)
+	}
+	return out
 }
 
 // retainedUpstreamModels merges a previous verified snapshot only for an
@@ -1448,7 +1503,7 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 	started := time.Now()
 	probeCtx, probeCancel := context.WithTimeout(ctx, upstreamManualModelTestTimeout)
 	defer probeCancel()
-	status, requestErr := sendUpstreamModelProbeWithRetry(probeCtx, client, base, key, model)
+	status, format, requestErr := sendUpstreamModelProbeWithRetryFormat(probeCtx, client, base, key, model)
 	latency := time.Since(started).Milliseconds()
 	ok := requestErr == nil && status >= 200 && status < 300
 	code := classifyUpstreamTestError(probeCtx, status, requestErr)
@@ -1468,7 +1523,7 @@ func (s *Service) TestUpstreamWithModel(ctx context.Context, id int64, requested
 		// newly enabled models are common examples). Persist a successful manual
 		// probe so group pickers and later transient validations do not lose the
 		// exact model that the operator just proved usable.
-		persisted, persistErr := s.recordExplicitUpstreamModel(ctx, store, updatedOrFallbackUpstream(updated, u), model)
+		persisted, persistErr := s.recordExplicitUpstreamModel(ctx, store, updatedOrFallbackUpstream(updated, u), model, format)
 		if persistErr != nil {
 			if errors.Is(persistErr, repository.ErrConflict) {
 				return supersededUpstreamResult(ctx, store, id)
@@ -1772,6 +1827,7 @@ type upstreamModelValidation struct {
 	ValidationComplete bool
 	advertisedModels   []string
 	transientModels    []string
+	modelFormats       map[string][]domain.RequestFormat
 }
 
 // validateUpstreamModels turns an advertised catalogue into a verified
@@ -1816,6 +1872,7 @@ func validateUpstreamModels(ctx context.Context, client *http.Client, base, key 
 		ValidationComplete: result.ValidationComplete,
 		advertisedModels:   append([]string{}, models...),
 		transientModels:    append([]string{}, result.transientModels...),
+		modelFormats:       cloneModelFormatSnapshot(result.modelFormats),
 	}
 }
 
@@ -1862,6 +1919,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 	defer cancel()
 	type outcome struct {
 		model   string
+		format  domain.RequestFormat
 		ok      bool
 		checked bool
 		code    string
@@ -1898,7 +1956,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 				// bounded request. Jobs skipped after the overall deadline are
 				// not reported as real validation attempts.
 				modelCtx, modelCancel := context.WithTimeout(validationCtx, upstreamModelValidationPerModel)
-				status, requestErr := sendUpstreamModelProbeWithRetry(modelCtx, client, base, key, model)
+				status, format, requestErr := sendUpstreamModelProbeWithRetryFormat(modelCtx, client, base, key, model)
 				modelCancel()
 				modelCode := classifyModelValidationError(validationCtx, status, requestErr)
 				// A 401/403 can be scoped to the selected model (for example a
@@ -1908,7 +1966,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 				if !(modelCode == "auth" && isModelScopedAuthFailure(requestErr)) {
 					recordFatal(modelCode)
 				}
-				results <- outcome{model: model, ok: modelCode == "", checked: true, code: modelCode}
+				results <- outcome{model: model, format: format, ok: modelCode == "", checked: true, code: modelCode}
 			}
 		}()
 	}
@@ -1944,12 +2002,16 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 	failed := 0
 	counts := make(map[string]int)
 	transientSet := make(map[string]struct{})
+	modelFormats := make(map[string][]domain.RequestFormat)
 	for outcome := range results {
 		if outcome.checked {
 			checked++
 		}
 		if outcome.ok {
 			valid = append(valid, outcome.model)
+			if outcome.format.Valid() {
+				modelFormats[outcome.model] = []domain.RequestFormat{outcome.format}
+			}
 		} else if outcome.checked {
 			failed++
 			if outcome.code != "" {
@@ -2030,6 +2092,7 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 		ModelsFailed:       failed,
 		ValidationComplete: complete,
 		transientModels:    transientModels,
+		modelFormats:       modelFormats,
 	}
 }
 
@@ -2497,50 +2560,138 @@ func sendUpstreamResponsesProbe(ctx context.Context, client *http.Client, target
 // Authentication mismatches are handled inside each request helper, while
 // quota, model, and provider failures are never replayed through another
 // protocol.
-func sendUpstreamModelProbe(ctx context.Context, client *http.Client, base, key, model string) (int, error) {
+func sendUpstreamModelProbeWithFormat(ctx context.Context, client *http.Client, base, key, model string) (int, domain.RequestFormat, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	format := domain.FormatOpenAIResponses
 	status, requestErr := sendUpstreamResponsesProbe(ctx, client, upstreamURL(base, "/v1/responses"), key, model)
 	if shouldFallbackTestRequest(status, requestErr) && ctx.Err() == nil {
+		format = domain.FormatOpenAIChat
 		status, requestErr = sendUpstreamChatProbe(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model)
 	}
 	if shouldFallbackToMessagesRequest(status, requestErr, key) && ctx.Err() == nil {
+		format = domain.FormatAnthropic
 		status, requestErr = sendUpstreamMessagesProbe(ctx, client, upstreamURL(base, "/v1/messages"), key, model)
 	}
+	return status, format, requestErr
+}
+
+func sendUpstreamModelProbe(ctx context.Context, client *http.Client, base, key, model string) (int, error) {
+	status, _, requestErr := sendUpstreamModelProbeWithFormat(ctx, client, base, key, model)
 	return status, requestErr
 }
 
-// sendUpstreamModelProbeWithRetry retries one transient model-level transport
-// result after the protocol selection above. The retry is bounded to one and
-// never runs after the caller's model deadline; definitive model/auth errors
-// are returned immediately.
+// sendUpstreamModelProbeWithRetry retries only a transport failure that was
+// observed before any request bytes were written. A response status (including
+// 408/429/5xx) is never replayed because the upstream may already have charged
+// or started the model request before returning that status. This keeps model
+// validation conservative while a later validation run can recover a transient
+// outage without risking duplicate spend in the same run.
 func sendUpstreamModelProbeWithRetry(ctx context.Context, client *http.Client, base, key, model string) (int, error) {
+	status, _, requestErr := sendUpstreamModelProbeWithRetryFormat(ctx, client, base, key, model)
+	return status, requestErr
+}
+
+func sendUpstreamModelProbeWithRetryFormat(ctx context.Context, client *http.Client, base, key, model string) (int, domain.RequestFormat, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	status, requestErr := sendUpstreamModelProbe(ctx, client, base, key, model)
-	if !shouldRetryTransientModelProbe(status, requestErr) || !waitForUpstreamModelProbeRetry(ctx) {
-		return status, requestErr
+	probeCtx, _ := withUpstreamProbeAttemptState(ctx)
+	status, format, requestErr := sendUpstreamModelProbeWithFormat(probeCtx, client, base, key, model)
+	if !shouldRetryTransientModelProbe(status, requestErr) || !isPreSendProbeTransportError(requestErr) || !waitForUpstreamModelProbeRetry(ctx) {
+		return status, format, requestErr
 	}
-	return sendUpstreamModelProbe(ctx, client, base, key, model)
+	retryCtx, _ := withUpstreamProbeAttemptState(ctx)
+	return sendUpstreamModelProbeWithFormat(retryCtx, client, base, key, model)
+}
+
+type upstreamProbeAttemptState struct {
+	requestWritten atomic.Bool
+}
+
+type upstreamProbeAttemptStateKey struct{}
+
+func withUpstreamProbeAttemptState(ctx context.Context) (context.Context, *upstreamProbeAttemptState) {
+	if state, ok := ctx.Value(upstreamProbeAttemptStateKey{}).(*upstreamProbeAttemptState); ok && state != nil {
+		return ctx, state
+	}
+	state := &upstreamProbeAttemptState{}
+	return context.WithValue(ctx, upstreamProbeAttemptStateKey{}, state), state
+}
+
+type upstreamProbeTransportError struct {
+	err            error
+	requestWritten bool
+	traceReliable  bool
+}
+
+func (e *upstreamProbeTransportError) Error() string {
+	if e == nil || e.err == nil {
+		return "upstream probe transport error"
+	}
+	return e.err.Error()
+}
+
+func (e *upstreamProbeTransportError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func isPreSendProbeTransportError(err error) bool {
+	var transportErr *upstreamProbeTransportError
+	return errors.As(err, &transportErr) && transportErr.traceReliable && !transportErr.requestWritten
+}
+
+type upstreamProbeTraceSupport interface {
+	SupportsHTTPTrace() bool
+}
+
+func supportsUpstreamProbeTrace(client *http.Client) bool {
+	if client == nil || client.Transport == nil {
+		return client != nil
+	}
+	if _, ok := client.Transport.(*http.Transport); ok {
+		return true
+	}
+	if support, ok := client.Transport.(upstreamProbeTraceSupport); ok {
+		return support.SupportsHTTPTrace()
+	}
+	return false
+}
+
+func doUpstreamProbeRequest(client *http.Client, req *http.Request) (*http.Response, error) {
+	ctx, state := withUpstreamProbeAttemptState(req.Context())
+	traceReliable := supportsUpstreamProbeTrace(client)
+	trace := &httptrace.ClientTrace{
+		// WroteHeaders is the earliest standard transport signal that any
+		// request bytes may have left this process. WroteRequest also covers
+		// transports which expose only the completed-write callback.
+		WroteHeaders: func() { state.requestWritten.Store(true) },
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			state.requestWritten.Store(true)
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
+	resp, err := client.Do(req)
+	if err != nil {
+		return resp, &upstreamProbeTransportError{
+			err:            err,
+			requestWritten: state.requestWritten.Load(),
+			traceReliable:  traceReliable,
+		}
+	}
+	return resp, nil
 }
 
 func shouldRetryTransientModelProbe(status int, requestErr error) bool {
-	switch status {
-	case http.StatusRequestTimeout, http.StatusTooManyRequests,
-		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return true
-	}
-	// A status-less transport reset can be a one-off connection failure. Do not
-	// replay context deadlines or malformed/semantic responses.
-	if status != 0 || requestErr == nil {
-		return false
-	}
-	if errors.Is(requestErr, context.Canceled) || errors.Is(requestErr, context.DeadlineExceeded) {
-		return false
-	}
-	return true
+	// Only a status-less transport error can be retried. Whether it happened
+	// before the request was sent is checked separately by the caller.
+	return status == 0 && requestErr != nil &&
+		!errors.Is(requestErr, context.Canceled) &&
+		!errors.Is(requestErr, context.DeadlineExceeded)
 }
 
 func waitForUpstreamModelProbeRetry(ctx context.Context) bool {
@@ -2776,7 +2927,7 @@ func sendUpstreamMessagesRequestOnce(ctx context.Context, client *http.Client, t
 	// Anthropic-compatible relays generally require this version header, while
 	// OpenAI-compatible relays safely ignore it.  Keep it on both auth attempts.
 	req.Header.Set("anthropic-version", "2023-06-01")
-	resp, err := client.Do(req)
+	resp, err := doUpstreamProbeRequest(client, req)
 	if err != nil {
 		return 0, err
 	}
@@ -2790,11 +2941,8 @@ func sendUpstreamMessagesRequestOnce(ctx context.Context, client *http.Client, t
 			return resp.StatusCode, readErr
 		}
 		if len(responseBody) == 0 || len(responseBody) > 1<<20 || !isUpstreamSuccessResponse(responseBody) {
-			var envelope map[string]any
-			if json.Unmarshal(trimUpstreamJSONBody(responseBody), &envelope) == nil {
-				if _, hasError := envelope["error"]; hasError {
-					return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), responseBody...)}
-				}
+			if isUpstreamFailureResponse(responseBody) {
+				return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), responseBody...)}
 			}
 			return resp.StatusCode, errInvalidUpstreamResponse
 		}
@@ -2891,7 +3039,7 @@ func sendUpstreamTestRequestShapeOnce(ctx context.Context, client *http.Client, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setUpstreamAuthHeader(req, key, mode)
-	resp, err := client.Do(req)
+	resp, err := doUpstreamProbeRequest(client, req)
 	if err != nil {
 		return 0, err
 	}
@@ -2908,11 +3056,8 @@ func sendUpstreamTestRequestShapeOnce(ctx context.Context, client *http.Client, 
 			return resp.StatusCode, readErr
 		}
 		if len(body) == 0 || len(body) > 1<<20 || !isUpstreamSuccessResponse(body) {
-			var envelope map[string]any
-			if json.Unmarshal(trimUpstreamJSONBody(body), &envelope) == nil {
-				if _, hasError := envelope["error"]; hasError {
-					return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), body...)}
-				}
+			if isUpstreamFailureResponse(body) {
+				return resp.StatusCode, &upstreamErrorEnvelope{body: append([]byte(nil), body...)}
 			}
 			return resp.StatusCode, errInvalidUpstreamResponse
 		}
@@ -2932,6 +3077,9 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 	}
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	reader := bufio.NewReaderSize(io.LimitReader(resp.Body, 1<<20+1), 32<<10)
+	if resp.ContentLength > 1<<20 {
+		return nil, errors.New("upstream probe response too large")
+	}
 	// A normal JSON response with a declared length has a complete boundary
 	// even when the server keeps the TCP connection alive. Read exactly that
 	// bounded body instead of waiting for a newline or EOF.
@@ -2943,14 +3091,18 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 		return body, nil
 	}
 	// Chunked JSON relays may omit both a newline and a terminating chunk while
-	// retaining the connection for reuse. The JSON decoder stops at the end of a
-	// complete value, which is the only boundary needed for capability proof.
-	// Restrict this fast path to JSON media types; SSE and plain-text responses
-	// continue through the line/event parser below.
+	// retaining the connection for reuse. Only take the JSON decoder fast path
+	// when the first byte is actually a JSON object/array. Some proxies rewrite
+	// SSE to application/json; handing its `data:`/`event:` prefix to Decoder
+	// would consume the prefix and wait until the request deadline.
 	if !strings.Contains(contentType, "text/event-stream") && isJSONContentType(contentType) {
-		var value json.RawMessage
-		if err := json.NewDecoder(reader).Decode(&value); err == nil && len(value) > 0 {
-			return value, nil
+		if jsonStart, peekErr := consumeUpstreamJSONPreamble(reader); peekErr == nil && jsonStart {
+			var value json.RawMessage
+			if err := json.NewDecoder(reader).Decode(&value); err == nil && len(value) > 0 {
+				return value, nil
+			} else if err != nil && !errors.Is(err, io.EOF) {
+				return nil, err
+			}
 		}
 	}
 	// A proxy may rewrite `text/event-stream` to `application/json`. Peek at
@@ -2982,6 +3134,9 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 		// The provider envelope is already sufficient evidence for a capability
 		// probe, so stop at that boundary instead of waiting for EOF. Multi-line
 		// or incomplete JSON continues through the bounded full read below.
+		if isUpstreamFailureResponse(prefix) {
+			return prefix, &upstreamErrorEnvelope{body: append([]byte(nil), prefix...)}
+		}
 		if isUpstreamSuccessResponse(prefix) {
 			return prefix, nil
 		}
@@ -3003,6 +3158,10 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 		return nil, firstErr
 	}
 	if errors.Is(firstErr, io.EOF) {
+		if event.Len() > 0 && isUpstreamFailureResponse(event.Bytes()) {
+			body := append([]byte(nil), event.Bytes()...)
+			return body, &upstreamErrorEnvelope{body: body}
+		}
 		if event.Len() > 0 && isUpstreamSuccessResponse(event.Bytes()) {
 			return event.Bytes(), nil
 		}
@@ -3011,6 +3170,10 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 	// The first line itself may be a complete data frame.  Do this check before
 	// reading another line: some keep-alive streams never emit the blank event
 	// separator after their first response.
+	if isUpstreamFailureResponse(event.Bytes()) {
+		body := append([]byte(nil), event.Bytes()...)
+		return body, &upstreamErrorEnvelope{body: body}
+	}
 	if isUpstreamSuccessResponse(event.Bytes()) {
 		return event.Bytes(), nil
 	}
@@ -3028,10 +3191,18 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 			// context timeout.  Multi-line data frames still wait for their normal
 			// blank boundary and are handled below.
 			trimmed := trimUpstreamSSELine(line)
+			if bytes.HasPrefix(trimmed, []byte("data:")) && isUpstreamFailureResponse(event.Bytes()) {
+				body := append([]byte(nil), event.Bytes()...)
+				return body, &upstreamErrorEnvelope{body: body}
+			}
 			if bytes.HasPrefix(trimmed, []byte("data:")) && isUpstreamSuccessResponse(event.Bytes()) {
 				return event.Bytes(), nil
 			}
 			if len(bytes.TrimSpace(line)) == 0 {
+				if isUpstreamFailureResponse(event.Bytes()) {
+					body := append([]byte(nil), event.Bytes()...)
+					return body, &upstreamErrorEnvelope{body: body}
+				}
 				if isUpstreamSuccessResponse(event.Bytes()) {
 					return event.Bytes(), nil
 				}
@@ -3040,6 +3211,10 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if event.Len() > 0 && isUpstreamFailureResponse(event.Bytes()) {
+					body := append([]byte(nil), event.Bytes()...)
+					return body, &upstreamErrorEnvelope{body: body}
+				}
 				if event.Len() > 0 && isUpstreamSuccessResponse(event.Bytes()) {
 					return event.Bytes(), nil
 				}
@@ -3047,6 +3222,37 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 			return nil, err
 		}
 	}
+}
+
+// consumeUpstreamJSONPreamble removes only insignificant leading whitespace
+// and an optional UTF-8 BOM, then reports whether the next byte begins a JSON
+// object or array. It deliberately leaves non-JSON bytes untouched so a proxy
+// that mislabeled SSE as application/json can still be parsed below.
+func consumeUpstreamJSONPreamble(reader *bufio.Reader) (bool, error) {
+	for consumed := 0; consumed < 64; consumed++ {
+		first, err := reader.Peek(1)
+		if err != nil {
+			return false, err
+		}
+		switch first[0] {
+		case '{', '[':
+			return true, nil
+		case ' ', '\t', '\r', '\n':
+			_, _ = reader.ReadByte()
+			continue
+		case 0xef:
+			bom, bomErr := reader.Peek(3)
+			if bomErr == nil && bytes.Equal(bom, []byte{0xef, 0xbb, 0xbf}) {
+				_, _ = reader.Discard(3)
+				consumed += 2
+				continue
+			}
+			return false, nil
+		default:
+			return false, nil
+		}
+	}
+	return false, nil
 }
 
 // isJSONContentType recognizes JSON media types without treating a vendor
@@ -3123,7 +3329,14 @@ func isJSONObjectResponse(body []byte) bool {
 	if err := json.Unmarshal(body, &value); err != nil {
 		return false
 	}
+	return isJSONObjectResponseMap(value, 0)
+}
+
+func isJSONObjectResponseMap(value map[string]any, depth int) bool {
 	if value == nil {
+		return false
+	}
+	if depth >= 8 {
 		return false
 	}
 	// Some relays incorrectly return HTTP 200 for an application-level error.
@@ -3134,16 +3347,19 @@ func isJSONObjectResponse(body []byte) bool {
 	if rawError, hasError := value["error"]; hasError && rawError != nil {
 		return false
 	}
+	if hasExplicitUpstreamFailure(value) || isNeutralUpstreamEvent(value) {
+		return false
+	}
 	// A generic 200 JSON document (for example a portal's {"status":"ok"})
 	// does not prove that the selected model endpoint answered. Require a
 	// recognized response envelope used by the supported APIs instead of merely
 	// accepting any arbitrary JSON object.
-	if id, ok := value["id"].(string); ok && strings.TrimSpace(id) != "" {
-		return true
+	if isChunk, meaningful := classifyChatCompletionChunk(value); isChunk {
+		return meaningful
 	}
 	if object, ok := value["object"].(string); ok {
 		switch strings.ToLower(strings.TrimSpace(object)) {
-		case "chat.completion", "chat.completion.chunk", "completion", "text_completion", "response", "message", "image", "image_generation":
+		case "chat.completion", "completion", "text_completion", "response", "message", "image", "image_generation":
 			return true
 		}
 	}
@@ -3162,6 +3378,14 @@ func isJSONObjectResponse(body []byte) bool {
 			return true
 		}
 	}
+	if status, ok := value["status"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "completed", "incomplete", "succeeded", "success":
+			if id, idOK := value["id"].(string); idOK && strings.TrimSpace(id) != "" {
+				return true
+			}
+		}
+	}
 	if _, ok := value["choices"].([]any); ok {
 		// The envelope itself proves that the completion route answered. A
 		// filtered, tool-only, or otherwise empty completion can legitimately
@@ -3174,30 +3398,174 @@ func isJSONObjectResponse(body []byte) bool {
 		// still returning a valid response envelope.
 		return true
 	}
-	switch data := value["data"].(type) {
-	case []any:
-		return len(data) > 0
-	case map[string]any:
-		return len(data) > 0
-	case string:
-		return strings.TrimSpace(data) != ""
+	if outputText, ok := value["output_text"].(string); ok && strings.TrimSpace(outputText) != "" {
+		return true
 	}
-	for _, key := range []string{"output_text", "content", "result", "response"} {
-		if value[key] == nil {
-			continue
-		}
+	for _, key := range []string{"response", "message", "data", "result", "payload", "body"} {
 		switch item := value[key].(type) {
-		case string:
-			if strings.TrimSpace(item) != "" {
+		case map[string]any:
+			if isJSONObjectResponseMap(item, depth+1) {
 				return true
 			}
 		case []any:
-			if len(item) > 0 {
+			for _, entry := range item {
+				child, ok := entry.(map[string]any)
+				if !ok {
+					continue
+				}
+				if isJSONObjectResponseMap(child, depth+1) || isUpstreamImageResult(child) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// classifyChatCompletionChunk distinguishes a streaming preamble from proof
+// that the selected model produced a result. OpenAI-compatible streams commonly
+// emit a role-only or empty delta first; accepting that frame can hide a failure
+// in the following event and publish an unusable model as healthy.
+func classifyChatCompletionChunk(value map[string]any) (bool, bool) {
+	object, _ := value["object"].(string)
+	isChunk := strings.EqualFold(strings.TrimSpace(object), "chat.completion.chunk")
+	choices, hasChoices := value["choices"].([]any)
+	if !hasChoices {
+		return isChunk, false
+	}
+	for _, rawChoice := range choices {
+		choice, ok := rawChoice.(map[string]any)
+		if !ok {
+			continue
+		}
+		delta, hasDelta := choice["delta"].(map[string]any)
+		if _, present := choice["delta"]; present {
+			isChunk = true
+		}
+		if hasDelta {
+			if hasMeaningfulChatChunkValue(delta["content"]) ||
+				hasMeaningfulChatChunkValue(delta["tool_calls"]) ||
+				hasMeaningfulChatChunkValue(delta["function_call"]) {
+				return true, true
+			}
+		}
+		if finishReason, ok := choice["finish_reason"].(string); ok && strings.TrimSpace(finishReason) != "" {
+			return true, true
+		}
+	}
+	return isChunk, false
+}
+
+func hasMeaningfulChatChunkValue(value any) bool {
+	switch item := value.(type) {
+	case string:
+		return strings.TrimSpace(item) != ""
+	case []any:
+		return len(item) > 0
+	case map[string]any:
+		return len(item) > 0
+	default:
+		return false
+	}
+}
+
+func isUpstreamImageResult(value map[string]any) bool {
+	if value == nil {
+		return false
+	}
+	for _, key := range []string{"url", "b64_json", "revised_prompt"} {
+		if text, ok := value[key].(string); ok && strings.TrimSpace(text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasExplicitUpstreamFailure(value map[string]any) bool {
+	return hasExplicitUpstreamFailureAt(value, 0)
+}
+
+func hasExplicitUpstreamFailureAt(value map[string]any, depth int) bool {
+	if value == nil {
+		return false
+	}
+	if depth >= 8 {
+		return false
+	}
+	if rawError, ok := value["error"]; ok && rawError != nil {
+		return true
+	}
+	for _, key := range []string{"success", "ok"} {
+		if flag, ok := value[key].(bool); ok && !flag {
+			return true
+		}
+	}
+	if status, ok := value["status"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "error", "failed", "failure", "cancelled", "canceled", "denied", "unauthorized":
+			return true
+		}
+	}
+	for _, key := range []string{"type", "object"} {
+		kind, ok := value[key].(string)
+		if !ok {
+			continue
+		}
+		kind = strings.ToLower(strings.TrimSpace(kind))
+		if kind == "error" || kind == "message_error" || strings.HasSuffix(kind, ".error") || strings.HasSuffix(kind, ".failed") || strings.HasSuffix(kind, ".cancelled") || strings.HasSuffix(kind, ".canceled") {
+			return true
+		}
+	}
+	for _, key := range []string{"response", "message", "data", "result", "payload", "body"} {
+		switch nested := value[key].(type) {
+		case map[string]any:
+			if hasExplicitUpstreamFailureAt(nested, depth+1) {
 				return true
 			}
+		case []any:
+			for _, item := range nested {
+				if child, ok := item.(map[string]any); ok && hasExplicitUpstreamFailureAt(child, depth+1) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isNeutralUpstreamEvent(value map[string]any) bool {
+	return isNeutralUpstreamEventAt(value, 0)
+}
+
+func isNeutralUpstreamEventAt(value map[string]any, depth int) bool {
+	if value == nil {
+		return false
+	}
+	if depth >= 8 {
+		return false
+	}
+	if status, ok := value["status"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(status)) {
+		case "queued", "pending", "processing", "in_progress":
+			return true
+		}
+	}
+	responseType, _ := value["type"].(string)
+	switch strings.ToLower(strings.TrimSpace(responseType)) {
+	case "ping", "response.created", "response.queued", "response.in_progress", "message_start", "content_block_start":
+		return true
+	}
+	for _, key := range []string{"response", "message", "data", "result", "payload", "body"} {
+		switch nested := value[key].(type) {
 		case map[string]any:
-			if len(item) > 0 {
+			if isNeutralUpstreamEventAt(nested, depth+1) {
 				return true
+			}
+		case []any:
+			for _, item := range nested {
+				if child, ok := item.(map[string]any); ok && isNeutralUpstreamEventAt(child, depth+1) {
+					return true
+				}
 			}
 		}
 	}
@@ -3212,22 +3580,61 @@ func isUpstreamSuccessResponse(body []byte) bool {
 	if isJSONObjectResponse(body) {
 		return true
 	}
+	return visitUpstreamSSEPayloads(body, func(eventName string, payload []byte) bool {
+		return !isFailureUpstreamSSEEvent(eventName) && !isNeutralUpstreamSSEEvent(eventName) && isJSONObjectResponse(payload)
+	})
+}
+
+func isUpstreamFailureResponse(body []byte) bool {
+	body = trimUpstreamJSONBody(body)
+	var value map[string]any
+	if json.Unmarshal(body, &value) == nil && hasExplicitUpstreamFailure(value) {
+		return true
+	}
+	return visitUpstreamSSEPayloads(body, func(eventName string, payload []byte) bool {
+		if isFailureUpstreamSSEEvent(eventName) {
+			return true
+		}
+		var event map[string]any
+		return json.Unmarshal(trimUpstreamJSONBody(payload), &event) == nil && hasExplicitUpstreamFailure(event)
+	})
+}
+
+func isFailureUpstreamSSEEvent(eventName string) bool {
+	eventName = strings.ToLower(strings.TrimSpace(eventName))
+	return eventName == "error" || eventName == "message_error" || strings.HasSuffix(eventName, ".error") || strings.HasSuffix(eventName, ".failed") || strings.HasSuffix(eventName, ".cancelled") || strings.HasSuffix(eventName, ".canceled")
+}
+
+func isNeutralUpstreamSSEEvent(eventName string) bool {
+	switch strings.ToLower(strings.TrimSpace(eventName)) {
+	case "ping", "response.created", "response.queued", "response.in_progress", "message_start", "content_block_start":
+		return true
+	default:
+		return false
+	}
+}
+
+func visitUpstreamSSEPayloads(body []byte, visit func(string, []byte) bool) bool {
 	// SSE permits an event payload to span multiple `data:` lines. Join the
 	// physical lines with the protocol-mandated newline and inspect each event
 	// at its blank-line boundary. Parsing each line independently would reject
 	// valid long JSON frames and hide a manually usable model.
 	var event bytes.Buffer
+	eventName := ""
 	flush := func() bool {
 		if event.Len() == 0 {
+			eventName = ""
 			return false
 		}
 		payload := event.Bytes()
 		if bytes.Equal(bytes.TrimSpace(payload), []byte("[DONE]")) {
 			event.Reset()
+			eventName = ""
 			return false
 		}
-		ok := isJSONObjectResponse(payload)
+		ok := visit(eventName, payload)
 		event.Reset()
+		eventName = ""
 		return ok
 	}
 	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
@@ -3236,6 +3643,10 @@ func isUpstreamSuccessResponse(body []byte) bool {
 			if flush() {
 				return true
 			}
+			continue
+		}
+		if bytes.HasPrefix(trimmed, []byte("event:")) {
+			eventName = strings.TrimSpace(string(bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("event:")))))
 			continue
 		}
 		if !bytes.HasPrefix(trimmed, []byte("data:")) {

@@ -40,7 +40,7 @@ func TestIsUpstreamSuccessResponseAcceptsResponsesAndAnthropicEvents(t *testing.
 	for _, body := range [][]byte{
 		[]byte("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"),
 		[]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\ndata: [DONE]\n\n"),
-		[]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-1\"}}\n\n"),
+		[]byte("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"),
 		[]byte("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"ok\"}}\n\n"),
 		[]byte("data: {\"data\":{\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}}\n\ndata: [DONE]\n\n"),
 	} {
@@ -155,29 +155,25 @@ func TestSendUpstreamTestRequestAcceptsCompleteJSONBeforeConnectionClose(t *test
 	require.Equal(t, http.StatusOK, status)
 }
 
-// The same model can answer immediately after a gateway's one-off 503. A
-// bounded retry keeps that transient transport result from being reported as a
-// definitive model-unavailable outcome.
-func TestValidateModelCatalogueRetriesTransient503ModelProbe(t *testing.T) {
+// A 503 response means the request reached the relay and may already have
+// consumed upstream work. Keep the result transient without replaying it.
+func TestValidateModelCatalogueDoesNotReplayTransient503ModelProbe(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/v1/responses", r.URL.Path)
-		if requests.Add(1) == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = io.WriteString(w, `{"error":{"message":"temporary provider outage"}}`)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"recovered","object":"response"}`)
+		requests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"error":{"message":"temporary provider outage"}}`)
 	}))
 	defer server.Close()
 
 	result := validateModelCatalogue(context.Background(), server.Client(), server.URL, "relay-key", []string{"manual-model"})
-	require.True(t, result.ValidationComplete)
-	require.True(t, result.OK)
-	require.Equal(t, []string{"manual-model"}, result.Models)
-	require.Zero(t, result.ModelsFailed)
-	require.Equal(t, int32(2), requests.Load())
+	require.False(t, result.ValidationComplete)
+	require.False(t, result.OK)
+	require.Empty(t, result.Models)
+	require.Equal(t, "upstream", result.ErrorCode)
+	require.Equal(t, 1, result.ModelsFailed)
+	require.Equal(t, int32(1), requests.Load())
 }
 
 func TestParseUpstreamModelsPayloadAcceptsCommonRelayWrappers(t *testing.T) {

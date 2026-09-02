@@ -364,10 +364,16 @@ func relayClassify(upClose *websocket.CloseError, upErr, clientErr, pingErr erro
 		if abortErr == nil {
 			abortErr = pingErr
 		}
-		if abortErr == nil {
-			abortErr = upClose // 上游错误关闭帧（1011 等，无网络错误记录时）
+		if abortErr != nil {
+			return relayEndUpstreamError, abortErr
 		}
-		return relayEndUpstreamError, abortErr
+		if upClose != nil { // 上游错误关闭帧（1011 等，无网络错误记录时）
+			return relayEndUpstreamError, upClose
+		}
+		// A provider can drop the TCP/WebSocket connection without sending a
+		// close frame. Never return a typed-nil *CloseError through error: the
+		// caller records and formats this value on the terminal path.
+		return relayEndUpstreamError, errors.New("upstream websocket closed without a close frame")
 	}
 }
 

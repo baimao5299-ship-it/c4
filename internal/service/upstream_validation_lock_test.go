@@ -45,7 +45,7 @@ func TestValidationUsesOptionalCrossInstanceLock(t *testing.T) {
 		case "/v1/models":
 			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
 		case "/v1/responses":
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -100,7 +100,7 @@ func TestStoredBearerKeyIsNormalizedBeforeEveryProbe(t *testing.T) {
 		case "/v1/models":
 			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
 		case "/v1/responses":
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

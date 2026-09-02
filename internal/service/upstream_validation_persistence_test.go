@@ -29,6 +29,13 @@ func (s *canceledWriteRejectingStore) RecordUpstreamModels(ctx context.Context, 
 	return s.multiUpstreamServiceStub.RecordUpstreamModels(ctx, expected, models, modelErr)
 }
 
+func (s *canceledWriteRejectingStore) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.multiUpstreamServiceStub.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr)
+}
+
 func (s *canceledWriteRejectingStore) RecordUpstreamProbe(ctx context.Context, expected *domain.Upstream, success bool, latencyMS int64, probeErr *string) (*domain.Upstream, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -47,7 +54,7 @@ func TestValidateAllUpstreamsPersistsCanceledDiagnosticWithoutStorageError(t *te
 		case "/v1/responses":
 			close(started)
 			<-release
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

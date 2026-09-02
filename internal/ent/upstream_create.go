@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent/account"
 	"github.com/is7qin/c3api/internal/ent/groupupstream"
 	"github.com/is7qin/c3api/internal/ent/upstream"
@@ -53,6 +54,12 @@ func (_c *UpstreamCreate) SetNillableUpstreamKey(v *string) *UpstreamCreate {
 // SetModels sets the "models" field.
 func (_c *UpstreamCreate) SetModels(v []string) *UpstreamCreate {
 	_c.mutation.SetModels(v)
+	return _c
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (_c *UpstreamCreate) SetModelFormats(v map[string][]domain.RequestFormat) *UpstreamCreate {
+	_c.mutation.SetModelFormats(v)
 	return _c
 }
 
@@ -495,6 +502,10 @@ func (_c *UpstreamCreate) defaults() {
 		v := upstream.DefaultModels
 		_c.mutation.SetModels(v)
 	}
+	if _, ok := _c.mutation.ModelFormats(); !ok {
+		v := upstream.DefaultModelFormats
+		_c.mutation.SetModelFormats(v)
+	}
 	if _, ok := _c.mutation.MultiplierBp(); !ok {
 		v := upstream.DefaultMultiplierBp
 		_c.mutation.SetMultiplierBp(v)
@@ -567,6 +578,9 @@ func (_c *UpstreamCreate) check() error {
 	}
 	if _, ok := _c.mutation.Models(); !ok {
 		return &ValidationError{Name: "models", err: errors.New(`ent: missing required field "Upstream.models"`)}
+	}
+	if _, ok := _c.mutation.ModelFormats(); !ok {
+		return &ValidationError{Name: "model_formats", err: errors.New(`ent: missing required field "Upstream.model_formats"`)}
 	}
 	if _, ok := _c.mutation.MultiplierBp(); !ok {
 		return &ValidationError{Name: "multiplier_bp", err: errors.New(`ent: missing required field "Upstream.multiplier_bp"`)}
@@ -666,6 +680,10 @@ func (_c *UpstreamCreate) createSpec() (*Upstream, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Models(); ok {
 		_spec.SetField(upstream.FieldModels, field.TypeJSON, value)
 		_node.Models = value
+	}
+	if value, ok := _c.mutation.ModelFormats(); ok {
+		_spec.SetField(upstream.FieldModelFormats, field.TypeJSON, value)
+		_node.ModelFormats = value
 	}
 	if value, ok := _c.mutation.ModelsCheckedAt(); ok {
 		_spec.SetField(upstream.FieldModelsCheckedAt, field.TypeTime, value)
@@ -906,6 +924,18 @@ func (u *UpstreamUpsert) SetModels(v []string) *UpstreamUpsert {
 // UpdateModels sets the "models" field to the value that was provided on create.
 func (u *UpstreamUpsert) UpdateModels() *UpstreamUpsert {
 	u.SetExcluded(upstream.FieldModels)
+	return u
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (u *UpstreamUpsert) SetModelFormats(v map[string][]domain.RequestFormat) *UpstreamUpsert {
+	u.Set(upstream.FieldModelFormats, v)
+	return u
+}
+
+// UpdateModelFormats sets the "model_formats" field to the value that was provided on create.
+func (u *UpstreamUpsert) UpdateModelFormats() *UpstreamUpsert {
+	u.SetExcluded(upstream.FieldModelFormats)
 	return u
 }
 
@@ -1431,6 +1461,20 @@ func (u *UpstreamUpsertOne) SetModels(v []string) *UpstreamUpsertOne {
 func (u *UpstreamUpsertOne) UpdateModels() *UpstreamUpsertOne {
 	return u.Update(func(s *UpstreamUpsert) {
 		s.UpdateModels()
+	})
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (u *UpstreamUpsertOne) SetModelFormats(v map[string][]domain.RequestFormat) *UpstreamUpsertOne {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.SetModelFormats(v)
+	})
+}
+
+// UpdateModelFormats sets the "model_formats" field to the value that was provided on create.
+func (u *UpstreamUpsertOne) UpdateModelFormats() *UpstreamUpsertOne {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.UpdateModelFormats()
 	})
 }
 
@@ -2191,6 +2235,20 @@ func (u *UpstreamUpsertBulk) SetModels(v []string) *UpstreamUpsertBulk {
 func (u *UpstreamUpsertBulk) UpdateModels() *UpstreamUpsertBulk {
 	return u.Update(func(s *UpstreamUpsert) {
 		s.UpdateModels()
+	})
+}
+
+// SetModelFormats sets the "model_formats" field.
+func (u *UpstreamUpsertBulk) SetModelFormats(v map[string][]domain.RequestFormat) *UpstreamUpsertBulk {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.SetModelFormats(v)
+	})
+}
+
+// UpdateModelFormats sets the "model_formats" field to the value that was provided on create.
+func (u *UpstreamUpsertBulk) UpdateModelFormats() *UpstreamUpsertBulk {
+	return u.Update(func(s *UpstreamUpsert) {
+		s.UpdateModelFormats()
 	})
 }
 

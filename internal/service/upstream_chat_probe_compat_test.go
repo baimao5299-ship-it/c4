@@ -32,7 +32,7 @@ func TestSendUpstreamChatProbeRetriesRequiredStreamShape(t *testing.T) {
 		}
 		require.Equal(t, true, body["stream"])
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-1\"}}\n\ndata: [DONE]\n\n"))
+		_, _ = w.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-1\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"ok\"}}\n\ndata: [DONE]\n\n"))
 	}))
 	defer server.Close()
 

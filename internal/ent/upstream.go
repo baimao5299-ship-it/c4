@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/ent/upstream"
 )
 
@@ -26,6 +27,8 @@ type Upstream struct {
 	UpstreamKey *string `json:"upstream_key,omitempty"`
 	// Models holds the value of the "models" field.
 	Models []string `json:"models,omitempty"`
+	// ModelFormats holds the value of the "model_formats" field.
+	ModelFormats map[string][]domain.RequestFormat `json:"model_formats,omitempty"`
 	// ModelsCheckedAt holds the value of the "models_checked_at" field.
 	ModelsCheckedAt *time.Time `json:"models_checked_at,omitempty"`
 	// ModelsError holds the value of the "models_error" field.
@@ -118,7 +121,7 @@ func (*Upstream) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case upstream.FieldModels:
+		case upstream.FieldModels, upstream.FieldModelFormats:
 			values[i] = new([]byte)
 		case upstream.FieldEnabled:
 			values[i] = new(sql.NullBool)
@@ -174,6 +177,14 @@ func (_m *Upstream) assignValues(columns []string, values []any) error {
 			} else if value != nil && len(*value) > 0 {
 				if err := json.Unmarshal(*value, &_m.Models); err != nil {
 					return fmt.Errorf("unmarshal field models: %w", err)
+				}
+			}
+		case upstream.FieldModelFormats:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field model_formats", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ModelFormats); err != nil {
+					return fmt.Errorf("unmarshal field model_formats: %w", err)
 				}
 			}
 		case upstream.FieldModelsCheckedAt:
@@ -402,6 +413,9 @@ func (_m *Upstream) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("models=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Models))
+	builder.WriteString(", ")
+	builder.WriteString("model_formats=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ModelFormats))
 	builder.WriteString(", ")
 	if v := _m.ModelsCheckedAt; v != nil {
 		builder.WriteString("models_checked_at=")

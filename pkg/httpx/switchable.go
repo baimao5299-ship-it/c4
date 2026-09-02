@@ -140,6 +140,23 @@ func (s *SwitchableTransport) Current() http.RoundTripper {
 	return state.rt
 }
 
+// SupportsHTTPTrace reports whether the currently selected route preserves
+// net/http trace callbacks. Management probes use this only to distinguish a
+// proven pre-write connection failure from an opaque custom RoundTripper error.
+func (s *SwitchableTransport) SupportsHTTPTrace() bool {
+	rt := s.Current()
+	if rt == nil {
+		return false
+	}
+	if _, ok := rt.(*http.Transport); ok {
+		return true
+	}
+	if support, ok := rt.(interface{ SupportsHTTPTrace() bool }); ok {
+		return support.SupportsHTTPTrace()
+	}
+	return false
+}
+
 // Swap atomically selects next and returns the route that was replaced. The
 // caller owns closing the old route after all related transports have swapped.
 func (s *SwitchableTransport) Swap(next http.RoundTripper) http.RoundTripper {

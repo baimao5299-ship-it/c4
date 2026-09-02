@@ -154,7 +154,7 @@ command -v docker >/dev/null || { echo '服务器缺少 docker' >&2; exit 2; }
 if docker compose version >/dev/null 2>&1; then compose() { docker compose "$@"; }
 elif command -v docker-compose >/dev/null 2>&1; then compose() { docker-compose "$@"; }
 else echo '服务器缺少 Docker Compose' >&2; exit 2; fi
-for tool in flock tar grep sed head od tr seq ln readlink find ls; do command -v "$tool" >/dev/null || { echo "服务器缺少 $tool" >&2; exit 3; }; done
+for tool in flock tar grep sed head od tr seq ln readlink find ls mv rm; do command -v "$tool" >/dev/null || { echo "服务器缺少 $tool" >&2; exit 3; }; done
 exec 9>'__REMOTE_DIR__/.deploy.lock'
 flock -n 9 || { echo '已有另一个 C4 部署正在进行' >&2; exit 8; }
 current_link='__REMOTE_DIR__/current'
@@ -194,7 +194,24 @@ port_in_use() {
   if command -v netstat >/dev/null; then netstat -ltn 2>/dev/null | grep -Eq '[:.]__APP_PORT__([[:space:]]|$)'; return $?; fi
   echo '服务器缺少 ss/netstat，无法安全检查端口' >&2; exit 3
 }
-if [ "$existing" -eq 0 ] && port_in_use; then echo '端口 __APP_PORT__ 已被占用，停止部署' >&2; exit 3; fi
+port_owned_by_c4_app() {
+  # During an upgrade the current app may legitimately own AppPort. Only
+  # permit that exact running Compose container; a stopped/missing container
+  # or an unrelated listener must fail closed before Compose can replace it.
+  app_container=$(docker ps -aq --filter 'label=com.docker.compose.project=c4' --filter 'label=com.docker.compose.service=app' | head -n 1)
+  [ -n "$app_container" ] || return 1
+  app_state=$(docker inspect -f '{{.State.Status}}' "$app_container" 2>/dev/null || true)
+  [ "$app_state" = 'running' ] || return 1
+  docker port "$app_container" 18080/tcp 2>/dev/null | grep -Eq '(^|:)__APP_PORT__([[:space:]]|$)'
+}
+if port_in_use; then
+  if [ "$existing" -eq 1 ] && port_owned_by_c4_app; then
+    :
+  else
+    echo '端口 __APP_PORT__ 已被非当前 C4 app 占用，停止部署' >&2
+    exit 3
+  fi
+fi
 # A prior failed first deployment may have left an empty .env or release
 # directory. Only a validated current release or an initialized PG_VERSION
 # means that this directory already owns durable state and needs an explicit
@@ -288,14 +305,13 @@ tar -xzf '__REMOTE_DIR__/c4-__SHA__.tar.gz' -C '__REMOTE_DIR__/releases/__SHA__'
 new_release='__REMOTE_DIR__/releases/__SHA__'
 ln -sfn '__REMOTE_DIR__/.env' "$new_release/.env"
 cd "$new_release"
-# Validate the exact release before moving current. A malformed compose file or
+# Validate the exact release before starting it. A malformed compose file or
 # missing mount must leave the live symlink untouched and therefore keep the
-# running version reachable.
+# last-known-good release reachable.
 if ! compose -p c4 config >/dev/null; then
   echo 'C4 新版本 Compose 配置无效，保留当前版本，停止部署' >&2
   exit 4
 fi
-ln -sfn "$new_release" '__REMOTE_DIR__/current'
 deploy_ok=1
 # Pass the exact release id to the Compose build without persisting it beside
 # operator-managed secrets. Dockerfile uses this value for `-version` output.
@@ -318,6 +334,32 @@ ensure_dependency() {
     *) echo "已有 C4 $service 容器不健康（状态：$container_health）；为避免中断，停止部署" >&2; return 1 ;;
   esac
 }
+# Preserve the exact image behind the currently serving app before the
+# candidate is built. A release may use a floating image tag (for example
+# :beta); tagging the image by ID gives rollback an immutable, local target even
+# when the candidate build replaces that tag.
+rollback_image_tag=''
+capture_previous_image() {
+  if [ "$existing" -eq 0 ]; then return 0; fi
+  previous_container=$(docker ps -aq --filter 'label=com.docker.compose.project=c4' --filter 'label=com.docker.compose.service=app' | head -n 1)
+  if [ -z "$previous_container" ]; then
+    echo '已有 C4 app 容器缺失，无法建立回滚镜像基准；停止部署' >&2
+    return 1
+  fi
+  previous_image_id=$(docker inspect -f '{{.Image}}' "$previous_container" 2>/dev/null || true)
+  if [ -z "$previous_image_id" ] || ! docker image inspect "$previous_image_id" >/dev/null 2>&1; then
+    echo '无法读取当前 C4 app 镜像；停止部署以保留回滚能力' >&2
+    return 1
+  fi
+  rollback_image_tag="c4-rollback-${previous_id}"
+  docker tag "$previous_image_id" "$rollback_image_tag"
+}
+cleanup_rollback_image() {
+  if [ -n "$rollback_image_tag" ]; then
+    docker image rm "$rollback_image_tag" >/dev/null 2>&1 || true
+    rollback_image_tag=''
+  fi
+}
 start_app() {
   if [ "$existing" -eq 1 ]; then
     # Updating only app keeps PostgreSQL/Redis containers, networks, volumes,
@@ -329,7 +371,6 @@ start_app() {
     compose -p c4 up -d --build
   fi
 }
-if ! start_app; then deploy_ok=0; fi
 health_ok() {
   # The host may export HTTP(S)_PROXY for outbound traffic. A local readiness
   # probe must never leave the machine or depend on that proxy route.
@@ -338,6 +379,107 @@ health_ok() {
   # inside the container.
   compose -p c4 exec -T app wget -q -T 3 -O /dev/null 'http://127.0.0.1:18080/readyz'
 }
+wait_for_health() {
+  for i in $(seq 1 30); do
+    if health_ok; then return 0; fi
+    if [ "$i" -lt 30 ]; then sleep 2; fi
+  done
+  return 1
+}
+set_current() {
+  target_release="$1"
+  next_link="${current_link}.next.$$"
+  rm -f -- "$next_link" || return 1
+  ln -s "$target_release" "$next_link" || return 1
+  # Both links live in RemoteDir, so rename is atomic. An interrupted deploy
+  # therefore leaves current at either the old healthy release or the fully
+  # validated candidate, never at a partially committed path.
+  if mv -Tf -- "$next_link" "$current_link"; then return 0; fi
+  rm -f -- "$next_link" || true
+  return 1
+}
+restore_previous_release() {
+  echo "正在回滚到 $previous" >&2
+  rollback_pointer_ok=1
+  if ! set_current "$previous"; then rollback_pointer_ok=0; fi
+  if ! ln -sfn '__REMOTE_DIR__/.env' "$previous/.env"; then
+    echo '上一版本 .env 链接恢复失败' >&2
+    return 1
+  fi
+  if ! cd "$previous"; then
+    echo '无法进入上一版本 release 目录' >&2
+    return 1
+  fi
+  export C3API_VERSION="$(basename "$previous")"
+  # Rollback must be local and build-free. The immutable tag captured before
+  # candidate startup prevents a floating IMAGE value from selecting the new
+  # image, while --no-deps leaves PostgreSQL/Redis untouched.
+  if ensure_dependency db && ensure_dependency redis; then
+    if [ -n "$rollback_image_tag" ]; then
+      IMAGE="$rollback_image_tag" compose -p c4 up -d --no-build --no-deps app
+    else
+      compose -p c4 up -d --no-build --no-deps app
+    fi
+  else
+    return 1
+  fi
+  if wait_for_health; then
+    if [ "$rollback_pointer_ok" -eq 1 ] || set_current "$previous"; then
+      echo '已恢复上一版本；新版本保留在 releases 目录供排查' >&2
+      cleanup_rollback_image
+      return 0
+    fi
+    echo '上一版本已恢复运行，但 current 指针恢复失败；请保留现场并检查目录权限' >&2
+    return 1
+  fi
+  echo '回滚健康检查也失败，请保留现场并检查 docker compose ps/logs' >&2
+  return 1
+}
+stop_uncommitted_first_deploy() {
+  echo '首次部署未通过验收；正在停止未验收 APP，保留依赖和 release 供排查' >&2
+  if ! cd "$new_release"; then return 1; fi
+  if compose -p c4 stop app; then return 0; fi
+  echo '停止未验收 APP 失败，请立即检查 docker compose ps/logs' >&2
+  return 1
+}
+# BEGIN C4 deployment transaction guards
+rollback_uncommitted() {
+  if [ "$candidate_attempted" -ne 1 ] || [ "$deploy_committed" -eq 1 ] || [ "$cleanup_running" -eq 1 ]; then return 0; fi
+  cleanup_running=1
+  rollback_result=0
+  # previous was resolved and validated before any candidate work began.
+  if [ -n "$previous" ]; then
+    if ! restore_previous_release; then
+      rollback_result=1
+      # A failed restore must not leave the unverified candidate serving. The
+      # project name is stable, so the previous Compose file addresses the same
+      # app container even if recreation failed midway.
+      cd "$previous" 2>/dev/null || true
+      compose -p c4 stop app >/dev/null 2>&1 || true
+    fi
+  else
+    if ! stop_uncommitted_first_deploy; then rollback_result=1; fi
+  fi
+  compose -p c4 ps || true
+  candidate_attempted=0
+  cleanup_running=0
+  return "$rollback_result"
+}
+transaction_exit() {
+  transaction_status="$1"
+  trap - EXIT HUP INT TERM
+  set +e
+  rollback_uncommitted
+  exit "$transaction_status"
+}
+commit_candidate() {
+  if ! set_current "$new_release"; then return 1; fi
+  deploy_committed=1
+  candidate_attempted=0
+  trap - EXIT HUP INT TERM
+  return 0
+}
+# END C4 deployment transaction guards
 cleanup_releases() {
   # Keep the current and previous release regardless of mtime. Only remove
   # directories whose names are full Git SHAs beneath the release root; this
@@ -360,32 +502,32 @@ cleanup_releases() {
   done
   rm -f -- "$remote_root/c4-__SHA__.tar.gz" || return 1
 }
-if [ "$deploy_ok" -eq 1 ]; then
-  for i in $(seq 1 30); do
-    if health_ok; then
-      if ! cleanup_releases; then echo '警告：release 清理失败，但当前版本已就绪；请检查磁盘权限' >&2; fi
-      exit 0
-    fi
-    sleep 2
-  done
-  deploy_ok=0
+candidate_attempted=0
+deploy_committed=0
+cleanup_running=0
+trap 'transaction_exit "$?"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if ! capture_previous_image; then
+  exit 5
 fi
-echo 'C4 新版本启动或健康检查失败' >&2
-if [ -n "$previous" ] && [ -f "$previous/compose.yml" ]; then
-  echo "正在回滚到 $previous" >&2
-  ln -sfn "$previous" '__REMOTE_DIR__/current'
-  ln -sfn '__REMOTE_DIR__/.env' '__REMOTE_DIR__/current/.env'
-  cd '__REMOTE_DIR__/current'
-  export C3API_VERSION="$(basename "$previous")"
-  if start_app && health_ok; then
-    echo '已恢复上一版本；新版本保留在 releases 目录供排查' >&2
-  else
-    echo '回滚健康检查也失败，请保留现场并检查 docker compose ps/logs' >&2
+candidate_attempted=1
+if ! start_app; then deploy_ok=0; fi
+if [ "$deploy_ok" -eq 1 ] && wait_for_health; then
+  # Compose is already running from new_release. Commit the control-plane
+  # pointer only after the candidate has passed the full readiness window.
+  if commit_candidate; then
+    if ! cleanup_releases; then echo '警告：release 清理失败，但当前版本已就绪；请检查磁盘权限' >&2; fi
+    cleanup_rollback_image
+    exit 0
   fi
-else
-  echo '这是首次部署，没有可回滚版本' >&2
+  echo 'C4 新版本已就绪，但 current 原子切换失败；开始恢复上一版本' >&2
 fi
-compose -p c4 ps
+deploy_ok=0
+echo 'C4 新版本启动或健康检查失败' >&2
+# EXIT cleanup restores the resolved previous release, or stops an unverified
+# first-deploy app. It preserves this failure status after cleanup completes.
 exit 4
 '@
 $remote = $remote.Replace('__APP_PORT__', $AppPort.ToString()).Replace('__REMOTE_DIR__', $RemoteDir).Replace('__SHA__', $sha).Replace('__PG_DATA_DIR__', $pgDataDir).Replace('__CARD_STORE_LINE__', $cardStoreLine).Replace('__APP_NAME_LINE__', $appNameLine).Replace('__REUSE_DATABASE__', $reuseDatabaseValue).Replace('__KEEP_RELEASES__', $KeepReleases.ToString())

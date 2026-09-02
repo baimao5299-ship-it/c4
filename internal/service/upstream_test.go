@@ -107,6 +107,21 @@ func (s *upstreamServiceStub) RecordUpstreamModels(_ context.Context, expected *
 	return &copy, nil
 }
 
+func (s *upstreamServiceStub) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
+	saved, err := s.RecordUpstreamModels(ctx, expected, models, modelErr)
+	if err != nil || models == nil {
+		return saved, err
+	}
+	formats := cloneModelFormatSnapshot(modelFormats)
+	if s.row != nil {
+		s.row.ModelFormats = cloneModelFormatSnapshot(formats)
+	}
+	if saved != nil {
+		saved.ModelFormats = formats
+	}
+	return saved, nil
+}
+
 func TestValidateBaseURLRejectsAmbiguousRoots(t *testing.T) {
 	for _, value := range []string{
 		"ftp://relay.example.com",
@@ -223,7 +238,7 @@ func TestTestUpstreamSendsHiUsingDiscoveredResponsesModel(t *testing.T) {
 		require.Equal(t, "/v1/responses", r.URL.Path)
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"resp_test"}`))
+		_, _ = w.Write([]byte(`{"id":"resp_test","object":"response"}`))
 	}))
 	defer endpoint.Close()
 
@@ -238,6 +253,7 @@ func TestTestUpstreamSendsHiUsingDiscoveredResponsesModel(t *testing.T) {
 	require.Equal(t, "hi", got["input"])
 	require.Equal(t, false, got["stream"])
 	require.Equal(t, false, got["store"])
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIResponses}, stub.row.ModelFormats["gpt-5.6-sol"])
 }
 
 func TestTestUpstreamUsesFreshProbeBudgetAfterSlowModelDiscovery(t *testing.T) {
@@ -291,7 +307,7 @@ func TestTestUpstreamFallsBackToChatCompletions(t *testing.T) {
 		}
 		require.Equal(t, "/v1/chat/completions", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"chat_test"}`))
+		_, _ = w.Write([]byte(`{"id":"chat_test","object":"chat.completion"}`))
 	}))
 	defer endpoint.Close()
 
@@ -316,7 +332,7 @@ func TestTestUpstreamFallsBackToUnversionedModelsCatalogue(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"}]}`))
 		case "/v1/responses":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"resp_test"}`))
+			_, _ = w.Write([]byte(`{"id":"resp_test","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -347,7 +363,7 @@ func TestTestUpstreamFallsBackWhenResponsesNotImplemented(t *testing.T) {
 			w.WriteHeader(http.StatusNotImplemented)
 		case "/v1/chat/completions":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"chat_test"}`))
+			_, _ = w.Write([]byte(`{"id":"chat_test","object":"chat.completion"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -616,7 +632,8 @@ func TestIsJSONObjectResponseRejectsEmptyAndScalar(t *testing.T) {
 	for _, body := range [][]byte{nil, []byte(""), []byte("null"), []byte("[]"), []byte(`"ok"`), []byte("<html>"), []byte(`{"data":[]}`)} {
 		require.Falsef(t, isJSONObjectResponse(body), "body %q must be rejected", body)
 	}
-	require.True(t, isJSONObjectResponse([]byte(`{"id":"ok"}`)))
+	require.False(t, isJSONObjectResponse([]byte(`{"id":"ok"}`)))
+	require.True(t, isJSONObjectResponse([]byte(`{"id":"ok","object":"response"}`)))
 	require.True(t, isJSONObjectResponse([]byte(`{"choices":[]}`)))
 	require.True(t, isJSONObjectResponse([]byte(`{"output":[]}`)))
 	require.False(t, isJSONObjectResponse([]byte(`{"error":{"message":"failed"}}`)))
@@ -631,7 +648,7 @@ func TestListUpstreamModelsDeduplicatesRealCatalogue(t *testing.T) {
 		case "/v1/models":
 			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"},{"id":"model-a"},{"id":"model-b"}]}`))
 		case "/v1/responses", "/v1/chat/completions":
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -651,6 +668,8 @@ func TestListUpstreamModelsDeduplicatesRealCatalogue(t *testing.T) {
 	require.Zero(t, result.ModelsFailed)
 	require.True(t, result.ValidationComplete)
 	require.Equal(t, result.Models, stub.row.Models)
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIResponses}, stub.row.ModelFormats["model-a"])
+	require.Equal(t, []domain.RequestFormat{domain.FormatOpenAIResponses}, stub.row.ModelFormats["model-b"])
 }
 
 func TestListUpstreamModelsKeepsOnlyModelsWithVerifiedJSONResponse(t *testing.T) {
@@ -728,7 +747,7 @@ func TestListUpstreamModelsPreservesRateLimitCauseWhenSomeModelsPass(t *testing.
 				_, _ = w.Write([]byte(`{"error":{"message":"rate limit exceeded"}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1068,7 +1087,7 @@ func TestUpstreamModelValidationAcceptsV1SuffixWithoutDuplicatingPath(t *testing
 		case "/v1/models":
 			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
 		case "/v1/responses":
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1167,7 +1186,7 @@ func TestValidateAllUpstreamsChecksEachRowAndRecordsHealth(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":[{"id":"model-a"}]}`))
 		case "/v1/responses":
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1214,7 +1233,7 @@ func TestValidateAllUpstreamsRejectsConcurrentRun(t *testing.T) {
 				close(entered)
 			}
 			<-release
-			_, _ = w.Write([]byte(`{"id":"verified"}`))
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1551,4 +1570,22 @@ func (s *multiUpstreamServiceStub) RecordUpstreamModels(_ context.Context, expec
 		}
 	}
 	return nil, repository.ErrNotFound
+}
+
+func (s *multiUpstreamServiceStub) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
+	saved, err := s.RecordUpstreamModels(ctx, expected, models, modelErr)
+	if err != nil || models == nil {
+		return saved, err
+	}
+	formats := cloneModelFormatSnapshot(modelFormats)
+	for _, row := range s.rows {
+		if row.ID == expected.ID {
+			row.ModelFormats = cloneModelFormatSnapshot(formats)
+			break
+		}
+	}
+	if saved != nil {
+		saved.ModelFormats = formats
+	}
+	return saved, nil
 }
