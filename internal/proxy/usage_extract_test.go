@@ -112,6 +112,14 @@ func TestChatStreamUsageEventAcceptsTopLevelAnthropicUsageOnTerminalFrame(t *tes
 	u, ok = chatStreamUsageEvent([]byte("usage"), terminal)
 	require.True(t, ok)
 	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12}, u)
+
+	// An explicit provider total must not suppress the Anthropic component
+	// counters; older Chat parsing treated total_tokens as sufficient and left
+	// the billable input/output lanes at zero.
+	terminal = []byte(`{"type":"message_stop","usage":{"input_tokens":1850,"output_tokens":937,"total_tokens":2787,"cache_read_input_tokens":134100}}`)
+	u, ok = chatStreamUsageEvent([]byte("message_stop"), terminal)
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100}, u)
 }
 
 func TestMergeStreamUsageDoesNotEraseMeasuredValues(t *testing.T) {

@@ -99,21 +99,16 @@ func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
 			return usageTuple{ot: ot}, true
 		}
 	}
+	// Claude-compatible relays may put the complete Anthropic summary in a
+	// terminal/custom frame. Check that shape before the OpenAI parser: an
+	// Anthropic object can also contain total_tokens, which would otherwise make
+	// the native parser look non-empty while leaving input/output at zero.
+	if summary, summaryOK := anthropicSummaryUsageCompat(data); summaryOK {
+		return summary, true
+	}
 	// OpenAI-compatible usage is normally a complete top-level object and is
 	// valid whether or not the relay attached an SSE event name.
-	if u, ok := chatStreamUsage(data); ok {
-		// Keep the native Chat shape authoritative when it is present. A few
-		// Claude-compatible relays instead put the complete Anthropic summary
-		// in a terminal named frame; that shape is handled below.
-		if u.it != 0 || u.ot != 0 || u.tt != 0 || u.cr != 0 || u.cc != 0 {
-			return u, true
-		}
-		if summary, summaryOK := anthropicSummaryUsageCompat(data); summaryOK {
-			return summary, true
-		}
-		return u, true
-	}
-	return anthropicSummaryUsageCompat(data)
+	return chatStreamUsage(data)
 }
 
 // anthropicSummaryUsageCompat extracts a complete Anthropic usage object when
@@ -127,14 +122,12 @@ func anthropicSummaryUsageCompat(data []byte) (usageTuple, bool) {
 		return usageTuple{}, false
 	}
 	_, _, hasInput := scanKeyValue(raw, inputTokensKeyBytes)
-	_, _, hasPrompt := scanKeyValue(raw, promptTokensKeyBytes)
 	_, _, hasOutput := scanKeyValue(raw, outputTokensKeyBytes)
-	_, _, hasCompletion := scanKeyValue(raw, completionTokensKeyBytes)
 	_, _, hasCacheRead := scanKeyValue(raw, cacheReadInputTokensKeyBytes)
 	_, _, hasCacheReadCompat := scanKeyValue(raw, cacheReadTokensKeyBytes)
 	_, _, hasCacheCreate := scanKeyValue(raw, cacheCreationInputTokensKeyBytes)
 	_, _, hasCacheWrite := scanKeyValue(raw, cacheWriteInputTokensKeyBytes)
-	if !hasInput && !hasPrompt && !hasOutput && !hasCompletion && !hasCacheRead && !hasCacheReadCompat && !hasCacheCreate && !hasCacheWrite {
+	if !hasInput && !hasOutput && !hasCacheRead && !hasCacheReadCompat && !hasCacheCreate && !hasCacheWrite {
 		return usageTuple{}, false
 	}
 	u := usageTuple{
