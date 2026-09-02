@@ -87,15 +87,16 @@ const markBilledBulkSQL = `UPDATE usage_logs SET billed = TRUE
 	WHERE id = ANY($1) AND NOT billed`
 
 // unbilledHeadIDSQL / unbilledHeadCreatedSQL 队头两步法探针（wave3 D-A/D-B，
-// spec-f2opt-wave3 §一）：步① 走部分索引 usagelog_unbilled_id 瞬时定位最老可
-// 结算行 id（谓词同结算批：cost>0 可结算子集）；步② pkey 回表取 created_at。
+// spec-f2opt-wave3 §一）：步① 走部分索引 usagelog_unbilled_id 瞬时定位最老待
+// 结算行 id（含 cost>0 与 no_price 恢复子集）；步② pkey 回表取 created_at。
 // 两次 O(log n)，替代已删除的 usagelog_unbilled_created 索引（marked 步索引
 // 维护 -33%）。
 // 语义注记（D-B）：队头行 created_at 是 MIN(created_unbilled) 的**有界近似**——
 // 游标按 id 升序消费、id 与 created_at 同序（序列分配），偏差上界 = flush 缓冲
 // 延迟 + 时钟偏移（秒级），远小于保留期护栏阈值（天级）；随游标推进收敛。
 const unbilledHeadIDSQL = `SELECT id FROM usage_logs
-	WHERE NOT billed AND error_type IN ('none', 'abort') AND cost > 0
+	WHERE NOT billed AND error_type IN ('none', 'abort')
+		AND (cost > 0 OR billing_tier LIKE 'no_price%')
 	ORDER BY id LIMIT 1`
 
 const unbilledHeadCreatedSQL = `SELECT created_at FROM usage_logs WHERE id = $1`
