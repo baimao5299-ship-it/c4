@@ -111,7 +111,7 @@ func TestBuildUpstreamRoutesTreatsEmptyCapabilityMapAsLegacyChat(t *testing.T) {
 	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-4.1"})
 }
 
-func TestBuildUpstreamRoutesDoesNotWidenMissingCapabilityKey(t *testing.T) {
+func TestBuildUpstreamRoutesKeepsModelWithMissingCapabilityKeyOnChat(t *testing.T) {
 	checked := time.Now()
 	key := "sk-upstream"
 	upstream := &domain.Upstream{
@@ -125,9 +125,33 @@ func TestBuildUpstreamRoutesDoesNotWidenMissingCapabilityKey(t *testing.T) {
 	routes := buildUpstreamRoutes([]*upstreamSnapshot{newUpstreamSnapshot(member, nil)}, nil)
 
 	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-5"})
-	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-4.1"},
-		"a model absent from a non-empty capability snapshot is not proven Chat-compatible")
+	// The model is present in the verified Models catalogue, but an older or
+	// partially written capability map has no protocol entry for it. Keep the
+	// model visible through the historical Chat route instead of reporting it as
+	// unavailable; do not invent a Responses capability for the missing entry.
+	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-4.1"})
 	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-4.1"})
+}
+
+func TestBuildUpstreamRoutesNormalizesModelIdentifiers(t *testing.T) {
+	checked := time.Now()
+	key := "sk-upstream"
+	upstream := &domain.Upstream{
+		ID: 1, Name: "legacy-whitespace", BaseURL: "https://upstream.example",
+		UpstreamKey: &key, Models: []string{"  gpt-5.6  "}, ModelsCheckedAt: &checked,
+		ModelFormats: map[string][]domain.RequestFormat{"  gpt-5.6  ": {domain.FormatOpenAIResponses}},
+		Enabled:      true,
+	}
+	member := &domain.GroupUpstream{ID: 10, GroupID: 20, UpstreamID: 1, Upstream: upstream, Weight: 100, Enabled: true}
+	routes := buildUpstreamRoutes([]*upstreamSnapshot{newUpstreamSnapshot(member, nil)}, []string{"  gpt-5.6  "})
+
+	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-5.6"})
+	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "  gpt-5.6  "})
+
+	// Selection receives the same canonical identifier after route generation;
+	// this protects clients that accidentally preserve surrounding whitespace in
+	// their model field.
+	require.True(t, upstreamSupportsModelFormat(upstream, " gpt-5.6 ", domain.FormatOpenAIResponses))
 }
 
 func TestBuildUpstreamRoutesTreatsRecordedEmptyCapabilityAsUnavailable(t *testing.T) {

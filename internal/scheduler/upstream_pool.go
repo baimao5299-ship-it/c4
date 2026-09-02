@@ -269,7 +269,11 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 		}
 		return routes
 	}
-	for _, model := range allowed {
+	for _, rawModel := range allowed {
+		model := canonicalModelID(rawModel)
+		if model == "" {
+			continue
+		}
 		for _, format := range formats {
 			candidates := upstreamCandidatesForModelFormat(pool, model, format)
 			if len(candidates) == 0 {
@@ -305,8 +309,8 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 		// A failed refresh keeps the last known catalogue in service. Continue
 		// using that bounded snapshot instead of dropping a healthy route during
 		// a transient probe failure; an endpoint/key edit clears the snapshot.
-		for _, model := range item.upstream.Models {
-			model = strings.TrimSpace(model)
+		for _, rawModel := range item.upstream.Models {
+			model := canonicalModelID(rawModel)
 			if model != "" {
 				confirmed[model] = struct{}{}
 			}
@@ -335,39 +339,59 @@ func upstreamCandidatesForModelFormat(pool []*upstreamSnapshot, model string, fo
 }
 
 func upstreamSupportsModelFormat(u *domain.Upstream, model string, format domain.RequestFormat) bool {
+	model = canonicalModelID(model)
 	if !upstreamSupportsModel(u, model) {
 		return false
 	}
-	model = strings.TrimSpace(model)
 	// Rows written before protocol-aware probing have a checked catalogue but an
 	// empty format map. Preserve their historical Chat route so an upgrade does
 	// not strand existing accounts. Once any per-model capability is present,
-	// however, a missing model key is an unverified result (typically a transient
-	// probe failure) and must not be widened into a Chat route.
+	// however, a missing model key should not invent Responses or Messages
+	// capability. Legacy snapshots and compatibility stores can contain a model
+	// without a per-model format entry; retain the broadly supported Chat route.
 	if len(u.ModelFormats) == 0 {
 		return format == domain.FormatOpenAIChat
 	}
-	formats, recorded := u.ModelFormats[model]
+	formats, recorded := upstreamModelFormats(u.ModelFormats, model)
 	if !recorded {
-		return false
+		return format == domain.FormatOpenAIChat
 	}
 	return slices.Contains(formats, format)
 }
 
 func upstreamSupportsModel(u *domain.Upstream, model string) bool {
-	if u == nil || strings.TrimSpace(model) == "" {
+	model = canonicalModelID(model)
+	if u == nil || model == "" {
 		return false
 	}
 	if u.ModelsCheckedAt == nil {
 		return true
 	}
-	model = strings.TrimSpace(model)
 	for _, candidate := range u.Models {
-		if strings.TrimSpace(candidate) == model {
+		if canonicalModelID(candidate) == model {
 			return true
 		}
 	}
 	return false
+}
+
+// canonicalModelID trims only surrounding whitespace. Provider model IDs may
+// be case-sensitive and may use meaningful prefixes or version suffixes, so
+// collapsing those forms would hide callable models.
+func canonicalModelID(model string) string { return strings.TrimSpace(model) }
+
+// upstreamModelFormats resolves legacy JSON keys that contain surrounding
+// whitespace using the same canonical model ID as the Models catalogue.
+func upstreamModelFormats(all map[string][]domain.RequestFormat, model string) ([]domain.RequestFormat, bool) {
+	if formats, ok := all[model]; ok {
+		return formats, true
+	}
+	for candidate, formats := range all {
+		if canonicalModelID(candidate) == model {
+			return formats, true
+		}
+	}
+	return nil, false
 }
 
 func newUpstreamWeightedSeq(pool []*upstreamSnapshot) *upstreamWeightedSeq {
@@ -428,6 +452,7 @@ func minInt(a, b int) int {
 }
 
 func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format domain.RequestFormat, model string, excluded []int64) (*Selection, error) {
+	model = canonicalModelID(model)
 	rt, ok := gs.upstreamRoutes[routeKey{format: format, model: model}]
 	if !ok {
 		rt, ok = gs.upstreamRoutes[routeKey{format: format}]

@@ -137,3 +137,17 @@ func TestUpstreamModelCapabilitiesNormalizesWhitespace(t *testing.T) {
 	require.NoError(t, err)
 	s.ReleaseSelection(sel)
 }
+
+func TestUpstreamSelectionNormalizesRequestedModelWhitespace(t *testing.T) {
+	member := testGroupUpstream(1, 101, 1, 0, 4)
+	member.Upstream.Models = []string{"gpt-5"}
+
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{
+		35: {ID: 35, Name: "trim-request", RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"gpt-5"}, UpstreamMembers: []*domain.GroupUpstream{member}},
+	})
+
+	sel, err := s.Select(35, domain.FormatOpenAIChat, "  gpt-5  ")
+	require.NoError(t, err, "surrounding request whitespace must not hide a routable model")
+	require.Equal(t, "gpt-5", sel.Model)
+	s.ReleaseSelection(sel)
+}
