@@ -711,11 +711,19 @@ func markNoPrice(l *domain.UsageLog) {
 		return
 	}
 	tier := strings.ToLower(strings.TrimSpace(l.BillingTier))
-	if tier == "" || tier == "auto" || tier == "no_price" || strings.HasPrefix(tier, "no_price:") {
+	if strings.HasPrefix(tier, "no_price:") {
+		return
+	}
+	if tier == "" || tier == "auto" || tier == "no_price" {
 		l.BillingTier = "no_price"
 		return
 	}
-	l.BillingTier = "no_price:" + tier
+	switch tier {
+	case "fast", "priority", "flex":
+		l.BillingTier = "no_price:" + tier
+	default:
+		l.BillingTier = "no_price"
+	}
 }
 
 func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
