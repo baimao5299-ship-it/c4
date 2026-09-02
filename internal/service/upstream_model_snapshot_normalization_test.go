@@ -12,6 +12,23 @@ import (
 	"github.com/is7qin/c3api/internal/domain"
 )
 
+func TestIsUpstreamSuccessResponseAcceptsMinimalKnownSSEOutputEvents(t *testing.T) {
+	for _, body := range [][]byte{
+		[]byte("event: response.output_text.delta\ndata: {\"delta\":\"hi\"}\n\n"),
+		[]byte("event: response.completed\ndata: {}\n\n"),
+		[]byte("event: content_block_delta\ndata: {\"delta\":{\"text\":\"hi\"}}\n\n"),
+	} {
+		require.Truef(t, isUpstreamSuccessResponse(body), "known output event should prove capability: %q", body)
+	}
+	for _, body := range [][]byte{
+		[]byte("event: response.created\ndata: {}\n\n"),
+		[]byte("event: response.output_text.delta\ndata: {\"error\":{\"message\":\"failed\"}}\n\n"),
+		[]byte("event: response.unknown\ndata: {}\n\n"),
+	} {
+		require.Falsef(t, isUpstreamSuccessResponse(body), "neutral/error/unknown event must not prove capability: %q", body)
+	}
+}
+
 func TestRetainedUpstreamModelFormatsNormalizesLegacyKeys(t *testing.T) {
 	current := map[string][]domain.RequestFormat{
 		"  claude-opus-4-6  ": {domain.FormatAnthropic},

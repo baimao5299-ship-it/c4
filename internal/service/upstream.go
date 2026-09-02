@@ -3752,8 +3752,50 @@ func isUpstreamSuccessResponse(body []byte) bool {
 		return true
 	}
 	return visitUpstreamSSEPayloads(body, func(eventName string, payload []byte) bool {
-		return !isFailureUpstreamSSEEvent(eventName) && !isNeutralUpstreamSSEEvent(eventName) && isJSONObjectResponse(payload)
+		if isFailureUpstreamSSEEvent(eventName) || isNeutralUpstreamSSEEvent(eventName) {
+			return false
+		}
+		if isJSONObjectResponse(payload) {
+			return true
+		}
+		// A few OpenAI/Anthropic-compatible relays put the event kind in the
+		// SSE `event:` line and send only a minimal JSON payload (for example
+		// `{\"delta\":\"hi\"}` or `{}`). The event itself is then the
+		// provider envelope. Accept only the bounded success-event allowlist so
+		// a portal/status JSON object cannot pass as a model response.
+		return isKnownSuccessfulUpstreamSSEEvent(eventName) && isJSONObjectPayload(payload)
 	})
+}
+
+func isJSONObjectPayload(payload []byte) bool {
+	payload = trimUpstreamJSONBody(payload)
+	if len(payload) == 0 {
+		return false
+	}
+	var value map[string]any
+	if err := json.Unmarshal(payload, &value); err != nil || value == nil {
+		return false
+	}
+	return !hasExplicitUpstreamFailure(value) && !isNeutralUpstreamEvent(value)
+}
+
+// isKnownSuccessfulUpstreamSSEEvent covers event names whose protocol
+// semantics prove that the selected model handled the request even when the
+// relay omits the usual `type`/`object` field from the data payload. Keep this
+// list deliberately narrow and let failure/neutral classifiers run first.
+func isKnownSuccessfulUpstreamSSEEvent(eventName string) bool {
+	eventName = strings.ToLower(strings.TrimSpace(eventName))
+	switch eventName {
+	case "response.completed", "response.incomplete",
+		"response.output_item.added", "response.output_item.done",
+		"response.content_part.added", "response.content_part.done",
+		"response.output_text.delta", "response.output_text.done",
+		"response.function_call_arguments.delta", "response.function_call_arguments.done",
+		"message_delta", "message_stop", "content_block_delta", "content_block_stop":
+		return true
+	default:
+		return false
+	}
 }
 
 func isUpstreamFailureResponse(body []byte) bool {
