@@ -57,6 +57,10 @@ func TestUserChannelMonitorReturnsEffectiveModelPrices(t *testing.T) {
 	store.assignMult[[2]int64{1, viewer.ID}] = &effective
 	rec := doUser(http.MethodGet, "/api/user/channel-monitor", "", token)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	// Assert the wire contract as well as the decoded value. This catches a
+	// regression where the remark is populated in the Go DTO but omitted or
+	// renamed during JSON serialization, which would leave the mobile UI blank.
+	require.Contains(t, rec.Body.String(), `"Remark":"手机用户专用"`)
 	var body userapi.UserChannelMonitorResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Len(t, body.Rows, 1)
@@ -67,4 +71,15 @@ func TestUserChannelMonitorReturnsEffectiveModelPrices(t *testing.T) {
 	require.InDelta(t, 0.0025, *body.Rows[0].ModelPrices[0].OutputPerM, 1e-12)
 	require.InDelta(t, 1.0, *body.Rows[0].ModelPrices[0].OfficialInputPerM, 1e-12)
 	require.InDelta(t, 2.5, *body.Rows[0].ModelPrices[0].OfficialOutputPerM, 1e-12)
+
+	// The same public group projection powers key creation. Keep the remark
+	// visible there too, so users do not have to leave the key flow to discover
+	// the administrator's note.
+	rec = doUser(http.MethodGet, "/api/user/groups", "", token)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var groups []userapi.Group
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &groups))
+	require.Len(t, groups, 1)
+	require.NotNil(t, groups[0].Remark)
+	require.Equal(t, "手机用户专用", *groups[0].Remark)
 }

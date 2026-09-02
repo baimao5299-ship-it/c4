@@ -29,6 +29,16 @@ type KeyUpdate = components['schemas']['KeyUpdate']
 type KeyStatus = components['schemas']['KeyStatus']
 type Group = components['schemas']['Group']
 
+// Keep the lower-case fallback for rolling upgrades where an older API may
+// serialize the public remark with a lower-case property name.
+type UserVisibleGroup = Group & { remark?: string | null }
+
+function groupRemark(group: UserVisibleGroup | undefined): string | null {
+  if (!group) return null
+  const value = group.Remark ?? group.remark
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
 const STATUSES: KeyStatus[] = ['active', 'disabled']
 
 // 创建表单：name/group_id 必填；数值字段 '' = 不发送（后端缺省），0 = 不限。
@@ -459,7 +469,10 @@ export default function UserKeys() {
                     <SelectContent>
                       {selectableGroups.map(g => (
                         <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? String(g.ID)}>
-                          <span className="min-w-0 flex-1 truncate">{g.Name ?? String(g.ID)}</span>
+                          <span className="flex min-w-0 flex-1 flex-col items-start">
+                            <span className="min-w-0 max-w-full truncate">{g.Name ?? String(g.ID)}</span>
+                            {groupRemark(g) && <span className="max-w-full truncate text-[11px] text-muted-foreground" title={groupRemark(g) ?? undefined}>{groupRemark(g)}</span>}
+                          </span>
                           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatGroupMultiplier(g.PriceMultiplier, t('groups.free'))}</span>
                         </SelectItem>
                       ))}
@@ -470,6 +483,7 @@ export default function UserKeys() {
                       <span className="min-w-0 max-w-full truncate font-medium" title={selectedCreateGroup.Name}>{selectedCreateGroup.Name}</span>
                       <span className="shrink-0 tabular-nums text-primary">{t('groups.table.priceMultiplier')}: {formatGroupMultiplier(selectedCreateGroup.PriceMultiplier, t('groups.free'))}</span>
                       {selectedCreateGroup.AllowedModels && <span className="shrink-0 text-muted-foreground">{selectedCreateGroup.AllowedModels.length} {t('groups.allowedModelsLabel')}</span>}
+                      {groupRemark(selectedCreateGroup) && <span className="w-full truncate text-muted-foreground" title={groupRemark(selectedCreateGroup) ?? undefined}>{groupRemark(selectedCreateGroup)}</span>}
                     </div>
                   )}
                   {groupsLoading && <p className="text-xs text-muted-foreground">{t('user.keys.groupLoading')}</p>}
@@ -530,7 +544,10 @@ export default function UserKeys() {
                 <SelectContent>
                   {editGroupOptions.map(g => (
                     <SelectItem key={g.ID} value={String(g.ID)} label={g.Name ?? String(g.ID)}>
-                      <span className="min-w-0 flex-1 truncate">{g.Name ?? String(g.ID)}</span>
+                      <span className="flex min-w-0 flex-1 flex-col items-start">
+                        <span className="min-w-0 max-w-full truncate">{g.Name ?? String(g.ID)}</span>
+                        {groupRemark(g) && <span className="max-w-full truncate text-[11px] text-muted-foreground" title={groupRemark(g) ?? undefined}>{groupRemark(g)}</span>}
+                      </span>
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatGroupMultiplier(g.PriceMultiplier, t('groups.free'))}</span>
                     </SelectItem>
                   ))}
@@ -541,6 +558,7 @@ export default function UserKeys() {
                   <span className="min-w-0 max-w-full truncate font-medium" title={selectedEditGroup.Name}>{selectedEditGroup.Name}</span>
                   <span className="shrink-0 tabular-nums text-primary">{t('groups.table.priceMultiplier')}: {formatGroupMultiplier(selectedEditGroup.PriceMultiplier, t('groups.free'))}</span>
                   {selectedEditGroup.AllowedModels && <span className="shrink-0 text-muted-foreground">{selectedEditGroup.AllowedModels.length} {t('groups.allowedModelsLabel')}</span>}
+                  {groupRemark(selectedEditGroup) && <span className="w-full truncate text-muted-foreground" title={groupRemark(selectedEditGroup) ?? undefined}>{groupRemark(selectedEditGroup)}</span>}
                 </div>
               )}
               {editGroupOptions.length === 0 && <p className="text-xs text-muted-foreground">{t('user.keys.groupEmpty')}</p>}
