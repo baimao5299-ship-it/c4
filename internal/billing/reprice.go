@@ -6,6 +6,7 @@ package billing
 
 import (
 	"context"
+	"fmt"
 	"math/bits"
 	"strings"
 
@@ -19,11 +20,37 @@ import (
 func recoveryTier(raw string) string {
 	const prefix = "no_price:"
 	if strings.HasPrefix(raw, prefix) {
-		if tier := strings.TrimSpace(strings.TrimPrefix(raw, prefix)); tier != "" {
-			return tier
+		value := strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+		if marker := strings.Index(value, ":m"); marker >= 0 {
+			value = value[:marker]
+		}
+		if strings.HasPrefix(value, "m") {
+			value = ""
+		}
+		if value != "" {
+			return value
 		}
 	}
 	return "auto"
+}
+
+// recoveryMultiplier returns the request-time multiplier embedded in newer
+// no_price markers. Legacy rows have no marker and deliberately use the
+// caller's current multiplier for backward compatibility.
+func recoveryMultiplier(raw string, fallback int) int {
+	marker := strings.LastIndex(strings.TrimSpace(raw), ":m")
+	if marker < 0 {
+		return fallback
+	}
+	value := strings.TrimSpace(strings.TrimSpace(raw)[marker+2:])
+	if value == "" {
+		return fallback
+	}
+	var parsed int
+	if _, err := fmt.Sscanf(value, "%d", &parsed); err != nil || parsed < 0 || parsed > 100000 {
+		return fallback
+	}
+	return parsed
 }
 
 func nonNegativePrice(v *int64) bool { return v != nil && *v >= 0 }
@@ -163,11 +190,11 @@ func RepriceUsage(u domain.UnpricedUsage, resolver PriceResolver, multiplier int
 		parts = AddCostParts(parts, CostPartsFromResolved(rp, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheCreationTokens))
 	}
 	result.RawCost = parts.Rounded()
-	result.Cost = ApplyMultiplier(result.RawCost, multiplier)
+	result.Cost = ApplyMultiplier(result.RawCost, recoveryMultiplier(u.BillingTier, multiplier))
 	// A recovered request with a positive raw amount must never become a
 	// permanently unbilled zero after rounding. Free groups (multiplier=0) keep
 	// their deliberate zero charge and are absorbed by the normal zero-cost lane.
-	if result.RawCost > 0 && result.Cost == 0 && multiplier > 0 {
+	if result.RawCost > 0 && result.Cost == 0 && recoveryMultiplier(u.BillingTier, multiplier) > 0 {
 		result.Cost = 1
 	}
 	if u.UpstreamMultiplierBP != nil {

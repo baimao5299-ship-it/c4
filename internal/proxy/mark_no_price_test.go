@@ -41,3 +41,19 @@ func TestMarkNoPriceNormalizesAndPreservesTier(t *testing.T) {
 func TestMarkNoPriceNilSafe(t *testing.T) {
 	markNoPrice(nil)
 }
+
+func TestMarkNoPriceCapturesRequestMultiplier(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		{"", "no_price:m800"},
+		{"priority", "no_price:priority:m12500"},
+		{"turbo", "no_price"},
+	} {
+		log := &domain.UsageLog{BillingTier: tc.in}
+		markNoPrice(log, map[string]int{"": 800, "priority": 12500, "turbo": 10000}[tc.in])
+		if log.BillingTier != tc.want {
+			t.Fatalf("marker = %q, want %q", log.BillingTier, tc.want)
+		}
+	}
+}

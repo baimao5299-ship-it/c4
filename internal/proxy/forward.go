@@ -463,7 +463,7 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 			if p.log != nil {
 				p.log.Warn("billing price lookup failed", logx.String("model", model))
 			}
-			markNoPrice(l)
+			markNoPrice(l, p.multiplierFor(l))
 			return
 		}
 	}
@@ -682,7 +682,7 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 			if p.log != nil {
 				p.log.Warn("billing image price lookup failed", logx.String("model", model))
 			}
-			markNoPrice(l)
+			markNoPrice(l, p.multiplierFor(l))
 			return
 		}
 	}
@@ -706,7 +706,7 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 // recovery marker. Legacy auto-tier rows retain the historical plain marker;
 // non-default tiers are encoded so delayed recovery can select the same price
 // variant after a snapshot refresh.
-func markNoPrice(l *domain.UsageLog) {
+func markNoPrice(l *domain.UsageLog, multiplier ...int) {
 	if l == nil {
 		return
 	}
@@ -714,15 +714,21 @@ func markNoPrice(l *domain.UsageLog) {
 	if strings.HasPrefix(tier, "no_price:") {
 		return
 	}
+	// Keep the request-time user/group multiplier with the recovery marker.
+	// This avoids repricing a delayed row at a later administrative rate.
+	markerMultiplier := ""
+	if len(multiplier) > 0 && multiplier[0] >= 0 && multiplier[0] <= maxBillingMultiplier && multiplier[0] != int(billingMultiplierBase) {
+		markerMultiplier = fmt.Sprintf(":m%d", multiplier[0])
+	}
 	if tier == "" || tier == "auto" || tier == "no_price" {
-		l.BillingTier = "no_price"
+		l.BillingTier = "no_price" + markerMultiplier
 		return
 	}
 	switch tier {
 	case "fast", "priority", "flex":
-		l.BillingTier = "no_price:" + tier
+		l.BillingTier = "no_price:" + tier + markerMultiplier
 	default:
-		l.BillingTier = "no_price"
+		l.BillingTier = "no_price" + markerMultiplier
 	}
 }
 

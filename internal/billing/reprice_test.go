@@ -99,4 +99,16 @@ func TestRepriceUsagePreservesPositiveChargeForSmallAmount(t *testing.T) {
 	require.Equal(t, int64(1), got.Cost)
 }
 
+func TestRepriceUsageUsesRequestMultiplierMarker(t *testing.T) {
+	in, out := int64(1_000_000), int64(1_000_000)
+	resolver := &repriceResolver{prices: domain.ResolvedPrices{InputPerM: &in, OutputPerM: &out}, ok: true}
+	row := domain.UnpricedUsage{ID: 13, Model: "m", Format: domain.FormatOpenAIChat,
+		BillingTier: "no_price:m0", InputTokens: 1_000_000, TotalTokens: 1_000_000}
+	got, ok := RepriceUsage(row, resolver, 100_000)
+	require.True(t, ok)
+	require.Equal(t, "auto", resolver.tier)
+	require.Equal(t, int64(1_000_000), got.RawCost)
+	require.Zero(t, got.Cost, "request-time free multiplier must survive delayed repricing")
+}
+
 var _ PriceResolver = (*repriceResolver)(nil)
