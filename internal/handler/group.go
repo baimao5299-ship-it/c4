@@ -27,6 +27,14 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 	if in.Visibility != nil {
 		visibility = domain.GroupVisibility(*in.Visibility)
 	}
+	publicStatus := domain.GroupPublicStatusAvailable
+	if in.PublicStatus != nil {
+		publicStatus = domain.GroupPublicStatus(*in.PublicStatus)
+		if !publicStatus.Valid() {
+			httpface.WriteErr(w, http.StatusBadRequest, "invalid public status")
+			return
+		}
+	}
 	mult, err := apiMultiplierToMillis(in.PriceMultiplier) // nil = 未指定；0~10 → 万分数
 	if err != nil {
 		httpface.WriteErr(w, http.StatusBadRequest, err.Error())
@@ -81,7 +89,7 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		g := &domain.Group{
-			Name: in.Name, Visibility: visibility, RoutingMode: routingMode,
+			Name: in.Name, Visibility: visibility, PublicStatus: publicStatus, RoutingMode: routingMode,
 			AllowedModels: allowedModels, PriceMultiplier: 10000,
 			ProtocolConverts: pcs,
 		}
@@ -149,6 +157,13 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 		return
 	}
 	g.Name = in.Name
+	if in.PublicStatus != nil {
+		g.PublicStatus = domain.GroupPublicStatus(*in.PublicStatus)
+		if !g.PublicStatus.Valid() {
+			httpface.WriteErr(w, http.StatusBadRequest, "invalid public status")
+			return
+		}
+	}
 	if in.Visibility != nil {
 		g.Visibility = domain.GroupVisibility(*in.Visibility)
 	}
@@ -334,13 +349,20 @@ func (h *AdminAPI) PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request)
 
 // groupPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新）。
 func groupPatchFromBody(f *GroupPatch) (repository.GroupPatch, error) {
-	if f.Name == nil && f.Visibility == nil {
+	if f.Name == nil && f.Visibility == nil && f.PublicStatus == nil {
 		return repository.GroupPatch{}, errors.New("fields must contain at least one field")
 	}
 	p := repository.GroupPatch{Name: f.Name}
 	if f.Visibility != nil {
 		v := domain.GroupVisibility(*f.Visibility)
 		p.Visibility = &v
+	}
+	if f.PublicStatus != nil {
+		v := domain.GroupPublicStatus(*f.PublicStatus)
+		if !v.Valid() {
+			return repository.GroupPatch{}, errors.New("invalid public status")
+		}
+		p.PublicStatus = &v
 	}
 	return p, nil
 }

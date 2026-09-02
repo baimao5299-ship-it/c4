@@ -46,6 +46,20 @@ func (_c *GroupCreate) SetNillableVisibility(v *group.Visibility) *GroupCreate {
 	return _c
 }
 
+// SetPublicStatus sets the "public_status" field.
+func (_c *GroupCreate) SetPublicStatus(v group.PublicStatus) *GroupCreate {
+	_c.mutation.SetPublicStatus(v)
+	return _c
+}
+
+// SetNillablePublicStatus sets the "public_status" field if the given value is not nil.
+func (_c *GroupCreate) SetNillablePublicStatus(v *group.PublicStatus) *GroupCreate {
+	if v != nil {
+		_c.SetPublicStatus(*v)
+	}
+	return _c
+}
+
 // SetRoutingMode sets the "routing_mode" field.
 func (_c *GroupCreate) SetRoutingMode(v group.RoutingMode) *GroupCreate {
 	_c.mutation.SetRoutingMode(v)
@@ -233,6 +247,10 @@ func (_c *GroupCreate) defaults() {
 		v := group.DefaultVisibility
 		_c.mutation.SetVisibility(v)
 	}
+	if _, ok := _c.mutation.PublicStatus(); !ok {
+		v := group.DefaultPublicStatus
+		_c.mutation.SetPublicStatus(v)
+	}
 	if _, ok := _c.mutation.RoutingMode(); !ok {
 		v := group.DefaultRoutingMode
 		_c.mutation.SetRoutingMode(v)
@@ -270,6 +288,14 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.Visibility(); ok {
 		if err := group.VisibilityValidator(v); err != nil {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.PublicStatus(); !ok {
+		return &ValidationError{Name: "public_status", err: errors.New(`ent: missing required field "Group.public_status"`)}
+	}
+	if v, ok := _c.mutation.PublicStatus(); ok {
+		if err := group.PublicStatusValidator(v); err != nil {
+			return &ValidationError{Name: "public_status", err: fmt.Errorf(`ent: validator failed for field "Group.public_status": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.RoutingMode(); !ok {
@@ -335,6 +361,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
 		_node.Visibility = value
+	}
+	if value, ok := _c.mutation.PublicStatus(); ok {
+		_spec.SetField(group.FieldPublicStatus, field.TypeEnum, value)
+		_node.PublicStatus = value
 	}
 	if value, ok := _c.mutation.RoutingMode(); ok {
 		_spec.SetField(group.FieldRoutingMode, field.TypeEnum, value)
@@ -501,6 +531,18 @@ func (u *GroupUpsert) SetVisibility(v group.Visibility) *GroupUpsert {
 // UpdateVisibility sets the "visibility" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateVisibility() *GroupUpsert {
 	u.SetExcluded(group.FieldVisibility)
+	return u
+}
+
+// SetPublicStatus sets the "public_status" field.
+func (u *GroupUpsert) SetPublicStatus(v group.PublicStatus) *GroupUpsert {
+	u.Set(group.FieldPublicStatus, v)
+	return u
+}
+
+// UpdatePublicStatus sets the "public_status" field to the value that was provided on create.
+func (u *GroupUpsert) UpdatePublicStatus() *GroupUpsert {
+	u.SetExcluded(group.FieldPublicStatus)
 	return u
 }
 
@@ -673,6 +715,20 @@ func (u *GroupUpsertOne) SetVisibility(v group.Visibility) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateVisibility() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateVisibility()
+	})
+}
+
+// SetPublicStatus sets the "public_status" field.
+func (u *GroupUpsertOne) SetPublicStatus(v group.PublicStatus) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPublicStatus(v)
+	})
+}
+
+// UpdatePublicStatus sets the "public_status" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdatePublicStatus() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePublicStatus()
 	})
 }
 
@@ -1027,6 +1083,20 @@ func (u *GroupUpsertBulk) SetVisibility(v group.Visibility) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateVisibility() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateVisibility()
+	})
+}
+
+// SetPublicStatus sets the "public_status" field.
+func (u *GroupUpsertBulk) SetPublicStatus(v group.PublicStatus) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPublicStatus(v)
+	})
+}
+
+// UpdatePublicStatus sets the "public_status" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdatePublicStatus() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePublicStatus()
 	})
 }
 

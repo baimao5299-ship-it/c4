@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, Check, CheckCircle2, CircleAlert, Clock3, Copy, RefreshCw, Sparkles } from 'lucide-react'
+import { Activity, ArrowRight, Check, CircleAlert, Copy, PauseCircle, RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { userApi } from '@/lib/api/client'
 import { sortModelsLatestFirst } from '@/lib/model-sort'
@@ -35,16 +35,9 @@ const rollingRange = (anchor: number) => {
 }
 
 function statusFor(metric: ChannelMetric, t: (key: string) => string) {
-  if (metric.Status === 'no_data') return { label: t('user.models.status.noData'), className: 'text-muted-foreground', icon: Clock3 }
-  if (metric.Status === 'degraded') return { label: t('user.models.status.attention'), className: 'text-amber-600 dark:text-amber-400', icon: CircleAlert }
-  return { label: t('user.models.status.stable'), className: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle2 }
-}
-
-function formatUpdated(value: string | null | undefined, empty: string) {
-  if (!value) return empty
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return empty
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (metric.Status === 'paused') return { label: t('user.models.status.paused'), className: 'text-muted-foreground', icon: PauseCircle }
+  if (metric.Status === 'maintenance') return { label: t('user.models.status.maintenance'), className: 'text-amber-600 dark:text-amber-400', icon: CircleAlert }
+  return { label: t('user.models.status.available'), className: 'text-emerald-600 dark:text-emerald-400', icon: Check }
 }
 
 function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
@@ -209,7 +202,6 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
     }, 2000)
   }
   const multiplier = Number.isFinite(metric.PriceMultiplier) && metric.PriceMultiplier >= 0 ? metric.PriceMultiplier : 1
-  const success = metric.RequestCount > 0 ? `${metric.SuccessRate.toFixed(1)}%` : '—'
   return (
     <Card className="h-full transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg">
       <CardHeader className="gap-3">
@@ -217,16 +209,11 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
           <CardTitle className="min-w-0 truncate text-base" title={metric.Name}>{metric.Name}</CardTitle>
           <Badge variant="secondary" className={cn('shrink-0 gap-1', status.className)}><Icon className="size-3.5" />{status.label}</Badge>
         </div>
-        <CardDescription className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><span className="flex min-w-0 items-center gap-1.5 truncate"><Activity className="size-4 shrink-0" />{t('user.models.channelWindow')}</span><span className="shrink-0 font-mono text-xs">{t('user.models.multiplier', { value: formatMultiplierValue(metric.PriceMultiplier) })}</span></CardDescription>
+        <CardDescription className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><span className="flex min-w-0 items-center gap-1.5 truncate"><Activity className="size-4 shrink-0" />{t('user.models.publicChannel')}</span><span className="shrink-0 font-mono text-xs">{t('user.models.multiplier', { value: formatMultiplierValue(metric.PriceMultiplier) })}</span></CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-lg bg-primary/6 px-2 py-2.5"><div className="text-lg font-semibold tabular-nums">{metric.RequestCount.toLocaleString()}</div><div className="text-[11px] text-muted-foreground">{t('user.models.calls')}</div></div>
-          <div className="rounded-lg bg-primary/6 px-2 py-2.5"><div className="text-lg font-semibold tabular-nums">{metric.AverageLatencyMS ? `${metric.AverageLatencyMS}ms` : '—'}</div><div className="text-[11px] text-muted-foreground">{t('user.models.latency')}</div></div>
-          <div className="rounded-lg bg-primary/6 px-2 py-2.5"><div className="text-lg font-semibold tabular-nums">{success}</div><div className="text-[11px] text-muted-foreground">{t('user.models.successRate')}</div></div>
-        </div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('user.models.modelsLabel')}</span><span className="shrink-0">{formatUpdated(metric.LastCalledAt, t('user.models.notCalled'))}</span></div>
+          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('user.models.modelsLabel')}</span><span className="shrink-0">{t('user.models.statusManual')}</span></div>
           {prices.length ? <div className="max-h-64 divide-y overflow-y-auto rounded-lg border bg-background/60">{prices.map(price => {
             const mode = priceMode(price)
             return <div key={price.Model} className="grid grid-cols-1 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)]"><ModelNameButton model={price.Model} copyState={copyState?.model === price.Model ? copyState.status : null} onCopy={() => { void copyModel(price.Model) }} t={t} /><PriceDetails price={price} mode={mode} multiplier={multiplier} t={t} /></div>
@@ -250,13 +237,10 @@ export default function UserModels({ compact = false }: { compact?: boolean }) {
   const refreshing = channelsQ.isFetching
   const hasData = channelsQ.data != null
   const stale = channelsQ.isError && hasData
-  const stableCount = metrics.filter(metric => metric.Status === 'stable').length
-  const measured = metrics.filter(metric => metric.RequestCount > 0)
-  const avgLatency = measured.length ? measured.reduce((sum, metric) => sum + metric.AverageLatencyMS, 0) / measured.length : 0
   return (
     <section id={compact ? undefined : 'channel-monitor'} className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2"><Sparkles className="size-5 text-primary" /><h2 className={compact ? 'text-lg font-semibold' : 'text-2xl font-semibold tracking-tight'}>{t('user.models.title')}</h2></div><p className="mt-1 text-sm text-muted-foreground">{t('user.models.subtitle')}</p>{hasData && <p className="mt-1 text-xs text-muted-foreground">{stale ? t('user.models.staleData') : t('user.models.updatedAt', { time: formatUpdated(channelsQ.data?.window_to, t('user.models.notCalled')) })}</p>}</div><div className="flex items-center gap-2">{!compact && <Button variant="outline" size="sm" onClick={() => { void channelsQ.refetch() }} disabled={refreshing}><RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />{t('user.models.refresh')}</Button>}{compact && <Button variant="ghost" size="sm" render={<Link to="/user/models" />}>{t('user.models.viewAll')}<ArrowRight className="size-4" /></Button>}</div></div>
-      {!compact && !loading && !channelsQ.isError && <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl border border-border/70 bg-card/50 px-4 py-3"><div className="text-xl font-semibold tabular-nums">{metrics.length}</div><div className="text-xs text-muted-foreground">{t('user.models.totalChannels')}</div></div><div className="rounded-xl border border-border/70 bg-card/50 px-4 py-3"><div className="text-xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{stableCount}</div><div className="text-xs text-muted-foreground">{t('user.models.stableCount')}</div></div><div className="rounded-xl border border-border/70 bg-card/50 px-4 py-3"><div className="text-xl font-semibold tabular-nums">{avgLatency ? `${Math.round(avgLatency)}ms` : '—'}</div><div className="text-xs text-muted-foreground">{t('user.models.avgLatency')}</div></div><div className="rounded-xl border border-border/70 bg-card/50 px-4 py-3"><div className="text-xl font-semibold tabular-nums">24h</div><div className="text-xs text-muted-foreground">{t('user.models.window')}</div></div></div>}
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2"><Sparkles className="size-5 text-primary" /><h2 className={compact ? 'text-lg font-semibold' : 'text-2xl font-semibold tracking-tight'}>{t('user.models.title')}</h2></div><p className="mt-1 text-sm text-muted-foreground">{t('user.models.subtitle')}</p>{hasData && stale && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{t('user.models.staleData')}</p>}</div><div className="flex items-center gap-2">{!compact && <Button variant="outline" size="sm" onClick={() => { void channelsQ.refetch() }} disabled={refreshing}><RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />{t('user.models.refresh')}</Button>}{compact && <Button variant="ghost" size="sm" render={<Link to="/user/models" />}>{t('user.models.viewAll')}<ArrowRight className="size-4" /></Button>}</div></div>
+      {!compact && !loading && !channelsQ.isError && <div className="rounded-xl border border-border/70 bg-card/50 px-4 py-3 text-sm text-muted-foreground">{t('user.models.publicCatalogHint')}</div>}
       {channelsQ.isError && !hasData ? <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">{t('user.models.loadFailed')}</p> : loading ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: compact ? 3 : 6 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-[14px]" />)}</div> : visible.length === 0 ? <Card><CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground"><Activity className="size-10" /><p className="font-medium">{t('user.models.emptyTitle')}</p><p className="max-w-md text-sm">{t('user.models.emptyDesc')}</p></CardContent></Card> : <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{visible.map(metric => <ChannelCard key={metric.GroupID} metric={metric} t={t} />)}</div>}
       {!compact && <p className="text-xs text-muted-foreground">{t('user.models.disclaimer')}</p>}
     </section>

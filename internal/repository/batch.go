@@ -88,8 +88,9 @@ type AccountPatch struct {
 }
 
 type GroupPatch struct {
-	Name       *string
-	Visibility *domain.GroupVisibility
+	Name        *string
+	Visibility  *domain.GroupVisibility
+	PublicStatus *domain.GroupPublicStatus
 }
 
 // --- 批量删除（软删：deleted_at 置值；事务，全成或全败） ---
@@ -388,6 +389,9 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 		}
 		if p.Visibility != nil {
 			u = u.SetVisibility(group.Visibility(*p.Visibility))
+		}
+		if p.PublicStatus != nil {
+			u = u.SetPublicStatus(group.PublicStatus(*p.PublicStatus))
 		}
 		if _, err := u.Save(ctx); err != nil {
 			if sqlgraph.IsUniqueConstraintError(err) {

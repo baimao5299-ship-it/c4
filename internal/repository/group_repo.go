@@ -48,9 +48,11 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	if allowedModels == nil {
 		allowedModels = []string{}
 	}
+	status := group.PublicStatus(g.EffectivePublicStatus())
 	q := r.client.Group.Create().
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
+		SetPublicStatus(status).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
 		// protocol_convert 恒写入（service 层把缺省归一为空数组；JSON 列自动
@@ -113,9 +115,11 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	if allowedModels == nil {
 		allowedModels = []string{}
 	}
+	status := group.PublicStatus(g.EffectivePublicStatus())
 	row, err := r.client.Group.UpdateOneID(g.ID).Where(group.DeletedAtIsNil()).
 		SetName(g.Name).
 		SetVisibility(group.Visibility(g.Visibility)).
+		SetPublicStatus(status).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
 		SetProtocolConvert(protocolConvertStrings(g.ProtocolConverts)).

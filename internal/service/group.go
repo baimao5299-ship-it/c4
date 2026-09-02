@@ -81,7 +81,7 @@ func normalizeGroupInput(name string, visibility domain.GroupVisibility, priceMu
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Group{Name: strings.TrimSpace(name), Visibility: visibility, RoutingMode: routingMode, AllowedModels: models, PriceMultiplier: mult, ProtocolConverts: converts}, nil
+	return &domain.Group{Name: strings.TrimSpace(name), Visibility: visibility, PublicStatus: domain.GroupPublicStatusAvailable, RoutingMode: routingMode, AllowedModels: models, PriceMultiplier: mult, ProtocolConverts: converts}, nil
 }
 
 func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
@@ -133,6 +133,12 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	// values remain rejected below.
 	if g.Visibility == "" {
 		g.Visibility = current.Visibility
+	}
+	if g.PublicStatus == "" {
+		g.PublicStatus = current.PublicStatus
+	}
+	if !g.PublicStatus.Valid() {
+		return nil, ErrInvalidInput
 	}
 	if !g.Visibility.Valid() {
 		return nil, ErrInvalidInput

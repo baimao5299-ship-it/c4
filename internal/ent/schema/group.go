@@ -18,6 +18,7 @@ func (Group) Fields() []ent.Field {
 		field.Int64("id"),
 		field.String("name").Unique(),
 		field.Enum("visibility").Values("public", "private").Default("public"),
+		field.Enum("public_status").Values("available", "maintenance", "paused").Default("available"),
 		// Existing groups remain account-routed. Upstream-pool groups explicitly
 		// opt into selecting members from group_upstreams.
 		field.Enum("routing_mode").Values("accounts", "upstreams").Default("accounts"),

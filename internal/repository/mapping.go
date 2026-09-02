@@ -34,6 +34,7 @@ func toDomainKey(k *ent.Key) *domain.Key {
 func toDomainGroup(g *ent.Group) *domain.Group {
 	return &domain.Group{
 		ID: g.ID, Name: g.Name, Visibility: domain.GroupVisibility(g.Visibility),
+		PublicStatus: domain.GroupPublicStatus(g.PublicStatus),
 		RoutingMode:      domain.GroupRoutingMode(g.RoutingMode),
 		PriceMultiplier:  g.PriceMultiplier,
 		ProtocolConverts: toDomainProtocolConverts(g.ProtocolConvert),

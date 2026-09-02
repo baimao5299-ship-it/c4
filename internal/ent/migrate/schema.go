@@ -161,6 +161,7 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString, Unique: true},
 		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"public", "private"}, Default: "public"},
+		{Name: "public_status", Type: field.TypeEnum, Enums: []string{"available", "maintenance", "paused"}, Default: "available"},
 		{Name: "routing_mode", Type: field.TypeEnum, Enums: []string{"accounts", "upstreams"}, Default: "accounts"},
 		{Name: "price_multiplier", Type: field.TypeInt, Default: 10000},
 		{Name: "protocol_convert", Type: field.TypeJSON},

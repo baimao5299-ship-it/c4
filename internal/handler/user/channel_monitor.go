@@ -53,7 +53,10 @@ func (h *UserAPI) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, 
 		if metric == nil || metric.Group == nil {
 			continue
 		}
-		status := UserChannelMetricStatus(metric.Status)
+		status := GroupPublicStatus(metric.Group.PublicStatus)
+		if status == "" {
+			status = GroupPublicStatusAvailable
+		}
 		models := append([]string(nil), metric.Group.AllowedModels...)
 		if models == nil {
 			models = []string{}
@@ -88,10 +91,7 @@ func (h *UserAPI) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, 
 		}
 		out.Rows = append(out.Rows, UserChannelMetric{
 			GroupID: metric.Group.ID, Name: metric.Group.Name, AllowedModels: models, ModelPrices: modelPrices,
-			PriceMultiplier: multiplier,
-			RequestCount:    metric.RequestCount, ErrorCount: metric.ErrorCount,
-			AverageLatencyMS: metric.AverageLatencyMS, SuccessRate: metric.SuccessRate,
-			LastCalledAt: metric.LastCalledAt, Status: status,
+			PriceMultiplier: multiplier, Status: status,
 		})
 	}
 	httpface.WriteJSON(w, http.StatusOK, out)

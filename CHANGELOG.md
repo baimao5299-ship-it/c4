@@ -10,6 +10,18 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.14] - 2026-09-02
+
+### Changed
+
+- User-facing group pages now expose only the administrator's manual status
+  label; operational sample counts, latency, success rates, and failure
+  judgments stay in the admin surface.
+- Group management now displays and edits `available`, `maintenance`, and
+  `paused` status values, with strict server-side validation.
+- Chat-to-Messages conversion now preserves remote and data-URI image inputs
+  as valid Anthropic image sources and reports malformed image data clearly.
+
 ## [v0.0.1-beta.13] - 2026-09-02
 
 ### Fixed

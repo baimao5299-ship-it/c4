@@ -61,6 +61,20 @@ func (_u *GroupUpdate) SetNillableVisibility(v *group.Visibility) *GroupUpdate {
 	return _u
 }
 
+// SetPublicStatus sets the "public_status" field.
+func (_u *GroupUpdate) SetPublicStatus(v group.PublicStatus) *GroupUpdate {
+	_u.mutation.SetPublicStatus(v)
+	return _u
+}
+
+// SetNillablePublicStatus sets the "public_status" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePublicStatus(v *group.PublicStatus) *GroupUpdate {
+	if v != nil {
+		_u.SetPublicStatus(*v)
+	}
+	return _u
+}
+
 // SetRoutingMode sets the "routing_mode" field.
 func (_u *GroupUpdate) SetRoutingMode(v group.RoutingMode) *GroupUpdate {
 	_u.mutation.SetRoutingMode(v)
@@ -352,6 +366,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PublicStatus(); ok {
+		if err := group.PublicStatusValidator(v); err != nil {
+			return &ValidationError{Name: "public_status", err: fmt.Errorf(`ent: validator failed for field "Group.public_status": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RoutingMode(); ok {
 		if err := group.RoutingModeValidator(v); err != nil {
 			return &ValidationError{Name: "routing_mode", err: fmt.Errorf(`ent: validator failed for field "Group.routing_mode": %w`, err)}
@@ -377,6 +396,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
+	}
+	if value, ok := _u.mutation.PublicStatus(); ok {
+		_spec.SetField(group.FieldPublicStatus, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.RoutingMode(); ok {
 		_spec.SetField(group.FieldRoutingMode, field.TypeEnum, value)
@@ -639,6 +661,20 @@ func (_u *GroupUpdateOne) SetVisibility(v group.Visibility) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableVisibility(v *group.Visibility) *GroupUpdateOne {
 	if v != nil {
 		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
+// SetPublicStatus sets the "public_status" field.
+func (_u *GroupUpdateOne) SetPublicStatus(v group.PublicStatus) *GroupUpdateOne {
+	_u.mutation.SetPublicStatus(v)
+	return _u
+}
+
+// SetNillablePublicStatus sets the "public_status" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePublicStatus(v *group.PublicStatus) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPublicStatus(*v)
 	}
 	return _u
 }
@@ -947,6 +983,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Group.visibility": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PublicStatus(); ok {
+		if err := group.PublicStatusValidator(v); err != nil {
+			return &ValidationError{Name: "public_status", err: fmt.Errorf(`ent: validator failed for field "Group.public_status": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RoutingMode(); ok {
 		if err := group.RoutingModeValidator(v); err != nil {
 			return &ValidationError{Name: "routing_mode", err: fmt.Errorf(`ent: validator failed for field "Group.routing_mode": %w`, err)}
@@ -989,6 +1030,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
+	}
+	if value, ok := _u.mutation.PublicStatus(); ok {
+		_spec.SetField(group.FieldPublicStatus, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.RoutingMode(); ok {
 		_spec.SetField(group.FieldRoutingMode, field.TypeEnum, value)

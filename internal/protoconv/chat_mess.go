@@ -5,7 +5,11 @@
 package protoconv
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/url"
+	"strings"
 )
 
 // chatToMessRequest 客户端 chat 请求体 → anthropic messages 请求体。字段映射
@@ -30,7 +34,9 @@ func chatToMessRequest(body []byte) ([]byte, error) {
 	if sys, ok := chatSystem(req); ok {
 		out["system"] = sys
 	}
-	if msgs, ok := chatMessagesToMess(req); ok {
+	if msgs, ok, err := chatMessagesToMess(req); err != nil {
+		return nil, err
+	} else if ok {
 		out["messages"] = msgs
 	}
 	pass(out, req, "model", "temperature", "top_p", "stream", "metadata")
@@ -81,12 +87,12 @@ func chatSystem(req map[string]any) (string, bool) {
 // chatMessagesToMess chat messages → anthropic messages（system 已并入顶层
 // system，此处跳过）：user 文本 → 消息（单文本块 → string content）；
 // assistant 文本 → 消息 + tool_calls → tool_use 块（arguments JSON 字符串 →
-// input 对象）；tool 消息 → user 消息 tool_result 块；image_url 等部件按
-// 规范丢弃（图像透传属 W4 范围）。
-func chatMessagesToMess(req map[string]any) ([]any, bool) {
+// input 对象）；tool 消息 → user 消息 tool_result 块；image_url → Anthropic
+// image source（URL 或 base64）。
+func chatMessagesToMess(req map[string]any) ([]any, bool, error) {
 	msgs, ok := arr(req, "messages")
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 	var out []any
 	for _, m := range msgs {
@@ -103,12 +109,18 @@ func chatMessagesToMess(req map[string]any) ([]any, bool) {
 				out = append(out, map[string]any{"role": "user", "content": s})
 				continue
 			}
-			blocks := chatPartsToMessBlocks(content)
+			blocks, err := chatPartsToMessBlocks(content)
+			if err != nil {
+				return nil, false, err
+			}
 			if len(blocks) > 0 {
 				out = append(out, map[string]any{"role": "user", "content": blocks})
 			}
 		case "assistant":
-			blocks := chatPartsToMessBlocks(mm["content"])
+			blocks, err := chatPartsToMessBlocks(mm["content"])
+			if err != nil {
+				return nil, false, err
+			}
 			if s, ok := mm["content"].(string); ok && s != "" {
 				blocks = append(blocks, map[string]any{"type": "text", "text": s})
 			}
@@ -149,15 +161,18 @@ func chatMessagesToMess(req map[string]any) ([]any, bool) {
 			}
 		}
 	}
-	return out, true
+	return out, true, nil
 }
 
-// chatPartsToMessBlocks chat 消息 content 部件 → anthropic 内容块（text →
-// text 块；image_url 等按规范丢弃）。
-func chatPartsToMessBlocks(content any) []any {
+// chatPartsToMessBlocks chat 消息 content 部件 → anthropic 内容块。Text is
+// copied as a text block; OpenAI image_url parts become Anthropic image blocks
+// (remote URL or canonical base64 data). A malformed image part is reported to
+// the caller instead of being silently discarded and sending a different
+// request than the client asked for.
+func chatPartsToMessBlocks(content any) ([]any, error) {
 	cs, ok := content.([]any)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	var blocks []any
 	for _, p := range cs {
@@ -169,9 +184,127 @@ func chatPartsToMessBlocks(content any) []any {
 			if t, ok := str(pm, "text"); ok {
 				blocks = append(blocks, map[string]any{"type": "text", "text": t})
 			}
+			continue
+		}
+		if pm["type"] == "image_url" {
+			block, err := chatImageURLToMessBlock(pm["image_url"])
+			if err != nil {
+				return nil, err
+			}
+			blocks = append(blocks, block)
 		}
 	}
-	return blocks
+	return blocks, nil
+}
+
+// chatImageURLToMessBlock maps an OpenAI image_url value to the corresponding
+// Anthropic image source. Anthropic accepts https URLs directly and requires
+// data URLs to be represented as a base64 source.
+func chatImageURLToMessBlock(value any) (map[string]any, error) {
+	var raw string
+	switch v := value.(type) {
+	case string:
+		raw = v
+	case map[string]any:
+		raw, _ = str(v, "url")
+	default:
+		return nil, fmt.Errorf("protoconv: image_url must contain a URL string")
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("protoconv: image_url URL is empty")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return nil, fmt.Errorf("protoconv: invalid image_url URL")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		if u.Host == "" {
+			return nil, fmt.Errorf("protoconv: invalid image_url URL")
+		}
+		return map[string]any{
+			"type":   "image",
+			"source": map[string]any{"type": "url", "url": raw},
+		}, nil
+	case "data":
+		return dataURLToMessImage(raw)
+	default:
+		return nil, fmt.Errorf("protoconv: image_url scheme %q is not supported", u.Scheme)
+	}
+}
+
+// dataURLToMessImage converts a data:image/* URL into Anthropic's canonical
+// base64 source. Non-base64 data URLs are decoded as UTF-8 bytes and encoded so
+// clients using either data URL form retain the image payload.
+func dataURLToMessImage(raw string) (map[string]any, error) {
+	const prefix = "data:"
+	if !strings.HasPrefix(strings.ToLower(raw), prefix) {
+		return nil, fmt.Errorf("protoconv: malformed data image URL")
+	}
+	comma := strings.IndexByte(raw[len(prefix):], ',')
+	if comma < 0 {
+		return nil, fmt.Errorf("protoconv: data image URL has no payload")
+	}
+	comma += len(prefix)
+	meta, payload := raw[len(prefix):comma], raw[comma+1:]
+	parts := strings.Split(meta, ";")
+	mediaType := normalizeMessImageMediaType(parts[0])
+	if mediaType == "" {
+		return nil, fmt.Errorf("protoconv: unsupported data image media type %q", strings.TrimSpace(parts[0]))
+	}
+	isBase64 := false
+	for _, part := range parts[1:] {
+		if strings.EqualFold(strings.TrimSpace(part), "base64") {
+			isBase64 = true
+		}
+	}
+	var encoded string
+	if isBase64 {
+		decodedPayload, err := url.PathUnescape(payload)
+		if err != nil {
+			return nil, fmt.Errorf("protoconv: invalid data image escaping: %w", err)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(decodedPayload)
+		if err != nil {
+			decoded, err = base64.RawStdEncoding.DecodeString(decodedPayload)
+			if err != nil {
+				return nil, fmt.Errorf("protoconv: invalid base64 image payload")
+			}
+		}
+		encoded = base64.StdEncoding.EncodeToString(decoded)
+	} else {
+		decoded, err := url.PathUnescape(payload)
+		if err != nil {
+			return nil, fmt.Errorf("protoconv: invalid data image payload: %w", err)
+		}
+		encoded = base64.StdEncoding.EncodeToString([]byte(decoded))
+	}
+	if encoded == "" {
+		return nil, fmt.Errorf("protoconv: data image payload is empty")
+	}
+	return map[string]any{
+		"type":   "image",
+		"source": map[string]any{"type": "base64", "media_type": mediaType, "data": encoded},
+	}, nil
+}
+
+// normalizeMessImageMediaType keeps the data formats accepted by Anthropic's
+// Messages API explicit. Mapping an unsupported image (for example SVG) would
+// only move the failure downstream and make protocol negotiation look flaky.
+func normalizeMessImageMediaType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "image/png":
+		return "image/png"
+	case "image/gif":
+		return "image/gif"
+	case "image/webp":
+		return "image/webp"
+	default:
+		return ""
+	}
 }
 
 // chatStop chat stop（string 或数组）→ anthropic stop_sequences（数组）。

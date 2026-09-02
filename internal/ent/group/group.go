@@ -19,6 +19,8 @@ const (
 	FieldName = "name"
 	// FieldVisibility holds the string denoting the visibility field in the database.
 	FieldVisibility = "visibility"
+	// FieldPublicStatus holds the string denoting the public_status field in the database.
+	FieldPublicStatus = "public_status"
 	// FieldRoutingMode holds the string denoting the routing_mode field in the database.
 	FieldRoutingMode = "routing_mode"
 	// FieldPriceMultiplier holds the string denoting the price_multiplier field in the database.
@@ -76,6 +78,7 @@ var Columns = []string{
 	FieldID,
 	FieldName,
 	FieldVisibility,
+	FieldPublicStatus,
 	FieldRoutingMode,
 	FieldPriceMultiplier,
 	FieldProtocolConvert,
@@ -142,6 +145,33 @@ func VisibilityValidator(v Visibility) error {
 	}
 }
 
+// PublicStatus defines the type for the "public_status" enum field.
+type PublicStatus string
+
+// PublicStatusAvailable is the default value of the PublicStatus enum.
+const DefaultPublicStatus = PublicStatusAvailable
+
+// PublicStatus values.
+const (
+	PublicStatusAvailable   PublicStatus = "available"
+	PublicStatusMaintenance PublicStatus = "maintenance"
+	PublicStatusPaused      PublicStatus = "paused"
+)
+
+func (ps PublicStatus) String() string {
+	return string(ps)
+}
+
+// PublicStatusValidator is a validator for the "public_status" field enum values. It is called by the builders before save.
+func PublicStatusValidator(ps PublicStatus) error {
+	switch ps {
+	case PublicStatusAvailable, PublicStatusMaintenance, PublicStatusPaused:
+		return nil
+	default:
+		return fmt.Errorf("group: invalid enum value for public_status field: %q", ps)
+	}
+}
+
 // RoutingMode defines the type for the "routing_mode" enum field.
 type RoutingMode string
 
@@ -184,6 +214,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByVisibility orders the results by the visibility field.
 func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
+}
+
+// ByPublicStatus orders the results by the public_status field.
+func ByPublicStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPublicStatus, opts...).ToFunc()
 }
 
 // ByRoutingMode orders the results by the routing_mode field.

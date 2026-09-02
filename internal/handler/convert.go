@@ -116,6 +116,7 @@ func toAPIGroup(g *domain.Group) Group {
 		ID:              &g.ID,
 		Name:            &g.Name,
 		Visibility:      &v,
+		PublicStatus:    ptr(GroupPublicStatus(g.PublicStatus)),
 		RoutingMode:     &routing,
 		AllowedModels:   &allowed,
 		PriceMultiplier: ptr(multToNormal(g.PriceMultiplier)),

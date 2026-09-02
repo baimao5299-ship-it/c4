@@ -93,6 +93,13 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	if strings.TrimSpace(group.Name) == "" || !group.Visibility.Valid() {
 		return nil, ErrInvalidInput
 	}
+	publicStatus := group.PublicStatus
+	if publicStatus == "" {
+		publicStatus = domain.GroupPublicStatusAvailable
+	}
+	if !publicStatus.Valid() {
+		return nil, ErrInvalidInput
+	}
 	if group.PriceMultiplier < 0 || group.PriceMultiplier > 100000 {
 		return nil, ErrInvalidInput
 	}
@@ -117,6 +124,7 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	}
 	groupCopy := *group
 	groupCopy.Name = strings.TrimSpace(group.Name)
+	groupCopy.PublicStatus = publicStatus
 	groupCopy.ProtocolConverts = converts
 	groupCopy.AllowedModels = allowed
 	created, err := store.CreateGroupWithUpstreams(ctx, &groupCopy, normalized)
@@ -143,6 +151,14 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 		return nil, err
 	}
 	normalizedGroup.ID = group.ID
+	publicStatus := group.PublicStatus
+	if publicStatus == "" {
+		publicStatus = domain.GroupPublicStatusAvailable
+	}
+	if !publicStatus.Valid() {
+		return nil, ErrInvalidInput
+	}
+	normalizedGroup.PublicStatus = publicStatus
 	if normalizedGroup.RoutingMode == domain.GroupRoutingModeUpstreams {
 		if len(members) == 0 || len(normalizedGroup.AllowedModels) == 0 {
 			return nil, fmt.Errorf("%w: upstream groups require members and allowed models", ErrInvalidInput)

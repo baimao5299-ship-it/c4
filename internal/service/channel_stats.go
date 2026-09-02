@@ -6,7 +6,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -102,13 +101,14 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 		public = append(public, g)
 		ids = append(ids, g.ID)
 	}
-	telemetry, ok := s.store.(PublicChannelStatsStore)
-	if !ok {
-		return nil, fmt.Errorf("public channel stats store is not configured")
-	}
-	stats, err := telemetry.ScanPublicChannelStats(ctx, ids, from, to)
-	if err != nil {
-		return nil, err
+	// Telemetry is an administrator concern. Keep it best-effort for legacy
+	// internal callers, but never let a missing or failed stats store hide the
+	// public model catalogue.
+	stats := map[int64]*domain.PublicChannelStat{}
+	if telemetry, ok := s.store.(PublicChannelStatsStore); ok {
+		if scanned, scanErr := telemetry.ScanPublicChannelStats(ctx, ids, from, to); scanErr == nil && scanned != nil {
+			stats = scanned
+		}
 	}
 	// Pricing is read from the immutable service snapshot so refreshing the
 	// public monitor does not issue one database query per model. If the

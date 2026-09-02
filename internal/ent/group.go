@@ -22,6 +22,8 @@ type Group struct {
 	Name string `json:"name,omitempty"`
 	// Visibility holds the value of the "visibility" field.
 	Visibility group.Visibility `json:"visibility,omitempty"`
+	// PublicStatus holds the value of the "public_status" field.
+	PublicStatus group.PublicStatus `json:"public_status,omitempty"`
 	// RoutingMode holds the value of the "routing_mode" field.
 	RoutingMode group.RoutingMode `json:"routing_mode,omitempty"`
 	// PriceMultiplier holds the value of the "price_multiplier" field.
@@ -102,7 +104,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case group.FieldID, group.FieldPriceMultiplier:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldVisibility, group.FieldRoutingMode:
+		case group.FieldName, group.FieldVisibility, group.FieldPublicStatus, group.FieldRoutingMode:
 			values[i] = new(sql.NullString)
 		case group.FieldUpdatedAt, group.FieldDeletedAt, group.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -138,6 +140,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field visibility", values[i])
 			} else if value.Valid {
 				_m.Visibility = group.Visibility(value.String)
+			}
+		case group.FieldPublicStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field public_status", values[i])
+			} else if value.Valid {
+				_m.PublicStatus = group.PublicStatus(value.String)
 			}
 		case group.FieldRoutingMode:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -247,6 +255,9 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("visibility=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
+	builder.WriteString(", ")
+	builder.WriteString("public_status=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PublicStatus))
 	builder.WriteString(", ")
 	builder.WriteString("routing_mode=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RoutingMode))

@@ -286,7 +286,7 @@ func TestAccountAndGroup(t *testing.T) {
 	// price_multiplier 恒写入——T3.5 修正：service 归一缺省为 10000，显式 0 = 免费组；
 	// protocol_convert 恒写入——JSON 数组列：空数组 = off（service 归一缺省）
 	tr.pool.ExpectQuery(q(`INSERT INTO "groups"`)).
-		WithArgs("g1", group.VisibilityPublic, group.RoutingModeAccounts, pgxmock.AnyArg(),
+		WithArgs("g1", group.VisibilityPublic, group.PublicStatusAvailable, group.RoutingModeAccounts, pgxmock.AnyArg(),
 			json.RawMessage(`[]`), json.RawMessage(`[]`), pgxmock.AnyArg(), pgxmock.AnyArg()).
 		WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(3)))
 

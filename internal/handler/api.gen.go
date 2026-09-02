@@ -1068,6 +1068,7 @@ type Group struct {
 	DeletedAt *time.Time `json:"DeletedAt"`
 	ID        *int64     `json:"ID,omitempty"`
 	Name      *string    `json:"Name,omitempty"`
+	PublicStatus *GroupPublicStatus `json:"PublicStatus,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
 	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
@@ -1102,6 +1103,7 @@ type GroupCreate struct {
 	// AllowedModels 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集
 	AllowedModels *[]string `json:"allowed_models,omitempty"`
 	Name          string    `json:"name"`
+	PublicStatus  *GroupPublicStatus `json:"public_status,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
 	PriceMultiplier *float64 `json:"price_multiplier"`
@@ -1125,8 +1127,9 @@ type GroupListResponse struct {
 
 // GroupPatch defines model for GroupPatch.
 type GroupPatch struct {
-	Name       *string          `json:"name,omitempty"`
-	Visibility *GroupVisibility `json:"visibility,omitempty"`
+	Name        *string           `json:"name,omitempty"`
+	PublicStatus *GroupPublicStatus `json:"public_status,omitempty"`
+	Visibility  *GroupVisibility  `json:"visibility,omitempty"`
 }
 
 // GroupProtocolConvert 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
@@ -1178,6 +1181,15 @@ type GroupUpstreamsUpdate struct {
 
 // GroupVisibility defines model for GroupVisibility.
 type GroupVisibility string
+
+// GroupPublicStatus defines the administrator-controlled user-facing label.
+type GroupPublicStatus string
+
+const (
+	GroupPublicStatusAvailable   GroupPublicStatus = "available"
+	GroupPublicStatusMaintenance GroupPublicStatus = "maintenance"
+	GroupPublicStatusPaused      GroupPublicStatus = "paused"
+)
 
 // ImportFailedItem 行级失败条目（index = items 原始下标——行级定位契约）
 type ImportFailedItem struct {

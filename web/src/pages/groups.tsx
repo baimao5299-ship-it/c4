@@ -37,6 +37,7 @@ import type { components } from '@/lib/api/schema'
 
 type Group = components['schemas']['Group']
 type GroupVisibility = components['schemas']['GroupVisibility']
+type GroupPublicStatus = components['schemas']['GroupPublicStatus']
 type GroupRoutingMode = components['schemas']['GroupRoutingMode']
 type GroupUpstreamInput = components['schemas']['GroupUpstreamInput']
 type Upstream = components['schemas']['Upstream']
@@ -305,6 +306,13 @@ function VisibilityBadge({ visibility }: { visibility?: GroupVisibility }) {
       {t(isPublic ? 'groups.visibilityPublic' : 'groups.visibilityPrivate')}
     </Badge>
   )
+}
+
+function PublicStatusBadge({ status }: { status?: GroupPublicStatus }) {
+  const { t } = useTranslation()
+  const value = status ?? 'available'
+  const tone = value === 'maintenance' ? 'text-amber-700 dark:text-amber-400' : value === 'paused' ? 'text-muted-foreground' : 'text-emerald-700 dark:text-emerald-400'
+  return <Badge variant="secondary" className={cn('gap-1.5', tone)}><span className={cn('size-1.5 shrink-0 rounded-full', value === 'maintenance' ? 'bg-amber-500' : value === 'paused' ? 'bg-muted-foreground/60' : 'bg-emerald-500')} />{t(`groups.publicStatuses.${value}`)}</Badge>
 }
 
 // 授予弹窗用户行：勾选 + 用户标识 + 专属倍率三态输入（public 默认列表与搜索列表共用）。
@@ -659,6 +667,7 @@ export default function Groups() {
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
   const [editVisibility, setEditVisibility] = useState<GroupVisibility>('public')
+  const [editPublicStatus, setEditPublicStatus] = useState<GroupPublicStatus>('available')
   const [editProtocols, setEditProtocols] = useState<GroupProtocolConvert[]>([])
   // 倍率用字符串态：空 = 不修改（PUT 省略键，后端保持原值）
   const [editMultiplier, setEditMultiplier] = useState('')
@@ -787,6 +796,7 @@ export default function Groups() {
     setEditTarget(group)
     setEditName(group.Name ?? '')
     setEditVisibility(group.Visibility ?? 'public')
+    setEditPublicStatus(group.PublicStatus ?? 'available')
     setEditRoutingMode(group.RoutingMode ?? 'accounts')
     setEditAllowedModels(group.AllowedModels ?? [])
     setEditMembers([])
@@ -799,7 +809,7 @@ export default function Groups() {
 
   const rename = useMutation({
     mutationFn: () => {
-      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
+      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility, public_status: editPublicStatus, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
       const m = normalizeMultiplierInput(editMultiplier, t('groups.multiplierInvalid'))
       if (m !== undefined) body.price_multiplier = m // 正常值直接提交；输入为空则省略键（后端保持原值）
       // The API commits policy and the complete member set in one database
@@ -888,6 +898,7 @@ export default function Groups() {
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
                   <TableHead>{t('groups.table.visibility')}</TableHead>
+                  <TableHead>{t('groups.table.publicStatus')}</TableHead>
                   <TableHead>{t('groups.table.routing')}</TableHead>
                   <TableHead>{t('groups.table.priceMultiplier')}</TableHead>
                   <TableHead>{t('groups.table.protocolConvert')}</TableHead>
@@ -904,6 +915,7 @@ export default function Groups() {
                     <TableCell className="tabular-nums">{g.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
                     <TableCell><VisibilityBadge visibility={g.Visibility} /></TableCell>
+                    <TableCell><PublicStatusBadge status={g.PublicStatus} /></TableCell>
                     <TableCell>
                       <Badge variant="outline">{t(`groups.routingModes.${g.RoutingMode ?? 'accounts'}`)}</Badge>
                       {g.RoutingMode === 'upstreams' && <div className="mt-1 text-xs text-muted-foreground">{g.AllowedModels?.length ? t('groups.modelCount', { count: g.AllowedModels.length }) : t('groups.autoModels')}</div>}
@@ -1008,6 +1020,21 @@ export default function Groups() {
                 <SelectContent>
                   <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
                   <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-edit-public-status">{t('groups.publicStatusLabel')}</Label>
+              <Select
+                items={Object.fromEntries((['available', 'maintenance', 'paused'] as GroupPublicStatus[]).map(value => [value, t(`groups.publicStatuses.${value}`)]))}
+                value={editPublicStatus}
+                onValueChange={v => setEditPublicStatus(v as GroupPublicStatus)}
+              >
+                <SelectTrigger id="grp-edit-public-status" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available" label={t('groups.publicStatuses.available')}>{t('groups.publicStatuses.available')}</SelectItem>
+                  <SelectItem value="maintenance" label={t('groups.publicStatuses.maintenance')}>{t('groups.publicStatuses.maintenance')}</SelectItem>
+                  <SelectItem value="paused" label={t('groups.publicStatuses.paused')}>{t('groups.publicStatuses.paused')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

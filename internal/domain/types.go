@@ -586,6 +586,8 @@ type Group struct {
 	ID         int64
 	Name       string
 	Visibility GroupVisibility
+	// PublicStatus is the administrator-controlled label shown to end users.
+	PublicStatus GroupPublicStatus
 	// RoutingMode selects the scheduler source. Empty values are treated as the
 	// legacy accounts mode by read paths; writes should persist an explicit mode.
 	RoutingMode GroupRoutingMode
@@ -611,6 +613,33 @@ type Group struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DeletedAt       *time.Time // 软删除时间戳；nil = 存活（列表/消费路径过滤；GET 单个可查已删）
+}
+
+// GroupPublicStatus is a manual, user-facing availability label. It is kept
+// separate from runtime telemetry so an operator can annotate a channel
+// without exposing internal request statistics.
+type GroupPublicStatus string
+
+const (
+	GroupPublicStatusAvailable   GroupPublicStatus = "available"
+	GroupPublicStatusMaintenance GroupPublicStatus = "maintenance"
+	GroupPublicStatusPaused      GroupPublicStatus = "paused"
+)
+
+func (s GroupPublicStatus) Valid() bool {
+	switch s {
+	case GroupPublicStatusAvailable, GroupPublicStatusMaintenance, GroupPublicStatusPaused:
+		return true
+	default:
+		return false
+	}
+}
+
+func (g *Group) EffectivePublicStatus() GroupPublicStatus {
+	if g == nil || !g.PublicStatus.Valid() {
+		return GroupPublicStatusAvailable
+	}
+	return g.PublicStatus
 }
 
 // ProtocolConvert 分组级协议转换方向枚举（补差语义：模板已支持客户端协议 →

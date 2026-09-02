@@ -328,6 +328,48 @@ func TestConvertRequestChatToMess(t *testing.T) {
 	require.Equal(t, "any", m["tool_choice"], "required → any")
 }
 
+func TestConvertRequestChatToMessPreservesImageParts(t *testing.T) {
+	out, err := ConvertRequest([]byte(`{
+		"model":"claude-test",
+		"messages":[{"role":"user","content":[
+			{"type":"text","text":"first"},
+			{"type":"image_url","image_url":{"url":"https://example.com/photo.png","detail":"high"}},
+			{"type":"text","text":"last"}
+		]}]
+	}`), domain.ProtocolConvertChatToMess)
+	require.NoError(t, err)
+	messages := arrOf(t, obj(t, out), "messages")
+	require.Len(t, messages, 1)
+	blocks := arrOf(t, messages[0].(map[string]any), "content")
+	require.Len(t, blocks, 3)
+	require.Equal(t, map[string]any{"type": "text", "text": "first"}, blocks[0])
+	require.Equal(t, map[string]any{
+		"type":   "image",
+		"source": map[string]any{"type": "url", "url": "https://example.com/photo.png"},
+	}, blocks[1])
+	require.Equal(t, map[string]any{"type": "text", "text": "last"}, blocks[2])
+}
+
+func TestConvertRequestChatToMessConvertsDataImageToBase64(t *testing.T) {
+	// "hello" is deliberately small: this checks both the media type and that
+	// the data URL prefix is removed before the Anthropic request is emitted.
+	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"image_url","image_url":"data:image/PNG;base64,aGVsbG8="}]}]}`), domain.ProtocolConvertChatToMess)
+	require.NoError(t, err)
+	blocks := arrOf(t, arrOf(t, obj(t, out), "messages")[0].(map[string]any), "content")
+	require.Equal(t, map[string]any{
+		"type":   "image",
+		"source": map[string]any{"type": "base64", "media_type": "image/png", "data": "aGVsbG8="},
+	}, blocks[0])
+}
+
+func TestConvertRequestChatToMessRejectsMalformedImageInsteadOfDroppingIt(t *testing.T) {
+	_, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,not-base64"}}]}]}`), domain.ProtocolConvertChatToMess)
+	require.EqualError(t, err, "protoconv: invalid base64 image payload")
+
+	_, err = ConvertRequest([]byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"file:///tmp/private.png"}}]}]}`), domain.ProtocolConvertChatToMess)
+	require.EqualError(t, err, `protoconv: image_url scheme "file" is not supported`)
+}
+
 func TestConvertRequestChatToMessMaxCompletionTokens(t *testing.T) {
 	out, err := ConvertRequest([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":300}`), domain.ProtocolConvertChatToMess)
 	require.NoError(t, err)

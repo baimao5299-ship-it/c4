@@ -5152,6 +5152,7 @@ type GroupMutation struct {
 	id                      *int64
 	name                    *string
 	visibility              *group.Visibility
+	public_status           *group.PublicStatus
 	routing_mode            *group.RoutingMode
 	price_multiplier        *int
 	addprice_multiplier     *int
@@ -5354,6 +5355,42 @@ func (m *GroupMutation) OldVisibility(ctx context.Context) (v group.Visibility, 
 // ResetVisibility resets all changes to the "visibility" field.
 func (m *GroupMutation) ResetVisibility() {
 	m.visibility = nil
+}
+
+// SetPublicStatus sets the "public_status" field.
+func (m *GroupMutation) SetPublicStatus(gs group.PublicStatus) {
+	m.public_status = &gs
+}
+
+// PublicStatus returns the value of the "public_status" field in the mutation.
+func (m *GroupMutation) PublicStatus() (r group.PublicStatus, exists bool) {
+	v := m.public_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicStatus returns the old "public_status" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldPublicStatus(ctx context.Context) (v group.PublicStatus, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicStatus: %w", err)
+	}
+	return oldValue.PublicStatus, nil
+}
+
+// ResetPublicStatus resets all changes to the "public_status" field.
+func (m *GroupMutation) ResetPublicStatus() {
+	m.public_status = nil
 }
 
 // SetRoutingMode sets the "routing_mode" field.
@@ -5921,12 +5958,15 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.name != nil {
 		fields = append(fields, group.FieldName)
 	}
 	if m.visibility != nil {
 		fields = append(fields, group.FieldVisibility)
+	}
+	if m.public_status != nil {
+		fields = append(fields, group.FieldPublicStatus)
 	}
 	if m.routing_mode != nil {
 		fields = append(fields, group.FieldRoutingMode)
@@ -5961,6 +6001,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case group.FieldVisibility:
 		return m.Visibility()
+	case group.FieldPublicStatus:
+		return m.PublicStatus()
 	case group.FieldRoutingMode:
 		return m.RoutingMode()
 	case group.FieldPriceMultiplier:
@@ -5988,6 +6030,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldName(ctx)
 	case group.FieldVisibility:
 		return m.OldVisibility(ctx)
+	case group.FieldPublicStatus:
+		return m.OldPublicStatus(ctx)
 	case group.FieldRoutingMode:
 		return m.OldRoutingMode(ctx)
 	case group.FieldPriceMultiplier:
@@ -6024,6 +6068,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetVisibility(v)
+		return nil
+	case group.FieldPublicStatus:
+		v, ok := value.(group.PublicStatus)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicStatus(v)
 		return nil
 	case group.FieldRoutingMode:
 		v, ok := value.(group.RoutingMode)
@@ -6152,6 +6203,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldVisibility:
 		m.ResetVisibility()
+		return nil
+	case group.FieldPublicStatus:
+		m.ResetPublicStatus()
 		return nil
 	case group.FieldRoutingMode:
 		m.ResetRoutingMode()

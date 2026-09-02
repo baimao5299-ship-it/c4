@@ -2036,6 +2036,8 @@ export interface components {
         };
         /** @enum {string} */
         GroupVisibility: "public" | "private";
+        /** @enum {string} */
+        GroupPublicStatus: "available" | "maintenance" | "paused";
         /**
          * @description 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
          * @enum {string}
@@ -2087,18 +2089,7 @@ export interface components {
             ModelPrices: components["schemas"]["UserChannelModelPrice"][];
             /** Format: double */
             PriceMultiplier: number;
-            /** Format: int64 */
-            RequestCount: number;
-            /** Format: int64 */
-            ErrorCount: number;
-            /** Format: int64 */
-            AverageLatencyMS: number;
-            /** Format: double */
-            SuccessRate: number;
-            /** Format: date-time */
-            LastCalledAt?: string | null;
-            /** @enum {string} */
-            Status: "stable" | "degraded" | "no_data";
+            Status: components["schemas"]["GroupPublicStatus"];
         };
         UserChannelModelPrice: {
             Model: string;
@@ -2387,6 +2378,7 @@ export interface components {
         GroupCreate: {
             name: string;
             visibility?: components["schemas"]["GroupVisibility"];
+            public_status?: components["schemas"]["GroupPublicStatus"];
             routing_mode?: components["schemas"]["GroupRoutingMode"];
             /** @description 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集 */
             allowed_models?: string[];
@@ -2514,6 +2506,7 @@ export interface components {
             ID?: number;
             Name?: string;
             Visibility?: components["schemas"]["GroupVisibility"];
+            PublicStatus?: components["schemas"]["GroupPublicStatus"];
             RoutingMode?: components["schemas"]["GroupRoutingMode"];
             /**
              * Format: double
@@ -2624,6 +2617,7 @@ export interface components {
         GroupPatch: {
             name?: string;
             visibility?: components["schemas"]["GroupVisibility"];
+            public_status?: components["schemas"]["GroupPublicStatus"];
         };
         BatchUpdateAccountsBody: {
             ids: number[];

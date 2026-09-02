@@ -165,6 +165,26 @@ func VisibilityNotIn(vs ...Visibility) predicate.Group {
 	return predicate.Group(sql.FieldNotIn(FieldVisibility, vs...))
 }
 
+// PublicStatusEQ applies the EQ predicate on the "public_status" field.
+func PublicStatusEQ(v PublicStatus) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPublicStatus, v))
+}
+
+// PublicStatusNEQ applies the NEQ predicate on the "public_status" field.
+func PublicStatusNEQ(v PublicStatus) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldPublicStatus, v))
+}
+
+// PublicStatusIn applies the In predicate on the "public_status" field.
+func PublicStatusIn(vs ...PublicStatus) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldPublicStatus, vs...))
+}
+
+// PublicStatusNotIn applies the NotIn predicate on the "public_status" field.
+func PublicStatusNotIn(vs ...PublicStatus) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldPublicStatus, vs...))
+}
+
 // RoutingModeEQ applies the EQ predicate on the "routing_mode" field.
 func RoutingModeEQ(v RoutingMode) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldRoutingMode, v))

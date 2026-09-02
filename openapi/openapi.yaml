@@ -2485,6 +2485,9 @@ components:
     GroupVisibility:
       type: string
       enum: [public, private]
+    GroupPublicStatus:
+      type: string
+      enum: [available, maintenance, paused]
     GroupProtocolConvert:
       type: string
       enum: [auto, chat_to_resp, mess_to_resp, resp_to_mess, chat_to_mess]
@@ -2564,7 +2567,7 @@ components:
           items: { $ref: '#/components/schemas/UserChannelMetric' }
     UserChannelMetric:
       type: object
-      required: [GroupID, Name, AllowedModels, ModelPrices, PriceMultiplier, RequestCount, ErrorCount, AverageLatencyMS, SuccessRate, Status]
+      required: [GroupID, Name, AllowedModels, ModelPrices, PriceMultiplier, Status]
       properties:
         GroupID: { type: integer, format: int64 }
         Name: { type: string }
@@ -2576,12 +2579,7 @@ components:
           description: "公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。"
           items: { $ref: '#/components/schemas/UserChannelModelPrice' }
         PriceMultiplier: { type: number, format: double, minimum: 0 }
-        RequestCount: { type: integer, format: int64, minimum: 0 }
-        ErrorCount: { type: integer, format: int64, minimum: 0 }
-        AverageLatencyMS: { type: integer, format: int64, minimum: 0 }
-        SuccessRate: { type: number, format: double, minimum: 0, maximum: 100 }
-        LastCalledAt: { type: string, format: date-time, nullable: true }
-        Status: { type: string, enum: [stable, degraded, no_data] }
+        Status: { $ref: '#/components/schemas/GroupPublicStatus' }
     UserChannelModelPrice:
       type: object
       required: [Model]
@@ -2795,6 +2793,7 @@ components:
       properties:
         name: { type: string }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
+        public_status: { $ref: '#/components/schemas/GroupPublicStatus' }
         routing_mode: { $ref: '#/components/schemas/GroupRoutingMode' }
         allowed_models:
           type: array
@@ -2923,6 +2922,7 @@ components:
         ID: { type: integer, format: int64 }
         Name: { type: string }
         Visibility: { $ref: '#/components/schemas/GroupVisibility' }
+        PublicStatus: { $ref: '#/components/schemas/GroupPublicStatus' }
         RoutingMode: { $ref: '#/components/schemas/GroupRoutingMode' }
         PriceMultiplier: { type: number, format: double, description: 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5） }
         AllowedModels:
@@ -3054,6 +3054,7 @@ components:
       properties:
         name: { type: string }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
+        public_status: { $ref: '#/components/schemas/GroupPublicStatus' }
     BatchUpdateAccountsBody:
       type: object
       required: [ids, fields]

@@ -76,11 +76,11 @@ const (
 	Sketch StatTTFTSummarySource = "sketch"
 )
 
-// Defines values for UserChannelMetricStatus.
+// Defines values for GroupPublicStatus.
 const (
-	Degraded UserChannelMetricStatus = "degraded"
-	NoData   UserChannelMetricStatus = "no_data"
-	Stable   UserChannelMetricStatus = "stable"
+	GroupPublicStatusAvailable   GroupPublicStatus = "available"
+	GroupPublicStatusMaintenance GroupPublicStatus = "maintenance"
+	GroupPublicStatusPaused      GroupPublicStatus = "paused"
 )
 
 // Defines values for UserChannelModelPriceMode.
@@ -399,22 +399,18 @@ type UserAuthResponse struct {
 // UserChannelMetric defines model for UserChannelMetric.
 type UserChannelMetric struct {
 	AllowedModels    []string   `json:"AllowedModels"`
-	AverageLatencyMS int64      `json:"AverageLatencyMS"`
-	ErrorCount       int64      `json:"ErrorCount"`
 	GroupID          int64      `json:"GroupID"`
-	LastCalledAt     *time.Time `json:"LastCalledAt"`
 
 	// ModelPrices 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。
 	ModelPrices     []UserChannelModelPrice `json:"ModelPrices"`
 	Name            string                  `json:"Name"`
 	PriceMultiplier float64                 `json:"PriceMultiplier"`
-	RequestCount    int64                   `json:"RequestCount"`
-	Status          UserChannelMetricStatus `json:"Status"`
-	SuccessRate     float64                 `json:"SuccessRate"`
+	Status          GroupPublicStatus       `json:"Status"`
 }
 
-// UserChannelMetricStatus defines model for UserChannelMetric.Status.
-type UserChannelMetricStatus string
+// GroupPublicStatus defines the administrator-controlled label shown to users.
+type GroupPublicStatus string
+
 
 // UserChannelModelPrice defines model for UserChannelModelPrice.
 type UserChannelModelPrice struct {
