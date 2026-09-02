@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -568,6 +569,66 @@ func TestConvertedRequestConvertFailReleasesSlot(t *testing.T) {
 	ri, ok := p.sched.Runtime(1)
 	require.True(t, ok)
 	require.Zero(t, ri.Concurrency, "转换失败路径释放目标选号并发槽（无泄漏）")
+}
+
+// TestConvertedNonStreamingFailureDoesNotRetry verifies that an application
+// failure returned inside an HTTP-200 provider envelope is surfaced as 502 and
+// does not replay the already-submitted request through failover.
+func TestConvertedNonStreamingFailureDoesNotRetry(t *testing.T) {
+	var requests atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"status":"failed","error":{"code":"provider_error","message":"generation failed"}}`)
+	}))
+	defer up.Close()
+	p := newConvertedTestProxy(t, up.URL, []domain.RequestFormat{domain.FormatOpenAIResponses}, []domain.ProtocolConvert{domain.ProtocolConvertChatToResp})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Contains(t, rec.Body.String(), "generation failed")
+	require.Equal(t, int32(1), requests.Load(), "application failure must not trigger a second chargeable attempt")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "failure path releases the selected slot")
+}
+
+// TestConvertedStreamingFailureDoesNotBecomeSuccess covers the case where a
+// provider emits content before response.failed and then closes cleanly. The
+// HTTP status is already committed as 200, but the stream must be logged as a
+// failure and must not be retried or marked KindOK.
+func TestConvertedStreamingFailureDoesNotBecomeSuccess(t *testing.T) {
+	var requests atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"rsp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\"}}\n\n")
+		_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")
+		_, _ = fmt.Fprint(w, "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"message\":\"provider stream failed\"}}}\n\n")
+		fl.Flush()
+	}))
+	defer up.Close()
+	p := newConvertedTestProxy(t, up.URL, []domain.RequestFormat{domain.FormatOpenAIResponses}, []domain.ProtocolConvert{domain.ProtocolConvertChatToResp})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`))
+	req.Header.Set("Authorization", "Bearer ck-1")
+	rec := httptest.NewRecorder()
+	p.HandleChat(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "SSE headers are committed once the stream starts")
+	require.Contains(t, rec.Body.String(), "provider stream failed")
+	require.NotContains(t, rec.Body.String(), `"finish_reason":"stop"`, "failed stream must not receive a synthetic success terminator")
+	require.Equal(t, int32(1), requests.Load(), "failed stream must not be replayed")
+	ri, ok := p.sched.Runtime(1)
+	require.True(t, ok)
+	require.Zero(t, ri.Concurrency, "stream failure releases the selected slot")
 }
 
 // TestConvertedChatToMessStreamingLogTotalTokens 转换流（chat→anthropic）流式

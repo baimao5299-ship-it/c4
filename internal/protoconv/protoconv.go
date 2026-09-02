@@ -18,10 +18,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/pkg/sserelay"
 )
+
+// UpstreamResponseError identifies a provider response that was delivered with
+// a successful HTTP status but contains an application-level failure envelope.
+// Protocol conversion must preserve that failure instead of manufacturing an
+// empty successful response for the client. The proxy maps this condition to a
+// 502 and records the already-used upstream selection without retrying it.
+type UpstreamResponseError struct {
+	Status  string
+	Code    string
+	Message string
+}
+
+func (e *UpstreamResponseError) Error() string {
+	if e == nil {
+		return "upstream response failed"
+	}
+	msg := strings.TrimSpace(e.Message)
+	if msg == "" {
+		msg = "upstream response reported a failure"
+	}
+	if code := strings.TrimSpace(e.Code); code != "" {
+		msg = code + ": " + msg
+	}
+	if status := strings.TrimSpace(e.Status); status != "" {
+		msg = "status " + status + ": " + msg
+	}
+	return "upstream response failed: " + msg
+}
+
+// StatusCode lets generic error classification retain the gateway/upstream
+// boundary if this error crosses another caller in the future.
+func (e *UpstreamResponseError) StatusCode() int { return 502 }
 
 // ConvertRequest 把客户端协议请求体转换为 dir 指向的模板协议请求体（返回的
 // 字节即模板协议上游请求体，可直接转发）。转换器按目标协议规范映射字段；
@@ -47,6 +80,21 @@ func ConvertRequest(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 
 // ConvertResponse 把模板协议的非流式响应 JSON 转换为客户端协议响应 JSON。
 func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
+	// Keep the unsupported-direction error precedence stable, then inspect the
+	// common provider envelope once before dispatching to a shape converter.
+	switch dir {
+	case domain.ProtocolConvertChatToResp,
+		domain.ProtocolConvertMessToResp,
+		domain.ProtocolConvertRespToMess,
+		domain.ProtocolConvertChatToMess,
+		AutoResponsesToChat,
+		AutoMessagesToChat:
+	default:
+		return nil, fmt.Errorf("protoconv: unsupported direction %q", dir)
+	}
+	if err := detectUpstreamResponseFailure(body); err != nil {
+		return nil, err
+	}
 	switch dir {
 	case domain.ProtocolConvertChatToResp:
 		return respToChatResponse(body)
@@ -62,6 +110,130 @@ func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 		return chatToMessResponse(body)
 	}
 	return nil, fmt.Errorf("protoconv: unsupported direction %q", dir)
+}
+
+// detectUpstreamResponseFailure recognizes the failure envelopes used by the
+// supported upstream protocols. A provider may return HTTP 200 while carrying
+// status=failed/cancelled or a top-level error object; treating that payload as
+// a normal completion causes a false success and can make failover replay an
+// already charged request. Only top-level envelope fields are considered, so a
+// user/tool payload containing an unrelated nested "error" value is untouched.
+func detectUpstreamResponseFailure(body []byte) error {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil || root == nil {
+		return nil
+	}
+	if raw, ok := root["error"]; ok && upstreamResponseHasErrorPayload(raw) {
+		code, message := upstreamResponseErrorDetails(raw)
+		if message == "" {
+			message = upstreamResponseRawString(root["message"])
+		}
+		return &UpstreamResponseError{Status: upstreamResponseRawString(root["status"]), Code: code, Message: message}
+	}
+	status := upstreamResponseRawString(root["status"])
+	if upstreamResponseIsFailureStatus(status) {
+		code, message := upstreamResponseErrorDetails(root["error"])
+		if message == "" {
+			message = upstreamResponseRawString(root["message"])
+		}
+		return &UpstreamResponseError{Status: status, Code: code, Message: message}
+	}
+	if strings.EqualFold(upstreamResponseRawString(root["type"]), "error") {
+		code, message := upstreamResponseErrorDetails(root["error"])
+		if message == "" {
+			message = upstreamResponseRawString(root["message"])
+		}
+		return &UpstreamResponseError{Status: status, Code: code, Message: message}
+	}
+	// A few relays wrap the Responses object in {response:{...}} even for a
+	// non-streaming request. Inspect that one known envelope without recursively
+	// walking arbitrary user data.
+	if nested, ok := root["response"]; ok {
+		var obj map[string]json.RawMessage
+		if json.Unmarshal(nested, &obj) == nil && obj != nil {
+			if nestedStatus := upstreamResponseRawString(obj["status"]); upstreamResponseIsFailureStatus(nestedStatus) {
+				code, message := upstreamResponseErrorDetails(obj["error"])
+				if message == "" {
+					message = upstreamResponseRawString(obj["message"])
+				}
+				return &UpstreamResponseError{Status: nestedStatus, Code: code, Message: message}
+			}
+			if raw, exists := obj["error"]; exists && upstreamResponseHasErrorPayload(raw) {
+				code, message := upstreamResponseErrorDetails(raw)
+				return &UpstreamResponseError{Status: upstreamResponseRawString(obj["status"]), Code: code, Message: message}
+			}
+		}
+	}
+	return nil
+}
+
+func upstreamResponseJSONNull(raw json.RawMessage) bool {
+	return strings.EqualFold(strings.TrimSpace(string(raw)), "null")
+}
+
+func upstreamResponseHasErrorPayload(raw json.RawMessage) bool {
+	if len(raw) == 0 || upstreamResponseJSONNull(raw) {
+		return false
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) == nil {
+		for _, value := range obj {
+			if upstreamResponseJSONNull(value) {
+				continue
+			}
+			var text string
+			if json.Unmarshal(value, &text) == nil {
+				if strings.TrimSpace(text) != "" {
+					return true
+				}
+				continue
+			}
+			return len(value) > 0 && strings.TrimSpace(string(value)) != "{}"
+		}
+		return false
+	}
+	return strings.TrimSpace(string(raw)) != ""
+}
+
+func upstreamResponseRawString(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		return value
+	}
+	return ""
+}
+
+func upstreamResponseErrorDetails(raw json.RawMessage) (code, message string) {
+	if len(raw) == 0 || upstreamResponseJSONNull(raw) {
+		return "", ""
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) == nil && obj != nil {
+		for _, key := range []string{"message", "detail", "reason"} {
+			if message = upstreamResponseRawString(obj[key]); message != "" {
+				break
+			}
+		}
+		for _, key := range []string{"code", "type", "name"} {
+			if code = upstreamResponseRawString(obj[key]); code != "" {
+				break
+			}
+		}
+		return code, message
+	}
+	return "", upstreamResponseRawString(raw)
+}
+
+func upstreamResponseIsFailureStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "failed", "failure", "cancelled", "canceled", "error", "errored", "rejected":
+		return true
+	default:
+		return false
+	}
 }
 
 // NewStreamMapper 构造有状态的流式响应事件映射器（每 SSE 流一个实例；

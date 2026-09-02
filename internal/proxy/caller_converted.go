@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -82,6 +81,7 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("X-Accel-Buffering", "no")
 		mapper := protoconv.NewStreamMapper(c.dir)
 		var it, ot, tt, cr, cc int64
+		var streamFailure error
 		// TTFT 采集（首 token 时间毫秒）：与模板 caller 同构。
 		var ttft *int64
 		err = sserelay.Relay(ctx, w, resp.Body, sserelay.Config{
@@ -115,9 +115,18 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 						ot = anthropicDeltaOutput(ev.Data)
 					}
 				}
+				if streamFailure == nil {
+					streamFailure = convertedStreamFailure(ev)
+				}
 				return mapper.Map(string(ev.Event), ev.Data)
 			},
 		})
+		// A provider can send a terminal failure event and then close the stream
+		// cleanly. Relay quite correctly returns nil in that case; promote the
+		// application failure before the success bookkeeping below.
+		if err == nil && streamFailure != nil {
+			err = streamFailure
+		}
 		if err == nil && target == domain.FormatOpenAIChat {
 			// Some compatible Chat relays close immediately after the final JSON
 			// chunk without emitting the conventional [DONE] sentinel. Complete
@@ -136,6 +145,14 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
 		}
 		if err != nil {
+			if streamFailure != nil {
+				msg := domain.TruncateErrMsg(streamFailure.Error())
+				l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, start))
+				l.ErrorMessage = &msg
+				p.finishSelection(sel, l)
+				p.sched.MarkSelectionResult(sel, rule.Kind5xx, nil, http.StatusBadGateway, msg, sel.Model)
+				return http.StatusBadGateway, nil, true, nil
+			}
 			// 客户端断开/流中止语义与模板 caller 逐字同构（recordStreamAbort +
 			// MarkResult；客户端断开 finish ErrAbort 不转移）。errors.Is(err,
 			// context.Canceled) 即客户端断开——sserelay.normalize 已区分三类
@@ -231,9 +248,17 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	}
 	conv, err := protoconv.ConvertResponse(data, c.dir)
 	if err != nil {
-		// 响应转换失败 = 网关内部错误（转换器 bug/上游异常字节）；按 500 返回，
-		// 骨架按 code>=500 转移（重试同 bug 无益，但语义与现状 5xx 一致）。
-		return http.StatusInternalServerError, nil, false, fmt.Errorf("protocol response conversion failed: %w", err)
+		// The upstream request has already completed. Returning handled=true is
+		// intentional: retrying through failover could charge the same prompt a
+		// second time. Record the conversion/application failure against the exact
+		// selection and expose a stable 502 to the client.
+		msg := domain.TruncateErrMsg("protocol response conversion failed: " + err.Error())
+		l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start))
+		l.ErrorMessage = &msg
+		p.finishSelection(sel, l)
+		p.sched.MarkSelectionResult(sel, rule.Kind5xx, nil, http.StatusBadGateway, msg, sel.Model)
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": msg, "type": "upstream_error"}})
+		return http.StatusBadGateway, nil, true, nil
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

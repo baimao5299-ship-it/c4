@@ -10,6 +10,16 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.15] - 2026-09-02
+
+### Fixed
+
+- Successful provider response objects with empty optional error fields are no
+  longer misclassified as failures during protocol conversion.
+- Application-level failures delivered as HTTP 200 or terminal SSE events now
+  become explicit 502 responses, are recorded against the actual upstream, and
+  are not replayed through failover after the provider has processed a request.
+
 ## [v0.0.1-beta.14] - 2026-09-02
 
 ### Changed
