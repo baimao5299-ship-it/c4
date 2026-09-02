@@ -48,6 +48,17 @@ func TestParsePriceEntryBasic(t *testing.T) {
 	require.Equal(t, domain.PriceModeCall, byModel["search-m"].Mode)
 }
 
+func TestParseAppliesConfirmedGPT56OutputFloor(t *testing.T) {
+	res, err := Parse([]byte(`{"gpt-5.6":{"input_cost_per_token":0.000004,"output_cost_per_token":0.000020},"other":{"input_cost_per_token":0.000004,"output_cost_per_token":0.000020}}`), nil)
+	require.NoError(t, err)
+	byModel := make(map[string]*domain.PriceEntry, len(res.PriceEntries))
+	for _, row := range res.PriceEntries {
+		byModel[row.Model] = row
+	}
+	require.Equal(t, int64(3_000_000), *byModel["gpt-5.6"].OutputPerM)
+	require.Equal(t, int64(2_000_000), *byModel["other"].OutputPerM)
+}
+
 func TestParseAcceptsAllTokenPricedLiteLLMModes(t *testing.T) {
 	jsonStr := `{
   "completion-model": {

@@ -166,6 +166,7 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 		}
 		pe, vars, ok := parsePriceEntry(model, entry, log)
 		if ok {
+			applyConservativeModelFloor(pe, vars)
 			res.PriceEntries = append(res.PriceEntries, pe)
 			res.Variants = append(res.Variants, vars...)
 			continue
@@ -173,6 +174,31 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 		res.Skipped++
 	}
 	return res, nil
+}
+
+// applyConservativeModelFloor keeps the operator-confirmed public price floor
+// for the current GPT-5.6 catalogue entries. A provider feed that temporarily
+// reports a lower value must not silently reduce customer charges; the floor
+// is applied to the base row and every conditional output variant.
+func applyConservativeModelFloor(pe *domain.PriceEntry, variants []*domain.PriceVariant) {
+	if pe == nil {
+		return
+	}
+	floor, ok := map[string]int64{"gpt-5.6": 3_000_000, "gpt-5.6-sol": 3_000_000}[strings.TrimSpace(pe.Model)]
+	if !ok {
+		return
+	}
+	if pe.OutputPerM == nil || *pe.OutputPerM < floor {
+		v := floor
+		pe.OutputPerM = &v
+	}
+	for _, variant := range variants {
+		if variant == nil || variant.SetOutputPerM == nil || *variant.SetOutputPerM >= floor {
+			continue
+		}
+		v := floor
+		variant.SetOutputPerM = &v
+	}
 }
 
 // SnapshotPriceModels returns the normalized model set whose price rows can be
