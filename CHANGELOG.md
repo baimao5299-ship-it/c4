@@ -10,6 +10,15 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.17] - 2026-09-02
+
+### Fixed
+
+- Public model pricing is now rendered as one independent card per model, with
+  the model name directly above its own billing fields.
+- Models with no effective billable price are highlighted as unavailable for
+  billing instead of looking like a normal priced model.
+
 ## [v0.0.1-beta.16] - 2026-09-02
 
 ### Added

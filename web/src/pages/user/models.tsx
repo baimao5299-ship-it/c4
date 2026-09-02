@@ -140,14 +140,19 @@ function PriceDetails({
     if (value == null && officialValue == null) return
     pairs.push({ key, label, value, officialValue, format })
   }
+  const hasImageFields = [price.ImgInTokPerM, price.ImgOutTokPerM, price.PricePerImage, price.OfficialImgInTokPerM, price.OfficialImgOutTokPerM, price.OfficialPricePerImage].some(value => value != null)
   if (mode === 'call') {
     add('call', t('user.models.callShort'), price.PricePerCall, price.OfficialPricePerCall, value => formatPricePerCall(value, t('user.models.callUnit')))
-  } else {
-    if (mode === 'image') {
-      add('image-input', t('user.models.imageInputShort'), price.ImgInTokPerM, price.OfficialImgInTokPerM, value => formatPricePerMillion(value))
-      add('image-output', t('user.models.imageOutputShort'), price.ImgOutTokPerM, price.OfficialImgOutTokPerM, value => formatPricePerMillion(value))
-      add('image', t('user.models.imageShort'), price.PricePerImage, price.OfficialPricePerImage, value => formatPricePerImage(value, t('user.models.imageUnit')))
-    }
+  }
+  // Some older or manually edited catalogue rows have an explicit token/call
+  // mode while still carrying image fields. Render every populated component
+  // so a mode mismatch cannot hide a real price from the user.
+  if (mode === 'image' || hasImageFields) {
+    add('image-input', t('user.models.imageInputShort'), price.ImgInTokPerM, price.OfficialImgInTokPerM, value => formatPricePerMillion(value))
+    add('image-output', t('user.models.imageOutputShort'), price.ImgOutTokPerM, price.OfficialImgOutTokPerM, value => formatPricePerMillion(value))
+    add('image', t('user.models.imageShort'), price.PricePerImage, price.OfficialPricePerImage, value => formatPricePerImage(value, t('user.models.imageUnit')))
+  }
+  if (mode !== 'call' || price.InputPerM != null || price.OutputPerM != null || price.CacheReadPerM != null || price.CacheWritePerM != null || price.OfficialInputPerM != null || price.OfficialOutputPerM != null || price.OfficialCacheReadPerM != null || price.OfficialCacheWritePerM != null) {
     // Multimodal catalogue rows can also carry normal token/cache prices.
     // Keep them visible instead of assuming image mode is mutually exclusive.
     add('input', t('user.models.inputShort'), price.InputPerM, price.OfficialInputPerM, value => formatPricePerMillion(value))
@@ -155,7 +160,7 @@ function PriceDetails({
     add('cache-read', t('user.models.cacheReadShort'), price.CacheReadPerM, price.OfficialCacheReadPerM, value => formatPricePerMillion(value))
     add('cache-write', t('user.models.cacheWriteShort'), price.CacheWritePerM, price.OfficialCacheWritePerM, value => formatPricePerMillion(value))
   }
-  if (pairs.length === 0) return <span className="text-xs font-medium text-amber-700 dark:text-amber-400">{t('user.models.unpriced')}</span>
+  if (pairs.length === 0) return null
   return <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">{pairs.map(pair => <PricePair key={pair.key} label={pair.label} value={pair.value} officialValue={pair.officialValue} multiplier={multiplier} format={pair.format} t={t} />)}</div>
 }
 
@@ -218,9 +223,26 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{t('user.models.modelsLabel')}</span><span className="shrink-0">{t('user.models.statusManual')}</span></div>
-          {prices.length ? <div className="max-h-64 divide-y overflow-y-auto rounded-lg border bg-background/60">{prices.map(price => {
+          {prices.length ? <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border bg-background/60 p-2">{prices.map(price => {
             const mode = priceMode(price)
-            return <div key={price.Model} className="grid grid-cols-1 items-center gap-x-2 gap-y-1 px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)]"><ModelNameButton model={price.Model} copyState={copyState?.model === price.Model ? copyState.status : null} onCopy={() => { void copyModel(price.Model) }} t={t} /><PriceDetails price={price} mode={mode} multiplier={multiplier} t={t} /></div>
+            // An official catalogue value is still useful when the current
+            // group has no resolved billable value (for example while a
+            // conditional variant is being repaired). Only mark a model as
+            // completely unpriced when both views are empty.
+            const hasAnyPrice = [
+              price.InputPerM, price.OutputPerM, price.CacheReadPerM, price.CacheWritePerM,
+              price.PricePerCall, price.PricePerImage, price.ImgInTokPerM, price.ImgOutTokPerM,
+              price.OfficialInputPerM, price.OfficialOutputPerM, price.OfficialCacheReadPerM,
+              price.OfficialCacheWritePerM, price.OfficialPricePerCall, price.OfficialPricePerImage,
+              price.OfficialImgInTokPerM, price.OfficialImgOutTokPerM,
+            ].some(value => value != null && Number.isFinite(value))
+            return <div key={price.Model} className={cn('rounded-md border bg-card/80 px-3 py-2.5 text-xs shadow-sm', !hasAnyPrice && 'border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/10')}>
+              <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/60 pb-2">
+                <ModelNameButton model={price.Model} copyState={copyState?.model === price.Model ? copyState.status : null} onCopy={() => { void copyModel(price.Model) }} t={t} />
+                {!hasAnyPrice && <span className="shrink-0 font-medium text-amber-700 dark:text-amber-400">{t('user.models.unpriced')}</span>}
+              </div>
+              <div className="pt-2"><PriceDetails price={price} mode={mode} multiplier={multiplier} t={t} /></div>
+            </div>
           })}</div> : <p className="text-xs text-muted-foreground">{t('user.models.modelsPending')}</p>}
           {models.length > 0 && <p className="text-[11px] text-muted-foreground">{t('user.models.priceUnit')}</p>}
         </div>
