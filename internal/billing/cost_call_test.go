@@ -44,6 +44,22 @@ func TestCostFromResolved_ZeroPrice(t *testing.T) {
 	require.Equal(t, int64(0), CostFromResolved(rp, 100, 200, 300, 400))
 }
 
+func TestCostFromResolved_MissingCacheRatesFallbackToInput(t *testing.T) {
+	in, out := int64(1_000_000), int64(2_000_000)
+	rp := domain.ResolvedPrices{InputPerM: &in, OutputPerM: &out}
+	// Cache rates are absent, but the measured cache tokens still represent
+	// billable input. They must use the base input rate rather than disappear.
+	require.Equal(t, int64(3_000_000), CostFromResolved(rp, 1_000_000, 0, 1_000_000, 1_000_000))
+}
+
+func TestCostFromResolved_ExplicitZeroCacheRateRemainsFree(t *testing.T) {
+	in, out, zero := int64(1_000_000), int64(2_000_000), int64(0)
+	rp := domain.ResolvedPrices{InputPerM: &in, OutputPerM: &out, CacheReadPerM: &zero, CacheWritePerM: &zero}
+	// nil means missing and falls back; an explicit zero remains an intentional
+	// free component.
+	require.Equal(t, int64(1_000_000), CostFromResolved(rp, 1_000_000, 0, 1_000_000, 1_000_000))
+}
+
 func TestCostFromResolved_NegativePricesAreIgnored(t *testing.T) {
 	neg := int64(-10)
 	positive := int64(20)

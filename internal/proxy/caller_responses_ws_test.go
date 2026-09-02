@@ -917,7 +917,7 @@ func TestResponsesWSBillingTierFast(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Equal(t, "fast", store.logs[0].BillingTier, "WS service_tier=fast → BillingTier=fast 落库")
-	require.Equal(t, int64(240), store.logs[0].Cost, "fast ×2.0：120×2 = 240 毫分（与 HTTP 同价；可计费输入 it'=3−1=2 → 2×10+5×20=120 毫分，cr 车道本例无缓存价 → 0）")
+	require.Equal(t, int64(320), store.logs[0].Cost, "fast ×2.0：160×2 = 320 毫分；缺失缓存单价按基础输入价计费，避免缓存 token 被漏收")
 }
 
 // TestResponsesWSBillingTierAuto 无 service_tier：BillingTier="auto"（与 HTTP
@@ -942,7 +942,7 @@ func TestResponsesWSBillingTierAuto(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Equal(t, "auto", store.logs[0].BillingTier, "WS 无 service_tier → BillingTier=auto")
-	require.Equal(t, int64(120), store.logs[0].Cost, "auto 基础价：it'=3−1=2 → 2×10 + 输出 5×20 = 120 毫分（缓存读单独车道，本例无缓存价 → 0）")
+	require.Equal(t, int64(160), store.logs[0].Cost, "auto 基础价：2×10 + 5×20 + 缓存读/写(1+3)×10 = 160 毫分")
 }
 
 // TestResponsesWSBillingTierStrip strip 策略：首帧改写点（relayResponsesWS）删
@@ -977,7 +977,7 @@ func TestResponsesWSBillingTierStrip(t *testing.T) {
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
 	require.Equal(t, "fast", store.logs[0].BillingTier, "剥离路径计费照常（tier 已提取）")
-	require.Equal(t, int64(240), store.logs[0].Cost, "strip 路径同归一后基础价 ×2.0：120×2 = 240")
+	require.Equal(t, int64(320), store.logs[0].Cost, "strip 路径同归一后基础价 ×2.0：160×2 = 320")
 }
 
 // TestResponsesWSBillingTierReject reject 策略：Select 前拒绝——客户端收到 error

@@ -462,6 +462,7 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 			return
 		}
 	}
+	rp = withObservedCacheRateFallback(l, rp)
 	if rp.InputPerM != nil {
 		l.PriceInputMillis = rp.InputPerM
 	}
@@ -484,6 +485,26 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	// a different pricing period while preserving sub-unit costs for this one.
 	p.applyResolvedBillingParts(l, parts, model, rp)
 	l.AboveHit = false
+}
+
+// withObservedCacheRateFallback makes the effective price snapshot explicit
+// when a catalogue omits a cache-specific rate. The billing core uses the same
+// rule; copying the input pointer here keeps usage logs and upstream economics
+// aligned with the amount actually charged. Explicit zero cache rates remain
+// untouched.
+func withObservedCacheRateFallback(l *domain.UsageLog, rp domain.ResolvedPrices) domain.ResolvedPrices {
+	if l == nil || rp.InputPerM == nil {
+		return rp
+	}
+	if l.CacheReadTokens > 0 && rp.CacheReadPerM == nil {
+		v := *rp.InputPerM
+		rp.CacheReadPerM = &v
+	}
+	if l.CacheCreationTokens > 0 && rp.CacheWritePerM == nil {
+		v := *rp.InputPerM
+		rp.CacheWritePerM = &v
+	}
+	return rp
 }
 
 func (p *Proxy) applyBillingParts(l *domain.UsageLog, parts billing.CostParts) {
@@ -849,25 +870,54 @@ func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 		if rm.hasTier {
 			l.BillingTier = rm.tier.String()
 		}
-		// Some compatible providers return a successful body without a usage
-		// object. Keep that request billable using a conservative local estimate
-		// instead of silently creating a free ledger row. This runs only when
-		// billing is enabled and only for token protocols; real usage values are
-		// never replaced.
-		if rm.billingEnabled && l.ErrorType == domain.ErrNone &&
-			rm.estimatedInputTokens > 0 && l.InputTokens == 0 && l.OutputTokens == 0 &&
-			l.TotalTokens == 0 && l.CacheReadTokens == 0 && l.CacheCreationTokens == 0 &&
-			(l.Format == domain.FormatOpenAIChat || l.Format == domain.FormatOpenAIResponses ||
-				l.Format == domain.FormatOpenAIResponsesWS || l.Format == domain.FormatAnthropic) {
-			l.InputTokens = rm.estimatedInputTokens
-			l.OutputTokens = 1
-			l.TotalTokens = addUsageTokens(l.InputTokens, l.OutputTokens)
+		// Compatible providers sometimes return only part of the usage object (or
+		// omit it entirely). Fill only missing components from the request estimate;
+		// provider-reported values always win. Without this, an output-only usage
+		// record leaves the whole prompt free, while an input-only record leaves the
+		// completion free. Cache tokens are removed from the estimate because they
+		// are logged and charged as a separate component.
+		if rm.billingEnabled && l.ErrorType == domain.ErrNone && rm.estimatedInputTokens > 0 && isTokenBillingFormat(l.Format) {
+			estimatedInput := rm.estimatedInputTokens
+			if l.CacheReadTokens > 0 {
+				estimatedInput -= l.CacheReadTokens
+				if estimatedInput < 1 {
+					estimatedInput = 1
+				}
+			}
+			if l.InputTokens <= 0 {
+				l.InputTokens = estimatedInput
+			}
+			if l.OutputTokens <= 0 {
+				// A positive provider total can recover a missing completion count.
+				// OpenAI-family totals include cached input; Anthropic totals do not.
+				derived := l.TotalTokens - l.InputTokens
+				if l.Format == domain.FormatOpenAIChat || l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS {
+					derived -= l.CacheReadTokens
+				}
+				if derived > 0 {
+					l.OutputTokens = derived
+				} else {
+					l.OutputTokens = 1
+				}
+			}
+			accounted := addUsageTokens(l.InputTokens, l.OutputTokens)
+			if l.Format == domain.FormatOpenAIChat || l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS {
+				accounted = addUsageTokens(accounted, l.CacheReadTokens)
+			}
+			if l.TotalTokens < accounted {
+				l.TotalTokens = accounted
+			}
 		}
 	}
 	if ttft, ok := ctx.Value(ctxKeyTTFT{}).(*int64); ok {
 		l.TTFTMS = ttft
 	}
 	return l
+}
+
+func isTokenBillingFormat(format domain.RequestFormat) bool {
+	return format == domain.FormatOpenAIChat || format == domain.FormatOpenAIResponses ||
+		format == domain.FormatOpenAIResponsesWS || format == domain.FormatAnthropic
 }
 
 // estimateRequestTokens provides a deterministic lower-bound estimate for

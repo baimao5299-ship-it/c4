@@ -143,6 +143,16 @@ func CostPartsFromResolved(rp domain.ResolvedPrices, pt, ct, cr, cc int64) CostP
 	pt, ct, cr, cc = clamp(pt), clamp(ct), clamp(cr), clamp(cc)
 	in, out := positiveCostPrice(rp.InputPerM), positiveCostPrice(rp.OutputPerM)
 	cacheRead, cacheWrite := positiveCostPrice(rp.CacheReadPerM), positiveCostPrice(rp.CacheWritePerM)
+	// A provider may report cache usage while the catalogue only contains the
+	// base input rate. Treat a missing cache rate as input-priced usage instead
+	// of silently making that component free. An explicit zero pointer remains a
+	// deliberate free price and is not replaced by the fallback.
+	if rp.CacheReadPerM == nil {
+		cacheRead = in
+	}
+	if rp.CacheWritePerM == nil {
+		cacheWrite = in
+	}
 	raw := saturatingCostAdd(saturatingCostMul(pt, in, segBudget), saturatingCostMul(ct, out, segBudget))
 	raw = saturatingCostAdd(raw, saturatingCostMul(cr, cacheRead, segBudget))
 	raw = saturatingCostAdd(raw, saturatingCostMul(cc, cacheWrite, segBudget))
