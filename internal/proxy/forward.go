@@ -537,22 +537,18 @@ func settlementPricesUsable(l *domain.UsageLog, rp domain.ResolvedPrices) bool {
 	}
 	switch l.Format {
 	case domain.FormatOpenAIImages:
-		// Image-token fields are optional provider metadata. A model may expose
-		// only a per-image charge (the established image pricing contract), so do
-		// not reject an otherwise valid per-image row merely because the optional
-		// token rates are absent. When a token rate is supplied, it is included in
-		// the settlement; when absent, no phantom zero-priced component is added.
-		if l.CallCount > 0 && rp.PricePerImage == nil {
-			return false
-		}
-		return resolvedPricesUsable(domain.FormatOpenAIImages, rp) || (l.InputTokens == 0 && l.OutputTokens == 0 && l.CallCount == 0)
+		return imagePricesUsableForUsage(l, rp)
 	case domain.FormatOpenAISearch:
-		return l.CallCount <= 0 || rp.PricePerCall != nil
+		return l.CallCount <= 0 || nonNegativePrice(rp.PricePerCall)
 	default:
 		if l.InputTokens > 0 || l.OutputTokens > 0 || l.TotalTokens > 0 {
 			if !tokenPricesComplete(rp) {
 				return false
 			}
+		}
+		if (l.CacheReadTokens > 0 && rp.CacheReadPerM != nil && *rp.CacheReadPerM < 0) ||
+			(l.CacheCreationTokens > 0 && rp.CacheWritePerM != nil && *rp.CacheWritePerM < 0) {
+			return false
 		}
 		// Cache rates are optional in the upstream catalogue. CostPartsFromResolved
 		// treats an omitted cache rate as the documented zero-rate component, while
@@ -565,6 +561,45 @@ func settlementPricesUsable(l *domain.UsageLog, rp domain.ResolvedPrices) bool {
 		}
 		return resolvedPricesUsableForSettlement(l.Format, rp, l.CallCount)
 	}
+}
+
+// imagePricesUsableForUsage validates only the components actually observed in
+// the response. Image providers use three legitimate pricing shapes: per-image
+// only, image-token only, or a combination of both. Requiring PricePerImage for
+// every CallCount rejects token-only providers, while accepting any single
+// configured field can make an observed token component free. A missing rate is
+// therefore fatal only when its corresponding usage component is positive;
+// explicit zero remains a valid free price.
+func imagePricesUsableForUsage(l *domain.UsageLog, rp domain.ResolvedPrices) bool {
+	if l == nil {
+		return false
+	}
+	// Image token counters are optional metadata for the established per-image
+	// pricing mode. Once either token rate is configured, however, every observed
+	// token component must have a valid rate; this prevents a partially configured
+	// token schedule from silently becoming free. With no token rates at all, a
+	// valid per-image rate remains sufficient and the metadata is ignored.
+	hasTokenPrices := rp.ImgInTokPerM != nil || rp.ImgOutTokPerM != nil
+	if hasTokenPrices {
+		if l.InputTokens > 0 && !nonNegativePrice(rp.ImgInTokPerM) {
+			return false
+		}
+		if l.OutputTokens > 0 && !nonNegativePrice(rp.ImgOutTokPerM) {
+			return false
+		}
+	} else if (l.InputTokens > 0 || l.OutputTokens > 0) && !nonNegativePrice(rp.PricePerImage) {
+		// A response carrying image-token usage cannot be settled when the
+		// catalogue has neither token rates nor a per-image rate. Without this
+		// guard the request would be admitted and silently charged zero.
+		return false
+	}
+	if l.CallCount > 0 && !nonNegativePrice(rp.PricePerImage) && l.InputTokens == 0 && l.OutputTokens == 0 {
+		return false
+	}
+	if l.InputTokens == 0 && l.OutputTokens == 0 && l.CallCount == 0 {
+		return resolvedPricesUsable(domain.FormatOpenAIImages, rp)
+	}
+	return true
 }
 
 func (p *Proxy) applyResolvedBillingParts(l *domain.UsageLog, parts billing.CostParts, model string, rp domain.ResolvedPrices) {
@@ -651,7 +686,7 @@ func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
 	}
 	model := domain.CodexSearchModel
 	rp, ok := p.bill.Resolver.ResolvePrices(model, 0, "", time.Now())
-	if !ok || rp.PricePerCall == nil {
+	if !ok || !nonNegativePrice(rp.PricePerCall) {
 		// codex-search 查无价 → 默认按次价兜底（$0.01/次，契约同旧快照兜底）
 		v := domain.DefaultCodexSearchPricePerCall
 		rp.PricePerCall = &v
@@ -878,7 +913,7 @@ func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 		// are logged and charged as a separate component.
 		if rm.billingEnabled && l.ErrorType == domain.ErrNone && rm.estimatedInputTokens > 0 && isTokenBillingFormat(l.Format) {
 			estimatedInput := rm.estimatedInputTokens
-			if l.CacheReadTokens > 0 {
+			if l.CacheReadTokens > 0 && (l.Format == domain.FormatOpenAIChat || l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS) {
 				estimatedInput -= l.CacheReadTokens
 				if estimatedInput < 1 {
 					estimatedInput = 1

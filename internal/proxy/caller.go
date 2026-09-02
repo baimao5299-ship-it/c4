@@ -477,7 +477,7 @@ func (p *Proxy) precheckPrice(format domain.RequestFormat, model, tier string) (
 
 func resolvedPricesUsable(format domain.RequestFormat, rp domain.ResolvedPrices) bool {
 	if format == domain.FormatOpenAIImages {
-		return rp.ImgInTokPerM != nil || rp.ImgOutTokPerM != nil || rp.PricePerImage != nil
+		return nonNegativePrice(rp.ImgInTokPerM) || nonNegativePrice(rp.ImgOutTokPerM) || nonNegativePrice(rp.PricePerImage)
 	}
 	// Token billing must have both sides of the token price present. A nil
 	// input/output side is a missing price, not a free side; allowing partial
@@ -495,7 +495,11 @@ func resolvedPricesUsable(format domain.RequestFormat, rp domain.ResolvedPrices)
 }
 
 func tokenPricesComplete(rp domain.ResolvedPrices) bool {
-	return rp.InputPerM != nil && rp.OutputPerM != nil
+	return nonNegativePrice(rp.InputPerM) && nonNegativePrice(rp.OutputPerM)
+}
+
+func nonNegativePrice(price *int64) bool {
+	return price != nil && *price >= 0
 }
 
 // resolvedPricesUsableForSettlement applies the usage-dependent part of the
