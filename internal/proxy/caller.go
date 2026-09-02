@@ -512,13 +512,11 @@ func resolvedPricesUsableForSettlement(format domain.RequestFormat, rp domain.Re
 	if format == domain.FormatOpenAIImages {
 		return resolvedPricesUsable(format, rp)
 	}
-	// A Responses image-tool call adds a separately billable component. Require
-	// both token rates and the per-image rate when text and image usage coexist;
-	// accepting a token-only snapshot would silently make each image free.
+	// A Responses image-tool call is independently billable. Require its
+	// per-image price before admitting the request to settlement; otherwise the
+	// successful row is kept for automatic repricing instead of losing the call.
 	if calls > 0 && (format == domain.FormatOpenAIResponses || format == domain.FormatOpenAIResponsesWS) {
-		// Image-only Responses rows legitimately have no token rates; any
-		// observed image call still requires an explicit per-image price.
-		return rp.PricePerImage != nil
+		return nonNegativePrice(rp.PricePerImage)
 	}
 	if tokenPricesComplete(rp) {
 		return true

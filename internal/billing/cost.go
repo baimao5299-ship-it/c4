@@ -258,3 +258,48 @@ func CallCostFromResolved(rp domain.ResolvedPrices, count int64) int64 {
 	}
 	return 0
 }
+
+// ApplyMultiplier applies the configured user/group multiplier to a raw ledger
+// amount. It is exported for delayed reconciliation, which must use the same
+// fixed-point arithmetic as the request path.
+func ApplyMultiplier(cost int64, multiplier int) int64 {
+	out, remainder := multiplierFloorParts(cost, multiplier, 100_000)
+	if out == math.MaxInt64 || remainder < 5_000 {
+		return out
+	}
+	return out + 1
+}
+
+// ApplyUpstreamMultiplier applies an upstream cost multiplier using the wider
+// validation ceiling reserved for provider economics.
+func ApplyUpstreamMultiplier(cost int64, multiplier int) int64 {
+	out, remainder := multiplierFloorParts(cost, multiplier, 1_000_000)
+	if out == math.MaxInt64 || remainder < 5_000 {
+		return out
+	}
+	return out + 1
+}
+
+func multiplierFloorParts(cost int64, multiplier, maxMultiplier int) (int64, int64) {
+	if cost <= 0 || multiplier <= 0 {
+		return 0, 0
+	}
+	if multiplier > maxMultiplier {
+		multiplier = maxMultiplier
+	}
+	if multiplier == 10_000 {
+		return cost, 0
+	}
+	q, rem := cost/10_000, cost%10_000
+	m := int64(multiplier)
+	if q > math.MaxInt64/m {
+		return math.MaxInt64, 0
+	}
+	out := q * m
+	scaled := rem * m
+	remCost := scaled / 10_000
+	if out > math.MaxInt64-remCost {
+		return math.MaxInt64, 0
+	}
+	return out + remCost, scaled % 10_000
+}

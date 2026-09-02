@@ -47,6 +47,20 @@ type LedgerStore interface {
 	UnbilledLag(ctx context.Context) (oldestCreated time.Time, ok bool, err error)
 }
 
+// UnpricedStore is an optional extension used to recover rows whose request
+// succeeded while the pricing snapshot was being refreshed.
+type UnpricedStore interface {
+	FetchUnpricedBatch(context.Context, int) ([]domain.UnpricedUsage, error)
+	ApplyRepricedBatch(context.Context, []domain.RepricedUsage) (int64, error)
+}
+
+// PriceResolver is the immutable pricing snapshot shared with the request
+// path. Keeping this interface here avoids coupling the billing worker to the
+// service package.
+type PriceResolver interface {
+	ResolvePrices(model string, promptTokens int64, tier string, at time.Time) (domain.ResolvedPrices, bool)
+}
+
 // FlushConfig 消费节奏（config.BillingConfig 映射）。
 type FlushConfig struct {
 	FlushInterval          time.Duration // 游标轮询周期（默认 250ms）
@@ -116,10 +130,12 @@ var inflightAbandonGrace = 500 * time.Millisecond
 // 周期结束后循环消费至游标清空（预算内）或截断退出（剩余行下次启动收敛，
 // RestartConvergence）。
 type Flusher struct {
-	cfg   FlushConfig
-	store LedgerStore
-	bal   *Balances
-	log   *logx.Logger
+	cfg      FlushConfig
+	store    LedgerStore
+	bal      *Balances
+	log      *logx.Logger
+	unpriced UnpricedStore
+	resolver PriceResolver
 	// balanceCtl/fefoCtl 结算批规模自适应控制器（batch_controller.go）——双车道
 	// 分治（spec-adaptive-batch-v2）：Balance 与 Fefo 各持一控制器互不污染——
 	// Fefo SQL 含窗口函数+行级条件更新，每行成本系统性更高，共享会让 Fefo 首条
@@ -164,6 +180,13 @@ func NewFlusher(cfg FlushConfig, store LedgerStore, bal *Balances, log *logx.Log
 	}
 	f.baseCtx, f.baseCancel = context.WithCancel(context.Background())
 	return f
+}
+
+// SetUnpricedReconciler enables the automatic no_price recovery pass during
+// assembly. The setter keeps the constructor ABI stable for existing callers.
+func (f *Flusher) SetUnpricedReconciler(store UnpricedStore, resolver PriceResolver) {
+	f.unpriced = store
+	f.resolver = resolver
 }
 
 // Name worker.Worker 契约（wm 按注册反向排空：flusher 最后注册最先排空）。
@@ -219,7 +242,8 @@ func (f *Flusher) consumeCycle(ctx context.Context, drain bool) int64 {
 		// 他实例在消费：本周期跳过（会话锁互斥；观测面照常刷新）。
 	default:
 		defer release()
-		marked = f.drainLoop(ctx)
+		marked = f.repriceNoPrice(ctx)
+		marked += f.drainLoop(ctx)
 		if marked > 0 {
 			f.lastFlush.Store(time.Now().UnixMilli())
 		}

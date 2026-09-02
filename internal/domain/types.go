@@ -859,6 +859,47 @@ type LedgerRow struct {
 	Format      string
 }
 
+// UnpricedUsage is the persisted usage needed to recover a request whose
+// runtime price lookup temporarily failed. It intentionally carries the
+// original usage counters and timestamp so a retry can select the same
+// context-priced variant without re-running the upstream request.
+type UnpricedUsage struct {
+	ID                   int64
+	UserID               int64
+	GroupID              int64
+	Model                string
+	MappedModel          string
+	Format               RequestFormat
+	BillingTier          string
+	InputTokens          int64
+	OutputTokens         int64
+	TotalTokens          int64
+	CacheReadTokens      int64
+	CacheCreationTokens  int64
+	CallCount            int64
+	CreatedAt            time.Time
+	UpstreamID           int64
+	UpstreamMultiplierBP *int
+}
+
+// RepricedUsage is an atomic replacement for the billing fields of an
+// unpriced usage row. The repository applies it only while the row is still
+// unbilled and marked no_price, making retries idempotent.
+type RepricedUsage struct {
+	ID                       int64
+	BillingTier              string
+	PriceInputMillis         *int64
+	PriceOutputMillis        *int64
+	PriceCacheReadMillis     *int64
+	PriceCacheCreationMillis *int64
+	PricePerCallMillis       *int64
+	RawCost                  int64
+	Cost                     int64
+	UpstreamCost             *int64
+	GrossProfit              *int64
+	ProfitMarginBP           *int64
+}
+
 // UserBalance 定向余额对（结算语句 debited/forced RETURNING (uid, balance_after)；
 // spec-f2opt-settlement §一 oracle 必改 #3）：保住 Balances 定向 Set 的预检
 // 新鲜度（10s Reload 间隙 fail-closed 预检依赖它）。

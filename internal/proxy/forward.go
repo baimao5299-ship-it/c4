@@ -437,16 +437,21 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	promptTokens := pricingPromptTokens(l)
 	rp, ok := p.bill.Resolver.ResolvePrices(model, promptTokens, l.BillingTier, time.Now())
 	settled := ok && settlementPricesUsable(l, rp)
+	// A request-start snapshot is available on normal billable traffic. If the
+	// completed response contains image calls but the current catalogue lost the
+	// flat image rate, keep the row pending so the delayed recovery pass can bill
+	// the entire request instead of silently making the image component free.
+	if settled && l.PrecheckedPrices != nil && l.CallCount > 0 &&
+		(l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS) &&
+		rp.PricePerImage == nil {
+		settled = false
+	}
 	if !settled {
 		if l.PrecheckedPrices != nil {
 			prechecked := *l.PrecheckedPrices
-			// Responses image detection adds CallCount to an otherwise token
-			// request. If the live catalogue disappears between precheck and
-			// settlement, a token-only snapshot is not sufficient evidence that
-			// the observed image calls are priced. Falling back to it would debit
-			// only the text component and silently turn the image component into a
-			// free request. Require an explicit per-image price for this mixed
-			// response shape; ordinary token requests keep the snapshot fallback.
+			// A Responses image call adds a separately billable component. A
+			// token-only precheck is insufficient once the image call is observed;
+			// require the per-image snapshot before falling back across a reload.
 			imagePriceRequired := l.CallCount > 0 &&
 				(l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS)
 			if (!imagePriceRequired || prechecked.PricePerImage != nil) && settlementPricesUsable(l, prechecked) {
@@ -458,7 +463,7 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 			if p.log != nil {
 				p.log.Warn("billing price lookup failed", logx.String("model", model))
 			}
-			l.BillingTier = "no_price"
+			markNoPrice(l)
 			return
 		}
 	}
@@ -541,6 +546,14 @@ func settlementPricesUsable(l *domain.UsageLog, rp domain.ResolvedPrices) bool {
 	case domain.FormatOpenAISearch:
 		return l.CallCount <= 0 || nonNegativePrice(rp.PricePerCall)
 	default:
+		// Responses image/tool calls are an independently billable component.
+		// Never settle only the text portion when the per-call price is missing;
+		// retain the row for the automatic repricing pass instead.
+		if l.CallCount > 0 &&
+			(l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS) &&
+			!nonNegativePrice(rp.PricePerImage) {
+			return false
+		}
 		if l.InputTokens > 0 || l.OutputTokens > 0 || l.TotalTokens > 0 {
 			if !tokenPricesComplete(rp) {
 				return false
@@ -557,6 +570,15 @@ func settlementPricesUsable(l *domain.UsageLog, rp domain.ResolvedPrices) bool {
 		// Per-image pricing is a valid substitute only when no text tokens were
 		// observed; otherwise accepting it would make the text portion free.
 		if l.CallCount > 0 && (l.InputTokens > 0 || l.OutputTokens > 0 || l.TotalTokens > 0) && !tokenPricesComplete(rp) {
+			return false
+		}
+		if l.CallCount > 0 &&
+			(l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS) &&
+			rp.PricePerImage == nil && l.InputTokens == 0 && l.OutputTokens == 0 &&
+			l.CacheReadTokens == 0 && l.CacheCreationTokens == 0 {
+			// A call-only Responses result has no token component to settle. A
+			// generic token price row must not make that call look free; keep it
+			// in the explicit no-price path until a per-image rate is configured.
 			return false
 		}
 		return resolvedPricesUsableForSettlement(l.Format, rp, l.CallCount)
@@ -660,7 +682,7 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 			if p.log != nil {
 				p.log.Warn("billing image price lookup failed", logx.String("model", model))
 			}
-			l.BillingTier = "no_price"
+			markNoPrice(l)
 			return
 		}
 	}
@@ -678,6 +700,22 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 		l.PricePerCallMillis = rp.PricePerImage
 	}
 	p.applyResolvedBillingParts(l, billing.ImageCostPartsFromResolved(rp, l.InputTokens, l.OutputTokens, l.CallCount), model, rp)
+}
+
+// markNoPrice keeps the request's normalized service tier alongside the
+// recovery marker. Legacy auto-tier rows retain the historical plain marker;
+// non-default tiers are encoded so delayed recovery can select the same price
+// variant after a snapshot refresh.
+func markNoPrice(l *domain.UsageLog) {
+	if l == nil {
+		return
+	}
+	tier := strings.ToLower(strings.TrimSpace(l.BillingTier))
+	if tier == "" || tier == "auto" || tier == "no_price" || strings.HasPrefix(tier, "no_price:") {
+		l.BillingTier = "no_price"
+		return
+	}
+	l.BillingTier = "no_price:" + tier
 }
 
 func (p *Proxy) applyFunctionBilling(l *domain.UsageLog) {
@@ -911,7 +949,9 @@ func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 		// record leaves the whole prompt free, while an input-only record leaves the
 		// completion free. Cache tokens are removed from the estimate because they
 		// are logged and charged as a separate component.
-		if rm.billingEnabled && l.ErrorType == domain.ErrNone && rm.estimatedInputTokens > 0 && isTokenBillingFormat(l.Format) {
+		upstreamStarted := l.ErrorType == domain.ErrNone ||
+			(l.ErrorType == domain.ErrAbort && l.StatusCode == http.StatusOK)
+		if rm.billingEnabled && upstreamStarted && rm.estimatedInputTokens > 0 && isTokenBillingFormat(l.Format) {
 			estimatedInput := rm.estimatedInputTokens
 			if l.CacheReadTokens > 0 && (l.Format == domain.FormatOpenAIChat || l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS) {
 				estimatedInput -= l.CacheReadTokens

@@ -12,6 +12,7 @@ package repository
 
 import (
 	"context"
+	stdsql "database/sql"
 	"fmt"
 	"sync"
 	"time"
@@ -20,6 +21,28 @@ import (
 
 	"github.com/is7qin/c3api/internal/domain"
 )
+
+// fetchUnpricedSQL intentionally selects the complete usage tuple needed for
+// deterministic delayed billing. The marker is matched by prefix so rows that
+// preserve a non-default service tier (no_price:priority, etc.) are recovered
+// as well as legacy plain no_price rows.
+const fetchUnpricedSQL = `SELECT id, COALESCE(user_id, 0), COALESCE(group_id, 0),
+	model, COALESCE(mapped_model, ''), format, COALESCE(billing_tier, ''),
+	input_tokens, output_tokens, total_tokens, cache_read_tokens,
+	cache_creation_tokens, call_count, created_at, COALESCE(upstream_id, 0),
+	upstream_multiplier_bp
+	FROM usage_logs
+	WHERE NOT billed AND billing_tier LIKE 'no_price%'
+		AND error_type IN ('none', 'abort')
+	ORDER BY id LIMIT $1`
+
+const applyRepricedSQL = `UPDATE usage_logs SET
+	price_input_millis = $2, price_output_millis = $3,
+	price_cache_read_millis = $4, price_cache_creation_millis = $5,
+	price_per_call_millis = $6, raw_cost = $7, cost = $8,
+	upstream_cost = $9, gross_profit = $10, profit_margin_bp = $11,
+	billing_tier = $12
+	WHERE id = $1 AND NOT billed AND billing_tier LIKE 'no_price%'`
 
 // rowScanner 行扫描面（entsql.Rows 与 pgx.Rows 的公共子集；两者 Close 签名
 // 不同——entsql.Close() error vs pgx.Close()，故不含 Close）。读取至 EOF
@@ -89,6 +112,86 @@ func (r *BillingRepo) FetchUnbilledBatch(ctx context.Context, limit int) ([]doma
 		return nil, err
 	}
 	return scanLedgerRows(rows)
+}
+
+// FetchUnpricedBatch returns successful, still-unbilled rows whose price
+// lookup was unavailable at request completion. It is a bounded read used by
+// the billing worker while holding the global cursor lock.
+func (r *BillingRepo) FetchUnpricedBatch(ctx context.Context, limit int) ([]domain.UnpricedUsage, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := r.queryRows(ctx, fetchUnpricedSQL, []any{limit})
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.UnpricedUsage, 0, limit)
+	for rows.Next() {
+		var row domain.UnpricedUsage
+		var upstreamMultiplier stdsql.NullInt64
+		var format string
+		if err := rows.Scan(&row.ID, &row.UserID, &row.GroupID, &row.Model,
+			&row.MappedModel, &format, &row.BillingTier, &row.InputTokens,
+			&row.OutputTokens, &row.TotalTokens, &row.CacheReadTokens,
+			&row.CacheCreationTokens, &row.CallCount, &row.CreatedAt,
+			&row.UpstreamID, &upstreamMultiplier); err != nil {
+			return nil, err
+		}
+		row.Format = domain.RequestFormat(format)
+		if upstreamMultiplier.Valid {
+			v := int(upstreamMultiplier.Int64)
+			row.UpstreamMultiplierBP = &v
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// ApplyRepricedBatch atomically replaces billing fields for rows that are
+// still marked no_price. The billed and marker predicates make a repeated
+// recovery attempt a no-op, so it is safe across retries and process restarts.
+func (r *BillingRepo) ApplyRepricedBatch(ctx context.Context, updates []domain.RepricedUsage) (int64, error) {
+	if len(updates) == 0 {
+		return 0, nil
+	}
+	if r.pool == nil {
+		return 0, fmt.Errorf("billing repo: pgx pool not configured (repository.NewWithPG); cannot apply repriced usage")
+	}
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Release()
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // Commit success closes the tx
+	var updated int64
+	for _, row := range updates {
+		args := []any{row.ID, nullableInt64(row.PriceInputMillis), nullableInt64(row.PriceOutputMillis),
+			nullableInt64(row.PriceCacheReadMillis), nullableInt64(row.PriceCacheCreationMillis),
+			nullableInt64(row.PricePerCallMillis), row.RawCost, row.Cost,
+			nullableInt64(row.UpstreamCost), nullableInt64(row.GrossProfit),
+			nullableInt64(row.ProfitMarginBP), row.BillingTier}
+		tag, err := tx.Exec(ctx, applyRepricedSQL, args...)
+		if err != nil {
+			return 0, err
+		}
+		updated += tag.RowsAffected()
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return updated, nil
+}
+
+func nullableInt64(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
 }
 
 // MarkBilledBulk 纯标记（F2 冻结 ABI-2，签名不得偏移）：零价行快速路径 +

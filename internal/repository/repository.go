@@ -930,6 +930,17 @@ func (r *Repository) FetchUnbilledBatch(ctx context.Context, limit int) ([]domai
 	return r.Billing.FetchUnbilledBatch(ctx, limit)
 }
 
+// FetchUnpricedBatch reads successful usage rows that need delayed price
+// recovery. The billing worker uses this optional extension before settlement.
+func (r *Repository) FetchUnpricedBatch(ctx context.Context, limit int) ([]domain.UnpricedUsage, error) {
+	return r.Billing.FetchUnpricedBatch(ctx, limit)
+}
+
+// ApplyRepricedBatch writes recovered costs and price snapshots atomically.
+func (r *Repository) ApplyRepricedBatch(ctx context.Context, updates []domain.RepricedUsage) (int64, error) {
+	return r.Billing.ApplyRepricedBatch(ctx, updates)
+}
+
 // MarkBilledBulk 纯标记 billed（cost=0 快速路径 + 终极毒行隔离；幂等）。
 func (r *Repository) MarkBilledBulk(ctx context.Context, ids []int64) error {
 	return r.Billing.MarkBilledBulk(ctx, ids)

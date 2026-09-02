@@ -14,6 +14,7 @@ package billing
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -152,7 +153,7 @@ func (f *Flusher) sweepZeroCost(ctx context.Context) int64 {
 	}
 	var zeroIDs []int64
 	for _, r := range rows {
-		if r.Cost <= 0 && r.BillingTier != "no_price" {
+		if r.Cost <= 0 && !strings.HasPrefix(r.BillingTier, "no_price") {
 			zeroIDs = append(zeroIDs, r.ID)
 		}
 	}

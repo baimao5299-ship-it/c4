@@ -116,7 +116,7 @@ func TestProxyBillingResponsesImagePriceAppliesToObservedCall(t *testing.T) {
 	require.Equal(t, perImage, *log.PricePerCallMillis)
 }
 
-func TestProxyBillingResponsesMixedUsageRequiresImagePrice(t *testing.T) {
+func TestProxyBillingResponsesMixedUsageWaitsForImagePrice(t *testing.T) {
 	in, out := int64(1e7), int64(2e7)
 	prices := &fakePriceLookup{entries: map[string]*domain.PriceEntry{
 		"gpt-5": {Model: "gpt-5", Mode: domain.PriceModeToken, InputPerM: &in, OutputPerM: &out},
@@ -130,6 +130,31 @@ func TestProxyBillingResponsesMixedUsageRequiresImagePrice(t *testing.T) {
 
 	p.applyBilling(log)
 
+	// The response reports text token usage and a tool-call count, but this
+	// provider/catalogue has no flat per-image rate. Keep the entire request
+	// pending so the call is not silently lost; delayed billing retries it when
+	// the image price is available.
+	require.Equal(t, "no_price", log.BillingTier)
+	require.Zero(t, log.Cost)
+	require.Zero(t, log.RawCost)
+}
+
+func TestProxyBillingResponsesCallOnlyStillRequiresImagePrice(t *testing.T) {
+	in, out := int64(1e7), int64(2e7)
+	prices := &fakePriceLookup{entries: map[string]*domain.PriceEntry{
+		"gpt-5": {Model: "gpt-5", Mode: domain.PriceModeToken, InputPerM: &in, OutputPerM: &out},
+	}}
+	p := &Proxy{bill: &BillingHooks{Resolver: prices}}
+	log := &domain.UsageLog{
+		Model: "gpt-5", Format: domain.FormatOpenAIResponses,
+		CallCount: 1, BillingTier: "auto",
+	}
+
+	p.applyBilling(log)
+
+	// No token usage was observed, so a generic token row cannot silently make
+	// the image/tool call free. It remains pending until a per-image price is
+	// available (or an upstream token usage report arrives).
 	require.Equal(t, "no_price", log.BillingTier)
 	require.Zero(t, log.Cost)
 	require.Zero(t, log.RawCost)

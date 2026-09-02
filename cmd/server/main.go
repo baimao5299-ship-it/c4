@@ -339,6 +339,10 @@ func main() {
 			Workers:                cfg.Billing.FlushWorkers,
 			LogRetentionDays:       cfg.Usage.LogRetentionDays,
 		}, repos, billBalances, log)
+		// Recover rows that completed while the pricing snapshot was refreshing;
+		// the recovered rows are atomically written and then consumed by the
+		// normal settlement lanes in the same billing cycle.
+		billFlusher.SetUnpricedReconciler(repos, svc)
 		billHooks = &proxy.BillingHooks{
 			Resolver:   svc,
 			Balances:   billBalances,
