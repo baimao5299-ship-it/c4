@@ -10,6 +10,15 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.13] - 2026-09-02
+
+### Fixed
+
+- PostgreSQL usage-log test fixtures now provision every UTC day touched by
+  their samples, preventing false failures when CI runs across midnight.
+- Deployment container discovery now requires exactly one running C4 service,
+  preventing stale stopped containers from becoming rollback targets.
+
 ## [v0.0.1-beta.12] - 2026-09-02
 
 ### Changed

@@ -194,12 +194,29 @@ port_in_use() {
   if command -v netstat >/dev/null; then netstat -ltn 2>/dev/null | grep -Eq '[:.]__APP_PORT__([[:space:]]|$)'; return $?; fi
   echo '服务器缺少 ss/netstat，无法安全检查端口' >&2; exit 3
 }
+single_running_c4_container() {
+  service="$1"
+  # Compose can leave stopped containers behind after an interrupted update.
+  # Select only one running instance; ambiguity must stop the transaction
+  # instead of allowing rollback or dependency checks to target the wrong ID.
+  running_ids=$(docker ps -q \
+    --filter 'label=com.docker.compose.project=c4' \
+    --filter "label=com.docker.compose.service=$service" \
+    --filter 'status=running' 2>/dev/null || true)
+  selected=''
+  count=0
+  for candidate in $running_ids; do
+    selected="$candidate"
+    count=$((count + 1))
+  done
+  if [ "$count" -ne 1 ]; then return 1; fi
+  printf '%s\n' "$selected"
+}
 port_owned_by_c4_app() {
   # During an upgrade the current app may legitimately own AppPort. Only
   # permit that exact running Compose container; a stopped/missing container
   # or an unrelated listener must fail closed before Compose can replace it.
-  app_container=$(docker ps -aq --filter 'label=com.docker.compose.project=c4' --filter 'label=com.docker.compose.service=app' | head -n 1)
-  [ -n "$app_container" ] || return 1
+  if ! app_container=$(single_running_c4_container app); then return 1; fi
   app_state=$(docker inspect -f '{{.State.Status}}' "$app_container" 2>/dev/null || true)
   [ "$app_state" = 'running' ] || return 1
   docker port "$app_container" 18080/tcp 2>/dev/null | grep -Eq '(^|:)__APP_PORT__([[:space:]]|$)'
@@ -318,9 +335,8 @@ deploy_ok=1
 export C3API_VERSION='__SHA__'
 ensure_dependency() {
   service="$1"
-  container_id=$(docker ps -aq --filter 'label=com.docker.compose.project=c4' --filter "label=com.docker.compose.service=$service" | head -n 1)
-  if [ -z "$container_id" ]; then
-    echo "已有 C4 实例缺少 $service 容器；为避免重建依赖，停止部署" >&2
+  if ! container_id=$(single_running_c4_container "$service"); then
+    echo "已有 C4 $service 容器缺失或运行实例不唯一；为避免误选依赖，停止部署" >&2
     return 1
   fi
   container_state=$(docker inspect -f '{{.State.Status}}' "$container_id" 2>/dev/null || true)
@@ -341,9 +357,8 @@ ensure_dependency() {
 rollback_image_tag=''
 capture_previous_image() {
   if [ "$existing" -eq 0 ]; then return 0; fi
-  previous_container=$(docker ps -aq --filter 'label=com.docker.compose.project=c4' --filter 'label=com.docker.compose.service=app' | head -n 1)
-  if [ -z "$previous_container" ]; then
-    echo '已有 C4 app 容器缺失，无法建立回滚镜像基准；停止部署' >&2
+  if ! previous_container=$(single_running_c4_container app); then
+    echo '已有 C4 app 容器缺失或运行实例不唯一，无法建立回滚镜像基准；停止部署' >&2
     return 1
   fi
   previous_image_id=$(docker inspect -f '{{.Image}}' "$previous_container" 2>/dev/null || true)

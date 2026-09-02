@@ -73,6 +73,15 @@ Describe 'C4 deployment transaction safety' {
     $remote | Should Not Match 'if \[ "\$existing" -eq 0 \] && port_in_use'
   }
 
+  It 'selects exactly one running container before port, dependency, or rollback checks' {
+    $remote | Should Match 'single_running_c4_container\(\)[\s\S]*--filter ''status=running'''
+    $remote | Should Match 'if ! app_container=\$\(single_running_c4_container app\); then'
+    $remote | Should Match 'if ! container_id=\$\(single_running_c4_container "\$service"\); then'
+    $remote | Should Match 'if ! previous_container=\$\(single_running_c4_container app\); then'
+    $remote | Should Not Match 'port_owned_by_c4_app\(\)[\s\S]*docker ps -aq[\s\S]*head -n 1'
+    $remote | Should Not Match 'capture_previous_image\(\)[\s\S]*docker ps -aq[\s\S]*head -n 1'
+  }
+
   It 'rolls back an attempted candidate when the remote shell receives HUP' -Skip:(-not $bashPath) {
     $harness = @"
 set -eu

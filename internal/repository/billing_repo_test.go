@@ -512,8 +512,14 @@ func TestPGUnbilledLag(t *testing.T) {
 	require.False(t, ok, "空游标")
 	require.True(t, oldest.IsZero(), "空游标 oldest 零值")
 
-	old := time.Now().Add(-time.Hour).Truncate(time.Second)
-	newer := time.Now().Truncate(time.Second)
+	// Capture one UTC clock snapshot and provision every day touched by the
+	// fixture. Without this, a run that crosses UTC midnight can create the
+	// "old" row in yesterday's unprovisioned partition and fail before the
+	// cursor behavior is exercised.
+	now := time.Now().UTC().Truncate(time.Second)
+	old := now.Add(-time.Hour)
+	newer := now
+	require.NoError(t, repos.EnsureUsageLogPartitions(ctx, old, newer))
 	r1 := logFor(1, "lag-old")
 	r1.CreatedAt = old
 	r2 := logFor(1, "lag-new")
