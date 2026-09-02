@@ -48,6 +48,126 @@ func TestParsePriceEntryBasic(t *testing.T) {
 	require.Equal(t, domain.PriceModeCall, byModel["search-m"].Mode)
 }
 
+func TestParseCSVOfficialUSDPerMillion(t *testing.T) {
+	csvData := "provider,model_id,context_tokens,input_usd_per_1m,cache_read_usd_per_1m,cache_write_usd_per_1m,output_usd_per_1m\n" +
+		"Anthropic,claude-opus-4-6,1000000,5,0.5,6.25,25\n"
+	res, err := Parse([]byte(csvData), nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude-opus-4-6"}, res.Models)
+	require.Len(t, res.PriceEntries, 1)
+	entry := res.PriceEntries[0]
+	require.Equal(t, "claude-opus-4-6", entry.Model)
+	require.Equal(t, int64(500000), *entry.InputPerM)
+	require.Equal(t, int64(2500000), *entry.OutputPerM)
+	require.Equal(t, int64(50000), *entry.CacheReadPerM)
+	require.Equal(t, int64(625000), *entry.CacheWritePerM)
+	require.Equal(t, int64(1000000), *entry.MaxInputTokens)
+}
+
+func TestParseCSVMergesIdenticalProvidersAndPrefersCanonicalConflict(t *testing.T) {
+	csvData := "provider_id,model_id,input_usd_per_1m,output_usd_per_1m\n" +
+		"quicksilverpro,claude-opus-4-6,4,20\n" +
+		"anthropic,claude-opus-4-6,5,25\n" +
+		"google,claude-opus-4-6,5,25\n" +
+		"openai,gpt-5.6-terra,2.5,15\n"
+	res, err := Parse([]byte(csvData), nil)
+	require.NoError(t, err)
+	require.Len(t, res.PriceEntries, 2)
+	byModel := map[string]*domain.PriceEntry{}
+	for _, entry := range res.PriceEntries { byModel[entry.Model] = entry }
+	require.Equal(t, int64(500000), *byModel["claude-opus-4-6"].InputPerM)
+	require.Equal(t, "anthropic", *byModel["claude-opus-4-6"].Provider)
+	require.Equal(t, int64(250000), *byModel["gpt-5.6-terra"].InputPerM)
+}
+
+func TestParseCSVRejectsRowsWithoutBillablePriceButKeepsSourceModels(t *testing.T) {
+	res, err := Parse([]byte("model_id,input_usd_per_1m,output_usd_per_1m\nmetadata-only,,\npriced,1,2\n"), nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"metadata-only", "priced"}, res.Models)
+	require.Equal(t, 1, res.Skipped)
+	require.Len(t, res.PriceEntries, 1)
+}
+
+func TestBuiltinOfficialPricesCoverPreviouslyUnpricedModels(t *testing.T) {
+	result := builtinOfficialPrices(nil)
+	require.NotNil(t, result)
+	byModel := make(map[string]*domain.PriceEntry, len(result.PriceEntries))
+	for _, row := range result.PriceEntries {
+		byModel[row.Model] = row
+	}
+	for _, model := range []string{"claude-opus-4-6", "kimi-k3", "GLM-5"} {
+		row := byModel[model]
+		require.NotNil(t, row, model)
+		require.NotNil(t, row.InputPerM, model)
+		require.NotNil(t, row.OutputPerM, model)
+	}
+}
+
+func TestMergeWithBuiltinPricesFillsMissingRowsAndNeverLowersPrice(t *testing.T) {
+	input := int64(500000)
+	output := int64(2500000)
+	primary := &FetchResult{Models: []string{"claude-opus-4-6"}, PriceEntries: []*domain.PriceEntry{{Model: "claude-opus-4-6", Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output}}}
+	fallbackInput, fallbackOutput := int64(300000), int64(1500000)
+	fallback := &FetchResult{Models: []string{"kimi-k3"}, PriceEntries: []*domain.PriceEntry{{Model: "kimi-k3", Mode: domain.PriceModeToken, InputPerM: &fallbackInput, OutputPerM: &fallbackOutput}}}
+	merged := mergeWithBuiltinPrices(primary, fallback)
+	require.Contains(t, merged.Models, "kimi-k3")
+	byModel := make(map[string]*domain.PriceEntry, len(merged.PriceEntries))
+	for _, row := range merged.PriceEntries {
+		byModel[row.Model] = row
+	}
+	require.Equal(t, input, *byModel["claude-opus-4-6"].InputPerM)
+	require.Equal(t, output, *byModel["claude-opus-4-6"].OutputPerM)
+}
+
+func TestParseCSVImageTokenPrice(t *testing.T) {
+	data := "provider,model_id,mode,input_image_usd_per_1m,output_image_usd_per_1m\n" +
+		"openai,gpt-image-1,image_generation,10,40\n"
+	res, err := Parse([]byte(data), nil)
+	require.NoError(t, err)
+	require.Len(t, res.PriceEntries, 1)
+	require.Equal(t, domain.PriceModeImage, res.PriceEntries[0].Mode)
+	require.Equal(t, int64(1000000), *res.PriceEntries[0].ImgInTokPerM)
+	require.Equal(t, int64(4000000), *res.PriceEntries[0].ImgOutTokPerM)
+}
+
+func TestParseCSVLiteLLMModelKeyHeader(t *testing.T) {
+	data := "model_key,litellm_provider,mode,input_usd_per_1m,output_usd_per_1m,cache_read_usd_per_1m\n" +
+		"openai/gpt-5.6-terra,openai,chat,2.5,15,0.25\n"
+	res, err := Parse([]byte(data), nil)
+	require.NoError(t, err)
+	require.Len(t, res.PriceEntries, 1)
+	entry := res.PriceEntries[0]
+	require.Equal(t, "openai/gpt-5.6-terra", entry.Model)
+	require.Equal(t, int64(250000), *entry.InputPerM)
+	require.Equal(t, int64(1500000), *entry.OutputPerM)
+	require.Equal(t, int64(25000), *entry.CacheReadPerM)
+}
+
+func TestMergeWithBuiltinPricesFillsMissingModelsAndNeverLowersRates(t *testing.T) {
+	primaryInput, primaryOutput := int64(400000), int64(2000000)
+	fallbackInput, fallbackOutput := int64(500000), int64(2500000)
+	primary := &FetchResult{
+		PriceEntries: []*domain.PriceEntry{{Model: "shared", Mode: domain.PriceModeToken, InputPerM: &primaryInput, OutputPerM: &primaryOutput}},
+		Models:       []string{"shared"},
+	}
+	fallback := &FetchResult{
+		PriceEntries: []*domain.PriceEntry{
+			{Model: "shared", Mode: domain.PriceModeToken, InputPerM: &fallbackInput, OutputPerM: &fallbackOutput},
+			{Model: "fallback-only", Mode: domain.PriceModeToken, InputPerM: &fallbackInput},
+		},
+		Models: []string{"shared", "fallback-only"},
+	}
+	merged := mergeWithBuiltinPrices(primary, fallback)
+	require.Len(t, merged.PriceEntries, 2)
+	byModel := map[string]*domain.PriceEntry{}
+	for _, entry := range merged.PriceEntries {
+		byModel[entry.Model] = entry
+	}
+	require.Equal(t, fallbackInput, *byModel["shared"].InputPerM)
+	require.Equal(t, fallbackOutput, *byModel["shared"].OutputPerM)
+	require.Contains(t, merged.Models, "fallback-only")
+}
+
 func TestParseAppliesConfirmedGPT56OutputFloor(t *testing.T) {
 	res, err := Parse([]byte(`{"gpt-5.6":{"input_cost_per_token":0.000004,"output_cost_per_token":0.000020},"other":{"input_cost_per_token":0.000004,"output_cost_per_token":0.000020}}`), nil)
 	require.NoError(t, err)

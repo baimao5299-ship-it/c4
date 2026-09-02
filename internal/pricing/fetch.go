@@ -6,6 +6,7 @@ package pricing
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,12 +44,13 @@ func NewFetcher(client *http.Client, log *logx.Logger) Fetcher {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &httpFetcher{client: client, log: log}
+	return &httpFetcher{client: client, log: log, builtin: builtinOfficialPrices(log)}
 }
 
 type httpFetcher struct {
 	client *http.Client
 	log    *logx.Logger
+	builtin *FetchResult
 }
 
 func (f *httpFetcher) Fetch(ctx context.Context, sourceURL string) (*FetchResult, error) {
@@ -73,7 +75,11 @@ func (f *httpFetcher) Fetch(ctx context.Context, sourceURL string) (*FetchResult
 	if len(data) > maxPriceTableBytes {
 		return nil, fmt.Errorf("pricing: fetch %s: response exceeds %d bytes", sourceURL, maxPriceTableBytes)
 	}
-	return Parse(data, f.log)
+	result, err := Parse(data, f.log)
+	if err != nil {
+		return nil, err
+	}
+	return mergeWithBuiltinPrices(result, f.builtin), nil
 }
 
 type litellmEntry struct {
@@ -117,6 +123,14 @@ type providerSpecificEntry struct {
 }
 
 func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
+	// Price catalogues are published both as LiteLLM JSON and as the
+	// provider-normalized CSV exports used by the admin tooling. Detect the
+	// format from the first non-whitespace byte so one configured source can be
+	// switched without a code or schema change.
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed != "" && trimmed[0] != '{' && trimmed[0] != '[' {
+		return ParseCSV(data, log)
+	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("pricing: parse price table: %w", err)
@@ -174,6 +188,315 @@ func Parse(data []byte, log *logx.Logger) (*FetchResult, error) {
 		res.Skipped++
 	}
 	return res, nil
+}
+
+// ParseCSV parses the normalized USD-per-million token price exports used by
+// the project. The parser intentionally accepts several header spellings so
+// both official-provider and LiteLLM CSV snapshots can be used as a price
+// source. Blank optional fields are left nil; a row with at least one
+// representable billable component is retained.
+func ParseCSV(data []byte, _ *logx.Logger) (*FetchResult, error) {
+	r := csv.NewReader(strings.NewReader(string(data)))
+	r.FieldsPerRecord = -1
+	r.TrimLeadingSpace = true
+	header, err := r.Read()
+	if err != nil {
+		return nil, fmt.Errorf("pricing: parse csv header: %w", err)
+	}
+	if len(header) == 0 {
+		return nil, fmt.Errorf("pricing: csv header is empty")
+	}
+	cols := make(map[string]int, len(header))
+	for i, name := range header {
+		name = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(name, "\ufeff")))
+		if name != "" {
+			cols[name] = i
+		}
+	}
+	modelCol := firstCSVColumn(cols, "model_id", "model_key", "model", "model_name")
+	if modelCol < 0 {
+		return nil, fmt.Errorf("pricing: csv model_id column is required")
+	}
+	result := &FetchResult{PriceEntries: make([]*domain.PriceEntry, 0), Models: make([]string, 0)}
+	byModel := make(map[string]*domain.PriceEntry)
+	providerByModel := make(map[string]string)
+	for rowNo := 2; ; rowNo++ {
+		row, readErr := r.Read()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("pricing: parse csv row %d: %w", rowNo, readErr)
+		}
+		if modelCol >= len(row) {
+			result.Skipped++
+			continue
+		}
+		model := strings.TrimSpace(row[modelCol])
+		if model == "" {
+			result.Skipped++
+			continue
+		}
+		result.Models = appendUniqueModel(result.Models, model)
+		entry, provider, ok := parseCSVPriceRow(cols, row, model)
+		if !ok {
+			result.Skipped++
+			continue
+		}
+		if previous, exists := byModel[model]; exists {
+			if csvEntriesEquivalent(previous, entry) {
+				// Keep a useful provider label when an otherwise identical model is
+				// listed by more than one provider.
+				if previous.Provider == nil && provider != "" {
+					p := provider
+					previous.Provider = &p
+					providerByModel[model] = provider
+				}
+				continue
+			}
+			// A catalogue can contain both the provider's public rate and a
+			// discounted/aggregated rate for the same model ID. Never let row order
+			// or a provider label select the cheaper value: billing must not
+			// undercharge when sources disagree. Merge every populated component by
+			// maximum, while retaining the preferred official provider label for
+			// diagnostics.
+			oldProvider := providerByModel[model]
+			merged := mergeCSVEntriesConservative(previous, entry)
+			if csvProviderScore(model, provider) > csvProviderScore(model, oldProvider) ||
+				(csvProviderScore(model, provider) == csvProviderScore(model, oldProvider) && strings.ToLower(provider) < strings.ToLower(oldProvider)) {
+				merged.Provider = csvStringPtr(provider)
+				providerByModel[model] = provider
+			}
+			byModel[model] = merged
+			continue
+		}
+		byModel[model] = entry
+		providerByModel[model] = provider
+	}
+	sort.Strings(result.Models)
+	models := make([]string, 0, len(byModel))
+	for model := range byModel {
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	for _, model := range models {
+		result.PriceEntries = append(result.PriceEntries, byModel[model])
+	}
+	return result, nil
+}
+
+func mergeCSVEntriesConservative(left, right *domain.PriceEntry) *domain.PriceEntry {
+	if left == nil {
+		return right
+	}
+	if right == nil {
+		return left
+	}
+	out := *left
+	// A mode conflict is resolved in favour of the row that carries the
+	// billable component. CSV exports normally agree on mode; this fallback
+	// keeps a malformed metadata field from erasing a usable price.
+	if out.Mode == "" && right.Mode != "" {
+		out.Mode = right.Mode
+	}
+	out.InputPerM = maxInt64Ptr(left.InputPerM, right.InputPerM)
+	out.OutputPerM = maxInt64Ptr(left.OutputPerM, right.OutputPerM)
+	out.CacheReadPerM = maxInt64Ptr(left.CacheReadPerM, right.CacheReadPerM)
+	out.CacheWritePerM = maxInt64Ptr(left.CacheWritePerM, right.CacheWritePerM)
+	out.PricePerCall = maxInt64Ptr(left.PricePerCall, right.PricePerCall)
+	out.ImgInTokPerM = maxInt64Ptr(left.ImgInTokPerM, right.ImgInTokPerM)
+	out.ImgOutTokPerM = maxInt64Ptr(left.ImgOutTokPerM, right.ImgOutTokPerM)
+	out.PricePerImage = maxInt64Ptr(left.PricePerImage, right.PricePerImage)
+	if out.MaxInputTokens == nil || (right.MaxInputTokens != nil && *right.MaxInputTokens > *out.MaxInputTokens) {
+		out.MaxInputTokens = right.MaxInputTokens
+	}
+	return &out
+}
+
+func maxInt64Ptr(left, right *int64) *int64 {
+	if left == nil {
+		return right
+	}
+	if right == nil || *left >= *right {
+		return left
+	}
+	return right
+}
+
+func firstCSVColumn(cols map[string]int, names ...string) int {
+	for _, name := range names {
+		if i, ok := cols[name]; ok {
+			return i
+		}
+	}
+	return -1
+}
+
+func csvValue(cols map[string]int, row []string, names ...string) string {
+	if i := firstCSVColumn(cols, names...); i >= 0 && i < len(row) {
+		return strings.TrimSpace(row[i])
+	}
+	return ""
+}
+
+func parseCSVFloat(value string) (*float64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "null") || value == "-" {
+		return nil, true
+	}
+	v, err := strconv.ParseFloat(value, 64)
+	if err != nil || !validCost(&v) {
+		return nil, false
+	}
+	return &v, true
+}
+
+func parseCSVPriceRow(cols map[string]int, row []string, model string) (*domain.PriceEntry, string, bool) {
+	provider := csvValue(cols, row, "provider_id", "provider", "litellm_provider")
+	mode := strings.ToLower(csvValue(cols, row, "mode"))
+	if mode == "search" || mode == "rerank" || mode == "vector_store" {
+		price, ok := parseCSVFloat(csvValue(cols, row, "input_usd_per_query", "input_cost_per_query"))
+		if !ok || price == nil {
+			return nil, provider, false
+		}
+		v, ok := toMilliCentsPerCall(*price)
+		if !ok {
+			return nil, provider, false
+		}
+		return &domain.PriceEntry{Model: model, Mode: domain.PriceModeCall, PricePerCall: &v, Provider: csvStringPtr(provider), Source: domain.PricingSourceLitellm}, provider, true
+	}
+	input, okIn := parseCSVFloat(csvValue(cols, row, "input_usd_per_1m"))
+	output, okOut := parseCSVFloat(csvValue(cols, row, "output_usd_per_1m"))
+	cacheRead, okRead := parseCSVFloat(csvValue(cols, row, "cache_read_usd_per_1m"))
+	cacheWrite, okWrite := parseCSVFloat(csvValue(cols, row, "cache_write_usd_per_1m"))
+	if !okIn || !okOut || !okRead || !okWrite {
+		return nil, provider, false
+	}
+	// Image-mode exports use image-token columns rather than text-token
+	// columns. Keep those rows billable as well; some feeds omit mode while
+	// still exposing the image-specific fields, so the presence of a value is
+	// accepted as an image row.
+	imageInput, imageInputOK := parseCSVFloat(csvValue(cols, row, "input_image_usd_per_1m", "input_cost_per_image_token"))
+	imageOutput, imageOutputOK := parseCSVFloat(csvValue(cols, row, "output_image_usd_per_1m", "output_cost_per_image_token"))
+	perImage, perImageOK := parseCSVFloat(csvValue(cols, row, "price_per_image", "input_usd_per_image", "output_usd_per_image"))
+	if !imageInputOK || !imageOutputOK || !perImageOK {
+		return nil, provider, false
+	}
+	if (mode == "image_generation" || mode == "image_edit") ||
+		(input == nil && output == nil && cacheRead == nil && cacheWrite == nil && (imageInput != nil || imageOutput != nil || perImage != nil)) {
+		entry := &domain.PriceEntry{Model: model, Mode: domain.PriceModeImage, Provider: csvStringPtr(provider), Source: domain.PricingSourceLitellm}
+		if imageInput != nil {
+			v, ok := csvUSDPerMillion(*imageInput)
+			if !ok {
+				return nil, provider, false
+			}
+			entry.ImgInTokPerM = &v
+		}
+		if imageOutput != nil {
+			v, ok := csvUSDPerMillion(*imageOutput)
+			if !ok {
+				return nil, provider, false
+			}
+			entry.ImgOutTokPerM = &v
+		}
+		if perImage != nil {
+			v, ok := toMilliCentsPerImage(*perImage)
+			if !ok {
+				return nil, provider, false
+			}
+			entry.PricePerImage = &v
+		}
+		if entry.ImgInTokPerM == nil && entry.ImgOutTokPerM == nil && entry.PricePerImage == nil {
+			return nil, provider, false
+		}
+		return entry, provider, true
+	}
+	entry := &domain.PriceEntry{Model: model, Mode: domain.PriceModeToken, Provider: csvStringPtr(provider), Source: domain.PricingSourceLitellm}
+	if input != nil {
+		v, ok := csvUSDPerMillion(*input)
+		if !ok { return nil, provider, false }
+		entry.InputPerM = &v
+	}
+	if output != nil {
+		v, ok := csvUSDPerMillion(*output)
+		if !ok { return nil, provider, false }
+		entry.OutputPerM = &v
+	}
+	if cacheRead != nil {
+		v, ok := csvUSDPerMillion(*cacheRead)
+		if !ok { return nil, provider, false }
+		entry.CacheReadPerM = &v
+	}
+	if cacheWrite != nil {
+		v, ok := csvUSDPerMillion(*cacheWrite)
+		if !ok { return nil, provider, false }
+		entry.CacheWritePerM = &v
+	}
+	if entry.InputPerM == nil && entry.OutputPerM == nil && entry.CacheReadPerM == nil && entry.CacheWritePerM == nil {
+		return nil, provider, false
+	}
+	if context := csvValue(cols, row, "context_window_tokens", "context_tokens", "max_input_tokens"); context != "" {
+		if v, err := strconv.ParseInt(context, 10, 64); err == nil && v > 0 {
+			entry.MaxInputTokens = &v
+		}
+	}
+	return entry, provider, true
+}
+
+func csvUSDPerMillion(value float64) (int64, bool) {
+	return scaledPositiveInt64(value, 1e5)
+}
+
+func csvStringPtr(value string) *string {
+	if value == "" { return nil }
+	return &value
+}
+
+func appendUniqueModel(models []string, model string) []string {
+	for _, existing := range models {
+		if existing == model { return models }
+	}
+	return append(models, model)
+}
+
+func csvEntriesEquivalent(left, right *domain.PriceEntry) bool {
+	if left == nil || right == nil { return left == right }
+	return left.Mode == right.Mode &&
+		int64PtrEqual(left.InputPerM, right.InputPerM) && int64PtrEqual(left.OutputPerM, right.OutputPerM) &&
+		int64PtrEqual(left.CacheReadPerM, right.CacheReadPerM) && int64PtrEqual(left.CacheWritePerM, right.CacheWritePerM) &&
+		int64PtrEqual(left.PricePerCall, right.PricePerCall) && int64PtrEqual(left.ImgInTokPerM, right.ImgInTokPerM) &&
+		int64PtrEqual(left.ImgOutTokPerM, right.ImgOutTokPerM) && int64PtrEqual(left.PricePerImage, right.PricePerImage)
+}
+
+func int64PtrEqual(left, right *int64) bool {
+	if left == nil || right == nil { return left == right }
+	return *left == *right
+}
+
+func csvProviderScore(model, provider string) int {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	m := strings.ToLower(model)
+	if slash := strings.LastIndexByte(m, '/'); slash >= 0 && slash+1 < len(m) {
+		m = m[slash+1:]
+	}
+	switch {
+	case strings.HasPrefix(m, "claude") && strings.Contains(p, "anthropic"):
+		return 100
+	case strings.HasPrefix(m, "gpt-") && strings.Contains(p, "openai"):
+		return 100
+	case strings.HasPrefix(m, "gemini") && strings.Contains(p, "google"):
+		return 100
+	case (strings.Contains(m, "kimi") || strings.Contains(m, "moonshot")) && strings.Contains(p, "moonshot"):
+		return 100
+	case strings.HasPrefix(m, "glm") && (strings.Contains(p, "zhipu") || strings.Contains(p, "z.ai")):
+		return 100
+	case p == "anthropic" || p == "openai" || p == "google":
+		return 80
+	case p != "":
+		return 20
+	default:
+		return 0
+	}
 }
 
 // applyConservativeModelFloor keeps the operator-confirmed public price floor
