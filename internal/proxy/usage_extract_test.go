@@ -96,6 +96,24 @@ func TestChatStreamUsageEventAcceptsFlattenedAnthropicUsage(t *testing.T) {
 	require.Equal(t, usageTuple{ot: 5}, delta)
 }
 
+func TestChatStreamUsageEventAcceptsTopLevelAnthropicUsageOnTerminalFrame(t *testing.T) {
+	// Some compatibility relays emit the final usage summary on a named
+	// message_stop frame, using Anthropic field names at the event top level
+	// instead of splitting input/output across message_start/message_delta.
+	// This is a real wire shape and must remain billable when the client route
+	// is OpenAI Chat or an Anthropic-to-Chat conversion.
+	terminal := []byte(`{"type":"message_stop","usage":{"input_tokens":1850,"output_tokens":937,"cache_read_input_tokens":134100,"cache_creation_input_tokens":12}}`)
+	u, ok := chatStreamUsageEvent([]byte("message_stop"), terminal)
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12}, u)
+
+	// A few relays use a provider-specific event name for the same summary;
+	// usage extraction must be shape-driven after the named-event cases.
+	u, ok = chatStreamUsageEvent([]byte("usage"), terminal)
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12}, u)
+}
+
 func TestMergeStreamUsageDoesNotEraseMeasuredValues(t *testing.T) {
 	got := usageTuple{it: 13, ot: 9, tt: 22, cr: 2, cc: 4}
 	mergeStreamUsage(&got, usageTuple{})

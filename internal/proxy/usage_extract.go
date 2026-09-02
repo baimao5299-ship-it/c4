@@ -101,7 +101,65 @@ func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
 	}
 	// OpenAI-compatible usage is normally a complete top-level object and is
 	// valid whether or not the relay attached an SSE event name.
-	return chatStreamUsage(data)
+	if u, ok := chatStreamUsage(data); ok {
+		// Keep the native Chat shape authoritative when it is present. A few
+		// Claude-compatible relays instead put the complete Anthropic summary
+		// in a terminal named frame; that shape is handled below.
+		if u.it != 0 || u.ot != 0 || u.tt != 0 || u.cr != 0 || u.cc != 0 {
+			return u, true
+		}
+		if summary, summaryOK := anthropicSummaryUsageCompat(data); summaryOK {
+			return summary, true
+		}
+		return u, true
+	}
+	return anthropicSummaryUsageCompat(data)
+}
+
+// anthropicSummaryUsageCompat extracts a complete Anthropic usage object when
+// a compatibility relay puts it on a terminal/custom SSE event instead of
+// splitting it across message_start and message_delta. Anthropic cache reads
+// are excluded from input_tokens and total_tokens, so this helper deliberately
+// does not apply the OpenAI cache subtraction used by usageFieldsFromInterval.
+func anthropicSummaryUsageCompat(data []byte) (usageTuple, bool) {
+	raw, ok := usageInterval(data, usageKeyBytes)
+	if !ok {
+		return usageTuple{}, false
+	}
+	_, _, hasInput := scanKeyValue(raw, inputTokensKeyBytes)
+	_, _, hasPrompt := scanKeyValue(raw, promptTokensKeyBytes)
+	_, _, hasOutput := scanKeyValue(raw, outputTokensKeyBytes)
+	_, _, hasCompletion := scanKeyValue(raw, completionTokensKeyBytes)
+	_, _, hasCacheRead := scanKeyValue(raw, cacheReadInputTokensKeyBytes)
+	_, _, hasCacheReadCompat := scanKeyValue(raw, cacheReadTokensKeyBytes)
+	_, _, hasCacheCreate := scanKeyValue(raw, cacheCreationInputTokensKeyBytes)
+	_, _, hasCacheWrite := scanKeyValue(raw, cacheWriteInputTokensKeyBytes)
+	if !hasInput && !hasPrompt && !hasOutput && !hasCompletion && !hasCacheRead && !hasCacheReadCompat && !hasCacheCreate && !hasCacheWrite {
+		return usageTuple{}, false
+	}
+	u := usageTuple{
+		it: scanFieldInt64(raw, inputTokensKeyBytes),
+		ot: scanFieldInt64(raw, outputTokensKeyBytes),
+		cr: scanFieldInt64(raw, cacheReadInputTokensKeyBytes),
+		cc: scanFieldInt64(raw, cacheCreationInputTokensKeyBytes),
+		tt: scanFieldInt64(raw, totalTokensKeyBytes),
+	}
+	if u.it <= 0 {
+		u.it = scanFieldInt64(raw, promptTokensKeyBytes)
+	}
+	if u.ot <= 0 {
+		u.ot = scanFieldInt64(raw, completionTokensKeyBytes)
+	}
+	if u.cr <= 0 {
+		u.cr = scanFieldInt64(raw, cacheReadTokensKeyBytes)
+	}
+	if u.cc <= 0 {
+		u.cc = scanFieldInt64(raw, cacheWriteInputTokensKeyBytes)
+	}
+	if u.tt <= 0 {
+		u.tt = addUsageTokens(u.it, u.ot)
+	}
+	return u, true
 }
 
 // usageStreamEventName returns the explicit SSE event name when present and
