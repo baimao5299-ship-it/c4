@@ -1303,17 +1303,48 @@ func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore,
 func retainedUpstreamModelFormats(expected *domain.Upstream, models []string, current map[string][]domain.RequestFormat, complete bool) map[string][]domain.RequestFormat {
 	out := make(map[string][]domain.RequestFormat, len(models))
 	for _, model := range models {
-		if formats := current[model]; len(formats) > 0 {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		// Capability snapshots written before model IDs were normalized can
+		// contain surrounding whitespace in their JSON keys. Resolve both the
+		// current probe result and the retained snapshot through one canonical
+		// lookup so a usable model does not lose its verified protocol route.
+		if formats, found := modelFormatSnapshotForID(current, model); found && len(formats) > 0 {
 			out[model] = append([]domain.RequestFormat(nil), formats...)
 			continue
 		}
 		if !complete && expected != nil {
-			if formats := expected.ModelFormats[model]; len(formats) > 0 {
+			if formats, found := modelFormatSnapshotForID(expected.ModelFormats, model); found && len(formats) > 0 {
 				out[model] = append([]domain.RequestFormat(nil), formats...)
 			}
 		}
 	}
 	return out
+}
+
+// modelFormatSnapshotForID reads a protocol capability map using the same
+// whitespace-only model identity normalization used by the scheduler. Model
+// IDs remain case-sensitive: prefixes, versions, and casing are meaningful to
+// providers and must never be collapsed here.
+func modelFormatSnapshotForID(snapshot map[string][]domain.RequestFormat, model string) ([]domain.RequestFormat, bool) {
+	if len(snapshot) == 0 {
+		return nil, false
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, false
+	}
+	if formats, ok := snapshot[model]; ok {
+		return formats, true
+	}
+	for rawModel, formats := range snapshot {
+		if strings.TrimSpace(rawModel) == model {
+			return formats, true
+		}
+	}
+	return nil, false
 }
 
 func cloneModelFormatSnapshot(in map[string][]domain.RequestFormat) map[string][]domain.RequestFormat {
