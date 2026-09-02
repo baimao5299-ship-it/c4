@@ -99,3 +99,36 @@ func TestValidateAllUpstreamsMarksRetainedSnapshotUsable(t *testing.T) {
 	require.Equal(t, "timeout", item.ErrorCode)
 	require.Equal(t, []string{"manual-model"}, stub.rows[0].Models)
 }
+
+// A complete /models response may intentionally omit tenant-scoped aliases.
+// Once another model has been confirmed in the same run, keep the previous
+// verified alias instead of deleting a route that a real request can still use.
+func TestListUpstreamModelsRetainsHiddenVerifiedModelOnCompleteRun(t *testing.T) {
+	key := "relay-key"
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"listed-model"}]}`))
+		case "/v1/responses":
+			_, _ = w.Write([]byte(`{"id":"verified","object":"response"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer endpoint.Close()
+
+	checked := time.Now().Add(-time.Minute)
+	stub := &upstreamServiceStub{row: &domain.Upstream{
+		ID: 1, Name: "relay", BaseURL: endpoint.URL, UpstreamKey: &key,
+		Models: []string{"hidden-alias"}, ModelsCheckedAt: &checked,
+		ModelFormats: map[string][]domain.RequestFormat{"hidden-alias": {domain.FormatOpenAIResponses}},
+	}}
+	svc := &Service{upstreams: stub, upstreamHTTPClient: endpoint.Client()}
+
+	result, err := svc.ListUpstreamModels(context.Background(), 1)
+	require.NoError(t, err)
+	require.True(t, result.ValidationComplete)
+	require.Equal(t, []string{"hidden-alias", "listed-model"}, result.Models)
+	require.Equal(t, result.Models, stub.row.Models)
+}

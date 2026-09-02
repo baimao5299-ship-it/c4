@@ -69,6 +69,47 @@ func TestBuildUpstreamRoutesUsesPerMemberProtocolCapabilities(t *testing.T) {
 	require.NotContains(t, routes, routeKey{format: domain.FormatAnthropic, model: "gpt-5"})
 }
 
+func TestBuildUpstreamRoutesIncludesEveryVerifiedProtocol(t *testing.T) {
+	checked := time.Now()
+	key := "sk-all"
+	formats := []domain.RequestFormat{
+		domain.FormatOpenAIChat,
+		domain.FormatOpenAIResponses,
+		domain.FormatOpenAIResponsesWS,
+		domain.FormatAnthropic,
+		domain.FormatOpenAIImages,
+		domain.FormatOpenAISearch,
+	}
+	upstream := &domain.Upstream{
+		ID: 1, Name: "all-protocols", BaseURL: "https://all.example", UpstreamKey: &key,
+		Models: []string{"gpt-5"}, ModelsCheckedAt: &checked, Enabled: true,
+		ModelFormats: map[string][]domain.RequestFormat{"gpt-5": formats},
+	}
+	member := &domain.GroupUpstream{ID: 10, GroupID: 20, UpstreamID: 1, Upstream: upstream, Weight: 100, Enabled: true}
+	routes := buildUpstreamRoutes([]*upstreamSnapshot{newUpstreamSnapshot(member, nil)}, nil)
+	for _, format := range formats {
+		require.Contains(t, routes, routeKey{format: format, model: "gpt-5"}, "verified %s route must be published", format)
+	}
+}
+
+func TestBuildUpstreamRoutesUsesModelFormatsAsModelEvidence(t *testing.T) {
+	checked := time.Now()
+	key := "sk-manual"
+	upstream := &domain.Upstream{
+		ID: 1, Name: "manual-probe", BaseURL: "https://manual.example", UpstreamKey: &key,
+		ModelsCheckedAt: &checked, Enabled: true,
+		// A successful explicit management probe can be persisted before the
+		// provider's /models catalogue learns about the tenant-scoped model.
+		ModelFormats: map[string][]domain.RequestFormat{
+			"tenant-k3": {domain.FormatOpenAIResponses},
+		},
+	}
+	member := &domain.GroupUpstream{ID: 10, GroupID: 20, UpstreamID: 1, Upstream: upstream, Weight: 100, Enabled: true}
+	routes := buildUpstreamRoutes([]*upstreamSnapshot{newUpstreamSnapshot(member, nil)}, nil)
+	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "tenant-k3"})
+	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "tenant-k3"})
+}
+
 func TestBuildLegacyUpstreamRoutesDoesNotInventNonConversationCapability(t *testing.T) {
 	key := "sk-upstream"
 	upstream := &domain.Upstream{

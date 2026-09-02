@@ -253,6 +253,10 @@ func applySelectionAttribution(l *domain.UsageLog, sel *scheduler.Selection) {
 		return
 	}
 	l.TargetKind = string(sel.TargetKind)
+	if sel.PrecheckedPrices != nil {
+		prices := *sel.PrecheckedPrices
+		l.PrecheckedPrices = &prices
+	}
 	// Legacy account-routed selections do not have a managed upstream ID, but
 	// their BaseURL is still the endpoint that handled the request. Preserve
 	// that host in diagnostics while stripping credentials and URL paths. A
@@ -426,13 +430,37 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 	if model == "" {
 		return
 	}
-	rp, ok := p.bill.Resolver.ResolvePrices(model, l.InputTokens, l.BillingTier, time.Now())
-	if !ok {
-		if p.log != nil {
-			p.log.Warn("billing price lookup failed", logx.String("model", model))
+	// InputTokens is cache-normalized for OpenAI Responses/Chat (cached input is
+	// kept in CacheReadTokens and charged at its own rate). Price variants are
+	// selected using the provider's original prompt size, otherwise a large
+	// cached prompt can incorrectly use a cheaper low-context tier.
+	promptTokens := pricingPromptTokens(l)
+	rp, ok := p.bill.Resolver.ResolvePrices(model, promptTokens, l.BillingTier, time.Now())
+	settled := ok && settlementPricesUsable(l, rp)
+	if !settled {
+		if l.PrecheckedPrices != nil {
+			prechecked := *l.PrecheckedPrices
+			// Responses image detection adds CallCount to an otherwise token
+			// request. If the live catalogue disappears between precheck and
+			// settlement, a token-only snapshot is not sufficient evidence that
+			// the observed image calls are priced. Falling back to it would debit
+			// only the text component and silently turn the image component into a
+			// free request. Require an explicit per-image price for this mixed
+			// response shape; ordinary token requests keep the snapshot fallback.
+			imagePriceRequired := l.CallCount > 0 &&
+				(l.Format == domain.FormatOpenAIResponses || l.Format == domain.FormatOpenAIResponsesWS)
+			if (!imagePriceRequired || prechecked.PricePerImage != nil) && settlementPricesUsable(l, prechecked) {
+				rp = prechecked
+				settled = true
+			}
 		}
-		l.BillingTier = "no_price"
-		return
+		if !settled {
+			if p.log != nil {
+				p.log.Warn("billing price lookup failed", logx.String("model", model))
+			}
+			l.BillingTier = "no_price"
+			return
+		}
 	}
 	if rp.InputPerM != nil {
 		l.PriceInputMillis = rp.InputPerM
@@ -460,6 +488,62 @@ func (p *Proxy) applyBilling(l *domain.UsageLog) {
 
 func (p *Proxy) applyBillingParts(l *domain.UsageLog, parts billing.CostParts) {
 	p.applyResolvedBillingParts(l, parts, "", domain.ResolvedPrices{})
+}
+
+// pricingPromptTokens returns the provider-side prompt size used for selecting
+// context-priced variants. OpenAI-family usage stores cached input separately
+// after normalization, so restore it for lookup only. The logged input remains
+// the billable (non-cached) component.
+func pricingPromptTokens(l *domain.UsageLog) int64 {
+	if l == nil {
+		return 0
+	}
+	prompt := l.InputTokens
+	switch l.Format {
+	case domain.FormatOpenAIChat, domain.FormatOpenAIResponses, domain.FormatOpenAIResponsesWS:
+		prompt = addUsageTokens(prompt, l.CacheReadTokens)
+	}
+	return prompt
+}
+
+// settlementPricesUsable is usage-aware. A price pointer that is nil means
+// "not configured", while an explicit zero pointer is a valid free component.
+// Requiring every observed component prevents cache or image usage from being
+// silently billed at zero when only the base token price exists.
+func settlementPricesUsable(l *domain.UsageLog, rp domain.ResolvedPrices) bool {
+	if l == nil {
+		return false
+	}
+	switch l.Format {
+	case domain.FormatOpenAIImages:
+		// Image-token fields are optional provider metadata. A model may expose
+		// only a per-image charge (the established image pricing contract), so do
+		// not reject an otherwise valid per-image row merely because the optional
+		// token rates are absent. When a token rate is supplied, it is included in
+		// the settlement; when absent, no phantom zero-priced component is added.
+		if l.CallCount > 0 && rp.PricePerImage == nil {
+			return false
+		}
+		return resolvedPricesUsable(domain.FormatOpenAIImages, rp) || (l.InputTokens == 0 && l.OutputTokens == 0 && l.CallCount == 0)
+	case domain.FormatOpenAISearch:
+		return l.CallCount <= 0 || rp.PricePerCall != nil
+	default:
+		if l.InputTokens > 0 || l.OutputTokens > 0 || l.TotalTokens > 0 {
+			if !tokenPricesComplete(rp) {
+				return false
+			}
+		}
+		// Cache rates are optional in the upstream catalogue. CostPartsFromResolved
+		// treats an omitted cache rate as the documented zero-rate component, while
+		// preserving the base token prices and all measured usage in the ledger.
+		// A Responses request may be text-free and contain only per-image calls.
+		// Per-image pricing is a valid substitute only when no text tokens were
+		// observed; otherwise accepting it would make the text portion free.
+		if l.CallCount > 0 && (l.InputTokens > 0 || l.OutputTokens > 0 || l.TotalTokens > 0) && !tokenPricesComplete(rp) {
+			return false
+		}
+		return resolvedPricesUsableForSettlement(l.Format, rp, l.CallCount)
+	}
 }
 
 func (p *Proxy) applyResolvedBillingParts(l *domain.UsageLog, parts billing.CostParts, model string, rp domain.ResolvedPrices) {
@@ -508,13 +592,21 @@ func (p *Proxy) applyImageBilling(l *domain.UsageLog) {
 	if model == "" {
 		return
 	}
-	rp, ok := p.bill.Resolver.ResolvePrices(model, l.InputTokens, l.BillingTier, time.Now())
-	if !ok || (rp.ImgInTokPerM == nil && rp.ImgOutTokPerM == nil && rp.PricePerImage == nil) {
-		if p.log != nil {
-			p.log.Warn("billing image price lookup failed", logx.String("model", model))
+	rp, ok := p.bill.Resolver.ResolvePrices(model, pricingPromptTokens(l), l.BillingTier, time.Now())
+	if !ok || !settlementPricesUsable(l, rp) {
+		if l.PrecheckedPrices != nil {
+			if settlementPricesUsable(l, *l.PrecheckedPrices) {
+				rp = *l.PrecheckedPrices
+				ok = true
+			}
 		}
-		l.BillingTier = "no_price"
-		return
+		if !ok || !settlementPricesUsable(l, rp) {
+			if p.log != nil {
+				p.log.Warn("billing image price lookup failed", logx.String("model", model))
+			}
+			l.BillingTier = "no_price"
+			return
+		}
 	}
 	// Image token prices share the generic input/output snapshot columns in the
 	// usage log schema. Persist them before calculating RawCost so the admin
@@ -561,12 +653,31 @@ func (p *Proxy) buildLog(reqID string, groupID, accountID int64, reqModel, usedM
 	in := addUsageTokens(u.it, u.ii)
 	out := addUsageTokens(u.ot, u.io)
 	total := u.tt
-	if total < 0 {
-		// A malformed/overflowed upstream total must not suppress quota debit.
+	if total <= 0 && (in > 0 || out > 0) {
+		// A missing, zero, or malformed upstream total must not suppress quota
+		// debit when the component counters prove that tokens were consumed.
 		total = addUsageTokens(in, out)
 	}
 	if total < 0 {
 		total = 0
+	}
+	// Keep quota accounting conservative across protocol conversion. OpenAI
+	// provider totals include cached input; Anthropic totals do not. The
+	// conversion path carries the explicit source-protocol marker so the
+	// client-facing format cannot change this interpretation.
+	accounted := addUsageTokens(in, out)
+	includeCache := u.cacheReadIncludedInTotal ||
+		(!u.cacheReadExcludedFromTotal &&
+			(format == domain.FormatOpenAIChat || format == domain.FormatOpenAIResponses || format == domain.FormatOpenAIResponsesWS))
+	if includeCache {
+		accounted = addUsageTokens(accounted, u.cr)
+	}
+	// A provider can return a positive but under-reported total. Never let that
+	// value reduce quota debit below measured components. Conversion callers set
+	// explicit cache semantics above, so Anthropic cache reads are not counted
+	// twice while native OpenAI totals include cached input.
+	if total < accounted {
+		total = accounted
 	}
 	calls := u.calls
 	if calls < 0 {
@@ -716,6 +827,10 @@ type reqMeta struct {
 	clientIP        string // 客户端 IP（guardPipeline 入口鉴权前提取；401 及全部拒绝路径带）
 	clientIPSource  string
 	clientIPTrusted bool
+	// estimatedInputTokens is only used when a successful upstream omits usage
+	// entirely. Provider-reported usage always takes precedence.
+	estimatedInputTokens int64
+	billingEnabled       bool
 }
 
 // logWithCtx 从 ctx 读请求元数据填日志归属（user_id/key_id；context 传递
@@ -734,11 +849,38 @@ func logWithCtx(ctx context.Context, l *domain.UsageLog) *domain.UsageLog {
 		if rm.hasTier {
 			l.BillingTier = rm.tier.String()
 		}
+		// Some compatible providers return a successful body without a usage
+		// object. Keep that request billable using a conservative local estimate
+		// instead of silently creating a free ledger row. This runs only when
+		// billing is enabled and only for token protocols; real usage values are
+		// never replaced.
+		if rm.billingEnabled && l.ErrorType == domain.ErrNone &&
+			rm.estimatedInputTokens > 0 && l.InputTokens == 0 && l.OutputTokens == 0 &&
+			l.TotalTokens == 0 && l.CacheReadTokens == 0 && l.CacheCreationTokens == 0 &&
+			(l.Format == domain.FormatOpenAIChat || l.Format == domain.FormatOpenAIResponses ||
+				l.Format == domain.FormatOpenAIResponsesWS || l.Format == domain.FormatAnthropic) {
+			l.InputTokens = rm.estimatedInputTokens
+			l.OutputTokens = 1
+			l.TotalTokens = addUsageTokens(l.InputTokens, l.OutputTokens)
+		}
 	}
 	if ttft, ok := ctx.Value(ctxKeyTTFT{}).(*int64); ok {
 		l.TTFTMS = ttft
 	}
 	return l
+}
+
+// estimateRequestTokens provides a deterministic lower-bound estimate for
+// relays that omit usage. JSON request bytes average roughly four bytes per
+// token across mixed text and metadata; rounding up and charging one output
+// token ensures successful traffic is never silently free. Provider usage is
+// always preferred whenever present.
+func estimateRequestTokens(body []byte) int64 {
+	n := int64((len(bytes.TrimSpace(body)) + 3) / 4)
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 type formatError struct {
@@ -814,6 +956,12 @@ func writeErr(w http.ResponseWriter, e *formatError) {
 type usageTuple struct {
 	it, ot, tt int64
 	cr, cc     int64 // 缓存读取/写入 token（缺失 = 0）
+	// Anthropic cache reads are outside input_tokens/total_tokens. Conversion
+	// callers set this explicitly because logs retain the client-facing format.
+	cacheReadExcludedFromTotal bool
+	// Set when an Anthropic-facing request is converted to an OpenAI upstream
+	// whose provider total includes the cache-read component.
+	cacheReadIncludedInTotal bool
 	// 功能调用计数（统一计费模型 spec 2026-08-13；当前唯一生产者 = 图片张数：
 	// resp 检测旁路 spec §6 / images 格式直连与 codex 路径 data 长 / 流式
 	// completed 事件数；search 端点接入后 = 1）。落 CallCount，不入 TotalTokens。
@@ -1000,6 +1148,21 @@ func setStreamAndModel(body []byte, stream bool, model string) ([]byte, error) {
 		return nil, err
 	}
 	return sjson.SetBytes(body, "model", model)
+}
+
+// ensureChatStreamUsage asks OpenAI-compatible upstreams to include the final
+// usage chunk. The API only emits usage for streamed chat completions when
+// stream_options.include_usage is true; callers are not required to send it,
+// so leaving the field absent can turn an otherwise successful request into a
+// zero-token billing row. Existing true values return the original slice.
+func ensureChatStreamUsage(body []byte) ([]byte, error) {
+	if gjson.GetBytes(body, "stream_options.include_usage").Type == gjson.True {
+		return body, nil
+	}
+	if !isJSONObjectRoot(body) {
+		return nil, errBodyNotObject
+	}
+	return sjson.SetBytes(body, "stream_options.include_usage", true)
 }
 
 // credentialFor 从 Selection 取当前凭据值（注册表分发；api_key 类型直读静态 Key）。

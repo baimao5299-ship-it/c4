@@ -204,6 +204,9 @@ func (p *Proxy) handleFormat(format domain.RequestFormat, w http.ResponseWriter,
 		writeErr(w, errBody)
 		return
 	}
+	if rm.billingEnabled && format != domain.FormatOpenAIImages && format != domain.FormatOpenAISearch {
+		rm.estimatedInputTokens = estimateRequestTokens(body)
+	}
 	// images 端点专用 body 分支（评审 P1-2）：multipart 跳过 json.Valid 硬门
 	// 与 gjson 顶层提取（下述 JSON 校验/stream 探测/body 重写对 multipart
 	// 全部失效——multipart 字节对 json.Valid 必然 false，撞门即误杀）；model
@@ -455,21 +458,69 @@ func (a *chatAttempt) call(ctx context.Context, w http.ResponseWriter, r *http.R
 	return code, respBody, responseHeadersFromError(callErr), handled, callErr
 }
 
-// precheckPrice 缺价预检（统一 PriceEntry resolver，零 DB）。
-func (p *Proxy) precheckPrice(format domain.RequestFormat, model string) error {
+// precheckPrice resolves and returns the request's initial price snapshot. The
+// snapshot is carried through selection so a concurrent pricing reload cannot
+// turn a successful request into an unpriced, zero-cost log at settlement.
+func (p *Proxy) precheckPrice(format domain.RequestFormat, model, tier string) (domain.ResolvedPrices, error) {
 	if p.bill == nil || p.bill.Resolver == nil {
-		return nil
+		return domain.ResolvedPrices{}, nil
 	}
-	rp, ok := p.bill.Resolver.ResolvePrices(model, 0, "", time.Now())
+	rp, ok := p.bill.Resolver.ResolvePrices(model, 0, tier, time.Now())
 	if !ok {
-		return errNoPrice
+		return domain.ResolvedPrices{}, errNoPrice
 	}
+	if !resolvedPricesUsable(format, rp) {
+		return domain.ResolvedPrices{}, errNoPrice
+	}
+	return rp, nil
+}
+
+func resolvedPricesUsable(format domain.RequestFormat, rp domain.ResolvedPrices) bool {
 	if format == domain.FormatOpenAIImages {
-		if rp.ImgInTokPerM == nil && rp.ImgOutTokPerM == nil && rp.PricePerImage == nil {
-			return errNoPrice
-		}
+		return rp.ImgInTokPerM != nil || rp.ImgOutTokPerM != nil || rp.PricePerImage != nil
 	}
-	return nil
+	// Token billing must have both sides of the token price present. A nil
+	// input/output side is a missing price, not a free side; allowing partial
+	// rows through precheck makes a successful request silently cost zero when
+	// its usage lands on the missing component. Explicit pointers containing 0
+	// remain valid and intentionally represent a free component.
+	if tokenPricesComplete(rp) {
+		return true
+	}
+	// Responses can also be used for image-generation calls billed per image.
+	// The request precheck cannot know whether an image call will be emitted, so
+	// retain the image-only admission path; settlement rejects it when the
+	// completed response contains no image call.
+	return (format == domain.FormatOpenAIResponses || format == domain.FormatOpenAIResponsesWS) && rp.PricePerImage != nil
+}
+
+func tokenPricesComplete(rp domain.ResolvedPrices) bool {
+	return rp.InputPerM != nil && rp.OutputPerM != nil
+}
+
+// resolvedPricesUsableForSettlement applies the usage-dependent part of the
+// price contract. Responses may carry a per-image price alongside token
+// prices, but that price is not a substitute for text-token prices. The
+// request precheck cannot know whether an image call will be emitted, so it
+// accepts an image-only Responses row; settlement may use it only after an
+// actual image call was observed.
+func resolvedPricesUsableForSettlement(format domain.RequestFormat, rp domain.ResolvedPrices, calls int64) bool {
+	if format == domain.FormatOpenAIImages {
+		return resolvedPricesUsable(format, rp)
+	}
+	// A Responses image-tool call adds a separately billable component. Require
+	// both token rates and the per-image rate when text and image usage coexist;
+	// accepting a token-only snapshot would silently make each image free.
+	if calls > 0 && (format == domain.FormatOpenAIResponses || format == domain.FormatOpenAIResponsesWS) {
+		// Image-only Responses rows legitimately have no token rates; any
+		// observed image call still requires an explicit per-image price.
+		return rp.PricePerImage != nil
+	}
+	if tokenPricesComplete(rp) {
+		return true
+	}
+	return (format == domain.FormatOpenAIResponses || format == domain.FormatOpenAIResponsesWS) &&
+		calls > 0 && rp.PricePerImage != nil
 }
 
 // imagesCallerFor 按端点路径选 images 调用器（generations/edits 上游子路径

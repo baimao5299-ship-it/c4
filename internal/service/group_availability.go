@@ -94,8 +94,9 @@ func upstreamGroupHasRoute(allowed []string, members []*domain.GroupUpstream) bo
 }
 
 func groupUpstreamContainsModel(models []string, want string) bool {
+	want = strings.TrimSpace(want)
 	for _, model := range models {
-		if model == want {
+		if strings.TrimSpace(model) == want {
 			return true
 		}
 	}

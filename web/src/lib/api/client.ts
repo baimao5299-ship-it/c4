@@ -10,9 +10,11 @@ import { userAuth } from '@/lib/auth'
 // 类实现（brief 原为 type 别名，但 throw new ApiError(...) 需要运行时值）
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code?: string
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    this.code = code
     this.name = 'ApiError'
   }
 }
@@ -175,8 +177,8 @@ export class ApiClient {
       throw new ApiUnauthorized(message, typeof body?.code === 'string' ? body.code : undefined)
     }
     if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      throw new ApiError(res.status, errorMessage(body, `HTTP ${res.status}`))
+      const body = await res.json().catch(() => null) as { code?: unknown } | null
+      throw new ApiError(res.status, errorMessage(body, `HTTP ${res.status}`), typeof body?.code === 'string' ? body.code : undefined)
     }
     // DELETE /rules/{id} 等返回 204 无 body，不能 res.json()
     if (res.status === 204) return undefined as T

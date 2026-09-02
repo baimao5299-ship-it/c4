@@ -803,6 +803,9 @@ func mapRepoErr(err error) error {
 		return fmt.Errorf("%w: %s", ErrNotFound, detail)
 	case errors.Is(err, repository.ErrConflict):
 		detail := strings.TrimPrefix(err.Error(), repository.ErrConflict.Error()+": ")
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(detail)), "name=") {
+			return &serviceerr.ConflictError{Code: serviceerr.ConflictCodeDuplicateName, Detail: detail}
+		}
 		return fmt.Errorf("%w: %s", ErrConflict, detail)
 	}
 	return err

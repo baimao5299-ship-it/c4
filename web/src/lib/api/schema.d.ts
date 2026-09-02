@@ -1496,6 +1496,8 @@ export interface components {
     schemas: {
         ErrorResponse: {
             error: string;
+            /** @description Stable machine-readable error code */
+            code?: string;
         };
         /** @description 上游管理表单；只需名称、端点、Key 和成本倍率；upstream_key 仅写入，响应永不返回；模型读取会保存最近一次有界能力快照供分组调度校验；余额查询会按供应商和常见中转站接口自动识别，旧的 balance_* 字段仅用于兼容已有配置 */
         UpstreamCreate: {

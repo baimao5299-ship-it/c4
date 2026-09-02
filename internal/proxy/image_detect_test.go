@@ -260,7 +260,7 @@ func TestProxyResponsesImageDetectNonStream(t *testing.T) {
 	}{
 		{"有价：ImageCost 聚合（2 张 × 5400 + chat 130）", credential.TypeResponsesSpecial, false, withPerImage, 2, 10930, i64p(5400), ""},
 		{"缺图价：no_price 整单不计费", credential.TypeResponsesSpecial, false, nil, 2, 0, nil, "no_price"},
-		{"P3-9：per-image nil → 图分量 0（chat 照常）", credential.TypeResponsesSpecial, false, tokenOnly, 2, 130, nil, ""},
+		{"per-image 缺失 → 混合响应整单 no_price", credential.TypeResponsesSpecial, false, tokenOnly, 2, 0, nil, "no_price"},
 		{"api_key 永不检测", credential.TypeAPIKey, false, withPerImage, 0, 130, nil, ""},
 		{"strip 开 → 不检测", credential.TypeResponsesSpecial, true, withPerImage, 0, 130, nil, ""},
 	}

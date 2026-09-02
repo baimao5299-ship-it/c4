@@ -57,7 +57,7 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var it, ot, tt, cr, cc int64
+		var observed usageTuple
 		// TTFT 采集（首 token 时间毫秒）：首个 SSE 帧（任意事件）到达时间——
 		// Observer 在帧原样写出后回调；单帧旁路零成本（time.Now 一次 + 毫秒
 		// 换算）。首帧后写入 ctx（logWithCtx 读取）；无首 token 路径不写入 → nil。
@@ -68,29 +68,11 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 					ms := time.Since(start).Milliseconds()
 					ttft = &ms
 				}
-				// 真实 API 的流式用量分两处携带：input/cache 在 message_start 事件的
-				// message.usage 里（评审 M1：前缀 message.usage.*，非顶层），
-				// output_tokens 在 message_delta 事件的 usage 里
-				// （message_delta.usage 不含 input_tokens）。EventName：缺 event:
-				// 名帧按 data.type 推断（非规范上游，P3）。
-				switch string(ev.EventName()) {
-				case "message_start":
-					// ot/tt 恒 0（anthropicStartUsage 无对应字段；tt 下游自算）
-					if t, ok := anthropicStartUsage(ev.Data); ok {
-						if t.it > 0 {
-							it = t.it
-						}
-						if t.cr > 0 {
-							cr = t.cr
-						}
-						if t.cc > 0 {
-							cc = t.cc
-						}
-					}
-				case "message_delta":
-					if delta, ok := anthropicDeltaUsage(ev.Data); ok && delta > ot {
-						ot = delta
-					}
+				// Anthropic usage may be split between message_start/message_delta,
+				// and some relays omit event: entirely. The shared helper infers
+				// data.type and accepts both canonical and flattened usage shapes.
+				if t, ok := chatStreamUsageEvent(ev.EventName(), ev.Data); ok {
+					mergeStreamUsage(&observed, t)
 				}
 			},
 		})
@@ -106,16 +88,18 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			if errors.Is(err, context.Canceled) {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, start)))
+				observed.tt = addUsageTokens(observed.it, observed.ot)
+				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, http.StatusOK, domain.ErrAbort, observed, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, err)
+			observed.tt = addUsageTokens(observed.it, observed.ot)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, observed, err)
 			p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 			return 0, nil, true, nil
 		}
-		tt = addUsageTokens(it, ot)
+		observed.tt = addUsageTokens(observed.it, observed.ot)
 		p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatAnthropic, 200, domain.ErrNone, observed, start)))
 		return 200, nil, true, nil
 	}
 

@@ -827,7 +827,11 @@ type UsageLog struct {
 	PriceCacheCreationMillis *int64 // 缓存写单价快照；nil = 无缓存写或无缓存价
 	CallCount                int64  // 功能调用计数：图片生成 = 张数（data 长/completed 事件数）、search = 1；不入 TotalTokens（功能调用非 token）
 	PricePerCallMillis       *int64 // 按单元价快照（**毫分/单元**——search 每次 / 图片每张；例外单位，例外于上文"毫分/1M"口径——per-call 计费不走 /1e6 除法）；nil = 无按单元分量
-	Cost                     int64  // 毫分；错误请求（402/4xx）为 0
+	// PrecheckedPrices is an in-memory fallback captured before an upstream
+	// request starts. It protects a successful request from a concurrent pricing
+	// reload and is intentionally omitted from persistence/API projections.
+	PrecheckedPrices *ResolvedPrices
+	Cost             int64 // 毫分；错误请求（402/4xx）为 0
 	// RawCost 乘倍率前的原始成本（毫分；免费组 cost=0 但 raw 有值——"实际消耗"
 	// 只有 raw 能看）。回显面投影归 Task 2（本字段无 json tag，对齐 domain 全
 	// 结构惯例）。

@@ -201,6 +201,7 @@ func (r *GroupRepo) CreateGroupWithUpstreams(ctx context.Context, g *domain.Grou
 	}
 	row, err := tx.Group.Create().
 		SetName(g.Name).
+		SetRemark(g.Remark).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).
@@ -287,6 +288,7 @@ func (r *GroupRepo) UpdateGroupWithUpstreams(ctx context.Context, g *domain.Grou
 	updated, err := tx.Group.Update().
 		Where(group.IDEQ(g.ID), group.DeletedAtIsNil()).
 		SetName(g.Name).
+		SetRemark(g.Remark).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
 		SetPriceMultiplier(g.PriceMultiplier).

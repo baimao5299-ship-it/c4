@@ -1025,7 +1025,8 @@ type ErrLogsResponse struct {
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
-	Error string `json:"error"`
+	Error string  `json:"error"`
+	Code  *string `json:"code,omitempty"`
 }
 
 // ErrorType defines model for ErrorType.

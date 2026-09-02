@@ -750,6 +750,20 @@ func TestSniffResponsesCompleted(t *testing.T) {
 	u, ok = sniffResponsesCompleted([]byte(`{"type":"response.completed","response":{"id":"r"}}`))
 	require.False(t, ok)
 	require.Zero(t, u)
+
+	// Codex-compatible relays put usage at the top level rather than inside
+	// response.usage. This is the same terminal frame shape used by the HTTP
+	// Codex adapter and must not be billed as a zero-token success on WS.
+	u, ok = sniffResponsesCompleted([]byte(`{"type":"response.completed","response":{"id":"r"},"usage":{"input_tokens":7,"output_tokens":4,"total_tokens":11}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 7, ot: 4, tt: 11}, u)
+
+	// Formatting differences from a relay proxy must not affect terminal-frame
+	// detection. The structural fallback handles spaces after the colon and
+	// reordered keys while still requiring an exact type value.
+	u, ok = sniffResponsesCompleted([]byte(`{"usage":{"input_tokens":2,"output_tokens":3}, "type" : "response.completed", "response":{"id":"r"}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 2, ot: 3, tt: 5}, u)
 }
 
 // TestRelayClassifyCloseFramePriority I-1 分类单元测试（确定性）：上游关闭帧

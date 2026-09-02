@@ -262,6 +262,7 @@
     "balanceRefreshFailed": "Balance refresh failed ({{code}})",
     "actionFailed": "Operation failed: {{message}}",
     "staleUpdate": "This upstream changed in another window. Reopen it before saving again.",
+    "duplicateName": "That upstream name is already in use (deleted records keep their name). Choose another name.",
     "probeErrors": {
       "auth": "Authentication failed",
       "rate_limited": "Rate limited",

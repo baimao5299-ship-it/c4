@@ -10,7 +10,10 @@
 // （errors.Is(err, service.ErrXxx)）同一哨兵实例语义——80+ 调用点零改动。
 package serviceerr
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrNotFound           = errors.New("service: not found")
@@ -26,3 +29,31 @@ var (
 	ErrMailNotConfigured = errors.New("service: mail not configured")
 	ErrMailQueueFull     = errors.New("service: mail queue full")
 )
+
+// ConflictCode is an optional machine-readable reason for a 409 response.
+// Keeping the HTTP status and ErrConflict wrapping unchanged preserves the
+// existing contract while allowing clients to distinguish stale edits from
+// ordinary uniqueness conflicts.
+type ConflictCode string
+
+const (
+	ConflictCodeRevision      ConflictCode = "revision_conflict"
+	ConflictCodeDuplicateName ConflictCode = "duplicate_name"
+)
+
+// ConflictError carries a stable code while still matching ErrConflict via
+// errors.Is. Detail remains the existing human-readable context (for example
+// `name="relay"` or `id=7 changed`).
+type ConflictError struct {
+	Code   ConflictCode
+	Detail string
+}
+
+func (e *ConflictError) Error() string {
+	if e == nil || e.Detail == "" {
+		return ErrConflict.Error()
+	}
+	return fmt.Sprintf("%s: %s", ErrConflict, e.Detail)
+}
+
+func (e *ConflictError) Unwrap() error { return ErrConflict }

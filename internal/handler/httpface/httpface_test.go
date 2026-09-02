@@ -48,6 +48,8 @@ func TestWriteServiceErr(t *testing.T) {
 		{"not found wrapped", fmt.Errorf("id=5 missing: %w", serviceerr.ErrNotFound), http.StatusNotFound, "{\"error\":\"id=5 missing: service: not found\"}\n"},
 		{"invalid input", serviceerr.ErrInvalidInput, http.StatusBadRequest, "{\"error\":\"service: invalid input\"}\n"},
 		{"conflict", serviceerr.ErrConflict, http.StatusConflict, "{\"error\":\"service: conflict\"}\n"},
+		{"duplicate name conflict", fmt.Errorf("%w: name=%q", serviceerr.ErrConflict, "relay"), http.StatusConflict, "{\"code\":\"duplicate_name\",\"error\":\"service: conflict: name=\\\"relay\\\"\"}\n"},
+		{"revision conflict", fmt.Errorf("%w: id=%d changed", serviceerr.ErrConflict, 7), http.StatusConflict, "{\"code\":\"revision_conflict\",\"error\":\"service: conflict: id=7 changed\"}\n"},
 		{"invalid credentials", serviceerr.ErrInvalidCredentials, http.StatusUnauthorized, "{\"error\":\"service: invalid email or password\"}\n"},
 		{"user disabled", serviceerr.ErrUserDisabled, http.StatusUnauthorized, "{\"code\":\"user_disabled\",\"contact\":\"QQ 2965798547\",\"error\":\"账号已被封禁，请联系 QQ 2965798547 处理\"}\n"},
 		{"signup disabled", serviceerr.ErrSignupDisabled, http.StatusForbidden, "{\"error\":\"service: signup disabled\"}\n"},

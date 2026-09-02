@@ -210,6 +210,7 @@ func buildUpstreamSnapshots(groups map[int64]*groupSnapshot, configs map[int64]*
 			gs.upstreams = append(gs.upstreams, us)
 		}
 		gs.upstreamRoutes = buildUpstreamRoutes(gs.upstreams, gs.allowedModels)
+		gs.modelAliases = buildModelAliases(gs.routes, gs.upstreamRoutes)
 	}
 	return byID
 }
@@ -244,10 +245,17 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 		}
 		return route
 	}
+	// Keep the route matrix aligned with the complete RequestFormat enum.  The
+	// capability snapshot is the authority for protocol support, so adding a
+	// format here does not advertise it unless that exact model/format pair was
+	// verified (legacy snapshots still take the bounded Chat fallback below).
 	formats := []domain.RequestFormat{
 		domain.FormatOpenAIChat,
 		domain.FormatOpenAIResponses,
+		domain.FormatOpenAIResponsesWS,
 		domain.FormatAnthropic,
+		domain.FormatOpenAIImages,
+		domain.FormatOpenAISearch,
 	}
 	if len(allowed) == 0 {
 		models, legacyFallback := upstreamModelIntersection(pool)
@@ -315,6 +323,16 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 				confirmed[model] = struct{}{}
 			}
 		}
+		// Explicit/manual probes can record a tenant-scoped model in the
+		// protocol map before the provider's catalogue is updated. Include those
+		// keys when building the pool's model union so the verified route is not
+		// lost at snapshot publication.
+		for rawModel := range item.upstream.ModelFormats {
+			model := canonicalModelID(rawModel)
+			if model != "" {
+				confirmed[model] = struct{}{}
+			}
+		}
 	}
 	if !checked {
 		return nil, unknown
@@ -371,6 +389,13 @@ func upstreamSupportsModel(u *domain.Upstream, model string) bool {
 		if canonicalModelID(candidate) == model {
 			return true
 		}
+	}
+	// A manual probe or a partially written capability snapshot can contain a
+	// usable model before the catalogue list is updated.  ModelFormats is
+	// concrete evidence for that model and must keep it routable; otherwise a
+	// successful manual test is immediately hidden by the scheduler.
+	if _, recorded := upstreamModelFormats(u.ModelFormats, model); recorded {
+		return true
 	}
 	return false
 }

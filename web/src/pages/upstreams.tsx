@@ -152,7 +152,11 @@ function modelValidationErrorCode(error: unknown): string | null {
 }
 
 function isRevisionConflict(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409
+  return error instanceof ApiError && error.status === 409 && (error.code === 'revision_conflict' || (!error.code && /(?:id=\d+ changed|configuration changed)/i.test(error.message)))
+}
+
+function isDuplicateNameConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && (error.code === 'duplicate_name' || (!error.code && /name=/.test(error.message)))
 }
 
 function probeErrorLabel(code: string | null | undefined, t: (key: string) => string): string {
@@ -478,6 +482,8 @@ export default function Upstreams() {
       if (isRevisionConflict(error)) {
         await refreshRows()
         toast.add({ title: t('upstreams.staleUpdate'), type: 'warning' })
+      } else if (isDuplicateNameConflict(error)) {
+        toast.add({ title: t('upstreams.duplicateName'), type: 'error' })
       } else {
         const message = errorMessage(error)
         const validationCode = modelValidationErrorCode(error)
@@ -964,7 +970,7 @@ export default function Upstreams() {
             <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">{t('upstreams.balanceAutoHint')}</p>
             {save.isPending && <ModelValidationProgress />}
             {validation && <p className="text-sm text-destructive">{validation}</p>}
-            {save.isError && <p className="text-sm text-destructive">{isRevisionConflict(save.error) ? t('upstreams.staleUpdate') : errorMessage(save.error)}</p>}
+            {save.isError && <p className="text-sm text-destructive">{isRevisionConflict(save.error) ? t('upstreams.staleUpdate') : isDuplicateNameConflict(save.error) ? t('upstreams.duplicateName') : errorMessage(save.error)}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={save.isPending}>{t('common.cancel')}</Button>

@@ -58,6 +58,12 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		if err != nil {
 			return 0, nil, false, err
 		}
+		if target == domain.FormatOpenAIChat {
+			streamBody, err = ensureChatStreamUsage(streamBody)
+			if err != nil {
+				return 0, nil, false, err
+			}
+		}
 		var resp *http.Response
 		switch target {
 		case domain.FormatOpenAIChat:
@@ -132,28 +138,24 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 						}
 					}
 				case domain.FormatOpenAIResponses:
-					if bytes.Equal(ev.EventName(), []byte("response.completed")) {
+					if isResponsesCompletedEvent(ev.EventName(), ev.Data) {
 						if t, ok := responsesStreamUsage(ev.Data); ok {
 							it, ot, tt, cr, cc = t.it, t.ot, t.tt, t.cr, t.cc
 						}
 					}
 				case domain.FormatAnthropic:
-					switch string(ev.EventName()) {
-					case "message_start":
-						if t, ok := anthropicStartUsage(ev.Data); ok {
-							if t.it > 0 {
-								it = t.it
-							}
-							if t.cr > 0 {
-								cr = t.cr
-							}
-							if t.cc > 0 {
-								cc = t.cc
-							}
+					if t, ok := chatStreamUsageEvent(ev.EventName(), ev.Data); ok {
+						if t.it > 0 {
+							it = t.it
 						}
-					case "message_delta":
-						if delta, ok := anthropicDeltaUsage(ev.Data); ok && delta > ot {
-							ot = delta
+						if t.ot > ot {
+							ot = t.ot
+						}
+						if t.cr > 0 {
+							cr = t.cr
+						}
+						if t.cc > 0 {
+							cc = t.cc
 						}
 					}
 				}
@@ -192,7 +194,7 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		if err != nil {
 			if streamFailure != nil {
 				msg := domain.TruncateErrMsg(streamFailure.Error())
-				l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, start))
+				l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, convertedUsageTuple(target, it, ot, tt, cr, cc), start))
 				l.ErrorMessage = &msg
 				p.finishSelection(sel, l)
 				p.sched.MarkSelectionResult(sel, rule.Kind5xx, nil, http.StatusBadGateway, msg, sel.Model)
@@ -203,16 +205,15 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			// context.Canceled) 即客户端断开——sserelay.normalize 已区分三类
 			// （C-P2-2）：上游停滞超时 → DeadlineExceeded 走上游错误分支。
 			if errors.Is(err, context.Canceled) {
-				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, start)))
+				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, convertedUsageTuple(target, it, ot, tt, cr, cc), start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, client, usageTuple{it: it, ot: ot, tt: addUsageTokens(it, ot), cr: cr, cc: cc}, err)
+			p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, client, convertedUsageTuple(target, it, ot, tt, cr, cc), err)
 			p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 			return 0, nil, true, nil
 		}
-		tt = addUsageTokens(it, ot)
 		p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, convertedUsageTuple(target, it, ot, tt, cr, cc), start)))
 		return 200, nil, true, nil
 	}
 
@@ -298,7 +299,7 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		// second time. Record the conversion/application failure against the exact
 		// selection and expose a stable 502 to the client.
 		msg := domain.TruncateErrMsg("protocol response conversion failed: " + err.Error())
-		l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start))
+		l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, convertedUsageTuple(target, it, ot, tt, cr, cc), start))
 		l.ErrorMessage = &msg
 		p.finishSelection(sel, l)
 		p.sched.MarkSelectionResult(sel, rule.Kind5xx, nil, http.StatusBadGateway, msg, sel.Model)
@@ -309,8 +310,21 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(conv)
 	p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+	p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, convertedUsageTuple(target, it, ot, tt, cr, cc), start)))
 	return 200, nil, true, nil
+}
+
+// convertedUsageTuple preserves the source protocol's cache-total semantics
+// while the usage log itself remains in the client's format. Anthropic excludes
+// cache reads from input_tokens/total_tokens; OpenAI-family usage includes them.
+func convertedUsageTuple(target domain.RequestFormat, it, ot, tt, cr, cc int64) usageTuple {
+	u := usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}
+	if target == domain.FormatAnthropic {
+		u.cacheReadExcludedFromTotal = true
+	} else {
+		u.cacheReadIncludedInTotal = true
+	}
+	return u
 }
 
 // clientAndTargetOf 转换方向的客户端/模板协议格式（方向合法性由 W1 枚举校验

@@ -76,6 +76,107 @@ func (f *fakePriceLookup) ResolvePrices(model string, promptTokens int64, tier s
 	return domain.ResolveEntryPrices(e, f.variants[model], tier, promptTokens, at)
 }
 
+func TestProxyBillingResponsesImagePriceDoesNotMakeTextFree(t *testing.T) {
+	perImage := int64(250)
+	prices := &fakePriceLookup{entries: map[string]*domain.PriceEntry{
+		"gpt-5": {Model: "gpt-5", Mode: domain.PriceModeToken, PricePerImage: &perImage},
+	}}
+	p := &Proxy{bill: &BillingHooks{Resolver: prices}}
+	log := &domain.UsageLog{
+		Model: "gpt-5", Format: domain.FormatOpenAIResponses,
+		InputTokens: 100, OutputTokens: 25, TotalTokens: 125,
+		BillingTier: "auto",
+	}
+
+	p.applyBilling(log)
+
+	// An image-only price is valid for an observed image call, but a normal
+	// text response has no priced token component and must be marked no_price
+	// instead of being silently recorded as a free request.
+	require.Equal(t, "no_price", log.BillingTier)
+	require.Zero(t, log.Cost)
+	require.Zero(t, log.RawCost)
+}
+
+func TestProxyBillingResponsesImagePriceAppliesToObservedCall(t *testing.T) {
+	perImage := int64(250)
+	prices := &fakePriceLookup{entries: map[string]*domain.PriceEntry{
+		"gpt-5": {Model: "gpt-5", Mode: domain.PriceModeToken, PricePerImage: &perImage},
+	}}
+	p := &Proxy{bill: &BillingHooks{Resolver: prices}}
+	log := &domain.UsageLog{
+		Model: "gpt-5", Format: domain.FormatOpenAIResponses,
+		CallCount: 1, BillingTier: "auto",
+	}
+
+	p.applyBilling(log)
+
+	require.Equal(t, int64(250), log.Cost)
+	require.Equal(t, int64(250), log.RawCost)
+	require.Equal(t, perImage, *log.PricePerCallMillis)
+}
+
+func TestProxyBillingResponsesMixedUsageRequiresImagePrice(t *testing.T) {
+	in, out := int64(1e7), int64(2e7)
+	prices := &fakePriceLookup{entries: map[string]*domain.PriceEntry{
+		"gpt-5": {Model: "gpt-5", Mode: domain.PriceModeToken, InputPerM: &in, OutputPerM: &out},
+	}}
+	p := &Proxy{bill: &BillingHooks{Resolver: prices}}
+	log := &domain.UsageLog{
+		Model: "gpt-5", Format: domain.FormatOpenAIResponses,
+		InputTokens: 100, OutputTokens: 25, TotalTokens: 125, CallCount: 1,
+		BillingTier: "auto",
+	}
+
+	p.applyBilling(log)
+
+	require.Equal(t, "no_price", log.BillingTier)
+	require.Zero(t, log.Cost)
+	require.Zero(t, log.RawCost)
+}
+
+func TestProxyBillingRejectsPartialTokenPriceWithoutChargingZero(t *testing.T) {
+	for name, entry := range map[string]*domain.PriceEntry{
+		"missing input price":  {Model: "gpt-5", Mode: domain.PriceModeToken, OutputPerM: ptr(int64(2e7))},
+		"missing output price": {Model: "gpt-5", Mode: domain.PriceModeToken, InputPerM: ptr(int64(1e7))},
+		"cache-only price":     {Model: "gpt-5", Mode: domain.PriceModeToken, CacheReadPerM: ptr(int64(1e7))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := &Proxy{bill: &BillingHooks{Resolver: &fakePriceLookup{entries: map[string]*domain.PriceEntry{"gpt-5": entry}}}}
+			log := &domain.UsageLog{
+				Model: "gpt-5", Format: domain.FormatOpenAIChat,
+				InputTokens: 100, OutputTokens: 25, TotalTokens: 125,
+				BillingTier: "auto",
+			}
+
+			p.applyBilling(log)
+
+			require.Equal(t, "no_price", log.BillingTier)
+			require.Zero(t, log.Cost)
+			require.Zero(t, log.RawCost)
+		})
+	}
+}
+
+func TestProxyBillingAllowsExplicitZeroTokenComponent(t *testing.T) {
+	zero := int64(0)
+	output := int64(2e7)
+	prices := &fakePriceLookup{entries: map[string]*domain.PriceEntry{
+		"gpt-5": {Model: "gpt-5", Mode: domain.PriceModeToken, InputPerM: &zero, OutputPerM: &output},
+	}}
+	p := &Proxy{bill: &BillingHooks{Resolver: prices}}
+	log := &domain.UsageLog{
+		Model: "gpt-5", Format: domain.FormatOpenAIChat,
+		InputTokens: 100, OutputTokens: 25, TotalTokens: 125,
+		BillingTier: "auto",
+	}
+
+	p.applyBilling(log)
+
+	require.Equal(t, "auto", log.BillingTier)
+	require.Equal(t, int64(500), log.Cost)
+}
+
 // newTestProxyBillingLogs 构造注入计费钩子的测试代理（默认 gpt-4o 模板 + 捕获
 // 日志；policy nil = 恒透传）。Balances 空快照 → 倍率默认 ×1（T2 断言恒等，
 // T3.5 无 nil 容忍：hooks 四字段齐备）。
@@ -389,9 +490,9 @@ func TestProxyBillingTierFastPolicyPassthrough(t *testing.T) {
 	require.Equal(t, int64(260), store.logs[0].Cost, "passthrough 按 fast 档计费：130×2.0 = 260")
 }
 
-// TestProxyBillingNoPriceDefenseAtFinish 运行时防御：预检通过后快照被删（竞态）→
-// applyBilling Warn + BillingTier="no_price" + cost 0（不按 0 计价也不炸）。
-func TestProxyBillingNoPriceDefenseAtFinish(t *testing.T) {
+// TestProxyBillingPriceSnapshotFallbackAtFinish 预检通过后快照被删（竞态）→
+// 成功请求仍使用请求开始时的价格快照，不会静默变成 0 成本。
+func TestProxyBillingPriceSnapshotFallbackAtFinish(t *testing.T) {
 	up := fakeOpenAI(t, "")
 	defer up.Close()
 	store := &captureLogStore{}
@@ -406,20 +507,19 @@ func TestProxyBillingNoPriceDefenseAtFinish(t *testing.T) {
 	p.HandleChat(rec, req)
 	require.Equal(t, 200, rec.Code, "body=%s", rec.Body.String(), "预检通过 → 正常转发")
 
-	// 分表路由（放行路径语义）：防御行 ErrorType=none（客户端拿到 200）→ 入
-	// usage_logs（cost=0 不限——err_logs 仅失败行）；errlog 不投递。
+	// 分表路由（放行路径语义）：成功行进入 usage_logs，并按预检快照结算。
 	require.NoError(t, p.rec.Close(context.Background()))
 	require.NoError(t, p.errlog.Close(context.Background()))
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	require.Len(t, store.logs, 1)
-	require.Equal(t, "no_price", store.logs[0].BillingTier, "竞态防御：no_price 审计")
-	require.Zero(t, store.logs[0].Cost, "缺价防御 cost 0")
+	require.Equal(t, "auto", store.logs[0].BillingTier, "预检快照回退不应覆盖正常计费档位")
+	require.Equal(t, int64(130), store.logs[0].Cost, "结算查价竞态不得把成功请求记成 0")
 	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType, "放行路径（none）入 usage_logs")
-	require.Nil(t, store.logs[0].PriceInputMillis, "no_price 防御：输入单价快照保持 nil（NULL 落库）")
-	require.Nil(t, store.logs[0].PriceOutputMillis, "no_price 防御：输出单价快照保持 nil")
-	require.Nil(t, store.logs[0].PriceCacheReadMillis, "no_price 防御：缓存读单价快照保持 nil")
-	require.Nil(t, store.logs[0].PriceCacheCreationMillis, "no_price 防御：缓存写单价快照保持 nil")
+	require.Equal(t, int64(1e7), *store.logs[0].PriceInputMillis, "输入单价来自请求开始时快照")
+	require.Equal(t, int64(2e7), *store.logs[0].PriceOutputMillis, "输出单价来自请求开始时快照")
+	require.Nil(t, store.logs[0].PriceCacheReadMillis, "无缓存读分量")
+	require.Nil(t, store.logs[0].PriceCacheCreationMillis, "无缓存写分量")
 }
 
 // TestProxyBillingPriceSnapshotCache 缓存价快照：请求有缓存读/写分量且模型有
@@ -890,6 +990,17 @@ func TestBuildLogUsageSaturatesAndClamps(t *testing.T) {
 	require.Zero(t, l.CallCount, "negative call counts are invalid")
 }
 
+func TestBuildLogBackfillsZeroProviderTotalFromComponents(t *testing.T) {
+	p := &Proxy{}
+	l := p.buildLog("r", 1, 1, "m", "m", domain.FormatOpenAIChat, 200, domain.ErrNone,
+		usageTuple{it: 120, ot: 30, tt: 0}, time.Now())
+
+	require.Equal(t, int64(120), l.InputTokens)
+	require.Equal(t, int64(30), l.OutputTokens)
+	require.Equal(t, int64(150), l.TotalTokens,
+		"a provider total of zero must not make a request free when components are positive")
+}
+
 // TestProxyBillingMultiplierAssignment 用户-组专属倍率（T3.5 修正：按组挂载，
 // 用户覆盖组）：(1,10) ×2 → cost 翻倍（130×2 = 260），单写点落 rec + Billed
 // 出生标记照常。
@@ -1170,4 +1281,49 @@ func TestProxyBillingNewUserImmediatelyUsable(t *testing.T) {
 
 	require.Equal(t, 200, req(), "新建用户 Reload 后立即请求不得 402（评审 M-2）")
 	require.NoError(t, rec.Close(context.Background()))
+}
+
+// TestFinishSelectionMissingUsageDoesNotMutateSelection verifies that a
+// successful provider response without a usage object remains a successful
+// request. Billing cannot infer provider token counts safely, so this path must
+// not convert the completed response into a 5xx, cool the account, or enqueue a
+// duplicate error row after the response has already reached the client.
+func TestFinishSelectionMissingUsageDoesNotMutateSelection(t *testing.T) {
+	up := fakeOpenAI(t, "")
+	defer up.Close()
+	store := &captureLogStore{}
+	p := newTestProxyTplTimeoutLogs(t, &domain.Template{
+		ID: 1, Name: "t", BaseURL: up.URL,
+		CredentialType:   credential.TypeAPIKey,
+		SupportedFormats: []domain.RequestFormat{domain.FormatOpenAIChat},
+		Models:           []string{"gpt-4o"},
+	}, 1, true, 30*time.Second, store, &BillingHooks{
+		Resolver: &fakePriceLookup{entries: map[string]*domain.PriceEntry{
+			"gpt-4o": proxyPricingEntry(),
+		}},
+		Balances: billing.NewBalances(fakeBalanceLoader{m: map[int64]int64{}}, nil),
+	})
+	p.cfg.BillingCapture = true
+
+	sel, err := p.sched.Select(10, domain.FormatOpenAIChat, "gpt-4o")
+	require.NoError(t, err)
+	p.finishSelection(sel, p.buildLog("missing-usage", 10, sel.AccountID,
+		"gpt-4o", sel.Model, domain.FormatOpenAIChat, http.StatusOK,
+		domain.ErrNone, usageTuple{}, time.Now()))
+
+	// MarkSelectionResult is asynchronous. Flushing here makes the assertion
+	// deterministic and catches any accidental 5xx/cooldown side effect.
+	p.sched.FlushRules()
+	ri, ok := p.sched.Runtime(sel.AccountID)
+	require.True(t, ok)
+	require.Equal(t, domain.StatusActive, ri.Status)
+	require.Nil(t, ri.CooldownUntil)
+	require.Zero(t, ri.Concurrency)
+
+	require.NoError(t, p.rec.Close(context.Background()))
+	require.NoError(t, p.errlog.Close(context.Background()))
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.logs, 1, "missing usage must not enqueue a duplicate error row")
+	require.Equal(t, domain.ErrNone, store.logs[0].ErrorType)
 }

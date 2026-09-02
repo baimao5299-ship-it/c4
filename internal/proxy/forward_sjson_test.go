@@ -116,6 +116,40 @@ func TestSetStreamAndModelAppendsMissing(t *testing.T) {
 	require.Equal(t, `{"model":"gpt-5.6","stream":true}`, string(out))
 }
 
+func TestEnsureChatStreamUsageAddsIncludeUsage(t *testing.T) {
+	body := []byte(`{"model":"gpt-4o","stream":true,"stream_options":{"include_logprobs":false}}`)
+	out, err := ensureChatStreamUsage(body)
+	require.NoError(t, err)
+	require.True(t, gjson.GetBytes(out, "stream_options.include_usage").Bool())
+	require.False(t, gjson.GetBytes(out, "stream_options.include_logprobs").Bool())
+}
+
+func TestEnsureChatStreamUsagePreservesTrueWithoutRewrite(t *testing.T) {
+	body := []byte(`{"model":"gpt-4o","stream_options":{"include_usage":true}}`)
+	out, err := ensureChatStreamUsage(body)
+	require.NoError(t, err)
+	require.True(t, &out[0] == &body[0], "已有 true 时不得重写请求体")
+}
+
+func TestEnsureChatStreamUsageOverridesFalseOrNull(t *testing.T) {
+	for _, body := range []string{
+		`{"stream_options":{"include_usage":false}}`,
+		`{"stream_options":null}`,
+		`{}`,
+	} {
+		out, err := ensureChatStreamUsage([]byte(body))
+		require.NoError(t, err, body)
+		require.True(t, gjson.GetBytes(out, "stream_options.include_usage").Bool(), body)
+	}
+}
+
+func TestEnsureChatStreamUsageRejectsNonObject(t *testing.T) {
+	for _, body := range []string{`null`, `[]`, `123`} {
+		_, err := ensureChatStreamUsage([]byte(body))
+		require.Error(t, err, body)
+	}
+}
+
 // TestStripServiceTierMissingKey 字段缺失 → sjson 删除不存在键 = 无操作返回
 // 原字节（与 map 版 delete 缺失键语义一致）。
 func TestStripServiceTierMissingKey(t *testing.T) {

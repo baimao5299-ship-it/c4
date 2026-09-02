@@ -33,6 +33,26 @@ func cacheCreationFromRaw(raw string) int64 {
 	)
 }
 
+// rawUsageNumber reads the first positive integer from a bounded list of
+// provider spellings.  The SDK structs intentionally expose only the native
+// protocol fields, while compatibility relays sometimes return the usage
+// object from another protocol unchanged (for example input_tokens on a Chat
+// response).  Keeping this fallback on the SDK's RawJSON preserves the exact
+// response without a second full response unmarshal.
+func rawUsageNumber(raw string, paths ...string) int64 {
+	for _, path := range paths {
+		value := gjson.Get(raw, path)
+		if !value.Exists() || value.Type == gjson.Null {
+			continue
+		}
+		n := value.Int()
+		if n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
 // chatStreamUsage 流式 chat usage 帧 → 元组 + ok（usage 存在判定内建——调用方
 // 不再前置 gjson 检查；显式 null 帧 ok=false 不清零：usageInterval 值首字节
 // {/[ 判定，null 字面量首字节 n → 不存在）。
@@ -58,29 +78,48 @@ func chatStreamUsage(data []byte) (usageTuple, bool) {
 // returned tuple is intentionally partial for Anthropic start/delta events;
 // callers merge it with the values collected from the other event.
 func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
+	// Some relays omit the SSE `event:` line and expose only the top-level
+	// JSON `type`.  Normalize that here as well as in the relay package so all
+	// callers (including direct Anthropic and conversion paths) share the same
+	// behavior when they invoke this helper with a raw event name.
+	eventName = usageStreamEventName(eventName, data)
 	switch {
 	case bytes.Equal(eventName, []byte("message_start")):
 		// Standard Anthropic start frames nest usage under message. Only
 		// select that shape when the message object is present; a relay may
 		// reuse the event label for a normal OpenAI usage object.
-		if _, _, ok := scanKeyValue(data, messageKeyBytes); ok {
-			if t, ok := anthropicStartUsage(data); ok {
-				return t, true
-			}
+		if t, ok := anthropicStartUsageCompat(data); ok {
+			return t, true
 		}
 	case bytes.Equal(eventName, []byte("message_delta")):
 		// Anthropic puts output_tokens under message_delta.usage. Keep the
 		// presence check distinct from a zero value so an empty usage object
 		// cannot be mistaken for a measured output count.
-		if raw, ok := usageInterval(data, usageKeyBytes); ok {
-			if _, _, hasOutput := scanKeyValue(raw, outputTokensKeyBytes); hasOutput {
-				return usageTuple{ot: scanFieldInt64(raw, outputTokensKeyBytes)}, true
-			}
+		if ot, ok := anthropicDeltaUsageCompat(data); ok {
+			return usageTuple{ot: ot}, true
 		}
 	}
 	// OpenAI-compatible usage is normally a complete top-level object and is
 	// valid whether or not the relay attached an SSE event name.
 	return chatStreamUsage(data)
+}
+
+// usageStreamEventName returns the explicit SSE event name when present and
+// otherwise reads a top-level JSON `type`.  The latter is needed for relays
+// that emit data-only Anthropic/Responses frames.  Values are returned as
+// slices into the current frame; callers must consume them synchronously.
+func usageStreamEventName(eventName, data []byte) []byte {
+	if len(eventName) > 0 {
+		eventName = bytes.TrimSpace(eventName)
+		if len(eventName) > 0 {
+			return eventName
+		}
+	}
+	start, end, ok := scanKeyValue(data, typeKeyBytes)
+	if !ok || end <= start+1 || start >= len(data) || end > len(data) || data[start] != '"' || data[end-1] != '"' {
+		return nil
+	}
+	return data[start+1 : end-1]
 }
 
 // mergeStreamUsage preserves fields collected from split protocol events while
@@ -133,6 +172,33 @@ func anthropicStartUsage(data []byte) (usageTuple, bool) {
 	}, true
 }
 
+// anthropicStartUsageCompat accepts both the canonical Messages envelope
+// (message.usage) and relays that flatten usage at the event's top level.
+func anthropicStartUsageCompat(data []byte) (usageTuple, bool) {
+	if t, ok := anthropicStartUsage(data); ok {
+		return t, true
+	}
+	raw, ok := usageInterval(data, usageKeyBytes)
+	if !ok {
+		return usageTuple{}, false
+	}
+	t := usageTuple{
+		it: scanFieldInt64(raw, inputTokensKeyBytes),
+		cr: scanFieldInt64(raw, cacheReadInputTokensKeyBytes),
+		cc: scanFieldInt64(raw, cacheCreationInputTokensKeyBytes),
+	}
+	if t.it <= 0 {
+		t.it = scanFieldInt64(raw, promptTokensKeyBytes)
+	}
+	if t.cr <= 0 {
+		t.cr = scanFieldInt64(raw, cachedTokensKeyBytes)
+	}
+	if t.cc <= 0 {
+		t.cc = scanFieldInt64(raw, cacheCreationInputTokensKeyBytes)
+	}
+	return t, true
+}
+
 // anthropicDeltaOutput 流式 message_delta 帧的 usage.output_tokens
 // （message_delta.usage 不含 input/cache 字段）。单字段统一走字节扫描族
 // （与其余提取同构，消除 gjson 依赖）；缺失/显式 null → 0。
@@ -154,6 +220,23 @@ func anthropicDeltaUsage(data []byte) (int64, bool) {
 		return 0, false
 	}
 	return scanFieldInt64(raw, outputTokensKeyBytes), true
+}
+
+// anthropicDeltaUsageCompat accepts output_tokens and the common OpenAI
+// completion_tokens spelling used by compatibility relays.
+func anthropicDeltaUsageCompat(data []byte) (int64, bool) {
+	if value, ok := anthropicDeltaUsage(data); ok {
+		return value, true
+	}
+	raw, ok := usageInterval(data, usageKeyBytes)
+	if !ok {
+		return 0, false
+	}
+	_, _, present := scanKeyValue(raw, completionTokensKeyBytes)
+	if !present {
+		return 0, false
+	}
+	return scanFieldInt64(raw, completionTokensKeyBytes), true
 }
 
 // responsesCompletedUsage 流式 response.completed 帧 → 元组 + ok（评审 M2：
@@ -261,19 +344,7 @@ func topLevelUsageHasExplicitTotal(data []byte) bool {
 // 真实上游 response.completed 恒唯一（终态事件）——调用方取首个命中帧后跳过
 // 后续解析（usage 只读一次；"最后帧覆盖"语义由终态唯一性等价保证）。
 func sniffResponsesCompletedTop(data []byte) (usageTuple, bool) {
-	start, end, ok := scanKeyValue(data, typeKeyBytes)
-	if !ok {
-		return usageTuple{}, false
-	}
-	// type 值必须为字符串字面（非字符串值不可能等于字面目标——gjson String()
-	// 对非字符串返原文/空，比较结果同为不命中）。病态差异（保守方向，对齐
-	// scanIntValue 惯例）：type 值含 \uXXXX 转义（如 "response.completed"
-	// 解码后与字面相同）——gjson 值 unescape 后比较命中，本实现 bytes.Equal
-	// 字节原样比较不匹配 → ok=false（不误计）
-	if start >= len(data) || data[start] != '"' {
-		return usageTuple{}, false
-	}
-	if !bytes.Equal(data[start+1:end-1], completedTypeBytes) {
+	if !isResponsesCompletedType(data) {
 		return usageTuple{}, false
 	}
 	raw, usageOK := usageInterval(data, usageKeyBytes)
@@ -281,6 +352,24 @@ func sniffResponsesCompletedTop(data []byte) (usageTuple, bool) {
 		return usageTuple{}, true // type 命中但 usage 缺失 → 零值元组（同旧行为）
 	}
 	return usageFieldsFromInterval(raw, inputTokensKeyBytes, outputTokensKeyBytes, inputTokensDetailsKeyBytes), true
+}
+
+// isResponsesCompletedType recognizes the terminal Responses event without
+// relying on one exact byte spelling. Relays commonly insert whitespace after
+// the colon or reorder top-level keys; a literal bytes.Contains check would
+// miss those frames and make a successful request appear to use zero tokens.
+// The comparison remains byte-exact for the value so text that merely mentions
+// response.completed is never treated as a terminal event.
+func isResponsesCompletedType(data []byte) bool {
+	start, end, ok := scanKeyValue(data, typeKeyBytes)
+	if !ok || end <= start+1 || start >= len(data) || end > len(data) || data[start] != '"' || data[end-1] != '"' {
+		return false
+	}
+	return bytes.Equal(data[start+1:end-1], completedTypeBytes)
+}
+
+func isResponsesCompletedEvent(eventName, data []byte) bool {
+	return bytes.Equal(eventName, completedTypeBytes) || isResponsesCompletedType(data)
 }
 
 // --- 字节扫描 helper（spec 2026-08-15-gc-opt-ab A-1：gjson 多遍扫描 →
@@ -404,8 +493,28 @@ func scanIntValue(raw []byte) int64 {
 // 上游 TotalTokens 原值（数值不变量：归一不改 total）。上游 total 与 in+out 的
 // 既有分歧维持现状（不收敛也不扩大）。
 func chatUsageFromResponse(u openai.CompletionUsage) (it, ot, tt, cr, cc int64) {
-	it, ot, tt, cr, cc = u.PromptTokens, u.CompletionTokens, u.TotalTokens,
-		u.PromptTokensDetails.CachedTokens, cacheCreationFromRaw(u.RawJSON())
+	raw := u.RawJSON()
+	it, ot, tt, cr = u.PromptTokens, u.CompletionTokens, u.TotalTokens,
+		u.PromptTokensDetails.CachedTokens
+	// Some OpenAI-compatible relays return an Anthropic/Responses-shaped usage
+	// object from the Chat route. The SDK keeps that object in RawJSON but leaves
+	// the native fields at zero, which previously made a successful request free.
+	if it <= 0 {
+		it = rawUsageNumber(raw, "prompt_tokens", "input_tokens")
+	}
+	if ot <= 0 {
+		ot = rawUsageNumber(raw, "completion_tokens", "output_tokens")
+	}
+	if tt <= 0 {
+		tt = rawUsageNumber(raw, "total_tokens")
+	}
+	if cr <= 0 {
+		cr = rawUsageNumber(raw, "prompt_tokens_details.cached_tokens", "cache_read_input_tokens", "cache_read_tokens", "cached_tokens")
+	}
+	cc = cacheCreationFromRaw(raw)
+	if cc <= 0 {
+		cc = rawUsageNumber(raw, "cache_creation_input_tokens", "cache_write_input_tokens", "cache_creation.input_tokens")
+	}
 	if tt <= 0 {
 		tt = addUsageTokens(it, ot)
 	}
@@ -417,17 +526,59 @@ func chatUsageFromResponse(u openai.CompletionUsage) (it, ot, tt, cr, cc int64) 
 // （spec 2026-08-25）——tt 先按原始 in+out 定值再归一 it（数值不变量：归一
 // 不改 total）。
 func responsesUsageFromResponse(u responses.ResponseUsage) (it, ot, tt, cr, cc int64) {
-	it, ot = u.InputTokens, u.OutputTokens
-	tt = addUsageTokens(it, ot)
-	cr, cc = u.InputTokensDetails.CachedTokens, cacheCreationFromRaw(u.RawJSON())
+	raw := u.RawJSON()
+	it, ot, tt, cr = u.InputTokens, u.OutputTokens, u.TotalTokens,
+		u.InputTokensDetails.CachedTokens
+	if it <= 0 {
+		it = rawUsageNumber(raw, "input_tokens", "prompt_tokens")
+	}
+	if ot <= 0 {
+		ot = rawUsageNumber(raw, "output_tokens", "completion_tokens")
+	}
+	if tt <= 0 {
+		tt = rawUsageNumber(raw, "total_tokens")
+	}
+	if cr <= 0 {
+		cr = rawUsageNumber(raw, "input_tokens_details.cached_tokens", "cache_read_input_tokens", "cache_read_tokens", "cached_tokens")
+	}
+	cc = cacheCreationFromRaw(raw)
+	if cc <= 0 {
+		cc = rawUsageNumber(raw, "cache_creation_input_tokens", "cache_write_input_tokens", "cache_creation.input_tokens")
+	}
+	if tt <= 0 {
+		tt = addUsageTokens(it, ot)
+	}
 	return deductCacheRead(it, cr), ot, tt, cr, cc
 }
 
 // anthropicUsageFromResponse 非流式 Anthropic 响应用量：SDK v1.56.0 Usage
 // 结构体直读（CacheRead/CacheCreationInputTokens 字段存在）。
 func anthropicUsageFromResponse(u anthropic.Usage) (it, ot, tt, cr, cc int64) {
-	return u.InputTokens, u.OutputTokens, addUsageTokens(u.InputTokens, u.OutputTokens),
+	raw := u.RawJSON()
+	it, ot, tt, cr, cc = u.InputTokens, u.OutputTokens, 0,
 		u.CacheReadInputTokens, u.CacheCreationInputTokens
+	// A few Messages-compatible relays return OpenAI usage names even though
+	// the response envelope is Anthropic. Preserve billing for those responses
+	// using the raw usage object retained by the SDK.
+	if it <= 0 {
+		it = rawUsageNumber(raw, "input_tokens", "prompt_tokens")
+	}
+	if ot <= 0 {
+		ot = rawUsageNumber(raw, "output_tokens", "completion_tokens")
+	}
+	if cr <= 0 {
+		cr = rawUsageNumber(raw, "cache_read_input_tokens", "cache_read_tokens", "input_tokens_details.cached_tokens", "cached_tokens")
+	}
+	if cc <= 0 {
+		cc = rawUsageNumber(raw, "cache_creation_input_tokens", "cache_write_input_tokens", "cache_creation.input_tokens")
+	}
+	if tt <= 0 {
+		tt = rawUsageNumber(raw, "total_tokens")
+	}
+	if tt <= 0 {
+		tt = addUsageTokens(it, ot)
+	}
+	return it, ot, tt, cr, cc
 }
 
 // --- resp/resp-ws 响应侧 image 检测旁路（spec §6；检测开关判定 + 计数提取） ---

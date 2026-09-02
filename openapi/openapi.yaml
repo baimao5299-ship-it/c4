@@ -1978,6 +1978,7 @@ components:
       required: [error]
       properties:
         error: { type: string }
+        code: { type: string, description: Stable machine-readable error code, when available }
     UpstreamCreate:
       type: object
       required: [name, base_url]

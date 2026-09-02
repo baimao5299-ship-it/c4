@@ -604,6 +604,26 @@ func TestFlusherZeroCostFastMark(t *testing.T) {
 	require.False(t, store.overdraftOf(z1.ID) || store.overdraftOf(z2.ID), "零价行 overdraft 出生 false 保持")
 }
 
+// TestFlusherZeroCostNoPriceStaysUnbilled 缺价行不得被零价扫尾吞掉。
+// applyBilling 标记 billing_tier=no_price 时，cost=0 仅表示当前无法结算，
+// 并不代表请求免费；价格恢复后该行仍需留在游标中重试。明确免费的行仍走
+// 原有 MarkBilledBulk 快速路径。
+func TestFlusherZeroCostNoPriceStaysUnbilled(t *testing.T) {
+	store := newFakeLedgerStore()
+	free := store.seedRow(1, 1, 0, time.Now())
+	noPrice := store.seedRow(2, 1, 0, time.Now())
+	store.mu.Lock()
+	store.rows[noPrice.ID].row.BillingTier = "no_price"
+	store.mu.Unlock()
+	f := newFlusherWith(store, 1, map[int64]int64{1: 1000})
+
+	n := f.consumeCycle(context.Background(), false)
+	require.Equal(t, int64(1), n, "only the explicitly free row exits the zero-cost lane")
+	require.True(t, store.isBilled(free.ID), "free row is absorbed by the zero-cost fast path")
+	require.False(t, store.isBilled(noPrice.ID), "no_price row remains available for later repricing")
+	require.Equal(t, [][]int64{{free.ID}}, store.markSnapshot(), "zero-cost sweep excludes no_price rows")
+}
+
 // TestFlusherTwoLaneDisjointness 两车道互斥路由（§〇-b）：temp-active 用户恒入
 // FEFO 车道、余额-only 用户恒入 Balance 车道——同周期双种群各自结算互不越道。
 func TestFlusherTwoLaneDisjointness(t *testing.T) {

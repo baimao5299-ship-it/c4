@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	serviceerr "github.com/is7qin/c3api/internal/service/errors"
 )
@@ -68,7 +69,11 @@ func WriteServiceErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, serviceerr.ErrInvalidInput):
 		WriteErr(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, serviceerr.ErrConflict):
-		WriteErr(w, http.StatusConflict, err.Error())
+		if code := conflictCode(err); code != "" {
+			WriteJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "code": code})
+		} else {
+			WriteErr(w, http.StatusConflict, err.Error())
+		}
 	case errors.Is(err, serviceerr.ErrInvalidCredentials):
 		WriteErr(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, serviceerr.ErrUserDisabled):
@@ -82,4 +87,26 @@ func WriteServiceErr(w http.ResponseWriter, err error) {
 	default:
 		WriteErr(w, http.StatusInternalServerError, "internal error")
 	}
+}
+
+// conflictCode keeps older service call sites source-compatible while
+// assigning stable codes to the two management conflicts the UI must treat
+// differently. Typed errors are preferred; the narrow text fallback covers
+// legacy callers that still wrap ErrConflict directly.
+func conflictCode(err error) string {
+	var typed *serviceerr.ConflictError
+	if errors.As(err, &typed) && typed != nil && typed.Code != "" {
+		return string(typed.Code)
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "name=") {
+		return string(serviceerr.ConflictCodeDuplicateName)
+	}
+	if strings.Contains(message, "id=") && strings.Contains(message, "changed") {
+		return string(serviceerr.ConflictCodeRevision)
+	}
+	if strings.Contains(message, "configuration changed") {
+		return string(serviceerr.ConflictCodeRevision)
+	}
+	return ""
 }

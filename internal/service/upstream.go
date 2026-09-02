@@ -805,7 +805,7 @@ func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store Upstrea
 	models := mergeUpstreamModelLists(expected.Models, []string{model})
 	modelFormats := cloneModelFormatSnapshot(expected.ModelFormats)
 	if format.Valid() {
-		modelFormats[model] = []domain.RequestFormat{format}
+		modelFormats[model] = mergeRequestFormats(modelFormatSnapshotForIDValue(modelFormats, model), []domain.RequestFormat{format})
 	}
 	// ModelsError is a single upstream-level field, not a per-model result. A
 	// successful explicit model request therefore clears it; any later batch
@@ -1311,14 +1311,48 @@ func retainedUpstreamModelFormats(expected *domain.Upstream, models []string, cu
 		// contain surrounding whitespace in their JSON keys. Resolve both the
 		// current probe result and the retained snapshot through one canonical
 		// lookup so a usable model does not lose its verified protocol route.
-		if formats, found := modelFormatSnapshotForID(current, model); found && len(formats) > 0 {
-			out[model] = append([]domain.RequestFormat(nil), formats...)
-			continue
+		var formats []domain.RequestFormat
+		if currentFormats, found := modelFormatSnapshotForID(current, model); found {
+			formats = mergeRequestFormats(formats, currentFormats)
 		}
-		if !complete && expected != nil {
-			if formats, found := modelFormatSnapshotForID(expected.ModelFormats, model); found && len(formats) > 0 {
-				out[model] = append([]domain.RequestFormat(nil), formats...)
+		// A model probe intentionally stops at the first working wire protocol;
+		// a complete run therefore does not prove that older, independently
+		// verified protocols stopped working. Preserve those capabilities and
+		// add the current result, otherwise a Responses-first refresh would
+		// silently remove a previously working Chat route (and vice versa).
+		if expected != nil {
+			if previous, found := modelFormatSnapshotForID(expected.ModelFormats, model); found {
+				formats = mergeRequestFormats(formats, previous)
 			}
+		}
+		if len(formats) > 0 {
+			out[model] = formats
+		}
+	}
+	return out
+}
+
+func modelFormatSnapshotForIDValue(snapshot map[string][]domain.RequestFormat, model string) []domain.RequestFormat {
+	formats, _ := modelFormatSnapshotForID(snapshot, strings.TrimSpace(model))
+	return formats
+}
+
+func mergeRequestFormats(left, right []domain.RequestFormat) []domain.RequestFormat {
+	if len(left) == 0 && len(right) == 0 {
+		return nil
+	}
+	seen := make(map[domain.RequestFormat]struct{}, len(left)+len(right))
+	out := make([]domain.RequestFormat, 0, len(left)+len(right))
+	for _, source := range [][]domain.RequestFormat{left, right} {
+		for _, format := range source {
+			if !format.Valid() {
+				continue
+			}
+			if _, exists := seen[format]; exists {
+				continue
+			}
+			seen[format] = struct{}{}
+			out = append(out, format)
 		}
 	}
 	return out
@@ -1355,13 +1389,17 @@ func cloneModelFormatSnapshot(in map[string][]domain.RequestFormat) map[string][
 	return out
 }
 
-// retainedUpstreamModels merges a previous verified snapshot only for an
-// unchanged upstream and a non-authoritative, incomplete run. This prevents a
-// timeout, relay reset, or malformed catalogue from deleting models that a
-// manual request already proved usable. Authentication and completed
-// model-specific failures remain authoritative and publish the current result.
+// retainedUpstreamModels merges a previous verified snapshot for an unchanged
+// upstream when a run is incomplete. A complete directory is also allowed to
+// omit tenant-scoped/manual aliases: when at least one model succeeds, those
+// prior verified names remain routable; a complete run with no success remains
+// authoritative and clears stale routes.
 func retainedUpstreamModels(expected *domain.Upstream, current, advertised, transient []string, complete bool, code string) []string {
-	if expected == nil || len(expected.Models) == 0 || !isRetainableValidation(code, complete) {
+	// A successful complete run may have current models while the provider's
+	// directory omits previously verified tenant aliases. Keep those aliases in
+	// that specific case; all-empty complete runs remain authoritative.
+	allowCompleteHidden := complete && len(current) > 0
+	if expected == nil || len(expected.Models) == 0 || (!isRetainableValidation(code, complete) && !allowCompleteHidden) {
 		return append([]string{}, current...)
 	}
 	previous := make([]string, 0, len(expected.Models))
@@ -1379,6 +1417,13 @@ func retainedUpstreamModels(expected *domain.Upstream, current, advertised, tran
 			transientSet[model] = struct{}{}
 		}
 	}
+	// A complete catalogue is not necessarily an exhaustive capability list:
+	// tenant aliases and newly enabled models are commonly callable but omitted
+	// from /models. If this run proved at least one model usable, keep the prior
+	// verified names that are absent from the directory. A run with no successful
+	// model (auth failure, empty catalogue, or all models rejected) remains
+	// authoritative and clears stale routes as before.
+	keepHiddenVerified := complete && len(current) > 0
 	for _, model := range expected.Models {
 		model = strings.TrimSpace(model)
 		if model == "" {
@@ -1391,7 +1436,10 @@ func retainedUpstreamModels(expected *domain.Upstream, current, advertised, tran
 		// snapshot remains the fallback as a whole.
 		if len(advertisedSet) > 0 {
 			if _, listed := advertisedSet[model]; !listed {
-				if complete {
+				// Only retain a hidden model when the previous snapshot carries
+				// concrete protocol evidence. Legacy rows without ModelFormats are
+				// still subject to the complete directory result.
+				if complete && (!keepHiddenVerified || len(modelFormatSnapshotForIDValue(expected.ModelFormats, model)) == 0) {
 					continue
 				}
 				previous = append(previous, model)

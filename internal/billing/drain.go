@@ -139,7 +139,9 @@ func (f *Flusher) applySettlement(s domain.SettlementSummary) {
 
 // sweepZeroCost 零价批车道（§〇-b 车道 3）：取批余量中 cost<=0 行一次
 // MarkBilledBulk 纯标记。cost>0 行忽略（两结算车道的后续窗口取批——本车道只
-// 吃免费行，绝不越权标记未扣费行）。
+// 吃免费行，绝不越权标记未扣费行）。缺价行（billing_tier=no_price）也必须
+// 保留在游标中：它们代表价格解析暂时失败，标记为 billed 会让后续价格恢复后
+// 永远无法重新结算。只有明确的免费/已吸收行才允许在这里退出游标。
 func (f *Flusher) sweepZeroCost(ctx context.Context) int64 {
 	rows, err := f.store.FetchUnbilledBatch(ctx, fetchBatchLimit)
 	if err != nil {
@@ -150,7 +152,7 @@ func (f *Flusher) sweepZeroCost(ctx context.Context) int64 {
 	}
 	var zeroIDs []int64
 	for _, r := range rows {
-		if r.Cost <= 0 {
+		if r.Cost <= 0 && r.BillingTier != "no_price" {
 			zeroIDs = append(zeroIDs, r.ID)
 		}
 	}

@@ -212,8 +212,11 @@ func (s *Service) validateAllowedModelsForUpstreams(ctx context.Context, allowed
 		return errUpstreamStoreUnavailable
 	}
 	covered := make(map[string]bool, len(allowed))
-	for _, model := range allowed {
-		covered[model] = false
+	for _, rawModel := range allowed {
+		model := canonicalUpstreamModelID(rawModel)
+		if model != "" {
+			covered[model] = false
+		}
 	}
 	for _, member := range members {
 		if member == nil || member.UpstreamID <= 0 {
@@ -234,9 +237,36 @@ func (s *Service) validateAllowedModelsForUpstreams(ctx context.Context, allowed
 			}
 			continue
 		}
-		for _, model := range u.Models {
+		markCovered := func(rawModel string) {
+			model := canonicalUpstreamModelID(rawModel)
 			if _, ok := covered[model]; ok {
 				covered[model] = true
+			}
+		}
+		if len(u.ModelFormats) == 0 {
+			// No protocol map means a legacy catalogue. The scheduler keeps the
+			// historical Chat fallback for these rows.
+			for _, rawModel := range u.Models {
+				markCovered(rawModel)
+			}
+		} else {
+			for _, rawModel := range u.Models {
+				model := canonicalUpstreamModelID(rawModel)
+				formats, recorded := modelFormatsForID(u.ModelFormats, model)
+				// A missing per-model key is the legacy partial-snapshot case and
+				// retains Chat compatibility. An explicitly empty key is a confirmed
+				// unavailable model and must not pass group validation.
+				if !recorded || hasValidModelFormat(formats) {
+					markCovered(model)
+				}
+			}
+		}
+		// ModelFormats is also a verified model source.  Manual probes can add a
+		// tenant-scoped or newly enabled model before /models includes it; group
+		// validation must agree with scheduler routing and accept that evidence.
+		for rawModel, formats := range u.ModelFormats {
+			if hasValidModelFormat(formats) {
+				markCovered(rawModel)
 			}
 		}
 	}
@@ -246,6 +276,34 @@ func (s *Service) validateAllowedModelsForUpstreams(ctx context.Context, allowed
 		}
 	}
 	return nil
+}
+
+func modelFormatsForID(all map[string][]domain.RequestFormat, model string) ([]domain.RequestFormat, bool) {
+	if formats, ok := all[model]; ok {
+		return formats, true
+	}
+	for rawModel, formats := range all {
+		if canonicalUpstreamModelID(rawModel) == model {
+			return formats, true
+		}
+	}
+	return nil, false
+}
+
+func hasValidModelFormat(formats []domain.RequestFormat) bool {
+	for _, format := range formats {
+		if format.Valid() {
+			return true
+		}
+	}
+	return false
+}
+
+// canonicalUpstreamModelID removes only surrounding whitespace. Model IDs can
+// be case-sensitive and provider/version suffixes are meaningful, so matching
+// must not lowercase or collapse aliases.
+func canonicalUpstreamModelID(model string) string {
+	return strings.TrimSpace(model)
 }
 
 func (s *Service) normalizeGroupUpstreams(ctx context.Context, groupID int64, members []*domain.GroupUpstream) ([]*domain.GroupUpstream, error) {

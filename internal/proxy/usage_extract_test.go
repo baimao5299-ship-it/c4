@@ -76,6 +76,26 @@ func TestChatStreamUsageEventSupportsNamedOpenAIAndAnthropicFrames(t *testing.T)
 	require.Equal(t, usageTuple{ot: 9}, delta)
 }
 
+func TestChatStreamUsageEventInfersDataOnlyAnthropicFrames(t *testing.T) {
+	start, ok := chatStreamUsageEvent(nil, []byte(`{"type":"message_start","message":{"usage":{"input_tokens":13,"cache_read_input_tokens":2,"cache_creation_input_tokens":4}}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 13, cr: 2, cc: 4}, start)
+
+	delta, ok := chatStreamUsageEvent(nil, []byte(` {"type": "message_delta", "usage":{"output_tokens":9}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{ot: 9}, delta)
+}
+
+func TestChatStreamUsageEventAcceptsFlattenedAnthropicUsage(t *testing.T) {
+	start, ok := chatStreamUsageEvent(nil, []byte(`{"type":"message_start","usage":{"input_tokens":8,"cached_tokens":3,"cache_creation_input_tokens":2}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 8, cr: 3, cc: 2}, start)
+
+	delta, ok := chatStreamUsageEvent(nil, []byte(`{"type":"message_delta","usage":{"completion_tokens":5}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{ot: 5}, delta)
+}
+
 func TestMergeStreamUsageDoesNotEraseMeasuredValues(t *testing.T) {
 	got := usageTuple{it: 13, ot: 9, tt: 22, cr: 2, cc: 4}
 	mergeStreamUsage(&got, usageTuple{})
@@ -138,6 +158,19 @@ func TestChatUsageFromResponse(t *testing.T) {
 	require.Equal(t, int64(10), total)
 }
 
+func TestChatUsageFromResponseFallsBackToCompatibilityFieldNames(t *testing.T) {
+	raw := `{"id":"x","object":"chat.completion","choices":[],"usage":{"input_tokens":17,"output_tokens":9,"cache_read_input_tokens":4,"cache_creation_input_tokens":3}}`
+	var resp openai.ChatCompletion
+	require.NoError(t, json.Unmarshal([]byte(raw), &resp))
+	require.True(t, resp.JSON.Usage.Valid())
+	it, ot, tt, cr, cc := chatUsageFromResponse(resp.Usage)
+	require.Equal(t, int64(13), it, "Responses/Anthropic input name is accepted and cache read is separated")
+	require.Equal(t, int64(9), ot)
+	require.Equal(t, int64(26), tt, "missing total is derived from provider input/output")
+	require.Equal(t, int64(4), cr)
+	require.Equal(t, int64(3), cc)
+}
+
 func TestStreamUsageDerivesMissingTotal(t *testing.T) {
 	u, ok := chatStreamUsage([]byte(`{"usage":{"prompt_tokens":7,"completion_tokens":3}}`))
 	require.True(t, ok)
@@ -187,6 +220,19 @@ func TestAnthropicUsageFromResponse(t *testing.T) {
 	require.Equal(t, int64(30), tt)
 	require.Equal(t, int64(7), cr)
 	require.Equal(t, int64(3), cc)
+}
+
+func TestAnthropicUsageFromResponseFallsBackToOpenAIFieldNames(t *testing.T) {
+	raw := `{"id":"x","type":"message","role":"assistant","model":"m","content":[],"usage":{"prompt_tokens":12,"completion_tokens":8,"total_tokens":20,"cached_tokens":2}}`
+	var resp anthropic.Message
+	require.NoError(t, json.Unmarshal([]byte(raw), &resp))
+	require.True(t, resp.JSON.Usage.Valid())
+	it, ot, tt, cr, cc := anthropicUsageFromResponse(resp.Usage)
+	require.Equal(t, int64(12), it)
+	require.Equal(t, int64(8), ot)
+	require.Equal(t, int64(20), tt)
+	require.Equal(t, int64(2), cr)
+	require.Zero(t, cc)
 }
 
 // —— Responses 流式（response.usage.* 前缀） ——
@@ -513,6 +559,19 @@ func TestResponsesUsageFromResponse(t *testing.T) {
 	require.Equal(t, int64(30), tt, "tt 先按原始 in+out 定值再归一——数值不变量")
 	require.Equal(t, int64(5), cr, "SDK InputTokensDetails.CachedTokens 直读")
 	require.Zero(t, cc, "恒 0 预期（M4）")
+}
+
+func TestResponsesUsageFromResponseHonorsProviderTotalAndCompatibilityNames(t *testing.T) {
+	raw := `{"id":"r","object":"response","model":"m","status":"completed","usage":{"prompt_tokens":17,"completion_tokens":9,"total_tokens":31,"cached_tokens":4},"output":[]}`
+	var resp responses.Response
+	require.NoError(t, json.Unmarshal([]byte(raw), &resp))
+	require.True(t, resp.JSON.Usage.Valid())
+	it, ot, tt, cr, cc := responsesUsageFromResponse(resp.Usage)
+	require.Equal(t, int64(13), it)
+	require.Equal(t, int64(9), ot)
+	require.Equal(t, int64(31), tt, "provider total is preserved when it differs from input+output")
+	require.Equal(t, int64(4), cr)
+	require.Zero(t, cc)
 }
 
 func TestUsageExtractionSaturatesProviderSums(t *testing.T) {

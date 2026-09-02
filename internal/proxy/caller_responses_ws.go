@@ -118,6 +118,9 @@ func (p *Proxy) HandleResponsesWS(w http.ResponseWriter, r *http.Request) {
 		p.record(r.Context(), reqID, groupID, 0, "", "", domain.FormatOpenAIResponsesWS, statusClientClosedRequest, domain.ErrAbort, 0, usageTuple{}, start)
 		return
 	}
+	if rm.billingEnabled {
+		rm.estimatedInputTokens = estimateRequestTokens(first)
+	}
 	if !json.Valid(first) {
 		wsWriteError(client, "invalid request body: invalid JSON")
 		return
@@ -395,10 +398,13 @@ func wsCloseStatus(err error) websocket.StatusCode {
 // 更新——completed 终态唯一、元组仅此处写入（此前值恒 0），与旧行为（覆盖 0）
 // 实际等价，勿误判为行为回归。
 func sniffResponsesCompleted(frame []byte) (usageTuple, bool) {
-	if !bytes.Contains(frame, []byte(`"type":"response.completed"`)) {
+	// Keep the cheap exact-spelling fast path for normal frames, but structurally
+	// inspect the type when a relay inserts whitespace or reorders keys. Parse
+	// both nested Responses and top-level Codex usage shapes consistently.
+	if !bytes.Contains(frame, []byte(`"type":"response.completed"`)) && !isResponsesCompletedType(frame) {
 		return usageTuple{}, false
 	}
-	return responsesCompletedUsage(frame)
+	return responsesStreamUsage(frame)
 }
 
 // isWebSocketUpgrade 升级请求判定（coder/websocket 未导出该检查，与库内

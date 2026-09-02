@@ -102,7 +102,9 @@ func (s *upstreamTestStore) CreateUpstream(_ context.Context, in *domain.Upstrea
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, row := range s.upstreams {
-		if row.DeletedAt == nil && row.Name == in.Name {
+		// PostgreSQL intentionally keeps the name unique after a soft delete;
+		// mirror that constraint so management error tests match production.
+		if row.Name == in.Name {
 			return nil, fmt.Errorf("%w: name=%q", repository.ErrConflict, in.Name)
 		}
 	}
@@ -399,6 +401,51 @@ func TestUpstreamManagementLifecycleAndSecretBoundary(t *testing.T) {
 	rec = do(http.MethodGet, "/api/admin/upstreams", "")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), `"total":0`)
+}
+
+func TestUpstreamDuplicateSoftDeletedNameHasSpecificConflictCode(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"duplicate-model"}]}`))
+			return
+		}
+		if r.URL.Path == "/v1/responses" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"duplicate-response","object":"response"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer endpoint.Close()
+
+	store := newUpstreamTestStore()
+	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
+	svc.SetUpstreamHTTPClient(endpoint.Client())
+	h := New(svc)
+	r := chi.NewRouter()
+	r.Mount("/", h.Router())
+	do := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	body := fmt.Sprintf(`{"name":"reused-name","base_url":%q}`, endpoint.URL)
+	created := do(http.MethodPost, "/api/admin/upstreams", body)
+	require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	var row Upstream
+	require.NoError(t, json.Unmarshal(created.Body.Bytes(), &row))
+
+	deleted := do(http.MethodDelete, "/api/admin/upstreams/"+itoa(row.ID), "")
+	require.Equal(t, http.StatusOK, deleted.Code, deleted.Body.String())
+
+	conflict := do(http.MethodPost, "/api/admin/upstreams", body)
+	require.Equal(t, http.StatusConflict, conflict.Code, conflict.Body.String())
+	require.Contains(t, conflict.Body.String(), `"code":"duplicate_name"`)
+	require.NotContains(t, conflict.Body.String(), "其他窗口")
 }
 
 func TestUpstreamModelsPreviewAndSelectedTest(t *testing.T) {

@@ -262,6 +262,7 @@
     "balanceRefreshFailed": "余额刷新失败（{{code}}）",
     "actionFailed": "操作失败：{{message}}",
     "staleUpdate": "该上游刚在其他窗口被修改，请关闭后重新打开再保存。",
+    "duplicateName": "上游名称已存在（已删除的旧记录也会保留名称），请换一个名称。",
     "probeErrors": {
       "auth": "认证失败",
       "rate_limited": "触发限流",

@@ -121,3 +121,37 @@ func TestPGUpdateGroupWithUpstreamsIsAtomic(t *testing.T) {
 	require.Len(t, members, 1)
 	require.Equal(t, second.ID, members[0].UpstreamID)
 }
+
+func TestPGUpstreamGroupRemarkRoundTrip(t *testing.T) {
+	repos := newPGRepos(t)
+	ctx := context.Background()
+	up, err := repos.Upstreams.CreateUpstream(ctx, &domain.Upstream{
+		Name: "remark-round-trip-upstream", BaseURL: "https://remark.example.com",
+		MultiplierBP: 10000, Enabled: true,
+	})
+	require.NoError(t, err)
+
+	created, err := repos.Groups.CreateGroupWithUpstreams(ctx, &domain.Group{
+		Name: "remark-round-trip-group", Remark: "手机用户专用",
+		Visibility: domain.GroupVisibilityPublic, RoutingMode: domain.GroupRoutingModeUpstreams,
+		AllowedModels: []string{"gpt-test"}, PriceMultiplier: 10000,
+	}, []*domain.GroupUpstream{{UpstreamID: up.ID, Weight: 100, MaxConcurrency: 8, Enabled: true}})
+	require.NoError(t, err)
+	require.Equal(t, "手机用户专用", created.Remark)
+
+	stored, err := repos.Groups.GetGroup(ctx, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, "手机用户专用", stored.Remark)
+
+	updated, err := repos.Groups.UpdateGroupWithUpstreams(ctx, &domain.Group{
+		ID: created.ID, Name: created.Name, Remark: "高峰期线路",
+		Visibility: domain.GroupVisibilityPublic, RoutingMode: domain.GroupRoutingModeUpstreams,
+		AllowedModels: []string{"gpt-test"}, PriceMultiplier: 10000,
+	}, []*domain.GroupUpstream{{UpstreamID: up.ID, Weight: 100, MaxConcurrency: 8, Enabled: true}})
+	require.NoError(t, err)
+	require.Equal(t, "高峰期线路", updated.Remark)
+
+	stored, err = repos.Groups.GetGroup(ctx, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, "高峰期线路", stored.Remark)
+}

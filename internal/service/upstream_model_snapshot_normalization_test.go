@@ -41,8 +41,8 @@ func TestRetainedUpstreamModelFormatsNormalizesLegacyKeys(t *testing.T) {
 
 	got := retainedUpstreamModelFormats(expected, []string{"claude-opus-4-6"}, current, false)
 	require.Equal(t, map[string][]domain.RequestFormat{
-		"claude-opus-4-6": {domain.FormatAnthropic},
-	}, got, "a current probe result must win even when its legacy key has whitespace")
+		"claude-opus-4-6": {domain.FormatAnthropic, domain.FormatOpenAIChat},
+	}, got, "current evidence is merged with previously verified capability even when legacy keys have whitespace")
 }
 
 func TestRetainedUpstreamModelFormatsFallsBackToLegacyKeyOnIncompleteProbe(t *testing.T) {

@@ -182,6 +182,10 @@ type groupSnapshot struct {
 	allowedModels  []string
 	upstreams      []*upstreamSnapshot
 	upstreamRoutes map[routeKey]*upstreamRoute
+	// modelAliases contains only unambiguous conservative shorthand mappings.
+	// The request format is part of the key: the same shorthand may legitimately
+	// refer to different provider models on Chat, Responses, or Messages routes.
+	modelAliases map[modelAliasKey]string
 }
 
 // snapshotStore 整体换入换出（atomic.Value），重建不阻塞请求路径。

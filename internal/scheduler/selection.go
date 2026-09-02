@@ -5,6 +5,7 @@
 package scheduler
 
 import (
+	"strings"
 	"time"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -39,9 +40,11 @@ func (s *Scheduler) SelectExcluding(groupID int64, format domain.RequestFormat, 
 		return nil, ErrGroupNotFound
 	}
 	if gs.routingMode == domain.GroupRoutingModeUpstreams {
-		return s.selectUpstream(gs, groupID, format, model, excluded)
+		resolved := resolveGroupModel(gs, format, model, true)
+		return s.selectUpstream(gs, groupID, format, resolved, excluded)
 	}
-	rt, ok := gs.routes[routeKey{format, model}]
+	resolved := resolveGroupModel(gs, format, model, false)
+	rt, ok := gs.routes[routeKey{format, resolved}]
 	if !ok {
 		// 未知模型：回落默认桶（仅含全模型账号的默认格式 tier2）
 		rt, ok = gs.routes[routeKey{format, ""}]
@@ -51,21 +54,50 @@ func (s *Scheduler) SelectExcluding(groupID int64, format domain.RequestFormat, 
 	}
 	now := s.timeNow()
 	if rt.tier1 != nil {
-		if sel, ok := s.pickFrom(rt.tier1, groupID, format, model, now, excluded); ok {
+		if sel, ok := s.pickFrom(rt.tier1, groupID, format, model, resolved, now, excluded); ok {
 			return sel, nil
 		}
 	}
 	if rt.tier2 != nil {
-		if sel, ok := s.pickFrom(rt.tier2, groupID, format, model, now, excluded); ok {
+		if sel, ok := s.pickFrom(rt.tier2, groupID, format, model, resolved, now, excluded); ok {
 			return sel, nil
 		}
 	}
 	return nil, ErrNoAvailable
 }
 
+// resolveGroupModel chooses the exact route before considering a shorthand.
+// Exact IDs remain case-sensitive provider data; aliases are lower-case,
+// route-local and only emitted when the alias generator found one target.
+// An unresolved request is returned trimmed so default all-model routes keep
+// forwarding the caller's model rather than an invented identifier.
+func resolveGroupModel(gs *groupSnapshot, format domain.RequestFormat, requested string, upstream bool) string {
+	model := strings.TrimSpace(requested)
+	if gs == nil {
+		return model
+	}
+	if upstream {
+		if _, ok := gs.upstreamRoutes[routeKey{format: format, model: model}]; ok {
+			return model
+		}
+	} else if _, ok := gs.routes[routeKey{format: format, model: model}]; ok {
+		return model
+	}
+	if alias := gs.modelAliases[modelAliasKey{format: format, alias: strings.ToLower(model)}]; alias != "" {
+		if upstream {
+			if _, ok := gs.upstreamRoutes[routeKey{format: format, model: alias}]; ok {
+				return alias
+			}
+		} else if _, ok := gs.routes[routeKey{format: format, model: alias}]; ok {
+			return alias
+		}
+	}
+	return model
+}
+
 // pickFrom 沿预生成序列扫描候选：游标取模 + 动态状态检查 + CAS 抢占。
 // 扫描上限 = 序列一轮（每候选检查一次）；全不可用/全竞争失败返回 false。
-func (s *Scheduler) pickFrom(ws *weightedSeq, groupID int64, format domain.RequestFormat, model string, now time.Time, excluded []int64) (*Selection, bool) {
+func (s *Scheduler) pickFrom(ws *weightedSeq, groupID int64, format domain.RequestFormat, requestedModel, routeModel string, now time.Time, excluded []int64) (*Selection, bool) {
 	n := len(ws.seq)
 	if n == 0 {
 		return nil, false
@@ -104,8 +136,13 @@ func (s *Scheduler) pickFrom(ws *weightedSeq, groupID int64, format domain.Reque
 			// （双借同时过 limit−1 时第二个 CAS 必败），无需新锁
 		}
 		if a.concurrency.CompareAndSwap(cur, cur+1) {
-			mapped := model
-			if m, ok := av.tpl.ModelMapping[model]; ok {
+			mapped := routeModel
+			// Explicit mappings retain priority over automatic shorthand aliases.
+			// Check the caller's spelling first (for example `k3`), then the
+			// canonical route key for direct requests and legacy mappings.
+			if m, ok := av.tpl.ModelMapping[strings.TrimSpace(requestedModel)]; ok {
+				mapped = m
+			} else if m, ok := av.tpl.ModelMapping[routeModel]; ok {
 				mapped = m
 			}
 			used := s.timeNow()

@@ -97,6 +97,9 @@ type Selection struct {
 	UpstreamKey    string
 	CredentialType credential.Type
 	Model          string // 已应用模型映射
+	// PrecheckedPrices follows this exact attempt and is used only when the
+	// mutable pricing snapshot changes before request settlement.
+	PrecheckedPrices *domain.ResolvedPrices
 	// StripImageTools 模板级图像 tool 剥离开关快照（pickFrom 从模板快照复制；
 	// 热路径布尔读 + 分支零开销；W4 消费）。
 	StripImageTools bool
@@ -506,6 +509,7 @@ func buildSnapshots(m map[int64][]*domain.Account, defaultMax int, oldByID map[i
 			gs.accounts = append(gs.accounts, as)
 		}
 		gs.routes = buildRoutes(gs.accounts)
+		gs.modelAliases = buildModelAliases(gs.routes, nil)
 		groups[gid] = gs
 	}
 	return groups, byID
@@ -787,7 +791,14 @@ func (s *Scheduler) InvalidateGroup(groupID int64) {
 				repl[i] = ns
 			}
 		}
-		newM[og] = &groupSnapshot{accounts: repl, routes: buildRoutes(repl)}
+		// Preserve the complete group snapshot when replacing account pointers.
+		// Upstream-routed groups carry their own routes and policy; rebuilding a
+		// bare account snapshot here used to silently drop those fields.
+		cp := *ref.gs
+		cp.accounts = repl
+		cp.routes = buildRoutes(repl)
+		cp.modelAliases = buildModelAliases(cp.routes, cp.upstreamRoutes)
+		newM[og] = &cp
 	}
 	// Prepare the optional upstream snapshot before publishing the account view.
 	// If the relation read fails, keep the previous generation intact; publishing
@@ -1341,6 +1352,7 @@ func (s *Scheduler) rebuildGroupsLocked(groupIDs []int64) {
 		}
 		cp := *gs
 		cp.routes = buildRoutes(gs.accounts)
+		cp.modelAliases = buildModelAliases(cp.routes, cp.upstreamRoutes)
 		newM[groupID] = &cp
 	}
 	byID, _ := s.store.byID.Load().(map[int64]*accountSnapshot)

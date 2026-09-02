@@ -53,6 +53,62 @@ func TestCreateUpstreamGroupAllowsUnknownCatalogueAndUsesAnySupportingMember(t *
 	require.Equal(t, 1, store.routingCalls)
 }
 
+func TestCreateUpstreamGroupMatchesWhitespaceNormalizedModelCatalogue(t *testing.T) {
+	store := newGroupUpstreamStoreStub()
+	checkedAt := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
+	store.upstreams[11] = &domain.Upstream{
+		ID: 11, Name: "relay", BaseURL: "https://relay.example", Enabled: true,
+		Models: []string{"  claude-opus-4-6  "}, ModelsCheckedAt: &checkedAt,
+	}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+
+	created, err := svc.CreateUpstreamGroup(context.Background(), &domain.Group{
+		Name: "normalized", Visibility: domain.GroupVisibilityPublic,
+		RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"claude-opus-4-6"},
+	}, []*domain.GroupUpstream{{UpstreamID: 11}})
+	require.NoError(t, err, "surrounding whitespace in a legacy catalogue must not reject a usable model")
+	require.NotZero(t, created.ID)
+}
+
+func TestCreateUpstreamGroupAcceptsModelRecordedByManualProtocolProbe(t *testing.T) {
+	store := newGroupUpstreamStoreStub()
+	checkedAt := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
+	store.upstreams[11] = &domain.Upstream{
+		ID: 11, Name: "relay", BaseURL: "https://relay.example", Enabled: true,
+		ModelsCheckedAt: &checkedAt,
+		// Explicit model tests are allowed to record tenant aliases that the
+		// provider omits from /models. Group validation must honor that evidence.
+		ModelFormats: map[string][]domain.RequestFormat{
+			"tenant-k3": {domain.FormatOpenAIResponses},
+		},
+	}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+
+	created, err := svc.CreateUpstreamGroup(context.Background(), &domain.Group{
+		Name: "manual-model", Visibility: domain.GroupVisibilityPublic,
+		RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"tenant-k3"},
+	}, []*domain.GroupUpstream{{UpstreamID: 11}})
+	require.NoError(t, err)
+	require.NotZero(t, created.ID)
+}
+
+func TestCreateUpstreamGroupRejectsModelWithEmptyVerifiedProtocolSet(t *testing.T) {
+	store := newGroupUpstreamStoreStub()
+	checkedAt := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
+	store.upstreams[11] = &domain.Upstream{
+		ID: 11, Name: "relay", BaseURL: "https://relay.example", Enabled: true,
+		Models: []string{"unavailable-model"}, ModelsCheckedAt: &checkedAt,
+		ModelFormats: map[string][]domain.RequestFormat{"unavailable-model": {}},
+	}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+
+	_, err := svc.CreateUpstreamGroup(context.Background(), &domain.Group{
+		Name: "unavailable-model", Visibility: domain.GroupVisibilityPublic,
+		RoutingMode: domain.GroupRoutingModeUpstreams, AllowedModels: []string{"unavailable-model"},
+	}, []*domain.GroupUpstream{{UpstreamID: 11}})
+	require.ErrorIs(t, err, ErrInvalidInput)
+}
+
 func TestSetGroupUpstreamsRejectsReplacementThatDropsAllowedModel(t *testing.T) {
 	store := newGroupUpstreamStoreStub()
 	checkedAt := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)

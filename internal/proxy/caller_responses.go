@@ -5,7 +5,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -92,7 +91,7 @@ func (c *responsesCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// 用量只在 response.completed 事件携带（响应对象的 usage 字段；
 				// 评审 M2：流式前缀 response.usage.*）。EventName：缺 event: 名
 				// 帧按 data.type 推断（非规范上游，P3——否则该上游下 usage 静默缺失）。
-				if bytes.Equal(ev.EventName(), []byte("response.completed")) {
+				if isResponsesCompletedEvent(ev.EventName(), ev.Data) {
 					if t, ok := responsesStreamUsage(ev.Data); ok {
 						it, ot, tt, cr, cc = t.it, t.ot, t.tt, t.cr, t.cc
 					}

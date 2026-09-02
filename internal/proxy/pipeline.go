@@ -53,7 +53,7 @@ func (p *Proxy) guardPipeline(w http.ResponseWriter, r *http.Request, format dom
 	// 路径分配不变（原本就有一个 rm），错误路径多一个 reqMeta 堆分配（非热
 	// 路径，可接受）。
 	clientIPValue, clientIPSource, clientIPTrusted := clientIPDetailsWithTrustedProxies(r, p.cfg.BehindCDN, p.trustedProxyCIDRs)
-	rm := &reqMeta{clientIP: clientIPValue, clientIPSource: clientIPSource, clientIPTrusted: clientIPTrusted}
+	rm := &reqMeta{clientIP: clientIPValue, clientIPSource: clientIPSource, clientIPTrusted: clientIPTrusted, billingEnabled: p.cfg.BillingCapture}
 	r = r.WithContext(context.WithValue(r.Context(), ctxKeyReqMeta{}, rm))
 	meta, ok := p.auth.Authenticate(r)
 	if !ok {
@@ -319,11 +319,21 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 		// 价预检——纯 image 价模型无 token 行，chat 预检会先行
 		// 402 误杀，"image 分量定生死"轮不到执行）；其余格式照旧。
 		if precheck {
-			if err := p.precheckPrice(format, sel.Model); err != nil {
+			tier := ""
+			if rm, ok := r.Context().Value(ctxKeyReqMeta{}).(*reqMeta); ok && rm.hasTier {
+				tier = rm.tier.String()
+			}
+			rp, err := p.precheckPrice(format, sel.Model, tier)
+			if err != nil {
 				p.sched.ReleaseSelection(sel)
 				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg, sel)
 				sink.writePrecheckRejected(w, st)
 				return
+			}
+			if resolvedPricesUsable(format, rp) {
+				// Keep the exact snapshot for this attempt. A failover selection
+				// receives a new snapshot on its next loop iteration.
+				sel.PrecheckedPrices = &rp
 			}
 		}
 		code, respBody, hdr, handled, callErr := attempt.call(r.Context(), w, r, reqID, groupID, start, sel, reqModel, body, st)

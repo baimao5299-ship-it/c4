@@ -18,6 +18,8 @@ import { formatMultiplierValue } from '@/lib/multiplier'
 type ChannelMetric = components['schemas']['UserChannelMetric'] & {
   /** Added by the group remark API; optional for rolling upgrades. */
   Remark?: string | null
+  /** Older proxies normalized response keys to camel/lower case. */
+  remark?: string | null
 }
 type ChannelModelPrice = components['schemas']['UserChannelModelPrice'] & {
   // Newer servers expose the catalogue price alongside the effective group
@@ -41,6 +43,12 @@ function statusFor(metric: ChannelMetric, t: (key: string) => string) {
   if (metric.Status === 'paused') return { label: t('user.models.status.paused'), className: 'text-muted-foreground', icon: PauseCircle }
   if (metric.Status === 'maintenance') return { label: t('user.models.status.maintenance'), className: 'text-amber-600 dark:text-amber-400', icon: CircleAlert }
   return { label: t('user.models.status.available'), className: 'text-emerald-600 dark:text-emerald-400', icon: Check }
+}
+
+function channelRemark(metric: ChannelMetric): string | null {
+  const value = metric.Remark ?? metric.remark
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || null
 }
 
 function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
@@ -210,6 +218,7 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
     }, 2000)
   }
   const multiplier = Number.isFinite(metric.PriceMultiplier) && metric.PriceMultiplier >= 0 ? metric.PriceMultiplier : 1
+  const remark = channelRemark(metric)
   return (
     <Card className="h-full transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-lg">
       <CardHeader className="gap-3">
@@ -218,7 +227,7 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
           <Badge variant="secondary" className={cn('shrink-0 gap-1', status.className)}><Icon className="size-3.5" />{status.label}</Badge>
         </div>
         <CardDescription className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><span className="flex min-w-0 items-center gap-1.5 truncate"><Activity className="size-4 shrink-0" />{t('user.models.publicChannel')}</span><span className="shrink-0 font-mono text-xs">{t('user.models.multiplier', { value: formatMultiplierValue(metric.PriceMultiplier) })}</span></CardDescription>
-        {metric.Remark && <p className="rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground" title={metric.Remark}>{metric.Remark}</p>}
+        {remark && <p className="rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground" title={remark}>{remark}</p>}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
