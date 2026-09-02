@@ -87,6 +87,7 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		w.Header().Set("X-Accel-Buffering", "no")
 		mapper := protoconv.NewStreamMapper(c.dir)
 		var it, ot, tt, cr, cc int64
+		var cacheReadExcluded bool
 		var streamFailure error
 		// TTFT 采集（首 token 时间毫秒）：与模板 caller 同构。
 		var ttft *int64
@@ -102,6 +103,9 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				case domain.FormatOpenAIChat:
 					if bytes.Contains(ev.Data, []byte(`"usage"`)) {
 						if t, ok := chatStreamUsageEvent(ev.EventName(), ev.Data); ok {
+							if t.cacheReadExcludedFromTotal {
+								cacheReadExcluded = true
+							}
 							name := ev.EventName()
 							if bytes.Equal(name, []byte("message_start")) || bytes.Equal(name, []byte("message_delta")) {
 								if t.it > 0 {
@@ -145,6 +149,9 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 					}
 				case domain.FormatAnthropic:
 					if t, ok := chatStreamUsageEvent(ev.EventName(), ev.Data); ok {
+						if t.cacheReadExcludedFromTotal {
+							cacheReadExcluded = true
+						}
 						if t.it > 0 {
 							it = t.it
 						}
@@ -194,7 +201,7 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		if err != nil {
 			if streamFailure != nil {
 				msg := domain.TruncateErrMsg(streamFailure.Error())
-				l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, convertedUsageTuple(target, it, ot, tt, cr, cc), start))
+				l := logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusBadGateway, domain.Err5xx, convertedUsageTupleWithCache(target, it, ot, tt, cr, cc, cacheReadExcluded), start))
 				l.ErrorMessage = &msg
 				p.finishSelection(sel, l)
 				p.sched.MarkSelectionResult(sel, rule.Kind5xx, nil, http.StatusBadGateway, msg, sel.Model)
@@ -205,15 +212,15 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 			// context.Canceled) 即客户端断开——sserelay.normalize 已区分三类
 			// （C-P2-2）：上游停滞超时 → DeadlineExceeded 走上游错误分支。
 			if errors.Is(err, context.Canceled) {
-				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, convertedUsageTuple(target, it, ot, tt, cr, cc), start)))
+				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, http.StatusOK, domain.ErrAbort, convertedUsageTupleWithCache(target, it, ot, tt, cr, cc, cacheReadExcluded), start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, client, convertedUsageTuple(target, it, ot, tt, cr, cc), err)
+			p.recordStreamAbortForFormat(ctx, reqID, groupID, start, sel, reqModel, client, convertedUsageTupleWithCache(target, it, ot, tt, cr, cc, cacheReadExcluded), err)
 			p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 			return 0, nil, true, nil
 		}
 		p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, convertedUsageTuple(target, it, ot, tt, cr, cc), start)))
+		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, client, 200, domain.ErrNone, convertedUsageTupleWithCache(target, it, ot, tt, cr, cc, cacheReadExcluded), start)))
 		return 200, nil, true, nil
 	}
 
@@ -323,6 +330,15 @@ func convertedUsageTuple(target domain.RequestFormat, it, ot, tt, cr, cc int64) 
 		u.cacheReadExcludedFromTotal = true
 	} else {
 		u.cacheReadIncludedInTotal = true
+	}
+	return u
+}
+
+func convertedUsageTupleWithCache(target domain.RequestFormat, it, ot, tt, cr, cc int64, cacheReadExcluded bool) usageTuple {
+	u := convertedUsageTuple(target, it, ot, tt, cr, cc)
+	if cacheReadExcluded {
+		u.cacheReadExcludedFromTotal = true
+		u.cacheReadIncludedInTotal = false
 	}
 	return u
 }

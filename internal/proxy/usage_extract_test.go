@@ -70,30 +70,30 @@ func TestChatStreamUsageEventSupportsNamedOpenAIAndAnthropicFrames(t *testing.T)
 	// Claude-compatible adapters split input/cache and output across events.
 	start, ok := chatStreamUsageEvent([]byte("message_start"), []byte(`{"type":"message_start","message":{"usage":{"input_tokens":13,"cache_read_input_tokens":2,"cache_creation_input_tokens":4}}}`))
 	require.True(t, ok)
-	require.Equal(t, usageTuple{it: 13, cr: 2, cc: 4}, start)
+	require.Equal(t, usageTuple{it: 13, cr: 2, cc: 4, cacheReadExcludedFromTotal: true}, start)
 	delta, ok := chatStreamUsageEvent([]byte("message_delta"), []byte(`{"type":"message_delta","usage":{"output_tokens":9}}`))
 	require.True(t, ok)
-	require.Equal(t, usageTuple{ot: 9}, delta)
+	require.Equal(t, usageTuple{ot: 9, cacheReadExcludedFromTotal: true}, delta)
 }
 
 func TestChatStreamUsageEventInfersDataOnlyAnthropicFrames(t *testing.T) {
 	start, ok := chatStreamUsageEvent(nil, []byte(`{"type":"message_start","message":{"usage":{"input_tokens":13,"cache_read_input_tokens":2,"cache_creation_input_tokens":4}}}`))
 	require.True(t, ok)
-	require.Equal(t, usageTuple{it: 13, cr: 2, cc: 4}, start)
+	require.Equal(t, usageTuple{it: 13, cr: 2, cc: 4, cacheReadExcludedFromTotal: true}, start)
 
 	delta, ok := chatStreamUsageEvent(nil, []byte(` {"type": "message_delta", "usage":{"output_tokens":9}}`))
 	require.True(t, ok)
-	require.Equal(t, usageTuple{ot: 9}, delta)
+	require.Equal(t, usageTuple{ot: 9, cacheReadExcludedFromTotal: true}, delta)
 }
 
 func TestChatStreamUsageEventAcceptsFlattenedAnthropicUsage(t *testing.T) {
 	start, ok := chatStreamUsageEvent(nil, []byte(`{"type":"message_start","usage":{"input_tokens":8,"cached_tokens":3,"cache_creation_input_tokens":2}}`))
 	require.True(t, ok)
-	require.Equal(t, usageTuple{it: 8, cr: 3, cc: 2}, start)
+	require.Equal(t, usageTuple{it: 8, cr: 3, cc: 2, cacheReadExcludedFromTotal: true}, start)
 
 	delta, ok := chatStreamUsageEvent(nil, []byte(`{"type":"message_delta","usage":{"completion_tokens":5}}`))
 	require.True(t, ok)
-	require.Equal(t, usageTuple{ot: 5}, delta)
+	require.Equal(t, usageTuple{ot: 5, cacheReadExcludedFromTotal: true}, delta)
 }
 
 func TestChatStreamUsageEventAcceptsTopLevelAnthropicUsageOnTerminalFrame(t *testing.T) {
@@ -105,13 +105,13 @@ func TestChatStreamUsageEventAcceptsTopLevelAnthropicUsageOnTerminalFrame(t *tes
 	terminal := []byte(`{"type":"message_stop","usage":{"input_tokens":1850,"output_tokens":937,"cache_read_input_tokens":134100,"cache_creation_input_tokens":12}}`)
 	u, ok := chatStreamUsageEvent([]byte("message_stop"), terminal)
 	require.True(t, ok)
-	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12}, u)
+	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12, cacheReadExcludedFromTotal: true}, u)
 
 	// A few relays use a provider-specific event name for the same summary;
 	// usage extraction must be shape-driven after the named-event cases.
 	u, ok = chatStreamUsageEvent([]byte("usage"), terminal)
 	require.True(t, ok)
-	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12}, u)
+	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cc: 12, cacheReadExcludedFromTotal: true}, u)
 
 	// An explicit provider total must not suppress the Anthropic component
 	// counters; older Chat parsing treated total_tokens as sufficient and left
@@ -119,7 +119,7 @@ func TestChatStreamUsageEventAcceptsTopLevelAnthropicUsageOnTerminalFrame(t *tes
 	terminal = []byte(`{"type":"message_stop","usage":{"input_tokens":1850,"output_tokens":937,"total_tokens":2787,"cache_read_input_tokens":134100}}`)
 	u, ok = chatStreamUsageEvent([]byte("message_stop"), terminal)
 	require.True(t, ok)
-	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100}, u)
+	require.Equal(t, usageTuple{it: 1850, ot: 937, tt: 2787, cr: 134100, cacheReadExcludedFromTotal: true}, u)
 }
 
 func TestMergeStreamUsageDoesNotEraseMeasuredValues(t *testing.T) {
@@ -128,6 +128,12 @@ func TestMergeStreamUsageDoesNotEraseMeasuredValues(t *testing.T) {
 	require.Equal(t, usageTuple{it: 13, ot: 9, tt: 22, cr: 2, cc: 4}, got)
 	mergeStreamUsage(&got, usageTuple{it: 20, ot: 10, tt: 30})
 	require.Equal(t, usageTuple{it: 20, ot: 10, tt: 30, cr: 2, cc: 4}, got)
+}
+
+func TestConvertedAnthropicUsagePreservesCacheSemantics(t *testing.T) {
+	u := convertedUsageTupleWithCache(domain.FormatOpenAIChat, 1850, 937, 2787, 134100, 12, true)
+	require.True(t, u.cacheReadExcludedFromTotal)
+	require.False(t, u.cacheReadIncludedInTotal)
 }
 
 func TestResponsesStreamUsageSupportsTopLevelRelayShape(t *testing.T) {

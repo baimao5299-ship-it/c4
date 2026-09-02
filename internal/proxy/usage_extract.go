@@ -89,6 +89,7 @@ func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
 		// select that shape when the message object is present; a relay may
 		// reuse the event label for a normal OpenAI usage object.
 		if t, ok := anthropicStartUsageCompat(data); ok {
+			t.cacheReadExcludedFromTotal = true
 			return t, true
 		}
 	case bytes.Equal(eventName, []byte("message_delta")):
@@ -96,7 +97,7 @@ func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
 		// presence check distinct from a zero value so an empty usage object
 		// cannot be mistaken for a measured output count.
 		if ot, ok := anthropicDeltaUsageCompat(data); ok {
-			return usageTuple{ot: ot}, true
+			return usageTuple{ot: ot, cacheReadExcludedFromTotal: true}, true
 		}
 	}
 	// Claude-compatible relays may put the complete Anthropic summary in a
@@ -104,6 +105,7 @@ func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
 	// Anthropic object can also contain total_tokens, which would otherwise make
 	// the native parser look non-empty while leaving input/output at zero.
 	if summary, summaryOK := anthropicSummaryUsageCompat(data); summaryOK {
+		summary.cacheReadExcludedFromTotal = true
 		return summary, true
 	}
 	// OpenAI-compatible usage is normally a complete top-level object and is
@@ -200,6 +202,12 @@ func mergeStreamUsage(dst *usageTuple, next usageTuple) {
 	}
 	if next.cc > 0 {
 		dst.cc = next.cc
+	}
+	if next.cacheReadExcludedFromTotal {
+		dst.cacheReadExcludedFromTotal = true
+	}
+	if next.cacheReadIncludedInTotal {
+		dst.cacheReadIncludedInTotal = true
 	}
 }
 
