@@ -94,14 +94,46 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				// EventName：缺 event: 名帧按 data.type 推断（非规范上游，P3）。
 				switch target {
 				case domain.FormatOpenAIChat:
-					if len(ev.Event) == 0 && bytes.Contains(ev.Data, []byte(`"usage"`)) {
-						if t, ok := chatStreamUsage(ev.Data); ok {
-							it, ot, tt, cr, cc = t.it, t.ot, t.tt, t.cr, t.cc
+					if bytes.Contains(ev.Data, []byte(`"usage"`)) {
+						if t, ok := chatStreamUsageEvent(ev.EventName(), ev.Data); ok {
+							name := ev.EventName()
+							if bytes.Equal(name, []byte("message_start")) || bytes.Equal(name, []byte("message_delta")) {
+								if t.it > 0 {
+									it = t.it
+								}
+								if t.ot > 0 {
+									ot = t.ot
+								}
+								if t.cr > 0 {
+									cr = t.cr
+								}
+								if t.cc > 0 {
+									cc = t.cc
+								}
+							} else {
+								// Keep scalar locals for this hot path while applying the
+								// same non-erasing merge semantics as caller_chat.
+								if t.it > 0 {
+									it = t.it
+								}
+								if t.ot > 0 {
+									ot = t.ot
+								}
+								if t.tt > 0 {
+									tt = t.tt
+								}
+								if t.cr > 0 {
+									cr = t.cr
+								}
+								if t.cc > 0 {
+									cc = t.cc
+								}
+							}
 						}
 					}
 				case domain.FormatOpenAIResponses:
 					if bytes.Equal(ev.EventName(), []byte("response.completed")) {
-						if t, ok := responsesCompletedUsage(ev.Data); ok {
+						if t, ok := responsesStreamUsage(ev.Data); ok {
 							it, ot, tt, cr, cc = t.it, t.ot, t.tt, t.cr, t.cc
 						}
 					}
@@ -109,10 +141,20 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 					switch string(ev.EventName()) {
 					case "message_start":
 						if t, ok := anthropicStartUsage(ev.Data); ok {
-							it, cr, cc = t.it, t.cr, t.cc
+							if t.it > 0 {
+								it = t.it
+							}
+							if t.cr > 0 {
+								cr = t.cr
+							}
+							if t.cc > 0 {
+								cc = t.cc
+							}
 						}
 					case "message_delta":
-						ot = anthropicDeltaOutput(ev.Data)
+						if delta, ok := anthropicDeltaUsage(ev.Data); ok && delta > ot {
+							ot = delta
+						}
 					}
 				}
 				if streamFailure == nil {
@@ -143,6 +185,9 @@ func (c *convertedCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 		resp.Body.Close()
 		if ttft != nil {
 			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
+		}
+		if tt <= 0 {
+			tt = addUsageTokens(it, ot)
 		}
 		if err != nil {
 			if streamFailure != nil {

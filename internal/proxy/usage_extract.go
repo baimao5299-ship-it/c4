@@ -46,6 +46,73 @@ func chatStreamUsage(data []byte) (usageTuple, bool) {
 	return usageFieldsFromInterval(raw, promptTokensKeyBytes, completionTokensKeyBytes, promptTokensDetailsKeyBytes), true
 }
 
+// chatStreamUsageEvent extracts usage from a Chat Completions stream frame,
+// including relays that attach an SSE event name. OpenAI-compatible relays
+// normally emit a data-only usage frame, but Claude adapters commonly keep the
+// Anthropic event names while serving the OpenAI wire format. The old caller
+// discarded every named frame before this parser could inspect it, which made
+// successful Claude streams appear to have zero tokens and zero cost.
+//
+// A frame may carry either the OpenAI shape (usage.prompt_tokens /
+// completion_tokens) or the Anthropic shape (message.usage / usage.output_tokens). The
+// returned tuple is intentionally partial for Anthropic start/delta events;
+// callers merge it with the values collected from the other event.
+func chatStreamUsageEvent(eventName, data []byte) (usageTuple, bool) {
+	switch {
+	case bytes.Equal(eventName, []byte("message_start")):
+		// Standard Anthropic start frames nest usage under message. Only
+		// select that shape when the message object is present; a relay may
+		// reuse the event label for a normal OpenAI usage object.
+		if _, _, ok := scanKeyValue(data, messageKeyBytes); ok {
+			if t, ok := anthropicStartUsage(data); ok {
+				return t, true
+			}
+		}
+	case bytes.Equal(eventName, []byte("message_delta")):
+		// Anthropic puts output_tokens under message_delta.usage. Keep the
+		// presence check distinct from a zero value so an empty usage object
+		// cannot be mistaken for a measured output count.
+		if raw, ok := usageInterval(data, usageKeyBytes); ok {
+			if _, _, hasOutput := scanKeyValue(raw, outputTokensKeyBytes); hasOutput {
+				return usageTuple{ot: scanFieldInt64(raw, outputTokensKeyBytes)}, true
+			}
+		}
+	}
+	// OpenAI-compatible usage is normally a complete top-level object and is
+	// valid whether or not the relay attached an SSE event name.
+	return chatStreamUsage(data)
+}
+
+// mergeStreamUsage preserves fields collected from split protocol events while
+// merging a later OpenAI usage frame field by field. Empty usage objects never
+// erase a non-empty measurement.
+func mergeStreamUsage(dst *usageTuple, next usageTuple) {
+	if dst == nil {
+		return
+	}
+	// A named frame can still be sparse (some relays emit Anthropic split
+	// frames followed by an OpenAI-shaped summary). Merge measured fields
+	// independently so a later sparse frame cannot erase input/cache usage.
+	if next.it == 0 && next.ot == 0 && next.tt == 0 && next.cr == 0 && next.cc == 0 {
+		return
+	}
+	if next.it > 0 {
+		dst.it = next.it
+	}
+	if next.ot > 0 {
+		dst.ot = next.ot
+	}
+	if next.tt > 0 {
+		dst.tt = next.tt
+	}
+	if next.cr > 0 {
+		dst.cr = next.cr
+	}
+	if next.cc > 0 {
+		dst.cc = next.cc
+	}
+}
+
 // anthropicStartUsage 流式 message_start 帧的 message.usage → 元组 + ok（input/
 // cacheRead/cacheCreation；ot/tt 无对应字段恒 0——调用点下游 tt = it + ot 自算）。
 // Anthropic 流式用量在 message_start 的 message.usage 里（评审 M1：前缀
@@ -70,11 +137,23 @@ func anthropicStartUsage(data []byte) (usageTuple, bool) {
 // （message_delta.usage 不含 input/cache 字段）。单字段统一走字节扫描族
 // （与其余提取同构，消除 gjson 依赖）；缺失/显式 null → 0。
 func anthropicDeltaOutput(data []byte) int64 {
+	value, _ := anthropicDeltaUsage(data)
+	return value
+}
+
+// anthropicDeltaUsage returns output_tokens plus a presence bit. The bit
+// distinguishes an empty/null usage object from a measured zero and lets
+// stream callers preserve an already observed output count.
+func anthropicDeltaUsage(data []byte) (int64, bool) {
 	raw, ok := usageInterval(data, usageKeyBytes)
 	if !ok {
-		return 0
+		return 0, false
 	}
-	return scanFieldInt64(raw, outputTokensKeyBytes)
+	_, _, present := scanKeyValue(raw, outputTokensKeyBytes)
+	if !present {
+		return 0, false
+	}
+	return scanFieldInt64(raw, outputTokensKeyBytes), true
 }
 
 // responsesCompletedUsage 流式 response.completed 帧 → 元组 + ok（评审 M2：
@@ -112,6 +191,65 @@ func responsesTopLevelUsage(data []byte) (usageTuple, bool) {
 		return usageTuple{}, false
 	}
 	return usageFieldsFromInterval(raw, inputTokensKeyBytes, outputTokensKeyBytes, inputTokensDetailsKeyBytes), true
+}
+
+// responsesStreamUsage accepts both response.completed shapes emitted by
+// Responses-compatible relays: the canonical nested response.usage object and
+// the Codex-style top-level usage object.
+func responsesStreamUsage(data []byte) (usageTuple, bool) {
+	nested, nestedOK := responsesCompletedUsage(data)
+	top, topOK := responsesTopLevelUsage(data)
+	if !nestedOK {
+		return top, topOK
+	}
+	if !topOK {
+		return nested, true
+	}
+	// A few relays include both objects but populate them incrementally. Keep
+	// the canonical nested values and fill only fields absent from that object
+	// using the top-level representation.
+	nestedTotalExplicit := responseUsageHasExplicitTotal(data)
+	topTotalExplicit := topLevelUsageHasExplicitTotal(data)
+	if nested.it <= 0 {
+		nested.it = top.it
+	}
+	if nested.ot <= 0 {
+		nested.ot = top.ot
+	}
+	if !nestedTotalExplicit && topTotalExplicit {
+		nested.tt = top.tt
+	} else if !nestedTotalExplicit && !topTotalExplicit {
+		nested.tt = addUsageTokens(nested.it, nested.ot)
+	}
+	if nested.cr <= 0 {
+		nested.cr = top.cr
+	}
+	if nested.cc <= 0 {
+		nested.cc = top.cc
+	}
+	return nested, true
+}
+
+func responseUsageHasExplicitTotal(data []byte) bool {
+	start, end, ok := scanKeyValue(data, responseKeyBytes)
+	if !ok {
+		return false
+	}
+	raw, ok := usageInterval(data[start:end], usageKeyBytes)
+	if !ok {
+		return false
+	}
+	_, _, ok = scanKeyValue(raw, totalTokensKeyBytes)
+	return ok
+}
+
+func topLevelUsageHasExplicitTotal(data []byte) bool {
+	raw, ok := usageInterval(data, usageKeyBytes)
+	if !ok {
+		return false
+	}
+	_, _, ok = scanKeyValue(raw, totalTokensKeyBytes)
+	return ok
 }
 
 // sniffResponsesCompletedTop 流式 fn 热路径嗅探（P1-1）：字节扫描 **type 精确判

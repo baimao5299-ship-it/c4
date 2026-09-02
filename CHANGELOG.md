@@ -10,6 +10,20 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.18] - 2026-09-02
+
+### Fixed
+
+- Named SSE usage frames are now parsed for OpenAI Chat and Claude-compatible
+  relays, including split `message_start` input/cache and `message_delta`
+  output counters, so successful Claude requests no longer settle at zero
+  tokens or zero cost.
+- Stream billing derives `total_tokens` when a relay omits it and preserves
+  already observed usage on aborts, empty frames, duplicate deltas, and sparse
+  mixed-protocol summaries.
+- Responses streaming accepts both canonical nested `response.usage` and
+  top-level `usage` shapes used by compatible relays.
+
 ## [v0.0.1-beta.17] - 2026-09-02
 
 ### Fixed

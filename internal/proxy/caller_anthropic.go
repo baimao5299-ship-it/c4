@@ -77,10 +77,20 @@ func (c *anthropicCaller) Call(ctx context.Context, w http.ResponseWriter, r *ht
 				case "message_start":
 					// ot/tt 恒 0（anthropicStartUsage 无对应字段；tt 下游自算）
 					if t, ok := anthropicStartUsage(ev.Data); ok {
-						it, cr, cc = t.it, t.cr, t.cc
+						if t.it > 0 {
+							it = t.it
+						}
+						if t.cr > 0 {
+							cr = t.cr
+						}
+						if t.cc > 0 {
+							cc = t.cc
+						}
 					}
 				case "message_delta":
-					ot = anthropicDeltaOutput(ev.Data)
+					if delta, ok := anthropicDeltaUsage(ev.Data); ok && delta > ot {
+						ot = delta
+					}
 				}
 			},
 		})

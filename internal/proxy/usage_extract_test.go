@@ -60,6 +60,52 @@ func TestChatStreamUsage(t *testing.T) {
 	require.False(t, ok, "嵌套同名键帧同样回退安全")
 }
 
+func TestChatStreamUsageEventSupportsNamedOpenAIAndAnthropicFrames(t *testing.T) {
+	// Named OpenAI usage frames are common when a relay preserves SSE event
+	// names. They must be parsed exactly like data-only frames.
+	u, ok := chatStreamUsageEvent([]byte("message_end"), []byte(`{"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 11, ot: 7, tt: 18}, u)
+
+	// Claude-compatible adapters split input/cache and output across events.
+	start, ok := chatStreamUsageEvent([]byte("message_start"), []byte(`{"type":"message_start","message":{"usage":{"input_tokens":13,"cache_read_input_tokens":2,"cache_creation_input_tokens":4}}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 13, cr: 2, cc: 4}, start)
+	delta, ok := chatStreamUsageEvent([]byte("message_delta"), []byte(`{"type":"message_delta","usage":{"output_tokens":9}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{ot: 9}, delta)
+}
+
+func TestMergeStreamUsageDoesNotEraseMeasuredValues(t *testing.T) {
+	got := usageTuple{it: 13, ot: 9, tt: 22, cr: 2, cc: 4}
+	mergeStreamUsage(&got, usageTuple{})
+	require.Equal(t, usageTuple{it: 13, ot: 9, tt: 22, cr: 2, cc: 4}, got)
+	mergeStreamUsage(&got, usageTuple{it: 20, ot: 10, tt: 30})
+	require.Equal(t, usageTuple{it: 20, ot: 10, tt: 30, cr: 2, cc: 4}, got)
+}
+
+func TestResponsesStreamUsageSupportsTopLevelRelayShape(t *testing.T) {
+	u, ok := responsesStreamUsage([]byte(`{"type":"response.completed","response":{"id":"r"},"usage":{"input_tokens":7,"output_tokens":4,"total_tokens":11}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 7, ot: 4, tt: 11}, u)
+
+	u, ok = responsesStreamUsage([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":3}},"usage":{"output_tokens":8,"total_tokens":11}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 3, ot: 8, tt: 11}, u, "canonical nested usage wins while sparse top-level fields fill gaps")
+
+	u, ok = responsesStreamUsage([]byte(`{"type":"response.completed","response":{"usage":{"input_tokens":3}},"usage":{"output_tokens":8}}`))
+	require.True(t, ok)
+	require.Equal(t, usageTuple{it: 3, ot: 8, tt: 11}, u, "missing totals are derived after both shapes are merged")
+}
+
+func TestAnthropicDeltaUsagePreservesPresence(t *testing.T) {
+	u, ok := anthropicDeltaUsage([]byte(`{"type":"message_delta","usage":{"output_tokens":9}}`))
+	require.True(t, ok)
+	require.Equal(t, int64(9), u)
+	_, ok = anthropicDeltaUsage([]byte(`{"type":"message_delta","usage":{}}`))
+	require.False(t, ok, "empty usage must not overwrite an observed output count")
+}
+
 // —— chat 非流式（SDK UnmarshalJSON → PromptTokensDetails 直读 + RawJSON gjson） ——
 
 func TestChatUsageFromResponse(t *testing.T) {

@@ -63,7 +63,7 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("X-Accel-Buffering", "no")
-		var it, ot, tt, cr, cc int64
+		var observed usageTuple
 		// TTFT 采集（首 token 时间毫秒）：首个 SSE 帧（任意事件）到达时间——
 		// Observer 在帧原样写出后回调，与客户端感知首 chunk 最接近；单帧旁路
 		// 零成本（time.Now 一次 + 毫秒换算）。首帧后写入 ctx（logWithCtx 读取）；
@@ -75,14 +75,14 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 					ms := time.Since(start).Milliseconds()
 					ttft = &ms
 				}
-				// "usage": null 的帧（存在但为 null）不得清零元组：chatStreamUsage
-				// 内建 usage 存在性判定（值首字节 {/[；缺失与显式 null 均
-				// ok=false → 不更新——与原 gjson Type==JSON 前置检查等价）。
-				// 热路径预筛：bytes.Contains 零分配子串预筛 "usage" 键帧（同
-				// sniffResponsesCompleted 纪律），误命中回退全量扫描语义不变。
-				if len(ev.Event) == 0 && bytes.Contains(ev.Data, []byte(`"usage"`)) {
-					if t, ok := chatStreamUsage(ev.Data); ok {
-						it, ot, tt, cr, cc = t.it, t.ot, t.tt, t.cr, t.cc
+				// "usage": null 的帧（存在但为 null）不得清零元组。兼容
+				// OpenAI data-only、带 event 名的 usage 帧，以及 Claude
+				// message_start/message_delta 事件（后者把 input/output 用量
+				// 拆在两个事件里）。旧逻辑只处理 len(ev.Event)==0，导致带
+				// event 的 Claude 流全部落成零 token。
+				if bytes.Contains(ev.Data, []byte(`"usage"`)) {
+					if t, ok := chatStreamUsageEvent(ev.EventName(), ev.Data); ok {
+						mergeStreamUsage(&observed, t)
 					}
 				}
 			},
@@ -90,6 +90,13 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 		resp.Body.Close()
 		if ttft != nil {
 			ctx = context.WithValue(ctx, ctxKeyTTFT{}, ttft)
+		}
+		// Claude-compatible streams report input and output in separate
+		// events and therefore have no provider total_tokens field. Derive the
+		// total before both success and abort/error bookkeeping so an interrupted
+		// response is still charged for usage already observed.
+		if observed.tt <= 0 {
+			observed.tt = addUsageTokens(observed.it, observed.ot)
 		}
 		if err != nil {
 			// 客户端断开：释放槽位，无法转移。errors.Is(err, context.Canceled) 即
@@ -99,15 +106,15 @@ func (c *chatCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.Re
 			if errors.Is(err, context.Canceled) {
 				// 客户端断开：上游已消费请求（成功），仍须记录用量，否则
 				// 成功请求丢日志。与上游流中止同语义：200 + ErrAbort。
-				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+				p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, http.StatusOK, domain.ErrAbort, observed, start)))
 				return 0, nil, true, nil
 			}
-			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, err)
+			p.recordStreamAbort(ctx, reqID, groupID, start, sel, reqModel, observed, err)
 			p.sched.MarkSelectionResult(sel, scheduler.RuleKindOf(statusOf(err)), nil, statusOf(err), err.Error(), sel.Model)
 			return 0, nil, true, nil
 		}
 		p.sched.MarkSelectionResult(sel, rule.KindOK, nil, http.StatusOK, "", sel.Model)
-		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, usageTuple{it: it, ot: ot, tt: tt, cr: cr, cc: cc}, start)))
+		p.finishSelection(sel, logWithCtx(ctx, p.buildLog(reqID, groupID, sel.AccountID, reqModel, sel.Model, domain.FormatOpenAIChat, 200, domain.ErrNone, observed, start)))
 		return 200, nil, true, nil
 	}
 
