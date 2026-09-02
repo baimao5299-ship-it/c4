@@ -60,6 +60,11 @@ func Name(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldName, v))
 }
 
+// Remark applies equality check predicate on the "remark" field. It's identical to RemarkEQ.
+func Remark(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRemark, v))
+}
+
 // PriceMultiplier applies equality check predicate on the "price_multiplier" field. It's identical to PriceMultiplierEQ.
 func PriceMultiplier(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPriceMultiplier, v))
@@ -143,6 +148,71 @@ func NameEqualFold(v string) predicate.Group {
 // NameContainsFold applies the ContainsFold predicate on the "name" field.
 func NameContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldName, v))
+}
+
+// RemarkEQ applies the EQ predicate on the "remark" field.
+func RemarkEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldRemark, v))
+}
+
+// RemarkNEQ applies the NEQ predicate on the "remark" field.
+func RemarkNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldRemark, v))
+}
+
+// RemarkIn applies the In predicate on the "remark" field.
+func RemarkIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldRemark, vs...))
+}
+
+// RemarkNotIn applies the NotIn predicate on the "remark" field.
+func RemarkNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldRemark, vs...))
+}
+
+// RemarkGT applies the GT predicate on the "remark" field.
+func RemarkGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldRemark, v))
+}
+
+// RemarkGTE applies the GTE predicate on the "remark" field.
+func RemarkGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldRemark, v))
+}
+
+// RemarkLT applies the LT predicate on the "remark" field.
+func RemarkLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldRemark, v))
+}
+
+// RemarkLTE applies the LTE predicate on the "remark" field.
+func RemarkLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldRemark, v))
+}
+
+// RemarkContains applies the Contains predicate on the "remark" field.
+func RemarkContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldRemark, v))
+}
+
+// RemarkHasPrefix applies the HasPrefix predicate on the "remark" field.
+func RemarkHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldRemark, v))
+}
+
+// RemarkHasSuffix applies the HasSuffix predicate on the "remark" field.
+func RemarkHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldRemark, v))
+}
+
+// RemarkEqualFold applies the EqualFold predicate on the "remark" field.
+func RemarkEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldRemark, v))
+}
+
+// RemarkContainsFold applies the ContainsFold predicate on the "remark" field.
+func RemarkContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldRemark, v))
 }
 
 // VisibilityEQ applies the EQ predicate on the "visibility" field.

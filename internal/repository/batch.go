@@ -88,8 +88,9 @@ type AccountPatch struct {
 }
 
 type GroupPatch struct {
-	Name        *string
-	Visibility  *domain.GroupVisibility
+	Name         *string
+	Remark       *string
+	Visibility   *domain.GroupVisibility
 	PublicStatus *domain.GroupPublicStatus
 }
 
@@ -288,7 +289,11 @@ func (r *TemplateRepo) UpdateTemplatesBatch(ctx context.Context, ids []int64, p 
 		}
 		if _, err := u.Save(ctx); err != nil {
 			if sqlgraph.IsUniqueConstraintError(err) {
-				return fmt.Errorf("%w: name=%q", ErrConflict, *p.Name)
+				name := ""
+				if p.Name != nil {
+					name = *p.Name
+				}
+				return fmt.Errorf("%w: name=%q", ErrConflict, name)
 			}
 			return errMissingID(err, id)
 		}
@@ -387,6 +392,9 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 		if p.Name != nil {
 			u = u.SetName(*p.Name)
 		}
+		if p.Remark != nil {
+			u = u.SetRemark(*p.Remark)
+		}
 		if p.Visibility != nil {
 			u = u.SetVisibility(group.Visibility(*p.Visibility))
 		}
@@ -395,7 +403,11 @@ func (r *GroupRepo) UpdateGroupsBatch(ctx context.Context, ids []int64, p GroupP
 		}
 		if _, err := u.Save(ctx); err != nil {
 			if sqlgraph.IsUniqueConstraintError(err) {
-				return fmt.Errorf("%w: name=%q", ErrConflict, *p.Name)
+				name := ""
+				if p.Name != nil {
+					name = *p.Name
+				}
+				return fmt.Errorf("%w: name=%q", ErrConflict, name)
 			}
 			return errMissingID(err, id)
 		}

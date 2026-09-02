@@ -32,6 +32,20 @@ func (_c *GroupCreate) SetName(v string) *GroupCreate {
 	return _c
 }
 
+// SetRemark sets the "remark" field.
+func (_c *GroupCreate) SetRemark(v string) *GroupCreate {
+	_c.mutation.SetRemark(v)
+	return _c
+}
+
+// SetNillableRemark sets the "remark" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableRemark(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetRemark(*v)
+	}
+	return _c
+}
+
 // SetVisibility sets the "visibility" field.
 func (_c *GroupCreate) SetVisibility(v group.Visibility) *GroupCreate {
 	_c.mutation.SetVisibility(v)
@@ -243,6 +257,10 @@ func (_c *GroupCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *GroupCreate) defaults() {
+	if _, ok := _c.mutation.Remark(); !ok {
+		v := group.DefaultRemark
+		_c.mutation.SetRemark(v)
+	}
 	if _, ok := _c.mutation.Visibility(); !ok {
 		v := group.DefaultVisibility
 		_c.mutation.SetVisibility(v)
@@ -281,6 +299,9 @@ func (_c *GroupCreate) defaults() {
 func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "Group.name"`)}
+	}
+	if _, ok := _c.mutation.Remark(); !ok {
+		return &ValidationError{Name: "remark", err: errors.New(`ent: missing required field "Group.remark"`)}
 	}
 	if _, ok := _c.mutation.Visibility(); !ok {
 		return &ValidationError{Name: "visibility", err: errors.New(`ent: missing required field "Group.visibility"`)}
@@ -357,6 +378,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(group.FieldName, field.TypeString, value)
 		_node.Name = value
+	}
+	if value, ok := _c.mutation.Remark(); ok {
+		_spec.SetField(group.FieldRemark, field.TypeString, value)
+		_node.Remark = value
 	}
 	if value, ok := _c.mutation.Visibility(); ok {
 		_spec.SetField(group.FieldVisibility, field.TypeEnum, value)
@@ -519,6 +544,18 @@ func (u *GroupUpsert) SetName(v string) *GroupUpsert {
 // UpdateName sets the "name" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateName() *GroupUpsert {
 	u.SetExcluded(group.FieldName)
+	return u
+}
+
+// SetRemark sets the "remark" field.
+func (u *GroupUpsert) SetRemark(v string) *GroupUpsert {
+	u.Set(group.FieldRemark, v)
+	return u
+}
+
+// UpdateRemark sets the "remark" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateRemark() *GroupUpsert {
+	u.SetExcluded(group.FieldRemark)
 	return u
 }
 
@@ -701,6 +738,20 @@ func (u *GroupUpsertOne) SetName(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateName() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateName()
+	})
+}
+
+// SetRemark sets the "remark" field.
+func (u *GroupUpsertOne) SetRemark(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRemark(v)
+	})
+}
+
+// UpdateRemark sets the "remark" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateRemark() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRemark()
 	})
 }
 
@@ -1069,6 +1120,20 @@ func (u *GroupUpsertBulk) SetName(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateName() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateName()
+	})
+}
+
+// SetRemark sets the "remark" field.
+func (u *GroupUpsertBulk) SetRemark(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetRemark(v)
+	})
+}
+
+// UpdateRemark sets the "remark" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateRemark() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateRemark()
 	})
 }
 

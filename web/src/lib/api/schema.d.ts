@@ -2084,6 +2084,8 @@ export interface components {
             /** Format: int64 */
             GroupID: number;
             Name: string;
+            /** @description 管理员给用户看的分组备注 */
+            Remark: string;
             AllowedModels: string[];
             /** @description 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。 */
             ModelPrices: components["schemas"]["UserChannelModelPrice"][];
@@ -2377,6 +2379,8 @@ export interface components {
         };
         GroupCreate: {
             name: string;
+            /** @description 管理员给用户看的分组备注 */
+            remark?: string;
             visibility?: components["schemas"]["GroupVisibility"];
             public_status?: components["schemas"]["GroupPublicStatus"];
             routing_mode?: components["schemas"]["GroupRoutingMode"];
@@ -2505,6 +2509,8 @@ export interface components {
             /** Format: int64 */
             ID?: number;
             Name?: string;
+            /** @description 管理员给用户看的分组备注 */
+            Remark?: string;
             Visibility?: components["schemas"]["GroupVisibility"];
             PublicStatus?: components["schemas"]["GroupPublicStatus"];
             RoutingMode?: components["schemas"]["GroupRoutingMode"];
@@ -2616,6 +2622,8 @@ export interface components {
         };
         GroupPatch: {
             name?: string;
+            /** @description 管理员给用户看的分组备注 */
+            remark?: string;
             visibility?: components["schemas"]["GroupVisibility"];
             public_status?: components["schemas"]["GroupPublicStatus"];
         };

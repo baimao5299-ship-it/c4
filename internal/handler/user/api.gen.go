@@ -152,6 +152,7 @@ type Group struct {
 	DeletedAt *time.Time `json:"DeletedAt"`
 	ID        *int64     `json:"ID,omitempty"`
 	Name      *string    `json:"Name,omitempty"`
+	Remark    *string    `json:"Remark,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
 	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
@@ -398,19 +399,19 @@ type UserAuthResponse struct {
 
 // UserChannelMetric defines model for UserChannelMetric.
 type UserChannelMetric struct {
-	AllowedModels    []string   `json:"AllowedModels"`
-	GroupID          int64      `json:"GroupID"`
+	AllowedModels []string `json:"AllowedModels"`
+	GroupID       int64    `json:"GroupID"`
 
 	// ModelPrices 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。
 	ModelPrices     []UserChannelModelPrice `json:"ModelPrices"`
 	Name            string                  `json:"Name"`
+	Remark          string                  `json:"Remark"`
 	PriceMultiplier float64                 `json:"PriceMultiplier"`
 	Status          GroupPublicStatus       `json:"Status"`
 }
 
 // GroupPublicStatus defines the administrator-controlled label shown to users.
 type GroupPublicStatus string
-
 
 // UserChannelModelPrice defines model for UserChannelModelPrice.
 type UserChannelModelPrice struct {

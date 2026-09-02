@@ -10,6 +10,21 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.16] - 2026-09-02
+
+### Added
+
+- Group remarks can be entered by administrators and are shown in the public
+  channel monitor so users can understand each group's intended use.
+
+### Fixed
+
+- Model pricing rows stay paired with their model identifier; models without a
+  complete price now show an explicit unavailable-for-billing state.
+- Provider model probes keep a short SSE settlement window and preserve
+  application-level failure events instead of publishing false-positive model
+  availability.
+
 ## [v0.0.1-beta.15] - 2026-09-02
 
 ### Fixed

@@ -160,6 +160,7 @@ var (
 	GroupsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString, Unique: true},
+		{Name: "remark", Type: field.TypeString, Default: ""},
 		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"public", "private"}, Default: "public"},
 		{Name: "public_status", Type: field.TypeEnum, Enums: []string{"available", "maintenance", "paused"}, Default: "available"},
 		{Name: "routing_mode", Type: field.TypeEnum, Enums: []string{"accounts", "upstreams"}, Default: "accounts"},

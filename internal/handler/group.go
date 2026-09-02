@@ -7,6 +7,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/is7qin/c3api/internal/domain"
 	"github.com/is7qin/c3api/internal/handler/httpface"
@@ -32,6 +33,15 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 		publicStatus = domain.GroupPublicStatus(*in.PublicStatus)
 		if !publicStatus.Valid() {
 			httpface.WriteErr(w, http.StatusBadRequest, "invalid public status")
+			return
+		}
+	}
+	remark := ""
+	if in.Remark != nil {
+		var remarkErr error
+		remark, remarkErr = normalizeGroupRemarkInput(*in.Remark)
+		if remarkErr != nil {
+			httpface.WriteErr(w, http.StatusBadRequest, remarkErr.Error())
 			return
 		}
 	}
@@ -89,7 +99,7 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		g := &domain.Group{
-			Name: in.Name, Visibility: visibility, PublicStatus: publicStatus, RoutingMode: routingMode,
+			Name: in.Name, Remark: remark, Visibility: visibility, PublicStatus: publicStatus, RoutingMode: routingMode,
 			AllowedModels: allowedModels, PriceMultiplier: 10000,
 			ProtocolConverts: pcs,
 		}
@@ -104,12 +114,20 @@ func (h *AdminAPI) PostGroups(w http.ResponseWriter, r *http.Request) {
 		httpface.WriteJSON(w, http.StatusOK, toAPIGroup(created))
 		return
 	}
-	g, err := h.svc.CreateGroupWithRouting(r.Context(), in.Name, visibility, mult, pcs, routingMode, allowedModels)
+	g, err := h.svc.CreateGroupWithRoutingAndRemark(r.Context(), in.Name, remark, visibility, mult, pcs, routingMode, allowedModels)
 	if err != nil {
 		httpface.WriteServiceErr(w, err)
 		return
 	}
 	httpface.WriteJSON(w, http.StatusOK, toAPIGroup(g))
+}
+
+func normalizeGroupRemarkInput(remark string) (string, error) {
+	remark = strings.TrimSpace(remark)
+	if len([]rune(remark)) > 500 {
+		return "", errors.New("remark must be 500 characters or fewer")
+	}
+	return remark, nil
 }
 
 // GetGroups 分组列表（分页/筛选/排序，ServerInterface）。
@@ -157,6 +175,14 @@ func (h *AdminAPI) PutGroupsId(w http.ResponseWriter, r *http.Request, id int64)
 		return
 	}
 	g.Name = in.Name
+	if in.Remark != nil {
+		remark, remarkErr := normalizeGroupRemarkInput(*in.Remark)
+		if remarkErr != nil {
+			httpface.WriteErr(w, http.StatusBadRequest, remarkErr.Error())
+			return
+		}
+		g.Remark = remark
+	}
 	if in.PublicStatus != nil {
 		g.PublicStatus = domain.GroupPublicStatus(*in.PublicStatus)
 		if !g.PublicStatus.Valid() {
@@ -349,10 +375,17 @@ func (h *AdminAPI) PostGroupsBatchUpdate(w http.ResponseWriter, r *http.Request)
 
 // groupPatchFromBody 生成类型 fields → repo patch（nil 字段 = 不更新）。
 func groupPatchFromBody(f *GroupPatch) (repository.GroupPatch, error) {
-	if f.Name == nil && f.Visibility == nil && f.PublicStatus == nil {
+	if f.Name == nil && f.Remark == nil && f.Visibility == nil && f.PublicStatus == nil {
 		return repository.GroupPatch{}, errors.New("fields must contain at least one field")
 	}
 	p := repository.GroupPatch{Name: f.Name}
+	if f.Remark != nil {
+		remark, err := normalizeGroupRemarkInput(*f.Remark)
+		if err != nil {
+			return repository.GroupPatch{}, err
+		}
+		p.Remark = &remark
+	}
 	if f.Visibility != nil {
 		v := domain.GroupVisibility(*f.Visibility)
 		p.Visibility = &v

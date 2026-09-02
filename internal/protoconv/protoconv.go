@@ -116,11 +116,22 @@ func ConvertResponse(body []byte, dir domain.ProtocolConvert) ([]byte, error) {
 // supported upstream protocols. A provider may return HTTP 200 while carrying
 // status=failed/cancelled or a top-level error object; treating that payload as
 // a normal completion causes a false success and can make failover replay an
-// already charged request. Only top-level envelope fields are considered, so a
-// user/tool payload containing an unrelated nested "error" value is untouched.
+// already charged request. Relays commonly add one of data/result/payload/body
+// wrappers, so those known envelope keys are inspected to a small fixed depth.
+// Arbitrary user/tool fields (for example output[].metadata.error) are never
+// walked.
 func detectUpstreamResponseFailure(body []byte) error {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(body, &root); err != nil || root == nil {
+		return nil
+	}
+	return detectUpstreamResponseFailureObject(root, 0)
+}
+
+const upstreamResponseFailureMaxDepth = 3
+
+func detectUpstreamResponseFailureObject(root map[string]json.RawMessage, depth int) error {
+	if root == nil || depth > upstreamResponseFailureMaxDepth {
 		return nil
 	}
 	if raw, ok := root["error"]; ok && upstreamResponseHasErrorPayload(raw) {
@@ -138,33 +149,74 @@ func detectUpstreamResponseFailure(body []byte) error {
 		}
 		return &UpstreamResponseError{Status: status, Code: code, Message: message}
 	}
-	if strings.EqualFold(upstreamResponseRawString(root["type"]), "error") {
+	if upstreamResponseIsFailureType(upstreamResponseRawString(root["type"])) {
 		code, message := upstreamResponseErrorDetails(root["error"])
 		if message == "" {
 			message = upstreamResponseRawString(root["message"])
 		}
 		return &UpstreamResponseError{Status: status, Code: code, Message: message}
 	}
-	// A few relays wrap the Responses object in {response:{...}} even for a
-	// non-streaming request. Inspect that one known envelope without recursively
-	// walking arbitrary user data.
-	if nested, ok := root["response"]; ok {
+	for _, key := range []string{"response", "data", "result", "payload", "body"} {
+		nested, ok := root[key]
+		if !ok {
+			continue
+		}
+		// A canonical provider response can carry arbitrary metadata under
+		// `data`/`result`. Only the explicit response wrapper is unconditionally
+		// traversed; for compatibility wrappers, avoid descending once the outer
+		// object already has a recognized completion shape.
+		if key != "response" && upstreamResponseLooksCanonical(root) {
+			continue
+		}
 		var obj map[string]json.RawMessage
-		if json.Unmarshal(nested, &obj) == nil && obj != nil {
-			if nestedStatus := upstreamResponseRawString(obj["status"]); upstreamResponseIsFailureStatus(nestedStatus) {
-				code, message := upstreamResponseErrorDetails(obj["error"])
-				if message == "" {
-					message = upstreamResponseRawString(obj["message"])
-				}
-				return &UpstreamResponseError{Status: nestedStatus, Code: code, Message: message}
+		if json.Unmarshal(nested, &obj) != nil || obj == nil {
+			continue
+		}
+		if failure := detectUpstreamResponseFailureObject(obj, depth+1); failure != nil {
+			return failure
+		}
+	}
+	for _, key := range []string{"success", "ok"} {
+		var flag bool
+		if raw, ok := root[key]; ok && json.Unmarshal(raw, &flag) == nil && !flag {
+			message := upstreamResponseRawString(root["message"])
+			if message == "" {
+				message = "upstream reported an unsuccessful response"
 			}
-			if raw, exists := obj["error"]; exists && upstreamResponseHasErrorPayload(raw) {
-				code, message := upstreamResponseErrorDetails(raw)
-				return &UpstreamResponseError{Status: upstreamResponseRawString(obj["status"]), Code: code, Message: message}
-			}
+			return &UpstreamResponseError{Status: status, Message: message}
 		}
 	}
 	return nil
+}
+
+func upstreamResponseIsFailureType(value string) bool {
+	typ := strings.ToLower(strings.TrimSpace(value))
+	return typ == "error" || typ == "failed" || typ == "cancelled" || typ == "canceled" ||
+		strings.HasSuffix(typ, ".error") || strings.HasSuffix(typ, ".failed") ||
+		strings.HasSuffix(typ, ".cancelled") || strings.HasSuffix(typ, ".canceled")
+}
+
+func upstreamResponseLooksCanonical(value map[string]json.RawMessage) bool {
+	for _, key := range []string{"choices", "output", "content"} {
+		if _, ok := value[key]; ok {
+			return true
+		}
+	}
+	if object := strings.ToLower(strings.TrimSpace(upstreamResponseRawString(value["object"]))); object != "" {
+		switch object {
+		case "chat.completion", "completion", "text_completion", "response", "message", "image", "image_generation":
+			return true
+		}
+	}
+	if typ := strings.ToLower(strings.TrimSpace(upstreamResponseRawString(value["type"]))); typ != "" {
+		switch {
+		case typ == "response", typ == "message", typ == "chat.completion", typ == "completion":
+			return true
+		case strings.HasPrefix(typ, "response."), strings.HasPrefix(typ, "message."), strings.HasPrefix(typ, "message_"), strings.HasPrefix(typ, "content_block_"):
+			return true
+		}
+	}
+	return false
 }
 
 func upstreamResponseJSONNull(raw json.RawMessage) bool {

@@ -2567,10 +2567,11 @@ components:
           items: { $ref: '#/components/schemas/UserChannelMetric' }
     UserChannelMetric:
       type: object
-      required: [GroupID, Name, AllowedModels, ModelPrices, PriceMultiplier, Status]
+      required: [GroupID, Name, Remark, AllowedModels, ModelPrices, PriceMultiplier, Status]
       properties:
         GroupID: { type: integer, format: int64 }
         Name: { type: string }
+        Remark: { type: string, description: 管理员给用户看的分组备注 }
         AllowedModels:
           type: array
           items: { type: string }
@@ -2792,6 +2793,7 @@ components:
       required: [name]
       properties:
         name: { type: string }
+        remark: { type: string, maxLength: 500, description: 管理员给用户看的分组备注 }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
         public_status: { $ref: '#/components/schemas/GroupPublicStatus' }
         routing_mode: { $ref: '#/components/schemas/GroupRoutingMode' }
@@ -2921,6 +2923,7 @@ components:
       properties:
         ID: { type: integer, format: int64 }
         Name: { type: string }
+        Remark: { type: string, description: 管理员给用户看的分组备注 }
         Visibility: { $ref: '#/components/schemas/GroupVisibility' }
         PublicStatus: { $ref: '#/components/schemas/GroupPublicStatus' }
         RoutingMode: { $ref: '#/components/schemas/GroupRoutingMode' }
@@ -3053,6 +3056,7 @@ components:
       type: object
       properties:
         name: { type: string }
+        remark: { type: string, maxLength: 500, description: 管理员给用户看的分组备注 }
         visibility: { $ref: '#/components/schemas/GroupVisibility' }
         public_status: { $ref: '#/components/schemas/GroupPublicStatus' }
     BatchUpdateAccountsBody:

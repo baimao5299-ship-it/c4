@@ -20,6 +20,8 @@ type Group struct {
 	ID int64 `json:"id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
+	// Remark holds the value of the "remark" field.
+	Remark string `json:"remark,omitempty"`
 	// Visibility holds the value of the "visibility" field.
 	Visibility group.Visibility `json:"visibility,omitempty"`
 	// PublicStatus holds the value of the "public_status" field.
@@ -104,7 +106,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case group.FieldID, group.FieldPriceMultiplier:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldVisibility, group.FieldPublicStatus, group.FieldRoutingMode:
+		case group.FieldName, group.FieldRemark, group.FieldVisibility, group.FieldPublicStatus, group.FieldRoutingMode:
 			values[i] = new(sql.NullString)
 		case group.FieldUpdatedAt, group.FieldDeletedAt, group.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -134,6 +136,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				_m.Name = value.String
+			}
+		case group.FieldRemark:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field remark", values[i])
+			} else if value.Valid {
+				_m.Remark = value.String
 			}
 		case group.FieldVisibility:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -252,6 +260,9 @@ func (_m *Group) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
+	builder.WriteString(", ")
+	builder.WriteString("remark=")
+	builder.WriteString(_m.Remark)
 	builder.WriteString(", ")
 	builder.WriteString("visibility=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))

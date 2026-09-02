@@ -1065,9 +1065,10 @@ type Group struct {
 	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
 
 	// DeletedAt 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
-	DeletedAt *time.Time `json:"DeletedAt"`
-	ID        *int64     `json:"ID,omitempty"`
-	Name      *string    `json:"Name,omitempty"`
+	DeletedAt    *time.Time         `json:"DeletedAt"`
+	ID           *int64             `json:"ID,omitempty"`
+	Name         *string            `json:"Name,omitempty"`
+	Remark       *string            `json:"Remark,omitempty"`
 	PublicStatus *GroupPublicStatus `json:"PublicStatus,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
@@ -1101,8 +1102,9 @@ type GroupAssignmentsResponse struct {
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
 	// AllowedModels 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集
-	AllowedModels *[]string `json:"allowed_models,omitempty"`
-	Name          string    `json:"name"`
+	AllowedModels *[]string          `json:"allowed_models,omitempty"`
+	Name          string             `json:"name"`
+	Remark        *string            `json:"remark,omitempty"`
 	PublicStatus  *GroupPublicStatus `json:"public_status,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
@@ -1127,9 +1129,10 @@ type GroupListResponse struct {
 
 // GroupPatch defines model for GroupPatch.
 type GroupPatch struct {
-	Name        *string           `json:"name,omitempty"`
+	Name         *string            `json:"name,omitempty"`
+	Remark       *string            `json:"remark,omitempty"`
 	PublicStatus *GroupPublicStatus `json:"public_status,omitempty"`
-	Visibility  *GroupVisibility  `json:"visibility,omitempty"`
+	Visibility   *GroupVisibility   `json:"visibility,omitempty"`
 }
 
 // GroupProtocolConvert 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）

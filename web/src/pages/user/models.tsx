@@ -15,7 +15,10 @@ import { cn } from '@/lib/utils'
 import type { components } from '@/lib/api/schema'
 import { formatMultiplierValue } from '@/lib/multiplier'
 
-type ChannelMetric = components['schemas']['UserChannelMetric']
+type ChannelMetric = components['schemas']['UserChannelMetric'] & {
+  /** Added by the group remark API; optional for rolling upgrades. */
+  Remark?: string | null
+}
 type ChannelModelPrice = components['schemas']['UserChannelModelPrice'] & {
   // Newer servers expose the catalogue price alongside the effective group
   // price. Keep these optional so an older frontend can still read old payloads.
@@ -152,7 +155,7 @@ function PriceDetails({
     add('cache-read', t('user.models.cacheReadShort'), price.CacheReadPerM, price.OfficialCacheReadPerM, value => formatPricePerMillion(value))
     add('cache-write', t('user.models.cacheWriteShort'), price.CacheWritePerM, price.OfficialCacheWritePerM, value => formatPricePerMillion(value))
   }
-  if (pairs.length === 0) return <span className="text-xs text-muted-foreground">—</span>
+  if (pairs.length === 0) return <span className="text-xs font-medium text-amber-700 dark:text-amber-400">{t('user.models.unpriced')}</span>
   return <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">{pairs.map(pair => <PricePair key={pair.key} label={pair.label} value={pair.value} officialValue={pair.officialValue} multiplier={multiplier} format={pair.format} t={t} />)}</div>
 }
 
@@ -210,6 +213,7 @@ function ChannelCard({ metric, t }: { metric: ChannelMetric; t: (key: string, op
           <Badge variant="secondary" className={cn('shrink-0 gap-1', status.className)}><Icon className="size-3.5" />{status.label}</Badge>
         </div>
         <CardDescription className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><span className="flex min-w-0 items-center gap-1.5 truncate"><Activity className="size-4 shrink-0" />{t('user.models.publicChannel')}</span><span className="shrink-0 font-mono text-xs">{t('user.models.multiplier', { value: formatMultiplierValue(metric.PriceMultiplier) })}</span></CardDescription>
+        {metric.Remark && <p className="rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-muted-foreground" title={metric.Remark}>{metric.Remark}</p>}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">

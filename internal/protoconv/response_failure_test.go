@@ -52,6 +52,26 @@ func TestConvertResponseRejectsApplicationFailureEnvelopes(t *testing.T) {
 			body: `{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}`,
 			want: "bad request",
 		},
+		{
+			name: "data wrapper failure",
+			body: `{"data":{"status":"failed","error":{"message":"wrapped failure"}}}`,
+			want: "wrapped failure",
+		},
+		{
+			name: "result wrapper error",
+			body: `{"success":false,"result":{"type":"response.failed","message":"result failed"}}`,
+			want: "result failed",
+		},
+		{
+			name: "nested payload wrapper",
+			body: `{"payload":{"body":{"error":{"code":"provider_error","message":"deep failure"}}}}`,
+			want: "deep failure",
+		},
+		{
+			name: "explicit unsuccessful flag",
+			body: `{"success":false,"message":"request rejected"}`,
+			want: "request rejected",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -67,6 +87,15 @@ func TestConvertResponseRejectsApplicationFailureEnvelopes(t *testing.T) {
 	}
 }
 
+func TestDetectUpstreamResponseFailureDoesNotWalkProviderContentMetadata(t *testing.T) {
+	for _, body := range []string{
+		`{"object":"response","status":"completed","output":[{"type":"message","metadata":{"error":"not a response failure"}}]}`,
+		`{"object":"chat.completion","choices":[{"message":{"content":"ok","metadata":{"error":{"message":"not a response failure"}}}}]}`,
+	} {
+		require.NoError(t, detectUpstreamResponseFailure([]byte(body)), "body=%s", body)
+	}
+}
+
 func TestConvertResponseKeepsSuccessfulFailureLookingFieldsNested(t *testing.T) {
 	// A tool/message payload may legitimately contain an `error` field. Only the
 	// response envelope itself is inspected, so this remains a normal conversion.
@@ -79,6 +108,8 @@ func TestConvertResponseKeepsSuccessfulFailureLookingFieldsNested(t *testing.T) 
 func TestDetectUpstreamResponseFailureIgnoresNullAndSuccess(t *testing.T) {
 	for _, body := range []string{
 		`{"status":"completed","error":null}`,
+		`{"success":true,"message":"ok"}`,
+		`{"ok":true,"object":"response"}`,
 		`{"status":"incomplete","message":"truncated"}`,
 		`{"status":"in_progress"}`,
 	} {

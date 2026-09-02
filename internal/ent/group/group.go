@@ -17,6 +17,8 @@ const (
 	FieldID = "id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
+	// FieldRemark holds the string denoting the remark field in the database.
+	FieldRemark = "remark"
 	// FieldVisibility holds the string denoting the visibility field in the database.
 	FieldVisibility = "visibility"
 	// FieldPublicStatus holds the string denoting the public_status field in the database.
@@ -77,6 +79,7 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldName,
+	FieldRemark,
 	FieldVisibility,
 	FieldPublicStatus,
 	FieldRoutingMode,
@@ -105,6 +108,8 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultRemark holds the default value on creation for the "remark" field.
+	DefaultRemark string
 	// DefaultPriceMultiplier holds the default value on creation for the "price_multiplier" field.
 	DefaultPriceMultiplier int
 	// DefaultProtocolConvert holds the default value on creation for the "protocol_convert" field.
@@ -209,6 +214,11 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // ByName orders the results by the name field.
 func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
+}
+
+// ByRemark orders the results by the remark field.
+func ByRemark(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRemark, opts...).ToFunc()
 }
 
 // ByVisibility orders the results by the visibility field.

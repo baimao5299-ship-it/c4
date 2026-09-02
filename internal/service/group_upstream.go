@@ -124,6 +124,9 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	}
 	groupCopy := *group
 	groupCopy.Name = strings.TrimSpace(group.Name)
+	if groupCopy.Remark, err = normalizeGroupRemark(groupCopy.Remark); err != nil {
+		return nil, err
+	}
 	groupCopy.PublicStatus = publicStatus
 	groupCopy.ProtocolConverts = converts
 	groupCopy.AllowedModels = allowed
@@ -151,6 +154,9 @@ func (s *Service) UpdateGroupWithUpstreams(ctx context.Context, group *domain.Gr
 		return nil, err
 	}
 	normalizedGroup.ID = group.ID
+	if normalizedGroup.Remark, err = normalizeGroupRemark(group.Remark); err != nil {
+		return nil, err
+	}
 	publicStatus := group.PublicStatus
 	if publicStatus == "" {
 		publicStatus = domain.GroupPublicStatusAvailable

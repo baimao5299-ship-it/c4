@@ -51,6 +51,7 @@ func toAPIGroup(g *domain.Group) Group {
 	return Group{
 		ID:              &g.ID,
 		Name:            &g.Name,
+		Remark:          &g.Remark,
 		Visibility:      &v,
 		RoutingMode:     &routing,
 		AllowedModels:   &allowed,

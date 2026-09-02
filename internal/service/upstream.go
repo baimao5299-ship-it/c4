@@ -371,6 +371,12 @@ const (
 // window without waiting 15 seconds to exercise the deadline boundary.
 var upstreamManualModelTestTimeout = 15 * time.Second
 
+// Some relays ignore stream=false and keep an SSE connection open after a
+// delta frame. Give a subsequent failure frame a short opportunity to arrive
+// before accepting that early frame as proof of capability; the bound keeps
+// open keep-alive streams from turning a probe into a full timeout.
+const upstreamProbeSSESettlementWindow = 200 * time.Millisecond
+
 var errUpstreamStoreUnavailable = errors.New("upstream management is not configured")
 
 const upstreamBalanceStaleFor = 15 * time.Minute
@@ -3150,76 +3156,210 @@ func readUpstreamProbeBody(resp *http.Response) ([]byte, error) {
 		}
 		return body, readErr
 	}
-	var event bytes.Buffer
-	if len(prefix) > 0 {
-		event.Write(prefix)
+	requestCtx := context.Background()
+	if resp.Request != nil && resp.Request.Context() != nil {
+		requestCtx = resp.Request.Context()
 	}
-	if firstErr != nil && !errors.Is(firstErr, io.EOF) {
+	return readUpstreamProbeSSEBody(reader, resp.Body, prefix, firstErr, requestCtx)
+}
+
+// readUpstreamProbeSSEBody consumes an SSE-shaped probe response while keeping
+// a short settlement window after the first successful provider frame. A
+// number of relays emit response.*.delta (or a role-only chat chunk) and only
+// then send response.failed; returning at the first delta would publish a
+// broken model as available. The bounded window catches those follow-up
+// failures without waiting for relays that leave keep-alive streams open.
+func readUpstreamProbeSSEBody(reader *bufio.Reader, body io.Closer, prefix []byte, firstErr error, ctx context.Context) ([]byte, error) {
+	if reader == nil {
+		return nil, errors.New("nil upstream probe reader")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	all := make([]byte, 0, len(prefix))
+	event := bytes.Buffer{}
+	settled := false
+	var settlementTimer *time.Timer
+	var settlementC <-chan time.Time
+	armSettlement := func() {
+		if settlementTimer == nil {
+			settlementTimer = time.NewTimer(upstreamProbeSSESettlementWindow)
+		} else {
+			if !settlementTimer.Stop() {
+				select {
+				case <-settlementTimer.C:
+				default:
+				}
+			}
+			settlementTimer.Reset(upstreamProbeSSESettlementWindow)
+		}
+		settlementC = settlementTimer.C
+	}
+	stopSettlement := func() {
+		if settlementTimer != nil {
+			if !settlementTimer.Stop() {
+				select {
+				case <-settlementTimer.C:
+				default:
+				}
+			}
+		}
+	}
+	defer stopSettlement()
+
+	// Process one physical SSE line. We inspect after data lines as well as at
+	// blank event boundaries because some relays omit the final blank separator
+	// when they keep the connection alive. The failure check always precedes the
+	// success check so a frame containing both signals cannot be accepted.
+	processLine := func(line []byte) (failure, success bool, err error) {
+		if len(all)+len(line) > 1<<20 {
+			return false, false, errors.New("upstream probe response too large")
+		}
+		all = append(all, line...)
+		event.Write(line)
+		if event.Len() > 1<<20 {
+			return false, false, errors.New("upstream probe response too large")
+		}
+		trimmed := trimUpstreamSSELine(line)
+		if bytes.HasPrefix(trimmed, []byte("data:")) {
+			if isUpstreamFailureResponse(event.Bytes()) {
+				return true, false, nil
+			}
+			if isUpstreamSuccessResponse(event.Bytes()) {
+				return false, true, nil
+			}
+		}
+		if isUpstreamSSEBlankLine(line) {
+			if isUpstreamFailureResponse(event.Bytes()) {
+				return true, false, nil
+			}
+			if isUpstreamSuccessResponse(event.Bytes()) {
+				return false, true, nil
+			}
+			event.Reset()
+		}
+		return false, false, nil
+	}
+
+	// The prefix can contain blank preamble lines plus the first data frame.
+	// Replay it through the same event parser rather than treating it as one
+	// opaque event; this preserves event names and multiline data semantics.
+	processPrefix := func() (bool, error) {
+		remaining := prefix
+		for len(remaining) > 0 {
+			line := remaining
+			if index := bytes.IndexByte(remaining, '\n'); index >= 0 {
+				line = remaining[:index+1]
+				remaining = remaining[index+1:]
+			} else {
+				remaining = nil
+			}
+			failure, success, err := processLine(line)
+			if err != nil {
+				return false, err
+			}
+			if failure {
+				return false, nil
+			}
+			if success {
+				settled = true
+				armSettlement()
+			}
+		}
+		return true, nil
+	}
+	if _, err := processPrefix(); err != nil {
+		return nil, err
+	}
+	// A failure may arrive in the buffered prefix before any success frame. Do
+	// not discard it just because the settlement window was never armed.
+	if isUpstreamFailureResponse(all) {
+		return all, &upstreamErrorEnvelope{body: append([]byte(nil), all...)}
+	}
+	if firstErr != nil {
+		if errors.Is(firstErr, io.EOF) {
+			if settled {
+				return append([]byte(nil), all...), nil
+			}
+			return nil, firstErr
+		}
+		if settled {
+			return append([]byte(nil), all...), firstErr
+		}
 		return nil, firstErr
 	}
-	if errors.Is(firstErr, io.EOF) {
-		if event.Len() > 0 && isUpstreamFailureResponse(event.Bytes()) {
-			body := append([]byte(nil), event.Bytes()...)
-			return body, &upstreamErrorEnvelope{body: body}
+
+	type lineResult struct {
+		line []byte
+		err  error
+	}
+	lines := make(chan lineResult, 1)
+	stopReader := make(chan struct{})
+	go func() {
+		defer close(lines)
+		for {
+			line, err := reader.ReadBytes('\n')
+			result := lineResult{line: line, err: err}
+			select {
+			case lines <- result:
+			case <-stopReader:
+				return
+			}
+			if err != nil {
+				return
+			}
 		}
-		if event.Len() > 0 && isUpstreamSuccessResponse(event.Bytes()) {
-			return event.Bytes(), nil
+	}()
+	defer func() {
+		close(stopReader)
+		// The caller also closes response bodies, but closing here is required
+		// when the settlement timer fires while the reader goroutine is blocked
+		// on an open keep-alive connection.
+		if body != nil {
+			_ = body.Close()
 		}
-		return nil, firstErr
-	}
-	// The first line itself may be a complete data frame.  Do this check before
-	// reading another line: some keep-alive streams never emit the blank event
-	// separator after their first response.
-	if isUpstreamFailureResponse(event.Bytes()) {
-		body := append([]byte(nil), event.Bytes()...)
-		return body, &upstreamErrorEnvelope{body: body}
-	}
-	if isUpstreamSuccessResponse(event.Bytes()) {
-		return event.Bytes(), nil
-	}
+	}()
+
 	for {
-		line, err := reader.ReadBytes('\n')
-		if len(line) > 0 {
-			event.Write(line)
-			if event.Len() > 1<<20 {
-				return nil, errors.New("upstream probe response too large")
+		select {
+		case <-settlementC:
+			if settled {
+				return append([]byte(nil), all...), nil
 			}
-			// A few relays flush one complete data frame and keep the HTTP
-			// connection open without sending the blank-line event terminator.
-			// A recognized successful JSON frame is already sufficient evidence
-			// that the model answered; return immediately instead of waiting for a
-			// context timeout.  Multi-line data frames still wait for their normal
-			// blank boundary and are handled below.
-			trimmed := trimUpstreamSSELine(line)
-			if bytes.HasPrefix(trimmed, []byte("data:")) && isUpstreamFailureResponse(event.Bytes()) {
-				body := append([]byte(nil), event.Bytes()...)
-				return body, &upstreamErrorEnvelope{body: body}
-			}
-			if bytes.HasPrefix(trimmed, []byte("data:")) && isUpstreamSuccessResponse(event.Bytes()) {
-				return event.Bytes(), nil
-			}
-			if len(bytes.TrimSpace(line)) == 0 {
-				if isUpstreamFailureResponse(event.Bytes()) {
-					body := append([]byte(nil), event.Bytes()...)
-					return body, &upstreamErrorEnvelope{body: body}
+			settlementC = nil
+		case <-ctx.Done():
+			// A success delta is provisional until the bounded settlement window
+			// completes. If the request context expires first, report the
+			// cancellation instead of publishing a false-positive capability.
+			return nil, ctx.Err()
+		case result, ok := <-lines:
+			if !ok {
+				if settled {
+					return append([]byte(nil), all...), nil
 				}
-				if isUpstreamSuccessResponse(event.Bytes()) {
-					return event.Bytes(), nil
-				}
-				event.Reset()
+				return nil, io.EOF
 			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if event.Len() > 0 && isUpstreamFailureResponse(event.Bytes()) {
-					body := append([]byte(nil), event.Bytes()...)
-					return body, &upstreamErrorEnvelope{body: body}
+			if len(result.line) > 0 {
+				failure, success, err := processLine(result.line)
+				if err != nil {
+					return nil, err
 				}
-				if event.Len() > 0 && isUpstreamSuccessResponse(event.Bytes()) {
-					return event.Bytes(), nil
+				if failure {
+					return append([]byte(nil), all...), &upstreamErrorEnvelope{body: append([]byte(nil), all...)}
+				}
+				if success {
+					settled = true
+					armSettlement()
 				}
 			}
-			return nil, err
+			if result.err != nil {
+				if errors.Is(result.err, io.EOF) {
+					if settled {
+						return append([]byte(nil), all...), nil
+					}
+				}
+				return nil, result.err
+			}
 		}
 	}
 }

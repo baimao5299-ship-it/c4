@@ -51,6 +51,7 @@ func (r *GroupRepo) CreateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	status := group.PublicStatus(g.EffectivePublicStatus())
 	q := r.client.Group.Create().
 		SetName(g.Name).
+		SetRemark(g.Remark).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetPublicStatus(status).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).
@@ -118,6 +119,7 @@ func (r *GroupRepo) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.G
 	status := group.PublicStatus(g.EffectivePublicStatus())
 	row, err := r.client.Group.UpdateOneID(g.ID).Where(group.DeletedAtIsNil()).
 		SetName(g.Name).
+		SetRemark(g.Remark).
 		SetVisibility(group.Visibility(g.Visibility)).
 		SetPublicStatus(status).
 		SetRoutingMode(group.RoutingMode(g.EffectiveRoutingMode())).

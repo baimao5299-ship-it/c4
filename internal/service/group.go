@@ -30,7 +30,15 @@ func (s *Service) CreateGroup(ctx context.Context, name string, visibility domai
 // source. The legacy CreateGroup entry point delegates here with accounts mode
 // so existing callers keep their behavior.
 func (s *Service) CreateGroupWithRouting(ctx context.Context, name string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
+	return s.CreateGroupWithRoutingAndRemark(ctx, name, "", visibility, priceMultiplier, protocolConverts, routingMode, allowedModels)
+}
+
+func (s *Service) CreateGroupWithRoutingAndRemark(ctx context.Context, name, remark string, visibility domain.GroupVisibility, priceMultiplier *int, protocolConverts []domain.ProtocolConvert, routingMode domain.GroupRoutingMode, allowedModels []string) (*domain.Group, error) {
 	g, err := normalizeGroupInput(name, visibility, priceMultiplier, protocolConverts, routingMode, allowedModels)
+	if err != nil {
+		return nil, err
+	}
+	g.Remark, err = normalizeGroupRemark(remark)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +92,14 @@ func normalizeGroupInput(name string, visibility domain.GroupVisibility, priceMu
 	return &domain.Group{Name: strings.TrimSpace(name), Visibility: visibility, PublicStatus: domain.GroupPublicStatusAvailable, RoutingMode: routingMode, AllowedModels: models, PriceMultiplier: mult, ProtocolConverts: converts}, nil
 }
 
+func normalizeGroupRemark(remark string) (string, error) {
+	remark = strings.TrimSpace(remark)
+	if len([]rune(remark)) > 500 {
+		return "", ErrInvalidInput
+	}
+	return remark, nil
+}
+
 func (s *Service) GetGroup(ctx context.Context, id int64) (*domain.Group, error) {
 	g, err := s.store.GetGroup(ctx, id)
 	if err != nil {
@@ -128,6 +144,10 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	if current == nil || current.DeletedAt != nil {
 		return nil, ErrNotFound
 	}
+	remark, err := normalizeGroupRemark(g.Remark)
+	if err != nil {
+		return nil, err
+	}
 	// Keep the service-level partial-update contract used by existing callers:
 	// an omitted visibility inherits the persisted value. Explicit unknown
 	// values remain rejected below.
@@ -153,6 +173,7 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	// 副本写入：归一结果落在副本上，不原地改调用方入参（当前无实际影响，防未来踩坑）
 	cp := *g
 	cp.Name = name
+	cp.Remark = remark
 	cp.ProtocolConverts = converts
 	cp.RoutingMode = g.EffectiveRoutingMode()
 	if !cp.RoutingMode.Valid() {

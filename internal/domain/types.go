@@ -583,8 +583,10 @@ type AccountUsage struct {
 }
 
 type Group struct {
-	ID         int64
-	Name       string
+	ID   int64
+	Name string
+	// Remark is an administrator-authored note shown to users on public groups.
+	Remark     string
 	Visibility GroupVisibility
 	// PublicStatus is the administrator-controlled label shown to end users.
 	PublicStatus GroupPublicStatus

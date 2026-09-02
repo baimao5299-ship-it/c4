@@ -85,26 +85,30 @@ func init() {
 	errlog.DefaultCreatedAt = errlogDescCreatedAt.Default.(func() time.Time)
 	groupFields := schema.Group{}.Fields()
 	_ = groupFields
+	// groupDescRemark is the schema descriptor for remark field.
+	groupDescRemark := groupFields[2].Descriptor()
+	// group.DefaultRemark holds the default value on creation for the remark field.
+	group.DefaultRemark = groupDescRemark.Default.(string)
 	// groupDescPriceMultiplier is the schema descriptor for price_multiplier field.
-	groupDescPriceMultiplier := groupFields[5].Descriptor()
+	groupDescPriceMultiplier := groupFields[6].Descriptor()
 	// group.DefaultPriceMultiplier holds the default value on creation for the price_multiplier field.
 	group.DefaultPriceMultiplier = groupDescPriceMultiplier.Default.(int)
 	// groupDescProtocolConvert is the schema descriptor for protocol_convert field.
-	groupDescProtocolConvert := groupFields[6].Descriptor()
+	groupDescProtocolConvert := groupFields[7].Descriptor()
 	// group.DefaultProtocolConvert holds the default value on creation for the protocol_convert field.
 	group.DefaultProtocolConvert = groupDescProtocolConvert.Default.([]string)
 	// groupDescAllowedModels is the schema descriptor for allowed_models field.
-	groupDescAllowedModels := groupFields[7].Descriptor()
+	groupDescAllowedModels := groupFields[8].Descriptor()
 	// group.DefaultAllowedModels holds the default value on creation for the allowed_models field.
 	group.DefaultAllowedModels = groupDescAllowedModels.Default.([]string)
 	// groupDescUpdatedAt is the schema descriptor for updated_at field.
-	groupDescUpdatedAt := groupFields[8].Descriptor()
+	groupDescUpdatedAt := groupFields[9].Descriptor()
 	// group.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	group.DefaultUpdatedAt = groupDescUpdatedAt.Default.(func() time.Time)
 	// group.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	group.UpdateDefaultUpdatedAt = groupDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// groupDescCreatedAt is the schema descriptor for created_at field.
-	groupDescCreatedAt := groupFields[10].Descriptor()
+	groupDescCreatedAt := groupFields[11].Descriptor()
 	// group.DefaultCreatedAt holds the default value on creation for the created_at field.
 	group.DefaultCreatedAt = groupDescCreatedAt.Default.(func() time.Time)
 	groupassignmentFields := schema.GroupAssignment{}.Fields()

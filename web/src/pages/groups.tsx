@@ -610,6 +610,7 @@ export default function Groups() {
   // —— 创建（名称 + 上游 + 模型；其余策略使用安全默认值）——
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [createRemark, setCreateRemark] = useState('')
   // New groups are intentionally opinionated: public, x1 and automatic
   // protocol negotiation. Advanced policy remains available in edit.
   const createVisibility: GroupVisibility = 'public'
@@ -630,6 +631,7 @@ export default function Groups() {
     mutationFn: async (n: string) => {
       const body: components['schemas']['GroupCreate'] = {
         name: n,
+        remark: createRemark.trim() || undefined,
         visibility: createVisibility,
         routing_mode: createRoutingMode,
         allowed_models: createAllowedModels,
@@ -656,6 +658,7 @@ export default function Groups() {
     // A usable unique name is generated up front so the operator can complete
     // the three-step flow without inventing metadata; it can be edited later.
     setCreateName(makeAutoGroupName(t('groups.autoNamePrefix')))
+    setCreateRemark('')
     setCreateAllowedModels([])
     setCreateMembers([])
     createAutoModelKey.current = ''
@@ -666,6 +669,7 @@ export default function Groups() {
   //      此处总是显式提交——空数组 = 清空既有方向）——
   const [editTarget, setEditTarget] = useState<Group | null>(null)
   const [editName, setEditName] = useState('')
+  const [editRemark, setEditRemark] = useState('')
   const [editVisibility, setEditVisibility] = useState<GroupVisibility>('public')
   const [editPublicStatus, setEditPublicStatus] = useState<GroupPublicStatus>('available')
   const [editProtocols, setEditProtocols] = useState<GroupProtocolConvert[]>([])
@@ -795,6 +799,7 @@ export default function Groups() {
     editAutoModelKey.current = null
     setEditTarget(group)
     setEditName(group.Name ?? '')
+    setEditRemark(group.Remark ?? '')
     setEditVisibility(group.Visibility ?? 'public')
     setEditPublicStatus(group.PublicStatus ?? 'available')
     setEditRoutingMode(group.RoutingMode ?? 'accounts')
@@ -809,7 +814,7 @@ export default function Groups() {
 
   const rename = useMutation({
     mutationFn: () => {
-      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), visibility: editVisibility, public_status: editPublicStatus, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
+      const body: components['schemas']['GroupCreate'] = { name: editName.trim(), remark: editRemark.trim(), visibility: editVisibility, public_status: editPublicStatus, routing_mode: editRoutingMode, allowed_models: editAllowedModels, protocol_convert: editProtocols }
       const m = normalizeMultiplierInput(editMultiplier, t('groups.multiplierInvalid'))
       if (m !== undefined) body.price_multiplier = m // 正常值直接提交；输入为空则省略键（后端保持原值）
       // The API commits policy and the complete member set in one database
@@ -897,6 +902,7 @@ export default function Groups() {
                   </TableHead>
                   <SortableHeader field="id" label="ID" active={activeSort === 'id'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="name" label={t('groups.table.name')} active={activeSort === 'name'} order={order} onToggle={onColumnToggle} />
+                  <TableHead>{t('groups.table.remark')}</TableHead>
                   <TableHead>{t('groups.table.visibility')}</TableHead>
                   <TableHead>{t('groups.table.publicStatus')}</TableHead>
                   <TableHead>{t('groups.table.routing')}</TableHead>
@@ -914,6 +920,7 @@ export default function Groups() {
                     </TableCell>
                     <TableCell className="tabular-nums">{g.ID}</TableCell>
                     <TableCell className="max-w-36 truncate" title={g.Name}>{g.Name}</TableCell>
+                    <TableCell className="max-w-48 truncate text-sm text-muted-foreground" title={g.Remark ?? undefined}>{g.Remark || '—'}</TableCell>
                     <TableCell><VisibilityBadge visibility={g.Visibility} /></TableCell>
                     <TableCell><PublicStatusBadge status={g.PublicStatus} /></TableCell>
                     <TableCell>
@@ -960,6 +967,11 @@ export default function Groups() {
             <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
               <div className="font-medium">{t('groups.autoNameLabel')}</div>
               <div className="mt-0.5 text-xs text-muted-foreground">{t('groups.autoNameValue', { name: createName })}</div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-create-remark">{t('groups.remarkLabel')}</Label>
+              <Input id="grp-create-remark" value={createRemark} maxLength={500} placeholder={t('groups.remarkPlaceholder')} onChange={e => setCreateRemark(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{t('groups.remarkHint')}</p>
             </div>
             <UpstreamPoolFields
               mode={createRoutingMode}
@@ -1008,6 +1020,11 @@ export default function Groups() {
             <div className="space-y-1.5">
               <Label htmlFor="grp-edit-name">{t('groups.nameLabel')}</Label>
               <Input id="grp-edit-name" value={editName} onChange={e => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-edit-remark">{t('groups.remarkLabel')}</Label>
+              <Input id="grp-edit-remark" value={editRemark} maxLength={500} placeholder={t('groups.remarkPlaceholder')} onChange={e => setEditRemark(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{t('groups.remarkHint')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="grp-edit-visibility">{t('groups.visibilityLabel')}</Label>

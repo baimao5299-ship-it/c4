@@ -33,7 +33,7 @@ func (s *channelMonitorStore) ScanPublicChannelStats(context.Context, []int64, t
 func TestUserChannelMonitorReturnsEffectiveModelPrices(t *testing.T) {
 	store := &channelMonitorStore{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
 	inPrice, outPrice := int64(100000), int64(250000)
-	store.groups[1] = &domain.Group{ID: 1, Name: "public", Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-priced"}, PriceMultiplier: 800}
+	store.groups[1] = &domain.Group{ID: 1, Name: "public", Remark: "手机用户专用", Visibility: domain.GroupVisibilityPublic, AllowedModels: []string{"gpt-priced"}, PriceMultiplier: 800}
 	store.priceEntries["gpt-priced"] = &domain.PriceEntry{Model: "gpt-priced", Mode: domain.PriceModeToken, InputPerM: &inPrice, OutputPerM: &outPrice, Source: domain.PricingSourceManual}
 
 	svc := service.New(store, fakeSched{}, service.NopInvalidator{}, nil, nil, &fakeKeys{}, nil)
@@ -60,6 +60,7 @@ func TestUserChannelMonitorReturnsEffectiveModelPrices(t *testing.T) {
 	var body userapi.UserChannelMonitorResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Len(t, body.Rows, 1)
+	require.Equal(t, "手机用户专用", body.Rows[0].Remark)
 	require.Len(t, body.Rows[0].ModelPrices, 1)
 	require.InDelta(t, 0.001, body.Rows[0].PriceMultiplier, 1e-12)
 	require.InDelta(t, 0.001, *body.Rows[0].ModelPrices[0].InputPerM, 1e-12)
