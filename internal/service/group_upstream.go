@@ -390,7 +390,8 @@ func (s *Service) normalizeGroupUpstreams(ctx context.Context, groupID int64, me
 			cp.Weight = 100
 		}
 		if cp.MaxConcurrency == 0 {
-			cp.MaxConcurrency = 8
+			// Keep in sync with the group_upstream schema default.
+			cp.MaxConcurrency = 80
 		}
 		if cp.Weight < 1 || cp.Weight > 10000 || cp.Priority < 0 || cp.Priority > 100000 || cp.MaxConcurrency < 1 || cp.MaxConcurrency > 100000 {
 			return nil, ErrInvalidInput

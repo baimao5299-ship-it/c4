@@ -35,7 +35,7 @@ func TestGroupUpstreamSchemaHasIndependentPolicyAndRuntimeFields(t *testing.T) {
 	}
 	require.Equal(t, 100, fields["weight"].Default)
 	require.Equal(t, 0, fields["priority"].Default)
-	require.Equal(t, 8, fields["max_concurrency"].Default)
+	require.Equal(t, 80, fields["max_concurrency"].Default)
 	require.Equal(t, true, fields["enabled"].Default)
 	require.Equal(t, 0, fields["failure_streak"].Default)
 }

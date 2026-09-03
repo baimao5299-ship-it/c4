@@ -146,7 +146,7 @@ func TestSetGroupUpstreamsValidatesAndReplacesAtomically(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, 100, rows[0].Weight, "default weight")
-	require.Equal(t, 8, rows[0].MaxConcurrency, "default concurrency")
+	require.Equal(t, 80, rows[0].MaxConcurrency, "default concurrency")
 
 	_, err = svc.SetGroupUpstreams(context.Background(), group.ID, []*domain.GroupUpstream{{UpstreamID: 11}, {UpstreamID: 11}})
 	require.ErrorIs(t, err, ErrInvalidInput)
@@ -192,7 +192,7 @@ func TestCreateUpstreamGroupUsesAtomicRepositoryOperation(t *testing.T) {
 	require.NotZero(t, created.ID)
 	require.Len(t, store.members[created.ID], 1)
 	require.Equal(t, 100, store.members[created.ID][0].Weight)
-	require.Equal(t, 8, store.members[created.ID][0].MaxConcurrency)
+	require.Equal(t, 80, store.members[created.ID][0].MaxConcurrency)
 	require.Equal(t, 1, pub.total())
 	require.True(t, pub.last().Multipliers)
 	require.Equal(t, []int64{created.ID}, pub.last().Groups)
