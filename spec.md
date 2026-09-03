@@ -1,6 +1,61 @@
 # spec.md — 模型名归一化与分组可见性修复（交给 Codex 执行）
 
-## 第三轮（当前任务，只读这节，前两轮已完成）
+## 第四轮（当前任务，只读这节）
+
+第三轮验收通过，输出完整、没有擅自改代码。HEAD 现在是 `536682d`。
+
+这轮验证协议转换的修复：`internal/protoconv/chat_resp.go`。
+
+### 改动内容
+
+`appendChatInputItems` 把 user 和 assistant 放在同一个 case 里，共用
+`appendContentParts`，而后者对所有文本部件硬编码 `"input_text"`。但 Responses
+协议只允许 assistant 消息携带 `output_text`/`refusal`，所以任何带 assistant
+历史的多轮对话经 Chat→Responses 转换后都会被上游整体拒绝：
+
+```
+invalid_value: Invalid value: 'input_text'.
+Supported values are: 'output_text' and 'refusal'.  param: input[2].content[0]
+```
+
+线上分组 31（上游 coco企业015，模型 gpt-5.6-sol）就是这个错误。它从第二轮对话
+起才失败，单轮请求没有 assistant 项、转换正常，所以看起来像是间歇性故障。
+
+改动是把文本部件类型作为参数从调用方传入，按 role 选择。`appendContentParts`
+只有一个调用点。developer 分支（`chat_resp.go:165`）保持 `input_text` 不变，
+那对 Responses 是正确的。
+
+新增测试 `chat_resp_assistant_role_test.go`，覆盖两种 role × 两种 content 形态
+（字符串和数组部件）。
+
+### 要跑的命令
+
+```
+go test ./internal/protoconv/... -count=1 -v
+go test ./internal/proxy/... ./internal/sdkbridge/... -count=1
+go vet ./internal/protoconv/... ./internal/proxy/...
+```
+
+### 重点关注
+
+`protoconv_test.go` 里 `TestConvertRequestChatToResp` 的 `input[1]`（user，
+第 77 行断言 `input_text`）和 `TestConvertRequestChatToRespLegacyMaxTokensAndImages`
+（第 111 行同样断言 `input_text`）都是 user 消息，**不应该受影响**。如果这两条
+失败，说明我把 user 分支也改坏了，停下报我。
+
+`input[2]` 是 assistant 项，原先没有任何断言，所以旧行为没被钉住。
+
+`internal/proxy` 和 `internal/sdkbridge` 里有 Codex/Responses 相关的集成测试，
+它们可能间接依赖转换输出，一并跑一下。
+
+### 如果有测试失败
+
+原样贴回失败测试名、完整 `-v` 输出、相关断言代码。不要改测试期望值，也不要改
+`chat_resp.go`。协议转换错了会让整类请求失败，我要自己判断。
+
+---
+
+## 第三轮（已完成，存档）
 
 第二轮验收通过，感谢你如实报告 `go build ./...` 的 `artifacts/gen-check*` 问题
 而不是擅自删除——那个目录确实在禁止范围内，且已证实不影响构建。
