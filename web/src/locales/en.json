@@ -789,6 +789,7 @@
     "priorityLabel": "Priority",
     "weightLabel": "Weight",
     "maxConcurrencyLabel": "Concurrency cap",
+    "memberOptionsHint": "Priority is strict failover: the lowest number takes every request, and traffic only moves to a higher number once that whole tier is unavailable or at its concurrency cap. To split traffic by proportion instead, give members the same priority and different weights.",
     "allowedModelsLabel": "Allowed models",
     "selectAllModels": "Select all",
     "loadingModels": "Reading verified models from the selected upstreams…",

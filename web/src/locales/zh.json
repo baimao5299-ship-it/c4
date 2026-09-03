@@ -789,6 +789,7 @@
     "priorityLabel": "优先级",
     "weightLabel": "权重",
     "maxConcurrencyLabel": "并发上限",
+    "memberOptionsHint": "优先级是严格故障转移：数字最小的一层承担全部请求，只有该层全部不可用或达到并发上限时才转到更大的数字。想按比例分流请给成员设相同优先级、不同权重。",
     "allowedModelsLabel": "开放模型",
     "selectAllModels": "全选",
     "loadingModels": "正在读取所选上游的已验证模型…",

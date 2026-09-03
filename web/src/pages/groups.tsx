@@ -204,6 +204,9 @@ function UpstreamPoolFields({
                 })}
               </div>
             )}
+            {showMemberOptions && selected.size > 0 && (
+              <p className="text-xs text-muted-foreground">{t('groups.memberOptionsHint')}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
@@ -973,10 +976,13 @@ export default function Groups() {
               <Input id="grp-create-remark" value={createRemark} maxLength={500} placeholder={t('groups.remarkPlaceholder')} onChange={e => setCreateRemark(e.target.value)} />
               <p className="text-xs text-muted-foreground">{t('groups.remarkHint')}</p>
             </div>
+            {/* Member options stay visible at creation: hiding them silently gave
+                every member priority 0, which puts the whole pool in one tier and
+                makes routing look like it ignores priority. Visibility, pricing and
+                protocol remain create-time defaults (see createDefaultsHint). */}
             <UpstreamPoolFields
               mode={createRoutingMode}
               showMode={false}
-              showMemberOptions={false}
               onModeChange={() => {}}
               upstreams={upstreamRows}
               upstreamsLoading={upstreamRowsLoading}
