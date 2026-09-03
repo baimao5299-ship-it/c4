@@ -614,12 +614,13 @@ export default function Groups() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
   const [createRemark, setCreateRemark] = useState('')
-  // New groups are intentionally opinionated: public, x1 and automatic
-  // protocol negotiation. Advanced policy remains available in edit.
-  const createVisibility: GroupVisibility = 'public'
-  // Automatic negotiation is the only protocol mode exposed for new groups.
-  const createProtocols: GroupProtocolConvert[] = ['auto']
-  const createMultiplier = ''
+  // The defaults stay opinionated -- public, x1, automatic negotiation -- but
+  // each one is editable here. Hiding them forced a create-then-reopen-and-edit
+  // round trip for the common cases of a private group or a non-x1 multiplier,
+  // and a group briefly existed as public x1 before the correction landed.
+  const [createVisibility, setCreateVisibility] = useState<GroupVisibility>('public')
+  const [createProtocols, setCreateProtocols] = useState<GroupProtocolConvert[]>(['auto'])
+  const [createMultiplier, setCreateMultiplier] = useState('')
   // A new group is always backed by the upstream pool. Existing account groups
   // remain supported in the edit flow, but a fresh group can never be created
   // empty and then look available while routing nothing.
@@ -662,6 +663,9 @@ export default function Groups() {
     // the three-step flow without inventing metadata; it can be edited later.
     setCreateName(makeAutoGroupName(t('groups.autoNamePrefix')))
     setCreateRemark('')
+    setCreateVisibility('public')
+    setCreateProtocols(['auto'])
+    setCreateMultiplier('')
     setCreateAllowedModels([])
     setCreateMembers([])
     createAutoModelKey.current = ''
@@ -967,19 +971,38 @@ export default function Groups() {
             <DialogDescription>{t('groups.newDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
-              <div className="font-medium">{t('groups.autoNameLabel')}</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">{t('groups.autoNameValue', { name: createName })}</div>
+            {/* Prefilled with a unique generated name so the flow still works
+                without inventing metadata, but editable: renaming afterwards
+                meant the group existed under a throwaway name in the meantime. */}
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-create-name">{t('groups.nameLabel')}</Label>
+              <Input id="grp-create-name" value={createName} onChange={e => setCreateName(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{t('groups.autoNameHint')}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="grp-create-remark">{t('groups.remarkLabel')}</Label>
               <Input id="grp-create-remark" value={createRemark} maxLength={500} placeholder={t('groups.remarkPlaceholder')} onChange={e => setCreateRemark(e.target.value)} />
               <p className="text-xs text-muted-foreground">{t('groups.remarkHint')}</p>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-create-visibility">{t('groups.visibilityLabel')}</Label>
+              <Select
+                items={Object.fromEntries([['public', t('groups.visibilityPublic')], ['private', t('groups.visibilityPrivate')]])}
+                value={createVisibility}
+                onValueChange={v => setCreateVisibility(v as GroupVisibility)}
+              >
+                <SelectTrigger id="grp-create-visibility" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public" label={t('groups.visibilityPublic')}>{t('groups.visibilityPublic')}</SelectItem>
+                  <SelectItem value="private" label={t('groups.visibilityPrivate')}>{t('groups.visibilityPrivate')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             {/* Member options stay visible at creation: hiding them silently gave
                 every member priority 0, which puts the whole pool in one tier and
-                makes routing look like it ignores priority. Visibility, pricing and
-                protocol remain create-time defaults (see createDefaultsHint). */}
+                makes routing look like it ignores priority. Routing mode is still
+                fixed to the upstream pool so a new group cannot be created empty
+                and then look available while routing nothing. */}
             <UpstreamPoolFields
               mode={createRoutingMode}
               showMode={false}
@@ -1000,9 +1023,24 @@ export default function Groups() {
               onToggleModel={toggleCreateModel}
               onSelectAllModels={selectAllCreateModels}
             />
-            <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-              {t('groups.createDefaultsHint')}
-            </p>
+            <div className="space-y-1.5">
+              <Label>{t('groups.protocolConvertLabel')}</Label>
+              <ProtocolConvertCheckboxes value={createProtocols} onChange={setCreateProtocols} />
+              <p className="text-xs text-muted-foreground">{t('groups.protocolConvertHint')}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="grp-create-multiplier">{t('groups.multiplierLabel')}</Label>
+              <Input
+                id="grp-create-multiplier"
+                type="number"
+                min={0}
+                max={10}
+                step={0.0001}
+                value={createMultiplier}
+                onChange={e => setCreateMultiplier(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t('groups.multiplierHint')}</p>
+            </div>
             {create.isError && errMsg(create.error) && (
               <p className="text-sm text-destructive">{errMsg(create.error)}</p>
             )}
