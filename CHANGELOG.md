@@ -16,6 +16,19 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
   numeric dot/dash variants, and short model tokens such as `k3`, while still
   rejecting aliases that could select between different provider prices.
 
+## [v0.0.1-beta.21] - 2026-09-04
+
+### Fixed
+
+- Checked in the generated Ent and OpenAPI contracts so clean release builds
+  remain drift-free; user channel status handling now follows the generated
+  enum names.
+- Concurrent partition bootstrap now tolerates the stale-drop window while
+  applying attribution-column upgrades, allowing both instances to converge.
+- Billing integration expectations now cover conservative base-input pricing
+  when a provider omits cache-specific rates, preventing cache usage from
+  being silently uncharged.
+
 ## [v0.0.1-beta.18] - 2026-09-02
 
 ### Fixed
