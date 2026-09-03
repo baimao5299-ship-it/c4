@@ -546,9 +546,19 @@ func (s *Service) CreateUpstreamWithModelValidation(ctx context.Context, u *doma
 	// Use a non-nil empty slice for a verified empty catalogue so the JSON field
 	// is persisted as [] (not NULL/unknown) and the scheduler excludes it.
 	u.Models = append([]string{}, result.Models...)
-	checkedAt := time.Now()
-	u.ModelsCheckedAt = &checkedAt
 	u.ModelsError = optionalString(result.ErrorCode)
+	// Only a complete run may claim the catalogue is authoritative. Stamping
+	// ModelsCheckedAt after a timeout publishes the handful of models that were
+	// probed before the deadline as the upstream's entire capability set, and
+	// every routing check treats a checked snapshot as exhaustive: the remaining
+	// advertised models become unroutable and any group whose allowlist needs
+	// them disappears from the user API and blocks key creation. Leaving it nil
+	// keeps the endpoint "not yet inspected", which routes permissively until a
+	// full probe tightens it.
+	if result.ValidationComplete {
+		checkedAt := time.Now()
+		u.ModelsCheckedAt = &checkedAt
+	}
 	created, err := store.CreateUpstream(ctx, u)
 	if err != nil {
 		return nil, mapRepoErr(err)
@@ -681,9 +691,13 @@ func (s *Service) updateUpstream(ctx context.Context, u *domain.Upstream, valida
 			return nil, &UpstreamModelValidationError{Code: result.ErrorCode}
 		}
 		u.Models = append([]string{}, result.Models...)
-		checkedAt := time.Now()
-		u.ModelsCheckedAt = &checkedAt
 		u.ModelsError = optionalString(result.ErrorCode)
+		// Same rule as the create path: an incomplete probe must not publish a
+		// truncated catalogue as authoritative. See CreateUpstreamWithModelValidation.
+		if result.ValidationComplete {
+			checkedAt := time.Now()
+			u.ModelsCheckedAt = &checkedAt
+		}
 	}
 	updated, err := store.UpdateUpstream(ctx, u)
 	if err != nil {
