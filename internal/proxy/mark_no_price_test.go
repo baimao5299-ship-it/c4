@@ -44,16 +44,26 @@ func TestMarkNoPriceNilSafe(t *testing.T) {
 
 func TestMarkNoPriceCapturesRequestMultiplier(t *testing.T) {
 	for _, tc := range []struct {
-		in, want string
+		name, in string
+		mult     int
+		want     string
 	}{
-		{"", "no_price:m800"},
-		{"priority", "no_price:priority:m12500"},
-		{"turbo", "no_price"},
+		{name: "discounted group", in: "", mult: 800, want: "no_price:m800"},
+		{name: "premium tier and multiplier", in: "priority", mult: 12500, want: "no_price:priority:m12500"},
+		// The default multiplier is recorded like any other. It used to be
+		// omitted as redundant, but an absent marker makes recoveryMultiplier
+		// fall back to the multiplier in force when the backfill runs, so an
+		// administrative rate change between request and backfill repriced the
+		// row at the new rate. Unknown tiers still collapse to the plain marker.
+		{name: "default multiplier is still recorded", in: "turbo", mult: 10000, want: "no_price:m10000"},
+		{name: "free group", in: "", mult: 0, want: "no_price:m0"},
 	} {
-		log := &domain.UsageLog{BillingTier: tc.in}
-		markNoPrice(log, map[string]int{"": 800, "priority": 12500, "turbo": 10000}[tc.in])
-		if log.BillingTier != tc.want {
-			t.Fatalf("marker = %q, want %q", log.BillingTier, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			log := &domain.UsageLog{BillingTier: tc.in}
+			markNoPrice(log, tc.mult)
+			if log.BillingTier != tc.want {
+				t.Fatalf("marker = %q, want %q", log.BillingTier, tc.want)
+			}
+		})
 	}
 }

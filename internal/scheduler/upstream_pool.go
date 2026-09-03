@@ -612,7 +612,9 @@ func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format doma
 			}
 			limit := item.member.MaxConcurrency
 			if limit < 1 {
-				limit = 8
+				// Mirror the schema default (group_upstream.max_concurrency) so a
+				// legacy or zero row behaves like a freshly created member.
+				limit = 80
 			}
 			cur := item.concurrency.Load()
 			if cur >= int64(limit) || !item.concurrency.CompareAndSwap(cur, cur+1) {

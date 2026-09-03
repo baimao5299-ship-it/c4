@@ -56,7 +56,10 @@ const defaultUpstreamMember = (upstream_id: number): UpstreamMemberDraft => ({
   upstream_id,
   priority: '0',
   weight: '100',
-  max_concurrency: '8',
+  // Keep in sync with the group_upstream.max_concurrency schema default: a
+  // member at its cap is skipped during tier selection, so a low value makes
+  // priority look ineffective under load.
+  max_concurrency: '80',
   enabled: true,
 })
 

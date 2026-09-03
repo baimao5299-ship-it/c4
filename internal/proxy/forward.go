@@ -716,8 +716,15 @@ func markNoPrice(l *domain.UsageLog, multiplier ...int) {
 	}
 	// Keep the request-time user/group multiplier with the recovery marker.
 	// This avoids repricing a delayed row at a later administrative rate.
+	//
+	// The default multiplier must be recorded too. Omitting it as "redundant"
+	// looked safe but left the most common case unprotected: with no marker,
+	// recoveryMultiplier falls back to the multiplier in force when repricing
+	// runs, so an administrative rate change between the request and the price
+	// backfill silently reprices the row at the new rate -- overcharging the
+	// user if it went up, undercharging if it went down.
 	markerMultiplier := ""
-	if len(multiplier) > 0 && multiplier[0] >= 0 && multiplier[0] <= maxBillingMultiplier && multiplier[0] != int(billingMultiplierBase) {
+	if len(multiplier) > 0 && multiplier[0] >= 0 && multiplier[0] <= maxBillingMultiplier {
 		markerMultiplier = fmt.Sprintf(":m%d", multiplier[0])
 	}
 	if tier == "" || tier == "auto" || tier == "no_price" {

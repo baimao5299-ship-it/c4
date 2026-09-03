@@ -22,7 +22,11 @@ func (GroupUpstream) Fields() []ent.Field {
 		field.Int64("upstream_id"),
 		field.Int("weight").Default(100),
 		field.Int("priority").Default(0),
-		field.Int("max_concurrency").Default(8),
+		// A member at its cap counts as unavailable for tier selection, so this
+		// value doubles as "how much traffic before priority stops holding".
+		// The old default of 8 made a busy primary tier spill into fallback long
+		// before any upstream was unhealthy, which read as priority being ignored.
+		field.Int("max_concurrency").Default(80),
 		field.Bool("enabled").Default(true),
 		field.Time("cooldown_until").Optional().Nillable(),
 		field.Int("failure_streak").Default(0),
