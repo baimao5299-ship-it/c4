@@ -94,7 +94,10 @@ function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
     seenExact.add(model)
     // Older C4 servers may not send ModelPrices yet. Keep those models visible
     // with explicit empty prices during a rolling frontend/backend upgrade.
-    rows.push(byName.get(model) ?? { Model: model })
+    // Pin Model to the trimmed allowlist spelling: a legacy price row can carry
+    // surrounding whitespace, and every later lookup here keys off this field.
+    const priced = byName.get(model)
+    rows.push(priced ? { ...priced, Model: model } : { Model: model })
   }
 
   // Rolling-upgrade safety net: an older backend still sends both legacy
@@ -120,8 +123,12 @@ function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
       out.push(row)
     }
   }
-  return sortModelsLatestFirst(out.map(row => row.Model)).map(
-    model => out.find(row => row.Model === model) ?? { Model: model },
+  // Sort by identifier, then map back through an exact-key index. Looking rows
+  // up with find() on a returned string would silently fall back to an unpriced
+  // row if the sorter ever normalized the spelling.
+  const byExact = new Map(out.map(row => [row.Model, row]))
+  return sortModelsLatestFirst([...byExact.keys()]).map(
+    model => byExact.get(model) ?? { Model: model },
   )
 }
 
