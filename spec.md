@@ -1,5 +1,47 @@
 # spec.md — 模型名归一化与分组可见性修复（交给 Codex 执行）
 
+## 第二轮（当前任务，先读这节）
+
+第一轮你交回了 `internal/service/channel_stats_coalesce_test.go`，14 个用例和
+第 2 节任务 3 的表格逐条对应，包括那条"已知局限"也如实固化了，**已验收并提交**。
+
+但你**没有交回任何验收命令的输出**（第 5 节第 1 项）。仓库里除了那个新测试文件
+没有其他改动，所以我无法区分两种情况：
+
+- (a) 代码一次编译通过、测试全绿，确实无须改动
+- (b) 任务 1（修编译错误）、任务 2（核对期望值）、任务 4（前端编译）没有执行
+
+**第二轮只要一件事：把下面这些命令跑一遍，把输出原文交回来。**
+
+```
+go build ./...
+go test ./internal/service/... -count=1
+go test ./internal/service/... -run 'TestCoalescePricedModelRows|TestUserChannelMetrics|TestUpstreamGroupHasRoute|TestUserKeyFlow' -count=1 -v
+go vet ./internal/service/...
+cd web && npm run build
+```
+
+我要在 `-v` 输出里看到这两个测试名出现并 PASS：
+
+- `TestUserChannelMetricsDeduplicatesLegacyModelSpellings` —— 管"该合并的合并了"
+- `TestUserChannelMetricsKeepsSeparatelyPricedPunctuationVariants` —— 管"不该合并的没被合并"
+
+前者是我最没把握的一处：那个用例里三个 Claude 拼写全都无价，走的是
+`publicModelPricesEqual` 全 nil 相等那条路径。**如果它失败，停下来报给我，
+不要改断言。**
+
+注意 HEAD 已经前进到 `837e311`，我在第二个提交里修了 `web/src/pages/user/models.tsx`
+的两个空格处理 bug（价格行会被误判为未定价）。所以前端必须重新编译验证。
+
+第 4 节任务 4 里原本标注的 TS 风险（`PRICE_FIELDS` 索引访问）我已核实站得住：
+那 16 个键全部存在于 `ChannelModelPrice` 类型上，值类型统一为
+`number | null | undefined`，`as const` 下能推出联合类型。如果 `tsc` 仍然报错，
+把错误原文交回来，**不要用 `any` 或 `@ts-ignore` 绕过**。
+
+如果全绿，就只交命令输出，不要改任何代码。
+
+---
+
 ## 0. 你的角色与硬约束
 
 诊断已经完成，根因已确定。**不要重新调查为什么分组会消失。** 本文件给的是结论，
