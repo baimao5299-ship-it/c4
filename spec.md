@@ -1,6 +1,68 @@
 # spec.md — 模型名归一化与分组可见性修复（交给 Codex 执行）
 
-## 第四轮（当前任务，只读这节）
+## 第五轮（当前任务，只读这节）
+
+第四轮验收通过。HEAD 现在是 `590a30e`。
+
+这轮改动面比前几轮大，**动了接口签名**，涉及 4 个生产文件 + 3 个测试桩。
+
+### 改动内容
+
+第三轮（`f3df30d`）只修了 service 层的创建/更新路径，但仓库层
+`recordUpstreamModelCapabilities` 仍然对任何非 nil 模型列表都盖
+`ModelsCheckedAt`，所以后台点一次「重新探测」就能把残缺快照重新标记为权威，
+把修复成果作废。
+
+`UpstreamModelCapabilityStore.RecordUpstreamModelCapabilities` 末尾加了
+`complete bool` 参数，只有完整运行才盖时间戳。不完整运行仍然写入已确认的模型
+和警告码——不盖章是安全的，因为 service 层在调用前已经合并了保留快照，所以
+记录的列表不会在这里变短。
+
+`RecordUpstreamModels`（legacy 接口）行为不变，它表达不了「不完整」这个概念。
+
+`recordExplicitUpstreamModel` 现在传 `complete=false`：手工探测单个模型按定义
+不是目录验证，在那里盖章会把一个从未验证过的上游钉死成只有那一个模型可路由。
+
+### 要跑的命令
+
+```
+go test ./internal/... -count=1
+go test ./internal/service/... -run 'TestListUpstreamModels|TestUpstream|TestValidateAll|TestCreateUpstream|TestUpdateUpstream' -count=1 -v
+go vet ./internal/...
+cd web && npm run build
+```
+
+第一条跑整个 `./internal/...`，因为改了接口签名，要确认没有其它实现方漏改。
+
+### 我预期不会失败的既有测试（失败就停下报我）
+
+- `TestListUpstreamModelsRetainsPreviousSnapshotOnPartialRun`
+  —— 这条测的是「部分运行仍保留旧快照的模型」，我没改那个合并逻辑
+- `upstream_test.go` 第 740、1138、1159 行三处 `require.NotNil(ModelsCheckedAt)`
+  —— 它们都在 `ValidationComplete=true` 的场景里（紧邻处都有
+  `require.True(t, result.ValidationComplete)`），应该不受影响
+- `TestValidateAllUpstreamsPersistsCanceledDiagnosticWithoutStorageError`
+  —— 只是桩签名跟着改了，语义没动
+
+新增测试是 `upstream_incomplete_stamp_test.go`，两条：不完整运行不盖章、
+完整运行照常盖章。
+
+### 如果有测试失败
+
+原样贴回失败测试名、完整 `-v` 输出、相关断言代码。**不要改测试期望值，不要改
+生产代码，不要给测试桩加特殊分支让它通过。** 这次改的是路由可用性的核心判断，
+改错的方向有两种：一是不可用的上游被当作可用（用户拿到上游报错），二是可用的
+上游被当作不可用（分组消失，就是我们一直在修的问题）。我需要自己判断是哪种。
+
+### 关于 `TEST_DATABASE_URL`
+
+仓库层的真实 SQL 行为测试（`pg_upstream_test.go`）在没配这个环境变量时会跳过。
+如果你那边能起一个临时 PostgreSQL，跑一下会很有价值——这轮改的正是那个文件里
+的 SQL 构造逻辑。**跑不了就明确说跳过了，不要假装跑过。**
+
+---
+
+## 第四轮（已完成，存档）
 
 第三轮验收通过，输出完整、没有擅自改代码。HEAD 现在是 `536682d`。
 
