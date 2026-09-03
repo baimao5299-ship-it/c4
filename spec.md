@@ -1,6 +1,61 @@
 # spec.md — 模型名归一化与分组可见性修复（交给 Codex 执行）
 
-## 第二轮（当前任务，先读这节）
+## 第三轮（当前任务，只读这节，前两轮已完成）
+
+第二轮验收通过，感谢你如实报告 `go build ./...` 的 `artifacts/gen-check*` 问题
+而不是擅自删除——那个目录确实在禁止范围内，且已证实不影响构建。
+
+HEAD 现在是 `f3df30d`，我改了 `internal/service/upstream.go` 两处，请验证。
+
+### 改动内容
+
+`CreateUpstreamWithModelValidation` 和 `UpdateUpstreamWithModelValidation` 原先
+在 `result.OK` 成立时**无条件**设置 `u.ModelsCheckedAt`。但 `OK` 的定义只是
+`len(result.Models) > 0`（一个模型探测成功即可），而探测是刻意串行的
+（`upstreamModelValidationConcurrency = 1`，每模型 12s），所以大目录常在探测
+几个模型后超时。结果是一份残缺快照被标记为「已确认」，而所有路由检查
+（`upstreamHasModel`、scheduler 的 `upstreamSupportsModel`）都把已标记的快照
+当作**穷尽列表**，导致未探测到的模型全部不可路由，依赖它们的分组从用户 API
+消失且无法建 key。
+
+改动是把标记改为以 `result.ValidationComplete` 为条件。该字段已存在，批量探测
+路径本来就在用它。
+
+### 要跑的命令
+
+```
+go test ./internal/service/... -count=1
+go test ./internal/service/... -run 'TestUpstream|TestUpdateUpstream|TestCreateUpstream|TestValidateModel|TestUserChannelMetrics|TestUpstreamGroupHasRoute' -count=1 -v
+go vet ./internal/service/...
+```
+
+### 我预期不会失败的既有测试（如果失败请停下报我）
+
+- `TestUpdateUpstreamWithModelValidationPersistsVerifiedSnapshot`
+  —— 该场景 1 个模型探测成功、属完整运行，`ValidationComplete=true`，
+  `ModelsCheckedAt` 仍应非 nil。**这条如果失败说明我的判断错了，立刻停下报我，
+  不要改断言、不要改我的代码去迁就测试。**
+- `TestUpdateUpstreamWithoutModelChangeKeepsLegacyWritePath`
+  —— 该场景不触发探测，`ModelsCheckedAt` 本就应为 nil。
+- `upstream_partial_snapshot_test.go` 里的全部用例
+  —— 它们走批量探测路径（`recordUpstreamModels`），我没动那条路径。
+
+### 如果有测试失败
+
+把**失败测试名 + 完整 `-v` 输出 + 相关断言那几行代码**原样贴回。不要修改
+测试期望值，也不要改 `upstream.go`。这两处改动涉及路由可用性判断，改错会让
+不可用的上游被当作可用，我需要自己判断。
+
+### 已知遗留（不要在这轮修）
+
+`internal/repository/upstream_repo.go` 的 `recordUpstreamModelCapabilities`
+（约 330-354 行）也在 `models != nil` 时无条件 `SetModelsCheckedAt`，所以批量
+重探测路径仍可能发布不完整快照。修它需要把 `complete` 穿过
+`UpstreamModelCapabilityStore` 接口，改动面更大，留到下一轮。
+
+---
+
+## 第二轮（已完成，存档）
 
 第一轮你交回了 `internal/service/channel_stats_coalesce_test.go`，14 个用例和
 第 2 节任务 3 的表格逐条对应，包括那条"已知局限"也如实固化了，**已验收并提交**。
