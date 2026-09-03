@@ -414,7 +414,8 @@ func TestStreamImageBillingNoPrice(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, code)
 	l := collectImageLogs(t, p, store)
-	require.Equal(t, "no_price", l.BillingTier)
+	// The marker carries the request-time multiplier (base rate here).
+	require.Equal(t, "no_price:m10000", l.BillingTier)
 	require.Zero(t, l.Cost)
 	require.Equal(t, int64(1), l.CallCount, "无价仍记张数（审计留痕）")
 }

@@ -93,7 +93,10 @@ func TestProxyBillingResponsesImagePriceDoesNotMakeTextFree(t *testing.T) {
 	// An image-only price is valid for an observed image call, but a normal
 	// text response has no priced token component and must be marked no_price
 	// instead of being silently recorded as a free request.
-	require.Equal(t, "no_price", log.BillingTier)
+	// markNoPrice now always records the request-time multiplier, including the
+	// base rate: without it, a later reprice would fall back to whatever
+	// multiplier is in force at backfill time.
+	require.Equal(t, "no_price:m10000", log.BillingTier)
 	require.Zero(t, log.Cost)
 	require.Zero(t, log.RawCost)
 }
@@ -134,7 +137,10 @@ func TestProxyBillingResponsesMixedUsageWaitsForImagePrice(t *testing.T) {
 	// provider/catalogue has no flat per-image rate. Keep the entire request
 	// pending so the call is not silently lost; delayed billing retries it when
 	// the image price is available.
-	require.Equal(t, "no_price", log.BillingTier)
+	// markNoPrice now always records the request-time multiplier, including the
+	// base rate: without it, a later reprice would fall back to whatever
+	// multiplier is in force at backfill time.
+	require.Equal(t, "no_price:m10000", log.BillingTier)
 	require.Zero(t, log.Cost)
 	require.Zero(t, log.RawCost)
 }
@@ -155,7 +161,10 @@ func TestProxyBillingResponsesCallOnlyStillRequiresImagePrice(t *testing.T) {
 	// No token usage was observed, so a generic token row cannot silently make
 	// the image/tool call free. It remains pending until a per-image price is
 	// available (or an upstream token usage report arrives).
-	require.Equal(t, "no_price", log.BillingTier)
+	// markNoPrice now always records the request-time multiplier, including the
+	// base rate: without it, a later reprice would fall back to whatever
+	// multiplier is in force at backfill time.
+	require.Equal(t, "no_price:m10000", log.BillingTier)
 	require.Zero(t, log.Cost)
 	require.Zero(t, log.RawCost)
 }
@@ -176,7 +185,10 @@ func TestProxyBillingRejectsPartialTokenPriceWithoutChargingZero(t *testing.T) {
 
 			p.applyBilling(log)
 
-			require.Equal(t, "no_price", log.BillingTier)
+			// markNoPrice now always records the request-time multiplier, including the
+	// base rate: without it, a later reprice would fall back to whatever
+	// multiplier is in force at backfill time.
+	require.Equal(t, "no_price:m10000", log.BillingTier)
 			require.Zero(t, log.Cost)
 			require.Zero(t, log.RawCost)
 		})
