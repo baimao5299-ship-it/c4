@@ -209,7 +209,7 @@ func TestCreateUpstreamGroupDeduplicatesCosmeticModelVariants(t *testing.T) {
 		AllowedModels: []string{"Claude-Fable-5.1", "claude_fable_5-1"}}
 	created, err := svc.CreateUpstreamGroup(context.Background(), group, []*domain.GroupUpstream{{UpstreamID: 11}})
 	require.NoError(t, err)
-	require.Equal(t, []string{"claude-fable-5.1"}, created.AllowedModels)
+	require.Equal(t, []string{"claude-fable-5-1"}, created.AllowedModels)
 }
 
 func TestCreateUpstreamGroupRejectsIncompletePayloadBeforeRepository(t *testing.T) {

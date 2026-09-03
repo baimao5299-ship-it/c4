@@ -148,8 +148,8 @@ func TestBuildUpstreamRoutesTreatsEmptyCapabilityMapAsLegacyChat(t *testing.T) {
 	// protocol-aware probing. Keep the historical Chat route for those rows.
 	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-5"})
 	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-5"})
-	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-4.1"})
-	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-4.1"})
+	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-4-1"})
+	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-4-1"})
 }
 
 func TestBuildUpstreamRoutesKeepsModelWithMissingCapabilityKeyOnChat(t *testing.T) {
@@ -170,8 +170,8 @@ func TestBuildUpstreamRoutesKeepsModelWithMissingCapabilityKeyOnChat(t *testing.
 	// partially written capability map has no protocol entry for it. Keep the
 	// model visible through the historical Chat route instead of reporting it as
 	// unavailable; do not invent a Responses capability for the missing entry.
-	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-4.1"})
-	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-4.1"})
+	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIChat, model: "gpt-4-1"})
+	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-4-1"})
 }
 
 func TestBuildUpstreamRoutesNormalizesModelIdentifiers(t *testing.T) {
@@ -186,7 +186,7 @@ func TestBuildUpstreamRoutesNormalizesModelIdentifiers(t *testing.T) {
 	member := &domain.GroupUpstream{ID: 10, GroupID: 20, UpstreamID: 1, Upstream: upstream, Weight: 100, Enabled: true}
 	routes := buildUpstreamRoutes([]*upstreamSnapshot{newUpstreamSnapshot(member, nil)}, []string{"  gpt-5.6  "})
 
-	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-5.6"})
+	require.Contains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "gpt-5-6"})
 	require.NotContains(t, routes, routeKey{format: domain.FormatOpenAIResponses, model: "  gpt-5.6  "})
 
 	// Selection receives the same canonical identifier after route generation;

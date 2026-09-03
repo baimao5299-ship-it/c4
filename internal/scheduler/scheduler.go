@@ -96,7 +96,11 @@ type Selection struct {
 	Format         domain.RequestFormat
 	UpstreamKey    string
 	CredentialType credential.Type
-	Model          string // 已应用模型映射
+	Model          string // 实际发送给上游的模型名（已应用模型映射）
+	// PricingModel is the stable public route name used for price lookup. It is
+	// set only when an upstream pool needs a provider-specific wire spelling.
+	// Keeping it separate prevents cosmetic provider IDs from bypassing billing.
+	PricingModel string
 	// PrecheckedPrices follows this exact attempt and is used only when the
 	// mutable pricing snapshot changes before request settlement.
 	PrecheckedPrices *domain.ResolvedPrices

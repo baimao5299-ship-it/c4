@@ -74,7 +74,9 @@ func TestParseCSVMergesIdenticalProvidersAndPrefersCanonicalConflict(t *testing.
 	require.NoError(t, err)
 	require.Len(t, res.PriceEntries, 2)
 	byModel := map[string]*domain.PriceEntry{}
-	for _, entry := range res.PriceEntries { byModel[entry.Model] = entry }
+	for _, entry := range res.PriceEntries {
+		byModel[entry.Model] = entry
+	}
 	require.Equal(t, int64(500000), *byModel["claude-opus-4-6"].InputPerM)
 	require.Equal(t, "anthropic", *byModel["claude-opus-4-6"].Provider)
 	require.Equal(t, int64(250000), *byModel["gpt-5.6-terra"].InputPerM)
@@ -95,12 +97,63 @@ func TestBuiltinOfficialPricesCoverPreviouslyUnpricedModels(t *testing.T) {
 	for _, row := range result.PriceEntries {
 		byModel[row.Model] = row
 	}
-	for _, model := range []string{"claude-opus-4-6", "kimi-k3", "GLM-5"} {
+	for _, model := range []string{"claude-opus-4-6", "kimi-k3", "GLM-5", "qwen3.7-max", "qwen3.8-max", "volcengine/doubao-seed-2-0-code"} {
 		row := byModel[model]
 		require.NotNil(t, row, model)
 		require.NotNil(t, row.InputPerM, model)
 		require.NotNil(t, row.OutputPerM, model)
 	}
+	require.Equal(t, int64(250000), *byModel["qwen3.7-max"].InputPerM)
+	require.Equal(t, int64(50000), *byModel["qwen3.7-max"].CacheReadPerM)
+	require.Equal(t, int64(750000), *byModel["qwen3.7-max"].OutputPerM)
+	require.Equal(t, int64(200000), *byModel["qwen3.8-max"].InputPerM)
+	require.Equal(t, int64(25000), *byModel["qwen3.8-max"].CacheReadPerM)
+	require.Equal(t, int64(600000), *byModel["qwen3.8-max"].OutputPerM)
+	require.Equal(t, int64(46000), *byModel["volcengine/doubao-seed-2-0-code"].InputPerM)
+	require.Equal(t, int64(230000), *byModel["volcengine/doubao-seed-2-0-code"].OutputPerM)
+}
+
+func TestAddUniquePreviewDateAliasesPrefersExactAndRejectsCollisions(t *testing.T) {
+	price := func(model string, input int64) *domain.PriceEntry {
+		output := input * 2
+		return &domain.PriceEntry{Model: model, Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output}
+	}
+	result := addUniquePreviewDateAliases(&FetchResult{
+		Models: []string{
+			"unique-preview-260215", "exact", "exact-preview-260215",
+			"ambiguous-preview-260215", "ambiguous-preview-260216",
+		},
+		PriceEntries: []*domain.PriceEntry{
+			price("unique-preview-260215", 100),
+			price("exact", 200), price("exact-preview-260215", 300),
+			price("ambiguous-preview-260215", 400), price("ambiguous-preview-260216", 500),
+		},
+	})
+	byModel := make(map[string]*domain.PriceEntry, len(result.PriceEntries))
+	for _, row := range result.PriceEntries {
+		byModel[row.Model] = row
+	}
+	require.Equal(t, int64(100), *byModel["unique"].InputPerM)
+	require.Equal(t, int64(200), *byModel["exact"].InputPerM, "an exact root must win over a preview alias")
+	require.NotContains(t, byModel, "ambiguous", "multiple previews must not produce a guessed root price")
+}
+
+func TestPreviewDateAliasRejectsNonDates(t *testing.T) {
+	for _, model := range []string{
+		"model-preview-123456", "model-preview-260230", "model-preview-20261301", "model-preview-build",
+	} {
+		_, ok := previewDateAlias(model)
+		require.Falsef(t, ok, "%q must not be treated as a dated preview", model)
+	}
+}
+
+func TestAddUniquePreviewDateAliasesTreatsExactRootCaseInsensitively(t *testing.T) {
+	input, output := int64(100), int64(200)
+	result := addUniquePreviewDateAliases(&FetchResult{PriceEntries: []*domain.PriceEntry{
+		{Model: "Model", Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output},
+		{Model: "model-preview-260215", Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output},
+	}})
+	require.Len(t, result.PriceEntries, 2, "a case-only exact root must prevent a duplicate alias")
 }
 
 func TestMergeWithBuiltinPricesFillsMissingRowsAndNeverLowersPrice(t *testing.T) {

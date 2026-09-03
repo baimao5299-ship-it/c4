@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -33,8 +34,8 @@ import (
 // 到 codexImagesCaller（T2，见 caller_images_codex.go）。双协议：
 //   - JSON：model 顶层提取 + setModel 模型映射改写（与 chat 同构）+ stream
 //     探测（SSE 透传）
-//   - multipart：body 原样透传（含图片文件字节与 boundary，Content-Type 保
-//     留）；不做 setModel/setStreamAndModel JSON 重写（form model 原样透传）
+//   - multipart：使用原 boundary 重建表单并只改写 model 字段；图片文件内容
+//     与 Content-Type 保留，确保规范化公开名仍能恢复为上游原始模型 ID。
 type imagesCaller struct {
 	p    *Proxy
 	path string // 上游路径（"images/generations" | "images/edits"）
@@ -51,11 +52,14 @@ func (c *imagesCaller) Call(ctx context.Context, w http.ResponseWriter, r *http.
 	if multipart {
 		reqModel = imagesMultipartModel(body, contentType)
 	}
-	// 模型映射改写：JSON 形态 setModel（ModelMapping 语义，与 chat 同构；
-	// 改写失败原样转发——body 已过 json.Valid，防御性兜底）；multipart 形态
-	// 不做改写（form model 字段原样透传，spec §5.1 声明）。
+	// 模型映射改写：JSON 与 multipart 都发送 Selection 中保存的上游原名。
+	// multipart 使用标准解析器和原 boundary 重建，文件内容按流复制。
 	upBody := body
-	if !multipart {
+	if multipart {
+		if nb, err := rewriteImagesMultipartModel(body, contentType, sel.Model); err == nil {
+			upBody = nb
+		}
+	} else {
 		if nb, err := setModel(body, sel.Model); err == nil {
 			upBody = nb
 		}
@@ -170,8 +174,7 @@ func isMultipartForm(contentType string) bool {
 	return err == nil && mt == "multipart/form-data"
 }
 
-// imagesMultipartModel 从 multipart body 提取 model 字段值（P1-2：model 从
-// form 字段取——不做 setModel JSON 重写，form model 原样透传）。body 已在
+// imagesMultipartModel 从 multipart body 提取 model 字段值。body 已在
 // 内存（MaxBytesReader 已限界），文件 part 不读内容（NextPart 仅解析 part
 // 头，文件字节原样留在 body 透传）；model 字段值域内截断 4096（防恶意大
 // 字段；form 文本字段正常值远小于此）。缺失/解析失败 → ""（调度器按格式
@@ -192,6 +195,57 @@ func imagesMultipartModel(body []byte, contentType string) string {
 			return strings.TrimSpace(string(b))
 		}
 	}
+}
+
+func rewriteImagesMultipartModel(body []byte, contentType, model string) ([]byte, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil || params["boundary"] == "" {
+		return nil, fmt.Errorf("invalid multipart content type")
+	}
+	boundary := params["boundary"]
+	mr := multipart.NewReader(bytes.NewReader(body), boundary)
+	var out bytes.Buffer
+	mw := multipart.NewWriter(&out)
+	if err := mw.SetBoundary(boundary); err != nil {
+		return nil, err
+	}
+	found := false
+	for {
+		part, nextErr := mr.NextPart()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			return nil, nextErr
+		}
+		dst, createErr := mw.CreatePart(part.Header)
+		if createErr != nil {
+			return nil, createErr
+		}
+		if part.FormName() == "model" {
+			found = true
+			if _, err = io.WriteString(dst, model); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if _, err = io.Copy(dst, part); err != nil {
+			return nil, err
+		}
+	}
+	if !found {
+		dst, createErr := mw.CreateFormField("model")
+		if createErr != nil {
+			return nil, createErr
+		}
+		if _, err = io.WriteString(dst, model); err != nil {
+			return nil, err
+		}
+	}
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 // isCodexCredentialType codex 号池类型判定（Task B 分流骨架起：images 端点

@@ -139,7 +139,7 @@ func TestModelLookupKeyReleaseAndProviderAliases(t *testing.T) {
 	}
 }
 
-func TestModelLookupKeyDoesNotCollapseVersionsOrPunctuation(t *testing.T) {
+func TestModelLookupKeyDoesNotCollapseVersionsButMatchesCosmeticPunctuation(t *testing.T) {
 	for _, model := range []string{
 		"claude-opus-4-6",
 		"claude-opus-4-7",
@@ -154,8 +154,8 @@ func TestModelLookupKeyDoesNotCollapseVersionsOrPunctuation(t *testing.T) {
 	}
 
 	got, ok := modelLookupKey([]string{"foo.bar"}, "foo-bar")
-	require.False(t, ok, "punctuation is part of a provider model identifier")
-	require.Empty(t, got)
+	require.True(t, ok, "pricing aliases follow the scheduler's cosmetic punctuation rule")
+	require.Equal(t, "foo.bar", got)
 }
 
 func TestStripModelSnapshotRecognizesSupportedDateForms(t *testing.T) {
@@ -326,4 +326,19 @@ func TestPricingShortAliasWithDifferentCandidatesStaysUnpriced(t *testing.T) {
 
 	_, ok := svc.ResolvePrices("k3", 0, "", time.Now())
 	require.False(t, ok, "an ambiguous short alias must not borrow an arbitrary price")
+}
+
+func TestPricingAliasMatchesCosmeticProviderSeparators(t *testing.T) {
+	fs := newFakeStore()
+	input, output := int64(100000), int64(200000)
+	_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+		Model: "relay/model.1", Mode: domain.PriceModeToken,
+		InputPerM: &input, OutputPerM: &output, Source: domain.PricingSourceLitellm,
+	}})
+	require.NoError(t, err)
+	svc := newPricingSvc(t, fs)
+	resolved, ok := svc.ResolvePrices("model-1", 0, "", time.Now())
+	require.True(t, ok, "billing must match cosmetic punctuation used by the scheduler")
+	require.Equal(t, input, *resolved.InputPerM)
+	require.Equal(t, output, *resolved.OutputPerM)
 }

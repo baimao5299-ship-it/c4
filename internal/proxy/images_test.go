@@ -192,9 +192,8 @@ func TestImagesEditsJSONDirect(t *testing.T) {
 
 // TestImagesMultipartHardGateSkippedAndPassthrough multipart 专用 body 分支
 // （P1-2）：body 为非 JSON（含图片文件字节）→ 必须 200（json.Valid 硬门对
-// multipart 跳过——不跳过则 400 误杀）；body 字节与 Content-Type（含
-// boundary）原样透传上游；model 从 form 字段取（映射不回写——form model
-// 原样透传）。
+// multipart 跳过——不跳过则 400 误杀）；Content-Type 与 boundary 保留，
+// model 改写为上游 ID，文件内容不变。
 func TestImagesMultipartHardGateSkippedAndPassthrough(t *testing.T) {
 	up, c := fakeImagesUpstream(t, "/v1/images/edits")
 	defer up.Close()
@@ -229,21 +228,29 @@ func TestImagesMultipartHardGateSkippedAndPassthrough(t *testing.T) {
 	c.mu.Lock()
 	require.Equal(t, 1, c.calls, "multipart 请求必须转发上游")
 	require.Equal(t, ct, c.contentType, "multipart Content-Type（含 boundary）原样透传")
-	require.Equal(t, body, c.body, "multipart body 字节原样透传（图片文件不解析不重写）")
-	// 上游侧解析 form：model 为客户端原值（img-1，映射不回写——spec §5.1 声明）
+	// 上游侧解析 form：model 已改写，其他字段和文件内容保持不变。
 	mr := multipart.NewReader(bytes.NewReader(c.body), boundaryOf(ct))
 	formModel := ""
+	prompt := ""
+	var fileBody []byte
 	for {
 		part, err := mr.NextPart()
 		if err != nil {
 			break
 		}
-		if part.FormName() == "model" {
-			b, _ := io.ReadAll(part)
+		b, _ := io.ReadAll(part)
+		switch part.FormName() {
+		case "model":
 			formModel = string(b)
+		case "prompt":
+			prompt = string(b)
+		case "image":
+			fileBody = b
 		}
 	}
-	require.Equal(t, "img-1", formModel, "multipart 形态不做 setModel 改写（form model 原样透传）")
+	require.Equal(t, "gpt-image-1", formModel)
+	require.Equal(t, "make it red", prompt)
+	require.Equal(t, []byte("PNG-binary-junk-that-is-not-json"), fileBody)
 	c.mu.Unlock()
 	require.NoError(t, p.rec.Close(context.Background()))
 }

@@ -126,6 +126,14 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		}
 		return 80
 	}
+	// Keep billing lookup aligned with scheduler routing for cosmetic provider
+	// spellings such as `model.1`, `model-1`, and `MODEL_1`.
+	if strings.EqualFold(modelMatchKey(keyBase), modelMatchKey(requestedBase)) {
+		if !requestedQualified && keyQualified {
+			return 55
+		}
+		return 79
+	}
 	// Relay catalogues frequently vary only in case and in the separator used
 	// inside a numeric release (for example Claude-Fable-5.1 versus
 	// claude-fable-5-1). Exact IDs still win above. The candidate collector and
@@ -283,6 +291,31 @@ func modelBasename(model string) string {
 		return model[slash+1:]
 	}
 	return model
+}
+
+func modelMatchKey(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if model == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(model))
+	lastDash := false
+	for _, r := range model {
+		if r == '_' || r == '.' {
+			r = '-'
+		}
+		if r == '-' {
+			if lastDash {
+				continue
+			}
+			lastDash = true
+		} else {
+			lastDash = false
+		}
+		b.WriteRune(r)
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func modelNamespace(model string) string {

@@ -171,7 +171,7 @@ func TestPostGroupsUpstreamsAtomic(t *testing.T) {
 		require.Equal(t, GroupVisibility(domain.GroupVisibilityPrivate), *got.Visibility)
 		require.Equal(t, GroupRoutingMode(domain.GroupRoutingModeUpstreams), *got.RoutingMode)
 		require.Equal(t, 1.25, *got.PriceMultiplier)
-		require.ElementsMatch(t, []string{"gpt-5.6", "gpt-5.5"}, *got.AllowedModels)
+		require.ElementsMatch(t, []string{"gpt-5-6", "gpt-5-5"}, *got.AllowedModels)
 
 		store.mu.Lock()
 		rows := cloneAtomicGroupMembers(store.members[*got.ID])
@@ -272,7 +272,7 @@ func TestPutGroupsUpstreamsAtomic(t *testing.T) {
 	require.Equal(t, "edited-route", stored.Name)
 	require.Equal(t, domain.GroupVisibilityPrivate, stored.Visibility)
 	require.Equal(t, 14000, stored.PriceMultiplier)
-	require.Equal(t, []string{"gpt-5.5"}, stored.AllowedModels)
+	require.Equal(t, []string{"gpt-5-5"}, stored.AllowedModels)
 	require.Len(t, members, 1)
 	require.Equal(t, secondID, members[0].UpstreamID)
 	require.Equal(t, 75, members[0].Weight)
@@ -317,7 +317,7 @@ func TestPutGroupsInfersUpstreamRoutingWhenMembersAreProvided(t *testing.T) {
 	members := cloneAtomicGroupMembers(store.members[*group.ID])
 	store.mu.Unlock()
 	require.Equal(t, domain.GroupRoutingModeUpstreams, stored.RoutingMode)
-	require.Equal(t, []string{"gpt-5.6"}, stored.AllowedModels)
+	require.Equal(t, []string{"gpt-5-6"}, stored.AllowedModels)
 	require.Len(t, members, 1)
 	require.Equal(t, firstID, members[0].UpstreamID)
 }

@@ -323,7 +323,11 @@ func (p *Proxy) failoverLoop(w http.ResponseWriter, r *http.Request, format, sel
 			if rm, ok := r.Context().Value(ctxKeyReqMeta{}).(*reqMeta); ok && rm.hasTier {
 				tier = rm.tier.String()
 			}
-			rp, err := p.precheckPrice(format, sel.Model, tier)
+			priceModel := sel.PricingModel
+			if priceModel == "" {
+				priceModel = sel.Model
+			}
+			rp, err := p.precheckPrice(format, priceModel, tier)
 			if err != nil {
 				p.sched.ReleaseSelection(sel)
 				p.recordRejected(r.Context(), reqID, groupID, sel.AccountID, reqModel, sel.Model, format, http.StatusPaymentRequired, domain.ErrBilling, 0, usageTuple{}, start, errNoPrice.msg, sel)

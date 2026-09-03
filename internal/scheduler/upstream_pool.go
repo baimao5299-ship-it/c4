@@ -109,7 +109,9 @@ func newUpstreamSnapshot(member *domain.GroupUpstream, old *upstreamSnapshot) *u
 		modelIDs: make(map[string]string), formatModelIDs: make(map[modelFormatKey]string),
 	}
 	if member.Upstream != nil {
-		for _, raw := range member.Upstream.Models {
+		models := append([]string(nil), member.Upstream.Models...)
+		slices.Sort(models)
+		for _, raw := range models {
 			id := canonicalModelID(raw)
 			if id == "" {
 				continue
@@ -347,9 +349,7 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 			continue
 		}
 		key := modelMatchKey(model)
-		if previous := byKey[key]; previous == "" || model < previous {
-			byKey[key] = model
-		}
+		byKey[key] = key
 	}
 	models := make([]string, 0, len(byKey))
 	for _, model := range byKey {
@@ -396,9 +396,7 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 			model := canonicalModelID(rawModel)
 			if model != "" {
 				key := modelMatchKey(model)
-				if previous := confirmed[key]; previous == "" || model < previous {
-					confirmed[key] = model
-				}
+				confirmed[key] = key
 			}
 		}
 		// Explicit/manual probes can record a tenant-scoped model in the
@@ -409,9 +407,7 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 			model := canonicalModelID(rawModel)
 			if model != "" {
 				key := modelMatchKey(model)
-				if previous := confirmed[key]; previous == "" || model < previous {
-					confirmed[key] = model
-				}
+				confirmed[key] = key
 			}
 		}
 	}
@@ -627,7 +623,8 @@ func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format doma
 				AccountID: 0, TemplateID: 0, BaseURL: item.endpoint,
 				UpstreamID: item.upstream.ID, UpstreamName: item.upstream.Name,
 				UpstreamHost: item.host, UpstreamMultiplierBP: item.upstream.MultiplierBP,
-				Format: format, UpstreamKey: item.key, CredentialType: credential.TypeAPIKey, Model: item.rawModelFor(model, format, requestedModel),
+				Format: format, UpstreamKey: item.key, CredentialType: credential.TypeAPIKey,
+				Model: item.rawModelFor(model, format, requestedModel), PricingModel: model,
 				upstreamRef: item,
 			}, nil
 		}

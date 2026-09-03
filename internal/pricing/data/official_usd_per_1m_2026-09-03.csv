@@ -1,4 +1,7 @@
 provider,model_id,model_name,context_tokens,input_usd_per_1m,cache_read_usd_per_1m,cache_write_usd_per_1m,output_usd_per_1m,batch_input_usd_per_1m,batch_output_usd_per_1m,currency_original,original_standard_price,original_batch_price,fx_usd_to_cny,pricing_basis,official_source
+AlibabaCloud,qwen3.7-max,Qwen3.7 Max,,2.5,0.5,,7.5,,,USD,2.5,,,Official provider USD/M tokens,https://www.alibabacloud.com/help/en/model-studio/models
+AlibabaCloud,qwen3.8-max,Qwen3.8 Max,,2,0.25,,6,,,USD,2,,,Official provider USD/M tokens,https://www.alibabacloud.com/help/en/model-studio/models
+Volcengine,volcengine/doubao-seed-2-0-code-preview-260215,Doubao Seed 2.0 Code Preview,256000,0.46,,,2.3,,,USD,0.46,,,Official provider USD/M tokens,https://www.volcengine.com/docs/82379/1330310
 Anthropic,claude-2,Claude 2.0 / 2.1,200000,8,,,24,,,USD,8,,,Official provider USD/M tokens,https://www.anthropic.com/pricing#api
 Anthropic,claude-3-5-haiku-latest,Claude Haiku 3.5,200000,0.8,0.08,1,4,,,USD,0.8,,,Official provider USD/M tokens,https://www.anthropic.com/pricing#api
 Anthropic,claude-3-5-sonnet,Claude Sonnet 3.5,200000,3,0.3,3.75,15,,,USD,3,,,Official provider USD/M tokens,https://www.anthropic.com/pricing#api

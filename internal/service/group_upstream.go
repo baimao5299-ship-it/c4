@@ -343,14 +343,11 @@ func canonicalUpstreamModelID(model string) string {
 func normalizeAllowedUpstreamModels(models []string) []string {
 	byKey := make(map[string]string, len(models))
 	for _, raw := range models {
-		display := strings.ToLower(strings.TrimSpace(raw))
-		key := canonicalUpstreamModelID(display)
+		key := canonicalUpstreamModelID(raw)
 		if key == "" {
 			continue
 		}
-		if previous := byKey[key]; previous == "" || display < previous {
-			byKey[key] = display
-		}
+		byKey[key] = key
 	}
 	out := make([]string, 0, len(byKey))
 	for _, model := range byKey {

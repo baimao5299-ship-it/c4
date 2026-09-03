@@ -117,6 +117,7 @@ func TestUpstreamModelCosmeticVariantsShareRouteAndPreserveRawID(t *testing.T) {
 	sel, err := s.Select(20, domain.FormatOpenAIChat, "CLAUDE_FABLE_5.1")
 	require.NoError(t, err)
 	require.Equal(t, "Claude-Fable-5.1", sel.Model, "proxy must send the upstream's original model spelling")
+	require.Equal(t, "claude-fable-5-1", sel.PricingModel, "billing must use the stable public route name")
 	s.ReleaseSelection(sel)
 }
 
@@ -140,10 +141,30 @@ func TestUpstreamSelectionPreservesProtocolSpecificRawModelID(t *testing.T) {
 	chat, err := s.Select(21, domain.FormatOpenAIChat, "model-1")
 	require.NoError(t, err)
 	require.Equal(t, "Model.1", chat.Model)
+	require.Equal(t, "model-1", chat.PricingModel)
 	s.ReleaseSelection(chat)
 
 	responses, err := s.Select(21, domain.FormatOpenAIResponses, "model.1")
 	require.NoError(t, err)
 	require.Equal(t, "MODEL-1", responses.Model)
+	require.Equal(t, "model-1", responses.PricingModel)
 	s.ReleaseSelection(responses)
+}
+
+func TestUpstreamSameProtocolCosmeticCollisionUsesStableRawID(t *testing.T) {
+	checked := time.Now()
+	key := "relay-key"
+	u := &domain.Upstream{ID: 203, Name: "stable-variants", BaseURL: "https://relay.example",
+		UpstreamKey: &key, Models: []string{"model_1", "Model.1", "MODEL-1"}, ModelsCheckedAt: &checked,
+		Enabled: true}
+	member := &domain.GroupUpstream{ID: 4, GroupID: 22, UpstreamID: u.ID, Upstream: u, Weight: 100, Enabled: true}
+	group := &domain.Group{ID: 22, Name: "stable-group", RoutingMode: domain.GroupRoutingModeUpstreams,
+		AllowedModels: []string{"model-1"}, UpstreamMembers: []*domain.GroupUpstream{member}}
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{22: group})
+
+	sel, err := s.Select(22, domain.FormatOpenAIChat, "model.1")
+	require.NoError(t, err)
+	require.Equal(t, "MODEL-1", sel.Model, "cosmetic aliases use a deterministic raw ID")
+	require.Equal(t, "model-1", sel.PricingModel)
+	s.ReleaseSelection(sel)
 }
