@@ -659,8 +659,8 @@ export default function Groups() {
     // Reset a previous failed submission so an old error does not look like a
     // new request failure when the dialog is opened again.
     create.reset()
-    // A usable unique name is generated up front so the operator can complete
-    // the three-step flow without inventing metadata; it can be edited later.
+    // A usable unique name is generated up front so the operator never has to
+    // invent metadata, but the field itself is editable in the dialog.
     setCreateName(makeAutoGroupName(t('groups.autoNamePrefix')))
     setCreateRemark('')
     setCreateVisibility('public')
