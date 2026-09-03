@@ -1,6 +1,64 @@
 # spec.md — 模型名归一化与分组可见性修复（交给 Codex 执行）
 
-## 第五轮（当前任务，只读这节）
+## 第六轮（当前任务，只读这节）
+
+第五轮你按要求在第一条命令失败时立刻停下并原样贴回了断言，这是正确处理。
+那条失败我判定为**测试断言错误、生产代码正确**，已在 `771a101` 改断言。
+HEAD 现在是 `ac3cd85`。
+
+### 为什么改的是测试而不是代码
+
+`TestTestUpstreamWithModelProbesExplicitModelMissingFromCatalogue` 第 83 行
+原本断言 `ModelsCheckedAt` 非 nil。但这条测试自己第 82 行的注释写着
+「a successful explicit probe must be routable after reload」，而盖章恰好破坏
+这一点：路由在 `ModelsCheckedAt == nil` 时放行任何模型，一旦盖章就只认
+`Models` 列表。该用例的上游从未验证过，`Models` 里只有手工探测的
+`hidden-alias`，所以旧行为让目录里的 `listed-model` **变成不可路由**。
+这就是分组消失那个 bug 的缩小版。断言已改为 `require.Nil`。
+
+### 这轮还包含前端改动
+
+用户反馈「设了优先级没效果」。查明两个原因，都在 `web/src/pages/groups.tsx`：
+
+1. 创建分组对话框传了 `showMemberOptions={false}`，把优先级/权重/并发三个输入框
+   隐藏了（那三个框在第 193-201 行受此 flag 控制），所以新建的成员一律是
+   `defaultUpstreamMember` 的 `priority: '0'`，全挤在同一层。已去掉该 flag。
+2. 优先级的真实语义是**严格故障转移**而非按比例分流
+   （`scheduler/upstream_pool.go:283-312` 按 priority 分桶，只有最小数字那层做
+   主序列，其余进 fallback；`:598-603` 主层耗尽才碰 fallback）。已加提示文案
+   `groups.memberOptionsHint`（中英双语）说明这一点。
+
+后端链路我查过，**没有问题**：handler、service 校验、repository 写入、调度器
+读取全都正确处理了 priority。这轮不需要改后端。
+
+### 要跑的命令
+
+```
+go test ./internal/... -count=1
+go test ./internal/service/... -run 'TestTestUpstreamWithModel|TestListUpstreamModels|TestUpstream' -count=1 -v
+go vet ./internal/...
+cd web && npm run build
+```
+
+前端改了三个文件（`groups.tsx` 和两个 locale JSON），`npm run build` 必须跑。
+
+### 重点关注
+
+- `TestTestUpstreamWithModelProbesExplicitModelMissingFromCatalogue` 现在应该
+  通过。如果它还失败，把新的失败原因贴回来。
+- `TestTestUpstreamWithModelDoesNotDependOnCatalogueAvailabilityWhenExplicit`
+  （同文件第 86 行）没有断言 `ModelsCheckedAt`，不该受影响。
+- `npm run build` 里注意 locale JSON 的语法——我手工加了 key，如果 JSON
+  格式错了 `tsc` 或 vite 会报错。
+
+### 硬约束不变
+
+测试失败就原样贴回，不要改测试期望值、不要改生产代码、不要给测试桩加特殊分支。
+`TEST_DATABASE_URL` 跑不了就明确说跳过。
+
+---
+
+## 第五轮（已完成，存档）
 
 第四轮验收通过。HEAD 现在是 `590a30e`。
 
