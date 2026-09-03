@@ -55,7 +55,7 @@ func (h *UserAPI) GetUserChannelMonitor(w http.ResponseWriter, r *http.Request, 
 		}
 		status := GroupPublicStatus(metric.Group.PublicStatus)
 		if status == "" {
-			status = GroupPublicStatusAvailable
+			status = Available
 		}
 		models := append([]string(nil), metric.Group.AllowedModels...)
 		if models == nil {

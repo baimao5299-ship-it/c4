@@ -217,7 +217,7 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "weight", Type: field.TypeInt, Default: 100},
 		{Name: "priority", Type: field.TypeInt, Default: 0},
-		{Name: "max_concurrency", Type: field.TypeInt, Default: 8},
+		{Name: "max_concurrency", Type: field.TypeInt, Default: 80},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "cooldown_until", Type: field.TypeTime, Nullable: true},
 		{Name: "failure_streak", Type: field.TypeInt, Default: 0},

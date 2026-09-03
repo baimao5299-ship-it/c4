@@ -39,7 +39,7 @@ import (
 //	  go test ./internal/proxy/ -run TestCodexResponsesHTTPBillingPG -v
 //
 // 独立 schema（c3api_test_t6）避共享库并发踩踏。断言面：SDK 合成体透传 +
-// usage 顶层五计数计费落库（cost 500 毫分）+ cred 传递（Bearer pat-pg-1 直供
+// usage 顶层五计数计费落库（缺少缓存单价时按基础输入价计费）+ cred 传递（Bearer pat-pg-1 直供
 // 适配层）。
 
 const codexHTTPPGTestSchema = "c3api_test_t6"
@@ -159,7 +159,8 @@ func TestCodexResponsesHTTPBillingPG(t *testing.T) {
 	require.True(t, isUUIDv7(cm.Get("turn_id").String()), "turn_id UUIDv7 格式（SDK 自动生成）")
 
 	// rec 排空（InsertBatch 落库）后断言 usage_logs 行——顶层 usage
-	// 五计数 + cost（10×1e7+20×2e7 = 500 毫分；cache 价 nil → cache 分量 0 成本）
+	// 五计数 + cost（8×1e7 + 20×2e7 + (2+4)×1e7 = 540 毫分；缺少
+	// cache 单价时按基础输入价计费，避免缓存用量被静默漏计）
 	require.NoError(t, rec.Close(ctx))
 	var (
 		it, ot, tt, cr, cc, cost int64
@@ -175,7 +176,7 @@ func TestCodexResponsesHTTPBillingPG(t *testing.T) {
 	require.Equal(t, int64(30), tt, "total_tokens")
 	require.Equal(t, int64(2), cr, "cache_read_tokens")
 	require.Equal(t, int64(4), cc, "cache_creation_tokens")
-	require.Equal(t, int64(480), cost, "it'=8：8×1e7+20×2e7 每 M 毫分 = 480（重复计费的 cr×InputPerM 份额已消除）")
+	require.Equal(t, int64(540), cost, "it'=8：8×1e7+20×2e7+(cr2+cc4)×1e7 = 540 毫分（缓存单价缺失时按基础输入价计费）")
 	require.Equal(t, "openai-responses", format)
 	require.Equal(t, "none", et)
 	require.Equal(t, "gpt-4o", model)

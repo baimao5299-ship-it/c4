@@ -34,6 +34,13 @@ const (
 	RespToMess GroupProtocolConvert = "resp_to_mess"
 )
 
+// Defines values for GroupPublicStatus.
+const (
+	Available   GroupPublicStatus = "available"
+	Maintenance GroupPublicStatus = "maintenance"
+	Paused      GroupPublicStatus = "paused"
+)
+
 // Defines values for GroupRoutingMode.
 const (
 	Accounts  GroupRoutingMode = "accounts"
@@ -74,13 +81,6 @@ const (
 const (
 	Exact  StatTTFTSummarySource = "exact"
 	Sketch StatTTFTSummarySource = "sketch"
-)
-
-// Defines values for GroupPublicStatus.
-const (
-	GroupPublicStatusAvailable   GroupPublicStatus = "available"
-	GroupPublicStatusMaintenance GroupPublicStatus = "maintenance"
-	GroupPublicStatusPaused      GroupPublicStatus = "paused"
 )
 
 // Defines values for UserChannelModelPriceMode.
@@ -132,7 +132,9 @@ type DeletedResponse struct {
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
-	Error string `json:"error"`
+	// Code Stable machine-readable error code
+	Code  *string `json:"code,omitempty"`
+	Error string  `json:"error"`
 }
 
 // ErrorType defines model for ErrorType.
@@ -152,13 +154,16 @@ type Group struct {
 	DeletedAt *time.Time `json:"DeletedAt"`
 	ID        *int64     `json:"ID,omitempty"`
 	Name      *string    `json:"Name,omitempty"`
-	Remark    *string    `json:"Remark,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
 	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
 
 	// ProtocolConvert 协议转换模式（auto = 自动协商；空数组 = off = 不转换；手动方向按客户端格式命中）
 	ProtocolConvert *[]GroupProtocolConvert `json:"ProtocolConvert,omitempty"`
+	PublicStatus    *GroupPublicStatus      `json:"PublicStatus,omitempty"`
+
+	// Remark 管理员给用户看的分组备注
+	Remark *string `json:"Remark,omitempty"`
 
 	// RoutingMode accounts 使用现有账号池；upstreams 使用本组上游成员
 	RoutingMode *GroupRoutingMode `json:"RoutingMode,omitempty"`
@@ -168,6 +173,9 @@ type Group struct {
 
 // GroupProtocolConvert 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
 type GroupProtocolConvert string
+
+// GroupPublicStatus defines model for GroupPublicStatus.
+type GroupPublicStatus string
 
 // GroupRoutingMode accounts 使用现有账号池；upstreams 使用本组上游成员
 type GroupRoutingMode string
@@ -405,13 +413,12 @@ type UserChannelMetric struct {
 	// ModelPrices 公开分组中每个模型的当前单价；价格为应用分组倍率后的 USD/1M tokens。没有定价条目时仍保留模型，输入/输出单价为 null。
 	ModelPrices     []UserChannelModelPrice `json:"ModelPrices"`
 	Name            string                  `json:"Name"`
-	Remark          string                  `json:"Remark"`
 	PriceMultiplier float64                 `json:"PriceMultiplier"`
-	Status          GroupPublicStatus       `json:"Status"`
-}
 
-// GroupPublicStatus defines the administrator-controlled label shown to users.
-type GroupPublicStatus string
+	// Remark 管理员给用户看的分组备注
+	Remark string            `json:"Remark"`
+	Status GroupPublicStatus `json:"Status"`
+}
 
 // UserChannelModelPrice defines model for UserChannelModelPrice.
 type UserChannelModelPrice struct {

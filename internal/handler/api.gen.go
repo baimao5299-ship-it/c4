@@ -78,6 +78,13 @@ const (
 	RespToMess GroupProtocolConvert = "resp_to_mess"
 )
 
+// Defines values for GroupPublicStatus.
+const (
+	Available   GroupPublicStatus = "available"
+	Maintenance GroupPublicStatus = "maintenance"
+	Paused      GroupPublicStatus = "paused"
+)
+
 // Defines values for GroupRoutingMode.
 const (
 	Accounts  GroupRoutingMode = "accounts"
@@ -1025,8 +1032,9 @@ type ErrLogsResponse struct {
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
-	Error string  `json:"error"`
+	// Code Stable machine-readable error code
 	Code  *string `json:"code,omitempty"`
+	Error string  `json:"error"`
 }
 
 // ErrorType defines model for ErrorType.
@@ -1066,17 +1074,19 @@ type Group struct {
 	CreatedAt     *time.Time `json:"CreatedAt,omitempty"`
 
 	// DeletedAt 软删除时间戳；null = 存活（列表/消费路径过滤已删；GET 单个可查已删项）
-	DeletedAt    *time.Time         `json:"DeletedAt"`
-	ID           *int64             `json:"ID,omitempty"`
-	Name         *string            `json:"Name,omitempty"`
-	Remark       *string            `json:"Remark,omitempty"`
-	PublicStatus *GroupPublicStatus `json:"PublicStatus,omitempty"`
+	DeletedAt *time.Time `json:"DeletedAt"`
+	ID        *int64     `json:"ID,omitempty"`
+	Name      *string    `json:"Name,omitempty"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）
 	PriceMultiplier *float64 `json:"PriceMultiplier,omitempty"`
 
 	// ProtocolConvert 协议转换模式（auto = 自动协商；空数组 = off = 不转换；手动方向按客户端格式命中）
 	ProtocolConvert *[]GroupProtocolConvert `json:"ProtocolConvert,omitempty"`
+	PublicStatus    *GroupPublicStatus      `json:"PublicStatus,omitempty"`
+
+	// Remark 管理员给用户看的分组备注
+	Remark *string `json:"Remark,omitempty"`
 
 	// RoutingMode accounts 使用现有账号池；upstreams 使用本组上游成员
 	RoutingMode *GroupRoutingMode `json:"RoutingMode,omitempty"`
@@ -1103,16 +1113,18 @@ type GroupAssignmentsResponse struct {
 // GroupCreate defines model for GroupCreate.
 type GroupCreate struct {
 	// AllowedModels 分组允许的模型白名单；空数组表示使用成员实际支持的模型交集
-	AllowedModels *[]string          `json:"allowed_models,omitempty"`
-	Name          string             `json:"name"`
-	Remark        *string            `json:"remark,omitempty"`
-	PublicStatus  *GroupPublicStatus `json:"public_status,omitempty"`
+	AllowedModels *[]string `json:"allowed_models,omitempty"`
+	Name          string    `json:"name"`
 
 	// PriceMultiplier 价格倍率（正常值，1 = ×1，0 = 免费，上限 10 = ×10；最多 4 位小数；API 边界与万分数换算——存储 15000 ↔ 显示 1.5）。缺省/null = 不设置（×1）；显式 0 = 免费组；PUT 显式写（含 0）
 	PriceMultiplier *float64 `json:"price_multiplier"`
 
 	// ProtocolConvert 协议转换模式。默认推荐 [auto]，优先原生协议并在缺少原生路由时自动选择转换；也可传单个或多个手动方向。空数组/缺省 = off = 不转换；auto 必须单独出现。PUT 语义：缺省（null/省略）= 保持原值；显式空数组 = 清空既有方向
 	ProtocolConvert *[]GroupProtocolConvert `json:"protocol_convert,omitempty"`
+	PublicStatus    *GroupPublicStatus      `json:"public_status,omitempty"`
+
+	// Remark 管理员给用户看的分组备注
+	Remark *string `json:"remark,omitempty"`
 
 	// RoutingMode accounts 使用现有账号池；upstreams 使用本组上游成员
 	RoutingMode *GroupRoutingMode `json:"routing_mode,omitempty"`
@@ -1131,13 +1143,18 @@ type GroupListResponse struct {
 // GroupPatch defines model for GroupPatch.
 type GroupPatch struct {
 	Name         *string            `json:"name,omitempty"`
-	Remark       *string            `json:"remark,omitempty"`
 	PublicStatus *GroupPublicStatus `json:"public_status,omitempty"`
-	Visibility   *GroupVisibility   `json:"visibility,omitempty"`
+
+	// Remark 管理员给用户看的分组备注
+	Remark     *string          `json:"remark,omitempty"`
+	Visibility *GroupVisibility `json:"visibility,omitempty"`
 }
 
 // GroupProtocolConvert 分组级协议转换模式。auto = 自动协商（优先原生协议，再按固定优先级尝试转换）；其余值为手动方向。off 不在枚举内——不转换 = 空数组（见 protocol_convert 字段说明）
 type GroupProtocolConvert string
+
+// GroupPublicStatus defines model for GroupPublicStatus.
+type GroupPublicStatus string
 
 // GroupRoutingMode accounts 使用现有账号池；upstreams 使用本组上游成员
 type GroupRoutingMode string
@@ -1185,15 +1202,6 @@ type GroupUpstreamsUpdate struct {
 
 // GroupVisibility defines model for GroupVisibility.
 type GroupVisibility string
-
-// GroupPublicStatus defines the administrator-controlled user-facing label.
-type GroupPublicStatus string
-
-const (
-	GroupPublicStatusAvailable   GroupPublicStatus = "available"
-	GroupPublicStatusMaintenance GroupPublicStatus = "maintenance"
-	GroupPublicStatusPaused      GroupPublicStatus = "paused"
-)
 
 // ImportFailedItem 行级失败条目（index = items 原始下标——行级定位契约）
 type ImportFailedItem struct {

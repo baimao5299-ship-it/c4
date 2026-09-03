@@ -40,7 +40,7 @@ const wsPGTestSchema = "proxy_ws_test"
 // finish → applyBilling（价格快照 + 倍率）→ routeLog 单写点（F2，spec §一）→
 // rec → InsertBatch 落库 → 断言 usage_logs 5 计数 + cost + 格式 + Billed 出生标记。
 // 5 计数：input 3 / output 5 / total 8 / cache_read 1 / cache_creation 3；
-// cost = 3×1e7 + 5×2e7 每 M 毫分 = 130 毫分（缓存分量无价不参与计费）。
+// 归一后的可计费输入为 2，缓存单价缺失时缓存分量按基础输入价计费。
 func TestResponsesWSBillingPG(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -120,7 +120,7 @@ func TestResponsesWSBillingPG(t *testing.T) {
 	require.Equal(t, int64(8), tt, "total_tokens")
 	require.Equal(t, int64(1), cr, "cache_read_tokens")
 	require.Equal(t, int64(3), cc, "cache_creation_tokens")
-	require.Equal(t, int64(120), cost, "it'=2：2×1e7+5×2e7 每 M 毫分 = 120")
+	require.Equal(t, int64(160), cost, "it'=2：2×1e7+5×2e7+(cr1+cc3)×1e7 = 160 毫分（缓存单价缺失时按基础输入价计费）")
 	require.Equal(t, "openai-responses-ws", format)
 	require.Equal(t, "none", et)
 	require.Equal(t, "gpt-4o", model)
@@ -192,5 +192,5 @@ func TestResponsesWSBillingTierPG(t *testing.T) {
 		Scan(&cost, &billingTier)
 	require.NoError(t, err, "usage_logs 必须有 resp-ws fast 档计费行")
 	require.Equal(t, "fast", billingTier, "BillingTier=fast 落库（WS 按档计费）")
-	require.Equal(t, int64(240), cost, "fast ×2.0：120×2 = 240（≠ auto 120；归一后基础价 it'=2）")
+	require.Equal(t, int64(320), cost, "fast ×2.0：160×2 = 320（≠ auto 160；归一后基础价 it'=2，缓存单价缺失时按基础输入价计费）")
 }

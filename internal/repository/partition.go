@@ -516,7 +516,7 @@ func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.
 		return err
 	}
 	for _, ddl := range usageLogUpgradeDDLs {
-		if err := r.execDDL(ctx, ddl); err != nil {
+		if err := r.execDDLTolerateRace(ctx, ddl); err != nil {
 			return fmt.Errorf("upgrade usage_logs attribution columns: %w", err)
 		}
 	}
@@ -530,7 +530,7 @@ func (r *PartitionRepo) EnsureErrLogPartitioned(ctx context.Context, now time.Ti
 		return err
 	}
 	for _, ddl := range errLogUpgradeDDLs {
-		if err := r.execDDL(ctx, ddl); err != nil {
+		if err := r.execDDLTolerateRace(ctx, ddl); err != nil {
 			return fmt.Errorf("upgrade err_logs attribution columns: %w", err)
 		}
 	}
