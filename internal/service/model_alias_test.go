@@ -14,7 +14,7 @@ import (
 	"github.com/is7qin/c3api/internal/domain"
 )
 
-func TestModelLookupKeyExactMatchIsCaseSensitive(t *testing.T) {
+func TestModelLookupKeyExactMatchAndUnambiguousCaseAlias(t *testing.T) {
 	keys := []string{"gpt-4o", "gpt-4o-2024-08-06", "Foo"}
 
 	got, ok := modelLookupKey(keys, "gpt-4o-2024-08-06")
@@ -22,7 +22,11 @@ func TestModelLookupKeyExactMatchIsCaseSensitive(t *testing.T) {
 	require.Equal(t, "gpt-4o-2024-08-06", got, "exact identifiers must win over aliases")
 
 	got, ok = modelLookupKey(keys, "foo")
-	require.False(t, ok, "case-only duplicates must not be guessed")
+	require.True(t, ok, "one case-only spelling is an unambiguous alias")
+	require.Equal(t, "Foo", got)
+
+	got, ok = modelLookupKey([]string{"Foo", "FOO"}, "foo")
+	require.False(t, ok, "several case-only candidates must not be guessed")
 	require.Empty(t, got)
 }
 
@@ -270,4 +274,56 @@ func TestPricingAliasMatchesVolcengineNumericReleaseAndDate(t *testing.T) {
 		require.Equal(t, inPrice, *got.InputPerM)
 		require.Equal(t, outPrice, *got.OutputPerM)
 	}
+}
+
+func TestPricingAliasMatchesRelayCaseVersionAndShortNames(t *testing.T) {
+	fs := newFakeStore()
+	prices := map[string][2]int64{
+		"claude-fable-5-1": {1000000, 5000000},
+		"claude-opus-5":    {500000, 2500000},
+		"kimi-k3":          {300000, 1500000},
+	}
+	for model, pair := range prices {
+		input, output := pair[0], pair[1]
+		_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+			Model: model, Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output, Source: domain.PricingSourceLitellm,
+		}})
+		require.NoError(t, err)
+	}
+	svc := newPricingSvc(t, fs)
+
+	for requested, canonical := range map[string]string{
+		"Claude-Fable-5.1": "claude-fable-5-1",
+		"Claude-Opus-5":    "claude-opus-5",
+		"k3":               "kimi-k3",
+	} {
+		got, ok := svc.ResolvePrices(requested, 0, "", time.Now())
+		require.Truef(t, ok, "expected %q to resolve through %q", requested, canonical)
+		require.Equal(t, prices[canonical][0], *got.InputPerM)
+		require.Equal(t, prices[canonical][1], *got.OutputPerM)
+	}
+
+	catalogue, resolved, err := svc.pricingProjectionForModels(context.Background(), []string{
+		"Claude-Fable-5.1", "Claude-Opus-5", "k3",
+	}, "", 0, time.Now())
+	require.NoError(t, err)
+	for _, requested := range []string{"Claude-Fable-5.1", "Claude-Opus-5", "k3"} {
+		require.Contains(t, catalogue, requested)
+		require.Contains(t, resolved, requested)
+	}
+}
+
+func TestPricingShortAliasWithDifferentCandidatesStaysUnpriced(t *testing.T) {
+	fs := newFakeStore()
+	for i, model := range []string{"kimi-k3", "vendor-k3"} {
+		input, output := int64(300000+i*10000), int64(1500000+i*10000)
+		_, err := fs.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+			Model: model, Mode: domain.PriceModeToken, InputPerM: &input, OutputPerM: &output, Source: domain.PricingSourceLitellm,
+		}})
+		require.NoError(t, err)
+	}
+	svc := newPricingSvc(t, fs)
+
+	_, ok := svc.ResolvePrices("k3", 0, "", time.Now())
+	require.False(t, ok, "an ambiguous short alias must not borrow an arbitrary price")
 }

@@ -250,13 +250,15 @@ func TestPricingSnapshotNormalizesModelWhitespace(t *testing.T) {
 	svc := newPricingSvc(t, fs)
 
 	// Runtime billing accepts the canonical name and ignores accidental request
-	// padding while retaining case-sensitive exact matching.
+	// padding and an unambiguous case-only relay spelling.
 	rp, ok := svc.ResolvePrices("  gpt-spaced  ", 0, "", time.Now())
 	require.True(t, ok)
 	require.Equal(t, variantInput, *rp.InputPerM)
 	require.Equal(t, outPrice, *rp.OutputPerM)
-	_, ok = svc.ResolvePrices("GPT-SPACED", 0, "", time.Now())
-	require.False(t, ok, "model matching remains case-sensitive")
+	rp, ok = svc.ResolvePrices("GPT-SPACED", 0, "", time.Now())
+	require.True(t, ok)
+	require.Equal(t, variantInput, *rp.InputPerM)
+	require.Equal(t, outPrice, *rp.OutputPerM)
 
 	entries, err := svc.PriceEntriesForModels(context.Background(), []string{" gpt-spaced "})
 	require.NoError(t, err)

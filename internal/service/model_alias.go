@@ -126,6 +126,17 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		}
 		return 80
 	}
+	// Relay catalogues frequently vary only in case and in the separator used
+	// inside a numeric release (for example Claude-Fable-5.1 versus
+	// claude-fable-5-1). Exact IDs still win above. The candidate collector and
+	// price-equivalence guard keep this fallback deterministic when a catalogue
+	// happens to contain several spellings with different prices.
+	if strings.EqualFold(keyNumericBase, requestedNumericBase) {
+		if !requestedQualified && keyQualified {
+			return 55
+		}
+		return 79
+	}
 	// An unqualified request often omits the provider's dated suffix while the
 	// official row includes it. Prefer an undated root (rank 80), but accept one
 	// dated row when no root exists. The caller still rejects ambiguous rows.
@@ -178,6 +189,16 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		// case-folding. modelLookupKey still rejects multiple equal-rank rows.
 		return 55
 	}
+	// Short aliases are accepted only for an unqualified token such as `k3`
+	// and only when that token is an actual component of the catalogue ID.
+	// modelLookupKey rejects multiple candidates; priceLookupKey additionally
+	// permits them only when every candidate has an identical billable value.
+	if !requestedQualified && shortModelAliasMatches(keyBase, requestedBase) {
+		if keyQualified {
+			return 35
+		}
+		return 40
+	}
 	// A provider-qualified request can still use a uniquely matching basename
 	// row when a relay omitted its namespace. Never apply this to an unqualified
 	// request after the root preference above, as that would mix providers.
@@ -185,6 +206,33 @@ func modelAliasRank(key, requested, requestedBase, requestedSnapshot, requestedS
 		return 50
 	}
 	return 0
+}
+
+func shortModelAliasMatches(model, requested string) bool {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if !isShortModelToken(requested) {
+		return false
+	}
+	for _, part := range strings.FieldsFunc(strings.ToLower(strings.TrimSpace(model)), func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	}) {
+		if part == requested {
+			return true
+		}
+	}
+	return false
+}
+
+func isShortModelToken(value string) bool {
+	if len(value) < 2 || len(value) > 4 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // numericModelAlias folds only '-'/'_' separators between two short numeric

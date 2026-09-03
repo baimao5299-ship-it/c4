@@ -77,6 +77,42 @@ func TestUserChannelMetricsIncludesModelPricesAndKeepsUnpricedModels(t *testing.
 	require.Nil(t, rows[0].ModelPrices[1].OfficialOutputPerM)
 }
 
+func TestUserChannelMetricsResolvesRelayModelAliases(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	requested := []string{"k3", "Claude-Fable-5.1", "Claude-Opus-5"}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "relay aliases", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: requested, PriceMultiplier: 6500,
+	}
+	for model, pair := range map[string][2]int64{
+		"kimi-k3":          {300000, 1500000},
+		"claude-fable-5-1": {1000000, 5000000},
+		"claude-opus-5":    {500000, 2500000},
+	} {
+		input, output := pair[0], pair[1]
+		_, err := store.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{{
+			Model: model, Mode: domain.PriceModeToken,
+			InputPerM: &input, OutputPerM: &output, Source: domain.PricingSourceLitellm,
+		}})
+		require.NoError(t, err)
+	}
+
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].ModelPrices, len(requested))
+	for i, model := range requested {
+		price := rows[0].ModelPrices[i]
+		require.Equal(t, model, price.Model)
+		require.NotNilf(t, price.InputPerM, "%s should have a resolved input price", model)
+		require.NotNilf(t, price.OutputPerM, "%s should have a resolved output price", model)
+		require.NotNilf(t, price.OfficialInputPerM, "%s should have an official input price", model)
+		require.NotNilf(t, price.OfficialOutputPerM, "%s should have an official output price", model)
+	}
+}
+
 func TestUserChannelMetricsSeparatesOfficialAndResolvedPrices(t *testing.T) {
 	now := time.Now().UTC()
 	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}

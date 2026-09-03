@@ -10,6 +10,12 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+### Fixed
+
+- Pricing now resolves unambiguous relay spellings across letter case,
+  numeric dot/dash variants, and short model tokens such as `k3`, while still
+  rejecting aliases that could select between different provider prices.
+
 ## [v0.0.1-beta.18] - 2026-09-02
 
 ### Fixed
