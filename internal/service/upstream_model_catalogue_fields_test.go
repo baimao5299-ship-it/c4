@@ -80,7 +80,16 @@ func TestTestUpstreamWithModelProbesExplicitModelMissingFromCatalogue(t *testing
 	require.Empty(t, result.ErrorCode)
 	require.Equal(t, 1, probeCalls)
 	require.Equal(t, []string{"hidden-alias"}, store.row.Models, "a successful explicit probe must be routable after reload")
-	require.NotNil(t, store.row.ModelsCheckedAt)
+	// Probing one explicit model is not a catalogue validation, so it must not
+	// stamp ModelsCheckedAt. Routing reads that timestamp as "this list is the
+	// upstream's entire capability set": stamping here would leave only
+	// hidden-alias routable and turn the advertised listed-model unroutable,
+	// which is the opposite of what the assertion above asks for. Leaving it nil
+	// keeps the endpoint permissive, so both the alias and the catalogue route.
+	// The recorded model still matters -- a later full validation merges the
+	// retained snapshot, so this manually confirmed alias survives.
+	require.Nil(t, store.row.ModelsCheckedAt,
+		"an explicit single-model probe must not claim the catalogue is exhaustive")
 }
 
 func TestTestUpstreamWithModelDoesNotDependOnCatalogueAvailabilityWhenExplicit(t *testing.T) {
