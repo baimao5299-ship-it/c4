@@ -1,6 +1,81 @@
 # spec.md — 模型名归一化与分组可见性修复（交给 Codex 执行）
 
-## 第七轮（当前任务，只读这节）
+## 第八轮（当前任务，只读这节）
+
+HEAD 现在是 `09231fc`。
+
+### 重要：上一轮的全绿结果无效，请重新跑
+
+上一轮交回的输出是全绿，但**几乎确定是跑在 `d64d434` 或更早的代码上**。证据：
+`9ed27ce` 改了 `markNoPrice` 的行为，`internal/proxy` 里有 7 处断言期望
+`BillingTier` 恰好等于 `"no_price"`，改动后它们会变成 `"no_price:m10000"`。
+如果真跑了新代码，`internal/proxy` 不可能报 ok。
+
+这不是你的问题——是我在你开跑之后又推了提交。这轮请**先确认 HEAD 是 `09231fc`**
+再跑（`git log --oneline -1`），并把这个输出一起交回。
+
+那 7 处断言我已自己修好（`09231fc`），所以这轮预期是真全绿。
+
+### 这三个提交改了什么
+
+**`9ed27ce` 计费修复（唯一一条真影响金额的问题）**
+
+`markNoPrice` 原先在倍率等于基准值（10000）时不写 `:m` 标记，当成冗余省掉。但
+`billing/reprice.go:40` 的 `recoveryMultiplier` 读不到标记时，回退用的是**补价
+运行那一刻的倍率**。所以管理员在请求和补价之间调过费率，这笔账就按新费率结算：
+调高多扣用户钱，调低平台漏收。默认费率恰恰是最常见情况，这是暴露面最大的一条。
+
+改为无条件持久化倍率。`billing_tier` 是无长度限制的 String，不会截断。免费组
+记 `:m0`，配合 `reprice.go:197` 的 `> 0` 判断仍然免费。
+
+保留「历史无标记行回退到当前倍率」的行为：那些行早于标记机制存在，其中折扣组
+的行如果改成按基准倍率补价会多扣用户钱，而沿用当前倍率在费率未变时是准的。
+
+**`9ed27ce` + `123fa51` 并发上限 8→80**
+
+分组成员打满并发时在选路中算作不可用（`upstream_pool.go:613`），所以 8 会让
+繁忙的主优先级层在任何上游变不健康之前就溢出到 fallback——表现就是「优先级
+没效果」。这个默认值在**四处**独立存在，都改了：ent schema、调度器零值兜底、
+`service.normalizeUpstreamMembers`、前端创建表单。另有三处测试钉住旧值 8，已改。
+
+不需要重跑 codegen：`internal/ent/runtime.go:131-133` 从 schema descriptor 读
+这个默认值。
+
+**`09231fc` 测试断言对齐**
+
+7 处期望 `"no_price"` 的断言改为 `"no_price:m10000"`。两处**故意不动**：
+`mark_no_price_test.go` 第一个表调用 `markNoPrice(log)` 不传倍率，走变参为空的
+分支，仍是裸标记；`flusher_test.go:616` 那个是输入 fixture 而非断言，它测的正是
+历史无标记行的回退路径。
+
+### 要跑的命令
+
+```
+git log --oneline -1
+go test ./internal/... -count=1
+go test ./internal/proxy/... ./internal/billing/... -count=1 -v 2>&1 | grep -E 'FAIL|ok |--- (PASS|FAIL).*(NoPrice|Billing|Reprice|Multiplier)'
+go test ./internal/ent/schema/... ./internal/service/... ./internal/scheduler/... -count=1
+go vet ./internal/...
+cd web && npm run build
+```
+
+### 重点关注
+
+- `TestMarkNoPriceNormalizesAndPreservesTier` 的 9 个子用例应该**全部保持原样
+  通过**（裸标记）。如果它们变成期望 `:m10000` 才通过，说明我把变参为空的分支
+  也改坏了，停下报我。
+- `TestMarkNoPriceCapturesRequestMultiplier` 有 4 个子用例，包括免费组 `:m0`。
+- `internal/billing` 的补价测试全绿——`recoveryMultiplier` 的解析逻辑我没动。
+- `TestGroupUpstreamSchemaFields`（`internal/ent/schema`）现在期望 80。
+
+### 硬约束不变
+
+测试失败原样贴回，不要改测试期望值、不要改生产代码、不要给测试桩加特殊分支。
+计费改错会直接导致算错钱，我要自己判断。`TEST_DATABASE_URL` 跑不了就说跳过。
+
+---
+
+## 第七轮（已完成，存档）
 
 HEAD 现在是 `660499a`。第六轮的改动加上这轮的前端改动一起验证。
 
