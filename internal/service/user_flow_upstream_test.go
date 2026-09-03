@@ -109,6 +109,17 @@ func TestUpstreamGroupHasRouteMatchesPersistentSchedulerRules(t *testing.T) {
 		}
 		return u
 	}
+	// probed mirrors an upstream whose manual capability probe recorded a model
+	// before the catalogue refresh landed: ModelFormats has the model, Models
+	// does not. The scheduler routes it, so availability must agree.
+	probed := func(baseURL string, models []string, formats ...string) *domain.Upstream {
+		u := upstream(true, baseURL, true, models...)
+		u.ModelFormats = make(map[string][]domain.RequestFormat, len(formats))
+		for _, model := range formats {
+			u.ModelFormats[model] = []domain.RequestFormat{domain.FormatOpenAIChat}
+		}
+		return u
+	}
 
 	cases := []struct {
 		name    string
@@ -123,6 +134,7 @@ func TestUpstreamGroupHasRouteMatchesPersistentSchedulerRules(t *testing.T) {
 		{name: "unchecked catalogue", allowed: []string{"gpt-5"}, members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", false))}, want: true},
 		{name: "checked model miss", allowed: []string{"gpt-5"}, members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", true, "gpt-4"))}, want: false},
 		{name: "checked model hit", allowed: []string{"gpt-5"}, members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", true, "gpt-5"))}, want: true},
+		{name: "checked cosmetic alias hit", allowed: []string{"Claude.Fable-5_1"}, members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", true, "claude-fable-5-1"))}, want: true},
 		{name: "legacy all unchecked", members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", false))}, want: true},
 		{name: "legacy checked empty", members: []*domain.GroupUpstream{member(1, true, upstream(true, "https://relay.example", true))}, want: false},
 		{name: "confirmed model union", members: []*domain.GroupUpstream{
@@ -137,6 +149,21 @@ func TestUpstreamGroupHasRouteMatchesPersistentSchedulerRules(t *testing.T) {
 			member(1, true, upstream(true, "https://a.example", true)),
 			member(2, true, upstream(true, "https://b.example", false)),
 		}, want: false},
+		// A manual probe records ModelFormats before the catalogue refresh. The
+		// scheduler's upstreamSupportsModel accepts that evidence, so hiding the
+		// group here would reject key creation for a route that actually works.
+		{name: "allowlist hit via manual probe formats only", allowed: []string{"gpt-5"}, members: []*domain.GroupUpstream{
+			member(1, true, probed("https://a.example", []string{"gpt-4"}, "gpt-5")),
+		}, want: true},
+		{name: "allowlist probe formats tolerate cosmetic aliases", allowed: []string{"Claude.Fable-5_1"}, members: []*domain.GroupUpstream{
+			member(1, true, probed("https://a.example", nil, "claude-fable-5-1")),
+		}, want: true},
+		{name: "allowlist miss when probe records another model", allowed: []string{"gpt-5"}, members: []*domain.GroupUpstream{
+			member(1, true, probed("https://a.example", []string{"gpt-4"}, "gpt-4o")),
+		}, want: false},
+		{name: "legacy checked group routes on probe formats", members: []*domain.GroupUpstream{
+			member(1, true, probed("https://a.example", nil, "gpt-5")),
+		}, want: true},
 	}
 
 	for _, tc := range cases {

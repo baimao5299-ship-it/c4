@@ -51,28 +51,78 @@ function channelRemark(metric: ChannelMetric): string | null {
   return trimmed || null
 }
 
+// modelMatchKey mirrors the Go helper of the same name. It only ever decides
+// whether two spellings are CANDIDATES for being the same model; equality of
+// price is what proves it. Never use it to drop a row on its own.
+function modelMatchKey(model: string): string {
+  return model.trim().toLowerCase().replace(/[._-]+/g, '-').replace(/^-|-$/g, '')
+}
+
+const PRICE_FIELDS = [
+  'InputPerM', 'OutputPerM', 'CacheReadPerM', 'CacheWritePerM',
+  'PricePerCall', 'PricePerImage', 'ImgInTokPerM', 'ImgOutTokPerM',
+  'OfficialInputPerM', 'OfficialOutputPerM', 'OfficialCacheReadPerM',
+  'OfficialCacheWritePerM', 'OfficialPricePerCall', 'OfficialPricePerImage',
+  'OfficialImgInTokPerM', 'OfficialImgOutTokPerM',
+] as const
+
+function hasAnyPrice(row: ChannelModelPrice): boolean {
+  return PRICE_FIELDS.some(field => row[field] != null)
+}
+
+function samePrices(left: ChannelModelPrice, right: ChannelModelPrice): boolean {
+  if ((left.Mode ?? null) !== (right.Mode ?? null)) return false
+  return PRICE_FIELDS.every(field => (left[field] ?? null) === (right[field] ?? null))
+}
+
 function modelRows(metric: ChannelMetric): ChannelModelPrice[] {
-  const models = sortModelsLatestFirst(metric.AllowedModels ?? [])
-  // The allowlist is trimmed by current write paths, but older groups and
-  // rolling backend upgrades can still return surrounding whitespace in either
-  // array. Use the canonical trimmed identifier only for the lookup key while
-  // returning the original price row unchanged so provider spelling/display is
-  // preserved.
+  // Current servers already coalesced legacy duplicates and send AllowedModels
+  // aligned with ModelPrices, so an exact trimmed match is the primary lookup.
+  // Whitespace tolerance stays for older groups and rolling upgrades.
   const byName = new Map<string, ChannelModelPrice>()
   for (const row of metric.ModelPrices ?? []) {
-    const key = row.Model.trim()
-    if (key === '') continue
-    // Prefer an already-canonical row when duplicate legacy rows differ only
-    // by whitespace; otherwise keep the first stable response entry.
-    const existing = byName.get(key)
-    if (!existing || row.Model === key) byName.set(key, row as ChannelModelPrice)
+    const key = row.Model?.trim()
+    if (!key) continue
+    if (!byName.has(key)) byName.set(key, row as ChannelModelPrice)
   }
-  // Older C4 servers may not send ModelPrices yet. Keep those models visible
-  // with explicit empty prices during a rolling frontend/backend upgrade.
-  return models.map(model => {
-    const canonical = model.trim()
-    return byName.get(canonical) ?? { Model: canonical || model }
-  })
+
+  const rows: ChannelModelPrice[] = []
+  const seenExact = new Set<string>()
+  for (const raw of metric.AllowedModels ?? []) {
+    const model = raw.trim()
+    if (!model || seenExact.has(model)) continue
+    seenExact.add(model)
+    // Older C4 servers may not send ModelPrices yet. Keep those models visible
+    // with explicit empty prices during a rolling frontend/backend upgrade.
+    rows.push(byName.get(model) ?? { Model: model })
+  }
+
+  // Rolling-upgrade safety net: an older backend still sends both legacy
+  // spellings. Merge them here, but only when their prices are identical --
+  // "deepseek-v3.2" and "deepseek.v3.2" can be different products, and hiding
+  // one behind the other's price is worse than showing a duplicate row.
+  const out: ChannelModelPrice[] = []
+  const index = new Map<string, number>()
+  for (const row of rows) {
+    const key = modelMatchKey(row.Model)
+    const at = key ? index.get(key) : undefined
+    if (at == null) {
+      if (key) index.set(key, out.length)
+      out.push(row)
+      continue
+    }
+    const existing = out[at]
+    if (samePrices(existing, row)) {
+      if (!hasAnyPrice(existing) && hasAnyPrice(row)) out[at] = { ...row, Model: existing.Model }
+    } else if (!hasAnyPrice(existing) && hasAnyPrice(row)) {
+      out[at] = { ...row, Model: existing.Model }
+    } else if (hasAnyPrice(existing) && hasAnyPrice(row)) {
+      out.push(row)
+    }
+  }
+  return sortModelsLatestFirst(out.map(row => row.Model)).map(
+    model => out.find(row => row.Model === model) ?? { Model: model },
+  )
 }
 
 function priceMode(price: ChannelModelPrice): 'token' | 'call' | 'image' {

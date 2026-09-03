@@ -508,6 +508,20 @@ func priceLookupKey(keys []string, requested string, entries map[string]*domain.
 	})
 }
 
+func resolvedPricesEquivalent(left, right domain.ResolvedPrices) bool {
+	return left.Mode == right.Mode &&
+		int64PointersEqual(left.InputPerM, right.InputPerM) &&
+		int64PointersEqual(left.OutputPerM, right.OutputPerM) &&
+		int64PointersEqual(left.CacheReadPerM, right.CacheReadPerM) &&
+		int64PointersEqual(left.CacheWritePerM, right.CacheWritePerM) &&
+		int64PointersEqual(left.PricePerCall, right.PricePerCall) &&
+		int64PointersEqual(left.ImgInTokPerM, right.ImgInTokPerM) &&
+		int64PointersEqual(left.ImgOutTokPerM, right.ImgOutTokPerM) &&
+		int64PointersEqual(left.PricePerImage, right.PricePerImage) &&
+		intPointersEqual(left.VariantSeq, right.VariantSeq) &&
+		stringPointersEqual(left.Provider, right.Provider)
+}
+
 func priceEntriesEquivalent(left, right *domain.PriceEntry) bool {
 	if left == nil || right == nil {
 		return left == right

@@ -116,7 +116,7 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 	// expose models with nil prices; the next refresh fills them in.
 	allModels := make([]string, 0)
 	for _, g := range public {
-		allModels = append(allModels, g.AllowedModels...)
+		allModels = append(allModels, distinctConfiguredModels(g.AllowedModels)...)
 	}
 	// Read the official catalogue and resolved runtime prices from one immutable
 	// snapshot so a concurrent pricing reload cannot mix two versions in one
@@ -153,10 +153,18 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 		if userMultiplier, ok := effectiveMultipliers[g.ID]; ok {
 			multiplier = userMultiplier
 		}
-		metric := &PublicChannelMetric{Group: g, PriceMultiplier: multiplier, Status: "no_data", ModelPrices: make([]PublicChannelModelPrice, 0, len(g.AllowedModels))}
-		for _, model := range g.AllowedModels {
+		// Build one row per configured spelling first. Whether two spellings are
+		// the same model cannot be decided from the string alone
+		// ("Claude-Fable-5.1" vs "claude-fable-5-1" are; "deepseek-v3.2" vs
+		// "deepseek.v3.2" need not be), so the merge happens after pricing, once
+		// equality can be proven.
+		models := distinctConfiguredModels(g.AllowedModels)
+		rows := make([]PublicChannelModelPrice, 0, len(models))
+		for _, model := range models {
 			row := PublicChannelModelPrice{Model: model}
-			catalogueKey, hasCatalogue := modelLookupKey(catalogueKeys, model)
+			catalogueKey, hasCatalogue := modelLookupKeyCoalesced(catalogueKeys, model, func(left, right string) bool {
+				return priceEntriesEquivalent(catalogue[left], catalogue[right])
+			})
 			if entry, ok := catalogue[catalogueKey]; hasCatalogue && ok && entry != nil {
 				row.OfficialInputPerM = entry.InputPerM
 				row.OfficialOutputPerM = entry.OutputPerM
@@ -168,7 +176,9 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 				row.OfficialImgOutTokPerM = entry.ImgOutTokPerM
 				row.Mode = entry.Mode
 			}
-			priceKey, hasPrice := modelLookupKey(priceKeys, model)
+			priceKey, hasPrice := modelLookupKeyCoalesced(priceKeys, model, func(left, right string) bool {
+				return resolvedPricesEquivalent(prices[left], prices[right])
+			})
 			if entry, ok := prices[priceKey]; hasPrice && ok {
 				row.Mode = entry.Mode
 				row.InputPerM = entry.InputPerM
@@ -180,8 +190,16 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 				row.ImgInTokPerM = entry.ImgInTokPerM
 				row.ImgOutTokPerM = entry.ImgOutTokPerM
 			}
-			metric.ModelPrices = append(metric.ModelPrices, row)
+			rows = append(rows, row)
 		}
+		rows = coalescePricedModelRows(rows)
+		shown := make([]string, 0, len(rows))
+		for _, row := range rows {
+			shown = append(shown, row.Model)
+		}
+		groupView := *g
+		groupView.AllowedModels = shown
+		metric := &PublicChannelMetric{Group: &groupView, PriceMultiplier: multiplier, Status: "no_data", ModelPrices: rows}
 		if stat != nil {
 			metric.RequestCount = stat.RequestCount
 			metric.ErrorCount = stat.ErrorCount
@@ -221,4 +239,122 @@ func (s *Service) UserChannelMetrics(ctx context.Context, userID int64, from, to
 		return strings.Compare(a.Group.Name, b.Group.Name)
 	})
 	return out, nil
+}
+
+// distinctConfiguredModels drops blanks and exact repeats only. Separator and
+// case variants are deliberately preserved here: collapsing them this early
+// would decide that two spellings are the same model before any price is known,
+// which silently hides a distinct model that happens to differ only by
+// punctuation. coalescePricedModelRows performs that merge later, once equality
+// can be proven from the resolved prices.
+func distinctConfiguredModels(models []string) []string {
+	out := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, raw := range models {
+		model := strings.TrimSpace(raw)
+		if model == "" {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		out = append(out, model)
+	}
+	return out
+}
+
+// coalescePricedModelRows merges rows whose identifiers differ only by case or
+// by `.`/`_`/`-` punctuation AND whose resolved and official prices are
+// identical. That combination is what a legacy duplicate looks like: the same
+// model registered twice under two spellings. When the prices differ the rows
+// describe different products and both stay visible, so a genuinely distinct
+// model is never hidden behind a similarly spelled one and no row is shown at
+// another model's price. The first configured spelling wins; a row carrying
+// prices is preferred over an unpriced one so a partially seeded catalogue does
+// not blank out a known price.
+func coalescePricedModelRows(rows []PublicChannelModelPrice) []PublicChannelModelPrice {
+	out := make([]PublicChannelModelPrice, 0, len(rows))
+	index := make(map[string]int, len(rows))
+	for _, row := range rows {
+		key := modelMatchKey(row.Model)
+		if key == "" {
+			out = append(out, row)
+			continue
+		}
+		at, seen := index[key]
+		if !seen {
+			index[key] = len(out)
+			out = append(out, row)
+			continue
+		}
+		existing := out[at]
+		switch {
+		case publicModelPricesEqual(existing, row):
+			// Same model, two spellings. Keep the first spelling, but adopt the
+			// duplicate's numbers when the first row had none at all.
+			if !publicModelRowHasPrice(existing) && publicModelRowHasPrice(row) {
+				merged := row
+				merged.Model = existing.Model
+				out[at] = merged
+			}
+		case !publicModelRowHasPrice(existing) && publicModelRowHasPrice(row):
+			// The first spelling is unpriced, so it carries no contradicting
+			// number. Promote the priced row under the original display name.
+			merged := row
+			merged.Model = existing.Model
+			out[at] = merged
+		case !publicModelRowHasPrice(row):
+			// Nothing to add.
+		default:
+			// Two spellings with different prices: distinct products.
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func publicModelRowHasPrice(row PublicChannelModelPrice) bool {
+	for _, value := range []*int64{
+		row.InputPerM, row.OutputPerM, row.CacheReadPerM, row.CacheWritePerM,
+		row.PricePerCall, row.PricePerImage, row.ImgInTokPerM, row.ImgOutTokPerM,
+		row.OfficialInputPerM, row.OfficialOutputPerM, row.OfficialCacheReadPerM,
+		row.OfficialCacheWritePerM, row.OfficialPricePerCall, row.OfficialPricePerImage,
+		row.OfficialImgInTokPerM, row.OfficialImgOutTokPerM,
+	} {
+		if value != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func publicModelPricesEqual(left, right PublicChannelModelPrice) bool {
+	if left.Mode != right.Mode {
+		return false
+	}
+	pairs := [][2]*int64{
+		{left.InputPerM, right.InputPerM},
+		{left.OutputPerM, right.OutputPerM},
+		{left.CacheReadPerM, right.CacheReadPerM},
+		{left.CacheWritePerM, right.CacheWritePerM},
+		{left.PricePerCall, right.PricePerCall},
+		{left.PricePerImage, right.PricePerImage},
+		{left.ImgInTokPerM, right.ImgInTokPerM},
+		{left.ImgOutTokPerM, right.ImgOutTokPerM},
+		{left.OfficialInputPerM, right.OfficialInputPerM},
+		{left.OfficialOutputPerM, right.OfficialOutputPerM},
+		{left.OfficialCacheReadPerM, right.OfficialCacheReadPerM},
+		{left.OfficialCacheWritePerM, right.OfficialCacheWritePerM},
+		{left.OfficialPricePerCall, right.OfficialPricePerCall},
+		{left.OfficialPricePerImage, right.OfficialPricePerImage},
+		{left.OfficialImgInTokPerM, right.OfficialImgInTokPerM},
+		{left.OfficialImgOutTokPerM, right.OfficialImgOutTokPerM},
+	}
+	for _, pair := range pairs {
+		if !int64PointersEqual(pair[0], pair[1]) {
+			return false
+		}
+	}
+	return true
 }

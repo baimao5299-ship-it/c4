@@ -64,7 +64,7 @@ func upstreamGroupHasRoute(allowed []string, members []*domain.GroupUpstream) bo
 				continue
 			}
 			for _, u := range live {
-				if u.ModelsCheckedAt == nil || groupUpstreamContainsModel(u.Models, model) {
+				if u.ModelsCheckedAt == nil || upstreamHasModel(u, model) {
 					return true
 				}
 			}
@@ -89,14 +89,53 @@ func upstreamGroupHasRoute(allowed []string, members []*domain.GroupUpstream) bo
 				confirmed[model] = struct{}{}
 			}
 		}
+		// Same ModelFormats fallback as the allowlist branch: a checked upstream
+		// whose catalogue has not caught up with a manual probe still routes.
+		for model := range u.ModelFormats {
+			if model = strings.TrimSpace(model); model != "" {
+				confirmed[model] = struct{}{}
+			}
+		}
 	}
 	return allUnchecked || len(confirmed) > 0
 }
 
 func groupUpstreamContainsModel(models []string, want string) bool {
-	want = strings.TrimSpace(want)
+	want = modelMatchKey(want)
+	if want == "" {
+		return false
+	}
 	for _, model := range models {
-		if strings.TrimSpace(model) == want {
+		if modelMatchKey(model) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// upstreamHasModel mirrors the scheduler's upstreamSupportsModel, including its
+// ModelFormats fallback. A manual probe or a partially written capability
+// snapshot records the protocol map before the catalogue list is refreshed; the
+// scheduler treats that as concrete evidence and publishes a route. Without the
+// same fallback here the group is hidden from the user API and key creation is
+// rejected while the request would in fact route successfully.
+func upstreamHasModel(u *domain.Upstream, model string) bool {
+	if u == nil {
+		return false
+	}
+	if groupUpstreamContainsModel(u.Models, model) {
+		return true
+	}
+	return upstreamFormatsContainModel(u.ModelFormats, model)
+}
+
+func upstreamFormatsContainModel(formats map[string][]domain.RequestFormat, want string) bool {
+	want = modelMatchKey(want)
+	if want == "" {
+		return false
+	}
+	for candidate := range formats {
+		if modelMatchKey(candidate) == want {
 			return true
 		}
 	}

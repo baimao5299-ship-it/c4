@@ -77,6 +77,56 @@ func TestUserChannelMetricsIncludesModelPricesAndKeepsUnpricedModels(t *testing.
 	require.Nil(t, rows[0].ModelPrices[1].OfficialOutputPerM)
 }
 
+func TestUserChannelMetricsDeduplicatesLegacyModelSpellings(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "legacy aliases", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: []string{"Claude-Fable-5.1", "claude-fable-5-1", " CLAUDE_FABLE_5_1 ", "gpt-5"},
+	}
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, []string{"Claude-Fable-5.1", "gpt-5"}, rows[0].Group.AllowedModels)
+	require.Len(t, rows[0].ModelPrices, 2)
+	require.Equal(t, "Claude-Fable-5.1", rows[0].ModelPrices[0].Model)
+}
+
+// Two spellings that differ only by punctuation are NOT automatically the same
+// model. When they carry different prices they are different products, so both
+// must stay visible; collapsing them would hide one model and bill the user at
+// the other one's price.
+func TestUserChannelMetricsKeepsSeparatelyPricedPunctuationVariants(t *testing.T) {
+	now := time.Now().UTC()
+	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
+	store.groups[1] = &domain.Group{
+		ID: 1, Name: "variants", Visibility: domain.GroupVisibilityPublic,
+		AllowedModels: []string{"deepseek-v3.2", "deepseek.v3.2"},
+	}
+	dashIn, dashOut := int64(100000), int64(200000)
+	dotIn, dotOut := int64(700000), int64(900000)
+	_, err := store.UpsertPriceEntriesFromLiteLLM(context.Background(), []*domain.PriceEntry{
+		{Model: "deepseek-v3.2", Mode: domain.PriceModeToken, InputPerM: &dashIn, OutputPerM: &dashOut, Source: domain.PricingSourceLitellm},
+		{Model: "deepseek.v3.2", Mode: domain.PriceModeToken, InputPerM: &dotIn, OutputPerM: &dotOut, Source: domain.PricingSourceLitellm},
+	})
+	require.NoError(t, err)
+
+	svc := &Service{store: store}
+	rows, err := svc.UserChannelMetrics(context.Background(), 42, now.Add(-24*time.Hour), now)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Len(t, rows[0].ModelPrices, 2, "differently priced spellings must both stay visible")
+	require.Equal(t, []string{"deepseek-v3.2", "deepseek.v3.2"}, rows[0].Group.AllowedModels)
+	byModel := make(map[string]PublicChannelModelPrice, 2)
+	for _, row := range rows[0].ModelPrices {
+		byModel[row.Model] = row
+	}
+	require.Equal(t, int64(100000), *byModel["deepseek-v3.2"].InputPerM)
+	require.Equal(t, int64(700000), *byModel["deepseek.v3.2"].InputPerM,
+		"each spelling keeps its own price instead of inheriting the other's")
+}
+
 func TestUserChannelMetricsResolvesRelayModelAliases(t *testing.T) {
 	now := time.Now().UTC()
 	store := &channelStatsFake{fakeStore: newFakeStore(), stats: map[int64]*domain.PublicChannelStat{}}
