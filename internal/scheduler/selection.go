@@ -41,7 +41,7 @@ func (s *Scheduler) SelectExcluding(groupID int64, format domain.RequestFormat, 
 	}
 	if gs.routingMode == domain.GroupRoutingModeUpstreams {
 		resolved := resolveGroupModel(gs, format, model, true)
-		return s.selectUpstream(gs, groupID, format, resolved, excluded)
+		return s.selectUpstream(gs, groupID, format, resolved, model, excluded)
 	}
 	resolved := resolveGroupModel(gs, format, model, false)
 	rt, ok := gs.routes[routeKey{format, resolved}]
@@ -67,12 +67,16 @@ func (s *Scheduler) SelectExcluding(groupID int64, format domain.RequestFormat, 
 }
 
 // resolveGroupModel chooses the exact route before considering a shorthand.
-// Exact IDs remain case-sensitive provider data; aliases are lower-case,
-// route-local and only emitted when the alias generator found one target.
+// Account routes retain exact provider IDs. Upstream routes use a lower-case
+// display spelling and accept cosmetic separator variants; aliases remain
+// route-local and are emitted only when one target is unambiguous.
 // An unresolved request is returned trimmed so default all-model routes keep
 // forwarding the caller's model rather than an invented identifier.
 func resolveGroupModel(gs *groupSnapshot, format domain.RequestFormat, requested string, upstream bool) string {
 	model := strings.TrimSpace(requested)
+	if upstream {
+		model = canonicalModelID(model)
+	}
 	if gs == nil {
 		return model
 	}
@@ -80,10 +84,18 @@ func resolveGroupModel(gs *groupSnapshot, format domain.RequestFormat, requested
 		if _, ok := gs.upstreamRoutes[routeKey{format: format, model: model}]; ok {
 			return model
 		}
+		identity := modelMatchKey(requested)
+		if _, ok := gs.upstreamRoutes[routeKey{format: format, model: identity}]; ok {
+			return identity
+		}
 	} else if _, ok := gs.routes[routeKey{format: format, model: model}]; ok {
 		return model
 	}
-	if alias := gs.modelAliases[modelAliasKey{format: format, alias: strings.ToLower(model)}]; alias != "" {
+	alias := gs.modelAliases[modelAliasKey{format: format, alias: strings.ToLower(strings.TrimSpace(requested))}]
+	if upstream && alias == "" {
+		alias = gs.modelAliases[modelAliasKey{format: format, alias: modelMatchKey(requested)}]
+	}
+	if alias != "" {
 		if upstream {
 			if _, ok := gs.upstreamRoutes[routeKey{format: format, model: alias}]; ok {
 				return alias

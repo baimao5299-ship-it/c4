@@ -198,6 +198,20 @@ func TestCreateUpstreamGroupUsesAtomicRepositoryOperation(t *testing.T) {
 	require.Equal(t, []int64{created.ID}, pub.last().Groups)
 }
 
+func TestCreateUpstreamGroupDeduplicatesCosmeticModelVariants(t *testing.T) {
+	store := newGroupUpstreamStoreStub()
+	checked := time.Now()
+	store.upstreams[11] = &domain.Upstream{ID: 11, Name: "a", BaseURL: "https://a.example", Enabled: true,
+		Models: []string{"Claude-Fable-5.1"}, ModelsCheckedAt: &checked}
+	svc := New(store, nil, NopInvalidator{}, nil, nil, nil, nil)
+
+	group := &domain.Group{Name: "relay", Visibility: domain.GroupVisibilityPublic, RoutingMode: domain.GroupRoutingModeUpstreams,
+		AllowedModels: []string{"Claude-Fable-5.1", "claude_fable_5-1"}}
+	created, err := svc.CreateUpstreamGroup(context.Background(), group, []*domain.GroupUpstream{{UpstreamID: 11}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude-fable-5.1"}, created.AllowedModels)
+}
+
 func TestCreateUpstreamGroupRejectsIncompletePayloadBeforeRepository(t *testing.T) {
 	store := newGroupUpstreamStoreStub()
 	store.upstreams[11] = &domain.Upstream{ID: 11, Name: "a", BaseURL: "https://a.example", Enabled: true}

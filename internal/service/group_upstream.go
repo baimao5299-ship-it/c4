@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/is7qin/c3api/internal/domain"
@@ -111,6 +112,7 @@ func (s *Service) CreateUpstreamGroup(ctx context.Context, group *domain.Group, 
 	if err != nil || len(allowed) == 0 {
 		return nil, fmt.Errorf("%w: upstream groups require at least one allowed model", ErrInvalidInput)
 	}
+	allowed = normalizeAllowedUpstreamModels(allowed)
 	if err := s.validateAllowedModelsForUpstreams(ctx, allowed, members); err != nil {
 		return nil, err
 	}
@@ -279,15 +281,26 @@ func (s *Service) validateAllowedModelsForUpstreams(ctx context.Context, allowed
 }
 
 func modelFormatsForID(all map[string][]domain.RequestFormat, model string) ([]domain.RequestFormat, bool) {
-	if formats, ok := all[model]; ok {
-		return formats, true
-	}
+	var merged []domain.RequestFormat
+	found := false
 	for rawModel, formats := range all {
 		if canonicalUpstreamModelID(rawModel) == model {
-			return formats, true
+			found = true
+			for _, format := range formats {
+				present := false
+				for _, existing := range merged {
+					if existing == format {
+						present = true
+						break
+					}
+				}
+				if !present {
+					merged = append(merged, format)
+				}
+			}
 		}
 	}
-	return nil, false
+	return merged, found
 }
 
 func hasValidModelFormat(formats []domain.RequestFormat) bool {
@@ -299,11 +312,52 @@ func hasValidModelFormat(formats []domain.RequestFormat) bool {
 	return false
 }
 
-// canonicalUpstreamModelID removes only surrounding whitespace. Model IDs can
-// be case-sensitive and provider/version suffixes are meaningful, so matching
-// must not lowercase or collapse aliases.
+// canonicalUpstreamModelID is the comparison key shared with scheduler model
+// matching. The raw provider spelling stays on the upstream and is selected
+// at request time.
 func canonicalUpstreamModelID(model string) string {
-	return strings.TrimSpace(model)
+	model = strings.ToLower(strings.TrimSpace(model))
+	if model == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(model))
+	lastDash := false
+	for _, r := range model {
+		if r == '_' || r == '.' {
+			r = '-'
+		}
+		if r == '-' {
+			if lastDash {
+				continue
+			}
+			lastDash = true
+		} else {
+			lastDash = false
+		}
+		b.WriteRune(r)
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func normalizeAllowedUpstreamModels(models []string) []string {
+	byKey := make(map[string]string, len(models))
+	for _, raw := range models {
+		display := strings.ToLower(strings.TrimSpace(raw))
+		key := canonicalUpstreamModelID(display)
+		if key == "" {
+			continue
+		}
+		if previous := byKey[key]; previous == "" || display < previous {
+			byKey[key] = display
+		}
+	}
+	out := make([]string, 0, len(byKey))
+	for _, model := range byKey {
+		out = append(out, model)
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (s *Service) normalizeGroupUpstreams(ctx context.Context, groupID int64, members []*domain.GroupUpstream) ([]*domain.GroupUpstream, error) {

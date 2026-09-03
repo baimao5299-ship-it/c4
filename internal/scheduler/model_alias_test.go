@@ -96,3 +96,54 @@ func TestModelAliasCollisionIsScopedToRequestFormat(t *testing.T) {
 	require.Equal(t, "kimi-k3", sel.Model)
 	s.ReleaseSelection(sel)
 }
+
+func TestUpstreamModelCosmeticVariantsShareRouteAndPreserveRawID(t *testing.T) {
+	checked := time.Now()
+	key := "relay-key"
+	u := &domain.Upstream{
+		ID: 201, Name: "variant-relay", BaseURL: "https://relay.example",
+		UpstreamKey: &key, Models: []string{"Claude-Fable-5.1"}, ModelsCheckedAt: &checked,
+		Enabled: true,
+	}
+	member := &domain.GroupUpstream{ID: 2, GroupID: 20, UpstreamID: u.ID, Upstream: u, Weight: 100, Enabled: true}
+	group := &domain.Group{ID: 20, Name: "variant-group", RoutingMode: domain.GroupRoutingModeUpstreams,
+		AllowedModels: []string{"claude-fable-5-1"}, UpstreamMembers: []*domain.GroupUpstream{member}}
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{20: group})
+
+	models, ok := s.GroupModels(20)
+	require.True(t, ok)
+	require.Equal(t, []string{"claude-fable-5-1"}, models)
+
+	sel, err := s.Select(20, domain.FormatOpenAIChat, "CLAUDE_FABLE_5.1")
+	require.NoError(t, err)
+	require.Equal(t, "Claude-Fable-5.1", sel.Model, "proxy must send the upstream's original model spelling")
+	s.ReleaseSelection(sel)
+}
+
+func TestUpstreamSelectionPreservesProtocolSpecificRawModelID(t *testing.T) {
+	checked := time.Now()
+	key := "relay-key"
+	u := &domain.Upstream{
+		ID: 202, Name: "protocol-variants", BaseURL: "https://relay.example",
+		UpstreamKey: &key, Models: []string{"Model.1", "MODEL-1"}, ModelsCheckedAt: &checked,
+		ModelFormats: map[string][]domain.RequestFormat{
+			"Model.1": {domain.FormatOpenAIChat},
+			"MODEL-1": {domain.FormatOpenAIResponses},
+		},
+		Enabled: true,
+	}
+	member := &domain.GroupUpstream{ID: 3, GroupID: 21, UpstreamID: u.ID, Upstream: u, Weight: 100, Enabled: true}
+	group := &domain.Group{ID: 21, Name: "protocol-group", RoutingMode: domain.GroupRoutingModeUpstreams,
+		AllowedModels: []string{"model-1"}, UpstreamMembers: []*domain.GroupUpstream{member}}
+	s, _ := newUpstreamScheduler(t, map[int64]*domain.Group{21: group})
+
+	chat, err := s.Select(21, domain.FormatOpenAIChat, "model-1")
+	require.NoError(t, err)
+	require.Equal(t, "Model.1", chat.Model)
+	s.ReleaseSelection(chat)
+
+	responses, err := s.Select(21, domain.FormatOpenAIResponses, "model.1")
+	require.NoError(t, err)
+	require.Equal(t, "MODEL-1", responses.Model)
+	s.ReleaseSelection(responses)
+}

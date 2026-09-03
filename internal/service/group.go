@@ -89,6 +89,9 @@ func normalizeGroupInput(name string, visibility domain.GroupVisibility, priceMu
 	if err != nil {
 		return nil, err
 	}
+	if routingMode == domain.GroupRoutingModeUpstreams {
+		models = normalizeAllowedUpstreamModels(models)
+	}
 	return &domain.Group{Name: strings.TrimSpace(name), Visibility: visibility, PublicStatus: domain.GroupPublicStatusAvailable, RoutingMode: routingMode, AllowedModels: models, PriceMultiplier: mult, ProtocolConverts: converts}, nil
 }
 
@@ -195,6 +198,9 @@ func (s *Service) UpdateGroup(ctx context.Context, g *domain.Group) (*domain.Gro
 	cp.AllowedModels, err = normalizeAllowedModels(g.AllowedModels)
 	if err != nil {
 		return nil, err
+	}
+	if cp.RoutingMode == domain.GroupRoutingModeUpstreams {
+		cp.AllowedModels = normalizeAllowedUpstreamModels(cp.AllowedModels)
 	}
 	if cp.RoutingMode == domain.GroupRoutingModeUpstreams && len(cp.AllowedModels) == 0 {
 		return nil, fmt.Errorf("%w: upstream groups require at least one allowed model", ErrInvalidInput)

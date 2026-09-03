@@ -25,11 +25,21 @@ type upstreamSnapshot struct {
 	// endpoint/key identify the configuration that owns runtime state. If an
 	// upstream is edited in place, its ID remains stable but cooldown and
 	// in-flight counters must not be carried to the new connection.
-	endpoint    string
-	host        string
-	key         string
-	concurrency *atomic.Int64
-	state       *atomic.Pointer[upstreamState]
+	endpoint string
+	host     string
+	key      string
+	// modelIDs maps the user-facing normalized model key to the exact model
+	// identifier advertised by this upstream. The normalized key is used only
+	// for route lookup and deduplication; proxy requests must use the raw value.
+	modelIDs       map[string]string
+	formatModelIDs map[modelFormatKey]string
+	concurrency    *atomic.Int64
+	state          *atomic.Pointer[upstreamState]
+}
+
+type modelFormatKey struct {
+	model  string
+	format domain.RequestFormat
 }
 
 type upstreamState struct {
@@ -96,8 +106,42 @@ func newUpstreamSnapshot(member *domain.GroupUpstream, old *upstreamSnapshot) *u
 	us := &upstreamSnapshot{
 		member: member, upstream: member.Upstream,
 		concurrency: new(atomic.Int64), state: new(atomic.Pointer[upstreamState]),
+		modelIDs: make(map[string]string), formatModelIDs: make(map[modelFormatKey]string),
 	}
 	if member.Upstream != nil {
+		for _, raw := range member.Upstream.Models {
+			id := canonicalModelID(raw)
+			if id == "" {
+				continue
+			}
+			key := modelMatchKey(id)
+			if _, exists := us.modelIDs[key]; !exists {
+				us.modelIDs[key] = strings.TrimSpace(raw)
+			}
+		}
+		// A manual probe can be the only source of a tenant-scoped model until
+		// the provider's catalogue catches up, so retain those raw keys too.
+		formatModels := make([]string, 0, len(member.Upstream.ModelFormats))
+		for raw := range member.Upstream.ModelFormats {
+			formatModels = append(formatModels, raw)
+		}
+		slices.Sort(formatModels)
+		for _, raw := range formatModels {
+			id := canonicalModelID(raw)
+			if id == "" {
+				continue
+			}
+			key := modelMatchKey(id)
+			if _, exists := us.modelIDs[key]; !exists {
+				us.modelIDs[key] = strings.TrimSpace(raw)
+			}
+			for _, format := range member.Upstream.ModelFormats[raw] {
+				key := modelFormatKey{model: modelMatchKey(id), format: format}
+				if _, exists := us.formatModelIDs[key]; !exists {
+					us.formatModelIDs[key] = strings.TrimSpace(raw)
+				}
+			}
+		}
 		us.endpoint = normalizeUpstreamEndpoint(member.Upstream.BaseURL)
 		us.host = sanitizedUpstreamHost(us.endpoint)
 		if member.Upstream.UpstreamKey != nil {
@@ -126,6 +170,25 @@ func newUpstreamSnapshot(member *domain.GroupUpstream, old *upstreamSnapshot) *u
 	}
 	us.state.Store(upstreamStateFromMember(member, current))
 	return us
+}
+
+// rawModelFor returns the provider spelling for a normalized route key.
+// Keeping this lookup on the immutable upstream snapshot makes request routing
+// independent of later catalogue refreshes and avoids rewriting provider IDs.
+func (u *upstreamSnapshot) rawModelFor(model string, format domain.RequestFormat, requested string) string {
+	if u != nil {
+		id := modelMatchKey(model)
+		if raw := u.formatModelIDs[modelFormatKey{model: id, format: format}]; raw != "" {
+			return raw
+		}
+		if raw := u.modelIDs[id]; raw != "" {
+			return raw
+		}
+	}
+	if requested = strings.TrimSpace(requested); requested != "" {
+		return requested
+	}
+	return strings.TrimSpace(model)
 }
 
 // normalizeUpstreamEndpoint keeps the scheduler's endpoint identity aligned
@@ -277,11 +340,23 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 		}
 		return routes
 	}
+	byKey := make(map[string]string, len(allowed))
 	for _, rawModel := range allowed {
 		model := canonicalModelID(rawModel)
 		if model == "" {
 			continue
 		}
+		key := modelMatchKey(model)
+		if previous := byKey[key]; previous == "" || model < previous {
+			byKey[key] = model
+		}
+	}
+	models := make([]string, 0, len(byKey))
+	for _, model := range byKey {
+		models = append(models, model)
+	}
+	slices.Sort(models)
+	for _, model := range models {
 		for _, format := range formats {
 			candidates := upstreamCandidatesForModelFormat(pool, model, format)
 			if len(candidates) == 0 {
@@ -302,7 +377,7 @@ func buildUpstreamRoutes(pool []*upstreamSnapshot, allowed []string) map[routeKe
 // The bool is true only when every member lacks a capability snapshot,
 // preserving legacy rows until an operator performs the first model read.
 func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
-	confirmed := make(map[string]struct{})
+	confirmed := make(map[string]string)
 	checked := false
 	unknown := false
 	for _, item := range pool {
@@ -320,7 +395,10 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 		for _, rawModel := range item.upstream.Models {
 			model := canonicalModelID(rawModel)
 			if model != "" {
-				confirmed[model] = struct{}{}
+				key := modelMatchKey(model)
+				if previous := confirmed[key]; previous == "" || model < previous {
+					confirmed[key] = model
+				}
 			}
 		}
 		// Explicit/manual probes can record a tenant-scoped model in the
@@ -330,7 +408,10 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 		for rawModel := range item.upstream.ModelFormats {
 			model := canonicalModelID(rawModel)
 			if model != "" {
-				confirmed[model] = struct{}{}
+				key := modelMatchKey(model)
+				if previous := confirmed[key]; previous == "" || model < previous {
+					confirmed[key] = model
+				}
 			}
 		}
 	}
@@ -338,7 +419,7 @@ func upstreamModelIntersection(pool []*upstreamSnapshot) ([]string, bool) {
 		return nil, unknown
 	}
 	models := make([]string, 0, len(confirmed))
-	for model := range confirmed {
+	for _, model := range confirmed {
 		models = append(models, model)
 	}
 	slices.Sort(models)
@@ -386,7 +467,7 @@ func upstreamSupportsModel(u *domain.Upstream, model string) bool {
 		return true
 	}
 	for _, candidate := range u.Models {
-		if canonicalModelID(candidate) == model {
+		if modelMatchKey(candidate) == modelMatchKey(model) {
 			return true
 		}
 	}
@@ -400,23 +481,55 @@ func upstreamSupportsModel(u *domain.Upstream, model string) bool {
 	return false
 }
 
-// canonicalModelID trims only surrounding whitespace. Provider model IDs may
-// be case-sensitive and may use meaningful prefixes or version suffixes, so
-// collapsing those forms would hide callable models.
-func canonicalModelID(model string) string { return strings.TrimSpace(model) }
+// canonicalModelID is the user-facing spelling. Case is normalized, but the
+// familiar punctuation from an existing group or catalogue is retained.
+func canonicalModelID(model string) string {
+	return strings.ToLower(strings.TrimSpace(model))
+}
+
+// modelMatchKey collapses cosmetic separator differences for equality only.
+// It is never sent upstream and therefore cannot alter provider identifiers.
+func modelMatchKey(model string) string {
+	model = canonicalModelID(model)
+	if model == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(model))
+	lastDash := false
+	for _, r := range model {
+		if r == '_' || r == '.' {
+			r = '-'
+		}
+		if r == '-' {
+			if lastDash {
+				continue
+			}
+			lastDash = true
+		} else {
+			lastDash = false
+		}
+		b.WriteRune(r)
+	}
+	return strings.Trim(b.String(), "-")
+}
 
 // upstreamModelFormats resolves legacy JSON keys that contain surrounding
 // whitespace using the same canonical model ID as the Models catalogue.
 func upstreamModelFormats(all map[string][]domain.RequestFormat, model string) ([]domain.RequestFormat, bool) {
-	if formats, ok := all[model]; ok {
-		return formats, true
-	}
+	var merged []domain.RequestFormat
+	found := false
 	for candidate, formats := range all {
-		if canonicalModelID(candidate) == model {
-			return formats, true
+		if modelMatchKey(candidate) == modelMatchKey(model) {
+			found = true
+			for _, format := range formats {
+				if !slices.Contains(merged, format) {
+					merged = append(merged, format)
+				}
+			}
 		}
 	}
-	return nil, false
+	return merged, found
 }
 
 func newUpstreamWeightedSeq(pool []*upstreamSnapshot) *upstreamWeightedSeq {
@@ -476,7 +589,7 @@ func minInt(a, b int) int {
 	return b
 }
 
-func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format domain.RequestFormat, model string, excluded []int64) (*Selection, error) {
+func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format domain.RequestFormat, model, requestedModel string, excluded []int64) (*Selection, error) {
 	model = canonicalModelID(model)
 	rt, ok := gs.upstreamRoutes[routeKey{format: format, model: model}]
 	if !ok {
@@ -514,7 +627,7 @@ func (s *Scheduler) selectUpstream(gs *groupSnapshot, groupID int64, format doma
 				AccountID: 0, TemplateID: 0, BaseURL: item.endpoint,
 				UpstreamID: item.upstream.ID, UpstreamName: item.upstream.Name,
 				UpstreamHost: item.host, UpstreamMultiplierBP: item.upstream.MultiplierBP,
-				Format: format, UpstreamKey: item.key, CredentialType: credential.TypeAPIKey, Model: model,
+				Format: format, UpstreamKey: item.key, CredentialType: credential.TypeAPIKey, Model: item.rawModelFor(model, format, requestedModel),
 				upstreamRef: item,
 			}, nil
 		}

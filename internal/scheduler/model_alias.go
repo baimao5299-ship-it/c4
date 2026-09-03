@@ -20,8 +20,14 @@ type modelAliasKey struct {
 func buildModelAliases(routes map[routeKey]*route, upstreamRoutes map[routeKey]*upstreamRoute) map[modelAliasKey]string {
 	candidates := make(map[modelAliasKey]string)
 	ambiguous := make(map[modelAliasKey]struct{})
-	add := func(format domain.RequestFormat, model string) {
-		for _, alias := range modelShortAliases(model) {
+	add := func(format domain.RequestFormat, model string, includeCosmeticIdentity bool) {
+		aliases := modelShortAliases(model)
+		if includeCosmeticIdentity {
+			if identity := modelMatchKey(model); identity != "" && identity != strings.ToLower(strings.TrimSpace(model)) {
+				aliases = append(aliases, identity)
+			}
+		}
+		for _, alias := range aliases {
 			if alias == "" || alias == strings.ToLower(strings.TrimSpace(model)) {
 				continue
 			}
@@ -39,12 +45,12 @@ func buildModelAliases(routes map[routeKey]*route, upstreamRoutes map[routeKey]*
 	}
 	for key := range routes {
 		if key.model != "" {
-			add(key.format, key.model)
+			add(key.format, key.model, false)
 		}
 	}
 	for key := range upstreamRoutes {
 		if key.model != "" {
-			add(key.format, key.model)
+			add(key.format, key.model, true)
 		}
 	}
 	return candidates
