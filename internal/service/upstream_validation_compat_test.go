@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPreviewUpstreamModelsRetriesResponsesOptionalFieldRejection(t *testing.T) {
+func TestPreviewUpstreamModelsStreamingProbeOmitsOptionalStoreField(t *testing.T) {
 	var responses atomic.Int32
 	var chats atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,11 +27,8 @@ func TestPreviewUpstreamModelsRetriesResponsesOptionalFieldRejection(t *testing.
 			responses.Add(1)
 			var body map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-			if _, hasStore := body["store"]; hasStore {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":{"message":"unknown field store"}}`))
-				return
-			}
+			require.Equal(t, true, body["stream"])
+			require.NotContains(t, body, "store")
 			_, _ = w.Write([]byte(`{"id":"resp-1","object":"response"}`))
 		case "/v1/chat/completions":
 			chats.Add(1)
@@ -46,11 +43,11 @@ func TestPreviewUpstreamModelsRetriesResponsesOptionalFieldRejection(t *testing.
 	require.NoError(t, err)
 	require.True(t, result.OK)
 	require.Equal(t, []string{"relay-model"}, result.Models)
-	require.Equal(t, int32(2), responses.Load(), "the compact retry should be the only second Responses request")
+	require.Equal(t, int32(1), responses.Load(), "the streaming probe should avoid an unnecessary parameter retry")
 	require.Zero(t, chats.Load(), "a field rejection is fixed on Responses without a paid Chat fallback")
 }
 
-func TestPreviewUpstreamModelsRetriesResponsesOptionalFieldEnvelope(t *testing.T) {
+func TestPreviewUpstreamModelsStreamingProbeAvoidsOptionalFieldEnvelope(t *testing.T) {
 	var responses atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -61,11 +58,8 @@ func TestPreviewUpstreamModelsRetriesResponsesOptionalFieldEnvelope(t *testing.T
 			responses.Add(1)
 			var body map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-			if _, hasStore := body["store"]; hasStore {
-				// Some relays use HTTP 200 for application-level validation errors.
-				_, _ = w.Write([]byte(`{"error":{"message":"unsupported field store"}}`))
-				return
-			}
+			require.Equal(t, true, body["stream"])
+			require.NotContains(t, body, "store")
 			_, _ = w.Write([]byte(`{"id":"resp-1","object":"response"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -77,7 +71,7 @@ func TestPreviewUpstreamModelsRetriesResponsesOptionalFieldEnvelope(t *testing.T
 	require.NoError(t, err)
 	require.True(t, result.OK)
 	require.Equal(t, []string{"relay-model"}, result.Models)
-	require.Equal(t, int32(2), responses.Load())
+	require.Equal(t, int32(1), responses.Load())
 }
 
 func TestPreviewUpstreamModelsRetriesChatTokenParameterRejection(t *testing.T) {

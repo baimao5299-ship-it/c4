@@ -10,11 +10,20 @@ During the **beta** phase, versions are `v0.x.0-beta.N` (N increments with each 
 
 ## [Unreleased]
 
+## [v0.0.1-beta.22] - 2026-09-04
+
 ### Fixed
 
 - Pricing now resolves unambiguous relay spellings across letter case,
   numeric dot/dash variants, and short model tokens such as `k3`, while still
   rejecting aliases that could select between different provider prices.
+- Model catalogue validation now probes streaming first and confirms a model
+  at its first valid provider output event. Slow reasoning models no longer
+  fail the 12-second probe while ordinary requests succeed, and relays that
+  explicitly reject streaming automatically fall back to a non-streaming
+  request.
+- The Compose default image now points at the current beta release so the
+  container image label and embedded server version no longer disagree.
 
 ## [v0.0.1-beta.21] - 2026-09-04
 

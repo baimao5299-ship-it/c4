@@ -2063,7 +2063,11 @@ func validateModelCatalogueWithTimeout(ctx context.Context, client *http.Client,
 				// bounded request. Jobs skipped after the overall deadline are
 				// not reported as real validation attempts.
 				modelCtx, modelCancel := context.WithTimeout(validationCtx, upstreamModelValidationPerModel)
-				status, format, requestErr := sendUpstreamModelProbeWithRetryFormat(modelCtx, client, base, key, model)
+				// Streaming validation confirms slow reasoning models at their first
+				// real output event instead of waiting for the full generation. The
+				// compatibility path retries without stream only after an explicit
+				// parameter rejection, so non-streaming-only relays remain supported.
+				status, format, requestErr := sendUpstreamModelProbeWithRetryPreferredShape(modelCtx, client, base, key, model, responsesProbeStream)
 				modelCancel()
 				modelCode := classifyModelValidationError(validationCtx, status, requestErr)
 				// A 401/403 can be scoped to the selected model (for example a
@@ -2625,6 +2629,7 @@ const (
 	responsesProbeInputArray
 	responsesProbeStream
 	responsesProbeNoOutputLimit
+	responsesProbeOmitStream
 )
 
 // sendUpstreamResponsesProbe starts with the ordinary Responses request and
@@ -2632,11 +2637,17 @@ const (
 // the relay explicitly rejected the request shape before model execution;
 // quota, authentication, model, and provider errors are never replayed.
 func sendUpstreamResponsesProbe(ctx context.Context, client *http.Client, target, key, model string) (int, error) {
+	return sendUpstreamResponsesProbeShape(ctx, client, target, key, model, responsesProbeCanonical)
+}
+
+// sendUpstreamResponsesProbeShape lets catalogue validation prefer streaming.
+// A streaming probe can confirm the model at the first provider output event
+// instead of waiting for a slow reasoning response to finish completely.
+func sendUpstreamResponsesProbeShape(ctx context.Context, client *http.Client, target, key, model string, shape responsesProbeShape) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	status, requestErr := sendUpstreamTestRequest(ctx, client, target, key, model, false)
-	shape := responsesProbeCanonical
+	status, requestErr := sendUpstreamTestRequestShape(ctx, client, target, key, model, false, shape)
 	tried := map[responsesProbeShape]struct{}{shape: {}}
 	// Parameter rejections are handled before model execution and therefore do
 	// not consume model quota. Four bounded retries cover the independent
@@ -2668,18 +2679,22 @@ func sendUpstreamResponsesProbe(ctx context.Context, client *http.Client, target
 // quota, model, and provider failures are never replayed through another
 // protocol.
 func sendUpstreamModelProbeWithFormat(ctx context.Context, client *http.Client, base, key, model string) (int, domain.RequestFormat, error) {
+	return sendUpstreamModelProbeWithPreferredShape(ctx, client, base, key, model, responsesProbeCanonical)
+}
+
+func sendUpstreamModelProbeWithPreferredShape(ctx context.Context, client *http.Client, base, key, model string, shape responsesProbeShape) (int, domain.RequestFormat, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	format := domain.FormatOpenAIResponses
-	status, requestErr := sendUpstreamResponsesProbe(ctx, client, upstreamURL(base, "/v1/responses"), key, model)
+	status, requestErr := sendUpstreamResponsesProbeShape(ctx, client, upstreamURL(base, "/v1/responses"), key, model, shape)
 	if shouldFallbackTestRequest(status, requestErr) && ctx.Err() == nil {
 		format = domain.FormatOpenAIChat
-		status, requestErr = sendUpstreamChatProbe(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model)
+		status, requestErr = sendUpstreamChatProbeShape(ctx, client, upstreamURL(base, "/v1/chat/completions"), key, model, shape)
 	}
 	if shouldFallbackToMessagesRequest(status, requestErr, key) && ctx.Err() == nil {
 		format = domain.FormatAnthropic
-		status, requestErr = sendUpstreamMessagesProbe(ctx, client, upstreamURL(base, "/v1/messages"), key, model)
+		status, requestErr = sendUpstreamMessagesProbeShape(ctx, client, upstreamURL(base, "/v1/messages"), key, model, shape)
 	}
 	return status, format, requestErr
 }
@@ -2701,16 +2716,20 @@ func sendUpstreamModelProbeWithRetry(ctx context.Context, client *http.Client, b
 }
 
 func sendUpstreamModelProbeWithRetryFormat(ctx context.Context, client *http.Client, base, key, model string) (int, domain.RequestFormat, error) {
+	return sendUpstreamModelProbeWithRetryPreferredShape(ctx, client, base, key, model, responsesProbeCanonical)
+}
+
+func sendUpstreamModelProbeWithRetryPreferredShape(ctx context.Context, client *http.Client, base, key, model string, shape responsesProbeShape) (int, domain.RequestFormat, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	probeCtx, _ := withUpstreamProbeAttemptState(ctx)
-	status, format, requestErr := sendUpstreamModelProbeWithFormat(probeCtx, client, base, key, model)
+	status, format, requestErr := sendUpstreamModelProbeWithPreferredShape(probeCtx, client, base, key, model, shape)
 	if !shouldRetryTransientModelProbe(status, requestErr) || !isPreSendProbeTransportError(requestErr) || !waitForUpstreamModelProbeRetry(ctx) {
 		return status, format, requestErr
 	}
 	retryCtx, _ := withUpstreamProbeAttemptState(ctx)
-	return sendUpstreamModelProbeWithFormat(retryCtx, client, base, key, model)
+	return sendUpstreamModelProbeWithPreferredShape(retryCtx, client, base, key, model, shape)
 }
 
 type upstreamProbeAttemptState struct {
@@ -2827,7 +2846,13 @@ func responsesProbeCompatibilityShape(status int, requestErr error) responsesPro
 		strings.Contains(body, "message") || strings.Contains(body, "expected")) {
 		return responsesProbeInputArray
 	}
-	// A few gateways force streaming for Responses requests.  Their error
+	// Streaming is the fast validation path for slow reasoning models. A relay
+	// that explicitly rejects it gets one parameter-only retry with the optional
+	// field omitted; the request has not reached model execution at this point.
+	if isProbeStreamRejectedMessage(body) {
+		return responsesProbeOmitStream
+	}
+	// A few gateways force streaming for Responses requests. Their error
 	// usually names both `stream` and the required true value.
 	if strings.Contains(body, "stream") && (strings.Contains(body, "true") ||
 		strings.Contains(body, "required") || strings.Contains(body, "must")) {
@@ -2849,11 +2874,14 @@ func responsesProbeCompatibilityShape(status int, requestErr error) responsesPro
 // for a tiny capability request; treating those as protocol mismatches keeps
 // a manually usable model from being filtered by the management probe.
 func sendUpstreamChatProbe(ctx context.Context, client *http.Client, target, key, model string) (int, error) {
+	return sendUpstreamChatProbeShape(ctx, client, target, key, model, responsesProbeCanonical)
+}
+
+func sendUpstreamChatProbeShape(ctx context.Context, client *http.Client, target, key, model string, shape responsesProbeShape) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	status, requestErr := sendUpstreamTestRequestShape(ctx, client, target, key, model, true, responsesProbeCanonical)
-	shape := responsesProbeCanonical
+	status, requestErr := sendUpstreamTestRequestShape(ctx, client, target, key, model, true, shape)
 	tried := map[responsesProbeShape]struct{}{shape: {}}
 	// Chat has two independent compatibility dimensions. Keep the same bounded
 	// retry discipline as Responses and never replay an ordinary model/provider
@@ -2882,6 +2910,9 @@ func chatProbeCompatibilityShape(status int, requestErr error) responsesProbeSha
 		return responsesProbeCanonical
 	}
 	body := strings.ToLower(responseErrorBody(requestErr))
+	if isProbeStreamRejectedMessage(body) {
+		return responsesProbeOmitStream
+	}
 	if strings.Contains(body, "stream") && (strings.Contains(body, "true") ||
 		strings.Contains(body, "required") || strings.Contains(body, "must")) {
 		return responsesProbeStream
@@ -2895,11 +2926,14 @@ func chatProbeCompatibilityShape(status int, requestErr error) responsesProbeSha
 // require stream=true or reject an optional field; those shape corrections are
 // retried only when the response explicitly identifies the offending field.
 func sendUpstreamMessagesProbe(ctx context.Context, client *http.Client, target, key, model string) (int, error) {
+	return sendUpstreamMessagesProbeShape(ctx, client, target, key, model, responsesProbeCanonical)
+}
+
+func sendUpstreamMessagesProbeShape(ctx context.Context, client *http.Client, target, key, model string, shape responsesProbeShape) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	status, requestErr := sendUpstreamMessagesRequestShape(ctx, client, target, key, model, responsesProbeCanonical)
-	shape := responsesProbeCanonical
+	status, requestErr := sendUpstreamMessagesRequestShape(ctx, client, target, key, model, shape)
 	tried := map[responsesProbeShape]struct{}{shape: {}}
 	for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
 		next := messagesProbeCompatibilityShape(status, requestErr)
@@ -2939,6 +2973,26 @@ func messagesProbeCompatibilityShape(status int, requestErr error) responsesProb
 	return responsesProbeCanonical
 }
 
+func isProbeStreamRejectedMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if !strings.Contains(message, "stream") {
+		return false
+	}
+	for _, marker := range []string{
+		"stream must be false", "stream=false required", "stream=false is required",
+		"stream is not supported", "stream not supported", "stream is unsupported",
+		"unsupported stream", "stream parameter is not supported", "stream parameter not supported",
+		"stream is not allowed", "stream not allowed", "stream parameter is not allowed",
+		"unknown parameter stream", "unknown field stream", "unrecognized field stream",
+		"unrecognised field stream", "unexpected field stream", "extra field stream",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func isMessagesStreamRequiredMessage(message string) bool {
 	message = strings.ToLower(strings.TrimSpace(message))
 	if !strings.Contains(message, "stream") {
@@ -2958,22 +3012,7 @@ func isMessagesStreamRequiredMessage(message string) bool {
 }
 
 func isMessagesStreamRejectedMessage(message string) bool {
-	message = strings.ToLower(strings.TrimSpace(message))
-	if !strings.Contains(message, "stream") {
-		return false
-	}
-	for _, marker := range []string{
-		"stream is not supported", "stream not supported", "stream is unsupported",
-		"unsupported stream", "stream parameter is not supported", "stream parameter not supported",
-		"stream is not allowed", "stream not allowed", "stream parameter is not allowed",
-		"unknown parameter stream", "unknown field stream", "unrecognized field stream",
-		"unrecognised field stream", "unexpected field stream", "extra field stream",
-	} {
-		if strings.Contains(message, marker) {
-			return true
-		}
-	}
-	return false
+	return isProbeStreamRejectedMessage(message)
 }
 
 func shouldRetryMessagesParameter(status int, requestErr error) bool {
@@ -3005,7 +3044,7 @@ func sendUpstreamMessagesRequestShape(ctx context.Context, client *http.Client, 
 	if shape&responsesProbeStream != 0 {
 		payload["stream"] = true
 	}
-	if shape&responsesProbeCompact != 0 {
+	if shape&responsesProbeCompact != 0 || shape&responsesProbeOmitStream != 0 {
 		// A few Anthropic-compatible relays reject the optional stream field
 		// unless streaming was explicitly requested.  The compact retry removes
 		// it while retaining the required max_tokens/messages fields.
@@ -3094,6 +3133,9 @@ func sendUpstreamTestRequestShape(ctx context.Context, client *http.Client, targ
 		if shape&responsesProbeStream != 0 {
 			payload["stream"] = true
 		}
+		if shape&responsesProbeOmitStream != 0 {
+			delete(payload, "stream")
+		}
 		if shape&responsesProbeCompact != 0 {
 			// Newer reasoning models reject the legacy max_tokens field. Keep
 			// the compatibility retry limited to an explicit parameter error.
@@ -3114,6 +3156,9 @@ func sendUpstreamTestRequestShape(ctx context.Context, client *http.Client, targ
 		}
 		if shape&responsesProbeStream != 0 {
 			payload["stream"] = true
+		}
+		if shape&responsesProbeOmitStream != 0 {
+			delete(payload, "stream")
 		}
 		if shape&responsesProbeNoOutputLimit != 0 {
 			delete(payload, "max_output_tokens")

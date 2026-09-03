@@ -241,6 +241,117 @@ func TestValidateModelCatalogueDoesNotProbeDuplicateIdentifiers(t *testing.T) {
 	require.Equal(t, int32(1), requests.Load())
 }
 
+func TestValidateModelCataloguePrefersStreamingForSlowReasoningModels(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, true, body["stream"])
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+		_, _ = io.WriteString(w, "event: response.output_text.delta\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")
+		flusher.Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	started := time.Now()
+	result := validateModelCatalogueWithTimeout(
+		context.Background(), server.Client(), server.URL, "relay-key",
+		[]string{"slow-reasoning-model"}, 700*time.Millisecond,
+	)
+
+	require.True(t, result.ValidationComplete)
+	require.True(t, result.OK)
+	require.Equal(t, []string{"slow-reasoning-model"}, result.Models)
+	require.Equal(t, int32(1), requests.Load())
+	require.Less(t, time.Since(started), 600*time.Millisecond,
+		"validation should finish at the first proven stream output, not full generation time")
+}
+
+func TestValidateModelCatalogueFallsBackWhenStreamingIsRejected(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := requests.Add(1)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		w.Header().Set("Content-Type", "application/json")
+		if attempt == 1 {
+			require.Equal(t, true, body["stream"])
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"stream is not supported"}}`)
+			return
+		}
+		require.NotContains(t, body, "stream")
+		_, _ = io.WriteString(w, `{"id":"resp-1","object":"response"}`)
+	}))
+	defer server.Close()
+
+	result := validateModelCatalogueWithTimeout(
+		context.Background(), server.Client(), server.URL, "relay-key",
+		[]string{"non-streaming-model"}, time.Second,
+	)
+
+	require.True(t, result.ValidationComplete)
+	require.True(t, result.OK)
+	require.Equal(t, []string{"non-streaming-model"}, result.Models)
+	require.Equal(t, int32(2), requests.Load())
+}
+
+func TestValidateModelCatalogueKeepsStreamingAcrossProtocolFallbacks(t *testing.T) {
+	tests := []struct {
+		name       string
+		targetPath string
+		format     domain.RequestFormat
+		event      string
+	}{
+		{
+			name:       "chat completions",
+			targetPath: "/v1/chat/completions",
+			format:     domain.FormatOpenAIChat,
+			event:      "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
+		},
+		{
+			name:       "messages",
+			targetPath: "/v1/messages",
+			format:     domain.FormatAnthropic,
+			event:      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"ok\"}}\n\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tc.targetPath {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				require.Equal(t, true, body["stream"])
+				w.Header().Set("Content-Type", "text/event-stream")
+				flusher, ok := w.(http.Flusher)
+				require.True(t, ok)
+				_, _ = io.WriteString(w, tc.event)
+				flusher.Flush()
+				<-r.Context().Done()
+			}))
+			defer server.Close()
+
+			result := validateModelCatalogueWithTimeout(
+				context.Background(), server.Client(), server.URL, "relay-key",
+				[]string{"model-a"}, time.Second,
+			)
+
+			require.True(t, result.ValidationComplete)
+			require.True(t, result.OK)
+			require.Equal(t, []domain.RequestFormat{tc.format}, result.modelFormats["model-a"])
+		})
+	}
+}
+
 func TestReadUpstreamProbeBodyAcceptsOpenSSEFrameImmediately(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
