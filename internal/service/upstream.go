@@ -71,8 +71,11 @@ type UpstreamModelStore interface {
 // the concrete wire protocol that answered for each model. Production uses
 // this richer surface; UpstreamModelStore remains as a compatibility fallback
 // for lightweight integrations.
+// The trailing bool reports whether the whole advertised catalogue was probed.
+// Only a complete run may stamp ModelsCheckedAt, because routing reads that
+// timestamp as the upstream's exhaustive capability set.
 type UpstreamModelCapabilityStore interface {
-	RecordUpstreamModelCapabilities(context.Context, *domain.Upstream, []string, map[string][]domain.RequestFormat, *string) (*domain.Upstream, error)
+	RecordUpstreamModelCapabilities(context.Context, *domain.Upstream, []string, map[string][]domain.RequestFormat, *string, bool) (*domain.Upstream, error)
 }
 
 // GroupUpstreamStore persists the per-group upstream relation. It is kept
@@ -827,7 +830,12 @@ func (s *Service) recordExplicitUpstreamModel(ctx context.Context, store Upstrea
 	var saved *domain.Upstream
 	var err error
 	if capabilityRecorder, capabilityOK := store.(UpstreamModelCapabilityStore); capabilityOK {
-		saved, err = capabilityRecorder.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, nil)
+		// complete=false: one explicit model probe is by definition not a full
+		// catalogue validation. The model still joins the routable list, but
+		// stamping ModelsCheckedAt here would restrict a never-validated upstream
+		// to just this merged list and make every other advertised model
+		// unroutable.
+		saved, err = capabilityRecorder.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, nil, false)
 	} else {
 		saved, err = recorder.RecordUpstreamModels(ctx, expected, models, nil)
 	}
@@ -1301,7 +1309,7 @@ func (s *Service) recordUpstreamModels(ctx context.Context, store UpstreamStore,
 	}
 	var err error
 	if capabilityRecorder, capabilityOK := store.(UpstreamModelCapabilityStore); capabilityOK {
-		_, err = capabilityRecorder.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr)
+		_, err = capabilityRecorder.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr, complete)
 	} else {
 		_, err = recorder.RecordUpstreamModels(ctx, expected, models, modelErr)
 	}

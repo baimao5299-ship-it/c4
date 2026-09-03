@@ -171,7 +171,7 @@ func TestPGUpstreamModelCapabilitiesRoundTripAndReset(t *testing.T) {
 		"chat-only": {domain.FormatOpenAIChat},
 		"multi":     {domain.FormatOpenAIResponses, domain.FormatAnthropic},
 	}
-	saved, err := repos.RecordUpstreamModelCapabilities(ctx, u, []string{"chat-only", "multi"}, formats, nil)
+	saved, err := repos.RecordUpstreamModelCapabilities(ctx, u, []string{"chat-only", "multi"}, formats, nil, true)
 	require.NoError(t, err)
 	require.Equal(t, formats, saved.ModelFormats)
 	require.NotNil(t, saved.ModelsCheckedAt)
@@ -190,7 +190,7 @@ func TestPGUpstreamModelCapabilitiesRoundTripAndReset(t *testing.T) {
 	// An incomplete validation records its error but keeps both halves of the
 	// previous capability snapshot.
 	errorCode := "timeout"
-	failed, err := repos.RecordUpstreamModelCapabilities(ctx, got, nil, nil, &errorCode)
+	failed, err := repos.RecordUpstreamModelCapabilities(ctx, got, nil, nil, &errorCode, false)
 	require.NoError(t, err)
 	require.Equal(t, got.Models, failed.Models)
 	require.Equal(t, got.ModelFormats, failed.ModelFormats)

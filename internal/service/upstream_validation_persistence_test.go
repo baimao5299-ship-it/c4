@@ -29,11 +29,11 @@ func (s *canceledWriteRejectingStore) RecordUpstreamModels(ctx context.Context, 
 	return s.multiUpstreamServiceStub.RecordUpstreamModels(ctx, expected, models, modelErr)
 }
 
-func (s *canceledWriteRejectingStore) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
+func (s *canceledWriteRejectingStore) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string, complete bool) (*domain.Upstream, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return s.multiUpstreamServiceStub.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr)
+	return s.multiUpstreamServiceStub.RecordUpstreamModelCapabilities(ctx, expected, models, modelFormats, modelErr, complete)
 }
 
 func (s *canceledWriteRejectingStore) RecordUpstreamProbe(ctx context.Context, expected *domain.Upstream, success bool, latencyMS int64, probeErr *string) (*domain.Upstream, error) {

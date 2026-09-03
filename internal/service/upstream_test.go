@@ -86,6 +86,12 @@ func (s *upstreamServiceStub) RecordUpstreamBalance(_ context.Context, expected 
 }
 
 func (s *upstreamServiceStub) RecordUpstreamModels(_ context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
+	// The legacy surface cannot express an incomplete run, matching the
+	// repository: whatever it receives is published as authoritative.
+	return s.recordModels(expected, models, modelErr, true)
+}
+
+func (s *upstreamServiceStub) recordModels(expected *domain.Upstream, models []string, modelErr *string, complete bool) (*domain.Upstream, error) {
 	if s.recordModelsFn != nil {
 		return s.recordModelsFn(expected, models, modelErr)
 	}
@@ -94,12 +100,16 @@ func (s *upstreamServiceStub) RecordUpstreamModels(_ context.Context, expected *
 	}
 	// A nil model slice paired with an error represents an incomplete
 	// catalogue/transport run; production keeps the previous verified snapshot
-	// and only updates the visible error. A non-nil (possibly empty) slice is a
-	// completed validation snapshot and replaces it.
+	// and only updates the visible error. A non-nil (possibly empty) slice
+	// contributes its confirmed models.
 	if !(modelErr != nil && models == nil) {
 		s.row.Models = append([]string(nil), models...)
-		now := time.Now()
-		s.row.ModelsCheckedAt = &now
+		// Only a complete run may stamp ModelsCheckedAt: routing reads that
+		// timestamp as the upstream's exhaustive capability set.
+		if complete {
+			now := time.Now()
+			s.row.ModelsCheckedAt = &now
+		}
 	}
 	s.row.ModelsError = modelErr
 	copy := *s.row
@@ -107,8 +117,8 @@ func (s *upstreamServiceStub) RecordUpstreamModels(_ context.Context, expected *
 	return &copy, nil
 }
 
-func (s *upstreamServiceStub) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
-	saved, err := s.RecordUpstreamModels(ctx, expected, models, modelErr)
+func (s *upstreamServiceStub) RecordUpstreamModelCapabilities(_ context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string, complete bool) (*domain.Upstream, error) {
+	saved, err := s.recordModels(expected, models, modelErr, complete)
 	if err != nil || models == nil {
 		return saved, err
 	}
@@ -1556,12 +1566,20 @@ func (s *multiUpstreamServiceStub) RecordUpstreamBalance(context.Context, *domai
 	return nil, errors.New("not implemented")
 }
 func (s *multiUpstreamServiceStub) RecordUpstreamModels(_ context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
+	// Legacy surface: publishes whatever it receives as authoritative.
+	return s.recordModels(expected, models, modelErr, true)
+}
+
+func (s *multiUpstreamServiceStub) recordModels(expected *domain.Upstream, models []string, modelErr *string, complete bool) (*domain.Upstream, error) {
 	for _, row := range s.rows {
 		if row.ID == expected.ID {
 			if !(modelErr != nil && models == nil) {
 				row.Models = append([]string(nil), models...)
-				now := time.Now()
-				row.ModelsCheckedAt = &now
+				// Only a complete run may claim the snapshot is exhaustive.
+				if complete {
+					now := time.Now()
+					row.ModelsCheckedAt = &now
+				}
 			}
 			row.ModelsError = modelErr
 			copy := *row
@@ -1572,8 +1590,8 @@ func (s *multiUpstreamServiceStub) RecordUpstreamModels(_ context.Context, expec
 	return nil, repository.ErrNotFound
 }
 
-func (s *multiUpstreamServiceStub) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
-	saved, err := s.RecordUpstreamModels(ctx, expected, models, modelErr)
+func (s *multiUpstreamServiceStub) RecordUpstreamModelCapabilities(_ context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string, complete bool) (*domain.Upstream, error) {
+	saved, err := s.recordModels(expected, models, modelErr, complete)
 	if err != nil || models == nil {
 		return saved, err
 	}

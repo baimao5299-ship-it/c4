@@ -307,18 +307,26 @@ func (r *UpstreamRepo) UpdateUpstream(ctx context.Context, u *domain.Upstream) (
 // The endpoint and write-only key are part of the predicate so a slow probe
 // cannot attach an old model list to a newly edited upstream.
 func (r *UpstreamRepo) RecordUpstreamModels(ctx context.Context, expected *domain.Upstream, models []string, modelErr *string) (*domain.Upstream, error) {
-	return r.recordUpstreamModelCapabilities(ctx, expected, models, nil, false, modelErr)
+	// This legacy surface cannot express an incomplete run, so it keeps the
+	// historical behaviour of publishing whatever it is given as authoritative.
+	// Production uses RecordUpstreamModelCapabilities below.
+	return r.recordUpstreamModelCapabilities(ctx, expected, models, nil, false, true, modelErr)
 }
 
 // RecordUpstreamModelCapabilities atomically publishes the model catalogue and
 // the protocols verified for each model. A nil model list means the validation
 // did not complete, so both parts of the previous capability snapshot remain
 // intact while the bounded error is recorded.
-func (r *UpstreamRepo) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string) (*domain.Upstream, error) {
-	return r.recordUpstreamModelCapabilities(ctx, expected, models, modelFormats, true, modelErr)
+//
+// complete reports whether the whole advertised catalogue was probed. A partial
+// run still contributes its confirmed models, but must not claim the snapshot
+// is exhaustive: routing treats a stamped ModelsCheckedAt as the upstream's
+// complete capability set and refuses every model outside it.
+func (r *UpstreamRepo) RecordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, modelErr *string, complete bool) (*domain.Upstream, error) {
+	return r.recordUpstreamModelCapabilities(ctx, expected, models, modelFormats, true, complete, modelErr)
 }
 
-func (r *UpstreamRepo) recordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, updateFormats bool, modelErr *string) (*domain.Upstream, error) {
+func (r *UpstreamRepo) recordUpstreamModelCapabilities(ctx context.Context, expected *domain.Upstream, models []string, modelFormats map[string][]domain.RequestFormat, updateFormats, complete bool, modelErr *string) (*domain.Upstream, error) {
 	if expected == nil || expected.ID <= 0 {
 		return nil, fmt.Errorf("%w: missing expected upstream", ErrNotFound)
 	}
@@ -330,14 +338,21 @@ func (r *UpstreamRepo) recordUpstreamModelCapabilities(ctx context.Context, expe
 	if modelErr != nil && strings.TrimSpace(*modelErr) != "" {
 		code := domain.TruncateErrMsg(strings.TrimSpace(*modelErr))
 		if models != nil {
-			// A non-nil list is an explicit completed validation snapshot. Publish
-			// exactly the subset that answered a real request, including an empty
-			// subset when every model failed. ModelsCheckedAt distinguishes this
-			// confirmed empty snapshot from an endpoint that has never been
-			// inspected. The service passes nil for incomplete catalogue/transport
-			// failures, which intentionally keeps the previous snapshot.
+			// A non-nil list carries the models that answered a real request,
+			// including an empty subset when every model failed. Publish it, but
+			// only stamp ModelsCheckedAt for a complete run: routing reads that
+			// timestamp as "this list is the upstream's entire capability set"
+			// and refuses everything outside it, so stamping a partially probed
+			// catalogue makes the unprobed remainder unroutable. Leaving an
+			// earlier timestamp untouched is safe because the service merges the
+			// retained snapshot, so the recorded list never shrinks here.
+			// The service passes nil for incomplete catalogue/transport failures,
+			// which intentionally keeps the previous snapshot.
 			clean := append([]string{}, models...)
-			b.SetModels(clean).SetModelsCheckedAt(time.Now()).SetModelsError(code)
+			b.SetModels(clean).SetModelsError(code)
+			if complete {
+				b.SetModelsCheckedAt(time.Now())
+			}
 			if updateFormats {
 				b.SetModelFormats(cloneUpstreamModelFormats(modelFormats))
 			}
@@ -346,7 +361,10 @@ func (r *UpstreamRepo) recordUpstreamModelCapabilities(ctx context.Context, expe
 		}
 	} else {
 		clean := append([]string{}, models...)
-		b.SetModels(clean).SetModelsCheckedAt(time.Now())
+		b.SetModels(clean)
+		if complete {
+			b.SetModelsCheckedAt(time.Now())
+		}
 		if updateFormats {
 			b.SetModelFormats(cloneUpstreamModelFormats(modelFormats))
 		}
