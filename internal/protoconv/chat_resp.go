@@ -166,13 +166,20 @@ func appendChatInputItems(out []byte, msgs gjson.Result) []byte {
 			}
 		case rawStrEq(role.Raw, "user"), rawStrEq(role.Raw, "assistant"):
 			// user/assistant → message 项（部件原字节映射；无部件 → 回退）
+			// Responses 只允许 assistant 内容为 output_text/refusal；把 assistant
+			// 历史写成 input_text 会让上游拒绝整个请求（invalid_value），因此
+			// 多轮对话在这里按角色选择文本部件类型。
+			textType := "input_text"
+			if rawStrEq(role.Raw, "assistant") {
+				textType = "output_text"
+			}
 			start := len(out)
 			if n > 0 {
 				out = append(out, ',')
 			}
 			out = append(out, `{"content":[`...)
 			var parts int
-			out, parts = appendContentParts(out, content)
+			out, parts = appendContentParts(out, content, textType)
 			if parts == 0 {
 				out = out[:start]
 			} else {
@@ -283,14 +290,21 @@ func contentTextRaw(content gjson.Result) (string, bool, bool) {
 }
 
 // appendContentParts content → resp 内容部件数组（直接写入 out）：字符串 →
-// 单 input_text（原字节）；text 部件 → input_text；image_url 部件 →
+// 单文本部件（原字节）；text 部件 → 文本部件；image_url 部件 →
 // input_image（url 原字节，string 或 {url} 两种形态）；其余部件按规范丢弃。
 // 返回 (out, 部件数)。
-func appendContentParts(out []byte, content gjson.Result) ([]byte, int) {
+//
+// textType 由调用方按角色决定：Responses 协议只接受 assistant 消息携带
+// output_text/refusal，user 与 developer 消息携带 input_text。对 assistant
+// 历史写 input_text 会被上游以 invalid_value 拒绝整个请求，因此多轮对话必须
+// 按角色分流（与 mess_resp.go 的 messages→resp 转换一致）。
+func appendContentParts(out []byte, content gjson.Result, textType string) ([]byte, int) {
 	if content.Type == gjson.String {
 		out = append(out, `{"text":`...)
 		out = append(out, content.Raw...)
-		out = append(out, `,"type":"input_text"}`...)
+		out = append(out, `,"type":"`...)
+		out = append(out, textType...)
+		out = append(out, `"}`...)
 		return out, 1
 	}
 	if !content.IsArray() {
@@ -310,7 +324,9 @@ func appendContentParts(out []byte, content gjson.Result) ([]byte, int) {
 				n++
 				out = append(out, `{"text":`...)
 				out = append(out, t.Raw...)
-				out = append(out, `,"type":"input_text"}`...)
+				out = append(out, `,"type":"`...)
+				out = append(out, textType...)
+				out = append(out, `"}`...)
 			}
 		case rawStrEq(p.Get("type").Raw, "image_url"):
 			if u, ok := imageURLRaw(p); ok {
