@@ -708,6 +708,8 @@
     },
     "new": "New user",
     "searchEmail": "Search email",
+    "totalBalance": "Total user balance",
+    "totalCount": "{{count}} users",
     "emptyTitle": "No users yet",
     "emptyDesc": "Create a user to issue client keys",
     "filterEmpty": "No users match the filters",
@@ -937,6 +939,7 @@
       "group": "Group",
       "account": "Account",
       "upstream": "Hit upstream",
+      "route": "Actual route",
       "model": "Model",
       "format": "Format",
       "errorType": "Error type",
@@ -982,6 +985,10 @@
         "upstream_member": "Upstream pool member"
       }
     },
+    "route": {
+      "group": "Group: {{name}}",
+      "account": "Account: {{name}}"
+    },
     "finance": {
       "userCharge": "User charge",
       "upstreamCost": "Est. upstream cost",
@@ -999,7 +1006,14 @@
       "profitMargin": "Est. margin",
       "lossRequestCount": "Loss-making requests",
       "refreshing": "Refreshing…",
-      "loadFailed": "Summary unavailable: {{message}}"
+      "loadFailed": "Summary unavailable: {{message}}",
+      "rankingsTitle": "Route rankings in this window",
+      "mostCalledUpstream": "Most called upstream",
+      "highestCostUpstream": "Highest upstream cost",
+      "mostCalledGroup": "Most called group",
+      "highestCostGroup": "Highest upstream cost group",
+      "noRanking": "No calls recorded",
+      "noCostSnapshot": "No cost snapshot"
     },
     "diagnostics": {
       "attempts": "Attempts {{count}}",

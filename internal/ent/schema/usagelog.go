@@ -106,6 +106,7 @@ func (UsageLog) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("created_at"),
 		index.Fields("group_id", "created_at"),
+		index.Fields("upstream_id", "created_at"),
 		index.Fields("account_id", "created_at"),
 		index.Fields("user_id", "created_at"),
 		index.Fields("key_id", "created_at"),

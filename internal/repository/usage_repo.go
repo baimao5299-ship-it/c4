@@ -39,14 +39,29 @@ type UsageQuery struct {
 // log query. Cost estimates are nullable because historical or unpriced rows
 // do not have a request-time upstream cost snapshot.
 type UsageLogsSummary struct {
-	RequestCount         int64
-	CostedRequestCount   int64
-	UserCharge           int64
-	AttributedUserCharge int64
-	UpstreamCost         *int64
-	GrossProfit          *int64
-	ProfitMarginBP       *int64
-	LossRequestCount     int64
+	RequestCount           int64
+	CostedRequestCount     int64
+	UserCharge             int64
+	AttributedUserCharge   int64
+	UpstreamCost           *int64
+	GrossProfit            *int64
+	ProfitMarginBP         *int64
+	LossRequestCount       int64
+	TopUpstreamsByRequests []*UsageLogRank
+	TopUpstreamsByCost     []*UsageLogRank
+	TopGroupsByRequests    []*UsageLogRank
+	TopGroupsByCost        []*UsageLogRank
+}
+
+// UsageLogRank is a complete-window ranking entry used by the admin log
+// summary. Cost is the persisted upstream cost estimate (in milli-cents), not
+// a value recomputed from the current price table.
+type UsageLogRank struct {
+	ID           int64
+	Name         string
+	RequestCount int64
+	Cost         int64
+	CostKnown    bool
 }
 
 // ScanPublicChannelStats aggregates recent calls for a bounded set of public
@@ -481,7 +496,109 @@ func (r *UsageRepo) SummarizeUsages(ctx context.Context, q UsageQuery) (*UsageLo
 	); err != nil {
 		return nil, err
 	}
+	ranks, err := r.rankUsageLogSets(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	out.TopUpstreamsByRequests = ranks["upstream_requests"]
+	out.TopUpstreamsByCost = ranks["upstream_cost"]
+	out.TopGroupsByRequests = ranks["group_requests"]
+	out.TopGroupsByCost = ranks["group_cost"]
 	return out, nil
+}
+
+// rankUsageLogSets aggregates all four rankings in one database round trip.
+// The filtered window is materialized once, which matters when an admin opens
+// logs over a large time range.
+func (r *UsageRepo) rankUsageLogSets(ctx context.Context, q UsageQuery) (map[string][]*UsageLogRank, error) {
+	where, args := usageLogRankFilters(q)
+	sql := `WITH filtered AS MATERIALIZED (
+		SELECT l.group_id, l.upstream_id, l.upstream_name, l.upstream_cost
+		FROM usage_logs l WHERE ` + where + `
+	), upstream AS (
+		SELECT upstream_id AS id, COALESCE(NULLIF(MAX(upstream_name), ''), '未记录上游') AS name,
+		count(*)::bigint AS request_count,
+			CASE WHEN SUM(upstream_cost::numeric) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+				WHEN SUM(upstream_cost::numeric) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+				ELSE COALESCE(SUM(upstream_cost::numeric), 0::numeric) END::bigint AS cost,
+			count(upstream_cost) > 0 AS cost_known
+		FROM filtered WHERE upstream_id IS NOT NULL GROUP BY upstream_id
+	), groups_agg AS (
+		SELECT f.group_id AS id, COALESCE(MAX(g.name), '#' || f.group_id::text) AS name,
+			count(*)::bigint AS request_count,
+			CASE WHEN SUM(f.upstream_cost::numeric) > 9223372036854775807::numeric THEN 9223372036854775807::numeric
+				WHEN SUM(f.upstream_cost::numeric) < -9223372036854775808::numeric THEN -9223372036854775808::numeric
+				ELSE COALESCE(SUM(f.upstream_cost::numeric), 0::numeric) END::bigint AS cost,
+			count(f.upstream_cost) > 0 AS cost_known
+		FROM filtered f LEFT JOIN "groups" g ON g.id = f.group_id
+		WHERE f.group_id IS NOT NULL GROUP BY f.group_id
+	), ranked AS (
+		(SELECT 'upstream_requests'::text AS kind, id, name, request_count, cost, cost_known FROM upstream ORDER BY request_count DESC, id ASC LIMIT 5)
+		UNION ALL
+		(SELECT 'upstream_cost'::text, id, name, request_count, cost, cost_known FROM upstream ORDER BY cost DESC, id ASC LIMIT 5)
+		UNION ALL
+		(SELECT 'group_requests'::text, id, name, request_count, cost, cost_known FROM groups_agg ORDER BY request_count DESC, id ASC LIMIT 5)
+		UNION ALL
+		(SELECT 'group_cost'::text, id, name, request_count, cost, cost_known FROM groups_agg ORDER BY cost DESC, id ASC LIMIT 5)
+	)
+	SELECT kind, id, name, request_count, cost, cost_known FROM ranked ORDER BY kind, request_count DESC, id ASC`
+	rows, err := r.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string][]*UsageLogRank, 4)
+	for rows.Next() {
+		v := &UsageLogRank{}
+		var kind string
+		if err := rows.Scan(&kind, &v.ID, &v.Name, &v.RequestCount, &v.Cost, &v.CostKnown); err != nil {
+			return nil, err
+		}
+		out[kind] = append(out[kind], v)
+	}
+	return out, rows.Err()
+}
+
+func usageLogRankFilters(q UsageQuery) (string, []any) {
+	clauses := make([]string, 0, 9)
+	args := make([]any, 0, 9)
+	add := func(expr string, value any) {
+		args = append(args, value)
+		clauses = append(clauses, fmt.Sprintf("l.%s = $%d", expr, len(args)))
+	}
+	if q.GroupID > 0 {
+		add("group_id", q.GroupID)
+	}
+	if q.AccountID > 0 {
+		add("account_id", q.AccountID)
+	}
+	if q.UserID > 0 {
+		add("user_id", q.UserID)
+	}
+	if q.KeyID > 0 {
+		add("key_id", q.KeyID)
+	}
+	if q.Model != "" {
+		add("model", q.Model)
+	}
+	if q.Format != "" {
+		add("format", q.Format)
+	}
+	if q.ErrorType != "" {
+		add("error_type", q.ErrorType)
+	}
+	if q.From != nil {
+		args = append(args, *q.From)
+		clauses = append(clauses, fmt.Sprintf("l.created_at >= $%d", len(args)))
+	}
+	if q.To != nil {
+		args = append(args, *q.To)
+		clauses = append(clauses, fmt.Sprintf("l.created_at < $%d", len(args)))
+	}
+	if len(clauses) == 0 {
+		return "TRUE", args
+	}
+	return strings.Join(clauses, " AND "), args
 }
 
 // QueryUsages usage_logs keyset 游标分页查询（用户裁决：无 from/to 的全分区

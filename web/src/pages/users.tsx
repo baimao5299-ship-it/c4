@@ -156,10 +156,9 @@ export default function Users() {
   const { t } = useTranslation()
   const qc = useQueryClient()
 
-  // —— 列表：筛选/分页状态归 queryKey（排序白名单：id/email/role/status/
-  // max_concurrency/created_at/updated_at——balance 不可排）——
+  // —— 列表：筛选/分页状态归 queryKey（排序白名单与后端一致，含余额）——
   const [email, setEmail] = useState('')
-  const [activeSort, setActiveSort] = useState<string | null>(null) // null = 无主动排序（默认 id desc）
+  const [activeSort, setActiveSort] = useState<string | null>('balance') // 默认余额降序，优先处理高余额用户
   const [order, setOrder] = useState<SortOrder>('desc')
   const [offset, setOffset] = useState(0)
   const [limit, setLimit] = useState(20)
@@ -404,6 +403,14 @@ export default function Users() {
         placeholder={t('users.searchEmail')}
       />
 
+      <div className="flex items-center justify-between gap-4 rounded-lg border bg-muted/20 px-4 py-3">
+        <div>
+          <p className="text-xs text-muted-foreground">{t('users.totalBalance')}</p>
+          <p className="text-xl font-semibold tabular-nums">{data ? formatBalance(data.total_balance) : '—'}</p>
+        </div>
+        <p className="text-right text-xs text-muted-foreground">{t('users.totalCount', { count: data?.total ?? 0 })}</p>
+      </div>
+
       {isError ? (
         <p className="text-sm text-destructive">{t('common.loadFailed', { message: (error as Error).message })}</p>
       ) : isLoading ? (
@@ -435,7 +442,7 @@ export default function Users() {
                   <SortableHeader field="role" label={t('users.table.role')} active={activeSort === 'role'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="status" label={t('users.table.status')} active={activeSort === 'status'} order={order} onToggle={onColumnToggle} />
                   <SortableHeader field="max_concurrency" label={t('users.table.maxConcurrency')} active={activeSort === 'max_concurrency'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
-                  <TableHead className="text-right">{t('users.table.balance')}</TableHead>
+                  <SortableHeader field="balance" label={t('users.table.balance')} active={activeSort === 'balance'} order={order} onToggle={onColumnToggle} className="text-right [&_button]:justify-end" />
                   <SortableHeader field="created_at" label={t('users.table.createdAt')} active={activeSort === 'created_at'} order={order} onToggle={onColumnToggle} />
                   <TableHead className="text-right">{t('users.table.actions')}</TableHead>
                 </TableRow>

@@ -117,16 +117,16 @@ func TestUsageLogPartitionBootstrapPG(t *testing.T) {
 	require.Len(t, rows, 1, "二次 bootstrap 不重建（数据保留）")
 	require.Equal(t, "idem", rows[0].RequestID)
 
-	// 预建分区：当日 + 明日；索引与 ent schema 同名同列（5 个非唯一 + 1 个
+	// 预建分区：当日 + 明日；索引与 ent schema 同名同列（6 个非唯一 + 1 个
 	// 唯一幂等键 usagelog_request_id_created_at + 主键）
 	names := pgPartitionNames(t, pool)
 	today := now.Truncate(24 * time.Hour)
 	require.Contains(t, names, "usage_logs_"+today.Format("20060102"))
 	require.Contains(t, names, "usage_logs_"+today.AddDate(0, 0, 1).Format("20060102"))
 	var n int64
-	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'usage_logs' AND indexname IN ('usagelog_created_at','usagelog_group_id_created_at','usagelog_account_id_created_at','usagelog_user_id_created_at','usagelog_key_id_created_at','usagelog_request_id_created_at')`).Scan(&n)
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'usage_logs' AND indexname IN ('usagelog_created_at','usagelog_group_id_created_at','usagelog_upstream_id_created_at','usagelog_account_id_created_at','usagelog_user_id_created_at','usagelog_key_id_created_at','usagelog_request_id_created_at')`).Scan(&n)
 	require.NoError(t, err)
-	require.Equal(t, int64(6), n, "bootstrap 建齐 5 个查询索引 + 1 个幂等键唯一索引")
+	require.Equal(t, int64(7), n, "bootstrap 建齐 6 个查询索引 + 1 个幂等键唯一索引")
 
 	// 幂等键唯一索引行为锚定（方向 A 批次 1a）：同 (request_id, created_at)
 	// 重复插入 → 23505 拒绝（COMMIT 歧义窗口重试的双扣防线真实生效）

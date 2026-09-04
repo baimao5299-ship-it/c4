@@ -2476,6 +2476,7 @@ export interface components {
         UserListResponse: {
             /** Format: int64 */
             total: number;
+            total_balance: number;
             rows: components["schemas"]["User"][];
         };
         Setting: {
@@ -3542,6 +3543,17 @@ export interface components {
              * @description GrossProfit < 0 的已知行数
              */
             LossRequestCount: number;
+            TopUpstreamsByRequests: components["schemas"]["UsageLogRank"][];
+            TopUpstreamsByCost: components["schemas"]["UsageLogRank"][];
+            TopGroupsByRequests: components["schemas"]["UsageLogRank"][];
+            TopGroupsByCost: components["schemas"]["UsageLogRank"][];
+        };
+        UsageLogRank: {
+            id: number;
+            name: string;
+            request_count: number;
+            cost: number;
+            cost_known: boolean;
         };
         UserLogsResponse: {
             rows: components["schemas"]["UserUsageLog"][];

@@ -82,6 +82,7 @@ var (
 	userSortFields = map[string]string{
 		"id": user.FieldID, "email": user.FieldEmail, "role": user.FieldRole,
 		"status": user.FieldStatus, "max_concurrency": user.FieldMaxConcurrency,
+		"balance":    user.FieldBalance,
 		"created_at": user.FieldCreatedAt, "updated_at": user.FieldUpdatedAt,
 	}
 	keySortFields = map[string]string{

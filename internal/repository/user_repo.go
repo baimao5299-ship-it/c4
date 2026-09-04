@@ -269,7 +269,9 @@ func (r *UserRepo) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, 
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
-	rows, err := pred.Order(order).Offset(q.Offset).Limit(q.Limit).All(ctx)
+	// Always add the immutable ID as a tie-breaker. This keeps balance sorting
+	// stable across pages while new ledger writes change other users' balances.
+	rows, err := pred.Order(order, ent.Asc(user.FieldID)).Offset(q.Offset).Limit(q.Limit).All(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -281,6 +283,28 @@ func (r *UserRepo) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User, 
 		return nil, 0, err
 	}
 	return out, int64(total), nil
+}
+
+// SumUserBalance returns the current platform balance total in storage units.
+// It intentionally ignores pagination and filters so the admin users screen
+// can show one authoritative total alongside the current page.
+func (r *UserRepo) SumUserBalance(ctx context.Context) (int64, error) {
+	rows := &sql.Rows{}
+	if err := r.driver.Query(ctx, `SELECT LEAST(GREATEST(COALESCE(SUM(balance::numeric), 0::numeric), -9223372036854775808::numeric), 9223372036854775807::numeric)::bigint FROM users`, nil, rows); err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("sum user balance: aggregate returned no row")
+	}
+	var value int64
+	if err := rows.Scan(&value); err != nil {
+		return 0, err
+	}
+	return value, nil
 }
 
 func (r *UserRepo) enrichInviters(ctx context.Context, users []*domain.User) error {

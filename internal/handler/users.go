@@ -34,11 +34,16 @@ func (h *AdminAPI) GetUsers(w http.ResponseWriter, r *http.Request, params GetUs
 		httpface.WriteServiceErr(w, err)
 		return
 	}
+	totalBalance, err := h.svc.SumUserBalance(r.Context())
+	if err != nil {
+		httpface.WriteServiceErr(w, err)
+		return
+	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
 		out = append(out, toAPIUser(u))
 	}
-	httpface.WriteJSON(w, http.StatusOK, UserListResponse{Total: total, Rows: out})
+	httpface.WriteJSON(w, http.StatusOK, UserListResponse{Total: total, TotalBalance: millisToUSD(totalBalance), Rows: out})
 }
 
 // PostUsers 创建用户（platform_admin 专属；email 唯一/密码长度校验在

@@ -671,6 +671,10 @@ func (r *Repository) ListUsers(ctx context.Context, q ListQuery) ([]*domain.User
 	return r.Users.ListUsers(ctx, q)
 }
 
+func (r *Repository) SumUserBalance(ctx context.Context) (int64, error) {
+	return r.Users.SumUserBalance(ctx)
+}
+
 func (r *Repository) UpdateUser(ctx context.Context, p *UserPatch) (*domain.User, error) {
 	return r.Users.UpdateUser(ctx, p)
 }

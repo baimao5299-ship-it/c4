@@ -396,6 +396,40 @@ function UpstreamAttribution({ row, compact = false }: { row: LogRow; compact?: 
   )
 }
 
+function RouteAttribution({
+  row,
+  groupNameById,
+  accountNameById,
+  compact = false,
+  showGroup = true,
+  showUpstream = true,
+  showAccount = true,
+}: {
+  row: LogRow
+  groupNameById?: Map<number, string>
+  accountNameById?: Map<number, string>
+  compact?: boolean
+  showGroup?: boolean
+  showUpstream?: boolean
+  showAccount?: boolean
+}) {
+  const { t } = useTranslation()
+  const group = row.GroupID ? groupNameById?.get(row.GroupID) ?? `#${row.GroupID}` : undefined
+  const account = row.AccountID ? accountNameById?.get(row.AccountID) ?? `#${row.AccountID}` : undefined
+  return (
+    <div className={cn('min-w-0', compact ? 'space-y-2' : 'space-y-1')}>
+      {(showGroup || showUpstream) && (
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {showGroup && <Badge variant="outline" className="max-w-full truncate font-normal" title={group}>{t('logs.route.group', { name: group ?? t('logs.value.unrecorded') })}</Badge>}
+          {showGroup && showUpstream && <span className="text-muted-foreground" aria-hidden="true">→</span>}
+          {showUpstream && <div className="min-w-0 flex-1"><UpstreamAttribution row={row} compact={compact} /></div>}
+        </div>
+      )}
+      {showAccount && account && <div className="truncate pl-1 text-xs text-muted-foreground" title={account}>{t('logs.route.account', { name: account })}</div>}
+    </div>
+  )
+}
+
 function FinancialAttribution({ row, compact = false }: { row: LogRow; compact?: boolean }) {
   const { t } = useTranslation()
   const finance = financialDetails(row)
@@ -523,17 +557,7 @@ function MobileLogCard({
         </header>
 
         <MobileSection icon={Network} title={t('logs.mobile.route')}>
-          <UpstreamAttribution row={row} compact />
-          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <span className="text-muted-foreground">{t('logs.table.account')}</span>
-            <span className="truncate text-right" title={row.AccountID ? accountNameById?.get(row.AccountID) : undefined}>
-              {row.AccountID ? accountNameById?.get(row.AccountID) ?? `#${row.AccountID}` : t('logs.value.unrecorded')}
-            </span>
-            <span className="text-muted-foreground">{t('logs.table.group')}</span>
-            <span className="truncate text-right" title={row.GroupID ? groupNameById?.get(row.GroupID) : undefined}>
-              {row.GroupID ? groupNameById?.get(row.GroupID) ?? `#${row.GroupID}` : t('logs.value.unrecorded')}
-            </span>
-          </div>
+          <RouteAttribution row={row} groupNameById={groupNameById} accountNameById={accountNameById} compact />
         </MobileSection>
 
         {tab === 'usage' && (
@@ -642,6 +666,31 @@ function UsageSummaryBand({
             </div>
           ))}
         </dl>
+      )}
+      {summary && (
+        <div className="grid gap-px border-t border-border/70 bg-border/70 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('logs.summary.rankingsTitle')}>
+          {([
+            ['requestsUpstream', t('logs.summary.mostCalledUpstream'), summary.TopUpstreamsByRequests ?? []],
+            ['costUpstream', t('logs.summary.highestCostUpstream'), summary.TopUpstreamsByCost ?? []],
+            ['requestsGroup', t('logs.summary.mostCalledGroup'), summary.TopGroupsByRequests ?? []],
+            ['costGroup', t('logs.summary.highestCostGroup'), summary.TopGroupsByCost ?? []],
+          ] as const).map(([key, label, entries]) => {
+            const item = entries[0]
+            return (
+              <div key={key} className="min-w-0 bg-background px-3 py-3">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                {item ? (
+                  <div className="mt-1 flex min-w-0 items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate text-sm font-semibold" title={`${item.name} (#${item.id})`}>{item.name}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {item.request_count.toLocaleString()} · {item.cost_known ? formatLogMoney(item.cost) : t('logs.summary.noCostSnapshot')}
+                    </span>
+                  </div>
+                ) : <p className="mt-1 text-sm text-muted-foreground">{t('logs.summary.noRanking')}</p>}
+              </div>
+            )
+          })}
+        </div>
       )}
     </section>
   )
@@ -1026,12 +1075,11 @@ export default function Logs() {
                 <Th>{t('logs.table.requestId')}</Th>
                 <Th>{t('logs.table.createdAt')}</Th>
                 {isColVisible('client') && <Th>{t('logs.table.client')}</Th>}
-                {isColVisible('upstream') && <Th>{t('logs.table.upstream')}</Th>}
+                {(isColVisible('upstream') || isColVisible('group')) && <Th>{t('logs.table.route')}</Th>}
                 {tab === 'usage' && isColVisible('finance') && <Th className="text-right">{t('logs.table.finance')}</Th>}
                 {isColVisible('diagnostics') && <Th className="text-right">{t('logs.table.diagnostics')}</Th>}
                 {isColVisible('user') && <Th className="text-right">{t('logs.table.user')}</Th>}
                 {isColVisible('key') && <Th className="text-right">{t('logs.table.key')}</Th>}
-                {isColVisible('group') && <Th className="text-right">{t('logs.table.group')}</Th>}
                 {isColVisible('account') && <Th className="text-right">{t('logs.table.account')}</Th>}
                 {isColVisible('model') && <Th>{t('logs.table.model')}</Th>}
                 {isColVisible('format') && <Th>{t('logs.table.format')}</Th>}
@@ -1057,9 +1105,9 @@ export default function Logs() {
                       <ClientAttribution row={l} />
                     </TableCell>
                   )}
-                  {isColVisible('upstream') && (
-                    <TableCell className="min-w-44 max-w-56">
-                      <UpstreamAttribution row={l} />
+                  {(isColVisible('upstream') || isColVisible('group')) && (
+                    <TableCell className="min-w-56 max-w-72">
+                      <RouteAttribution row={l} groupNameById={groupNameById} accountNameById={accountNameById} showGroup={isColVisible('group')} showUpstream={isColVisible('upstream')} showAccount={false} />
                     </TableCell>
                   )}
                   {isColVisible('finance') && (
@@ -1083,11 +1131,6 @@ export default function Logs() {
                     </TableCell>
                   )}
                   {isColVisible('key') && <TableCell className="text-right tabular-nums">{l.KeyID ? `#${l.KeyID}` : '—'}</TableCell>}
-                  {isColVisible('group') && (
-                    <TableCell className="text-right">
-                      {l.GroupID ? <span className="tabular-nums">{groupNameById?.get(l.GroupID) ?? `#${l.GroupID}`}</span> : '—'}
-                    </TableCell>
-                  )}
                   {isColVisible('account') && (
                     <TableCell className="text-right">
                       {l.AccountID ? <span className="tabular-nums">{accountNameById?.get(l.AccountID) ?? `#${l.AccountID}`}</span> : '—'}
@@ -1228,9 +1271,9 @@ export default function Logs() {
                       <ClientAttribution row={l} />
                     </TableCell>
                   )}
-                  {isColVisible('upstream') && (
-                    <TableCell className="min-w-44 max-w-56">
-                      <UpstreamAttribution row={l} />
+                  {(isColVisible('upstream') || isColVisible('group')) && (
+                    <TableCell className="min-w-56 max-w-72">
+                      <RouteAttribution row={l} groupNameById={groupNameById} accountNameById={accountNameById} showGroup={isColVisible('group')} showUpstream={isColVisible('upstream')} showAccount={false} />
                     </TableCell>
                   )}
                   {/* 错误明细不产生 usage_logs 计费行，财务列仅在用量 Tab 展示。 */}
@@ -1250,11 +1293,6 @@ export default function Logs() {
                     </TableCell>
                   )}
                   {isColVisible('key') && <TableCell className="text-right tabular-nums">{l.KeyID ? `#${l.KeyID}` : '—'}</TableCell>}
-                  {isColVisible('group') && (
-                    <TableCell className="text-right">
-                      {l.GroupID ? <span className="tabular-nums">{groupNameById?.get(l.GroupID) ?? `#${l.GroupID}`}</span> : '—'}
-                    </TableCell>
-                  )}
                   {isColVisible('account') && (
                     <TableCell className="text-right">
                       {l.AccountID ? <span className="tabular-nums">{accountNameById?.get(l.AccountID) ?? `#${l.AccountID}`}</span> : '—'}

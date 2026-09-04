@@ -28,8 +28,9 @@ type AdminAPI struct {
 	ops OpsOptions // 运维观测装配（GetOpsWorkers 用；变参注入，零值 = 端点返回空）
 	// overview/users-top 聚合面缓存（spec 2026-08-14 TTL：30s/2s——dashboard
 	// 轮询频率下无陈旧感；键含参数与 UTC 日界；无 singleflight）。
-	overviewCache *ttlCache
-	usersTopCache *ttlCache
+	overviewCache     *ttlCache
+	usersTopCache     *ttlCache
+	usageSummaryCache *ttlCache
 	// now 可注入时钟（默认 time.Now；测试注入断言缓存键日界滚转）。
 	now func() time.Time
 	// validationTasks holds short-lived, admin-scoped progress snapshots for
@@ -49,12 +50,13 @@ func New(svc *service.Service, ops ...OpsOptions) *AdminAPI {
 		o = ops[0]
 	}
 	return &AdminAPI{
-		svc:             svc,
-		ops:             o,
-		overviewCache:   newTTLCache(30 * time.Second),
-		usersTopCache:   newTTLCache(2 * time.Second),
-		now:             time.Now,
-		validationTasks: make(map[string]*upstreamValidationTask),
+		svc:               svc,
+		ops:               o,
+		overviewCache:     newTTLCache(30 * time.Second),
+		usersTopCache:     newTTLCache(2 * time.Second),
+		usageSummaryCache: newTTLCache(15 * time.Second),
+		now:               time.Now,
+		validationTasks:   make(map[string]*upstreamValidationTask),
 	}
 }
 

@@ -577,6 +577,85 @@ func TestMapRespToChatFailed(t *testing.T) {
 	require.NotContains(t, out, "[DONE]")
 }
 
+func TestMapRespReasoningToChatStream(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertChatToResp,
+		"response.created", `{"type":"response.created","response":{"id":"rsp_reason","status":"in_progress","model":"o3"}}`,
+		"response.reasoning_summary_text.delta", `{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","summary_index":0,"delta":"checking"}`,
+		"response.output_text.delta", `{"type":"response.output_text.delta","delta":"done"}`,
+		"response.completed", `{"type":"response.completed","response":{"id":"rsp_reason","status":"completed","model":"o3","output":[],"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}`,
+	)
+	require.Contains(t, out, `"reasoning_content":"checking"`, "Responses reasoning 摘要应转为 Chat reasoning_content")
+}
+
+func TestMapRespReasoningToMessStream(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertMessToResp,
+		"response.created", `{"type":"response.created","response":{"id":"rsp_reason","status":"in_progress","model":"o3"}}`,
+		"response.output_item.added", `{"type":"response.output_item.added","output_index":0,"item":{"id":"rs_1","type":"reasoning","status":"in_progress","summary":[]}}`,
+		"response.reasoning_summary_text.delta", `{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","summary_index":0,"delta":"checking"}`,
+		"response.reasoning_summary_text.done", `{"type":"response.reasoning_summary_text.done","item_id":"rs_1","summary_index":0,"text":"checking"}`,
+		"response.completed", `{"type":"response.completed","response":{"id":"rsp_reason","status":"completed","model":"o3","output":[],"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}`,
+	)
+	require.Contains(t, out, `"type":"thinking"`, "Responses reasoning 应转为 Anthropic thinking block")
+	require.Contains(t, out, `"type":"thinking_delta"`, "Responses reasoning delta 应转为 thinking_delta")
+}
+
+func TestMapChatReasoningToMessStream(t *testing.T) {
+	out := mapAll(t, AutoMessagesToChat,
+		"", `{"id":"chat_reason","model":"o3","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"checking"},"finish_reason":null}]}`,
+		"", `{"id":"chat_reason","model":"o3","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":null}]}`,
+		"", `{"id":"chat_reason","model":"o3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+		"", `[DONE]`,
+	)
+	require.Contains(t, out, `"type":"thinking_delta"`)
+	require.Contains(t, out, `"thinking":"checking"`)
+}
+
+func TestMapThinkingToRespStream(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertRespToMess,
+		"message_start", `{"type":"message_start","message":{"id":"msg_reason","model":"claude","usage":{"input_tokens":1,"output_tokens":0}}}`,
+		"content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
+		"content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"checking"}}`,
+		"content_block_stop", `{"type":"content_block_stop","index":0}`,
+		"message_stop", `{"type":"message_stop"}`,
+	)
+	require.Contains(t, out, `"type":"reasoning"`, "Anthropic thinking 应转为 Responses reasoning item")
+	require.Contains(t, out, `response.reasoning_summary_text.delta`, "Anthropic thinking delta 应转为 Responses reasoning delta")
+}
+
+func TestMapThinkingToChatStream(t *testing.T) {
+	out := mapAll(t, domain.ProtocolConvertChatToMess,
+		"message_start", `{"type":"message_start","message":{"id":"msg_reason","model":"claude","usage":{"input_tokens":1,"output_tokens":0}}}`,
+		"content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
+		"content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"checking"}}`,
+		"message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}`,
+	)
+	require.Contains(t, out, `"reasoning_content":"checking"`, "Anthropic thinking 应转为 Chat reasoning_content")
+}
+
+func TestConvertReasoningResponsesToAnthropic(t *testing.T) {
+	out, err := ConvertResponse([]byte(`{"id":"rsp_reason","model":"o3","status":"completed","output":[{"type":"reasoning","summary":[{"type":"summary_text","text":"checking"}]}],"usage":{"input_tokens":1,"output_tokens":2}}`), domain.ProtocolConvertMessToResp)
+	require.NoError(t, err)
+	require.Contains(t, string(out), `"type":"thinking"`)
+	require.Contains(t, string(out), `"thinking":"checking"`)
+}
+
+func TestConvertReasoningAnthropicToResponses(t *testing.T) {
+	out, err := ConvertResponse([]byte(`{"id":"msg_reason","model":"claude","content":[{"type":"thinking","thinking":"checking"},{"type":"text","text":"done"}],"usage":{"input_tokens":1,"output_tokens":2}}`), domain.ProtocolConvertRespToMess)
+	require.NoError(t, err)
+	require.Contains(t, string(out), `"type":"reasoning"`)
+	require.Contains(t, string(out), `"summary_text"`)
+}
+
+func TestConvertReasoningRequestControls(t *testing.T) {
+	resp, err := ConvertRequest([]byte(`{"model":"o3","reasoning":{"effort":"high"},"input":"hi"}`), domain.ProtocolConvertRespToMess)
+	require.NoError(t, err)
+	require.Contains(t, string(resp), `"thinking":{"budget_tokens":4096,"type":"enabled"}`)
+
+	mess, err := ConvertRequest([]byte(`{"model":"claude","thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hi"}]}`), domain.ProtocolConvertMessToResp)
+	require.NoError(t, err)
+	require.Contains(t, string(mess), `"reasoning":{"effort":"low","summary":"auto"}`)
+}
+
 func TestMapRespToMessStream(t *testing.T) {
 	out := mapAll(t, domain.ProtocolConvertMessToResp,
 		"response.created", `{"type":"response.created","response":{"id":"rsp_1","object":"response","created_at":1750000000,"status":"in_progress","model":"gpt-4o","output":[],"usage":null}}`,

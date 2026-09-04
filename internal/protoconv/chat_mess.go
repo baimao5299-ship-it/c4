@@ -57,6 +57,9 @@ func chatToMessRequest(body []byte) ([]byte, error) {
 	if tc, ok := chatToolChoiceMess(req); ok {
 		out["tool_choice"] = tc
 	}
+	if effort, ok := req["reasoning_effort"].(string); ok && effort != "" {
+		out["thinking"] = map[string]any{"type": "enabled", "budget_tokens": reasoningEffortBudget(effort)}
+	}
 	return json.Marshal(out)
 }
 
@@ -124,6 +127,9 @@ func chatMessagesToMess(req map[string]any) ([]any, bool, error) {
 			if s, ok := mm["content"].(string); ok && s != "" {
 				blocks = append(blocks, map[string]any{"type": "text", "text": s})
 			}
+			if reasoning, ok := firstChatReasoning(mm); ok && reasoning != "" {
+				blocks = append([]any{map[string]any{"type": "thinking", "thinking": reasoning}}, blocks...)
+			}
 			if tcs, ok := arr(mm, "tool_calls"); ok {
 				for _, tc := range tcs {
 					tcm, ok := tc.(map[string]any)
@@ -183,6 +189,12 @@ func chatPartsToMessBlocks(content any) ([]any, error) {
 		if pm["type"] == "text" {
 			if t, ok := str(pm, "text"); ok {
 				blocks = append(blocks, map[string]any{"type": "text", "text": t})
+			}
+			continue
+		}
+		if pm["type"] == "reasoning_content" || pm["type"] == "reasoning" {
+			if t, ok := str(pm, "text"); ok {
+				blocks = append(blocks, map[string]any{"type": "thinking", "thinking": t})
 			}
 			continue
 		}
@@ -501,7 +513,17 @@ func (m *StreamMapper) mapMessToChat(name string, data []byte) ([]byte, bool) {
 		return m.chatFrame(map[string]any{"role": "assistant", "content": ""}, nil, nil), false
 	case "content_block_start":
 		block, ok := ev["content_block"].(map[string]any)
-		if !ok || block["type"] != "tool_use" {
+		if !ok {
+			return nil, true
+		}
+		if block["type"] == "thinking" {
+			text, _ := str(block, "thinking")
+			if text == "" {
+				return nil, true
+			}
+			return m.chatFrame(map[string]any{"reasoning_content": text}, nil, nil), false
+		}
+		if block["type"] != "tool_use" {
 			return nil, true
 		}
 		id, _ := str(block, "id")
@@ -517,6 +539,9 @@ func (m *StreamMapper) mapMessToChat(name string, data []byte) ([]byte, bool) {
 			return nil, true
 		}
 		switch delta["type"] {
+		case "thinking_delta":
+			text, _ := str(delta, "thinking")
+			return m.chatFrame(map[string]any{"reasoning_content": text}, nil, nil), false
 		case "text_delta":
 			text, _ := str(delta, "text")
 			return m.chatFrame(map[string]any{"content": text}, nil, nil), false

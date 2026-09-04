@@ -310,6 +310,9 @@ func (m *StreamMapper) ensureBlocks() {
 		m.argsByIndex = make(map[int64]string)
 		m.fcNames = make(map[int64]string)
 		m.fcIDs = make(map[int64]string)
+		m.reasoningByIndex = make(map[int64]string)
+		m.reasoningIndexes = make(map[int64]int64)
+		m.occupiedBlocks = make(map[int64]bool)
 	}
 	if m.chatToolIndexes == nil {
 		m.chatToolIndexes = make(map[int64]int64)
@@ -347,14 +350,24 @@ type StreamMapper struct {
 	fcNames      map[int64]string
 	fcIDs        map[int64]string
 	blockOrder   []int64 // 内容块出现顺序（output items 保持顺序）
+	// reasoning blocks are tracked separately so protocol conversion can keep
+	// provider-exposed reasoning summaries without colliding with text/tool
+	// block indexes.
+	reasoningByIndex map[int64]string
+	reasoningIndexes map[int64]int64
+	occupiedBlocks   map[int64]bool
+	textBlockIndex   int64
+	textBlockSet     bool
 
 	// Chat target streaming state. Content block indexes are allocated in
 	// first-seen order so pure-tool and mixed text/tool streams both remain
 	// contiguous Anthropic streams.
-	chatTextIndex   int64
-	chatTextSet     bool
-	chatToolIndexes map[int64]int64
-	nextChatBlock   int64
+	chatTextIndex      int64
+	chatTextSet        bool
+	chatToolIndexes    map[int64]int64
+	chatReasoningSet   bool
+	chatReasoningIndex int64
+	nextChatBlock      int64
 }
 
 // Map 把一个模板协议 SSE 事件映射为客户端协议帧；drop=true 丢弃该帧。

@@ -18,3 +18,10 @@ func TestUpstreamSortWhitelistMatchesOpenAPI(t *testing.T) {
 	_, err := (ListQuery{Sort: "not-a-field"}).sortOrder(upstreamSortFields)
 	require.ErrorIs(t, err, ErrInvalidSort)
 }
+
+func TestUserSortWhitelistIncludesBalance(t *testing.T) {
+	for _, order := range []string{"asc", "desc"} {
+		_, err := (ListQuery{Sort: "balance", Order: order}).sortOrder(userSortFields)
+		require.NoError(t, err, order)
+	}
+}

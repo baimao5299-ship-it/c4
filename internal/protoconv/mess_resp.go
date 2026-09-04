@@ -19,7 +19,8 @@ import (
 //   - tools → tools（input_schema → parameters）；tool_choice 归一化
 //     （any → required；{type:"tool",name} → {type:"function",name}）
 //   - 同名字段透传：model/stream/metadata
-//   - resp 无对应参数（stop_sequences/thinking 等）→ 按规范丢弃
+//   - resp 无对应参数（stop_sequences 等）→ 按规范丢弃；reasoning 按
+//     thinking enabled/budget_tokens 的最近等级映射
 func messToRespRequest(body []byte) ([]byte, error) {
 	req, err := decodeObj(body)
 	if err != nil {
@@ -41,6 +42,11 @@ func messToRespRequest(body []byte) ([]byte, error) {
 	}
 	if tc, ok := messToolChoice(req); ok {
 		out["tool_choice"] = tc
+	}
+	if thinking, ok := req["thinking"]; ok {
+		if reasoning, ok := thinkingToReasoning(thinking); ok {
+			out["reasoning"] = reasoning
+		}
 	}
 	return json.Marshal(out)
 }
@@ -120,6 +126,7 @@ func messMessagesToInput(req map[string]any) ([]any, bool) {
 		case "assistant":
 			var textParts []any
 			var fcs []any
+			var reasoning []any
 			if cs, ok := arr(mm, "content"); ok {
 				for _, blk := range cs {
 					bm, ok := blk.(map[string]any)
@@ -130,6 +137,10 @@ func messMessagesToInput(req map[string]any) ([]any, bool) {
 					case "text":
 						if t, ok := str(bm, "text"); ok {
 							textParts = append(textParts, map[string]any{"type": "output_text", "text": t})
+						}
+					case "thinking":
+						if t, ok := str(bm, "thinking"); ok {
+							reasoning = append(reasoning, map[string]any{"type": "reasoning", "summary": []any{map[string]any{"type": "summary_text", "text": t}}})
 						}
 					case "tool_use":
 						id, _ := str(bm, "id")
@@ -144,6 +155,7 @@ func messMessagesToInput(req map[string]any) ([]any, bool) {
 			if len(textParts) > 0 {
 				items = append(items, map[string]any{"type": "message", "role": "assistant", "content": textParts})
 			}
+			items = append(items, reasoning...)
 			items = append(items, fcs...)
 		}
 	}
@@ -237,6 +249,16 @@ func respOutputToMessBlocks(r map[string]any) []any {
 				continue
 			}
 			switch im["type"] {
+			case "reasoning":
+				if summary, ok := arr(im, "summary"); ok {
+					for _, raw := range summary {
+						if sm, ok := raw.(map[string]any); ok {
+							if t, ok := str(sm, "text"); ok {
+								blocks = append(blocks, map[string]any{"type": "thinking", "thinking": t})
+							}
+						}
+					}
+				}
 			case "message":
 				if content, ok := arr(im, "content"); ok {
 					for _, part := range content {
@@ -303,7 +325,8 @@ func respUsageToMess(r map[string]any) map[string]any {
 //	response.created                 → message_start（usage.input_tokens 在响应
 //	                                  完成前不可知 → 0，补差映射已知取舍；网关
 //	                                  计费独立于客户端用量展示）
-//	response.output_text.delta       → content_block_start(0,text) 惰性 +
+//	response.reasoning_summary_text.delta → thinking block + thinking_delta
+//	response.output_text.delta       → content_block_start(text) 惰性 +
 //	                                  content_block_delta(text_delta)
 //	response.output_text.done        → content_block_stop(0)
 //	response.output_item.added(FC)   → content_block_start(块索引, tool_use)
@@ -338,33 +361,76 @@ func (m *StreamMapper) mapRespToMess(name string, data []byte) ([]byte, bool) {
 				"usage": map[string]any{"input_tokens": 0, "output_tokens": 0},
 			},
 		}), false
+	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		delta, _ := str(ev, "delta")
+		if delta == "" {
+			return nil, true
+		}
+		index := m.respReasoningBlock(intOr0(ev, "summary_index"))
+		m.reasoningByIndex[index] += delta
+		var f []byte
+		if !m.blockStarted[index] {
+			m.blockStarted[index] = true
+			f = EncodeFrame("content_block_start", map[string]any{
+				"type": "content_block_start", "index": index,
+				"content_block": map[string]any{"type": "thinking", "thinking": ""},
+			})
+		}
+		f = append(f, EncodeFrame("content_block_delta", map[string]any{
+			"type": "content_block_delta", "index": index,
+			"delta": map[string]any{"type": "thinking_delta", "thinking": delta},
+		})...)
+		return f, false
+	case "response.reasoning_summary_text.done", "response.reasoning_text.done":
+		index := m.respReasoningBlock(intOr0(ev, "summary_index"))
+		if m.blockStarted[index] && !m.blockStopped[index] {
+			m.blockStopped[index] = true
+			return EncodeFrame("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}), false
+		}
+		return nil, true
 	case "response.output_text.delta":
 		delta, _ := str(ev, "delta")
 		var f []byte
-		if !m.blockStarted[0] {
-			m.blockStarted[0] = true
+		index := m.respTextBlock()
+		if !m.blockStarted[index] {
+			m.blockStarted[index] = true
 			f = EncodeFrame("content_block_start", map[string]any{
-				"type": "content_block_start", "index": 0,
+				"type": "content_block_start", "index": index,
 				"content_block": map[string]any{"type": "text", "text": ""},
 			})
 		}
 		f = append(f, EncodeFrame("content_block_delta", map[string]any{
-			"type": "content_block_delta", "index": 0,
+			"type": "content_block_delta", "index": index,
 			"delta": map[string]any{"type": "text_delta", "text": delta},
 		})...)
 		return f, false
 	case "response.output_text.done":
-		if m.blockStarted[0] && !m.blockStopped[0] {
-			m.blockStopped[0] = true
-			return EncodeFrame("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0}), false
+		index := m.respTextBlock()
+		if m.blockStarted[index] && !m.blockStopped[index] {
+			m.blockStopped[index] = true
+			return EncodeFrame("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}), false
 		}
 		return nil, true
 	case "response.output_item.added":
 		item, ok := ev["item"].(map[string]any)
-		if !ok || item["type"] != "function_call" {
+		if !ok {
 			return nil, true
 		}
-		index := intOr0(ev, "output_index")
+		if item["type"] == "reasoning" {
+			index := m.respReasoningBlock(intOr0(ev, "summary_index"))
+			if m.blockStarted[index] {
+				return nil, true
+			}
+			m.blockStarted[index] = true
+			return EncodeFrame("content_block_start", map[string]any{
+				"type": "content_block_start", "index": index,
+				"content_block": map[string]any{"type": "thinking", "thinking": ""},
+			}), false
+		}
+		if item["type"] != "function_call" {
+			return nil, true
+		}
+		index := m.respToolBlock(intOr0(ev, "output_index"))
 		id := toolCallID(item) // call_id 优先（tool_result.tool_use_id 匹配键，M-1）
 		name, _ := str(item, "name")
 		if !m.blockStarted[index] {
@@ -377,13 +443,13 @@ func (m *StreamMapper) mapRespToMess(name string, data []byte) ([]byte, bool) {
 		return nil, true
 	case "response.function_call_arguments.delta":
 		delta, _ := str(ev, "delta")
-		index := intOr0(ev, "output_index")
+		index := m.respToolBlock(intOr0(ev, "output_index"))
 		return EncodeFrame("content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": index,
 			"delta": map[string]any{"type": "input_json_delta", "partial_json": delta},
 		}), false
 	case "response.function_call_arguments.done":
-		index := intOr0(ev, "output_index")
+		index := m.respToolBlock(intOr0(ev, "output_index"))
 		if m.blockStarted[index] && !m.blockStopped[index] {
 			m.blockStopped[index] = true
 			return EncodeFrame("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}), false
@@ -422,4 +488,51 @@ func (m *StreamMapper) mapRespToMess(name string, data []byte) ([]byte, bool) {
 		return nil, true
 	}
 	return nil, true
+}
+
+// respBlockIndex allocates a stable Anthropic content-block index while
+// preserving the upstream output_index when it is available. Reasoning can
+// arrive before text/tool output, so collisions are resolved deterministically.
+func (m *StreamMapper) respBlockIndex(preferred int64) int64 {
+	if !m.occupiedBlocks[preferred] {
+		m.occupiedBlocks[preferred] = true
+		return preferred
+	}
+	for next := int64(0); ; next++ {
+		if !m.occupiedBlocks[next] {
+			m.occupiedBlocks[next] = true
+			return next
+		}
+	}
+}
+
+func (m *StreamMapper) respReasoningBlock(summary int64) int64 {
+	if index, ok := m.reasoningIndexes[summary]; ok {
+		return index
+	}
+	index := m.respBlockIndex(0)
+	m.reasoningIndexes[summary] = index
+	m.blockOrder = append(m.blockOrder, index)
+	return index
+}
+
+func (m *StreamMapper) respTextBlock() int64 {
+	if m.textBlockSet {
+		return m.textBlockIndex
+	}
+	m.textBlockSet = true
+	m.textBlockIndex = m.respBlockIndex(0)
+	m.blockOrder = append(m.blockOrder, m.textBlockIndex)
+	return m.textBlockIndex
+}
+
+func (m *StreamMapper) respToolBlock(output int64) int64 {
+	key := -output - 1
+	if index, ok := m.reasoningIndexes[key]; ok {
+		return index
+	}
+	index := m.respBlockIndex(output)
+	m.reasoningIndexes[key] = index
+	m.blockOrder = append(m.blockOrder, index)
+	return index
 }

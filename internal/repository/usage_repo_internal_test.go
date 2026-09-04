@@ -22,3 +22,14 @@ func TestUsageLogsSummarySQLUsesHalfOpenUpperBound(t *testing.T) {
 	require.Contains(t, query, "created_at < $2")
 	require.NotContains(t, strings.ToLower(query), "created_at <=")
 }
+
+func TestUsageLogRankFiltersQualifyColumnsAndPreserveWindow(t *testing.T) {
+	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(24 * time.Hour)
+	where, args := usageLogRankFilters(UsageQuery{GroupID: 7, Model: "gpt-latest", From: &from, To: &to})
+	require.Equal(t, []any{int64(7), "gpt-latest", from, to}, args)
+	require.Contains(t, where, "l.group_id = $1")
+	require.Contains(t, where, "l.model = $2")
+	require.Contains(t, where, "l.created_at >= $3")
+	require.Contains(t, where, "l.created_at < $4")
+}

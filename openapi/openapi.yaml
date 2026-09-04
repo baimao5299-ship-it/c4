@@ -2869,9 +2869,10 @@ components:
         idempotency_key: { type: string, minLength: 8, maxLength: 100, description: 可选请求幂等键；重复提交不会重复加款 }
     UserListResponse:
       type: object
-      required: [total, rows]
+      required: [total, total_balance, rows]
       properties:
         total: { type: integer, format: int64 }
+        total_balance: { type: number, format: double, description: 所有用户当前余额合计（USD） }
         rows:
           type: array
           items: { $ref: '#/components/schemas/User' }
@@ -3670,7 +3671,7 @@ components:
         next_cursor: { type: integer, format: int64, nullable: true, description: 下一页游标（本页最后一条 id）；null = 无更多行 }
     UsageLogsSummary:
       type: object
-      required: [RequestCount, CostedRequestCount, UserCharge, AttributedUserCharge, LossRequestCount]
+      required: [RequestCount, CostedRequestCount, UserCharge, AttributedUserCharge, LossRequestCount, TopUpstreamsByRequests, TopUpstreamsByCost, TopGroupsByRequests, TopGroupsByCost]
       properties:
         RequestCount: { type: integer, format: int64, description: 筛选窗口内的用量请求数 }
         CostedRequestCount: { type: integer, format: int64, description: 具备上游成本估算的请求数 }
@@ -3680,6 +3681,31 @@ components:
         GrossProfit: { type: integer, format: int64, nullable: true, description: 已知行的估算毛利合计；无已知行时 null }
         ProfitMarginBP: { type: integer, format: int64, nullable: true, description: GrossProfit / AttributedUserCharge 的万分数；分母为 0 时 null }
         LossRequestCount: { type: integer, format: int64, description: GrossProfit < 0 的已知行数 }
+        TopUpstreamsByRequests:
+          type: array
+          description: 筛选时间窗内调用次数最多的上游（完整窗口聚合）
+          items: { $ref: '#/components/schemas/UsageLogRank' }
+        TopUpstreamsByCost:
+          type: array
+          description: 筛选时间窗内上游成本最高的上游（完整窗口聚合）
+          items: { $ref: '#/components/schemas/UsageLogRank' }
+        TopGroupsByRequests:
+          type: array
+          description: 筛选时间窗内调用次数最多的分组（完整窗口聚合）
+          items: { $ref: '#/components/schemas/UsageLogRank' }
+        TopGroupsByCost:
+          type: array
+          description: 筛选时间窗内上游成本最高的分组（完整窗口聚合）
+          items: { $ref: '#/components/schemas/UsageLogRank' }
+    UsageLogRank:
+      type: object
+      required: [id, name, request_count, cost, cost_known]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        request_count: { type: integer, format: int64 }
+        cost: { type: integer, format: int64, description: 该实体的费用合计（毫分） }
+        cost_known: { type: boolean, description: 是否至少有一条请求包含上游成本快照 }
     UserLogsResponse:
       type: object
       required: [rows, next_cursor]

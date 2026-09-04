@@ -110,7 +110,7 @@ func TestUsageLogCopyColumnsMatchColumnDefs(t *testing.T) {
 // NOT billed 即计费游标本体——标记后自动退出索引，重启天然续传；谓词列序/
 // 索引名漂移即红。
 func TestUsageLogUnbilledPartialIndex(t *testing.T) {
-	require.Len(t, usageLogIndexDDLs, 7, "6 个 ent 对齐索引 + 1 个计费游标部分索引")
+	require.Len(t, usageLogIndexDDLs, 8, "7 个 ent 对齐索引 + 1 个计费游标部分索引")
 	idx := usageLogIndexDDLs[len(usageLogIndexDDLs)-1]
 	require.Contains(t, idx, "CREATE INDEX usagelog_unbilled_id ON usage_logs (id)", "游标索引名与键列")
 	require.Contains(t, idx, "WHERE NOT billed", "部分索引谓词 = 未扣子集")

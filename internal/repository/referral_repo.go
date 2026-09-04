@@ -27,7 +27,10 @@ type ReferralRepo struct {
 }
 
 func (r *ReferralRepo) GetUserByInviteCode(ctx context.Context, code string) (*domain.User, error) {
-	row, err := r.client.User.Query().Where(user.InviteCodeEQ(strings.ToUpper(strings.TrimSpace(code)))).Only(ctx)
+	row, err := r.client.User.Query().Where(
+		user.InviteCodeEQ(strings.ToUpper(strings.TrimSpace(code))),
+		user.StatusEQ(user.StatusActive),
+	).Only(ctx)
 	if ent.IsNotFound(err) {
 		return nil, fmt.Errorf("%w: invite code", ErrNotFound)
 	}

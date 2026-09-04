@@ -306,6 +306,18 @@ func (s *Service) ListUsers(ctx context.Context, q repository.ListQuery) ([]*dom
 	return s.store.ListUsers(ctx, q)
 }
 
+// SumUserBalance is an optional repository capability used by the admin users
+// view. Lightweight stores that do not implement the aggregate return zero so
+// existing integrations remain source-compatible.
+func (s *Service) SumUserBalance(ctx context.Context) (int64, error) {
+	if agg, ok := s.store.(interface {
+		SumUserBalance(context.Context) (int64, error)
+	}); ok {
+		return agg.SumUserBalance(ctx)
+	}
+	return 0, nil
+}
+
 // maxUserUpdateRetries 条件更新 0 行（期间有扣费/并发变更）→ 重读重试上限
 // （v02 修复方向：重试时 new 保持管理员显式意图，仅刷新旧值条件）。
 const maxUserUpdateRetries = 3

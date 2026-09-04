@@ -71,6 +71,17 @@ func messToChatRequest(body []byte) ([]byte, error) {
 	return json.Marshal(out)
 }
 
+func reasoningEffortBudget(effort string) int {
+	switch effort {
+	case "low":
+		return 1024
+	case "high":
+		return 4096
+	default:
+		return 2048
+	}
+}
+
 func messMessagesToChat(req map[string]any) ([]any, bool) {
 	messages, ok := arr(req, "messages")
 	if !ok {
@@ -94,13 +105,16 @@ func messMessagesToChat(req map[string]any) ([]any, bool) {
 				out = append(out, map[string]any{"role": "user", "content": text})
 			}
 		case "assistant":
-			text, calls := messAssistantContentToChat(message["content"])
-			if text == "" && len(calls) == 0 {
+			text, calls, reasoning := messAssistantContentToChat(message["content"])
+			if text == "" && len(calls) == 0 && reasoning == "" {
 				continue
 			}
 			converted := map[string]any{"role": "assistant", "content": text}
 			if len(calls) > 0 {
 				converted["tool_calls"] = calls
+			}
+			if reasoning != "" {
+				converted["reasoning_content"] = reasoning
 			}
 			out = append(out, converted)
 		}
@@ -139,16 +153,17 @@ func messUserContentToChat(content any) (string, []any) {
 	return joinStrings(text, "\n"), results
 }
 
-func messAssistantContentToChat(content any) (string, []any) {
+func messAssistantContentToChat(content any) (string, []any, string) {
 	if text, ok := content.(string); ok {
-		return text, nil
+		return text, nil, ""
 	}
 	blocks, ok := content.([]any)
 	if !ok {
-		return "", nil
+		return "", nil, ""
 	}
 	var text []string
 	var calls []any
+	var reasoning []string
 	for _, raw := range blocks {
 		block, ok := raw.(map[string]any)
 		if !ok {
@@ -166,9 +181,13 @@ func messAssistantContentToChat(content any) (string, []any) {
 				"id": id, "type": "function",
 				"function": map[string]any{"name": name, "arguments": marshalAny(block["input"])},
 			})
+		case "thinking":
+			if value, ok := str(block, "thinking"); ok {
+				reasoning = append(reasoning, value)
+			}
 		}
 	}
-	return joinStrings(text, ""), calls
+	return joinStrings(text, ""), calls, joinStrings(reasoning, "")
 }
 
 func messToolsToChat(tools []any) []any {
@@ -272,6 +291,9 @@ func chatMessageToMessBlocks(message map[string]any) []any {
 				blocks = append(blocks, map[string]any{"type": "text", "text": text})
 			}
 		}
+	}
+	if reasoning, ok := firstChatReasoning(message); ok && reasoning != "" {
+		blocks = append([]any{map[string]any{"type": "thinking", "thinking": reasoning}}, blocks...)
 	}
 	if calls, ok := arr(message, "tool_calls"); ok {
 		for _, raw := range calls {
@@ -462,6 +484,20 @@ func (m *StreamMapper) captureChatUsage(event map[string]any) {
 func (m *StreamMapper) chatDeltaToMessEvents(delta map[string]any) []chatStreamEvent {
 	m.ensureBlocks()
 	var out []chatStreamEvent
+	if reasoning, ok := firstChatReasoning(delta); ok && reasoning != "" {
+		index := m.chatReasoningBlock()
+		if !m.blockStarted[index] {
+			m.blockStarted[index] = true
+			out = append(out, chatStreamEvent{name: "content_block_start", data: map[string]any{
+				"type": "content_block_start", "index": index,
+				"content_block": map[string]any{"type": "thinking", "thinking": ""},
+			}})
+		}
+		out = append(out, chatStreamEvent{name: "content_block_delta", data: map[string]any{
+			"type": "content_block_delta", "index": index,
+			"delta": map[string]any{"type": "thinking_delta", "thinking": reasoning},
+		}})
+	}
 	if text, ok := str(delta, "content"); ok && text != "" {
 		index := m.chatTextBlock()
 		if !m.blockStarted[index] {
@@ -518,6 +554,15 @@ func (m *StreamMapper) chatDeltaToMessEvents(delta map[string]any) []chatStreamE
 	return out
 }
 
+func firstChatReasoning(delta map[string]any) (string, bool) {
+	for _, key := range []string{"reasoning_content", "reasoning", "reasoning_text"} {
+		if value, ok := str(delta, key); ok && value != "" {
+			return value, true
+		}
+	}
+	return "", false
+}
+
 // mergeChatFragment accepts both delta-style fragments and relays that repeat
 // the cumulative value on every chunk. IDs and function names are normally
 // sent once, but a few compatibility relays split them; blindly concatenating
@@ -553,6 +598,17 @@ func (m *StreamMapper) chatTextBlock() int64 {
 		m.blockOrder = append(m.blockOrder, m.chatTextIndex)
 	}
 	return m.chatTextIndex
+}
+
+func (m *StreamMapper) chatReasoningBlock() int64 {
+	if m.chatReasoningSet {
+		return m.chatReasoningIndex
+	}
+	m.chatReasoningSet = true
+	m.chatReasoningIndex = m.nextChatBlock
+	m.nextChatBlock++
+	m.blockOrder = append(m.blockOrder, m.chatReasoningIndex)
+	return m.chatReasoningIndex
 }
 
 func (m *StreamMapper) chatToolBlock(chatIndex int64) int64 {

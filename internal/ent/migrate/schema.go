@@ -774,6 +774,11 @@ var (
 				Columns: []*schema.Column{UsageLogsColumns[5], UsageLogsColumns[41]},
 			},
 			{
+				Name:    "usagelog_upstream_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[9], UsageLogsColumns[41]},
+			},
+			{
 				Name:    "usagelog_account_id_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{UsageLogsColumns[6], UsageLogsColumns[41]},

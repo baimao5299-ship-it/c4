@@ -49,8 +49,8 @@ func chatToRespRequest(body []byte) ([]byte, error) {
 	// 预筛：顶层单遍 ForEach 提取各字段原始文本（Raw 零拷贝切片；重复键
 	// 后者覆盖——与 map 解码 last-wins 语义一致）。
 	var (
-		msgs, maxCT, maxT, toolChoice, tools                              gjson.Result
-		model, temperature, topP, stream, parallel, user, metadata, store string
+		msgs, maxCT, maxT, toolChoice, tools                                               gjson.Result
+		model, temperature, topP, stream, parallel, user, metadata, store, reasoningEffort string
 	)
 	root.ForEach(func(k, v gjson.Result) bool {
 		switch {
@@ -80,6 +80,8 @@ func chatToRespRequest(body []byte) ([]byte, error) {
 			metadata = v.Raw
 		case gjsonKeyEq(k, "store"):
 			store = v.Raw
+		case gjsonKeyEq(k, "reasoning_effort"):
+			reasoningEffort = v.Raw
 		}
 		return true
 	})
@@ -135,6 +137,9 @@ func chatToRespRequest(body []byte) ([]byte, error) {
 	}
 	if rawNotNull(user) {
 		out = appendField(out, &first, "user", user)
+	}
+	if rawNotNull(reasoningEffort) {
+		out = appendField(out, &first, "reasoning", `{"effort":`+reasoningEffort+`,"summary":"auto"}`)
 	}
 	out = append(out, '}')
 	return out, nil
@@ -643,9 +648,34 @@ func (m *StreamMapper) mapRespToChat(name string, data []byte) ([]byte, bool) {
 		m.dbuf = append(m.dbuf, strOrEmpty(ev.Get("delta"))...)
 		m.dbuf = append(m.dbuf, '}')
 		return m.chatChunkFrame(m.dbuf, nil, nil), false
+	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		delta := ev.Get("delta")
+		if delta.Type != gjson.String {
+			return nil, true
+		}
+		m.dbuf = append(m.dbuf[:0], `{"reasoning_content":`...)
+		m.dbuf = append(m.dbuf, strOrEmpty(delta)...)
+		m.dbuf = append(m.dbuf, '}')
+		return m.chatChunkFrame(m.dbuf, nil, nil), false
 	case "response.output_item.added":
 		item := ev.Get("item")
-		if !item.IsObject() || !rawStrEq(item.Get("type").Raw, "function_call") {
+		if !item.IsObject() {
+			return nil, true
+		}
+		if rawStrEq(item.Get("type").Raw, "reasoning") {
+			if summary := item.Get("summary"); summary.IsArray() {
+				for _, part := range summary.Array() {
+					if text := part.Get("text"); text.Type == gjson.String && text.String() != "" {
+						m.dbuf = append(m.dbuf[:0], `{"reasoning_content":`...)
+						m.dbuf = append(m.dbuf, strOrEmpty(text)...)
+						m.dbuf = append(m.dbuf, '}')
+						return m.chatChunkFrame(m.dbuf, nil, nil), false
+					}
+				}
+			}
+			return nil, true
+		}
+		if !rawStrEq(item.Get("type").Raw, "function_call") {
 			return nil, true
 		}
 		idRaw := fcIDRaw(item) // call_id 优先（客户端回传匹配键，M-1）

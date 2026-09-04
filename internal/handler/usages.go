@@ -74,6 +74,15 @@ func (h *AdminAPI) GetUsageLogs(w http.ResponseWriter, r *http.Request, params G
 // It intentionally does not accept pagination fields, so its totals never
 // depend on the currently visible page.
 func (h *AdminAPI) GetUsageLogsSummary(w http.ResponseWriter, r *http.Request, params GetUsageLogsSummaryParams) {
+	cacheKey := "usage-summary:" + r.URL.RawQuery
+	if h.usageSummaryCache != nil {
+		if cached, ok := h.usageSummaryCache.get(cacheKey); ok {
+			if value, ok := cached.(UsageLogsSummary); ok {
+				httpface.WriteJSON(w, http.StatusOK, value)
+				return
+			}
+		}
+	}
 	q := repository.UsageQuery{From: &params.From, To: &params.To}
 	if params.GroupId != nil {
 		q.GroupID = *params.GroupId
@@ -102,14 +111,33 @@ func (h *AdminAPI) GetUsageLogsSummary(w http.ResponseWriter, r *http.Request, p
 		httpface.WriteServiceErr(w, err)
 		return
 	}
-	httpface.WriteJSON(w, http.StatusOK, UsageLogsSummary{
-		RequestCount:         summary.RequestCount,
-		CostedRequestCount:   summary.CostedRequestCount,
-		UserCharge:           summary.UserCharge,
-		AttributedUserCharge: summary.AttributedUserCharge,
-		UpstreamCost:         summary.UpstreamCost,
-		GrossProfit:          summary.GrossProfit,
-		ProfitMarginBP:       summary.ProfitMarginBP,
-		LossRequestCount:     summary.LossRequestCount,
-	})
+	out := UsageLogsSummary{
+		RequestCount:           summary.RequestCount,
+		CostedRequestCount:     summary.CostedRequestCount,
+		UserCharge:             summary.UserCharge,
+		AttributedUserCharge:   summary.AttributedUserCharge,
+		UpstreamCost:           summary.UpstreamCost,
+		GrossProfit:            summary.GrossProfit,
+		ProfitMarginBP:         summary.ProfitMarginBP,
+		LossRequestCount:       summary.LossRequestCount,
+		TopUpstreamsByRequests: toAPILogRanks(summary.TopUpstreamsByRequests),
+		TopUpstreamsByCost:     toAPILogRanks(summary.TopUpstreamsByCost),
+		TopGroupsByRequests:    toAPILogRanks(summary.TopGroupsByRequests),
+		TopGroupsByCost:        toAPILogRanks(summary.TopGroupsByCost),
+	}
+	if h.usageSummaryCache != nil {
+		h.usageSummaryCache.set(cacheKey, out)
+	}
+	httpface.WriteJSON(w, http.StatusOK, out)
+}
+
+func toAPILogRanks(rows []*repository.UsageLogRank) []UsageLogRank {
+	out := make([]UsageLogRank, 0, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		out = append(out, UsageLogRank{ID: row.ID, Name: row.Name, RequestCount: row.RequestCount, Cost: row.Cost, CostKnown: row.CostKnown})
+	}
+	return out
 }

@@ -2320,6 +2320,20 @@ type UsageLogsSummary struct {
 
 	// UserCharge 全部筛选行的用户扣费合计（毫分）
 	UserCharge int64 `json:"UserCharge"`
+
+	TopUpstreamsByRequests []UsageLogRank `json:"TopUpstreamsByRequests"`
+	TopUpstreamsByCost     []UsageLogRank `json:"TopUpstreamsByCost"`
+	TopGroupsByRequests    []UsageLogRank `json:"TopGroupsByRequests"`
+	TopGroupsByCost        []UsageLogRank `json:"TopGroupsByCost"`
+}
+
+// UsageLogRank is a complete-window upstream or group ranking entry.
+type UsageLogRank struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	RequestCount int64  `json:"request_count"`
+	Cost         int64  `json:"cost"`
+	CostKnown    bool   `json:"cost_known"`
 }
 
 // User defines model for User.
@@ -2376,8 +2390,9 @@ type UserGroupsResponse struct {
 
 // UserListResponse defines model for UserListResponse.
 type UserListResponse struct {
-	Rows  []User `json:"rows"`
-	Total int64  `json:"total"`
+	Rows         []User  `json:"rows"`
+	Total        int64   `json:"total"`
+	TotalBalance float64 `json:"total_balance"`
 }
 
 // UserRole defines model for UserRole.

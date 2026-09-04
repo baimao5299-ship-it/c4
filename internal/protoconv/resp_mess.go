@@ -20,7 +20,8 @@ import (
 //     （required → any；{type:"function",name} → {type:"tool",name}）
 //   - 同名字段透传：model/temperature/top_p/stream/metadata
 //   - anthropic 无对应参数（top_logprobs/seed/store/parallel_tool_calls/
-//     reasoning/text/include/truncation 等）→ 按规范丢弃
+//     text/include/truncation 等）→ 按规范丢弃；thinking 映射为 Responses
+//     reasoning 的最近 effort 等级
 func respToMessRequest(body []byte) ([]byte, error) {
 	req, err := decodeObj(body)
 	if err != nil {
@@ -45,6 +46,11 @@ func respToMessRequest(body []byte) ([]byte, error) {
 	}
 	if tc, ok := respToolChoice(req); ok {
 		out["tool_choice"] = tc
+	}
+	if reasoning, ok := req["reasoning"]; ok {
+		if thinking, ok := reasoningToThinking(reasoning); ok {
+			out["thinking"] = thinking
+		}
 	}
 	return json.Marshal(out)
 }
@@ -136,6 +142,10 @@ func respInputToMessMessages(req map[string]any) ([]any, bool) {
 						if t, ok := str(pm, "text"); ok {
 							blocks = append(blocks, map[string]any{"type": "text", "text": t})
 						}
+					case "reasoning":
+						if t, ok := str(pm, "text"); ok {
+							blocks = append(blocks, map[string]any{"type": "thinking", "thinking": t})
+						}
 					}
 				}
 			}
@@ -169,6 +179,23 @@ func respInputToMessMessages(req map[string]any) ([]any, bool) {
 			content = append(content, map[string]any{
 				"type": "tool_use", "id": id, "name": name, "input": parseJSON(im["arguments"]),
 			})
+			am["content"] = content
+		case "reasoning":
+			if lastAssistant < 0 {
+				msgs = append(msgs, map[string]any{"role": "assistant", "content": []any{}})
+				lastAssistant = len(msgs) - 1
+			}
+			am, _ := msgs[lastAssistant].(map[string]any)
+			content, _ := arr(am, "content")
+			if summary, ok := arr(im, "summary"); ok {
+				for _, raw := range summary {
+					if sm, ok := raw.(map[string]any); ok {
+						if t, ok := str(sm, "text"); ok {
+							content = append(content, map[string]any{"type": "thinking", "thinking": t})
+						}
+					}
+				}
+			}
 			am["content"] = content
 		case "function_call_output":
 			callID, _ := str(im, "call_id")
@@ -260,6 +287,7 @@ func messContentToRespOutput(msg map[string]any) ([]any, int64, int64) {
 	var output []any
 	var textParts []any
 	var fcs []any
+	msgID, _ := str(msg, "id")
 	content, _ := arr(msg, "content")
 	for _, blk := range content {
 		bm, ok := blk.(map[string]any)
@@ -267,6 +295,13 @@ func messContentToRespOutput(msg map[string]any) ([]any, int64, int64) {
 			continue
 		}
 		switch bm["type"] {
+		case "thinking":
+			if t, ok := str(bm, "thinking"); ok {
+				output = append(output, map[string]any{
+					"id": "rs_" + msgID + "_" + stringIndex(int64(len(output))), "type": "reasoning", "status": "completed",
+					"summary": []any{map[string]any{"type": "summary_text", "text": t}},
+				})
+			}
 		case "text":
 			if t, ok := str(bm, "text"); ok {
 				textParts = append(textParts, map[string]any{"type": "output_text", "text": t, "annotations": []any{}})
@@ -316,6 +351,7 @@ func messUsageToResp(msg map[string]any, it, ot int64) map[string]any {
 // mapMessToResp 流式：anthropic messages SSE 事件 → resp 流。事件映射表：
 //
 //	message_start           → response.created（id/model/input 用量入状态）
+//	content_block_start(thinking) → response.output_item.added(reasoning)
 //	content_block_start     → response.output_item.added（text → message 项 /
 //	                          tool_use → function_call 项）
 //	content_block_delta     → response.output_text.delta（text）/
@@ -358,6 +394,28 @@ func (m *StreamMapper) mapMessToResp(name string, data []byte) ([]byte, bool) {
 			return nil, true
 		}
 		switch block["type"] {
+		case "thinking":
+			if m.blockStarted[index] {
+				return nil, true
+			}
+			m.blockStarted[index] = true
+			m.blockOrder = append(m.blockOrder, index)
+			thinking, _ := str(block, "thinking")
+			m.reasoningByIndex[index] = thinking
+			f := EncodeFrame("response.output_item.added", map[string]any{
+				"type": "response.output_item.added", "output_index": index,
+				"item": map[string]any{
+					"id": m.itemID(index), "type": "reasoning", "status": "in_progress",
+					"summary": []any{map[string]any{"type": "summary_text", "text": ""}},
+				},
+			})
+			if thinking != "" {
+				f = append(f, EncodeFrame("response.reasoning_summary_text.delta", map[string]any{
+					"type": "response.reasoning_summary_text.delta", "item_id": m.itemID(index),
+					"output_index": index, "summary_index": 0, "delta": thinking,
+				})...)
+			}
+			return f, false
 		case "text":
 			if m.blockStarted[index] {
 				return nil, true
@@ -398,6 +456,13 @@ func (m *StreamMapper) mapMessToResp(name string, data []byte) ([]byte, bool) {
 			return nil, true
 		}
 		switch delta["type"] {
+		case "thinking_delta":
+			thinking, _ := str(delta, "thinking")
+			m.reasoningByIndex[index] += thinking
+			return EncodeFrame("response.reasoning_summary_text.delta", map[string]any{
+				"type": "response.reasoning_summary_text.delta", "item_id": m.itemID(index),
+				"output_index": index, "summary_index": 0, "delta": thinking,
+			}), false
 		case "text_delta":
 			text, _ := str(delta, "text")
 			m.textByIndex[index] += text
@@ -411,6 +476,16 @@ func (m *StreamMapper) mapMessToResp(name string, data []byte) ([]byte, bool) {
 			return EncodeFrame("response.function_call_arguments.delta", map[string]any{
 				"type": "response.function_call_arguments.delta", "item_id": "fc_" + m.fcIDs[index],
 				"output_index": index, "delta": partial,
+			}), false
+		}
+		return nil, true
+	case "content_block_stop":
+		index := intOr0(ev, "index")
+		if _, ok := m.reasoningByIndex[index]; ok && m.blockStarted[index] && !m.blockStopped[index] {
+			m.blockStopped[index] = true
+			return EncodeFrame("response.reasoning_summary_text.done", map[string]any{
+				"type": "response.reasoning_summary_text.done", "item_id": m.itemID(index),
+				"output_index": index, "summary_index": 0, "text": m.reasoningByIndex[index],
 			}), false
 		}
 		return nil, true
@@ -454,6 +529,13 @@ func (m *StreamMapper) mapMessToResp(name string, data []byte) ([]byte, bool) {
 func (m *StreamMapper) messOutputItems() []any {
 	var output []any
 	for _, index := range m.blockOrder {
+		if text, ok := m.reasoningByIndex[index]; ok {
+			output = append(output, map[string]any{
+				"id": m.itemID(index), "type": "reasoning", "status": "completed",
+				"summary": []any{map[string]any{"type": "summary_text", "text": text}},
+			})
+			continue
+		}
 		if name, ok := m.fcNames[index]; ok {
 			output = append(output, map[string]any{
 				"id": "fc_" + m.fcIDs[index], "type": "function_call", "call_id": m.fcIDs[index],

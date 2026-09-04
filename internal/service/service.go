@@ -661,7 +661,7 @@ var listSortFields = map[string][]string{
 	"templates": {"id", "name", "base_url", "created_at", "updated_at"},
 	"accounts":  {"id", "name", "template_id", "status", "cooldown_until", "weight", "max_concurrency", "last_used_at", "created_at", "updated_at"},
 	"groups":    {"id", "name", "created_at", "updated_at", "display_order"},
-	"users":     {"id", "email", "role", "status", "max_concurrency", "created_at", "updated_at"},
+	"users":     {"id", "email", "role", "status", "max_concurrency", "balance", "created_at", "updated_at"},
 	"keys":      {"id", "name", "status", "max_concurrency", "quota", "quota_used", "created_at", "updated_at"},
 	// 与 repo 层 keyAdminSortFields 白名单一致（双保险；/api/admin/keys——管理端仅
 	// id/name/created_at 三键，用户端 8 键白名单见上 "keys"）。

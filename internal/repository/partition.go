@@ -174,6 +174,10 @@ var usageLogUpgradeDDLs = []string{
 	`ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS profit_margin_bp bigint NULL`,
 }
 
+var usageLogIndexUpgradeDDLs = []string{
+	`CREATE INDEX IF NOT EXISTS usagelog_upstream_id_created_at ON usage_logs (upstream_id, created_at)`,
+}
+
 // usageLogIndexDDLs 对齐 ent schema Indexes（同名同列；分区表父表索引为
 // 分区索引，子分区自动继承）。唯一索引含分区键 created_at（分区表硬约束，
 // 见本文件头注释）：request_id 幂等键（方向 A 批次 1a，A-P2-3）——COMMIT
@@ -183,6 +187,7 @@ var usageLogUpgradeDDLs = []string{
 var usageLogIndexDDLs = []string{
 	`CREATE INDEX usagelog_created_at ON usage_logs (created_at)`,
 	`CREATE INDEX usagelog_group_id_created_at ON usage_logs (group_id, created_at)`,
+	`CREATE INDEX usagelog_upstream_id_created_at ON usage_logs (upstream_id, created_at)`,
 	`CREATE INDEX usagelog_account_id_created_at ON usage_logs (account_id, created_at)`,
 	`CREATE INDEX usagelog_user_id_created_at ON usage_logs (user_id, created_at)`,
 	`CREATE INDEX usagelog_key_id_created_at ON usage_logs (key_id, created_at)`,
@@ -518,6 +523,11 @@ func (r *PartitionRepo) EnsureUsageLogPartitioned(ctx context.Context, now time.
 	for _, ddl := range usageLogUpgradeDDLs {
 		if err := r.execDDLTolerateRace(ctx, ddl); err != nil {
 			return fmt.Errorf("upgrade usage_logs attribution columns: %w", err)
+		}
+	}
+	for _, ddl := range usageLogIndexUpgradeDDLs {
+		if err := r.execDDLTolerateRace(ctx, ddl); err != nil {
+			return fmt.Errorf("upgrade usage_logs indexes: %w", err)
 		}
 	}
 	return nil
