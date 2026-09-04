@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.0.1-beta.31] - 2026-09-04
+
+- Harden the groups console against legacy or partial API responses that omit
+  optional arrays. Group edits now keep a successful save successful even when
+  cached rows, protocol conversion settings, model lists, or assignments are
+  missing.
+
 ## [v0.0.1-beta.30] - 2026-09-04
 
 - Add immutable 12-letter invitation codes and registration referral links.

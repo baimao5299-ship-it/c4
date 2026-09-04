@@ -45,6 +45,18 @@ type Upstream = components['schemas']['Upstream']
 type GroupProtocolConvert = components['schemas']['GroupProtocolConvert']
 type GroupAssignmentsBody = components['schemas']['GroupAssignmentsBody']
 
+// API responses from older C4 builds may omit optional array fields (or return
+// a partially populated list while a migration is in progress). Keep the UI
+// state total so a successful write cannot be turned into a client-side error
+// by an unsafe `.map` in a cache updater.
+const arrayOrEmpty = <T,>(value: T[] | null | undefined): T[] => Array.isArray(value) ? value : []
+
+const normalizeGroup = (group: Group): Group => ({
+  ...group,
+  AllowedModels: arrayOrEmpty(group.AllowedModels),
+  ProtocolConvert: arrayOrEmpty(group.ProtocolConvert),
+})
+
 interface UpstreamMemberDraft {
   upstream_id: number
   priority: string
@@ -280,16 +292,17 @@ function ProtocolConvertCheckboxes({ value, onChange }: {
   onChange: (v: GroupProtocolConvert[]) => void
 }) {
   const { t } = useTranslation()
+  const protocols = arrayOrEmpty(value)
   return (
     <div className="space-y-1">
       {PROTOCOL_CONVERTS.map(v => (
         <label key={v} className="flex cursor-pointer items-center gap-2.5 rounded-md border px-2 py-1.5 text-sm">
-          <Checkbox checked={value.includes(v)} onCheckedChange={c => {
+          <Checkbox checked={protocols.includes(v)} onCheckedChange={c => {
             if (v === 'auto') {
               onChange(c === true ? ['auto'] : [])
               return
             }
-            const next = toggleConvert(c === true, v, value.filter(x => x !== 'auto'))
+            const next = toggleConvert(c === true, v, protocols.filter(x => x !== 'auto'))
             onChange(next)
           }} />
           {t(`groups.protocolConvert.${v}`)}
@@ -400,7 +413,10 @@ export default function Groups() {
   const queryKey = ['groups', { limit, offset, name, sort: activeSort ?? 'display_order', order: activeSort ? order : 'asc' }] as const
   const { data, isLoading, isError, error } = useQuery({
     queryKey,
-    queryFn: () => api.listGroups({ limit, offset, name: name || undefined, sort: activeSort ?? 'display_order', order: activeSort ? order : 'asc' }),
+    queryFn: async () => {
+      const response = await api.listGroups({ limit, offset, name: name || undefined, sort: activeSort ?? 'display_order', order: activeSort ? order : 'asc' })
+      return { ...response, rows: arrayOrEmpty(response.rows).map(normalizeGroup) }
+    },
   })
   const rows = useMemo(() => data?.rows ?? [], [data?.rows])
   const categoryOptions = useMemo(() => Array.from(new Set(rows.map(group => group.Category?.trim()).filter((value): value is string => !!value))).sort((a, b) => a.localeCompare(b)), [rows])
@@ -533,6 +549,7 @@ export default function Groups() {
     api.getGroupAssignments(gid)
       .then(resp => {
         if (assignFetchId.current !== fetchId) return
+        const userIDs = arrayOrEmpty(resp.user_ids)
         const muls: Record<number, AssignRowMult> = {}
         const prefilledUids: number[] = []
         for (const [uid, m] of Object.entries(resp.multipliers ?? {})) {
@@ -543,16 +560,16 @@ export default function Groups() {
               prefilledUids.push(id)
               muls[id] = { mult: String(m), cleared: false }
             }
-          } else if (typeof m === 'number' && resp.user_ids.includes(id)) {
+          } else if (typeof m === 'number' && userIDs.includes(id)) {
             // private：仅回显已授予用户的数值倍率；null = 未设置 → 留空（省略键沿用当前值，语义不变）
             muls[id] = { mult: String(m), cleared: false }
           }
         }
         prefilledUids.sort((a, b) => a - b)
-        setAssignChecked(isPublic ? prefilledUids : resp.user_ids)
+        setAssignChecked(isPublic ? prefilledUids : userIDs)
         setAssignMult(muls)
         // 默认列表数据源：public = 已配置专属倍率的用户；private = 已授予权限的用户全量
-        setAssignPrefillUids(isPublic ? prefilledUids : resp.user_ids)
+        setAssignPrefillUids(isPublic ? prefilledUids : userIDs)
         setAssignPrefilled(true)
       })
       .catch(() => {
@@ -611,12 +628,13 @@ export default function Groups() {
     },
     onSuccess: (resp) => {
       setAssignTarget(null)
+      const userIDs = arrayOrEmpty(resp.user_ids)
       // 空勾选提交 = 清空（契约语义）：toast 用清空文案，避免「已授予 0 个用户」歧义。
       // public 组文案用「配置专属倍率」语义，private 组用「授予」语义。
       toast.add({
         title: t(assignIsPublic ? 'groups.assignPublicSuccess' : 'groups.assignSuccess'),
-        description: resp.user_ids.length > 0
-          ? t(assignIsPublic ? 'groups.assignConfiguredCount' : 'groups.assignSuccessDesc', { count: resp.user_ids.length })
+        description: userIDs.length > 0
+          ? t(assignIsPublic ? 'groups.assignConfiguredCount' : 'groups.assignSuccessDesc', { count: userIDs.length })
           : t(assignIsPublic ? 'groups.assignConfiguredClearedDesc' : 'groups.assignClearedDesc'),
         type: 'success',
       })
@@ -758,21 +776,22 @@ export default function Groups() {
     // A detail response can be an empty placeholder while the list row still
     // carries the persisted allowlist. Do not make a reopened edit form look
     // like its saved models disappeared.
-    const detailModels = config.allowed_models ?? []
-    const rowModels = editTarget.AllowedModels ?? []
+    const detailModels = arrayOrEmpty(config.allowed_models)
+    const rowModels = arrayOrEmpty(editTarget.AllowedModels)
     setEditAllowedModels(detailModels.length > 0 || rowModels.length === 0 ? detailModels : rowModels)
-    setEditMembers((config.members ?? []).map(draftFromUpstream))
-    editInitialMemberKey.current = (config.members ?? []).map(member => member.UpstreamID).sort((a, b) => a - b).join(',')
+    const members = arrayOrEmpty(config.members)
+    setEditMembers(members.map(draftFromUpstream))
+    editInitialMemberKey.current = members.map(member => member.UpstreamID).sort((a, b) => a - b).join(',')
     editPoolLoadedKey.current = key
   }, [editTarget, editUpstreamConfig.data, editUpstreamConfig.dataUpdatedAt])
   const activeMemberIDs = (createOpen ? createMembers : editTarget ? editMembers : []).map(member => member.upstream_id).sort((a, b) => a - b)
   const activeMemberKey = activeMemberIDs.join(',')
-  const upstreamModelSnapshotKey = upstreamRows.map(upstream => `${upstream.ID}:${upstream.ModelsCheckedAt ?? ''}:${upstream.ModelsError ?? ''}:${(upstream.Models ?? []).join('|')}`).join(';')
+  const upstreamModelSnapshotKey = upstreamRows.map(upstream => `${upstream.ID}:${upstream.ModelsCheckedAt ?? ''}:${upstream.ModelsError ?? ''}:${arrayOrEmpty(upstream.Models).join('|')}`).join(';')
   const groupModels = useQuery({
     queryKey: ['group-upstream-models', activeMemberIDs, upstreamModelSnapshotKey],
     queryFn: () => {
       const selected = activeMemberIDs.map(id => upstreamRows.find(upstream => upstream.ID === id)).filter((upstream): upstream is Upstream => upstream != null)
-      const union = sortModelsLatestFirst(Array.from(new Set(selected.flatMap(upstream => upstream.Models ?? []))))
+      const union = sortModelsLatestFirst(Array.from(new Set(selected.flatMap(upstream => arrayOrEmpty(upstream.Models)))))
       // A saved snapshot remains usable when the latest check is incomplete.
       // The previous successful model set stays routable while the operator
       // retries; only a missing snapshot blocks group setup.
@@ -874,9 +893,9 @@ export default function Groups() {
     setEditVisibility(group.Visibility ?? 'public')
     setEditPublicStatus(group.PublicStatus ?? 'available')
     setEditRoutingMode(group.RoutingMode ?? 'accounts')
-    setEditAllowedModels(group.AllowedModels ?? [])
+    setEditAllowedModels(arrayOrEmpty(group.AllowedModels))
     setEditMembers([])
-    setEditProtocols(group.ProtocolConvert ?? [])
+    setEditProtocols(arrayOrEmpty(group.ProtocolConvert))
     setEditMultiplier(group.PriceMultiplier != null ? String(group.PriceMultiplier) : '')
     rename.reset()
   }
@@ -899,7 +918,7 @@ export default function Groups() {
       // invalidation below still reconciles with the authoritative response.
       qc.setQueriesData<components['schemas']['GroupListResponse']>({ queryKey: ['groups'] }, current => current ? {
         ...current,
-        rows: current.rows.map(row => row.ID === updated.ID ? updated : row),
+        rows: arrayOrEmpty(current.rows).map(row => row.ID === updated.ID ? normalizeGroup(updated) : row),
       } : current)
       qc.invalidateQueries({ queryKey: ['groups'] })
       qc.invalidateQueries({ queryKey: ['group-upstreams'] })
@@ -1029,9 +1048,9 @@ export default function Groups() {
                     </TableCell>
                     <TableCell className="tabular-nums">{formatMultiplier(g.PriceMultiplier, t)}</TableCell>
                     <TableCell>
-                      {g.ProtocolConvert && g.ProtocolConvert.length > 0 ? (
+                      {arrayOrEmpty(g.ProtocolConvert).length > 0 ? (
                         <div className="flex flex-wrap gap-1">
-                          {g.ProtocolConvert.map(pc => (
+                          {arrayOrEmpty(g.ProtocolConvert).map(pc => (
                             <Badge key={pc} variant="secondary" className="font-mono text-xs">{t(`groups.protocolConvertShort.${pc}`)}</Badge>
                           ))}
                         </div>
