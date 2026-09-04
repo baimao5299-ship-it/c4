@@ -164,6 +164,11 @@ func TestUsageExtractAcceptsFlatCacheCreationAliases(t *testing.T) {
 	u, ok = chatStreamUsage(chat)
 	require.True(t, ok)
 	require.Equal(t, int64(63400), u.cc)
+	flatCache := []byte(`{"usage":{"input_tokens":5906,"output_tokens":282,"cache_read_input_tokens":118200,"cache_creation_input_tokens":63400}}`)
+	u, ok = responsesTopLevelUsage(flatCache)
+	require.True(t, ok)
+	require.Equal(t, int64(118200), u.cr, "扁平 cache_read_input_tokens 必须参与计费")
+	require.Equal(t, int64(63400), u.cc)
 
 	nested := []byte(`{"usage":{"cache_creation":{"input_tokens":63400}}}`)
 	u, ok = responsesTopLevelUsage(nested)

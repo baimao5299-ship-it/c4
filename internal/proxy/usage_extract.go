@@ -507,6 +507,16 @@ func usageFieldsFromInterval(raw []byte, itKey, otKey, crKey []byte) usageTuple 
 	if s, e, ok := scanKeyValue(raw, crKey); ok {
 		u.cr = scanFieldInt64(raw[s:e], cachedTokensKeyBytes)
 	}
+	if u.cr <= 0 {
+		// Compatibility relays may flatten the cache-read counter instead of
+		// nesting it under input_tokens_details/prompt_tokens_details.
+		for _, key := range [][]byte{cacheReadInputTokensKeyBytes, cacheReadTokensKeyBytes} {
+			if n := scanFieldInt64(raw, key); n > 0 {
+				u.cr = n
+				break
+			}
+		}
+	}
 	u.cc = cacheCreationTokensFromInterval(raw)
 	u.it = deductCacheRead(u.it, u.cr)
 	return u
