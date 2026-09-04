@@ -2721,7 +2721,9 @@ const (
 type responsesProbeRouteDisabledKey struct{}
 type responsesProbeRouteState struct{ disabled atomic.Bool }
 
-const upstreamResponsesRouteAttemptTimeout = 5 * time.Second
+// Leave enough room for a normal slow Responses completion while still
+// reserving a few seconds for the zero-cost route check and Chat fallback.
+const upstreamResponsesRouteAttemptTimeout = 8 * time.Second
 
 func withResponsesProbeRouteDisabled(ctx context.Context) context.Context {
 	if ctx == nil {

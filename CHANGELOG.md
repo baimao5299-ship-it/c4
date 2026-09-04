@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.0.1-beta.36] - 2026-09-05
+
+### Fixed
+
+- Give Responses capability probes an eight-second route budget before the
+  WebSocket-only fallback, preserving slower valid Responses models while
+  leaving time to verify Chat compatibility in the same probe.
+
 ## [v0.0.1-beta.35] - 2026-09-05
 
 ### Fixed
